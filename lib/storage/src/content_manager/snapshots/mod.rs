@@ -155,7 +155,7 @@ async fn _do_create_full_snapshot(
     }
     let current_time = chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S").to_string();
 
-    let snapshot_name = format!("{}-{}.snapshot", FULL_SNAPSHOT_FILE_NAME, &current_time);
+    let snapshot_name = format!("{FULL_SNAPSHOT_FILE_NAME}-{current_time}.snapshot");
 
     let collection_name_to_snapshot_path: HashMap<_, _> = created_snapshots
         .iter()

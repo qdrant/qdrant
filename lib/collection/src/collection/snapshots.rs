@@ -45,10 +45,9 @@ impl Collection {
         this_peer_id: PeerId,
     ) -> CollectionResult<SnapshotDescription> {
         let snapshot_name = format!(
-            "{}-{}-{}.snapshot",
+            "{}-{this_peer_id}-{}.snapshot",
             self.name(),
-            this_peer_id,
-            chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S")
+            chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S"),
         );
 
         // Final location of snapshot
@@ -114,7 +113,7 @@ impl Collection {
             .tempfile_in(global_temp_dir)?;
 
         // Archive snapshot folder into a single file
-        log::debug!("Archiving snapshot {:?}", &snapshot_temp_target_dir_path);
+        log::debug!("Archiving snapshot {snapshot_temp_target_dir_path:?}");
         let archiving = tokio::task::spawn_blocking(move || -> CollectionResult<_> {
             let mut builder = tar::Builder::new(snapshot_temp_arc_file.as_file_mut());
             // archive recursively collection directory `snapshot_path_with_arc_extension` into `snapshot_path`
@@ -152,11 +151,7 @@ impl Collection {
         snapshot_file.keep()?;
         checksum_file.keep()?;
 
-        log::info!(
-            "Collection snapshot {} completed into {:?}",
-            snapshot_name,
-            snapshot_path,
-        );
+        log::info!("Collection snapshot {snapshot_name} completed into {snapshot_path:?}");
         snapshot_ops::get_snapshot_description(&snapshot_path).await
     }
 
