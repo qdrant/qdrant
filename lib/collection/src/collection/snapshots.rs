@@ -141,10 +141,16 @@ impl Collection {
         log::debug!("Computing checksum for snapshot: {snapshot_path_tmp_move:?}");
         let checksum_path = snapshot_ops::get_checksum_path(snapshot_path.as_path());
         let checksum = hash_file(&snapshot_path_tmp_move).await?;
+        let checksum_file = tempfile::TempPath::from_path(&checksum_path);
         let mut file = tokio::fs::File::create(checksum_path.as_path()).await?;
         file.write_all(checksum.as_bytes()).await?;
 
+        let snapshot_file = tempfile::TempPath::from_path(&snapshot_path);
         fs::rename(&snapshot_path_tmp_move, &snapshot_path).await?;
+
+        // Snapshot files are ready now, so keep them
+        snapshot_file.keep()?;
+        checksum_file.keep()?;
 
         log::info!(
             "Collection snapshot {} completed into {:?}",

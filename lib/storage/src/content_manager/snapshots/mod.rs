@@ -189,6 +189,7 @@ async fn _do_create_full_snapshot(
     }
 
     let full_snapshot_path = snapshot_dir.join(&snapshot_name);
+    let snapshot_file = tempfile::TempPath::from_path(&full_snapshot_path);
 
     let config_path_clone = config_path.clone();
     let full_snapshot_path_clone = full_snapshot_path.clone();
@@ -224,10 +225,15 @@ async fn _do_create_full_snapshot(
     log::debug!("Computing checksum for snapshot: {full_snapshot_path:?}");
     let checksum_path = get_checksum_path(full_snapshot_path.as_path());
     let checksum = hash_file(full_snapshot_path.as_path()).await?;
+    let checksum_file = tempfile::TempPath::from_path(&checksum_path);
     let mut file = tokio::fs::File::create(checksum_path.as_path()).await?;
     file.write_all(checksum.as_bytes()).await?;
 
     tokio::fs::remove_file(&config_path).await?;
+
+    // Snapshot files are ready now, so keep them
+    snapshot_file.keep()?;
+    checksum_file.keep()?;
 
     Ok(get_snapshot_description(&full_snapshot_path).await?)
 }

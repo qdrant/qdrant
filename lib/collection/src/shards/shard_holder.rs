@@ -758,18 +758,18 @@ impl ShardHolder {
         // Compute and store the file's checksum
         let checksum_path = get_checksum_path(temp_file.path());
         let checksum = hash_file(temp_file.path()).await?;
+        let checksum_file = tempfile::TempPath::from_path(&checksum_path);
         let mut file = tokio::fs::File::create(checksum_path.as_path()).await?;
         file.write_all(checksum.as_bytes()).await?;
 
-        // Remove partially moved `snapshot_path` or checksum, if `move_file` fails
-        let snapshot_file = tempfile::TempPath::from_path(&snapshot_path);
-
         // `tempfile::NamedTempFile::persist` does not work if destination file is on another
         // file-system, so we have to move the file explicitly
+        let snapshot_file = tempfile::TempPath::from_path(&snapshot_path);
         move_file(temp_file.path(), &snapshot_path).await?;
 
-        // We successfully moved `snapshot_path`, so we `keep` it
+        // Snapshot files are ready now, so keep them
         snapshot_file.keep()?;
+        checksum_file.keep()?;
 
         // We successfully moved `temp_file`, but `tempfile` will still try to delete the file on drop,
         // so we `keep` it and ignore the error
