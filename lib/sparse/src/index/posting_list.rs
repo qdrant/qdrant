@@ -196,6 +196,11 @@ impl<'a> PostingListIterator<'a> {
         self.elements.get(self.current_index)
     }
 
+    /// Returns the next element *without* bounds checking.
+    pub fn get_unchecked(&self) -> &PostingElement {
+        unsafe { self.elements.get_unchecked(self.current_index) }
+    }
+
     /// Returns the number of elements from the current position to the end of the list.
     pub fn len_to_end(&self) -> usize {
         self.elements.len() - self.current_index

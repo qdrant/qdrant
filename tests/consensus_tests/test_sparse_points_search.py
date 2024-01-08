@@ -6,7 +6,8 @@ from .assertions import assert_http_ok
 
 N_PEERS = 5
 N_SHARDS = 4
-N_REPLICA = 2
+N_REPLICA = 1  # replicas introduces non-determinism in sparse scores
+
 
 def test_sparse_points_search(tmp_path: pathlib.Path):
     assert_project_root()

@@ -111,7 +111,16 @@ fn compare_sparse_vectors_search_with_without_filter(full_scan_threshold: usize)
                 .filter(|s| s.score != 0.0)
                 .zip(no_filter_result.iter().filter(|s| s.score != 0.0))
             {
-                assert_eq!(filter_result, no_filter_result);
+                assert_eq!(filter_result.idx, no_filter_result.idx);
+                // the scores between search and plain search can be slightly different due to different order in which points are processed
+                let score_error = (filter_result.score - no_filter_result.score).abs();
+                assert!(
+                    score_error < 0.01,
+                    "query = {:#?}, filter_result = {:#?} no_filter_result = {:#?}",
+                    query,
+                    filter_result,
+                    no_filter_result,
+                );
             }
         }
     }

@@ -17,13 +17,44 @@ pub struct IndexedPostingListIterator<'a> {
     query_weight: DimWeight,
 }
 
+/// Tracks the min record of posting list based on their position.
+///
+/// Sorted by min record id to allow for efficient min record id lookup.
+#[derive(Debug, PartialEq)]
+struct PostingTracker {
+    min_record_id: PointOffsetType,
+    index: usize, // the index of the posting list in `SearchContext::postings_iterators`
+}
+
+impl PostingTracker {
+    fn new(min_record_id: PointOffsetType, index: usize) -> PostingTracker {
+        PostingTracker {
+            min_record_id,
+            index,
+        }
+    }
+}
+impl Eq for PostingTracker {}
+
+impl Ord for PostingTracker {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.min_record_id.cmp(&other.min_record_id)
+    }
+}
+
+impl PartialOrd for PostingTracker {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 pub struct SearchContext<'a> {
     postings_iterators: Vec<IndexedPostingListIterator<'a>>,
     query: SparseVector,
     top: usize,
     is_stopped: &'a AtomicBool,
     result_queue: FixedLengthPriorityQueue<ScoredPointOffset>, // keep the largest elements and peek smallest
-    min_record_ids: FixedLengthPriorityQueue<PointOffsetType>, // min record ids across all posting lists
+    min_record_ids: FixedLengthPriorityQueue<PostingTracker>, // min record ids across all posting lists
     use_pruning: bool,
 }
 
@@ -54,9 +85,10 @@ impl<'a> SearchContext<'a> {
         let use_pruning = query.values.iter().all(|v| *v >= 0.0);
         // find min record id across all posting lists
         let mut min_record_ids = FixedLengthPriorityQueue::new(max(query.indices.len(), 1));
-        for posting_iterator in postings_iterators.iter() {
+        for (id, posting_iterator) in postings_iterators.iter().enumerate() {
             if let Some(element) = posting_iterator.posting_list_iterator.peek() {
-                min_record_ids.push(element.record_id);
+                let tracker = PostingTracker::new(element.record_id, id);
+                min_record_ids.push(tracker);
             }
         }
         SearchContext {
@@ -139,25 +171,30 @@ impl<'a> SearchContext<'a> {
     /// b,  21, 34, 60, 200
     /// b,  30, 34, 60, 230
     fn advance(&mut self) -> Option<ScoredPointOffset> {
-        // Get current min record id from all posting list iterators
-        let current_min_record_id = *self.min_record_ids.peek()?;
+        // get current min tracker from all posting list iterators
+        let min_tracker = self.min_record_ids.peek()?;
+        // current record_id to score
+        let current_min_record_id = min_tracker.min_record_id;
         let mut score = 0.0;
-
-        // Iterate to advance matching posting iterators
-        for posting_iterator in self.postings_iterators.iter_mut() {
-            if let Some(element) = posting_iterator.posting_list_iterator.peek() {
-                // accumulate score for the current record id
-                if element.record_id == current_min_record_id {
-                    score += element.weight * posting_iterator.query_weight;
-                    // advance posting list iterator to next element
-                    posting_iterator.posting_list_iterator.advance();
-                    // pop min record id
-                    self.min_record_ids.pop();
-                    // look-ahead to find next min record id
-                    if let Some(next_element) = posting_iterator.posting_list_iterator.peek() {
-                        self.min_record_ids.push(next_element.record_id);
-                    }
+        // caution: very hot loop
+        while let Some(mut pop_tracker) = self.min_record_ids.pop() {
+            if pop_tracker.min_record_id == current_min_record_id {
+                // advance posting list iterator to next element
+                let posting_iterator = &mut self.postings_iterators[pop_tracker.index];
+                // fetch element without bounds check as we know that the posting list iterator is not empty
+                let element = posting_iterator.posting_list_iterator.get_unchecked();
+                score += element.weight * posting_iterator.query_weight;
+                posting_iterator.posting_list_iterator.advance();
+                // look-ahead to find next min record id
+                if let Some(next_element) = posting_iterator.posting_list_iterator.peek() {
+                    pop_tracker.min_record_id = next_element.record_id;
+                    self.min_record_ids.push(pop_tracker);
                 }
+            } else {
+                // push back tracker
+                self.min_record_ids.push(pop_tracker);
+                // we have reached the next min record id in the trackers
+                break;
             }
         }
 
@@ -165,53 +202,6 @@ impl<'a> SearchContext<'a> {
             score,
             idx: current_min_record_id,
         })
-    }
-
-    /// Returns the next min record id from all posting list iterators
-    ///
-    /// returns None if all posting list iterators are exhausted
-    fn next_min_id(to_inspect: &[IndexedPostingListIterator<'_>]) -> Option<u32> {
-        let mut min_record_id = None;
-
-        // Iterate to find min record id at the head of the posting lists
-        for posting_iterator in to_inspect.iter() {
-            if let Some(next_element) = posting_iterator.posting_list_iterator.peek() {
-                match min_record_id {
-                    None => min_record_id = Some(next_element.record_id), // first record with matching id
-                    Some(min_id_seen) => {
-                        // update min record id if smaller
-                        if next_element.record_id < min_id_seen {
-                            min_record_id = Some(next_element.record_id);
-                        }
-                    }
-                }
-            }
-        }
-
-        min_record_id
-    }
-
-    /// Make sure the longest posting list is at the head of the posting list iterators
-    fn promote_longest_posting_lists_to_the_front(&mut self) {
-        // find index of longest posting list
-        let posting_index = self
-            .postings_iterators
-            .iter()
-            .enumerate()
-            .max_by(|(_, a), (_, b)| {
-                a.posting_list_iterator
-                    .len_to_end()
-                    .cmp(&b.posting_list_iterator.len_to_end())
-            })
-            .map(|(index, _)| index);
-
-        if let Some(posting_index) = posting_index {
-            // make sure it is not already at the head
-            if posting_index != 0 {
-                // swap longest posting list to the head
-                self.postings_iterators.swap(0, posting_index);
-            }
-        }
     }
 
     /// Search for the top k results that satisfy the filter condition
@@ -236,7 +226,6 @@ impl<'a> SearchContext<'a> {
             self.result_queue.push(candidate);
 
             // we potentially have enough results to prune low performing posting lists
-            // TODO(sparse) pruning is expensive, we should only do it when it makes sense (detect hot keys at runtime)
             if self.use_pruning && self.result_queue.len() == self.top {
                 // current min score
                 let new_min_score = self.result_queue.top().unwrap().score;
@@ -246,18 +235,18 @@ impl<'a> SearchContext<'a> {
                 } else {
                     best_min_score = new_min_score;
                 }
-                // make sure the first posting list is the longest for pruning
-                self.promote_longest_posting_lists_to_the_front();
 
                 // prune posting list that cannot possibly contribute to the top results
-                let pruned = self.prune_longest_posting_list(new_min_score);
+                let pruned = self.prune_lowest_posting_list(new_min_score);
                 if pruned {
-                    // recompute new min record id for next iteration
-                    // the pruned posting list is always at the head and with the lowest record_id
-                    self.min_record_ids.pop();
-                    let new_min = self.postings_iterators[0].posting_list_iterator.peek();
-                    if let Some(next_element) = new_min {
-                        self.min_record_ids.push(next_element.record_id);
+                    // recompute tracker for the pruned posting list id for next iteration
+                    if let Some(mut pruned_tracker) = self.min_record_ids.pop() {
+                        let pruned_posting = &self.postings_iterators[pruned_tracker.index];
+                        if let Some(next_element) = pruned_posting.posting_list_iterator.peek() {
+                            // update tracker
+                            pruned_tracker.min_record_id = next_element.record_id;
+                            self.min_record_ids.push(pruned_tracker);
+                        }
                     }
                 }
             }
@@ -267,60 +256,71 @@ impl<'a> SearchContext<'a> {
         queue.into_vec()
     }
 
-    /// Prune posting lists that cannot possibly contribute to the top results
-    /// Assumes longest posting list is at the head of the posting list iterators
-    /// Returns true if the longest posting list was pruned
-    pub fn prune_longest_posting_list(&mut self, min_score: f32) -> bool {
-        // peek first element of longest posting list
-        let longest_posting_iterator = &self.postings_iterators[0];
-        if let Some(element) = longest_posting_iterator.posting_list_iterator.peek() {
-            let next_min_id_in_others = Self::next_min_id(&self.postings_iterators[1..]);
-            match next_min_id_in_others {
-                Some(next_min_id) => {
-                    match next_min_id.cmp(&element.record_id) {
-                        Ordering::Equal => {
-                            // if the next min id in the other posting lists is the same as the current one,
-                            // we can't prune the current element as it needs to be scored properly across posting lists
-                            return false;
-                        }
-                        Ordering::Less => {
-                            // we can't prune as there the other posting lists contains smaller smaller ids that need to scored first
-                            return false;
-                        }
-                        Ordering::Greater => {
-                            // next_min_id is > element.record_id there is a chance to prune up to `next_min_id`
-                            // check against the max possible score using the `max_next_weight`
-                            // we can under prune as we should actually check the best score up to `next_min_id` - 1 only
-                            // instead of the max possible score but it is not possible to know the best score up to `next_min_id` - 1
-                            let max_weight_from_list = element.weight.max(element.max_next_weight);
-                            let max_score_contribution =
-                                max_weight_from_list * longest_posting_iterator.query_weight;
-                            if max_score_contribution <= min_score {
-                                // prune to next_min_id
-                                let longest_posting_iterator =
-                                    &mut self.postings_iterators[0].posting_list_iterator;
-                                let position_before_pruning =
-                                    longest_posting_iterator.current_index;
-                                longest_posting_iterator.skip_to(next_min_id);
-                                let position_after_pruning = longest_posting_iterator.current_index;
-                                // check if pruning took place
-                                return position_before_pruning != position_after_pruning;
-                            }
-                        }
-                    }
+    /// Prune posting lists that cannot possibly contribute to the top results.
+    /// If the min record id is unique, we can prune up to the next min record id.
+    ///
+    /// Returns true if the a posting list was pruned.
+    pub fn prune_lowest_posting_list(&mut self, min_score: f32) -> bool {
+        let trackers_len = self.min_record_ids.len();
+        // no trackers left
+        if trackers_len == 0 {
+            return false;
+        }
+        // one tracker left, let's try to prune fully the corresponding posting
+        if trackers_len == 1 {
+            let tracker = self.min_record_ids.iter().next().unwrap();
+            let posting = &self.postings_iterators[tracker.index];
+            if let Some(element) = posting.posting_list_iterator.peek() {
+                let max_weight_from_list = element.weight.max(element.max_next_weight);
+                let max_score_contribution = max_weight_from_list * posting.query_weight;
+                // check if the last posting list can contribute to the top results
+                if max_score_contribution <= min_score {
+                    // prune to the end!
+                    let to_prune = &mut self.postings_iterators[tracker.index];
+                    to_prune.posting_list_iterator.skip_to_end();
+                    return true;
                 }
-                None => {
-                    // the current posting list is the only one left, we can potentially skip it to the end
-                    // check against the max possible score using the `max_next_weight`
-                    let max_weight_from_list = element.weight.max(element.max_next_weight);
-                    let max_score_contribution =
-                        max_weight_from_list * longest_posting_iterator.query_weight;
-                    if max_score_contribution <= min_score {
-                        // prune to the end!
-                        let longest_posting_iterator = &mut self.postings_iterators[0];
-                        longest_posting_iterator.posting_list_iterator.skip_to_end();
-                        return true;
-                    }
+            }
+        } else {
+            // check that the min record id is unique by inspecting the two lowest trackers
+            // pop first
+            let first_tracker = self.min_record_ids.pop().unwrap();
+            let min_record_id = first_tracker.min_record_id;
+            let first_tracker_index = first_tracker.index;
+
+            // peek at second
+            let second_tracker = self.min_record_ids.peek().unwrap();
+            let next_min_id_in_others = second_tracker.min_record_id;
+
+            // put back first tracker to restore state
+            self.min_record_ids.push(first_tracker);
+
+            if min_record_id == next_min_id_in_others {
+                // min record id is not unique, we cannot prune
+                return false;
+            }
+            if let Some(element) = self.postings_iterators[first_tracker_index]
+                .posting_list_iterator
+                .peek()
+            {
+                // `next_min_id_in_others` is > `element.record_id` there is a chance to prune up to `next_min_id_in_others`
+                // check against the max possible score using the `max_next_weight`
+                // we can under prune as we should actually check the best score up to `next_min_id` - 1 only
+                // instead of the max possible score but it is not possible to know the best score up to `next_min_id` - 1
+                let max_weight_from_list = element.weight.max(element.max_next_weight);
+                let posting_to_prune = &mut self.postings_iterators[first_tracker_index];
+                let max_score_contribution = max_weight_from_list * posting_to_prune.query_weight;
+                if max_score_contribution <= min_score {
+                    // prune to next_min_id_in_others
+                    let position_before_pruning =
+                        posting_to_prune.posting_list_iterator.current_index;
+                    posting_to_prune
+                        .posting_list_iterator
+                        .skip_to(next_min_id_in_others);
+                    let position_after_pruning =
+                        posting_to_prune.posting_list_iterator.current_index;
+                    // check if pruning took place
+                    return position_before_pruning != position_after_pruning;
                 }
             }
         }
@@ -355,6 +355,30 @@ mod tests {
             &is_stopped,
         );
         assert_eq!(search_context.search(&match_all), Vec::new());
+    }
+
+    /// Returns the next min record id from all posting list iterators
+    ///
+    /// returns None if all posting list iterators are exhausted
+    fn next_min_id(to_inspect: &[IndexedPostingListIterator<'_>]) -> Option<u32> {
+        let mut min_record_id = None;
+
+        // Iterate to find min record id at the head of the posting lists
+        for posting_iterator in to_inspect.iter() {
+            if let Some(next_element) = posting_iterator.posting_list_iterator.peek() {
+                match min_record_id {
+                    None => min_record_id = Some(next_element.record_id), // first record with matching id
+                    Some(min_id_seen) => {
+                        // update min record id if smaller
+                        if next_element.record_id < min_id_seen {
+                            min_record_id = Some(next_element.record_id);
+                        }
+                    }
+                }
+            }
+        }
+
+        min_record_id
     }
 
     /// Match all filter condition for testing
@@ -674,7 +698,7 @@ mod tests {
                 .len_to_end(),
             8
         );
-        assert!(!search_context.prune_longest_posting_list(30.0));
+        assert!(!search_context.prune_lowest_posting_list(30.0));
         assert_eq!(
             search_context.postings_iterators[0]
                 .posting_list_iterator
@@ -695,7 +719,7 @@ mod tests {
                 .len_to_end(),
             7
         );
-        assert!(!search_context.prune_longest_posting_list(30.0));
+        assert!(!search_context.prune_lowest_posting_list(30.0));
         assert_eq!(
             search_context.postings_iterators[0]
                 .posting_list_iterator
@@ -717,7 +741,7 @@ mod tests {
                 .len_to_end(),
             6
         );
-        assert!(search_context.prune_longest_posting_list(30.0));
+        assert!(search_context.prune_lowest_posting_list(30.0));
         assert_eq!(
             search_context.postings_iterators[0]
                 .posting_list_iterator
@@ -778,7 +802,7 @@ mod tests {
         );
 
         // assuming we have gathered enough results and want to prune the longest posting list
-        assert!(search_context.prune_longest_posting_list(30.0));
+        assert!(search_context.prune_lowest_posting_list(30.0));
         // the longest posting list was pruned to the end
         assert_eq!(
             search_context.postings_iterators[0]
@@ -811,7 +835,7 @@ mod tests {
         );
 
         // assuming we have gathered enough results and want to prune the longest posting list
-        assert!(search_context.prune_longest_posting_list(30.0));
+        assert!(search_context.prune_lowest_posting_list(30.0));
         // the longest posting list was pruned to the end
         assert_eq!(
             search_context.postings_iterators[0]
@@ -852,9 +876,9 @@ mod tests {
 
         // one would expect this to prune up to `6` but it does not happen it practice because we are under pruning by design
         // we should actually check the best score up to `6` - 1 only instead of the max possible score (40.0)
-        assert!(!search_context.prune_longest_posting_list(30.0));
+        assert!(!search_context.prune_lowest_posting_list(30.0));
 
-        assert!(search_context.prune_longest_posting_list(40.0));
+        assert!(search_context.prune_lowest_posting_list(40.0));
         // the longest posting list was pruned to the end
         assert_eq!(
             search_context.postings_iterators[0]
@@ -963,9 +987,7 @@ mod tests {
 
         let mut all_next_min_observed = HashSet::new();
 
-        while let Some(next_min) =
-            SearchContext::next_min_id(search_context.postings_iterators.as_slice())
-        {
+        while let Some(next_min) = next_min_id(search_context.postings_iterators.as_slice()) {
             all_next_min_observed.insert(next_min);
             let next_candidate_id = search_context.advance().map(|s| s.idx);
             assert_eq!(next_candidate_id, Some(next_min));
@@ -993,57 +1015,20 @@ mod tests {
         );
 
         // initial state
-        let min = SearchContext::next_min_id(search_context.postings_iterators.as_slice());
+        let min = next_min_id(search_context.postings_iterators.as_slice());
         // no side effect
         assert_eq!(min, Some(1));
         assert_eq!(min, Some(1));
 
         // Complete scan over all vectors because the query vector contains all dimensions in the index.
         for i in 1..num_vectors {
-            let before_min =
-                SearchContext::next_min_id(search_context.postings_iterators.as_slice());
+            let before_min = next_min_id(search_context.postings_iterators.as_slice());
             assert_eq!(before_min, Some(i));
             let next = search_context.advance().map(|s| s.idx);
             assert_eq!(next, Some(i));
-            let new_min = SearchContext::next_min_id(search_context.postings_iterators.as_slice());
+            let new_min = next_min_id(search_context.postings_iterators.as_slice());
             assert_eq!(new_min, Some(i + 1));
         }
-    }
-
-    #[test]
-    fn promote_longest_test() {
-        let is_stopped = AtomicBool::new(false);
-        let inverted_index_ram = InvertedIndexBuilder::new()
-            .add(1, PostingList::from(vec![(1, 10.0), (2, 20.0)]))
-            .add(2, PostingList::from(vec![(1, 10.0), (3, 30.0)]))
-            .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
-            .build();
-
-        let mut search_context = SearchContext::new(
-            SparseVector {
-                indices: vec![1, 2, 3],
-                values: vec![1.0, 1.0, 1.0],
-            },
-            3,
-            &inverted_index_ram,
-            &is_stopped,
-        );
-
-        assert_eq!(
-            search_context.postings_iterators[0]
-                .posting_list_iterator
-                .len_to_end(),
-            2
-        );
-
-        search_context.promote_longest_posting_lists_to_the_front();
-
-        assert_eq!(
-            search_context.postings_iterators[0]
-                .posting_list_iterator
-                .len_to_end(),
-            3
-        );
     }
 
     #[test]
