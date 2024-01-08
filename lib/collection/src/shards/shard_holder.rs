@@ -6,17 +6,19 @@ use itertools::Itertools;
 // TODO rename ReplicaShard to ReplicaSetShard
 use segment::types::ShardKey;
 use tar::Builder as TarBuilder;
+use tokio::io::AsyncWriteExt;
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 
 use super::replica_set::AbortShardTransfer;
 use crate::common::file_utils::move_file;
+use crate::common::sha_256::hash_file;
 use crate::config::{CollectionConfig, ShardingMethod};
 use crate::hash_ring::HashRing;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::snapshot_ops::{
-    get_snapshot_description, list_snapshots_in_directory, SnapshotDescription,
+    get_checksum_path, get_snapshot_description, list_snapshots_in_directory, SnapshotDescription,
 };
 use crate::operations::types::{CollectionError, CollectionResult, ShardTransferInfo};
 use crate::operations::{OperationToShard, SplitByShard};
@@ -753,7 +755,13 @@ impl ShardHolder {
             }
         }
 
-        // Remove partially moved `snapshot_path`, if `move_file` fails
+        // Compute and store the file's checksum
+        let checksum_path = get_checksum_path(temp_file.path());
+        let checksum = hash_file(temp_file.path()).await?;
+        let mut file = tokio::fs::File::create(checksum_path.as_path()).await?;
+        file.write_all(checksum.as_bytes()).await?;
+
+        // Remove partially moved `snapshot_path` or checksum, if `move_file` fails
         let snapshot_file = tempfile::TempPath::from_path(&snapshot_path);
 
         // `tempfile::NamedTempFile::persist` does not work if destination file is on another
