@@ -23,8 +23,8 @@ pub struct SearchContext<'a> {
     top: usize,
     is_stopped: &'a AtomicBool,
     result_queue: FixedLengthPriorityQueue<ScoredPointOffset>, // keep the largest elements and peek smallest
+    min_record_ids: FixedLengthPriorityQueue<PointOffsetType>, // min record ids across all posting lists
     use_pruning: bool,
-    min_record_id: Option<u32>, // min record id across all posting lists
 }
 
 impl<'a> SearchContext<'a> {
@@ -52,15 +52,21 @@ impl<'a> SearchContext<'a> {
         // The max contribution per posting list that we calculate is not made to compute the max value of two negative numbers.
         // This is a limitation of the current pruning implementation.
         let use_pruning = query.values.iter().all(|v| *v >= 0.0);
-        let min_record_id = Self::next_min_id(&postings_iterators);
+        // find min record id across all posting lists
+        let mut min_record_ids = FixedLengthPriorityQueue::new(query.indices.len());
+        for posting_iterator in postings_iterators.iter() {
+            if let Some(element) = posting_iterator.posting_list_iterator.peek() {
+                min_record_ids.push(element.record_id);
+            }
+        }
         SearchContext {
             postings_iterators,
             query,
             top,
             is_stopped,
             result_queue,
+            min_record_ids,
             use_pruning,
-            min_record_id,
         }
     }
 
@@ -133,9 +139,8 @@ impl<'a> SearchContext<'a> {
     /// b,  21, 34, 60, 200
     /// b,  30, 34, 60, 230
     fn advance(&mut self) -> Option<ScoredPointOffset> {
-        let current_min_record_id = self.min_record_id?;
-        // look-ahead to find next min record id
-        let mut next_min_record_id = None;
+        // Get current min record id from all posting list iterators
+        let current_min_record_id = *self.min_record_ids.peek()?;
         let mut score = 0.0;
 
         // Iterate to advance matching posting iterators
@@ -146,37 +151,15 @@ impl<'a> SearchContext<'a> {
                     score += element.weight * posting_iterator.query_weight;
                     // advance posting list iterator to next element
                     posting_iterator.posting_list_iterator.advance();
+                    // pop min record id
+                    self.min_record_ids.pop();
                     // look-ahead to find next min record id
                     if let Some(next_element) = posting_iterator.posting_list_iterator.peek() {
-                        // update next min record id
-                        match next_min_record_id {
-                            None => {
-                                next_min_record_id = Some(next_element.record_id);
-                            }
-                            Some(next) => {
-                                if next_element.record_id < next {
-                                    next_min_record_id = Some(next_element.record_id);
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    // update next min record id
-                    match next_min_record_id {
-                        None => {
-                            next_min_record_id = Some(element.record_id);
-                        }
-                        Some(next) => {
-                            if element.record_id < next {
-                                next_min_record_id = Some(element.record_id);
-                            }
-                        }
+                        self.min_record_ids.push(next_element.record_id);
                     }
                 }
             }
         }
-        // update next min record id for next iteration
-        self.min_record_id = next_min_record_id;
 
         Some(ScoredPointOffset {
             score,
@@ -270,7 +253,12 @@ impl<'a> SearchContext<'a> {
                 let pruned = self.prune_longest_posting_list(new_min_score);
                 if pruned {
                     // recompute new min record id for next iteration
-                    self.min_record_id = Self::next_min_id(&self.postings_iterators)
+                    // the pruned posting list is always at the head and with the lowest record_id
+                    self.min_record_ids.pop();
+                    let new_min = self.postings_iterators[0].posting_list_iterator.peek();
+                    if let Some(next_element) = new_min {
+                        self.min_record_ids.push(next_element.record_id);
+                    }
                 }
             }
         }
