@@ -49,7 +49,7 @@ storage:
     # If 0 - auto selection, keep 1 or more CPUs unallocated depending on CPU size
     # If negative - subtract this number of CPUs from the available CPUs.
     # If positive - use this exact number of CPUs.
-    cpu_budget: 0
+    optimizer_cpu_budget: 0
 
     # Prevent DDoS of too many concurrent updates in distributed mode.
     # One external update usually triggers multiple internal updates, which breaks internal

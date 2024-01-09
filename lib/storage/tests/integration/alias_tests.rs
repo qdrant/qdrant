@@ -46,7 +46,7 @@ fn test_alias_operation() {
         performance: PerformanceConfig {
             max_search_threads: 1,
             max_optimization_threads: 1,
-            cpu_budget: 0,
+            optimizer_cpu_budget: 0,
             update_rate_limit: None,
             search_timeout_sec: None,
             incoming_shard_transfers_limit: Some(1),

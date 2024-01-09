@@ -35,7 +35,7 @@ pub struct PerformanceConfig {
     /// If negative - subtract this relative number of CPUs from the available CPUs.
     /// If positive - use this absolute number of CPUs.
     #[serde(default)]
-    pub cpu_budget: isize,
+    pub optimizer_cpu_budget: isize,
     #[serde(default = "default_io_shard_transfers_limit")]
     pub incoming_shard_transfers_limit: Option<usize>,
     #[serde(default = "default_io_shard_transfers_limit")]
