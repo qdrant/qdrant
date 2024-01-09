@@ -1,6 +1,6 @@
 from .helpers.helpers import request_with_validation
 
-def test_health_api():
+def test_ping_api():
     response = request_with_validation(
         api='/',
         method="GET",
@@ -8,7 +8,7 @@ def test_health_api():
     assert response.ok
 
     body = response.json()
-    assert body.keys() == {'title', 'version','commit_id'}
+    assert body.keys() == {'title', 'version','commit'}
     assert body['title'] == 'qdrant - vector search engine'
     assert len(body['version']) > 0
-    assert len(body['commit_id']) == 40
+    assert len(body['commit']) == 40
