@@ -18,7 +18,7 @@ pub fn default_cpu_budget_unallocated(num_cpu: usize) -> isize {
         49..=64 => -3,
         65..=96 => -4,
         97..=128 => -6,
-        num_cpu => -(num_cpu as isize / 16),
+        num_cpu @ 129.. => -(num_cpu as isize / 16),
     }
 }
 
@@ -34,6 +34,6 @@ pub fn thread_count_for_hnsw(num_cpu: usize) -> usize {
     match num_cpu {
         0..=48 => 8.min(num_cpu).max(1),
         49..=64 => 12,
-        _ => 16,
+        65.. => 16,
     }
 }
