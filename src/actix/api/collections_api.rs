@@ -37,6 +37,16 @@ async fn get_collections(toc: web::Data<TableOfContent>) -> impl Responder {
     process_response(response, timing)
 }
 
+#[get("/collections/{collection_name}/exists")]
+async fn collection_exists(
+    toc: web::Data<TableOfContent>,
+    collection_name: Path<CollectionPath>,
+) -> impl Responder {
+    let timing = Instant::now();
+    let response = do_check_collection_exists(toc.get_ref(), &collection_name.name).await;
+    process_response(response, timing)
+}
+
 #[get("/aliases")]
 async fn get_aliases(toc: web::Data<TableOfContent>) -> impl Responder {
     let timing = Instant::now();

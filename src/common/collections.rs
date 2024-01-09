@@ -50,6 +50,13 @@ pub async fn do_list_collections(toc: &TableOfContent) -> CollectionsResponse {
     CollectionsResponse { collections }
 }
 
+pub async fn do_check_collection_exists(
+    toc: &TableOfContent,
+    name: &str,
+) -> Result<bool, StorageError> {
+    Ok(toc.get_collection(name).await.is_ok())
+}
+
 /// Construct shards-replicas layout for the shard from the given scope of peers
 /// Example:
 ///   Shards: 3
