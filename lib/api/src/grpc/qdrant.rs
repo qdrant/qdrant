@@ -11293,6 +11293,8 @@ pub struct HealthCheckReply {
     pub title: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub version: ::prost::alloc::string::String,
+    #[prost(string, optional, tag = "3")]
+    pub commit: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// Generated client implementations.
 pub mod qdrant_client {
