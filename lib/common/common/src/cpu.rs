@@ -76,8 +76,8 @@ impl CpuBudget {
 
     /// Try to acquire CPU permit for optimization task from global CPU budget.
     ///
-    /// The given `desired_cpus` is not exact, but rather a hint on what we'd like to aquire.
-    /// - it will prefer to aquire the maximum number of CPUs
+    /// The given `desired_cpus` is not exact, but rather a hint on what we'd like to acquire.
+    /// - it will prefer to acquire the maximum number of CPUs
     /// - it will never be higher than the total CPU budget
     /// - it will never be lower than `min_permits(desired_cpus)`
     pub fn try_acquire(&self, desired_cpus: usize) -> Option<CpuPermit> {
