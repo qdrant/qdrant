@@ -10545,7 +10545,7 @@
           "version": {
             "type": "string"
           },
-          "commit_id": {
+          "commit": {
             "type": "string",
             "nullable": true
           }

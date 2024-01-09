@@ -9,7 +9,7 @@ pub struct VersionInfo {
     pub title: String,
     pub version: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub commit_id: Option<String>,
+    pub commit: Option<String>,
 }
 
 impl Default for VersionInfo {
@@ -17,7 +17,7 @@ impl Default for VersionInfo {
         VersionInfo {
             title: "qdrant - vector search engine".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
-            commit_id: option_env!("GIT_COMMIT_ID").map(ToString::to_string),
+            commit: option_env!("GIT_COMMIT_ID").map(ToString::to_string),
         }
     }
 }
