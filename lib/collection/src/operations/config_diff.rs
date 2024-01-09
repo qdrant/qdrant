@@ -71,10 +71,7 @@ pub struct HnswConfigDiff {
     )]
     #[validate(range(min = 10))]
     pub full_scan_threshold: Option<usize>,
-    /// Number of parallel threads used for background index building.
-    /// If 0 - automatically select from 8 to 16.
-    /// Best to keep between 8 and 16 to prevent likelihood of building broken/inefficient HNSW graphs.
-    /// On small CPUs, less threads are used.
+    /// Number of parallel threads used for background index building. If 0 - auto selection.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_indexing_threads: Option<usize>,
     /// Store HNSW index on disk. If set to false, the index will be stored in RAM. Default: false
@@ -157,10 +154,7 @@ pub struct OptimizersConfigDiff {
     pub indexing_threshold: Option<usize>,
     /// Minimum interval between forced flushes.
     pub flush_interval_sec: Option<u64>,
-    /// Max number of threads (jobs) for running optimizations per shard.
-    /// Note: each optimization job will also use `max_indexing_threads` threads by itself for index building.
-    /// If null - have no limit and choose dynamically to saturate CPU.
-    /// If 0 - no optimization threads, optimizations will be disabled.
+    /// Maximum available threads for optimization workers
     pub max_optimization_threads: Option<usize>,
 }
 
@@ -382,7 +376,7 @@ mod tests {
             memmap_threshold: None,
             indexing_threshold: Some(50_000),
             flush_interval_sec: 30,
-            max_optimization_threads: Some(1),
+            max_optimization_threads: 1,
         };
         let update: OptimizersConfigDiff =
             serde_json::from_str(r#"{ "indexing_threshold": 10000 }"#).unwrap();

@@ -40,7 +40,7 @@ fn test_alias_operation() {
             memmap_threshold: Some(100),
             indexing_threshold: Some(100),
             flush_interval_sec: 2,
-            max_optimization_threads: Some(2),
+            max_optimization_threads: 2,
         },
         wal: Default::default(),
         performance: PerformanceConfig {

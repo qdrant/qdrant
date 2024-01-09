@@ -81,7 +81,7 @@ fn batch_search_bench(c: &mut Criterion) {
             memmap_threshold: Some(100_000),
             indexing_threshold: Some(50_000),
             flush_interval_sec: 30,
-            max_optimization_threads: Some(2),
+            max_optimization_threads: 2,
         },
         wal_config,
         hnsw_config: Default::default(),

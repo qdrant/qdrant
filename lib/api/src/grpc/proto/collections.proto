@@ -140,10 +140,7 @@ message HnswConfigDiff {
   */
   optional uint64 full_scan_threshold = 3;
   /*
-  Number of parallel threads used for background index building.
-  If 0 - automatically select from 8 to 16.
-  Best to keep between 8 and 16 to prevent likelihood of building broken/inefficient HNSW graphs.
-  On small CPUs, less threads are used.
+  Number of parallel threads used for background index building. If 0 - auto selection.
   */
   optional uint64 max_indexing_threads = 4;
   /*
@@ -230,10 +227,7 @@ message OptimizersConfigDiff {
   */
   optional uint64 flush_interval_sec = 7;
   /*
-  Max number of threads (jobs) for running optimizations per shard.
-  Note: each optimization job will also use `max_indexing_threads` threads by itself for index building.
-  If null - have no limit and choose dynamically to saturate CPU.
-  If 0 - no optimization threads, optimizations will be disabled.
+  Max number of threads, which can be used for optimization. If 0 - `NUM_CPU - 1` will be used
   */
   optional uint64 max_optimization_threads = 8;
 }

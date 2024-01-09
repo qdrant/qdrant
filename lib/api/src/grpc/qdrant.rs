@@ -220,10 +220,7 @@ pub struct HnswConfigDiff {
     #[prost(uint64, optional, tag = "3")]
     pub full_scan_threshold: ::core::option::Option<u64>,
     ///
-    /// Number of parallel threads used for background index building.
-    /// If 0 - automatically select from 8 to 16.
-    /// Best to keep between 8 and 16 to prevent likelihood of building broken/inefficient HNSW graphs.
-    /// On small CPUs, less threads are used.
+    /// Number of parallel threads used for background index building. If 0 - auto selection.
     #[prost(uint64, optional, tag = "4")]
     pub max_indexing_threads: ::core::option::Option<u64>,
     ///
@@ -325,10 +322,7 @@ pub struct OptimizersConfigDiff {
     #[prost(uint64, optional, tag = "7")]
     pub flush_interval_sec: ::core::option::Option<u64>,
     ///
-    /// Max number of threads (jobs) for running optimizations per shard.
-    /// Note: each optimization job will also use `max_indexing_threads` threads by itself for index building.
-    /// If null - have no limit and choose dynamically to saturate CPU.
-    /// If 0 - no optimization threads, optimizations will be disabled.
+    /// Max number of threads, which can be used for optimization. If 0 - `NUM_CPU - 1` will be used
     #[prost(uint64, optional, tag = "8")]
     pub max_optimization_threads: ::core::option::Option<u64>,
 }
