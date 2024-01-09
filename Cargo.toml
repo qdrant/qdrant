@@ -58,7 +58,7 @@ itertools = "0.12"
 anyhow = "1.0.79"
 futures = "0.3.30"
 futures-util = "0.3.30"
-clap = { version = "4.4.11", features = ["derive"] }
+clap = { version = "4.4.14", features = ["derive"] }
 serde_cbor = { version = "0.11.2" }
 uuid = { version = "1.6", features = ["v4", "serde"] }
 sys-info = "0.9.1"
