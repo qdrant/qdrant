@@ -102,6 +102,7 @@ fn test_filtering_context_consistency() {
                     Condition::Field(FieldCondition::new_match("c", 1.into())),
                 ]),
                 should: None,
+                min_should: None,
                 must_not: Some(vec![Condition::Field(FieldCondition::new_range(
                     "d",
                     Range {
@@ -144,6 +145,7 @@ fn test_filtering_context_consistency() {
                     Condition::Field(FieldCondition::new_match("d", 0.into())),
                 ]),
                 should: None,
+                min_should: None,
                 must_not: None,
             },
         );
@@ -178,6 +180,7 @@ fn test_filtering_context_consistency() {
                     Condition::Field(FieldCondition::new_match("d", 0.into())),
                 ]),
                 should: None,
+                min_should: None,
                 must_not: None,
             },
         );
@@ -206,6 +209,7 @@ fn test_filtering_context_consistency() {
                     1.into(),
                 ))]),
                 should: None,
+                min_should: None,
                 must_not: None,
             },
         );
@@ -221,10 +225,12 @@ fn test_filtering_context_consistency() {
                             10.into(),
                         ))]),
                         should: None,
+                        min_should: None,
                         must_not: None,
                     },
                 )]),
                 should: None,
+                min_should: None,
                 must_not: None,
             },
         );
@@ -232,6 +238,7 @@ fn test_filtering_context_consistency() {
         let nested_filter_3 = Filter {
             must: Some(vec![nested_condition_3, nester_condition_3_1]),
             should: None,
+            min_should: None,
             must_not: None,
         };
 

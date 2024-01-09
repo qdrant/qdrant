@@ -768,6 +768,7 @@ impl TryFrom<Filter> for segment::types::Filter {
     fn try_from(value: Filter) -> Result<Self, Self::Error> {
         Ok(Self {
             should: conditions_helper_from_grpc(value.should)?,
+            min_should: None, // TODO
             must: conditions_helper_from_grpc(value.must)?,
             must_not: conditions_helper_from_grpc(value.must_not)?,
         })

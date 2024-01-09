@@ -196,6 +196,12 @@ where
             }
         }
     }
+    match &filter.min_should {
+        None => {}
+        Some(_) => {
+            todo!()
+        }
+    }
     match &filter.must_not {
         None => {}
         Some(conditions) => {
@@ -342,6 +348,7 @@ mod tests {
     fn must_estimation_query_test() {
         let query = Filter {
             should: None,
+            min_should: None,
             must: Some(vec![
                 test_condition("color".to_owned()),
                 test_condition("size".to_owned()),
@@ -368,6 +375,7 @@ mod tests {
                 test_condition("color".to_owned()),
                 test_condition("size".to_owned()),
             ]),
+            min_should: None,
             must: None,
             must_not: None,
         };
@@ -387,6 +395,7 @@ mod tests {
                 test_condition("size".to_owned()),
                 test_condition("un-indexed".to_owned()),
             ]),
+            min_should: None,
             must: None,
             must_not: None,
         };
@@ -405,6 +414,7 @@ mod tests {
             should: Some(vec![
                 Condition::Filter(Filter {
                     should: None,
+                    min_should: None,
                     must: Some(vec![
                         test_condition("color".to_owned()),
                         test_condition("size".to_owned()),
@@ -413,6 +423,7 @@ mod tests {
                 }),
                 Condition::Filter(Filter {
                     should: None,
+                    min_should: None,
                     must: Some(vec![
                         test_condition("price".to_owned()),
                         test_condition("size".to_owned()),
@@ -420,6 +431,7 @@ mod tests {
                     must_not: None,
                 }),
             ]),
+            min_should: None,
             must: None,
             must_not: Some(vec![Condition::HasId(HasIdCondition {
                 has_id: HashSet::from_iter([1, 2, 3, 4, 5].into_iter().map(|x| x.into())),
@@ -437,6 +449,7 @@ mod tests {
     fn another_complex_estimation_query_test() {
         let query = Filter {
             should: None,
+            min_should: None,
             must: Some(vec![
                 Condition::Filter(Filter {
                     must: None,
@@ -444,6 +457,7 @@ mod tests {
                         test_condition("color".to_owned()),
                         test_condition("size".to_owned()),
                     ]),
+                    min_should: None,
                     must_not: None,
                 }),
                 Condition::Filter(Filter {
@@ -452,6 +466,7 @@ mod tests {
                         test_condition("price".to_owned()),
                         test_condition("size".to_owned()),
                     ]),
+                    min_should: None,
                     must_not: None,
                 }),
             ]),

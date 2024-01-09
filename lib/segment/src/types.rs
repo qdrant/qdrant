@@ -1952,10 +1952,29 @@ pub struct WithPayload {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default)]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
+pub struct MinShould {
+    pub conditions: Vec<Condition>,
+    pub min_count: usize,
+}
+
+impl MinShould {
+    pub fn new_min_should(condition: Condition, min_count: usize) -> Self {
+        MinShould {
+            conditions: vec![condition],
+            min_count,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default)]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub struct Filter {
     /// At least one of those conditions should match
     #[validate]
     pub should: Option<Vec<Condition>>,
+    /// At least minimum amount of given conditions should match
+    #[validate]
+    pub min_should: Option<MinShould>,
     /// All conditions must match
     #[validate]
     pub must: Option<Vec<Condition>>,
@@ -1968,6 +1987,16 @@ impl Filter {
     pub fn new_should(condition: Condition) -> Self {
         Filter {
             should: Some(vec![condition]),
+            min_should: None,
+            must: None,
+            must_not: None,
+        }
+    }
+
+    pub fn new_min_should(min_should: MinShould) -> Self {
+        Filter {
+            should: None,
+            min_should: Some(min_should),
             must: None,
             must_not: None,
         }
@@ -1976,6 +2005,7 @@ impl Filter {
     pub fn new_must(condition: Condition) -> Self {
         Filter {
             should: None,
+            min_should: None,
             must: Some(vec![condition]),
             must_not: None,
         }
@@ -1984,6 +2014,7 @@ impl Filter {
     pub fn new_must_not(condition: Condition) -> Self {
         Filter {
             should: None,
+            min_should: None,
             must: None,
             must_not: Some(vec![condition]),
         }
@@ -2003,6 +2034,18 @@ impl Filter {
         };
         Filter {
             should: merge_component(self.should.clone(), other.should.clone()),
+            // TODO
+            min_should: {
+                match (self.min_should.clone(), other.min_should.clone()) {
+                    (None, None) => None,
+                    (Some(this), None) => Some(this),
+                    (None, Some(other)) => Some(other),
+                    (Some(mut this), Some(other)) => {
+                        this.conditions.extend(other.conditions);
+                        Some(this) // min_count follows self.min_should.min_count
+                    }
+                }
+            },
             must: merge_component(self.must.clone(), other.must.clone()),
             must_not: merge_component(self.must_not.clone(), other.must_not.clone()),
         }
@@ -2201,6 +2244,7 @@ mod tests {
             ))]),
             must_not: None,
             should: None,
+            min_should: None,
         };
         let json = serde_json::to_string_pretty(&filter).unwrap();
         eprintln!("{json}")
@@ -2562,6 +2606,79 @@ mod tests {
         let filter: Filter = serde_json::from_str(query1).unwrap();
         let must = filter.must.unwrap();
         assert_eq!(must.len(), 2);
+    }
+
+    #[test]
+    fn test_min_should_query_parse() {
+        let query1 = r#"
+        {
+            "min_should": {
+                "conditions": [
+                    {
+                        "key": "hello.nested.world",
+                        "match": {
+                            "value": 42
+                        }
+                    },
+                    {
+                        "key": "foo.nested.bar",
+                        "match": {
+                            "value": 1
+                        }
+                    }
+                ],
+                "min_count": 2
+            }
+        }
+        "#;
+
+        let filter: Filter = serde_json::from_str(query1).unwrap();
+        let min_should = filter.min_should.unwrap();
+        assert_eq!(min_should.conditions.len(), 2);
+    }
+
+    #[test]
+    fn test_min_should_nested_parse() {
+        let query1 = r#"
+        {
+            "must": [
+                {
+                    "min_should": {
+                        "conditions": [
+                            {
+                                "key": "hello.nested.world",
+                                "match": {
+                                    "value": 42
+                                }
+                            },
+                            {
+                                "key": "foo.nested.bar",
+                                "match": {
+                                    "value": 1
+                                }
+                            }
+                        ],
+                        "min_count": 2
+                    }
+                }
+            ]
+        }
+        "#;
+
+        let filter: Filter = serde_json::from_str(query1).unwrap();
+        let must = filter.must.unwrap();
+        assert_eq!(must.len(), 1);
+
+        match must.get(0) {
+            Some(Condition::Filter(f)) => {
+                let min_should = &f.min_should;
+                match min_should {
+                    Some(v) => assert_eq!(v.conditions.len(), 2),
+                    None => panic!("Filter expected"),
+                }
+            }
+            _ => panic!("Condition expected"),
+        }
     }
 
     #[test]
