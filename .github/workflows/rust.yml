@@ -23,8 +23,6 @@ jobs:
     - uses: Swatinem/rust-cache@v2
     - name: Install Protoc
       uses: arduino/setup-protoc@v2
-      env:
-        ACTIONS_STEP_DEBUG: true
       with:
         repo-token: ${{ secrets.GITHUB_TOKEN }}
     - name: Install nextest
