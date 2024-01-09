@@ -24,11 +24,15 @@ jobs:
       with:
         components: rustfmt, clippy
     - uses: actions/checkout@v4
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v2
+      with:
+        repo-token: ${{ secrets.GITHUB_TOKEN }}
     - uses: Swatinem/rust-cache@v2
       with:
         key: clippy
     - name: Install dependencies
-      run: sudo apt-get install clang protobuf-compiler libunwind-dev
+      run: sudo apt-get install clang libunwind-dev
     - name: Check code formatting
       run: cargo +nightly fmt --all -- --check
     - name: Check cargo clippy warnings

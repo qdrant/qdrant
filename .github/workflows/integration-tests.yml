@@ -18,9 +18,13 @@ jobs:
       - name: Install minimal stable
         uses: dtolnay/rust-toolchain@stable 
       - uses: actions/checkout@v4
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v2
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: Swatinem/rust-cache@v2
       - name: Install dependencies
-        run: sudo apt-get install clang protobuf-compiler
+        run: sudo apt-get install clang
       - name: Build
         run: cargo build --features service_debug
       - name: Run integration tests
@@ -38,9 +42,13 @@ jobs:
       - name: Install minimal stable
         uses: dtolnay/rust-toolchain@stable
       - uses: actions/checkout@v4
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v2
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: Swatinem/rust-cache@v2
       - name: Install dependencies
-        run: sudo apt-get install clang protobuf-compiler
+        run: sudo apt-get install clang
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
@@ -161,13 +169,17 @@ jobs:
 
     steps:
       - name: Install dependencies
-        run: sudo apt-get install clang protobuf-compiler git-lfs jq
+        run: sudo apt-get install clang git-lfs jq
       - name: Setup git-lfs
         run: git lfs install
       - name: Install minimal stable
-        uses: dtolnay/rust-toolchain@stable 
+        uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: actions/checkout@v4
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v2
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Docker build
@@ -192,13 +204,17 @@ jobs:
 
     steps:
       - name: Install dependencies
-        run: sudo apt-get install clang protobuf-compiler jq
+        run: sudo apt-get install clang jq
       - name: Setup git-lfs
         run: git lfs install
       - name: Install minimal stable
         uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: actions/checkout@v4
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v2
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Docker build
@@ -226,8 +242,12 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: actions/checkout@v4
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v2
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install dependencies
-        run: sudo apt-get install clang protobuf-compiler jq
+        run: sudo apt-get install clang jq
       - name: Build
         run: cargo build --bin qdrant
       - name: Run Shard Snapshot API Tests

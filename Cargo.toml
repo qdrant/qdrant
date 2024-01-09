@@ -37,7 +37,7 @@ stacktrace = ["rstack-self"]
 serde_urlencoded = "0.7"
 sealed_test = "1.0.0"
 
-tempfile = "3.8.1"
+tempfile = "3.9.0"
 rusty-hook = "^0.11.2"
 
 
@@ -58,7 +58,7 @@ itertools = "0.12"
 anyhow = "1.0.79"
 futures = "0.3.30"
 futures-util = "0.3.30"
-clap = { version = "4.4.11", features = ["derive"] }
+clap = { version = "4.4.14", features = ["derive"] }
 serde_cbor = { version = "0.11.2" }
 uuid = { version = "1.6", features = ["v4", "serde"] }
 sys-info = "0.9.1"
@@ -70,7 +70,7 @@ tokio = { version = "~1.35", features = ["full"] }
 
 actix-web = { version = "4.4.1", optional = true, features = ["rustls-0_21", "actix-tls"] }
 actix-cors = "0.6.5"
-actix-files = "0.6.2"
+actix-files = "0.6.4"
 actix-web-httpauth = "0.8.1"
 tonic = { version = "0.9.2", features = ["gzip", "tls"] }
 tonic-reflection = "0.9.2"
@@ -80,7 +80,7 @@ num-traits = "0.2.17"
 tar = "0.4.40"
 reqwest = { version = "0.11", default-features = false, features = ["stream", "rustls-tls", "blocking"] }
 rustls = "0.21.10"
-rustls-pemfile = "1.0.3"
+rustls-pemfile = "2.0.0"
 prometheus = { version = "0.13.3", default-features = false }
 validator = { version = "0.16", features = ["derive"] }
 actix-web-validator = "5.0.1"
