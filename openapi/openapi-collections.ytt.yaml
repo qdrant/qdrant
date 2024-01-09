@@ -127,6 +127,22 @@ paths:
           schema:
             type: integer
       responses: #@ response(type("boolean"))
+  
+  /collections/{collection_name}/exists:
+    get:
+      tags:
+        - collections
+      summary: Check if collection exists
+      description: Check if collection exists
+      operationId: collection_exists
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection to check
+          required: true
+          schema:
+            type: string
+      responses: #@ response(type("boolean"))
 
   /collections/{collection_name}/index:
     put:

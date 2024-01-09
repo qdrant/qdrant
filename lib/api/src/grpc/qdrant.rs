@@ -134,6 +134,16 @@ pub struct GetCollectionInfoRequest {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CheckCollectionExistsRequest {
+    /// Name of the collection
+    #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
+    pub collection_name: ::prost::alloc::string::String,
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListCollectionsRequest {}
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -149,6 +159,16 @@ pub struct CollectionDescription {
 pub struct GetCollectionInfoResponse {
     #[prost(message, optional, tag = "1")]
     pub result: ::core::option::Option<CollectionInfo>,
+    /// Time spent to process
+    #[prost(double, tag = "2")]
+    pub time: f64,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CheckCollectionExistsResponse {
+    #[prost(bool, tag = "3")]
+    pub result: Boolean(bool),
     /// Time spent to process
     #[prost(double, tag = "2")]
     pub time: f64,
@@ -1749,6 +1769,10 @@ pub mod collections_server {
             tonic::Response<super::GetCollectionInfoResponse>,
             tonic::Status,
         >;
+        async fn collection_exists(
+            &self,
+            request: tonic::Request<super::CheckCollectionExistsRequest>,
+        ) -> std::result::Result<tonic::Response<super::CollectionExistsResponse>, tonic::Status>;
         ///
         /// Get list name of all existing collections
         async fn list(
