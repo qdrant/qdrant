@@ -76,9 +76,10 @@ impl CpuBudget {
 
     /// Try to acquire CPU permit for optimization task from global CPU budget.
     ///
-    /// The given `desired_cpus` is not exact, but rather the maximum preferred number of CPUs to
-    /// aquire. The actual number of CPUs acquired may be less than this number, but is always
-    /// at least `min_permits(desired_cpus)`.
+    /// The given `desired_cpus` is not exact, but rather a hint on what we'd like to aquire.
+    /// - it will prefer to aquire the maximum number of CPUs
+    /// - it will never be higher than the total CPU budget
+    /// - it will never be lower than `min_permits(desired_cpus)`
     pub fn try_acquire(&self, desired_cpus: usize) -> Option<CpuPermit> {
         // Determine what number of CPUs to acquire based on available budget
         let min_required = self.min_permits(desired_cpus) as u32;
@@ -115,9 +116,11 @@ impl CpuBudget {
     /// Block until we have CPU budget available for the given number of desired CPUs.
     ///
     /// Waits for at least the minimum number of permits based on the given desired CPUs. For
-    /// example, if `desired_cpus` is 8, this will wait for at least 2 to be available. See
+    /// example, if `desired_cpus` is 8, this will wait for at least 4 to be available. See
     /// [`Self::min_permits`].
-    /// Provide `0` to wait for any CPU budget to be available.
+    ///
+    /// - `1` to wait for any CPU budget to be available.
+    /// - `0` will always return immediately.
     ///
     /// Uses an exponential backoff strategy to avoid busy waiting.
     pub fn block_until_budget(&self, desired_cpus: usize) {
