@@ -1,6 +1,6 @@
 from .helpers.helpers import request_with_validation
 
-def test_ping_api():
+def test_root_api():
     response = request_with_validation(
         api='/',
         method="GET",

@@ -3,9 +3,9 @@
 paths:
   /:
     get:
-      summary: Ping for Qdrant version information
+      summary: Returns information about the running Qdrant instance
       description: Returns information about the running Qdrant instance like version and commit id
-      operationId: ping
+      operationId: root
       tags:
         - service
       responses: #@ response(reference("VersionInfo"))
