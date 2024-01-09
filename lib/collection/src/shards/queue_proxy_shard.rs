@@ -156,11 +156,12 @@ impl ShardOperation for QueueProxyShard {
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
+        cancel: cancel::CancellationToken,
     ) -> CollectionResult<UpdateResult> {
         self.inner
             .as_ref()
             .expect("Queue proxy has been finalized")
-            .update(operation, wait)
+            .update(operation, wait, cancel)
             .await
     }
 
@@ -385,12 +386,15 @@ impl ShardOperation for Inner {
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
+        cancel: cancel::CancellationToken,
     ) -> CollectionResult<UpdateResult> {
-        let _update_lock = self.update_lock.lock().await;
+        let _update_lock =
+            cancel::future::cancel_on_token(cancel.clone(), self.update_lock.lock()).await?;
+
         let local_shard = &self.wrapped_shard;
         // Shard update is within a write lock scope, because we need a way to block the shard updates
         // during the transfer restart and finalization.
-        local_shard.update(operation.clone(), wait).await
+        local_shard.update(operation.clone(), wait, cancel).await
     }
 
     /// Forward read-only `scroll_by` to `wrapped_shard`

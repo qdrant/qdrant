@@ -252,6 +252,7 @@ impl TableOfContent {
         operation: CollectionUpdateOperations,
         wait: bool,
         ordering: WriteOrdering,
+        cancel: cancel::CancellationToken,
     ) -> Result<UpdateResult, StorageError> {
         if shard_keys.is_empty() {
             return Err(StorageError::bad_input("Empty shard keys selection"));
@@ -260,7 +261,13 @@ impl TableOfContent {
         let updates: Vec<_> = shard_keys
             .into_iter()
             .map(|shard_key| {
-                collection.update_from_client(operation.clone(), wait, ordering, Some(shard_key))
+                collection.update_from_client(
+                    operation.clone(),
+                    wait,
+                    ordering,
+                    Some(shard_key),
+                    cancel.child_token(),
+                )
             })
             .collect();
 
@@ -309,7 +316,10 @@ impl TableOfContent {
             Some(rate_limiter) => {
                 // We only want to rate limit the first node in the chain
                 if !shard_selector.is_shard_id() {
-                    Some(rate_limiter.acquire().await)
+                    Some(
+                        cancel::future::cancel_on_token(cancel.clone(), rate_limiter.acquire())
+                            .await,
+                    )
                 } else {
                     None
                 }
@@ -321,31 +331,39 @@ impl TableOfContent {
         let res = match shard_selector {
             ShardSelectorInternal::Empty => {
                 collection
-                    .update_from_client(operation, wait, ordering, None)
+                    .update_from_client(operation, wait, ordering, None, cancel)
                     .await?
             }
             ShardSelectorInternal::All => {
                 let shard_keys = collection.get_shard_keys().await;
                 if shard_keys.is_empty() {
                     collection
-                        .update_from_client(operation, wait, ordering, None)
+                        .update_from_client(operation, wait, ordering, None, cancel)
                         .await?
                 } else {
-                    Self::_update_shard_keys(&collection, shard_keys, operation, wait, ordering)
-                        .await?
+                    Self::_update_shard_keys(
+                        &collection,
+                        shard_keys,
+                        operation,
+                        wait,
+                        ordering,
+                        cancel,
+                    )
+                    .await?
                 }
             }
             ShardSelectorInternal::ShardKey(shard_key) => {
                 collection
-                    .update_from_client(operation, wait, ordering, Some(shard_key))
+                    .update_from_client(operation, wait, ordering, Some(shard_key), cancel)
                     .await?
             }
             ShardSelectorInternal::ShardKeys(shard_keys) => {
-                Self::_update_shard_keys(&collection, shard_keys, operation, wait, ordering).await?
+                Self::_update_shard_keys(&collection, shard_keys, operation, wait, ordering, cancel)
+                    .await?
             }
             ShardSelectorInternal::ShardId(shard_selection) => {
                 collection
-                    .update_from_peer(operation, shard_selection, wait, ordering)
+                    .update_from_peer(operation, shard_selection, wait, ordering, cancel)
                     .await?
             }
         };

@@ -105,7 +105,9 @@ impl Collection {
                     }),
                 );
 
-                replica_set.update_local(create_index_op, true).await?;
+                replica_set
+                    .update_local(create_index_op, true, cancel::CancellationToken::new()) // TODO!
+                    .await?;
             }
 
             self.shards_holder.write().await.add_shard(

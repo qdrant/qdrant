@@ -542,9 +542,12 @@ impl ShardOperation for RemoteShard {
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
+        _: cancel::CancellationToken,
     ) -> CollectionResult<UpdateResult> {
         // targets the shard explicitly
         let shard_id = Some(self.id);
+
+        // TODO: Ensure cancel safety!
         self.execute_update_operation(shard_id, self.collection_id.clone(), operation, wait, None)
             .await
     }

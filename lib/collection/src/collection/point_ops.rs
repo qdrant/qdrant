@@ -26,7 +26,10 @@ impl Collection {
 
         let res: Vec<_> = shard_holder_guard
             .all_shards()
-            .map(|shard| shard.update_local(operation.clone(), wait))
+            .map(|shard| {
+                // TODO!
+                shard.update_local(operation.clone(), wait, cancel::CancellationToken::new())
+            })
             .collect();
 
         let results: Vec<_> = future::try_join_all(res).await?;
@@ -45,17 +48,20 @@ impl Collection {
         shard_selection: ShardId,
         wait: bool,
         ordering: WriteOrdering,
+        cancel: cancel::CancellationToken,
     ) -> CollectionResult<UpdateResult> {
-        let _update_lock = self.updates_lock.read().await;
-        let shard_holder_guard = self.shards_holder.read().await;
+        let _update_lock =
+            cancel::future::cancel_on_token(cancel.clone(), self.updates_lock.read()).await?;
+        let shard_holder_guard =
+            cancel::future::cancel_on_token(cancel.clone(), self.shards_holder.read()).await?;
 
         let res = match shard_holder_guard.get_shard(&shard_selection) {
             None => None,
             Some(target_shard) => match ordering {
-                WriteOrdering::Weak => target_shard.update_local(operation, wait).await?,
+                WriteOrdering::Weak => target_shard.update_local(operation, wait, cancel).await?,
                 WriteOrdering::Medium | WriteOrdering::Strong => Some(
                     target_shard
-                        .update_with_consistency(operation, wait, ordering)
+                        .update_with_consistency(operation, wait, ordering, cancel)
                         .await?,
                 ),
             },
@@ -76,8 +82,14 @@ impl Collection {
         wait: bool,
         ordering: WriteOrdering,
     ) -> CollectionResult<UpdateResult> {
-        self.update_from_client(operation, wait, ordering, None)
-            .await
+        self.update_from_client(
+            operation,
+            wait,
+            ordering,
+            None,
+            cancel::CancellationToken::new(), // TODO!
+        )
+        .await
     }
 
     pub async fn update_from_client(
@@ -86,6 +98,7 @@ impl Collection {
         wait: bool,
         ordering: WriteOrdering,
         shard_keys_selection: Option<ShardKey>,
+        cancel: cancel::CancellationToken,
     ) -> CollectionResult<UpdateResult> {
         operation.validate()?;
         let _update_lock = self.updates_lock.read().await;
@@ -103,7 +116,12 @@ impl Collection {
             let shard_requests = shard_to_op
                 .into_iter()
                 .map(move |(replica_set, operation)| {
-                    replica_set.update_with_consistency(operation, wait, ordering)
+                    replica_set.update_with_consistency(
+                        operation,
+                        wait,
+                        ordering,
+                        cancel.child_token(),
+                    )
                 });
             future::join_all(shard_requests).await
         };

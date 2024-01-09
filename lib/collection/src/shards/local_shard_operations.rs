@@ -110,6 +110,7 @@ impl ShardOperation for LocalShard {
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
+        cancel: cancel::CancellationToken,
     ) -> CollectionResult<UpdateResult> {
         let (callback_sender, callback_receiver) = if wait {
             let (tx, rx) = oneshot::channel();
@@ -120,7 +121,10 @@ impl ShardOperation for LocalShard {
 
         let operation_id = {
             let update_sender = self.update_sender.load();
-            let channel_permit = update_sender.reserve().await?;
+
+            let channel_permit =
+                cancel::future::cancel_on_token(cancel, update_sender.reserve()).await??;
+
             let mut wal_lock = self.wal.lock();
             let operation_id = wal_lock.write(&operation)?;
             channel_permit.send(UpdateSignal::Operation(OperationData {

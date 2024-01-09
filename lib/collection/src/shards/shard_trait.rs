@@ -19,6 +19,7 @@ pub trait ShardOperation {
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
+        cancel: cancel::CancellationToken,
     ) -> CollectionResult<UpdateResult>;
 
     #[allow(clippy::too_many_arguments)]

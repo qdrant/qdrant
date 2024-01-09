@@ -1,6 +1,7 @@
 use std::ops::Deref as _;
 use std::time::Duration;
 
+use cancel::future;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt as _, StreamExt as _};
 use itertools::Itertools as _;
@@ -20,15 +21,20 @@ impl ShardReplicaSet {
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
+        cancel: cancel::CancellationToken,
     ) -> CollectionResult<Option<UpdateResult>> {
-        if let Some(local_shard) = &*self.local.read().await {
+        let local = cancel::future::cancel_on_token(cancel.clone(), self.local.read()).await?;
+
+        if let Some(local_shard) = local.deref() {
             match self.peer_state(&self.this_peer_id()) {
                 Some(ReplicaState::Active | ReplicaState::Partial | ReplicaState::Initializing) => {
-                    Ok(Some(local_shard.get().update(operation, wait).await?))
+                    Ok(Some(
+                        local_shard.get().update(operation, wait, cancel).await?,
+                    ))
                 }
-                Some(ReplicaState::Listener) => {
-                    Ok(Some(local_shard.get().update(operation, false).await?))
-                }
+                Some(ReplicaState::Listener) => Ok(Some(
+                    local_shard.get().update(operation, false, cancel).await?,
+                )),
                 Some(ReplicaState::PartialSnapshot | ReplicaState::Dead) | None => Ok(None),
             }
         } else {
@@ -41,6 +47,7 @@ impl ShardReplicaSet {
         operation: CollectionUpdateOperations,
         wait: bool,
         ordering: WriteOrdering,
+        cancel: cancel::CancellationToken,
     ) -> CollectionResult<UpdateResult> {
         match self.leader_peer_for_update(ordering) {
             None => Err(CollectionError::service_error(format!(
@@ -53,13 +60,14 @@ impl ShardReplicaSet {
                     // lock updates if ordering is medium or strong
                     let _guard = match ordering {
                         WriteOrdering::Weak => None, // no locking required
-                        WriteOrdering::Medium | WriteOrdering::Strong => Some(self.write_ordering_lock.lock().await), // one request at a time
+                        WriteOrdering::Medium | WriteOrdering::Strong => Some(cancel::future::cancel_on_token(cancel.clone(), self.write_ordering_lock.lock()).await?), // one request at a time
                     };
-                    self.update(operation, wait).await
+
+                    self.update(operation, wait, cancel).await
                 } else {
                     // forward the update to the designated leader
-                    self.forward_update(leader_peer, operation, wait, ordering)
-                        .await
+                    future::cancel_on_token(cancel, self.forward_update(leader_peer, operation, wait, ordering)) // TODO!?
+                        .await?
                         .map_err(|err| {
                             if err.is_transient() {
                                 // Deactivate the peer if forwarding failed with transient error
@@ -106,10 +114,12 @@ impl ShardReplicaSet {
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
+        cancel: cancel::CancellationToken,
     ) -> CollectionResult<UpdateResult> {
         let all_res: Vec<Result<_, _>> = {
-            let remotes = self.remotes.read().await;
-            let local = self.local.read().await;
+            let remotes =
+                cancel::future::cancel_on_token(cancel.clone(), self.remotes.read()).await?;
+            let local = cancel::future::cancel_on_token(cancel.clone(), self.local.read()).await?;
             let this_peer_id = self.this_peer_id();
 
             // target all remote peers that can receive updates
@@ -145,7 +155,7 @@ impl ShardReplicaSet {
                     let local_update = async move {
                         local
                             .get()
-                            .update(operation, local_wait)
+                            .update(operation, local_wait, cancel::CancellationToken::new()) // TODO!?
                             .await
                             .map(|ok| (this_peer_id, ok))
                             .map_err(|err| (this_peer_id, err))
@@ -160,7 +170,7 @@ impl ShardReplicaSet {
 
                 let remote_update = async move {
                     remote
-                        .update(operation, wait)
+                        .update(operation, wait, cancel::CancellationToken::new()) // TODO!?
                         .await
                         .map(|ok| (remote.peer_id, ok))
                         .map_err(|err| (remote.peer_id, err))
