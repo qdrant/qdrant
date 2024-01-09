@@ -265,7 +265,7 @@ impl UpdateHandler {
                     None => {
                         log::trace!(
                             "No available CPU permit for {} optimizer, postponing",
-                            optimizer.name()
+                            optimizer.name(),
                         );
                         if handles.is_empty() {
                             callback(false);
@@ -426,6 +426,10 @@ impl UpdateHandler {
         max_handles: Option<usize>,
     ) {
         let max_handles = max_handles.unwrap_or(usize::MAX);
+        let max_indexing_threads = optimizers
+            .first()
+            .map(|optimizer| optimizer.hnsw_config().max_indexing_threads)
+            .unwrap_or_default();
 
         loop {
             let receiver = timeout(OPTIMIZER_CLEANUP_INTERVAL, receiver.recv());
@@ -459,7 +463,8 @@ impl UpdateHandler {
                     log::trace!(
                         "Blocking optimization check, waiting for CPU budget to be available"
                     );
-                    optimizer_cpu_budget.block_until_budget();
+                    let desired_cpus = max_rayon_threads(max_indexing_threads);
+                    optimizer_cpu_budget.block_until_budget(desired_cpus);
                     log::trace!("Continue with optimizations, new CPU budget available");
 
                     // Determine optimization handle limit based on max handles we allow

@@ -57,20 +57,33 @@ pub fn get_cpu_budget(cpu_budget_param: isize) -> usize {
 #[derive(Debug, Clone)]
 pub struct CpuBudget {
     semaphore: Arc<Semaphore>,
+    /// Total CPU budget, available and leased out.
+    cpu_budget: usize,
 }
 
 impl CpuBudget {
     pub fn new(cpu_budget: usize) -> Self {
         Self {
             semaphore: Arc::new(Semaphore::new(cpu_budget)),
+            cpu_budget,
         }
     }
 
+    /// For the given desired number of CPUs, return the minimum number of required CPUs.
+    fn min_permits(&self, desired_cpus: usize) -> usize {
+        desired_cpus.min(self.cpu_budget).div_ceil(2)
+    }
+
     /// Try to acquire CPU permit for optimization task from global CPU budget.
+    ///
+    /// The given `desired_cpus` is not exact, but rather the maximum preferred number of CPUs to
+    /// aquire. The actual number of CPUs acquired may be less than this number, but is always
+    /// at least `min_permits(desired_cpus)`.
     pub fn try_acquire(&self, desired_cpus: usize) -> Option<CpuPermit> {
         // Determine what number of CPUs to acquire based on available budget
+        let min_required = self.min_permits(desired_cpus) as u32;
         let num_cpus = self.semaphore.available_permits().min(desired_cpus) as u32;
-        if num_cpus == 0 {
+        if desired_cpus == 0 || num_cpus < min_required {
             return None;
         }
 
@@ -85,23 +98,38 @@ impl CpuBudget {
         Some(CpuPermit::new(num_cpus, permit))
     }
 
-    /// Check if there is any available CPU in this budget.
-    pub fn has_budget(&self) -> bool {
-        self.semaphore.available_permits() > 0
+    /// Check if there is enough CPU budget available for the given `desired_cpus`.
+    ///
+    /// A desired CPU count of `0` will always return `true`.
+    pub fn has_budget(&self, desired_cpus: usize) -> bool {
+        self.has_budget_exact(self.min_permits(desired_cpus))
     }
 
-    /// Block until we have any CPU budget available.
+    /// Check if there are at least `budget` available CPUs in this budget.
+    ///
+    /// A budget of `0` will always return `true`.
+    fn has_budget_exact(&self, budget: usize) -> bool {
+        self.semaphore.available_permits() >= budget
+    }
+
+    /// Block until we have CPU budget available for the given number of desired CPUs.
+    ///
+    /// Waits for at least the minimum number of permits based on the given desired CPUs. For
+    /// example, if `desired_cpus` is 8, this will wait for at least 2 to be available. See
+    /// [`Self::min_permits`].
+    /// Provide `0` to wait for any CPU budget to be available.
     ///
     /// Uses an exponential backoff strategy to avoid busy waiting.
-    pub fn block_until_budget(&self) {
-        if self.has_budget() {
+    pub fn block_until_budget(&self, desired_cpus: usize) {
+        let min_required = self.min_permits(desired_cpus);
+        if self.has_budget_exact(min_required) {
             return;
         }
 
         // Wait for CPU budget to be available with exponential backoff
         // TODO: find better way, don't busy wait
         let mut delay = Duration::from_micros(100);
-        while !self.has_budget() {
+        while !self.has_budget_exact(min_required) {
             thread::sleep(delay);
             delay = (delay * 2).min(Duration::from_secs(10));
         }
