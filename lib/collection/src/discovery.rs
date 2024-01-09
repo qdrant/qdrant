@@ -90,6 +90,7 @@ fn discovery_into_core_search(
     let filter = {
         let not_ids = Filter {
             should: None,
+            min_should: None,
             must: None,
             must_not: Some(vec![Condition::HasId(HasIdCondition {
                 has_id: referenced_ids.into_iter().collect(),

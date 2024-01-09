@@ -46,6 +46,7 @@ fn test_point_exclusion() {
 
     let frt = Filter {
         should: None,
+        min_should: None,
         must: None,
         must_not: Some(vec![Condition::HasId(ids.into())]),
     };
@@ -105,6 +106,7 @@ fn test_named_vector_search() {
 
     let frt = Filter {
         should: None,
+        min_should: None,
         must: None,
         must_not: Some(vec![Condition::HasId(ids.into())]),
     };
