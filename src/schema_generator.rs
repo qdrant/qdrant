@@ -1,4 +1,4 @@
-use api::grpc::models::CollectionsResponse;
+use api::grpc::models::{CollectionsResponse, VersionInfo};
 use collection::operations::cluster_ops::ClusterOperations;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
@@ -78,6 +78,7 @@ struct AllDefinitions {
     b9: ShardSnapshotRecover,
     ba: DiscoverRequest,
     bb: DiscoverRequestBatch,
+    bc: VersionInfo,
 }
 
 fn save_schema<T: JsonSchema>() {
