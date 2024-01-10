@@ -148,6 +148,16 @@ impl From<FileStorageError> for StorageError {
     }
 }
 
+impl From<tempfile::PathPersistError> for StorageError {
+    fn from(err: tempfile::PathPersistError) -> Self {
+        Self::service_error(format!(
+            "failed to persist temporary file path {}: {}",
+            err.path.display(),
+            err.error,
+        ))
+    }
+}
+
 impl<Guard> From<std::sync::PoisonError<Guard>> for StorageError {
     fn from(err: std::sync::PoisonError<Guard>) -> Self {
         StorageError::ServiceError {

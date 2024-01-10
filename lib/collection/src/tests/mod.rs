@@ -1,3 +1,4 @@
+mod sha_256_test;
 mod snapshot_test;
 mod sparse_vectors_validation_tests;
 mod wal_recovery_test;
