@@ -11,6 +11,10 @@ service Collections {
    */
   rpc Get (GetCollectionInfoRequest) returns (GetCollectionInfoResponse) {}
   /*
+  Check if collection exists
+   */
+  rpc CheckCollectionExists (CheckCollectionExistsRequest) returns (CheckCollectionExistsResponse) {}
+  /*
   Get list name of all existing collections
    */
   rpc List (ListCollectionsRequest) returns (ListCollectionsResponse) {}

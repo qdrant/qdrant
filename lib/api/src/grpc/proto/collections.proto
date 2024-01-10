@@ -50,6 +50,14 @@ message GetCollectionInfoRequest {
   string collection_name = 1; // Name of the collection
 }
 
+message CheckCollectionExistsRequest {
+  string collection_name = 1; // Name of the collection
+}
+
+message CheckCollectionExistsResponse {
+  bool exists = 1; // If collection exists
+}
+
 message ListCollectionsRequest {
 }
 

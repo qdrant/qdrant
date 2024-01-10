@@ -236,6 +236,14 @@ impl TableOfContent {
         }))
     }
 
+    pub async fn collection_exists(&self, collection_name: &str) -> Result<bool, StorageError> {
+        let read_collection = self.collections.read().await;
+        let alias_persistence = self.alias_persistence.read().await;
+        let real_collection_name =
+            Self::resolve_name(collection_name, &read_collection, &alias_persistence).await?;
+        Ok(read_collection.contains_key(&real_collection_name))
+    }
+
     async fn get_collection_opt(
         &self,
         collection_name: String,
