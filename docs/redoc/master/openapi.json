@@ -8150,6 +8150,10 @@
             "type": "integer",
             "format": "uint64",
             "minimum": 0
+          },
+          "checksum": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

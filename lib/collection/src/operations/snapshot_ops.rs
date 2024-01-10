@@ -77,6 +77,8 @@ pub struct SnapshotDescription {
     pub name: String,
     pub creation_time: Option<NaiveDateTime>,
     pub size: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checksum: Option<String>,
 }
 
 impl From<SnapshotDescription> for api::grpc::qdrant::SnapshotDescription {
@@ -85,6 +87,7 @@ impl From<SnapshotDescription> for api::grpc::qdrant::SnapshotDescription {
             name: value.name,
             creation_time: value.creation_time.map(date_time_to_proto),
             size: value.size as i64,
+            checksum: value.checksum,
         }
     }
 }
@@ -100,12 +103,26 @@ pub async fn get_snapshot_description(path: &Path) -> CollectionResult<SnapshotD
                 NaiveDateTime::from_timestamp_opt(duration.as_secs() as i64, 0).unwrap()
             })
     });
+
+    let checksum = read_checksum_for_snapshot(path).await;
     let size = file_meta.len();
     Ok(SnapshotDescription {
         name: name.to_string(),
         creation_time,
         size,
+        checksum,
     })
+}
+
+async fn read_checksum_for_snapshot(snapshot_path: impl Into<PathBuf>) -> Option<String> {
+    let checksum_path = get_checksum_path(snapshot_path);
+    tokio::fs::read_to_string(&checksum_path).await.ok()
+}
+
+pub fn get_checksum_path(snapshot_path: impl Into<PathBuf>) -> PathBuf {
+    let mut checksum_path = snapshot_path.into().into_os_string();
+    checksum_path.push(".checksum");
+    checksum_path.into()
 }
 
 pub async fn list_snapshots_in_directory(
