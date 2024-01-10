@@ -1,4 +1,4 @@
-use std::cmp::Ordering;
+use std::cmp::{max, Ordering};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 
@@ -53,7 +53,7 @@ impl<'a> SearchContext<'a> {
         // This is a limitation of the current pruning implementation.
         let use_pruning = query.values.iter().all(|v| *v >= 0.0);
         // find min record id across all posting lists
-        let mut min_record_ids = FixedLengthPriorityQueue::new(query.indices.len());
+        let mut min_record_ids = FixedLengthPriorityQueue::new(max(query.indices.len(), 1));
         for posting_iterator in postings_iterators.iter() {
             if let Some(element) = posting_iterator.posting_list_iterator.peek() {
                 min_record_ids.push(element.record_id);
@@ -343,6 +343,19 @@ mod tests {
         InvertedIndexBuilder, InvertedIndexRam,
     };
     use crate::index::posting_list::PostingList;
+
+    #[test]
+    fn test_empty_query() {
+        let is_stopped = AtomicBool::new(false);
+        let index = InvertedIndexRam::empty();
+        let mut search_context = SearchContext::new(
+            SparseVector::default(), // empty query vector
+            10,
+            &index,
+            &is_stopped,
+        );
+        assert_eq!(search_context.search(&match_all), Vec::new());
+    }
 
     /// Match all filter condition for testing
     fn match_all(_p: PointOffsetType) -> bool {
