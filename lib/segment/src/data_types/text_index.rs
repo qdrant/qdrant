@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum TokenizerType {
     Prefix,
     Whitespace,
@@ -19,6 +20,7 @@ pub enum TokenizerType {
 
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub enum TextIndexType {
     #[default]
     Text,
@@ -26,6 +28,7 @@ pub enum TextIndexType {
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct TextIndexParams {
     // Required for OpenAPI pattern matching
     pub r#type: TextIndexType,
