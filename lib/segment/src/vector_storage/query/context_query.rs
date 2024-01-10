@@ -46,7 +46,7 @@ impl<T> ContextPair<T> {
     ///                   │
     ///
     /// Simple 2D model:
-    /// https://www.desmos.com/calculator/vlmskkagg2
+    /// https://www.desmos.com/calculator/lbxycyh2hs
     pub fn loss_by(&self, similarity: impl Fn(&T) -> ScoreType) -> ScoreType {
         const MARGIN: ScoreType = ScoreType::EPSILON;
 
