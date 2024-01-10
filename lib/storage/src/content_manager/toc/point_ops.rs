@@ -276,6 +276,7 @@ impl TableOfContent {
         wait: bool,
         ordering: WriteOrdering,
         shard_selector: ShardSelectorInternal,
+        cancel: cancel::CancellationToken,
     ) -> Result<UpdateResult, StorageError> {
         let collection = self.get_collection(collection_name).await?;
 

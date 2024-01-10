@@ -168,13 +168,14 @@ pub async fn do_upsert_points(
 
     let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
 
-    let future = tokio::spawn(async move {
+    let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
         toc.update(
             &collection_name,
             collection_operation,
             wait,
             ordering,
             shard_selector,
+            cancel,
         )
         .await
     });
@@ -201,13 +202,14 @@ pub async fn do_delete_points(
     let collection_operation = CollectionUpdateOperations::PointOperation(point_operation);
     let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
 
-    let future = tokio::spawn(async move {
+    let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
         toc.update(
             &collection_name,
             collection_operation,
             wait,
             ordering,
             shard_selector,
+            cancel,
         )
         .await
     });
@@ -231,13 +233,14 @@ pub async fn do_update_vectors(
 
     let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
 
-    let future = tokio::spawn(async move {
+    let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
         toc.update(
             &collection_name,
             collection_operation,
             wait,
             ordering,
             shard_selector,
+            cancel,
         )
         .await
     });
@@ -264,8 +267,9 @@ pub async fn do_delete_vectors(
 
     let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
 
-    let future = tokio::spawn(async move {
+    let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
         let mut result = None;
+        let mut cancel = Some(cancel);
 
         if let Some(filter) = filter {
             let vectors_operation =
@@ -279,6 +283,7 @@ pub async fn do_delete_vectors(
                     wait,
                     ordering,
                     shard_selector.clone(),
+                    cancel.take().unwrap_or_default(),
                 )
                 .await?,
             );
@@ -295,6 +300,7 @@ pub async fn do_delete_vectors(
                     wait,
                     ordering,
                     shard_selector,
+                    cancel.take().unwrap_or_default(),
                 )
                 .await?,
             );
@@ -332,13 +338,14 @@ pub async fn do_set_payload(
 
     let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
 
-    let future = tokio::spawn(async move {
+    let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
         toc.update(
             &collection_name,
             collection_operation,
             wait,
             ordering,
             shard_selector,
+            cancel,
         )
         .await
     });
@@ -370,13 +377,14 @@ pub async fn do_overwrite_payload(
 
     let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
 
-    let future = tokio::spawn(async move {
+    let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
         toc.update(
             &collection_name,
             collection_operation,
             wait,
             ordering,
             shard_selector,
+            cancel,
         )
         .await
     });
@@ -408,13 +416,14 @@ pub async fn do_delete_payload(
 
     let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
 
-    let future = tokio::spawn(async move {
+    let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
         toc.update(
             &collection_name,
             collection_operation,
             wait,
             ordering,
             shard_selector,
+            cancel,
         )
         .await
     });
@@ -443,13 +452,14 @@ pub async fn do_clear_payload(
 
     let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
 
-    let future = tokio::spawn(async move {
+    let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
         toc.update(
             &collection_name,
             collection_operation,
             wait,
             ordering,
             shard_selector,
+            cancel,
         )
         .await
     });
@@ -584,13 +594,14 @@ pub async fn do_create_index_internal(
         ShardSelectorInternal::All
     };
 
-    let future = tokio::spawn(async move {
+    let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
         toc.update(
             &collection_name,
             collection_operation,
             wait,
             ordering,
             shard_selector,
+            cancel,
         )
         .await
     });
@@ -660,13 +671,14 @@ pub async fn do_delete_index_internal(
         ShardSelectorInternal::All
     };
 
-    let future = tokio::spawn(async move {
+    let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
         toc.update(
             &collection_name,
             collection_operation,
             wait,
             ordering,
             shard_selector,
+            cancel,
         )
         .await
     });

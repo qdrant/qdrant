@@ -162,13 +162,14 @@ pub async fn sync(
         ShardSelectorInternal::Empty
     };
 
-    let future = tokio::spawn(async move {
+    let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
         toc.update(
             &collection_name,
             collection_operation,
             wait.unwrap_or(false),
             write_ordering_from_proto(ordering)?,
             shard_selector,
+            cancel,
         )
         .await
         .map_err(error_to_status)
