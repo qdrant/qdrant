@@ -65,7 +65,7 @@ Feeling confident and want to contribute more? - Come to [work with us](https://
 
 * 🏝️ New Data Exploration techniques
   * [ ] Improvements in Discovery API to support more use-cases
-  * [ ] Diversity Search
+  * [ ] Diversity Sampling
   * [ ] Better Aggregations
   * [ ] Advanced text filtering
     * [ ] Phrase queries
