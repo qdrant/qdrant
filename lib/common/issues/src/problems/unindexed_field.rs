@@ -1,9 +1,7 @@
 use http::{HeaderMap, Method, Uri};
 
-use crate::{
-    issue::Issue,
-    solution::{Action, Solution},
-};
+use crate::issue::Issue;
+use crate::solution::{Action, Solution};
 
 pub struct UnindexedField {
     field_name: String,

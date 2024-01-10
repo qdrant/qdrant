@@ -2,7 +2,6 @@ use std::hash::{Hash, Hasher};
 
 use crate::solution::Solution;
 
-
 /// An issue that can be hashed by its code
 pub trait Issue {
     fn code(&self) -> String;

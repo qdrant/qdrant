@@ -1,5 +1,5 @@
-use crate::{solution::Solution, issue::Issue};
-
+use crate::issue::Issue;
+use crate::solution::Solution;
 
 pub struct TooManyCollections;
 
