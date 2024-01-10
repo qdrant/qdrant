@@ -62,7 +62,7 @@ clap = { version = "4.4.14", features = ["derive"] }
 serde_cbor = { version = "0.11.2" }
 uuid = { version = "1.6", features = ["v4", "serde"] }
 sys-info = "0.9.1"
-wal = { git = "https://github.com/qdrant/wal.git", rev = "fad0e7c48be58d8e7db4cc739acd9b1cf6735de0" }
+wal = { git = "https://github.com/qdrant/wal.git", branch = "copy-wal-files-using-memcpy" }
 
 config = "~0.13.4"
 

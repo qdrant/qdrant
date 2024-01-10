@@ -685,13 +685,7 @@ impl LocalShard {
         // lock wal during snapshot
         let mut wal_guard = wal.lock();
         wal_guard.flush()?;
-        let source_wal_path = wal_guard.path();
-        let options = fs_extra::dir::CopyOptions::new();
-        fs_extra::dir::copy(source_wal_path, snapshot_shard_path, &options).map_err(|err| {
-            CollectionError::service_error(format!(
-                "Error while copy WAL {snapshot_shard_path:?} {err}"
-            ))
-        })?;
+        wal_guard.save_to_path(snapshot_shard_path)?;
         Ok(())
     }
 
