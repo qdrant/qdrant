@@ -12,7 +12,7 @@ Goals of the release:
 * **Maintain easy upgrades** - we plan to keep backward compatibility for at least one minor version back (this stays the same in 2024).
   * That means that you can upgrade Qdrant without any downtime and without any changes in your client code within one minor version.
   * Storage should be compatible between any two consequent versions, so you can upgrade Qdrant with automatic data migration between consecutive versions.
-* **Make serving easy on multi-billion scale** - qdrant already can can serve billions of vectors cheaply, using such techniques as quantization. In the 2024 year, we plan to make it even easier to scale Qdrant.
+* **Make serving easy on multi-billion scale** - Qdrant already can serve billions of vectors cheaply, using techniques as quantization. In the 2024 year, we plan to make it even easier to scale it.
   * Faster and more reliable replications
   * Out-of-the-box read-write segregation
   * Specialized nodes and multi-region deployments
