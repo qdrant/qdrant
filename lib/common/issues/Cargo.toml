@@ -1,0 +1,16 @@
+[package]
+name = "issues"
+version = "0.0.0"
+authors = [
+    "Andrey Vasnetsov <vasnetsov93@gmail.com>",
+    "Qdrant Team <info@qdrant.tech>",
+]
+license = "Apache-2.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+http = "1.0.0"
+serde = "1.0.194"
+http-serde = "2.0.0"
+serde_json = "1.0.111"
