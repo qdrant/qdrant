@@ -130,7 +130,6 @@ mod test {
         *x as ScoreType
     }
 
-
     /// Possible similarities
     fn sim() -> impl Strategy<Value = f32> {
         (-100.0..=100.0).prop_map(|x| x as f32)
@@ -142,7 +141,7 @@ mod test {
         /// Checks that the loss is between 0 and -1
         #[test]
         fn loss_is_not_more_than_1_per_pair((p, n) in (sim(), sim())) {
-            let query= ContextQuery::new(vec![ContextPair::from((p, n))]);
+            let query = ContextQuery::new(vec![ContextPair::from((p, n))]);
 
             let score = query.score_by(dummy_similarity);
             assert!(score <= 0.0, "similarity: {}", score);
