@@ -80,7 +80,7 @@ pub fn open_simple_vector_storage(
             db_wrapper,
             update_buffer: StoredRecord {
                 deleted: false,
-                vector: vec![0.; dim],
+                vector: vec![num_traits::identities::zero(); dim],
             },
             deleted,
             deleted_count,

@@ -9,6 +9,7 @@ use segment::segment::Segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::segment_constructor::simple_segment_constructor::build_multivec_segment;
 use segment::types::Distance;
+use segment::vector;
 use segment::vector_storage::VectorStorage;
 use tempfile::Builder;
 
@@ -28,8 +29,8 @@ fn test_rebuild_with_removed_vectors() {
                 1,
                 i.into(),
                 NamedVectors::from([
-                    ("vector1".to_string(), vec![i as f32, 0., 0., 0.]),
-                    ("vector2".to_string(), vec![0., i as f32, 0., 0., 0., 0.]),
+                    ("vector1".to_string(), vector![i as f32, 0., 0., 0.]),
+                    ("vector2".to_string(), vector![0., i as f32, 0., 0., 0., 0.]),
                 ]),
             )
             .unwrap();
@@ -37,11 +38,11 @@ fn test_rebuild_with_removed_vectors() {
 
     for i in 0..NUM_VECTORS_2 {
         let vectors = if i % 5 == 0 {
-            NamedVectors::from([("vector1".to_string(), vec![0., 0., i as f32, 0.])])
+            NamedVectors::from([("vector1".to_string(), vector![0., 0., i as f32, 0.])])
         } else {
             NamedVectors::from([
-                ("vector1".to_string(), vec![0., 0., i as f32, 0.]),
-                ("vector2".to_string(), vec![0., 0., 0., i as f32, 0., 0.]),
+                ("vector1".to_string(), vector![0., 0., i as f32, 0.]),
+                ("vector2".to_string(), vector![0., 0., 0., i as f32, 0., 0.]),
             ])
         };
 

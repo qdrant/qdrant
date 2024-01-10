@@ -92,7 +92,10 @@ fn _test_filterable_hnsw(
     let num_vectors: u64 = 5_000;
     let ef_construct = 16;
     let distance = Distance::Cosine;
+    #[cfg(feature = "use_f32")]
     let full_scan_threshold = 16; // KB
+    #[cfg(not(feature = "use_f32"))]
+    let full_scan_threshold = 8; // KB
     let indexing_threshold = 500; // num vectors
     let num_payload_values = 2;
 

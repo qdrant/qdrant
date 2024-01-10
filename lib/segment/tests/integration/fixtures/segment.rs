@@ -4,7 +4,7 @@ use std::path::Path;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{only_default_vector, VectorElementType};
 use segment::entry::entry_point::SegmentEntry;
-use segment::segment::Segment;
+use segment::segment::{vector, Segment};
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::{Distance, Indexes, SegmentConfig, VectorDataConfig, VectorStorageType};
@@ -18,11 +18,11 @@ pub fn empty_segment(path: &Path) -> Segment {
 pub fn build_segment_1(path: &Path) -> Segment {
     let mut segment1 = empty_segment(path);
 
-    let vec1 = vec![1.0, 0.0, 1.0, 1.0];
-    let vec2 = vec![1.0, 0.0, 1.0, 0.0];
-    let vec3 = vec![1.0, 1.0, 1.0, 1.0];
-    let vec4 = vec![1.0, 1.0, 0.0, 1.0];
-    let vec5 = vec![1.0, 0.0, 0.0, 0.0];
+    let vec1 = vector![1.0, 0.0, 1.0, 1.0];
+    let vec2 = vector![1.0, 0.0, 1.0, 0.0];
+    let vec3 = vector![1.0, 1.0, 1.0, 1.0];
+    let vec4 = vector![1.0, 1.0, 0.0, 1.0];
+    let vec5 = vector![1.0, 0.0, 0.0, 0.0];
 
     segment1
         .upsert_point(1, 1.into(), only_default_vector(&vec1))
@@ -59,11 +59,11 @@ pub fn build_segment_1(path: &Path) -> Segment {
 pub fn build_segment_2(path: &Path) -> Segment {
     let mut segment2 = empty_segment(path);
 
-    let vec1 = vec![-1.0, 0.0, 1.0, 1.0];
-    let vec2 = vec![-1.0, 0.0, 1.0, 0.0];
-    let vec3 = vec![-1.0, 1.0, 1.0, 1.0];
-    let vec4 = vec![-1.0, 1.0, 0.0, 1.0];
-    let vec5 = vec![-1.0, 0.0, 0.0, 0.0];
+    let vec1 = vector![-1.0, 0.0, 1.0, 1.0];
+    let vec2 = vector![-1.0, 0.0, 1.0, 0.0];
+    let vec3 = vector![-1.0, 1.0, 1.0, 1.0];
+    let vec4 = vector![-1.0, 1.0, 0.0, 1.0];
+    let vec5 = vector![-1.0, 0.0, 0.0, 0.0];
 
     segment2
         .upsert_point(11, 11.into(), only_default_vector(&vec1))
@@ -159,29 +159,29 @@ pub fn build_segment_3(path: &Path) -> Segment {
     };
 
     let vec1 = [
-        vec![1.0, 0.0, 1.0, 1.0],
-        vec![0.0],
-        vec![-1.0, 0.0, 1.0, 1.0],
+        vector![1.0, 0.0, 1.0, 1.0],
+        vector![0.0],
+        vector![-1.0, 0.0, 1.0, 1.0],
     ];
     let vec2 = [
-        vec![1.0, 0.0, 1.0, 0.0],
-        vec![1.0],
-        vec![-1.0, 0.0, 1.0, 1.0],
+        vector![1.0, 0.0, 1.0, 0.0],
+        vector![1.0],
+        vector![-1.0, 0.0, 1.0, 1.0],
     ];
     let vec3 = [
-        vec![1.0, 1.0, 1.0, 1.0],
-        vec![2.0],
-        vec![-1.0, 0.0, 1.0, 1.0],
+        vector![1.0, 1.0, 1.0, 1.0],
+        vector![2.0],
+        vector![-1.0, 0.0, 1.0, 1.0],
     ];
     let vec4 = [
-        vec![1.0, 1.0, 0.0, 1.0],
-        vec![3.0],
-        vec![-1.0, 0.0, 1.0, 1.0],
+        vector![1.0, 1.0, 0.0, 1.0],
+        vector![3.0],
+        vector![-1.0, 0.0, 1.0, 1.0],
     ];
     let vec5 = [
-        vec![1.0, 0.0, 0.0, 0.0],
-        vec![4.0],
-        vec![-1.0, 0.0, 1.0, 1.0],
+        vector![1.0, 0.0, 0.0, 0.0],
+        vector![4.0],
+        vector![-1.0, 0.0, 1.0, 1.0],
     ];
 
     segment3

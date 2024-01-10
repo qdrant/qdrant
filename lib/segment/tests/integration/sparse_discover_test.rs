@@ -29,7 +29,9 @@ fn convert_to_sparse_vector(vector: &[VectorElementType]) -> SparseVector {
     let mut sparse_vector = SparseVector::default();
     for (idx, value) in vector.iter().enumerate() {
         sparse_vector.indices.push(idx as u32);
-        sparse_vector.values.push(*value);
+        sparse_vector
+            .values
+            .push(num_traits::NumCast::from(*value).unwrap());
     }
     sparse_vector
 }

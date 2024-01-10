@@ -9,9 +9,11 @@ license = "Apache-2.0"
 edition = "2021"
 
 [features]
+default = ["use_f32"]
 multiling-chinese = ["charabia/chinese"]
 multiling-japanese = ["charabia/japanese"]
 multiling-korean = ["charabia/korean"]
+use_f32 = []
 
 [dev-dependencies]
 criterion = "0.5"
@@ -72,6 +74,7 @@ memory = { path = "../common/memory" }
 sparse = { path = "../sparse" }
 
 tracing = { version = "0.1", features = ["async-await"], optional = true }
+half = { version = "2.3.1", features = ["num-traits", "rand_distr", "serde"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 cgroups-rs = "0.3"

@@ -44,7 +44,12 @@ where
             .unwrap();
         let query = original_query
             .clone()
-            .transform(|v: DenseVector| Ok(quantized_storage.encode_query(&v)))
+            .transform(|v: DenseVector| {
+                // TODO: Remove this once `quantization` supports f16.
+                #[cfg(not(feature = "use_f32"))]
+                let v = v.iter().map(|&x| x.to_f32()).collect::<Vec<f32>>();
+                Ok(quantized_storage.encode_query(&v))
+            })
             .unwrap();
 
         Self {

@@ -48,6 +48,18 @@ pub struct QuantizedVectors {
     distance: Distance,
 }
 
+// TODO: Remove this once `quantization` supports f16.
+macro_rules! convert_vectors_f32 {
+    ($vectors:ident) => {
+        #[cfg(not(feature = "use_f32"))]
+        let vectors_vec = $vectors
+            .map(|x| x.iter().map(|&x| x.to_f32()).collect::<Vec<f32>>())
+            .collect::<Vec<Vec<f32>>>();
+        #[cfg(not(feature = "use_f32"))]
+        let $vectors = vectors_vec.iter().map(|x| x.as_slice());
+    };
+}
+
 impl QuantizedVectors {
     pub fn default_rescoring(&self) -> bool {
         matches!(
@@ -274,6 +286,7 @@ impl QuantizedVectors {
         if in_ram {
             let mut storage_builder = ChunkedVectors::<u8>::new(quantized_vector_size);
             storage_builder.try_set_capacity_exact(vector_parameters.count)?;
+            convert_vectors_f32!(vectors);
             Ok(QuantizedVectorStorage::ScalarRam(EncodedVectorsU8::encode(
                 vectors,
                 storage_builder,
@@ -288,6 +301,7 @@ impl QuantizedVectors {
                 vector_parameters.count,
                 quantized_vector_size,
             )?;
+            convert_vectors_f32!(vectors);
             Ok(QuantizedVectorStorage::ScalarMmap(
                 EncodedVectorsU8::encode(
                     vectors,
@@ -319,6 +333,7 @@ impl QuantizedVectors {
         if in_ram {
             let mut storage_builder = ChunkedVectors::<u8>::new(quantized_vector_size);
             storage_builder.try_set_capacity_exact(vector_parameters.count)?;
+            convert_vectors_f32!(vectors);
             Ok(QuantizedVectorStorage::PQRam(EncodedVectorsPQ::encode(
                 vectors,
                 storage_builder,
@@ -334,6 +349,7 @@ impl QuantizedVectors {
                 vector_parameters.count,
                 quantized_vector_size,
             )?;
+            convert_vectors_f32!(vectors);
             Ok(QuantizedVectorStorage::PQMmap(EncodedVectorsPQ::encode(
                 vectors,
                 storage_builder,
@@ -361,6 +377,7 @@ impl QuantizedVectors {
         if in_ram {
             let mut storage_builder = ChunkedVectors::<u8>::new(quantized_vector_size);
             storage_builder.try_set_capacity_exact(vector_parameters.count)?;
+            convert_vectors_f32!(vectors);
             Ok(QuantizedVectorStorage::BinaryRam(
                 EncodedVectorsBin::encode(vectors, storage_builder, vector_parameters, || {
                     stopped.load(Ordering::Relaxed)
@@ -373,6 +390,7 @@ impl QuantizedVectors {
                 vector_parameters.count,
                 quantized_vector_size,
             )?;
+            convert_vectors_f32!(vectors);
             Ok(QuantizedVectorStorage::BinaryMmap(
                 EncodedVectorsBin::encode(vectors, storage_builder, vector_parameters, || {
                     stopped.load(Ordering::Relaxed)

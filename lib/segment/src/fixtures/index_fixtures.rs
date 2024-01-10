@@ -21,7 +21,8 @@ use crate::vector_storage::{
 };
 
 pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> Vec<VectorElementType> {
-    (0..size).map(|_| rnd_gen.gen_range(-1.0..1.0)).collect()
+    let one = num_traits::identities::one::<VectorElementType>();
+    (0..size).map(|_| rnd_gen.gen_range(-one..one)).collect()
 }
 
 pub struct FakeFilterContext {}

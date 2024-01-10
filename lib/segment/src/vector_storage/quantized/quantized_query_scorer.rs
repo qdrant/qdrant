@@ -24,6 +24,15 @@ where
         distance: Distance,
     ) -> Self {
         let original_query = distance.preprocess_vector(raw_query);
+        // TODO: Remove this once `quantization` supports f16.
+        #[cfg(not(feature = "use_f32"))]
+        let query = quantized_data.encode_query(
+            &original_query
+                .iter()
+                .map(|&x| x.to_f32())
+                .collect::<Vec<f32>>(),
+        );
+        #[cfg(feature = "use_f32")]
         let query = quantized_data.encode_query(&original_query);
 
         Self {

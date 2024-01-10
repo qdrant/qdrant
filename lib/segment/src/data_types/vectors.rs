@@ -15,7 +15,7 @@ use crate::vector_storage::query::reco_query::RecoQuery;
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
 #[serde(untagged, rename_all = "snake_case")]
 pub enum Vector {
-    Dense(DenseVector),
+    Dense(#[schemars(schema_with = "dense_vector_schema")] DenseVector),
     Sparse(SparseVector),
 }
 
@@ -146,12 +146,36 @@ impl<'a> From<&'a Vector> for VectorRef<'a> {
 }
 
 /// Type of vector element.
+#[cfg(feature = "use_f32")]
 pub type VectorElementType = f32;
+
+/// Type of vector element.
+#[cfg(not(feature = "use_f32"))]
+pub type VectorElementType = half::f16;
 
 pub const DEFAULT_VECTOR_NAME: &str = "";
 
 /// Type for dense vector
 pub type DenseVector = Vec<VectorElementType>;
+
+fn dense_vector_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+    // We use `Vec<f32>` both for f16 and f32 vectors
+    <Vec<f32>>::json_schema(gen)
+}
+
+fn vec_of_dense_vector_schema(
+    gen: &mut schemars::gen::SchemaGenerator,
+) -> schemars::schema::Schema {
+    // We use `Vec<f32>` both for f16 and f32 vectors
+    <Vec<Vec<f32>>>::json_schema(gen)
+}
+
+#[cfg(feature = "use_f16")]
+/// Convert dense vector to `Vec<f32>`. This is a workaround for libraries that
+/// do not yet support f16. Once they do, we can remove this.
+pub fn dense_vector_to_vec_f32(vector: &DenseVector) -> Vec<f32> {
+    vector.iter().map(|&x| x.to_f32()).collect()
+}
 
 impl<'a> VectorRef<'a> {
     // Cannot use `ToOwned` trait because of `Borrow` implementation for `Vector`
@@ -208,7 +232,7 @@ pub fn only_default_vector(vec: &[VectorElementType]) -> NamedVectors {
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
 #[serde(untagged, rename_all = "snake_case")]
 pub enum VectorStruct {
-    Single(DenseVector),
+    Single(#[schemars(schema_with = "dense_vector_schema")] DenseVector),
     Multi(HashMap<String, Vector>),
 }
 
@@ -280,6 +304,7 @@ pub struct NamedVector {
     /// Name of vector data
     pub name: String,
     /// Vector data
+    #[schemars(schema_with = "dense_vector_schema")]
     pub vector: DenseVector,
 }
 
@@ -313,7 +338,7 @@ pub struct NamedSparseVector {
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
 pub enum NamedVectorStruct {
-    Default(DenseVector),
+    Default(#[schemars(schema_with = "dense_vector_schema")] DenseVector),
     Dense(NamedVector),
     Sparse(NamedSparseVector),
 }
@@ -389,7 +414,7 @@ impl Validate for NamedVectorStruct {
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
 pub enum BatchVectorStruct {
-    Single(Vec<DenseVector>),
+    Single(#[schemars(schema_with = "vec_of_dense_vector_schema")] Vec<DenseVector>),
     Multi(HashMap<String, Vec<Vector>>),
 }
 
