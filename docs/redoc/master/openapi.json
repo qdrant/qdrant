@@ -5778,6 +5778,9 @@
         "anyOf": [
           {
             "$ref": "#/components/schemas/TextIndexParams"
+          },
+          {
+            "$ref": "#/components/schemas/IntegerParams"
           }
         ]
       },
@@ -5825,6 +5828,33 @@
           "whitespace",
           "word",
           "multilingual"
+        ]
+      },
+      "IntegerParams": {
+        "type": "object",
+        "required": [
+          "lookup",
+          "range",
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/IntegerIndexType"
+          },
+          "lookup": {
+            "description": "If true - support direct lookups.",
+            "type": "boolean"
+          },
+          "range": {
+            "description": "If true - support ranges filters.",
+            "type": "boolean"
+          }
+        }
+      },
+      "IntegerIndexType": {
+        "type": "string",
+        "enum": [
+          "integer"
         ]
       },
       "PointRequest": {

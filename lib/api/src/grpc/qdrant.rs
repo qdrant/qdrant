@@ -602,8 +602,19 @@ pub struct TextIndexParams {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IntegerParams {
+    /// If true - support direct lookups.
+    #[prost(bool, tag = "1")]
+    pub lookup: bool,
+    /// If true - support ranges filters.
+    #[prost(bool, tag = "2")]
+    pub range: bool,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PayloadIndexParams {
-    #[prost(oneof = "payload_index_params::IndexParams", tags = "1")]
+    #[prost(oneof = "payload_index_params::IndexParams", tags = "1, 2")]
     pub index_params: ::core::option::Option<payload_index_params::IndexParams>,
 }
 /// Nested message and enum types in `PayloadIndexParams`.
@@ -615,6 +626,9 @@ pub mod payload_index_params {
         /// Parameters for text index
         #[prost(message, tag = "1")]
         TextIndexParams(super::TextIndexParams),
+        /// Parameters for integer index
+        #[prost(message, tag = "2")]
+        IntegerParams(super::IntegerParams),
     }
 }
 #[derive(serde::Serialize)]
