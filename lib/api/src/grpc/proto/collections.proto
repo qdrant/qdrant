@@ -344,8 +344,8 @@ message TextIndexParams {
 }
 
 message IntegerParams {
-  optional bool lookup = 1; // If true - support direct lookups.
-  optional bool range = 2; // If true - support ranges filters.
+  bool lookup = 1; // If true - support direct lookups.
+  bool range = 2; // If true - support ranges filters.
 }
 
 message PayloadIndexParams {

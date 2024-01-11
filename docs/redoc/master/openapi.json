@@ -5833,6 +5833,8 @@
       "IntegerParams": {
         "type": "object",
         "required": [
+          "lookup",
+          "range",
           "type"
         ],
         "properties": {
@@ -5841,13 +5843,11 @@
           },
           "lookup": {
             "description": "If true - support direct lookups.",
-            "type": "boolean",
-            "nullable": true
+            "type": "boolean"
           },
           "range": {
             "description": "If true - support ranges filters.",
-            "type": "boolean",
-            "nullable": true
+            "type": "boolean"
           }
         }
       },

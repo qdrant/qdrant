@@ -604,11 +604,11 @@ pub struct TextIndexParams {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IntegerParams {
     /// If true - support direct lookups.
-    #[prost(bool, optional, tag = "1")]
-    pub lookup: ::core::option::Option<bool>,
+    #[prost(bool, tag = "1")]
+    pub lookup: bool,
     /// If true - support ranges filters.
-    #[prost(bool, optional, tag = "2")]
-    pub range: ::core::option::Option<bool>,
+    #[prost(bool, tag = "2")]
+    pub range: bool,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

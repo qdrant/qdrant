@@ -713,8 +713,8 @@
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| lookup | [bool](#bool) | optional | If true - support direct lookups. |
-| range | [bool](#bool) | optional | If true - support ranges filters. |
+| lookup | [bool](#bool) |  | If true - support direct lookups. |
+| range | [bool](#bool) |  | If true - support ranges filters. |
 
 
 

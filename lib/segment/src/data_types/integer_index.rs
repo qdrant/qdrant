@@ -14,9 +14,7 @@ pub struct IntegerParams {
     // Required for OpenAPI pattern matching
     pub r#type: IntegerIndexType,
     /// If true - support direct lookups.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub lookup: Option<bool>,
+    pub lookup: bool,
     /// If true - support ranges filters.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub range: Option<bool>,
+    pub range: bool,
 }
