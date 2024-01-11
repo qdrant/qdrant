@@ -280,14 +280,13 @@ impl Settings {
 #[allow(dead_code)]
 pub fn max_web_workers(settings: &Settings) -> usize {
     let max_workers = settings.service.max_workers;
-
-    if max_workers == Some(0) {
-        let num_cpu = common::cpu::get_num_cpus();
-        std::cmp::max(1, num_cpu - 1)
-    } else if max_workers.is_none() {
-        settings.storage.performance.max_search_threads
-    } else {
-        max_workers.unwrap()
+    match max_workers {
+        Some(0) => {
+            let num_cpu = common::cpu::get_num_cpus();
+            std::cmp::max(1, num_cpu - 1)
+        }
+        Some(n) => n,
+        None => settings.storage.performance.max_search_threads,
     }
 }
 
