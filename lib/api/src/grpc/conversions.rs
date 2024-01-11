@@ -254,18 +254,6 @@ impl TryFrom<TextIndexParams> for segment::data_types::text_index::TextIndexPara
     }
 }
 
-impl TryFrom<PayloadIndexParams> for segment::data_types::text_index::TextIndexParams {
-    type Error = Status;
-    fn try_from(params: PayloadIndexParams) -> Result<Self, Self::Error> {
-        match params.index_params {
-            None => Ok(Default::default()),
-            Some(IndexParams::TextIndexParams(text_index_params)) => {
-                Ok(text_index_params.try_into()?)
-            }
-        }
-    }
-}
-
 impl TryFrom<IndexParams> for segment::types::PayloadSchemaParams {
     type Error = Status;
 
