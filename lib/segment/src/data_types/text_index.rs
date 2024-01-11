@@ -22,14 +22,11 @@ pub enum TokenizerType {
 pub struct TextIndexParams {
     #[serde(default)]
     pub tokenizer: TokenizerType,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_token_len: Option<usize>,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_token_len: Option<usize>,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     /// If true, lowercase all tokens. Default: true
     pub lowercase: Option<bool>,
 }
