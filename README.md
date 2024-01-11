@@ -92,7 +92,7 @@ Unlock the power of semantic embeddings with Qdrant, transcending keyword-based 
 
 There's more to discovery than text search, especially when it comes to food. People often choose meals based on appearance rather than descriptions and ingredients. Let Qdrant help your users find their next delicious meal using visual search, even if they don't know the dish's name. [Check it out!](https://qdrant.to/food-discovery)
 
-### Master Extreme Classification - E-commerce Categorization 📺
+### Master Extreme Classification - E-commerce Product Categorization 📺
 
 Enter the cutting-edge realm of extreme classification, an emerging machine learning field tackling multi-class and multi-label problems with millions of labels. Harness the potential of similarity learning models, and see how a pre-trained transformer model and Qdrant can revolutionize e-commerce product categorization. [Play with it online!](https://qdrant.to/extreme-classification-demo)
 
