@@ -339,6 +339,10 @@ pub fn internal_create_index(
                     api::grpc::qdrant::FieldType::Text as i32,
                     Some(text_index_params.into()),
                 ),
+                PayloadSchemaParams::Integer(integer_params) => (
+                    api::grpc::qdrant::FieldType::Integer as i32,
+                    Some(integer_params.into()),
+                ),
             },
         })
         .map(|(field_type, field_params)| (Some(field_type), field_params))
