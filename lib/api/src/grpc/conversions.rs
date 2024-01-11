@@ -2,7 +2,6 @@ use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
 use chrono::{NaiveDateTime, Timelike};
-use segment::data_types::text_index::TextIndexType;
 use segment::data_types::vectors::VectorElementType;
 use segment::types::default_quantization_ignore_value;
 use tonic::Status;
@@ -243,7 +242,6 @@ impl TryFrom<TextIndexParams> for segment::data_types::text_index::TextIndexPara
     type Error = Status;
     fn try_from(params: TextIndexParams) -> Result<Self, Self::Error> {
         Ok(segment::data_types::text_index::TextIndexParams {
-            r#type: TextIndexType::Text,
             tokenizer: TokenizerType::from_i32(params.tokenizer)
                 .map(|x| x.try_into())
                 .unwrap_or_else(|| Err(Status::invalid_argument("unknown tokenizer type")))?,

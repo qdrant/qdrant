@@ -137,7 +137,6 @@ impl Tokenizer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_types::text_index::TextIndexType;
 
     #[test]
     fn test_whitespace_tokenizer() {
@@ -249,7 +248,6 @@ mod tests {
         Tokenizer::tokenize_doc(
             text,
             &TextIndexParams {
-                r#type: TextIndexType::Text,
                 tokenizer: TokenizerType::Prefix,
                 min_token_len: Some(1),
                 max_token_len: Some(4),

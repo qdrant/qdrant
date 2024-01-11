@@ -2,7 +2,7 @@ use common::types::PointOffsetType;
 use tempfile::Builder;
 
 use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
-use crate::data_types::text_index::{TextIndexParams, TextIndexType, TokenizerType};
+use crate::data_types::text_index::{TextIndexParams, TokenizerType};
 use crate::index::field_index::full_text_index::text_index::FullTextIndex;
 use crate::index::field_index::ValueIndexer;
 
@@ -153,7 +153,6 @@ fn get_texts() -> Vec<String> {
 fn test_prefix_search() {
     let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
     let config = TextIndexParams {
-        r#type: TextIndexType::Text,
         tokenizer: TokenizerType::Prefix,
         min_token_len: None,
         max_token_len: None,

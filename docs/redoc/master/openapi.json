@@ -5775,47 +5775,41 @@
       },
       "PayloadSchemaParams": {
         "description": "Payload type with parameters",
-        "anyOf": [
+        "oneOf": [
           {
-            "$ref": "#/components/schemas/TextIndexParams"
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "text"
+                ]
+              },
+              "tokenizer": {
+                "$ref": "#/components/schemas/TokenizerType"
+              },
+              "min_token_len": {
+                "type": "integer",
+                "format": "uint",
+                "minimum": 0,
+                "nullable": true
+              },
+              "max_token_len": {
+                "type": "integer",
+                "format": "uint",
+                "minimum": 0,
+                "nullable": true
+              },
+              "lowercase": {
+                "description": "If true, lowercase all tokens. Default: true",
+                "type": "boolean",
+                "nullable": true
+              }
+            }
           }
-        ]
-      },
-      "TextIndexParams": {
-        "type": "object",
-        "required": [
-          "type"
-        ],
-        "properties": {
-          "type": {
-            "$ref": "#/components/schemas/TextIndexType"
-          },
-          "tokenizer": {
-            "$ref": "#/components/schemas/TokenizerType"
-          },
-          "min_token_len": {
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0,
-            "nullable": true
-          },
-          "max_token_len": {
-            "type": "integer",
-            "format": "uint",
-            "minimum": 0,
-            "nullable": true
-          },
-          "lowercase": {
-            "description": "If true, lowercase all tokens. Default: true",
-            "type": "boolean",
-            "nullable": true
-          }
-        }
-      },
-      "TextIndexType": {
-        "type": "string",
-        "enum": [
-          "text"
         ]
       },
       "TokenizerType": {

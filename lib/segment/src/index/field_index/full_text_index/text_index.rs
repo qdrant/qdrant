@@ -243,7 +243,7 @@ mod tests {
     use super::*;
     use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
     use crate::common::utils::MultiValue;
-    use crate::data_types::text_index::{TextIndexType, TokenizerType};
+    use crate::data_types::text_index::TokenizerType;
     use crate::types::MatchText;
 
     fn filter_request(text: &str) -> FieldCondition {
@@ -275,7 +275,6 @@ mod tests {
 
         let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
         let config = TextIndexParams {
-            r#type: TextIndexType::Text,
             tokenizer: TokenizerType::Word,
             min_token_len: None,
             max_token_len: None,
