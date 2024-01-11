@@ -82,17 +82,17 @@ Qdrant offers the following client libraries to help you integrate it into your 
 - Detailed [Documentation](https://qdrant.tech/documentation/) are great starting points
 - [Step-by-Step Tutorial](https://qdrant.to/qdrant-tutorial) to create your first neural network project with Qdrant
 
-## Demo Projects
+## Demo Projects  <a href="https://replit.com/@qdrant"><img align="right" src="https://replit.com/badge/github/qdrant/qdrant" alt="Run on Repl.it"></a>
 
-### Discover Semantic Text Search 🔍 <a href="https://replit.com/new/github/qdrant/qdrant_demo"><img  align="right" src="https://replit.com/badge/github/qdrant/qdrant_demo" alt="Run on Repl.it"></a>
+### Discover Semantic Text Search 🔍
 
 Unlock the power of semantic embeddings with Qdrant, transcending keyword-based search to find meaningful connections in short texts. Deploy a neural search in minutes using a pre-trained neural network, and experience the future of text search. [Try it online!](https://qdrant.to/semantic-search-demo)
 
-### Explore Similar Image Search - Food Discovery 🍕 <a href="https://replit.com/new/github/qdrant/demo-food-discovery"><img align="right" src="https://replit.com/badge/github/qdrant/demo-food-discovery" alt="Run on Repl.it"></a>
+### Explore Similar Image Search - Food Discovery 🍕
 
 There's more to discovery than text search, especially when it comes to food. People often choose meals based on appearance rather than descriptions and ingredients. Let Qdrant help your users find their next delicious meal using visual search, even if they don't know the dish's name. [Check it out!](https://qdrant.to/food-discovery)
 
-### Master Extreme Classification - E-commerce Categorization 📺 <a href="https://replit.com/github/qdrant/goods_categorization_demo"><img  align="right" src="https://replit.com/badge/github/qdrant/goods_categorization_demo" alt="Run on Repl.it"></a>
+### Master Extreme Classification - E-commerce Categorization 📺
 
 Enter the cutting-edge realm of extreme classification, an emerging machine learning field tackling multi-class and multi-label problems with millions of labels. Harness the potential of similarity learning models, and see how a pre-trained transformer model and Qdrant can revolutionize e-commerce product categorization. [Play with it online!](https://qdrant.to/extreme-classification-demo)
 
