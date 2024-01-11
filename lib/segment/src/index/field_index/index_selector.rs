@@ -55,10 +55,10 @@ pub fn index_selector(
                 FullTextIndex::new(db, text_index_params.clone(), field),
             )],
             PayloadSchemaParams::Integer(integer_params) => {
-                let lookup = integer_params.lookup.unwrap_or(true).then(|| {
+                let lookup = integer_params.lookup.then(|| {
                     FieldIndex::IntMapIndex(MapIndex::new(db.clone(), field, is_appendable))
                 });
-                let range = integer_params.range.unwrap_or(true).then(|| {
+                let range = integer_params.range.then(|| {
                     FieldIndex::IntIndex(NumericIndex::<IntPayloadType>::new(
                         db,
                         field,
