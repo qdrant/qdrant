@@ -25,6 +25,7 @@ use crate::common::utils::{
     check_exclude_pattern, check_include_pattern, filter_json_values, get_value_from_json_map,
     get_value_from_json_map_opt, MultiValue,
 };
+use crate::data_types::integer_index::IntegerParams;
 use crate::data_types::text_index::TextIndexParams;
 use crate::data_types::vectors::{DenseVector, VectorElementType, VectorStruct};
 use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
@@ -252,6 +253,11 @@ impl PayloadIndexInfo {
             PayloadFieldSchema::FieldParams(schema_params) => match schema_params {
                 PayloadSchemaParams::Text(_) => PayloadIndexInfo {
                     data_type: PayloadSchemaType::Text,
+                    params: Some(schema_params),
+                    points: points_count,
+                },
+                PayloadSchemaParams::Integer(_) => PayloadIndexInfo {
+                    data_type: PayloadSchemaType::Integer,
                     params: Some(schema_params),
                     points: points_count,
                 },
@@ -1066,6 +1072,7 @@ pub enum PayloadSchemaType {
 #[serde(rename_all = "snake_case", tag = "type")]
 pub enum PayloadSchemaParams {
     Text(TextIndexParams),
+    Integer(IntegerParams),
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]

@@ -31,6 +31,7 @@
     - [GetCollectionInfoRequest](#qdrant-GetCollectionInfoRequest)
     - [GetCollectionInfoResponse](#qdrant-GetCollectionInfoResponse)
     - [HnswConfigDiff](#qdrant-HnswConfigDiff)
+    - [IntegerParams](#qdrant-IntegerParams)
     - [ListAliasesRequest](#qdrant-ListAliasesRequest)
     - [ListAliasesResponse](#qdrant-ListAliasesResponse)
     - [ListCollectionAliasesRequest](#qdrant-ListCollectionAliasesRequest)
@@ -704,6 +705,22 @@
 
 
 
+<a name="qdrant-IntegerParams"></a>
+
+### IntegerParams
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| lookup | [bool](#bool) | optional | If true - support direct lookups. |
+| range | [bool](#bool) | optional | If true - support ranges filters. |
+
+
+
+
+
+
 <a name="qdrant-ListAliasesRequest"></a>
 
 ### ListAliasesRequest
@@ -872,6 +889,7 @@ Note: 1kB = 1 vector of size 256. |
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | text_index_params | [TextIndexParams](#qdrant-TextIndexParams) |  | Parameters for text index |
+| integer_params | [IntegerParams](#qdrant-IntegerParams) |  | Parameters for integer index |
 
 
 

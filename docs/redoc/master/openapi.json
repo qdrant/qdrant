@@ -5809,6 +5809,30 @@
                 "nullable": true
               }
             }
+          },
+          {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "integer"
+                ]
+              },
+              "lookup": {
+                "description": "If true - support direct lookups.",
+                "type": "boolean",
+                "nullable": true
+              },
+              "range": {
+                "description": "If true - support ranges filters.",
+                "type": "boolean",
+                "nullable": true
+              }
+            }
           }
         ]
       },
