@@ -86,7 +86,7 @@ Qdrant offers the following client libraries to help you integrate it into your 
 - Detailed [Documentation](https://qdrant.tech/documentation/) are great starting points
 - [Step-by-Step Tutorial](https://qdrant.to/qdrant-tutorial) to create your first neural network project with Qdrant
 
-## Demo Projects
+## Demo Projects  <a href="https://replit.com/@qdrant"><img align="right" src="https://replit.com/badge/github/qdrant/qdrant" alt="Run on Repl.it"></a>
 
 ### Discover Semantic Text Search 🔍
 
