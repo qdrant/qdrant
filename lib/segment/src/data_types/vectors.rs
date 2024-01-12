@@ -223,6 +223,34 @@ impl VectorStruct {
             }),
         }
     }
+
+    /// Merge `other` into this
+    ///
+    /// Other overwrites vectors we already have in this.
+    pub fn merge(&mut self, other: Self) {
+        match (self, other) {
+            // If other is empty, merge nothing
+            (_, VectorStruct::Multi(other)) if other.is_empty() => {}
+            // Single overwrites single
+            (VectorStruct::Single(this), VectorStruct::Single(other)) => {
+                *this = other;
+            }
+            // If multi into single, convert this to multi and merge
+            (this @ VectorStruct::Single(_), other @ VectorStruct::Multi(_)) => {
+                let VectorStruct::Single(single) = this.clone() else {
+                    unreachable!();
+                };
+                *this = VectorStruct::Multi(HashMap::from([(String::new(), single.into())]));
+                this.merge(other);
+            }
+            // Single into multi
+            (VectorStruct::Multi(this), VectorStruct::Single(other)) => {
+                this.insert(String::new(), other.into());
+            }
+            // Multi into multi
+            (VectorStruct::Multi(this), VectorStruct::Multi(other)) => this.extend(other),
+        }
+    }
 }
 
 impl Validate for VectorStruct {
