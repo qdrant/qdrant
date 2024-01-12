@@ -343,7 +343,7 @@ message TextIndexParams {
   optional uint64 max_token_len = 4; // Maximal token length
 }
 
-message IntegerParams {
+message IntegerIndexParams {
   bool lookup = 1; // If true - support direct lookups.
   bool range = 2; // If true - support ranges filters.
 }
@@ -351,7 +351,7 @@ message IntegerParams {
 message PayloadIndexParams {
   oneof index_params {
     TextIndexParams text_index_params = 1; // Parameters for text index
-    IntegerParams integer_params = 2; // Parameters for integer index
+    IntegerIndexParams integer_index_params = 2; // Parameters for integer index
   }
 }
 

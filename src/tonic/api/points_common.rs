@@ -686,7 +686,7 @@ fn convert_field_type(
         (
             Some(FieldType::Integer),
             Some(PayloadIndexParams {
-                index_params: Some(IndexParams::IntegerParams(integer_params)),
+                index_params: Some(IndexParams::IntegerIndexParams(integer_params)),
             }),
         ) => Some(PayloadFieldSchema::FieldParams(
             PayloadSchemaParams::Integer(integer_params.try_into()?),

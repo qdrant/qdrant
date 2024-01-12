@@ -7,7 +7,7 @@ use common::types::PointOffsetType;
 use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
-use segment::data_types::integer_index::{IntegerIndexType, IntegerParams};
+use segment::data_types::integer_index::{IntegerIndexParams, IntegerIndexType};
 use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_context_fixture::FixtureIdTracker;
@@ -101,22 +101,26 @@ fn build_test_segments(path_struct: &Path, path_plain: &Path) -> (Segment, Segme
         .create_field_index(
             opnum,
             INT_KEY_2,
-            Some(&FieldParams(PayloadSchemaParams::Integer(IntegerParams {
-                r#type: IntegerIndexType::Integer,
-                lookup: true,
-                range: false,
-            }))),
+            Some(&FieldParams(PayloadSchemaParams::Integer(
+                IntegerIndexParams {
+                    r#type: IntegerIndexType::Integer,
+                    lookup: true,
+                    range: false,
+                },
+            ))),
         )
         .unwrap();
     struct_segment
         .create_field_index(
             opnum,
             INT_KEY_3,
-            Some(&FieldParams(PayloadSchemaParams::Integer(IntegerParams {
-                r#type: IntegerIndexType::Integer,
-                lookup: false,
-                range: true,
-            }))),
+            Some(&FieldParams(PayloadSchemaParams::Integer(
+                IntegerIndexParams {
+                    r#type: IntegerIndexType::Integer,
+                    lookup: false,
+                    range: true,
+                },
+            ))),
         )
         .unwrap();
     struct_segment

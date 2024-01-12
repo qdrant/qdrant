@@ -31,7 +31,7 @@
     - [GetCollectionInfoRequest](#qdrant-GetCollectionInfoRequest)
     - [GetCollectionInfoResponse](#qdrant-GetCollectionInfoResponse)
     - [HnswConfigDiff](#qdrant-HnswConfigDiff)
-    - [IntegerParams](#qdrant-IntegerParams)
+    - [IntegerIndexParams](#qdrant-IntegerIndexParams)
     - [ListAliasesRequest](#qdrant-ListAliasesRequest)
     - [ListAliasesResponse](#qdrant-ListAliasesResponse)
     - [ListCollectionAliasesRequest](#qdrant-ListCollectionAliasesRequest)
@@ -705,9 +705,9 @@
 
 
 
-<a name="qdrant-IntegerParams"></a>
+<a name="qdrant-IntegerIndexParams"></a>
 
-### IntegerParams
+### IntegerIndexParams
 
 
 
@@ -889,7 +889,7 @@ Note: 1kB = 1 vector of size 256. |
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | text_index_params | [TextIndexParams](#qdrant-TextIndexParams) |  | Parameters for text index |
-| integer_params | [IntegerParams](#qdrant-IntegerParams) |  | Parameters for integer index |
+| integer_index_params | [IntegerIndexParams](#qdrant-IntegerIndexParams) |  | Parameters for integer index |
 
 
 
