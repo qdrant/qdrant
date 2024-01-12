@@ -5780,7 +5780,7 @@
             "$ref": "#/components/schemas/TextIndexParams"
           },
           {
-            "$ref": "#/components/schemas/IntegerParams"
+            "$ref": "#/components/schemas/IntegerIndexParams"
           }
         ]
       },
@@ -5830,7 +5830,7 @@
           "multilingual"
         ]
       },
-      "IntegerParams": {
+      "IntegerIndexParams": {
         "type": "object",
         "required": [
           "lookup",
