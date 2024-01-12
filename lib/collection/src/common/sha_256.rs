@@ -6,6 +6,8 @@ use sha2::{Digest, Sha256};
 use tokio::io::AsyncReadExt;
 
 pub async fn hash_file(file_path: &Path) -> io::Result<String> {
+    log::debug!("Computing checksum for file: {file_path:?}");
+
     const ONE_MB: usize = 1024 * 1024;
     let input_file = tokio::fs::File::open(file_path).await?;
     let mut reader = tokio::io::BufReader::new(input_file);

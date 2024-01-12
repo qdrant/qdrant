@@ -222,7 +222,6 @@ async fn _do_create_full_snapshot(
     archiving.await??;
 
     // Compute and store the file's checksum
-    log::debug!("Computing checksum for snapshot: {full_snapshot_path:?}");
     let checksum_path = get_checksum_path(&full_snapshot_path);
     let checksum = hash_file(full_snapshot_path.as_path()).await?;
     let checksum_file = tempfile::TempPath::from_path(&checksum_path);
