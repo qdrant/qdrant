@@ -171,8 +171,9 @@ impl ShardOperation for ForwardProxyShard {
         operation: CollectionUpdateOperations,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
-        // Once we apply `local_shard` update, we *have to* execute `remote_shard`, or it might (I think?)
-        // introduce inconcistency between shards, so this method is not cancel safe.
+        // If we apply `local_shard` update, we *have to* execute `remote_shard` update to completion
+        // (or we *might* introduce an inconsistency between shards?), so this method is not cancel
+        // safe.
 
         let _update_lock = self.update_lock.lock().await;
 

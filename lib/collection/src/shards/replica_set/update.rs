@@ -26,6 +26,9 @@ impl ShardReplicaSet {
         operation: CollectionUpdateOperations,
         wait: bool,
     ) -> CollectionResult<Option<UpdateResult>> {
+        // `ShardOperations::update` is not guaranteed to be cancel safe, so this method is not
+        // cancel safe.
+
         let local = self.local.read().await;
 
         if let Some(local_shard) = local.deref() {
@@ -43,6 +46,9 @@ impl ShardReplicaSet {
         }
     }
 
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
     pub async fn update_with_consistency(
         &self,
         operation: CollectionUpdateOperations,
@@ -50,6 +56,8 @@ impl ShardReplicaSet {
         ordering: WriteOrdering,
         cancel: cancel::CancellationToken,
     ) -> CollectionResult<UpdateResult> {
+        // `ShardReplicaSet::update` is not cancel safe, so this method is not cancel safe.
+
         match self.leader_peer_for_update(ordering) {
             None => Err(CollectionError::service_error(format!(
                 "Cannot update shard {}:{} with {ordering:?} ordering because no leader could be selected",
@@ -58,7 +66,7 @@ impl ShardReplicaSet {
             Some(leader_peer) => {
                 // If we are the leader, run the update from this replica set
                 if leader_peer == self.this_peer_id() {
-                    // lock updates if ordering is medium or strong
+                    // Lock updates if ordering is medium or strong
                     let _guard = match ordering {
                         WriteOrdering::Weak => None, // no locking required
                         WriteOrdering::Medium | WriteOrdering::Strong => Some(cancel::future::cancel_on_token(cancel.clone(), self.write_ordering_lock.lock()).await?), // one request at a time
@@ -66,11 +74,7 @@ impl ShardReplicaSet {
 
                     self.update(operation, wait, cancel).await
                 } else {
-                    // forward the update to the designated leader
-                    //
-                    // TODO: Is it safe to cancel forward-update operation!?
-                    //
-                    // Considering the
+                    // Forward the update to the designated leader
                     future::cancel_on_token(cancel, self.forward_update(leader_peer, operation, wait, ordering)) // TODO!?
                         .await?
                         .map_err(|err| {
@@ -78,7 +82,7 @@ impl ShardReplicaSet {
                                 // Deactivate the peer if forwarding failed with transient error
                                 self.add_locally_disabled(leader_peer);
 
-                                // return service error
+                                // Return service error
                                 CollectionError::service_error(format!(
                                     "Failed to apply update with {ordering:?} ordering via leader peer {leader_peer}: {err}"
                                 ))
@@ -124,9 +128,9 @@ impl ShardReplicaSet {
         wait: bool,
         cancel: cancel::CancellationToken,
     ) -> CollectionResult<UpdateResult> {
-        // It's nearly impossible to cancel multiple parallel update operations (local and remote)
-        // in a way that is *guaranteed* to not introduce inconcistencies between nodes,
-        // so this method is not cancel safe.
+        // `LocalShard::update` is not guaranteed to be cancel safe and it's also almost impossible
+        // to cancel multiple parallel updates in a way that is *guaranteed* not to introduce
+        // inconsistencies between nodes, so this method is not cancel safe.
 
         let all_res: Vec<Result<_, _>> = {
             let remotes =
@@ -347,7 +351,12 @@ impl ShardReplicaSet {
 
         wait_for_deactivation
     }
+
     /// Forward update to the leader replica
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
     async fn forward_update(
         &self,
         leader_peer: PeerId,
@@ -355,6 +364,8 @@ impl ShardReplicaSet {
         wait: bool,
         ordering: WriteOrdering,
     ) -> CollectionResult<UpdateResult> {
+        // `RemoteShard::forward_update` is cancel safe, so this method is cancel safe.
+
         let remotes_guard = self.remotes.read().await;
         let remote_leader = remotes_guard.iter().find(|r| r.peer_id == leader_peer);
 

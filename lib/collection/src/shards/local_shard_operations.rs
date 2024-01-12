@@ -116,8 +116,8 @@ impl ShardOperation for LocalShard {
         operation: CollectionUpdateOperations,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
-        // `LocalShard::update` only has a single `await`, WAL operations are blocking,
-        // and update is applied by separate task, so, surprisingly, this method is cancel safe. :D
+        // `LocalShard::update` only has a single cancel safe `await`, WAL operations are blocking,
+        // and update is applied by a separate task, so, surprisingly, this method is cancel safe. :D
 
         let (callback_sender, callback_receiver) = if wait {
             let (tx, rx) = oneshot::channel();

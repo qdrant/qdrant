@@ -43,6 +43,10 @@ impl Collection {
     /// Handle collection updates from peers.
     ///
     /// Shard transfer aware.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
     pub async fn update_from_peer(
         &self,
         operation: CollectionUpdateOperations,

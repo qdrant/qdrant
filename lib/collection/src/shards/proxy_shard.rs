@@ -138,8 +138,8 @@ impl ShardOperation for ProxyShard {
         operation: CollectionUpdateOperations,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
-        // After we modify `self.changed_points`, we *have to* (I think?) execute `local_shard` update,
-        // so this method is not cancel safe.
+        // If we modify `self.changed_points`, we *have to* (?) execute `local_shard` update
+        // to completion, so this method is not cancel safe.
 
         let local_shard = &self.wrapped_shard;
         let estimate_effect = operation.estimate_effect_area();

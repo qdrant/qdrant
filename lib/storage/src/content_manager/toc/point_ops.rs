@@ -246,6 +246,9 @@ impl TableOfContent {
             .map_err(|err| err.into())
     }
 
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
     async fn _update_shard_keys(
         collection: &Collection,
         shard_keys: Vec<ShardKey>,
@@ -254,6 +257,8 @@ impl TableOfContent {
         ordering: WriteOrdering,
         cancel: cancel::CancellationToken,
     ) -> Result<UpdateResult, StorageError> {
+        // `Collection::update_from_client` is not cancel safe, so this method is not cancel safe.
+
         if shard_keys.is_empty() {
             return Err(StorageError::bad_input("Empty shard keys selection"));
         }
@@ -276,6 +281,9 @@ impl TableOfContent {
         Ok(results.into_iter().next().unwrap())
     }
 
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
     pub async fn update(
         &self,
         collection_name: &str,
@@ -285,7 +293,12 @@ impl TableOfContent {
         shard_selector: ShardSelectorInternal,
         cancel: cancel::CancellationToken,
     ) -> Result<UpdateResult, StorageError> {
-        let collection = self.get_collection(collection_name).await?;
+        // `TableOfContent::_update_shard_keys` and `Collection::update_from_*` are not cancel safe,
+        // so this method is not cancel safe.
+
+        let collection =
+            cancel::future::cancel_on_token(cancel.clone(), self.get_collection(collection_name))
+                .await??;
 
         // Ordered operation flow:
         //
