@@ -388,7 +388,11 @@ fn sampling_limit(
     let poisson_sampling =
         find_search_sampling_over_point_distribution(limit as f64, segment_probability)
             .unwrap_or(limit);
-    let effective = effective_limit(limit, ef_limit.unwrap_or(0), poisson_sampling);
+
+    // if no ef_limit was found, it is a plain index => sampling optimization is not needed.
+    let effective = ef_limit.map_or(limit, |ef_limit| {
+        effective_limit(limit, ef_limit, poisson_sampling)
+    });
     log::trace!("sampling: {effective}, poisson: {poisson_sampling} segment_probability: {segment_probability}, segment_points: {segment_points}, total_points: {total_points}");
     effective
 }
@@ -799,7 +803,7 @@ mod tests {
 
     #[test]
     fn test_sampling_limit() {
-        assert_eq!(sampling_limit(1000, None, 464530, 35103551), 30);
+        assert_eq!(sampling_limit(1000, None, 464530, 35103551), 1000);
     }
 
     #[test]
