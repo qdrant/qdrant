@@ -126,7 +126,7 @@ pub async fn new_local_collection(
 }
 
 /// Default to a collection with all the shards local
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn load_local_collection(
     id: CollectionId,
     path: &Path,
