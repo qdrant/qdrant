@@ -17,24 +17,25 @@ const DEFAULT_SHARD_DEACTIVATION_TIMEOUT: Duration = Duration::from_secs(30);
 
 impl ShardReplicaSet {
     /// Update local shard if any without forwarding to remote shards
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
     pub async fn update_local(
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
-        cancel: cancel::CancellationToken,
     ) -> CollectionResult<Option<UpdateResult>> {
-        let local = cancel::future::cancel_on_token(cancel.clone(), self.local.read()).await?;
+        let local = self.local.read().await;
 
         if let Some(local_shard) = local.deref() {
             match self.peer_state(&self.this_peer_id()) {
                 Some(ReplicaState::Active | ReplicaState::Partial | ReplicaState::Initializing) => {
-                    Ok(Some(
-                        local_shard.get().update(operation, wait, cancel).await?,
-                    ))
+                    Ok(Some(local_shard.get().update(operation, wait).await?))
                 }
-                Some(ReplicaState::Listener) => Ok(Some(
-                    local_shard.get().update(operation, false, cancel).await?,
-                )),
+                Some(ReplicaState::Listener) => {
+                    Ok(Some(local_shard.get().update(operation, false).await?))
+                }
                 Some(ReplicaState::PartialSnapshot | ReplicaState::Dead) | None => Ok(None),
             }
         } else {
@@ -66,6 +67,10 @@ impl ShardReplicaSet {
                     self.update(operation, wait, cancel).await
                 } else {
                     // forward the update to the designated leader
+                    //
+                    // TODO: Is it safe to cancel forward-update operation!?
+                    //
+                    // Considering the
                     future::cancel_on_token(cancel, self.forward_update(leader_peer, operation, wait, ordering)) // TODO!?
                         .await?
                         .map_err(|err| {
@@ -110,12 +115,19 @@ impl ShardReplicaSet {
         self.replica_state.read().peers.keys().max().cloned()
     }
 
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
     async fn update(
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
         cancel: cancel::CancellationToken,
     ) -> CollectionResult<UpdateResult> {
+        // It's nearly impossible to cancel multiple parallel update operations (local and remote)
+        // in a way that is *guaranteed* to not introduce inconcistencies between nodes,
+        // so this method is not cancel safe.
+
         let all_res: Vec<Result<_, _>> = {
             let remotes =
                 cancel::future::cancel_on_token(cancel.clone(), self.remotes.read()).await?;
@@ -155,7 +167,7 @@ impl ShardReplicaSet {
                     let local_update = async move {
                         local
                             .get()
-                            .update(operation, local_wait, cancel::CancellationToken::new()) // TODO!?
+                            .update(operation, local_wait)
                             .await
                             .map(|ok| (this_peer_id, ok))
                             .map_err(|err| (this_peer_id, err))
@@ -170,7 +182,7 @@ impl ShardReplicaSet {
 
                 let remote_update = async move {
                     remote
-                        .update(operation, wait, cancel::CancellationToken::new()) // TODO!?
+                        .update(operation, wait)
                         .await
                         .map(|ok| (remote.peer_id, ok))
                         .map_err(|err| (remote.peer_id, err))

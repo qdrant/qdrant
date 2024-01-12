@@ -16,6 +16,10 @@ use crate::shards::shard::ShardId;
 impl Collection {
     /// Apply collection update operation to all local shards.
     /// Return None if there are no local shards
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
     pub async fn update_all_local(
         &self,
         operation: CollectionUpdateOperations,
@@ -26,10 +30,7 @@ impl Collection {
 
         let res: Vec<_> = shard_holder_guard
             .all_shards()
-            .map(|shard| {
-                // TODO!
-                shard.update_local(operation.clone(), wait, cancel::CancellationToken::new())
-            })
+            .map(|shard| shard.update_local(operation.clone(), wait))
             .collect();
 
         let results: Vec<_> = future::try_join_all(res).await?;
@@ -58,7 +59,7 @@ impl Collection {
         let res = match shard_holder_guard.get_shard(&shard_selection) {
             None => None,
             Some(target_shard) => match ordering {
-                WriteOrdering::Weak => target_shard.update_local(operation, wait, cancel).await?,
+                WriteOrdering::Weak => target_shard.update_local(operation, wait).await?,
                 WriteOrdering::Medium | WriteOrdering::Strong => Some(
                     target_shard
                         .update_with_consistency(operation, wait, ordering, cancel)
@@ -76,22 +77,29 @@ impl Collection {
         }
     }
 
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
     pub async fn update_from_client_simple(
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
         ordering: WriteOrdering,
     ) -> CollectionResult<UpdateResult> {
+        // TODO: Propagate cancellation token!?
         self.update_from_client(
             operation,
             wait,
             ordering,
             None,
-            cancel::CancellationToken::new(), // TODO!
+            cancel::CancellationToken::new(),
         )
         .await
     }
 
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
     pub async fn update_from_client(
         &self,
         operation: CollectionUpdateOperations,
@@ -101,10 +109,12 @@ impl Collection {
         cancel: cancel::CancellationToken,
     ) -> CollectionResult<UpdateResult> {
         operation.validate()?;
-        let _update_lock = self.updates_lock.read().await;
+        let _update_lock =
+            cancel::future::cancel_on_token(cancel.clone(), self.updates_lock.read()).await?;
 
         let mut results = {
-            let shards_holder = self.shards_holder.read().await;
+            let shards_holder =
+                cancel::future::cancel_on_token(cancel.clone(), self.shards_holder.read()).await?;
             let shard_to_op = shards_holder.split_by_shard(operation, &shard_keys_selection)?;
 
             if shard_to_op.is_empty() {

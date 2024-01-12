@@ -63,7 +63,6 @@ impl ForwardProxyShard {
                         }),
                     ),
                     false,
-                    cancel::CancellationToken::new(), // TODO!
                 )
                 .await?;
         }
@@ -125,11 +124,7 @@ impl ForwardProxyShard {
 
         // TODO: Is cancelling `RemoteShard::update` safe for *receiver*?
         self.remote_shard
-            .update(
-                insert_points_operation,
-                wait,
-                cancel::CancellationToken::new(), // TODO!
-            )
+            .update(insert_points_operation, wait)
             .await?;
 
         Ok(next_page_offset)
@@ -167,23 +162,28 @@ impl ForwardProxyShard {
 #[async_trait]
 impl ShardOperation for ForwardProxyShard {
     /// Update `wrapped_shard` while keeping track of the changed points
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
     async fn update(
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
-        cancel: cancel::CancellationToken,
     ) -> CollectionResult<UpdateResult> {
-        let _update_lock =
-            cancel::future::cancel_on_token(cancel.clone(), self.update_lock.lock()).await?;
+        // Once we apply `local_shard` update, we *have to* execute `remote_shard`, or it might (I think?)
+        // introduce inconcistency between shards, so this method is not cancel safe.
+
+        let _update_lock = self.update_lock.lock().await;
 
         let local_shard = &self.wrapped_shard;
 
         // Shard update is within a write lock scope, because we need a way to block the shard updates
         // during the transfer restart and finalization.
-        local_shard.update(operation.clone(), wait, cancel).await?;
+        local_shard.update(operation.clone(), wait).await?;
 
         self.remote_shard
-            .update(operation, false, cancel::CancellationToken::new()) // Can't be cancelled!
+            .update(operation, false)
             .await
             .map_err(|err| CollectionError::forward_proxy_error(self.remote_shard.peer_id, err))
     }

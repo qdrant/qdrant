@@ -101,17 +101,24 @@ impl LocalShard {
         Ok(top_results)
     }
 }
+
 #[async_trait]
 impl ShardOperation for LocalShard {
     /// Imply interior mutability.
     /// Performs update operation on this collection asynchronously.
     /// Explicitly waits for result to be updated.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
     async fn update(
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
-        cancel: cancel::CancellationToken,
     ) -> CollectionResult<UpdateResult> {
+        // `LocalShard::update` only has a single `await`, WAL operations are blocking,
+        // and update is applied by separate task, so, surprisingly, this method is cancel safe. :D
+
         let (callback_sender, callback_receiver) = if wait {
             let (tx, rx) = oneshot::channel();
             (Some(tx), Some(rx))
@@ -122,8 +129,7 @@ impl ShardOperation for LocalShard {
         let operation_id = {
             let update_sender = self.update_sender.load();
 
-            let channel_permit =
-                cancel::future::cancel_on_token(cancel, update_sender.reserve()).await??;
+            let channel_permit = update_sender.reserve().await?;
 
             let mut wal_lock = self.wal.lock();
             let operation_id = wal_lock.write(&operation)?;

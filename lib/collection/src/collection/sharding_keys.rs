@@ -42,6 +42,9 @@ impl Collection {
         .await
     }
 
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
     pub async fn create_shard_key(
         &self,
         shard_key: ShardKey,
@@ -105,9 +108,7 @@ impl Collection {
                     }),
                 );
 
-                replica_set
-                    .update_local(create_index_op, true, cancel::CancellationToken::new()) // TODO!
-                    .await?;
+                replica_set.update_local(create_index_op, true).await?;
             }
 
             self.shards_holder.write().await.add_shard(

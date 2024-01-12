@@ -129,12 +129,18 @@ impl ProxyShard {
 #[async_trait]
 impl ShardOperation for ProxyShard {
     /// Update `wrapped_shard` while keeping track of the changed points
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
     async fn update(
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
-        cancel: cancel::CancellationToken,
     ) -> CollectionResult<UpdateResult> {
+        // After we modify `self.changed_points`, we *have to* (I think?) execute `local_shard` update,
+        // so this method is not cancel safe.
+
         let local_shard = &self.wrapped_shard;
         let estimate_effect = operation.estimate_effect_area();
         let points_operation_effect: PointsOperationEffect = match estimate_effect {
@@ -153,9 +159,7 @@ impl ShardOperation for ProxyShard {
         };
 
         {
-            let mut changed_points_guard =
-                cancel::future::cancel_on_token(cancel.clone(), self.changed_points.write())
-                    .await?;
+            let mut changed_points_guard = self.changed_points.write().await;
 
             match points_operation_effect {
                 PointsOperationEffect::Empty => {}
@@ -173,9 +177,7 @@ impl ShardOperation for ProxyShard {
 
             // Shard update is within a write lock scope, because we need a way to block the shard updates
             // during the transfer restart and finalization.
-            local_shard
-                .update(operation, wait, cancel::CancellationToken::new()) // Can't be cancelled!
-                .await
+            local_shard.update(operation, wait).await
         }
     }
 

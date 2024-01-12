@@ -217,6 +217,9 @@ impl RemoteShard {
         .await
     }
 
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
     pub async fn execute_update_operation(
         &self,
         shard_id: Option<ShardId>,
@@ -225,6 +228,10 @@ impl RemoteShard {
         wait: bool,
         ordering: Option<WriteOrdering>,
     ) -> CollectionResult<UpdateResult> {
+        // Given that update API *should be* cancel safe on the server side, cancelling remote
+        // request on the client side *should not* break invariants or introduce an inconsistency
+        // on remote server.
+
         let mut timer = ScopeDurationMeasurer::new(&self.telemetry_update_durations);
         timer.set_success(false);
 
@@ -538,16 +545,16 @@ pub struct CollectionCoreSearchRequest<'a>(pub(crate) (CollectionId, &'a CoreSea
 #[async_trait]
 #[allow(unused_variables)]
 impl ShardOperation for RemoteShard {
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
     async fn update(
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
-        _: cancel::CancellationToken,
     ) -> CollectionResult<UpdateResult> {
         // targets the shard explicitly
         let shard_id = Some(self.id);
-
-        // TODO: Ensure cancel safety!
         self.execute_update_operation(shard_id, self.collection_id.clone(), operation, wait, None)
             .await
     }

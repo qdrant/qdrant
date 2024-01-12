@@ -60,7 +60,6 @@ impl ShardOperation for DummyShard {
         &self,
         _: CollectionUpdateOperations,
         _: bool,
-        _: cancel::CancellationToken,
     ) -> CollectionResult<UpdateResult> {
         self.dummy()
     }
