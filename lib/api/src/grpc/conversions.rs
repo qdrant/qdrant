@@ -21,7 +21,7 @@ use crate::grpc::qdrant::with_payload_selector::SelectorOptions;
 use crate::grpc::qdrant::{
     shard_key, with_vectors_selector, CollectionDescription, CollectionOperationResponse,
     Condition, Distance, FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius,
-    HasIdCondition, HealthCheckReply, HnswConfigDiff, IntegerParams, IsEmptyCondition,
+    HasIdCondition, HealthCheckReply, HnswConfigDiff, IntegerIndexParams, IsEmptyCondition,
     IsNullCondition, ListCollectionsResponse, ListValue, Match, NamedVectors, NestedCondition,
     PayloadExcludeSelector, PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo,
     PayloadSchemaType, PointId, ProductQuantization, QuantizationConfig, QuantizationSearchParams,
@@ -201,10 +201,10 @@ impl From<segment::data_types::text_index::TextIndexParams> for PayloadIndexPara
     }
 }
 
-impl From<segment::data_types::integer_index::IntegerParams> for PayloadIndexParams {
-    fn from(params: segment::data_types::integer_index::IntegerParams) -> Self {
+impl From<segment::data_types::integer_index::IntegerIndexParams> for PayloadIndexParams {
+    fn from(params: segment::data_types::integer_index::IntegerIndexParams) -> Self {
         PayloadIndexParams {
-            index_params: Some(IndexParams::IntegerParams(IntegerParams {
+            index_params: Some(IndexParams::IntegerIndexParams(IntegerIndexParams {
                 lookup: params.lookup,
                 range: params.range,
             })),
@@ -269,10 +269,10 @@ impl TryFrom<TextIndexParams> for segment::data_types::text_index::TextIndexPara
     }
 }
 
-impl TryFrom<IntegerParams> for segment::data_types::integer_index::IntegerParams {
+impl TryFrom<IntegerIndexParams> for segment::data_types::integer_index::IntegerIndexParams {
     type Error = Status;
-    fn try_from(params: IntegerParams) -> Result<Self, Self::Error> {
-        Ok(segment::data_types::integer_index::IntegerParams {
+    fn try_from(params: IntegerIndexParams) -> Result<Self, Self::Error> {
+        Ok(segment::data_types::integer_index::IntegerIndexParams {
             r#type: IntegerIndexType::Integer,
             lookup: params.lookup,
             range: params.range,
@@ -288,7 +288,7 @@ impl TryFrom<IndexParams> for segment::types::PayloadSchemaParams {
             IndexParams::TextIndexParams(text_index_params) => Ok(
                 segment::types::PayloadSchemaParams::Text(text_index_params.try_into()?),
             ),
-            IndexParams::IntegerParams(integer_params) => Ok(
+            IndexParams::IntegerIndexParams(integer_params) => Ok(
                 segment::types::PayloadSchemaParams::Integer(integer_params.try_into()?),
             ),
         }

@@ -602,7 +602,7 @@ pub struct TextIndexParams {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct IntegerParams {
+pub struct IntegerIndexParams {
     /// If true - support direct lookups.
     #[prost(bool, tag = "1")]
     pub lookup: bool,
@@ -628,7 +628,7 @@ pub mod payload_index_params {
         TextIndexParams(super::TextIndexParams),
         /// Parameters for integer index
         #[prost(message, tag = "2")]
-        IntegerParams(super::IntegerParams),
+        IntegerIndexParams(super::IntegerIndexParams),
     }
 }
 #[derive(serde::Serialize)]
