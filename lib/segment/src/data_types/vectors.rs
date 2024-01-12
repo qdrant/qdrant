@@ -515,3 +515,175 @@ impl From<SparseVector> for QueryVector {
         Self::Nearest(Vector::Sparse(vec))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn vector_struct_merge_single_into_single() {
+        let mut a = VectorStruct::Single(vec![0.2, 0.1, 0.0, 0.9]);
+        let b = VectorStruct::Single(vec![0.1, 0.9, 0.6, 0.3]);
+        a.merge(b);
+        assert_eq!(a, VectorStruct::Single(vec![0.1, 0.9, 0.6, 0.3]));
+    }
+
+    #[test]
+    fn vector_struct_merge_single_into_multi() {
+        // Single into multi without default vector
+        let mut a = VectorStruct::Multi(HashMap::from([
+            ("a".into(), vec![0.8, 0.3, 0.0, 0.1].into()),
+            ("b".into(), vec![0.4, 0.5, 0.8, 0.3].into()),
+        ]));
+        let b = VectorStruct::Single(vec![0.5, 0.3, 0.0, 0.4]);
+        a.merge(b);
+        assert_eq!(
+            a,
+            VectorStruct::Multi(HashMap::from([
+                ("a".into(), vec![0.8, 0.3, 0.0, 0.1].into()),
+                ("b".into(), vec![0.4, 0.5, 0.8, 0.3].into()),
+                ("".into(), vec![0.5, 0.3, 0.0, 0.4].into()),
+            ])),
+        );
+
+        // Single into multi with default vector
+        let mut a = VectorStruct::Multi(HashMap::from([
+            ("a".into(), vec![0.2, 0.0, 0.5, 0.1].into()),
+            ("".into(), vec![0.3, 0.7, 0.6, 0.4].into()),
+        ]));
+        let b = VectorStruct::Single(vec![0.4, 0.4, 0.8, 0.5]);
+        a.merge(b);
+        assert_eq!(
+            a,
+            VectorStruct::Multi(HashMap::from([
+                ("a".into(), vec![0.2, 0.0, 0.5, 0.1].into()),
+                ("".into(), vec![0.4, 0.4, 0.8, 0.5].into()),
+            ])),
+        );
+    }
+
+    #[test]
+    fn vector_struct_merge_multi_into_multi() {
+        // Empty multi into multi shouldn't do anything
+        let mut a = VectorStruct::Multi(HashMap::from([(
+            "a".into(),
+            vec![0.0, 0.5, 0.9, 0.0].into(),
+        )]));
+        let b = VectorStruct::Multi(HashMap::new());
+        a.merge(b);
+        assert_eq!(
+            a,
+            VectorStruct::Multi(HashMap::from([(
+                "a".into(),
+                vec![0.0, 0.5, 0.9, 0.0].into()
+            ),])),
+        );
+
+        // Multi into empty multi
+        let mut a = VectorStruct::Multi(HashMap::new());
+        let b = VectorStruct::Multi(HashMap::from([(
+            "a".into(),
+            vec![0.2, 0.0, 0.6, 0.5].into(),
+        )]));
+        a.merge(b);
+        assert_eq!(
+            a,
+            VectorStruct::Multi(HashMap::from([(
+                "a".into(),
+                vec![0.2, 0.0, 0.6, 0.5].into(),
+            )]))
+        );
+
+        // Non-overlapping multi into multi
+        let mut a = VectorStruct::Multi(HashMap::from([(
+            "a".into(),
+            vec![0.8, 0.6, 0.2, 0.1].into(),
+        )]));
+        let b = VectorStruct::Multi(HashMap::from([(
+            "b".into(),
+            vec![0.1, 0.9, 0.8, 0.2].into(),
+        )]));
+        a.merge(b);
+        assert_eq!(
+            a,
+            VectorStruct::Multi(HashMap::from([
+                ("a".into(), vec![0.8, 0.6, 0.2, 0.1].into()),
+                ("b".into(), vec![0.1, 0.9, 0.8, 0.2].into()),
+            ])),
+        );
+
+        // Overlapping multi into multi
+        let mut a = VectorStruct::Multi(HashMap::from([
+            ("a".into(), vec![0.3, 0.2, 0.7, 0.5].into()),
+            ("b".into(), vec![0.6, 0.3, 0.8, 0.3].into()),
+        ]));
+        let b = VectorStruct::Multi(HashMap::from([
+            ("b".into(), vec![0.8, 0.2, 0.4, 0.9].into()),
+            ("c".into(), vec![0.4, 0.8, 0.9, 0.6].into()),
+        ]));
+        a.merge(b);
+        assert_eq!(
+            a,
+            VectorStruct::Multi(HashMap::from([
+                ("a".into(), vec![0.3, 0.2, 0.7, 0.5].into()),
+                ("b".into(), vec![0.8, 0.2, 0.4, 0.9].into()),
+                ("c".into(), vec![0.4, 0.8, 0.9, 0.6].into()),
+            ])),
+        );
+    }
+
+    #[test]
+    fn vector_struct_merge_multi_into_single() {
+        // Empty multi into single shouldn't do anything
+        let mut a = VectorStruct::Single(vec![0.0, 0.8, 0.4, 0.1]);
+        let b = VectorStruct::Multi(HashMap::new());
+        a.merge(b);
+        assert_eq!(a, VectorStruct::Single(vec![0.0, 0.8, 0.4, 0.1]),);
+
+        // Non-overlapping multi into single
+        let mut a = VectorStruct::Single(vec![0.2, 0.5, 0.5, 0.1]);
+        let b = VectorStruct::Multi(HashMap::from([(
+            "a".into(),
+            vec![0.1, 0.9, 0.7, 0.6].into(),
+        )]));
+        a.merge(b);
+        assert_eq!(
+            a,
+            VectorStruct::Multi(HashMap::from([
+                ("".into(), vec![0.2, 0.5, 0.5, 0.1].into()),
+                ("a".into(), vec![0.1, 0.9, 0.7, 0.6].into()),
+            ])),
+        );
+
+        // Overlapping multi ("") into single
+        // This becomes a multi even if other has a multi with only a default vector
+        let mut a = VectorStruct::Single(vec![0.3, 0.1, 0.8, 0.1]);
+        let b = VectorStruct::Multi(HashMap::from([(
+            "".into(),
+            vec![0.6, 0.1, 0.3, 0.4].into(),
+        )]));
+        a.merge(b);
+        assert_eq!(
+            a,
+            VectorStruct::Multi(HashMap::from([(
+                "".into(),
+                vec![0.6, 0.1, 0.3, 0.4].into()
+            )])),
+        );
+
+        // Overlapping multi into single
+        let mut a = VectorStruct::Single(vec![0.6, 0.9, 0.7, 0.6]);
+        let b = VectorStruct::Multi(HashMap::from([
+            ("".into(), vec![0.7, 0.5, 0.8, 0.1].into()),
+            ("a".into(), vec![0.2, 0.9, 0.7, 0.0].into()),
+        ]));
+        a.merge(b);
+        assert_eq!(
+            a,
+            VectorStruct::Multi(HashMap::from([
+                ("".into(), vec![0.7, 0.5, 0.8, 0.1].into()),
+                ("a".into(), vec![0.2, 0.9, 0.7, 0.0].into()),
+            ])),
+        );
+    }
+}
