@@ -9738,6 +9738,12 @@
                 "nullable": true
               }
             ]
+          },
+          "checksum": {
+            "description": "Optional SHA256 checksum to verify snapshot integrity before recovery.",
+            "default": null,
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -10409,6 +10415,12 @@
                 "nullable": true
               }
             ]
+          },
+          "checksum": {
+            "description": "Optional SHA256 checksum to verify snapshot integrity before recovery.",
+            "default": null,
+            "type": "string",
+            "nullable": true
           }
         }
       },

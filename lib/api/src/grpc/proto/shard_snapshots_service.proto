@@ -45,6 +45,7 @@ message RecoverShardSnapshotRequest {
   uint32 shard_id = 2; // Id of the shard
   ShardSnapshotLocation snapshot_location = 3; // Location of the shard snapshot
   ShardSnapshotPriority snapshot_priority = 4; // Priority of the shard snapshot
+  optional string checksum = 5; // SHA256 checksum for verifying snapshot integrity
 }
 
 message ShardSnapshotLocation {

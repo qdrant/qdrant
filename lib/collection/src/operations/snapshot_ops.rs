@@ -70,6 +70,11 @@ pub struct SnapshotRecover {
     /// If set to `Replica`, the current state will be used as a source of truth, and after recovery if will be synchronized with the snapshot.
     #[serde(default)]
     pub priority: Option<SnapshotPriority>,
+
+    /// Optional SHA256 checksum to verify snapshot integrity before recovery.
+    #[serde(default)]
+    #[validate(custom = "common::validation::validate_sha256_hash")]
+    pub checksum: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
@@ -148,6 +153,11 @@ pub struct ShardSnapshotRecover {
 
     #[serde(default)]
     pub priority: Option<SnapshotPriority>,
+
+    /// Optional SHA256 checksum to verify snapshot integrity before recovery.
+    #[validate(custom = "common::validation::validate_sha256_hash")]
+    #[serde(default)]
+    pub checksum: Option<String>,
 }
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize, schemars::JsonSchema)]
