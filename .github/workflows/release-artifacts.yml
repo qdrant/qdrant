@@ -165,6 +165,28 @@ jobs:
               --executable qdrant \
               -d qdrant.desktop \
               -i qdrant.svg \
+
+          rm AppDir/AppRun
+
+          cat << EOF > "AppDir/AppRun"
+          #!/bin/bash
+          APPDIR="\$(dirname "\$(readlink -f "\$0")")"
+          if [ ! -d "static" ]; then
+              STATIC_DIR="\$APPDIR/usr/share/static"
+              mkdir -p static
+              cp -r "\$STATIC_DIR/"* "static/"
+          fi
+          exec "\$APPDIR/usr/bin/qdrant" "\$@"
+          EOF
+
+          wget -O dist-qdrant.zip "$(curl --silent "https://api.github.com/repos/qdrant/qdrant-web-ui/releases/latest" | jq -r '.assets[] | select(.name=="dist-qdrant.zip") | .browser_download_url')"          
+          unzip -o dist-qdrant.zip -d static
+          mv -n static/dist/* static/
+          rm -rf static/dist
+          mv static AppDir/usr/share
+
+          ./linuxdeploy-x86_64.AppImage \
+              --appdir AppDir \
               --output appimage
 
       - name: Upload AppImage
