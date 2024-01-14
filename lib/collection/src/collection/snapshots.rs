@@ -5,9 +5,11 @@ use io::file_operations::read_json;
 use segment::common::version::StorageVersion as _;
 use tempfile::TempPath;
 use tokio::fs;
+use tokio::io::AsyncWriteExt;
 
 use super::Collection;
 use crate::collection::CollectionVersion;
+use crate::common::sha_256::hash_file;
 use crate::config::{CollectionConfig, ShardingMethod};
 use crate::operations::snapshot_ops::{self, SnapshotDescription};
 use crate::operations::types::{CollectionError, CollectionResult, NodeType};
@@ -43,10 +45,9 @@ impl Collection {
         this_peer_id: PeerId,
     ) -> CollectionResult<SnapshotDescription> {
         let snapshot_name = format!(
-            "{}-{}-{}.snapshot",
+            "{}-{this_peer_id}-{}.snapshot",
             self.name(),
-            this_peer_id,
-            chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S")
+            chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S"),
         );
 
         // Final location of snapshot
@@ -112,7 +113,7 @@ impl Collection {
             .tempfile_in(global_temp_dir)?;
 
         // Archive snapshot folder into a single file
-        log::debug!("Archiving snapshot {:?}", &snapshot_temp_target_dir_path);
+        log::debug!("Archiving snapshot {snapshot_temp_target_dir_path:?}");
         let archiving = tokio::task::spawn_blocking(move || -> CollectionResult<_> {
             let mut builder = tar::Builder::new(snapshot_temp_arc_file.as_file_mut());
             // archive recursively collection directory `snapshot_path_with_arc_extension` into `snapshot_path`
@@ -133,13 +134,23 @@ impl Collection {
         // Ensure that the temporary file is deleted on error
         let _temp_path = TempPath::from_path(&snapshot_path_tmp_move);
         fs::copy(&snapshot_temp_arc_file.path(), &snapshot_path_tmp_move).await?;
+
+        // compute and store the file's checksum before the final snapshot file is saved
+        // to avoid making snapshot available without checksum
+        let checksum_path = snapshot_ops::get_checksum_path(&snapshot_path);
+        let checksum = hash_file(&snapshot_path_tmp_move).await?;
+        let checksum_file = tempfile::TempPath::from_path(&checksum_path);
+        let mut file = tokio::fs::File::create(checksum_path.as_path()).await?;
+        file.write_all(checksum.as_bytes()).await?;
+
+        let snapshot_file = tempfile::TempPath::from_path(&snapshot_path);
         fs::rename(&snapshot_path_tmp_move, &snapshot_path).await?;
 
-        log::info!(
-            "Collection snapshot {} completed into {:?}",
-            snapshot_name,
-            snapshot_path
-        );
+        // Snapshot files are ready now, so keep them
+        snapshot_file.keep()?;
+        checksum_file.keep()?;
+
+        log::info!("Collection snapshot {snapshot_name} completed into {snapshot_path:?}");
         snapshot_ops::get_snapshot_description(&snapshot_path).await
     }
 

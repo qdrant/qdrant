@@ -43,6 +43,20 @@ jobs:
           bin: qdrant
           target: ${{ matrix.target }}
           token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build Debian Package
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: |
+          cargo install cargo-deb
+          cargo deb --no-strip --target ${{ matrix.target }}
+      - name: Upload Debian package
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: target/${{ matrix.target }}/debian/*.deb
+          tag: ${{ github.ref }}
+          overwrite: true
+          file_glob: true
 
   build-mac-binaries:
     strategy:
@@ -151,6 +165,28 @@ jobs:
               --executable qdrant \
               -d qdrant.desktop \
               -i qdrant.svg \
+
+          rm AppDir/AppRun
+
+          cat << EOF > "AppDir/AppRun"
+          #!/bin/bash
+          APPDIR="\$(dirname "\$(readlink -f "\$0")")"
+          if [ ! -d "static" ]; then
+              STATIC_DIR="\$APPDIR/usr/share/static"
+              mkdir -p static
+              cp -r "\$STATIC_DIR/"* "static/"
+          fi
+          exec "\$APPDIR/usr/bin/qdrant" "\$@"
+          EOF
+
+          wget -O dist-qdrant.zip "$(curl --silent "https://api.github.com/repos/qdrant/qdrant-web-ui/releases/latest" | jq -r '.assets[] | select(.name=="dist-qdrant.zip") | .browser_download_url')"          
+          unzip -o dist-qdrant.zip -d static
+          mv -n static/dist/* static/
+          rm -rf static/dist
+          mv static AppDir/usr/share
+
+          ./linuxdeploy-x86_64.AppImage \
+              --appdir AppDir \
               --output appimage
 
       - name: Upload AppImage

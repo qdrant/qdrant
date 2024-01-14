@@ -57,6 +57,7 @@ message SnapshotDescription {
   string name = 1; // Name of the snapshot
   google.protobuf.Timestamp creation_time = 2; // Creation time of the snapshot
   int64 size = 3; // Size of the snapshot in bytes
+  optional string checksum = 4; // SHA256 digest of the snapshot file
 }
 
 message CreateSnapshotResponse {

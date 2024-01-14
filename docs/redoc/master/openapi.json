@@ -168,6 +168,61 @@
         }
       }
     },
+    "/": {
+      "get": {
+        "summary": "Returns information about the running Qdrant instance",
+        "description": "Returns information about the running Qdrant instance like version and commit id",
+        "operationId": "root",
+        "tags": [
+          "service"
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/VersionInfo"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/telemetry": {
       "get": {
         "summary": "Collect telemetry data",
@@ -5723,6 +5778,9 @@
         "anyOf": [
           {
             "$ref": "#/components/schemas/TextIndexParams"
+          },
+          {
+            "$ref": "#/components/schemas/IntegerIndexParams"
           }
         ]
       },
@@ -5770,6 +5828,33 @@
           "whitespace",
           "word",
           "multilingual"
+        ]
+      },
+      "IntegerIndexParams": {
+        "type": "object",
+        "required": [
+          "lookup",
+          "range",
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/IntegerIndexType"
+          },
+          "lookup": {
+            "description": "If true - support direct lookups.",
+            "type": "boolean"
+          },
+          "range": {
+            "description": "If true - support ranges filters.",
+            "type": "boolean"
+          }
+        }
+      },
+      "IntegerIndexType": {
+        "type": "string",
+        "enum": [
+          "integer"
         ]
       },
       "PointRequest": {
@@ -8095,6 +8180,10 @@
             "type": "integer",
             "format": "uint64",
             "minimum": 0
+          },
+          "checksum": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -10474,6 +10563,25 @@
             "items": {
               "$ref": "#/components/schemas/DiscoverRequest"
             }
+          }
+        }
+      },
+      "VersionInfo": {
+        "type": "object",
+        "required": [
+          "title",
+          "version"
+        ],
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "commit": {
+            "type": "string",
+            "nullable": true
           }
         }
       }

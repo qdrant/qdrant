@@ -12,7 +12,7 @@ edition = "2021"
 tracing = ["dep:tracing", "api/tracing", "collection/tracing", "segment/tracing"]
 
 [dev-dependencies]
-tempfile = "3.8.1"
+tempfile = "3.9.0"
 proptest = "1.4.0"
 env_logger = "0.10.1"
 
@@ -53,6 +53,6 @@ anyhow = "1.0.79"
 uuid = "1.6.1"
 url = "2.5.0"
 reqwest = { version = "0.11", default-features = false, features = ["stream", "rustls-tls"] }
-tempfile = "3.8.1"
+tempfile = "3.9.0"
 
 tracing = { version = "0.1", features = ["async-await"], optional = true }

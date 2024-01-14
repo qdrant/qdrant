@@ -673,21 +673,25 @@ fn convert_field_type(
         .ok_or_else(|| Status::invalid_argument("cannot convert field_type"))?;
 
     let field_schema = match (field_type_parsed, field_index_params) {
+        // Parameterized text type
         (
-            Some(v),
+            Some(FieldType::Text),
             Some(PayloadIndexParams {
                 index_params: Some(IndexParams::TextIndexParams(text_index_params)),
             }),
-        ) => match v {
-            FieldType::Text => Some(PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(
-                text_index_params.try_into()?,
-            ))),
-            _ => {
-                return Err(Status::invalid_argument(
-                    "field_type and field_index_params do not match",
-                ))
-            }
-        },
+        ) => Some(PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(
+            text_index_params.try_into()?,
+        ))),
+        // Parameterized integer type
+        (
+            Some(FieldType::Integer),
+            Some(PayloadIndexParams {
+                index_params: Some(IndexParams::IntegerIndexParams(integer_params)),
+            }),
+        ) => Some(PayloadFieldSchema::FieldParams(
+            PayloadSchemaParams::Integer(integer_params.try_into()?),
+        )),
+        // Regular field types
         (Some(v), None | Some(PayloadIndexParams { index_params: None })) => match v {
             FieldType::Keyword => Some(PayloadSchemaType::Keyword.into()),
             FieldType::Integer => Some(PayloadSchemaType::Integer.into()),
@@ -696,6 +700,17 @@ fn convert_field_type(
             FieldType::Text => Some(PayloadSchemaType::Text.into()),
             FieldType::Bool => Some(PayloadSchemaType::Bool.into()),
         },
+        // Parameterized index with mismatching types
+        (
+            Some(v),
+            Some(PayloadIndexParams {
+                index_params: Some(_),
+            }),
+        ) => {
+            return Err(Status::invalid_argument(format!(
+                "field_type ({v:?}) and field_index_params do not match"
+            )))
+        }
         (None, Some(_)) => return Err(Status::invalid_argument("field type is missing")),
         (None, None) => None,
     };

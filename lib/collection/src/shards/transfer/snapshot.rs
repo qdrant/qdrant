@@ -6,7 +6,7 @@ use tempfile::TempPath;
 use tokio::time::sleep;
 
 use super::{ShardTransfer, ShardTransferConsensus};
-use crate::operations::snapshot_ops::SnapshotPriority;
+use crate::operations::snapshot_ops::{get_checksum_path, SnapshotPriority};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::channel_service::ChannelService;
 use crate::shards::remote_shard::RemoteShard;
@@ -204,6 +204,7 @@ pub(super) async fn transfer_snapshot(
                 "Failed to determine snapshot path, cannot continue with shard snapshot recovery: {err}"
             ))
         })?;
+    let snapshot_checksum_temp_path = TempPath::from_path(get_checksum_path(&snapshot_temp_path));
 
     // Recover shard snapshot on remote
     let mut shard_download_url = local_rest_address;
@@ -229,6 +230,9 @@ pub(super) async fn transfer_snapshot(
 
     if let Err(err) = snapshot_temp_path.close() {
         log::warn!("Failed to delete shard transfer snapshot after recovery, snapshot file may be left behind: {err}");
+    }
+    if let Err(err) = snapshot_checksum_temp_path.close() {
+        log::warn!("Failed to delete shard transfer snapshot checksum file after recovery, file may be left behind: {err}");
     }
 
     // Set shard state to Partial

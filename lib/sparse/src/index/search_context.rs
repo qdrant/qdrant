@@ -1,4 +1,4 @@
-use std::cmp::Ordering;
+use std::cmp::{max, Ordering};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 
@@ -6,12 +6,15 @@ use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoredPointOffset};
 
 use crate::common::sparse_vector::SparseVector;
+use crate::common::types::{DimId, DimWeight};
 use crate::index::inverted_index::InvertedIndex;
 use crate::index::posting_list::PostingListIterator;
 
+/// Iterator over posting lists with a reference to the corresponding query index and weight
 pub struct IndexedPostingListIterator<'a> {
     posting_list_iterator: PostingListIterator<'a>,
-    query_weight_offset: usize,
+    query_index: DimId,
+    query_weight: DimWeight,
 }
 
 pub struct SearchContext<'a> {
@@ -20,6 +23,7 @@ pub struct SearchContext<'a> {
     top: usize,
     is_stopped: &'a AtomicBool,
     result_queue: FixedLengthPriorityQueue<ScoredPointOffset>, // keep the largest elements and peek smallest
+    min_record_ids: FixedLengthPriorityQueue<PointOffsetType>, // min record ids across all posting lists
     use_pruning: bool,
 }
 
@@ -34,9 +38,12 @@ impl<'a> SearchContext<'a> {
 
         for (query_weight_offset, id) in query.indices.iter().enumerate() {
             if let Some(posting_list_iterator) = inverted_index.get(id) {
+                let query_index = *id;
+                let query_weight = query.values[query_weight_offset];
                 postings_iterators.push(IndexedPostingListIterator {
                     posting_list_iterator,
-                    query_weight_offset,
+                    query_index,
+                    query_weight,
                 });
             }
         }
@@ -45,12 +52,20 @@ impl<'a> SearchContext<'a> {
         // The max contribution per posting list that we calculate is not made to compute the max value of two negative numbers.
         // This is a limitation of the current pruning implementation.
         let use_pruning = query.values.iter().all(|v| *v >= 0.0);
+        // find min record id across all posting lists
+        let mut min_record_ids = FixedLengthPriorityQueue::new(max(query.indices.len(), 1));
+        for posting_iterator in postings_iterators.iter() {
+            if let Some(element) = posting_iterator.posting_list_iterator.peek() {
+                min_record_ids.push(element.record_id);
+            }
+        }
         SearchContext {
             postings_iterators,
             query,
             top,
             is_stopped,
             result_queue,
+            min_record_ids,
             use_pruning,
         }
     }
@@ -76,7 +91,7 @@ impl<'a> SearchContext<'a> {
                     None => {} // no match for posting list
                     Some(element) => {
                         // match for posting list
-                        indices.push(self.query.indices[posting_iterator.query_weight_offset]);
+                        indices.push(posting_iterator.query_index);
                         values.push(element.weight);
                     }
                 }
@@ -124,25 +139,31 @@ impl<'a> SearchContext<'a> {
     /// b,  21, 34, 60, 200
     /// b,  30, 34, 60, 230
     fn advance(&mut self) -> Option<ScoredPointOffset> {
-        let min_record_id = Self::next_min_id(&self.postings_iterators)?;
+        // Get current min record id from all posting list iterators
+        let current_min_record_id = *self.min_record_ids.peek()?;
         let mut score = 0.0;
 
-        // Iterate second time to advance posting iterators
+        // Iterate to advance matching posting iterators
         for posting_iterator in self.postings_iterators.iter_mut() {
             if let Some(element) = posting_iterator.posting_list_iterator.peek() {
                 // accumulate score for the current record id
-                if element.record_id == min_record_id {
-                    score +=
-                        element.weight * self.query.values[posting_iterator.query_weight_offset];
+                if element.record_id == current_min_record_id {
+                    score += element.weight * posting_iterator.query_weight;
                     // advance posting list iterator to next element
                     posting_iterator.posting_list_iterator.advance();
+                    // pop min record id
+                    self.min_record_ids.pop();
+                    // look-ahead to find next min record id
+                    if let Some(next_element) = posting_iterator.posting_list_iterator.peek() {
+                        self.min_record_ids.push(next_element.record_id);
+                    }
                 }
             }
         }
 
         Some(ScoredPointOffset {
             score,
-            idx: min_record_id,
+            idx: current_min_record_id,
         })
     }
 
@@ -203,13 +224,13 @@ impl<'a> SearchContext<'a> {
         }
         let mut best_min_score = f32::MIN;
         while let Some(candidate) = self.advance() {
-            // check for cancellation
-            if self.is_stopped.load(Relaxed) {
-                break;
-            }
             // check filter condition
             if !filter_condition(candidate.idx) {
                 continue;
+            }
+            // check for cancellation
+            if self.is_stopped.load(Relaxed) {
+                break;
             }
             // push candidate to result queue
             self.result_queue.push(candidate);
@@ -229,7 +250,16 @@ impl<'a> SearchContext<'a> {
                 self.promote_longest_posting_lists_to_the_front();
 
                 // prune posting list that cannot possibly contribute to the top results
-                self.prune_longest_posting_list(new_min_score);
+                let pruned = self.prune_longest_posting_list(new_min_score);
+                if pruned {
+                    // recompute new min record id for next iteration
+                    // the pruned posting list is always at the head and with the lowest record_id
+                    self.min_record_ids.pop();
+                    let new_min = self.postings_iterators[0].posting_list_iterator.peek();
+                    if let Some(next_element) = new_min {
+                        self.min_record_ids.push(next_element.record_id);
+                    }
+                }
             }
         }
         // posting iterators exhausted, return result queue
@@ -259,13 +289,12 @@ impl<'a> SearchContext<'a> {
                         }
                         Ordering::Greater => {
                             // next_min_id is > element.record_id there is a chance to prune up to `next_min_id`
-                            let posting_query_offset = longest_posting_iterator.query_weight_offset;
                             // check against the max possible score using the `max_next_weight`
                             // we can under prune as we should actually check the best score up to `next_min_id` - 1 only
                             // instead of the max possible score but it is not possible to know the best score up to `next_min_id` - 1
                             let max_weight_from_list = element.weight.max(element.max_next_weight);
                             let max_score_contribution =
-                                max_weight_from_list * self.query.values[posting_query_offset];
+                                max_weight_from_list * longest_posting_iterator.query_weight;
                             if max_score_contribution <= min_score {
                                 // prune to next_min_id
                                 let longest_posting_iterator =
@@ -282,11 +311,10 @@ impl<'a> SearchContext<'a> {
                 }
                 None => {
                     // the current posting list is the only one left, we can potentially skip it to the end
-                    let posting_query_offset = longest_posting_iterator.query_weight_offset;
                     // check against the max possible score using the `max_next_weight`
                     let max_weight_from_list = element.weight.max(element.max_next_weight);
                     let max_score_contribution =
-                        max_weight_from_list * self.query.values[posting_query_offset];
+                        max_weight_from_list * longest_posting_iterator.query_weight;
                     if max_score_contribution <= min_score {
                         // prune to the end!
                         let longest_posting_iterator = &mut self.postings_iterators[0];
@@ -315,6 +343,19 @@ mod tests {
         InvertedIndexBuilder, InvertedIndexRam,
     };
     use crate::index::posting_list::PostingList;
+
+    #[test]
+    fn test_empty_query() {
+        let is_stopped = AtomicBool::new(false);
+        let index = InvertedIndexRam::empty();
+        let mut search_context = SearchContext::new(
+            SparseVector::default(), // empty query vector
+            10,
+            &index,
+            &is_stopped,
+        );
+        assert_eq!(search_context.search(&match_all), Vec::new());
+    }
 
     /// Match all filter condition for testing
     fn match_all(_p: PointOffsetType) -> bool {
