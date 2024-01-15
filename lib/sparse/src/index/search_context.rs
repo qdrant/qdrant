@@ -1,4 +1,4 @@
-use std::cmp::{max, Ordering};
+use std::cmp::Ordering;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 
@@ -23,7 +23,7 @@ pub struct SearchContext<'a> {
     top: usize,
     is_stopped: &'a AtomicBool,
     result_queue: FixedLengthPriorityQueue<ScoredPointOffset>, // keep the largest elements and peek smallest
-    min_record_ids: FixedLengthPriorityQueue<PointOffsetType>, // min record ids across all posting lists
+    min_record_id: Option<PointOffsetType>, // min record ids across all posting lists
     use_pruning: bool,
 }
 
@@ -53,19 +53,14 @@ impl<'a> SearchContext<'a> {
         // This is a limitation of the current pruning implementation.
         let use_pruning = query.values.iter().all(|v| *v >= 0.0);
         // find min record id across all posting lists
-        let mut min_record_ids = FixedLengthPriorityQueue::new(max(query.indices.len(), 1));
-        for posting_iterator in postings_iterators.iter() {
-            if let Some(element) = posting_iterator.posting_list_iterator.peek() {
-                min_record_ids.push(element.record_id);
-            }
-        }
+        let min_record_id = Self::next_min_id(&postings_iterators);
         SearchContext {
             postings_iterators,
             query,
             top,
             is_stopped,
             result_queue,
-            min_record_ids,
+            min_record_id,
             use_pruning,
         }
     }
@@ -140,25 +135,30 @@ impl<'a> SearchContext<'a> {
     /// b,  30, 34, 60, 230
     fn advance(&mut self) -> Option<ScoredPointOffset> {
         // Get current min record id from all posting list iterators
-        let current_min_record_id = *self.min_record_ids.peek()?;
+        let current_min_record_id = self.min_record_id?;
         let mut score = 0.0;
-
+        let mut found = false;
         // Iterate to advance matching posting iterators
         for posting_iterator in self.postings_iterators.iter_mut() {
             if let Some(element) = posting_iterator.posting_list_iterator.peek() {
                 // accumulate score for the current record id
                 if element.record_id == current_min_record_id {
+                    found = true;
                     score += element.weight * posting_iterator.query_weight;
                     // advance posting list iterator to next element
                     posting_iterator.posting_list_iterator.advance();
-                    // pop min record id
-                    self.min_record_ids.pop();
-                    // look-ahead to find next min record id
-                    if let Some(next_element) = posting_iterator.posting_list_iterator.peek() {
-                        self.min_record_ids.push(next_element.record_id);
-                    }
                 }
             }
+        }
+
+        // update min record id for next iteration
+        if found {
+            // assume the next min record id is the current one + 1
+            self.min_record_id = self.min_record_id.map(|min_id| min_id + 1);
+        } else {
+            // no match found, compute next min record id from all posting list iterators
+            self.min_record_id = Self::next_min_id(&self.postings_iterators);
+            return self.advance();
         }
 
         Some(ScoredPointOffset {
@@ -254,11 +254,7 @@ impl<'a> SearchContext<'a> {
                 if pruned {
                     // recompute new min record id for next iteration
                     // the pruned posting list is always at the head and with the lowest record_id
-                    self.min_record_ids.pop();
-                    let new_min = self.postings_iterators[0].posting_list_iterator.peek();
-                    if let Some(next_element) = new_min {
-                        self.min_record_ids.push(next_element.record_id);
-                    }
+                    self.min_record_id = Self::next_min_id(&self.postings_iterators);
                 }
             }
         }
