@@ -92,7 +92,7 @@ impl Collection {
                     self.collection_config.clone(),
                     self.shared_storage_config.clone(),
                     self.update_runtime.clone(),
-                    consensus.cpu_budget()?,
+                    self.optimizer_cpu_budget.clone(),
                 )
                 .await?;
 

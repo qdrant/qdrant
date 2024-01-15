@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
-use common::cpu::CpuBudget;
 use common::defaults;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -80,9 +79,6 @@ pub enum ShardTransferMethod {
 /// Interface to consensus for shard transfer operations.
 #[async_trait]
 pub trait ShardTransferConsensus: Send + Sync {
-    /// Get current CPU budget.
-    fn cpu_budget(&self) -> CollectionResult<CpuBudget>;
-
     /// Get the current consensus commit and term state.
     ///
     /// Returns `(commit, term)`.
