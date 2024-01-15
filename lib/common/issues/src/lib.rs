@@ -43,6 +43,7 @@
 //! issues::solve("issue1".to_string()); // returns true if the issue was solved
 //! assert!(issues::submit(Box::new(DummyIssue::new("issue1")))); // Now we can submit it again
 //! ```
+
 mod dashboard;
 mod issue;
 pub mod problems;
