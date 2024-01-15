@@ -13,7 +13,8 @@ use crate::index::field_index::numeric_index::NumericIndex;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
-    FieldCondition, FloatPayloadType, IntPayloadType, Match, MatchText, PayloadKeyType,
+    DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, Match, MatchText,
+    PayloadKeyType,
 };
 
 pub trait PayloadFieldIndex {
@@ -116,6 +117,7 @@ pub trait ValueIndexer<T> {
 #[allow(clippy::enum_variant_names)]
 pub enum FieldIndex {
     IntIndex(NumericIndex<IntPayloadType>),
+    DatetimeIndex(NumericIndex<IntPayloadType>),
     IntMapIndex(MapIndex<IntPayloadType>),
     KeywordIndex(MapIndex<SmolStr>),
     FloatIndex(NumericIndex<FloatPayloadType>),
@@ -139,6 +141,7 @@ impl FieldIndex {
     ) -> Option<bool> {
         match self {
             FieldIndex::IntIndex(_) => None,
+            FieldIndex::DatetimeIndex(_) => None,
             FieldIndex::IntMapIndex(_) => None,
             FieldIndex::KeywordIndex(_) => None,
             FieldIndex::FloatIndex(_) => None,
@@ -163,6 +166,7 @@ impl FieldIndex {
     fn get_payload_field_index(&self) -> &dyn PayloadFieldIndex {
         match self {
             FieldIndex::IntIndex(payload_field_index) => payload_field_index,
+            FieldIndex::DatetimeIndex(payload_field_index) => payload_field_index,
             FieldIndex::IntMapIndex(payload_field_index) => payload_field_index,
             FieldIndex::KeywordIndex(payload_field_index) => payload_field_index,
             FieldIndex::FloatIndex(payload_field_index) => payload_field_index,
@@ -176,6 +180,7 @@ impl FieldIndex {
     fn get_payload_field_index_mut(&mut self) -> &mut dyn PayloadFieldIndex {
         match self {
             FieldIndex::IntIndex(ref mut payload_field_index) => payload_field_index,
+            FieldIndex::DatetimeIndex(ref mut payload_field_index) => payload_field_index,
             FieldIndex::IntMapIndex(ref mut payload_field_index) => payload_field_index,
             FieldIndex::KeywordIndex(ref mut payload_field_index) => payload_field_index,
             FieldIndex::FloatIndex(ref mut payload_field_index) => payload_field_index,
@@ -188,6 +193,7 @@ impl FieldIndex {
     pub fn load(&mut self) -> OperationResult<bool> {
         match self {
             FieldIndex::IntIndex(ref mut payload_field_index) => payload_field_index.load(),
+            FieldIndex::DatetimeIndex(ref mut payload_field_index) => payload_field_index.load(),
             FieldIndex::IntMapIndex(ref mut payload_field_index) => payload_field_index.load(),
             FieldIndex::KeywordIndex(ref mut payload_field_index) => payload_field_index.load(),
             FieldIndex::FloatIndex(ref mut payload_field_index) => payload_field_index.load(),
@@ -200,6 +206,7 @@ impl FieldIndex {
     pub fn clear(self) -> OperationResult<()> {
         match self {
             FieldIndex::IntIndex(index) => index.clear(),
+            FieldIndex::DatetimeIndex(index) => index.clear(),
             FieldIndex::IntMapIndex(index) => index.clear(),
             FieldIndex::KeywordIndex(index) => index.clear(),
             FieldIndex::FloatIndex(index) => index.clear(),
@@ -212,6 +219,7 @@ impl FieldIndex {
     pub fn recreate(&self) -> OperationResult<()> {
         match self {
             FieldIndex::IntIndex(index) => index.recreate(),
+            FieldIndex::DatetimeIndex(index) => index.recreate(),
             FieldIndex::IntMapIndex(index) => index.recreate(),
             FieldIndex::KeywordIndex(index) => index.recreate(),
             FieldIndex::FloatIndex(index) => index.recreate(),
@@ -260,7 +268,10 @@ impl FieldIndex {
     ) -> OperationResult<()> {
         match self {
             FieldIndex::IntIndex(ref mut payload_field_index) => {
-                payload_field_index.add_point(id, payload)
+                ValueIndexer::<IntPayloadType>::add_point(payload_field_index, id, payload)
+            }
+            FieldIndex::DatetimeIndex(ref mut payload_field_index) => {
+                ValueIndexer::<DateTimePayloadType>::add_point(payload_field_index, id, payload)
             }
             FieldIndex::IntMapIndex(ref mut payload_field_index) => {
                 payload_field_index.add_point(id, payload)
@@ -269,7 +280,7 @@ impl FieldIndex {
                 payload_field_index.add_point(id, payload)
             }
             FieldIndex::FloatIndex(ref mut payload_field_index) => {
-                payload_field_index.add_point(id, payload)
+                ValueIndexer::<FloatPayloadType>::add_point(payload_field_index, id, payload)
             }
             FieldIndex::GeoIndex(ref mut payload_field_index) => {
                 payload_field_index.add_point(id, payload)
@@ -286,6 +297,7 @@ impl FieldIndex {
     pub fn remove_point(&mut self, point_id: PointOffsetType) -> OperationResult<()> {
         match self {
             FieldIndex::IntIndex(index) => index.remove_point(point_id),
+            FieldIndex::DatetimeIndex(index) => index.remove_point(point_id),
             FieldIndex::IntMapIndex(index) => index.remove_point(point_id),
             FieldIndex::KeywordIndex(index) => index.remove_point(point_id),
             FieldIndex::FloatIndex(index) => index.remove_point(point_id),
@@ -298,6 +310,7 @@ impl FieldIndex {
     pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
         match self {
             FieldIndex::IntIndex(index) => index.get_telemetry_data(),
+            FieldIndex::DatetimeIndex(index) => index.get_telemetry_data(),
             FieldIndex::IntMapIndex(index) => index.get_telemetry_data(),
             FieldIndex::KeywordIndex(index) => index.get_telemetry_data(),
             FieldIndex::FloatIndex(index) => index.get_telemetry_data(),
@@ -310,6 +323,7 @@ impl FieldIndex {
     pub fn values_count(&self, point_id: PointOffsetType) -> usize {
         match self {
             FieldIndex::IntIndex(index) => index.values_count(point_id),
+            FieldIndex::DatetimeIndex(index) => index.values_count(point_id),
             FieldIndex::IntMapIndex(index) => index.values_count(point_id),
             FieldIndex::KeywordIndex(index) => index.values_count(point_id),
             FieldIndex::FloatIndex(index) => index.values_count(point_id),
@@ -322,6 +336,7 @@ impl FieldIndex {
     pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
         match self {
             FieldIndex::IntIndex(index) => index.values_is_empty(point_id),
+            FieldIndex::DatetimeIndex(index) => index.values_is_empty(point_id),
             FieldIndex::IntMapIndex(index) => index.values_is_empty(point_id),
             FieldIndex::KeywordIndex(index) => index.values_is_empty(point_id),
             FieldIndex::FloatIndex(index) => index.values_is_empty(point_id),

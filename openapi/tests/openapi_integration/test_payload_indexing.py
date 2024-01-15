@@ -134,6 +134,42 @@ def test_boolean_index():
     assert len(response.json()['result']['payload_schema']) == 0
 
 
+def test_datetime_indexing():
+    datetime_key = "datetime_payload"
+    # create payload
+    set_payload({datetime_key: "2015-01-01T00:00:00Z"}, [1])
+    set_payload({datetime_key: "2015-02-01T00:00:00Z"}, [2])
+
+    # Create index
+    response = request_with_validation(
+        api='/collections/{collection_name}/index',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "field_name": datetime_key,
+            "field_schema": "datetime"
+        }
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/scroll',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "with_vector": False,
+            "filter": {
+                "must": [
+                    {"key": datetime_key, "datetime_range": {"gte": "2015-01-01T00:00:00Z", "lte": "2015-01-01T00:00:00Z"}}
+                ]
+            }
+        }
+    )
+    assert response.ok
+    assert [p["id"] for p in response.json()["result"]["points"]] == [1]
+
+
 def test_update_payload_on_indexed_field():
     keyword_field = "city"
 

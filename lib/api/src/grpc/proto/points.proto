@@ -3,8 +3,9 @@ syntax = "proto3";
 package qdrant;
 option csharp_namespace = "Qdrant.Client.Grpc";
 
-import "json_with_int.proto";
 import "collections.proto";
+import "google/protobuf/timestamp.proto";
+import "json_with_int.proto";
 
 
 enum WriteOrderingType {
@@ -145,6 +146,7 @@ enum FieldType {
   FieldTypeGeo = 3;
   FieldTypeText = 4;
   FieldTypeBool = 5;
+  FieldTypeDatetime = 6;
 }
 
 message CreateFieldIndexCollection {
@@ -661,6 +663,7 @@ message FieldCondition {
   GeoRadius geo_radius = 5; // Check if geo point is within a given radius
   ValuesCount values_count = 6; // Check number of values for a specific field
   GeoPolygon geo_polygon = 7; // Check if geo point is within a given polygon
+  DatetimeRange datetime_range = 8; // Check if datetime is within a given range
 }
 
 message Match {
@@ -689,6 +692,13 @@ message Range {
   optional double gt = 2;
   optional double gte = 3;
   optional double lte = 4;
+}
+
+message DatetimeRange {
+  optional google.protobuf.Timestamp lt = 1;
+  optional google.protobuf.Timestamp gt = 2;
+  optional google.protobuf.Timestamp gte = 3;
+  optional google.protobuf.Timestamp lte = 4;
 }
 
 message GeoBoundingBox {

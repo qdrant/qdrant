@@ -286,6 +286,7 @@ mod tests {
             "rating": vec![3, 7, 9, 9],
             "color": "red",
             "has_delivery": true,
+            "shipped_at": "2020-02-15T00:00:00Z",
             "parts": [],
             "packaging": null,
             "not_null": [null]
@@ -377,6 +378,40 @@ mod tests {
         let match_blue = Condition::Field(FieldCondition::new_match(
             "color".to_string(),
             "blue".to_owned().into(),
+        ));
+        let shipped_in_february = Condition::Field(FieldCondition::new_datetime_range(
+            "shipped_at".to_string(),
+            Range {
+                lt: Some(
+                    chrono::DateTime::parse_from_rfc3339("2020-03-01T00:00:00Z")
+                        .unwrap()
+                        .into(),
+                ),
+                gt: None,
+                gte: Some(
+                    chrono::DateTime::parse_from_rfc3339("2020-02-01T00:00:00Z")
+                        .unwrap()
+                        .into(),
+                ),
+                lte: None,
+            },
+        ));
+        let shipped_in_march = Condition::Field(FieldCondition::new_datetime_range(
+            "shipped_at".to_string(),
+            Range {
+                lt: Some(
+                    chrono::DateTime::parse_from_rfc3339("2020-04-01T00:00:00Z")
+                        .unwrap()
+                        .into(),
+                ),
+                gt: None,
+                gte: Some(
+                    chrono::DateTime::parse_from_rfc3339("2020-03-01T00:00:00Z")
+                        .unwrap()
+                        .into(),
+                ),
+                lte: None,
+            },
         ));
         let with_delivery = Condition::Field(FieldCondition::new_match(
             "has_delivery".to_string(),
@@ -522,6 +557,19 @@ mod tests {
             must_not: None,
         };
         assert!(payload_checker.check(0, &query));
+
+        let query = Filter {
+            should: None,
+            must: Some(vec![shipped_in_february]),
+            must_not: None,
+        };
+        assert!(payload_checker.check(0, &query));
+        let query = Filter {
+            should: None,
+            must: Some(vec![shipped_in_march]),
+            must_not: None,
+        };
+        assert!(!payload_checker.check(0, &query));
 
         let query = Filter {
             should: None,

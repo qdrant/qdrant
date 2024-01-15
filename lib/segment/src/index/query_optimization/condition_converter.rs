@@ -13,9 +13,9 @@ use crate::payload_storage::query_checker::{
     select_nested_indexes,
 };
 use crate::types::{
-    AnyVariants, Condition, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoPolygon,
-    GeoRadius, Match, MatchAny, MatchExcept, MatchText, MatchValue, OwnedPayloadRef,
-    PayloadContainer, Range, ValueVariants,
+    AnyVariants, Condition, DateTimePayloadType, FieldCondition, FloatPayloadType, GeoBoundingBox,
+    GeoPolygon, GeoRadius, IntPayloadType, Match, MatchAny, MatchExcept, MatchText, MatchValue,
+    OwnedPayloadRef, PayloadContainer, Range, ValueVariants,
 };
 
 pub fn condition_converter<'a>(
@@ -145,6 +145,14 @@ pub fn field_condition_index<'a>(
     }
 
     if let Some(checker) = field_condition
+        .datetime_range
+        .clone()
+        .and_then(|cond| get_datetime_range_checkers(index, cond))
+    {
+        return Some(checker);
+    }
+
+    if let Some(checker) = field_condition
         .geo_radius
         .clone()
         .and_then(|cond| get_geo_radius_checkers(index, cond))
@@ -221,17 +229,33 @@ pub fn get_geo_bounding_box_checkers(
     }
 }
 
-pub fn get_range_checkers(index: &FieldIndex, range: Range) -> Option<ConditionCheckerFn> {
+pub fn get_range_checkers(
+    index: &FieldIndex,
+    range: Range<FloatPayloadType>,
+) -> Option<ConditionCheckerFn> {
     match index {
         FieldIndex::IntIndex(num_index) => Some(Box::new(move |point_id: PointOffsetType| {
+            let range = range.map(|f| f as IntPayloadType);
             num_index.get_values(point_id).map_or(false, |values| {
-                values
-                    .iter()
-                    .copied()
-                    .any(|i| range.check_range(i as FloatPayloadType))
+                values.iter().copied().any(|i| range.check_range(i))
             })
         })),
         FieldIndex::FloatIndex(num_index) => Some(Box::new(move |point_id: PointOffsetType| {
+            num_index.get_values(point_id).map_or(false, |values| {
+                values.iter().copied().any(|i| range.check_range(i))
+            })
+        })),
+        _ => None,
+    }
+}
+
+pub fn get_datetime_range_checkers(
+    index: &FieldIndex,
+    range: Range<DateTimePayloadType>,
+) -> Option<ConditionCheckerFn> {
+    match index {
+        FieldIndex::DatetimeIndex(num_index) => Some(Box::new(move |point_id: PointOffsetType| {
+            let range = range.map(|ts| ts.timestamp_millis());
             num_index.get_values(point_id).map_or(false, |values| {
                 values.iter().copied().any(|i| range.check_range(i))
             })

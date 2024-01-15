@@ -5872,7 +5872,8 @@
           "float",
           "geo",
           "text",
-          "bool"
+          "bool",
+          "datetime"
         ]
       },
       "PayloadSchemaParams": {
@@ -6447,7 +6448,18 @@
             "description": "Check if points value lies in a given range",
             "anyOf": [
               {
-                "$ref": "#/components/schemas/Range"
+                "$ref": "#/components/schemas/Range_for_double"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "datetime_range": {
+            "description": "Check if datetime is within a given range",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Range_for_DateTime"
               },
               {
                 "nullable": true
@@ -6596,7 +6608,7 @@
           }
         }
       },
-      "Range": {
+      "Range_for_double": {
         "description": "Range filter request",
         "type": "object",
         "properties": {
@@ -6622,6 +6634,36 @@
             "description": "point.key <= range.lte",
             "type": "number",
             "format": "double",
+            "nullable": true
+          }
+        }
+      },
+      "Range_for_DateTime": {
+        "description": "Range filter request",
+        "type": "object",
+        "properties": {
+          "lt": {
+            "description": "point.key < range.lt",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "gt": {
+            "description": "point.key > range.gt",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "gte": {
+            "description": "point.key >= range.gte",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lte": {
+            "description": "point.key <= range.lte",
+            "type": "string",
+            "format": "date-time",
             "nullable": true
           }
         }

@@ -1124,6 +1124,7 @@ pub enum PayloadSchemaType {
     Geo = 4,
     Text = 5,
     Bool = 6,
+    Datetime = 7,
 }
 impl PayloadSchemaType {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -1139,6 +1140,7 @@ impl PayloadSchemaType {
             PayloadSchemaType::Geo => "Geo",
             PayloadSchemaType::Text => "Text",
             PayloadSchemaType::Bool => "Bool",
+            PayloadSchemaType::Datetime => "Datetime",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -1151,6 +1153,7 @@ impl PayloadSchemaType {
             "Geo" => Some(Self::Geo),
             "Text" => Some(Self::Text),
             "Bool" => Some(Self::Bool),
+            "Datetime" => Some(Self::Datetime),
             _ => None,
         }
     }
@@ -4704,6 +4707,9 @@ pub struct FieldCondition {
     /// Check if geo point is within a given polygon
     #[prost(message, optional, tag = "7")]
     pub geo_polygon: ::core::option::Option<GeoPolygon>,
+    /// Check if datetime is within a given range
+    #[prost(message, optional, tag = "8")]
+    pub datetime_range: ::core::option::Option<DatetimeRange>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4770,6 +4776,23 @@ pub struct Range {
     pub gte: ::core::option::Option<f64>,
     #[prost(double, optional, tag = "4")]
     pub lte: ::core::option::Option<f64>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DatetimeRange {
+    #[prost(message, optional, tag = "1")]
+    #[serde(skip)]
+    pub lt: ::core::option::Option<::prost_types::Timestamp>,
+    #[prost(message, optional, tag = "2")]
+    #[serde(skip)]
+    pub gt: ::core::option::Option<::prost_types::Timestamp>,
+    #[prost(message, optional, tag = "3")]
+    #[serde(skip)]
+    pub gte: ::core::option::Option<::prost_types::Timestamp>,
+    #[prost(message, optional, tag = "4")]
+    #[serde(skip)]
+    pub lte: ::core::option::Option<::prost_types::Timestamp>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4954,6 +4977,7 @@ pub enum FieldType {
     Geo = 3,
     Text = 4,
     Bool = 5,
+    Datetime = 6,
 }
 impl FieldType {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -4968,6 +4992,7 @@ impl FieldType {
             FieldType::Geo => "FieldTypeGeo",
             FieldType::Text => "FieldTypeText",
             FieldType::Bool => "FieldTypeBool",
+            FieldType::Datetime => "FieldTypeDatetime",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -4979,6 +5004,7 @@ impl FieldType {
             "FieldTypeGeo" => Some(Self::Geo),
             "FieldTypeText" => Some(Self::Text),
             "FieldTypeBool" => Some(Self::Bool),
+            "FieldTypeDatetime" => Some(Self::Datetime),
             _ => None,
         }
     }

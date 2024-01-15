@@ -9,6 +9,7 @@ use std::ops::Bound;
 use std::ops::Bound::{Excluded, Included, Unbounded};
 use std::sync::Arc;
 
+use chrono::{NaiveDateTime, TimeZone};
 use common::types::PointOffsetType;
 use mutable_numeric_index::MutableNumericIndex;
 use parking_lot::RwLock;
@@ -30,7 +31,9 @@ use crate::index::key_encoding::{
     encode_i64_key_ascending,
 };
 use crate::telemetry::PayloadIndexTelemetry;
-use crate::types::{FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, Range};
+use crate::types::{
+    DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, Range,
+};
 
 const HISTOGRAM_MAX_BUCKET_SIZE: usize = 10_000;
 const HISTOGRAM_PRECISION: f64 = 0.01;
@@ -77,6 +80,32 @@ impl Encodable for FloatPayloadType {
             return std::cmp::Ordering::Greater;
         }
         self.partial_cmp(other).unwrap()
+    }
+}
+
+/// Encodes timestamps as i64 in milliseconds
+impl Encodable for DateTimePayloadType {
+    fn encode_key(&self, id: PointOffsetType) -> Vec<u8> {
+        encode_i64_key_ascending(self.timestamp_millis(), id)
+    }
+
+    fn decode_key(key: &[u8]) -> (PointOffsetType, Self) {
+        let (id, timestamp) = decode_i64_key_ascending(key);
+        let datetime = chrono::Utc.from_utc_datetime(
+            &chrono::NaiveDateTime::from_timestamp_opt(
+                timestamp / 1000,
+                (timestamp % 1000) as u32 * 1_000_000,
+            )
+            .unwrap_or_else(|| {
+                log::warn!("Failed to decode timestamp {timestamp}, fallback to UNIX_EPOCH");
+                NaiveDateTime::UNIX_EPOCH
+            }),
+        );
+        (id, datetime)
+    }
+
+    fn cmp_encoded(&self, other: &Self) -> std::cmp::Ordering {
+        self.timestamp_millis().cmp(&other.timestamp_millis())
     }
 }
 
@@ -167,7 +196,7 @@ impl<T: Encodable + Numericable + Default> NumericIndex<T> {
         }
     }
 
-    fn range_cardinality(&self, range: &Range) -> CardinalityEstimation {
+    fn range_cardinality(&self, range: &Range<FloatPayloadType>) -> CardinalityEstimation {
         let max_values_per_point = self.max_values_per_point();
         if max_values_per_point == 0 {
             return CardinalityEstimation::exact(0);
@@ -429,6 +458,33 @@ impl ValueIndexer<IntPayloadType> for NumericIndex<IntPayloadType> {
             return num.as_i64();
         }
         None
+    }
+
+    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
+        NumericIndex::remove_point(self, id)
+    }
+}
+
+impl ValueIndexer<DateTimePayloadType> for NumericIndex<IntPayloadType> {
+    fn add_many(
+        &mut self,
+        id: PointOffsetType,
+        values: Vec<DateTimePayloadType>,
+    ) -> OperationResult<()> {
+        match self {
+            NumericIndex::Mutable(index) => {
+                index.add_many_to_list(id, values.into_iter().map(|x| x.timestamp_millis()))
+            }
+            NumericIndex::Immutable(_) => Err(OperationError::service_error(
+                "Can't add values to immutable numeric index",
+            )),
+        }
+    }
+
+    fn get_value(&self, value: &Value) -> Option<DateTimePayloadType> {
+        chrono::DateTime::parse_from_rfc3339(value.as_str()?)
+            .ok()
+            .map(|x| x.into())
     }
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
