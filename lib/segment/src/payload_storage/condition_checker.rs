@@ -3,8 +3,9 @@
 use serde_json::Value;
 
 use crate::types::{
-    AnyVariants, FieldCondition, GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius, Match, MatchAny,
-    MatchExcept, MatchText, MatchValue, Range, ValueVariants, ValuesCount,
+    AnyVariants, DateTimePayloadType, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoPoint,
+    GeoPolygon, GeoRadius, Match, MatchAny, MatchExcept, MatchText, MatchValue, Range,
+    ValueVariants, ValuesCount,
 };
 
 pub trait ValueChecker {
@@ -35,6 +36,11 @@ impl ValueChecker for FieldCondition {
         res = res
             || self
                 .range
+                .as_ref()
+                .map_or(false, |condition| condition.check_match(payload));
+        res = res
+            || self
+                .datetime_range
                 .as_ref()
                 .map_or(false, |condition| condition.check_match(payload));
         res = res
@@ -109,7 +115,7 @@ impl ValueChecker for Match {
     }
 }
 
-impl ValueChecker for Range {
+impl ValueChecker for Range<FloatPayloadType> {
     fn check_match(&self, payload: &Value) -> bool {
         match payload {
             Value::Number(num) => num
@@ -118,6 +124,15 @@ impl ValueChecker for Range {
                 .unwrap_or(false),
             _ => false,
         }
+    }
+}
+
+impl ValueChecker for Range<DateTimePayloadType> {
+    fn check_match(&self, payload: &Value) -> bool {
+        payload
+            .as_str()
+            .and_then(|x| chrono::DateTime::parse_from_rfc3339(x).ok())
+            .map_or(false, |x| self.check_range(x.into()))
     }
 }
 

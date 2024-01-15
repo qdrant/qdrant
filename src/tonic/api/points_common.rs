@@ -699,6 +699,7 @@ fn convert_field_type(
             FieldType::Geo => Some(PayloadSchemaType::Geo.into()),
             FieldType::Text => Some(PayloadSchemaType::Text.into()),
             FieldType::Bool => Some(PayloadSchemaType::Bool.into()),
+            FieldType::Datetime => Some(PayloadSchemaType::Datetime.into()),
         },
         // Parameterized index with mismatching types
         (

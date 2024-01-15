@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use api::grpc::conversions::date_time_to_proto;
+use api::grpc::conversions::naive_date_time_to_proto;
 use chrono::NaiveDateTime;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -85,7 +85,7 @@ impl From<SnapshotDescription> for api::grpc::qdrant::SnapshotDescription {
     fn from(value: SnapshotDescription) -> Self {
         Self {
             name: value.name,
-            creation_time: value.creation_time.map(date_time_to_proto),
+            creation_time: value.creation_time.map(naive_date_time_to_proto),
             size: value.size as i64,
             checksum: value.checksum,
         }

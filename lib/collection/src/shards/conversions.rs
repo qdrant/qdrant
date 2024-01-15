@@ -331,6 +331,9 @@ pub fn internal_create_index(
                     segment::types::PayloadSchemaType::Bool => {
                         api::grpc::qdrant::FieldType::Bool as i32
                     }
+                    segment::types::PayloadSchemaType::Datetime => {
+                        api::grpc::qdrant::FieldType::Datetime as i32
+                    }
                 },
                 None,
             ),

@@ -241,6 +241,10 @@ fn configure_validation(builder: Builder) -> Builder {
             ("DiscoveryQuery.context", ""),
             ("ContextQuery.context", ""),
         ], &[])
+        .field_attribute("DatetimeRange.lt", "#[serde(skip)]")
+        .field_attribute("DatetimeRange.gt", "#[serde(skip)]")
+        .field_attribute("DatetimeRange.lte", "#[serde(skip)]")
+        .field_attribute("DatetimeRange.gte", "#[serde(skip)]")
         .type_attribute(".", "#[derive(serde::Serialize)]")
         // Service: points_internal_service.proto
         .validates(&[
