@@ -10,7 +10,7 @@ use super::get_vector_storage_path;
 use crate::common::error_logging::LogError;
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::entry::entry_point::SegmentEntry;
-use crate::index::hnsw_index::max_rayon_threads;
+use crate::index::hnsw_index::num_rayon_threads;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::segment::Segment;
 use crate::segment_constructor::{build_segment, load_segment};
@@ -243,7 +243,7 @@ impl SegmentBuilder {
         for (vector_name, vector_data) in &mut segment.vector_data {
             let max_threads = if let Some(config) = config.vector_data.get(vector_name) {
                 match &config.index {
-                    Indexes::Hnsw(hnsw) => max_rayon_threads(hnsw.max_indexing_threads),
+                    Indexes::Hnsw(hnsw) => num_rayon_threads(hnsw.max_indexing_threads),
                     _ => 1,
                 }
             } else {

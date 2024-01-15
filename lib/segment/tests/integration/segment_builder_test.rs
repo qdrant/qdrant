@@ -8,7 +8,7 @@ use itertools::Itertools;
 use segment::common::operation_error::OperationError;
 use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
-use segment::index::hnsw_index::max_rayon_threads;
+use segment::index::hnsw_index::num_rayon_threads;
 use segment::segment::Segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::types::{Indexes, SegmentConfig, VectorDataConfig, VectorStorageType};
@@ -50,7 +50,7 @@ fn test_building_new_segment() {
 
     // Now we finalize building
 
-    let permit_cpu_count = max_rayon_threads(0);
+    let permit_cpu_count = num_rayon_threads(0);
     let permit = CpuPermit::dummy(permit_cpu_count as u32);
 
     let merged_segment: Segment = builder.build(permit, &stopped).unwrap();
@@ -112,7 +112,7 @@ fn estimate_build_time(segment: &Segment, stop_delay_millis: u64) -> (u64, bool)
         })
         .unwrap();
 
-    let permit_cpu_count = max_rayon_threads(0);
+    let permit_cpu_count = num_rayon_threads(0);
     let permit = CpuPermit::dummy(permit_cpu_count as u32);
 
     let res = builder.build(permit, &stopped);

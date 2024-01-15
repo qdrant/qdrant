@@ -10,7 +10,7 @@ use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{QueryVector, VectorElementType};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::random_vector;
-use segment::index::hnsw_index::max_rayon_threads;
+use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::index::sparse_index::sparse_vector_index::SparseVectorIndex;
 use segment::index::VectorIndex;
@@ -146,7 +146,7 @@ fn sparse_index_discover_test() {
     let mut sparse_segment = build_segment(dir.path(), &sparse_config, true).unwrap();
     let mut dense_segment = build_segment(dir.path(), &dense_config, true).unwrap();
 
-    let permit_cpu_count = max_rayon_threads(0);
+    let permit_cpu_count = num_rayon_threads(0);
     let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
 
     for n in 0..num_vectors {

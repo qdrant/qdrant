@@ -12,7 +12,7 @@ use crate::entry::entry_point::SegmentEntry;
 use crate::fixtures::index_fixtures::random_vector;
 use crate::index::hnsw_index::graph_links::{GraphLinks, GraphLinksRam};
 use crate::index::hnsw_index::hnsw::HNSWIndex;
-use crate::index::hnsw_index::max_rayon_threads;
+use crate::index::hnsw_index::num_rayon_threads;
 use crate::index::VectorIndex;
 use crate::segment_constructor::build_segment;
 use crate::types::{
@@ -72,7 +72,7 @@ fn test_graph_connectivity() {
         payload_m: None,
     };
 
-    let permit_cpu_count = max_rayon_threads(hnsw_config.max_indexing_threads);
+    let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
     let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
 
     let mut hnsw_index = HNSWIndex::<GraphLinksRam>::open(

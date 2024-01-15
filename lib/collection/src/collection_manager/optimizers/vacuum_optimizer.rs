@@ -224,7 +224,7 @@ mod tests {
     use itertools::Itertools;
     use parking_lot::RwLock;
     use segment::entry::entry_point::SegmentEntry;
-    use segment::index::hnsw_index::max_rayon_threads;
+    use segment::index::hnsw_index::num_rayon_threads;
     use segment::types::{Distance, PayloadContainer, PayloadSchemaType};
     use serde_json::{json, Value};
     use tempfile::Builder;
@@ -325,7 +325,7 @@ mod tests {
         // Check that only one segment is selected for optimization
         assert_eq!(suggested_to_optimize.len(), 1);
 
-        let permit_cpu_count = max_rayon_threads(0);
+        let permit_cpu_count = num_rayon_threads(0);
         let permit = CpuPermit::dummy(permit_cpu_count as u32);
 
         vacuum_optimizer
@@ -451,7 +451,7 @@ mod tests {
             payload_m: None,
         };
 
-        let permit_cpu_count = max_rayon_threads(hnsw_config.max_indexing_threads);
+        let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
         let permit = CpuPermit::dummy(permit_cpu_count as u32);
 
         // Optimizers used in test

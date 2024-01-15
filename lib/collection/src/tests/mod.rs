@@ -10,7 +10,7 @@ use common::cpu::CpuBudget;
 use futures::future::join_all;
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
-use segment::index::hnsw_index::max_rayon_threads;
+use segment::index::hnsw_index::num_rayon_threads;
 use tempfile::Builder;
 use tokio::time::{sleep, Instant};
 
@@ -67,7 +67,7 @@ async fn test_optimization_process() {
     // The optimizers try to saturate the CPU, as number of optimizations tasks we should therefore
     // expect the amount that would fit within our CPU budget
     let expected_optimization_count = common::cpu::get_cpu_budget(0)
-        .div_ceil(max_rayon_threads(0))
+        .div_ceil(num_rayon_threads(0))
         .clamp(1, 2);
 
     assert_eq!(handles.len(), expected_optimization_count);
@@ -171,7 +171,7 @@ async fn test_cancel_optimization() {
     // expect the amount that would fit within our CPU budget
     {
         let expected_optimization_count = common::cpu::get_cpu_budget(0)
-            .div_ceil(max_rayon_threads(0))
+            .div_ceil(num_rayon_threads(0))
             .clamp(1, 3);
 
         let log = optimizers_log.lock().to_telemetry();

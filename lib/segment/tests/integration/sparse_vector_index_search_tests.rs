@@ -13,7 +13,7 @@ use segment::data_types::vectors::{QueryVector, Vector};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::STR_KEY;
 use segment::fixtures::sparse_fixtures::{fixture_open_sparse_index, fixture_sparse_index_ram};
-use segment::index::hnsw_index::max_rayon_threads;
+use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::index::sparse_index::sparse_vector_index::SparseVectorIndex;
 use segment::index::{PayloadIndex, VectorIndex, VectorIndexEnum};
@@ -186,7 +186,7 @@ fn sparse_vector_index_consistent_with_storage() {
         &stopped,
     );
 
-    let permit_cpu_count = max_rayon_threads(0);
+    let permit_cpu_count = num_rayon_threads(0);
     let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
 
     // check consistency with underlying RAM inverted index
@@ -328,7 +328,7 @@ fn sparse_vector_index_ram_deleted_points_search() {
         sparse_vector_index.indexed_vector_count() - 1
     );
 
-    let permit_cpu_count = max_rayon_threads(0);
+    let permit_cpu_count = num_rayon_threads(0);
     let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
 
     // refresh index to remove point
@@ -536,7 +536,7 @@ fn handling_empty_sparse_vectors() {
         NUM_VECTORS,
     );
 
-    let permit_cpu_count = max_rayon_threads(0);
+    let permit_cpu_count = num_rayon_threads(0);
     let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
 
     // empty vectors are not indexed
@@ -579,7 +579,7 @@ fn sparse_vector_index_persistence_test() {
     };
     let mut segment = build_segment(dir.path(), &config, true).unwrap();
 
-    let permit_cpu_count = max_rayon_threads(0);
+    let permit_cpu_count = num_rayon_threads(0);
     let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
 
     for n in 0..num_vectors {
@@ -765,7 +765,7 @@ fn sparse_vector_index_files() {
         &stopped,
     );
 
-    let permit_cpu_count = max_rayon_threads(0);
+    let permit_cpu_count = num_rayon_threads(0);
     let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
 
     let mmap_index_dir = Builder::new().prefix("mmap_index_dir").tempdir().unwrap();

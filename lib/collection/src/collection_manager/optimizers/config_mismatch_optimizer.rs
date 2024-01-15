@@ -274,7 +274,7 @@ mod tests {
     use common::cpu::CpuPermit;
     use parking_lot::RwLock;
     use segment::entry::entry_point::SegmentEntry;
-    use segment::index::hnsw_index::max_rayon_threads;
+    use segment::index::hnsw_index::num_rayon_threads;
     use segment::types::{
         CompressionRatio, Distance, ProductQuantization, ProductQuantizationConfig,
         ScalarQuantizationConfig, ScalarType,
@@ -359,7 +359,7 @@ mod tests {
             Default::default(),
         );
 
-        let permit_cpu_count = max_rayon_threads(hnsw_config.max_indexing_threads);
+        let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
         let permit = CpuPermit::dummy(permit_cpu_count as u32);
 
         // Use indexing optimizer to build index for HNSW mismatch test
@@ -505,7 +505,7 @@ mod tests {
             payload_m: None,
         };
 
-        let permit_cpu_count = max_rayon_threads(hnsw_config_collection.max_indexing_threads);
+        let permit_cpu_count = num_rayon_threads(hnsw_config_collection.max_indexing_threads);
         let permit = CpuPermit::dummy(permit_cpu_count as u32);
 
         // Optimizers used in test
@@ -702,7 +702,7 @@ mod tests {
             Some(quantization_config_collection),
         );
 
-        let permit_cpu_count = max_rayon_threads(0);
+        let permit_cpu_count = num_rayon_threads(0);
         let permit = CpuPermit::dummy(permit_cpu_count as u32);
 
         // Use indexing optimizer to build index for quantization mismatch test

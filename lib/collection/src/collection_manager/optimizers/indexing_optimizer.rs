@@ -296,7 +296,7 @@ mod tests {
     use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
     use segment::entry::entry_point::SegmentEntry;
     use segment::fixtures::index_fixtures::random_vector;
-    use segment::index::hnsw_index::max_rayon_threads;
+    use segment::index::hnsw_index::num_rayon_threads;
     use segment::types::{Distance, Payload, PayloadSchemaType};
     use serde_json::json;
     use tempfile::Builder;
@@ -386,7 +386,7 @@ mod tests {
             index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
         assert!(suggested_to_optimize.contains(&large_segment_id));
 
-        let permit_cpu_count = max_rayon_threads(0);
+        let permit_cpu_count = num_rayon_threads(0);
         let permit = CpuPermit::dummy(permit_cpu_count as u32);
 
         index_optimizer
@@ -526,7 +526,7 @@ mod tests {
         )
         .unwrap();
 
-        let permit_cpu_count = max_rayon_threads(0);
+        let permit_cpu_count = num_rayon_threads(0);
         let permit = CpuPermit::dummy(permit_cpu_count as u32);
 
         // ------ Plain -> Mmap & Indexed payload
@@ -853,7 +853,7 @@ mod tests {
             Default::default(),
         );
 
-        let permit_cpu_count = max_rayon_threads(0);
+        let permit_cpu_count = num_rayon_threads(0);
         let permit = CpuPermit::dummy(permit_cpu_count as u32);
 
         // Use indexing optimizer to build mmap

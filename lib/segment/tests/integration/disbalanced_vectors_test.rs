@@ -6,7 +6,7 @@ use std::sync::atomic::AtomicBool;
 use common::cpu::CpuPermit;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::entry::entry_point::SegmentEntry;
-use segment::index::hnsw_index::max_rayon_threads;
+use segment::index::hnsw_index::num_rayon_threads;
 use segment::segment::Segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::segment_constructor::simple_segment_constructor::build_multivec_segment;
@@ -90,7 +90,7 @@ fn test_rebuild_with_removed_vectors() {
     builder.update_from(&segment1, &stopped).unwrap();
     builder.update_from(&segment2, &stopped).unwrap();
 
-    let permit_cpu_count = max_rayon_threads(0);
+    let permit_cpu_count = num_rayon_threads(0);
     let permit = CpuPermit::dummy(permit_cpu_count as u32);
 
     let merged_segment: Segment = builder.build(permit, &stopped).unwrap();

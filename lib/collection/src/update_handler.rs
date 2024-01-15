@@ -9,7 +9,7 @@ use itertools::Itertools;
 use log::{debug, error, info, trace, warn};
 use parking_lot::Mutex;
 use segment::common::operation_error::OperationResult;
-use segment::index::hnsw_index::max_rayon_threads;
+use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::SeqNumberType;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{self, Receiver, Sender};
@@ -256,7 +256,7 @@ impl UpdateHandler {
 
                 // Determine how many CPUs we prefer for optimization task, acquire permit for it
                 let max_indexing_threads = optimizer.hnsw_config().max_indexing_threads;
-                let desired_cpus = max_rayon_threads(max_indexing_threads);
+                let desired_cpus = num_rayon_threads(max_indexing_threads);
                 let permit = match optimizer_cpu_budget.try_acquire(desired_cpus) {
                     Some(permit) => permit,
                     // If there is no CPU budget, break outer loop and return early
@@ -463,7 +463,7 @@ impl UpdateHandler {
                     log::trace!(
                         "Blocking optimization check, waiting for CPU budget to be available"
                     );
-                    let desired_cpus = max_rayon_threads(max_indexing_threads);
+                    let desired_cpus = num_rayon_threads(max_indexing_threads);
                     optimizer_cpu_budget.block_until_budget(desired_cpus);
                     log::trace!("Continue with optimizations, new CPU budget available");
 
