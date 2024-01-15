@@ -279,13 +279,12 @@ impl Settings {
 /// Returns the number of maximum actix workers.
 #[allow(dead_code)]
 pub fn max_web_workers(settings: &Settings) -> usize {
-    let max_workers = settings.service.max_workers;
-    match max_workers {
+    match settings.service.max_workers {
         Some(0) => {
             let num_cpu = common::cpu::get_num_cpus();
             std::cmp::max(1, num_cpu - 1)
         }
-        Some(n) => n,
+        Some(max_workers) => max_workers,
         None => settings.storage.performance.max_search_threads,
     }
 }
