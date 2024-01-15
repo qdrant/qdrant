@@ -135,7 +135,7 @@ storage:
     full_scan_threshold_kb: 10000
 
     # Number of parallel threads used for background index building.
-    # If 0 - automatically select from 8 to 16.
+    # If 0 - automatically select.
     # Best to keep between 8 and 16 to prevent likelihood of building broken/inefficient HNSW graphs.
     # On small CPUs, less threads are used.
     max_indexing_threads: 0
