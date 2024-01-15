@@ -113,6 +113,13 @@ pub trait SegmentEntry {
     /// Iterator over all points in segment in ascending order.
     fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_>;
 
+    /// Validate `vector_name` and extend the output collections with points in segment that don't have vector with the provided name.
+    fn try_extend_points_with_empty_vector(
+        &self,
+        vector_name: &str,
+        out: &mut impl Extend<PointIdType>,
+    ) -> OperationResult<()>;
+
     /// Paginate over points which satisfies filtering condition starting with `offset` id including.
     fn read_filtered<'a>(
         &'a self,

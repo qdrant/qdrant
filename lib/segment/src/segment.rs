@@ -1020,6 +1020,57 @@ impl SegmentEntry for Segment {
         unsafe { self.id_tracker.as_ptr().as_ref().unwrap().iter_external() }
     }
 
+    fn try_extend_points_with_empty_vector(
+        &self,
+        vector_name: &str,
+        out: &mut impl Extend<PointIdType>,
+    ) -> OperationResult<()> {
+        check_vector_name(vector_name, &self.segment_config)?;
+
+        let vector_data = self.vector_data.get(vector_name).ok_or_else(|| {
+            OperationError::VectorNameNotExists {
+                received_name: vector_name.to_string(),
+            }
+        })?;
+        let segment_path = self.current_path.as_path();
+        let vector_storage = vector_data.vector_storage.borrow();
+        let id_tracker = self.id_tracker.borrow();
+        let deleted_points = id_tracker.deleted_point_bitslice();
+
+        let points_with_empty_vector_iter = vector_storage.deleted_vector_bitslice()
+            .iter_ones()
+            .filter_map(|point_offset| {
+                let point_deleted = if let Some(point_deleted_ref) =
+                    deleted_points.get(point_offset)
+                {
+                    *point_deleted_ref
+                } else {
+                    // point is not deleted
+                    false
+                };
+
+                if !point_deleted {
+                    // point has empty vector
+                    let poffset = PointOffsetType::try_from(point_offset).expect("point offsets are in range");
+
+                    if let Some(point_id) = id_tracker.external_id(poffset) {
+                        Some(point_id)
+                    } else {
+                        log::error!(
+                            "Skipping point: failed to get external point id for point offset {}. Segment path {}",
+                            point_offset,
+                            segment_path.display()
+                        );
+                        None
+                    }
+                } else {
+                    None
+                }
+            });
+        out.extend(points_with_empty_vector_iter);
+        Ok(())
+    }
+
     fn read_filtered<'a>(
         &'a self,
         offset: Option<PointIdType>,
