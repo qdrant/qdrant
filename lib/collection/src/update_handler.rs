@@ -468,6 +468,9 @@ impl UpdateHandler {
                     log::trace!("Continue with optimizations, new CPU budget available");
 
                     // Determine optimization handle limit based on max handles we allow
+                    // Not related to the CPU budget, but a different limit for the maximum number
+                    // of concurrent concrete optimizations per shard as configured by the user in
+                    // the Qdrant configuration.
                     // Skip if we reached limit, an ongoing optimization that finishes will trigger this loop again
                     let limit = max_handles.saturating_sub(optimization_handles.lock().await.len());
                     if limit == 0 {
