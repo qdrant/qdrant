@@ -145,21 +145,6 @@ jobs:
           cp docs/logo.svg qdrant.svg
           cp target/release/qdrant .
 
-          cat << EOF > "qdrant.desktop"
-          [Desktop Entry]
-          Name=qdrant
-          GenericName=Vector Database
-          Comment=Advanced and High-Performant Vector Search Technology
-          TryExec=qdrant
-          Exec=qdrant %F
-          Terminal=true
-          Type=Application
-          Keywords=Database;
-          Icon=qdrant
-          Categories=Utility;
-          StartupNotify=false
-          EOF
-
           curl -Lo linuxdeploy-x86_64.AppImage \
               https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           chmod +x linuxdeploy-x86_64.AppImage
@@ -167,17 +152,9 @@ jobs:
           ./linuxdeploy-x86_64.AppImage \
               --appdir AppDir \
               --executable qdrant \
-              -d qdrant.desktop \
+              -d pkg/appimage/qdrant.desktop \
               -i qdrant.svg \
-
-          rm AppDir/AppRun
-
-          cat << EOF > "AppDir/AppRun"
-          #!/bin/bash
-          APPDIR="\$(dirname "\$(readlink -f "\$0")")"
-          export QDRANT__SERVICE__STATIC_CONTENT_DIR="\$APPDIR/usr/share/static"
-          exec "\$APPDIR/usr/bin/qdrant" "\$@"
-          EOF
+              --custom-apprun pkg/appimage/AppRun.sh
 
           wget -O dist-qdrant.zip "$(curl --silent "https://api.github.com/repos/qdrant/qdrant-web-ui/releases/latest" | jq -r '.assets[] | select(.name=="dist-qdrant.zip") | .browser_download_url')"          
           unzip -o dist-qdrant.zip -d static
