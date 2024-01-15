@@ -175,11 +175,7 @@ jobs:
           cat << EOF > "AppDir/AppRun"
           #!/bin/bash
           APPDIR="\$(dirname "\$(readlink -f "\$0")")"
-          if [ ! -d "static" ]; then
-              STATIC_DIR="\$APPDIR/usr/share/static"
-              mkdir -p static
-              cp -r "\$STATIC_DIR/"* "static/"
-          fi
+          export QDRANT__SERVICE__STATIC_CONTENT_DIR="\$APPDIR/usr/share/static"
           exec "\$APPDIR/usr/bin/qdrant" "\$@"
           EOF
 
