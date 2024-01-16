@@ -584,8 +584,9 @@ impl<'s> SegmentHolder {
     {
         let segments_lock = segments.upgradable_read();
 
+        // Source config for temporary segment which we target all writes to
         let config = match collection_params {
-            // Source temporary segment config from collection parameters
+            // Base config on collection params
             Some(collection_params) => {
                 SegmentConfig {
                     vector_data: collection_params.into_base_vector_data().unwrap(),
@@ -597,7 +598,7 @@ impl<'s> SegmentHolder {
                     },
                 }
             }
-            // Source temporary segment config from random appendable segment
+            // Base config on existing appendable or non-appendable segment
             None => {
                 let appendable_segment = segments_lock
                     .random_appendable_segment()
@@ -633,19 +634,17 @@ impl<'s> SegmentHolder {
             PayloadFieldSchema,
         >::new()));
 
-        let segment_ids = {
-            // let segments_read = segments.read();
-            segments_lock
-                .segments
-                .keys()
-                .cloned()
-                .collect::<Vec<SegmentId>>()
-        };
+        // List all segments we want to snapshot
+        let segment_ids = segments_lock
+            .segments
+            .keys()
+            .cloned()
+            .collect::<Vec<SegmentId>>();
 
+        // Create proxy for all segments
         let mut proxies = Vec::new();
         for segment_id in &segment_ids {
             let segment = segments_lock.segments.get(segment_id).unwrap();
-
             let mut proxy = ProxySegment::new(
                 segment.clone(),
                 tmp_segment.clone(),
@@ -670,6 +669,7 @@ impl<'s> SegmentHolder {
             LockedSegment::Proxy(_) => unreachable!(),
         }
 
+        // Replace all segments with proxies
         let proxy_ids: Vec<_> = {
             // Exclusive lock for the segments operations.
             let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
@@ -690,7 +690,7 @@ impl<'s> SegmentHolder {
             let read_segments = segments.read();
             for proxy_id in &proxy_ids {
                 let Some(proxy_segment) = read_segments.get(*proxy_id) else {
-                    log::warn!("Proxy segment to snapshot is not available anymore, this should not happen, ignoring");
+                    log::error!("Running operation on all proxied shard segments, but a proxy segment is missing: {proxy_id}");
                     continue;
                 };
 
@@ -702,7 +702,7 @@ impl<'s> SegmentHolder {
                     }
                     // All segments to snapshot should be proxy, warn if this is not the case
                     LockedSegment::Original(segment) => {
-                        log::warn!("Reached non-proxy segment while snapshotting, this should not happen, ignoring");
+                        log::warn!("Reached non-proxy segment while applying operation to proxies, this should not happen, ignoring");
                         segment.clone()
                     }
                 };
@@ -716,6 +716,7 @@ impl<'s> SegmentHolder {
             let mut write_segments = segments.write();
             for proxy_id in proxy_ids {
                 let Some(proxy_segment) = write_segments.get(proxy_id) else {
+                    log::error!("Unproxying temporary shard segment proxies, but a proxy segment is missing, cannot unproxy: {proxy_id}");
                     continue;
                 };
 
@@ -760,6 +761,8 @@ impl<'s> SegmentHolder {
         temp_dir: &Path,
         snapshot_dir_path: &Path,
     ) -> OperationResult<()> {
+        // Snapshotting may take long-running read locks on segments blocking incoming writes, do
+        // this through proxied segments to allow writes to continue.
         Self::proxy_all_segments_and_apply(
             segments,
             collection_path,
