@@ -618,12 +618,15 @@ impl<'s> SegmentHolder {
 
         // Apply provided function
         log::trace!("Applying function on all proxied shard segments");
+        let mut result = Ok(());
         {
             let read_segments = segments.read();
             for proxy_id in &proxy_ids {
                 let Some(proxy_segment) = read_segments.get(*proxy_id) else {
-                    log::error!("Applying function on all proxied shard segments, but a proxy segment is missing: {proxy_id}");
-                    continue;
+                    result = Err(OperationError::service_error(format!(
+                        "Applying function on all proxied shard segments, but a proxy segment {proxy_id} is missing",
+                    )));
+                    break;
                 };
 
                 // Get segment to snapshot, wrapped proxy segment or regular one
@@ -640,17 +643,25 @@ impl<'s> SegmentHolder {
                 };
 
                 // Call provided function on segment
-                f(segment)?;
+                if let Err(err) = f(segment) {
+                    result = Err(OperationError::service_error(format!(
+                        "Applying function to a proxied shard segment {proxy_id} failed: {err}"
+                    )));
+                    break;
+                }
             }
         }
 
         // Unproxy all segments
+        // Always do this to prevent leaving proxy segments in place
         log::trace!("Unproxying all shard segments after function is applied");
         Self::unproxy_all_segments(segments, proxy_ids, tmp_segment)?;
 
-        Ok(())
+        // Return any function result we might have had
+        result
     }
 
+    /// Proxy all shard segments for [`proxy_all_segments_and_apply`]
     fn proxy_all_segments(
         segments: LockedSegmentHolder,
         collection_path: &Path,
@@ -756,12 +767,14 @@ impl<'s> SegmentHolder {
         Ok((proxy_ids, tmp_segment))
     }
 
+    /// Unproxy all shard segments for [`proxy_all_segments_and_apply`]
     fn unproxy_all_segments(
         segments: LockedSegmentHolder,
         proxy_ids: Vec<SegmentId>,
         tmp_segment: LockedSegment,
     ) -> OperationResult<()> {
         let mut write_segments = segments.write();
+
         for proxy_id in proxy_ids {
             let Some(proxy_segment) = write_segments.get(proxy_id) else {
                 log::error!("Unproxying temporary shard segment proxies, but a proxy segment is missing, cannot unproxy: {proxy_id}");
@@ -773,7 +786,10 @@ impl<'s> SegmentHolder {
                 LockedSegment::Proxy(proxy_segment) => {
                     let wrapped_segment = {
                         let proxy_segment = proxy_segment.read();
-                        proxy_segment.propagate_to_writeable()?;
+                        // TODO: can we simply ignore this if failed? what would be better to do?
+                        if let Err(err) = proxy_segment.propagate_to_writeable() {
+                            log::error!("Propagating proxy segment {proxy_id} changes to wrapped segment failed, ignoring: {err}");
+                        }
                         proxy_segment.wrapped_segment.clone()
                     };
                     write_segments.swap(wrapped_segment, &[proxy_id]);
