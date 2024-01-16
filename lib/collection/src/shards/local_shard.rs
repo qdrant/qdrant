@@ -623,13 +623,22 @@ impl LocalShard {
             rx.await?;
         }
 
+        let collection_path = self.path.clone();
+        let collection_params = self.collection_config.read().await.params.clone();
+
         let temp_path = temp_path.to_owned();
 
         tokio::task::spawn_blocking(move || {
             let segments_read = segments.read();
 
             // Do not change segments while snapshotting
-            segments_read.snapshot_all_segments(&temp_path, &snapshot_segments_shard_path)?;
+            SegmentHolder::snapshot_all_segments(
+                segments.clone(),
+                &collection_path,
+                Some(&collection_params),
+                &temp_path,
+                &snapshot_segments_shard_path,
+            )?;
 
             if save_wal {
                 // snapshot all shard's WAL

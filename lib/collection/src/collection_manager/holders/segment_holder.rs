@@ -11,11 +11,17 @@ use parking_lot::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWrit
 use rand::seq::SliceRandom;
 use rand::{thread_rng, Rng};
 use segment::common::operation_error::{OperationError, OperationResult};
+use segment::common::version::StorageVersion;
 use segment::entry::entry_point::SegmentEntry;
-use segment::segment::Segment;
-use segment::types::{PointIdType, SeqNumberType};
+use segment::segment::{Segment, SegmentVersion};
+use segment::segment_constructor::build_segment;
+use segment::types::{
+    PayloadFieldSchema, PayloadKeyType, PayloadStorageType, PointIdType, SegmentConfig,
+    SeqNumberType,
+};
 
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
+use crate::config::CollectionParams;
 use crate::operations::types::CollectionError;
 use crate::shards::update_tracker::UpdateTracker;
 
@@ -552,20 +558,218 @@ impl<'s> SegmentHolder {
             .collect()
     }
 
+    /// Temporarily proxify all segments and apply function `f` to it.
+    ///
+    /// Intended to smoothly accept writes while performing long-running read operations on each
+    /// segment, such as during snapshotting.
+    ///
+    /// This calls function `f` on all segments, but each segment is temporarily proxified while
+    /// the function is called. All segments are also unproxied again when the given function
+    /// returns.
+    ///
+    /// As part of this process, a new segment is created. All proxies direct their writes to this
+    /// segment. The segment is added to the collection if it has any operations, otherwise it is
+    /// deleted when all segments are unproxied again.
+    ///
+    /// It is recommended to provide collection parameters. The segment configuration will be
+    /// sourced from it.
+    pub fn proxy_all_segments_and_apply<F>(
+        segments: LockedSegmentHolder,
+        collection_path: &Path,
+        collection_params: Option<&CollectionParams>,
+        f: F,
+    ) -> OperationResult<()>
+    where
+        F: Fn(Arc<RwLock<dyn SegmentEntry>>) -> OperationResult<()>,
+    {
+        let segments_lock = segments.upgradable_read();
+
+        let config = match collection_params {
+            // Source temporary segment config from collection parameters
+            Some(collection_params) => {
+                SegmentConfig {
+                    vector_data: collection_params.into_base_vector_data().unwrap(),
+                    sparse_vector_data: collection_params.into_sparse_vector_data().unwrap(),
+                    payload_storage_type: if collection_params.on_disk_payload {
+                        PayloadStorageType::OnDisk
+                    } else {
+                        PayloadStorageType::InMemory
+                    },
+                }
+            }
+            // Source temporary segment config from random appendable segment
+            None => {
+                let appendable_segment = segments_lock
+                    .random_appendable_segment()
+                    .or_else(|| {
+                        segments_lock
+                            .non_appendable_segments()
+                            .first()
+                            .and_then(|id| segments_lock.get(*id))
+                            .cloned()
+                    })
+                    .expect("failed to get random appendable segment");
+                let config = appendable_segment.get().read().config().clone();
+                config
+            }
+        };
+
+        // Create temporary appendable segment to collect proxy writes
+        let temp_segment = || -> OperationResult<LockedSegment> {
+            let config = config.clone();
+            Ok(LockedSegment::new(build_segment(
+                collection_path,
+                &config,
+                false,
+            )?))
+        };
+
+        let tmp_segment = temp_segment()?;
+
+        let proxy_deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
+        let proxy_deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
+        let proxy_created_indexes = Arc::new(RwLock::new(HashMap::<
+            PayloadKeyType,
+            PayloadFieldSchema,
+        >::new()));
+
+        let segment_ids = {
+            // let segments_read = segments.read();
+            segments_lock
+                .segments
+                .keys()
+                .cloned()
+                .collect::<Vec<SegmentId>>()
+        };
+
+        let mut proxies = Vec::new();
+        for segment_id in &segment_ids {
+            let segment = segments_lock.segments.get(segment_id).unwrap();
+
+            let mut proxy = ProxySegment::new(
+                segment.clone(),
+                tmp_segment.clone(),
+                proxy_deleted_points.clone(),
+                proxy_created_indexes.clone(),
+                proxy_deleted_indexes.clone(),
+            );
+
+            // Wrapped segment is fresh, so it has no operations
+            // Operation with number 0 will be applied
+            proxy.replicate_field_indexes(0)?;
+            proxies.push(proxy);
+        }
+
+        // Save segment version once all payload indices have been converted
+        // If this ends up not being saved due to a crash, the segment will not be used
+        match &tmp_segment {
+            LockedSegment::Original(segment) => {
+                let segment_path = &segment.read().current_path;
+                SegmentVersion::save(segment_path)?;
+            }
+            LockedSegment::Proxy(_) => unreachable!(),
+        }
+
+        let proxy_ids: Vec<_> = {
+            // Exclusive lock for the segments operations.
+            let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
+            let mut proxy_ids = Vec::new();
+            for (mut proxy, idx) in proxies.into_iter().zip(segment_ids) {
+                // replicate_field_indexes for the second time,
+                // because optimized segments could have been changed.
+                // The probability is small, though,
+                // so we can afford this operation under the full collection write lock
+                let op_num = 0;
+                proxy.replicate_field_indexes(op_num)?; // Slow only in case the index is change in the gap between two calls
+                proxy_ids.push(write_segments.swap(proxy, &[idx]).0);
+            }
+            proxy_ids
+        };
+
+        {
+            let read_segments = segments.read();
+            for proxy_id in &proxy_ids {
+                let Some(proxy_segment) = read_segments.get(*proxy_id) else {
+                    log::warn!("Proxy segment to snapshot is not available anymore, this should not happen, ignoring");
+                    continue;
+                };
+
+                // Get segment to snapshot, wrapped proxy segment or regular one
+                let segment = match proxy_segment {
+                    LockedSegment::Proxy(proxy_segment) => {
+                        let wrapped_segment = proxy_segment.read().wrapped_segment.clone();
+                        wrapped_segment.get()
+                    }
+                    // All segments to snapshot should be proxy, warn if this is not the case
+                    LockedSegment::Original(segment) => {
+                        log::warn!("Reached non-proxy segment while snapshotting, this should not happen, ignoring");
+                        segment.clone()
+                    }
+                };
+
+                f(segment)?;
+            }
+        }
+
+        // Unproxy all segments
+        {
+            let mut write_segments = segments.write();
+            for proxy_id in proxy_ids {
+                let Some(proxy_segment) = write_segments.get(proxy_id) else {
+                    continue;
+                };
+
+                match proxy_segment {
+                    LockedSegment::Proxy(proxy_segment) => {
+                        let wrapped_segment = proxy_segment.read().wrapped_segment.clone();
+                        write_segments.swap(wrapped_segment, &[proxy_id]);
+                    }
+                    // If already unproxied, do nothing
+                    LockedSegment::Original(_) => continue,
+                }
+            }
+
+            // Finalize temporary segment we proxied writes to
+            // Append a temp segment to collection if it is not empty or there is no other appendable segment
+            let has_appendable_segments = write_segments.random_appendable_segment().is_some();
+            if tmp_segment.get().read().available_point_count() > 0 || !has_appendable_segments {
+                write_segments.add_locked(tmp_segment);
+
+                // Unlock collection for search and updates
+                drop(write_segments);
+            } else {
+                // Unlock collection for search and updates, then drop empty temporary segment
+                drop(write_segments);
+                tmp_segment.drop_data()?;
+            }
+        }
+
+        Ok(())
+    }
+
     /// Take a snapshot of all segments into `snapshot_dir_path`
     ///
-    /// Shortcuts at the first failing segment snapshot
+    /// It is recommended to provide collection parameters. This function internally creates a
+    /// temporary segment, which will source the configuration from it.
+    ///
+    /// Shortcuts at the first failing segment snapshot.
     pub fn snapshot_all_segments(
-        &self,
+        segments: LockedSegmentHolder,
+        collection_path: &Path,
+        collection_params: Option<&CollectionParams>,
         temp_dir: &Path,
         snapshot_dir_path: &Path,
     ) -> OperationResult<()> {
-        for segment in self.segments.values() {
-            let segment_lock = segment.get();
-            let read_segment = segment_lock.read();
-            read_segment.take_snapshot(temp_dir, snapshot_dir_path)?;
-        }
-        Ok(())
+        Self::proxy_all_segments_and_apply(
+            segments,
+            collection_path,
+            collection_params,
+            |segment| {
+                let read_segment = segment.read();
+                read_segment.take_snapshot(temp_dir, snapshot_dir_path)?;
+                Ok(())
+            },
+        )
     }
 
     pub fn report_optimizer_error<E: Into<CollectionError>>(&mut self, error: E) {
@@ -811,11 +1015,19 @@ mod tests {
         let sid2 = holder.add(segment2);
         assert_ne!(sid1, sid2);
 
+        let holder = Arc::new(RwLock::new(holder));
+
+        let collection_dir = Builder::new().prefix("collection_dir").tempdir().unwrap();
         let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
         let snapshot_dir = Builder::new().prefix("snapshot_dir").tempdir().unwrap();
-        holder
-            .snapshot_all_segments(temp_dir.path(), snapshot_dir.path())
-            .unwrap();
+        SegmentHolder::snapshot_all_segments(
+            holder,
+            collection_dir.path(),
+            None,
+            temp_dir.path(),
+            snapshot_dir.path(),
+        )
+        .unwrap();
 
         let archive_count = read_dir(&snapshot_dir).unwrap().count();
         // one archive produced per concrete segment in the SegmentHolder
