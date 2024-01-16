@@ -610,8 +610,7 @@ impl<'s> SegmentHolder {
                             .cloned()
                     })
                     .expect("failed to get random appendable segment");
-                let config = appendable_segment.get().read().config().clone();
-                config
+                appendable_segment.get().read().config().clone()
             }
         };
 
@@ -721,8 +720,13 @@ impl<'s> SegmentHolder {
                 };
 
                 match proxy_segment {
+                    // Propagate proxied changes to wrapped segment, take it out and swap with proxy
                     LockedSegment::Proxy(proxy_segment) => {
-                        let wrapped_segment = proxy_segment.read().wrapped_segment.clone();
+                        let wrapped_segment = {
+                            let proxy_segment = proxy_segment.read();
+                            proxy_segment.propagate_to_writeable()?;
+                            proxy_segment.wrapped_segment.clone()
+                        };
                         write_segments.swap(wrapped_segment, &[proxy_id]);
                     }
                     // If already unproxied, do nothing

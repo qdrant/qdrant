@@ -153,6 +153,54 @@ impl ProxySegment {
             }
         }
     }
+
+    /// Propagate changes in this proxy to the wrapped segment
+    ///
+    /// This propagates:
+    /// - delete (or moved) points
+    /// - deleted payload indexes
+    /// - created payload indexes
+    ///
+    /// This is required if making both the wrapped segment and the writable segment available in a
+    /// shard holder at the same time. If the wrapped segment is thrown away, then this is not
+    /// required.
+    pub(super) fn propagate_to_writeable(&self) -> OperationResult<()> {
+        log::trace!("Propagating changes from proxy segment into wrapped segment");
+
+        let write_segment = self.write_segment.get();
+        let mut write_segment = write_segment.write();
+
+        let op_num = 0;
+
+        // Propagate deleted points
+        {
+            let mut deleted_points = self.deleted_points.write();
+            for point_id in deleted_points.iter() {
+                write_segment.delete_point(op_num, *point_id)?;
+            }
+            deleted_points.clear();
+        }
+
+        // Propagate deleted indexes
+        {
+            let mut deleted_indexes = self.deleted_indexes.write();
+            for key in deleted_indexes.iter() {
+                write_segment.delete_field_index(op_num, key)?;
+            }
+            deleted_indexes.clear();
+        }
+
+        // Propagate created indexes
+        {
+            let mut created_indexes = self.created_indexes.write();
+            for (key, field_schema) in created_indexes.iter() {
+                write_segment.create_field_index(op_num, key, Some(field_schema))?;
+            }
+            created_indexes.clear();
+        }
+
+        Ok(())
+    }
 }
 
 impl SegmentEntry for ProxySegment {
