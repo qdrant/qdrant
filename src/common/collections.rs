@@ -133,7 +133,7 @@ pub async fn do_create_snapshot(
         Ok(snapshot.await??)
     } else {
         Ok(SnapshotDescription {
-            name: "".to_string(),
+            name: String::new(),
             creation_time: None,
             size: 0,
             checksum: None,
