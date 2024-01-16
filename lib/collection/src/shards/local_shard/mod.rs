@@ -663,8 +663,6 @@ impl LocalShard {
         let temp_path = temp_path.to_owned();
 
         tokio::task::spawn_blocking(move || {
-            let segments_read = segments.read();
-
             // Do not change segments while snapshotting
             SegmentHolder::snapshot_all_segments(
                 segments.clone(),
