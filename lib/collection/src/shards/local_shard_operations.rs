@@ -17,7 +17,7 @@ use crate::operations::types::{
     CountRequestInternal, CountResult, PointRequestInternal, QueryEnum, Record, UpdateResult,
     UpdateStatus,
 };
-use crate::operations::CollectionUpdateOperations;
+use crate::operations::OperationWithClockTag;
 use crate::optimizers_builder::DEFAULT_INDEXING_THRESHOLD_KB;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
@@ -113,7 +113,7 @@ impl ShardOperation for LocalShard {
     /// This method is cancel safe.
     async fn update(
         &self,
-        operation: CollectionUpdateOperations,
+        operation: OperationWithClockTag,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
         // `LocalShard::update` only has a single cancel safe `await`, WAL operations are blocking,
@@ -135,7 +135,7 @@ impl ShardOperation for LocalShard {
             let operation_id = wal_lock.write(&operation)?;
             channel_permit.send(UpdateSignal::Operation(OperationData {
                 op_num: operation_id,
-                operation,
+                operation: operation.operation,
                 sender: callback_sender,
                 wait,
             }));
@@ -147,11 +147,13 @@ impl ShardOperation for LocalShard {
             Ok(UpdateResult {
                 operation_id: Some(operation_id),
                 status: UpdateStatus::Completed,
+                clock_tag: None, // TODO: Add clock tag!
             })
         } else {
             Ok(UpdateResult {
                 operation_id: Some(operation_id),
                 status: UpdateStatus::Acknowledged,
+                clock_tag: None, // TODO: Add clock tag!
             })
         }
     }

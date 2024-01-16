@@ -7,7 +7,7 @@ use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::point_ops::WriteOrdering;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::*;
-use collection::operations::CollectionUpdateOperations;
+use collection::operations::{CollectionUpdateOperations, OperationWithClockTag};
 use collection::{discovery, recommendations};
 use futures::stream::FuturesUnordered;
 use futures::TryStreamExt as _;
@@ -284,7 +284,7 @@ impl TableOfContent {
     pub async fn update(
         &self,
         collection_name: &str,
-        operation: CollectionUpdateOperations,
+        operation: OperationWithClockTag,
         wait: bool,
         ordering: WriteOrdering,
         shard_selector: ShardSelectorInternal,
@@ -302,18 +302,21 @@ impl TableOfContent {
         //  │ Shard: None
         //  │ Ordering: Strong
         //  │ ShardKey: Some("cats")
+        //  │ ClockTag: None
         // ┌▼──────────────────┐
         // │ First Node        │ <- update_from_client
         // └┬──────────────────┘
         //  │ Shard: Some(N)
         //  │ Ordering: Strong
         //  │ ShardKey: None
+        //  │ ClockTag: None
         // ┌▼──────────────────┐
         // │ Leader node       │ <- update_from_peer
         // └┬──────────────────┘
         //  │ Shard: Some(N)
         //  │ Ordering: None(Weak)
         //  │ ShardKey: None
+        //  │ ClockTag: { peer_id: IdOf(Leader node), clock_id: 1, clock_tick: 123 }
         // ┌▼──────────────────┐
         // │ Updating node     │ <- update_from_peer
         // └───────────────────┘
@@ -331,46 +334,56 @@ impl TableOfContent {
             None => None,
         };
 
-        if operation.is_write_operation() {
+        if operation.operation.is_write_operation() {
             self.check_write_lock()?;
         }
+
+        // TODO: `debug_assert(operation.clock_tag.is_none())` for `_update_shard_keys`/`update_from_client`!?
 
         let res = match shard_selector {
             ShardSelectorInternal::Empty => {
                 collection
-                    .update_from_client(operation, wait, ordering, None)
+                    .update_from_client(operation.operation, wait, ordering, None)
                     .await?
             }
-
             ShardSelectorInternal::All => {
                 let shard_keys = collection.get_shard_keys().await;
                 if shard_keys.is_empty() {
                     collection
-                        .update_from_client(operation, wait, ordering, None)
+                        .update_from_client(operation.operation, wait, ordering, None)
                         .await?
                 } else {
-                    Self::_update_shard_keys(&collection, shard_keys, operation, wait, ordering)
-                        .await?
+                    Self::_update_shard_keys(
+                        &collection,
+                        shard_keys,
+                        operation.operation,
+                        wait,
+                        ordering,
+                    )
+                    .await?
                 }
             }
-
             ShardSelectorInternal::ShardKey(shard_key) => {
                 collection
-                    .update_from_client(operation, wait, ordering, Some(shard_key))
+                    .update_from_client(operation.operation, wait, ordering, Some(shard_key))
                     .await?
             }
-
             ShardSelectorInternal::ShardKeys(shard_keys) => {
-                Self::_update_shard_keys(&collection, shard_keys, operation, wait, ordering).await?
+                Self::_update_shard_keys(
+                    &collection,
+                    shard_keys,
+                    operation.operation,
+                    wait,
+                    ordering,
+                )
+                .await?
             }
-
             ShardSelectorInternal::ShardId(shard_selection) => {
                 collection
                     .update_from_peer(operation, shard_selection, wait, ordering)
                     .await?
             }
         };
-
         Ok(res)
     }
 }

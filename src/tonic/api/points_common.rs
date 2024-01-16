@@ -8,12 +8,12 @@ use api::grpc::qdrant::{
     points_update_operation, BatchResult, ClearPayloadPoints, CoreSearchPoints, CountPoints,
     CountResponse, CreateFieldIndexCollection, DeleteFieldIndexCollection, DeletePayloadPoints,
     DeletePointVectors, DeletePoints, DiscoverBatchResponse, DiscoverPoints, DiscoverResponse,
-    FieldType, GetPoints, GetResponse, PayloadIndexParams, PointsOperationResponse, PointsSelector,
-    ReadConsistency as ReadConsistencyGrpc, RecommendBatchResponse, RecommendGroupsResponse,
-    RecommendPointGroups, RecommendPoints, RecommendResponse, ScrollPoints, ScrollResponse,
-    SearchBatchResponse, SearchGroupsResponse, SearchPointGroups, SearchPoints, SearchResponse,
-    SetPayloadPoints, SyncPoints, UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors,
-    UpsertPoints,
+    FieldType, GetPoints, GetResponse, PayloadIndexParams, PointsOperationResponseInternal,
+    PointsSelector, ReadConsistency as ReadConsistencyGrpc, RecommendBatchResponse,
+    RecommendGroupsResponse, RecommendPointGroups, RecommendPoints, RecommendResponse,
+    ScrollPoints, ScrollResponse, SearchBatchResponse, SearchGroupsResponse, SearchPointGroups,
+    SearchPoints, SearchResponse, SetPayloadPoints, SyncPoints, UpdateBatchPoints,
+    UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
 };
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::conversions::{
@@ -30,7 +30,7 @@ use collection::operations::types::{
     QueryEnum, RecommendExample, ScrollRequestInternal,
 };
 use collection::operations::vector_ops::{DeleteVectors, PointVectors, UpdateVectors};
-use collection::operations::CollectionUpdateOperations;
+use collection::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
 use collection::shards::shard::ShardId;
 use segment::types::{
     ExtendedPointId, Filter, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
@@ -62,11 +62,11 @@ fn extract_points_selector(
     Ok((points, filter))
 }
 
-pub fn points_operation_response(
+pub fn points_operation_response_internal(
     timing: Instant,
     update_result: collection::operations::types::UpdateResult,
-) -> PointsOperationResponse {
-    PointsOperationResponse {
+) -> PointsOperationResponseInternal {
+    PointsOperationResponseInternal {
         result: Some(update_result.into()),
         time: timing.elapsed().as_secs_f64(),
     }
@@ -93,8 +93,9 @@ pub(crate) fn convert_shard_selector_for_read(
 pub async fn upsert(
     toc: Arc<TableOfContent>,
     upsert_points: UpsertPoints,
+    clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
-) -> Result<Response<PointsOperationResponse>, Status> {
+) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let UpsertPoints {
         collection_name,
         wait,
@@ -115,6 +116,7 @@ pub async fn upsert(
         toc,
         collection_name,
         operation,
+        clock_tag,
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
@@ -122,15 +124,16 @@ pub async fn upsert(
     .await
     .map_err(error_to_status)?;
 
-    let response = points_operation_response(timing, result);
+    let response = points_operation_response_internal(timing, result);
     Ok(Response::new(response))
 }
 
 pub async fn sync(
     toc: Arc<TableOfContent>,
     sync_points: SyncPoints,
+    clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
-) -> Result<Response<PointsOperationResponse>, Status> {
+) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let SyncPoints {
         collection_name,
         wait,
@@ -165,7 +168,7 @@ pub async fn sync(
     let result = toc
         .update(
             &collection_name,
-            collection_operation,
+            OperationWithClockTag::new(collection_operation, clock_tag),
             wait.unwrap_or(false),
             write_ordering_from_proto(ordering)?,
             shard_selector,
@@ -173,15 +176,16 @@ pub async fn sync(
         .await
         .map_err(error_to_status)?;
 
-    let response = points_operation_response(timing, result);
+    let response = points_operation_response_internal(timing, result);
     Ok(Response::new(response))
 }
 
 pub async fn delete(
     toc: Arc<TableOfContent>,
     delete_points: DeletePoints,
+    clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
-) -> Result<Response<PointsOperationResponse>, Status> {
+) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let DeletePoints {
         collection_name,
         wait,
@@ -200,6 +204,7 @@ pub async fn delete(
         toc,
         collection_name,
         points_selector,
+        clock_tag,
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
@@ -207,15 +212,16 @@ pub async fn delete(
     .await
     .map_err(error_to_status)?;
 
-    let response = points_operation_response(timing, result);
+    let response = points_operation_response_internal(timing, result);
     Ok(Response::new(response))
 }
 
 pub async fn update_vectors(
     toc: Arc<TableOfContent>,
     update_point_vectors: UpdatePointVectors,
+    clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
-) -> Result<Response<PointsOperationResponse>, Status> {
+) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let UpdatePointVectors {
         collection_name,
         wait,
@@ -248,6 +254,7 @@ pub async fn update_vectors(
         toc,
         collection_name,
         operation,
+        clock_tag,
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
@@ -255,15 +262,16 @@ pub async fn update_vectors(
     .await
     .map_err(error_to_status)?;
 
-    let response = points_operation_response(timing, result);
+    let response = points_operation_response_internal(timing, result);
     Ok(Response::new(response))
 }
 
 pub async fn delete_vectors(
     toc: Arc<TableOfContent>,
     delete_point_vectors: DeletePointVectors,
+    clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
-) -> Result<Response<PointsOperationResponse>, Status> {
+) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let DeletePointVectors {
         collection_name,
         wait,
@@ -291,6 +299,7 @@ pub async fn delete_vectors(
         toc,
         collection_name,
         operation,
+        clock_tag,
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
@@ -298,15 +307,16 @@ pub async fn delete_vectors(
     .await
     .map_err(error_to_status)?;
 
-    let response = points_operation_response(timing, result);
+    let response = points_operation_response_internal(timing, result);
     Ok(Response::new(response))
 }
 
 pub async fn set_payload(
     toc: Arc<TableOfContent>,
     set_payload_points: SetPayloadPoints,
+    clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
-) -> Result<Response<PointsOperationResponse>, Status> {
+) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let SetPayloadPoints {
         collection_name,
         wait,
@@ -329,6 +339,7 @@ pub async fn set_payload(
         toc,
         collection_name,
         operation,
+        clock_tag,
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
@@ -336,15 +347,16 @@ pub async fn set_payload(
     .await
     .map_err(error_to_status)?;
 
-    let response = points_operation_response(timing, result);
+    let response = points_operation_response_internal(timing, result);
     Ok(Response::new(response))
 }
 
 pub async fn overwrite_payload(
     toc: Arc<TableOfContent>,
     set_payload_points: SetPayloadPoints,
+    clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
-) -> Result<Response<PointsOperationResponse>, Status> {
+) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let SetPayloadPoints {
         collection_name,
         wait,
@@ -367,6 +379,7 @@ pub async fn overwrite_payload(
         toc,
         collection_name,
         operation,
+        clock_tag,
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
@@ -374,15 +387,16 @@ pub async fn overwrite_payload(
     .await
     .map_err(error_to_status)?;
 
-    let response = points_operation_response(timing, result);
+    let response = points_operation_response_internal(timing, result);
     Ok(Response::new(response))
 }
 
 pub async fn delete_payload(
     toc: Arc<TableOfContent>,
     delete_payload_points: DeletePayloadPoints,
+    clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
-) -> Result<Response<PointsOperationResponse>, Status> {
+) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let DeletePayloadPoints {
         collection_name,
         wait,
@@ -405,6 +419,7 @@ pub async fn delete_payload(
         toc,
         collection_name,
         operation,
+        clock_tag,
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
@@ -412,15 +427,16 @@ pub async fn delete_payload(
     .await
     .map_err(error_to_status)?;
 
-    let response = points_operation_response(timing, result);
+    let response = points_operation_response_internal(timing, result);
     Ok(Response::new(response))
 }
 
 pub async fn clear_payload(
     toc: Arc<TableOfContent>,
     clear_payload_points: ClearPayloadPoints,
+    clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
-) -> Result<Response<PointsOperationResponse>, Status> {
+) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let ClearPayloadPoints {
         collection_name,
         wait,
@@ -439,6 +455,7 @@ pub async fn clear_payload(
         toc,
         collection_name,
         points_selector,
+        clock_tag,
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
@@ -446,13 +463,14 @@ pub async fn clear_payload(
     .await
     .map_err(error_to_status)?;
 
-    let response = points_operation_response(timing, result);
+    let response = points_operation_response_internal(timing, result);
     Ok(Response::new(response))
 }
 
 pub async fn update_batch(
     toc: Arc<TableOfContent>,
     update_batch_points: UpdateBatchPoints,
+    clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
 ) -> Result<Response<UpdateBatchResponse>, Status> {
     let UpdateBatchPoints {
@@ -484,6 +502,7 @@ pub async fn update_batch(
                         ordering,
                         shard_key_selector,
                     },
+                    clock_tag,
                     shard_selection,
                 )
                 .await
@@ -498,6 +517,7 @@ pub async fn update_batch(
                         ordering,
                         shard_key_selector: None,
                     },
+                    clock_tag,
                     shard_selection,
                 )
                 .await
@@ -519,6 +539,7 @@ pub async fn update_batch(
                         ordering,
                         shard_key_selector,
                     },
+                    clock_tag,
                     shard_selection,
                 )
                 .await
@@ -540,6 +561,7 @@ pub async fn update_batch(
                         ordering,
                         shard_key_selector,
                     },
+                    clock_tag,
                     shard_selection,
                 )
                 .await
@@ -561,6 +583,7 @@ pub async fn update_batch(
                         ordering,
                         shard_key_selector,
                     },
+                    clock_tag,
                     shard_selection,
                 )
                 .await
@@ -578,6 +601,7 @@ pub async fn update_batch(
                         ordering,
                         shard_key_selector,
                     },
+                    clock_tag,
                     shard_selection,
                 )
                 .await
@@ -597,6 +621,7 @@ pub async fn update_batch(
                         ordering,
                         shard_key_selector,
                     },
+                    clock_tag,
                     shard_selection,
                 )
                 .await
@@ -618,6 +643,7 @@ pub async fn update_batch(
                         ordering,
                         shard_key_selector,
                     },
+                    clock_tag,
                     shard_selection,
                 )
                 .await
@@ -632,6 +658,7 @@ pub async fn update_batch(
                         ordering,
                         shard_key_selector: None,
                     },
+                    clock_tag,
                     shard_selection,
                 )
                 .await
@@ -649,6 +676,7 @@ pub async fn update_batch(
                         ordering,
                         shard_key_selector,
                     },
+                    clock_tag,
                     shard_selection,
                 )
                 .await
@@ -659,7 +687,7 @@ pub async fn update_batch(
     Ok(Response::new(UpdateBatchResponse {
         result: results
             .into_iter()
-            .map(|response| response.into_inner().result.unwrap())
+            .map(|response| response.into_inner().result.unwrap().into())
             .collect(),
         time: timing.elapsed().as_secs_f64(),
     }))
@@ -723,8 +751,9 @@ fn convert_field_type(
 pub async fn create_field_index(
     dispatcher: Arc<Dispatcher>,
     create_field_index_collection: CreateFieldIndexCollection,
+    clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
-) -> Result<Response<PointsOperationResponse>, Status> {
+) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let CreateFieldIndexCollection {
         collection_name,
         wait,
@@ -746,6 +775,7 @@ pub async fn create_field_index(
         dispatcher,
         collection_name,
         operation,
+        clock_tag,
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
@@ -753,15 +783,16 @@ pub async fn create_field_index(
     .await
     .map_err(error_to_status)?;
 
-    let response = points_operation_response(timing, result);
+    let response = points_operation_response_internal(timing, result);
     Ok(Response::new(response))
 }
 
 pub async fn create_field_index_internal(
     toc: Arc<TableOfContent>,
     create_field_index_collection: CreateFieldIndexCollection,
+    clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
-) -> Result<Response<PointsOperationResponse>, Status> {
+) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let CreateFieldIndexCollection {
         collection_name,
         wait,
@@ -779,6 +810,7 @@ pub async fn create_field_index_internal(
         collection_name,
         field_name,
         field_schema,
+        clock_tag,
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
@@ -786,15 +818,16 @@ pub async fn create_field_index_internal(
     .await
     .map_err(error_to_status)?;
 
-    let response = points_operation_response(timing, result);
+    let response = points_operation_response_internal(timing, result);
     Ok(Response::new(response))
 }
 
 pub async fn delete_field_index(
     dispatcher: Arc<Dispatcher>,
     delete_field_index_collection: DeleteFieldIndexCollection,
+    clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
-) -> Result<Response<PointsOperationResponse>, Status> {
+) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let DeleteFieldIndexCollection {
         collection_name,
         wait,
@@ -807,6 +840,7 @@ pub async fn delete_field_index(
         dispatcher,
         collection_name,
         field_name,
+        clock_tag,
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
@@ -814,15 +848,16 @@ pub async fn delete_field_index(
     .await
     .map_err(error_to_status)?;
 
-    let response = points_operation_response(timing, result);
+    let response = points_operation_response_internal(timing, result);
     Ok(Response::new(response))
 }
 
 pub async fn delete_field_index_internal(
     toc: Arc<TableOfContent>,
     delete_field_index_collection: DeleteFieldIndexCollection,
+    clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
-) -> Result<Response<PointsOperationResponse>, Status> {
+) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let DeleteFieldIndexCollection {
         collection_name,
         wait,
@@ -835,6 +870,7 @@ pub async fn delete_field_index_internal(
         toc,
         collection_name,
         field_name,
+        clock_tag,
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
@@ -842,7 +878,7 @@ pub async fn delete_field_index_internal(
     .await
     .map_err(error_to_status)?;
 
-    let response = points_operation_response(timing, result);
+    let response = points_operation_response_internal(timing, result);
     Ok(Response::new(response))
 }
 

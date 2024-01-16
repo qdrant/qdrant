@@ -39,7 +39,7 @@ use crate::operations::types::{
     check_sparse_compatible_with_segment_config, CollectionError, CollectionInfoInternal,
     CollectionResult, CollectionStatus, OptimizersStatus,
 };
-use crate::operations::CollectionUpdateOperations;
+use crate::operations::OperationWithClockTag;
 use crate::optimizers_builder::{build_optimizers, clear_temp_segments};
 use crate::shards::shard::ShardId;
 use crate::shards::shard_config::{ShardConfig, SHARD_CONFIG_FILE};
@@ -48,7 +48,7 @@ use crate::shards::CollectionId;
 use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
 
-pub type LockedWal = Arc<ParkingMutex<SerdeWal<CollectionUpdateOperations>>>;
+pub type LockedWal = Arc<ParkingMutex<SerdeWal<OperationWithClockTag>>>;
 
 /// If rendering WAL load progression in basic text form, report progression every 60 seconds.
 const WAL_LOAD_REPORT_EVERY: Duration = Duration::from_secs(60);
@@ -116,7 +116,7 @@ impl LocalShard {
         segment_holder: SegmentHolder,
         collection_config: Arc<TokioRwLock<CollectionConfig>>,
         shared_storage_config: Arc<SharedStorageConfig>,
-        wal: SerdeWal<CollectionUpdateOperations>,
+        wal: SerdeWal<OperationWithClockTag>,
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         optimizer_cpu_budget: CpuBudget,
         shard_path: &Path,
@@ -182,7 +182,7 @@ impl LocalShard {
         let segments_path = Self::segments_path(shard_path);
         let mut segment_holder = SegmentHolder::default();
 
-        let wal: SerdeWal<CollectionUpdateOperations> = SerdeWal::new(
+        let wal: SerdeWal<OperationWithClockTag> = SerdeWal::new(
             wal_path.to_str().unwrap(),
             (&collection_config_read.wal_config).into(),
         )
@@ -415,7 +415,7 @@ impl LocalShard {
             segment_holder.add(segment);
         }
 
-        let wal: SerdeWal<CollectionUpdateOperations> =
+        let wal: SerdeWal<OperationWithClockTag> =
             SerdeWal::new(wal_path.to_str().unwrap(), (&config.wal_config).into())?;
 
         let optimizers = build_optimizers(
@@ -491,7 +491,7 @@ impl LocalShard {
 
         for (op_num, update) in wal.read_all() {
             // Propagate `CollectionError::ServiceError`, but skip other error types.
-            match &CollectionUpdater::update(segments, op_num, update) {
+            match &CollectionUpdater::update(segments, op_num, update.operation) {
                 Err(err @ CollectionError::ServiceError { error, backtrace }) => {
                     let path = self.path.display();
 

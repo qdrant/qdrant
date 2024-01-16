@@ -11,7 +11,7 @@ use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::*;
-use crate::operations::CollectionUpdateOperations;
+use crate::operations::{CollectionUpdateOperations, OperationWithClockTag};
 use crate::shards::shard::ShardId;
 
 impl Collection {
@@ -41,7 +41,13 @@ impl Collection {
 
             let local_updates: FuturesUnordered<_> = shard_holder
                 .all_shards()
-                .map(|shard| shard.update_local(operation.clone(), wait))
+                .map(|shard| {
+                    // The operation *can't* have a clock tag!
+                    //
+                    // We update *all* shards with a single operation, but each shard has it's own clock,
+                    // so it's *impossible* to assign any single clock tag to this operation.
+                    shard.update_local(OperationWithClockTag::from(operation.clone()), wait)
+                })
                 .collect();
 
             let results: Vec<_> = local_updates.collect().await;
@@ -72,7 +78,7 @@ impl Collection {
     /// This method is cancel safe.
     pub async fn update_from_peer(
         &self,
-        operation: CollectionUpdateOperations,
+        operation: OperationWithClockTag,
         shard_selection: ShardId,
         wait: bool,
         ordering: WriteOrdering,
@@ -89,10 +95,16 @@ impl Collection {
 
             match ordering {
                 WriteOrdering::Weak => shard.update_local(operation, wait).await,
-                WriteOrdering::Medium | WriteOrdering::Strong => shard
-                    .update_with_consistency(operation, wait, ordering)
-                    .await
-                    .map(Some),
+                WriteOrdering::Medium | WriteOrdering::Strong => {
+                    if operation.clock_tag.is_some() {
+                        log::error!("TODO"); // TODO!
+                    }
+
+                    shard
+                        .update_with_consistency(operation.operation, wait, ordering)
+                        .await
+                        .map(Some)
+                }
             }
         })
         .await??;

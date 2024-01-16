@@ -413,9 +413,8 @@ impl Validate for NamedVectorStruct {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
+#[serde(untagged, rename_all = "snake_case")]
 pub enum BatchVectorStruct {
     Single(Vec<DenseVector>),
     Multi(HashMap<String, Vec<Vector>>),

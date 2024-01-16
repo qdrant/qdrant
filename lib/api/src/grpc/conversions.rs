@@ -26,10 +26,11 @@ use crate::grpc::qdrant::{
     HasIdCondition, HealthCheckReply, HnswConfigDiff, IntegerIndexParams, IsEmptyCondition,
     IsNullCondition, ListCollectionsResponse, ListValue, Match, NamedVectors, NestedCondition,
     PayloadExcludeSelector, PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo,
-    PayloadSchemaType, PointId, ProductQuantization, QuantizationConfig, QuantizationSearchParams,
-    QuantizationType, Range, RepeatedIntegers, RepeatedStrings, ScalarQuantization, ScoredPoint,
-    SearchParams, ShardKey, Struct, TextIndexParams, TokenizerType, Value, ValuesCount, Vector,
-    Vectors, VectorsSelector, WithPayloadSelector, WithVectorsSelector,
+    PayloadSchemaType, PointId, PointsOperationResponse, PointsOperationResponseInternal,
+    ProductQuantization, QuantizationConfig, QuantizationSearchParams, QuantizationType, Range,
+    RepeatedIntegers, RepeatedStrings, ScalarQuantization, ScoredPoint, SearchParams, ShardKey,
+    Struct, TextIndexParams, TokenizerType, UpdateResult, UpdateResultInternal, Value, ValuesCount,
+    Vector, Vectors, VectorsSelector, WithPayloadSelector, WithVectorsSelector,
 };
 
 pub fn payload_to_proto(payload: segment::types::Payload) -> HashMap<String, Value> {
@@ -1315,4 +1316,43 @@ pub fn into_named_vector_struct(
             }
         }
     })
+}
+
+impl From<PointsOperationResponseInternal> for PointsOperationResponse {
+    fn from(resp: PointsOperationResponseInternal) -> Self {
+        Self {
+            result: resp.result.map(Into::into),
+            time: resp.time,
+        }
+    }
+}
+
+// TODO: Make it explicit `from_operations_response` method instead of `impl From<PointsOperationResponse>`?
+impl From<PointsOperationResponse> for PointsOperationResponseInternal {
+    fn from(resp: PointsOperationResponse) -> Self {
+        Self {
+            result: resp.result.map(Into::into),
+            time: resp.time,
+        }
+    }
+}
+
+impl From<UpdateResultInternal> for UpdateResult {
+    fn from(res: UpdateResultInternal) -> Self {
+        Self {
+            operation_id: res.operation_id,
+            status: res.status,
+        }
+    }
+}
+
+// TODO: Make it explicit `from_update_result` method instead of `impl From<UpdateResult>`?
+impl From<UpdateResult> for UpdateResultInternal {
+    fn from(res: UpdateResult) -> Self {
+        Self {
+            operation_id: res.operation_id,
+            status: res.status,
+            clock_tag: None,
+        }
+    }
 }

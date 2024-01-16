@@ -48,6 +48,7 @@ async fn upsert_points(
         collection.into_inner().name,
         operation,
         None,
+        None,
         wait,
         ordering,
     )
@@ -71,6 +72,7 @@ async fn delete_points(
         toc.into_inner(),
         collection.into_inner().name,
         operation,
+        None,
         None,
         wait,
         ordering,
@@ -96,6 +98,7 @@ async fn update_vectors(
         collection.into_inner().name,
         operation,
         None,
+        None,
         wait,
         ordering,
     )
@@ -119,6 +122,7 @@ async fn delete_vectors(
         toc.into_inner(),
         collection.into_inner().name,
         operation,
+        None,
         None,
         wait,
         ordering,
@@ -144,6 +148,7 @@ async fn set_payload(
         collection.into_inner().name,
         operation,
         None,
+        None,
         wait,
         ordering,
     )
@@ -167,6 +172,7 @@ async fn overwrite_payload(
         toc.into_inner(),
         collection.into_inner().name,
         operation,
+        None,
         None,
         wait,
         ordering,
@@ -192,6 +198,7 @@ async fn delete_payload(
         collection.into_inner().name,
         operation,
         None,
+        None,
         wait,
         ordering,
     )
@@ -215,6 +222,7 @@ async fn clear_payload(
         toc.into_inner(),
         collection.into_inner().name,
         operation,
+        None,
         None,
         wait,
         ordering,
@@ -240,6 +248,7 @@ async fn update_batch(
         collection.into_inner().name,
         operations.operations,
         None,
+        None,
         wait,
         ordering,
     )
@@ -263,6 +272,7 @@ async fn create_field_index(
         collection.into_inner().name,
         operation,
         None,
+        None,
         wait,
         ordering,
     )
@@ -285,6 +295,7 @@ async fn delete_field_index(
         dispatcher.into_inner(),
         collection.into_inner().name,
         field.name.clone(),
+        None,
         None,
         wait,
         ordering,
