@@ -170,8 +170,6 @@ impl ProxySegment {
     /// shard holder at the same time. If the wrapped segment is thrown away, then this is not
     /// required.
     pub(super) fn propagate_to_writeable(&self) -> OperationResult<()> {
-        log::trace!("Propagating changes from proxy segment into wrapped segment");
-
         let write_segment = self.write_segment.get();
         let mut write_segment = write_segment.write();
 
