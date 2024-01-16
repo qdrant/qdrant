@@ -15,10 +15,7 @@ use segment::common::version::StorageVersion;
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::build_segment;
-use segment::types::{
-    PayloadFieldSchema, PayloadKeyType, PayloadStorageType, PointIdType, SegmentConfig,
-    SeqNumberType,
-};
+use segment::types::{PayloadStorageType, PointIdType, SegmentConfig, SeqNumberType};
 
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
 use crate::config::CollectionParams;
@@ -582,25 +579,72 @@ impl<'s> SegmentHolder {
     where
         F: Fn(Arc<RwLock<dyn SegmentEntry>>) -> OperationResult<()>,
     {
+        // Proxy all segments
+        log::trace!("Proxying all shard segments to apply function");
+        let (proxy_ids, tmp_segment) =
+            Self::proxy_all_segments(segments.clone(), collection_path, collection_params)?;
+
+        // Apply provided function
+        log::trace!("Applying function on all proxied shard segments");
+        {
+            let read_segments = segments.read();
+            for proxy_id in &proxy_ids {
+                let Some(proxy_segment) = read_segments.get(*proxy_id) else {
+                    log::error!("Applying function on all proxied shard segments, but a proxy segment is missing: {proxy_id}");
+                    continue;
+                };
+
+                // Get segment to snapshot, wrapped proxy segment or regular one
+                let segment = match proxy_segment {
+                    LockedSegment::Proxy(proxy_segment) => {
+                        let wrapped_segment = proxy_segment.read().wrapped_segment.clone();
+                        wrapped_segment.get()
+                    }
+                    // All segments to snapshot should be proxy, warn if this is not the case
+                    LockedSegment::Original(segment) => {
+                        log::warn!("Reached non-proxy segment while applying function to proxies, this should not happen, ignoring");
+                        segment.clone()
+                    }
+                };
+
+                // Call provided function on segment
+                f(segment)?;
+            }
+        }
+
+        // Unproxy all segments
+        log::trace!("Unproxying all shard segments after function is applied");
+        Self::unproxy_all_segments(segments, proxy_ids, tmp_segment)?;
+
+        Ok(())
+    }
+
+    fn proxy_all_segments(
+        segments: LockedSegmentHolder,
+        collection_path: &Path,
+        collection_params: Option<&CollectionParams>,
+    ) -> OperationResult<(Vec<SegmentId>, LockedSegment)> {
         let segments_lock = segments.upgradable_read();
 
         // Source config for temporary segment which we target all writes to
         let config = match collection_params {
             // Base config on collection params
-            Some(collection_params) => {
-                SegmentConfig {
-                    vector_data: collection_params.into_base_vector_data().unwrap(),
-                    sparse_vector_data: collection_params.into_sparse_vector_data().unwrap(),
-                    payload_storage_type: if collection_params.on_disk_payload {
-                        PayloadStorageType::OnDisk
-                    } else {
-                        PayloadStorageType::InMemory
-                    },
-                }
-            }
+            Some(collection_params) => SegmentConfig {
+                vector_data: collection_params
+                    .into_base_vector_data()
+                    .map_err(|err| OperationError::service_error(format!("Failed to source dense vector configuration from collection parameters: {err:?}")))?,
+                sparse_vector_data: collection_params
+                    .into_sparse_vector_data()
+                    .map_err(|err| OperationError::service_error(format!("Failed to source sparse vector configuration from collection parameters: {err:?}")))?,
+                payload_storage_type: if collection_params.on_disk_payload {
+                    PayloadStorageType::OnDisk
+                } else {
+                    PayloadStorageType::InMemory
+                },
+            },
             // Base config on existing appendable or non-appendable segment
             None => {
-                let appendable_segment = segments_lock
+                segments_lock
                     .random_appendable_segment()
                     .or_else(|| {
                         segments_lock
@@ -609,29 +653,20 @@ impl<'s> SegmentHolder {
                             .and_then(|id| segments_lock.get(*id))
                             .cloned()
                     })
-                    .expect("failed to get random appendable segment");
-                appendable_segment.get().read().config().clone()
+                    .ok_or_else(|| OperationError::service_error("No existing segment to source temporary segment configuration from"))?
+                    .get()
+                    .read()
+                    .config()
+                    .clone()
             }
         };
 
-        // Create temporary appendable segment to collect proxy writes
-        let temp_segment = || -> OperationResult<LockedSegment> {
-            let config = config.clone();
-            Ok(LockedSegment::new(build_segment(
-                collection_path,
-                &config,
-                false,
-            )?))
-        };
+        // Create temporary appendable segment to direct all proxy writes into
+        let tmp_segment = LockedSegment::new(build_segment(collection_path, &config, false)?);
 
-        let tmp_segment = temp_segment()?;
-
-        let proxy_deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
-        let proxy_deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
-        let proxy_created_indexes = Arc::new(RwLock::new(HashMap::<
-            PayloadKeyType,
-            PayloadFieldSchema,
-        >::new()));
+        let proxy_deleted_points = Arc::new(RwLock::default());
+        let proxy_deleted_indexes = Arc::new(RwLock::default());
+        let proxy_created_indexes = Arc::new(RwLock::default());
 
         // List all segments we want to snapshot
         let segment_ids = segments_lock
@@ -683,70 +718,51 @@ impl<'s> SegmentHolder {
                 proxy_ids.push(write_segments.swap(proxy, &[idx]).0);
             }
             proxy_ids
+
         };
 
-        {
-            let read_segments = segments.read();
-            for proxy_id in &proxy_ids {
-                let Some(proxy_segment) = read_segments.get(*proxy_id) else {
-                    log::error!("Running operation on all proxied shard segments, but a proxy segment is missing: {proxy_id}");
-                    continue;
-                };
+        Ok((proxy_ids, tmp_segment))
+    }
 
-                // Get segment to snapshot, wrapped proxy segment or regular one
-                let segment = match proxy_segment {
-                    LockedSegment::Proxy(proxy_segment) => {
-                        let wrapped_segment = proxy_segment.read().wrapped_segment.clone();
-                        wrapped_segment.get()
-                    }
-                    // All segments to snapshot should be proxy, warn if this is not the case
-                    LockedSegment::Original(segment) => {
-                        log::warn!("Reached non-proxy segment while applying operation to proxies, this should not happen, ignoring");
-                        segment.clone()
-                    }
-                };
+    fn unproxy_all_segments(
+        segments: LockedSegmentHolder,
+        proxy_ids: Vec<SegmentId>,
+        tmp_segment: LockedSegment,
+    ) -> OperationResult<()> {
+        let mut write_segments = segments.write();
+        for proxy_id in proxy_ids {
+            let Some(proxy_segment) = write_segments.get(proxy_id) else {
+                log::error!("Unproxying temporary shard segment proxies, but a proxy segment is missing, cannot unproxy: {proxy_id}");
+                continue;
+            };
 
-                f(segment)?;
+            match proxy_segment {
+                // Propagate proxied changes to wrapped segment, take it out and swap with proxy
+                LockedSegment::Proxy(proxy_segment) => {
+                    let wrapped_segment = {
+                        let proxy_segment = proxy_segment.read();
+                        proxy_segment.propagate_to_writeable()?;
+                        proxy_segment.wrapped_segment.clone()
+                    };
+                    write_segments.swap(wrapped_segment, &[proxy_id]);
+                }
+                // If already unproxied, do nothing
+                LockedSegment::Original(_) => continue,
             }
         }
 
-        // Unproxy all segments
-        {
-            let mut write_segments = segments.write();
-            for proxy_id in proxy_ids {
-                let Some(proxy_segment) = write_segments.get(proxy_id) else {
-                    log::error!("Unproxying temporary shard segment proxies, but a proxy segment is missing, cannot unproxy: {proxy_id}");
-                    continue;
-                };
-
-                match proxy_segment {
-                    // Propagate proxied changes to wrapped segment, take it out and swap with proxy
-                    LockedSegment::Proxy(proxy_segment) => {
-                        let wrapped_segment = {
-                            let proxy_segment = proxy_segment.read();
-                            proxy_segment.propagate_to_writeable()?;
-                            proxy_segment.wrapped_segment.clone()
-                        };
-                        write_segments.swap(wrapped_segment, &[proxy_id]);
-                    }
-                    // If already unproxied, do nothing
-                    LockedSegment::Original(_) => continue,
-                }
-            }
-
-            // Finalize temporary segment we proxied writes to
-            // Append a temp segment to collection if it is not empty or there is no other appendable segment
-            let has_appendable_segments = write_segments.random_appendable_segment().is_some();
-            if tmp_segment.get().read().available_point_count() > 0 || !has_appendable_segments {
-                write_segments.add_locked(tmp_segment);
-
-                // Unlock collection for search and updates
-                drop(write_segments);
-            } else {
-                // Unlock collection for search and updates, then drop empty temporary segment
-                drop(write_segments);
-                tmp_segment.drop_data()?;
-            }
+        // Finalize temporary segment we proxied writes to
+        // Append a temp segment to collection if it is not empty or there is no other appendable segment
+        let has_appendable_segments = write_segments.random_appendable_segment().is_some();
+        let available_points = tmp_segment.get().read().available_point_count();
+        if available_points > 0 || !has_appendable_segments {
+            log::trace!("Keeping temporary segment with {available_points} points");
+            write_segments.add_locked(tmp_segment);
+            drop(write_segments);
+        } else {
+            log::trace!("Dropping temporary segment with no changes");
+            drop(write_segments);
+            tmp_segment.drop_data()?;
         }
 
         Ok(())
