@@ -685,7 +685,7 @@ impl LocalShard {
         let wal_path = LocalShard::wal_path(snapshot_shard_path);
         fs_extra::dir::create(&wal_path, true).map_err(|err| {
             CollectionError::service_error(format!(
-                "Error while creating directory for WAL shapshot {wal_path:?} {err}"
+                "Error while creating directory for WAL snapshot {wal_path:?} {err}"
             ))
         })?;
 
