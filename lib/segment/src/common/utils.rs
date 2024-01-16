@@ -5,9 +5,20 @@ use serde_json::Value;
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::Vector;
 use crate::index::field_index::FieldIndex;
-use crate::types::PayloadKeyType;
+use crate::types::{PayloadFieldSchema, PayloadKeyType};
 
-pub type IndexesMap = HashMap<PayloadKeyType, Vec<FieldIndex>>;
+pub type IndexesMap = HashMap<PayloadKeyType, IndexMapItem>;
+
+pub struct IndexMapItem {
+    pub schema: PayloadFieldSchema,
+    pub indices: Vec<FieldIndex>,
+}
+
+impl AsRef<IndexMapItem> for IndexMapItem {
+    fn as_ref(&self) -> &Self {
+        self
+    }
+}
 
 /// Avoids allocating Vec with a single element
 #[derive(Debug)]

@@ -6,9 +6,8 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use common::types::PointOffsetType;
 
-use crate::common::utils::IndexesMap;
+use crate::common::utils::{IndexMapItem, IndexesMap};
 use crate::id_tracker::IdTrackerSS;
-use crate::index::field_index::FieldIndex;
 use crate::payload_storage::condition_checker::ValueChecker;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::ConditionChecker;
@@ -72,9 +71,9 @@ where
 pub fn select_nested_indexes<'a, R>(
     nested_path: &str,
     field_indexes: &'a HashMap<PayloadKeyType, R>,
-) -> HashMap<PayloadKeyType, &'a Vec<FieldIndex>>
+) -> HashMap<PayloadKeyType, &'a IndexMapItem>
 where
-    R: AsRef<Vec<FieldIndex>>,
+    R: AsRef<IndexMapItem>,
 {
     let nested_prefix = format!("{}.", nested_path);
     let nested_indexes: HashMap<_, _> = field_indexes
@@ -95,7 +94,7 @@ pub fn check_payload<'a, R>(
     field_indexes: &HashMap<PayloadKeyType, R>,
 ) -> bool
 where
-    R: AsRef<Vec<FieldIndex>>,
+    R: AsRef<IndexMapItem>,
 {
     let checker = |condition: &Condition| match condition {
         Condition::Field(field_condition) => {
@@ -147,7 +146,7 @@ pub fn check_field_condition<R>(
     field_indexes: &HashMap<PayloadKeyType, R>,
 ) -> bool
 where
-    R: AsRef<Vec<FieldIndex>>,
+    R: AsRef<IndexMapItem>,
 {
     let field_values = payload.get_value(&field_condition.key);
     let field_indexes = field_indexes.get(&field_condition.key);
@@ -156,7 +155,7 @@ where
     if let Some(field_indexes) = field_indexes {
         for p in field_values {
             let mut index_checked = false;
-            for index in field_indexes.as_ref() {
+            for index in &field_indexes.as_ref().indices {
                 if let Some(index_check_res) = index.check_condition(field_condition, p) {
                     if index_check_res {
                         // If at least one object matches the condition, we can return true
