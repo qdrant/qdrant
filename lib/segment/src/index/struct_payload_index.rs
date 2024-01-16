@@ -190,7 +190,7 @@ impl StructPayloadIndex {
         payload_storage.iter(|point_id, point_payload| {
             let field_value = &point_payload.get_value(field);
             for field_index in field_indexes.iter_mut() {
-                field_index.add_point(point_id, field_value)?;
+                field_index.add_point(point_id, payload_schema, field_value)?;
             }
             Ok(true)
         })?;
@@ -492,7 +492,7 @@ impl PayloadIndex for StructPayloadIndex {
             let field_value_opt = &payload.get_value_opt(field);
             if let Some(field_value) = field_value_opt {
                 for index in &mut field_index.indices {
-                    index.add_point(point_id, field_value)?;
+                    index.add_point(point_id, &field_index.schema, field_value)?;
                 }
             }
         }
