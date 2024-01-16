@@ -443,12 +443,12 @@ pub trait SegmentOptimizer {
         //
         // On the other hand - we do not want to hold write lock during the segment creation.
         // Solution in the middle - is a upgradable lock. It ensures consistency after the check and allows to perform read operation.
-        let segment_lock = segments.upgradable_read();
+        let segments_lock = segments.upgradable_read();
 
         let optimizing_segments: Vec<_> = ids
             .iter()
             .cloned()
-            .map(|id| segment_lock.get(id))
+            .map(|id| segments_lock.get(id))
             .filter_map(|x| x.cloned())
             .collect();
 
@@ -501,7 +501,7 @@ pub trait SegmentOptimizer {
 
         let proxy_ids: Vec<_> = {
             // Exclusive lock for the segments operations.
-            let mut write_segments = RwLockUpgradableReadGuard::upgrade(segment_lock);
+            let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
             let mut proxy_ids = Vec::new();
             for (mut proxy, idx) in proxies.into_iter().zip(ids.iter().cloned()) {
                 // replicate_field_indexes for the second time,
@@ -592,7 +592,7 @@ pub trait SegmentOptimizer {
             // Release reference counter of the optimized segments
             drop(optimizing_segments);
 
-            // Append a temp segment to a collection if it is not empty or there is no other appendable segment
+            // Append a temp segment to collection if it is not empty or there is no other appendable segment
             if tmp_segment.get().read().available_point_count() > 0 || !has_appendable_segments {
                 write_segments_guard.add_locked(tmp_segment);
 
