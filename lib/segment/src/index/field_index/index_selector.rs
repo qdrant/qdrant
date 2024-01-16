@@ -50,9 +50,11 @@ pub fn index_selector(
             ))],
             PayloadSchemaType::Bool => vec![FieldIndex::BinaryIndex(BinaryIndex::new(db, field))],
             PayloadSchemaType::Datetime => {
-                vec![FieldIndex::DatetimeIndex(
-                    NumericIndex::<IntPayloadType>::new(db, field, is_appendable),
-                )]
+                vec![FieldIndex::IntIndex(NumericIndex::<IntPayloadType>::new(
+                    db,
+                    field,
+                    is_appendable,
+                ))]
             }
         },
         PayloadFieldSchema::FieldParams(payload_params) => match payload_params {

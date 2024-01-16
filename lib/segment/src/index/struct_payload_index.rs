@@ -14,7 +14,7 @@ use schemars::_serde_json::Value;
 use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
-use crate::common::utils::{IndexesMap, JsonPathPayload, MultiValue};
+use crate::common::utils::{IndexMapItem, IndexesMap, JsonPathPayload, MultiValue};
 use crate::common::Flusher;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::index_selector::index_selector;
@@ -69,6 +69,7 @@ impl StructPayloadIndex {
             };
 
             indexes
+                .indices
                 .iter()
                 .find_map(|index| index.estimate_cardinality(&full_path_condition).ok())
         })
@@ -83,6 +84,7 @@ impl StructPayloadIndex {
             .get(&field_condition.key)
             .and_then(|indexes| {
                 indexes
+                    .indices
                     .iter()
                     .find_map(|field_index| field_index.filter(field_condition).ok())
             });
@@ -100,10 +102,14 @@ impl StructPayloadIndex {
 
     fn load_all_fields(&mut self, is_appendable: bool) -> OperationResult<()> {
         let mut field_indexes: IndexesMap = Default::default();
-
         for (field, payload_schema) in &self.config.indexed_fields {
-            let field_index = self.load_from_db(field, payload_schema.to_owned(), is_appendable)?;
-            field_indexes.insert(field.clone(), field_index);
+            field_indexes.insert(
+                field.clone(),
+                IndexMapItem {
+                    schema: payload_schema.to_owned(),
+                    indices: self.load_from_db(field, payload_schema, is_appendable)?,
+                },
+            );
         }
         self.field_indexes = field_indexes;
         Ok(())
@@ -112,10 +118,10 @@ impl StructPayloadIndex {
     fn load_from_db(
         &self,
         field: PayloadKeyTypeRef,
-        payload_schema: PayloadFieldSchema,
+        payload_schema: &PayloadFieldSchema,
         is_appendable: bool,
     ) -> OperationResult<Vec<FieldIndex>> {
-        let mut indexes = index_selector(field, &payload_schema, self.db.clone(), is_appendable);
+        let mut indexes = index_selector(field, payload_schema, self.db.clone(), is_appendable);
 
         let mut is_loaded = true;
         for ref mut index in indexes.iter_mut() {
@@ -173,10 +179,10 @@ impl StructPayloadIndex {
     pub fn build_field_indexes(
         &self,
         field: PayloadKeyTypeRef,
-        payload_schema: PayloadFieldSchema,
+        payload_schema: &PayloadFieldSchema,
     ) -> OperationResult<Vec<FieldIndex>> {
         let payload_storage = self.payload.borrow();
-        let mut field_indexes = index_selector(field, &payload_schema, self.db.clone(), true);
+        let mut field_indexes = index_selector(field, payload_schema, self.db.clone(), true);
         for index in &field_indexes {
             index.recreate()?;
         }
@@ -196,8 +202,14 @@ impl StructPayloadIndex {
         field: PayloadKeyTypeRef,
         payload_schema: PayloadFieldSchema,
     ) -> OperationResult<()> {
-        let field_indexes = self.build_field_indexes(field, payload_schema)?;
-        self.field_indexes.insert(field.into(), field_indexes);
+        let field_indexes = self.build_field_indexes(field, &payload_schema)?;
+        self.field_indexes.insert(
+            field.into(),
+            IndexMapItem {
+                schema: payload_schema,
+                indices: field_indexes,
+            },
+        );
         Ok(())
     }
 
@@ -241,7 +253,7 @@ impl StructPayloadIndex {
 
                 let mut indexed_points = 0;
                 if let Some(field_indexes) = self.field_indexes.get(&full_path) {
-                    for index in field_indexes {
+                    for index in &field_indexes.indices {
                         indexed_points = indexed_points.max(index.count_indexed_points())
                     }
                     CardinalityEstimation {
@@ -270,7 +282,7 @@ impl StructPayloadIndex {
 
                 let mut indexed_points = 0;
                 if let Some(field_indexes) = self.field_indexes.get(&full_path) {
-                    for index in field_indexes {
+                    for index in &field_indexes.indices {
                         indexed_points = indexed_points.max(index.count_indexed_points())
                     }
                     CardinalityEstimation {
@@ -318,6 +330,7 @@ impl StructPayloadIndex {
             .iter()
             .flat_map(|(name, field)| -> Vec<PayloadIndexTelemetry> {
                 field
+                    .indices
                     .iter()
                     .map(|field| field.get_telemetry_data().set_name(name.to_string()))
                     .collect()
@@ -365,7 +378,7 @@ impl PayloadIndex for StructPayloadIndex {
         let removed_indexes = self.field_indexes.remove(field);
 
         if let Some(indexes) = removed_indexes {
-            for index in indexes {
+            for index in indexes.indices {
                 index.clear()?;
             }
         }
@@ -446,6 +459,7 @@ impl PayloadIndex for StructPayloadIndex {
             // so the points indexed with those indexes are the same.
             // We will return minimal number as a worst case, to highlight possible errors in the index early.
             indexes
+                .indices
                 .iter()
                 .map(|index| index.count_indexed_points())
                 .min()
@@ -466,7 +480,7 @@ impl PayloadIndex for StructPayloadIndex {
             None => Box::new(vec![].into_iter()),
             Some(indexes) => {
                 let field_clone = field.to_owned();
-                Box::new(indexes.iter().flat_map(move |field_index| {
+                Box::new(indexes.indices.iter().flat_map(move |field_index| {
                     field_index.payload_blocks(threshold, field_clone.clone())
                 }))
             }
@@ -477,7 +491,7 @@ impl PayloadIndex for StructPayloadIndex {
         for (field, field_index) in &mut self.field_indexes {
             let field_value_opt = &payload.get_value_opt(field);
             if let Some(field_value) = field_value_opt {
-                for index in field_index {
+                for index in &mut field_index.indices {
                     index.add_point(point_id, field_value)?;
                 }
             }
@@ -495,7 +509,7 @@ impl PayloadIndex for StructPayloadIndex {
         key: PayloadKeyTypeRef,
     ) -> OperationResult<Vec<Value>> {
         if let Some(indexes) = self.field_indexes.get_mut(key) {
-            for index in indexes {
+            for index in &mut indexes.indices {
                 index.remove_point(point_id)?;
             }
         }
@@ -504,7 +518,7 @@ impl PayloadIndex for StructPayloadIndex {
 
     fn drop(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
         for (_, field_indexes) in self.field_indexes.iter_mut() {
-            for index in field_indexes {
+            for index in &mut field_indexes.indices {
                 index.remove_point(point_id)?;
             }
         }
@@ -514,7 +528,7 @@ impl PayloadIndex for StructPayloadIndex {
     fn flusher(&self) -> Flusher {
         let mut flushers = Vec::new();
         for field_indexes in self.field_indexes.values() {
-            for index in field_indexes {
+            for index in &field_indexes.indices {
                 flushers.push(index.flusher());
             }
         }
