@@ -741,8 +741,34 @@ impl<'s> SegmentHolder {
         proxy_ids: Vec<SegmentId>,
         tmp_segment: LockedSegment,
     ) -> OperationResult<()> {
-        let mut write_segments = segments.write();
+        // We must propagate all changes in the proxy into their wrapped segments, as we'll put the
+        // wrapped segments back into the segment holder. This can be an expensive step if we
+        // collected a lot of changes in the proxy, so we do this in two batches. First we
+        // propagate all changes on a shared read lock, not blocking other operations. Second we
+        // propagate any new changes again on an exclusive write lock, blocking other operations.
+        // This second batch should be very fast, as we already propagated all changes in the
+        // first, which is why we can hold a write lock. Once done, we can swap out the proxy for
+        // the wrapped shard.
 
+        // Batch 1: propagate changes to wrapped segment in shared read lock
+        {
+            let read_segments = segments.read();
+            proxy_ids
+                .iter()
+                .flat_map(|proxy_id| read_segments.get(*proxy_id).map(|segment| (proxy_id, segment)))
+                .flat_map(|(proxy_id, proxy_segment)| match proxy_segment {
+                    LockedSegment::Proxy(proxy_segment) => Some((proxy_id, proxy_segment)),
+                    LockedSegment::Original(_) => None,
+                }).for_each(|(proxy_id, proxy_segment)| {
+                    if let Err(err) = proxy_segment.read().propagate_to_writeable() {
+                        log::error!("Propagating proxy segment {proxy_id} changes to wrapped segment failed, ignoring: {err}");
+                    }
+                });
+        }
+
+        // Batch 2: propagate changes to wrapped segment in exclusive write lock
+        // Swap out each proxy with wrapped segment once changes are propagated
+        let mut write_segments = segments.write();
         for proxy_id in proxy_ids {
             let Some(proxy_segment) = write_segments.get(proxy_id) else {
                 log::error!("Unproxying temporary shard segment proxies, but a proxy segment is missing, cannot unproxy: {proxy_id}");
@@ -763,7 +789,7 @@ impl<'s> SegmentHolder {
                     write_segments.swap(wrapped_segment, &[proxy_id]);
                 }
                 // If already unproxied, do nothing
-                LockedSegment::Original(_) => continue,
+                LockedSegment::Original(_) => {}
             }
         }
 
