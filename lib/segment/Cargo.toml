@@ -41,7 +41,7 @@ serde-value = "0.7"
 ordered-float = "4.2"
 thiserror = "1.0"
 atomic_refcell = "0.1.13"
-atomicwrites = "0.4.2"
+atomicwrites = "0.4.3"
 memmap2 = "0.9.3"
 schemars = { version = "0.8.16", features = ["uuid1", "preserve_order", "chrono"] }
 log = "0.4"
