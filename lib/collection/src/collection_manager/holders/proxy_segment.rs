@@ -179,29 +179,29 @@ impl ProxySegment {
 
         // Propagate deleted points
         {
-            let mut deleted_points = self.deleted_points.write();
+            let deleted_points = self.deleted_points.upgradable_read();
             for point_id in deleted_points.iter() {
                 write_segment.delete_point(op_num, *point_id)?;
             }
-            deleted_points.clear();
+            RwLockUpgradableReadGuard::upgrade(deleted_points).clear();
         }
 
         // Propagate deleted indexes
         {
-            let mut deleted_indexes = self.deleted_indexes.write();
+            let deleted_indexes = self.deleted_indexes.upgradable_read();
             for key in deleted_indexes.iter() {
                 write_segment.delete_field_index(op_num, key)?;
             }
-            deleted_indexes.clear();
+            RwLockUpgradableReadGuard::upgrade(deleted_indexes).clear();
         }
 
         // Propagate created indexes
         {
-            let mut created_indexes = self.created_indexes.write();
+            let created_indexes = self.created_indexes.upgradable_read();
             for (key, field_schema) in created_indexes.iter() {
                 write_segment.create_field_index(op_num, key, Some(field_schema))?;
             }
-            created_indexes.clear();
+            RwLockUpgradableReadGuard::upgrade(created_indexes).clear();
         }
 
         Ok(())
