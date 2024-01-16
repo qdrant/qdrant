@@ -1,0 +1,13 @@
+[Desktop Entry]
+Name=qdrant
+GenericName=Vector Database
+Comment=Advanced and High-Performant Vector Search Technology
+TryExec=qdrant
+Exec=qdrant %F
+Terminal=true
+Type=Application
+Keywords=Database;
+Icon=qdrant
+Categories=Utility;
+StartupNotify=false
+
