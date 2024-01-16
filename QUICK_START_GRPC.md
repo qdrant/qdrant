@@ -100,35 +100,20 @@ grpcurl -plaintext -import-path ./lib/api/src/grpc/proto/ -proto qdrant.proto -d
     {
       "id": {
         "num": 1
-      }, 
-      "vectors": { 
-        "vector": { 
-          "data": [0.05, 0.61, 0.76, 0.74] 
-        } 
-      }, 
-      "payload": 
-      {
-        "city": { 
-          "string_value": "Berlin" 
-        }, 
-        "country": { 
-          "string_value": "Germany" 
-        }, 
-        "population": { 
-          "integer_value": 1000000 
-        }, 
-        "square": { 
-          "double_value": 12.5 
-        }, 
-        "coords": { 
+      },
+      "vectors": {
+        "vector": { "data": [0.05, 0.61, 0.76, 0.74] }
+      },
+      "payload": {
+        "city": { "string_value": "Berlin" },
+        "country": { "string_value": "Germany" },
+        "population": { "integer_value": 1000000 },
+        "square": { "double_value": 12.5 },
+        "coords": {
           "struct_value": {
-            "fields":{ 
-              "lat": { 
-                "double_value":1.0 
-              }, 
-              "lon": { 
-                "double_value": 2.0 
-              } 
+            "fields":{
+              "lat": { "double_value": 1.0 },
+              "lon": { "double_value": 2.0 }
             }
           }
         }
