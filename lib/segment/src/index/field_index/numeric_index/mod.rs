@@ -92,7 +92,7 @@ impl Encodable for DateTimePayloadType {
     fn decode_key(key: &[u8]) -> (PointOffsetType, Self) {
         let (id, timestamp) = decode_i64_key_ascending(key);
         let datetime = chrono::Utc.from_utc_datetime(
-            &chrono::NaiveDateTime::from_timestamp_opt(
+            &NaiveDateTime::from_timestamp_opt(
                 timestamp / 1000,
                 (timestamp % 1000) as u32 * 1_000_000,
             )
