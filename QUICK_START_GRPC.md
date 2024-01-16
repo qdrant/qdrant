@@ -94,7 +94,7 @@ Let's now add vectors with some payload:
 
 ```bash
 grpcurl -plaintext -import-path ./lib/api/src/grpc/proto/ -proto qdrant.proto -d '{
-  "collection_name": "milittle",
+  "collection_name": "test_collection",
   "wait": true,
   "points": [
     {
