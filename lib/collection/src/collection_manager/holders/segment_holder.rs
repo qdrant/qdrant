@@ -564,6 +564,9 @@ impl<'s> SegmentHolder {
     /// the function is called. All segments are also unproxied again when the given function
     /// returns.
     ///
+    /// It is possible for the provided function to get a non-proxified segment, if external
+    /// factors are modifying the segment holder at the same time.
+    ///
     /// As part of this process, a new segment is created. All proxies direct their writes to this
     /// segment. The segment is added to the collection if it has any operations, otherwise it is
     /// deleted when all segments are unproxied again.
@@ -657,13 +660,6 @@ impl<'s> SegmentHolder {
             None => {
                 segments_lock
                     .random_appendable_segment()
-                    .or_else(|| {
-                        segments_lock
-                            .non_appendable_segments()
-                            .first()
-                            .and_then(|id| segments_lock.get(*id))
-                            .cloned()
-                    })
                     .ok_or_else(|| OperationError::service_error("No existing segment to source temporary segment configuration from"))?
                     .get()
                     .read()
@@ -729,7 +725,6 @@ impl<'s> SegmentHolder {
                 proxy_ids.push(write_segments.swap(proxy, &[idx]).0);
             }
             proxy_ids
-
         };
 
         Ok((proxy_ids, tmp_segment))
