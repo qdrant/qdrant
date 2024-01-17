@@ -93,6 +93,7 @@ impl BuilderExt for Builder {
 #[rustfmt::skip]
 fn configure_validation(builder: Builder) -> Builder {
     builder
+        .extern_path(".google.protobuf.Timestamp", "::prost_wkt_types::Timestamp")
         // Service: collections.proto
         .validates(&[
             ("GetCollectionInfoRequest.collection_name", "length(min = 1, max = 255)"),
@@ -241,11 +242,11 @@ fn configure_validation(builder: Builder) -> Builder {
             ("DiscoveryQuery.target", ""),
             ("DiscoveryQuery.context", ""),
             ("ContextQuery.context", ""),
+            ("DatetimeRange.lt", "custom = \"crate::grpc::validate::validate_timestamp\""),
+            ("DatetimeRange.gt", "custom = \"crate::grpc::validate::validate_timestamp\""),
+            ("DatetimeRange.lte", "custom = \"crate::grpc::validate::validate_timestamp\""),
+            ("DatetimeRange.gte", "custom = \"crate::grpc::validate::validate_timestamp\""),
         ], &[])
-        .field_attribute("DatetimeRange.lt", "#[serde(skip)]")
-        .field_attribute("DatetimeRange.gt", "#[serde(skip)]")
-        .field_attribute("DatetimeRange.lte", "#[serde(skip)]")
-        .field_attribute("DatetimeRange.gte", "#[serde(skip)]")
         .type_attribute(".", "#[derive(serde::Serialize)]")
         // Service: points_internal_service.proto
         .validates(&[
@@ -293,11 +294,11 @@ fn configure_validation(builder: Builder) -> Builder {
             ("RecoverShardSnapshotRequest.collection_name", "length(min = 1, max = 255)"),
             ("RecoverShardSnapshotRequest.snapshot_name", "length(min = 1)"),
             ("RecoverShardSnapshotRequest.checksum", "custom = \"common::validation::validate_sha256_hash_option\""),
+            ("SnapshotDescription.creation_time", "custom = \"crate::grpc::validate::validate_timestamp\""),
         ], &[
             "CreateFullSnapshotRequest",
             "ListFullSnapshotsRequest",
         ])
-        .field_attribute("SnapshotDescription.creation_time", "#[serde(skip)]")
 }
 
 fn append_to_file(path: &str, line: &str) {

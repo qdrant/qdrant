@@ -1237,18 +1237,20 @@ impl From<HnswConfigDiff> for segment::types::HnswConfig {
     }
 }
 
-pub fn naive_date_time_to_proto(date_time: NaiveDateTime) -> prost_types::Timestamp {
-    prost_types::Timestamp {
+pub fn naive_date_time_to_proto(date_time: NaiveDateTime) -> prost_wkt_types::Timestamp {
+    prost_wkt_types::Timestamp {
         seconds: date_time.timestamp(), // number of non-leap seconds since the midnight on January 1, 1970.
         nanos: date_time.nanosecond() as i32,
     }
 }
 
-pub fn date_time_to_proto(date_time: chrono::DateTime<chrono::Utc>) -> prost_types::Timestamp {
+pub fn date_time_to_proto(date_time: chrono::DateTime<chrono::Utc>) -> prost_wkt_types::Timestamp {
     naive_date_time_to_proto(date_time.naive_utc())
 }
 
-pub fn date_time_from_proto(date_time: prost_types::Timestamp) -> chrono::DateTime<chrono::Utc> {
+pub fn date_time_from_proto(
+    date_time: prost_wkt_types::Timestamp,
+) -> chrono::DateTime<chrono::Utc> {
     chrono::Utc.from_utc_datetime(
         &chrono::NaiveDateTime::from_timestamp_opt(
             date_time.seconds,

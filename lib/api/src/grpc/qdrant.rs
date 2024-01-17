@@ -4777,22 +4777,23 @@ pub struct Range {
     #[prost(double, optional, tag = "4")]
     pub lte: ::core::option::Option<f64>,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DatetimeRange {
     #[prost(message, optional, tag = "1")]
-    #[serde(skip)]
-    pub lt: ::core::option::Option<::prost_types::Timestamp>,
+    #[validate(custom = "crate::grpc::validate::validate_timestamp")]
+    pub lt: ::core::option::Option<::prost_wkt_types::Timestamp>,
     #[prost(message, optional, tag = "2")]
-    #[serde(skip)]
-    pub gt: ::core::option::Option<::prost_types::Timestamp>,
+    #[validate(custom = "crate::grpc::validate::validate_timestamp")]
+    pub gt: ::core::option::Option<::prost_wkt_types::Timestamp>,
     #[prost(message, optional, tag = "3")]
-    #[serde(skip)]
-    pub gte: ::core::option::Option<::prost_types::Timestamp>,
+    #[validate(custom = "crate::grpc::validate::validate_timestamp")]
+    pub gte: ::core::option::Option<::prost_wkt_types::Timestamp>,
     #[prost(message, optional, tag = "4")]
-    #[serde(skip)]
-    pub lte: ::core::option::Option<::prost_types::Timestamp>,
+    #[validate(custom = "crate::grpc::validate::validate_timestamp")]
+    pub lte: ::core::option::Option<::prost_wkt_types::Timestamp>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -10019,6 +10020,7 @@ pub struct DeleteSnapshotRequest {
     pub snapshot_name: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize)]
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SnapshotDescription {
@@ -10027,8 +10029,8 @@ pub struct SnapshotDescription {
     pub name: ::prost::alloc::string::String,
     /// Creation time of the snapshot
     #[prost(message, optional, tag = "2")]
-    #[serde(skip)]
-    pub creation_time: ::core::option::Option<::prost_types::Timestamp>,
+    #[validate(custom = "crate::grpc::validate::validate_timestamp")]
+    pub creation_time: ::core::option::Option<::prost_wkt_types::Timestamp>,
     /// Size of the snapshot in bytes
     #[prost(int64, tag = "3")]
     pub size: i64,
