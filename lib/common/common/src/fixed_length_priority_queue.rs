@@ -70,16 +70,6 @@ impl<T: Ord> FixedLengthPriorityQueue<T> {
     pub fn is_empty(&self) -> bool {
         self.heap.is_empty()
     }
-
-    /// Returns the smallest element in the queue
-    pub fn peek(&self) -> Option<&T> {
-        self.heap.peek().map(|x| &x.0)
-    }
-
-    /// Removes the smallest element in the queue
-    pub fn pop(&mut self) -> Option<T> {
-        self.heap.pop().map(|Reverse(x)| x)
-    }
 }
 
 pub struct Iter<'a, T> {
