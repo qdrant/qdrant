@@ -8,7 +8,7 @@ mod field_index_base;
 pub mod full_text_index;
 pub mod geo_hash;
 pub mod geo_index;
-mod histogram;
+pub mod histogram;
 pub mod index_selector;
 pub mod map_index;
 pub mod numeric_index;

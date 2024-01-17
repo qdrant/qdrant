@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+use ordered_float::OrderedFloat;
+
 use crate::common::operation_error::{OperationResult, SegmentFailedState};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::{QueryVector, Vector};
@@ -126,10 +128,11 @@ pub trait SegmentEntry {
     /// Will panic if there is no index for the order_by key.
     fn read_ordered_filtered<'a>(
         &'a self,
+        offset: Option<PointIdType>,
         limit: Option<usize>,
         filter: Option<&'a Filter>,
         order_by: &'a OrderBy,
-    ) -> OperationResult<Vec<PointIdType>>;
+    ) -> OperationResult<Vec<(OrderedFloat<f64>, PointIdType)>>;
 
     /// Read points in [from; to) range
     fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType>;

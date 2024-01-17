@@ -38,6 +38,13 @@ use crate::types::{
 const HISTOGRAM_MAX_BUCKET_SIZE: usize = 10_000;
 const HISTOGRAM_PRECISION: f64 = 0.01;
 
+pub trait OrderableRead<T> {
+    fn orderable_read(
+        &self,
+        range: &Range,
+    ) -> Box<dyn DoubleEndedIterator<Item = (T, PointOffsetType)> + '_>;
+}
+
 pub trait Encodable: Copy {
     fn encode_key(&self, id: PointOffsetType) -> Vec<u8>;
 
@@ -80,6 +87,38 @@ impl Encodable for FloatPayloadType {
             return std::cmp::Ordering::Greater;
         }
         self.partial_cmp(other).unwrap()
+    }
+}
+
+impl Range {
+    pub(in crate::index::field_index::numeric_index) fn as_bounds<T: Encodable + Numericable>(
+        &self,
+    ) -> (Bound<NumericIndexKey<T>>, Bound<NumericIndexKey<T>>) {
+        let start_bound = match self {
+            Range { gt: Some(gt), .. } => {
+                let v: T = T::from_f64(*gt);
+                Excluded(NumericIndexKey::new(v, PointOffsetType::MAX))
+            }
+            Range { gte: Some(gte), .. } => {
+                let v: T = T::from_f64(*gte);
+                Included(NumericIndexKey::new(v, PointOffsetType::MIN))
+            }
+            _ => Unbounded,
+        };
+
+        let end_bound = match self {
+            Range { lt: Some(lt), .. } => {
+                let v: T = T::from_f64(*lt);
+                Excluded(NumericIndexKey::new(v, PointOffsetType::MIN))
+            }
+            Range { lte: Some(lte), .. } => {
+                let v: T = T::from_f64(*lte);
+                Included(NumericIndexKey::new(v, PointOffsetType::MAX))
+            }
+            _ => Unbounded,
+        };
+
+        (start_bound, end_bound)
     }
 }
 
@@ -293,29 +332,7 @@ impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
             .as_ref()
             .ok_or_else(|| OperationError::service_error("failed to get condition range"))?;
 
-        let start_bound = match cond_range {
-            Range { gt: Some(gt), .. } => {
-                let v: T = T::from_f64(*gt);
-                Excluded(NumericIndexKey::new(v, PointOffsetType::MAX))
-            }
-            Range { gte: Some(gte), .. } => {
-                let v: T = T::from_f64(*gte);
-                Included(NumericIndexKey::new(v, PointOffsetType::MIN))
-            }
-            _ => Unbounded,
-        };
-
-        let end_bound = match cond_range {
-            Range { lt: Some(lt), .. } => {
-                let v: T = T::from_f64(*lt);
-                Excluded(NumericIndexKey::new(v, PointOffsetType::MIN))
-            }
-            Range { lte: Some(lte), .. } => {
-                let v: T = T::from_f64(*lte);
-                Included(NumericIndexKey::new(v, PointOffsetType::MAX))
-            }
-            _ => Unbounded,
-        };
+        let (start_bound, end_bound) = cond_range.as_bounds();
 
         // map.range
         // Panics if range start > end. Panics if range start == end and both bounds are Excluded.
@@ -470,5 +487,34 @@ impl ValueIndexer<FloatPayloadType> for NumericIndex<FloatPayloadType> {
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
         NumericIndex::remove_point(self, id)
+    }
+}
+
+impl<T> OrderableRead<T> for NumericIndex<T>
+where
+    T: Encodable + Numericable,
+{
+    fn orderable_read(
+        &self,
+        range: &Range,
+    ) -> Box<dyn DoubleEndedIterator<Item = (T, PointOffsetType)> + '_> {
+        let (start_bound, end_bound) = range.as_bounds();
+
+        // map.range
+        // Panics if range start > end. Panics if range start == end and both bounds are Excluded.
+        if !check_boundaries(&start_bound, &end_bound) {
+            return Box::new(vec![].into_iter());
+        }
+
+        match self {
+            NumericIndex::Mutable(index) => {
+                let start_bound = bound_map(start_bound, |k| k.encode());
+                let end_bound = bound_map(end_bound, |k| k.encode());
+                Box::new(index.orderable_values_range(start_bound, end_bound))
+            }
+            NumericIndex::Immutable(index) => {
+                Box::new(index.orderable_values_range(start_bound, end_bound))
+            }
+        }
     }
 }

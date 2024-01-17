@@ -51,8 +51,21 @@ impl<T: Encodable + Numericable> MutableNumericIndex<T> {
         &self,
         start_bound: Bound<Vec<u8>>,
         end_bound: Bound<Vec<u8>>,
-    ) -> impl Iterator<Item = PointOffsetType> + '_ {
+    ) -> impl DoubleEndedIterator<Item = PointOffsetType> + '_ {
         self.map.range((start_bound, end_bound)).map(|(_, v)| *v)
+    }
+
+    pub fn orderable_values_range(
+        &self,
+        start_bound: Bound<Vec<u8>>,
+        end_bound: Bound<Vec<u8>>,
+    ) -> impl DoubleEndedIterator<Item = (T, PointOffsetType)> + '_ {
+        self.map
+            .range((start_bound, end_bound))
+            .map(|(encoded, idx)| {
+                let (_idx, value) = T::decode_key(encoded);
+                (value, *idx)
+            })
     }
 
     fn add_value(&mut self, id: PointOffsetType, value: T) -> OperationResult<()> {

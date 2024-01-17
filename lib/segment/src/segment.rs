@@ -1,7 +1,7 @@
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
-use std::ops::Bound;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -10,7 +10,9 @@ use std::thread::{self, JoinHandle};
 use atomic_refcell::AtomicRefCell;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use io::file_operations::{atomic_save_json, read_json};
+use itertools::Itertools;
 use memory::mmap_ops;
+use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
 use rocksdb::DB;
 use sparse::common::sparse_vector::SparseVector;
@@ -21,25 +23,25 @@ use crate::common::operation_error::OperationError::TypeInferenceError;
 use crate::common::operation_error::{
     get_service_error, OperationError, OperationResult, SegmentFailedState,
 };
-use crate::common::utils::bound_map;
 use crate::common::version::{StorageVersion, VERSION_FILE};
 use crate::common::{
     check_named_vectors, check_query_vectors, check_stopped, check_vector, check_vector_name,
 };
 use crate::data_types::named_vectors::NamedVectors;
+use crate::data_types::order_by::OrderedByFieldIterator;
 use crate::data_types::vectors::{QueryVector, Vector};
 use crate::entry::entry_point::SegmentEntry;
 use crate::id_tracker::IdTrackerSS;
+use crate::index::field_index::numeric_index::OrderableRead;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndex, VectorIndexEnum};
 use crate::spaces::tools::peek_top_smallest_iterable;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
-    Condition, Direction, FieldCondition, Filter, OrderBy, Payload, PayloadFieldSchema,
-    PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointIdType, Range,
-    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentState, SegmentType,
-    SeqNumberType, VectorDataInfo, WithPayload, WithVector,
+    Direction, Filter, OrderBy, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType,
+    PayloadKeyTypeRef, PayloadSchemaType, PointIdType, ScoredPoint, SearchParams, SegmentConfig,
+    SegmentInfo, SegmentState, SegmentType, SeqNumberType, VectorDataInfo, WithPayload, WithVector,
 };
 use crate::utils;
 use crate::utils::fs::find_symlink;
@@ -700,6 +702,53 @@ impl Segment {
             .collect()
     }
 
+    pub fn filtered_read_by_value_stream(
+        &self,
+        order_by: &OrderBy,
+        offset: Option<PointIdType>,
+        limit: Option<usize>,
+        filter: Option<&Filter>,
+    ) -> OperationResult<Vec<(f64, PointIdType)>> {
+        let payload_index = self.payload_index.borrow();
+
+        let numeric_index = payload_index
+            .field_indexes
+            .get(&order_by.key)
+            .and_then(|indexes| indexes.first())
+            .and_then(|index| index.as_numeric())
+            .ok_or_else(|| OperationError::ValidationError { description: "There is no numeric index for the order_by field, please create one to use order_by".to_string() })?;
+
+        let id_tracker = self.id_tracker.borrow();
+
+        let range_iter = numeric_index.orderable_read(&order_by.as_range());
+
+        let ordered_iter =
+            OrderedByFieldIterator::new(range_iter, id_tracker.deref(), order_by.direction())
+                .skip_while(|item| match offset {
+                    Some(offset) => match order_by.direction() {
+                        Direction::Asc => item.external_id < offset,
+                        Direction::Desc => item.external_id > offset,
+                    },
+                    _ => false,
+                });
+
+        let reads = if let Some(filter) = filter {
+            let filter_context = payload_index.filter_context(filter);
+
+            ordered_iter
+                .filter(move |item| filter_context.check(item.internal_id))
+                .map(|item| (item.value, item.external_id))
+                .take(limit.unwrap_or(usize::MAX))
+                .collect()
+        } else {
+            ordered_iter
+                .map(|item| (item.value, item.external_id))
+                .take(limit.unwrap_or(usize::MAX))
+                .collect()
+        };
+        Ok(reads)
+    }
+
     /// Check consistency of the segment's data and repair it if possible.
     pub fn check_consistency_and_repair(&mut self) -> OperationResult<()> {
         let mut internal_ids_to_delete = HashSet::new();
@@ -1114,103 +1163,21 @@ impl SegmentEntry for Segment {
 
     fn read_ordered_filtered<'a>(
         &'a self,
+        offset: Option<PointIdType>,
         limit: Option<usize>,
         filter: Option<&'a Filter>,
         order_by: &'a OrderBy,
-    ) -> OperationResult<Vec<PointIdType>> {
-        let limit = limit
-            .map(|limit| {
-                filter.map_or(limit, |filter| {
-                    let payload_index = self.payload_index.borrow();
-                    let query_cardinality = payload_index.estimate_cardinality(filter);
+    ) -> OperationResult<Vec<(OrderedFloat<f64>, PointIdType)>> {
+        let reads = self
+            .filtered_read_by_value_stream(order_by, offset, limit, filter)?
+            .into_iter()
+            .map(|(value, point_id)| (OrderedFloat(value), point_id))
+            .collect_vec();
 
-                    let available_points = self.available_point_count();
-
-                    let filtered_out_points =
-                        available_points.saturating_sub(query_cardinality.min);
-
-                    // Protect from worst case: all filtered points are in front of the offset
-                    limit.saturating_add(filtered_out_points)
-                })
-            })
-            .unwrap_or(usize::MAX);
-
-        let direction = order_by.direction.unwrap_or_default();
-        let from = match direction {
-            Direction::Asc => order_by.value_offset.unwrap_or(f64::NEG_INFINITY),
-            Direction::Desc => order_by.value_offset.unwrap_or(f64::INFINITY),
-        };
-
-        let borrowed_payload_index = self.payload_index.borrow();
-
-        let index = borrowed_payload_index
-            .field_indexes
-            .get(&order_by.key)
-            .and_then(|field_indexes| field_indexes.iter().find(|index| index.is_numeric()))
-            // SAFETY: Protected by schema validation earlier in the chain
-            .ok_or_else(|| OperationError::ValidationError {
-                description: "Numeric index must exist for the order_by field".to_string(),
-            })?;
-
-        let search_from = match order_by.value_offset {
-            None => Bound::Included(from),
-
-            // We don't know where the offset id will be, if there are many records with the same value,
-            // so we exclude `from` when searching for the end value
-            Some(_) => Bound::Excluded(from),
-        };
-
-        let from = Bound::Included(from);
-
-        // Infer the destination bound value from the current limit, which will be used to filter the records
-        let mut range_bounds = match index {
-            crate::index::field_index::FieldIndex::IntIndex(int_index) => {
-                let search_from = bound_map(search_from, |x: f64| x as i64);
-                let to = int_index.get_range_by_size_excluding(limit, search_from, direction);
-                (from, bound_map(to, |x| x as f64))
-            }
-            crate::index::field_index::FieldIndex::FloatIndex(float_index) => {
-                let to = float_index.get_range_by_size_excluding(limit, search_from, direction);
-                (from, to)
-            }
-            crate::index::field_index::FieldIndex::IntMapIndex(_)
-            | crate::index::field_index::FieldIndex::KeywordIndex(_)
-            | crate::index::field_index::FieldIndex::GeoIndex(_)
-            | crate::index::field_index::FieldIndex::FullTextIndex(_)
-            | crate::index::field_index::FieldIndex::BinaryIndex(_) => {
-                unimplemented!(
-                    "Order-by is not implemented for this index type: {:?}",
-                    index
-                )
-            }
-        };
-
-        // Adjust range direction of std::ops::Range for converting into `Range`
-        if matches!(direction, Direction::Desc) {
-            range_bounds = (range_bounds.1, range_bounds.0)
-        }
-
-        let range_cond = FieldCondition::new_range(order_by.key.clone(), Range::from(range_bounds));
-
-        // We can have many records with same value, so we need to expand the limit
-        // to make sure we get enough points to sort and cut at offset later
-        let estimated_limit = index.estimate_cardinality(&range_cond).ok();
-
-        let extended_limit = estimated_limit.map(|estimation| {
-            limit.max(
-                estimation.max + 1, /* To account for next page offset */
-            )
+        debug_assert!(match order_by.direction() {
+            Direction::Asc => reads.windows(2).all(|w| w[0] <= w[1]),
+            Direction::Desc => reads.windows(2).all(|w| w[0] >= w[1]),
         });
-
-        let range_filter = Filter::new_must(Condition::Field(range_cond));
-
-        let filter = filter.unwrap_or(&Filter::default()).merge(&range_filter);
-
-        let mut reads = self.filtered_read_by_index_unsorted(extended_limit, &filter);
-
-        if matches!(direction, Direction::Desc) {
-            reads.reverse()
-        }
 
         Ok(reads)
     }

@@ -1996,6 +1996,21 @@ pub enum Direction {
     Desc,
 }
 
+impl Direction {
+    pub fn as_range(&self, from: f64) -> Range {
+        match self {
+            Direction::Asc => Range {
+                gte: Some(from),
+                ..Default::default()
+            },
+            Direction::Desc => Range {
+                lte: Some(from),
+                ..Default::default()
+            },
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, Default)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "snake_case")]
@@ -2010,6 +2025,21 @@ pub struct OrderBy {
     /// we get this offset value by fetching the offset id in the request
     #[serde(skip)]
     pub value_offset: Option<f64>,
+}
+
+impl OrderBy {
+    pub fn as_range(&self) -> Range {
+        match self.value_offset {
+            Some(offset) => self.direction.unwrap().as_range(offset),
+            None => Range {
+                ..Default::default()
+            },
+        }
+    }
+
+    pub fn direction(&self) -> Direction {
+        self.direction.unwrap_or_default()
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default)]

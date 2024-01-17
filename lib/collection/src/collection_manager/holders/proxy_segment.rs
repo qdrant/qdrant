@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use ordered_float::OrderedFloat;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::common::operation_error::{OperationResult, SegmentFailedState};
 use segment::data_types::named_vectors::NamedVectors;
@@ -508,20 +509,22 @@ impl SegmentEntry for ProxySegment {
 
     fn read_ordered_filtered<'a>(
         &'a self,
+        offset: Option<PointIdType>,
         limit: Option<usize>,
         filter: Option<&'a Filter>,
         order_by: &'a segment::types::OrderBy,
-    ) -> OperationResult<Vec<PointIdType>> {
+    ) -> OperationResult<Vec<(OrderedFloat<f64>, PointIdType)>> {
         let deleted_points = self.deleted_points.read();
         let mut read_points = if deleted_points.is_empty() {
             self.wrapped_segment
                 .get()
                 .read()
-                .read_ordered_filtered(limit, filter, order_by)?
+                .read_ordered_filtered(offset, limit, filter, order_by)?
         } else {
             let wrapped_filter =
                 self.add_deleted_points_condition_to_filter(filter, &deleted_points);
             self.wrapped_segment.get().read().read_ordered_filtered(
+                offset,
                 limit,
                 Some(&wrapped_filter),
                 order_by,
@@ -531,7 +534,7 @@ impl SegmentEntry for ProxySegment {
             .write_segment
             .get()
             .read()
-            .read_ordered_filtered(limit, filter, order_by)?;
+            .read_ordered_filtered(offset, limit, filter, order_by)?;
         read_points.append(&mut write_segment_points);
         read_points.sort_unstable();
         Ok(read_points)
