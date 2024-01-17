@@ -5653,7 +5653,7 @@ dependencies = [
 [[package]]
 name = "wal"
 version = "0.1.2"
-source = "git+https://github.com/qdrant/wal.git?branch=copy-wal-files-using-memcpy#4cae86c8baa0042452e57e693664c4671f296465"
+source = "git+https://github.com/qdrant/wal.git?rev=3f69dff6f32809e804293aa202f82f04323649ab#3f69dff6f32809e804293aa202f82f04323649ab"
 dependencies = [
  "byteorder",
  "crc32c",
