@@ -6346,7 +6346,7 @@
             "description": "Check if points value lies in a given range",
             "anyOf": [
               {
-                "$ref": "#/components/schemas/Range_for_double"
+                "$ref": "#/components/schemas/Range"
               },
               {
                 "nullable": true
@@ -6357,7 +6357,7 @@
             "description": "Check if datetime is within a given range",
             "anyOf": [
               {
-                "$ref": "#/components/schemas/Range_for_DateTime"
+                "$ref": "#/components/schemas/RangeDatetime"
               },
               {
                 "nullable": true
@@ -6506,7 +6506,7 @@
           }
         }
       },
-      "Range_for_double": {
+      "Range": {
         "description": "Range filter request",
         "type": "object",
         "properties": {
@@ -6536,7 +6536,7 @@
           }
         }
       },
-      "Range_for_DateTime": {
+      "RangeDatetime": {
         "description": "Range filter request",
         "type": "object",
         "properties": {
