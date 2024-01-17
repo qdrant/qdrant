@@ -711,6 +711,7 @@ impl<'s> SegmentHolder {
         }
 
         // Replace all segments with proxies
+        // We cannot fail past this point to prevent only having some segments proxified
         let proxy_ids: Vec<_> = {
             // Exclusive lock for the segments operations.
             let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
@@ -721,7 +722,9 @@ impl<'s> SegmentHolder {
                 // The probability is small, though,
                 // so we can afford this operation under the full collection write lock
                 let op_num = 0;
-                proxy.replicate_field_indexes(op_num)?; // Slow only in case the index is change in the gap between two calls
+                if let Err(err) = proxy.replicate_field_indexes(op_num) {
+                    log::error!("Failed to replicate proxy segment field indexes, ignoring: {err}");
+                }
                 proxy_ids.push(write_segments.swap(proxy, &[idx]).0);
             }
             proxy_ids

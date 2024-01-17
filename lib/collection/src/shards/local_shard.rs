@@ -623,9 +623,10 @@ impl LocalShard {
             rx.await?;
         }
 
-        let collection_path = self.path.clone();
+        let collection_path = self.path.parent().map(Path::to_path_buf).ok_or_else(|| {
+            CollectionError::service_error("Failed to determine collection path for shard")
+        })?;
         let collection_params = self.collection_config.read().await.params.clone();
-
         let temp_path = temp_path.to_owned();
 
         tokio::task::spawn_blocking(move || {
