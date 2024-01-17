@@ -138,7 +138,7 @@ def test_datetime_indexing():
     datetime_key = "datetime_payload"
     # create payload
     set_payload({datetime_key: "2015-01-01T00:00:00Z"}, [1])
-    set_payload({datetime_key: "2015-02-01T00:00:00Z"}, [2])
+    set_payload({datetime_key: "2015-02-01T08:00:00+02:00"}, [2])
 
     # Create index
     response = request_with_validation(
@@ -153,22 +153,24 @@ def test_datetime_indexing():
     )
     assert response.ok
 
-    response = request_with_validation(
-        api='/collections/{collection_name}/points/scroll',
-        method="POST",
-        path_params={'collection_name': collection_name},
-        body={
-            "with_vector": False,
-            "filter": {
-                "must": [
-                    {"key": datetime_key, "datetime_range": {"gte": "2015-01-01T00:00:00Z", "lte": "2015-01-01T00:00:00Z"}}
-                ]
-            }
-        }
-    )
-    assert response.ok
-    assert [p["id"] for p in response.json()["result"]["points"]] == [1]
-
+    data = [
+        ({"gte": "2015-01-01T00:00:00Z", "lte": "2015-01-01T00:00:00Z"}, [1]),
+        ({"gte": "2015-01-01T01:00:00+01:00", "lte": "2015-01-01T01:00:00+01:00"}, [1]),
+        ({"gte": "2015-02-01T06:00:00Z", "lte": "2015-02-01T06:00:00Z"}, [2]),
+    ]
+    for range_, expected in data:
+        print(range_, expected)
+        response = request_with_validation(
+            api="/collections/{collection_name}/points/scroll",
+            method="POST",
+            path_params={"collection_name": collection_name},
+            body={
+                "with_vector": False,
+                "filter": {"must": [{"key": datetime_key, "datetime_range": range_}]},
+            },
+        )
+        assert response.ok
+        assert [p["id"] for p in response.json()["result"]["points"]] == expected
 
 def test_update_payload_on_indexed_field():
     keyword_field = "city"
