@@ -446,7 +446,7 @@ impl ValueIndexer<DateTimePayloadType> for NumericIndex<IntPayloadType> {
     ) -> OperationResult<()> {
         match self {
             NumericIndex::Mutable(index) => {
-                index.add_many_to_list(id, values.into_iter().map(|x| x.timestamp_millis()))
+                index.add_many_to_list(id, values.into_iter().map(|x| x.timestamp_micros()))
             }
             NumericIndex::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable numeric index",

@@ -256,7 +256,7 @@ pub fn get_datetime_range_checkers(
 ) -> Option<ConditionCheckerFn> {
     match index {
         FieldIndex::IntIndex(num_index) => Some(Box::new(move |point_id: PointOffsetType| {
-            let range = range.map(|ts| ts.timestamp_millis());
+            let range = range.map(|ts| ts.timestamp_micros());
             num_index.get_values(point_id).map_or(false, |values| {
                 values.iter().copied().any(|i| range.check_range(i))
             })
