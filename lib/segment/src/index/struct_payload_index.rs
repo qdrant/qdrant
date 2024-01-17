@@ -310,6 +310,7 @@ impl StructPayloadIndex {
             Condition::Field(field_condition) => self
                 .estimate_field_condition(field_condition, nested_path)
                 .unwrap_or_else(|| CardinalityEstimation::unknown(self.available_point_count())),
+            Condition::DoesNotHaveVector(_) => todo!(),
         }
     }
 

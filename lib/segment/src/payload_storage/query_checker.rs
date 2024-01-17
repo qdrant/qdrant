@@ -125,6 +125,7 @@ where
                 })
         }
         Condition::Filter(_) => unreachable!(),
+        Condition::DoesNotHaveVector(_) => todo!(),
     };
 
     check_filter(&checker, query)

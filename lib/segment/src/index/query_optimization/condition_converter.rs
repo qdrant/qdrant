@@ -121,6 +121,7 @@ pub fn condition_converter<'a>(
             })
         }
         Condition::Filter(_) => unreachable!(),
+        Condition::DoesNotHaveVector(_) => todo!(),
     }
 }
 

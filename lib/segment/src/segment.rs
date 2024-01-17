@@ -34,9 +34,10 @@ use crate::index::{PayloadIndex, VectorIndex, VectorIndexEnum};
 use crate::spaces::tools::peek_top_smallest_iterable;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
-    Filter, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef,
-    PayloadSchemaType, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
-    SegmentState, SegmentType, SeqNumberType, VectorDataInfo, WithPayload, WithVector,
+    Condition, DoesNotHaveVectorCondition, Filter, Payload, PayloadFieldSchema, PayloadIndexInfo,
+    PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointIdType, ScoredPoint, SearchParams,
+    SegmentConfig, SegmentInfo, SegmentState, SegmentType, SeqNumberType, VectorDataInfo,
+    WithPayload, WithVector,
 };
 use crate::utils;
 use crate::utils::fs::find_symlink;
@@ -1086,6 +1087,19 @@ impl SegmentEntry for Segment {
                 .take(limit.unwrap_or(usize::MAX))
                 .collect(),
             Some(condition) => {
+                if let Some(Condition::DoesNotHaveVector(DoesNotHaveVectorCondition {
+                    vector_name,
+                    ..
+                })) = condition.first_condition()
+                {
+                    let mut out = Vec::with_capacity(100);
+                    self.try_extend_points_with_empty_vector(vector_name, &mut out)
+                        .unwrap_or_else(|err| {
+                            log::error!("Invalid vector name {}: {}", vector_name, err);
+                        });
+                    return out;
+                }
+
                 let query_cardinality = {
                     let payload_index = self.payload_index.borrow();
                     payload_index.estimate_cardinality(condition)

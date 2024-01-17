@@ -1462,7 +1462,7 @@ impl GeoPolygon {
                 || (first.lon - last.lon).abs() > f64::EPSILON
             {
                 return Err(OperationError::ValidationError {
-                    description: String::from("polygon invalid, the first and the last points should be the same to form a closed line") 
+                    description: String::from("polygon invalid, the first and the last points should be the same to form a closed line")
                 });
             }
         }
@@ -1668,6 +1668,11 @@ pub struct IsEmptyCondition {
 pub struct IsNullCondition {
     pub is_null: PayloadField,
 }
+/// Check if a point doesn't have vector with the provided name
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+pub struct DoesNotHaveVectorCondition {
+    pub vector_name: String,
+}
 
 impl From<String> for IsNullCondition {
     fn from(key: String) -> Self {
@@ -1753,6 +1758,8 @@ pub enum Condition {
     Nested(NestedCondition),
     /// Nested filter
     Filter(Filter),
+    /// Check if a point doesn't have vector with the provided name
+    DoesNotHaveVector(DoesNotHaveVectorCondition),
 }
 
 impl Condition {
@@ -1770,7 +1777,10 @@ impl Condition {
 impl Validate for Condition {
     fn validate(&self) -> Result<(), ValidationErrors> {
         match self {
-            Condition::HasId(_) | Condition::IsEmpty(_) | Condition::IsNull(_) => Ok(()),
+            Condition::HasId(_)
+            | Condition::IsEmpty(_)
+            | Condition::IsNull(_)
+            | Condition::DoesNotHaveVector(_) => Ok(()),
             Condition::Field(field_condition) => field_condition.validate(),
             Condition::Nested(nested_condition) => nested_condition.validate(),
             Condition::Filter(filter) => filter.validate(),
@@ -2013,6 +2023,15 @@ impl Filter {
             must: merge_component(self.must.clone(), other.must.clone()),
             must_not: merge_component(self.must_not.clone(), other.must_not.clone()),
         }
+    }
+
+    pub fn first_condition(&self) -> Option<&Condition> {
+        self.must
+            .as_ref()
+            .map(|c| c.first())
+            .flatten()
+            .or_else(|| self.must_not.as_ref().map(|c| c.first()).flatten())
+            .or_else(|| self.should.as_ref().map(|c| c.first()).flatten())
     }
 }
 
@@ -2294,7 +2313,7 @@ mod tests {
         let should = filter.should.unwrap();
 
         assert_eq!(should.len(), 1);
-        let c = match should.first() {
+        let c = match should.get(0) {
             Some(Condition::Field(c)) => c,
             _ => panic!("Condition::Field expected"),
         };
@@ -2399,7 +2418,7 @@ mod tests {
         let should = filter.should.unwrap();
 
         assert_eq!(should.len(), 1);
-        let c = match should.first() {
+        let c = match should.get(0) {
             Some(Condition::IsEmpty(c)) => c,
             _ => panic!("Condition::IsEmpty expected"),
         };
@@ -2425,7 +2444,7 @@ mod tests {
         let should = filter.should.unwrap();
 
         assert_eq!(should.len(), 1);
-        let c = match should.first() {
+        let c = match should.get(0) {
             Some(Condition::IsNull(c)) => c,
             _ => panic!("Condition::IsNull expected"),
         };
@@ -2465,13 +2484,13 @@ mod tests {
         let filter: Filter = serde_json::from_str(query).unwrap();
         let musts = filter.must.unwrap();
         assert_eq!(musts.len(), 1);
-        match musts.first() {
+        match musts.get(0) {
             Some(Condition::Nested(nested_condition)) => {
                 assert_eq!(nested_condition.raw_key(), "country.cities");
                 assert_eq!(nested_condition.array_key(), "country.cities[]");
                 let nested_musts = nested_condition.filter().must.as_ref().unwrap();
                 assert_eq!(nested_musts.len(), 2);
-                let first_must = nested_musts.first().unwrap();
+                let first_must = nested_musts.get(0).unwrap();
                 match first_must {
                     Condition::Field(c) => {
                         assert_eq!(c.key, "population");
