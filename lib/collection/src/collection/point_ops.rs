@@ -282,10 +282,17 @@ impl Collection {
                         .unwrap_or(default_value);
                     (value, point)
                 });
-                retrieved_iter
-                    .sorted_unstable_by_key(|(value, point)| (OrderedFloat(*value), point.id))
-                    .map(|(_, record)| record)
-                    .collect_vec()
+                match order_by.direction() {
+                    Direction::Asc => retrieved_iter
+                        .sorted_unstable_by_key(|(value, point)| (OrderedFloat(*value), point.id))
+                        .map(|(_, record)| record)
+                        .collect_vec(),
+                    Direction::Desc => retrieved_iter
+                        .sorted_unstable_by_key(|(value, point)| (OrderedFloat(*value), point.id))
+                        .rev()
+                        .map(|(_, record)| record)
+                        .collect_vec(),
+                }
             }
         }
         .into_iter()

@@ -714,8 +714,7 @@ impl Segment {
         let numeric_index = payload_index
             .field_indexes
             .get(&order_by.key)
-            .and_then(|indexes| indexes.first())
-            .and_then(|index| index.as_numeric())
+            .and_then(|indexes| indexes.iter().find_map(|index| index.as_numeric()))
             .ok_or_else(|| OperationError::ValidationError { description: "There is no numeric index for the order_by field, please create one to use order_by".to_string() })?;
 
         let id_tracker = self.id_tracker.borrow();
@@ -725,10 +724,14 @@ impl Segment {
         let ordered_iter =
             OrderedByFieldIterator::new(range_iter, id_tracker.deref(), order_by.direction())
                 .skip_while(|item| match offset {
-                    Some(offset) => match order_by.direction() {
-                        Direction::Asc => item.external_id < offset,
-                        Direction::Desc => item.external_id > offset,
-                    },
+                    Some(id_offset) => {
+                        let item_key = (item.value, item.external_id);
+                        let offset_key = (order_by.value_offset(), id_offset);
+                        match order_by.direction() {
+                            Direction::Asc => item_key < offset_key,
+                            Direction::Desc => item_key > offset_key,
+                        }
+                    }
                     _ => false,
                 });
 

@@ -2040,6 +2040,13 @@ impl OrderBy {
     pub fn direction(&self) -> Direction {
         self.direction.unwrap_or_default()
     }
+
+    pub fn value_offset(&self) -> f64 {
+        self.value_offset.unwrap_or_else(|| match self.direction() {
+            Direction::Asc => f64::NEG_INFINITY,
+            Direction::Desc => f64::INFINITY,
+        })
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default)]

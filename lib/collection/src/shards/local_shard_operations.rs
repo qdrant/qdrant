@@ -137,9 +137,12 @@ impl LocalShard {
                 .collect()
         };
 
-        let all_reads = try_join_all(read_handles).await?;
+        let all_reads: Vec<_> = try_join_all(read_handles)
+            .await?
+            .into_iter()
+            .try_collect()?;
 
-        let all_points = all_reads.into_iter().flatten().flatten();
+        let all_points = all_reads.into_iter().flatten();
 
         let top_records = match order_by.direction() {
             Direction::Asc => tools::peek_top_smallest_iterable(all_points, limit),

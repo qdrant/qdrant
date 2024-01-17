@@ -434,28 +434,28 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
     let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
     let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
 
-    fn get_float_payload(value: f64) -> Option<Payload> {
+    fn get_payload(value: f64) -> Option<Payload> {
         let mut payload_map = Map::new();
-        payload_map.insert("price".to_string(), (value).into());
+        payload_map.insert("price_float".to_string(), (value).into());
         payload_map.insert("price_int".to_string(), (value as i64).into());
         Some(Payload(payload_map))
     }
 
     let payloads: Vec<Option<Payload>> = vec![
-        get_float_payload(11.0),
-        get_float_payload(10.0),
-        get_float_payload(9.0),
-        get_float_payload(8.0),
-        get_float_payload(7.0),
-        get_float_payload(6.0),
-        get_float_payload(5.0),
-        get_float_payload(5.0),
-        get_float_payload(5.0),
-        get_float_payload(5.0),
-        get_float_payload(4.0),
-        get_float_payload(3.0),
-        get_float_payload(2.0),
-        get_float_payload(1.0),
+        get_payload(11.0),
+        get_payload(10.0),
+        get_payload(9.0),
+        get_payload(8.0),
+        get_payload(7.0),
+        get_payload(6.0),
+        get_payload(5.0),
+        get_payload(5.0),
+        get_payload(5.0),
+        get_payload(5.0),
+        get_payload(4.0),
+        get_payload(3.0),
+        get_payload(2.0),
+        get_payload(1.0),
     ];
     let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
         Batch {
@@ -492,7 +492,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
 
     collection
         .create_payload_index_with_wait(
-            "price".to_string(),
+            "price_float".to_string(),
             PayloadFieldSchema::FieldType(PayloadSchemaType::Float),
             true,
         )
@@ -508,7 +508,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
         .await
         .unwrap();
 
-    for key in ["price", "price_int"] {
+    for key in ["price_float", "price_int"] {
         let result_asc = collection
             .scroll_by(
                 ScrollRequestInternal {

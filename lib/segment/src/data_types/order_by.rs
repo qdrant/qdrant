@@ -4,6 +4,7 @@ use itertools::Either;
 use crate::id_tracker::IdTrackerSS;
 use crate::types::{Direction, PointIdType};
 
+#[derive(Debug)]
 pub(crate) struct OrderableItem {
     pub value: f64,
     pub external_id: PointIdType,
