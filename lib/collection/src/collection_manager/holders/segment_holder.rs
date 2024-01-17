@@ -783,24 +783,22 @@ impl<'s> SegmentHolder {
         // the wrapped shard.
 
         // Batch 1: propagate changes to wrapped segment in shared read lock
-        {
-            let read_segments = segments.read();
-            proxy_ids
-                .iter()
-                .flat_map(|proxy_id| read_segments.get(*proxy_id).map(|segment| (proxy_id, segment)))
-                .flat_map(|(proxy_id, proxy_segment)| match proxy_segment {
-                    LockedSegment::Proxy(proxy_segment) => Some((proxy_id, proxy_segment)),
-                    LockedSegment::Original(_) => None,
-                }).for_each(|(proxy_id, proxy_segment)| {
-                    if let Err(err) = proxy_segment.read().propagate_to_writeable() {
-                        log::error!("Propagating proxy segment {proxy_id} changes to wrapped segment failed, ignoring: {err}");
-                    }
-                });
-        }
+        let read_segments = segments.upgradable_read();
+        proxy_ids
+            .iter()
+            .flat_map(|proxy_id| read_segments.get(*proxy_id).map(|segment| (proxy_id, segment)))
+            .flat_map(|(proxy_id, proxy_segment)| match proxy_segment {
+                LockedSegment::Proxy(proxy_segment) => Some((proxy_id, proxy_segment)),
+                LockedSegment::Original(_) => None,
+            }).for_each(|(proxy_id, proxy_segment)| {
+                if let Err(err) = proxy_segment.read().propagate_to_writeable() {
+                    log::error!("Propagating proxy segment {proxy_id} changes to wrapped segment failed, ignoring: {err}");
+                }
+            });
 
         // Batch 2: propagate changes to wrapped segment in exclusive write lock
         // Swap out each proxy with wrapped segment once changes are propagated
-        let mut write_segments = segments.write();
+        let mut write_segments = RwLockUpgradableReadGuard::upgrade(read_segments);
         for proxy_id in proxy_ids {
             let Some(proxy_segment) = write_segments.get(proxy_id) else {
                 log::error!("Unproxying temporary shard segment proxies, but a proxy segment is missing, cannot unproxy: {proxy_id}");
