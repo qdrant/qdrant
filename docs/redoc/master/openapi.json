@@ -8158,6 +8158,12 @@
           "latest_error": {
             "type": "string",
             "nullable": true
+          },
+          "latest_error_timestamp": {
+            "description": "Timestamp of the latest error",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         }
       },
