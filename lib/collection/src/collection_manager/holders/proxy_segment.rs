@@ -173,6 +173,7 @@ impl ProxySegment {
         let write_segment = self.write_segment.get();
         let mut write_segment = write_segment.write();
 
+        // TODO: define proper op_num here!
         let op_num = 0;
 
         // Propagate deleted points
