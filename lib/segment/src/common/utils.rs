@@ -448,8 +448,67 @@ impl JsonPathPayload {
     }
 }
 
+/// Deserialize JSON single value or array into Vec
+///
+/// E.g
+/// {
+///   "key": [
+///       { "inner": "value" }
+///   ]
+/// }
+///
+/// {
+///   "key": {
+///       "inner": "value"
+///   }
+/// }
+pub fn deserialize_one_or_many<'de, T, D>(deserializer: D) -> Result<Vec<T>, D::Error>
+where
+    T: serde::Deserialize<'de>,
+    D: serde::Deserializer<'de>,
+{
+    use serde_untagged::UntaggedEnumVisitor;
+
+    UntaggedEnumVisitor::new()
+        .seq(|x| x.deserialize())
+        .map(|x| x.deserialize().map(|x| vec![x]))
+        .deserialize(deserializer)
+}
+
+pub fn deserialize_one_or_many_opt<'de, T, D>(deserializer: D) -> Result<Option<Vec<T>>, D::Error>
+where
+    T: serde::Deserialize<'de>,
+    D: serde::Deserializer<'de>,
+{
+    deserialize_one_or_many(deserializer).map(|x| x.into())
+}
+
+/// Generates the JSON schema for a single or collection of instances of a give type `T`
+pub fn schema_one_or_many_opt<T>(
+    gen: &mut schemars::gen::SchemaGenerator,
+) -> schemars::schema::Schema
+where
+    T: schemars::JsonSchema,
+{
+    use schemars::schema::SchemaObject;
+    use schemars::JsonSchema;
+
+    #[derive(JsonSchema)]
+    #[serde(untagged)]
+    enum OneOrMany<T> {
+        _One(Option<T>),
+        _Many(Option<Vec<T>>),
+    }
+
+    let schema: SchemaObject = <OneOrMany<T>>::json_schema(gen).into();
+    schema.into()
+}
+
 #[cfg(test)]
 mod tests {
+    use schemars::JsonSchema;
+    use serde::Deserialize;
+
     use super::*;
 
     #[test]
@@ -780,5 +839,73 @@ mod tests {
         assert!(!check_exclude_pattern("a.b.c", "a.b.d"));
         assert!(!check_exclude_pattern("a.b.c", "a"));
         assert!(check_exclude_pattern("a", "a.d"));
+    }
+
+    #[test]
+    fn test_deserialize_one_or_many() {
+        #[derive(Deserialize)]
+        struct Test {
+            #[serde(deserialize_with = "deserialize_one_or_many")]
+            data: Vec<Inner>,
+        }
+
+        #[derive(Deserialize)]
+        struct Inner {
+            key: String,
+        }
+
+        let res = serde_json::from_str::<Test>(
+            r#"
+            {
+                "data": {
+                    "key": "value"
+                }
+            }
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(res.data.len(), 1);
+        assert_eq!(res.data[0].key, "value".to_string());
+
+        let res = serde_json::from_str::<Test>(
+            r#"
+            {
+                "data": [
+                    {
+                        "key": "value"
+                    }
+                ]
+            }
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(res.data.len(), 1);
+        assert_eq!(res.data[0].key, "value".to_string());
+    }
+
+    #[test]
+    fn test_schema_one_or_many() {
+        #[derive(JsonSchema)]
+        struct Test {
+            #[schemars(schema_with = "schema_one_or_many_opt::<String>")]
+            _field: Vec<String>,
+        }
+
+        let schema = schemars::schema_for!(Test);
+        let json = serde_json::to_value(&schema).unwrap();
+
+        let types = json
+            .get("properties")
+            .and_then(|x| x.get("_field"))
+            .and_then(|x| x.get("anyOf"))
+            .and_then(|x| x.as_array())
+            .unwrap();
+
+        assert_eq!(
+            serde_json::to_string(types).unwrap(),
+            "[{\"type\":[\"string\",\"null\"]},{\"items\":{\"type\":\"string\"},\"type\":[\"array\",\"null\"]}]",
+        );
     }
 }

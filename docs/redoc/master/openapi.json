@@ -6374,27 +6374,72 @@
         "properties": {
           "should": {
             "description": "At least one of those conditions should match",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Condition"
-            },
-            "nullable": true
+            "default": null,
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/Condition"
+                  },
+                  {
+                    "nullable": true
+                  }
+                ]
+              },
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Condition"
+                },
+                "nullable": true
+              }
+            ]
           },
           "must": {
             "description": "All conditions must match",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Condition"
-            },
-            "nullable": true
+            "default": null,
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/Condition"
+                  },
+                  {
+                    "nullable": true
+                  }
+                ]
+              },
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Condition"
+                },
+                "nullable": true
+              }
+            ]
           },
           "must_not": {
             "description": "All conditions must NOT match",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Condition"
-            },
-            "nullable": true
+            "default": null,
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/Condition"
+                  },
+                  {
+                    "nullable": true
+                  }
+                ]
+              },
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Condition"
+                },
+                "nullable": true
+              }
+            ]
           }
         },
         "additionalProperties": false
