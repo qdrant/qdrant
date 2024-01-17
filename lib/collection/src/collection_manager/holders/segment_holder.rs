@@ -153,7 +153,32 @@ pub struct SegmentHolder {
     pub optimizer_errors: Option<CollectionError>,
 }
 
-pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
+#[derive(Clone)]
+pub struct LockedSegmentHolder {
+    pub segments: Arc<RwLock<SegmentHolder>>,
+    pub shared_lock: Arc<RwLock<()>>,
+}
+
+impl LockedSegmentHolder {
+    pub fn new(segments: SegmentHolder) -> Self {
+        Self::from(Arc::new(RwLock::new(segments)))
+    }
+
+    pub fn from(segments: Arc<RwLock<SegmentHolder>>) -> Self {
+        LockedSegmentHolder {
+            segments,
+            shared_lock: Default::default(),
+        }
+    }
+}
+
+impl Deref for LockedSegmentHolder {
+    type Target = RwLock<SegmentHolder>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.segments
+    }
+}
 
 impl<'s> SegmentHolder {
     pub fn iter(&'s self) -> impl Iterator<Item = (&SegmentId, &LockedSegment)> + 's {
@@ -582,6 +607,9 @@ impl<'s> SegmentHolder {
     where
         F: Fn(Arc<RwLock<dyn SegmentEntry>>) -> OperationResult<()>,
     {
+        let _global_write_arc = segments.shared_lock.clone();
+        let _global_write = _global_write_arc.write();
+
         // Proxy all segments
         log::trace!("Proxying all shard segments to apply function");
         let (proxies, tmp_segment) =

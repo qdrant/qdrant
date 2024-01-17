@@ -436,6 +436,8 @@ pub trait SegmentOptimizer {
         let mut timer = ScopeDurationMeasurer::new(&self.get_telemetry_counter());
         timer.set_success(false);
 
+        let _global_read = segments.shared_lock.read();
+
         // On the one hand - we want to check consistently if all provided segments are
         // available for optimization (not already under one) and we want to do it before creating a temp segment
         // which is an expensive operation. So we can't not unlock `segments` after the check and before the insert.
@@ -596,6 +598,7 @@ pub trait SegmentOptimizer {
 
                 // unlock collection for search and updates
                 drop(write_segments_guard);
+                drop(_global_read);
                 // After the collection is unlocked - we can remove data as slow as we want.
 
                 // Only remove data after we ensure the consistency of the collection.
@@ -606,6 +609,7 @@ pub trait SegmentOptimizer {
             } else {
                 // unlock collection for search and updates
                 drop(write_segments_guard);
+                drop(_global_read);
                 // After the collection is unlocked - we can remove data as slow as we want.
 
                 // Proxy contains pointer to the `tmp_segment`, so they should be removed first

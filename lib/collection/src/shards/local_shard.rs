@@ -121,7 +121,7 @@ impl LocalShard {
         shard_path: &Path,
         update_runtime: Handle,
     ) -> Self {
-        let segment_holder = Arc::new(RwLock::new(segment_holder));
+        let segment_holder = LockedSegmentHolder::new(segment_holder);
         let config = collection_config.read().await;
         let locked_wal = Arc::new(ParkingMutex::new(wal));
         let optimizers_log = Arc::new(ParkingMutex::new(Default::default()));
