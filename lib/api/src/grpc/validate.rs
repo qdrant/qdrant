@@ -322,6 +322,21 @@ pub fn validate_geo_polygon_interiors(lines: &Vec<GeoLineString>) -> Result<(), 
     Ok(())
 }
 
+/// Validate that the timestamp is within the range specified in the protobuf docs.
+/// https://protobuf.dev/reference/protobuf/google.protobuf/#timestamp
+pub fn validate_timestamp(ts: &Option<prost_wkt_types::Timestamp>) -> Result<(), ValidationError> {
+    let Some(ts) = ts else {
+        return Ok(());
+    };
+    validate_range_generic(
+        ts.seconds,
+        Some(-62135596800), // 0001-01-01T00:00:00Z
+        Some(253402300799), // 9999-12-31T23:59:59Z
+    )?;
+    validate_range_generic(ts.nanos, Some(0), Some(999_999_999))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use validator::Validate;
