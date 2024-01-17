@@ -22,7 +22,12 @@ use uuid::Uuid;
 use validator::{Validate, ValidationError, ValidationErrors};
 
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::common::utils::{self, MultiValue};
+use crate::common::utils;
+use crate::common::utils::{
+    self, check_exclude_pattern, check_include_pattern, deserialize_one_or_many_opt,
+    filter_json_values, get_value_from_json_map, get_value_from_json_map_opt,
+    schema_one_or_many_opt, MultiValue,
+};
 use crate::data_types::integer_index::IntegerIndexParams;
 use crate::data_types::text_index::TextIndexParams;
 use crate::data_types::vectors::{VectorElementType, VectorStruct};
@@ -2108,16 +2113,22 @@ impl MinShould {
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub struct Filter {
     /// At least one of those conditions should match
+    #[serde(default, deserialize_with = "deserialize_one_or_many_opt")]
     #[validate]
+    #[schemars(schema_with = "schema_one_or_many_opt::<Condition>")]
     pub should: Option<Vec<Condition>>,
     /// At least minimum amount of given conditions should match
     #[validate]
     pub min_should: Option<MinShould>,
     /// All conditions must match
+    #[serde(default, deserialize_with = "deserialize_one_or_many_opt")]
     #[validate]
+    #[schemars(schema_with = "schema_one_or_many_opt::<Condition>")]
     pub must: Option<Vec<Condition>>,
     /// All conditions must NOT match
+    #[serde(default, deserialize_with = "deserialize_one_or_many_opt")]
     #[validate]
+    #[schemars(schema_with = "schema_one_or_many_opt::<Condition>")]
     pub must_not: Option<Vec<Condition>>,
 }
 
@@ -2765,6 +2776,47 @@ mod tests {
                     Condition::Field(c) => {
                         assert_eq!(c.key.to_string(), "sightseeing");
                         assert!(c.values_count.is_some());
+                    }
+                    _ => panic!("Condition::Field expected"),
+                }
+            }
+            o => panic!("Condition::Nested expected but got {:?}", o),
+        };
+    }
+
+    #[test]
+    fn test_parse_single_nested_filter_query() {
+        let query = r#"
+        {
+          "must": {
+              "nested": {
+                "key": "country.cities",
+                "filter": {
+                  "must": {
+                      "key": "population",
+                      "range": {
+                        "gte": 8
+                      }
+                    }
+                }
+              }
+            }
+        }
+        "#;
+        let filter: Filter = serde_json::from_str(query).unwrap();
+        let musts = filter.must.unwrap();
+        assert_eq!(musts.len(), 1);
+        match musts.first() {
+            Some(Condition::Nested(nested_condition)) => {
+                assert_eq!(nested_condition.raw_key(), "country.cities");
+                assert_eq!(nested_condition.array_key(), "country.cities[]");
+                let nested_must = nested_condition.filter().must.as_ref().unwrap();
+                assert_eq!(nested_must.len(), 1);
+                let must = nested_must.first().unwrap();
+                match must {
+                    Condition::Field(c) => {
+                        assert_eq!(c.key, "population");
+                        assert!(c.range.is_some());
                     }
                     _ => panic!("Condition::Field expected"),
                 }
