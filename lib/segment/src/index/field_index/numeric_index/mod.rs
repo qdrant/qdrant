@@ -453,10 +453,7 @@ impl ValueIndexer<IntPayloadType> for NumericIndex<IntPayloadType> {
     }
 
     fn get_value(&self, value: &Value) -> Option<IntPayloadType> {
-        if let Value::Number(num) = value {
-            return num.as_i64();
-        }
-        None
+        value.as_i64()
     }
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
@@ -479,10 +476,7 @@ impl ValueIndexer<FloatPayloadType> for NumericIndex<FloatPayloadType> {
     }
 
     fn get_value(&self, value: &Value) -> Option<FloatPayloadType> {
-        if let Value::Number(num) = value {
-            return num.as_f64();
-        }
-        None
+        value.as_f64()
     }
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {

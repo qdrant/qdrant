@@ -1,8 +1,11 @@
 use std::sync::Arc;
 
 use futures::{future, TryFutureExt, TryStreamExt as _};
-use itertools::{Either, Itertools as _};
-use segment::types::{OrderBy, PayloadContainer, ShardKey, WithPayload, WithPayloadInterface};
+use itertools::Itertools;
+use ordered_float::OrderedFloat;
+use segment::types::{
+    Direction, OrderBy, PayloadContainer, ShardKey, WithPayload, WithPayloadInterface,
+};
 use validator::Validate as _;
 
 use super::Collection;
@@ -11,7 +14,6 @@ use crate::operations::point_ops::WriteOrdering;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::*;
 use crate::operations::CollectionUpdateOperations;
-use crate::shards::local_shard_operations::from_offset_sorted;
 use crate::shards::shard::ShardId;
 
 impl Collection {
@@ -256,9 +258,37 @@ impl Collection {
 
         let retrieved_iter = retrieved_points.into_iter().flatten();
         let mut points = match order_by {
-            None => Either::Left(retrieved_iter.sorted_unstable_by_key(|point| point.id)),
-            Some(order_by) => Either::Right(from_offset_sorted(retrieved_iter, &order_by, offset)),
+            None => retrieved_iter
+                .sorted_unstable_by_key(|point| point.id)
+                .collect_vec(),
+            Some(order_by) => {
+                let default_value = match order_by.direction() {
+                    Direction::Asc => std::f64::MAX,
+                    Direction::Desc => std::f64::MIN,
+                };
+
+                // Extract order_by value from payload
+                let retrieved_iter = retrieved_iter.map(|point| {
+                    let value = point
+                        .payload
+                        .as_ref()
+                        .and_then(|payload| {
+                            payload
+                                .get_value(&order_by.key)
+                                .values()
+                                .first()
+                                .and_then(|v| v.as_f64())
+                        })
+                        .unwrap_or(default_value);
+                    (value, point)
+                });
+                retrieved_iter
+                    .sorted_unstable_by_key(|(value, point)| (OrderedFloat(*value), point.id))
+                    .map(|(_, record)| record)
+                    .collect_vec()
+            }
         }
+        .into_iter()
         .take(limit)
         .collect_vec();
 

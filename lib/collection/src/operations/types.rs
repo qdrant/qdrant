@@ -11,7 +11,6 @@ use common::types::ScoreType;
 use common::validation::validate_range_generic;
 use io::file_operations::FileStorageError;
 use merge::Merge;
-use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::common::operation_error::OperationError;
@@ -92,8 +91,6 @@ pub struct Record {
     /// Shard Key
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<ShardKey>,
-    #[serde(skip)]
-    pub ordered_by: Option<OrderedFloat<f64>>,
 }
 
 /// Current statistics and configuration of the collection

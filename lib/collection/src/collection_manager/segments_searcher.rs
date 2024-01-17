@@ -332,7 +332,6 @@ impl SegmentsSearcher {
                             }
                         },
                         shard_key: None,
-                        ordered_by: None,
                     },
                 );
                 point_version.insert(id, version);
