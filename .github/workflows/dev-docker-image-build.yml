@@ -1,4 +1,4 @@
-name: Docker Build and Push dev branch images
+name: Push dev branch container to ghcr
 
 on:
   workflow_dispatch:
@@ -22,7 +22,7 @@ jobs:
             docker login https://ghcr.io -u qdrant --password ${{ secrets.GITHUB_TOKEN }}
 
             # Build regular image for Github Registry
-            GITHUB_TAG="-t ghcr.io/qdrant/qdrant/qdrant:dev-${{ github.sha }}"
+            GITHUB_TAG="-t ghcr.io/qdrant/qdrant/qdrant:dev-${{ github.sha }} -t ghcr.io/qdrant/qdrant/qdrant:dev"
 
             # Pull, retag and push to GitHub packages
             docker buildx build --platform='linux/amd64,linux/arm64' $GITHUB_TAG --push --label "org.opencontainers.image.revision"=${{ github.sha }} .
