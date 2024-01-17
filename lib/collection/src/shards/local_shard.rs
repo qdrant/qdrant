@@ -29,7 +29,9 @@ use wal::{Wal, WalOptions};
 
 use super::update_tracker::UpdateTracker;
 use crate::collection_manager::collection_updater::CollectionUpdater;
-use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
+use crate::collection_manager::holders::segment_holder::{
+    LockedSegment, LockedSegmentHolder, SegmentHolder,
+};
 use crate::collection_manager::optimizers::TrackerLog;
 use crate::common::file_utils::move_dir;
 use crate::config::CollectionConfig;
@@ -58,7 +60,7 @@ const WAL_LOAD_REPORT_EVERY: Duration = Duration::from_secs(60);
 ///
 /// Holds all object, required for collection functioning
 pub struct LocalShard {
-    pub(super) segments: Arc<RwLock<SegmentHolder>>,
+    pub(super) segments: LockedSegmentHolder,
     pub(super) collection_config: Arc<TokioRwLock<CollectionConfig>>,
     pub(super) shared_storage_config: Arc<SharedStorageConfig>,
     pub(super) wal: LockedWal,
