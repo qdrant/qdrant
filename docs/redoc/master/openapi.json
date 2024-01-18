@@ -1630,6 +1630,15 @@
             "schema": {
               "$ref": "#/components/schemas/SnapshotPriority"
             }
+          },
+          {
+            "name": "checksum",
+            "in": "query",
+            "description": "Optional SHA256 checksum to verify snapshot integrity before recovery.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -1741,6 +1750,15 @@
             "required": false,
             "schema": {
               "type": "boolean"
+            }
+          },
+          {
+            "name": "checksum",
+            "in": "query",
+            "description": "Optional SHA256 checksum to verify snapshot integrity before recovery.",
+            "required": false,
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -2486,6 +2504,15 @@
             "schema": {
               "$ref": "#/components/schemas/SnapshotPriority"
             }
+          },
+          {
+            "name": "checksum",
+            "in": "query",
+            "description": "Optional SHA256 checksum to verify snapshot integrity before recovery.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -2606,6 +2633,15 @@
             "required": false,
             "schema": {
               "type": "boolean"
+            }
+          },
+          {
+            "name": "checksum",
+            "in": "query",
+            "description": "Optional SHA256 checksum to verify snapshot integrity before recovery.",
+            "required": false,
+            "schema": {
+              "type": "string"
             }
           }
         ],
