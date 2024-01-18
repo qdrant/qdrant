@@ -14,6 +14,10 @@ jobs:
         - uses: Swatinem/rust-cache@v2
         - name: Build the Docker image
           run: |
+
+            # Print latest commit id:
+            git rev-parse HEAD
+
             # Create build container
             docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
             docker buildx create --use
