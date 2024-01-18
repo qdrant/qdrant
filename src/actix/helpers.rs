@@ -18,7 +18,7 @@ pub fn collection_into_actix_error(err: CollectionError) -> Error {
 
 pub fn storage_into_actix_error(err: StorageError) -> Error {
     match err {
-        StorageError::AlreadyExists { .. } => error::ErrorBadRequest(format!("{err}")),
+        StorageError::AlreadyExists { .. } => error::ErrorConflict(format!("{err}")),
         StorageError::BadInput { .. } => error::ErrorBadRequest(format!("{err}")),
         StorageError::NotFound { .. } => error::ErrorNotFound(format!("{err}")),
         StorageError::ServiceError { .. } => error::ErrorInternalServerError(format!("{err}")),
@@ -50,7 +50,7 @@ where
             let error_description = format!("{err}");
 
             let mut resp = match err {
-                StorageError::AlreadyExists { .. } => HttpResponse::BadRequest(),
+                StorageError::AlreadyExists { .. } => HttpResponse::Conflict(),
                 StorageError::BadInput { .. } => HttpResponse::BadRequest(),
                 StorageError::NotFound { .. } => HttpResponse::NotFound(),
                 StorageError::ServiceError {
@@ -181,7 +181,7 @@ impl From<StorageError> for HttpError {
     fn from(err: StorageError) -> Self {
         let (status_code, description) = match err {
             StorageError::AlreadyExists { description } => {
-                (http::StatusCode::BAD_REQUEST, description)
+                (http::StatusCode::CONFLICT, description)
             }
             StorageError::BadInput { description } => (http::StatusCode::BAD_REQUEST, description),
             StorageError::NotFound { description } => (http::StatusCode::NOT_FOUND, description),
