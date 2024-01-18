@@ -364,7 +364,7 @@ async fn recover_shard_snapshot(
         )
         .await?;
 
-        Ok(())
+        Ok(true)
     };
 
     helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
