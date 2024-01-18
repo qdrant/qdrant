@@ -2,7 +2,7 @@ use std::collections::{BTreeSet, HashMap};
 
 use common::types::PointOffsetType;
 
-use super::inverted_index::{TokenId, Document, ParsedQuery};
+use super::inverted_index::{Document, ParsedQuery, TokenId};
 use super::posting_list::PostingList;
 use super::postings_iterator::intersect_postings_iterator;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};

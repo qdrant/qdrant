@@ -10,17 +10,14 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::data_types::text_index::TextIndexParams;
-use crate::index::field_index::full_text_index::inverted_index::{
-    Document, ParsedQuery,
-};
+use crate::index::field_index::full_text_index::immutable_inverted_index::ImmutableInvertedIndex;
+use crate::index::field_index::full_text_index::inverted_index::{Document, ParsedQuery};
 use crate::index::field_index::full_text_index::tokenizers::Tokenizer;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, ValueIndexer,
 };
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, Match, PayloadKeyType};
-
-use crate::index::field_index::full_text_index::immutable_inverted_index::ImmutableInvertedIndex;
 
 pub struct ImmutableFullTextIndex {
     inverted_index: ImmutableInvertedIndex,
