@@ -65,6 +65,7 @@ where
                 StorageError::BadRequest { .. } => HttpResponse::BadRequest(),
                 StorageError::Locked { .. } => HttpResponse::Forbidden(),
                 StorageError::Timeout { .. } => HttpResponse::RequestTimeout(),
+                StorageError::AlreadyExists { .. } => HttpResponse::Conflict(),
             };
 
             resp.json(ApiResponse::<()> {
