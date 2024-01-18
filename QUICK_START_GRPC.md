@@ -101,19 +101,28 @@ grpcurl -plaintext -import-path ./lib/api/src/grpc/proto/ -proto qdrant.proto -d
       "id": {
         "num": 1
       },
-      "vector": [0.05, 0.61, 0.76, 0.74],
+      "vectors": {
+        "vector": { "data": [0.05, 0.61, 0.76, 0.74] }
+      },
       "payload": {
-        "city": "Berlin",
-        "country": "Germany",
-        "population": 1000000,
-        "square": 12.5,
-        "coords": { "lat": 1.0, "lon": 2.0 }
+        "city": { "string_value": "Berlin" },
+        "country": { "string_value": "Germany" },
+        "population": { "integer_value": 1000000 },
+        "square": { "double_value": 12.5 },
+        "coords": {
+          "struct_value": {
+            "fields":{
+              "lat": { "double_value": 1.0 },
+              "lon": { "double_value": 2.0 }
+            }
+          }
+        }
       }
     },
-    {"id": {"num": 2}, "vector": [0.18, 0.01, 0.85, 0.80], "payload": {"square": [10, 11] }},
-    {"id": {"num": 3}, "vector": [0.24, 0.18, 0.22, 0.45], "payload": {"count": [0] }},
-    {"id": {"num": 4}, "vector": [0.24, 0.18, 0.22, 0.45], "payload": {"coords": [{ "lat": 1.0, "lon": 2.0}, { "lat": 3.0, "lon": 4.0}]}},
-    {"id": {"num": 5}, "vector": [0.35, 0.08, 0.11, 0.44]}
+    {"id": {"num": 2}, "vectors": {"vector": {"data": [0.18, 0.01, 0.85, 0.80]}}, "payload": {"square": {"list_value": {"values": [{"integer_value": 10}, {"integer_value": 11}]}} }},
+    {"id": {"num": 3}, "vectors": {"vector": {"data": [0.24, 0.18, 0.22, 0.45]}}, "payload": {"count": {"list_value": {"values": [{"integer_value": 0}]}} }},
+    {"id": {"num": 4}, "vectors": {"vector": {"data": [0.24, 0.18, 0.22, 0.45]}}, "payload": {"coords": {"list_value": {"values": [{ "struct_value": {"fields": { "lat": { "double_value":1.0 }, "lon": { "double_value": 2.0 } } } }, { "struct_value": {"fields":  { "lat": { "double_value":3.0 }, "lon": { "double_value": 4.0 } } } }] }} }},
+    {"id": {"num": 5}, "vectors": {"vector": {"data": [0.35, 0.08, 0.11, 0.44]}}}
   ]
 }' \
 0.0.0.0:6334 qdrant.Points/Upsert
