@@ -12,10 +12,11 @@ use collection::operations::CollectionUpdateOperations;
 use collection::recommendations::recommend_by;
 use collection::shards::replica_set::{ReplicaSetState, ReplicaState};
 use itertools::Itertools;
+use segment::data_types::order_by::{Direction, OrderBy};
 use segment::data_types::vectors::VectorStruct;
 use segment::types::{
-    Condition, Direction, FieldCondition, Filter, HasIdCondition, OrderBy, Payload,
-    PayloadFieldSchema, PayloadSchemaType, PointIdType, WithPayloadInterface,
+    Condition, FieldCondition, Filter, HasIdCondition, Payload, PayloadFieldSchema,
+    PayloadSchemaType, PointIdType, WithPayloadInterface,
 };
 use serde_json::Map;
 use tempfile::Builder;

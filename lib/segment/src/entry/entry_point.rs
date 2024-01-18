@@ -6,11 +6,12 @@ use ordered_float::OrderedFloat;
 
 use crate::common::operation_error::{OperationResult, SegmentFailedState};
 use crate::data_types::named_vectors::NamedVectors;
+use crate::data_types::order_by::OrderBy;
 use crate::data_types::vectors::{QueryVector, Vector};
 use crate::index::field_index::CardinalityEstimation;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
-    Filter, OrderBy, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
+    Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
     ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, WithPayload,
     WithVector,
 };

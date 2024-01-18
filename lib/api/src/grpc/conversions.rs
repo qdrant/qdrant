@@ -1199,26 +1199,26 @@ impl From<segment::types::Match> for Match {
     }
 }
 
-impl From<Direction> for segment::types::Direction {
+impl From<Direction> for segment::data_types::order_by::Direction {
     fn from(value: Direction) -> Self {
         match value {
-            Direction::Asc => segment::types::Direction::Asc,
-            Direction::Desc => segment::types::Direction::Desc,
+            Direction::Asc => segment::data_types::order_by::Direction::Asc,
+            Direction::Desc => segment::data_types::order_by::Direction::Desc,
         }
     }
 }
 
-impl From<segment::types::Direction> for Direction {
-    fn from(value: segment::types::Direction) -> Self {
+impl From<segment::data_types::order_by::Direction> for Direction {
+    fn from(value: segment::data_types::order_by::Direction) -> Self {
         match value {
-            segment::types::Direction::Asc => Direction::Asc,
-            segment::types::Direction::Desc => Direction::Desc,
+            segment::data_types::order_by::Direction::Asc => Direction::Asc,
+            segment::data_types::order_by::Direction::Desc => Direction::Desc,
         }
     }
 }
 
-impl From<segment::types::OrderBy> for OrderBy {
-    fn from(value: segment::types::OrderBy) -> Self {
+impl From<segment::data_types::order_by::OrderBy> for OrderBy {
+    fn from(value: segment::data_types::order_by::OrderBy) -> Self {
         Self {
             key: value.key,
             direction: value.direction.map(|d| Direction::from(d) as i32),

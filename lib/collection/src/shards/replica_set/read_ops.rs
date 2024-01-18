@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures::FutureExt as _;
+use segment::data_types::order_by::OrderBy;
 use segment::types::*;
 
 use super::ShardReplicaSet;

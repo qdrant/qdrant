@@ -28,7 +28,7 @@ use crate::common::{
     check_named_vectors, check_query_vectors, check_stopped, check_vector, check_vector_name,
 };
 use crate::data_types::named_vectors::NamedVectors;
-use crate::data_types::order_by::OrderedByFieldIterator;
+use crate::data_types::order_by::{Direction, OrderBy, OrderedByFieldIterator};
 use crate::data_types::vectors::{QueryVector, Vector};
 use crate::entry::entry_point::SegmentEntry;
 use crate::id_tracker::IdTrackerSS;
@@ -39,9 +39,9 @@ use crate::index::{PayloadIndex, VectorIndex, VectorIndexEnum};
 use crate::spaces::tools::peek_top_smallest_iterable;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
-    Direction, Filter, OrderBy, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType,
-    PayloadKeyTypeRef, PayloadSchemaType, PointIdType, ScoredPoint, SearchParams, SegmentConfig,
-    SegmentInfo, SegmentState, SegmentType, SeqNumberType, VectorDataInfo, WithPayload, WithVector,
+    Filter, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef,
+    PayloadSchemaType, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
+    SegmentState, SegmentType, SeqNumberType, VectorDataInfo, WithPayload, WithVector,
 };
 use crate::utils;
 use crate::utils::fs::find_symlink;

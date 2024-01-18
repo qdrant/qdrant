@@ -512,7 +512,7 @@ impl SegmentEntry for ProxySegment {
         offset: Option<PointIdType>,
         limit: Option<usize>,
         filter: Option<&'a Filter>,
-        order_by: &'a segment::types::OrderBy,
+        order_by: &'a segment::data_types::order_by::OrderBy,
     ) -> OperationResult<Vec<(OrderedFloat<f64>, PointIdType)>> {
         let deleted_points = self.deleted_points.read();
         let mut read_points = if deleted_points.is_empty() {

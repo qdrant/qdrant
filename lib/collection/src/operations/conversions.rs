@@ -13,8 +13,9 @@ use api::grpc::qdrant::update_collection_cluster_setup_request::{
 use api::grpc::qdrant::{CreateShardKey, SearchPoints};
 use common::types::ScoreType;
 use itertools::Itertools;
+use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{Named, NamedQuery, Vector, VectorStruct, DEFAULT_VECTOR_NAME};
-use segment::types::{Distance, OrderBy, QuantizationConfig};
+use segment::types::{Distance, QuantizationConfig};
 use segment::vector_storage::query::context_query::{ContextPair, ContextQuery};
 use segment::vector_storage::query::discovery_query::DiscoveryQuery;
 use segment::vector_storage::query::reco_query::RecoQuery;
@@ -1718,7 +1719,7 @@ impl TryFrom<api::grpc::qdrant::OrderBy> for OrderByInterface {
         let direction = value
             .direction
             .and_then(api::grpc::qdrant::Direction::from_i32)
-            .map(segment::types::Direction::from);
+            .map(segment::data_types::order_by::Direction::from);
 
         Ok(Self::Struct(OrderBy {
             key: value.key,

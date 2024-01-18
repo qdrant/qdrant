@@ -3,9 +3,8 @@ use std::sync::Arc;
 use futures::{future, TryFutureExt, TryStreamExt as _};
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
-use segment::types::{
-    Direction, OrderBy, PayloadContainer, ShardKey, WithPayload, WithPayloadInterface,
-};
+use segment::data_types::order_by::{Direction, OrderBy};
+use segment::types::{PayloadContainer, ShardKey, WithPayload, WithPayloadInterface};
 use validator::Validate as _;
 
 use super::Collection;

@@ -4,10 +4,10 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::future::try_join_all;
 use itertools::Itertools;
+use segment::data_types::order_by::{Direction, OrderBy};
 use segment::spaces::tools;
 use segment::types::{
-    Direction, ExtendedPointId, Filter, OrderBy, Payload, ScoredPoint, WithPayload,
-    WithPayloadInterface, WithVector,
+    ExtendedPointId, Filter, Payload, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
 use tokio::sync::oneshot;

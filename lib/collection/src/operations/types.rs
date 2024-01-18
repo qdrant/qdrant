@@ -15,14 +15,14 @@ use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::common::operation_error::OperationError;
 use segment::data_types::groups::GroupId;
+use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{
     DenseVector, Named, NamedQuery, NamedVectorStruct, QueryVector, Vector, VectorElementType,
     VectorRef, VectorStruct, DEFAULT_VECTOR_NAME,
 };
 use segment::types::{
-    Distance, Filter, OrderBy, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType,
-    QuantizationConfig, ScoredPoint, SearchParams, SeqNumberType, ShardKey, WithPayloadInterface,
-    WithVector,
+    Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, QuantizationConfig,
+    ScoredPoint, SearchParams, SeqNumberType, ShardKey, WithPayloadInterface, WithVector,
 };
 use segment::vector_storage::query::context_query::ContextQuery;
 use segment::vector_storage::query::discovery_query::DiscoveryQuery;
