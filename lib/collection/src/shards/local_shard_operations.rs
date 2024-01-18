@@ -103,8 +103,56 @@ impl LocalShard {
         Ok(top_results)
     }
 
+    async fn scroll_by_id(
+        &self,
+        offset: Option<ExtendedPointId>,
+        limit: usize,
+        with_payload_interface: &WithPayloadInterface,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
+        search_runtime_handle: &Handle,
+    ) -> CollectionResult<Vec<Record>> {
+        let segments = self.segments();
+
+        let read_handles: Vec<_> = {
+            let segments_guard = segments.read();
+            segments_guard
+                .iter()
+                .map(|(_, segment)| {
+                    let segment = segment.clone();
+                    let filter = filter.cloned();
+
+                    search_runtime_handle.spawn_blocking(move || {
+                        segment
+                            .get()
+                            .read()
+                            .read_filtered(offset, Some(limit), filter.as_ref())
+                    })
+                })
+                .collect()
+        };
+
+        let all_points = try_join_all(read_handles).await?;
+
+        let point_ids = all_points
+            .into_iter()
+            .flatten()
+            .sorted()
+            .dedup()
+            .take(limit)
+            .collect_vec();
+
+        let with_payload = WithPayload::from(with_payload_interface);
+        let mut points =
+            SegmentsSearcher::retrieve(segments, &point_ids, &with_payload, with_vector)?;
+
+        points.sort_by_key(|point| point.id);
+
+        Ok(points)
+    }
+
     #[allow(clippy::too_many_arguments)]
-    async fn ordered_scroll_by(
+    async fn scroll_by_field(
         &self,
         offset: Option<ExtendedPointId>,
         limit: usize,
@@ -137,12 +185,12 @@ impl LocalShard {
                 .collect()
         };
 
-        let all_reads: Vec<_> = try_join_all(read_handles)
+        let all_reads = try_join_all(read_handles)
             .await?
             .into_iter()
-            .try_collect()?;
+            .collect::<Result<Vec<_>, _>>()?;
 
-        let all_points = all_reads.into_iter().flatten();
+        let all_points = all_reads.into_iter().flatten().dedup();
 
         let top_records = match order_by.direction() {
             Direction::Asc => tools::peek_top_smallest_iterable(all_points, limit),
@@ -158,6 +206,7 @@ impl LocalShard {
             SegmentsSearcher::retrieve(segments, &point_ids, &with_payload, with_vector)?;
 
         // Add order_by value to the payload
+        // TODO: This will show both floats and ints as floats in the payload, which might be confusing for users
         records
             .iter_mut()
             .zip(top_records)
@@ -234,12 +283,20 @@ impl ShardOperation for LocalShard {
         search_runtime_handle: &Handle,
         order_by: Option<&OrderBy>,
     ) -> CollectionResult<Vec<Record>> {
-        // ToDo: Make faster points selection with a set
-        let segments = self.segments();
-
         match order_by {
+            None => {
+                self.scroll_by_id(
+                    offset,
+                    limit,
+                    with_payload_interface,
+                    with_vector,
+                    filter,
+                    search_runtime_handle,
+                )
+                .await
+            }
             Some(order_by) => {
-                self.ordered_scroll_by(
+                self.scroll_by_field(
                     offset,
                     limit,
                     with_payload_interface,
@@ -249,44 +306,6 @@ impl ShardOperation for LocalShard {
                     order_by,
                 )
                 .await
-            }
-            None => {
-                let read_handles: Vec<_> = {
-                    let segments_guard = segments.read();
-                    segments_guard
-                        .iter()
-                        .map(|(_, segment)| {
-                            let segment = segment.clone();
-                            let filter = filter.cloned();
-
-                            search_runtime_handle.spawn_blocking(move || {
-                                segment.get().read().read_filtered(
-                                    offset,
-                                    Some(limit),
-                                    filter.as_ref(),
-                                )
-                            })
-                        })
-                        .collect()
-                };
-
-                let all_points = try_join_all(read_handles).await?;
-
-                let point_ids = all_points
-                    .into_iter()
-                    .flatten()
-                    .sorted()
-                    .dedup()
-                    .take(limit)
-                    .collect_vec();
-
-                let with_payload = WithPayload::from(with_payload_interface);
-                let mut points =
-                    SegmentsSearcher::retrieve(segments, &point_ids, &with_payload, with_vector)?;
-
-                points.sort_by_key(|point| point.id);
-
-                Ok(points)
             }
         }
     }

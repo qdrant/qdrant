@@ -126,7 +126,7 @@ pub trait SegmentEntry {
 
     /// Paginate over points which satisfies filtering condition starting with `order_by.value_offset` value including, ordered by the `order_by.key` field.
     ///
-    /// Will panic if there is no index for the order_by key.
+    /// Will fail if there is no index for the order_by key.
     fn read_ordered_filtered<'a>(
         &'a self,
         offset: Option<PointIdType>,
