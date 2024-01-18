@@ -15,7 +15,7 @@ pub trait Checker {
         collection_name: &str,
     ) -> Result<(), StorageError> {
         if self.is_collection_exists(collection_name) {
-            return Err(StorageError::BadInput {
+            return Err(StorageError::AlreadyExists {
                 description: format!("Collection `{collection_name}` already exists!"),
             });
         }

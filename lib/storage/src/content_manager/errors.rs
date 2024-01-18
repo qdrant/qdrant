@@ -10,6 +10,8 @@ use thiserror::Error;
 #[error("{0}")]
 pub enum StorageError {
     #[error("Wrong input: {description}")]
+    AlreadyExists { description: String },
+    #[error("Wrong input: {description}")]
     BadInput { description: String },
     #[error("Not found: {description}")]
     NotFound { description: String },
@@ -52,6 +54,9 @@ impl StorageError {
         overriding_description: String,
     ) -> StorageError {
         match err {
+            CollectionError::AlreadyExists { .. } => StorageError::AlreadyExists {
+                description: overriding_description,
+            },
             CollectionError::BadInput { .. } => StorageError::BadInput {
                 description: overriding_description,
             },
@@ -98,6 +103,9 @@ impl StorageError {
 impl From<CollectionError> for StorageError {
     fn from(err: CollectionError) -> Self {
         match err {
+            CollectionError::AlreadyExists { description } => {
+                StorageError::AlreadyExists { description }
+            }
             CollectionError::BadInput { description } => StorageError::BadInput { description },
             CollectionError::NotFound { .. } => StorageError::NotFound {
                 description: format!("{err}"),

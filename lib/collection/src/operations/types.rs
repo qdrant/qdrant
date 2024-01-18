@@ -853,6 +853,8 @@ pub struct CountResult {
 #[error("{0}")]
 pub enum CollectionError {
     #[error("Wrong input: {description}")]
+    AlreadyExists { description: String },
+    #[error("Wrong input: {description}")]
     BadInput { description: String },
     #[error("{what} not found")]
     NotFound { what: String },
@@ -949,6 +951,7 @@ impl CollectionError {
             Self::Cancelled { .. } => true,
             Self::OutOfMemory { .. } => true,
             // Not transient
+            Self::AlreadyExists { .. } => false,
             Self::BadInput { .. } => false,
             Self::NotFound { .. } => false,
             Self::PointNotFound { .. } => false,
@@ -1102,7 +1105,7 @@ impl From<tonic::Status> for CollectionError {
             tonic::Code::InvalidArgument => CollectionError::BadInput {
                 description: format!("InvalidArgument: {err}"),
             },
-            tonic::Code::AlreadyExists => CollectionError::BadInput {
+            tonic::Code::AlreadyExists => CollectionError::AlreadyExists {
                 description: format!("AlreadyExists: {err}"),
             },
             tonic::Code::NotFound => CollectionError::NotFound {
