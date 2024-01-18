@@ -676,15 +676,11 @@ impl<'s> SegmentHolder {
         let proxy_created_indexes = Arc::new(RwLock::default());
 
         // List all segments we want to snapshot
-        let segment_ids = segments_lock
-            .segments
-            .keys()
-            .cloned()
-            .collect::<Vec<SegmentId>>();
+        let segment_ids = segments_lock.segments.keys().collect::<Vec<&SegmentId>>();
 
         // Create proxy for all segments
-        let mut proxies = Vec::new();
-        for segment_id in &segment_ids {
+        let mut new_proxies = Vec::with_capacity(segment_ids.len());
+        for segment_id in segment_ids {
             let segment = segments_lock.segments.get(segment_id).unwrap();
             let mut proxy = ProxySegment::new(
                 segment.clone(),
@@ -697,7 +693,7 @@ impl<'s> SegmentHolder {
             // Wrapped segment is fresh, so it has no operations
             // Operation with number 0 will be applied
             proxy.replicate_field_indexes(0)?;
-            proxies.push(proxy);
+            new_proxies.push((*segment_id, proxy));
         }
 
         // Save segment version once all payload indices have been converted
@@ -712,11 +708,10 @@ impl<'s> SegmentHolder {
 
         // Replace all segments with proxies
         // We cannot fail past this point to prevent only having some segments proxified
-        let proxy_ids: Vec<_> = {
-            // Exclusive lock for the segments operations.
+        let mut proxies = Vec::with_capacity(new_proxies.len());
+        {
             let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
-            let mut proxy_ids = Vec::new();
-            for (mut proxy, idx) in proxies.into_iter().zip(segment_ids) {
+            for (segment_id, mut proxy) in new_proxies {
                 // replicate_field_indexes for the second time,
                 // because optimized segments could have been changed.
                 // The probability is small, though,
@@ -725,12 +720,11 @@ impl<'s> SegmentHolder {
                 if let Err(err) = proxy.replicate_field_indexes(op_num) {
                     log::error!("Failed to replicate proxy segment field indexes, ignoring: {err}");
                 }
-                proxy_ids.push(write_segments.swap(proxy, &[idx]).0);
+                proxies.push(write_segments.swap(proxy, &[segment_id]).0);
             }
-            proxy_ids
-        };
+        }
 
-        Ok((proxy_ids, tmp_segment))
+        Ok((proxies, tmp_segment))
     }
 
     /// Unproxy all shard segments for [`proxy_all_segments_and_apply`]
