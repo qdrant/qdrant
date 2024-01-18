@@ -24,6 +24,7 @@ pub struct SearchContext<'a> {
     is_stopped: &'a AtomicBool,
     result_queue: FixedLengthPriorityQueue<ScoredPointOffset>, // keep the largest elements and peek smallest
     min_record_id: Option<PointOffsetType>, // min record ids across all posting lists
+    contains_empty_posting: bool, // whether the posting list iterators contain exhausted posting lists
     use_pruning: bool,
 }
 
@@ -54,6 +55,8 @@ impl<'a> SearchContext<'a> {
         let use_pruning = query.values.iter().all(|v| *v >= 0.0);
         // find min record id across all posting lists
         let min_record_id = Self::next_min_id(&postings_iterators);
+        // no empty posting lists at the beginning
+        let contains_empty_posting = false;
         SearchContext {
             postings_iterators,
             query,
@@ -61,6 +64,7 @@ impl<'a> SearchContext<'a> {
             is_stopped,
             result_queue,
             min_record_id,
+            contains_empty_posting,
             use_pruning,
         }
     }
@@ -148,6 +152,9 @@ impl<'a> SearchContext<'a> {
                     // advance posting list iterator to next element
                     posting_iterator.posting_list_iterator.advance();
                 }
+            } else {
+                // mark search context for cleanup if any posting list iterator is exhausted
+                self.contains_empty_posting = true;
             }
         }
 
@@ -235,6 +242,15 @@ impl<'a> SearchContext<'a> {
             // push candidate to result queue
             self.result_queue.push(candidate);
 
+            // remove empty posting lists if necessary
+            if self.contains_empty_posting {
+                self.postings_iterators.retain(|posting_iterator| {
+                    posting_iterator.posting_list_iterator.len_to_end() != 0
+                });
+                // reset flag
+                self.contains_empty_posting = false;
+            }
+
             // we potentially have enough results to prune low performing posting lists
             // TODO(sparse) pruning is expensive, we should only do it when it makes sense (detect hot keys at runtime)
             if self.use_pruning && self.result_queue.len() == self.top {
@@ -267,6 +283,9 @@ impl<'a> SearchContext<'a> {
     /// Assumes longest posting list is at the head of the posting list iterators
     /// Returns true if the longest posting list was pruned
     pub fn prune_longest_posting_list(&mut self, min_score: f32) -> bool {
+        if self.postings_iterators.is_empty() {
+            return false;
+        }
         // peek first element of longest posting list
         let longest_posting_iterator = &self.postings_iterators[0];
         if let Some(element) = longest_posting_iterator.posting_list_iterator.peek() {
