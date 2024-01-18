@@ -192,6 +192,9 @@ impl From<StorageError> for HttpError {
             StorageError::Timeout { description } => {
                 (http::StatusCode::REQUEST_TIMEOUT, description)
             }
+            StorageError::AlreadyExists { description } => {
+                (http::StatusCode::CONFLICT, description)
+            }
         };
 
         Self {
