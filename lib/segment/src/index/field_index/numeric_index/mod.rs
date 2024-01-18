@@ -31,9 +31,7 @@ use crate::index::key_encoding::{
     encode_i64_key_ascending,
 };
 use crate::telemetry::PayloadIndexTelemetry;
-use crate::types::{
-    Direction, FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, Range,
-};
+use crate::types::{FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, Range};
 
 const HISTOGRAM_MAX_BUCKET_SIZE: usize = 10_000;
 const HISTOGRAM_PRECISION: f64 = 0.01;
@@ -287,22 +285,6 @@ impl<T: Encodable + Numericable> NumericIndex<T> {
         self.get_values(point_id)
             .map(|x| x.is_empty())
             .unwrap_or(true)
-    }
-
-    /// Infers boundaries for bucket of given size and starting point, skipping the first
-    /// border next to the starting point.
-    pub fn get_range_by_size_excluding(
-        &self,
-        size: usize,
-        from: Bound<T>,
-        direction: Direction,
-    ) -> Bound<T> {
-        match direction {
-            Direction::Asc => self.get_histogram().get_range_by_size_excluding(from, size),
-            Direction::Desc => self
-                .get_histogram()
-                .get_range_by_size_rev_excluding(from, size),
-        }
     }
 }
 
