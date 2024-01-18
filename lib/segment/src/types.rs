@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
 use std::mem::size_of;
-use std::ops::{Bound, Deref};
+use std::ops::Deref;
 use std::rc::Rc;
 use std::str::FromStr;
 
@@ -1361,27 +1361,6 @@ impl Range {
             && self.gt.map_or(true, |x| number > x)
             && self.lte.map_or(true, |x| number <= x)
             && self.gte.map_or(true, |x| number >= x)
-    }
-}
-
-impl From<(Bound<f64>, Bound<f64>)> for Range {
-    /// Assumes start >= end
-    fn from(value: (Bound<f64>, Bound<f64>)) -> Self {
-        let mut range = Range::default();
-
-        match value.0 {
-            Bound::Included(start) => range.gte = Some(start),
-            Bound::Excluded(start) => range.gt = Some(start),
-            Bound::Unbounded => range.gt = Some(f64::NEG_INFINITY),
-        }
-
-        match value.1 {
-            Bound::Included(end) => range.lte = Some(end),
-            Bound::Excluded(end) => range.lt = Some(end),
-            Bound::Unbounded => range.lt = Some(f64::INFINITY),
-        }
-
-        range
     }
 }
 
