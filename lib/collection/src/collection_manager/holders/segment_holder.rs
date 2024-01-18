@@ -616,49 +616,39 @@ impl<'s> SegmentHolder {
     {
         // Proxy all segments
         log::trace!("Proxying all shard segments to apply function");
-        let (proxy_ids, tmp_segment) =
+        let (proxies, tmp_segment) =
             Self::proxy_all_segments(segments.clone(), collection_path, collection_params)?;
 
         // Apply provided function
         log::trace!("Applying function on all proxied shard segments");
         let mut result = Ok(());
-        {
-            let read_segments = segments.read();
-            for proxy_id in &proxy_ids {
-                let Some(proxy_segment) = read_segments.get(*proxy_id) else {
-                    result = Err(OperationError::service_error(format!(
-                        "Applying function on all proxied shard segments, but a proxy segment {proxy_id} is missing",
-                    )));
-                    break;
-                };
-
-                // Get segment to snapshot, wrapped proxy segment or regular one
-                let segment = match proxy_segment {
-                    LockedSegment::Proxy(proxy_segment) => {
-                        let wrapped_segment = proxy_segment.read().wrapped_segment.clone();
-                        wrapped_segment.get()
-                    }
-                    // All segments to snapshot should be proxy, warn if this is not the case
-                    LockedSegment::Original(segment) => {
-                        log::warn!("Reached non-proxy segment while applying function to proxies, this should not happen, ignoring");
-                        segment.clone()
-                    }
-                };
-
-                // Call provided function on segment
-                if let Err(err) = f(segment) {
-                    result = Err(OperationError::service_error(format!(
-                        "Applying function to a proxied shard segment {proxy_id} failed: {err}"
-                    )));
-                    break;
+        for (proxy_id, proxy_segment) in &proxies {
+            // Get segment to snapshot, wrapped proxy segment or regular one
+            let segment = match proxy_segment {
+                LockedSegment::Proxy(proxy_segment) => {
+                    let wrapped_segment = proxy_segment.read().wrapped_segment.clone();
+                    wrapped_segment.get()
                 }
+                // All segments to snapshot should be proxy, warn if this is not the case
+                LockedSegment::Original(segment) => {
+                    log::warn!("Reached non-proxy segment while applying function to proxies, this should not happen, ignoring");
+                    segment.clone()
+                }
+            };
+
+            // Call provided function on segment
+            if let Err(err) = f(segment) {
+                result = Err(OperationError::service_error(format!(
+                    "Applying function to a proxied shard segment {proxy_id} failed: {err}"
+                )));
+                break;
             }
         }
 
         // Unproxy all segments
         // Always do this to prevent leaving proxy segments in place
         log::trace!("Unproxying all shard segments after function is applied");
-        Self::unproxy_all_segments(segments, proxy_ids, tmp_segment)?;
+        Self::unproxy_all_segments(segments, proxies, tmp_segment)?;
 
         // Return any function result we might have had
         result
@@ -669,7 +659,7 @@ impl<'s> SegmentHolder {
         segments: LockedSegmentHolder,
         collection_path: &Path,
         collection_params: Option<&CollectionParams>,
-    ) -> OperationResult<(Vec<SegmentId>, LockedSegment)> {
+    ) -> OperationResult<(Vec<(SegmentId, LockedSegment)>, LockedSegment)> {
         // Source config for temporary segment which we target all writes to
         let config = match collection_params {
             // Base config on collection params
@@ -751,7 +741,10 @@ impl<'s> SegmentHolder {
                 if let Err(err) = proxy.replicate_field_indexes(op_num) {
                     log::error!("Failed to replicate proxy segment field indexes, ignoring: {err}");
                 }
-                proxies.push(write_segments.swap(proxy, &[segment_id]).0);
+
+                let (segment_id, segments) = write_segments.swap(proxy, &[segment_id]);
+                debug_assert_eq!(segments.len(), 1);
+                proxies.push((segment_id, segments[0].clone()));
             }
         }
 
@@ -761,23 +754,21 @@ impl<'s> SegmentHolder {
     /// Unproxy all shard segments for [`proxy_all_segments_and_apply`]
     fn unproxy_all_segments(
         segments: LockedSegmentHolder,
-        proxy_ids: Vec<SegmentId>,
+        proxies: Vec<(SegmentId, LockedSegment)>,
         tmp_segment: LockedSegment,
     ) -> OperationResult<()> {
         // We must propagate all changes in the proxy into their wrapped segments, as we'll put the
         // wrapped segments back into the segment holder. This can be an expensive step if we
         // collected a lot of changes in the proxy, so we do this in two batches. First we
-        // propagate all changes on a shared read lock, not blocking other operations. Second we
-        // propagate any new changes again on an exclusive write lock, blocking other operations.
-        // This second batch should be very fast, as we already propagated all changes in the
-        // first, which is why we can hold a write lock. Once done, we can swap out the proxy for
-        // the wrapped shard.
+        // propagate all changes without write locking the shard holder, not blocking other
+        // operations. Second we propagate any new changes again on an exclusive write lock on the
+        // segment holder, blocking other operations. This second batch should be very fast, as we
+        // already propagated all changes in the first, which is why we can hold a write lock. Once
+        // done, we can swap out the proxy for the wrapped shard.
 
-        // Batch 1: propagate changes to wrapped segment in shared read lock
-        let read_segments = segments.upgradable_read();
-        proxy_ids
+        // Batch 1: propagate changes to wrapped segment without segments holder write lock
+        proxies
             .iter()
-            .flat_map(|proxy_id| read_segments.get(*proxy_id).map(|segment| (proxy_id, segment)))
             .flat_map(|(proxy_id, proxy_segment)| match proxy_segment {
                 LockedSegment::Proxy(proxy_segment) => Some((proxy_id, proxy_segment)),
                 LockedSegment::Original(_) => None,
@@ -787,15 +778,10 @@ impl<'s> SegmentHolder {
                 }
             });
 
-        // Batch 2: propagate changes to wrapped segment in exclusive write lock
+        // Batch 2: propagate changes to wrapped segment in exclusive segments holder write lock
         // Swap out each proxy with wrapped segment once changes are propagated
-        let mut write_segments = RwLockUpgradableReadGuard::upgrade(read_segments);
-        for proxy_id in proxy_ids {
-            let Some(proxy_segment) = write_segments.get(proxy_id) else {
-                log::error!("Unproxying temporary shard segment proxies, but a proxy segment is missing, cannot unproxy: {proxy_id}");
-                continue;
-            };
-
+        let mut write_segments = segments.write();
+        for (proxy_id, proxy_segment) in proxies {
             match proxy_segment {
                 // Propagate proxied changes to wrapped segment, take it out and swap with proxy
                 LockedSegment::Proxy(proxy_segment) => {
