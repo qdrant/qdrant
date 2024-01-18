@@ -161,17 +161,17 @@ impl Collection {
 
         // Handle case of order_by
         if let Some(order_by) = &mut order_by {
-            // Validate we have a numeric index for the order_by key
-            let has_numeric_index_for_order_by_field = self
+            // Validate we have a range index for the order_by key
+            let has_range_index_for_order_by_field = self
                 .payload_index_schema
                 .read()
                 .schema
                 .get(order_by.key.as_str())
-                .is_some_and(|field| field.is_numeric());
+                .is_some_and(|field| field.has_range_index());
 
-            if !has_numeric_index_for_order_by_field {
+            if !has_range_index_for_order_by_field {
                 return Err(CollectionError::bad_request(format!(
-                    "No numeric index for order_by key: {}",
+                    "No range index for `order_by` key: {}. Please create one to use `order_by`. Integer and float payloads can have range indexes, see https://qdrant.tech/documentation/concepts/indexing/#payload-index.",
                     order_by.key.as_str()
                 )));
             }

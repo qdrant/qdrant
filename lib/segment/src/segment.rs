@@ -715,7 +715,7 @@ impl Segment {
             .field_indexes
             .get(&order_by.key)
             .and_then(|indexes| indexes.iter().find_map(|index| index.as_numeric()))
-            .ok_or_else(|| OperationError::ValidationError { description: "There is no numeric index for the order_by field, please create one to use order_by".to_string() })?;
+            .ok_or_else(|| OperationError::ValidationError { description: "There is no range index for the `order_by` key, please create one to use `order_by`".to_string() })?;
 
         let id_tracker = self.id_tracker.borrow();
 

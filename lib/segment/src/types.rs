@@ -1083,12 +1083,22 @@ pub enum PayloadFieldSchema {
 }
 
 impl PayloadFieldSchema {
-    pub fn is_numeric(&self) -> bool {
-        matches!(
-            self,
+    pub fn has_range_index(&self) -> bool {
+        match self {
+            PayloadFieldSchema::FieldParams(PayloadSchemaParams::Integer(IntegerParams {
+                range,
+                ..
+            })) => *range,
+
             PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)
-                | PayloadFieldSchema::FieldType(PayloadSchemaType::Float)
-        )
+            | PayloadFieldSchema::FieldType(PayloadSchemaType::Float) => true,
+
+            PayloadFieldSchema::FieldType(PayloadSchemaType::Bool)
+            | PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)
+            | PayloadFieldSchema::FieldType(PayloadSchemaType::Text)
+            | PayloadFieldSchema::FieldType(PayloadSchemaType::Geo)
+            | PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(_)) => false,
+        }
     }
 }
 
