@@ -11,6 +11,8 @@ use thiserror::Error;
 pub enum StorageError {
     #[error("Wrong input: {description}")]
     BadInput { description: String },
+    #[error("Wrong input: {description}")]
+    AlreadyExists { description: String },
     #[error("Not found: {description}")]
     NotFound { description: String },
     #[error("Service internal error: {description}")]
