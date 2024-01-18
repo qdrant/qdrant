@@ -638,8 +638,6 @@ impl<'s> SegmentHolder {
         collection_path: &Path,
         collection_params: Option<&CollectionParams>,
     ) -> OperationResult<(Vec<SegmentId>, LockedSegment)> {
-        let segments_lock = segments.upgradable_read();
-
         // Source config for temporary segment which we target all writes to
         let config = match collection_params {
             // Base config on collection params
@@ -658,7 +656,7 @@ impl<'s> SegmentHolder {
             },
             // Base config on existing appendable or non-appendable segment
             None => {
-                segments_lock
+                segments.read()
                     .random_appendable_segment()
                     .ok_or_else(|| OperationError::service_error("No existing segment to source temporary segment configuration from"))?
                     .get()
@@ -676,6 +674,7 @@ impl<'s> SegmentHolder {
         let proxy_created_indexes = Arc::new(RwLock::default());
 
         // List all segments we want to snapshot
+        let segments_lock = segments.upgradable_read();
         let segment_ids = segments_lock.segments.keys().collect::<Vec<&SegmentId>>();
 
         // Create proxy for all segments
