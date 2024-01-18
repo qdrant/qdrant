@@ -51,7 +51,7 @@ impl<T: Encodable + Numericable> MutableNumericIndex<T> {
         &self,
         start_bound: Bound<Vec<u8>>,
         end_bound: Bound<Vec<u8>>,
-    ) -> impl DoubleEndedIterator<Item = PointOffsetType> + '_ {
+    ) -> impl Iterator<Item = PointOffsetType> + '_ {
         self.map.range((start_bound, end_bound)).map(|(_, v)| *v)
     }
 

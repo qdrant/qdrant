@@ -75,7 +75,9 @@ pub(crate) struct OrderableItem {
     pub internal_id: PointOffsetType,
 }
 
-/// Iterates over points ordered in (value, external_id) order
+/// Iterates over points ordered in (value, external_id) order.
+///
+/// Assumes that the stream already comes ordered by value.
 pub(crate) struct OrderedByFieldIterator<'a> {
     /// Iterator of points ordered only by their value
     stream: Box<dyn Iterator<Item = OrderableItem> + 'a>,

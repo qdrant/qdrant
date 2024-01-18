@@ -5,7 +5,7 @@ use serde_json::Value;
 use smol_str::SmolStr;
 
 use super::map_index::MapIndex;
-use super::numeric_index::OrderableRead;
+use super::numeric_index::StreamWithValue;
 use crate::common::operation_error::OperationResult;
 use crate::common::utils::MultiValue;
 use crate::common::Flusher;
@@ -348,17 +348,6 @@ impl FieldIndex {
         }
     }
 
-    pub fn is_numeric(&self) -> bool {
-        match self {
-            FieldIndex::IntIndex(_) | FieldIndex::FloatIndex(_) => true,
-            FieldIndex::IntMapIndex(_)
-            | FieldIndex::KeywordIndex(_)
-            | FieldIndex::GeoIndex(_)
-            | FieldIndex::BinaryIndex(_)
-            | FieldIndex::FullTextIndex(_) => false,
-        }
-    }
-
     pub fn as_numeric(&self) -> Option<NumericFieldIndex> {
         match self {
             FieldIndex::IntIndex(index) => Some(NumericFieldIndex::IntIndex(index)),
@@ -377,16 +366,16 @@ pub enum NumericFieldIndex<'a> {
     FloatIndex(&'a NumericIndex<FloatPayloadType>),
 }
 
-impl<'a> OrderableRead<f64> for NumericFieldIndex<'a> {
-    fn orderable_read(
+impl<'a> StreamWithValue<f64> for NumericFieldIndex<'a> {
+    fn stream_with_value(
         &self,
         range: &Range,
     ) -> Box<dyn DoubleEndedIterator<Item = (f64, PointOffsetType)> + 'a> {
         match self {
             NumericFieldIndex::IntIndex(index) => {
-                Box::new(index.orderable_read(range).map(|(v, p)| (v as f64, p)))
+                Box::new(index.stream_with_value(range).map(|(v, p)| (v as f64, p)))
             }
-            NumericFieldIndex::FloatIndex(index) => index.orderable_read(range),
+            NumericFieldIndex::FloatIndex(index) => index.stream_with_value(range),
         }
     }
 }

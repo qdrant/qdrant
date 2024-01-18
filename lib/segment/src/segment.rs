@@ -32,7 +32,7 @@ use crate::data_types::order_by::{Direction, OrderBy, OrderedByFieldIterator};
 use crate::data_types::vectors::{QueryVector, Vector};
 use crate::entry::entry_point::SegmentEntry;
 use crate::id_tracker::IdTrackerSS;
-use crate::index::field_index::numeric_index::OrderableRead;
+use crate::index::field_index::numeric_index::StreamWithValue;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndex, VectorIndexEnum};
@@ -669,22 +669,6 @@ impl Segment {
         page
     }
 
-    pub fn filtered_read_by_index_unsorted(
-        &self,
-        limit: Option<usize>,
-        filter: &Filter,
-    ) -> Vec<PointIdType> {
-        let payload_index = self.payload_index.borrow();
-        let id_tracker = self.id_tracker.borrow();
-
-        payload_index
-            .query_points(filter)
-            .into_iter()
-            .filter_map(|internal_id| id_tracker.external_id(internal_id))
-            .take(limit.unwrap_or(usize::MAX))
-            .collect()
-    }
-
     pub fn filtered_read_by_id_stream(
         &self,
         offset: Option<PointIdType>,
@@ -719,7 +703,7 @@ impl Segment {
 
         let id_tracker = self.id_tracker.borrow();
 
-        let range_iter = numeric_index.orderable_read(&order_by.as_range());
+        let range_iter = numeric_index.stream_with_value(&order_by.as_range());
 
         let ordered_iter =
             OrderedByFieldIterator::new(range_iter, id_tracker.deref(), order_by.direction())

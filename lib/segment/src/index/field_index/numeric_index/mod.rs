@@ -36,8 +36,8 @@ use crate::types::{FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyT
 const HISTOGRAM_MAX_BUCKET_SIZE: usize = 10_000;
 const HISTOGRAM_PRECISION: f64 = 0.01;
 
-pub trait OrderableRead<T> {
-    fn orderable_read(
+pub trait StreamWithValue<T> {
+    fn stream_with_value(
         &self,
         range: &Range,
     ) -> Box<dyn DoubleEndedIterator<Item = (T, PointOffsetType)> + '_>;
@@ -466,11 +466,11 @@ impl ValueIndexer<FloatPayloadType> for NumericIndex<FloatPayloadType> {
     }
 }
 
-impl<T> OrderableRead<T> for NumericIndex<T>
+impl<T> StreamWithValue<T> for NumericIndex<T>
 where
     T: Encodable + Numericable,
 {
-    fn orderable_read(
+    fn stream_with_value(
         &self,
         range: &Range,
     ) -> Box<dyn DoubleEndedIterator<Item = (T, PointOffsetType)> + '_> {
