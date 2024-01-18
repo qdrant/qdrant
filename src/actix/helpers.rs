@@ -24,6 +24,7 @@ pub fn storage_into_actix_error(err: StorageError) -> Error {
         StorageError::BadRequest { .. } => error::ErrorBadRequest(format!("{err}")),
         StorageError::Locked { .. } => error::ErrorForbidden(format!("{err}")),
         StorageError::Timeout { .. } => error::ErrorRequestTimeout(format!("{err}")),
+        StorageError::AlreadyExists { .. } => error::ErrorConflict(format!("{err}")),
     }
 }
 
