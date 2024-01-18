@@ -48,6 +48,12 @@ impl StorageError {
         }
     }
 
+    pub fn already_exists(description: impl Into<String>) -> StorageError {
+        StorageError::AlreadyExists {
+            description: description.into(),
+        }
+    }
+
     /// Used to override the `description` field of the resulting `StorageError`
     pub fn from_inconsistent_shard_failure(
         err: CollectionError,
