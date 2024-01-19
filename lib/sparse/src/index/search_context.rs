@@ -174,6 +174,23 @@ impl<'a> SearchContext<'a> {
         })
     }
 
+    /// Compute scores for the last posting list quickly
+    fn process_last_posting_list<F: Fn(PointOffsetType) -> bool>(&mut self, filter_condition: &F) {
+        debug_assert_eq!(self.postings_iterators.len(), 1);
+        let posting = &self.postings_iterators[0];
+        for element in posting.posting_list_iterator.remaining_elements() {
+            // do not score if filter condition is not satisfied
+            if !filter_condition(element.record_id) {
+                continue;
+            }
+            let score = element.weight * posting.query_weight;
+            self.result_queue.push(ScoredPointOffset {
+                score,
+                idx: element.record_id,
+            });
+        }
+    }
+
     /// Returns the next min record id from all posting list iterators
     ///
     /// returns None if all posting list iterators are exhausted
@@ -249,10 +266,14 @@ impl<'a> SearchContext<'a> {
                 });
                 // reset flag
                 self.contains_empty_posting = false;
+                // if only one posting list left, we can score it quickly
+                if self.postings_iterators.len() == 1 {
+                    self.process_last_posting_list(filter_condition);
+                    break;
+                }
             }
 
             // we potentially have enough results to prune low performing posting lists
-            // TODO(sparse) pruning is expensive, we should only do it when it makes sense (detect hot keys at runtime)
             if self.use_pruning && self.result_queue.len() == self.top {
                 // current min score
                 let new_min_score = self.result_queue.top().unwrap().score;
