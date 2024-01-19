@@ -102,6 +102,7 @@ sparse = { path = "lib/sparse" }
 api = { path = "lib/api" }
 actix-multipart = "0.6.1"
 constant_time_eq = "0.3.0"
+smart-default = "0.7"
 
 # Profiling
 tracing = { version = "0.1", features = ["async-await"] }
