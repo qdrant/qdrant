@@ -342,7 +342,7 @@ impl SegmentsSearcher {
         // Restore the order the ids came in
         let ordered_records = points
             .iter()
-            .flat_map(|point| point_records.remove(point))
+            .filter_map(|point| point_records.get(point).cloned())
             .collect();
 
         Ok(ordered_records)

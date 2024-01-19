@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use futures::{future, TryFutureExt, TryStreamExt as _};
 use itertools::Itertools;
-use segment::data_types::order_by::{Direction, OrderBy};
+use segment::data_types::order_by::{Direction, OrderBy, INTERNAL_KEY_OF_ORDER_BY_VALUE};
 use segment::types::{PayloadContainer, ShardKey, WithPayload, WithPayloadInterface};
 use validator::Validate as _;
 
@@ -268,28 +268,31 @@ impl Collection {
                     Direction::Desc => std::f64::MIN,
                 };
 
-                let retrieve_value_from_payload = |point: &Record| {
-                    point
+                let remove_order_value_from_payload = |record: &mut Record| {
+                    record
                         .payload
-                        .as_ref()
+                        .as_mut()
                         .and_then(|payload| {
                             payload
-                                .get_value(&order_by.key)
-                                .values()
-                                .first()
+                                .0
+                                .remove(INTERNAL_KEY_OF_ORDER_BY_VALUE)
                                 .and_then(|v| v.as_f64())
                         })
                         .unwrap_or(default_value)
                 };
 
                 retrieved_iter
-                    .kmerge_by(|a, b| {
-                        // Extract order_by value from payload
-                        let value_a = retrieve_value_from_payload(a);
-                        let value_b = retrieve_value_from_payload(b);
-
-                        let key_a = (value_a, a.id);
-                        let key_b = (value_b, b.id);
+                    // Extract and remove order value from payload
+                    .map(|vec| {
+                        vec.into_iter().map(|mut record| {
+                            let value = remove_order_value_from_payload(&mut record);
+                            (value, record)
+                        })
+                    })
+                    // Get top results
+                    .kmerge_by(|(value_a, record_a), (value_b, record_b)| {
+                        let key_a = (value_a, record_a.id);
+                        let key_b = (value_b, record_b.id);
 
                         match order_by.direction() {
                             Direction::Asc => key_a <= key_b,
@@ -297,6 +300,7 @@ impl Collection {
                         }
                     })
                     .take(limit)
+                    .map(|(_, record)| record)
                     .collect_vec()
             }
         };

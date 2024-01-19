@@ -4,9 +4,9 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::future::try_join_all;
 use itertools::Itertools;
-use segment::data_types::order_by::{Direction, OrderBy};
+use segment::data_types::order_by::{Direction, OrderBy, INTERNAL_KEY_OF_ORDER_BY_VALUE};
 use segment::types::{
-    ExtendedPointId, Filter, Payload, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
+    ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
 use tokio::sync::oneshot;
@@ -204,26 +204,25 @@ impl LocalShard {
         // Fetch with the requested payload and vector
         let point_ids = top_records.iter().map(|(_, id)| *id).collect_vec();
 
+        // include original order_by value in the payload
+        let with_payload =
+            with_payload.union(&WithPayload::from(&WithPayloadInterface::Fields(vec![
+                order_by.key.clone(),
+            ])));
+
         let mut records =
             SegmentsSearcher::retrieve(segments, &point_ids, &with_payload, with_vector)?;
 
-        // Add order_by value to the payload
-        // TODO: This will show both floats and ints as floats in the payload, which might be confusing for users
+        // Add order_by value to the payload. It will be removed in the next step, after crossing the shard boundary.
         records
             .iter_mut()
             .zip(top_records)
             .for_each(|(record, (value, _))| {
-                if let Some(payload) = record.payload.as_mut() {
-                    payload
-                        .0
-                        .insert(order_by.key.clone(), serde_json::Value::from(value.0));
-                } else {
-                    let payload_value = Payload(serde_json::Map::from_iter(vec![(
-                        order_by.key.clone(),
-                        serde_json::Value::from(value.0),
-                    )]));
-                    record.payload = Some(payload_value);
-                };
+                let mut new_payload = record.payload.take().unwrap_or_default();
+                new_payload
+                    .0
+                    .insert(INTERNAL_KEY_OF_ORDER_BY_VALUE.to_string(), value.0.into());
+                record.payload = Some(new_payload);
             });
 
         Ok(records)

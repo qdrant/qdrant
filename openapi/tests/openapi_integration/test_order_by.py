@@ -20,6 +20,7 @@ def upsert_points(collection_name, amount=100):
             yield repeated_float
 
     maybe_repeated_generator = maybe_repeated()
+    
     points = [
         {
             "id": i,
@@ -29,7 +30,7 @@ def upsert_points(collection_name, amount=100):
                 "is_middle_split": i > amount * 0.25 and i < amount * 0.75,
                 "price": float(amount - i),
                 "payload_id": i,
-                "multi_id": [i, amount - i],
+                "multi_id": [i, amount - i + 1],
                 "maybe_repeated_float": next(maybe_repeated_generator),
             },
         }
@@ -283,3 +284,32 @@ def test_order_by_with_filters(key, direction):
             filtered_points = set([point["id"] for point in response.json()["result"]["points"]])
 
             assert filtered_points == points_set, f"Missing points: {filtered_points - points_set}"
+
+
+def test_multi_values_appear_multiple_times():
+    
+    limit = total_points * 2
+    
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/scroll",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "order_by": "multi_id",
+            "limit": limit,
+        },
+    )
+    assert response.ok, response.json()
+    
+    points = response.json()["result"]["points"]
+    assert len(points) == limit
+    
+    freqs = {}
+    for point in points:
+        id_ = point["id"]
+        if id_ in freqs:
+            freqs[id_] += 1
+        else:
+            freqs[id_] = 1
+        
+    assert all([count == 2 for count in freqs.values()])

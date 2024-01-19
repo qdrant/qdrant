@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 
 use collection::operations::payload_ops::{PayloadOps, SetPayloadOp};
@@ -435,12 +435,20 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
     let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
     let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
 
-    fn get_payload(value: f64) -> Option<Payload> {
+    const PRICE_FLOAT_KEY: &str = "price_float";
+    const PRICE_INT_KEY: &str = "price_int";
+    const MULTI_VALUE_KEY: &str = "multi_value";
+
+    let get_payload = |value: f64| -> Option<Payload> {
         let mut payload_map = Map::new();
-        payload_map.insert("price_float".to_string(), (value).into());
-        payload_map.insert("price_int".to_string(), (value as i64).into());
+        payload_map.insert(PRICE_FLOAT_KEY.to_string(), (value).into());
+        payload_map.insert(PRICE_INT_KEY.to_string(), (value as i64).into());
+        payload_map.insert(
+            MULTI_VALUE_KEY.to_string(),
+            vec![value, value + 20.0].into(),
+        );
         Some(Payload(payload_map))
-    }
+    };
 
     let payloads: Vec<Option<Payload>> = vec![
         get_payload(11.0),
@@ -458,6 +466,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
         get_payload(2.0),
         get_payload(1.0),
     ];
+
     let insert_points = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
         Batch {
             ids: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
@@ -493,7 +502,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
 
     collection
         .create_payload_index_with_wait(
-            "price_float".to_string(),
+            PRICE_FLOAT_KEY.to_string(),
             PayloadFieldSchema::FieldType(PayloadSchemaType::Float),
             true,
         )
@@ -502,14 +511,24 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
 
     collection
         .create_payload_index_with_wait(
-            "price_int".to_string(),
+            PRICE_INT_KEY.to_string(),
             PayloadFieldSchema::FieldType(PayloadSchemaType::Integer),
             true,
         )
         .await
         .unwrap();
 
-    for key in ["price_float", "price_int"] {
+    collection
+        .create_payload_index_with_wait(
+            MULTI_VALUE_KEY.to_string(),
+            PayloadFieldSchema::FieldType(PayloadSchemaType::Float),
+            true,
+        )
+        .await
+        .unwrap();
+
+    // Test single-valued fields
+    for key in [PRICE_FLOAT_KEY, PRICE_INT_KEY].into_iter() {
         let result_asc = collection
             .scroll_by(
                 ScrollRequestInternal {
@@ -603,6 +622,37 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
         // Order is in (value, id), so should return ids [7, 6, 10, 11] and then offset id is 12
         assert_eq!(desc_second_page.next_page_offset, Some(12.into()));
     }
+
+    // Test multi-value field
+    let result_multi = collection
+        .scroll_by(
+            ScrollRequestInternal {
+                offset: None,
+                limit: Some(100),
+                filter: None,
+                with_payload: Some(WithPayloadInterface::Bool(true)),
+                with_vector: false.into(),
+                order_by: Some(OrderByInterface::Key(MULTI_VALUE_KEY.into())),
+            },
+            None,
+            &ShardSelectorInternal::All,
+        )
+        .await
+        .unwrap();
+
+    assert!(result_multi
+        .points
+        .iter()
+        .fold(HashMap::<PointIdType, usize, _>::new(), |mut acc, point| {
+            acc.entry(point.id)
+                .and_modify(|x| {
+                    *x += 1;
+                })
+                .or_insert(1);
+            acc
+        })
+        .values()
+        .all(|&x| x == 2));
 }
 
 #[tokio::test(flavor = "multi_thread")]

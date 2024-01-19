@@ -7,6 +7,8 @@ use validator::Validate;
 use crate::id_tracker::IdTrackerSS;
 use crate::types::{PointIdType, Range};
 
+pub const INTERNAL_KEY_OF_ORDER_BY_VALUE: &str = "____ordered_with____";
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum Direction {
