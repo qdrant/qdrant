@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use futures::{future, TryFutureExt, TryStreamExt as _};
 use itertools::Itertools;
-use ordered_float::OrderedFloat;
 use segment::data_types::order_by::{Direction, OrderBy};
 use segment::types::{PayloadContainer, ShardKey, WithPayload, WithPayloadInterface};
 use validator::Validate as _;
@@ -255,10 +254,13 @@ impl Collection {
             future::try_join_all(scroll_futures).await?
         };
 
-        let retrieved_iter = retrieved_points.into_iter().flatten();
+        let retrieved_iter = retrieved_points.into_iter();
+
         let mut points = match order_by {
             None => retrieved_iter
+                .flatten()
                 .sorted_unstable_by_key(|point| point.id)
+                .take(limit)
                 .collect_vec(),
             Some(order_by) => {
                 let default_value = match order_by.direction() {
@@ -266,9 +268,8 @@ impl Collection {
                     Direction::Desc => std::f64::MIN,
                 };
 
-                // Extract order_by value from payload
-                let retrieved_iter = retrieved_iter.map(|point| {
-                    let value = point
+                let retrieve_value_from_payload = |point: &Record| {
+                    point
                         .payload
                         .as_ref()
                         .and_then(|payload| {
@@ -278,25 +279,27 @@ impl Collection {
                                 .first()
                                 .and_then(|v| v.as_f64())
                         })
-                        .unwrap_or(default_value);
-                    (value, point)
-                });
-                match order_by.direction() {
-                    Direction::Asc => retrieved_iter
-                        .sorted_unstable_by_key(|(value, point)| (OrderedFloat(*value), point.id))
-                        .map(|(_, record)| record)
-                        .collect_vec(),
-                    Direction::Desc => retrieved_iter
-                        .sorted_unstable_by_key(|(value, point)| (OrderedFloat(*value), point.id))
-                        .rev()
-                        .map(|(_, record)| record)
-                        .collect_vec(),
-                }
+                        .unwrap_or(default_value)
+                };
+
+                retrieved_iter
+                    .kmerge_by(|a, b| {
+                        // Extract order_by value from payload
+                        let value_a = retrieve_value_from_payload(a);
+                        let value_b = retrieve_value_from_payload(b);
+
+                        let key_a = (value_a, a.id);
+                        let key_b = (value_b, b.id);
+
+                        match order_by.direction() {
+                            Direction::Asc => key_a <= key_b,
+                            Direction::Desc => key_a >= key_b,
+                        }
+                    })
+                    .take(limit)
+                    .collect_vec()
             }
-        }
-        .into_iter()
-        .take(limit)
-        .collect_vec();
+        };
 
         let next_page_offset = if points.len() < limit {
             // This was the last page

@@ -5,7 +5,6 @@ use async_trait::async_trait;
 use futures::future::try_join_all;
 use itertools::Itertools;
 use segment::data_types::order_by::{Direction, OrderBy};
-use segment::spaces::tools;
 use segment::types::{
     ExtendedPointId, Filter, Payload, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
@@ -190,12 +189,15 @@ impl LocalShard {
             .into_iter()
             .collect::<Result<Vec<_>, _>>()?;
 
-        let all_points = all_reads.into_iter().flatten().dedup();
-
-        let top_records = match order_by.direction() {
-            Direction::Asc => tools::peek_top_smallest_iterable(all_points, limit),
-            Direction::Desc => tools::peek_top_largest_iterable(all_points, limit),
-        };
+        let top_records = all_reads
+            .into_iter()
+            .kmerge_by(|a, b| match order_by.direction() {
+                Direction::Asc => a <= b,
+                Direction::Desc => a >= b,
+            })
+            .dedup()
+            .take(limit)
+            .collect_vec();
 
         let with_payload = WithPayload::from(with_payload_interface);
 
