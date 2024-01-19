@@ -1085,7 +1085,7 @@ pub enum PayloadFieldSchema {
 impl PayloadFieldSchema {
     pub fn has_range_index(&self) -> bool {
         match self {
-            PayloadFieldSchema::FieldParams(PayloadSchemaParams::Integer(IntegerParams {
+            PayloadFieldSchema::FieldParams(PayloadSchemaParams::Integer(IntegerIndexParams {
                 range,
                 ..
             })) => *range,
