@@ -71,25 +71,18 @@ pub struct SnapshotManager(Arc<SnapshotManagerInner>);
 
 impl SnapshotManager {
     pub fn new(path: String, config_s3: Option<SnapshotsS3Config>) -> Self {
-        let bucket: Option<Bucket> = if let Some(config_s3) = &config_s3 {
-            Some(
-                Bucket::new(
-                    &config_s3.bucket,
-                    config_s3.service.clone().into(),
-                    Credentials::new(
-                        config_s3.access_key.as_deref(),
-                        config_s3.secret_key.as_deref(),
-                        None,
-                        None,
-                        None,
-                    )
-                    .expect("Failed to create S3 credentials. Have you configured them correctly?"),
-                )
-                .unwrap(),
+        let bucket: Option<Bucket> = config_s3.as_ref().map(|config_s3| Bucket::new(
+            &config_s3.bucket,
+            config_s3.service.clone().into(),
+            Credentials::new(
+                config_s3.access_key.as_deref(),
+                config_s3.secret_key.as_deref(),
+                None,
+                None,
+                None,
             )
-        } else {
-            None
-        };
+            .expect("Failed to create S3 credentials. Have you configured them correctly?"),
+        ).unwrap());
 
         SnapshotManager(Arc::new(SnapshotManagerInner {
             path,
@@ -118,7 +111,7 @@ impl SnapshotManager {
         &self,
         snapshot: &SnapshotFile,
     ) -> Result<(), SnapshotManagerError> {
-        if !self.snapshot_exists(&snapshot).await? {
+        if !self.snapshot_exists(snapshot).await? {
             return Err(SnapshotManagerError::NotFound {
                 description: if let Some(collection) = &snapshot.collection {
                     format!(
@@ -131,7 +124,7 @@ impl SnapshotManager {
             });
         }
 
-        self.remove_snapshot(&snapshot).await?;
+        self.remove_snapshot(snapshot).await?;
 
         Ok(())
     }
@@ -154,7 +147,7 @@ impl SnapshotManager {
         snapshot: &SnapshotFile,
     ) -> Result<SnapshotDescription, SnapshotManagerError> {
         let path = snapshot.get_path(self.snapshots_path());
-        let checksum = self.get_snapshot_checksum(&snapshot).await.ok();
+        let checksum = self.get_snapshot_checksum(snapshot).await.ok();
 
         let (creation_time, size) = if self.using_s3() {
             unimplemented!();
