@@ -67,18 +67,6 @@ pub struct SnapshotRecover {
     pub priority: Option<SnapshotPriority>,
 }
 
-// MOGTODO: fix this somehow?
-// impl From<SnapshotDescription> for api::grpc::qdrant::SnapshotDescription {
-//     fn from(value: SnapshotDescription) -> Self {
-//         Self {
-//             name: value.name,
-//             creation_time: value.creation_time.map(date_time_to_proto),
-//             size: value.size as i64,
-//             checksum: value.checksum,
-//         }
-//     }
-// }
-
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize, schemars::JsonSchema)]
 pub struct ShardSnapshotRecover {
     pub location: ShardSnapshotLocation,

@@ -5061,6 +5061,7 @@ dependencies = [
 name = "snapshot-manager"
 version = "0.0.0"
 dependencies = [
+ "api",
  "chrono",
  "log",
  "rust-s3",

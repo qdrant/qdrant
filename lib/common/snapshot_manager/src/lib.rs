@@ -4,6 +4,7 @@ use std::time::SystemTime;
 
 use ::s3::creds::Credentials;
 use ::s3::{Bucket, Region};
+use api::grpc::conversions::date_time_to_proto;
 use chrono::NaiveDateTime;
 use error::SnapshotManagerError;
 use schemars::JsonSchema;
@@ -26,6 +27,17 @@ pub struct SnapshotDescription {
     pub size: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub checksum: Option<String>,
+}
+
+impl From<SnapshotDescription> for api::grpc::qdrant::SnapshotDescription {
+    fn from(value: SnapshotDescription) -> Self {
+        Self {
+            name: value.name,
+            creation_time: value.creation_time.map(date_time_to_proto),
+            size: value.size as i64,
+            checksum: value.checksum,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
