@@ -71,18 +71,21 @@ pub struct SnapshotManager(Arc<SnapshotManagerInner>);
 
 impl SnapshotManager {
     pub fn new(path: String, config_s3: Option<SnapshotsS3Config>) -> Self {
-        let bucket: Option<Bucket> = config_s3.as_ref().map(|config_s3| Bucket::new(
-            &config_s3.bucket,
-            config_s3.service.clone().into(),
-            Credentials::new(
-                config_s3.access_key.as_deref(),
-                config_s3.secret_key.as_deref(),
-                None,
-                None,
-                None,
+        let bucket: Option<Bucket> = config_s3.as_ref().map(|config_s3| {
+            Bucket::new(
+                &config_s3.bucket,
+                config_s3.service.clone().into(),
+                Credentials::new(
+                    config_s3.access_key.as_deref(),
+                    config_s3.secret_key.as_deref(),
+                    None,
+                    None,
+                    None,
+                )
+                .expect("Failed to create S3 credentials. Have you configured them correctly?"),
             )
-            .expect("Failed to create S3 credentials. Have you configured them correctly?"),
-        ).unwrap());
+            .unwrap()
+        });
 
         SnapshotManager(Arc::new(SnapshotManagerInner {
             path,
