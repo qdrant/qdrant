@@ -14,6 +14,7 @@ use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::types::{HnswConfig, QuantizationConfig};
 use serde::{Deserialize, Serialize};
+use snapshot_manager::SnapshotsS3Config;
 use tonic::transport::Uri;
 use validator::Validate;
 
@@ -42,6 +43,8 @@ pub struct StorageConfig {
     #[serde(default = "default_snapshots_path")]
     #[validate(length(min = 1))]
     pub snapshots_path: String,
+    #[serde(default)]
+    pub snapshots_s3: Option<SnapshotsS3Config>,
     #[validate(length(min = 1))]
     #[serde(default)]
     pub temp_path: Option<String>,

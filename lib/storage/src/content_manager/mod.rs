@@ -13,6 +13,7 @@ pub mod conversions;
 mod data_transfer;
 pub mod errors;
 pub mod shard_distribution;
+pub mod snapshot_manager;
 pub mod snapshots;
 pub mod toc;
 

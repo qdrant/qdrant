@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 
 use io::file_operations::read_json;
 use segment::common::version::StorageVersion as _;
+use snapshot_manager::SnapshotDescription;
+use snapshot_manager::file::SnapshotFile;
 use tempfile::TempPath;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
@@ -11,7 +13,6 @@ use super::Collection;
 use crate::collection::CollectionVersion;
 use crate::common::sha_256::hash_file;
 use crate::config::{CollectionConfig, ShardingMethod};
-use crate::operations::snapshot_ops::{self, SnapshotDescription};
 use crate::operations::types::{CollectionError, CollectionResult, NodeType};
 use crate::shards::local_shard::LocalShard;
 use crate::shards::remote_shard::RemoteShard;
@@ -23,7 +24,7 @@ use crate::shards::shard_versioning;
 
 impl Collection {
     pub async fn list_snapshots(&self) -> CollectionResult<Vec<SnapshotDescription>> {
-        snapshot_ops::list_snapshots_in_directory(&self.snapshots_path).await
+        Ok(self.snapshot_manager.do_list_collection_snapshots(&self.name()).await?)
     }
 
     /// Creates a snapshot of the collection.
@@ -50,12 +51,14 @@ impl Collection {
             chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S"),
         );
 
+        let base = self.snapshot_manager.temp_path();
+        let snapshot = SnapshotFile::new_full(&snapshot_name); // NOTE: new_full is used here to stay in an existing directory (./snapshots/tmp/)
+
         // Final location of snapshot
-        let snapshot_path = self.snapshots_path.join(&snapshot_name);
+        let snapshot_path = snapshot.get_path(&base);
         log::info!(
-            "Creating collection snapshot {} into {:?}",
-            snapshot_name,
-            snapshot_path
+            "Creating collection snapshot {}",
+            snapshot_name
         );
 
         // Dedicated temporary directory for this snapshot (deleted on drop)
@@ -137,7 +140,7 @@ impl Collection {
 
         // compute and store the file's checksum before the final snapshot file is saved
         // to avoid making snapshot available without checksum
-        let checksum_path = snapshot_ops::get_checksum_path(&snapshot_path);
+        let checksum_path = snapshot.get_checksum_path(&base);
         let checksum = hash_file(&snapshot_path_tmp_move).await?;
         let checksum_file = tempfile::TempPath::from_path(&checksum_path);
         let mut file = tokio::fs::File::create(checksum_path.as_path()).await?;
@@ -146,12 +149,12 @@ impl Collection {
         let snapshot_file = tempfile::TempPath::from_path(&snapshot_path);
         fs::rename(&snapshot_path_tmp_move, &snapshot_path).await?;
 
-        // Snapshot files are ready now, so keep them
-        snapshot_file.keep()?;
-        checksum_file.keep()?;
+        // Snapshot files are ready now, hand them off to the manager
+        let snapshot = SnapshotFile::new_collection(snapshot.name, self.name());
+        self.snapshot_manager.save_snapshot(&snapshot, snapshot_file, checksum_file);
 
-        log::info!("Collection snapshot {snapshot_name} completed into {snapshot_path:?}");
-        snapshot_ops::get_snapshot_description(&snapshot_path).await
+        log::info!("Collection snapshot {snapshot_name} completed");
+        Ok(self.snapshot_manager.get_snapshot_description(&snapshot).await?)
     }
 
     /// Restore collection from snapshot
@@ -252,36 +255,36 @@ impl Collection {
             .await
     }
 
-    pub async fn get_snapshot_path(&self, snapshot_name: &str) -> CollectionResult<PathBuf> {
-        let snapshot_path = self.snapshots_path.join(snapshot_name);
+    // pub async fn get_snapshot_path(&self, snapshot_name: &str) -> CollectionResult<PathBuf> {
+    //     let snapshot_path = self.snapshots_path.join(snapshot_name);
 
-        let absolute_snapshot_path =
-            snapshot_path
-                .canonicalize()
-                .map_err(|_| CollectionError::NotFound {
-                    what: format!("Snapshot {snapshot_name}"),
-                })?;
+    //     let absolute_snapshot_path =
+    //         snapshot_path
+    //             .canonicalize()
+    //             .map_err(|_| CollectionError::NotFound {
+    //                 what: format!("Snapshot {snapshot_name}"),
+    //             })?;
 
-        let absolute_snapshot_dir =
-            self.snapshots_path
-                .canonicalize()
-                .map_err(|_| CollectionError::NotFound {
-                    what: format!("Snapshot directory: {}", self.snapshots_path.display()),
-                })?;
+    //     let absolute_snapshot_dir =
+    //         self.snapshots_path
+    //             .canonicalize()
+    //             .map_err(|_| CollectionError::NotFound {
+    //                 what: format!("Snapshot directory: {}", self.snapshots_path.display()),
+    //             })?;
 
-        if !absolute_snapshot_path.starts_with(absolute_snapshot_dir) {
-            return Err(CollectionError::NotFound {
-                what: format!("Snapshot {snapshot_name}"),
-            });
-        }
+    //     if !absolute_snapshot_path.starts_with(absolute_snapshot_dir) {
+    //         return Err(CollectionError::NotFound {
+    //             what: format!("Snapshot {snapshot_name}"),
+    //         });
+    //     }
 
-        if !snapshot_path.exists() {
-            return Err(CollectionError::NotFound {
-                what: format!("Snapshot {snapshot_name}"),
-            });
-        }
-        Ok(snapshot_path)
-    }
+    //     if !snapshot_path.exists() {
+    //         return Err(CollectionError::NotFound {
+    //             what: format!("Snapshot {snapshot_name}"),
+    //         });
+    //     }
+    //     Ok(snapshot_path)
+    // }
 
     pub async fn list_shard_snapshots(
         &self,
@@ -290,7 +293,7 @@ impl Collection {
         self.shards_holder
             .read()
             .await
-            .list_shard_snapshots(&self.snapshots_path, shard_id)
+            .list_shard_snapshots(&self.snapshot_manager, shard_id)
             .await
     }
 
@@ -302,7 +305,7 @@ impl Collection {
         self.shards_holder
             .read()
             .await
-            .create_shard_snapshot(&self.snapshots_path, &self.name(), shard_id, temp_dir)
+            .create_shard_snapshot(&self.snapshot_manager, &self.name(), shard_id, temp_dir)
             .await
     }
 

@@ -3,6 +3,7 @@ use std::num::{NonZeroU32, NonZeroU64};
 use std::sync::Arc;
 
 use segment::types::Distance;
+use snapshot_manager::SnapshotManager;
 use tempfile::Builder;
 
 use crate::collection::{Collection, RequestShardTransfer};
@@ -92,7 +93,10 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         collection_name,
         1,
         collection_dir.path(),
-        snapshots_path.path(),
+        SnapshotManager::new(
+            snapshots_path.path().to_string_lossy().to_string(),
+            None
+        ),
         &config,
         Arc::new(storage_config),
         CollectionShardDistribution { shards },
@@ -135,7 +139,10 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         collection_name_rec,
         1,
         recover_dir.path(),
-        snapshots_path.path(),
+        SnapshotManager::new(
+            snapshots_path.path().to_string_lossy().to_string(),
+            None
+        ),
         Default::default(),
         ChannelService::default(),
         dummy_on_replica_failure(),

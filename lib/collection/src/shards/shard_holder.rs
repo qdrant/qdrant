@@ -5,8 +5,8 @@ use std::sync::Arc;
 use itertools::Itertools;
 // TODO rename ReplicaShard to ReplicaSetShard
 use segment::types::ShardKey;
+use snapshot_manager::SnapshotManager;
 use tar::Builder as TarBuilder;
-use tokio::io::AsyncWriteExt;
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 
@@ -17,9 +17,6 @@ use crate::config::{CollectionConfig, ShardingMethod};
 use crate::hash_ring::HashRing;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::shared_storage_config::SharedStorageConfig;
-use crate::operations::snapshot_ops::{
-    get_checksum_path, get_snapshot_description, list_snapshots_in_directory, SnapshotDescription,
-};
 use crate::operations::types::{CollectionError, CollectionResult, ShardTransferInfo};
 use crate::operations::{OperationToShard, SplitByShard};
 use crate::save_on_disk::SaveOnDisk;
@@ -31,6 +28,8 @@ use crate::shards::shard_config::{ShardConfig, ShardType};
 use crate::shards::shard_versioning::latest_shard_paths;
 use crate::shards::transfer::{ShardTransfer, ShardTransferKey};
 use crate::shards::CollectionId;
+
+use snapshot_manager::SnapshotDescription;
 
 const HASH_RING_SHARD_SCALE: u32 = 100;
 
@@ -645,7 +644,7 @@ impl ShardHolder {
     /// This method is cancel safe.
     pub async fn list_shard_snapshots(
         &self,
-        snapshots_path: &Path,
+        snapshot_manager: &SnapshotManager,
         shard_id: ShardId,
     ) -> CollectionResult<Vec<SnapshotDescription>> {
         self.assert_shard_is_local(shard_id).await?;
@@ -664,7 +663,7 @@ impl ShardHolder {
     /// This method is cancel safe.
     pub async fn create_shard_snapshot(
         &self,
-        snapshots_path: &Path,
+        snapshot_manager: &SnapshotManager,
         collection_name: &str,
         shard_id: ShardId,
         temp_dir: &Path,

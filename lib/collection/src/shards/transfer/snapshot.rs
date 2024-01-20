@@ -6,7 +6,7 @@ use tempfile::TempPath;
 use tokio::time::sleep;
 
 use super::{ShardTransfer, ShardTransferConsensus};
-use crate::operations::snapshot_ops::{get_checksum_path, SnapshotPriority};
+use crate::operations::snapshot_ops::SnapshotPriority;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::channel_service::ChannelService;
 use crate::shards::remote_shard::RemoteShard;

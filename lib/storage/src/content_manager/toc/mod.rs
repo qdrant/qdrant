@@ -11,6 +11,7 @@ use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::fs::{create_dir_all, read_dir};
 use std::num::NonZeroU32;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -30,6 +31,7 @@ use collection::telemetry::CollectionTelemetry;
 use futures::future::try_join_all;
 use futures::Future;
 use segment::common::cpu::get_num_cpus;
+use snapshot_manager::SnapshotManager;
 use tokio::runtime::Runtime;
 use tokio::sync::{Mutex, RwLock, RwLockReadGuard, Semaphore};
 use tonic::codegen::InterceptedService;
@@ -56,6 +58,7 @@ pub const FULL_SNAPSHOT_FILE_NAME: &str = "full-snapshot";
 pub struct TableOfContent {
     collections: Arc<RwLock<Collections>>,
     pub(super) storage_config: Arc<StorageConfig>,
+    pub(super) snapshot_manager: SnapshotManager,
     search_runtime: Runtime,
     update_runtime: Runtime,
     general_runtime: Runtime,
@@ -182,6 +185,10 @@ impl TableOfContent {
         TableOfContent {
             collections: Arc::new(RwLock::new(collections)),
             storage_config: Arc::new(storage_config.clone()),
+            snapshot_manager: SnapshotManager::new(
+                storage_config.snapshots_path,
+                 storage_config.snapshots_s3
+            ),
             search_runtime,
             update_runtime,
             general_runtime,

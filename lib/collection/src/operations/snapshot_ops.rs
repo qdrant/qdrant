@@ -1,14 +1,9 @@
-use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use std::path::PathBuf;
 
-use api::grpc::conversions::date_time_to_proto;
-use chrono::NaiveDateTime;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use url::Url;
 use validator::Validate;
-
-use crate::operations::types::CollectionResult;
 
 /// Defines source of truth for snapshot recovery:
 /// `NoSync` means - restore snapshot without *any* additional synchronization.
@@ -72,75 +67,17 @@ pub struct SnapshotRecover {
     pub priority: Option<SnapshotPriority>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
-pub struct SnapshotDescription {
-    pub name: String,
-    pub creation_time: Option<NaiveDateTime>,
-    pub size: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub checksum: Option<String>,
-}
-
-impl From<SnapshotDescription> for api::grpc::qdrant::SnapshotDescription {
-    fn from(value: SnapshotDescription) -> Self {
-        Self {
-            name: value.name,
-            creation_time: value.creation_time.map(date_time_to_proto),
-            size: value.size as i64,
-            checksum: value.checksum,
-        }
-    }
-}
-
-pub async fn get_snapshot_description(path: &Path) -> CollectionResult<SnapshotDescription> {
-    let name = path.file_name().unwrap().to_str().unwrap();
-    let file_meta = tokio::fs::metadata(&path).await?;
-    let creation_time = file_meta.created().ok().and_then(|created_time| {
-        created_time
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .ok()
-            .map(|duration| {
-                NaiveDateTime::from_timestamp_opt(duration.as_secs() as i64, 0).unwrap()
-            })
-    });
-
-    let checksum = read_checksum_for_snapshot(path).await;
-    let size = file_meta.len();
-    Ok(SnapshotDescription {
-        name: name.to_string(),
-        creation_time,
-        size,
-        checksum,
-    })
-}
-
-async fn read_checksum_for_snapshot(snapshot_path: impl Into<PathBuf>) -> Option<String> {
-    let checksum_path = get_checksum_path(snapshot_path);
-    tokio::fs::read_to_string(&checksum_path).await.ok()
-}
-
-pub fn get_checksum_path(snapshot_path: impl Into<PathBuf>) -> PathBuf {
-    let mut checksum_path = snapshot_path.into().into_os_string();
-    checksum_path.push(".checksum");
-    checksum_path.into()
-}
-
-pub async fn list_snapshots_in_directory(
-    directory: &Path,
-) -> CollectionResult<Vec<SnapshotDescription>> {
-    let mut entries = tokio::fs::read_dir(directory).await?;
-    let mut snapshots = Vec::new();
-
-    while let Some(entry) = entries.next_entry().await? {
-        let path = entry.path();
-
-        if !path.is_dir() && path.extension().map_or(false, |ext| ext == "snapshot") {
-            snapshots.push(get_snapshot_description(&path).await?);
-        }
-    }
-
-    Ok(snapshots)
-}
+// MOGTODO: fix this somehow?
+// impl From<SnapshotDescription> for api::grpc::qdrant::SnapshotDescription {
+//     fn from(value: SnapshotDescription) -> Self {
+//         Self {
+//             name: value.name,
+//             creation_time: value.creation_time.map(date_time_to_proto),
+//             size: value.size as i64,
+//             checksum: value.checksum,
+//         }
+//     }
+// }
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize, schemars::JsonSchema)]
 pub struct ShardSnapshotRecover {

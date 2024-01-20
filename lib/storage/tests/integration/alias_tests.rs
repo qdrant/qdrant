@@ -29,6 +29,7 @@ fn test_alias_operation() {
             .to_str()
             .unwrap()
             .to_string(),
+        snapshots_s3: None,
         temp_path: None,
         on_disk_payload: false,
         optimizers: OptimizersConfig {

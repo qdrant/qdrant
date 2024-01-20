@@ -16,6 +16,7 @@ use std::time::Duration;
 use segment::common::version::StorageVersion;
 use segment::types::ShardKey;
 use semver::Version;
+use snapshot_manager::SnapshotManager;
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
 
@@ -47,7 +48,7 @@ pub struct Collection {
     pub(crate) payload_index_schema: SaveOnDisk<PayloadIndexSchema>,
     this_peer_id: PeerId,
     path: PathBuf,
-    snapshots_path: PathBuf,
+    snapshot_manager: SnapshotManager,
     channel_service: ChannelService,
     transfer_tasks: Mutex<TransferTasksPool>,
     request_shard_transfer_cb: RequestShardTransfer,
@@ -79,7 +80,7 @@ impl Collection {
         name: CollectionId,
         this_peer_id: PeerId,
         path: &Path,
-        snapshots_path: &Path,
+        snapshot_manager: SnapshotManager,
         collection_config: &CollectionConfig,
         shared_storage_config: Arc<SharedStorageConfig>,
         shard_distribution: CollectionShardDistribution,
@@ -135,7 +136,7 @@ impl Collection {
             shared_storage_config,
             this_peer_id,
             path: path.to_owned(),
-            snapshots_path: snapshots_path.to_owned(),
+            snapshot_manager,
             channel_service,
             transfer_tasks: Mutex::new(TransferTasksPool::new(name.clone())),
             request_shard_transfer_cb: request_shard_transfer.clone(),
@@ -154,7 +155,7 @@ impl Collection {
         collection_id: CollectionId,
         this_peer_id: PeerId,
         path: &Path,
-        snapshots_path: &Path,
+        snapshot_manager: SnapshotManager,
         shared_storage_config: Arc<SharedStorageConfig>,
         channel_service: ChannelService,
         on_replica_failure: replica_set::ChangePeerState,
@@ -229,7 +230,7 @@ impl Collection {
             shared_storage_config,
             this_peer_id,
             path: path.to_owned(),
-            snapshots_path: snapshots_path.to_owned(),
+            snapshot_manager,
             channel_service,
             transfer_tasks: Mutex::new(TransferTasksPool::new(collection_id.clone())),
             request_shard_transfer_cb: request_shard_transfer.clone(),

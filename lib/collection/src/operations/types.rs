@@ -29,6 +29,7 @@ use segment::vector_storage::query::reco_query::RecoQuery;
 use serde;
 use serde::{Deserialize, Serialize};
 use serde_json::Error as JsonError;
+use snapshot_manager::error::SnapshotManagerError;
 use sparse::common::sparse_vector::SparseVector;
 use thiserror::Error;
 use tokio::sync::mpsc::error::SendError;
@@ -956,6 +957,18 @@ impl CollectionError {
             Self::BadShardSelection { .. } => false,
             Self::InconsistentShardFailure { .. } => false,
             Self::ForwardProxyError { .. } => false,
+        }
+    }
+}
+
+impl From<SnapshotManagerError> for CollectionError {
+    fn from(value: SnapshotManagerError) -> CollectionError {
+        match value {
+            SnapshotManagerError::BadInput { description } => CollectionError::BadInput { description },
+            SnapshotManagerError::BadRequest { description } => CollectionError::BadRequest { description },
+            SnapshotManagerError::NotFound { description } => CollectionError::NotFound { what: description },
+            SnapshotManagerError::ServiceError { description, backtrace } => CollectionError::ServiceError { error: description, backtrace },
+            SnapshotManagerError::Timeout { description } => CollectionError::Timeout { description },
         }
     }
 }

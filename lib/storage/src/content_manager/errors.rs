@@ -3,6 +3,7 @@ use std::io::Error as IoError;
 
 use collection::operations::types::CollectionError;
 use io::file_operations::FileStorageError;
+use snapshot_manager::error::SnapshotManagerError;
 use tempfile::PersistError;
 use thiserror::Error;
 
@@ -132,6 +133,18 @@ impl From<CollectionError> for StorageError {
             CollectionError::Timeout { .. } => StorageError::Timeout {
                 description: format!("{err}"),
             },
+        }
+    }
+}
+
+impl From<SnapshotManagerError> for StorageError {
+    fn from(value: SnapshotManagerError) -> Self {
+        match value {
+            SnapshotManagerError::BadInput { description } => StorageError::BadInput { description },
+            SnapshotManagerError::BadRequest { description } => StorageError::BadRequest { description },
+            SnapshotManagerError::NotFound { description } => StorageError::NotFound { description },
+            SnapshotManagerError::ServiceError { description, backtrace } => StorageError::ServiceError { description, backtrace },
+            SnapshotManagerError::Timeout { description } => StorageError::Timeout { description },
         }
     }
 }

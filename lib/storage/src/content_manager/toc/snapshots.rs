@@ -11,36 +11,42 @@ use crate::content_manager::consensus_ops::ConsensusOperations;
 use crate::content_manager::errors::StorageError;
 
 impl TableOfContent {
-    pub fn snapshots_path(&self) -> &str {
-        &self.storage_config.snapshots_path
-    }
+    // pub fn snapshots_path(&self) -> &str {
+    //     &self.storage_config.snapshots_path
+    // }
 
-    pub fn collection_snapshots_path(snapshots_path: &Path, collection_name: &str) -> PathBuf {
-        snapshots_path.join(collection_name)
-    }
+    // pub fn snapshots_s3(&self) -> &Option<SnapshotsS3Config> {
+    //     &self.storage_config.snapshots_s3
+    // }
 
-    pub fn snapshots_path_for_collection(&self, collection_name: &str) -> PathBuf {
-        Self::collection_snapshots_path(
-            Path::new(&self.storage_config.snapshots_path),
-            collection_name,
-        )
-    }
+    // pub fn collection_snapshots_path(snapshots_path: &Path, collection_name: &str) -> PathBuf {
+    //     snapshots_path.join(collection_name)
+    // }
 
-    pub async fn create_snapshots_path(
-        &self,
-        collection_name: &str,
-    ) -> Result<PathBuf, StorageError> {
-        let snapshots_path = self.snapshots_path_for_collection(collection_name);
-        tokio::fs::create_dir_all(&snapshots_path)
-            .await
-            .map_err(|err| {
-                StorageError::service_error(format!(
-                    "Can't create directory for snapshots {collection_name}. Error: {err}"
-                ))
-            })?;
+    // pub fn snapshots_path_for_collection(&self, collection_name: &str) -> PathBuf {
+    //     Self::collection_snapshots_path(
+    //         Path::new(&self.storage_config.snapshots_path),
+    //         collection_name,
+    //     )
+    // }
 
-        Ok(snapshots_path)
-    }
+    // pub async fn create_snapshots_path(
+    //     &self,
+    //     collection_name: &str,
+    // ) -> Result<PathBuf, StorageError> {
+    //     let snapshots_path = self.snapshots_path_for_collection(collection_name);
+    //     if self.snapshots_s3().is_none() {
+    //         tokio::fs::create_dir_all(&snapshots_path)
+    //             .await
+    //             .map_err(|err| {
+    //                 StorageError::service_error(format!(
+    //                     "Can't create directory for snapshots {collection_name}. Error: {err}"
+    //                 ))
+    //             })?;
+    //     }
+
+    //     Ok(snapshots_path)
+    // }
 
     pub async fn create_snapshot(
         &self,
