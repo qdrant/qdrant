@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 
 use io::file_operations::read_json;
 use segment::common::version::StorageVersion as _;
-use snapshot_manager::SnapshotDescription;
 use snapshot_manager::file::SnapshotFile;
+use snapshot_manager::SnapshotDescription;
 use tempfile::TempPath;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
@@ -24,7 +24,10 @@ use crate::shards::shard_versioning;
 
 impl Collection {
     pub async fn list_snapshots(&self) -> CollectionResult<Vec<SnapshotDescription>> {
-        Ok(self.snapshot_manager.do_list_collection_snapshots(&self.name()).await?)
+        Ok(self
+            .snapshot_manager
+            .do_list_collection_snapshots(&self.name())
+            .await?)
     }
 
     /// Creates a snapshot of the collection.
@@ -56,10 +59,7 @@ impl Collection {
 
         // Final location of snapshot
         let snapshot_path = snapshot.get_path(&base);
-        log::info!(
-            "Creating collection snapshot {}",
-            snapshot_name
-        );
+        log::info!("Creating collection snapshot {}", snapshot_name);
 
         // Dedicated temporary directory for this snapshot (deleted on drop)
         let snapshot_temp_target_dir = tempfile::Builder::new()
@@ -151,10 +151,14 @@ impl Collection {
 
         // Snapshot files are ready now, hand them off to the manager
         let snapshot = SnapshotFile::new_collection(snapshot.name, self.name());
-        self.snapshot_manager.save_snapshot(&snapshot, snapshot_file, checksum_file);
+        self.snapshot_manager
+            .save_snapshot(&snapshot, snapshot_file, checksum_file);
 
         log::info!("Collection snapshot {snapshot_name} completed");
-        Ok(self.snapshot_manager.get_snapshot_description(&snapshot).await?)
+        Ok(self
+            .snapshot_manager
+            .get_snapshot_description(&snapshot)
+            .await?)
     }
 
     /// Restore collection from snapshot

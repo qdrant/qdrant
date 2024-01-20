@@ -5,7 +5,7 @@ use std::sync::Arc;
 use itertools::Itertools;
 // TODO rename ReplicaShard to ReplicaSetShard
 use segment::types::ShardKey;
-use snapshot_manager::SnapshotManager;
+use snapshot_manager::{SnapshotDescription, SnapshotManager};
 use tar::Builder as TarBuilder;
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
@@ -28,8 +28,6 @@ use crate::shards::shard_config::{ShardConfig, ShardType};
 use crate::shards::shard_versioning::latest_shard_paths;
 use crate::shards::transfer::{ShardTransfer, ShardTransferKey};
 use crate::shards::CollectionId;
-
-use snapshot_manager::SnapshotDescription;
 
 const HASH_RING_SHARD_SCALE: u32 = 100;
 

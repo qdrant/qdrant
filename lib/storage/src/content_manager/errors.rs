@@ -140,10 +140,22 @@ impl From<CollectionError> for StorageError {
 impl From<SnapshotManagerError> for StorageError {
     fn from(value: SnapshotManagerError) -> Self {
         match value {
-            SnapshotManagerError::BadInput { description } => StorageError::BadInput { description },
-            SnapshotManagerError::BadRequest { description } => StorageError::BadRequest { description },
-            SnapshotManagerError::NotFound { description } => StorageError::NotFound { description },
-            SnapshotManagerError::ServiceError { description, backtrace } => StorageError::ServiceError { description, backtrace },
+            SnapshotManagerError::BadInput { description } => {
+                StorageError::BadInput { description }
+            }
+            SnapshotManagerError::BadRequest { description } => {
+                StorageError::BadRequest { description }
+            }
+            SnapshotManagerError::NotFound { description } => {
+                StorageError::NotFound { description }
+            }
+            SnapshotManagerError::ServiceError {
+                description,
+                backtrace,
+            } => StorageError::ServiceError {
+                description,
+                backtrace,
+            },
             SnapshotManagerError::Timeout { description } => StorageError::Timeout { description },
         }
     }

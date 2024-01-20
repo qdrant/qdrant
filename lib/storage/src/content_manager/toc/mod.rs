@@ -187,7 +187,7 @@ impl TableOfContent {
             storage_config: Arc::new(storage_config.clone()),
             snapshot_manager: SnapshotManager::new(
                 storage_config.snapshots_path,
-                 storage_config.snapshots_s3
+                storage_config.snapshots_s3,
             ),
             search_runtime,
             update_runtime,

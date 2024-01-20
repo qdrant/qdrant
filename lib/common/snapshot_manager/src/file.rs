@@ -7,19 +7,14 @@ pub struct SnapshotFile {
 }
 
 impl SnapshotFile {
-    pub fn new_full(
-        name: impl Into<String>,
-    ) -> Self {
+    pub fn new_full(name: impl Into<String>) -> Self {
         SnapshotFile {
             name: name.into(),
             collection: None,
         }
     }
 
-    pub fn new_collection(
-        name: impl Into<String>,
-        collection: impl Into<String>,
-    ) -> Self {
+    pub fn new_collection(name: impl Into<String>, collection: impl Into<String>) -> Self {
         SnapshotFile {
             name: name.into(),
             collection: Some(collection.into()),
@@ -30,10 +25,7 @@ impl SnapshotFile {
         self.collection.is_some()
     }
 
-    pub fn get_path(
-        &self,
-        base: impl Into<PathBuf>,
-    ) -> PathBuf {
+    pub fn get_path(&self, base: impl Into<PathBuf>) -> PathBuf {
         let path: PathBuf = base.into();
         let path = if let Some(collection) = &self.collection {
             path.join(collection)
@@ -43,10 +35,7 @@ impl SnapshotFile {
         path.join(&self.name)
     }
 
-    pub fn get_checksum_path(
-        &self,
-        base: impl Into<PathBuf>,
-    ) -> PathBuf {
+    pub fn get_checksum_path(&self, base: impl Into<PathBuf>) -> PathBuf {
         let path: PathBuf = base.into();
         let path = if let Some(collection) = &self.collection {
             path.join(collection)

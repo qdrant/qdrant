@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use s3::Bucket;
 
+use super::file::SnapshotFile;
+use super::SnapshotManager;
 use crate::error::SnapshotManagerError;
-
-use super::{SnapshotManager, file::SnapshotFile};
 
 impl SnapshotManager {
     pub(super) fn using_s3(&self) -> bool {
@@ -36,7 +36,11 @@ impl SnapshotManager {
         snapshot: &SnapshotFile,
     ) -> Result<(), SnapshotManagerError> {
         if let Some(collection) = &snapshot.collection {
-            log::info!("Deleting collection {:?} snapshot {:?}", collection, snapshot.name);
+            log::info!(
+                "Deleting collection {:?} snapshot {:?}",
+                collection,
+                snapshot.name
+            );
         } else {
             log::info!("Deleting full storage snapshot {:?}", snapshot.name);
         }

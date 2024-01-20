@@ -2,6 +2,7 @@ pub mod download;
 pub mod recover;
 
 use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 use super::errors::StorageError;
@@ -30,9 +31,7 @@ pub async fn do_create_full_snapshot(
     }
 }
 
-async fn _do_create_full_snapshot(
-    dispatcher: &Dispatcher,
-) -> Result<SnapshotFile, StorageError> {
+async fn _do_create_full_snapshot(dispatcher: &Dispatcher) -> Result<SnapshotFile, StorageError> {
     let dispatcher = dispatcher.clone();
 
     let base: PathBuf = dispatcher.snapshots_temp_path();
@@ -43,7 +42,7 @@ async fn _do_create_full_snapshot(
         let snapshot_details = dispatcher.create_snapshot(collection_name).await?;
         created_snapshots.push(SnapshotFile::new_collection(
             snapshot_details.name,
-            collection_name
+            collection_name,
         ));
     }
     let current_time = chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S").to_string();
@@ -52,10 +51,12 @@ async fn _do_create_full_snapshot(
 
     let collection_name_to_snapshot_path: HashMap<_, _> = created_snapshots
         .iter()
-        .map(|x| (
-            x.collection.clone().unwrap(),
-            x.get_path(&base).to_string_lossy().to_string()
-        ))
+        .map(|x| {
+            (
+                x.collection.clone().unwrap(),
+                x.get_path(&base).to_string_lossy().to_string(),
+            )
+        })
         .collect();
 
     let mut alias_mapping: HashMap<String, String> = Default::default();
@@ -88,10 +89,7 @@ async fn _do_create_full_snapshot(
 
     let config_path_clone = config_path.clone();
     let full_snapshot_path_clone = full_snapshot_path.clone();
-    let created_snapshots_clone: Vec<_> = created_snapshots
-        .iter()
-        .map(|x| x.clone())
-        .collect();
+    let created_snapshots_clone: Vec<_> = created_snapshots.iter().map(|x| x.clone()).collect();
     let base_clone = base.clone();
     let archiving = tokio::task::spawn_blocking(move || {
         let base = base_clone;
@@ -125,11 +123,10 @@ async fn _do_create_full_snapshot(
 
     tokio::fs::remove_file(&config_path).await?;
 
-    dispatcher.snapshot_manager.save_snapshot(
-        full_snapshot,
-        snapshot_file,
-        checksum_file
-    ).await?;
+    dispatcher
+        .snapshot_manager
+        .save_snapshot(full_snapshot, snapshot_file, checksum_file)
+        .await?;
 
     Ok(full_snapshot)
 }

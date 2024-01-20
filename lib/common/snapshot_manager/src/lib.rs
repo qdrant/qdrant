@@ -1,19 +1,21 @@
-use std::{sync::Arc, time::SystemTime, path::PathBuf};
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::SystemTime;
 
+use ::s3::creds::Credentials;
+use ::s3::{Bucket, Region};
 use chrono::NaiveDateTime;
 use error::SnapshotManagerError;
-use ::s3::{Bucket, Region, creds::Credentials};
-use tempfile::TempPath;
-use serde::{Deserialize, Serialize};
 use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use tempfile::TempPath;
 use validator::Validate;
 
 //use crate::{types::SnapshotsS3Config, dispatcher::Dispatcher, content_manager::toc::FULL_SNAPSHOT_FILE_NAME};
-
 use self::file::SnapshotFile;
 
-pub mod file;
 pub mod error;
+pub mod file;
 mod helpers;
 mod s3;
 
@@ -36,7 +38,9 @@ pub enum SnapshotsS3Service {
 impl From<SnapshotsS3Service> for Region {
     fn from(value: SnapshotsS3Service) -> Self {
         match value {
-            SnapshotsS3Service::AWS { region } => region.parse().expect("Invalid AWS region specified."),
+            SnapshotsS3Service::AWS { region } => {
+                region.parse().expect("Invalid AWS region specified.")
+            }
             SnapshotsS3Service::R2 { account_id } => Region::R2 { account_id },
             SnapshotsS3Service::Custom { region, endpoint } => Region::Custom { region, endpoint },
         }
@@ -68,15 +72,21 @@ pub struct SnapshotManager(Arc<SnapshotManagerInner>);
 impl SnapshotManager {
     pub fn new(path: String, config_s3: Option<SnapshotsS3Config>) -> Self {
         let bucket: Option<Bucket> = if let Some(config_s3) = &config_s3 {
-            Some(Bucket::new(
-                &config_s3.bucket,
-                config_s3.service.clone().into(),
-                Credentials::new(
-                    config_s3.access_key.as_deref(),
-                    config_s3.secret_key.as_deref(),
-                    None, None, None
-                ).expect("Failed to create S3 credentials. Have you configured them correctly?"),
-            ).unwrap())
+            Some(
+                Bucket::new(
+                    &config_s3.bucket,
+                    config_s3.service.clone().into(),
+                    Credentials::new(
+                        config_s3.access_key.as_deref(),
+                        config_s3.secret_key.as_deref(),
+                        None,
+                        None,
+                        None,
+                    )
+                    .expect("Failed to create S3 credentials. Have you configured them correctly?"),
+                )
+                .unwrap(),
+            )
         } else {
             None
         };
@@ -95,16 +105,15 @@ impl SnapshotManager {
     ) -> Result<bool, SnapshotManagerError> {
         let _self = self.clone();
         let snapshot = snapshot.clone();
-        let task =
-            tokio::spawn(async move { _self._do_delete_snapshot(&snapshot).await });
-    
+        let task = tokio::spawn(async move { _self._do_delete_snapshot(&snapshot).await });
+
         if wait {
             task.await??;
         }
-    
+
         Ok(true)
     }
-    
+
     async fn _do_delete_snapshot(
         &self,
         snapshot: &SnapshotFile,
@@ -112,7 +121,10 @@ impl SnapshotManager {
         if !self.snapshot_exists(&snapshot).await? {
             return Err(SnapshotManagerError::NotFound {
                 description: if let Some(collection) = &snapshot.collection {
-                    format!("Collection {:?} snapshot {} not found", collection, snapshot.name)
+                    format!(
+                        "Collection {:?} snapshot {} not found",
+                        collection, snapshot.name
+                    )
                 } else {
                     format!("Full storage snapshot {} not found", snapshot.name)
                 },
@@ -120,7 +132,7 @@ impl SnapshotManager {
         }
 
         self.remove_snapshot(&snapshot).await?;
-    
+
         Ok(())
     }
 
@@ -157,10 +169,7 @@ impl SnapshotManager {
                     })
             });
 
-            (
-                creation_time,
-                meta.len(),
-            )
+            (creation_time, meta.len())
         };
 
         Ok(SnapshotDescription {
@@ -208,7 +217,6 @@ impl SnapshotManager {
         Ok(out)
     }
 
-
     pub async fn ensure_snapshots_path(
         &self,
         collection_name: &str,
@@ -224,7 +232,7 @@ impl SnapshotManager {
                     ))
                 })?;
         }
-        
+
         Ok(())
     }
 

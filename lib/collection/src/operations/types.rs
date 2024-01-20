@@ -964,11 +964,25 @@ impl CollectionError {
 impl From<SnapshotManagerError> for CollectionError {
     fn from(value: SnapshotManagerError) -> CollectionError {
         match value {
-            SnapshotManagerError::BadInput { description } => CollectionError::BadInput { description },
-            SnapshotManagerError::BadRequest { description } => CollectionError::BadRequest { description },
-            SnapshotManagerError::NotFound { description } => CollectionError::NotFound { what: description },
-            SnapshotManagerError::ServiceError { description, backtrace } => CollectionError::ServiceError { error: description, backtrace },
-            SnapshotManagerError::Timeout { description } => CollectionError::Timeout { description },
+            SnapshotManagerError::BadInput { description } => {
+                CollectionError::BadInput { description }
+            }
+            SnapshotManagerError::BadRequest { description } => {
+                CollectionError::BadRequest { description }
+            }
+            SnapshotManagerError::NotFound { description } => {
+                CollectionError::NotFound { what: description }
+            }
+            SnapshotManagerError::ServiceError {
+                description,
+                backtrace,
+            } => CollectionError::ServiceError {
+                error: description,
+                backtrace,
+            },
+            SnapshotManagerError::Timeout { description } => {
+                CollectionError::Timeout { description }
+            }
         }
     }
 }
