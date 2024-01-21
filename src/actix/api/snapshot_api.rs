@@ -53,48 +53,6 @@ pub struct SnapshottingForm {
 }
 
 // Actix specific code
-// pub async fn do_get_full_snapshot(toc: &TableOfContent, snapshot_name: &str) -> Result<NamedFile> {
-//     let file_name = get_full_snapshot_path(toc, snapshot_name)
-//         .await
-//         .map_err(storage_into_actix_error)?;
-
-//     Ok(NamedFile::open(file_name)?)
-// }
-
-// pub async fn do_save_uploaded_snapshot(
-//     toc: &TableOfContent,
-//     collection_name: &str,
-//     snapshot: TempFile,
-// ) -> std::result::Result<Url, StorageError> {
-//     let filename = snapshot
-//         .file_name
-//         .unwrap_or_else(|| Uuid::new_v4().to_string());
-//     let collection_snapshot_path = toc.snapshots_path_for_collection(collection_name);
-//     if !collection_snapshot_path.exists() {
-//         log::debug!(
-//             "Creating missing collection snapshots directory for {}",
-//             collection_name
-//         );
-//         toc.create_snapshots_path(collection_name).await?;
-//     }
-
-//     let path = collection_snapshot_path.join(filename);
-
-//     move_file(snapshot.file.path(), &path).await?;
-
-//     let absolute_path = path.canonicalize()?;
-
-//     let snapshot_location = Url::from_file_path(&absolute_path).map_err(|_| {
-//         StorageError::service_error(format!(
-//             "Failed to convert path to URL: {}",
-//             absolute_path.display()
-//         ))
-//     })?;
-
-//     Ok(snapshot_location)
-// }
-
-// Actix specific code
 pub async fn do_get_snapshot(
     toc: &TableOfContent,
     snapshot: SnapshotFile,

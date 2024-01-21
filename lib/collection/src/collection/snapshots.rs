@@ -267,37 +267,6 @@ impl Collection {
             .await
     }
 
-    // pub async fn get_snapshot_path(&self, snapshot_name: &str) -> CollectionResult<PathBuf> {
-    //     let snapshot_path = self.snapshots_path.join(snapshot_name);
-
-    //     let absolute_snapshot_path =
-    //         snapshot_path
-    //             .canonicalize()
-    //             .map_err(|_| CollectionError::NotFound {
-    //                 what: format!("Snapshot {snapshot_name}"),
-    //             })?;
-
-    //     let absolute_snapshot_dir =
-    //         self.snapshots_path
-    //             .canonicalize()
-    //             .map_err(|_| CollectionError::NotFound {
-    //                 what: format!("Snapshot directory: {}", self.snapshots_path.display()),
-    //             })?;
-
-    //     if !absolute_snapshot_path.starts_with(absolute_snapshot_dir) {
-    //         return Err(CollectionError::NotFound {
-    //             what: format!("Snapshot {snapshot_name}"),
-    //         });
-    //     }
-
-    //     if !snapshot_path.exists() {
-    //         return Err(CollectionError::NotFound {
-    //             what: format!("Snapshot {snapshot_name}"),
-    //         });
-    //     }
-    //     Ok(snapshot_path)
-    // }
-
     pub async fn list_shard_snapshots(
         &self,
         shard_id: ShardId,

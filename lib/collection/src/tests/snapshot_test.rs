@@ -1,7 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::fs;
 use std::num::{NonZeroU32, NonZeroU64};
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use segment::types::Distance;
@@ -73,8 +71,6 @@ async fn _test_snapshot_collection(node_type: NodeType) {
     };
 
     let snapshots_path = Builder::new().prefix("test_snapshots").tempdir().unwrap();
-    //fs::create_dir("./test_snapshots").unwrap();
-    //let snapshots_path = PathBuf::from("./test_snapshots").canonicalize().unwrap();
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
     let recover_dir = Builder::new()
         .prefix("test_collection_rec")
