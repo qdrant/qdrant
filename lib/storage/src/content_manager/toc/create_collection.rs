@@ -71,7 +71,8 @@ impl TableOfContent {
         }
 
         let collection_path = self.create_collection_path(collection_name).await?;
-        let snapshots_path = self.create_snapshots_path(collection_name).await?;
+        self.snapshot_manager
+            .ensure_snapshots_path(collection_name)?;
 
         let shard_number = match sharding_method.unwrap_or_default() {
             ShardingMethod::Auto => {
@@ -158,33 +159,34 @@ impl TableOfContent {
             hnsw_config,
             quantization_config,
         };
-        let collection = Collection::new(
-            collection_name.to_string(),
-            self.this_peer_id,
-            &collection_path,
-            &snapshots_path,
-            &collection_config,
-            storage_config,
-            collection_shard_distribution,
-            self.channel_service.clone(),
-            Self::change_peer_state_callback(
-                self.consensus_proposal_sender.clone(),
+        let collection =
+            Collection::new(
                 collection_name.to_string(),
-                ReplicaState::Dead,
-                None,
-            ),
-            Self::request_shard_transfer_callback(
-                self.consensus_proposal_sender.clone(),
-                collection_name.to_string(),
-            ),
-            Self::abort_shard_transfer_callback(
-                self.consensus_proposal_sender.clone(),
-                collection_name.to_string(),
-            ),
-            Some(self.search_runtime.handle().clone()),
-            Some(self.update_runtime.handle().clone()),
-        )
-        .await?;
+                self.this_peer_id,
+                &collection_path,
+                self.snapshot_manager.clone(),
+                &collection_config,
+                storage_config,
+                collection_shard_distribution,
+                self.channel_service.clone(),
+                Self::change_peer_state_callback(
+                    self.consensus_proposal_sender.clone(),
+                    collection_name.to_string(),
+                    ReplicaState::Dead,
+                    None,
+                ),
+                Self::request_shard_transfer_callback(
+                    self.consensus_proposal_sender.clone(),
+                    collection_name.to_string(),
+                ),
+                Self::abort_shard_transfer_callback(
+                    self.consensus_proposal_sender.clone(),
+                    collection_name.to_string(),
+                ),
+                Some(self.search_runtime.handle().clone()),
+                Some(self.update_runtime.handle().clone()),
+            )
+            .await?;
 
         let local_shards = collection.get_local_shards().await;
 

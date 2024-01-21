@@ -2,6 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use common::defaults;
+use snapshot_manager::SnapshotManager;
 use tempfile::TempPath;
 use tokio::time::sleep;
 
@@ -158,7 +159,7 @@ pub(super) async fn transfer_snapshot(
     remote_shard: RemoteShard,
     channel_service: ChannelService,
     consensus: &dyn ShardTransferConsensus,
-    snapshots_path: &Path,
+    snapshot_manager: SnapshotManager,
     collection_name: &str,
     temp_dir: &Path,
 ) -> CollectionResult<()> {
@@ -173,9 +174,9 @@ pub(super) async fn transfer_snapshot(
 
     let transferring_shard = shard_holder_read.get_shard(&shard_id);
     let Some(replica_set) = transferring_shard else {
-        return Err(CollectionError::service_error(format!(
-            "Shard {shard_id} cannot be queue proxied because it does not exist"
-        )));
+        return Err(CollectionError::service_error(
+            format!("Shard {shard_id} cannot be queue proxied because it does not exist")
+        ));
     };
 
     // Queue proxy local shard
@@ -191,20 +192,22 @@ pub(super) async fn transfer_snapshot(
     // Create shard snapshot
     log::trace!("Creating snapshot of shard {shard_id} for shard snapshot transfer");
     let snapshot_description = shard_holder_read
-        .create_shard_snapshot(snapshots_path, collection_name, shard_id, temp_dir)
+        .create_shard_snapshot(&snapshot_manager, collection_name, shard_id, temp_dir)
         .await?;
 
-    // TODO: If future is cancelled until `get_shard_snapshot_path` resolves, shard snapshot may not be cleaned up...
-    let snapshot_temp_path = shard_holder_read
-        .get_shard_snapshot_path(snapshots_path, shard_id, &snapshot_description.name)
+    let temp_base = snapshot_manager.temp_path();
+    // TODO: If future is cancelled until `get_shard_snapshot` resolves, shard snapshot may not be cleaned up...
+    let snapshot = shard_holder_read
+        .get_shard_snapshot(&collection_name, shard_id, &snapshot_description.name)
         .await
-        .map(TempPath::from_path)
         .map_err(|err| {
             CollectionError::service_error(format!(
                 "Failed to determine snapshot path, cannot continue with shard snapshot recovery: {err}"
             ))
         })?;
-    let snapshot_checksum_temp_path = TempPath::from_path(get_checksum_path(&snapshot_temp_path));
+
+    let snapshot_temp_path = TempPath::from_path(snapshot.get_path(&temp_base));
+    let snapshot_checksum_temp_path = TempPath::from_path(snapshot.get_checksum_path(temp_base));
 
     // Recover shard snapshot on remote
     let mut shard_download_url = local_rest_address;
@@ -223,9 +226,9 @@ pub(super) async fn transfer_snapshot(
         )
         .await
         .map_err(|err| {
-            CollectionError::service_error(format!(
-                "Failed to recover shard snapshot on remote: {err}"
-            ))
+            CollectionError::service_error(
+                format!("Failed to recover shard snapshot on remote: {err}")
+            )
         })?;
 
     if let Err(err) = snapshot_temp_path.close() {

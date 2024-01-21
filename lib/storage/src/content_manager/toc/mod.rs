@@ -11,7 +11,6 @@ use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::fs::{create_dir_all, read_dir};
 use std::num::NonZeroU32;
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -58,7 +57,7 @@ pub const FULL_SNAPSHOT_FILE_NAME: &str = "full-snapshot";
 pub struct TableOfContent {
     collections: Arc<RwLock<Collections>>,
     pub(super) storage_config: Arc<StorageConfig>,
-    pub(super) snapshot_manager: SnapshotManager,
+    pub snapshot_manager: SnapshotManager,
     search_runtime: Runtime,
     update_runtime: Runtime,
     general_runtime: Runtime,
@@ -94,8 +93,11 @@ impl TableOfContent {
         this_peer_id: PeerId,
         consensus_proposal_sender: Option<OperationSender>,
     ) -> Self {
-        let snapshots_path = Path::new(&storage_config.snapshots_path.clone()).to_owned();
-        create_dir_all(&snapshots_path).expect("Can't create Snapshots directory");
+        let snapshot_manager = SnapshotManager::new(
+            storage_config.snapshots_path.clone(),
+            storage_config.snapshots_s3.clone(),
+        );
+
         let collections_path = Path::new(&storage_config.storage_path).join(COLLECTIONS_DIR);
         create_dir_all(&collections_path).expect("Can't create Collections directory");
         if let Some(path) = storage_config.temp_path.as_deref() {
@@ -125,17 +127,16 @@ impl TableOfContent {
                 .to_str()
                 .expect("A filename of one of the collection files is not a valid UTF-8")
                 .to_string();
-            let collection_snapshots_path =
-                Self::collection_snapshots_path(&snapshots_path, &collection_name);
-            create_dir_all(&collection_snapshots_path).unwrap_or_else(|e| {
-                panic!("Can't create a directory for snapshot of {collection_name}: {e}")
-            });
+            snapshot_manager
+                .ensure_snapshots_path(&collection_name)
+                .unwrap();
+
             log::info!("Loading collection: {}", collection_name);
             let collection = general_runtime.block_on(Collection::load(
                 collection_name.clone(),
                 this_peer_id,
                 &collection_path,
-                &collection_snapshots_path,
+                snapshot_manager.clone(),
                 storage_config
                     .to_shared_storage_config(is_distributed)
                     .into(),
@@ -185,10 +186,7 @@ impl TableOfContent {
         TableOfContent {
             collections: Arc::new(RwLock::new(collections)),
             storage_config: Arc::new(storage_config.clone()),
-            snapshot_manager: SnapshotManager::new(
-                storage_config.snapshots_path,
-                storage_config.snapshots_s3,
-            ),
+            snapshot_manager,
             search_runtime,
             update_runtime,
             general_runtime,

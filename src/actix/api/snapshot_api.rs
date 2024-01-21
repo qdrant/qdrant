@@ -1,33 +1,29 @@
-use actix_files::NamedFile;
 use actix_multipart::form::tempfile::TempFile;
 use actix_multipart::form::MultipartForm;
+use actix_web::body::BodyStream;
+use actix_web::http::header;
 use actix_web::rt::time::Instant;
-use actix_web::{delete, get, post, put, web, Responder, Result};
+use actix_web::{delete, get, post, put, web, HttpResponse, Responder, Result};
 use actix_web_validator as valid;
-use collection::common::file_utils::move_file;
 use collection::operations::snapshot_ops::{
     ShardSnapshotRecover, SnapshotPriority, SnapshotRecover,
 };
 use collection::shards::shard::ShardId;
 use futures::{FutureExt as _, TryFutureExt as _};
-use reqwest::Url;
+use reqwest::StatusCode;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use storage::content_manager::errors::StorageError;
+use snapshot_manager::file::SnapshotFile;
+use storage::content_manager::snapshots::do_create_full_snapshot;
 use storage::content_manager::snapshots::recover::do_recover_from_snapshot;
-use storage::content_manager::snapshots::{
-    do_create_full_snapshot, do_delete_collection_snapshot, do_delete_full_snapshot,
-    do_list_full_snapshots, get_full_snapshot_path,
-};
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
-use uuid::Uuid;
+use tokio_util::io::ReaderStream;
 use validator::Validate;
 
 use super::CollectionPath;
-use crate::actix::helpers;
 use crate::actix::helpers::{
-    accepted_response, collection_into_actix_error, process_response, storage_into_actix_error,
+    self, accepted_response, process_response, snapshot_manager_into_actix_error,
 };
 use crate::common;
 use crate::common::collections::*;
@@ -57,64 +53,61 @@ pub struct SnapshottingForm {
 }
 
 // Actix specific code
-pub async fn do_get_full_snapshot(toc: &TableOfContent, snapshot_name: &str) -> Result<NamedFile> {
-    let file_name = get_full_snapshot_path(toc, snapshot_name)
-        .await
-        .map_err(storage_into_actix_error)?;
+// pub async fn do_get_full_snapshot(toc: &TableOfContent, snapshot_name: &str) -> Result<NamedFile> {
+//     let file_name = get_full_snapshot_path(toc, snapshot_name)
+//         .await
+//         .map_err(storage_into_actix_error)?;
 
-    Ok(NamedFile::open(file_name)?)
-}
+//     Ok(NamedFile::open(file_name)?)
+// }
 
-pub async fn do_save_uploaded_snapshot(
-    toc: &TableOfContent,
-    collection_name: &str,
-    snapshot: TempFile,
-) -> std::result::Result<Url, StorageError> {
-    let filename = snapshot
-        .file_name
-        .unwrap_or_else(|| Uuid::new_v4().to_string());
-    let collection_snapshot_path = toc.snapshots_path_for_collection(collection_name);
-    if !collection_snapshot_path.exists() {
-        log::debug!(
-            "Creating missing collection snapshots directory for {}",
-            collection_name
-        );
-        toc.create_snapshots_path(collection_name).await?;
-    }
+// pub async fn do_save_uploaded_snapshot(
+//     toc: &TableOfContent,
+//     collection_name: &str,
+//     snapshot: TempFile,
+// ) -> std::result::Result<Url, StorageError> {
+//     let filename = snapshot
+//         .file_name
+//         .unwrap_or_else(|| Uuid::new_v4().to_string());
+//     let collection_snapshot_path = toc.snapshots_path_for_collection(collection_name);
+//     if !collection_snapshot_path.exists() {
+//         log::debug!(
+//             "Creating missing collection snapshots directory for {}",
+//             collection_name
+//         );
+//         toc.create_snapshots_path(collection_name).await?;
+//     }
 
-    let path = collection_snapshot_path.join(filename);
+//     let path = collection_snapshot_path.join(filename);
 
-    move_file(snapshot.file.path(), &path).await?;
+//     move_file(snapshot.file.path(), &path).await?;
 
-    let absolute_path = path.canonicalize()?;
+//     let absolute_path = path.canonicalize()?;
 
-    let snapshot_location = Url::from_file_path(&absolute_path).map_err(|_| {
-        StorageError::service_error(format!(
-            "Failed to convert path to URL: {}",
-            absolute_path.display()
-        ))
-    })?;
+//     let snapshot_location = Url::from_file_path(&absolute_path).map_err(|_| {
+//         StorageError::service_error(format!(
+//             "Failed to convert path to URL: {}",
+//             absolute_path.display()
+//         ))
+//     })?;
 
-    Ok(snapshot_location)
-}
+//     Ok(snapshot_location)
+// }
 
 // Actix specific code
 pub async fn do_get_snapshot(
     toc: &TableOfContent,
-    collection_name: &str,
-    snapshot_name: &str,
-) -> Result<NamedFile> {
-    let collection = toc
-        .get_collection(collection_name)
+    snapshot: SnapshotFile,
+) -> Result<impl Responder> {
+    let stream = toc
+        .snapshot_manager
+        .get_snapshot(&snapshot)
         .await
-        .map_err(storage_into_actix_error)?;
+        .map_err(snapshot_manager_into_actix_error)?;
 
-    let file_name = collection
-        .get_snapshot_path(snapshot_name)
-        .await
-        .map_err(collection_into_actix_error)?;
-
-    Ok(NamedFile::open(file_name)?)
+    let mut res = HttpResponse::build(StatusCode::OK);
+    res.insert_header((header::CONTENT_TYPE, "application/octet-stream"));
+    Ok(res.body(BodyStream::new(ReaderStream::new(stream))))
 }
 
 #[get("/collections/{name}/snapshots")]
@@ -156,11 +149,14 @@ async fn upload_snapshot(
     let snapshot = form.snapshot;
     let wait = params.wait.unwrap_or(true);
 
-    let snapshot_location =
-        match do_save_uploaded_snapshot(dispatcher.get_ref(), &collection.name, snapshot).await {
-            Ok(location) => location,
-            Err(err) => return process_response::<()>(Err(err), timing),
-        };
+    let snapshot_location = match dispatcher
+        .snapshot_manager
+        .do_save_uploaded_snapshot(&collection.name, snapshot.file_name, snapshot.file)
+        .await
+    {
+        Ok(location) => location,
+        Err(err) => return process_response::<()>(Err(err.into()), timing),
+    };
 
     let http_client = match http_client.client() {
         Ok(http_client) => http_client,
@@ -227,13 +223,14 @@ async fn get_snapshot(
     path: web::Path<(String, String)>,
 ) -> impl Responder {
     let (collection_name, snapshot_name) = path.into_inner();
-    do_get_snapshot(&toc, &collection_name, &snapshot_name).await
+    let snapshot = SnapshotFile::new_collection(snapshot_name, collection_name);
+    do_get_snapshot(&toc, snapshot).await
 }
 #[get("/snapshots")]
 async fn list_full_snapshots(toc: web::Data<TableOfContent>) -> impl Responder {
     let timing = Instant::now();
-    let response = do_list_full_snapshots(toc.get_ref()).await;
-    process_response(response, timing)
+    let response = toc.snapshot_manager.do_list_full_snapshots().await;
+    process_response(response.map_err(|x| x.into()), timing)
 }
 
 #[post("/snapshots")]
@@ -244,6 +241,7 @@ async fn create_full_snapshot(
     let timing = Instant::now();
     let wait = params.wait.unwrap_or(true);
     let response = do_create_full_snapshot(dispatcher.get_ref(), wait).await;
+
     match response {
         Err(_) => process_response(response, timing),
         Ok(_) if wait => process_response(response, timing),
@@ -256,8 +254,8 @@ async fn get_full_snapshot(
     toc: web::Data<TableOfContent>,
     path: web::Path<String>,
 ) -> impl Responder {
-    let snapshot_name = path.into_inner();
-    do_get_full_snapshot(&toc, &snapshot_name).await
+    let snapshot = SnapshotFile::new_full(path.into_inner());
+    do_get_snapshot(&toc, snapshot).await
 }
 
 #[delete("/snapshots/{snapshot_name}")]
@@ -266,10 +264,17 @@ async fn delete_full_snapshot(
     path: web::Path<String>,
     params: valid::Query<SnapshottingParam>,
 ) -> impl Responder {
-    let snapshot_name = path.into_inner();
+    let snapshot = SnapshotFile::new_full(path.into_inner());
     let timing = Instant::now();
     let wait = params.wait.unwrap_or(true);
-    let response = do_delete_full_snapshot(dispatcher.get_ref(), &snapshot_name, wait).await;
+
+    let response =
+        dispatcher
+            .snapshot_manager
+            .do_delete_snapshot(&snapshot, wait)
+            .await
+            .map_err(|x| x.into());
+
     match response {
         Err(_) => process_response(response, timing),
         Ok(_) if wait => process_response(response, timing),
@@ -284,11 +289,15 @@ async fn delete_collection_snapshot(
     params: valid::Query<SnapshottingParam>,
 ) -> impl Responder {
     let (collection_name, snapshot_name) = path.into_inner();
+    let snapshot = SnapshotFile::new_collection(snapshot_name, collection_name);
     let timing = Instant::now();
     let wait = params.wait.unwrap_or(true);
     let response =
-        do_delete_collection_snapshot(dispatcher.get_ref(), &collection_name, &snapshot_name, wait)
-            .await;
+        dispatcher
+            .snapshot_manager
+            .do_delete_snapshot(&snapshot, wait)
+            .await
+            .map_err(|x| x.into());
     match response {
         Err(_) => process_response(response, timing),
         Ok(_) if wait => process_response(response, timing),
@@ -330,21 +339,22 @@ async fn recover_shard_snapshot(
     query: web::Query<SnapshottingParam>,
     web::Json(request): web::Json<ShardSnapshotRecover>,
 ) -> impl Responder {
-    let future = async move {
-        let (collection, shard) = path.into_inner();
+    let future =
+        async move {
+            let (collection, shard) = path.into_inner();
 
-        common::snapshots::recover_shard_snapshot(
-            toc.into_inner(),
-            collection,
-            shard,
-            request.location,
-            request.priority.unwrap_or_default(),
-            http_client.as_ref().clone(),
-        )
-        .await?;
+            common::snapshots::recover_shard_snapshot(
+                toc.into_inner(),
+                collection,
+                shard,
+                request.location,
+                request.priority.unwrap_or_default(),
+                http_client.as_ref().clone(),
+            )
+            .await?;
 
-        Ok(())
-    };
+            Ok(())
+        };
 
     helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
 }
@@ -396,12 +406,10 @@ async fn upload_shard_snapshot(
 async fn download_shard_snapshot(
     toc: web::Data<TableOfContent>,
     path: web::Path<(String, ShardId, String)>,
-) -> Result<impl Responder, helpers::HttpError> {
+) -> impl Responder {
     let (collection, shard, snapshot) = path.into_inner();
-    let collection = toc.get_collection(&collection).await?;
-    let snapshot_path = collection.get_shard_snapshot_path(shard, &snapshot).await?;
-
-    Ok(NamedFile::open(snapshot_path))
+    let snapshot = SnapshotFile::new_shard(snapshot, collection, shard);
+    do_get_snapshot(&toc, snapshot).await
 }
 
 #[delete("/collections/{collection}/shards/{shard}/snapshots/{snapshot}")]

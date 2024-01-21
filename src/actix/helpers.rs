@@ -7,6 +7,7 @@ use actix_web::{error, http, Error, HttpResponse};
 use api::grpc::models::{ApiResponse, ApiStatus};
 use collection::operations::types::CollectionError;
 use serde::Serialize;
+use snapshot_manager::error::SnapshotManagerError;
 use storage::content_manager::errors::StorageError;
 
 use crate::common::http_client;
@@ -14,6 +15,18 @@ use crate::common::http_client;
 pub fn collection_into_actix_error(err: CollectionError) -> Error {
     let storage_error: StorageError = err.into();
     storage_into_actix_error(storage_error)
+}
+
+pub fn snapshot_manager_into_actix_error(err: SnapshotManagerError) -> Error {
+    match err {
+        SnapshotManagerError::BadInput { .. } => error::ErrorBadRequest(format!("{err}")),
+        SnapshotManagerError::NotFound { .. } => error::ErrorNotFound(format!("{err}")),
+        SnapshotManagerError::ServiceError { .. } => {
+            error::ErrorInternalServerError(format!("{err}"))
+        }
+        SnapshotManagerError::BadRequest { .. } => error::ErrorBadRequest(format!("{err}")),
+        SnapshotManagerError::Timeout { .. } => error::ErrorRequestTimeout(format!("{err}")),
+    }
 }
 
 pub fn storage_into_actix_error(err: StorageError) -> Error {

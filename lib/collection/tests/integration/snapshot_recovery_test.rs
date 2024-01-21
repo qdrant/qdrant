@@ -14,6 +14,7 @@ use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::ReplicaState;
 use segment::types::{Distance, WithPayloadInterface, WithVector};
+use snapshot_manager::SnapshotManager;
 use tempfile::Builder;
 
 use crate::common::{
@@ -66,11 +67,13 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         this_peer_id,
     );
 
+    let snapshot_manager = SnapshotManager::new(snapshots_path.path(), None);
+
     let collection = Collection::new(
         collection_name,
         this_peer_id,
         collection_dir.path(),
-        snapshots_path.path(),
+        snapshot_manager,
         &config,
         Arc::new(storage_config),
         shard_distribution,
@@ -125,11 +128,13 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         panic!("Failed to restore snapshot: {err}")
     }
 
+    let snapshot_manager = SnapshotManager::new(snapshots_path.path(), None);
+
     let recovered_collection = Collection::load(
         collection_name_rec,
         this_peer_id,
         recover_dir.path(),
-        snapshots_path.path(),
+        snapshot_manager,
         Default::default(),
         ChannelService::new(REST_PORT),
         dummy_on_replica_failure(),

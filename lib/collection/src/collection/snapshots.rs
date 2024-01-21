@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use io::file_operations::read_json;
 use segment::common::version::StorageVersion as _;
@@ -152,7 +152,8 @@ impl Collection {
         // Snapshot files are ready now, hand them off to the manager
         let snapshot = SnapshotFile::new_collection(snapshot.name, self.name());
         self.snapshot_manager
-            .save_snapshot(&snapshot, snapshot_file, checksum_file);
+            .save_snapshot(&snapshot, snapshot_file, checksum_file)
+            .await?;
 
         log::info!("Collection snapshot {snapshot_name} completed");
         Ok(self
@@ -297,7 +298,7 @@ impl Collection {
         self.shards_holder
             .read()
             .await
-            .list_shard_snapshots(&self.snapshot_manager, shard_id)
+            .list_shard_snapshots(&self.snapshot_manager, &self.name(), shard_id)
             .await
     }
 
@@ -354,15 +355,15 @@ impl Collection {
             .await
     }
 
-    pub async fn get_shard_snapshot_path(
+    pub async fn get_shard_snapshot(
         &self,
         shard_id: ShardId,
         snapshot_file_name: impl AsRef<Path>,
-    ) -> CollectionResult<PathBuf> {
+    ) -> CollectionResult<SnapshotFile> {
         self.shards_holder
             .read()
             .await
-            .get_shard_snapshot_path(&self.snapshots_path, shard_id, snapshot_file_name)
+            .get_shard_snapshot(&self.name(), shard_id, snapshot_file_name)
             .await
     }
 }

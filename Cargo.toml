@@ -36,8 +36,6 @@ stacktrace = ["rstack-self"]
 [dev-dependencies]
 serde_urlencoded = "0.7"
 sealed_test = "1.0.0"
-
-tempfile = "3.9.0"
 rusty-hook = "^0.11.2"
 
 
@@ -45,6 +43,7 @@ rusty-hook = "^0.11.2"
 
 parking_lot = { version = "0.12.1", features = ["deadlock_detection"], optional = true }
 
+tempfile = "3.9.0"
 num_cpus = "1.16"
 thiserror = "1.0"
 log = "0.4"
@@ -67,6 +66,7 @@ wal = { git = "https://github.com/qdrant/wal.git", rev = "fad0e7c48be58d8e7db4cc
 config = "~0.13.4"
 
 tokio = { version = "~1.35", features = ["full"] }
+tokio-util = { version = "0.7.10", default-features = false, features = ["io"] }
 
 actix-web = { version = "4.4.1", optional = true, features = ["rustls-0_21", "actix-tls"] }
 actix-cors = "0.7.0"
@@ -93,6 +93,7 @@ prost = "0.11.9"
 raft-proto = { version = "0.7.0", features = ["prost-codec"], default-features = false }
 
 common = { path = "lib/common/common" }
+snapshot-manager = { path = "lib/common/snapshot_manager" }
 cancel = { path = "lib/common/cancel" }
 memory = { path = "lib/common/memory" }
 segment = { path = "lib/segment" }

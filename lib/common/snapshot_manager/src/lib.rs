@@ -1,3 +1,4 @@
+use std::fs::{create_dir_all, File};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -9,7 +10,10 @@ use chrono::NaiveDateTime;
 use error::SnapshotManagerError;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use tempfile::TempPath;
+use tempfile::{NamedTempFile, TempPath};
+use tokio::io::AsyncRead;
+use url::Url;
+use uuid::Uuid;
 use validator::Validate;
 
 //use crate::{types::SnapshotsS3Config, dispatcher::Dispatcher, content_manager::toc::FULL_SNAPSHOT_FILE_NAME};
@@ -73,7 +77,7 @@ pub struct SnapshotsS3Config {
 
 #[derive(Clone, Debug)]
 pub struct SnapshotManagerInner {
-    path: String,
+    path: PathBuf,
     config_s3: Option<SnapshotsS3Config>,
     bucket: Option<Bucket>,
 }
@@ -82,7 +86,7 @@ pub struct SnapshotManagerInner {
 pub struct SnapshotManager(Arc<SnapshotManagerInner>);
 
 impl SnapshotManager {
-    pub fn new(path: String, config_s3: Option<SnapshotsS3Config>) -> Self {
+    pub fn new(path: impl Into<PathBuf>, config_s3: Option<SnapshotsS3Config>) -> Self {
         let bucket: Option<Bucket> = config_s3.as_ref().map(|config_s3| {
             Bucket::new(
                 &config_s3.bucket,
@@ -98,6 +102,12 @@ impl SnapshotManager {
             )
             .unwrap()
         });
+
+        let path = path.into();
+
+        if config_s3.is_none() && !path.exists() {
+            create_dir_all(&path).expect("Can't create Snapshots directory");
+        }
 
         SnapshotManager(Arc::new(SnapshotManagerInner {
             path,
@@ -209,8 +219,7 @@ impl SnapshotManager {
         &self,
         collection: &str,
     ) -> Result<Vec<SnapshotDescription>, SnapshotManagerError> {
-        let directory: PathBuf = self.snapshots_path().into();
-        let directory = directory.join(collection);
+        let directory = self.snapshots_path().join(collection);
 
         let filenames = self.list_snapshots_in_directory(directory).await?;
 
@@ -225,20 +234,36 @@ impl SnapshotManager {
         Ok(out)
     }
 
-    pub async fn ensure_snapshots_path(
+    pub async fn do_list_shard_snapshots(
         &self,
-        collection_name: &str,
-    ) -> Result<(), SnapshotManagerError> {
-        if !self.using_s3() {
-            let snapshots_path = PathBuf::from(self.snapshots_path()).join(collection_name);
+        collection: &str,
+        shard: u32,
+    ) -> Result<Vec<SnapshotDescription>, SnapshotManagerError> {
+        let base = self.snapshots_path();
+        let directory = SnapshotFile::new_shard("", collection, shard).get_directory(base);
 
-            tokio::fs::create_dir_all(&snapshots_path)
-                .await
-                .map_err(|err| {
-                    SnapshotManagerError::service_error(format!(
-                        "Can't create directory for snapshots {collection_name}. Error: {err}"
-                    ))
-                })?;
+        let filenames = self.list_snapshots_in_directory(directory).await?;
+
+        let mut out: Vec<SnapshotDescription> = Vec::with_capacity(filenames.len());
+
+        for name in filenames {
+            let snapshot = SnapshotFile::new_full(name);
+            let desc = self.get_snapshot_description(&snapshot).await?;
+            out.push(desc);
+        }
+
+        Ok(out)
+    }
+
+    pub fn ensure_snapshots_path(&self, collection_name: &str) -> Result<(), SnapshotManagerError> {
+        if !self.using_s3() {
+            let snapshots_path = self.snapshots_path().join(collection_name);
+
+            std::fs::create_dir_all(snapshots_path).map_err(|err| {
+                SnapshotManagerError::service_error(
+                    format!("Can't create directory for snapshots {collection_name}. Error: {err}")
+                )
+            })?;
         }
 
         Ok(())
@@ -258,7 +283,7 @@ impl SnapshotManager {
             let snapshot_temp = snapshot_file.keep()?;
             let checksum_temp = checksum_file.keep()?;
 
-            let base: PathBuf = self.snapshots_path().into();
+            let base = self.snapshots_path();
 
             let snapshot_path = snapshot.get_path(&base);
             let checksum_path = snapshot.get_checksum_path(base);
@@ -268,5 +293,47 @@ impl SnapshotManager {
         }
 
         Ok(())
+    }
+
+    pub async fn get_snapshot(
+        &self,
+        snapshot: &SnapshotFile,
+    ) -> Result<impl AsyncRead, SnapshotManagerError> {
+        if self.using_s3() {
+            unimplemented!();
+        } else {
+            Ok(tokio::fs::File::open(snapshot.get_path(self.snapshots_path())).await?)
+        }
+    }
+
+    pub async fn do_save_uploaded_snapshot(
+        &self,
+        collection: &str,
+        name: Option<String>,
+        file: NamedTempFile<File>,
+    ) -> Result<Url, SnapshotManagerError> {
+        let name = name.unwrap_or_else(|| Uuid::new_v4().to_string());
+
+        let snapshot = SnapshotFile::new_collection(name, collection);
+
+        let path = snapshot.get_path(self.snapshots_path());
+        let absolute_path = path.canonicalize()?;
+
+        if self.using_s3() {
+            unimplemented!()
+        } else {
+            let (_, temp_path) = file.keep()?;
+
+            if tokio::fs::rename(&temp_path, &path).await.is_err() {
+                tokio::fs::copy(&temp_path, path).await?;
+                tokio::fs::remove_file(temp_path).await?;
+            }
+        }
+
+        Url::from_file_path(&absolute_path).map_err(|_| {
+            SnapshotManagerError::service_error(
+                format!("Failed to convert path to URL: {}", absolute_path.display(),)
+            )
+        })
     }
 }

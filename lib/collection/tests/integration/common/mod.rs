@@ -13,6 +13,7 @@ use collection::shards::collection_shard_distribution::CollectionShardDistributi
 use collection::shards::replica_set::{AbortShardTransfer, ChangePeerState, ReplicaState};
 use collection::shards::CollectionId;
 use segment::types::Distance;
+use snapshot_manager::SnapshotManager;
 
 /// Test collections for this upper bound of shards.
 /// Testing with more shards is problematic due to `number of open files problem`
@@ -62,13 +63,19 @@ pub async fn simple_collection_fixture(collection_path: &Path, shard_number: u32
         quantization_config: Default::default(),
     };
 
-    let snapshot_path = collection_path.join("snapshots");
+    let snapshot_manager = SnapshotManager::new(
+        collection_path
+            .join("snapshots")
+            .to_string_lossy()
+            .to_string(),
+        None,
+    );
 
     // Default to a collection with all the shards local
     new_local_collection(
         "test".to_string(),
         collection_path,
-        &snapshot_path,
+        snapshot_manager,
         &collection_config,
     )
     .await
@@ -92,14 +99,14 @@ pub fn dummy_abort_shard_transfer() -> AbortShardTransfer {
 pub async fn new_local_collection(
     id: CollectionId,
     path: &Path,
-    snapshots_path: &Path,
+    snapshot_manager: SnapshotManager,
     config: &CollectionConfig,
 ) -> Result<Collection, CollectionError> {
     let collection = Collection::new(
         id,
         0,
         path,
-        snapshots_path,
+        snapshot_manager,
         config,
         Default::default(),
         CollectionShardDistribution::all_local(Some(config.params.shard_number.into()), 0),
@@ -128,13 +135,13 @@ pub async fn new_local_collection(
 pub async fn load_local_collection(
     id: CollectionId,
     path: &Path,
-    snapshots_path: &Path,
+    snapshot_manager: SnapshotManager,
 ) -> Collection {
     Collection::load(
         id,
         0,
         path,
-        snapshots_path,
+        snapshot_manager,
         Default::default(),
         ChannelService::new(REST_PORT),
         dummy_on_replica_failure(),

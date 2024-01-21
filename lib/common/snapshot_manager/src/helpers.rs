@@ -11,12 +11,12 @@ impl SnapshotManager {
         self.0.config_s3.is_some()
     }
 
-    pub(super) fn snapshots_path(&self) -> String {
+    pub(super) fn snapshots_path(&self) -> PathBuf {
         self.0.path.clone()
     }
 
     pub fn temp_path(&self) -> PathBuf {
-        PathBuf::from(self.0.path.clone()).join("tmp")
+        self.snapshots_path().join("tmp")
     }
 
     pub(super) async fn snapshot_exists(
@@ -76,6 +76,10 @@ impl SnapshotManager {
         if self.using_s3() {
             unimplemented!()
         } else {
+            if !directory.exists() {
+                return Ok(vec![]);
+            }
+
             let mut entries = tokio::fs::read_dir(directory).await?;
             let mut snapshots = Vec::new();
 

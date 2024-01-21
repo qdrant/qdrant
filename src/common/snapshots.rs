@@ -1,13 +1,11 @@
-use std::fmt;
-use std::path::Path;
 use std::sync::Arc;
 
 use collection::collection::Collection;
-use collection::operations::snapshot_ops::{
-    get_checksum_path, ShardSnapshotLocation, SnapshotDescription, SnapshotPriority,
-};
+use collection::operations::snapshot_ops::{ShardSnapshotLocation, SnapshotPriority};
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::ShardId;
+use snapshot_manager::file::SnapshotFile;
+use snapshot_manager::SnapshotDescription;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::snapshots;
 use storage::content_manager::toc::TableOfContent;
@@ -53,24 +51,10 @@ pub async fn delete_shard_snapshot(
     shard_id: ShardId,
     snapshot_name: String,
 ) -> Result<(), StorageError> {
-    let collection = toc.get_collection(&collection_name).await?;
-    let snapshot_path = collection
-        .get_shard_snapshot_path(shard_id, &snapshot_name)
+    let snapshot = SnapshotFile::new_shard(snapshot_name, collection_name, shard_id);
+    toc.snapshot_manager
+        .do_delete_snapshot(&snapshot, true)
         .await?;
-    let checksum_path = get_checksum_path(&snapshot_path);
-
-    check_shard_snapshot_file_exists(&snapshot_path)?;
-    let (delete_snapshot, delete_checksum) = tokio::join!(
-        tokio::fs::remove_file(snapshot_path),
-        tokio::fs::remove_file(checksum_path)
-    );
-    delete_snapshot?;
-
-    // We might not have a checksum file for the snapshot, ignore deletion errors in that case
-    if let Err(err) = delete_checksum {
-        log::warn!("Failed to delete checksum file for snapshot, ignoring: {err}");
-    }
-
     Ok(())
 }
 
@@ -118,9 +102,10 @@ pub async fn recover_shard_snapshot(
                 }
 
                 ShardSnapshotLocation::Path(path) => {
-                    let snapshot_path = collection.get_shard_snapshot_path(shard_id, path).await?;
-                    check_shard_snapshot_file_exists(&snapshot_path)?;
-                    (snapshot_path, None)
+                    unimplemented!();
+                    // let snapshot_path = collection.get_shard_snapshot_path(shard_id, path).await?;
+                    // check_shard_snapshot_file_exists(&snapshot_path)?;
+                    // (snapshot_path, None)
                 }
             };
 
@@ -242,23 +227,4 @@ pub async fn recover_shard_snapshot_impl(
     }
 
     Ok(())
-}
-
-fn check_shard_snapshot_file_exists(snapshot_path: &Path) -> Result<(), StorageError> {
-    let snapshot_path_display = snapshot_path.display();
-    let snapshot_file_name = snapshot_path.file_name().and_then(|str| str.to_str());
-
-    let snapshot: &dyn fmt::Display = snapshot_file_name
-        .as_ref()
-        .map_or(&snapshot_path_display, |str| str);
-
-    if !snapshot_path.exists() {
-        let description = format!("Snapshot {snapshot} not found");
-        Err(StorageError::NotFound { description })
-    } else if !snapshot_path.is_file() {
-        let description = format!("{snapshot} is not a file");
-        Err(StorageError::service_error(description))
-    } else {
-        Ok(())
-    }
 }

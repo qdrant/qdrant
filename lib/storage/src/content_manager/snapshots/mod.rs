@@ -2,10 +2,18 @@ pub mod download;
 pub mod recover;
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 
+use collection::common::sha_256::hash_file;
 use serde::{Deserialize, Serialize};
+use snapshot_manager::error::SnapshotManagerError;
+use snapshot_manager::file::SnapshotFile;
+use snapshot_manager::SnapshotDescription;
+use tar::Builder as TarBuilder;
+use tokio::io::AsyncWriteExt;
 
 use super::errors::StorageError;
+use crate::content_manager::toc::FULL_SNAPSHOT_FILE_NAME;
 use crate::dispatcher::Dispatcher;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -20,10 +28,9 @@ pub struct SnapshotConfig {
 pub async fn do_create_full_snapshot(
     dispatcher: &Dispatcher,
     wait: bool,
-) -> Result<Option<SnapshotFile>, StorageError> {
+) -> Result<Option<SnapshotDescription>, StorageError> {
     let dispatcher = dispatcher.clone();
-    let _self = self.clone();
-    let task = tokio::spawn(async move { _self._do_create_full_snapshot(&dispatcher).await });
+    let task = tokio::spawn(async move { _do_create_full_snapshot(&dispatcher).await });
     if wait {
         Ok(Some(task.await??))
     } else {
@@ -31,10 +38,12 @@ pub async fn do_create_full_snapshot(
     }
 }
 
-async fn _do_create_full_snapshot(dispatcher: &Dispatcher) -> Result<SnapshotFile, StorageError> {
+async fn _do_create_full_snapshot(
+    dispatcher: &Dispatcher,
+) -> Result<SnapshotDescription, StorageError> {
     let dispatcher = dispatcher.clone();
 
-    let base: PathBuf = dispatcher.snapshots_temp_path();
+    let base: PathBuf = dispatcher.snapshots_temp_path()?;
 
     let all_collections = dispatcher.all_collections().await;
     let mut created_snapshots: Vec<SnapshotFile> = vec![];
@@ -91,27 +100,28 @@ async fn _do_create_full_snapshot(dispatcher: &Dispatcher) -> Result<SnapshotFil
     let full_snapshot_path_clone = full_snapshot_path.clone();
     let created_snapshots_clone: Vec<_> = created_snapshots.iter().map(|x| x.clone()).collect();
     let base_clone = base.clone();
-    let archiving = tokio::task::spawn_blocking(move || {
-        let base = base_clone;
-        // have to use std here, cause TarBuilder is not async
-        let file = std::fs::File::create(&full_snapshot_path_clone)?;
-        let mut builder = TarBuilder::new(file);
-        for snapshot in created_snapshots_clone {
-            let snapshot_path = snapshot.get_path(&base);
-            builder.append_path_with_name(&snapshot_path, &snapshot.name)?;
-            std::fs::remove_file(&snapshot_path)?;
+    let archiving =
+        tokio::task::spawn_blocking(move || {
+            let base = base_clone;
+            // have to use std here, cause TarBuilder is not async
+            let file = std::fs::File::create(&full_snapshot_path_clone)?;
+            let mut builder = TarBuilder::new(file);
+            for snapshot in created_snapshots_clone {
+                let snapshot_path = snapshot.get_path(&base);
+                builder.append_path_with_name(&snapshot_path, &snapshot.name)?;
+                std::fs::remove_file(&snapshot_path)?;
 
-            // Remove associated checksum if there is one
-            let snapshot_checksum = snapshot.get_checksum_path(&base);
-            if let Err(err) = std::fs::remove_file(snapshot_checksum) {
-                log::warn!("Failed to delete checksum file for snapshot, ignoring: {err}");
+                // Remove associated checksum if there is one
+                let snapshot_checksum = snapshot.get_checksum_path(&base);
+                if let Err(err) = std::fs::remove_file(snapshot_checksum) {
+                    log::warn!("Failed to delete checksum file for snapshot, ignoring: {err}");
+                }
             }
-        }
-        builder.append_path_with_name(&config_path_clone, "config.json")?;
+            builder.append_path_with_name(&config_path_clone, "config.json")?;
 
-        builder.finish()?;
-        Ok::<(), SnapshotManagerError>(())
-    });
+            builder.finish()?;
+            Ok::<(), SnapshotManagerError>(())
+        });
     archiving.await??;
 
     // Compute and store the file's checksum
@@ -125,8 +135,13 @@ async fn _do_create_full_snapshot(dispatcher: &Dispatcher) -> Result<SnapshotFil
 
     dispatcher
         .snapshot_manager
-        .save_snapshot(full_snapshot, snapshot_file, checksum_file)
+        .save_snapshot(&full_snapshot, snapshot_file, checksum_file)
         .await?;
 
-    Ok(full_snapshot)
+    let description = dispatcher
+        .snapshot_manager
+        .get_snapshot_description(&full_snapshot)
+        .await?;
+
+    Ok(description)
 }

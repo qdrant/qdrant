@@ -7,6 +7,7 @@ use collection::operations::CollectionUpdateOperations;
 use itertools::Itertools;
 use segment::types::{PayloadContainer, PayloadSelectorExclude, WithPayloadInterface};
 use serde_json::Value;
+use snapshot_manager::SnapshotManager;
 use tempfile::Builder;
 
 use crate::common::{load_local_collection, simple_collection_fixture, N_SHARDS};
@@ -20,6 +21,9 @@ async fn test_collection_reloading() {
 async fn test_collection_reloading_with_shards(shard_number: u32) {
     let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
 
+    let collection_path = collection_dir.path();
+    let snapshot_manager = SnapshotManager::new(collection_path.join("snapshots"), None);
+
     let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
     drop(collection);
     for _i in 0..5 {
@@ -27,7 +31,7 @@ async fn test_collection_reloading_with_shards(shard_number: u32) {
         let collection = load_local_collection(
             "test".to_string(),
             collection_path,
-            &collection_path.join("snapshots"),
+            snapshot_manager.clone(),
         )
         .await;
         let insert_points = CollectionUpdateOperations::PointOperation(
@@ -44,12 +48,9 @@ async fn test_collection_reloading_with_shards(shard_number: u32) {
     }
 
     let collection_path = collection_dir.path();
-    let collection = load_local_collection(
-        "test".to_string(),
-        collection_path,
-        &collection_path.join("snapshots"),
-    )
-    .await;
+
+    let collection =
+        load_local_collection("test".to_string(), collection_path, snapshot_manager).await;
     assert_eq!(
         collection
             .info(&ShardSelectorInternal::All)
@@ -68,6 +69,7 @@ async fn test_collection_payload_reloading() {
 
 async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
     let collection_dir = Builder::new().prefix("collection").tempdir().unwrap();
+    let snapshot_manager = SnapshotManager::new(collection_dir.path().join("snapshots"), None);
     {
         let collection = simple_collection_fixture(collection_dir.path(), shard_number).await;
         let insert_points = CollectionUpdateOperations::PointOperation(
@@ -83,12 +85,8 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
             .unwrap();
     }
     let collection_path = collection_dir.path();
-    let collection = load_local_collection(
-        "test".to_string(),
-        collection_path,
-        &collection_path.join("snapshots"),
-    )
-    .await;
+    let collection =
+        load_local_collection("test".to_string(), collection_path, snapshot_manager).await;
 
     let res = collection
         .scroll_by(
@@ -153,12 +151,9 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
     }
 
     let collection_path = collection_dir.path();
-    let collection = load_local_collection(
-        "test".to_string(),
-        collection_path,
-        &collection_path.join("snapshots"),
-    )
-    .await;
+    let snapshot_manager = SnapshotManager::new(collection_path.join("snapshots"), None);
+    let collection =
+        load_local_collection("test".to_string(), collection_path, snapshot_manager).await;
 
     // Test res with filter payload
     let res_with_custom_payload = collection

@@ -3963,6 +3963,7 @@ dependencies = [
  "serde_urlencoded",
  "slog",
  "slog-stdlog",
+ "snapshot-manager",
  "sparse",
  "storage",
  "sys-info",
@@ -3971,6 +3972,7 @@ dependencies = [
  "thiserror",
  "tikv-jemallocator",
  "tokio",
+ "tokio-util",
  "tonic",
  "tonic-reflection",
  "tower",
@@ -5072,6 +5074,8 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "url",
+ "uuid",
  "validator",
 ]
 
@@ -5551,9 +5555,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-stream"
-version = "0.1.11"
+version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d660770404473ccd7bc9f8b28494a811bc18542b915c0855c51e8f419d5223ce"
+checksum = "397c988d37662c7dda6d2208364a706264bf3d6138b11d436cbac0ad38832842"
 dependencies = [
  "futures-core",
  "pin-project-lite",
