@@ -1,5 +1,5 @@
 use std::fs::{create_dir_all, File};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
 
@@ -199,6 +199,20 @@ impl SnapshotManager {
         })
     }
 
+    pub async fn is_path_on_s3(&self, path: &Path) -> Result<bool, SnapshotManagerError> {
+        if self.using_s3() {
+            let canon = path.canonicalize()?;
+            if canon.exists() {
+                Ok(false)
+            } else {
+                Ok(canon.starts_with(self.snapshots_path().canonicalize()?)
+                    && !canon.starts_with(self.snapshots_path().canonicalize()?))
+            }
+        } else {
+            Ok(false)
+        }
+    }
+
     pub async fn do_list_full_snapshots(
         &self,
     ) -> Result<Vec<SnapshotDescription>, SnapshotManagerError> {
@@ -312,26 +326,42 @@ impl SnapshotManager {
         }
     }
 
+    pub async fn get_snapshot_path(
+        &self,
+        snapshot: &SnapshotFile,
+    ) -> Result<(PathBuf, Option<TempPath>), SnapshotManagerError> {
+        if self.using_s3() {
+            unimplemented!();
+        } else {
+            Ok((snapshot.get_path(self.snapshots_path()), None))
+        }
+    }
+
+    pub fn get_snapshot_path_sync(
+        &self,
+        snapshot: &SnapshotFile,
+    ) -> Result<(PathBuf, Option<TempPath>), SnapshotManagerError> {
+        if self.using_s3() {
+            unimplemented!();
+        } else {
+            Ok((snapshot.get_path(self.snapshots_path()), None))
+        }
+    }
+
     pub async fn get_snapshot_file(
         &self,
         snapshot: &SnapshotFile,
     ) -> Result<(File, Option<TempPath>), SnapshotManagerError> {
-        if self.using_s3() {
-            unimplemented!();
-        } else {
-            Ok((File::open(snapshot.get_path(self.snapshots_path()))?, None))
-        }
+        let (path, temp) = self.get_snapshot_path(snapshot).await?;
+        Ok((File::open(path)?, temp))
     }
 
     pub fn get_snapshot_file_sync(
         &self,
         snapshot: &SnapshotFile,
     ) -> Result<(File, Option<TempPath>), SnapshotManagerError> {
-        if self.using_s3() {
-            unimplemented!();
-        } else {
-            Ok((File::open(snapshot.get_path(self.snapshots_path()))?, None))
-        }
+        let (path, temp) = self.get_snapshot_path_sync(snapshot)?;
+        Ok((File::open(path)?, temp))
     }
 
     pub async fn do_save_uploaded_snapshot(

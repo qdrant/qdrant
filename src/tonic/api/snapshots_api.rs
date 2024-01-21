@@ -238,6 +238,7 @@ impl ShardSnapshots for ShardSnapshotsService {
             self.toc.clone(),
             request.collection_name,
             request.shard_id,
+            self.toc.snapshot_manager.clone(),
             request.snapshot_location.try_into()?,
             request.snapshot_priority.try_into()?,
             self.http_client.clone(),

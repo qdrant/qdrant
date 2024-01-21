@@ -5,7 +5,7 @@ use collection::operations::snapshot_ops::{ShardSnapshotLocation, SnapshotPriori
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::ShardId;
 use snapshot_manager::file::SnapshotFile;
-use snapshot_manager::SnapshotDescription;
+use snapshot_manager::{SnapshotDescription, SnapshotManager};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::snapshots;
 use storage::content_manager::toc::TableOfContent;
@@ -65,6 +65,7 @@ pub async fn recover_shard_snapshot(
     toc: Arc<TableOfContent>,
     collection_name: String,
     shard_id: ShardId,
+    snapshot_manager: SnapshotManager,
     snapshot_location: ShardSnapshotLocation,
     snapshot_priority: SnapshotPriority,
     client: HttpClient,
@@ -95,17 +96,21 @@ pub async fn recover_shard_snapshot(
                     let client = client.client()?;
 
                     let (snapshot_path, snapshot_temp_path) =
-                        snapshots::download::download_snapshot(&client, url, download_dir.path())
-                            .await?;
+                        snapshots::download::download_snapshot(
+                            &client,
+                            url,
+                            snapshot_manager,
+                            download_dir.path(),
+                        )
+                        .await?;
 
                     (snapshot_path, snapshot_temp_path)
                 }
 
                 ShardSnapshotLocation::Path(path) => {
-                    unimplemented!();
-                    // let snapshot_path = collection.get_shard_snapshot_path(shard_id, path).await?;
-                    // check_shard_snapshot_file_exists(&snapshot_path)?;
-                    // (snapshot_path, None)
+                    let snapshot =
+                        SnapshotFile::new_shard(path.to_string_lossy(), &collection_name, shard_id);
+                    snapshot_manager.get_snapshot_path(&snapshot).await?
                 }
             };
 

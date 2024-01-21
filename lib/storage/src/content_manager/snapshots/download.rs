@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use futures::StreamExt;
 use reqwest;
+use snapshot_manager::SnapshotManager;
 use tempfile::TempPath;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
@@ -66,6 +67,7 @@ async fn download_file(
 pub async fn download_snapshot(
     client: &reqwest::Client,
     url: Url,
+    snapshot_manager: SnapshotManager,
     snapshots_dir: &Path,
 ) -> Result<(PathBuf, Option<TempPath>), StorageError> {
     match url.scheme() {
@@ -75,12 +77,16 @@ pub async fn download_snapshot(
                     "Invalid snapshot URI, file path must be absolute or on localhost",
                 )
             })?;
-            if !local_path.exists() {
-                return Err(StorageError::bad_request(format!(
-                    "Snapshot file {local_path:?} does not exist"
-                )));
+            if snapshot_manager.is_path_on_s3(&local_path).await? {
+                unimplemented!("S3");
+            } else {
+                if !local_path.exists() {
+                    return Err(StorageError::bad_request(format!(
+                        "Snapshot file {local_path:?} does not exist"
+                    )));
+                }
+                Ok((local_path, None))
             }
-            Ok((local_path, None))
         }
         "http" | "https" => {
             let download_to = snapshots_dir.join(snapshot_name(&url));

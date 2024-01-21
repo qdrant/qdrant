@@ -299,6 +299,7 @@ async fn recover_shard_snapshot(
     query: web::Query<SnapshottingParam>,
     web::Json(request): web::Json<ShardSnapshotRecover>,
 ) -> impl Responder {
+    let snapshot_manager = toc.snapshot_manager.clone();
     let future = async move {
         let (collection, shard) = path.into_inner();
 
@@ -306,6 +307,7 @@ async fn recover_shard_snapshot(
             toc.into_inner(),
             collection,
             shard,
+            snapshot_manager,
             request.location,
             request.priority.unwrap_or_default(),
             http_client.as_ref().clone(),

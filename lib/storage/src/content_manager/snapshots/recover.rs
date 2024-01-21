@@ -85,8 +85,13 @@ async fn _do_recover_from_snapshot(
         download_dir.path().display(),
     );
 
-    let (snapshot_path, snapshot_temp_path) =
-        download_snapshot(client, location, download_dir.path()).await?;
+    let (snapshot_path, snapshot_temp_path) = download_snapshot(
+        client,
+        location,
+        dispatcher.snapshot_manager.clone(),
+        download_dir.path(),
+    )
+    .await?;
 
     log::debug!("Snapshot downloaded to {}", snapshot_path.display());
 
