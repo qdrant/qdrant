@@ -4,7 +4,7 @@ use std::path::Path;
 use io::file_operations::read_json;
 use segment::common::version::StorageVersion as _;
 use snapshot_manager::file::SnapshotFile;
-use snapshot_manager::SnapshotDescription;
+use snapshot_manager::{SnapshotDescription, SnapshotManager};
 use tempfile::TempPath;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
@@ -42,12 +42,12 @@ impl Collection {
     /// * `global_temp_dir`: directory used to host snapshots while they are being created
     /// * `this_peer_id`: current peer id
     ///
-    /// returns: Result<SnapshotDescription, CollectionError>
+    /// returns: Result<(SnapshotFile, SnapshotDescription), CollectionError>
     pub async fn create_snapshot(
         &self,
         global_temp_dir: &Path,
         this_peer_id: PeerId,
-    ) -> CollectionResult<SnapshotDescription> {
+    ) -> CollectionResult<(SnapshotFile, SnapshotDescription)> {
         let snapshot_name = format!(
             "{}-{this_peer_id}-{}.snapshot",
             self.name(),
@@ -59,6 +59,7 @@ impl Collection {
 
         // Final location of snapshot
         let snapshot_path = snapshot.get_path(&base);
+        tokio::fs::create_dir_all(snapshot_path.parent().unwrap()).await?;
         log::info!("Creating collection snapshot {}", snapshot_name);
 
         // Dedicated temporary directory for this snapshot (deleted on drop)
@@ -135,7 +136,7 @@ impl Collection {
         let snapshot_path_tmp_move = snapshot_path.with_extension("tmp");
 
         // Ensure that the temporary file is deleted on error
-        let _temp_path = TempPath::from_path(&snapshot_path_tmp_move);
+        let snapshot_file = TempPath::from_path(&snapshot_path_tmp_move);
         fs::copy(&snapshot_temp_arc_file.path(), &snapshot_path_tmp_move).await?;
 
         // compute and store the file's checksum before the final snapshot file is saved
@@ -146,33 +147,34 @@ impl Collection {
         let mut file = tokio::fs::File::create(checksum_path.as_path()).await?;
         file.write_all(checksum.as_bytes()).await?;
 
-        let snapshot_file = tempfile::TempPath::from_path(&snapshot_path);
-        fs::rename(&snapshot_path_tmp_move, &snapshot_path).await?;
-
         // Snapshot files are ready now, hand them off to the manager
-        let snapshot = SnapshotFile::new_collection(snapshot.name, self.name());
+        let snapshot = SnapshotFile::new_collection(snapshot.name(), self.name());
         self.snapshot_manager
             .save_snapshot(&snapshot, snapshot_file, checksum_file)
             .await?;
 
         log::info!("Collection snapshot {snapshot_name} completed");
-        Ok(self
-            .snapshot_manager
-            .get_snapshot_description(&snapshot)
-            .await?)
+        Ok((
+            snapshot.clone(),
+            self
+                .snapshot_manager
+                .get_snapshot_description(&snapshot)
+                .await?,
+        ))
     }
 
     /// Restore collection from snapshot
     ///
     /// This method performs blocking IO.
     pub fn restore_snapshot(
-        snapshot_path: &Path,
+        snapshot_manager: SnapshotManager,
+        snapshot: &SnapshotFile,
         target_dir: &Path,
         this_peer_id: PeerId,
         is_distributed: bool,
     ) -> CollectionResult<()> {
         // decompress archive
-        let archive_file = std::fs::File::open(snapshot_path)?;
+        let (archive_file, archive_file_keep) = snapshot_manager.get_snapshot_file_sync(snapshot)?;
         let mut ar = tar::Archive::new(archive_file);
         ar.unpack(target_dir)?;
 
@@ -233,6 +235,11 @@ impl Collection {
                     shard_path.display()
                 )));
             }
+        }
+
+        // MOGTODO: is this needed? when would it be dropped?
+        if let Some(temp) = archive_file_keep {
+            let _ = temp.close();
         }
 
         Ok(())

@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use collection::collection::Collection;
 use collection::shards::shard::PeerId;
 use log::info;
+use snapshot_manager::SnapshotManager;
+use snapshot_manager::file::SnapshotFile;
 use storage::content_manager::alias_mapping::AliasPersistence;
 use storage::content_manager::snapshots::SnapshotConfig;
 use storage::content_manager::toc::{ALIASES_PATH, COLLECTIONS_DIR};
@@ -23,6 +25,7 @@ pub fn recover_snapshots(
     force: bool,
     temp_dir: Option<&str>,
     storage_dir: &str,
+    snapshot_manager: SnapshotManager,
     this_peer_id: PeerId,
     is_distributed: bool,
 ) -> Vec<String> {
@@ -62,7 +65,8 @@ pub fn recover_snapshots(
             .map(PathBuf::from)
             .unwrap_or_else(|| collection_path.with_extension("tmp"));
         if let Err(err) = Collection::restore_snapshot(
-            snapshot_path,
+            snapshot_manager.clone(),
+            &SnapshotFile::new_oop(snapshot_path),
             &collection_temp_path,
             this_peer_id,
             is_distributed,
@@ -84,6 +88,7 @@ pub fn recover_full_snapshot(
     temp_dir: Option<&str>,
     snapshot_path: &str,
     storage_dir: &str,
+    snapshot_manager: SnapshotManager,
     force: bool,
     this_peer_id: PeerId,
     is_distributed: bool,
@@ -121,6 +126,7 @@ pub fn recover_full_snapshot(
         force,
         temp_dir,
         storage_dir,
+        snapshot_manager,
         this_peer_id,
         is_distributed,
     );

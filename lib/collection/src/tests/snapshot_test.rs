@@ -1,5 +1,7 @@
 use std::collections::{HashMap, HashSet};
+use std::fs;
 use std::num::{NonZeroU32, NonZeroU64};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use segment::types::Distance;
@@ -71,6 +73,8 @@ async fn _test_snapshot_collection(node_type: NodeType) {
     };
 
     let snapshots_path = Builder::new().prefix("test_snapshots").tempdir().unwrap();
+    //fs::create_dir("./test_snapshots").unwrap();
+    //let snapshots_path = PathBuf::from("./test_snapshots").canonicalize().unwrap();
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
     let recover_dir = Builder::new()
         .prefix("test_collection_rec")
@@ -89,11 +93,13 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         ..Default::default()
     };
 
+    let snapshot_manager = SnapshotManager::new(snapshots_path.path(), None);
+
     let collection = Collection::new(
         collection_name,
         1,
         collection_dir.path(),
-        SnapshotManager::new(snapshots_path.path().to_string_lossy().to_string(), None),
+        snapshot_manager.clone(),
         &config,
         Arc::new(storage_config),
         CollectionShardDistribution { shards },
@@ -108,7 +114,7 @@ async fn _test_snapshot_collection(node_type: NodeType) {
     .unwrap();
 
     let snapshots_temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
-    let snapshot_description = collection
+    let (snapshot, snapshot_description) = collection
         .create_snapshot(snapshots_temp_dir.path(), 0)
         .await
         .unwrap();
@@ -116,7 +122,8 @@ async fn _test_snapshot_collection(node_type: NodeType) {
     assert_eq!(snapshot_description.checksum.unwrap().len(), 64);
     // Do not recover in local mode if some shards are remote
     assert!(Collection::restore_snapshot(
-        &snapshots_path.path().join(&snapshot_description.name),
+        snapshot_manager.clone(),
+        &snapshot,
         recover_dir.path(),
         0,
         false,
@@ -124,7 +131,8 @@ async fn _test_snapshot_collection(node_type: NodeType) {
     .is_err());
 
     if let Err(err) = Collection::restore_snapshot(
-        &snapshots_path.path().join(snapshot_description.name),
+        snapshot_manager.clone(),
+        &snapshot,
         recover_dir.path(),
         0,
         true,
@@ -136,7 +144,7 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         collection_name_rec,
         1,
         recover_dir.path(),
-        SnapshotManager::new(snapshots_path.path().to_string_lossy().to_string(), None),
+        snapshot_manager.clone(),
         Default::default(),
         ChannelService::default(),
         dummy_on_replica_failure(),

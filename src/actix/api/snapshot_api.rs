@@ -107,6 +107,7 @@ pub async fn do_get_snapshot(
 
     let mut res = HttpResponse::build(StatusCode::OK);
     res.insert_header((header::CONTENT_TYPE, "application/octet-stream"));
+    res.insert_header((header::CONTENT_DISPOSITION, format!("attachment; filename={:?}", snapshot.name())));
     Ok(res.body(BodyStream::new(ReaderStream::new(stream))))
 }
 

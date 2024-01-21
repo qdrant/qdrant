@@ -35,14 +35,14 @@ impl SnapshotManager {
         &self,
         snapshot: &SnapshotFile,
     ) -> Result<(), SnapshotManagerError> {
-        if let Some(collection) = &snapshot.collection {
+        if let Some(collection) = &snapshot.collection() {
             log::info!(
                 "Deleting collection {:?} snapshot {:?}",
                 collection,
-                snapshot.name
+                snapshot.name()
             );
         } else {
-            log::info!("Deleting full storage snapshot {:?}", snapshot.name);
+            log::info!("Deleting full storage snapshot {:?}", snapshot.name());
         }
 
         if self.using_s3() {

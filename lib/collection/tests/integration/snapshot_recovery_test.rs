@@ -73,7 +73,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         collection_name,
         this_peer_id,
         collection_dir.path(),
-        snapshot_manager,
+        snapshot_manager.clone(),
         &config,
         Arc::new(storage_config),
         shard_distribution,
@@ -114,13 +114,14 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
 
     // Take a snapshot
     let snapshots_temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
-    let snapshot_description = collection
+    let (snapshot, _) = collection
         .create_snapshot(snapshots_temp_dir.path(), 0)
         .await
         .unwrap();
 
     if let Err(err) = Collection::restore_snapshot(
-        &snapshots_path.path().join(snapshot_description.name),
+        snapshot_manager.clone(),
+        &snapshot,
         recover_dir.path(),
         0,
         false,
@@ -128,13 +129,11 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         panic!("Failed to restore snapshot: {err}")
     }
 
-    let snapshot_manager = SnapshotManager::new(snapshots_path.path(), None);
-
     let recovered_collection = Collection::load(
         collection_name_rec,
         this_peer_id,
         recover_dir.path(),
-        snapshot_manager,
+        snapshot_manager.clone(),
         Default::default(),
         ChannelService::new(REST_PORT),
         dummy_on_replica_failure(),

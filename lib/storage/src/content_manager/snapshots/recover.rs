@@ -5,6 +5,7 @@ use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::shard_config::ShardType;
 use collection::shards::shard_versioning::latest_shard_paths;
+use snapshot_manager::file::SnapshotFile;
 
 use crate::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateCollectionOperation,
@@ -106,10 +107,12 @@ async fn _do_recover_from_snapshot(
     );
 
     let tmp_collection_dir_clone = tmp_collection_dir.path().to_path_buf();
+    let _snapshot_manager = dispatcher.snapshot_manager.clone();
     let restoring = tokio::task::spawn_blocking(move || {
         // Unpack snapshot collection to the target folder
         Collection::restore_snapshot(
-            &snapshot_path,
+            _snapshot_manager,
+            &SnapshotFile::new_oop(snapshot_path),
             &tmp_collection_dir_clone,
             this_peer_id,
             is_distributed,

@@ -138,13 +138,13 @@ impl SnapshotManager {
     ) -> Result<(), SnapshotManagerError> {
         if !self.snapshot_exists(snapshot).await? {
             return Err(SnapshotManagerError::NotFound {
-                description: if let Some(collection) = &snapshot.collection {
+                description: if let Some(collection) = &snapshot.collection() {
                     format!(
                         "Collection {:?} snapshot {} not found",
-                        collection, snapshot.name
+                        collection, snapshot.name()
                     )
                 } else {
-                    format!("Full storage snapshot {} not found", snapshot.name)
+                    format!("Full storage snapshot {} not found", snapshot.name())
                 },
             });
         }
@@ -191,7 +191,7 @@ impl SnapshotManager {
         };
 
         Ok(SnapshotDescription {
-            name: snapshot.name.clone(),
+            name: snapshot.name(),
             creation_time,
             size,
             checksum,
@@ -288,6 +288,11 @@ impl SnapshotManager {
             let snapshot_path = snapshot.get_path(&base);
             let checksum_path = snapshot.get_checksum_path(base);
 
+            let dir = snapshot_path.parent().unwrap();
+            if !dir.exists() {
+                tokio::fs::create_dir_all(dir).await?;
+            }
+
             tokio::fs::rename(snapshot_temp, snapshot_path).await?;
             tokio::fs::rename(checksum_temp, checksum_path).await?;
         }
@@ -303,6 +308,28 @@ impl SnapshotManager {
             unimplemented!();
         } else {
             Ok(tokio::fs::File::open(snapshot.get_path(self.snapshots_path())).await?)
+        }
+    }
+
+    pub async fn get_snapshot_file(
+        &self,
+        snapshot: &SnapshotFile,
+    ) -> Result<(File, Option<TempPath>), SnapshotManagerError> {
+        if self.using_s3() {
+            unimplemented!();
+        } else {
+            Ok((File::open(snapshot.get_path(self.snapshots_path()))?, None))
+        }
+    }
+
+    pub fn get_snapshot_file_sync(
+        &self,
+        snapshot: &SnapshotFile,
+    ) -> Result<(File, Option<TempPath>), SnapshotManagerError> {
+        if self.using_s3() {
+            unimplemented!();
+        } else {
+            Ok((File::open(snapshot.get_path(self.snapshots_path()))?, None))
         }
     }
 

@@ -6,6 +6,7 @@ use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::channel_service::ChannelService;
 use memory::madvise;
 use segment::types::Distance;
+use snapshot_manager::SnapshotManager;
 use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CollectionMetaOperations, CreateAlias, CreateCollection,
     CreateCollectionOperation, DeleteAlias, RenameAlias,
@@ -14,7 +15,7 @@ use storage::content_manager::consensus::operation_sender::OperationSender;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use storage::types::{PerformanceConfig, StorageConfig};
-use tempfile::Builder;
+use tempfile::{Builder, TempDir};
 use tokio::runtime::Runtime;
 
 #[test]
@@ -74,6 +75,7 @@ fn test_alias_operation() {
 
     let toc = Arc::new(TableOfContent::new(
         &config,
+        SnapshotManager::new(&config.snapshots_path, config.snapshots_s3.clone()),
         search_runtime,
         update_runtime,
         general_runtime,

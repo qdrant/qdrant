@@ -86,6 +86,7 @@ impl TableOfContent {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         storage_config: &StorageConfig,
+        snapshot_manager: SnapshotManager,
         search_runtime: Runtime,
         update_runtime: Runtime,
         general_runtime: Runtime,
@@ -93,11 +94,6 @@ impl TableOfContent {
         this_peer_id: PeerId,
         consensus_proposal_sender: Option<OperationSender>,
     ) -> Self {
-        let snapshot_manager = SnapshotManager::new(
-            storage_config.snapshots_path.clone(),
-            storage_config.snapshots_s3.clone(),
-        );
-
         let collections_path = Path::new(&storage_config.storage_path).join(COLLECTIONS_DIR);
         create_dir_all(&collections_path).expect("Can't create Collections directory");
         if let Some(path) = storage_config.temp_path.as_deref() {

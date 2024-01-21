@@ -48,11 +48,8 @@ async fn _do_create_full_snapshot(
     let all_collections = dispatcher.all_collections().await;
     let mut created_snapshots: Vec<SnapshotFile> = vec![];
     for collection_name in &all_collections {
-        let snapshot_details = dispatcher.create_snapshot(collection_name).await?;
-        created_snapshots.push(SnapshotFile::new_collection(
-            snapshot_details.name,
-            collection_name,
-        ));
+        let (snapshot, _) = dispatcher.create_snapshot(collection_name).await?;
+        created_snapshots.push(snapshot);
     }
     let current_time = chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S").to_string();
 
@@ -62,7 +59,7 @@ async fn _do_create_full_snapshot(
         .iter()
         .map(|x| {
             (
-                x.collection.clone().unwrap(),
+                x.collection().unwrap(),
                 x.get_path(&base).to_string_lossy().to_string(),
             )
         })
@@ -108,7 +105,7 @@ async fn _do_create_full_snapshot(
             let mut builder = TarBuilder::new(file);
             for snapshot in created_snapshots_clone {
                 let snapshot_path = snapshot.get_path(&base);
-                builder.append_path_with_name(&snapshot_path, &snapshot.name)?;
+                builder.append_path_with_name(&snapshot_path, &snapshot.name())?;
                 std::fs::remove_file(&snapshot_path)?;
 
                 // Remove associated checksum if there is one

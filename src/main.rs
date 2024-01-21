@@ -18,6 +18,7 @@ use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
+use snapshot_manager::SnapshotManager;
 use ::tonic::transport::Uri;
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use clap::Parser;
@@ -127,6 +128,11 @@ fn main() -> anyhow::Result<()> {
 
     let settings = Settings::new(args.config_path)?;
 
+    let snapshot_manager = SnapshotManager::new(
+        settings.storage.snapshots_path.clone(),
+        settings.storage.snapshots_s3.clone(),
+    );
+
     let reporting_enabled = !settings.telemetry_disabled && !args.disable_telemetry;
 
     let reporting_id = TelemetryCollector::generate_id();
@@ -163,6 +169,7 @@ fn main() -> anyhow::Result<()> {
             temp_path,
             &full_snapshot,
             &settings.storage.storage_path,
+            snapshot_manager.clone(),
             args.force_snapshot,
             persistent_consensus_state.this_peer_id(),
             is_distributed_deployment,
@@ -174,6 +181,7 @@ fn main() -> anyhow::Result<()> {
             args.force_snapshot,
             temp_path,
             &settings.storage.storage_path,
+            snapshot_manager.clone(),
             persistent_consensus_state.this_peer_id(),
             is_distributed_deployment,
         )
@@ -230,6 +238,7 @@ fn main() -> anyhow::Result<()> {
     // It is a main entry point for the storage.
     let toc = TableOfContent::new(
         &settings.storage,
+        snapshot_manager,
         search_runtime,
         update_runtime,
         general_runtime,
