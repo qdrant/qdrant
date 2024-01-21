@@ -36,6 +36,8 @@ stacktrace = ["rstack-self"]
 [dev-dependencies]
 serde_urlencoded = "0.7"
 sealed_test = "1.0.0"
+
+tempfile = "3.9.0"
 rusty-hook = "^0.11.2"
 
 
@@ -43,7 +45,6 @@ rusty-hook = "^0.11.2"
 
 parking_lot = { version = "0.12.1", features = ["deadlock_detection"], optional = true }
 
-tempfile = "3.9.0"
 num_cpus = "1.16"
 thiserror = "1.0"
 log = "0.4"
