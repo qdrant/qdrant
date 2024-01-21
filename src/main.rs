@@ -18,13 +18,13 @@ use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use snapshot_manager::SnapshotManager;
 use ::tonic::transport::Uri;
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use clap::Parser;
 use collection::shards::channel_service::ChannelService;
 use consensus::Consensus;
 use slog::Drain;
+use snapshot_manager::SnapshotManager;
 use startup::setup_panic_hook;
 use storage::content_manager::consensus::operation_sender::OperationSender;
 use storage::content_manager::consensus::persistent::Persistent;

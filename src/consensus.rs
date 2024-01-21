@@ -1179,7 +1179,10 @@ mod tests {
         let operation_sender = OperationSender::new(propose_sender);
         let toc = TableOfContent::new(
             &settings.storage,
-            SnapshotManager::new(&settings.storage.snapshots_path, settings.storage.snapshots_s3.clone()),
+            SnapshotManager::new(
+                &settings.storage.snapshots_path,
+                settings.storage.snapshots_s3.clone(),
+            ),
             search_runtime,
             update_runtime,
             general_runtime,

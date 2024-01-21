@@ -128,7 +128,8 @@ pub async fn do_create_snapshot(
 ) -> Result<SnapshotDescription, StorageError> {
     let collection = collection_name.to_string();
     let dispatcher = dispatcher.clone();
-    let snapshot = tokio::spawn(async move { dispatcher.create_snapshot(&collection).await.map(|x| x.1) });
+    let snapshot =
+        tokio::spawn(async move { dispatcher.create_snapshot(&collection).await.map(|x| x.1) });
     if wait {
         Ok(snapshot.await??)
     } else {

@@ -194,30 +194,29 @@ where
         let mut result = Err(cancel::Error::Cancelled);
 
         for attempt in 0..MAX_RETRY_COUNT {
-            let future =
-                async {
-                    if attempt > 0 {
-                        sleep(RETRY_DELAY * attempt as u32).await;
+            let future = async {
+                if attempt > 0 {
+                    sleep(RETRY_DELAY * attempt as u32).await;
 
-                        log::warn!(
-                            "Retrying shard transfer {collection_id}:{} -> {} (retry {attempt})",
-                            transfer.shard_id,
-                            transfer.to,
-                        );
-                    }
+                    log::warn!(
+                        "Retrying shard transfer {collection_id}:{} -> {} (retry {attempt})",
+                        transfer.shard_id,
+                        transfer.to,
+                    );
+                }
 
-                    transfer_shard(
-                        transfer.clone(),
-                        shards_holder.clone(),
-                        consensus.as_ref(),
-                        collection_id.clone(),
-                        &collection_name,
-                        channel_service.clone(),
-                        snapshot_manager.clone(),
-                        &temp_dir,
-                    )
-                    .await
-                };
+                transfer_shard(
+                    transfer.clone(),
+                    shards_holder.clone(),
+                    consensus.as_ref(),
+                    collection_id.clone(),
+                    &collection_name,
+                    channel_service.clone(),
+                    snapshot_manager.clone(),
+                    &temp_dir,
+                )
+                .await
+            };
 
             result = cancel::future::cancel_on_token(cancel.clone(), future).await;
 

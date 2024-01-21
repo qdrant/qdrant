@@ -107,7 +107,10 @@ pub async fn do_get_snapshot(
 
     let mut res = HttpResponse::build(StatusCode::OK);
     res.insert_header((header::CONTENT_TYPE, "application/octet-stream"));
-    res.insert_header((header::CONTENT_DISPOSITION, format!("attachment; filename={:?}", snapshot.name())));
+    res.insert_header((
+        header::CONTENT_DISPOSITION,
+        format!("attachment; filename={:?}", snapshot.name()),
+    ));
     Ok(res.body(BodyStream::new(ReaderStream::new(stream))))
 }
 
@@ -269,12 +272,11 @@ async fn delete_full_snapshot(
     let timing = Instant::now();
     let wait = params.wait.unwrap_or(true);
 
-    let response =
-        dispatcher
-            .snapshot_manager
-            .do_delete_snapshot(&snapshot, wait)
-            .await
-            .map_err(|x| x.into());
+    let response = dispatcher
+        .snapshot_manager
+        .do_delete_snapshot(&snapshot, wait)
+        .await
+        .map_err(|x| x.into());
 
     match response {
         Err(_) => process_response(response, timing),
@@ -293,12 +295,11 @@ async fn delete_collection_snapshot(
     let snapshot = SnapshotFile::new_collection(snapshot_name, collection_name);
     let timing = Instant::now();
     let wait = params.wait.unwrap_or(true);
-    let response =
-        dispatcher
-            .snapshot_manager
-            .do_delete_snapshot(&snapshot, wait)
-            .await
-            .map_err(|x| x.into());
+    let response = dispatcher
+        .snapshot_manager
+        .do_delete_snapshot(&snapshot, wait)
+        .await
+        .map_err(|x| x.into());
     match response {
         Err(_) => process_response(response, timing),
         Ok(_) if wait => process_response(response, timing),
@@ -340,22 +341,21 @@ async fn recover_shard_snapshot(
     query: web::Query<SnapshottingParam>,
     web::Json(request): web::Json<ShardSnapshotRecover>,
 ) -> impl Responder {
-    let future =
-        async move {
-            let (collection, shard) = path.into_inner();
+    let future = async move {
+        let (collection, shard) = path.into_inner();
 
-            common::snapshots::recover_shard_snapshot(
-                toc.into_inner(),
-                collection,
-                shard,
-                request.location,
-                request.priority.unwrap_or_default(),
-                http_client.as_ref().clone(),
-            )
-            .await?;
+        common::snapshots::recover_shard_snapshot(
+            toc.into_inner(),
+            collection,
+            shard,
+            request.location,
+            request.priority.unwrap_or_default(),
+            http_client.as_ref().clone(),
+        )
+        .await?;
 
-            Ok(())
-        };
+        Ok(())
+    };
 
     helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
 }

@@ -97,28 +97,27 @@ async fn _do_create_full_snapshot(
     let full_snapshot_path_clone = full_snapshot_path.clone();
     let created_snapshots_clone: Vec<_> = created_snapshots.iter().map(|x| x.clone()).collect();
     let base_clone = base.clone();
-    let archiving =
-        tokio::task::spawn_blocking(move || {
-            let base = base_clone;
-            // have to use std here, cause TarBuilder is not async
-            let file = std::fs::File::create(&full_snapshot_path_clone)?;
-            let mut builder = TarBuilder::new(file);
-            for snapshot in created_snapshots_clone {
-                let snapshot_path = snapshot.get_path(&base);
-                builder.append_path_with_name(&snapshot_path, &snapshot.name())?;
-                std::fs::remove_file(&snapshot_path)?;
+    let archiving = tokio::task::spawn_blocking(move || {
+        let base = base_clone;
+        // have to use std here, cause TarBuilder is not async
+        let file = std::fs::File::create(&full_snapshot_path_clone)?;
+        let mut builder = TarBuilder::new(file);
+        for snapshot in created_snapshots_clone {
+            let snapshot_path = snapshot.get_path(&base);
+            builder.append_path_with_name(&snapshot_path, &snapshot.name())?;
+            std::fs::remove_file(&snapshot_path)?;
 
-                // Remove associated checksum if there is one
-                let snapshot_checksum = snapshot.get_checksum_path(&base);
-                if let Err(err) = std::fs::remove_file(snapshot_checksum) {
-                    log::warn!("Failed to delete checksum file for snapshot, ignoring: {err}");
-                }
+            // Remove associated checksum if there is one
+            let snapshot_checksum = snapshot.get_checksum_path(&base);
+            if let Err(err) = std::fs::remove_file(snapshot_checksum) {
+                log::warn!("Failed to delete checksum file for snapshot, ignoring: {err}");
             }
-            builder.append_path_with_name(&config_path_clone, "config.json")?;
+        }
+        builder.append_path_with_name(&config_path_clone, "config.json")?;
 
-            builder.finish()?;
-            Ok::<(), SnapshotManagerError>(())
-        });
+        builder.finish()?;
+        Ok::<(), SnapshotManagerError>(())
+    });
     archiving.await??;
 
     // Compute and store the file's checksum

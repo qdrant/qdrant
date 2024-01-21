@@ -141,7 +141,8 @@ impl SnapshotManager {
                 description: if let Some(collection) = &snapshot.collection() {
                     format!(
                         "Collection {:?} snapshot {} not found",
-                        collection, snapshot.name()
+                        collection,
+                        snapshot.name()
                     )
                 } else {
                     format!("Full storage snapshot {} not found", snapshot.name())
@@ -260,9 +261,9 @@ impl SnapshotManager {
             let snapshots_path = self.snapshots_path().join(collection_name);
 
             std::fs::create_dir_all(snapshots_path).map_err(|err| {
-                SnapshotManagerError::service_error(
-                    format!("Can't create directory for snapshots {collection_name}. Error: {err}")
-                )
+                SnapshotManagerError::service_error(format!(
+                    "Can't create directory for snapshots {collection_name}. Error: {err}"
+                ))
             })?;
         }
 
@@ -358,9 +359,10 @@ impl SnapshotManager {
         }
 
         Url::from_file_path(&absolute_path).map_err(|_| {
-            SnapshotManagerError::service_error(
-                format!("Failed to convert path to URL: {}", absolute_path.display(),)
-            )
+            SnapshotManagerError::service_error(format!(
+                "Failed to convert path to URL: {}",
+                absolute_path.display(),
+            ))
         })
     }
 }

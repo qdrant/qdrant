@@ -156,8 +156,7 @@ impl Collection {
         log::info!("Collection snapshot {snapshot_name} completed");
         Ok((
             snapshot.clone(),
-            self
-                .snapshot_manager
+            self.snapshot_manager
                 .get_snapshot_description(&snapshot)
                 .await?,
         ))
@@ -174,7 +173,8 @@ impl Collection {
         is_distributed: bool,
     ) -> CollectionResult<()> {
         // decompress archive
-        let (archive_file, archive_file_keep) = snapshot_manager.get_snapshot_file_sync(snapshot)?;
+        let (archive_file, archive_file_keep) =
+            snapshot_manager.get_snapshot_file_sync(snapshot)?;
         let mut ar = tar::Archive::new(archive_file);
         ar.unpack(target_dir)?;
 

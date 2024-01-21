@@ -39,9 +39,7 @@ impl SnapshotFile {
         }
     }
 
-    pub fn new_oop(
-        path: impl Into<PathBuf>,
-    ) -> Self {
+    pub fn new_oop(path: impl Into<PathBuf>) -> Self {
         SnapshotFile::OutOfPlace(path.into())
     }
 
@@ -70,22 +68,23 @@ impl SnapshotFile {
 
     pub(super) fn get_directory(&self, base: impl Into<PathBuf>) -> PathBuf {
         match &self {
-            Self::Normal { collection, shard, .. } => {
+            Self::Normal {
+                collection, shard, ..
+            } => {
                 let path: PathBuf = base.into();
-    
-                let path =
-                    if let Some(collection) = &collection {
-                        path.join(collection)
-                    } else {
-                        path
-                    };
-    
+
+                let path = if let Some(collection) = &collection {
+                    path.join(collection)
+                } else {
+                    path
+                };
+
                 if let Some(shard) = &shard {
                     path.join(format!("shards/{}", shard))
                 } else {
                     path
                 }
-            },
+            }
             Self::OutOfPlace(path) => path.parent().unwrap().to_path_buf(),
         }
     }

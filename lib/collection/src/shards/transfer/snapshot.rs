@@ -174,9 +174,9 @@ pub(super) async fn transfer_snapshot(
 
     let transferring_shard = shard_holder_read.get_shard(&shard_id);
     let Some(replica_set) = transferring_shard else {
-        return Err(CollectionError::service_error(
-            format!("Shard {shard_id} cannot be queue proxied because it does not exist")
-        ));
+        return Err(CollectionError::service_error(format!(
+            "Shard {shard_id} cannot be queue proxied because it does not exist"
+        )));
     };
 
     // Queue proxy local shard
@@ -226,9 +226,9 @@ pub(super) async fn transfer_snapshot(
         )
         .await
         .map_err(|err| {
-            CollectionError::service_error(
-                format!("Failed to recover shard snapshot on remote: {err}")
-            )
+            CollectionError::service_error(format!(
+                "Failed to recover shard snapshot on remote: {err}"
+            ))
         })?;
 
     if let Err(err) = snapshot_temp_path.close() {
