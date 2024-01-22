@@ -38,6 +38,12 @@ use crate::shards::transfer::ShardTransfer;
 use crate::shards::{replica_set, CollectionId};
 use crate::telemetry::CollectionTelemetry;
 
+/// Soft limit of incoming and outgoing shard transfers on a node
+///
+/// To automatically initiate a new shard transfer, we must be below this limit. This is a soft
+/// limit, because we won't reject additional shard transfers requested by the user.
+const AUTO_SHARD_TRANSFER_LIMIT: usize = 1;
+
 /// Collection's data is split into several shards.
 pub struct Collection {
     pub(crate) id: CollectionId,
@@ -392,12 +398,25 @@ impl Collection {
 
         // Try to request shard transfer if replicas on the current peer are dead
         if state == ReplicaState::Dead && self.this_peer_id == peer_id {
+            // We cannot do shard transfer at this time if we reached our own limit
+            let own_transfer_count = shard_holder.count_shard_transfers_on(&self.this_peer_id);
+            if own_transfer_count >= AUTO_SHARD_TRANSFER_LIMIT {
+                log::debug!("Not requesting transfer for recovering shard {shard_id} now, reached our own shard transfer limit ({own_transfer_count}/{AUTO_SHARD_TRANSFER_LIMIT})");
+                // TODO: we must retry later!
+                return Ok(());
+            }
+
             let transfer_from = replica_set
                 .peers()
                 .into_iter()
-                .find(|(peer_id, state)| {
-                    peer_id != &self.this_peer_id && state == &ReplicaState::Active
+                // Do not transfer from ourselves
+                .filter(|(peer_id, _)| peer_id != &self.this_peer_id)
+                // Do not transfer from peers that reashed the shard transfer limit
+                .filter(|(peer_id, _)| {
+                    shard_holder.count_shard_transfers_on(peer_id) < AUTO_SHARD_TRANSFER_LIMIT
                 })
+                // Find any peer that has an active replica
+                .find(|(_, state)| state == &ReplicaState::Active)
                 .map(|(peer_id, _)| peer_id);
             if let Some(transfer_from) = transfer_from {
                 self.request_shard_transfer(ShardTransfer {
@@ -413,7 +432,7 @@ impl Collection {
                     ),
                 })
             } else {
-                log::warn!("No alive replicas to recover shard {shard_id}");
+                log::warn!("No replicas to recover shard {shard_id} from, all replicas are not alive or reached shard transfer limit");
             }
         }
 
