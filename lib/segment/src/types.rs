@@ -1325,7 +1325,7 @@ impl From<Vec<IntPayloadType>> for MatchExcept {
 
 /// Range filter request
 #[macro_rules_attribute::macro_rules_derive(crate::common::macros::schemars_rename_generics)]
-#[derive_args(<FloatPayloadType> => "Range", <DateTimePayloadType> => "RangeDatetime")]
+#[derive_args(<FloatPayloadType> => "Range", <DateTimePayloadType> => "DatetimeRange")]
 #[derive(Debug, Deserialize, Serialize, Default, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct Range<T> {

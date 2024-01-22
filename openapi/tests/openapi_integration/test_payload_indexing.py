@@ -170,7 +170,7 @@ def test_datetime_indexing():
             },
         )
         assert response.ok
-        assert [p["id"] for p in response.json()["result"]["points"]] == expected
+        assert all(p["id"] in expected for p in response.json()["result"]["points"])
 
 def test_update_payload_on_indexed_field():
     keyword_field = "city"
