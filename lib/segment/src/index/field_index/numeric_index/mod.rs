@@ -9,6 +9,7 @@ use std::ops::Bound;
 use std::ops::Bound::{Excluded, Included, Unbounded};
 use std::sync::Arc;
 
+use chrono::{NaiveDateTime, TimeZone};
 use common::types::PointOffsetType;
 use mutable_numeric_index::MutableNumericIndex;
 use parking_lot::RwLock;
@@ -79,6 +80,32 @@ impl Encodable for FloatPayloadType {
             return std::cmp::Ordering::Greater;
         }
         self.partial_cmp(other).unwrap()
+    }
+}
+
+/// Encodes timestamps as i64 in milliseconds
+impl Encodable for DateTimePayloadType {
+    fn encode_key(&self, id: PointOffsetType) -> Vec<u8> {
+        encode_i64_key_ascending(self.timestamp_millis(), id)
+    }
+
+    fn decode_key(key: &[u8]) -> (PointOffsetType, Self) {
+        let (id, timestamp) = decode_i64_key_ascending(key);
+        let datetime = chrono::Utc.from_utc_datetime(
+            &chrono::NaiveDateTime::from_timestamp_opt(
+                timestamp / 1000,
+                (timestamp % 1000) as u32 * 1_000_000,
+            )
+            .unwrap_or_else(|| {
+                log::warn!("Failed to decode timestamp {timestamp}, fallback to UNIX_EPOCH");
+                NaiveDateTime::UNIX_EPOCH
+            }),
+        );
+        (id, datetime)
+    }
+
+    fn cmp_encoded(&self, other: &Self) -> std::cmp::Ordering {
+        self.timestamp_millis().cmp(&other.timestamp_millis())
     }
 }
 
