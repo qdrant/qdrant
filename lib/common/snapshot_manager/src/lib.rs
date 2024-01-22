@@ -428,6 +428,8 @@ impl SnapshotManager {
         } else {
             let (_, temp_path) = file.keep()?;
 
+            tokio::fs::create_dir_all(path.parent().unwrap()).await?;
+
             if tokio::fs::rename(&temp_path, &path).await.is_err() {
                 tokio::fs::copy(&temp_path, &path).await?;
                 tokio::fs::remove_file(temp_path).await?;
