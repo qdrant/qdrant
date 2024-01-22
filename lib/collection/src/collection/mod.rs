@@ -17,7 +17,7 @@ use segment::common::version::StorageVersion;
 use segment::types::ShardKey;
 use semver::Version;
 use tokio::runtime::Handle;
-use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
+use tokio::sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_state::{ShardInfo, State};
@@ -398,43 +398,61 @@ impl Collection {
 
         // Try to request shard transfer if replicas on the current peer are dead
         if state == ReplicaState::Dead && self.this_peer_id == peer_id {
-            // We cannot do shard transfer at this time if we reached our own limit
-            let own_transfer_count = shard_holder.count_shard_transfers_on(&self.this_peer_id);
-            if own_transfer_count >= AUTO_SHARD_TRANSFER_LIMIT {
-                log::debug!("Not requesting transfer for recovering shard {shard_id} now, reached our own shard transfer limit ({own_transfer_count}/{AUTO_SHARD_TRANSFER_LIMIT})");
-                // TODO: we must retry later!
-                return Ok(());
-            }
-
-            let transfer_from = replica_set
-                .peers()
-                .into_iter()
-                // Do not transfer from ourselves
-                .filter(|(peer_id, _)| peer_id != &self.this_peer_id)
-                // Do not transfer from peers that reashed the shard transfer limit
-                .filter(|(peer_id, _)| {
-                    shard_holder.count_shard_transfers_on(peer_id) < AUTO_SHARD_TRANSFER_LIMIT
-                })
-                // Find any peer that has an active replica
-                .find(|(_, state)| state == &ReplicaState::Active)
-                .map(|(peer_id, _)| peer_id);
-            if let Some(transfer_from) = transfer_from {
-                self.request_shard_transfer(ShardTransfer {
-                    shard_id,
-                    from: transfer_from,
-                    to: self.this_peer_id,
-                    sync: true,
-                    // For automatic shard transfers, always select some default method from this point on
-                    method: Some(
-                        self.shared_storage_config
-                            .default_shard_transfer_method
-                            .unwrap_or_default(),
-                    ),
-                })
-            } else {
-                log::warn!("No replicas to recover shard {shard_id} from, all replicas are not alive or reached shard transfer limit");
-            }
+            self.automatic_shard_recovery(shard_id, shard_holder)?;
         }
+
+        Ok(())
+    }
+
+    /// Automatically recover the given shard on this node
+    ///
+    /// Warning: this does not check whether recovery is needed and always assumes the current
+    /// shard state to be dead.
+    ///
+    /// This method will try to recover the current shard by requesting a shard transfer from a
+    /// different node on which this the shard replica is alive. This will not request a transfer
+    /// if we reached the shard transfer limit on this or other nodes.
+    fn automatic_shard_recovery(
+        &self,
+        shard_id: ShardId,
+        shard_holder: RwLockReadGuard<'_, ShardHolder>,
+    ) -> CollectionResult<()> {
+        let replica_set = shard_holder
+            .get_shard(&shard_id)
+            .ok_or_else(|| shard_not_found_error(shard_id))?;
+
+        // We cannot do shard transfer at this time if we reached our own limit
+        let own_transfer_count = shard_holder.count_shard_transfers_on(&self.this_peer_id);
+        if own_transfer_count >= AUTO_SHARD_TRANSFER_LIMIT {
+            log::debug!("Not requesting transfer for recovering shard {shard_id} now, reached our own shard transfer limit ({own_transfer_count}/{AUTO_SHARD_TRANSFER_LIMIT})");
+            // TODO: we must retry later!
+            return Ok(());
+        }
+
+        let Some(transfer_from) = replica_set
+            .peers()
+            .into_iter()
+            // Do not transfer from ourselves
+            .filter(|(peer_id, _)| peer_id != &self.this_peer_id)
+            // Do not transfer from peers that reashed the shard transfer limit
+            .filter(|(peer_id, _)| {
+                shard_holder.count_shard_transfers_on(peer_id) < AUTO_SHARD_TRANSFER_LIMIT
+            })
+            // Find any peer that has an active replica
+            .find(|(_, state)| state == &ReplicaState::Active)
+            .map(|(peer_id, _)| peer_id)
+        else {
+            log::warn!("No replicas to recover shard {shard_id} from, all replicas are not alive or reached shard transfer limit");
+            return Ok(());
+        };
+
+        self.request_shard_transfer(ShardTransfer {
+            shard_id,
+            from: transfer_from,
+            to: self.this_peer_id,
+            sync: true,
+            method: self.shared_storage_config.default_shard_transfer_method,
+        });
 
         Ok(())
     }
