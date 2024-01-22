@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use futures::StreamExt;
 use reqwest;
+use snapshot_manager::file::SnapshotFile;
 use snapshot_manager::SnapshotManager;
 use tempfile::TempPath;
 use tokio::fs::File;
@@ -78,7 +79,11 @@ pub async fn download_snapshot(
                 )
             })?;
             if snapshot_manager.is_path_on_s3(&local_path).await? {
-                unimplemented!("S3");
+                let snapshot = SnapshotFile::new_oop(local_path);
+                snapshot_manager
+                    .get_snapshot_path(&snapshot)
+                    .await
+                    .map_err(|x| x.into())
             } else {
                 if !local_path.exists() {
                     return Err(StorageError::bad_request(format!(

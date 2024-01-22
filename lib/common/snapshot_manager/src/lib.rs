@@ -1,4 +1,5 @@
 use std::fs::{create_dir_all, File};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -8,10 +9,11 @@ use ::s3::{Bucket, Region};
 use api::grpc::conversions::date_time_to_proto;
 use chrono::NaiveDateTime;
 use error::SnapshotManagerError;
+use path_clean::PathClean;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tempfile::{NamedTempFile, TempPath};
-use tokio::io::AsyncRead;
+use tokio::fs::OpenOptions;
 use url::Url;
 use uuid::Uuid;
 use validator::Validate;
@@ -22,7 +24,6 @@ use self::file::SnapshotFile;
 pub mod error;
 pub mod file;
 mod helpers;
-mod s3;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 pub struct SnapshotDescription {
@@ -161,8 +162,10 @@ impl SnapshotManager {
     ) -> Result<String, SnapshotManagerError> {
         let path = snapshot.get_checksum_path(self.snapshots_path());
 
-        if self.using_s3() {
-            unimplemented!()
+        if let Some(bucket) = self.s3_bucket() {
+            let path = self.s3ify_path(path)?;
+            let obj = bucket.get_object(path).await?;
+            Ok(obj.as_str()?.to_string())
         } else {
             Ok(tokio::fs::read_to_string(&path).await?)
         }
@@ -175,8 +178,21 @@ impl SnapshotManager {
         let path = snapshot.get_path(self.snapshots_path());
         let checksum = self.get_snapshot_checksum(snapshot).await.ok();
 
-        let (creation_time, size) = if self.using_s3() {
-            unimplemented!();
+        let (creation_time, size) = if let Some(bucket) = self.s3_bucket() {
+            let path = self.s3ify_path(path)?;
+            let (head, code) = bucket.head_object(path).await?;
+
+            if code == 404 {
+                return Err(SnapshotManagerError::NotFound {
+                    description: format!("Snapshot {:?} not found", snapshot.name()),
+                });
+            }
+
+            let creation_time = head
+                .last_modified
+                .and_then(|x| NaiveDateTime::parse_from_str(&x, "&a, %d %b %Y %H:%M:%S %Z").ok());
+
+            (creation_time, head.content_length.unwrap_or(0) as u64)
         } else {
             let meta = tokio::fs::metadata(path).await?;
             let creation_time = meta.created().ok().and_then(|created_time| {
@@ -201,12 +217,12 @@ impl SnapshotManager {
 
     pub async fn is_path_on_s3(&self, path: &Path) -> Result<bool, SnapshotManagerError> {
         if self.using_s3() {
-            let canon = path.canonicalize()?;
+            let canon = path.join(self.snapshots_path().canonicalize()?).clean();
             if canon.exists() {
                 Ok(false)
             } else {
                 Ok(canon.starts_with(self.snapshots_path().canonicalize()?)
-                    && !canon.starts_with(self.snapshots_path().canonicalize()?))
+                    && !canon.starts_with(self.temp_path().canonicalize()?))
             }
         } else {
             Ok(false)
@@ -290,9 +306,22 @@ impl SnapshotManager {
         snapshot_file: TempPath,
         checksum_file: TempPath,
     ) -> Result<(), SnapshotManagerError> {
-        if self.using_s3() {
+        if let Some(bucket) = self.s3_bucket() {
             // Sync snapshot files to S3 and drop them
-            unimplemented!();
+            let snapshot_path = self.s3ify_path(snapshot.get_path(self.snapshots_path()))?;
+            let checksum_path =
+                self.s3ify_path(snapshot.get_checksum_path(self.snapshots_path()))?;
+
+            let mut snapshot_stream = tokio::fs::File::open(snapshot_file.to_path_buf()).await?;
+            let checksum = tokio::fs::read(checksum_file.to_path_buf()).await?;
+
+            bucket.put_object(checksum_path, &checksum).await?;
+            bucket
+                .put_object_stream(&mut snapshot_stream, snapshot_path)
+                .await?;
+
+            let _ = snapshot_file.close();
+            let _ = checksum_file.close();
         } else {
             // Snapshot files are ready now, move them into the right place
             let snapshot_temp = snapshot_file.keep()?;
@@ -315,23 +344,20 @@ impl SnapshotManager {
         Ok(())
     }
 
-    pub async fn get_snapshot(
-        &self,
-        snapshot: &SnapshotFile,
-    ) -> Result<impl AsyncRead, SnapshotManagerError> {
-        if self.using_s3() {
-            unimplemented!();
-        } else {
-            Ok(tokio::fs::File::open(snapshot.get_path(self.snapshots_path())).await?)
-        }
-    }
-
     pub async fn get_snapshot_path(
         &self,
         snapshot: &SnapshotFile,
     ) -> Result<(PathBuf, Option<TempPath>), SnapshotManagerError> {
-        if self.using_s3() {
-            unimplemented!();
+        if let Some(bucket) = self.s3_bucket() {
+            let f = tempfile::Builder::new().tempfile_in(self.temp_path())?;
+            let path = self.s3ify_path(snapshot.get_path(self.snapshots_path()))?;
+            let mut file = OpenOptions::new().write(true).open(f.path()).await?;
+
+            bucket.get_object_to_writer(path, &mut file).await?;
+
+            let f = f.into_temp_path();
+
+            Ok((f.to_path_buf(), Some(f)))
         } else {
             Ok((snapshot.get_path(self.snapshots_path()), None))
         }
@@ -341,8 +367,16 @@ impl SnapshotManager {
         &self,
         snapshot: &SnapshotFile,
     ) -> Result<(PathBuf, Option<TempPath>), SnapshotManagerError> {
-        if self.using_s3() {
-            unimplemented!();
+        if let Some(bucket) = self.s3_bucket() {
+            let f = tempfile::Builder::new().tempfile_in(self.temp_path())?;
+            let path = self.s3ify_path(snapshot.get_path(self.snapshots_path()))?;
+            let mut file = std::fs::OpenOptions::new().write(true).open(f.path())?;
+
+            file.write_all(bucket.get_object_blocking(path)?.as_slice())?;
+
+            let f = f.into_temp_path();
+
+            Ok((f.to_path_buf(), Some(f)))
         } else {
             Ok((snapshot.get_path(self.snapshots_path()), None))
         }
@@ -374,24 +408,27 @@ impl SnapshotManager {
 
         let snapshot = SnapshotFile::new_collection(name, collection);
 
-        let path = snapshot.get_path(self.snapshots_path());
-        let absolute_path = path.canonicalize()?;
+        let path = snapshot
+            .get_path(self.snapshots_path().canonicalize()?)
+            .clean();
 
-        if self.using_s3() {
-            unimplemented!()
+        if let Some(bucket) = self.s3_bucket() {
+            let mut f = tokio::fs::File::open(file.path()).await?;
+            let path = self.s3ify_path(&path)?;
+            bucket.put_object_stream(&mut f, path).await?;
         } else {
             let (_, temp_path) = file.keep()?;
 
             if tokio::fs::rename(&temp_path, &path).await.is_err() {
-                tokio::fs::copy(&temp_path, path).await?;
+                tokio::fs::copy(&temp_path, &path).await?;
                 tokio::fs::remove_file(temp_path).await?;
             }
         }
 
-        Url::from_file_path(&absolute_path).map_err(|_| {
+        Url::from_file_path(&path).map_err(|_| {
             SnapshotManagerError::service_error(format!(
                 "Failed to convert path to URL: {}",
-                absolute_path.display(),
+                path.display(),
             ))
         })
     }

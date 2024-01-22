@@ -1,16 +1,16 @@
+use std::fs::File;
+
+use actix_files::NamedFile;
 use actix_multipart::form::tempfile::TempFile;
 use actix_multipart::form::MultipartForm;
-use actix_web::body::BodyStream;
-use actix_web::http::header;
 use actix_web::rt::time::Instant;
-use actix_web::{delete, get, post, put, web, HttpResponse, Responder, Result};
+use actix_web::{delete, get, post, put, web, HttpRequest, Responder, Result};
 use actix_web_validator as valid;
 use collection::operations::snapshot_ops::{
     ShardSnapshotRecover, SnapshotPriority, SnapshotRecover,
 };
 use collection::shards::shard::ShardId;
 use futures::{FutureExt as _, TryFutureExt as _};
-use reqwest::StatusCode;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use snapshot_manager::file::SnapshotFile;
@@ -18,7 +18,6 @@ use storage::content_manager::snapshots::do_create_full_snapshot;
 use storage::content_manager::snapshots::recover::do_recover_from_snapshot;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
-use tokio_util::io::ReaderStream;
 use validator::Validate;
 
 use super::CollectionPath;
@@ -56,20 +55,22 @@ pub struct SnapshottingForm {
 pub async fn do_get_snapshot(
     toc: &TableOfContent,
     snapshot: SnapshotFile,
+    req: &HttpRequest,
 ) -> Result<impl Responder> {
-    let stream = toc
+    let (path, _temp) = toc
         .snapshot_manager
-        .get_snapshot(&snapshot)
+        .get_snapshot_path(&snapshot)
         .await
         .map_err(snapshot_manager_into_actix_error)?;
 
-    let mut res = HttpResponse::build(StatusCode::OK);
-    res.insert_header((header::CONTENT_TYPE, "application/octet-stream"));
-    res.insert_header((
-        header::CONTENT_DISPOSITION,
-        format!("attachment; filename={:?}", snapshot.name()),
-    ));
-    Ok(res.body(BodyStream::new(ReaderStream::new(stream))))
+    let file = File::open(&path).map_err(|x| snapshot_manager_into_actix_error(x.into()))?;
+
+    let file = NamedFile::from_file(file, path);
+
+    // Need to pre-generate response so that TempPath doesn't drop the file before
+    // the response can be generated.
+    let res = file.respond_to(req);
+    Ok(res)
 }
 
 #[get("/collections/{name}/snapshots")]
@@ -183,10 +184,11 @@ async fn recover_from_snapshot(
 async fn get_snapshot(
     toc: web::Data<TableOfContent>,
     path: web::Path<(String, String)>,
+    req: HttpRequest,
 ) -> impl Responder {
     let (collection_name, snapshot_name) = path.into_inner();
     let snapshot = SnapshotFile::new_collection(snapshot_name, collection_name);
-    do_get_snapshot(&toc, snapshot).await
+    do_get_snapshot(&toc, snapshot, &req).await
 }
 #[get("/snapshots")]
 async fn list_full_snapshots(toc: web::Data<TableOfContent>) -> impl Responder {
@@ -215,9 +217,10 @@ async fn create_full_snapshot(
 async fn get_full_snapshot(
     toc: web::Data<TableOfContent>,
     path: web::Path<String>,
+    req: HttpRequest,
 ) -> impl Responder {
     let snapshot = SnapshotFile::new_full(path.into_inner());
-    do_get_snapshot(&toc, snapshot).await
+    do_get_snapshot(&toc, snapshot, &req).await
 }
 
 #[delete("/snapshots/{snapshot_name}")]
@@ -367,10 +370,11 @@ async fn upload_shard_snapshot(
 async fn download_shard_snapshot(
     toc: web::Data<TableOfContent>,
     path: web::Path<(String, ShardId, String)>,
+    req: HttpRequest,
 ) -> impl Responder {
     let (collection, shard, snapshot) = path.into_inner();
     let snapshot = SnapshotFile::new_shard(snapshot, collection, shard);
-    do_get_snapshot(&toc, snapshot).await
+    do_get_snapshot(&toc, snapshot, &req).await
 }
 
 #[delete("/collections/{collection}/shards/{shard}/snapshots/{snapshot}")]

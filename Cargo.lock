@@ -806,6 +806,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "block_on_proc"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b872f3528eeeb4370ee73b51194dc1cd93680c2d0eb6c7a223889038d2c1a167"
+dependencies = [
+ "quote",
+ "syn 1.0.107",
+]
+
+[[package]]
 name = "brotli"
 version = "3.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3416,6 +3426,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d01a5bd0424d00070b0098dd17ebca6f961a959dead1dbcbbbc1d1cd8d3deeba"
 
 [[package]]
+name = "path-clean"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "17359afc20d7ab31fdb42bb844c8b3bb1dabd7dcf7e68428492da7f16966fcef"
+
+[[package]]
 name = "pathdiff"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4459,6 +4475,7 @@ dependencies = [
  "aws-creds",
  "aws-region",
  "base64 0.13.1",
+ "block_on_proc",
  "bytes",
  "cfg-if",
  "futures",
@@ -5065,7 +5082,9 @@ version = "0.0.0"
 dependencies = [
  "api",
  "chrono",
+ "futures",
  "log",
+ "path-clean",
  "rust-s3",
  "schemars",
  "serde",
@@ -5074,6 +5093,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tokio-util",
  "url",
  "uuid",
  "validator",

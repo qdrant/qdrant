@@ -1,6 +1,8 @@
 use std::backtrace::Backtrace;
 use std::io::Error as IoError;
+use std::str::Utf8Error;
 
+use s3::error::S3Error;
 use tempfile::PersistError;
 use thiserror::Error;
 
@@ -39,6 +41,37 @@ impl SnapshotManagerError {
     pub fn bad_input(description: impl Into<String>) -> SnapshotManagerError {
         SnapshotManagerError::BadInput {
             description: description.into(),
+        }
+    }
+}
+
+impl From<S3Error> for SnapshotManagerError {
+    fn from(value: S3Error) -> Self {
+        match value {
+            S3Error::Http(code, msg) => {
+                if code == 404 {
+                    SnapshotManagerError::NotFound {
+                        description: format!("File not found on S3 ({:?})", msg),
+                    }
+                } else {
+                    SnapshotManagerError::ServiceError {
+                        description: format!("S3 returned {} {:?}", code, msg),
+                        backtrace: Some(Backtrace::force_capture().to_string()),
+                    }
+                }
+            }
+            _ => SnapshotManagerError::ServiceError {
+                description: format!("S3 error: {:?}", value),
+                backtrace: Some(Backtrace::force_capture().to_string()),
+            },
+        }
+    }
+}
+
+impl From<Utf8Error> for SnapshotManagerError {
+    fn from(value: Utf8Error) -> Self {
+        SnapshotManagerError::BadInput {
+            description: format!("UTF-8 error: {:#?}", value),
         }
     }
 }

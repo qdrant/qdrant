@@ -15,7 +15,7 @@ use storage::content_manager::consensus::operation_sender::OperationSender;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use storage::types::{PerformanceConfig, StorageConfig};
-use tempfile::{Builder, TempDir};
+use tempfile::Builder;
 use tokio::runtime::Runtime;
 
 #[test]
