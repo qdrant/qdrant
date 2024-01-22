@@ -403,7 +403,12 @@ impl Collection {
                     from: transfer_from,
                     to: self.this_peer_id,
                     sync: true,
-                    method: self.shared_storage_config.default_shard_transfer_method,
+                    // For automatic shard transfers, always select some default method from this point on
+                    method: Some(
+                        self.shared_storage_config
+                            .default_shard_transfer_method
+                            .unwrap_or_default(),
+                    ),
                 })
             } else {
                 log::warn!("No alive replicas to recover shard {shard_id}");
