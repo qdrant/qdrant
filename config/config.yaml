@@ -7,6 +7,37 @@ storage:
   # Where to store snapshots
   snapshots_path: ./snapshots
 
+  # S3 snapshot storage configuration
+  # If present, all snapshots will be stored in AWS S3 or S3-compatible storage.
+  # snapshots_s3:
+    # Bucket name
+    # bucket: your_bucket_here
+
+    # Storage provider
+    # service:
+      # AWS S3
+      # type: AWS
+      # Bucket region (e.g. eu-central-1)
+      # region: your_bucket_region_here
+
+      # Cloudflare R2
+      # type: R2
+      # Cloudflare account ID
+      # account_id: your_account_id_here
+
+      # Custom
+      # type: Custom
+      # region: your_bucket_region_here
+      # endpoint: your_endpoint_here
+    
+    # Storage access key
+    # Can be specified either here or in the `AWS_ACCESS_KEY_ID` environment variable.
+    # access_key: your_access_key_here
+
+    # Storage secret key
+    # Can be specified either here or in the `AWS_SECRET_ACCESS_KEY` environment variable.
+    # secret_key: your_secret_key_here
+
   # Where to store temporary files
   # If null, temporary snapshot are stored in: storage/snapshots_temp/
   temp_path: null
