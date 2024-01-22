@@ -17,7 +17,6 @@ proptest = "1.4.0"
 env_logger = "0.10.1"
 
 [dependencies]
-num_cpus = "1.16"
 thiserror = "1.0"
 rand = "0.8.5"
 wal = { git = "https://github.com/qdrant/wal.git", rev = "fad0e7c48be58d8e7db4cc739acd9b1cf6735de0" }

@@ -45,7 +45,6 @@ rusty-hook = "^0.11.2"
 
 parking_lot = { version = "0.12.1", features = ["deadlock_detection"], optional = true }
 
-num_cpus = "1.16"
 thiserror = "1.0"
 log = "0.4"
 colored = "2"
@@ -76,7 +75,6 @@ tonic = { version = "0.9.2", features = ["gzip", "tls"] }
 tonic-reflection = "0.9.2"
 tower = "0.4.13"
 tower-layer = "0.3.2"
-num-traits = "0.2.17"
 tar = "0.4.40"
 reqwest = { version = "0.11", default-features = false, features = ["stream", "rustls-tls", "blocking"] }
 rustls = "0.21.10"
@@ -98,7 +96,6 @@ memory = { path = "lib/common/memory" }
 segment = { path = "lib/segment" }
 collection = { path = "lib/collection" }
 storage = { path = "lib/storage" }
-sparse = { path = "lib/sparse" }
 api = { path = "lib/api" }
 actix-multipart = "0.6.1"
 constant_time_eq = "0.3.0"
