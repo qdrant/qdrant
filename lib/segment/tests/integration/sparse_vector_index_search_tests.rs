@@ -386,7 +386,7 @@ fn sparse_vector_index_ram_filtered_search() {
     assert_eq!(*indexed_fields.get(field_name).unwrap(), FieldType(Keyword));
 
     let field_indexes = &payload_index.field_indexes;
-    let field_index = &field_indexes.get(field_name).unwrap().indices;
+    let field_index = field_indexes.get(field_name).unwrap();
     assert_eq!(field_index[0].count_indexed_points(), 0);
     drop(payload_index);
 
@@ -407,7 +407,7 @@ fn sparse_vector_index_ram_filtered_search() {
     // assert payload index updated
     let payload_index = sparse_vector_index.payload_index.borrow();
     let field_indexes = &payload_index.field_indexes;
-    let field_index = &field_indexes.get(field_name).unwrap().indices;
+    let field_index = field_indexes.get(field_name).unwrap();
     assert_eq!(field_index[0].count_indexed_points(), half_indexed_count);
     drop(payload_index);
 

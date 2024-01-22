@@ -156,7 +156,7 @@ fn build_test_segments(path_struct: &Path, path_plain: &Path) -> (Segment, Segme
     }
 
     for (field, indexes) in struct_segment.payload_index.borrow().field_indexes.iter() {
-        for index in &indexes.indices {
+        for index in indexes {
             assert!(index.count_indexed_points() < num_points as usize);
             if field != FLICKING_KEY {
                 assert!(
@@ -261,7 +261,7 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
     }
 
     for (_field, indexes) in struct_segment.payload_index.borrow().field_indexes.iter() {
-        for index in &indexes.indices {
+        for index in indexes {
             assert!(index.count_indexed_points() < num_points as usize);
             assert!(
                 index.count_indexed_points()
@@ -397,30 +397,15 @@ fn test_integer_index_types() {
 
     let indexes = struct_segment.payload_index.borrow();
     assert!(matches!(
-        indexes
-            .field_indexes
-            .get(INT_KEY)
-            .unwrap()
-            .indices
-            .as_slice(),
+        indexes.field_indexes.get(INT_KEY).unwrap().as_slice(),
         [FieldIndex::IntMapIndex(_), FieldIndex::IntIndex(_)]
     ));
     assert!(matches!(
-        indexes
-            .field_indexes
-            .get(INT_KEY_2)
-            .unwrap()
-            .indices
-            .as_slice(),
+        indexes.field_indexes.get(INT_KEY_2).unwrap().as_slice(),
         [FieldIndex::IntMapIndex(_)]
     ));
     assert!(matches!(
-        indexes
-            .field_indexes
-            .get(INT_KEY_3)
-            .unwrap()
-            .indices
-            .as_slice(),
+        indexes.field_indexes.get(INT_KEY_3).unwrap().as_slice(),
         [FieldIndex::IntIndex(_)]
     ));
 }
@@ -841,7 +826,7 @@ fn test_update_payload_index_type() {
         *index.indexed_fields().get("field").unwrap(),
         FieldType(Integer)
     );
-    let field_index = &index.field_indexes.get("field").unwrap().indices;
+    let field_index = index.field_indexes.get("field").unwrap();
     assert_eq!(field_index[0].count_indexed_points(), point_num);
     assert_eq!(field_index[1].count_indexed_points(), point_num);
 
@@ -851,7 +836,7 @@ fn test_update_payload_index_type() {
         *index.indexed_fields().get("field").unwrap(),
         FieldType(Keyword)
     );
-    let field_index = &index.field_indexes.get("field").unwrap().indices;
+    let field_index = index.field_indexes.get("field").unwrap();
     assert_eq!(field_index[0].count_indexed_points(), 0); // only one field index for Keyword
 
     // set field to Integer type (again)
@@ -860,7 +845,7 @@ fn test_update_payload_index_type() {
         *index.indexed_fields().get("field").unwrap(),
         FieldType(Integer)
     );
-    let field_index = &index.field_indexes.get("field").unwrap().indices;
+    let field_index = index.field_indexes.get("field").unwrap();
     assert_eq!(field_index[0].count_indexed_points(), point_num);
     assert_eq!(field_index[1].count_indexed_points(), point_num);
 }
