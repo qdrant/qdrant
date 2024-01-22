@@ -395,7 +395,9 @@ impl Collection {
             let transfer_from = replica_set
                 .peers()
                 .into_iter()
-                .find(|(_, state)| state == &ReplicaState::Active)
+                .find(|(peer_id, state)| {
+                    peer_id != &self.this_peer_id && state == &ReplicaState::Active
+                })
                 .map(|(peer_id, _)| peer_id);
             if let Some(transfer_from) = transfer_from {
                 self.request_shard_transfer(ShardTransfer {
