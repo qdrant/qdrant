@@ -93,7 +93,8 @@ impl BuilderExt for Builder {
 #[rustfmt::skip]
 fn configure_validation(builder: Builder) -> Builder {
     builder
-        .extern_path(".google.protobuf.Timestamp", "::prost_wkt_types::Timestamp")
+        // prost_wkt_types needed for serde support
+        .extern_path(".google.protobuf.Timestamp", "::prost_wkt_types::Timestamp") 
         // Service: collections.proto
         .validates(&[
             ("GetCollectionInfoRequest.collection_name", "length(min = 1, max = 255)"),

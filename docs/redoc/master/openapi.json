@@ -6357,7 +6357,7 @@
             "description": "Check if datetime is within a given range",
             "anyOf": [
               {
-                "$ref": "#/components/schemas/RangeDatetime"
+                "$ref": "#/components/schemas/DatetimeRange"
               },
               {
                 "nullable": true
@@ -6536,7 +6536,7 @@
           }
         }
       },
-      "RangeDatetime": {
+      "DatetimeRange": {
         "description": "Range filter request",
         "type": "object",
         "properties": {
