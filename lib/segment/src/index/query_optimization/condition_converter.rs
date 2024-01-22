@@ -29,7 +29,6 @@ pub fn condition_converter<'a>(
             .get(&field_condition.key)
             .and_then(|indexes| {
                 indexes
-                    .indices
                     .iter()
                     .find_map(|index| field_condition_index(index, field_condition))
             })
@@ -45,7 +44,7 @@ pub fn condition_converter<'a>(
         Condition::IsEmpty(is_empty) => {
             let first_field_index = field_indexes
                 .get(&is_empty.is_empty.key)
-                .and_then(|indexes| indexes.indices.first());
+                .and_then(|indexes| indexes.first());
 
             let fallback = Box::new(move |point_id| {
                 payload_provider.with_payload(point_id, |payload| {
@@ -255,7 +254,7 @@ pub fn get_datetime_range_checkers(
     range: Range<DateTimePayloadType>,
 ) -> Option<ConditionCheckerFn> {
     match index {
-        FieldIndex::IntIndex(num_index) => Some(Box::new(move |point_id: PointOffsetType| {
+        FieldIndex::DatetimeIndex(num_index) => Some(Box::new(move |point_id: PointOffsetType| {
             let range = range.map(|ts| ts.timestamp_micros());
             num_index.get_values(point_id).map_or(false, |values| {
                 values.iter().copied().any(|i| range.check_range(i))
