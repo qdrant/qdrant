@@ -124,6 +124,7 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         0,
         false,
     )
+    .await
     .is_err());
 
     if let Err(err) = Collection::restore_snapshot(
