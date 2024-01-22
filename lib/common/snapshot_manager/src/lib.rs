@@ -46,6 +46,7 @@ impl From<SnapshotDescription> for api::grpc::qdrant::SnapshotDescription {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(tag = "type")]
 pub enum SnapshotsS3Service {
     AWS { region: String },
     R2 { account_id: String },
@@ -257,7 +258,7 @@ impl SnapshotManager {
         let mut out: Vec<SnapshotDescription> = Vec::with_capacity(filenames.len());
 
         for name in filenames {
-            let snapshot = SnapshotFile::new_full(name);
+            let snapshot = SnapshotFile::new_collection(name, collection);
             let desc = self.get_snapshot_description(&snapshot).await?;
             out.push(desc);
         }
@@ -278,7 +279,7 @@ impl SnapshotManager {
         let mut out: Vec<SnapshotDescription> = Vec::with_capacity(filenames.len());
 
         for name in filenames {
-            let snapshot = SnapshotFile::new_full(name);
+            let snapshot = SnapshotFile::new_shard(name, collection, shard);
             let desc = self.get_snapshot_description(&snapshot).await?;
             out.push(desc);
         }
@@ -348,6 +349,10 @@ impl SnapshotManager {
         &self,
         snapshot: &SnapshotFile,
     ) -> Result<(PathBuf, Option<TempPath>), SnapshotManagerError> {
+        if snapshot.is_oop() {
+            return Ok((snapshot.get_path(self.snapshots_path()), None));
+        }
+
         if let Some(bucket) = self.s3_bucket() {
             let f = tempfile::Builder::new().tempfile_in(self.temp_path())?;
             let path = self.s3ify_path(snapshot.get_path(self.snapshots_path()))?;
@@ -367,6 +372,10 @@ impl SnapshotManager {
         &self,
         snapshot: &SnapshotFile,
     ) -> Result<(PathBuf, Option<TempPath>), SnapshotManagerError> {
+        if snapshot.is_oop() {
+            return Ok((snapshot.get_path(self.snapshots_path()), None));
+        }
+        
         if let Some(bucket) = self.s3_bucket() {
             let f = tempfile::Builder::new().tempfile_in(self.temp_path())?;
             let path = self.s3ify_path(snapshot.get_path(self.snapshots_path()))?;

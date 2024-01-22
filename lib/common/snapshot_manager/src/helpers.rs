@@ -137,17 +137,21 @@ impl SnapshotManager {
         if let Some(bucket) = self.s3_bucket() {
             let path = self.s3ify_path(directory)?;
             let list = bucket
-                .list(path, Some(path::MAIN_SEPARATOR_STR.to_string()))
-                .await?
-                .into_iter()
-                .map(|x| x.name)
+                .list(
+                    format!("{}{}", &path[1..], path::MAIN_SEPARATOR_STR), 
+                    Some(path::MAIN_SEPARATOR_STR.to_string())
+                )
+                .await?[0]
+                .contents
+                .iter()
+                .map(|x| PathBuf::from(&x.key))
                 .filter(|x| {
-                    PathBuf::from(x)
+                    x
                         .extension()
                         .map_or(false, |ext| ext == "snapshot")
                 })
+                .map(|x| x.file_name().unwrap().to_string_lossy().to_string())
                 .collect();
-
             Ok(list)
         } else {
             if !directory.exists() {

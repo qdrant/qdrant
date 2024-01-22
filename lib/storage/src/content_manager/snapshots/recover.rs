@@ -113,17 +113,13 @@ async fn _do_recover_from_snapshot(
 
     let tmp_collection_dir_clone = tmp_collection_dir.path().to_path_buf();
     let _snapshot_manager = dispatcher.snapshot_manager.clone();
-    let restoring = tokio::task::spawn_blocking(move || {
-        // Unpack snapshot collection to the target folder
-        Collection::restore_snapshot(
-            _snapshot_manager,
-            &SnapshotFile::new_oop(snapshot_path),
-            &tmp_collection_dir_clone,
-            this_peer_id,
-            is_distributed,
-        )
-    });
-    restoring.await??;
+    Collection::restore_snapshot(
+        _snapshot_manager,
+        &SnapshotFile::new_oop(snapshot_path),
+        &tmp_collection_dir_clone,
+        this_peer_id,
+        is_distributed,
+    ).await?;
 
     let snapshot_config = CollectionConfig::load(tmp_collection_dir.path())?;
     snapshot_config.validate_and_warn();

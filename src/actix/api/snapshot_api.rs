@@ -65,7 +65,7 @@ pub async fn do_get_snapshot(
 
     let file = File::open(&path).map_err(|x| snapshot_manager_into_actix_error(x.into()))?;
 
-    let file = NamedFile::from_file(file, path);
+    let file = NamedFile::from_file(file, snapshot.get_path("./"));
 
     // Need to pre-generate response so that TempPath doesn't drop the file before
     // the response can be generated.

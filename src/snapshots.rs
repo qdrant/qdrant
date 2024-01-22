@@ -64,7 +64,7 @@ pub fn recover_snapshots(
         let collection_temp_path = temp_dir
             .map(PathBuf::from)
             .unwrap_or_else(|| collection_path.with_extension("tmp"));
-        if let Err(err) = Collection::restore_snapshot(
+        if let Err(err) = Collection::restore_snapshot_sync(
             snapshot_manager.clone(),
             &SnapshotFile::new_oop(snapshot_path),
             &collection_temp_path,
