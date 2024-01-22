@@ -528,7 +528,12 @@ impl Collection {
                     to: *this_peer_id,
                     shard_id,
                     sync: true,
-                    method: self.shared_storage_config.default_shard_transfer_method,
+                    // For automatic shard transfers, always select some default method from this point on
+                    method: Some(
+                        self.shared_storage_config
+                            .default_shard_transfer_method
+                            .unwrap_or_default(),
+                    ),
                 };
 
                 if check_transfer_conflicts_strict(&transfer, transfers.iter()).is_some() {
