@@ -280,7 +280,7 @@ impl FieldIndex {
                 payload_field_index.add_point(id, payload)
             }
             FieldIndex::FloatIndex(ref mut payload_field_index) => {
-                ValueIndexer::<FloatPayloadType>::add_point(payload_field_index, id, payload)
+                payload_field_index.add_point(id, payload)
             }
             FieldIndex::GeoIndex(ref mut payload_field_index) => {
                 payload_field_index.add_point(id, payload)

@@ -83,10 +83,10 @@ impl Encodable for FloatPayloadType {
     }
 }
 
-/// Encodes timestamps as i64 in milliseconds
+/// Encodes timestamps as i64 in microseconds
 impl Encodable for DateTimePayloadType {
     fn encode_key(&self, id: PointOffsetType) -> Vec<u8> {
-        encode_i64_key_ascending(self.timestamp_millis(), id)
+        encode_i64_key_ascending(self.timestamp_micros(), id)
     }
 
     fn decode_key(key: &[u8]) -> (PointOffsetType, Self) {
@@ -105,7 +105,7 @@ impl Encodable for DateTimePayloadType {
     }
 
     fn cmp_encoded(&self, other: &Self) -> std::cmp::Ordering {
-        self.timestamp_millis().cmp(&other.timestamp_millis())
+        self.timestamp_micros().cmp(&other.timestamp_micros())
     }
 }
 
