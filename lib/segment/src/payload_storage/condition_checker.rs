@@ -37,12 +37,12 @@ impl ValueChecker for FieldCondition {
             || self
                 .range
                 .as_ref()
-                .map_or(false, |condition| condition.check_match(payload));
+                .map_or(false, |condition| condition.range.check_match(payload));
         res = res
             || self
                 .datetime_range
                 .as_ref()
-                .map_or(false, |condition| condition.check_match(payload));
+                .map_or(false, |condition| condition.range.check_match(payload));
         res = res
             || self
                 .geo_radius

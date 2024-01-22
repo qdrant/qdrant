@@ -298,10 +298,11 @@ impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
         &self,
         condition: &FieldCondition,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
-        let cond_range = condition
+        let cond_range = &condition
             .range
             .as_ref()
-            .ok_or_else(|| OperationError::service_error("failed to get condition range"))?;
+            .ok_or_else(|| OperationError::service_error("failed to get condition range"))?
+            .range;
 
         let start_bound = match cond_range {
             Range { gt: Some(gt), .. } => {
@@ -359,7 +360,7 @@ impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
             .range
             .as_ref()
             .map(|range| {
-                let mut cardinality = self.range_cardinality(range);
+                let mut cardinality = self.range_cardinality(&range.range);
                 cardinality
                     .primary_clauses
                     .push(PrimaryCondition::Condition(condition.clone()));

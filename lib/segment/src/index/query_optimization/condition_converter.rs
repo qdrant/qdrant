@@ -139,7 +139,7 @@ pub fn field_condition_index<'a>(
     if let Some(checker) = field_condition
         .range
         .clone()
-        .and_then(|cond| get_range_checkers(index, cond))
+        .and_then(|cond| get_range_checkers(index, cond.range))
     {
         return Some(checker);
     }
@@ -147,7 +147,7 @@ pub fn field_condition_index<'a>(
     if let Some(checker) = field_condition
         .datetime_range
         .clone()
-        .and_then(|cond| get_datetime_range_checkers(index, cond))
+        .and_then(|cond| get_datetime_range_checkers(index, cond.range))
     {
         return Some(checker);
     }

@@ -5,7 +5,7 @@ use chrono::{NaiveDateTime, TimeZone as _, Timelike};
 use segment::data_types::integer_index::IntegerIndexType;
 use segment::data_types::text_index::TextIndexType;
 use segment::data_types::vectors::VectorElementType;
-use segment::types::{default_quantization_ignore_value, DateTimePayloadType, FloatPayloadType};
+use segment::types::default_quantization_ignore_value;
 use tonic::Status;
 use uuid::Uuid;
 
@@ -1100,8 +1100,21 @@ impl From<segment::types::GeoLineString> for GeoLineString {
     }
 }
 
-impl From<Range> for segment::types::Range<FloatPayloadType> {
+impl From<Range> for segment::types::NumericRange {
     fn from(value: Range) -> Self {
+        segment::types::Range {
+            lt: value.lt,
+            gt: value.gt,
+            gte: value.gte,
+            lte: value.lte,
+        }
+        .into()
+    }
+}
+
+impl From<segment::types::NumericRange> for Range {
+    fn from(value: segment::types::NumericRange) -> Self {
+        let value = value.range;
         Self {
             lt: value.lt,
             gt: value.gt,
@@ -1111,30 +1124,21 @@ impl From<Range> for segment::types::Range<FloatPayloadType> {
     }
 }
 
-impl From<segment::types::Range<FloatPayloadType>> for Range {
-    fn from(value: segment::types::Range<FloatPayloadType>) -> Self {
-        Self {
-            lt: value.lt,
-            gt: value.gt,
-            gte: value.gte,
-            lte: value.lte,
-        }
-    }
-}
-
-impl From<DatetimeRange> for segment::types::Range<DateTimePayloadType> {
+impl From<DatetimeRange> for segment::types::DatetimeRange {
     fn from(value: DatetimeRange) -> Self {
-        Self {
+        segment::types::Range {
             lt: value.lt.map(date_time_from_proto),
             gt: value.gt.map(date_time_from_proto),
             gte: value.gte.map(date_time_from_proto),
             lte: value.lte.map(date_time_from_proto),
         }
+        .into()
     }
 }
 
-impl From<segment::types::Range<DateTimePayloadType>> for DatetimeRange {
-    fn from(value: segment::types::Range<DateTimePayloadType>) -> Self {
+impl From<segment::types::DatetimeRange> for DatetimeRange {
+    fn from(value: segment::types::DatetimeRange) -> Self {
+        let value = value.range;
         Self {
             lt: value.lt.map(date_time_to_proto),
             gt: value.gt.map(date_time_to_proto),

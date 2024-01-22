@@ -1323,10 +1323,34 @@ impl From<Vec<IntPayloadType>> for MatchExcept {
     }
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Default, Clone, PartialEq)]
+#[serde(rename = "DatetimeRange")]
+pub struct DatetimeRange {
+    #[serde(flatten)]
+    pub range: Range<DateTimePayloadType>,
+}
+
+impl From<Range<DateTimePayloadType>> for DatetimeRange {
+    fn from(range: Range<DateTimePayloadType>) -> Self {
+        Self { range }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Default, Clone, PartialEq)]
+#[serde(rename = "Range")]
+pub struct NumericRange {
+    #[serde(flatten)]
+    pub range: Range<FloatPayloadType>,
+}
+
+impl From<Range<FloatPayloadType>> for NumericRange {
+    fn from(range: Range<FloatPayloadType>) -> Self {
+        Self { range }
+    }
+}
+
 /// Range filter request
-#[macro_rules_attribute::macro_rules_derive(crate::common::macros::schemars_rename_generics)]
-#[derive_args(<FloatPayloadType> => "Range", <DateTimePayloadType> => "DatetimeRange")]
-#[derive(Debug, Deserialize, Serialize, Default, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Default, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct Range<T> {
     /// point.key < range.lt
@@ -1559,9 +1583,9 @@ pub struct FieldCondition {
     /// Check if point has field with a given value
     pub r#match: Option<Match>,
     /// Check if points value lies in a given range
-    pub range: Option<Range<FloatPayloadType>>,
+    pub range: Option<NumericRange>,
     /// Check if datetime is within a given range
-    pub datetime_range: Option<Range<DateTimePayloadType>>,
+    pub datetime_range: Option<DatetimeRange>,
     /// Check if points geo location lies in a given area
     pub geo_bounding_box: Option<GeoBoundingBox>,
     /// Check if geo point is within a given radius
@@ -1590,7 +1614,7 @@ impl FieldCondition {
         Self {
             key: key.into(),
             r#match: None,
-            range: Some(range),
+            range: Some(range.into()),
             datetime_range: None,
             geo_bounding_box: None,
             geo_radius: None,
@@ -1607,7 +1631,7 @@ impl FieldCondition {
             key: key.into(),
             r#match: None,
             range: None,
-            datetime_range: Some(datetime_range),
+            datetime_range: Some(datetime_range.into()),
             geo_bounding_box: None,
             geo_radius: None,
             geo_polygon: None,
