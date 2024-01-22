@@ -62,7 +62,7 @@ RUN case "$BUILDPLATFORM" in \
 ARG TARGETPLATFORM
 ENV TARGETPLATFORM=${TARGETPLATFORM:-linux/amd64}
 
-RUN xx-apt-get install -y pkg-config gcc g++ libc6-dev libunwind-dev
+RUN xx-apt-get install -y pkg-config gcc g++ libc6-dev libunwind-dev git
 
 # Select Cargo profile (e.g., `release`, `dev` or `ci`)
 ARG PROFILE=release
@@ -77,6 +77,7 @@ ARG RUSTFLAGS
 ARG LINKER=mold
 
 COPY --from=planner /qdrant/recipe.json recipe.json
+COPY . .
 # `PKG_CONFIG=...` is a workaround for `xx-cargo` bug for crates based on `pkg-config`!
 #
 # https://github.com/tonistiigi/xx/issues/107
@@ -86,7 +87,6 @@ RUN PKG_CONFIG="/usr/bin/$(xx-info)-pkg-config" \
     RUSTFLAGS="${LINKER:+-C link-arg=-fuse-ld=}$LINKER $RUSTFLAGS" \
     xx-cargo chef cook --profile $PROFILE ${FEATURES:+--features} $FEATURES --features=stacktrace --recipe-path recipe.json
 
-COPY . .
 # `PKG_CONFIG=...` is a workaround for `xx-cargo` bug for crates based on `pkg-config`!
 #
 # https://github.com/tonistiigi/xx/issues/107
