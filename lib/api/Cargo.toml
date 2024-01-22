@@ -26,6 +26,7 @@ thiserror = "1.0"
 parking_lot = { workspace = true }
 validator = { version = "0.16", features = ["derive"] }
 prost-wkt-types = "0.4.2"
+log = "0.4"
 
 common = { path = "../common/common" }
 segment = { path = "../segment" }
