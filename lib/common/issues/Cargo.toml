@@ -2,7 +2,7 @@
 name = "issues"
 version = "0.0.0"
 authors = [
-    "Andrey Vasnetsov <vasnetsov93@gmail.com>",
+    "Andrey Vasnetsov <andrey@vasnetsov.com>",
     "Qdrant Team <info@qdrant.tech>",
 ]
 license = "Apache-2.0"
