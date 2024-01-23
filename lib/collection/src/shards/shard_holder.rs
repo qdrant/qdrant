@@ -744,6 +744,8 @@ impl ShardHolder {
 
         let snapshot = SnapshotFile::new_shard(snapshot_file_name, collection_name, shard_id);
         let snapshot_path = snapshot.get_path(snapshot_manager.temp_path());
+        
+        tokio::fs::create_dir_all(snapshot_path.parent().unwrap()).await?;
 
         // Compute and store the file's checksum
         let checksum_path = snapshot.get_checksum_path(snapshot_manager.temp_path());
