@@ -19,7 +19,9 @@ use semver::Version;
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use self::shard_transfer::SharedShardTransferTracker;
+use self::shard_transfer::{
+    SharedShardTransferTracker, AUTO_SHARD_TRANSFER_LIMIT_IN, AUTO_SHARD_TRANSFER_LIMIT_OUT,
+};
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_state::{ShardInfo, State};
 use crate::common::is_ready::IsReady;
@@ -38,12 +40,6 @@ use crate::shards::transfer::transfer_tasks_pool::TransferTasksPool;
 use crate::shards::transfer::ShardTransfer;
 use crate::shards::{replica_set, CollectionId};
 use crate::telemetry::CollectionTelemetry;
-
-/// Soft limit of incoming and outgoing shard transfers on a node
-///
-/// To automatically initiate a new shard transfer, we must be below this limit. This is a soft
-/// limit, because we won't reject additional shard transfers requested by the user.
-const AUTO_SHARD_TRANSFER_LIMIT: usize = 1;
 
 /// Collection's data is split into several shards.
 pub struct Collection {
@@ -432,9 +428,13 @@ impl Collection {
 
         // Respect shard transfer limit on this node
         // It will automatically be retried later while syncing local state
-        let shard_transfer_count = shard_transfer_tracker.count_on(&self.this_peer_id);
-        if shard_transfer_count >= AUTO_SHARD_TRANSFER_LIMIT {
-            log::trace!("Postponing automatic shard {shard_id} transfer to stay below limit on this node ({shard_transfer_count}/{AUTO_SHARD_TRANSFER_LIMIT})");
+        let transfer_io = shard_transfer_tracker.count_io(&self.this_peer_id);
+        if Self::at_shard_transfer_limit(transfer_io) {
+            log::trace!(
+                "Postponing automatic shard {shard_id} transfer to stay below limit on this node (in: {}/{AUTO_SHARD_TRANSFER_LIMIT_IN}, out: {}/{AUTO_SHARD_TRANSFER_LIMIT_OUT})",
+                transfer_io.0,
+                transfer_io.1,
+            );
             return Ok(());
         }
 
@@ -445,7 +445,7 @@ impl Collection {
             .filter(|(peer_id, _)| peer_id != &self.this_peer_id)
             // Respect shard transfer limit on the other node
             .filter(|(peer_id, _)| {
-                shard_transfer_tracker.count_on(peer_id) < AUTO_SHARD_TRANSFER_LIMIT
+                Self::at_shard_transfer_limit(shard_transfer_tracker.count_io(peer_id))
             })
             // Find any peer that has an active replica
             .find(|(_, state)| state == &ReplicaState::Active)
@@ -584,9 +584,13 @@ impl Collection {
             let mut shard_transfer_tracker = self.shard_transfer_tracker.lock().await;
 
             // Respect shard transfer limit on this node
-            let shard_transfer_count = shard_transfer_tracker.count_on(this_peer_id);
-            if shard_transfer_count >= AUTO_SHARD_TRANSFER_LIMIT {
-                log::trace!("Postponing automatic shard {shard_id} transfer to stay below limit on this node ({shard_transfer_count}/{AUTO_SHARD_TRANSFER_LIMIT})");
+            let transfer_io = shard_transfer_tracker.count_io(this_peer_id);
+            if Self::at_shard_transfer_limit(transfer_io) {
+                log::trace!(
+                    "Postponing automatic shard {shard_id} transfer to stay below limit on this node (in: {}/{AUTO_SHARD_TRANSFER_LIMIT_IN}, out: {}/{AUTO_SHARD_TRANSFER_LIMIT_OUT})",
+                    transfer_io.0,
+                    transfer_io.1,
+                );
                 continue;
             }
 
@@ -610,9 +614,13 @@ impl Collection {
                 }
 
                 // Respect shard transfer limit
-                let shard_transfer_count = shard_transfer_tracker.count_on(&replica_id);
-                if shard_transfer_count >= AUTO_SHARD_TRANSFER_LIMIT {
-                    log::trace!("Postponing automatic shard {shard_id} transfer to stay below limit on peer {replica_id} ({shard_transfer_count}/{AUTO_SHARD_TRANSFER_LIMIT})");
+                let transfer_io = shard_transfer_tracker.count_io(&replica_id);
+                if Self::at_shard_transfer_limit(transfer_io) {
+                    log::trace!(
+                        "Postponing automatic shard {shard_id} transfer to stay below limit on peer {replica_id} (in: {}/{AUTO_SHARD_TRANSFER_LIMIT_IN}, out: {}/{AUTO_SHARD_TRANSFER_LIMIT_OUT})",
+                        transfer_io.0,
+                        transfer_io.1,
+                    );
                     continue;
                 }
 

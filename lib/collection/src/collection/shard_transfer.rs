@@ -18,6 +18,18 @@ use crate::shards::transfer::{
 };
 use crate::shards::{transfer, CollectionId};
 
+/// Soft limit of incoming shard transfers on a node
+///
+/// To automatically initiate a new shard transfer, we must be below this limit. This is a soft
+/// limit, because we won't reject additional shard transfers requested by the user.
+pub(super) const AUTO_SHARD_TRANSFER_LIMIT_IN: usize = 1;
+
+/// Soft limit of outgoing shard transfers on a node
+///
+/// To automatically initiate a new shard transfer, we must be below this limit. This is a soft
+/// limit, because we won't reject additional shard transfers requested by the user.
+pub(super) const AUTO_SHARD_TRANSFER_LIMIT_OUT: usize = 1;
+
 /// Cooldown for proposed shard transfers, when they are not (yet) accepted by consensus
 ///
 /// After this time, a proposed shard transfer is forgotten when it is not accepted by consensus.
@@ -366,6 +378,12 @@ impl Collection {
             }
         }
     }
+
+    /// Whether we have reached the shard transfer soft limit based on the given incoming and
+    /// outgoing transfers.
+    pub(super) fn at_shard_transfer_limit((incoming, outgoing): (usize, usize)) -> bool {
+        incoming >= AUTO_SHARD_TRANSFER_LIMIT_IN || outgoing >= AUTO_SHARD_TRANSFER_LIMIT_OUT
+    }
 }
 
 /// A structure tracking ongoing and proposed shard transfers, usually used globally.
@@ -382,23 +400,23 @@ pub struct ShardTransferTracker {
 }
 
 impl ShardTransferTracker {
-    /// The sum of incoming and outgoing shard transfers on the given peer across all collections
+    /// The count of incoming and outgoing shard transfers on the given peer across all collections
     ///
     /// This includes both transfers in consensus and proposed transfers by this node that may not
     /// actually be accepted by consensus yet.
-    pub fn count_on(&mut self, peer_id: &PeerId) -> usize {
+    pub fn count_io(&mut self, peer_id: &PeerId) -> (usize, usize) {
         self.forget_old_proposals();
-        let consensus_transfers = self
-            .transfers
+        self.transfers
             .iter()
-            .filter(|(_, transfer)| transfer.from == *peer_id || transfer.to == *peer_id)
-            .count();
-        let proposed_transfers = self
-            .proposed_transfers
-            .iter()
-            .filter(|(_, transfer, _)| transfer.from == *peer_id || transfer.to == *peer_id)
-            .count();
-        consensus_transfers + proposed_transfers
+            .map(|(_, transfer)| (transfer.to == *peer_id, transfer.from == *peer_id))
+            .chain(
+                self.proposed_transfers
+                    .iter()
+                    .map(|(_, transfer, _)| (transfer.to == *peer_id, transfer.from == *peer_id)),
+            )
+            .fold((0, 0), |(i, o), (is_outgoing, is_incoming)| {
+                (i + is_outgoing as usize, o + is_incoming as usize)
+            })
     }
 
     pub fn propose<T>(&mut self, collection_id: CollectionId, transfer: T)
