@@ -28,7 +28,7 @@ pprof = { version = "0.12", features = ["flamegraph", "prost-codec"] }
 [dependencies]
 tempfile = "3.9.0"
 parking_lot = "0.12"
-rayon = "1.8.0"
+rayon = "1.8.1"
 num_cpus = "1.16"
 itertools = "0.12"
 rocksdb = { version = "0.21.0", default-features = false, features = [ "snappy" ] }
