@@ -1,25 +1,24 @@
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use serde::{Serialize, Serializer};
 
-use crate::issue::{DummyIssue, Issue};
+use crate::issue::{CodeType, Issue};
 
 #[derive(Default, Serialize)]
 struct Dashboard {
-    pub issues: HashSet<Box<dyn Issue>>,
+    pub issues: HashMap<CodeType, Box<dyn Issue>>,
 }
 
 impl Dashboard {
     /// Activates an issue, returning true if the issue was not active before
     fn add_issue(&mut self, issue: Box<dyn Issue>) -> bool {
-        self.issues.insert(issue)
+        self.issues.insert(issue.code(), issue).is_none()
     }
 
-    /// Deactivates an issue by its code, returning true if the issue was active or not
-    fn remove_issue(&mut self, code: String) -> bool {
-        let issue: Box<dyn Issue> = Box::new(DummyIssue { code });
-        self.issues.remove(&issue)
+    /// Deactivates an issue by its code, returning true if the issue was active before
+    fn remove_issue<S: AsRef<str>>(&mut self, code: S) -> bool {
+        self.issues.remove(code.as_ref()).is_some()
     }
 }
 
@@ -52,7 +51,7 @@ pub fn submit(issue: Box<dyn Issue>) -> bool {
 }
 
 /// Solves an issue by its code, returning true if the issue code was active before
-pub fn solve(code: String) -> bool {
+pub fn solve<S: AsRef<str>>(code: S) -> bool {
     dashboard().remove_issue(code)
 }
 
@@ -70,17 +69,19 @@ pub fn clear() {
 pub fn prefix_solve(prefix: &str) {
     dashboard()
         .issues
-        .retain(|issue| !issue.code().starts_with(prefix));
+        .retain(|code, _issue| !code.starts_with(prefix));
 }
 
 /// Solves all issues whose code satisfy the predicate
 pub fn filter_solve(f: impl Fn(&str) -> bool) {
-    dashboard().issues.retain(|issue| !f(&issue.code()));
+    dashboard().issues.retain(|code, _issue| !f(code));
 }
 
 #[cfg(test)]
 mod tests {
     use serial_test::serial;
+
+    use crate::issue::DummyIssue;
 
     use super::*;
 
@@ -92,8 +93,8 @@ mod tests {
         });
         assert!(dashboard.add_issue(issue.clone()));
         assert!(!dashboard.add_issue(issue.clone()));
-        assert!(dashboard.remove_issue("test".to_string()));
-        assert!(!dashboard.remove_issue("test".to_string()));
+        assert!(dashboard.remove_issue("test"));
+        assert!(!dashboard.remove_issue("test"));
     }
 
     #[test]
@@ -121,12 +122,12 @@ mod tests {
 
             std::thread::sleep(std::time::Duration::from_millis(10));
 
-            assert!(solve("issue1".to_string()));
-            assert!(solve("issue2".to_string()));
-            assert!(solve("issue3".to_string()));
-            assert!(solve("issue4".to_string()));
-            assert!(solve("issue5".to_string()));
-            assert!(solve("issue6".to_string()));
+            assert!(solve("issue1"));
+            assert!(solve("issue2"));
+            assert!(solve("issue3"));
+            assert!(solve("issue4"));
+            assert!(solve("issue5"));
+            assert!(solve("issue6"));
         });
 
         std::thread::sleep(std::time::Duration::from_millis(70));
@@ -150,8 +151,8 @@ mod tests {
         assert_eq!(dashboard().issues.len(), 1);
         assert!(dashboard()
             .issues
-            .iter()
-            .all(|issue| !issue.code().starts_with("issue")));
+            .keys()
+            .all(|code| !code.starts_with("issue")));
         clear();
     }
 
@@ -166,10 +167,7 @@ mod tests {
         filter_solve(|code| code.contains('2'));
 
         assert_eq!(dashboard().issues.len(), 2);
-        assert!(dashboard()
-            .issues
-            .iter()
-            .all(|issue| !issue.code().contains('2')));
+        assert!(dashboard().issues.keys().all(|code| !code.contains('2')));
         clear();
     }
 }

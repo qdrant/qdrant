@@ -1,27 +1,16 @@
-use std::hash::{Hash, Hasher};
-
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
 
 use crate::solution::Solution;
 
+/// Type of the issue code
+pub type CodeType = String;
+
 /// An issue that can be hashed by its code
 pub trait Issue: Sync + Send {
-    fn code(&self) -> String;
+    fn code(&self) -> CodeType;
     fn description(&self) -> String;
     fn solution(&self) -> Result<Solution, String>;
-}
-
-impl Hash for dyn Issue {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.code().hash(state);
-    }
-}
-
-impl PartialEq for dyn Issue {
-    fn eq(&self, other: &Self) -> bool {
-        self.code() == other.code()
-    }
 }
 
 impl Serialize for dyn Issue {
@@ -33,8 +22,6 @@ impl Serialize for dyn Issue {
         map.end()
     }
 }
-
-impl Eq for dyn Issue {}
 
 #[derive(Clone)]
 pub(crate) struct DummyIssue {
