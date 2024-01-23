@@ -81,9 +81,8 @@ pub fn filter_solve(f: impl Fn(&str) -> bool) {
 mod tests {
     use serial_test::serial;
 
-    use crate::issue::DummyIssue;
-
     use super::*;
+    use crate::issue::DummyIssue;
 
     #[test]
     fn test_dashboard() {

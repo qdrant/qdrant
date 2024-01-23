@@ -10,7 +10,7 @@ pub type CodeType = String;
 pub trait Issue: Sync + Send {
     fn code(&self) -> CodeType;
     fn description(&self) -> String;
-    fn solution(&self) -> Result<Solution, String>;
+    fn solution(&self) -> Solution;
 }
 
 impl Serialize for dyn Issue {
@@ -44,10 +44,7 @@ impl Issue for DummyIssue {
         "".to_string()
     }
 
-    fn solution(&self) -> Result<Solution, String> {
-        Ok(Solution {
-            message: "".to_string(),
-            action: None,
-        })
+    fn solution(&self) -> Solution {
+        Solution::None
     }
 }

@@ -3,9 +3,24 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct Solution {
+pub enum Solution {
+    /// A solution that can be applied immediately
+    Immediate(ImmediateSolution),
+
+    /// Two or more solutions to choose from
+    ImmediateChoice(Vec<ImmediateSolution>),
+
+    /// A solution that requires manual intervention
+    Refactor(String),
+
+    /// Failed to generate solution
+    None,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ImmediateSolution {
     pub message: String,
-    pub action: Option<Action>,
+    pub action: Action,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
