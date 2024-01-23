@@ -19,9 +19,7 @@ use semver::Version;
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use self::shard_transfer::{
-    SharedShardTransferTracker, AUTO_SHARD_TRANSFER_LIMIT_IN, AUTO_SHARD_TRANSFER_LIMIT_OUT,
-};
+use self::shard_transfer::SharedShardTransferTracker;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_state::{ShardInfo, State};
 use crate::common::is_ready::IsReady;
@@ -429,9 +427,9 @@ impl Collection {
         // Respect shard transfer limit on this node
         // It will automatically be retried later while syncing local state
         let transfer_io = shard_transfer_tracker.count_io(&self.this_peer_id);
-        if Self::at_shard_transfer_limit(transfer_io) {
+        if self.check_shard_transfer_limit(transfer_io) {
             log::trace!(
-                "Postponing automatic shard {shard_id} transfer to stay below limit on this node (in: {}/{AUTO_SHARD_TRANSFER_LIMIT_IN}, out: {}/{AUTO_SHARD_TRANSFER_LIMIT_OUT})",
+                "Postponing automatic shard {shard_id} transfer to stay below limit on this node (i/o: {}/{})",
                 transfer_io.0,
                 transfer_io.1,
             );
@@ -445,7 +443,7 @@ impl Collection {
             .filter(|(peer_id, _)| peer_id != &self.this_peer_id)
             // Respect shard transfer limit on the other node
             .filter(|(peer_id, _)| {
-                Self::at_shard_transfer_limit(shard_transfer_tracker.count_io(peer_id))
+                self.check_shard_transfer_limit(shard_transfer_tracker.count_io(peer_id))
             })
             // Find any peer that has an active replica
             .find(|(_, state)| state == &ReplicaState::Active)
@@ -585,9 +583,9 @@ impl Collection {
 
             // Respect shard transfer limit on this node
             let transfer_io = shard_transfer_tracker.count_io(this_peer_id);
-            if Self::at_shard_transfer_limit(transfer_io) {
+            if self.check_shard_transfer_limit(transfer_io) {
                 log::trace!(
-                    "Postponing automatic shard {shard_id} transfer to stay below limit on this node (in: {}/{AUTO_SHARD_TRANSFER_LIMIT_IN}, out: {}/{AUTO_SHARD_TRANSFER_LIMIT_OUT})",
+                    "Postponing automatic shard {shard_id} transfer to stay below limit on this node(i/o: {}/{})",
                     transfer_io.0,
                     transfer_io.1,
                 );
@@ -615,9 +613,9 @@ impl Collection {
 
                 // Respect shard transfer limit
                 let transfer_io = shard_transfer_tracker.count_io(&replica_id);
-                if Self::at_shard_transfer_limit(transfer_io) {
+                if self.check_shard_transfer_limit(transfer_io) {
                     log::trace!(
-                        "Postponing automatic shard {shard_id} transfer to stay below limit on peer {replica_id} (in: {}/{AUTO_SHARD_TRANSFER_LIMIT_IN}, out: {}/{AUTO_SHARD_TRANSFER_LIMIT_OUT})",
+                        "Postponing automatic shard {shard_id} transfer to stay below limit on peer {replica_id} (i/o: {}/{})",
                         transfer_io.0,
                         transfer_io.1,
                     );

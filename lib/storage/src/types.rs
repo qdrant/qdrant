@@ -28,10 +28,18 @@ pub struct PerformanceConfig {
     pub update_rate_limit: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub search_timeout_sec: Option<usize>,
+    #[serde(default = "default_io_shard_transfers_limit")]
+    pub incoming_shard_transfers_limit: Option<usize>,
+    #[serde(default = "default_io_shard_transfers_limit")]
+    pub outgoing_shard_transfers_limit: Option<usize>,
 }
 
 const fn default_max_optimization_threads() -> usize {
     1
+}
+
+const fn default_io_shard_transfers_limit() -> Option<usize> {
+    Some(1)
 }
 
 /// Global configuration of the storage, loaded on the service launch, default stored in ./config
@@ -91,6 +99,8 @@ impl StorageConfig {
             self.update_concurrency,
             is_distributed,
             self.shard_transfer_method,
+            self.performance.incoming_shard_transfers_limit,
+            self.performance.outgoing_shard_transfers_limit,
         )
     }
 }

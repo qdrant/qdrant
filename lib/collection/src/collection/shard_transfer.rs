@@ -18,18 +18,6 @@ use crate::shards::transfer::{
 };
 use crate::shards::{transfer, CollectionId};
 
-/// Soft limit of incoming shard transfers on a node
-///
-/// To automatically initiate a new shard transfer, we must be below this limit. This is a soft
-/// limit, because we won't reject additional shard transfers requested by the user.
-pub(super) const AUTO_SHARD_TRANSFER_LIMIT_IN: usize = 1;
-
-/// Soft limit of outgoing shard transfers on a node
-///
-/// To automatically initiate a new shard transfer, we must be below this limit. This is a soft
-/// limit, because we won't reject additional shard transfers requested by the user.
-pub(super) const AUTO_SHARD_TRANSFER_LIMIT_OUT: usize = 1;
-
 /// Cooldown for proposed shard transfers, when they are not (yet) accepted by consensus
 ///
 /// After this time, a proposed shard transfer is forgotten when it is not accepted by consensus.
@@ -381,8 +369,16 @@ impl Collection {
 
     /// Whether we have reached the shard transfer soft limit based on the given incoming and
     /// outgoing transfers.
-    pub(super) fn at_shard_transfer_limit((incoming, outgoing): (usize, usize)) -> bool {
-        incoming >= AUTO_SHARD_TRANSFER_LIMIT_IN || outgoing >= AUTO_SHARD_TRANSFER_LIMIT_OUT
+    pub(super) fn check_shard_transfer_limit(&self, (incoming, outgoing): (usize, usize)) -> bool {
+        self.shared_storage_config
+            .incoming_shard_transfers_limit
+            .map(|limit| incoming >= limit)
+            .unwrap_or(false)
+            || self
+                .shared_storage_config
+                .outgoing_shard_transfers_limit
+                .map(|limit| outgoing >= limit)
+                .unwrap_or(false)
     }
 }
 
