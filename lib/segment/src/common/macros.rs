@@ -1,6 +1,6 @@
 /// Similar to `#[derive(JsonSchema)]`, but allows to override `schema_name()`
 /// for each generic specialization using the following syntax:
-/// ```
+/// ```no_run
 /// #[macro_rules_attribute::macro_rules_derive(schemars_rename_generics)]
 /// #[derive_args(<i32> => "NewName", ...)]
 /// ```
