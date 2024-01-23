@@ -49,7 +49,8 @@ async fn _do_create_full_snapshot(
     let all_collections = dispatcher.all_collections().await;
     let mut created_snapshots: Vec<(SnapshotFile, TempPath, TempPath)> = vec![];
     for collection_name in &all_collections {
-        let (snapshot, snapshot_file, checksum_file) = dispatcher.create_temp_snapshot(collection_name).await?;
+        let (snapshot, snapshot_file, checksum_file) =
+            dispatcher.create_temp_snapshot(collection_name).await?;
         created_snapshots.push((snapshot, snapshot_file, checksum_file));
     }
     let current_time = chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S").to_string();

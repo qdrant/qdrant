@@ -133,7 +133,9 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         recover_dir.path(),
         0,
         true,
-    ).await {
+    )
+    .await
+    {
         panic!("Failed to restore snapshot: {err}")
     }
 

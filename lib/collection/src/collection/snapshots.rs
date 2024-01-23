@@ -138,11 +138,7 @@ impl Collection {
         // Snapshot files are ready now, hand them off to the manager
         let snapshot = SnapshotFile::new_collection(snapshot.name(), self.name());
 
-        Ok((
-            snapshot,
-            snapshot_file,
-            checksum_file,
-        ))
+        Ok((snapshot, snapshot_file, checksum_file))
     }
 
     /// Creates a snapshot of the collection.
@@ -163,9 +159,10 @@ impl Collection {
         global_temp_dir: &Path,
         this_peer_id: PeerId,
     ) -> CollectionResult<(SnapshotFile, SnapshotDescription)> {
-        let (snapshot, snapshot_file, checksum_file) =
-            self.create_temp_snapshot(global_temp_dir, this_peer_id).await?;
-        
+        let (snapshot, snapshot_file, checksum_file) = self
+            .create_temp_snapshot(global_temp_dir, this_peer_id)
+            .await?;
+
         self.snapshot_manager
             .save_snapshot(&snapshot, snapshot_file, checksum_file)
             .await?;
@@ -192,13 +189,9 @@ impl Collection {
         let target_dir = target_dir.to_owned();
         tokio::task::spawn_blocking(move || {
             // Unpack snapshot collection to the target folder
-            Self::_restore_snapshot(
-                &target_dir,
-                this_peer_id,
-                is_distributed,
-                ar,
-            )
-        }).await??;
+            Self::_restore_snapshot(&target_dir, this_peer_id, is_distributed, ar)
+        })
+        .await??;
 
         Ok(())
     }
@@ -228,7 +221,7 @@ impl Collection {
         (archive_file, archive_file_keep): (File, Option<TempPath>),
     ) -> CollectionResult<()> {
         // decompress archive
-        
+
         let mut ar = tar::Archive::new(archive_file);
         ar.unpack(target_dir)?;
 

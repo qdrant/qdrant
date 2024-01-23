@@ -119,7 +119,8 @@ async fn _do_recover_from_snapshot(
         &tmp_collection_dir_clone,
         this_peer_id,
         is_distributed,
-    ).await?;
+    )
+    .await?;
 
     let snapshot_config = CollectionConfig::load(tmp_collection_dir.path())?;
     snapshot_config.validate_and_warn();

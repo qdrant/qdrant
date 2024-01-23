@@ -375,7 +375,7 @@ impl SnapshotManager {
         if snapshot.is_oop() {
             return Ok((snapshot.get_path(self.snapshots_path()), None));
         }
-        
+
         if let Some(bucket) = self.s3_bucket() {
             let f = tempfile::Builder::new().tempfile_in(self.temp_path())?;
             let path = self.s3ify_path(snapshot.get_path(self.snapshots_path()))?;
