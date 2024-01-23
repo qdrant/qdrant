@@ -55,13 +55,13 @@ storage:
     # Only affects automatic shard transfers for recovery, does not affect user requested transfers.
     # The same value should be used on all nodes in a cluster.
     # If null - unlimited.
-    incoming_shard_transfers_limit: 1
+    #incoming_shard_transfers_limit: 1
 
     # Soft limit for number of outgoing shard transfers per collection on this node.
     # Only affects automatic shard transfers for recovery, does not affect user requested transfers.
     # The same value should be used on all nodes in a cluster.
     # If null - unlimited.
-    outgoing_shard_transfers_limit: 1
+    #outgoing_shard_transfers_limit: 1
 
   optimizers:
     # The minimal fraction of deleted vectors in a segment, required to perform segment optimization
