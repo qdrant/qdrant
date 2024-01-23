@@ -43,7 +43,7 @@ merge = "0.1.0"
 async-trait = "0.1.77"
 arc-swap = "1.6.0"
 tonic = { version = "0.9.2", features = ["gzip", "tls"] }
-uuid = { version = "1.6", features = ["v4", "serde"] }
+uuid = { version = "1.7", features = ["v4", "serde"] }
 url = { version = "2", features = ["serde"] }
 validator = { version = "0.16", features = ["derive"] }
 actix-web-validator = "5.0.1"
