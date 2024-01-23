@@ -316,15 +316,6 @@ impl ShardHolder {
             .collect()
     }
 
-    /// The sum of incoming and outgoing shard transfers on the given peer
-    pub fn count_shard_transfers_on(&self, peer_id: &PeerId) -> usize {
-        self.shard_transfers
-            .read()
-            .iter()
-            .filter(|transfer| transfer.from == *peer_id || transfer.to == *peer_id)
-            .count()
-    }
-
     fn get_shard_ids_by_key(&self, shard_key: &ShardKey) -> CollectionResult<HashSet<ShardId>> {
         match self.key_mapping.read().get(shard_key).cloned() {
             None => Err(CollectionError::bad_request(format!(

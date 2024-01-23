@@ -100,6 +100,7 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
         dummy_abort_shard_transfer(),
+        Default::default(),
         None,
         None,
     )
@@ -141,6 +142,7 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
         dummy_abort_shard_transfer(),
+        Default::default(),
         None,
         None,
     )

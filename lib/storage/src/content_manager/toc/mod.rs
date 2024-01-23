@@ -19,6 +19,7 @@ use std::time::Duration;
 use api::grpc::qdrant::qdrant_internal_client::QdrantInternalClient;
 use api::grpc::qdrant::WaitOnConsensusCommitRequest;
 use api::grpc::transport_channel_pool::AddTimeout;
+use collection::collection::shard_transfer::SharedShardTransferTracker;
 use collection::collection::{Collection, RequestShardTransfer};
 use collection::config::{default_replication_factor, CollectionConfig};
 use collection::operations::types::*;
@@ -77,6 +78,8 @@ pub struct TableOfContent {
     collection_create_lock: Mutex<()>,
     /// Dispatcher for shard transfer to access consensus.
     shard_transfer_dispatcher: parking_lot::Mutex<Option<ShardTransferDispatcher>>,
+    /// Shared shard transfer tracker, used to track global transfer state on this node.
+    shard_transfer_tracker: SharedShardTransferTracker,
 }
 
 impl TableOfContent {
@@ -102,6 +105,7 @@ impl TableOfContent {
         let collection_paths =
             read_dir(&collections_path).expect("Can't read Collections directory");
         let mut collections: HashMap<String, Collection> = Default::default();
+        let shard_transfer_tracker: SharedShardTransferTracker = Default::default();
         let is_distributed = consensus_proposal_sender.is_some();
         for entry in collection_paths {
             let collection_path = entry
@@ -151,6 +155,7 @@ impl TableOfContent {
                     consensus_proposal_sender.clone(),
                     collection_name.clone(),
                 ),
+                shard_transfer_tracker.clone(),
                 Some(search_runtime.handle().clone()),
                 Some(update_runtime.handle().clone()),
             ));
@@ -194,6 +199,7 @@ impl TableOfContent {
             update_rate_limiter: rate_limiter,
             collection_create_lock: Default::default(),
             shard_transfer_dispatcher: Default::default(),
+            shard_transfer_tracker,
         }
     }
 

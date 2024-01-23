@@ -2,7 +2,7 @@ mod collection_ops;
 pub mod payload_index_schema;
 mod point_ops;
 mod search;
-mod shard_transfer;
+pub mod shard_transfer;
 mod sharding_keys;
 mod snapshots;
 mod state_management;
@@ -19,6 +19,7 @@ use semver::Version;
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
+use self::shard_transfer::SharedShardTransferTracker;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_state::{ShardInfo, State};
 use crate::common::is_ready::IsReady;
@@ -60,6 +61,7 @@ pub struct Collection {
     #[allow(dead_code)] //Might be useful in case of repartition implementation
     notify_peer_failure_cb: ChangePeerState,
     abort_shard_transfer_cb: replica_set::AbortShardTransfer,
+    shard_transfer_tracker: SharedShardTransferTracker,
     init_time: Duration,
     // One-way boolean flag that is set to true when the collection is fully initialized
     // i.e. all shards are activated for the first time.
@@ -93,6 +95,7 @@ impl Collection {
         on_replica_failure: ChangePeerState,
         request_shard_transfer: RequestShardTransfer,
         abort_shard_transfer: replica_set::AbortShardTransfer,
+        shard_transfer_tracker: SharedShardTransferTracker,
         search_runtime: Option<Handle>,
         update_runtime: Option<Handle>,
     ) -> Result<Self, CollectionError> {
@@ -147,6 +150,7 @@ impl Collection {
             request_shard_transfer_cb: request_shard_transfer.clone(),
             notify_peer_failure_cb: on_replica_failure.clone(),
             abort_shard_transfer_cb: abort_shard_transfer,
+            shard_transfer_tracker,
             init_time: start_time.elapsed(),
             is_initialized: Arc::new(Default::default()),
             updates_lock: RwLock::new(()),
@@ -166,6 +170,7 @@ impl Collection {
         on_replica_failure: replica_set::ChangePeerState,
         request_shard_transfer: RequestShardTransfer,
         abort_shard_transfer: replica_set::AbortShardTransfer,
+        shard_transfer_tracker: SharedShardTransferTracker,
         search_runtime: Option<Handle>,
         update_runtime: Option<Handle>,
     ) -> Self {
@@ -241,6 +246,7 @@ impl Collection {
             request_shard_transfer_cb: request_shard_transfer.clone(),
             notify_peer_failure_cb: on_replica_failure,
             abort_shard_transfer_cb: abort_shard_transfer,
+            shard_transfer_tracker,
             init_time: start_time.elapsed(),
             is_initialized: Arc::new(Default::default()),
             updates_lock: RwLock::new(()),
@@ -398,7 +404,8 @@ impl Collection {
 
         // Try to request shard transfer if replicas on the current peer are dead
         if state == ReplicaState::Dead && self.this_peer_id == peer_id {
-            self.automatic_shard_recovery(shard_id, shard_holder)?;
+            self.automatic_shard_recovery(shard_id, shard_holder)
+                .await?;
         }
 
         Ok(())
@@ -412,7 +419,7 @@ impl Collection {
     /// This method will try to recover the current shard by requesting a shard transfer from a
     /// different node on which this the shard replica is alive. This will not request a transfer
     /// if we reached the shard transfer limit on this or other nodes.
-    fn automatic_shard_recovery(
+    async fn automatic_shard_recovery(
         &self,
         shard_id: ShardId,
         shard_holder: RwLockReadGuard<'_, ShardHolder>,
@@ -421,11 +428,13 @@ impl Collection {
             .get_shard(&shard_id)
             .ok_or_else(|| shard_not_found_error(shard_id))?;
 
-        // We cannot do shard transfer at this time if we reached our own limit
-        let own_transfer_count = shard_holder.count_shard_transfers_on(&self.this_peer_id);
-        if own_transfer_count >= AUTO_SHARD_TRANSFER_LIMIT {
-            log::debug!("Not requesting transfer for recovering shard {shard_id} now, reached our own shard transfer limit ({own_transfer_count}/{AUTO_SHARD_TRANSFER_LIMIT})");
-            // TODO: we must retry later!
+        let mut shard_transfer_tracker = self.shard_transfer_tracker.lock().await;
+
+        // Respect shard transfer limit on this node
+        // It will automatically be retried later while syncing local state
+        let shard_transfer_count = shard_transfer_tracker.count_on(&self.this_peer_id);
+        if shard_transfer_count >= AUTO_SHARD_TRANSFER_LIMIT {
+            log::trace!("Postponing automatic shard {shard_id} transfer to stay below limit on this node ({shard_transfer_count}/{AUTO_SHARD_TRANSFER_LIMIT})");
             return Ok(());
         }
 
@@ -434,25 +443,27 @@ impl Collection {
             .into_iter()
             // Do not transfer from ourselves
             .filter(|(peer_id, _)| peer_id != &self.this_peer_id)
-            // Do not transfer from peers that reashed the shard transfer limit
+            // Respect shard transfer limit on the other node
             .filter(|(peer_id, _)| {
-                shard_holder.count_shard_transfers_on(peer_id) < AUTO_SHARD_TRANSFER_LIMIT
+                shard_transfer_tracker.count_on(peer_id) < AUTO_SHARD_TRANSFER_LIMIT
             })
             // Find any peer that has an active replica
             .find(|(_, state)| state == &ReplicaState::Active)
             .map(|(peer_id, _)| peer_id)
         else {
-            log::warn!("No replicas to recover shard {shard_id} from, all replicas are not alive or reached shard transfer limit");
+            log::debug!("No replicas to recover shard {shard_id} from, all replicas are not alive or reached shard transfer limit");
             return Ok(());
         };
 
-        self.request_shard_transfer(ShardTransfer {
-            shard_id,
+        let shard_transfer = ShardTransfer {
             from: transfer_from,
             to: self.this_peer_id,
+            shard_id,
             sync: true,
             method: self.shared_storage_config.default_shard_transfer_method,
-        });
+        };
+        shard_transfer_tracker.propose(self.id.clone(), &shard_transfer);
+        self.request_shard_transfer(shard_transfer);
 
         Ok(())
     }
@@ -570,6 +581,14 @@ impl Collection {
 
             // Try to find dead replicas with no active transfers
             let transfers = shard_holder.get_transfers(|_| true);
+            let mut shard_transfer_tracker = self.shard_transfer_tracker.lock().await;
+
+            // Respect shard transfer limit on this node
+            let shard_transfer_count = shard_transfer_tracker.count_on(this_peer_id);
+            if shard_transfer_count >= AUTO_SHARD_TRANSFER_LIMIT {
+                log::trace!("Postponing automatic shard {shard_id} transfer to stay below limit on this node ({shard_transfer_count}/{AUTO_SHARD_TRANSFER_LIMIT})");
+                continue;
+            }
 
             // Try to find a replica to transfer from
             for replica_id in replica_set.active_remote_shards().await {
@@ -590,6 +609,13 @@ impl Collection {
                     continue; // this transfer won't work
                 }
 
+                // Respect shard transfer limit
+                let shard_transfer_count = shard_transfer_tracker.count_on(&replica_id);
+                if shard_transfer_count >= AUTO_SHARD_TRANSFER_LIMIT {
+                    log::trace!("Postponing automatic shard {shard_id} transfer to stay below limit on peer {replica_id} ({shard_transfer_count}/{AUTO_SHARD_TRANSFER_LIMIT})");
+                    continue;
+                }
+
                 // TODO: Should we, maybe, throttle/backoff this requests a bit?
                 if let Err(err) = replica_set.health_check(replica_id).await {
                     // TODO: This is rather verbose, not sure if we want to log this at all... :/
@@ -600,18 +626,15 @@ impl Collection {
                         self.id,
                         replica_set.shard_id,
                     );
-
                     continue;
                 }
 
                 log::debug!(
-                    "Recovering shard {}:{} on peer {} by requesting it from {}",
+                    "Recovering shard {}:{shard_id} on peer {this_peer_id} by requesting it from {replica_id}",
                     self.name(),
-                    shard_id,
-                    this_peer_id,
-                    replica_id
                 );
 
+                shard_transfer_tracker.propose(self.id.clone(), &transfer);
                 self.request_shard_transfer(transfer);
                 break;
             }

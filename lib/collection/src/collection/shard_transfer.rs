@@ -1,8 +1,10 @@
 use std::future::Future;
 use std::path::PathBuf;
-use std::time::Duration;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
-use common::defaults;
+use common::defaults::{self, CONSENSUS_META_OP_WAIT};
+use tokio::sync::Mutex;
 
 use super::Collection;
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -10,11 +12,18 @@ use crate::shards::local_shard::LocalShard;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::ShardHolder;
-use crate::shards::transfer;
 use crate::shards::transfer::transfer_tasks_pool::TaskResult;
 use crate::shards::transfer::{
     ShardTransfer, ShardTransferConsensus, ShardTransferKey, ShardTransferMethod,
 };
+use crate::shards::{transfer, CollectionId};
+
+/// Cooldown for proposed shard transfers, when they are not (yet) accepted by consensus
+///
+/// After this time, a proposed shard transfer is forgotten when it is not accepted by consensus.
+const SHARD_TRANSFER_PROPOSED_COOLDOWN: Duration = CONSENSUS_META_OP_WAIT;
+
+pub type SharedShardTransferTracker = Arc<Mutex<ShardTransferTracker>>;
 
 impl Collection {
     pub async fn get_outgoing_transfers(&self, current_peer_id: &PeerId) -> Vec<ShardTransfer> {
@@ -356,5 +365,91 @@ impl Collection {
                 ))),
             }
         }
+    }
+}
+
+/// A structure tracking ongoing and proposed shard transfers, usually used globally.
+///
+/// This can be used to count the number of shard transfers on some peer to rate-limit automatic
+/// transfers.
+#[derive(Debug, Default)]
+pub struct ShardTransferTracker {
+    /// Ongoing shard transfers.
+    transfers: Vec<(CollectionId, ShardTransferKey)>,
+    /// List of proposed transfers, temporarily holding transfers until they may be accepted by
+    /// consensus.
+    proposed_transfers: Vec<(CollectionId, ShardTransferKey, Instant)>,
+}
+
+impl ShardTransferTracker {
+    /// The sum of incoming and outgoing shard transfers on the given peer across all collections
+    ///
+    /// This includes both transfers in consensus and proposed transfers by this node that may not
+    /// actually be accepted by consensus yet.
+    pub fn count_on(&mut self, peer_id: &PeerId) -> usize {
+        self.forget_old_proposals();
+        let consensus_transfers = self
+            .transfers
+            .iter()
+            .filter(|(_, transfer)| transfer.from == *peer_id || transfer.to == *peer_id)
+            .count();
+        let proposed_transfers = self
+            .proposed_transfers
+            .iter()
+            .filter(|(_, transfer, _)| transfer.from == *peer_id || transfer.to == *peer_id)
+            .count();
+        consensus_transfers + proposed_transfers
+    }
+
+    pub fn propose<T>(&mut self, collection_id: CollectionId, transfer: T)
+    where
+        T: Into<ShardTransferKey>,
+    {
+        let transfer = transfer.into();
+        log::trace!("Proposed transfer for collection {collection_id} on shard transfer tracker: {transfer:?}");
+
+        self.proposed_transfers
+            .push((collection_id, transfer, Instant::now()));
+    }
+
+    pub fn add<T>(&mut self, collection_id: CollectionId, transfer: T)
+    where
+        T: Into<ShardTransferKey>,
+    {
+        let transfer = transfer.into();
+        log::trace!(
+            "Added transfer for collection {collection_id} on shard transfer tracker: {transfer:?}"
+        );
+
+        // Remove this shard transfer from proposed list
+        self.proposed_transfers
+            .retain(|(proposed_collection_id, proposed_transfer, _)| {
+                &collection_id != proposed_collection_id || proposed_transfer != &transfer
+            });
+
+        self.transfers.push((collection_id, transfer));
+    }
+
+    pub fn remove<T>(&mut self, collection_id: &CollectionId, transfer: T)
+    where
+        T: Into<ShardTransferKey>,
+    {
+        let transfer = transfer.into();
+        log::trace!("Removed transfer for collection {collection_id} on shard transfer tracker: {transfer:?}");
+
+        self.transfers
+            .retain(|(proposed_collection_id, proposed_transfer)| {
+                collection_id != proposed_collection_id || proposed_transfer != &transfer
+            });
+        self.proposed_transfers
+            .retain(|(proposed_collection_id, proposed_transfer, _)| {
+                collection_id != proposed_collection_id || proposed_transfer != &transfer
+            });
+    }
+
+    /// Forget about proposals that are too old.
+    fn forget_old_proposals(&mut self) {
+        self.proposed_transfers
+            .retain(|(_, _, instant)| instant.elapsed() < SHARD_TRANSFER_PROPOSED_COOLDOWN);
     }
 }
