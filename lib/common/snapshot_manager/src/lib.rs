@@ -7,7 +7,7 @@ use std::time::SystemTime;
 use ::s3::creds::Credentials;
 use ::s3::{Bucket, Region};
 use api::grpc::conversions::date_time_to_proto;
-use chrono::NaiveDateTime;
+use chrono::{DateTime, NaiveDateTime};
 use error::SnapshotManagerError;
 use path_clean::PathClean;
 use schemars::JsonSchema;
@@ -191,7 +191,8 @@ impl SnapshotManager {
 
             let creation_time = head
                 .last_modified
-                .and_then(|x| NaiveDateTime::parse_from_str(&x, "&a, %d %b %Y %H:%M:%S %Z").ok());
+                .and_then(|x| DateTime::parse_from_rfc2822(&x).ok())
+                .map(|x| x.naive_local());
 
             (creation_time, head.content_length.unwrap_or(0) as u64)
         } else {
