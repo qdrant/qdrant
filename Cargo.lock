@@ -487,7 +487,6 @@ dependencies = [
  "parking_lot",
  "prost 0.11.9",
  "prost-build 0.11.9",
- "prost-types 0.11.9",
  "prost-wkt-types",
  "rand 0.8.5",
  "schemars",
