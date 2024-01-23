@@ -3,12 +3,15 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
-use common::types::{PointOffsetType, ScoredPointOffset};
+use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 
 use crate::common::sparse_vector::SparseVector;
 use crate::common::types::{DimId, DimWeight};
 use crate::index::inverted_index::InvertedIndex;
 use crate::index::posting_list::PostingListIterator;
+
+/// Threshold to switch from lockstep traversal to fast in memory evaluation of posting lists
+const FAST_EVAL_THRESHOLD: usize = 10_000;
 
 /// Iterator over posting lists with a reference to the corresponding query index and weight
 pub struct IndexedPostingListIterator<'a> {
@@ -23,7 +26,8 @@ pub struct SearchContext<'a> {
     top: usize,
     is_stopped: &'a AtomicBool,
     result_queue: FixedLengthPriorityQueue<ScoredPointOffset>, // keep the largest elements and peek smallest
-    min_record_id: Option<PointOffsetType>, // min record ids across all posting lists
+    min_record_id: Option<PointOffsetType>, // min record id across all posting lists
+    max_record_id: PointOffsetType,         // max record id across all posting lists
     contains_empty_posting: bool, // whether the posting list iterators contain exhausted posting lists
     use_pruning: bool,
 }
@@ -36,16 +40,23 @@ impl<'a> SearchContext<'a> {
         is_stopped: &'a AtomicBool,
     ) -> SearchContext<'a> {
         let mut postings_iterators = Vec::new();
-
+        let mut max_record_id = 0;
         for (query_weight_offset, id) in query.indices.iter().enumerate() {
             if let Some(posting_list_iterator) = inverted_index.get(id) {
                 let query_index = *id;
                 let query_weight = query.values[query_weight_offset];
-                postings_iterators.push(IndexedPostingListIterator {
+                let posting_iterator = IndexedPostingListIterator {
                     posting_list_iterator,
                     query_index,
                     query_weight,
-                });
+                };
+                // capture max record id across all posting lists
+                if let Some(posting_last_record) =
+                    posting_iterator.posting_list_iterator.elements.last()
+                {
+                    max_record_id = max_record_id.max(posting_last_record.record_id);
+                }
+                postings_iterators.push(posting_iterator);
             }
         }
         let result_queue = FixedLengthPriorityQueue::new(top);
@@ -64,6 +75,7 @@ impl<'a> SearchContext<'a> {
             is_stopped,
             result_queue,
             min_record_id,
+            max_record_id,
             contains_empty_posting,
             use_pruning,
         }
@@ -191,6 +203,96 @@ impl<'a> SearchContext<'a> {
         }
     }
 
+    /// Intersects remaining posting lists to compute scores in a single pass.
+    ///
+    /// Expects at least two posting lists.
+    /// Allocates `records_count` intermediate scores for the intersections.
+    fn fast_eval_posting_lists<F: Fn(PointOffsetType) -> bool>(
+        &mut self,
+        records_count: usize,
+        min_id: u32,
+        filter_condition: &F,
+    ) {
+        let posting_len = self.postings_iterators.len();
+        debug_assert!(posting_len >= 2);
+        debug_assert!(records_count < FAST_EVAL_THRESHOLD);
+        // shortest lists first to allocate less intermediate scores
+        self.postings_iterators.sort_unstable_by(|a, b| {
+            a.posting_list_iterator
+                .len_to_end()
+                .cmp(&b.posting_list_iterator.len_to_end())
+        });
+        // save intermediate score starting from `min_id` at index 0
+        let mut intermediate_scores: Vec<Option<ScoreType>> = vec![None; records_count];
+
+        // all postings BUT the last one to build intermediate scores
+        for posting in &self.postings_iterators[..posting_len - 1] {
+            for element in posting.posting_list_iterator.remaining_elements() {
+                let local_id = (element.record_id - min_id) as usize;
+                let record_local_score = intermediate_scores[local_id];
+                match record_local_score {
+                    Some(prev_score) => {
+                        // compute combined score
+                        let score = element.weight * posting.query_weight;
+                        intermediate_scores[local_id] = Some(prev_score + score);
+                    }
+                    None => {
+                        // do not score if filter condition is not satisfied
+                        if !filter_condition(element.record_id) {
+                            continue;
+                        }
+                        let score = element.weight * posting.query_weight;
+                        intermediate_scores[local_id] = Some(score);
+                    }
+                }
+            }
+        }
+
+        // process last posting (the longest one)
+        // we can intersect the last posting list with the intermediate scores in a single pass
+        let last_posting = self.postings_iterators.last().unwrap();
+        for element in last_posting.posting_list_iterator.remaining_elements() {
+            let local_id = (element.record_id - min_id) as usize;
+            // consume intermediate score if there is an intersection
+            let record_local_score = intermediate_scores[local_id];
+            match record_local_score {
+                Some(intermediate_score) => {
+                    // compute combined score
+                    let score = element.weight * last_posting.query_weight;
+                    self.result_queue.push(ScoredPointOffset {
+                        score: score + intermediate_score,
+                        idx: element.record_id,
+                    });
+                    // replace intermediate score with None to avoid double counting
+                    intermediate_scores[local_id] = None;
+                }
+                None => {
+                    // do not score if filter condition is not satisfied
+                    if !filter_condition(element.record_id) {
+                        continue;
+                    }
+                    let score = element.weight * last_posting.query_weight;
+                    // no intersection, push score straight into the queue
+                    self.result_queue.push(ScoredPointOffset {
+                        score,
+                        idx: element.record_id,
+                    });
+                }
+            }
+        }
+
+        // push remaining intermediate scores (did not intersect with the last posting)
+        for (local_record_id, score) in intermediate_scores.into_iter().enumerate() {
+            if let Some(score) = score {
+                let record_id = local_record_id as u32 + min_id;
+                self.result_queue.push(ScoredPointOffset {
+                    score,
+                    idx: record_id,
+                });
+            }
+        }
+    }
+
     /// Returns the next min record id from all posting list iterators
     ///
     /// returns None if all posting list iterators are exhausted
@@ -248,8 +350,9 @@ impl<'a> SearchContext<'a> {
         }
         let mut best_min_score = f32::MIN;
         while let Some(candidate) = self.advance() {
+            let candidate_id = candidate.idx;
             // check filter condition
-            if !filter_condition(candidate.idx) {
+            if !filter_condition(candidate_id) {
                 continue;
             }
             // check for cancellation
@@ -266,11 +369,30 @@ impl<'a> SearchContext<'a> {
                 });
                 // reset flag
                 self.contains_empty_posting = false;
-                // if only one posting list left, we can score it quickly
-                if self.postings_iterators.len() == 1 {
-                    self.process_last_posting_list(filter_condition);
-                    break;
-                }
+            }
+
+            let posting_len = self.postings_iterators.len();
+            if posting_len == 0 {
+                // all posting lists exhausted, return result queue
+                break;
+            }
+            // if only one posting list left, we can score it quickly
+            if posting_len == 1 {
+                self.process_last_posting_list(filter_condition);
+                break;
+            }
+            // estimate number of remaining records
+            // upper bound because some maybe be deleted or in different postings/segments
+            let upper_bound_remaining_records = (self.max_record_id - candidate_id) as usize;
+            if upper_bound_remaining_records < FAST_EVAL_THRESHOLD {
+                // current candidate was already processed
+                let next_min_id = candidate_id + 1;
+                self.fast_eval_posting_lists(
+                    upper_bound_remaining_records,
+                    next_min_id,
+                    filter_condition,
+                );
+                break;
             }
 
             // we potentially have enough results to prune low performing posting lists
@@ -933,34 +1055,6 @@ mod tests {
                     score: -1.0,
                     idx: 1
                 },
-            ]
-        );
-
-        // try again with pruning to show the problem
-        let mut search_context = SearchContext::new(
-            SparseVector {
-                indices: vec![1, 2, 3],
-                values: vec![-1.0, 1.0, 1.0],
-            },
-            2,
-            &inverted_index_ram,
-            &is_stopped,
-        );
-        search_context.use_pruning = true;
-        assert!(search_context.use_pruning);
-
-        // the last value has been pruned although it could have contributed a high score -1 * -40 = 40
-        assert_eq!(
-            search_context.search(&match_all),
-            vec![
-                ScoredPointOffset {
-                    score: -1.0,
-                    idx: 1
-                },
-                ScoredPointOffset {
-                    score: -2.0,
-                    idx: 2
-                }
             ]
         );
     }

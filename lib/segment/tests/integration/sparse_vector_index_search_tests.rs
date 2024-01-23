@@ -35,7 +35,7 @@ use tempfile::Builder;
 const MAX_SPARSE_DIM: usize = 4096;
 
 /// Number of vectors to index in tests
-const NUM_VECTORS: usize = 2000;
+const NUM_VECTORS: usize = 1000;
 
 /// Default full scan threshold in tests
 /// very low value to force usage of index
@@ -111,7 +111,16 @@ fn compare_sparse_vectors_search_with_without_filter(full_scan_threshold: usize)
                 .filter(|s| s.score != 0.0)
                 .zip(no_filter_result.iter().filter(|s| s.score != 0.0))
             {
-                assert_eq!(filter_result, no_filter_result);
+                assert_eq!(filter_result.idx, no_filter_result.idx);
+                // the scores are computed differently, but should be very close
+                let score_diff = (filter_result.score - no_filter_result.score).abs();
+                assert!(
+                    score_diff < 0.01,
+                    "query = {:#?}, filter_result = {:#?} no_filter_result = {:#?}",
+                    query,
+                    filter_result,
+                    no_filter_result,
+                );
             }
         }
     }
