@@ -11,6 +11,8 @@ use thiserror::Error;
 pub enum StorageError {
     #[error("Wrong input: {description}")]
     BadInput { description: String },
+    #[error("Wrong input: {description}")]
+    AlreadyExists { description: String },
     #[error("Not found: {description}")]
     NotFound { description: String },
     #[error("Service internal error: {description}")]
@@ -42,6 +44,12 @@ impl StorageError {
 
     pub fn bad_input(description: impl Into<String>) -> StorageError {
         StorageError::BadInput {
+            description: description.into(),
+        }
+    }
+
+    pub fn already_exists(description: impl Into<String>) -> StorageError {
+        StorageError::AlreadyExists {
             description: description.into(),
         }
     }
