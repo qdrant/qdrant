@@ -14,10 +14,9 @@ tracing = ["dep:tracing", "api/tracing", "collection/tracing", "segment/tracing"
 [dev-dependencies]
 tempfile = "3.9.0"
 proptest = "1.4.0"
-env_logger = "0.10.1"
+env_logger = "0.10.2"
 
 [dependencies]
-num_cpus = "1.16"
 thiserror = "1.0"
 rand = "0.8.5"
 wal = { git = "https://github.com/qdrant/wal.git", rev = "fad0e7c48be58d8e7db4cc739acd9b1cf6735de0" }
@@ -51,7 +50,7 @@ collection = { path = "../collection" }
 api = { path = "../api" }
 futures = "0.3.30"
 anyhow = "1.0.79"
-uuid = "1.6.1"
+uuid = "1.7.0"
 url = "2.5.0"
 reqwest = { version = "0.11", default-features = false, features = ["stream", "rustls-tls"] }
 tempfile = "3.9.0"

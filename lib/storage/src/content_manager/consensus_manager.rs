@@ -142,6 +142,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         }
         entry.count += 1;
         entry.latest_error = Some(error.to_string());
+        entry.latest_error_timestamp = Some(Utc::now());
     }
 
     pub fn record_message_send_success(&self, peer_address: &Uri) {
