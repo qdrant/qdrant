@@ -31,24 +31,11 @@ impl Collection {
             .await?)
     }
 
-    /// Creates a snapshot of the collection.
-    ///
-    /// The snapshot is created in three steps:
-    /// 1. Create a temporary directory and create a snapshot of each shard in it.
-    /// 2. Archive the temporary directory into a single file.
-    /// 3. Move the archive to the final location.
-    ///
-    /// # Arguments
-    ///
-    /// * `global_temp_dir`: directory used to host snapshots while they are being created
-    /// * `this_peer_id`: current peer id
-    ///
-    /// returns: Result<(SnapshotFile, SnapshotDescription), CollectionError>
-    pub async fn create_snapshot(
+    pub async fn create_temp_snapshot(
         &self,
         global_temp_dir: &Path,
         this_peer_id: PeerId,
-    ) -> CollectionResult<(SnapshotFile, SnapshotDescription)> {
+    ) -> CollectionResult<(SnapshotFile, TempPath, TempPath)> {
         let snapshot_name = format!(
             "{}-{this_peer_id}-{}.snapshot",
             self.name(),
@@ -150,11 +137,40 @@ impl Collection {
 
         // Snapshot files are ready now, hand them off to the manager
         let snapshot = SnapshotFile::new_collection(snapshot.name(), self.name());
+
+        Ok((
+            snapshot,
+            snapshot_file,
+            checksum_file,
+        ))
+    }
+
+    /// Creates a snapshot of the collection.
+    ///
+    /// The snapshot is created in three steps:
+    /// 1. Create a temporary directory and create a snapshot of each shard in it.
+    /// 2. Archive the temporary directory into a single file.
+    /// 3. Move the archive to the final location.
+    ///
+    /// # Arguments
+    ///
+    /// * `global_temp_dir`: directory used to host snapshots while they are being created
+    /// * `this_peer_id`: current peer id
+    ///
+    /// returns: Result<(SnapshotFile, SnapshotDescription), CollectionError>
+    pub async fn create_snapshot(
+        &self,
+        global_temp_dir: &Path,
+        this_peer_id: PeerId,
+    ) -> CollectionResult<(SnapshotFile, SnapshotDescription)> {
+        let (snapshot, snapshot_file, checksum_file) =
+            self.create_temp_snapshot(global_temp_dir, this_peer_id).await?;
+        
         self.snapshot_manager
             .save_snapshot(&snapshot, snapshot_file, checksum_file)
             .await?;
 
-        log::info!("Collection snapshot {snapshot_name} completed");
+        log::info!("Collection snapshot {} completed", snapshot.name());
         Ok((
             snapshot.clone(),
             self.snapshot_manager

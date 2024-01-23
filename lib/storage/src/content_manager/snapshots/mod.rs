@@ -10,6 +10,7 @@ use snapshot_manager::error::SnapshotManagerError;
 use snapshot_manager::file::SnapshotFile;
 use snapshot_manager::SnapshotDescription;
 use tar::Builder as TarBuilder;
+use tempfile::TempPath;
 use tokio::io::AsyncWriteExt;
 
 use super::errors::StorageError;
@@ -46,10 +47,10 @@ async fn _do_create_full_snapshot(
     let base: PathBuf = dispatcher.snapshots_temp_path()?;
 
     let all_collections = dispatcher.all_collections().await;
-    let mut created_snapshots: Vec<SnapshotFile> = vec![];
+    let mut created_snapshots: Vec<(SnapshotFile, TempPath, TempPath)> = vec![];
     for collection_name in &all_collections {
-        let (snapshot, _) = dispatcher.create_snapshot(collection_name).await?;
-        created_snapshots.push(snapshot);
+        let (snapshot, snapshot_file, checksum_file) = dispatcher.create_temp_snapshot(collection_name).await?;
+        created_snapshots.push((snapshot, snapshot_file, checksum_file));
     }
     let current_time = chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S").to_string();
 
@@ -59,8 +60,8 @@ async fn _do_create_full_snapshot(
         .iter()
         .map(|x| {
             (
-                x.collection().unwrap(),
-                x.get_path(&base).to_string_lossy().to_string(),
+                x.0.collection().unwrap(),
+                x.1.to_path_buf().to_string_lossy().to_string(),
             )
         })
         .collect();
@@ -95,21 +96,14 @@ async fn _do_create_full_snapshot(
 
     let config_path_clone = config_path.clone();
     let full_snapshot_path_clone = full_snapshot_path.clone();
-    let created_snapshots_clone: Vec<_> = created_snapshots.iter().map(|x| x.clone()).collect();
-    let base_clone = base.clone();
     let archiving = tokio::task::spawn_blocking(move || {
-        let base = base_clone;
         // have to use std here, cause TarBuilder is not async
         let file = std::fs::File::create(&full_snapshot_path_clone)?;
         let mut builder = TarBuilder::new(file);
-        for snapshot in created_snapshots_clone {
-            let snapshot_path = snapshot.get_path(&base);
+        for (snapshot, snapshot_path, checksum_path) in created_snapshots {
             builder.append_path_with_name(&snapshot_path, &snapshot.name())?;
-            std::fs::remove_file(&snapshot_path)?;
-
-            // Remove associated checksum if there is one
-            let snapshot_checksum = snapshot.get_checksum_path(&base);
-            if let Err(err) = std::fs::remove_file(snapshot_checksum) {
+            snapshot_path.close()?;
+            if let Err(err) = checksum_path.close() {
                 log::warn!("Failed to delete checksum file for snapshot, ignoring: {err}");
             }
         }

@@ -3,6 +3,7 @@ use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::transfer::{ShardTransfer, ShardTransferMethod};
 use snapshot_manager::file::SnapshotFile;
 use snapshot_manager::SnapshotDescription;
+use tempfile::TempPath;
 
 use super::TableOfContent;
 use crate::content_manager::consensus::operation_sender::OperationSender;
@@ -10,6 +11,19 @@ use crate::content_manager::consensus_ops::ConsensusOperations;
 use crate::content_manager::errors::StorageError;
 
 impl TableOfContent {
+    pub async fn create_temp_snapshot(
+        &self,
+        collection_name: &str,
+    ) -> Result<(SnapshotFile, TempPath, TempPath), StorageError> {
+        let collection = self.get_collection(collection_name).await?;
+        // We want to use temp dir inside the temp_path (storage if not specified), because it is possible, that
+        // snapshot directory is mounted as network share and multiple writes to it could be slow
+        let temp_dir = self.optional_temp_or_storage_temp_path()?;
+        Ok(collection
+            .create_temp_snapshot(&temp_dir, self.this_peer_id)
+            .await?)
+    }
+
     pub async fn create_snapshot(
         &self,
         collection_name: &str,
