@@ -71,10 +71,10 @@ Qdrant offers the following client libraries to help you integrate it into your 
 - Official: [JavaScript/TypeScript client](https://github.com/qdrant/qdrant-js)
 - Official: [Python client](https://github.com/qdrant/qdrant-client)
 - Official: [.NET/C# client](https://github.com/qdrant/qdrant-dotnet)
+- Official: [Java](https://github.com/qdrant/java-client)
 - Community: [Elixir](https://hexdocs.pm/qdrant/readme.html)
 - Community: [PHP](https://github.com/hkulekci/qdrant-php)
 - Community: [Ruby](https://github.com/andreibondarev/qdrant-ruby)
-- Community: [Java](https://github.com/metaloom/qdrant-java-client)
 
 ### Where do I go from here?
 
