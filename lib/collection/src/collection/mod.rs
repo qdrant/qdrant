@@ -19,7 +19,7 @@ use semver::Version;
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use self::shard_transfer::SharedShardTransferTracker;
+use self::shard_transfer::ShardTransferTracker;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_state::{ShardInfo, State};
 use crate::common::is_ready::IsReady;
@@ -55,7 +55,7 @@ pub struct Collection {
     #[allow(dead_code)] //Might be useful in case of repartition implementation
     notify_peer_failure_cb: ChangePeerState,
     abort_shard_transfer_cb: replica_set::AbortShardTransfer,
-    shard_transfer_tracker: SharedShardTransferTracker,
+    shard_transfer_tracker: Mutex<ShardTransferTracker>,
     init_time: Duration,
     // One-way boolean flag that is set to true when the collection is fully initialized
     // i.e. all shards are activated for the first time.
@@ -89,7 +89,6 @@ impl Collection {
         on_replica_failure: ChangePeerState,
         request_shard_transfer: RequestShardTransfer,
         abort_shard_transfer: replica_set::AbortShardTransfer,
-        shard_transfer_tracker: SharedShardTransferTracker,
         search_runtime: Option<Handle>,
         update_runtime: Option<Handle>,
     ) -> Result<Self, CollectionError> {
@@ -144,7 +143,7 @@ impl Collection {
             request_shard_transfer_cb: request_shard_transfer.clone(),
             notify_peer_failure_cb: on_replica_failure.clone(),
             abort_shard_transfer_cb: abort_shard_transfer,
-            shard_transfer_tracker,
+            shard_transfer_tracker: Default::default(),
             init_time: start_time.elapsed(),
             is_initialized: Arc::new(Default::default()),
             updates_lock: RwLock::new(()),
@@ -164,7 +163,6 @@ impl Collection {
         on_replica_failure: replica_set::ChangePeerState,
         request_shard_transfer: RequestShardTransfer,
         abort_shard_transfer: replica_set::AbortShardTransfer,
-        shard_transfer_tracker: SharedShardTransferTracker,
         search_runtime: Option<Handle>,
         update_runtime: Option<Handle>,
     ) -> Self {
@@ -240,7 +238,7 @@ impl Collection {
             request_shard_transfer_cb: request_shard_transfer.clone(),
             notify_peer_failure_cb: on_replica_failure,
             abort_shard_transfer_cb: abort_shard_transfer,
-            shard_transfer_tracker,
+            shard_transfer_tracker: Default::default(),
             init_time: start_time.elapsed(),
             is_initialized: Arc::new(Default::default()),
             updates_lock: RwLock::new(()),
@@ -460,7 +458,7 @@ impl Collection {
             sync: true,
             method: self.shared_storage_config.default_shard_transfer_method,
         };
-        shard_transfer_tracker.propose(self.id.clone(), &shard_transfer);
+        shard_transfer_tracker.propose(&shard_transfer);
         self.request_shard_transfer(shard_transfer);
 
         Ok(())
@@ -640,7 +638,7 @@ impl Collection {
                     self.name(),
                 );
 
-                shard_transfer_tracker.propose(self.id.clone(), &transfer);
+                shard_transfer_tracker.propose(&transfer);
                 self.request_shard_transfer(transfer);
                 break;
             }

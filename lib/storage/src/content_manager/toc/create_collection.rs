@@ -181,7 +181,6 @@ impl TableOfContent {
                 self.consensus_proposal_sender.clone(),
                 collection_name.to_string(),
             ),
-            self.shard_transfer_tracker.clone(),
             Some(self.search_runtime.handle().clone()),
             Some(self.update_runtime.handle().clone()),
         )

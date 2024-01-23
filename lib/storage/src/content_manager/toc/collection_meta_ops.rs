@@ -338,11 +338,6 @@ impl TableOfContent {
                         on_failure,
                     )
                     .await?;
-
-                self.shard_transfer_tracker
-                    .lock()
-                    .await
-                    .add(collection_id.clone(), transfer);
             }
             ShardTransferOperations::Finish(transfer) => {
                 // Validate transfer exists to prevent double handling
@@ -350,12 +345,6 @@ impl TableOfContent {
                     &transfer.key(),
                     &collection.state().await.transfers,
                 )?;
-
-                self.shard_transfer_tracker
-                    .lock()
-                    .await
-                    .remove(&collection_id, &transfer);
-
                 collection.finish_shard_transfer(transfer).await?;
             }
             ShardTransferOperations::SnapshotRecovered(transfer) => {
@@ -387,12 +376,6 @@ impl TableOfContent {
                     &collection.state().await.transfers,
                 )?;
                 log::warn!("Aborting shard transfer: {reason}");
-
-                self.shard_transfer_tracker
-                    .lock()
-                    .await
-                    .remove(&collection_id, transfer);
-
                 collection.abort_shard_transfer(transfer).await?;
             }
         };
