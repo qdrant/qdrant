@@ -1,8 +1,8 @@
 use std::future::Future;
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use common::defaults::{self, CONSENSUS_META_OP_WAIT};
+use common::defaults;
 
 use super::Collection;
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -15,11 +15,6 @@ use crate::shards::transfer::transfer_tasks_pool::TaskResult;
 use crate::shards::transfer::{
     ShardTransfer, ShardTransferConsensus, ShardTransferKey, ShardTransferMethod,
 };
-
-/// Cooldown for proposed shard transfers, when they are not (yet) accepted by consensus
-///
-/// After this time, a proposed shard transfer is forgotten when it is not accepted by consensus.
-const SHARD_TRANSFER_PROPOSED_COOLDOWN: Duration = CONSENSUS_META_OP_WAIT;
 
 impl Collection {
     pub async fn get_outgoing_transfers(&self, current_peer_id: &PeerId) -> Vec<ShardTransfer> {
@@ -57,11 +52,6 @@ impl Collection {
             log::warn!("No shard transfer method selected, defaulting to {method:?}");
             shard_transfer.method.replace(method);
         }
-
-        self.shard_transfer_tracker
-            .lock()
-            .await
-            .add(&shard_transfer);
 
         let shard_id = shard_transfer.shard_id;
         let do_transfer = {
@@ -172,8 +162,6 @@ impl Collection {
             .is_finished();
         log::debug!("transfer_finished: {transfer_finished}");
 
-        self.shard_transfer_tracker.lock().await.remove(&transfer);
-
         let shards_holder_guard = self.shards_holder.read().await;
 
         // Should happen on transfer side
@@ -252,11 +240,6 @@ impl Collection {
             .stop_if_exists(&transfer_key)
             .await
             .is_finished();
-
-        self.shard_transfer_tracker
-            .lock()
-            .await
-            .remove(transfer_key);
 
         let replica_set =
             if let Some(replica_set) = shard_holder_guard.get_shard(&transfer_key.shard_id) {
@@ -386,82 +369,5 @@ impl Collection {
                 .outgoing_shard_transfers_limit
                 .map(|limit| outgoing >= limit)
                 .unwrap_or(false)
-    }
-}
-
-/// A structure tracking ongoing and proposed shard transfers, usually used globally.
-///
-/// This can be used to count the number of shard transfers on some peer to rate-limit automatic
-/// transfers.
-#[derive(Debug, Default)]
-pub struct ShardTransferTracker {
-    /// Ongoing shard transfers.
-    transfers: Vec<ShardTransferKey>,
-    /// List of proposed transfers, temporarily holding transfers until they may be accepted by
-    /// consensus.
-    proposed_transfers: Vec<(ShardTransferKey, Instant)>,
-}
-
-impl ShardTransferTracker {
-    /// The count of incoming and outgoing shard transfers on the given peer
-    ///
-    /// This includes both transfers in consensus and proposed transfers by this node that may not
-    /// actually be accepted by consensus yet.
-    pub fn count_io(&mut self, peer_id: &PeerId) -> (usize, usize) {
-        self.forget_old_proposals();
-        self.transfers
-            .iter()
-            .map(|transfer| (transfer.to == *peer_id, transfer.from == *peer_id))
-            .chain(
-                self.proposed_transfers
-                    .iter()
-                    .map(|(transfer, _)| (transfer.to == *peer_id, transfer.from == *peer_id)),
-            )
-            .fold((0, 0), |(i, o), (is_outgoing, is_incoming)| {
-                (i + is_outgoing as usize, o + is_incoming as usize)
-            })
-    }
-
-    pub fn propose<T>(&mut self, transfer: T)
-    where
-        T: Into<ShardTransferKey>,
-    {
-        let transfer = transfer.into();
-        log::trace!("Proposed transfer in shard transfer tracker: {transfer:?}");
-
-        self.proposed_transfers.push((transfer, Instant::now()));
-    }
-
-    pub fn add<T>(&mut self, transfer: T)
-    where
-        T: Into<ShardTransferKey>,
-    {
-        let transfer = transfer.into();
-        log::trace!("Added transfer in shard transfer tracker: {transfer:?}");
-
-        // Remove this shard transfer from proposed list
-        self.proposed_transfers
-            .retain(|(proposed_transfer, _)| proposed_transfer != &transfer);
-
-        self.transfers.push(transfer);
-    }
-
-    pub fn remove<T>(&mut self, transfer: T)
-    where
-        T: Into<ShardTransferKey>,
-    {
-        let transfer = transfer.into();
-        log::trace!("Removed transfer in shard transfer tracker: {transfer:?}");
-
-        self.transfers
-            .retain(|active_transfer| active_transfer != &transfer);
-        self.proposed_transfers
-            .retain(|(proposed_transfer, _)| proposed_transfer != &transfer);
-    }
-
-    /// Forget about proposals that are too old.
-    fn forget_old_proposals(&mut self) {
-        self.proposed_transfers
-            .retain(|(_, instant)| instant.elapsed() < SHARD_TRANSFER_PROPOSED_COOLDOWN);
     }
 }
