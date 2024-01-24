@@ -39,15 +39,6 @@ async fn create_shard_key(
     )
     .await;
 
-    let response = if response.is_ok() {
-        match dispatcher.await_consensus_sync(wait_timeout).await {
-            Ok(_) => response,
-            Err(x) => Err(x),
-        }
-    } else {
-        response
-    };
-
     process_response(response, timing)
 }
 
