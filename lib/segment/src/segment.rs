@@ -689,7 +689,7 @@ impl Segment {
     pub fn filtered_read_by_value_stream(
         &self,
         order_by: &OrderBy,
-        offset: Option<PointIdType>,
+        id_offset: Option<PointIdType>,
         limit: Option<usize>,
         filter: Option<&Filter>,
     ) -> OperationResult<Vec<(f64, PointIdType)>> {
@@ -705,7 +705,7 @@ impl Segment {
 
         let range_iter = numeric_index.stream_with_value(&order_by.as_range());
 
-        let offset_key = order_by.offset_key(offset);
+        let offset_key = order_by.offset_key(id_offset);
 
         let ordered_iter =
             OrderedByFieldIterator::new(range_iter, id_tracker.deref(), order_by.direction())
@@ -1142,13 +1142,14 @@ impl SegmentEntry for Segment {
 
     fn read_ordered_filtered<'a>(
         &'a self,
-        offset: Option<PointIdType>,
+        id_offset: Option<PointIdType>,
         limit: Option<usize>,
         filter: Option<&'a Filter>,
         order_by: &'a OrderBy,
     ) -> OperationResult<Vec<(OrderedFloat<f64>, PointIdType)>> {
+        // TODO: make same optimization for high-constraining filters as in `read_filtered`
         let reads = self
-            .filtered_read_by_value_stream(order_by, offset, limit, filter)?
+            .filtered_read_by_value_stream(order_by, id_offset, limit, filter)?
             .into_iter()
             .map(|(value, point_id)| (OrderedFloat(value), point_id))
             .collect_vec();

@@ -1724,7 +1724,7 @@ impl TryFrom<api::grpc::qdrant::OrderBy> for OrderByInterface {
         Ok(Self::Struct(OrderBy {
             key: value.key,
             direction,
-            value_offset: None,
+            value_offset: value.value_offset,
         }))
     }
 }

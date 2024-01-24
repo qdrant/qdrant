@@ -33,7 +33,6 @@ impl Direction {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, Default)]
-#[serde(deny_unknown_fields)]
 #[serde(rename_all = "snake_case")]
 pub struct OrderBy {
     /// Payload key to order by
@@ -42,9 +41,8 @@ pub struct OrderBy {
     /// Direction of ordering: `asc` or `desc`. Default is ascending.
     pub direction: Option<Direction>,
 
-    /// Used internally (not exposed to the user in scroll) to know which payload value to start scrolling from,
-    /// we get this offset value by fetching the offset id in the request
-    #[serde(skip)]
+    /// Which payload value to start scrolling from.
+    /// If not provided, this offset value is fetched from the offset id in the request
     pub value_offset: Option<f64>,
 }
 

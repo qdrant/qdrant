@@ -145,7 +145,7 @@ impl Collection {
     ) -> CollectionResult<ScrollResult> {
         let default_request = ScrollRequestInternal::default();
 
-        let offset = request.offset;
+        let id_offset = request.offset;
         let limit = request
             .limit
             .unwrap_or_else(|| default_request.limit.unwrap());
@@ -174,46 +174,22 @@ impl Collection {
                 )));
             }
 
-            // Fetch offset id to get offset value
-            order_by.value_offset = if let Some(offset) = offset {
-                let with_payload_interface =
-                    WithPayloadInterface::Fields(vec![order_by.key.clone()]);
-                let with_payload = WithPayload::from(&with_payload_interface);
-
-                let retrieve_request = Arc::new(PointRequestInternal {
-                    ids: vec![offset],
-                    with_payload: Some(with_payload_interface),
-                    with_vector: false.into(),
-                });
-
-                let offset_point: Vec<_> = {
-                    let shards_holder = self.shards_holder.read().await;
-                    let target_shards = shards_holder.select_shards(shard_selection)?;
-                    let scroll_futures = target_shards.into_iter().map(|(shard, _shard_key)| {
-                        let retrieve_request = retrieve_request.clone();
-                        shard.retrieve(
-                            retrieve_request,
-                            &with_payload,
+            // Try to get offset value by fetching id offset point
+            if order_by.value_offset.is_none() {
+                order_by.value_offset = match id_offset {
+                    Some(id_offset) => {
+                        self.fetch_offset_value(
+                            order_by,
+                            id_offset,
+                            shard_selection,
                             &with_vector,
                             read_consistency,
-                            false,
                         )
-                    });
-
-                    future::try_join_all(scroll_futures).await?
-                };
-
-                // Extract number value from payload
-                offset_point
-                    .iter()
-                    .flatten()
-                    .next()
-                    .and_then(|offset_point| offset_point.payload.as_ref())
-                    .map(|payload| payload.get_value(&order_by.key))
-                    .and_then(|multi_value| multi_value.values().iter().find_map(|v| v.as_f64()))
-            } else {
-                None
-            };
+                        .await?
+                    }
+                    None => None,
+                }
+            }
         };
 
         if limit == 0 {
@@ -231,7 +207,7 @@ impl Collection {
                 let shard_key = shard_key.cloned();
                 shard
                     .scroll_by(
-                        offset,
+                        id_offset,
                         limit,
                         &with_payload_interface,
                         &with_vector,
@@ -388,5 +364,45 @@ impl Collection {
         };
         let points = all_shard_collection_results.into_iter().flatten().collect();
         Ok(points)
+    }
+
+    async fn fetch_offset_value(
+        &self,
+        order_by: &mut OrderBy,
+        id_offset: segment::types::ExtendedPointId,
+        shard_selection: &ShardSelectorInternal,
+        with_vector: &segment::types::WithVector,
+        read_consistency: Option<ReadConsistency>,
+    ) -> Result<Option<f64>, CollectionError> {
+        let with_payload_interface = WithPayloadInterface::Fields(vec![order_by.key.clone()]);
+        let with_payload = WithPayload::from(&with_payload_interface);
+        let retrieve_request = Arc::new(PointRequestInternal {
+            ids: vec![id_offset],
+            with_payload: Some(with_payload_interface),
+            with_vector: false.into(),
+        });
+        let offset_point: Vec<_> = {
+            let shards_holder = self.shards_holder.read().await;
+            let target_shards = shards_holder.select_shards(shard_selection)?;
+            let scroll_futures = target_shards.into_iter().map(|(shard, _shard_key)| {
+                let retrieve_request = retrieve_request.clone();
+                shard.retrieve(
+                    retrieve_request,
+                    &with_payload,
+                    with_vector,
+                    read_consistency,
+                    false,
+                )
+            });
+
+            future::try_join_all(scroll_futures).await?
+        };
+        Ok(offset_point
+            .iter()
+            .flatten()
+            .next()
+            .and_then(|offset_point| offset_point.payload.as_ref())
+            .map(|payload| payload.get_value(&order_by.key))
+            .and_then(|multi_value| multi_value.values().iter().find_map(|v| v.as_f64())))
     }
 }

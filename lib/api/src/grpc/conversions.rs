@@ -1222,6 +1222,7 @@ impl From<segment::data_types::order_by::OrderBy> for OrderBy {
         Self {
             key: value.key,
             direction: value.direction.map(|d| Direction::from(d) as i32),
+            value_offset: value.value_offset,
         }
     }
 }

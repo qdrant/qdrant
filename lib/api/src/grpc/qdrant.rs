@@ -3769,6 +3769,8 @@ pub struct OrderBy {
     /// Ascending or descending order
     #[prost(enumeration = "Direction", optional, tag = "2")]
     pub direction: ::core::option::Option<i32>,
+    #[prost(double, optional, tag = "3")]
+    pub value_offset: ::core::option::Option<f64>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

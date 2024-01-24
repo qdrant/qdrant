@@ -307,6 +307,7 @@ enum Direction {
 message OrderBy {
   string key = 1; // Payload key to order by
   optional Direction direction = 2; // Ascending or descending order
+  optional double value_offset = 3;
 }
 
 message ScrollPoints {

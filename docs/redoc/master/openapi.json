@@ -7167,9 +7167,14 @@
                 "nullable": true
               }
             ]
+          },
+          "value_offset": {
+            "description": "Which payload value to start scrolling from. If not provided, this offset value is fetched from the offset id in the request",
+            "type": "number",
+            "format": "double",
+            "nullable": true
           }
-        },
-        "additionalProperties": false
+        }
       },
       "Direction": {
         "type": "string",

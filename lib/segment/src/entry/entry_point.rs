@@ -129,7 +129,7 @@ pub trait SegmentEntry {
     /// Will fail if there is no index for the order_by key.
     fn read_ordered_filtered<'a>(
         &'a self,
-        offset: Option<PointIdType>,
+        id_offset: Option<PointIdType>,
         limit: Option<usize>,
         filter: Option<&'a Filter>,
         order_by: &'a OrderBy,

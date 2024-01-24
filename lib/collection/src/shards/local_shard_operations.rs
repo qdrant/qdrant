@@ -153,7 +153,7 @@ impl LocalShard {
     #[allow(clippy::too_many_arguments)]
     async fn scroll_by_field(
         &self,
-        offset: Option<ExtendedPointId>,
+        id_offset: Option<ExtendedPointId>,
         limit: usize,
         with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
@@ -174,7 +174,7 @@ impl LocalShard {
 
                     search_runtime_handle.spawn_blocking(move || {
                         segment.get().read().read_ordered_filtered(
-                            offset,
+                            id_offset,
                             Some(limit),
                             filter.as_ref(),
                             &order_by,
