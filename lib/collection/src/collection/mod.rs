@@ -7,7 +7,7 @@ mod sharding_keys;
 mod snapshots;
 mod state_management;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -17,7 +17,7 @@ use segment::common::version::StorageVersion;
 use segment::types::ShardKey;
 use semver::Version;
 use tokio::runtime::Handle;
-use tokio::sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
 
 use self::shard_transfer::ShardTransferTracker;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
@@ -476,6 +476,12 @@ impl Collection {
             }
         }
 
+        // Count how many transfers we are now proposing
+        // We must track this here so we can reference it when checking for tranfser limits,
+        // because transfers we propose now will not be in the consensus state within the lifetime
+        // of this function
+        let mut proposed = HashMap::<PeerId, usize>::new();
+
         // Check for proper replica states
         for replica_set in shard_holder.all_shards() {
             let this_peer_id = &replica_set.this_peer_id();
@@ -510,10 +516,13 @@ impl Collection {
 
             // Try to find dead replicas with no active transfers
             let transfers = shard_holder.get_transfers(|_| true);
-            let mut shard_transfer_tracker = self.shard_transfer_tracker.lock().await;
 
             // Respect shard transfer limit on this node
-            let transfer_io = shard_transfer_tracker.count_io(this_peer_id);
+            let transfer_io = shard_holder.count_shard_tranfser_io(this_peer_id);
+            let transfer_io = (
+                transfer_io.0 + *proposed.get(this_peer_id).unwrap_or(&0),
+                transfer_io.1,
+            );
             if self.check_shard_transfer_limit(transfer_io) {
                 log::trace!(
                     "Postponing automatic shard {shard_id} transfer to stay below limit on this node (i/o: {}/{})",
@@ -543,7 +552,11 @@ impl Collection {
                 }
 
                 // Respect shard transfer limit
-                let transfer_io = shard_transfer_tracker.count_io(&replica_id);
+                let transfer_io = shard_holder.count_shard_tranfser_io(&replica_id);
+                let transfer_io = (
+                    transfer_io.0,
+                    transfer_io.1 + *proposed.get(&replica_id).unwrap_or(&0),
+                );
                 if self.check_shard_transfer_limit(transfer_io) {
                     log::trace!(
                         "Postponing automatic shard {shard_id} transfer to stay below limit on peer {replica_id} (i/o: {}/{})",
@@ -571,7 +584,9 @@ impl Collection {
                     self.name(),
                 );
 
-                shard_transfer_tracker.propose(&transfer);
+                // Update our counters for proposed transfers, then request (propose) shard transfer
+                *proposed.entry(transfer.from).or_default() += 1;
+                *proposed.entry(transfer.to).or_default() += 1;
                 self.request_shard_transfer(transfer);
                 break;
             }
