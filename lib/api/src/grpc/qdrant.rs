@@ -130,12 +130,14 @@ pub struct GetCollectionInfoRequest {
     #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CheckCollectionExistsRequest {
     /// Name of the collection
     #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize)]

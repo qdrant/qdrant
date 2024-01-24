@@ -113,7 +113,7 @@ impl Collections for CollectionsService {
         get(self.dispatcher.as_ref(), request.into_inner(), None).await
     }
 
-    async fn collection_exists(
+    async fn check_collection_exists(
         &self,
         request: Request<CheckCollectionExistsRequest>,
     ) -> Result<Response<CheckCollectionExistsResponse>, Status> {
@@ -121,10 +121,11 @@ impl Collections for CollectionsService {
         let CheckCollectionExistsRequest { collection_name } = request.into_inner();
         let response = do_check_collection_exists(self.dispatcher.toc(), &collection_name)
             .await
-            .map_err(error_to_status)?
-            .into();
+            .map_err(error_to_status)?;
 
-        Ok(Response::new(response))
+        Ok(Response::new(CheckCollectionExistsResponse {
+            exists: response,
+        }))
     }
 
     async fn list(
