@@ -70,7 +70,12 @@ async fn _do_recover_from_snapshot(
     source: SnapshotRecover,
     client: &reqwest::Client,
 ) -> Result<bool, StorageError> {
-    let SnapshotRecover { location, priority } = source;
+    let SnapshotRecover {
+        location,
+        checksum: _,
+        priority,
+    } = source;
+
     let toc = dispatcher.toc();
 
     let this_peer_id = toc.this_peer_id;
