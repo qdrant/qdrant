@@ -61,23 +61,7 @@ pub struct ShardTransferKey {
 
 impl ShardTransferKey {
     pub fn check(&self, transfer: &ShardTransfer) -> bool {
-        &Self::from(transfer) == self
-    }
-}
-
-impl From<ShardTransfer> for ShardTransferKey {
-    fn from(transfer: ShardTransfer) -> Self {
-        (&transfer).into()
-    }
-}
-
-impl From<&ShardTransfer> for ShardTransferKey {
-    fn from(transfer: &ShardTransfer) -> Self {
-        Self {
-            shard_id: transfer.shard_id,
-            from: transfer.from,
-            to: transfer.to,
-        }
+        transfer.key() == *self
     }
 }
 

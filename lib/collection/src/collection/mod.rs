@@ -513,7 +513,7 @@ impl Collection {
             // Try to find dead replicas with no active transfers
             let transfers = shard_holder.get_transfers(|_| true);
 
-            // Respect shard transfer limit on this node
+            // Respect shard transfer limit, consider already proposed transfers in our counts
             let transfer_io = shard_holder.count_shard_tranfser_io(this_peer_id);
             let transfer_io = (
                 transfer_io.0 + *proposed.get(this_peer_id).unwrap_or(&0),
@@ -547,7 +547,7 @@ impl Collection {
                     continue; // this transfer won't work
                 }
 
-                // Respect shard transfer limit
+                // Respect shard transfer limit, consider already proposed transfers in our counts
                 let transfer_io = shard_holder.count_shard_tranfser_io(&replica_id);
                 let transfer_io = (
                     transfer_io.0,
