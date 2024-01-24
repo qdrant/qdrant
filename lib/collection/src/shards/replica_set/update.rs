@@ -1,7 +1,6 @@
 use std::ops::Deref as _;
 use std::time::Duration;
 
-use cancel::future;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt as _, StreamExt as _};
 use itertools::Itertools as _;
@@ -54,44 +53,44 @@ impl ShardReplicaSet {
         operation: CollectionUpdateOperations,
         wait: bool,
         ordering: WriteOrdering,
-        cancel: cancel::CancellationToken,
     ) -> CollectionResult<UpdateResult> {
         // `ShardReplicaSet::update` is not cancel safe, so this method is not cancel safe.
 
-        match self.leader_peer_for_update(ordering) {
-            None => Err(CollectionError::service_error(format!(
+        let Some(leader_peer) = self.leader_peer_for_update(ordering) else {
+            return Err(CollectionError::service_error(format!(
                 "Cannot update shard {}:{} with {ordering:?} ordering because no leader could be selected",
                 self.collection_id, self.shard_id
-            ))),
-            Some(leader_peer) => {
-                // If we are the leader, run the update from this replica set
-                if leader_peer == self.this_peer_id() {
-                    // Lock updates if ordering is medium or strong
-                    let _guard = match ordering {
-                        WriteOrdering::Weak => None, // no locking required
-                        WriteOrdering::Medium | WriteOrdering::Strong => Some(cancel::future::cancel_on_token(cancel.clone(), self.write_ordering_lock.lock()).await?), // one request at a time
-                    };
+            )));
+        };
 
-                    self.update(operation, wait, cancel).await
-                } else {
-                    // Forward the update to the designated leader
-                    future::cancel_on_token(cancel, self.forward_update(leader_peer, operation, wait, ordering)) // TODO!?
-                        .await?
-                        .map_err(|err| {
-                            if err.is_transient() {
-                                // Deactivate the peer if forwarding failed with transient error
-                                self.add_locally_disabled(leader_peer);
-
-                                // Return service error
-                                CollectionError::service_error(format!(
-                                    "Failed to apply update with {ordering:?} ordering via leader peer {leader_peer}: {err}"
-                                ))
-                            } else {
-                                err
-                            }
-                        })
+        // If we are the leader, run the update from this replica set
+        if leader_peer == self.this_peer_id() {
+            // Lock updates if ordering is strong or medium
+            let _write_ordering_lock = match ordering {
+                WriteOrdering::Strong | WriteOrdering::Medium => {
+                    Some(self.write_ordering_lock.lock().await)
                 }
-            }
+                WriteOrdering::Weak => None,
+            };
+
+            self.update(operation, wait).await
+        } else {
+            // Forward the update to the designated leader
+            self.forward_update(leader_peer, operation, wait, ordering)
+                .await
+                .map_err(|err| {
+                    if err.is_transient() {
+                        // Deactivate the peer if forwarding failed with transient error
+                        self.add_locally_disabled(leader_peer);
+
+                        // Return service error
+                        CollectionError::service_error(format!(
+                            "Failed to apply update with {ordering:?} ordering via leader peer {leader_peer}: {err}"
+                        ))
+                    } else {
+                        err
+                    }
+                })
         }
     }
 
@@ -126,16 +125,14 @@ impl ShardReplicaSet {
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
-        cancel: cancel::CancellationToken,
     ) -> CollectionResult<UpdateResult> {
-        // `LocalShard::update` is not guaranteed to be cancel safe and it's also almost impossible
-        // to cancel multiple parallel updates in a way that is *guaranteed* not to introduce
-        // inconsistencies between nodes, so this method is not cancel safe.
+        // `LocalShard::update` is not guaranteed to be cancel safe and it's impossible to cancel
+        // multiple parallel updates in a way that is *guaranteed* not to introduce inconsistencies
+        // between nodes, so this method is not cancel safe.
 
         let all_res: Vec<Result<_, _>> = {
-            let remotes =
-                cancel::future::cancel_on_token(cancel.clone(), self.remotes.read()).await?;
-            let local = cancel::future::cancel_on_token(cancel.clone(), self.local.read()).await?;
+            let remotes = self.remotes.read().await;
+            let local = self.local.read().await;
             let this_peer_id = self.this_peer_id();
 
             // target all remote peers that can receive updates

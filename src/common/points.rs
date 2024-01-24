@@ -168,19 +168,14 @@ pub async fn do_upsert_points(
 
     let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
 
-    let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
-        toc.update(
-            &collection_name,
-            collection_operation,
-            wait,
-            ordering,
-            shard_selector,
-            cancel,
-        )
-        .await
-    });
-
-    future.await?
+    toc.update(
+        &collection_name,
+        collection_operation,
+        wait,
+        ordering,
+        shard_selector,
+    )
+    .await
 }
 
 pub async fn do_delete_points(
@@ -202,19 +197,14 @@ pub async fn do_delete_points(
     let collection_operation = CollectionUpdateOperations::PointOperation(point_operation);
     let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
 
-    let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
-        toc.update(
-            &collection_name,
-            collection_operation,
-            wait,
-            ordering,
-            shard_selector,
-            cancel,
-        )
-        .await
-    });
-
-    future.await?
+    toc.update(
+        &collection_name,
+        collection_operation,
+        wait,
+        ordering,
+        shard_selector,
+    )
+    .await
 }
 
 pub async fn do_update_vectors(
@@ -233,19 +223,14 @@ pub async fn do_update_vectors(
 
     let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
 
-    let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
-        toc.update(
-            &collection_name,
-            collection_operation,
-            wait,
-            ordering,
-            shard_selector,
-            cancel,
-        )
-        .await
-    });
-
-    future.await?
+    toc.update(
+        &collection_name,
+        collection_operation,
+        wait,
+        ordering,
+        shard_selector,
+    )
+    .await
 }
 
 pub async fn do_delete_vectors(
@@ -256,6 +241,8 @@ pub async fn do_delete_vectors(
     wait: bool,
     ordering: WriteOrdering,
 ) -> Result<UpdateResult, StorageError> {
+    // TODO: Is this cancel safe!?
+
     let DeleteVectors {
         vector,
         filter,
@@ -267,51 +254,44 @@ pub async fn do_delete_vectors(
 
     let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
 
-    let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
-        let mut result = None;
-        let mut cancel = Some(cancel);
+    let mut result = None;
 
-        if let Some(filter) = filter {
-            let vectors_operation =
-                VectorOperations::DeleteVectorsByFilter(filter, vector_names.clone());
-            let collection_operation =
-                CollectionUpdateOperations::VectorOperation(vectors_operation);
-            result = Some(
-                toc.update(
-                    &collection_name,
-                    collection_operation,
-                    wait,
-                    ordering,
-                    shard_selector.clone(),
-                    cancel.take().unwrap_or_default(),
-                )
-                .await?,
-            );
-        }
+    if let Some(filter) = filter {
+        let vectors_operation =
+            VectorOperations::DeleteVectorsByFilter(filter, vector_names.clone());
 
-        if let Some(points) = points {
-            let vectors_operation = VectorOperations::DeleteVectors(points.into(), vector_names);
-            let collection_operation =
-                CollectionUpdateOperations::VectorOperation(vectors_operation);
-            result = Some(
-                toc.update(
-                    &collection_name,
-                    collection_operation,
-                    wait,
-                    ordering,
-                    shard_selector,
-                    cancel.take().unwrap_or_default(),
-                )
-                .await?,
-            );
-        }
+        let collection_operation = CollectionUpdateOperations::VectorOperation(vectors_operation);
 
-        Result::<_, StorageError>::Ok(result)
-    });
+        result = Some(
+            toc.update(
+                &collection_name,
+                collection_operation,
+                wait,
+                ordering,
+                shard_selector.clone(),
+            )
+            .await?,
+        );
+    }
 
-    future
-        .await??
-        .ok_or_else(|| StorageError::bad_request("No filter or points provided"))
+    if let Some(points) = points {
+        let vectors_operation = VectorOperations::DeleteVectors(points.into(), vector_names);
+
+        let collection_operation = CollectionUpdateOperations::VectorOperation(vectors_operation);
+
+        result = Some(
+            toc.update(
+                &collection_name,
+                collection_operation,
+                wait,
+                ordering,
+                shard_selector,
+            )
+            .await?,
+        );
+    }
+
+    result.ok_or_else(|| StorageError::bad_request("No filter or points provided"))
 }
 
 pub async fn do_set_payload(
@@ -338,19 +318,14 @@ pub async fn do_set_payload(
 
     let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
 
-    let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
-        toc.update(
-            &collection_name,
-            collection_operation,
-            wait,
-            ordering,
-            shard_selector,
-            cancel,
-        )
-        .await
-    });
-
-    future.await?
+    toc.update(
+        &collection_name,
+        collection_operation,
+        wait,
+        ordering,
+        shard_selector,
+    )
+    .await
 }
 
 pub async fn do_overwrite_payload(
@@ -377,19 +352,14 @@ pub async fn do_overwrite_payload(
 
     let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
 
-    let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
-        toc.update(
-            &collection_name,
-            collection_operation,
-            wait,
-            ordering,
-            shard_selector,
-            cancel,
-        )
-        .await
-    });
-
-    future.await?
+    toc.update(
+        &collection_name,
+        collection_operation,
+        wait,
+        ordering,
+        shard_selector,
+    )
+    .await
 }
 
 pub async fn do_delete_payload(
@@ -416,19 +386,14 @@ pub async fn do_delete_payload(
 
     let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
 
-    let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
-        toc.update(
-            &collection_name,
-            collection_operation,
-            wait,
-            ordering,
-            shard_selector,
-            cancel,
-        )
-        .await
-    });
-
-    future.await?
+    toc.update(
+        &collection_name,
+        collection_operation,
+        wait,
+        ordering,
+        shard_selector,
+    )
+    .await
 }
 
 pub async fn do_clear_payload(
@@ -452,19 +417,14 @@ pub async fn do_clear_payload(
 
     let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
 
-    let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
-        toc.update(
-            &collection_name,
-            collection_operation,
-            wait,
-            ordering,
-            shard_selector,
-            cancel,
-        )
-        .await
-    });
-
-    future.await?
+    toc.update(
+        &collection_name,
+        collection_operation,
+        wait,
+        ordering,
+        shard_selector,
+    )
+    .await
 }
 
 pub async fn do_batch_update_points(
@@ -594,19 +554,14 @@ pub async fn do_create_index_internal(
         ShardSelectorInternal::All
     };
 
-    let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
-        toc.update(
-            &collection_name,
-            collection_operation,
-            wait,
-            ordering,
-            shard_selector,
-            cancel,
-        )
-        .await
-    });
-
-    future.await?
+    toc.update(
+        &collection_name,
+        collection_operation,
+        wait,
+        ordering,
+        shard_selector,
+    )
+    .await
 }
 
 pub async fn do_create_index(
@@ -617,6 +572,8 @@ pub async fn do_create_index(
     wait: bool,
     ordering: WriteOrdering,
 ) -> Result<UpdateResult, StorageError> {
+    // TODO: Is this cancel safe!?
+
     let Some(field_schema) = operation.field_schema else {
         return Err(StorageError::bad_request(
             "Can't auto-detect field type, please specify `field_schema` in the request",
@@ -671,19 +628,14 @@ pub async fn do_delete_index_internal(
         ShardSelectorInternal::All
     };
 
-    let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
-        toc.update(
-            &collection_name,
-            collection_operation,
-            wait,
-            ordering,
-            shard_selector,
-            cancel,
-        )
-        .await
-    });
-
-    future.await?
+    toc.update(
+        &collection_name,
+        collection_operation,
+        wait,
+        ordering,
+        shard_selector,
+    )
+    .await
 }
 
 pub async fn do_delete_index(
@@ -694,6 +646,8 @@ pub async fn do_delete_index(
     wait: bool,
     ordering: WriteOrdering,
 ) -> Result<UpdateResult, StorageError> {
+    // TODO: Is this cancel safe!?
+
     let consensus_op = CollectionMetaOperations::DropPayloadIndex(DropPayloadIndex {
         collection_name: collection_name.to_string(),
         field_name: index_name.clone(),

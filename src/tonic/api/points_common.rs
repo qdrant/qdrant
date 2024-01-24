@@ -162,22 +162,16 @@ pub async fn sync(
         ShardSelectorInternal::Empty
     };
 
-    let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
-        toc.update(
+    let result = toc
+        .update(
             &collection_name,
             collection_operation,
             wait.unwrap_or(false),
             write_ordering_from_proto(ordering)?,
             shard_selector,
-            cancel,
         )
         .await
-        .map_err(error_to_status)
-    });
-
-    let result = future
-        .await
-        .map_err(|err| Status::aborted(err.to_string()))??;
+        .map_err(error_to_status)?;
 
     let response = points_operation_response(timing, result);
     Ok(Response::new(response))
