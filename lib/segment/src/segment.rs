@@ -623,7 +623,7 @@ impl Segment {
             .collect()
     }
 
-    pub fn read_by_id_stream(
+    fn read_by_id_stream(
         &self,
         offset: Option<PointIdType>,
         limit: Option<usize>,
@@ -1095,13 +1095,7 @@ impl SegmentEntry for Segment {
         filter: Option<&'a Filter>,
     ) -> Vec<PointIdType> {
         match filter {
-            None => self
-                .id_tracker
-                .borrow()
-                .iter_from(offset)
-                .map(|x| x.0)
-                .take(limit.unwrap_or(usize::MAX))
-                .collect(),
+            None => self.read_by_id_stream(offset, limit),
             Some(condition) => {
                 let query_cardinality = {
                     let payload_index = self.payload_index.borrow();
