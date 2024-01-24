@@ -182,6 +182,7 @@ async fn update_collection_cluster(
 pub fn config_collections_api(cfg: &mut web::ServiceConfig) {
     cfg.service(get_collections)
         .service(get_collection)
+        .service(collection_exists)
         .service(create_collection)
         .service(update_collection)
         .service(delete_collection)

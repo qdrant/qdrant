@@ -18,10 +18,10 @@ def setup(on_disk_vectors):
 
 def test_collection_exists():
     response = request_with_validation(
-        api="/collections/{name}/exists",
+        api="/collections/{collection_name}/exists",
         method="GET",
-        path_params={"name": collection_name},
+        path_params={"collection_name": collection_name},
     )
     assert response.ok
-    result = response.json()["exists"]
+    result = response.json()["result"]
     assert result == True
