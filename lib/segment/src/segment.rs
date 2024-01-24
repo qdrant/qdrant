@@ -705,18 +705,16 @@ impl Segment {
 
         let range_iter = numeric_index.stream_with_value(&order_by.as_range());
 
+        let offset_key = order_by.offset_key(offset);
+
         let ordered_iter =
             OrderedByFieldIterator::new(range_iter, id_tracker.deref(), order_by.direction())
-                .skip_while(|item| match offset {
-                    Some(id_offset) => {
-                        let item_key = (item.value, item.external_id);
-                        let offset_key = (order_by.value_offset(), id_offset);
-                        match order_by.direction() {
-                            Direction::Asc => item_key < offset_key,
-                            Direction::Desc => item_key > offset_key,
-                        }
+                .skip_while(|item| {
+                    let item_key = (item.value, item.external_id);
+                    match order_by.direction() {
+                        Direction::Asc => item_key < offset_key,
+                        Direction::Desc => item_key > offset_key,
                     }
-                    _ => false,
                 });
 
         let reads = if let Some(filter) = filter {

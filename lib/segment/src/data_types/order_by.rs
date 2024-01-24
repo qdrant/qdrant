@@ -68,6 +68,18 @@ impl OrderBy {
             Direction::Desc => f64::INFINITY,
         })
     }
+
+    fn id_offset(&self, id_offset: Option<PointIdType>) -> PointIdType {
+        id_offset.unwrap_or_else(|| match self.direction() {
+            Direction::Asc => PointIdType::MIN,
+            Direction::Desc => PointIdType::MAX,
+        })
+    }
+
+    /// Computes the composite offset key from the value and id offsets
+    pub fn offset_key(&self, id_offset: Option<PointIdType>) -> (f64, PointIdType) {
+        (self.value_offset(), self.id_offset(id_offset))
+    }
 }
 
 #[derive(Debug)]
