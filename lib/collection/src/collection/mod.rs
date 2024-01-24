@@ -2,7 +2,7 @@ mod collection_ops;
 pub mod payload_index_schema;
 mod point_ops;
 mod search;
-pub mod shard_transfer;
+mod shard_transfer;
 mod sharding_keys;
 mod snapshots;
 mod state_management;

@@ -331,7 +331,7 @@ impl TableOfContent {
                 let temp_dir = self.optional_temp_or_storage_temp_path()?;
                 collection
                     .start_shard_transfer(
-                        transfer.clone(),
+                        transfer,
                         shard_consensus,
                         temp_dir,
                         on_finish,
