@@ -225,6 +225,10 @@ Examples and/or documentation of Qdrant integrations:
 - Want to stay in touch with latest releases? Subscribe to our [Newsletters](https://qdrant.to/newsletter)
 - Looking for a managed cloud? Check [pricing](https://qdrant.tech/pricing/), need something personalised? We're at [info@qdrant.tech](mailto:info@qdrant.tech)
 
+## Contributing
+
+Thanks for your interest in contributing to the project! Please refer to [contribution guidelines](CONTRIBUTING.md) for more information.
+
 ## Contributors ✨
 
 Thanks to the people who contributed to Qdrant:
