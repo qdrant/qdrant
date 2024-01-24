@@ -583,7 +583,7 @@ impl Collection {
             let transfer_io = shard_transfer_tracker.count_io(this_peer_id);
             if self.check_shard_transfer_limit(transfer_io) {
                 log::trace!(
-                    "Postponing automatic shard {shard_id} transfer to stay below limit on this node(i/o: {}/{})",
+                    "Postponing automatic shard {shard_id} transfer to stay below limit on this node (i/o: {}/{})",
                     transfer_io.0,
                     transfer_io.1,
                 );
