@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use common::types::PointOffsetType;
 use serde::{Deserialize, Serialize};
@@ -386,27 +386,45 @@ struct FlattenedVocab {
 }
 
 impl FlattenedVocab {
-    fn new(vocab: HashMap<String, TokenId>) -> Self {
+    fn new(vocab: HashMap<String, TokenId>) -> (Self, Vec<TokenId>) {
+        let vocab: BTreeMap<String, TokenId> = vocab.into_iter().collect();
         let mut offsets = vec![0];
         let mut data = String::new();
-        for (token, _idx) in vocab {
+        let mut token_id_reindex = vec![0; vocab.len()];
+        for (token, old_token_id) in vocab {
+            token_id_reindex[old_token_id as usize] = offsets.len() as TokenId - 1;
             offsets.push(offsets.last().unwrap() + token.len());
             data.push_str(&token);
         }
-        Self { data, offsets }
+        (Self { data, offsets }, token_id_reindex)
     }
 
     pub fn get_id(&self, token: &str) -> Option<TokenId> {
-        self.offsets
-            .binary_search_by(|&offset| token.cmp(self.get_token(offset as TokenId).unwrap()))
-            .map(|idx| idx as TokenId)
-            .ok()
-    }
-
-    pub fn get_token(&self, token: TokenId) -> Option<&str> {
-        let start = self.offsets.get(token as usize)?;
-        let end = self.offsets.get(token as usize + 1)?;
-        Some(&self.data[*start..*end])
+        let mut l = 0;
+        let mut r = self.offsets.len() - 1;
+        while l < r {
+            let m = (l + r) / 2;
+            let start = self.offsets[m];
+            let end = self.offsets[m + 1];
+            let token_in_vocab = &self.data[start..end];
+            match token.cmp(token_in_vocab) {
+                std::cmp::Ordering::Less => {
+                    r = m - 1;
+                }
+                std::cmp::Ordering::Equal => return Some(m as TokenId),
+                std::cmp::Ordering::Greater => {
+                    l = m + 1;
+                }
+            }
+        }
+        let start = self.offsets[l];
+        let end = self.offsets[l + 1];
+        let token_in_vocab = &self.data[start..end];
+        if token == token_in_vocab {
+            Some(l as TokenId)
+        } else {
+            None
+        }
     }
 
     pub fn iter_vocab(&self) -> impl Iterator<Item = (&str, TokenId)> + '_ {
@@ -568,10 +586,25 @@ impl ImmutableInvertedIndex {
 }
 
 impl From<MutableInvertedIndex> for ImmutableInvertedIndex {
-    fn from(index: MutableInvertedIndex) -> Self {
+    fn from(mut index: MutableInvertedIndex) -> Self {
+        let (vocab, token_id_reindex) = FlattenedVocab::new(index.vocab);
+        index.point_to_docs.iter_mut().for_each(|doc| {
+            if let Some(doc) = doc {
+                doc.tokens
+                    .iter_mut()
+                    .for_each(|token| *token = token_id_reindex[*token as usize]);
+            }
+        });
+
+        let mut postings = vec![None; index.postings.len()];
+        for (token_id, posting) in index.postings.into_iter().enumerate() {
+            let new_token_id = token_id_reindex[token_id];
+            postings[new_token_id as usize] = posting;
+        }
+
         ImmutableInvertedIndex {
-            postings: index.postings,
-            vocab: FlattenedVocab::new(index.vocab),
+            postings,
+            vocab,
             point_to_docs: index.point_to_docs,
             points_count: index.points_count,
         }
