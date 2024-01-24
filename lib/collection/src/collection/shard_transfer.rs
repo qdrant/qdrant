@@ -403,7 +403,7 @@ pub struct ShardTransferTracker {
 }
 
 impl ShardTransferTracker {
-    /// The count of incoming and outgoing shard transfers on the given peer across all collections
+    /// The count of incoming and outgoing shard transfers on the given peer
     ///
     /// This includes both transfers in consensus and proposed transfers by this node that may not
     /// actually be accepted by consensus yet.
