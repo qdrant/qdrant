@@ -441,7 +441,7 @@ impl Collection {
             .filter(|(peer_id, _)| peer_id != &self.this_peer_id)
             // Respect shard transfer limit on the other node
             .filter(|(peer_id, _)| {
-                self.check_shard_transfer_limit(shard_transfer_tracker.count_io(peer_id))
+                !self.check_shard_transfer_limit(shard_transfer_tracker.count_io(peer_id))
             })
             // Find any peer that has an active replica
             .find(|(_, state)| state == &ReplicaState::Active)
