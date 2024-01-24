@@ -8,17 +8,15 @@ authors = [
 license = "Apache-2.0"
 edition = "2021"
 
-
 [dependencies]
 common = { path = "../common/common" }
 io = { path = "../common/io" }
-memory = { path = "../common/memory" }
+itertools = "0.12.0"
 memmap2 = "0.9.3"
-schemars = { version = "0.8.16" }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-tempfile = "3.9.0"
+memory = { path = "../common/memory" }
 ordered-float = "4.2"
 rand = "0.8.5"
+schemars = { version = "0.8.16" }
+serde = { version = "1", features = ["derive"] }
+tempfile = "3.9.0"
 validator = "0.16"
-itertools = "0.12.0"

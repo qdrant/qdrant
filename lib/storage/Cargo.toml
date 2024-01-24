@@ -9,50 +9,64 @@ license = "Apache-2.0"
 edition = "2021"
 
 [features]
-tracing = ["dep:tracing", "api/tracing", "collection/tracing", "segment/tracing"]
+tracing = [
+    "dep:tracing",
+    "api/tracing",
+    "collection/tracing",
+    "segment/tracing",
+]
 
 [dev-dependencies]
-tempfile = "3.9.0"
-proptest = "1.4.0"
 env_logger = "0.10.1"
+proptest = "1.4.0"
+tempfile = "3.9.0"
 
 [dependencies]
-num_cpus = "1.16"
-thiserror = "1.0"
-rand = "0.8.5"
-wal = { git = "https://github.com/qdrant/wal.git", rev = "fad0e7c48be58d8e7db4cc739acd9b1cf6735de0" }
-tokio = { version = "~1.35", features = ["rt-multi-thread"] }
-serde = { version = "~1.0", features = ["derive"] }
-serde_json = "~1.0"
-schemars = { version = "0.8.16", features = ["uuid1", "preserve_order", "chrono"] }
-itertools = "0.12"
-log = "0.4"
-tonic = { version = "0.9.2", features = ["gzip", "tls"] }
-http = "0.2"
-parking_lot = { version = "0.12.1", features = ["deadlock_detection", "serde"] }
-tar = "0.4.40"
-chrono = { version = "~0.4", features = ["serde"] }
-validator = { version = "0.16", features = ["derive"] }
+anyhow = "1.0.79"
+api = { path = "../api" }
 
 # Consensus related
 atomicwrites = { version = "0.4.3" }
-raft = { version = "0.7.0", features = ["prost-codec"], default-features = false }
+cancel = { path = "../common/cancel" }
+chrono = { version = "~0.4", features = ["serde"] }
+collection = { path = "../collection" }
+common = { path = "../common/common" }
+futures = "0.3.30"
+http = "0.2"
+io = { path = "../common/io" }
+itertools = "0.12"
+log = "0.4"
+memory = { path = "../common/memory" }
+parking_lot = { version = "0.12.1", features = ["deadlock_detection", "serde"] }
 prost = { version = "0.11.9" } # version of prost used by raft
 protobuf = "2.28.0" # version of protobuf used by raft
-serde_cbor = { version = "0.11.2" }
-
-common = { path = "../common/common" }
-cancel = { path = "../common/cancel" }
-io = { path = "../common/io" }
-memory = { path = "../common/memory" }
+raft = { version = "0.7.0", features = [
+    "prost-codec",
+], default-features = false }
+rand = "0.8.5"
+reqwest = { version = "0.11", default-features = false, features = [
+    "stream",
+    "rustls-tls",
+] }
+schemars = { version = "0.8.16", features = [
+    "uuid1",
+    "preserve_order",
+    "chrono",
+] }
 segment = { path = "../segment" }
-collection = { path = "../collection" }
-api = { path = "../api" }
-futures = "0.3.30"
-anyhow = "1.0.79"
-uuid = "1.6.1"
-url = "2.5.0"
-reqwest = { version = "0.11", default-features = false, features = ["stream", "rustls-tls"] }
+serde = { version = "~1.0", features = ["derive"] }
+serde_cbor = { version = "0.11.2" }
+serde_json = "~1.0"
+tar = "0.4.40"
 tempfile = "3.9.0"
-
+thiserror = "1.0"
+tokio = { version = "~1.35", features = ["rt-multi-thread"] }
+tonic = { version = "0.9.2", features = ["gzip", "tls"] }
 tracing = { version = "0.1", features = ["async-await"], optional = true }
+url = "2.5.0"
+uuid = "1.6.1"
+validator = { version = "0.16", features = ["derive"] }
+wal = { git = "https://github.com/qdrant/wal.git", rev = "fad0e7c48be58d8e7db4cc739acd9b1cf6735de0" }
+
+[package.metadata.cargo-machete]
+ignored = ["tracing"]

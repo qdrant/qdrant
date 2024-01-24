@@ -15,63 +15,68 @@ multiling-korean = ["charabia/korean"]
 
 [dev-dependencies]
 criterion = "0.5"
-rmp-serde = "~1.1"
-rand_distr = "0.4.3"
-walkdir = "2.4.0"
-rstest = "0.18.2"
 proptest = "1.4.0"
+rand_distr = "0.4.3"
+rmp-serde = "~1.1"
+rstest = "0.18.2"
+walkdir = "2.4.0"
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
 pprof = { version = "0.12", features = ["flamegraph", "prost-codec"] }
 
-
 [dependencies]
-tempfile = "3.9.0"
-parking_lot = "0.12"
-rayon = "1.8.0"
-num_cpus = "1.16"
-itertools = "0.12"
-rocksdb = { version = "0.21.0", default-features = false, features = [ "snappy" ] }
-uuid = { version = "1.6", features = ["v4", "serde"] }
-bincode = "1.3"
-serde = { version = "~1.0", features = ["derive", "rc"] }
-serde_json = "~1.0"
-serde_cbor = "0.11.2"
-serde-value = "0.7"
-ordered-float = "4.2"
-thiserror = "1.0"
 atomic_refcell = "0.1.13"
 atomicwrites = "0.4.3"
-memmap2 = "0.9.3"
-schemars = { version = "0.8.16", features = ["uuid1", "preserve_order", "chrono"] }
-log = "0.4"
+bincode = "1.3"
+bitvec = "1.0.1"
+charabia = { version = "0.8.5", default-features = false, features = [
+    "greek",
+    "hebrew",
+    "thai",
+] }
+chrono = { version = "0.4.31", features = ["serde"] }
+common = { path = "../common/common" }
+fs_extra = "1.3.0"
 geo = "0.27.0"
 geohash = "0.13.0"
-num-traits = "0.2.17"
-num-derive = "0.4.1"
-rand = "0.8"
-bitvec = "1.0.1"
-seahash = "4.1.0"
-tar = "0.4.40"
-fs_extra = "1.3.0"
-semver = "1.0.21"
-tinyvec = { version = "1.6.0", features = ["alloc"] }
-quantization = { git = "https://github.com/qdrant/quantization.git" }
-validator = { version = "0.16", features = ["derive"] }
-chrono = { version = "0.4.31", features = ["serde"] }
-smol_str = "0.2.0"
-lazy_static = "1.4"
-
-sysinfo = "0.30"
-futures = "0.3.30"
-charabia = { version = "0.8.5", default-features = false, features = ["greek", "hebrew", "thai"] }
-
-common = { path = "../common/common" }
 io = { path = "../common/io" }
+itertools = "0.12"
+lazy_static = "1.4"
+log = "0.4"
+memmap2 = "0.9.3"
 memory = { path = "../common/memory" }
+num-derive = "0.4.1"
+num-traits = "0.2.17"
+num_cpus = "1.16"
+ordered-float = "4.2"
+parking_lot = "0.12"
+quantization = { git = "https://github.com/qdrant/quantization.git" }
+rand = "0.8"
+rayon = "1.8.0"
+rocksdb = { version = "0.21.0", default-features = false, features = [
+    "snappy",
+] }
+schemars = { version = "0.8.16", features = [
+    "uuid1",
+    "preserve_order",
+    "chrono",
+] }
+seahash = "4.1.0"
+semver = "1.0.21"
+serde = { version = "~1.0", features = ["derive", "rc"] }
+serde-value = "0.7"
+serde_cbor = "0.11.2"
+serde_json = "~1.0"
+smol_str = "0.2.0"
 sparse = { path = "../sparse" }
-
+sysinfo = "0.30"
+tar = "0.4.40"
+tempfile = "3.9.0"
+thiserror = "1.0"
+tinyvec = { version = "1.6.0", features = ["alloc"] }
 tracing = { version = "0.1", features = ["async-await"], optional = true }
+uuid = { version = "1.6", features = ["v4", "serde"] }
+validator = { version = "0.16", features = ["derive"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 cgroups-rs = "0.3"
@@ -121,3 +126,6 @@ harness = false
 [[bench]]
 name = "sparse_index_build"
 harness = false
+
+[package.metadata.cargo-machete]
+ignored = ["tracing"]
