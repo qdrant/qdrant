@@ -36,7 +36,7 @@ impl FullTextIndex {
         bincode::deserialize(data).unwrap()
     }
 
-    fn serialize_document_tokens(&self, tokens: BTreeSet<String>) -> OperationResult<Vec<u8>> {
+    fn serialize_document_tokens(tokens: BTreeSet<String>) -> OperationResult<Vec<u8>> {
         #[derive(Serialize)]
         struct StoredDocument {
             tokens: BTreeSet<String>,
@@ -47,7 +47,7 @@ impl FullTextIndex {
         })
     }
 
-    fn deserialize_document(data: &[u8], index: &mut InvertedIndex) -> OperationResult<Document> {
+    fn deserialize_document(data: &[u8]) -> OperationResult<BTreeSet<String>> {
         #[derive(Deserialize)]
         struct StoredDocument {
             tokens: BTreeSet<String>,
@@ -56,35 +56,37 @@ impl FullTextIndex {
             .map_err(|e| {
                 OperationError::service_error(format!("Failed to deserialize document: {e}"))
             })
-            .map(|doc| index.document_from_tokens(&doc.tokens))
+            .map(|doc| doc.tokens)
     }
 
     fn storage_cf_name(field: &str) -> String {
         format!("{field}_fts")
     }
 
-    pub fn new(db: Arc<RwLock<DB>>, config: TextIndexParams, field: &str) -> Self {
+    pub fn new(
+        db: Arc<RwLock<DB>>,
+        config: TextIndexParams,
+        field: &str,
+        is_appendable: bool,
+    ) -> Self {
         let store_cf_name = Self::storage_cf_name(field);
         let db_wrapper = DatabaseColumnWrapper::new(db, &store_cf_name);
         FullTextIndex {
-            inverted_index: InvertedIndex::new(),
+            inverted_index: InvertedIndex::new(is_appendable),
             db_wrapper,
             config,
         }
     }
 
     pub fn get_doc(&self, idx: PointOffsetType) -> Option<&Document> {
-        match self.inverted_index.point_to_docs.get(idx as usize) {
-            Some(Some(doc)) => Some(doc),
-            _ => None,
-        }
+        self.inverted_index.get_doc(idx)
     }
 
     pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
         PayloadIndexTelemetry {
             field_name: None,
-            points_values_count: self.inverted_index.points_count,
-            points_count: self.inverted_index.points_count,
+            points_values_count: self.inverted_index.get_points_count(),
+            points_count: self.inverted_index.get_points_count(),
             histogram_bucket_size: None,
         }
     }
@@ -96,7 +98,7 @@ impl FullTextIndex {
     pub fn parse_query(&self, text: &str) -> ParsedQuery {
         let mut tokens = HashSet::new();
         Tokenizer::tokenize_query(text, &self.config, |token| {
-            tokens.insert(self.inverted_index.vocab.get(token).copied());
+            tokens.insert(self.inverted_index.get_vocab(token));
         });
         ParsedQuery {
             tokens: tokens.into_iter().collect(),
@@ -106,8 +108,8 @@ impl FullTextIndex {
     pub fn parse_document(&self, text: &str) -> Document {
         let mut document_tokens = vec![];
         Tokenizer::tokenize_doc(text, &self.config, |token| {
-            if let Some(token_id) = self.inverted_index.vocab.get(token) {
-                document_tokens.push(*token_id);
+            if let Some(token_id) = self.inverted_index.get_vocab(token) {
+                document_tokens.push(token_id);
             }
         });
         Document::new(document_tokens)
@@ -143,11 +145,10 @@ impl ValueIndexer<String> for FullTextIndex {
             });
         }
 
-        let document = self.inverted_index.document_from_tokens(&tokens);
-        self.inverted_index.index_document(idx, document);
+        self.inverted_index.index_tokens(idx, &tokens)?;
 
         let db_idx = Self::store_key(&idx);
-        let db_document = self.serialize_document_tokens(tokens)?;
+        let db_document = Self::serialize_document_tokens(tokens)?;
 
         self.db_wrapper.put(db_idx, db_document)?;
 
@@ -177,7 +178,7 @@ impl ValueIndexer<String> for FullTextIndex {
 
 impl PayloadFieldIndex for FullTextIndex {
     fn count_indexed_points(&self) -> usize {
-        self.inverted_index.points_count
+        self.inverted_index.get_points_count()
     }
 
     fn load(&mut self) -> OperationResult<bool> {
@@ -185,11 +186,14 @@ impl PayloadFieldIndex for FullTextIndex {
             return Ok(false);
         };
 
-        for (key, value) in self.db_wrapper.lock_db().iter()? {
+        let db = self.db_wrapper.lock_db();
+        let i = db.iter()?.map(|(key, value)| {
             let idx = Self::restore_key(&key);
-            let document = Self::deserialize_document(&value, &mut self.inverted_index)?;
-            self.inverted_index.index_document(idx, document);
-        }
+            let tokens = Self::deserialize_document(&value)?;
+            Ok((idx, tokens))
+        });
+        self.inverted_index.build_index(i)?;
+
         Ok(true)
     }
 
@@ -238,6 +242,7 @@ impl PayloadFieldIndex for FullTextIndex {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
     use tempfile::Builder;
 
     use super::*;
@@ -260,8 +265,10 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_full_text_indexing() {
+    #[rstest]
+    #[case(true)]
+    #[case(false)]
+    fn test_full_text_indexing(#[case] immutable: bool) {
         let payloads: Vec<_> = vec![
             serde_json::json!("The celebration had a long way to go and even in the silent depths of Multivac's underground chambers, it hung in the air."),
             serde_json::json!("If nothing else, there was the mere fact of isolation and silence."),
@@ -285,7 +292,7 @@ mod tests {
         {
             let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
 
-            let mut index = FullTextIndex::new(db, config.clone(), "text");
+            let mut index = FullTextIndex::new(db, config.clone(), "text", true);
 
             index.recreate().unwrap();
 
@@ -335,7 +342,7 @@ mod tests {
 
         {
             let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
-            let mut index = FullTextIndex::new(db, config, "text");
+            let mut index = FullTextIndex::new(db, config, "text", immutable);
             let loaded = index.load().unwrap();
             assert!(loaded);
 
