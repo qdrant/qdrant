@@ -17,9 +17,7 @@ impl Default for VersionInfo {
         VersionInfo {
             title: "qdrant - vector search engine".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
-            commit: option_env!("GIT_COMMIT_ID")
-                .map(ToString::to_string)
-                .filter(|s| !s.trim().is_empty()),
+            commit: option_env!("GIT_COMMIT_ID").map(ToString::to_string),
         }
     }
 }
