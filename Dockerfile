@@ -16,7 +16,7 @@ COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
 
 
-FROM chef as builder
+FROM chef AS builder
 WORKDIR /qdrant
 
 COPY --from=xx / /
@@ -31,8 +31,9 @@ COPY --from=xx / /
 # so, please, don't reorder them without prior consideration. 🥲
 
 RUN apt-get update \
-    && apt-get install -y clang lld cmake protobuf-compiler jq \
-    && rustup component add rustfmt
+    && apt-get install --no-install-recommends -y clang lld cmake protobuf-compiler jq \
+    && rustup component add rustfmt \
+    && rm -rf /var/lib/apt/lists/*
 
 # `ARG`/`ENV` pair is a workaround for `docker build` backward-compatibility.
 #
@@ -105,7 +106,7 @@ RUN mkdir /static ; STATIC_DIR='/static' ./tools/sync-web-ui.sh
 FROM debian:12-slim AS qdrant
 
 RUN apt-get update \
-    && apt-get install -y ca-certificates tzdata libunwind8 \
+    && apt-get install --no-install-recommends -y ca-certificates tzdata libunwind8 \
     && rm -rf /var/lib/apt/lists/*
 
 ARG APP=/qdrant
