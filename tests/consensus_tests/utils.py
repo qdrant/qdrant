@@ -420,7 +420,7 @@ def wait_for_collection_local_shards_count(peer_api_uri: str, collection_name: s
         raise e
 
 
-def wait_for(condition: Callable[..., bool], *args, **kwargs):
+def wait_for(condition: Callable[..., bool], *args, wait_for_interval=RETRY_INTERVAL_SEC, **kwargs):
     start = time.time()
     while not condition(*args, **kwargs):
         elapsed = time.time() - start
@@ -428,7 +428,7 @@ def wait_for(condition: Callable[..., bool], *args, **kwargs):
             raise Exception(
                 f"Timeout waiting for condition {condition.__name__} to be satisfied in {WAIT_TIME_SEC} seconds")
         else:
-            time.sleep(RETRY_INTERVAL_SEC)
+            time.sleep(wait_for_interval)
 
 
 def peer_is_online(peer_api_uri: str) -> bool:

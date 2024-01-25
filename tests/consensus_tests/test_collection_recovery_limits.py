@@ -55,7 +55,7 @@ def test_collection_recovery_below_limit(tmp_path: pathlib.Path):
 # Set a custom incoming/outgoing transfer limit of 3, and make sure we actually
 # reach this limit with automatic transfers.
 def test_collection_recovery_reach_limit(tmp_path: pathlib.Path):
-    N_POINTS = 5000
+    N_POINTS = 10000
     N_SHARDS = N_PEERS
 
     assert_project_root()
@@ -88,7 +88,7 @@ def test_collection_recovery_reach_limit(tmp_path: pathlib.Path):
     wait_for_peer_online(peer_url)
 
     # We must see 3 transfers at one point with our customized limits
-    wait_for(transfers_reached_threshold, peer_url, transfer_threshold=3, transfer_limit=3)
+    wait_for(transfers_reached_threshold, peer_url, wait_for_interval=0.1, transfer_threshold=3, transfer_limit=3)
 
     # Wait until all shards are active, never allow more than 3 shard transfers
     wait_for(transfers_below_limit_or_done, peer_url, transfer_limit=3)
@@ -108,7 +108,7 @@ def test_collection_recovery_reach_limit(tmp_path: pathlib.Path):
 # user requested transfers. After the user requested transfer are done, never go
 # above the default limit again.
 def test_collection_recovery_user_requests_above_limit(tmp_path: pathlib.Path):
-    N_POINTS = 5000
+    N_POINTS = 10000
     N_SHARDS = N_PEERS
 
     assert_project_root()
@@ -156,7 +156,7 @@ def test_collection_recovery_user_requests_above_limit(tmp_path: pathlib.Path):
     wait_for_peer_online(peer_url)
 
     # We must see N_SHARDS transfers on our new node
-    wait_for(transfers_reached_threshold, peer_urls[-1], transfer_threshold=N_SHARDS, transfer_limit=N_SHARDS + 1)
+    wait_for(transfers_reached_threshold, peer_urls[-1], wait_for_interval=0.1, transfer_threshold=N_SHARDS, transfer_limit=N_SHARDS + 1)
 
     # Wait until all shards are active on our new node we replicated to
     wait_for(all_collection_shards_are_active, peer_urls[-1], COLLECTION_NAME)
