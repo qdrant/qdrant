@@ -4,7 +4,7 @@ use std::time::Instant;
 use chrono::{NaiveDateTime, Timelike};
 use segment::data_types::text_index::TextIndexType;
 use segment::data_types::vectors::VectorElementType;
-use segment::types::default_quantization_ignore_value;
+use segment::types::{default_quantization_ignore_value};
 use tonic::Status;
 use uuid::Uuid;
 
@@ -21,7 +21,7 @@ use crate::grpc::qdrant::{
     shard_key, with_vectors_selector, CollectionDescription, CollectionOperationResponse,
     Condition, Distance, FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius,
     HasIdCondition, HealthCheckReply, HnswConfigDiff, IsEmptyCondition, IsNullCondition,
-    ListCollectionsResponse, ListValue, Match, NamedVectors, NestedCondition,
+    ListCollectionsResponse, ListValue, Match, MinShould, NamedVectors, NestedCondition,
     PayloadExcludeSelector, PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo,
     PayloadSchemaType, PointId, ProductQuantization, QuantizationConfig, QuantizationSearchParams,
     QuantizationType, Range, RepeatedIntegers, RepeatedStrings, ScalarQuantization, ScoredPoint,
@@ -768,7 +768,18 @@ impl TryFrom<Filter> for segment::types::Filter {
     fn try_from(value: Filter) -> Result<Self, Self::Error> {
         Ok(Self {
             should: conditions_helper_from_grpc(value.should)?,
-            min_should: None, // TODO
+            min_should: {
+                match value.min_should {
+                    Some(MinShould { conditions, min_count }) => 
+                        Some(segment::types::MinShould { 
+                            conditions: conditions_helper_from_grpc(conditions).and_then(
+                                |conds| Ok(conds.unwrap_or_default()) 
+                            )?, 
+                            min_count: min_count as usize
+                        }),
+                    None => None,
+                }
+            }, 
             must: conditions_helper_from_grpc(value.must)?,
             must_not: conditions_helper_from_grpc(value.must_not)?,
         })
@@ -779,6 +790,14 @@ impl From<segment::types::Filter> for Filter {
     fn from(value: segment::types::Filter) -> Self {
         Self {
             should: conditions_helper_to_grpc(value.should),
+            min_should: {
+                if let Some(segment::types::MinShould { conditions, min_count }) = value.min_should {
+                    Some(MinShould { 
+                        conditions: conditions_helper_to_grpc(Some(conditions)), 
+                        min_count: min_count as u64
+                    })
+                } else { None }
+            },
             must: conditions_helper_to_grpc(value.must),
             must_not: conditions_helper_to_grpc(value.must_not),
         }

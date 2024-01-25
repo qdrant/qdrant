@@ -4486,14 +4486,26 @@ pub struct Filter {
     #[prost(message, repeated, tag = "1")]
     #[validate]
     pub should: ::prost::alloc::vec::Vec<Condition>,
-    /// All conditions must match
-    #[prost(message, repeated, tag = "2")]
+    /// At least minimum amount of given conditions should match
+    #[prost(message, optional, tag = "2")]
+    pub min_should: ::core::option::Option<MinShould>,
+    ///None All conditions must match
+    #[prost(message, repeated, tag = "3")]
     #[validate]
     pub must: ::prost::alloc::vec::Vec<Condition>,
     /// All conditions must NOT match
-    #[prost(message, repeated, tag = "3")]
+    #[prost(message, repeated, tag = "4")]
     #[validate]
     pub must_not: ::prost::alloc::vec::Vec<Condition>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MinShould {
+    #[prost(message, repeated, tag = "1")]
+    pub conditions: ::prost::alloc::vec::Vec<Condition>,
+    #[prost(uint64, tag = "2")]
+    pub min_count: u64,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
