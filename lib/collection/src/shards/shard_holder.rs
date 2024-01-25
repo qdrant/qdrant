@@ -287,13 +287,14 @@ impl ShardHolder {
     /// This only includes shard transfers that are in consensus for the current collection. A
     /// shard transfer that has just been proposed may not be included yet.
     pub fn count_shard_transfer_io(&self, peer_id: &PeerId) -> (usize, usize) {
-        self.shard_transfers
-            .read()
-            .iter()
-            .map(|transfer| (transfer.to == *peer_id, transfer.from == *peer_id))
-            .fold((0, 0), |(i, o), (is_incoming, is_outgoing)| {
-                (i + is_incoming as usize, o + is_outgoing as usize)
-            })
+        let (mut incoming, mut outgoing) = (0, 0);
+
+        for transfer in self.shard_transfers.read().iter() {
+            incoming += (transfer.to == *peer_id) as usize;
+            outgoing += (transfer.from == *peer_id) as usize;
+        }
+
+        (incoming, outgoing)
     }
 
     pub fn get_shard_transfer_info(&self) -> Vec<ShardTransferInfo> {
