@@ -514,17 +514,10 @@ impl Collection {
             let transfers = shard_holder.get_transfers(|_| true);
 
             // Respect shard transfer limit, consider already proposed transfers in our counts
-            let transfer_io = shard_holder.count_shard_transfer_io(this_peer_id);
-            let transfer_io = (
-                transfer_io.0 + *proposed.get(this_peer_id).unwrap_or(&0),
-                transfer_io.1,
-            );
-            if self.check_shard_transfer_limit(transfer_io) {
-                log::trace!(
-                    "Postponing automatic shard {shard_id} transfer to stay below limit on this node (i/o: {}/{})",
-                    transfer_io.0,
-                    transfer_io.1,
-                );
+            let (mut incoming, outgoing) = shard_holder.count_shard_transfer_io(this_peer_id);
+            incoming += proposed.get(this_peer_id).copied().unwrap_or(0);
+            if self.check_shard_transfer_limit(incoming, outgoing) {
+                log::trace!("Postponing automatic shard {shard_id} transfer to stay below limit on this node (i/o: {incoming}/{outgoing})");
                 continue;
             }
 
@@ -548,17 +541,10 @@ impl Collection {
                 }
 
                 // Respect shard transfer limit, consider already proposed transfers in our counts
-                let transfer_io = shard_holder.count_shard_transfer_io(&replica_id);
-                let transfer_io = (
-                    transfer_io.0,
-                    transfer_io.1 + *proposed.get(&replica_id).unwrap_or(&0),
-                );
-                if self.check_shard_transfer_limit(transfer_io) {
-                    log::trace!(
-                        "Postponing automatic shard {shard_id} transfer to stay below limit on peer {replica_id} (i/o: {}/{})",
-                        transfer_io.0,
-                        transfer_io.1,
-                    );
+                let (incoming, mut outgoing) = shard_holder.count_shard_transfer_io(&replica_id);
+                outgoing += proposed.get(&replica_id).copied().unwrap_or(0);
+                if self.check_shard_transfer_limit(incoming, outgoing) {
+                    log::trace!("Postponing automatic shard {shard_id} transfer to stay below limit on peer {replica_id} (i/o: {incoming}/{outgoing})");
                     continue;
                 }
 

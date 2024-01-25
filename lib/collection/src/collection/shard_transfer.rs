@@ -364,12 +364,12 @@ impl Collection {
             .shared_storage_config
             .incoming_shard_transfers_limit
             .map_or(false, |limit| incoming >= limit);
-            
+
         let outgoing_shard_transfer_limit_reached = self
             .shared_storage_config
             .outgoing_shard_transfers_limit
             .map_or(false, |limit| outgoing >= limit);
 
-         incoming_shard_transfer_limit_reached || outgoing_shard_transfer_limit_reached
+        incoming_shard_transfer_limit_reached || outgoing_shard_transfer_limit_reached
     }
 }
