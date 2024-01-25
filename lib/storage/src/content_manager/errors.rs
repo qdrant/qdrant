@@ -26,6 +26,8 @@ pub enum StorageError {
     Locked { description: String },
     #[error("Timeout: {description}")]
     Timeout { description: String },
+    #[error("Checksum mismatch: expected {expected}, actual {actual}")]
+    ChecksumMismatch { expected: String, actual: String },
 }
 
 impl StorageError {
@@ -51,6 +53,13 @@ impl StorageError {
     pub fn already_exists(description: impl Into<String>) -> StorageError {
         StorageError::AlreadyExists {
             description: description.into(),
+        }
+    }
+
+    pub fn checksum_mismatch(expected: impl Into<String>, actual: impl Into<String>) -> Self {
+        StorageError::ChecksumMismatch {
+            expected: expected.into(),
+            actual: actual.into(),
         }
     }
 

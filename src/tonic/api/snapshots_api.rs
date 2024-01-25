@@ -232,6 +232,7 @@ impl ShardSnapshots for ShardSnapshotsService {
             request.shard_id,
             request.snapshot_location.try_into()?,
             request.snapshot_priority.try_into()?,
+            request.checksum,
             self.http_client.clone(),
         )
         .await

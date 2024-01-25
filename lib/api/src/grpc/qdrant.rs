@@ -10688,6 +10688,10 @@ pub struct RecoverShardSnapshotRequest {
     /// Priority of the shard snapshot
     #[prost(enumeration = "ShardSnapshotPriority", tag = "4")]
     pub snapshot_priority: i32,
+    /// SHA256 checksum for verifying snapshot integrity
+    #[prost(string, optional, tag = "5")]
+    #[validate(custom = "common::validation::validate_sha256_hash_option")]
+    pub checksum: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

@@ -24,3 +24,28 @@ pub async fn hash_file(file_path: &Path) -> io::Result<String> {
     let hash = sha.finalize();
     Ok(format!("{hash:x}"))
 }
+
+/// Compare two hashes, ignoring whitespace and case
+pub fn hashes_equal(a: &str, b: &str) -> bool {
+    Iterator::eq(
+        a.chars()
+            .filter(|c| !c.is_whitespace())
+            .map(|c| c.to_ascii_lowercase()),
+        b.chars()
+            .filter(|c| !c.is_whitespace())
+            .map(|c| c.to_ascii_lowercase()),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_compare_hash() {
+        assert!(hashes_equal("0123abc", "0123abc"));
+        assert!(hashes_equal("0123abc", "0123ABC"));
+        assert!(hashes_equal("0123abc", "0123abc "));
+        assert!(!hashes_equal("0123abc", "0123abd"));
+    }
+}

@@ -287,6 +287,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("DeleteShardSnapshotRequest.snapshot_name", "length(min = 1)"),
             ("RecoverShardSnapshotRequest.collection_name", "length(min = 1, max = 255)"),
             ("RecoverShardSnapshotRequest.snapshot_name", "length(min = 1)"),
+            ("RecoverShardSnapshotRequest.checksum", "custom = \"common::validation::validate_sha256_hash_option\""),
         ], &[
             "CreateFullSnapshotRequest",
             "ListFullSnapshotsRequest",
