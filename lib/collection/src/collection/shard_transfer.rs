@@ -359,15 +359,17 @@ impl Collection {
 
     /// Whether we have reached the shard transfer soft limit based on the given incoming and
     /// outgoing transfers.
-    pub(super) fn check_shard_transfer_limit(&self, (incoming, outgoing): (usize, usize)) -> bool {
-        self.shared_storage_config
+    pub(super) fn check_shard_transfer_limit(&self, incoming: usize, outgoing: usize) -> bool {
+        let incoming_shard_transfer_limit_reached = self
+            .shared_storage_config
             .incoming_shard_transfers_limit
-            .map(|limit| incoming >= limit)
-            .unwrap_or(false)
-            || self
-                .shared_storage_config
-                .outgoing_shard_transfers_limit
-                .map(|limit| outgoing >= limit)
-                .unwrap_or(false)
+            .map_or(false, |limit| incoming >= limit);
+            
+        let outgoing_shard_transfer_limit_reached = self
+            .shared_storage_config
+            .outgoing_shard_transfers_limit
+            .map_or(false, |limit| outgoing >= limit);
+
+         incoming_shard_transfer_limit_reached || outgoing_shard_transfer_limit_reached
     }
 }
