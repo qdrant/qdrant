@@ -49,8 +49,16 @@ pub(crate) fn update_vectors(
     op_num: SeqNumberType,
     points: &[PointVectors],
 ) -> CollectionResult<usize> {
-    let points_map: HashMap<PointIdType, &PointVectors> =
-        points.iter().map(|p| (p.id, p)).collect();
+    // Build a map of vectors to update per point, merge updates on same point ID
+    let points_map: HashMap<PointIdType, PointVectors> =
+        points
+            .iter()
+            .fold(HashMap::with_capacity(points.len()), |mut map, p| {
+                map.entry(p.id)
+                    .and_modify(|e| e.vector.merge(p.vector.clone()))
+                    .or_insert_with(|| p.clone());
+                map
+            });
     let ids: Vec<PointIdType> = points_map.keys().copied().collect();
 
     let updated_points =

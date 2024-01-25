@@ -1,6 +1,15 @@
 #@ load("openapi.lib.yml", "response", "reference", "type", "array")
 
 paths:
+  /:
+    get:
+      summary: Returns information about the running Qdrant instance
+      description: Returns information about the running Qdrant instance like version and commit id
+      operationId: root
+      tags:
+        - service
+      responses: #@ response(reference("VersionInfo"))
+
   /telemetry:
     get:
       summary: Collect telemetry data

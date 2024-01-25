@@ -1,4 +1,5 @@
 use collection::collection::Collection;
+use collection::common::sha_256::{hash_file, hashes_equal};
 use collection::config::CollectionConfig;
 use collection::operations::snapshot_ops::{SnapshotPriority, SnapshotRecover};
 use collection::shards::replica_set::ReplicaState;
@@ -70,7 +71,11 @@ async fn _do_recover_from_snapshot(
     source: SnapshotRecover,
     client: &reqwest::Client,
 ) -> Result<bool, StorageError> {
-    let SnapshotRecover { location, priority } = source;
+    let SnapshotRecover {
+        location,
+        priority,
+        checksum,
+    } = source;
     let toc = dispatcher.toc();
 
     let this_peer_id = toc.this_peer_id;
@@ -86,6 +91,15 @@ async fn _do_recover_from_snapshot(
 
     let (snapshot_path, snapshot_temp_path) =
         download_snapshot(client, location, download_dir.path()).await?;
+
+    if let Some(checksum) = checksum {
+        let snapshot_checksum = hash_file(&snapshot_path).await?;
+        if !hashes_equal(&snapshot_checksum, &checksum) {
+            return Err(StorageError::bad_input(format!(
+                "Snapshot checksum mismatch: expected {checksum}, got {snapshot_checksum}"
+            )));
+        }
+    }
 
     log::debug!("Snapshot downloaded to {}", snapshot_path.display());
 

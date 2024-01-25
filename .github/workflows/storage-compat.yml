@@ -16,12 +16,16 @@ jobs:
 
     steps:
       - name: Install dependencies
-        run: sudo apt-get install clang git-lfs protobuf-compiler
+        run: sudo apt-get install clang git-lfs
       - name: Setup git-lfs
         run: git lfs install
       - name: Install minimal stable
         uses: dtolnay/rust-toolchain@stable
       - uses: actions/checkout@v4
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v2
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: Swatinem/rust-cache@v2
       - name: Run storage compatibility test
         run: ./tests/storage-compat/storage-compatibility.sh

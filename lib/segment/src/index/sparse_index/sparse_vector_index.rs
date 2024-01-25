@@ -282,6 +282,9 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         is_stopped: &AtomicBool,
         prefiltered_points: &mut Option<Vec<PointOffsetType>>,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
+        if vector.is_empty() {
+            return Ok(vec![]);
+        }
         let mut vector = vector.clone();
         vector.sort_by_indices();
 

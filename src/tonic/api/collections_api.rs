@@ -243,11 +243,6 @@ impl Collections for CollectionsService {
         .await
         .map_err(error_to_status)?;
 
-        self.dispatcher
-            .await_consensus_sync(timeout)
-            .await
-            .map_err(error_to_status)?;
-
         Ok(Response::new(CreateShardKeyResponse { result }))
     }
 

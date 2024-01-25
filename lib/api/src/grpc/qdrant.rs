@@ -602,8 +602,19 @@ pub struct TextIndexParams {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IntegerIndexParams {
+    /// If true - support direct lookups.
+    #[prost(bool, tag = "1")]
+    pub lookup: bool,
+    /// If true - support ranges filters.
+    #[prost(bool, tag = "2")]
+    pub range: bool,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PayloadIndexParams {
-    #[prost(oneof = "payload_index_params::IndexParams", tags = "1")]
+    #[prost(oneof = "payload_index_params::IndexParams", tags = "1, 2")]
     pub index_params: ::core::option::Option<payload_index_params::IndexParams>,
 }
 /// Nested message and enum types in `PayloadIndexParams`.
@@ -615,6 +626,9 @@ pub mod payload_index_params {
         /// Parameters for text index
         #[prost(message, tag = "1")]
         TextIndexParams(super::TextIndexParams),
+        /// Parameters for integer index
+        #[prost(message, tag = "2")]
+        IntegerIndexParams(super::IntegerIndexParams),
     }
 }
 #[derive(serde::Serialize)]
@@ -9896,6 +9910,9 @@ pub struct SnapshotDescription {
     /// Size of the snapshot in bytes
     #[prost(int64, tag = "3")]
     pub size: i64,
+    /// SHA256 digest of the snapshot file
+    #[prost(string, optional, tag = "4")]
+    pub checksum: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -10683,6 +10700,10 @@ pub struct RecoverShardSnapshotRequest {
     /// Priority of the shard snapshot
     #[prost(enumeration = "ShardSnapshotPriority", tag = "4")]
     pub snapshot_priority: i32,
+    /// SHA256 checksum for verifying snapshot integrity
+    #[prost(string, optional, tag = "5")]
+    #[validate(custom = "common::validation::validate_sha256_hash_option")]
+    pub checksum: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -11305,6 +11326,8 @@ pub struct HealthCheckReply {
     pub title: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub version: ::prost::alloc::string::String,
+    #[prost(string, optional, tag = "3")]
+    pub commit: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// Generated client implementations.
 pub mod qdrant_client {

@@ -1,11 +1,12 @@
 use std::num::NonZeroU32;
 use std::ops::Deref;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use collection::config::ShardingMethod;
 use common::defaults::CONSENSUS_META_OP_WAIT;
 
+use crate::content_manager::collection_meta_ops::AliasOperations;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::{
     ClusterStatus, CollectionMetaOperations, ConsensusOperations, ConsensusStateRef, StorageError,
@@ -50,6 +51,8 @@ impl Dispatcher {
     ) -> Result<bool, StorageError> {
         // if distributed deployment is enabled
         if let Some(state) = self.consensus_state.as_ref() {
+            let start = Instant::now();
+
             // List of operations to await for collection to be operational
             let mut expect_operations: Vec<ConsensusOperations> = vec![];
 
@@ -112,6 +115,28 @@ impl Dispatcher {
                     None
                 };
 
+            let do_sync_nodes = match &op {
+                // Sync nodes after collection or shard key creation
+                CollectionMetaOperations::CreateCollection(_)
+                | CollectionMetaOperations::CreateShardKey(_) => true,
+                // Sync nodes when creating or renaming collection aliases
+                CollectionMetaOperations::ChangeAliases(changes) => {
+                    changes.actions.iter().any(|change| match change {
+                        AliasOperations::CreateAlias(_) | AliasOperations::RenameAlias(_) => true,
+                        AliasOperations::DeleteAlias(_) => false,
+                    })
+                }
+                // No need to sync nodes for other operations
+                CollectionMetaOperations::UpdateCollection(_)
+                | CollectionMetaOperations::DeleteCollection(_)
+                | CollectionMetaOperations::TransferShard(_, _)
+                | CollectionMetaOperations::SetShardReplicaState(_)
+                | CollectionMetaOperations::DropShardKey(_)
+                | CollectionMetaOperations::CreatePayloadIndex(_)
+                | CollectionMetaOperations::DropPayloadIndex(_)
+                | CollectionMetaOperations::Nop { .. } => false,
+            };
+
             let res = state
                 .propose_consensus_op_with_await(
                     ConsensusOperations::CollectionMeta(Box::new(op)),
@@ -127,6 +152,15 @@ impl Dispatcher {
                         log::warn!("Not all expected operations were completed: {}", err)
                     }
                     Err(err) => log::warn!("Awaiting for expected operations timed out: {}", err),
+                }
+            }
+
+            // On some operations, synchronize all nodes to ensure all are ready for point operations
+            if do_sync_nodes {
+                let remaining_timeout =
+                    wait_timeout.map(|timeout| timeout.saturating_sub(start.elapsed()));
+                if let Err(err) = self.await_consensus_sync(remaining_timeout).await {
+                    log::warn!("Failed to synchronize all nodes after collection operation in time, some nodes may not be ready: {err}");
                 }
             }
 

@@ -184,6 +184,11 @@ impl<'a> PostingListIterator<'a> {
         }
     }
 
+    /// Slice of the remaining elements.
+    pub fn remaining_elements(&self) -> &'a [PostingElement] {
+        &self.elements[self.current_index..]
+    }
+
     /// Advances the iterator to the next element.
     pub fn advance(&mut self) {
         if self.current_index < self.elements.len() {

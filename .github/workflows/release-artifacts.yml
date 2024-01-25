@@ -23,13 +23,17 @@ jobs:
     steps:
       - name: Install dependencies
         run: |
-            sudo apt-get update
-            sudo apt-get install -y gcc-multilib clang cmake protobuf-compiler
-            rustup default stable
-            rustup update
-            rustup show
-            cargo -Vv
+          sudo apt-get update
+          sudo apt-get install -y gcc-multilib clang cmake protobuf-compiler
+          rustup default stable
+          rustup update
+          rustup show
+          cargo -Vv
       - uses: actions/checkout@v4
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v2
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
       - name: Install cross-compilation tools
@@ -70,12 +74,12 @@ jobs:
     steps:
       - name: Install dependencies
         run: |
-            brew update-reset
-            brew install gcc cmake protobuf-c
-            rustup default stable
-            rustup update
-            rustup show
-            cargo -Vv
+          brew update-reset
+          brew install gcc cmake protobuf-c
+          rustup default stable
+          rustup update
+          rustup show
+          cargo -Vv
       - uses: actions/checkout@v4
       - name: Build and publish
         uses: taiki-e/upload-rust-binary-action@v1
@@ -108,3 +112,65 @@ jobs:
         with:
           bin: qdrant
           token: ${{ secrets.GITHUB_TOKEN }}
+
+  build-app-image:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-20.04
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-multilib clang cmake protobuf-compiler libfuse2
+
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v2
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Build AppImage
+        shell: bash
+        run: |
+          mkdir -p AppDir
+          cp docs/logo.svg qdrant.svg
+          cp target/release/qdrant .
+
+          curl -Lo linuxdeploy-x86_64.AppImage \
+              https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          chmod +x linuxdeploy-x86_64.AppImage
+
+          ./linuxdeploy-x86_64.AppImage \
+              --appdir AppDir \
+              --executable qdrant \
+              -d pkg/appimage/qdrant.desktop \
+              -i qdrant.svg \
+              --custom-apprun pkg/appimage/AppRun.sh
+
+          wget -O dist-qdrant.zip "$(curl --silent "https://api.github.com/repos/qdrant/qdrant-web-ui/releases/latest" | jq -r '.assets[] | select(.name=="dist-qdrant.zip") | .browser_download_url')"          
+          unzip -o dist-qdrant.zip -d static
+          mv -n static/dist/* static/
+          rm -rf static/dist
+          mv static AppDir/usr/share
+
+          ./linuxdeploy-x86_64.AppImage \
+              --appdir AppDir \
+              --output appimage
+
+      - name: Upload AppImage
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: "qdrant-x86_64.AppImage"
+          tag: ${{ github.ref }}
+          overwrite: true
+          file_glob: true

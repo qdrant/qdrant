@@ -31,6 +31,7 @@
     - [GetCollectionInfoRequest](#qdrant-GetCollectionInfoRequest)
     - [GetCollectionInfoResponse](#qdrant-GetCollectionInfoResponse)
     - [HnswConfigDiff](#qdrant-HnswConfigDiff)
+    - [IntegerIndexParams](#qdrant-IntegerIndexParams)
     - [ListAliasesRequest](#qdrant-ListAliasesRequest)
     - [ListAliasesResponse](#qdrant-ListAliasesResponse)
     - [ListCollectionAliasesRequest](#qdrant-ListCollectionAliasesRequest)
@@ -705,6 +706,22 @@
 
 
 
+<a name="qdrant-IntegerIndexParams"></a>
+
+### IntegerIndexParams
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| lookup | [bool](#bool) |  | If true - support direct lookups. |
+| range | [bool](#bool) |  | If true - support ranges filters. |
+
+
+
+
+
+
 <a name="qdrant-ListAliasesRequest"></a>
 
 ### ListAliasesRequest
@@ -873,6 +890,7 @@ Note: 1kB = 1 vector of size 256. |
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | text_index_params | [TextIndexParams](#qdrant-TextIndexParams) |  | Parameters for text index |
+| integer_index_params | [IntegerIndexParams](#qdrant-IntegerIndexParams) |  | Parameters for integer index |
 
 
 
@@ -3569,6 +3587,7 @@ When using target (with or without context), the score behaves a little differen
 | ----- | ---- | ----- | ----------- |
 | title | [string](#string) |  |  |
 | version | [string](#string) |  |  |
+| commit | [string](#string) | optional |  |
 
 
 
@@ -3835,6 +3854,7 @@ When using target (with or without context), the score behaves a little differen
 | name | [string](#string) |  | Name of the snapshot |
 | creation_time | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  | Creation time of the snapshot |
 | size | [int64](#int64) |  | Size of the snapshot in bytes |
+| checksum | [string](#string) | optional | SHA256 digest of the snapshot file |
 
 
 

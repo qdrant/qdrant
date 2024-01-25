@@ -7,27 +7,29 @@ use common::types::PointOffsetType;
 use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
+use segment::data_types::integer_index::{IntegerIndexParams, IntegerIndexType};
 use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_context_fixture::FixtureIdTracker;
 use segment::fixtures::payload_fixtures::{
     generate_diverse_nested_payload, generate_diverse_payload, random_filter, random_nested_filter,
-    random_vector, FLICKING_KEY, GEO_KEY, INT_KEY, INT_KEY_2, LAT_RANGE, LON_RANGE, STR_KEY,
-    STR_PROJ_KEY, STR_ROOT_PROJ_KEY, TEXT_KEY,
+    random_vector, FLICKING_KEY, GEO_KEY, INT_KEY, INT_KEY_2, INT_KEY_3, LAT_RANGE, LON_RANGE,
+    STR_KEY, STR_PROJ_KEY, STR_ROOT_PROJ_KEY, TEXT_KEY,
 };
-use segment::index::field_index::PrimaryCondition;
+use segment::index::field_index::{FieldIndex, PrimaryCondition};
 use segment::index::struct_payload_index::StructPayloadIndex;
 use segment::index::PayloadIndex;
 use segment::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use segment::payload_storage::PayloadStorage;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
-use segment::types::PayloadFieldSchema::FieldType;
+use segment::types::PayloadFieldSchema::{FieldParams, FieldType};
 use segment::types::PayloadSchemaType::{Integer, Keyword};
 use segment::types::{
     AnyVariants, Condition, Distance, FieldCondition, Filter, GeoBoundingBox, GeoLineString,
     GeoPoint, GeoPolygon, GeoRadius, Indexes, IsEmptyCondition, Match, Payload, PayloadField,
-    PayloadSchemaType, Range, SegmentConfig, VectorDataConfig, VectorStorageType, WithPayload,
+    PayloadSchemaParams, PayloadSchemaType, Range, SegmentConfig, VectorDataConfig,
+    VectorStorageType, WithPayload,
 };
 use serde_json::json;
 use tempfile::Builder;
@@ -94,6 +96,32 @@ fn build_test_segments(path_struct: &Path, path_plain: &Path) -> (Segment, Segme
         .unwrap();
     struct_segment
         .create_field_index(opnum, INT_KEY, None)
+        .unwrap();
+    struct_segment
+        .create_field_index(
+            opnum,
+            INT_KEY_2,
+            Some(&FieldParams(PayloadSchemaParams::Integer(
+                IntegerIndexParams {
+                    r#type: IntegerIndexType::Integer,
+                    lookup: true,
+                    range: false,
+                },
+            ))),
+        )
+        .unwrap();
+    struct_segment
+        .create_field_index(
+            opnum,
+            INT_KEY_3,
+            Some(&FieldParams(PayloadSchemaParams::Integer(
+                IntegerIndexParams {
+                    r#type: IntegerIndexType::Integer,
+                    lookup: false,
+                    range: true,
+                },
+            ))),
+        )
         .unwrap();
     struct_segment
         .create_field_index(opnum, GEO_KEY, Some(&PayloadSchemaType::Geo.into()))
@@ -358,6 +386,28 @@ fn test_is_empty_conditions() {
         (estimation_struct.exp as f64 - real_number as f64).abs()
             <= (estimation_plain.exp as f64 - real_number as f64).abs()
     );
+}
+
+#[test]
+fn test_integer_index_types() {
+    let dir1 = Builder::new().prefix("segment1_dir").tempdir().unwrap();
+    let dir2 = Builder::new().prefix("segment2_dir").tempdir().unwrap();
+
+    let (struct_segment, _) = build_test_segments(dir1.path(), dir2.path());
+
+    let indexes = struct_segment.payload_index.borrow();
+    assert!(matches!(
+        indexes.field_indexes.get(INT_KEY).unwrap().as_slice(),
+        [FieldIndex::IntMapIndex(_), FieldIndex::IntIndex(_)]
+    ));
+    assert!(matches!(
+        indexes.field_indexes.get(INT_KEY_2).unwrap().as_slice(),
+        [FieldIndex::IntMapIndex(_)]
+    ));
+    assert!(matches!(
+        indexes.field_indexes.get(INT_KEY_3).unwrap().as_slice(),
+        [FieldIndex::IntIndex(_)]
+    ));
 }
 
 #[test]

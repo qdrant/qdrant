@@ -8,7 +8,7 @@ collection_name = 'test_collection'
 
 @pytest.fixture(autouse=True)
 def setup(on_disk_vectors, on_disk_payload):
-    multivec_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors, on_disk_payload=on_disk_payload)
+    multivec_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors, on_disk_payload=on_disk_payload, distance='Dot')
     yield
     drop_collection(collection_name=collection_name)
 
@@ -412,6 +412,142 @@ def test_update_vectors_unknown_point():
     assert response.status_code == 404
     error = response.json()["status"]["error"]
     assert error == "Not found: No point with id 424242424242424242 found"
+
+
+def test_update_vectors_same_point_in_batch():
+    POINT_ID = 1000
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "points": [
+                {
+                    "id": POINT_ID,
+                    "vector": {
+                        "text": [0.1, 0.3, 0.2, 0.9, 0.9, 0.1, 0.4, 0.9],
+                        "image": [0.8, 0.6, 0.3, 0.0],
+                    },
+                }
+            ]
+        }
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': POINT_ID},
+    )
+    assert response.ok
+    result = response.json()["result"]
+    assert result["vector"].get("text") == [0.1, 0.3, 0.2, 0.9, 0.9, 0.1, 0.4, 0.9]
+    assert result["vector"].get("image") == [0.8, 0.6, 0.3, 0.0]
+
+    # Update both vectors in separate batch items
+    # Matches bug report: <https://github.com/qdrant/qdrant/issues/3376>
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/vectors',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "points": [
+                {
+                    "id": POINT_ID,
+                    "vector": {
+                        "text": [0.8, 0.8, 0.9, 0.2, 0.7, 0.5, 0.2, 0.6],
+                    }
+                },
+                {
+                    "id": POINT_ID,
+                    "vector": {
+                        "image": [0.3, 0.6, 0.4, 0.4],
+                    }
+                }
+            ]
+        }
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': POINT_ID},
+    )
+    assert response.ok
+    result = response.json()["result"]
+    assert result["vector"].get("text") == [0.8, 0.8, 0.9, 0.2, 0.7, 0.5, 0.2, 0.6]
+    assert result["vector"].get("image") == [0.3, 0.6, 0.4, 0.4]
+
+    # Update the same vector twice
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/vectors',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "points": [
+                {
+                    "id": POINT_ID,
+                    "vector": {
+                        "text": [0.2, 0.0, 0.1, 0.3, 0.1, 0.0, 0.0, 0.5],
+                    }
+                },
+                {
+                    "id": POINT_ID,
+                    "vector": {
+                        "image": [0.7, 0.5, 0.0, 0.5],
+                        "text": [0.9, 0.2, 0.5, 0.6, 0.4, 0.1, 0.6, 0.7],
+                    }
+                },
+                {
+                    "id": 1,
+                    "vector": {
+                        "image": [0.4, 0.4, 0.0, 0.9],
+                        "text": [0.8, 0.6, 0.9, 0.2, 0.3, 0.9, 0.5, 0.9],
+                    }
+                },
+                {
+                    "id": 2,
+                    "vector": {
+                        "text": [0.5, 0.8, 0.9, 0.8, 0.3, 0.2, 0.1, 0.1],
+                    }
+                },
+                {
+                    "id": 3,
+                    "vector": {
+                        "image": [0.1, 0.1, 0.3, 0.7],
+                    }
+                },
+                {
+                    "id": POINT_ID,
+                    "vector": {
+                        "image": [0.9, 0.9, 0.7, 0.5],
+                    }
+                },
+                {
+                    "id": POINT_ID,
+                    "vector": {
+                        "image": [0.4, 0.5, 0.6, 0.2],
+                    }
+                },
+            ]
+        }
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': POINT_ID},
+    )
+    assert response.ok
+    result = response.json()["result"]
+    assert result["vector"].get("text") == [0.9, 0.2, 0.5, 0.6, 0.4, 0.1, 0.6, 0.7]
+    assert result["vector"].get("image") == [0.4, 0.5, 0.6, 0.2]
 
 
 def test_no_vectors():
