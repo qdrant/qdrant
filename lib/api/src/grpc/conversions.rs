@@ -4,7 +4,7 @@ use std::time::Instant;
 use chrono::{NaiveDateTime, Timelike};
 use segment::data_types::text_index::TextIndexType;
 use segment::data_types::vectors::VectorElementType;
-use segment::types::{default_quantization_ignore_value};
+use segment::types::default_quantization_ignore_value;
 use tonic::Status;
 use uuid::Uuid;
 
@@ -770,16 +770,17 @@ impl TryFrom<Filter> for segment::types::Filter {
             should: conditions_helper_from_grpc(value.should)?,
             min_should: {
                 match value.min_should {
-                    Some(MinShould { conditions, min_count }) => 
-                        Some(segment::types::MinShould { 
-                            conditions: conditions_helper_from_grpc(conditions).and_then(
-                                |conds| Ok(conds.unwrap_or_default()) 
-                            )?, 
-                            min_count: min_count as usize
-                        }),
+                    Some(MinShould {
+                        conditions,
+                        min_count,
+                    }) => Some(segment::types::MinShould {
+                        conditions: conditions_helper_from_grpc(conditions)
+                            .map(|conds| conds.unwrap_or_default())?,
+                        min_count: min_count as usize,
+                    }),
                     None => None,
                 }
-            }, 
+            },
             must: conditions_helper_from_grpc(value.must)?,
             must_not: conditions_helper_from_grpc(value.must_not)?,
         })
@@ -791,12 +792,18 @@ impl From<segment::types::Filter> for Filter {
         Self {
             should: conditions_helper_to_grpc(value.should),
             min_should: {
-                if let Some(segment::types::MinShould { conditions, min_count }) = value.min_should {
-                    Some(MinShould { 
-                        conditions: conditions_helper_to_grpc(Some(conditions)), 
-                        min_count: min_count as u64
+                if let Some(segment::types::MinShould {
+                    conditions,
+                    min_count,
+                }) = value.min_should
+                {
+                    Some(MinShould {
+                        conditions: conditions_helper_to_grpc(Some(conditions)),
+                        min_count: min_count as u64,
                     })
-                } else { None }
+                } else {
+                    None
+                }
             },
             must: conditions_helper_to_grpc(value.must),
             must_not: conditions_helper_to_grpc(value.must_not),

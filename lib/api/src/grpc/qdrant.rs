@@ -4489,7 +4489,7 @@ pub struct Filter {
     /// At least minimum amount of given conditions should match
     #[prost(message, optional, tag = "2")]
     pub min_should: ::core::option::Option<MinShould>,
-    ///None All conditions must match
+    /// All conditions must match
     #[prost(message, repeated, tag = "3")]
     #[validate]
     pub must: ::prost::alloc::vec::Vec<Condition>,
