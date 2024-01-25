@@ -15,6 +15,7 @@ use futures::{FutureExt as _, TryFutureExt as _};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use snapshot_manager::file::SnapshotFile;
+use storage::content_manager::errors::StorageError;
 use storage::content_manager::snapshots::do_create_full_snapshot;
 use storage::content_manager::snapshots::recover::do_recover_from_snapshot;
 use storage::content_manager::toc::TableOfContent;
