@@ -60,8 +60,8 @@ pub struct ShardTransferKey {
 }
 
 impl ShardTransferKey {
-    pub fn check(&self, transfer: &ShardTransfer) -> bool {
-        transfer.key() == *self
+    pub fn check(self, transfer: &ShardTransfer) -> bool {
+        self == transfer.key()
     }
 }
 

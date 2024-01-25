@@ -291,8 +291,8 @@ impl ShardHolder {
             .read()
             .iter()
             .map(|transfer| (transfer.to == *peer_id, transfer.from == *peer_id))
-            .fold((0, 0), |(i, o), (is_outgoing, is_incoming)| {
-                (i + is_outgoing as usize, o + is_incoming as usize)
+            .fold((0, 0), |(i, o), (is_incoming, is_outgoing)| {
+                (i + is_incoming as usize, o + is_outgoing as usize)
             })
     }
 
