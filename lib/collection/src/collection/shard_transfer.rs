@@ -357,9 +357,9 @@ impl Collection {
         }
     }
 
-    /// Whether we have reached the shard transfer soft limit based on the given incoming and
+    /// Whether we have reached the automatic shard transfer limit based on the given incoming and
     /// outgoing transfers.
-    pub(super) fn check_shard_transfer_limit(&self, incoming: usize, outgoing: usize) -> bool {
+    pub(super) fn check_auto_shard_transfer_limit(&self, incoming: usize, outgoing: usize) -> bool {
         let incoming_shard_transfer_limit_reached = self
             .shared_storage_config
             .incoming_shard_transfers_limit
