@@ -173,7 +173,6 @@ def test_collection_recovery_user_requests_above_limit(tmp_path: pathlib.Path):
 def transfers_reached_threshold(peer_url, transfer_threshold=1, transfer_limit = 1):
     # Ongoing transfers must be at threshold but not over the limit
     transfer_count = get_shard_transfer_count(peer_url, COLLECTION_NAME)
-    print(">>> CHECKING TRANSFERS: " + str(transfer_count))
     if transfer_count > transfer_limit:
         raise Exception(f"Number of shard transfers in collection {COLLECTION_NAME} is above our limit ({transfer_count}/{transfer_limit})")
 
@@ -183,7 +182,6 @@ def transfers_reached_threshold(peer_url, transfer_threshold=1, transfer_limit =
 def transfers_below_limit_or_done(peer_url, transfer_limit = 1):
     # Ongoing transfers must be below limit
     transfer_count = get_shard_transfer_count(peer_url, COLLECTION_NAME)
-    print(">>> CHECKING TRANSFERS: " + str(transfer_count))
     if transfer_count > transfer_limit:
         raise Exception(f"Number of shard transfers in collection {COLLECTION_NAME} is above our limit ({transfer_count}/{transfer_limit})")
 
