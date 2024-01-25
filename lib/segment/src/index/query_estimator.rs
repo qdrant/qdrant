@@ -8,7 +8,7 @@ use std::cmp::{max, min};
 use itertools::Itertools;
 
 use crate::index::field_index::{CardinalityEstimation, PrimaryCondition};
-use crate::types::{Condition, Filter};
+use crate::types::{Condition, Filter, MinShould};
 
 /// Re-estimate cardinality based on number of available vectors
 /// Assuming that deleted vectors are not correlated with the filter
@@ -125,6 +125,27 @@ pub fn combine_should_estimations(
     }
 }
 
+pub fn combine_min_should_estimations(
+    estimations: &[CardinalityEstimation],
+    min_count: usize,
+    total: usize,
+) -> CardinalityEstimation {
+    /*
+    | First estimate cardinality of intersections and then combine the estimations
+    | ex) min_count : 2, # of estimations : 4
+    | |(A ⋂ B) ∪ (A ⋂ C) ∪ (A ⋂ D) ∪ (B ⋂ C) ∪ (B ⋂ D) ∪ (C ⋂ D)|
+     */
+    let intersection_estimations = estimations
+        .iter()
+        .combinations(min_count)
+        .map(|intersection| {
+            combine_must_estimations(&intersection.into_iter().cloned().collect_vec(), total)
+        })
+        .collect_vec();
+
+    combine_should_estimations(&intersection_estimations, total)
+}
+
 pub fn combine_must_estimations(
     estimations: &[CardinalityEstimation],
     total: usize,
@@ -198,9 +219,12 @@ where
     }
     match &filter.min_should {
         None => {}
-        Some(_) => {
-            todo!()
-        }
+        Some(MinShould {
+            conditions,
+            min_count,
+        }) => filter_estimations.push(estimate_min_should(
+            estimator, conditions, *min_count, total,
+        )),
     }
     match &filter.must_not {
         None => {}
@@ -225,6 +249,20 @@ where
     let estimate = |x| estimate_condition(estimator, x, total);
     let should_estimations = conditions.iter().map(estimate).collect_vec();
     combine_should_estimations(&should_estimations, total)
+}
+
+fn estimate_min_should<F>(
+    estimator: &F,
+    conditions: &[Condition],
+    min_count: usize,
+    total: usize,
+) -> CardinalityEstimation
+where
+    F: Fn(&Condition) -> CardinalityEstimation,
+{
+    let estimate = |x| estimate_condition(estimator, x, total);
+    let min_should_estimations = conditions.iter().map(estimate).collect_vec();
+    combine_min_should_estimations(&min_should_estimations, min_count, total)
 }
 
 fn estimate_must<F>(estimator: &F, conditions: &[Condition], total: usize) -> CardinalityEstimation
@@ -403,6 +441,51 @@ mod tests {
         let estimation = estimate_filter(&test_estimator, &query, TOTAL);
         assert_eq!(estimation.primary_clauses.len(), 0);
         eprintln!("estimation = {estimation:#?}");
+        assert!(estimation.max <= TOTAL);
+        assert!(estimation.exp <= estimation.max);
+        assert!(estimation.min <= estimation.exp);
+    }
+
+    #[test]
+    fn min_should_estimation_query_test() {
+        let query = Filter {
+            should: None,
+            min_should: Some(MinShould {
+                conditions: vec![
+                    test_condition("color".to_owned()),
+                    test_condition("size".to_owned()),
+                ],
+                min_count: 1,
+            }),
+            must: None,
+            must_not: None,
+        };
+
+        let estimation = estimate_filter(&test_estimator, &query, TOTAL);
+        assert_eq!(estimation.primary_clauses.len(), 2);
+        assert!(estimation.max <= TOTAL);
+        assert!(estimation.exp <= estimation.max);
+        assert!(estimation.min <= estimation.exp);
+    }
+
+    #[test]
+    fn another_min_should_estimation_query_test() {
+        let query = Filter {
+            should: None,
+            min_should: Some(MinShould {
+                conditions: vec![
+                    test_condition("color".to_owned()),
+                    test_condition("size".to_owned()),
+                    test_condition("price".to_owned()),
+                ],
+                min_count: 2,
+            }),
+            must: None,
+            must_not: None,
+        };
+
+        let estimation = estimate_filter(&test_estimator, &query, TOTAL);
+        assert_eq!(estimation.primary_clauses.len(), 3);
         assert!(estimation.max <= TOTAL);
         assert!(estimation.exp <= estimation.max);
         assert!(estimation.min <= estimation.exp);

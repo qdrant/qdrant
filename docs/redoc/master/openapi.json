@@ -4976,7 +4976,7 @@
   ],
   "info": {
     "title": "Qdrant API",
-    "description": "API description for Qdrant vector search engine.\n\nThis document describes CRUD and search operations on collections of points (vectors with payload).\n\nQdrant supports any combinations of `should`, `must` and `must_not` conditions, which makes it possible to use in applications when object could not be described solely by vector. It could be location features, availability flags, and other custom properties businesses should take into account.\n## Examples\nThis examples cover the most basic use-cases - collection creation and basic vector search.\n### Create collection\nFirst - let's create a collection with dot-production metric.\n```\ncurl -X PUT 'http://localhost:6333/collections/test_collection' \\\n  -H 'Content-Type: application/json' \\\n  --data-raw '{\n    \"vectors\": {\n      \"size\": 4,\n      \"distance\": \"Dot\"\n    }\n  }'\n\n```\nExpected response:\n```\n{\n    \"result\": true,\n    \"status\": \"ok\",\n    \"time\": 0.031095451\n}\n```\nWe can ensure that collection was created:\n```\ncurl 'http://localhost:6333/collections/test_collection'\n```\nExpected response:\n```\n{\n  \"result\": {\n    \"status\": \"green\",\n    \"vectors_count\": 0,\n    \"segments_count\": 5,\n    \"disk_data_size\": 0,\n    \"ram_data_size\": 0,\n    \"config\": {\n      \"params\": {\n        \"vectors\": {\n          \"size\": 4,\n          \"distance\": \"Dot\"\n        }\n      },\n      \"hnsw_config\": {\n        \"m\": 16,\n        \"ef_construct\": 100,\n        \"full_scan_threshold\": 10000\n      },\n      \"optimizer_config\": {\n        \"deleted_threshold\": 0.2,\n        \"vacuum_min_vector_number\": 1000,\n        \"max_segment_number\": 5,\n        \"memmap_threshold\": 50000,\n        \"indexing_threshold\": 20000,\n        \"flush_interval_sec\": 1\n      },\n      \"wal_config\": {\n        \"wal_capacity_mb\": 32,\n        \"wal_segments_ahead\": 0\n      }\n    }\n  },\n  \"status\": \"ok\",\n  \"time\": 2.1199e-05\n}\n```\n\n### Add points\nLet's now add vectors with some payload:\n```\ncurl -L -X PUT 'http://localhost:6333/collections/test_collection/points?wait=true' \\ -H 'Content-Type: application/json' \\ --data-raw '{\n  \"points\": [\n    {\"id\": 1, \"vector\": [0.05, 0.61, 0.76, 0.74], \"payload\": {\"city\": \"Berlin\"}},\n    {\"id\": 2, \"vector\": [0.19, 0.81, 0.75, 0.11], \"payload\": {\"city\": [\"Berlin\", \"London\"] }},\n    {\"id\": 3, \"vector\": [0.36, 0.55, 0.47, 0.94], \"payload\": {\"city\": [\"Berlin\", \"Moscow\"] }},\n    {\"id\": 4, \"vector\": [0.18, 0.01, 0.85, 0.80], \"payload\": {\"city\": [\"London\", \"Moscow\"] }},\n    {\"id\": 5, \"vector\": [0.24, 0.18, 0.22, 0.44], \"payload\": {\"count\": [0]}},\n    {\"id\": 6, \"vector\": [0.35, 0.08, 0.11, 0.44]}\n  ]\n}'\n```\nExpected response:\n```\n{\n    \"result\": {\n        \"operation_id\": 0,\n        \"status\": \"completed\"\n    },\n    \"status\": \"ok\",\n    \"time\": 0.000206061\n}\n```\n### Search with filtering\nLet's start with a basic request:\n```\ncurl -L -X POST 'http://localhost:6333/collections/test_collection/points/search' \\ -H 'Content-Type: application/json' \\ --data-raw '{\n    \"vector\": [0.2,0.1,0.9,0.7],\n    \"top\": 3\n}'\n```\nExpected response:\n```\n{\n    \"result\": [\n        { \"id\": 4, \"score\": 1.362, \"payload\": null, \"version\": 0 },\n        { \"id\": 1, \"score\": 1.273, \"payload\": null, \"version\": 0 },\n        { \"id\": 3, \"score\": 1.208, \"payload\": null, \"version\": 0 }\n    ],\n    \"status\": \"ok\",\n    \"time\": 0.000055785\n}\n```\nBut result is different if we add a filter:\n```\ncurl -L -X POST 'http://localhost:6333/collections/test_collection/points/search' \\ -H 'Content-Type: application/json' \\ --data-raw '{\n    \"filter\": {\n        \"should\": [\n            {\n                \"key\": \"city\",\n                \"match\": {\n                    \"value\": \"London\"\n                }\n            }\n        ]\n    },\n    \"vector\": [0.2, 0.1, 0.9, 0.7],\n    \"top\": 3\n}'\n```\nExpected response:\n```\n{\n    \"result\": [\n        { \"id\": 4, \"score\": 1.362, \"payload\": null, \"version\": 0 },\n        { \"id\": 2, \"score\": 0.871, \"payload\": null, \"version\": 0 }\n    ],\n    \"status\": \"ok\",\n    \"time\": 0.000093972\n}\n```\n",
+    "description": "API description for Qdrant vector search engine.\n\nThis document describes CRUD and search operations on collections of points (vectors with payload).\n\nQdrant supports any combinations of `should`, `min_should`, `must` and `must_not` conditions, which makes it possible to use in applications when object could not be described solely by vector. It could be location features, availability flags, and other custom properties businesses should take into account.\n## Examples\nThis examples cover the most basic use-cases - collection creation and basic vector search.\n### Create collection\nFirst - let's create a collection with dot-production metric.\n```\ncurl -X PUT 'http://localhost:6333/collections/test_collection' \\\n  -H 'Content-Type: application/json' \\\n  --data-raw '{\n    \"vectors\": {\n      \"size\": 4,\n      \"distance\": \"Dot\"\n    }\n  }'\n\n```\nExpected response:\n```\n{\n    \"result\": true,\n    \"status\": \"ok\",\n    \"time\": 0.031095451\n}\n```\nWe can ensure that collection was created:\n```\ncurl 'http://localhost:6333/collections/test_collection'\n```\nExpected response:\n```\n{\n  \"result\": {\n    \"status\": \"green\",\n    \"vectors_count\": 0,\n    \"segments_count\": 5,\n    \"disk_data_size\": 0,\n    \"ram_data_size\": 0,\n    \"config\": {\n      \"params\": {\n        \"vectors\": {\n          \"size\": 4,\n          \"distance\": \"Dot\"\n        }\n      },\n      \"hnsw_config\": {\n        \"m\": 16,\n        \"ef_construct\": 100,\n        \"full_scan_threshold\": 10000\n      },\n      \"optimizer_config\": {\n        \"deleted_threshold\": 0.2,\n        \"vacuum_min_vector_number\": 1000,\n        \"max_segment_number\": 5,\n        \"memmap_threshold\": 50000,\n        \"indexing_threshold\": 20000,\n        \"flush_interval_sec\": 1\n      },\n      \"wal_config\": {\n        \"wal_capacity_mb\": 32,\n        \"wal_segments_ahead\": 0\n      }\n    }\n  },\n  \"status\": \"ok\",\n  \"time\": 2.1199e-05\n}\n```\n\n### Add points\nLet's now add vectors with some payload:\n```\ncurl -L -X PUT 'http://localhost:6333/collections/test_collection/points?wait=true' \\ -H 'Content-Type: application/json' \\ --data-raw '{\n  \"points\": [\n    {\"id\": 1, \"vector\": [0.05, 0.61, 0.76, 0.74], \"payload\": {\"city\": \"Berlin\"}},\n    {\"id\": 2, \"vector\": [0.19, 0.81, 0.75, 0.11], \"payload\": {\"city\": [\"Berlin\", \"London\"] }},\n    {\"id\": 3, \"vector\": [0.36, 0.55, 0.47, 0.94], \"payload\": {\"city\": [\"Berlin\", \"Moscow\"] }},\n    {\"id\": 4, \"vector\": [0.18, 0.01, 0.85, 0.80], \"payload\": {\"city\": [\"London\", \"Moscow\"] }},\n    {\"id\": 5, \"vector\": [0.24, 0.18, 0.22, 0.44], \"payload\": {\"count\": [0]}},\n    {\"id\": 6, \"vector\": [0.35, 0.08, 0.11, 0.44]}\n  ]\n}'\n```\nExpected response:\n```\n{\n    \"result\": {\n        \"operation_id\": 0,\n        \"status\": \"completed\"\n    },\n    \"status\": \"ok\",\n    \"time\": 0.000206061\n}\n```\n### Search with filtering\nLet's start with a basic request:\n```\ncurl -L -X POST 'http://localhost:6333/collections/test_collection/points/search' \\ -H 'Content-Type: application/json' \\ --data-raw '{\n    \"vector\": [0.2,0.1,0.9,0.7],\n    \"top\": 3\n}'\n```\nExpected response:\n```\n{\n    \"result\": [\n        { \"id\": 4, \"score\": 1.362, \"payload\": null, \"version\": 0 },\n        { \"id\": 1, \"score\": 1.273, \"payload\": null, \"version\": 0 },\n        { \"id\": 3, \"score\": 1.208, \"payload\": null, \"version\": 0 }\n    ],\n    \"status\": \"ok\",\n    \"time\": 0.000055785\n}\n```\nBut result is different if we add a filter:\n```\ncurl -L -X POST 'http://localhost:6333/collections/test_collection/points/search' \\ -H 'Content-Type: application/json' \\ --data-raw '{\n    \"filter\": {\n        \"should\": [\n            {\n                \"key\": \"city\",\n                \"match\": {\n                    \"value\": \"London\"\n                }\n            }\n        ]\n    },\n    \"vector\": [0.2, 0.1, 0.9, 0.7],\n    \"top\": 3\n}'\n```\nExpected response:\n```\n{\n    \"result\": [\n        { \"id\": 4, \"score\": 1.362, \"payload\": null, \"version\": 0 },\n        { \"id\": 2, \"score\": 0.871, \"payload\": null, \"version\": 0 }\n    ],\n    \"status\": \"ok\",\n    \"time\": 0.000093972\n}\n```\n",
     "contact": {
       "email": "andrey@vasnetsov.com"
     },
@@ -6193,6 +6193,17 @@
             },
             "nullable": true
           },
+          "min_should": {
+            "description": "At least minimum amount of given conditions should match",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MinShould"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "must": {
             "description": "All conditions must match",
             "type": "array",
@@ -6639,6 +6650,27 @@
             "$ref": "#/components/schemas/Filter"
           }
         }
+      },
+      "MinShould": {
+        "type": "object",
+        "required": [
+          "conditions",
+          "min_count"
+        ],
+        "properties": {
+          "conditions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Condition"
+            }
+          },
+          "min_count": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
       },
       "SearchParams": {
         "description": "Additional parameters of the search",

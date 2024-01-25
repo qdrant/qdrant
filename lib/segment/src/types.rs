@@ -2669,7 +2669,7 @@ mod tests {
         let must = filter.must.unwrap();
         assert_eq!(must.len(), 1);
 
-        match must.get(0) {
+        match must.first() {
             Some(Condition::Filter(f)) => {
                 let min_should = &f.min_should;
                 match min_should {
