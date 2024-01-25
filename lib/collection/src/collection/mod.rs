@@ -517,7 +517,7 @@ impl Collection {
             let (mut incoming, outgoing) = shard_holder.count_shard_transfer_io(this_peer_id);
             incoming += proposed.get(this_peer_id).copied().unwrap_or(0);
             if self.check_shard_transfer_limit(incoming, outgoing) {
-                log::trace!("Postponing automatic shard {shard_id} transfer to stay below limit on this node (i/o: {incoming}/{outgoing})");
+                log::trace!("Postponing automatic shard {shard_id} transfer to stay below limit on this node (incoming: {incoming}, outgoing: {outgoing})");
                 continue;
             }
 
@@ -544,7 +544,7 @@ impl Collection {
                 let (incoming, mut outgoing) = shard_holder.count_shard_transfer_io(&replica_id);
                 outgoing += proposed.get(&replica_id).copied().unwrap_or(0);
                 if self.check_shard_transfer_limit(incoming, outgoing) {
-                    log::trace!("Postponing automatic shard {shard_id} transfer to stay below limit on peer {replica_id} (i/o: {incoming}/{outgoing})");
+                    log::trace!("Postponing automatic shard {shard_id} transfer to stay below limit on peer {replica_id} (incoming: {incoming}, outgoing: {outgoing})");
                     continue;
                 }
 
