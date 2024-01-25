@@ -6,6 +6,7 @@ use actix_multipart::form::MultipartForm;
 use actix_web::rt::time::Instant;
 use actix_web::{delete, get, post, put, web, HttpRequest, Responder, Result};
 use actix_web_validator as valid;
+use collection::common::sha_256::{hash_file, hashes_equal};
 use collection::operations::snapshot_ops::{
     ShardSnapshotRecover, SnapshotPriority, SnapshotRecover,
 };
@@ -39,6 +40,11 @@ struct SnapshotPath {
 pub struct SnapshotUploadingParam {
     pub wait: Option<bool>,
     pub priority: Option<SnapshotPriority>,
+
+    /// Optional SHA256 checksum to verify snapshot integrity before recovery.
+    #[serde(default)]
+    #[validate(custom = "::common::validation::validate_sha256_hash")]
+    pub checksum: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, JsonSchema, Validate)]
@@ -112,6 +118,19 @@ async fn upload_snapshot(
     let snapshot = form.snapshot;
     let wait = params.wait.unwrap_or(true);
 
+    if let Some(checksum) = &params.checksum {
+        let snapshot_checksum = match hash_file(snapshot.file.path()).await {
+            Ok(checksum) => checksum,
+            Err(err) => return process_response::<()>(Err(err.into()), timing),
+        };
+        if !hashes_equal(snapshot_checksum.as_str(), checksum.as_str()) {
+            return process_response::<()>(
+                Err(StorageError::checksum_mismatch(snapshot_checksum, checksum)),
+                timing,
+            );
+        }
+    }
+
     let snapshot_location = match dispatcher
         .snapshot_manager
         .do_save_uploaded_snapshot(&collection.name, snapshot.file_name, snapshot.file)
@@ -129,6 +148,7 @@ async fn upload_snapshot(
     let snapshot_recover = SnapshotRecover {
         location: snapshot_location,
         priority: params.priority,
+        checksum: None,
     };
 
     let response = do_recover_from_snapshot(
@@ -313,11 +333,12 @@ async fn recover_shard_snapshot(
             snapshot_manager,
             request.location,
             request.priority.unwrap_or_default(),
+            request.checksum,
             http_client.as_ref().clone(),
         )
         .await?;
 
-        Ok(())
+        Ok(true)
     };
 
     helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
@@ -332,12 +353,24 @@ async fn upload_shard_snapshot(
     MultipartForm(form): MultipartForm<SnapshottingForm>,
 ) -> impl Responder {
     let (collection, shard) = path.into_inner();
-    let SnapshotUploadingParam { wait, priority } = query.into_inner();
+    let SnapshotUploadingParam {
+        wait,
+        priority,
+        checksum,
+    } = query.into_inner();
 
     // - `recover_shard_snapshot_impl` is *not* cancel safe
     //   - but the task is *spawned* on the runtime and won't be cancelled, if request is cancelled
 
     let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
+        if let Some(checksum) = checksum {
+            let snapshot_checksum = hash_file(form.snapshot.file.path()).await?;
+            if !hashes_equal(snapshot_checksum.as_str(), checksum.as_str()) {
+                let err = StorageError::checksum_mismatch(snapshot_checksum, checksum);
+                return Result::<_, helpers::HttpError>::Err(err.into());
+            }
+        }
+
         let future = async {
             let collection = toc.get_collection(&collection).await?;
             collection.assert_shard_exists(shard).await?;

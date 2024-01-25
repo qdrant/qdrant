@@ -26,11 +26,11 @@ fn main() -> std::io::Result<()> {
 
     // Fetch git commit ID and pass it to the compiler
     match Command::new("git").args(["rev-parse", "HEAD"]).output() {
-        Ok(output) => {
+        Ok(output) if output.status.success() => {
             let git_commit_id = str::from_utf8(&output.stdout).unwrap().trim();
             println!("cargo:rustc-env=GIT_COMMIT_ID={git_commit_id}");
         }
-        Err(_) => println!("cargo:warning=current git commit hash could not be determined"),
+        Ok(_) | Err(_) => println!("cargo:warning=current git commit hash could not be determined"),
     }
 
     Ok(())
@@ -287,6 +287,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("DeleteShardSnapshotRequest.snapshot_name", "length(min = 1)"),
             ("RecoverShardSnapshotRequest.collection_name", "length(min = 1, max = 255)"),
             ("RecoverShardSnapshotRequest.snapshot_name", "length(min = 1)"),
+            ("RecoverShardSnapshotRequest.checksum", "custom = \"common::validation::validate_sha256_hash_option\""),
         ], &[
             "CreateFullSnapshotRequest",
             "ListFullSnapshotsRequest",

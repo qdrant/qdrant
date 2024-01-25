@@ -38,6 +38,7 @@ pub fn storage_into_actix_error(err: StorageError) -> Error {
         StorageError::Locked { .. } => error::ErrorForbidden(format!("{err}")),
         StorageError::Timeout { .. } => error::ErrorRequestTimeout(format!("{err}")),
         StorageError::AlreadyExists { .. } => error::ErrorConflict(format!("{err}")),
+        StorageError::ChecksumMismatch { .. } => error::ErrorBadRequest(format!("{err}")),
     }
 }
 
@@ -79,6 +80,7 @@ where
                 StorageError::Locked { .. } => HttpResponse::Forbidden(),
                 StorageError::Timeout { .. } => HttpResponse::RequestTimeout(),
                 StorageError::AlreadyExists { .. } => HttpResponse::Conflict(),
+                StorageError::ChecksumMismatch { .. } => HttpResponse::BadRequest(),
             };
 
             resp.json(ApiResponse::<()> {
@@ -207,6 +209,9 @@ impl From<StorageError> for HttpError {
             }
             StorageError::AlreadyExists { description } => {
                 (http::StatusCode::CONFLICT, description)
+            }
+            StorageError::ChecksumMismatch { .. } => {
+                (http::StatusCode::BAD_REQUEST, err.to_string())
             }
         };
 
