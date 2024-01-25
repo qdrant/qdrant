@@ -19,7 +19,7 @@ impl Default for VersionInfo {
             version: env!("CARGO_PKG_VERSION").to_string(),
             commit: option_env!("GIT_COMMIT_ID")
                 .map(ToString::to_string)
-                .filter(|s| !s.is_empty()),
+                .filter(|s| !s.trim().is_empty()),
         }
     }
 }
