@@ -158,8 +158,7 @@ def test_datetime_indexing():
         ({"gte": "2015-01-01T01:00:00+01:00", "lte": "2015-01-01T01:00:00+01:00"}, [1]),
         ({"gte": "2015-02-01T06:00:00Z", "lte": "2015-02-01T06:00:00Z"}, [2]),
     ]
-    for range_, expected in data:
-        print(range_, expected)
+    for range_, expected_ids in data:
         response = request_with_validation(
             api="/collections/{collection_name}/points/scroll",
             method="POST",
@@ -170,7 +169,9 @@ def test_datetime_indexing():
             },
         )
         assert response.ok
-        assert all(p["id"] in expected for p in response.json()["result"]["points"])
+        
+        point_ids = [p["id"] for p in response.json()["result"]["points"]]
+        assert all(id in point_ids for id in expected_ids)
 
 def test_update_payload_on_indexed_field():
     keyword_field = "city"
