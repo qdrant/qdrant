@@ -25,3 +25,15 @@ def test_collection_exists():
     assert response.ok
     result = response.json()["result"]
     assert result == True
+
+
+def test_collection_not_found():
+    response = request_with_validation(
+        api="/collections/{collection_name}/exists",
+        method="GET",
+        path_params={"collection_name": "not_found"},
+    )
+    assert response.status_code == 404
+    assert (
+        response.json()["status"]["error"] == "Not found: Collection `not_found` doesn't exist!"
+    )
