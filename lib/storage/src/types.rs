@@ -4,7 +4,9 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use collection::config::WalConfig;
-use collection::operations::shared_storage_config::SharedStorageConfig;
+use collection::operations::shared_storage_config::{
+    SharedStorageConfig, DEFAULT_IO_SHARD_TRANSFER_LIMIT,
+};
 use collection::operations::types::NodeType;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::shard::PeerId;
@@ -39,7 +41,7 @@ const fn default_max_optimization_threads() -> usize {
 }
 
 const fn default_io_shard_transfers_limit() -> Option<usize> {
-    Some(1)
+    DEFAULT_IO_SHARD_TRANSFER_LIMIT
 }
 
 /// Global configuration of the storage, loaded on the service launch, default stored in ./config

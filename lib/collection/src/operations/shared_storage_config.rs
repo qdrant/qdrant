@@ -9,6 +9,7 @@ use crate::shards::transfer::ShardTransferMethod;
 const DEFAULT_SEARCH_TIMEOUT: Duration = Duration::from_secs(60);
 const DEFAULT_UPDATE_QUEUE_SIZE: usize = 100;
 const DEFAULT_UPDATE_QUEUE_SIZE_LISTENER: usize = 10_000;
+pub const DEFAULT_IO_SHARD_TRANSFER_LIMIT: Option<usize> = Some(1);
 
 /// Storage configuration shared between all collections.
 /// Represents a per-node configuration, which might be changes with restart.
@@ -38,8 +39,8 @@ impl Default for SharedStorageConfig {
             update_concurrency: None,
             is_distributed: false,
             default_shard_transfer_method: None,
-            incoming_shard_transfers_limit: Some(1),
-            outgoing_shard_transfers_limit: Some(1),
+            incoming_shard_transfers_limit: DEFAULT_IO_SHARD_TRANSFER_LIMIT,
+            outgoing_shard_transfers_limit: DEFAULT_IO_SHARD_TRANSFER_LIMIT,
         }
     }
 }
