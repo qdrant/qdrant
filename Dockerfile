@@ -77,7 +77,7 @@ ARG RUSTFLAGS
 ARG LINKER=mold
 
 COPY --from=planner /qdrant/recipe.json recipe.json
-COPY .git .git
+COPY . .
 # `PKG_CONFIG=...` is a workaround for `xx-cargo` bug for crates based on `pkg-config`!
 #
 # https://github.com/tonistiigi/xx/issues/107
