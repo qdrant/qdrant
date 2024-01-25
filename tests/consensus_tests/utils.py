@@ -197,6 +197,11 @@ def get_collection_cluster_info(peer_api_uri: str, collection_name: str) -> dict
     return res
 
 
+def get_shard_transfer_count(peer_api_uri: str, collection_name: str) -> int:
+    info = get_collection_cluster_info(peer_api_uri, collection_name)
+    return len(info["shard_transfers"])
+
+
 def get_collection_info(peer_api_uri: str, collection_name: str) -> dict:
     r = requests.get(f"{peer_api_uri}/collections/{collection_name}")
     assert_http_ok(r)
@@ -415,9 +420,9 @@ def wait_for_collection_local_shards_count(peer_api_uri: str, collection_name: s
         raise e
 
 
-def wait_for(condition: Callable[..., bool], *args):
+def wait_for(condition: Callable[..., bool], *args, **kwargs):
     start = time.time()
-    while not condition(*args):
+    while not condition(*args, **kwargs):
         elapsed = time.time() - start
         if elapsed > WAIT_TIME_SEC:
             raise Exception(
