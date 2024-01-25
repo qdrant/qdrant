@@ -17,7 +17,7 @@ schemars = { version = "0.8.16", features = ["uuid1", "preserve_order", "chrono"
 tokio = { version = "~1.35", features = ["rt-multi-thread"] }
 tokio-util = "0.7"
 path-clean = "1.0.1"
-rust-s3 = { version = "0.33.0", features = ["blocking"] }
+rust-s3 = { version = "0.33.0", default-features = false, features = ["tokio-rustls-tls", "blocking"] }
 tar = "0.4.40"
 chrono = { version = "~0.4", features = ["serde"] }
 tempfile = "3.9.0"
