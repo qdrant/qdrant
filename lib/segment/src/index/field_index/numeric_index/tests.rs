@@ -376,7 +376,7 @@ fn test_numeric_index(#[case] immutable: bool) {
     );
 }
 
-fn test_cond<T: Encodable + Numericable + PartialOrd + Clone>(
+fn test_cond<T: Encodable + Numericable + PartialOrd + Clone + Default>(
     index: &NumericIndex<T>,
     rng: Range,
     result: Vec<u32>,

@@ -21,7 +21,7 @@ pub struct MutableNumericIndex<T: Encodable + Numericable> {
     pub(super) point_to_values: Vec<Vec<T>>,
 }
 
-impl<T: Encodable + Numericable> MutableNumericIndex<T> {
+impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
     pub fn new(db: Arc<RwLock<DB>>, field: &str) -> Self {
         let store_cf_name = NumericIndex::<T>::storage_cf_name(field);
         let db_wrapper = DatabaseColumnWrapper::new(db, &store_cf_name);

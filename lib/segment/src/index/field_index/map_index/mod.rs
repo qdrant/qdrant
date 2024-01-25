@@ -29,7 +29,7 @@ use crate::types::{
     PayloadKeyType, ValueVariants,
 };
 
-pub enum MapIndex<N: Hash + Eq + Clone + Display + FromStr> {
+pub enum MapIndex<N: Hash + Eq + Clone + Display + FromStr + Default> {
     Mutable(MutableMapIndex<N>),
     Immutable(ImmutableMapIndex<N>),
 }
