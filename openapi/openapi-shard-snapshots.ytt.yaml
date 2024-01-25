@@ -34,6 +34,12 @@ paths:
           required: false
           schema:
             $ref: "#/components/schemas/SnapshotPriority"
+        - name: checksum
+          in: query
+          description: "Optional SHA256 checksum to verify snapshot integrity before recovery."
+          required: false
+          schema:
+            type: string
       requestBody:
         description: Snapshot to recover from
         content:
@@ -72,6 +78,12 @@ paths:
           required: false
           schema:
             type: boolean
+        - name: checksum
+          in: query
+          description: "Optional SHA256 checksum to verify snapshot integrity before recovery."
+          required: false
+          schema:
+            type: string
       requestBody:
         description: Snapshot to recover from
         content:

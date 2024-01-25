@@ -19,6 +19,7 @@ pub fn error_to_status(error: StorageError) -> tonic::Status {
         StorageError::Locked { .. } => tonic::Code::FailedPrecondition,
         StorageError::Timeout { .. } => tonic::Code::DeadlineExceeded,
         StorageError::AlreadyExists { .. } => tonic::Code::AlreadyExists,
+        StorageError::ChecksumMismatch { .. } => tonic::Code::DataLoss,
     };
     tonic::Status::new(error_code, format!("{error}"))
 }
