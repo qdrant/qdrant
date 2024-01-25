@@ -1,3 +1,5 @@
+use std::fmt;
+use std::path::Path;
 use std::sync::Arc;
 
 use collection::collection::Collection;
@@ -110,7 +112,10 @@ pub async fn recover_shard_snapshot(
                 ShardSnapshotLocation::Path(path) => {
                     let snapshot =
                         SnapshotFile::new_shard(path.to_string_lossy(), &collection_name, shard_id);
-                    snapshot_manager.get_snapshot_path(&snapshot).await?
+                    let (snapshot_path, snapshot_temp_path) =
+                        snapshot_manager.get_snapshot_path(&snapshot).await?;
+                    check_shard_snapshot_file_exists(&snapshot_path)?;
+                    (snapshot_path, snapshot_temp_path)
                 }
             };
 
@@ -232,4 +237,23 @@ pub async fn recover_shard_snapshot_impl(
     }
 
     Ok(())
+}
+
+fn check_shard_snapshot_file_exists(snapshot_path: &Path) -> Result<(), StorageError> {
+    let snapshot_path_display = snapshot_path.display();
+    let snapshot_file_name = snapshot_path.file_name().and_then(|str| str.to_str());
+
+    let snapshot: &dyn fmt::Display = snapshot_file_name
+        .as_ref()
+        .map_or(&snapshot_path_display, |str| str);
+
+    if !snapshot_path.exists() {
+        let description = format!("Snapshot {snapshot} not found");
+        Err(StorageError::NotFound { description })
+    } else if !snapshot_path.is_file() {
+        let description = format!("{snapshot} is not a file");
+        Err(StorageError::service_error(description))
+    } else {
+        Ok(())
+    }
 }
