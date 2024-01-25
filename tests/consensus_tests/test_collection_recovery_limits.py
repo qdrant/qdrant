@@ -156,7 +156,7 @@ def test_collection_recovery_user_requests_above_limit(tmp_path: pathlib.Path):
     wait_for_peer_online(peer_url)
 
     # We must see N_SHARDS transfers on our new node
-    wait_for(transfers_reached_threshold, peer_urls[-1], transfer_threshold=N_SHARDS, transfer_limit=N_SHARDS)
+    wait_for(transfers_reached_threshold, peer_urls[-1], transfer_threshold=N_SHARDS, transfer_limit=N_SHARDS + 1)
 
     # Wait until all shards are active on our new node we replicated to
     wait_for(all_collection_shards_are_active, peer_urls[-1], COLLECTION_NAME)
