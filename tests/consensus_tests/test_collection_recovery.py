@@ -61,15 +61,6 @@ def request_result(resp):
     return resp.json()["result"]
 
 
-def collection_exists(peer_url, collection_name):
-    try:
-        get_collection_cluster_info(peer_url, collection_name)
-    except:
-        return False
-
-    return True
-
-
 def all_collection_shards_are_active(peer_url, collection_name):
     try:
         info = get_collection_cluster_info(peer_url, collection_name)
