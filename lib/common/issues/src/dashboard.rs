@@ -7,13 +7,14 @@ use crate::issue::{CodeType, Issue};
 
 #[derive(Default, Serialize)]
 struct Dashboard {
-    pub issues: HashMap<CodeType, Box<dyn Issue>>,
+    pub issues: HashMap<CodeType, Issue>,
 }
 
 impl Dashboard {
     /// Activates an issue, returning true if the issue was not active before
-    fn add_issue(&mut self, issue: Box<dyn Issue>) -> bool {
-        self.issues.insert(issue.code(), issue).is_none()
+    fn add_issue(&mut self, issue: impl Into<Issue>) -> bool {
+        let issue = issue.into();
+        self.issues.insert(issue.code.clone(), issue).is_none()
     }
 
     /// Deactivates an issue by its code, returning true if the issue was active before
@@ -46,7 +47,7 @@ fn dashboard<'a>() -> MutexGuard<'a, Dashboard> {
 }
 
 /// Submits an issue to the dashboard, returning true if the issue code was not active before
-pub fn submit(issue: Box<dyn Issue>) -> bool {
+pub fn submit(issue: impl Into<Issue>) -> bool {
     dashboard().add_issue(issue)
 }
 
@@ -58,6 +59,10 @@ pub fn solve<S: AsRef<str>>(code: S) -> bool {
 /// Generates serialized report of the issues in the dashboard, using the provided serializer
 pub fn report<S: Serializer>(serializer: S) -> Result<S::Ok, S::Error> {
     dashboard().serialize(serializer)
+}
+
+pub fn all_issues() -> Vec<Issue> {
+    dashboard().issues.values().cloned().collect()
 }
 
 /// Clears all issues from the dashboard
@@ -87,9 +92,9 @@ mod tests {
     #[test]
     fn test_dashboard() {
         let mut dashboard = Dashboard::default();
-        let issue = Box::new(DummyIssue {
+        let issue = DummyIssue {
             code: "test".to_string(),
-        });
+        };
         assert!(dashboard.add_issue(issue.clone()));
         assert!(!dashboard.add_issue(issue.clone()));
         assert!(dashboard.remove_issue("test"));
@@ -101,23 +106,23 @@ mod tests {
     fn test_singleton() -> std::thread::Result<()> {
         clear();
         let handle1 = std::thread::spawn(|| {
-            submit(Box::new(DummyIssue::new("issue1")));
-            submit(Box::new(DummyIssue::new("issue2")));
-            submit(Box::new(DummyIssue::new("issue3")));
+            submit(DummyIssue::new("issue1"));
+            submit(DummyIssue::new("issue2"));
+            submit(DummyIssue::new("issue3"));
 
             std::thread::sleep(std::time::Duration::from_millis(50));
 
-            assert!(!submit(Box::new(DummyIssue::new("issue4"))));
+            assert!(!submit(DummyIssue::new("issue4")));
         });
 
         let handle2 = std::thread::spawn(|| {
-            submit(Box::new(DummyIssue::new("issue4")));
-            submit(Box::new(DummyIssue::new("issue5")));
-            submit(Box::new(DummyIssue::new("issue6")));
+            submit(DummyIssue::new("issue4"));
+            submit(DummyIssue::new("issue5"));
+            submit(DummyIssue::new("issue6"));
 
             std::thread::sleep(std::time::Duration::from_millis(50));
 
-            assert!(!submit(Box::new(DummyIssue::new("issue1"))));
+            assert!(!submit(DummyIssue::new("issue1")));
 
             std::thread::sleep(std::time::Duration::from_millis(10));
 
@@ -140,9 +145,9 @@ mod tests {
     #[serial]
     fn test_prefix_solve() {
         clear();
-        submit(Box::new(DummyIssue::new("issue1")));
-        submit(Box::new(DummyIssue::new("issue2")));
-        submit(Box::new(DummyIssue::new("other_prefix_issue3")));
+        submit(DummyIssue::new("issue1"));
+        submit(DummyIssue::new("issue2"));
+        submit(DummyIssue::new("other_prefix_issue3"));
 
         // solve all the issues starting with "issue"
         prefix_solve("issue");
@@ -159,9 +164,9 @@ mod tests {
     #[serial]
     fn test_filter_solve() {
         clear();
-        submit(Box::new(DummyIssue::new("issue1")));
-        submit(Box::new(DummyIssue::new("issue2")));
-        submit(Box::new(DummyIssue::new("issue3")));
+        submit(DummyIssue::new("issue1"));
+        submit(DummyIssue::new("issue2"));
+        submit(DummyIssue::new("issue3"));
 
         filter_solve(|code| code.contains('2'));
 

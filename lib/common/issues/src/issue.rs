@@ -1,26 +1,19 @@
-use serde::ser::SerializeMap;
-use serde::{Serialize, Serializer};
+use std::fmt::Debug;
+
+use schemars::JsonSchema;
+use serde::Serialize;
 
 use crate::solution::Solution;
 
 /// Type of the issue code
 pub type CodeType = String;
 
-/// An issue that can be hashed by its code
-pub trait Issue: Sync + Send {
-    fn code(&self) -> CodeType;
-    fn description(&self) -> String;
-    fn solution(&self) -> Solution;
-}
-
-impl Serialize for dyn Issue {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut map = serializer.serialize_map(Some(3))?;
-        map.serialize_entry("code", &self.code())?;
-        map.serialize_entry("description", &self.description())?;
-        map.serialize_entry("solution", &self.solution())?;
-        map.end()
-    }
+/// An issue that can be identified by its code
+#[derive(Debug, Serialize, JsonSchema, Clone)]
+pub struct Issue {
+    pub code: CodeType,
+    pub description: String,
+    pub solution: Solution,
 }
 
 #[derive(Clone)]
@@ -35,16 +28,14 @@ impl DummyIssue {
     }
 }
 
-impl Issue for DummyIssue {
-    fn code(&self) -> String {
-        self.code.clone()
-    }
+impl From<DummyIssue> for Issue {
+    fn from(val: DummyIssue) -> Self {
+        Issue {
+            code: val.code.clone(),
 
-    fn description(&self) -> String {
-        "".to_string()
-    }
+            description: "".to_string(),
 
-    fn solution(&self) -> Solution {
-        Solution::None
+            solution: Solution::None,
+        }
     }
 }

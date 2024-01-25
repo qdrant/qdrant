@@ -9,20 +9,7 @@ pub struct UnindexedField {
     collection: String,
 }
 
-impl Issue for UnindexedField {
-    fn code(&self) -> String {
-        format!(
-            "UNINDEXED_FIELD,{},{},{}",
-            self.collection, self.field_name, self.field_type
-        )
-    }
-    fn description(&self) -> String {
-        format!(
-            "Unindexed field '{}' of type '{}' is slowing down queries in collection '{}'",
-            self.field_name, self.field_type, self.collection
-        )
-    }
-
+impl UnindexedField {
     fn solution(&self) -> Solution {
         let uri = match Uri::builder()
             .path_and_query(format!("/collection/{}/indexes", self.collection).as_str())
@@ -41,16 +28,33 @@ impl Issue for UnindexedField {
         });
 
         Solution::Immediate(ImmediateSolution {
-            message: format!(
-                "Create an index on field '{}' of type '{}' in collection '{}'. Check the documentation for more details: https://qdrant.tech/documentation/concepts/indexing/#payload-index",
-                self.field_name, self.field_type, self.collection
+                    message: format!(
+                        "Create an index on field '{}' of type '{}' in collection '{}'. Check the documentation for more details: https://qdrant.tech/documentation/concepts/indexing/#payload-index",
+                        self.field_name, self.field_type, self.collection
+                    ),
+                    action: Action {
+                        method: Method::POST,
+                        uri,
+                        headers: HeaderMap::new(),
+                        body: Some(request_body),
+                    },
+                })
+    }
+}
+
+impl From<UnindexedField> for Issue {
+    fn from(val: UnindexedField) -> Self {
+        Issue {
+            code: format!(
+                "UNINDEXED_FIELD,{},{},{}",
+                val.collection, val.field_name, val.field_type
             ),
-            action: Action {
-                method: Method::POST,
-                uri,
-                headers: HeaderMap::new(),
-                body: Some(request_body),
-            },
-        })
+            description: format!(
+                "Unindexed field '{}' of type '{}' is slowing down queries in collection '{}'",
+                val.field_name, val.field_type, val.collection
+            ),
+
+            solution: val.solution(),
+        }
     }
 }
