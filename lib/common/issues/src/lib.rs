@@ -27,11 +27,8 @@
 //!         "".to_string()
 //!     }
 //!
-//!     fn solution(&self) -> Result<Solution, String> {
-//!         Ok(Solution {
-//!             message: "".to_string(),
-//!             action: None,
-//!         })
+//!     fn solution(&self) -> Solution {
+//!         Solution::None
 //!     }
 //! }
 //!
@@ -40,7 +37,7 @@
 //! assert!(!issues::submit(Box::new(DummyIssue::new("issue1")))); // can't submit the same issue twice
 //!
 //! // Solve an issue
-//! issues::solve("issue1".to_string()); // returns true if the issue was solved
+//! issues::solve("issue1"); // returns true if the issue was solved
 //! assert!(issues::submit(Box::new(DummyIssue::new("issue1")))); // Now we can submit it again
 //! ```
 

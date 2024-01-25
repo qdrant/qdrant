@@ -11,8 +11,8 @@ publish = false
 
 [dependencies]
 http = "1.0.0"
-serde = "1.0.194"
 http-serde = "2.0.0"
-serde_json = "1.0.111"
 log = "0.4.20"
+serde = "1.0.194"
+serde_json = "1.0.111"
 serial_test = { version = "3.0.0", default-features = false }
