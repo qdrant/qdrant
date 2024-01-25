@@ -10,7 +10,7 @@ use collection::operations::cluster_ops::{
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::operations::types::{
-    AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionsAliasesResponse,
+    AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionsAliasesResponse
 };
 use collection::shards::replica_set;
 use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};

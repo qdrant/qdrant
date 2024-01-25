@@ -51,6 +51,7 @@ actix-web-validator = "5.0.1"
 common = { path = "../common/common" }
 cancel = { path = "../common/cancel" }
 io = { path = "../common/io" }
+issues = { path = "../common/issues" }
 segment = { path = "../segment" }
 sparse = { path = "../sparse" }
 api = { path = "../api" }

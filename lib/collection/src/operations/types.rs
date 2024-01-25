@@ -10,6 +10,7 @@ use api::grpc::transport_channel_pool::RequestError;
 use common::types::ScoreType;
 use common::validation::validate_range_generic;
 use io::file_operations::FileStorageError;
+use issues::Issue;
 use merge::Merge;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
@@ -1773,4 +1774,9 @@ impl From<QueryEnum> for QueryVector {
             QueryEnum::Context(named) => QueryVector::Context(named.query),
         }
     }
+}
+
+#[derive(Serialize, JsonSchema, Debug)]
+pub struct IssuesReport {
+    pub issues: Vec<Issue>,
 }
