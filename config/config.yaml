@@ -53,13 +53,14 @@ storage:
 
     # Limit for number of incoming automatic shard transfers per collection on this node, does not affect user-requested transfers.
     # The same value should be used on all nodes in a cluster.
-    # If null - unlimited.
+    # Default is to allow 1 transfer.
+    # If null - allow unlimited transfers.
     #incoming_shard_transfers_limit: 1
 
-    # Soft limit for number of outgoing shard transfers per collection on this node.
-    # Only affects automatic shard transfers for recovery, does not affect user requested transfers.
+    # Limit for number of outgoing automatic shard transfers per collection on this node, does not affect user-requested transfers.
     # The same value should be used on all nodes in a cluster.
-    # If null - unlimited.
+    # Default is to allow 1 transfer.
+    # If null - allow unlimited transfers.
     #outgoing_shard_transfers_limit: 1
 
   optimizers:
