@@ -80,12 +80,12 @@ impl Encodable for FloatPayloadType {
     }
 }
 
-pub enum NumericIndex<T: Encodable + Numericable> {
+pub enum NumericIndex<T: Encodable + Numericable + Default> {
     Mutable(MutableNumericIndex<T>),
     Immutable(ImmutableNumericIndex<T>),
 }
 
-impl<T: Encodable + Numericable> NumericIndex<T> {
+impl<T: Encodable + Numericable + Default> NumericIndex<T> {
     pub fn new(db: Arc<RwLock<DB>>, field: &str, is_appendable: bool) -> Self {
         if is_appendable {
             NumericIndex::Mutable(MutableNumericIndex::new(db, field))
@@ -248,7 +248,7 @@ impl<T: Encodable + Numericable> NumericIndex<T> {
     }
 }
 
-impl<T: Encodable + Numericable> PayloadFieldIndex for NumericIndex<T> {
+impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndex<T> {
     fn count_indexed_points(&self) -> usize {
         self.get_points_count()
     }
