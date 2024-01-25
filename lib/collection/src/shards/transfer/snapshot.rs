@@ -198,7 +198,7 @@ pub(super) async fn transfer_snapshot(
     let temp_base = snapshot_manager.temp_path();
     // TODO: If future is cancelled until `get_shard_snapshot` resolves, shard snapshot may not be cleaned up...
     let snapshot = shard_holder_read
-        .get_shard_snapshot(&collection_name, shard_id, &snapshot_description.name)
+        .get_shard_snapshot(collection_name, shard_id, &snapshot_description.name)
         .await
         .map_err(|err| {
             CollectionError::service_error(format!(

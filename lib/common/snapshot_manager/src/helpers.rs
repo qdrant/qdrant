@@ -32,7 +32,7 @@ impl SnapshotManager {
         let path =
             path.strip_prefix(snapshots_canon)
                 .map_err(|_| SnapshotManagerError::BadRequest {
-                    description: format!("Provided file path is invalid."),
+                    description: "Provided file path is invalid.".to_string(),
                 })?;
         let p = path.to_string_lossy().to_string();
         if !path.has_root() {
@@ -56,7 +56,7 @@ impl SnapshotManager {
                 Ok((_, code)) => {
                     if code == 404 {
                         Ok(false)
-                    } else if code >= 200 && code < 300 {
+                    } else if (200..300).contains(&code) {
                         Ok(true)
                     } else {
                         Err(S3Error::Http(code, "".to_string()).into())

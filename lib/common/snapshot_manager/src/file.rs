@@ -67,10 +67,7 @@ impl SnapshotFile {
     }
 
     pub fn is_oop(&self) -> bool {
-        match self {
-            SnapshotFile::OutOfPlace(_) => true,
-            _ => false,
-        }
+        matches!(self, SnapshotFile::OutOfPlace(_))
     }
 
     pub(super) fn get_directory(&self, base: impl Into<PathBuf>) -> PathBuf {

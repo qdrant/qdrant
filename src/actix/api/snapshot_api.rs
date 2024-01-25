@@ -63,7 +63,7 @@ pub async fn do_get_snapshot(
         .await
         .map_err(snapshot_manager_into_actix_error)?;
 
-    let file = File::open(&path).map_err(|x| snapshot_manager_into_actix_error(x.into()))?;
+    let file = File::open(path).map_err(|x| snapshot_manager_into_actix_error(x.into()))?;
 
     let file = NamedFile::from_file(file, snapshot.get_path("./"));
 
