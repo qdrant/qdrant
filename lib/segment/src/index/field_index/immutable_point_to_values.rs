@@ -18,10 +18,10 @@ pub struct ImmutablePointToValues<N: Default> {
 
 impl<N: Default> ImmutablePointToValues<N> {
     pub fn new(src: Vec<Vec<N>>) -> Self {
-        let mut point_to_values: Vec<_> = Default::default();
-        let mut point_to_values_container: Vec<_> = Default::default();
+        let mut point_to_values = Vec::with_capacity(src.len());
+        let all_values_count = src.iter().fold(0, |acc, values| acc + values.len());
+        let mut point_to_values_container = Vec::with_capacity(all_values_count);
         for values in src {
-            let values = values.into_iter().collect::<Vec<_>>();
             let container_len = point_to_values_container.len() as u32;
             let range = container_len..container_len + values.len() as u32;
             point_to_values.push(range.clone());
