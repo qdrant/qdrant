@@ -51,8 +51,7 @@ storage:
     # If null - auto selection.
     update_rate_limit: null
 
-    # Soft limit for number of incoming shard transfers per collection on this node.
-    # Only affects automatic shard transfers for recovery, does not affect user requested transfers.
+    # Limit for number of incoming automatic shard transfers per collection on this node, does not affect user-requested transfers.
     # The same value should be used on all nodes in a cluster.
     # If null - unlimited.
     #incoming_shard_transfers_limit: 1
