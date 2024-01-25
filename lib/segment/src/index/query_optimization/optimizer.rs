@@ -87,7 +87,6 @@ where
                         min_count: *min_count,
                     })
                 } else {
-                    // 0 min_should possible?
                     None
                 }
             },
@@ -221,10 +220,9 @@ where
     if min_count < conditions.len() / 2 {
         converted.sort_by_key(|(_, estimation)| Reverse(estimation.exp));
     } else {
-        // Less probable conditions first in o
+        // Less probable conditions first
         converted.sort_by_key(|(_, estimation)| estimation.exp);
     }
-    // Hmm..
     let (conditions, estimations): (Vec<_>, Vec<_>) = converted.into_iter().unzip();
 
     (
