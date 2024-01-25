@@ -101,10 +101,12 @@ def test_collection_recovery_reach_limit(tmp_path: pathlib.Path):
     assert count == N_POINTS
 
 
-# Check that a failed node automatically recovers with shard transfers.
+# Check that a failed node automatically recovers with shard transfers, while
+# user requested transfers are also going on.
 # Keep the default automatic shard transfer limit of 1, but make some user
-# requests initiating additional shard transfers. Make sure that we surpass more
-# than one ongoing shard transfer.
+# requests before the failed node is restarted. Make sure we reach the number of
+# user requested transfers. After the user requested transfer are done, never go
+# above the default limit again.
 def test_collection_recovery_user_requests_above_limit(tmp_path: pathlib.Path):
     N_POINTS = 5000
     N_SHARDS = N_PEERS
@@ -135,10 +137,6 @@ def test_collection_recovery_user_requests_above_limit(tmp_path: pathlib.Path):
     peer_urls.append(start_peer(peer_dirs[-1], f"peer_{N_PEERS + 1}.log", bootstrap_url))
     wait_for_peer_online(peer_urls[-1])
 
-    # Restart the peer, wait unil it is up
-    peer_url = start_peer(killed_peer_dir, f"peer_0_restarted.log", bootstrap_url)
-    wait_for_peer_online(peer_url)
-
     # Replicate all shards to our new peer
     source_peer_id = get_cluster_info(peer_urls[0])["peer_id"]
     target_peer_id = get_cluster_info(peer_urls[-1])["peer_id"]
@@ -153,14 +151,18 @@ def test_collection_recovery_user_requests_above_limit(tmp_path: pathlib.Path):
             })
         assert_http_ok(r)
 
-    # We must see 4 transfers at one point with our customized limits
-    wait_for(transfers_reached_threshold, peer_url, transfer_threshold=4, transfer_limit=4)
+    # Restart the peer, wait unil it is up
+    peer_url = start_peer(killed_peer_dir, f"peer_0_restarted.log", bootstrap_url)
+    wait_for_peer_online(peer_url)
 
-    # Wait until all shards are active, never allow more than 4 shard transfers
-    wait_for(transfers_below_limit_or_done, peer_url, transfer_limit=4)
+    # We must see N_SHARDS transfers on our new node
+    wait_for(transfers_reached_threshold, peer_urls[-1], transfer_threshold=N_SHARDS, transfer_limit=N_SHARDS)
 
     # Wait until all shards are active on our new node we replicated to
     wait_for(all_collection_shards_are_active, peer_urls[-1], COLLECTION_NAME)
+
+    # Wait until all shards are active on our recovering node, never allow more than 1 shard transfers
+    wait_for(transfers_below_limit_or_done, peer_url, transfer_limit=1)
 
     # Check, that the collection is not empty on recovered node
     info = get_collection_cluster_info(peer_url, COLLECTION_NAME)
