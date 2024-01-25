@@ -286,7 +286,7 @@ impl ShardHolder {
     ///
     /// This only includes shard transfers that are in consensus for the current collection. A
     /// shard transfer that has just been proposed may not be included yet.
-    pub fn count_shard_tranfser_io(&self, peer_id: &PeerId) -> (usize, usize) {
+    pub fn count_shard_transfer_io(&self, peer_id: &PeerId) -> (usize, usize) {
         self.shard_transfers
             .read()
             .iter()

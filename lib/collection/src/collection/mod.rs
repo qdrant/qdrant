@@ -514,7 +514,7 @@ impl Collection {
             let transfers = shard_holder.get_transfers(|_| true);
 
             // Respect shard transfer limit, consider already proposed transfers in our counts
-            let transfer_io = shard_holder.count_shard_tranfser_io(this_peer_id);
+            let transfer_io = shard_holder.count_shard_transfer_io(this_peer_id);
             let transfer_io = (
                 transfer_io.0 + *proposed.get(this_peer_id).unwrap_or(&0),
                 transfer_io.1,
@@ -548,7 +548,7 @@ impl Collection {
                 }
 
                 // Respect shard transfer limit, consider already proposed transfers in our counts
-                let transfer_io = shard_holder.count_shard_tranfser_io(&replica_id);
+                let transfer_io = shard_holder.count_shard_transfer_io(&replica_id);
                 let transfer_io = (
                     transfer_io.0,
                     transfer_io.1 + *proposed.get(&replica_id).unwrap_or(&0),
