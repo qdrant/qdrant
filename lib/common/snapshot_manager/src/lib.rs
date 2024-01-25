@@ -359,13 +359,32 @@ impl SnapshotManager {
             let path = self.s3ify_path(snapshot.get_path(self.snapshots_path()))?;
             let mut file = OpenOptions::new().write(true).open(f.path()).await?;
 
-            bucket.get_object_to_writer(path, &mut file).await?;
+            match bucket.get_object_to_writer(path, &mut file).await {
+                Ok(x) => Ok(x),
+                Err(e) => match e {
+                    s3::error::S3Error::Http(code, _) => match code {
+                        404 => Err(SnapshotManagerError::NotFound {
+                            description: format!("Snapshot {} not found", snapshot.name()),
+                        }),
+                        _ => Err(e.into()),
+                    },
+                    _ => Err(e.into()),
+                },
+            }?;
 
             let f = f.into_temp_path();
 
             Ok((f.to_path_buf(), Some(f)))
         } else {
-            Ok((snapshot.get_path(self.snapshots_path()), None))
+            let path = snapshot.get_path(self.snapshots_path());
+
+            if !path.exists() {
+                Err(SnapshotManagerError::NotFound {
+                    description: format!("Snapshot {} not found", snapshot.name()),
+                })
+            } else {
+                Ok((path, None))
+            }
         }
     }
 
