@@ -64,6 +64,7 @@ pub async fn delete_shard_snapshot(
 /// # Cancel safety
 ///
 /// This function is cancel safe.
+#[allow(clippy::too_many_arguments)]
 pub async fn recover_shard_snapshot(
     toc: Arc<TableOfContent>,
     collection_name: String,
