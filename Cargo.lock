@@ -68,7 +68,7 @@ dependencies = [
  "actix-service",
  "actix-tls",
  "actix-utils",
- "ahash 0.8.7",
+ "ahash 0.8.5",
  "base64 0.21.0",
  "bitflags 2.4.1",
  "brotli",
@@ -242,7 +242,7 @@ dependencies = [
  "actix-tls",
  "actix-utils",
  "actix-web-codegen",
- "ahash 0.8.7",
+ "ahash 0.8.5",
  "bytes",
  "bytestring",
  "cfg-if",
@@ -355,9 +355,9 @@ dependencies = [
 
 [[package]]
 name = "ahash"
-version = "0.8.7"
+version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77c3a9648d43b9cd48db467b3f87fdd6e146bcc88ab0180006cef2179fe11d01"
+checksum = "cd7d5a2cecb58716e47d67d5703a249964b14c7be1ec3cad3affc295b2d1c35d"
 dependencies = [
  "cfg-if",
  "getrandom 0.2.11",
@@ -2103,7 +2103,7 @@ version = "0.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f93e7192158dbcda357bdec5fb5788eebf8bbac027f3f33e719d29135ae84156"
 dependencies = [
- "ahash 0.8.7",
+ "ahash 0.8.5",
  "allocator-api2",
 ]
 
@@ -2366,7 +2366,7 @@ version = "0.11.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "abfb2e51b23c338595ae0b6bdaaa7a4a8b860b8d788a4331cb07b50fe5dea71b"
 dependencies = [
- "ahash 0.8.7",
+ "ahash 0.8.5",
  "indexmap 2.0.1",
  "is-terminal",
  "itoa",
