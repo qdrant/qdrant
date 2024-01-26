@@ -131,13 +131,9 @@ impl<'a> SearchContext<'a> {
                 }
                 // update score for id
                 let local_id = (element_id - batch_start_id) as usize;
-                let local_id_score = self.batch_scores[local_id];
+                let local_id_score = self.batch_scores[local_id].unwrap_or(0.0);
                 let element_score = element.weight * posting.query_weight;
-                let updated_score = match local_id_score {
-                    Some(prev_score) => Some(prev_score + element_score),
-                    None => Some(element_score),
-                };
-                self.batch_scores[local_id] = updated_score;
+                self.batch_scores[local_id] = Some(local_id_score + element_score);
             }
             // advance posting to the batch last id
             posting.posting_list_iterator.skip_to(batch_last_id + 1);
