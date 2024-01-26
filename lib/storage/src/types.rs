@@ -4,7 +4,9 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use collection::config::WalConfig;
-use collection::operations::shared_storage_config::SharedStorageConfig;
+use collection::operations::shared_storage_config::{
+    SharedStorageConfig, DEFAULT_IO_SHARD_TRANSFER_LIMIT,
+};
 use collection::operations::types::NodeType;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::shard::PeerId;
@@ -27,10 +29,18 @@ pub struct PerformanceConfig {
     pub update_rate_limit: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub search_timeout_sec: Option<usize>,
+    #[serde(default = "default_io_shard_transfers_limit")]
+    pub incoming_shard_transfers_limit: Option<usize>,
+    #[serde(default = "default_io_shard_transfers_limit")]
+    pub outgoing_shard_transfers_limit: Option<usize>,
 }
 
 const fn default_max_optimization_threads() -> usize {
     1
+}
+
+const fn default_io_shard_transfers_limit() -> Option<usize> {
+    DEFAULT_IO_SHARD_TRANSFER_LIMIT
 }
 
 /// Global configuration of the storage, loaded on the service launch, default stored in ./config
@@ -86,6 +96,8 @@ impl StorageConfig {
                 .map(|x| Duration::from_secs(x as u64)),
             self.update_concurrency,
             is_distributed,
+            self.performance.incoming_shard_transfers_limit,
+            self.performance.outgoing_shard_transfers_limit,
         )
     }
 }

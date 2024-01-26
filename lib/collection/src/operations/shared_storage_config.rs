@@ -8,6 +8,7 @@ use crate::operations::types::NodeType;
 const DEFAULT_SEARCH_TIMEOUT: Duration = Duration::from_secs(60);
 const DEFAULT_UPDATE_QUEUE_SIZE: usize = 100;
 const DEFAULT_UPDATE_QUEUE_SIZE_LISTENER: usize = 10_000;
+pub const DEFAULT_IO_SHARD_TRANSFER_LIMIT: Option<usize> = Some(1);
 
 /// Storage configuration shared between all collections.
 /// Represents a per-node configuration, which might be changes with restart.
@@ -21,6 +22,8 @@ pub struct SharedStorageConfig {
     pub search_timeout: Duration,
     pub update_concurrency: Option<NonZeroUsize>,
     pub is_distributed: bool,
+    pub incoming_shard_transfers_limit: Option<usize>,
+    pub outgoing_shard_transfers_limit: Option<usize>,
 }
 
 impl Default for SharedStorageConfig {
@@ -33,11 +36,14 @@ impl Default for SharedStorageConfig {
             search_timeout: DEFAULT_SEARCH_TIMEOUT,
             update_concurrency: None,
             is_distributed: false,
+            incoming_shard_transfers_limit: DEFAULT_IO_SHARD_TRANSFER_LIMIT,
+            outgoing_shard_transfers_limit: DEFAULT_IO_SHARD_TRANSFER_LIMIT,
         }
     }
 }
 
 impl SharedStorageConfig {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         update_queue_size: Option<usize>,
         node_type: NodeType,
@@ -46,6 +52,8 @@ impl SharedStorageConfig {
         search_timeout: Option<Duration>,
         update_concurrency: Option<NonZeroUsize>,
         is_distributed: bool,
+        incoming_shard_transfers_limit: Option<usize>,
+        outgoing_shard_transfers_limit: Option<usize>,
     ) -> Self {
         let update_queue_size = update_queue_size.unwrap_or(match node_type {
             NodeType::Normal => DEFAULT_UPDATE_QUEUE_SIZE,
@@ -59,6 +67,8 @@ impl SharedStorageConfig {
             search_timeout: search_timeout.unwrap_or(DEFAULT_SEARCH_TIMEOUT),
             update_concurrency,
             is_distributed,
+            incoming_shard_transfers_limit,
+            outgoing_shard_transfers_limit,
         }
     }
 }
