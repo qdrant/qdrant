@@ -64,13 +64,12 @@ pub enum CollectionStatus {
     Red,
 }
 
-/// State of existance of a collection,
+/// State of existence of a collection,
 /// true = exists, false = does not exist
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
-pub struct CollectionExistance {
+pub struct CollectionExistence {
     pub exists: bool,
 }
-// pub struct CollectionExistance(bool);
 
 /// Current state of the collection
 #[derive(

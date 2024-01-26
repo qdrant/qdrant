@@ -167,7 +167,7 @@ paths:
     get:
       tags:
         - collections
-      summary: Check the existance of a collection
+      summary: Check the existence of a collection
       description: Returns "true" if the given collection name exists, and "false" otherwise
       operationId: collection_exists
       parameters:
@@ -177,7 +177,7 @@ paths:
           required: true
           schema:
             type: string
-      responses: #@ response(reference("CollectionExistance"))
+      responses: #@ response(reference("CollectionExistence"))
 
   /collections/{collection_name}/index/{field_name}:
     delete:

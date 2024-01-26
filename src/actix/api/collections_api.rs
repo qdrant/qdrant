@@ -55,7 +55,7 @@ async fn get_collection(
 }
 
 #[get("/collections/{name}/exists")]
-async fn get_collection_existance(
+async fn get_collection_existence(
     toc: web::Data<TableOfContent>,
     collection: Path<CollectionPath>,
 ) -> impl Responder {
@@ -182,7 +182,7 @@ async fn update_collection_cluster(
 pub fn config_collections_api(cfg: &mut web::ServiceConfig) {
     cfg.service(get_collections)
         .service(get_collection)
-        .service(get_collection_existance)
+        .service(get_collection_existence)
         .service(create_collection)
         .service(update_collection)
         .service(delete_collection)

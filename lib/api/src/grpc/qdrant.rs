@@ -1665,7 +1665,7 @@ pub mod collections_client {
             self.inner.unary(req, path, codec).await
         }
         ///
-        /// Check the existance of a collection
+        /// Check the existence of a collection
         pub async fn collection_exists(
             &mut self,
             request: impl tonic::IntoRequest<super::CollectionExistsRequest>,
@@ -1865,7 +1865,7 @@ pub mod collections_server {
             tonic::Status,
         >;
         ///
-        /// Check the existance of a collection
+        /// Check the existence of a collection
         async fn collection_exists(
             &self,
             request: tonic::Request<super::CollectionExistsRequest>,

@@ -7,7 +7,7 @@ use collection::operations::snapshot_ops::{
     ShardSnapshotRecover, SnapshotDescription, SnapshotRecover,
 };
 use collection::operations::types::{
-    AliasDescription, CollectionClusterInfo, CollectionExistance, CollectionInfo,
+    AliasDescription, CollectionClusterInfo, CollectionExistence, CollectionInfo,
     CollectionsAliasesResponse, CountRequest, CountResult, DiscoverRequest, DiscoverRequestBatch,
     GroupsResult, PointGroup, PointRequest, RecommendGroupsRequest, RecommendRequest,
     RecommendRequestBatch, Record, ScrollRequest, ScrollResult, SearchGroupsRequest, SearchRequest,
@@ -79,7 +79,7 @@ struct AllDefinitions {
     ba: DiscoverRequest,
     bb: DiscoverRequestBatch,
     bc: VersionInfo,
-    bd: CollectionExistance,
+    bd: CollectionExistence,
 }
 
 fn save_schema<T: JsonSchema>() {
