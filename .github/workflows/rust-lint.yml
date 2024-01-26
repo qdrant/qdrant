@@ -13,15 +13,20 @@ jobs:
   test:
 
     runs-on: ubuntu-latest
-
+    strategy:
+      matrix:
+        # 1.75 is the MSRV, https://github.com/qdrant/qdrant/pull/3315
+        rust-version: [ "1.75", stable ]
+      fail-fast: false
     steps:
     - name: Install minimal nightly (only for fmt)
       uses: dtolnay/rust-toolchain@nightly
       with:
         components: rustfmt
-    - name: Install minimal stable
-      uses: dtolnay/rust-toolchain@stable
+    - name: Install rust
+      uses: dtolnay/rust-toolchain@master
       with:
+        toolchain: ${{ matrix.rust-version }}
         components: rustfmt, clippy
     - uses: actions/checkout@v4
     - name: Install Protoc
