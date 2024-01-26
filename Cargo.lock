@@ -4867,7 +4867,6 @@ dependencies = [
 name = "sparse"
 version = "0.1.0"
 dependencies = [
- "ahash 0.8.7",
  "common",
  "io",
  "itertools 0.12.1",

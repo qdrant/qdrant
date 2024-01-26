@@ -1,8 +1,7 @@
-use std::cmp::Ordering;
+use std::cmp::{min, Ordering};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 
-use ahash::AHashMap;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 
@@ -28,7 +27,7 @@ pub struct SearchContext<'a> {
     result_queue: FixedLengthPriorityQueue<ScoredPointOffset>, // keep the largest elements and peek smallest
     min_record_id: Option<u32>, // min_record_id ids across all posting lists
     max_record_id: u32,         // max_record_id ids across all posting lists
-    batch_scores: AHashMap<PointOffsetType, Option<ScoreType>>, // scores for the current batch
+    batch_scores: Vec<Option<ScoreType>>, // scores for the current batch
     use_pruning: bool,
 }
 
@@ -65,7 +64,7 @@ impl<'a> SearchContext<'a> {
         // This is a limitation of the current pruning implementation.
         let use_pruning = query.values.iter().all(|v| *v >= 0.0);
         // reuse batch scores vector
-        let batch_scores = AHashMap::with_capacity(ADVANCE_BATCH_SIZE);
+        let batch_scores = Vec::with_capacity(ADVANCE_BATCH_SIZE);
         SearchContext {
             postings_iterators,
             query,
@@ -116,65 +115,45 @@ impl<'a> SearchContext<'a> {
         queue.into_vec()
     }
 
-    /// Advance posting lists iterators and return the next candidate by increasing ids.
-    ///
-    /// Example
-    ///
-    /// postings_iterators:
-    ///
-    /// 1,  30, 34, 60, 230
-    /// 10, 30, 35, 51, 230
-    /// 2,  21, 34, 60, 200
-    /// 2,  30, 34, 60, 230
-    ///
-    /// Next:
-    ///
-    /// a,  30, 34, 60, 230
-    /// 10, 30, 35, 51, 230
-    /// 2,  21, 34, 60, 200
-    /// 2,  30, 34, 60, 230
-    ///
-    /// Next:
-    ///
-    /// a,  30, 34, 60, 230
-    /// 10, 30, 35, 51, 230
-    /// b,  21, 34, 60, 200
-    /// b,  30, 34, 60, 230
-    ///
-    /// Next:
-    ///
-    /// a,  30, 34, 60, 230
-    /// c,  30, 35, 51, 230
-    /// b,  21, 34, 60, 200
-    /// b,  30, 34, 60, 230
-    fn advance_batch(&mut self, last_id: PointOffsetType) {
-        for posting_iterator in self.postings_iterators.iter_mut() {
-            for element in posting_iterator.posting_list_iterator.remaining_elements() {
+    /// Advance posting lists iterators in a batch fashion.
+    fn advance_batch<F: Fn(PointOffsetType) -> bool>(
+        &mut self,
+        batch_start_id: PointOffsetType,
+        batch_last_id: PointOffsetType,
+        filter_condition: &F,
+    ) {
+        for posting in self.postings_iterators.iter_mut() {
+            for element in posting.posting_list_iterator.remaining_elements() {
                 let element_id = element.record_id;
-                if element_id > last_id {
+                if element_id > batch_last_id {
                     // reaching end of the batch
                     break;
                 }
                 // update score for id
-                let element_score = element.weight * posting_iterator.query_weight;
-                self.batch_scores
-                    .entry(element_id)
-                    .and_modify(|score| match score {
-                        None => *score = Some(element_score),
-                        Some(current_score) => *current_score += element_score,
-                    });
+                let local_id = (element_id - batch_start_id) as usize;
+                let local_id_score = self.batch_scores[local_id];
+                let element_score = element.weight * posting.query_weight;
+                let updated_score = match local_id_score {
+                    Some(prev_score) => Some(prev_score + element_score),
+                    None => Some(element_score),
+                };
+                self.batch_scores[local_id] = updated_score;
             }
-            // skip to the last id
-            posting_iterator.posting_list_iterator.skip_to(last_id + 1);
+            // advance posting to the batch last id
+            posting.posting_list_iterator.skip_to(batch_last_id + 1);
         }
 
         // publish scores
-        for (index, score) in self.batch_scores.iter() {
-            // filter out ids without score
+        for (local_index, score) in self.batch_scores.iter().enumerate() {
             if let Some(score) = score {
+                let real_id = batch_start_id + local_index as PointOffsetType;
+                // do not score if filter condition is not satisfied
+                if !filter_condition(real_id) {
+                    continue;
+                }
                 let score_point_offset = ScoredPointOffset {
                     score: *score,
-                    idx: *index,
+                    idx: real_id,
                 };
                 self.result_queue.push(score_point_offset);
             }
@@ -255,45 +234,38 @@ impl<'a> SearchContext<'a> {
         }
         let mut best_min_score = f32::MIN;
         loop {
-            // check for cancellation
+            // check for cancellation (amortized by batch)
             if self.is_stopped.load(Relaxed) {
                 break;
             }
 
             // prepare next iterator of batched ids
-            let start = match self.min_record_id {
+            let start_batch_id = match self.min_record_id {
                 Some(min_id) => min_id,
                 None => break, // all posting lists exhausted
             };
 
-            // an iterator of ids that satisfy the filter condition
-            let ids_selection_iter = (start..=self.max_record_id)
-                .filter(|id| filter_condition(*id)) // filter out ids that do not satisfy the filter condition
-                .take(ADVANCE_BATCH_SIZE);
+            // compute batch range of contiguous ids for the next batch
+            let last_batch_id = min(
+                start_batch_id + ADVANCE_BATCH_SIZE as u32,
+                self.max_record_id,
+            );
+            let batch_len = last_batch_id - start_batch_id + 1;
 
-            // init batch scores (size bounded)
+            // init batch scores
             self.batch_scores.clear();
-            let mut last_id = start;
-            for id in ids_selection_iter {
-                self.batch_scores.insert(id, None);
-                last_id = id;
-            }
-
-            // check if no ids to process
-            if self.batch_scores.is_empty() {
-                break;
-            }
+            self.batch_scores.resize(batch_len as usize, None);
 
             // advance and score posting lists iterators
-            self.advance_batch(last_id);
-
-            // update min_record_id
-            self.min_record_id = Self::next_min_id(&self.postings_iterators);
+            self.advance_batch(start_batch_id, last_batch_id, filter_condition);
 
             // remove empty posting lists if necessary
             self.postings_iterators.retain(|posting_iterator| {
                 posting_iterator.posting_list_iterator.len_to_end() != 0
             });
+
+            // update min_record_id
+            self.min_record_id = Self::next_min_id(&self.postings_iterators);
 
             // check if all posting lists are exhausted
             if self.postings_iterators.is_empty() {
