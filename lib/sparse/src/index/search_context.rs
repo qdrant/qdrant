@@ -5,7 +5,6 @@ use std::sync::atomic::Ordering::Relaxed;
 use ahash::AHashMap;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
-use roaring::RoaringBitmap;
 
 use crate::common::sparse_vector::SparseVector;
 use crate::common::types::{DimId, DimWeight};
@@ -27,8 +26,9 @@ pub struct SearchContext<'a> {
     top: usize,
     is_stopped: &'a AtomicBool,
     result_queue: FixedLengthPriorityQueue<ScoredPointOffset>, // keep the largest elements and peek smallest
-    record_ids_bitmap: RoaringBitmap, // all record ids across all posting lists
-    batch_scores: AHashMap<PointOffsetType, ScoreType>, // scores for the current batch
+    min_record_id: Option<u32>, // min_record_id ids across all posting lists
+    max_record_id: u32,         // max_record_id ids across all posting lists
+    batch_scores: AHashMap<PointOffsetType, Option<ScoreType>>, // scores for the current batch
     use_pruning: bool,
 }
 
@@ -40,10 +40,16 @@ impl<'a> SearchContext<'a> {
         is_stopped: &'a AtomicBool,
     ) -> SearchContext<'a> {
         let mut postings_iterators = Vec::new();
+        let mut max_record_id = 0;
         for (query_weight_offset, id) in query.indices.iter().enumerate() {
             if let Some(posting_list_iterator) = inverted_index.get(id) {
                 let query_index = *id;
                 let query_weight = query.values[query_weight_offset];
+                if let Some(max_posting_record_id) =
+                    posting_list_iterator.elements.last().map(|e| e.record_id)
+                {
+                    max_record_id = max_record_id.max(max_posting_record_id);
+                }
                 postings_iterators.push(IndexedPostingListIterator {
                     posting_list_iterator,
                     query_index,
@@ -51,14 +57,8 @@ impl<'a> SearchContext<'a> {
                 });
             }
         }
-        // init bitmap with all record ids across all posting lists
-        let mut record_ids_bitmap = RoaringBitmap::new();
-        for posting_iterator in postings_iterators.iter() {
-            for element in posting_iterator.posting_list_iterator.remaining_elements() {
-                record_ids_bitmap.insert(element.record_id);
-            }
-        }
-
+        // compute min_record_id
+        let min_record_id = Self::next_min_id(&postings_iterators);
         let result_queue = FixedLengthPriorityQueue::new(top);
         // Query vectors with negative values can NOT use the pruning mechanism which relies on the pre-computed `max_next_weight`.
         // The max contribution per posting list that we calculate is not made to compute the max value of two negative numbers.
@@ -72,7 +72,8 @@ impl<'a> SearchContext<'a> {
             top,
             is_stopped,
             result_queue,
-            record_ids_bitmap,
+            min_record_id,
+            max_record_id,
             batch_scores,
             use_pruning,
         }
@@ -155,9 +156,13 @@ impl<'a> SearchContext<'a> {
                     break;
                 }
                 // update score for id
+                let element_score = element.weight * posting_iterator.query_weight;
                 self.batch_scores
                     .entry(element_id)
-                    .and_modify(|score| *score += element.weight * posting_iterator.query_weight);
+                    .and_modify(|score| match score {
+                        None => *score = Some(element_score),
+                        Some(current_score) => *current_score += element_score,
+                    });
             }
             // skip to the last id
             posting_iterator.posting_list_iterator.skip_to(last_id + 1);
@@ -165,11 +170,14 @@ impl<'a> SearchContext<'a> {
 
         // publish scores
         for (index, score) in self.batch_scores.iter() {
-            let score_point_offset = ScoredPointOffset {
-                score: *score,
-                idx: *index,
-            };
-            self.result_queue.push(score_point_offset);
+            // filter out ids without score
+            if let Some(score) = score {
+                let score_point_offset = ScoredPointOffset {
+                    score: *score,
+                    idx: *index,
+                };
+                self.result_queue.push(score_point_offset);
+            }
         }
     }
 
@@ -253,17 +261,21 @@ impl<'a> SearchContext<'a> {
             }
 
             // prepare next iterator of batched ids
-            let ids_selection_iter = self
-                .record_ids_bitmap
-                .iter()
-                .filter(|id| filter_condition(*id)) // filter out ids that do not satisfy the filter condition
-                .take(ADVANCE_BATCH_SIZE); // batch of existing ids
+            let start = match self.min_record_id {
+                Some(min_id) => min_id,
+                None => break, // all posting lists exhausted
+            };
 
-            // init batch scores
-            let mut last_id = 0;
+            // an iterator of ids that satisfy the filter condition
+            let ids_selection_iter = (start..=self.max_record_id)
+                .filter(|id| filter_condition(*id)) // filter out ids that do not satisfy the filter condition
+                .take(ADVANCE_BATCH_SIZE);
+
+            // init batch scores (size bounded)
             self.batch_scores.clear();
+            let mut last_id = start;
             for id in ids_selection_iter {
-                self.batch_scores.insert(id, 0.0);
+                self.batch_scores.insert(id, None);
                 last_id = id;
             }
 
@@ -275,13 +287,18 @@ impl<'a> SearchContext<'a> {
             // advance and score posting lists iterators
             self.advance_batch(last_id);
 
-            // remove ids from bitmap
-            self.record_ids_bitmap.remove_range(..=last_id);
+            // update min_record_id
+            self.min_record_id = Self::next_min_id(&self.postings_iterators);
 
             // remove empty posting lists if necessary
             self.postings_iterators.retain(|posting_iterator| {
                 posting_iterator.posting_list_iterator.len_to_end() != 0
             });
+
+            // check if all posting lists are exhausted
+            if self.postings_iterators.is_empty() {
+                break;
+            }
 
             // if only one posting list left, we can score it quickly
             if self.postings_iterators.len() == 1 {
@@ -303,7 +320,11 @@ impl<'a> SearchContext<'a> {
                 self.promote_longest_posting_lists_to_the_front();
 
                 // prune posting list that cannot possibly contribute to the top results
-                self.prune_longest_posting_list(new_min_score);
+                let pruned = self.prune_longest_posting_list(new_min_score);
+                if pruned {
+                    // update min_record_id
+                    self.min_record_id = Self::next_min_id(&self.postings_iterators);
+                }
             }
         }
         // posting iterators exhausted, return result queue

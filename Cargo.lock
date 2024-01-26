@@ -4152,12 +4152,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "retain_mut"
-version = "0.1.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c31b5c4033f8fdde8700e4657be2c497e7288f01515be52168c631e2e4d4086"
-
-[[package]]
 name = "rgb"
 version = "0.8.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4215,17 +4209,6 @@ dependencies = [
  "byteorder",
  "rmp",
  "serde",
-]
-
-[[package]]
-name = "roaring"
-version = "0.10.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6106b5cf8587f5834158895e9715a3c6c9716c8aefab57f1f7680917191c7873"
-dependencies = [
- "bytemuck",
- "byteorder",
- "retain_mut",
 ]
 
 [[package]]
@@ -4892,7 +4875,6 @@ dependencies = [
  "memory",
  "ordered-float 4.2.0",
  "rand 0.8.5",
- "roaring",
  "schemars",
  "serde",
  "tempfile",
