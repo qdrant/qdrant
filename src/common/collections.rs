@@ -32,10 +32,13 @@ pub async fn do_collection_exists(
     // if this returns Ok, it means the collection exists.
     // if not, we check that the error is NotFound
     let Err(error) = toc.get_collection(name).await else {
-        return Ok(CollectionExistsResponse { exists: true });
+        return Ok(CollectionExistsResponse { exists: true, time: 0.0 });
     };
     match error {
-        StorageError::NotFound { .. } => Ok(CollectionExistsResponse { exists: false }),
+        StorageError::NotFound { .. } => Ok(CollectionExistsResponse {
+            exists: false,
+            time: 0.0,
+        }),
         e => Err(e),
     }
 }

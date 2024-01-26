@@ -56,6 +56,7 @@ message CollectionExistsRequest {
 
 message CollectionExistsResponse {
   bool exists = 1;
+  double time = 2; // Time spent to process
 }
 
 message ListCollectionsRequest {

@@ -145,6 +145,9 @@ pub struct CollectionExistsRequest {
 pub struct CollectionExistsResponse {
     #[prost(bool, tag = "1")]
     pub exists: bool,
+    /// Time spent to process
+    #[prost(double, tag = "2")]
+    pub time: f64,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

@@ -177,11 +177,13 @@ impl Collections for CollectionsService {
         &self,
         request: Request<CollectionExistsRequest>,
     ) -> Result<Response<CollectionExistsResponse>, Status> {
+        let timing = Instant::now();
         validate(request.get_ref())?;
         let CollectionExistsRequest { collection_name } = request.into_inner();
-        let response = do_collection_exists(self.dispatcher.toc(), &collection_name)
+        let mut response = do_collection_exists(self.dispatcher.toc(), &collection_name)
             .await
             .map_err(error_to_status)?;
+        response.time = timing.elapsed().as_secs_f64();
 
         Ok(Response::new(response))
     }

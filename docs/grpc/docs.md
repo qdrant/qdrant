@@ -404,6 +404,7 @@
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | exists | [bool](#bool) |  |  |
+| time | [double](#double) |  | Time spent to process |
 
 
 
