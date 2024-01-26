@@ -957,7 +957,7 @@ impl TryFrom<FieldCondition> for segment::types::FieldCondition {
             key,
             r#match: r#match.map_or_else(|| Ok(None), |m| m.try_into().map(Some))?,
             range: range.map(Into::into),
-            datetime_range: datetime_range.map(Into::into),
+            datetime_range: datetime_range.map(TryInto::try_into).transpose()?,
             geo_bounding_box,
             geo_radius,
             geo_polygon,
@@ -1122,14 +1122,16 @@ impl From<segment::types::Range<FloatPayloadType>> for Range {
     }
 }
 
-impl From<DatetimeRange> for segment::types::Range<DateTimePayloadType> {
-    fn from(value: DatetimeRange) -> Self {
-        Self {
-            lt: value.lt.map(date_time_from_proto),
-            gt: value.gt.map(date_time_from_proto),
-            gte: value.gte.map(date_time_from_proto),
-            lte: value.lte.map(date_time_from_proto),
-        }
+impl TryFrom<DatetimeRange> for segment::types::Range<DateTimePayloadType> {
+    type Error = Status;
+
+    fn try_from(value: DatetimeRange) -> Result<Self, Self::Error> {
+        Ok(Self {
+            lt: value.lt.map(date_time_from_proto).transpose()?,
+            gt: value.gt.map(date_time_from_proto).transpose()?,
+            gte: value.gte.map(date_time_from_proto).transpose()?,
+            lte: value.lte.map(date_time_from_proto).transpose()?,
+        })
     }
 }
 
@@ -1250,17 +1252,13 @@ pub fn date_time_to_proto(date_time: chrono::DateTime<chrono::Utc>) -> prost_wkt
 
 pub fn date_time_from_proto(
     date_time: prost_wkt_types::Timestamp,
-) -> chrono::DateTime<chrono::Utc> {
-    chrono::Utc.from_utc_datetime(
-        &chrono::NaiveDateTime::from_timestamp_opt(
-            date_time.seconds,
-            date_time.nanos.try_into().unwrap_or(0),
-        )
-        .unwrap_or_else(|| {
-            log::warn!("Failed to decode {date_time}, fallback to UNIX_EPOCH");
-            NaiveDateTime::UNIX_EPOCH
-        }),
+) -> Result<chrono::DateTime<chrono::Utc>, Status> {
+    chrono::NaiveDateTime::from_timestamp_opt(
+        date_time.seconds,
+        date_time.nanos.try_into().unwrap_or(0),
     )
+    .map(|naive_date_time| chrono::Utc.from_utc_datetime(&naive_date_time))
+    .ok_or_else(|| Status::invalid_argument(format!("Unable to parse timestamp: {date_time}")))
 }
 
 impl TryFrom<Distance> for segment::types::Distance {
