@@ -8,6 +8,8 @@
     - [AliasOperations](#qdrant-AliasOperations)
     - [BinaryQuantization](#qdrant-BinaryQuantization)
     - [ChangeAliases](#qdrant-ChangeAliases)
+    - [CheckCollectionExistsRequest](#qdrant-CheckCollectionExistsRequest)
+    - [CheckCollectionExistsResponse](#qdrant-CheckCollectionExistsResponse)
     - [CollectionClusterInfoRequest](#qdrant-CollectionClusterInfoRequest)
     - [CollectionClusterInfoResponse](#qdrant-CollectionClusterInfoResponse)
     - [CollectionConfig](#qdrant-CollectionConfig)
@@ -304,6 +306,36 @@
 | ----- | ---- | ----- | ----------- |
 | actions | [AliasOperations](#qdrant-AliasOperations) | repeated | List of actions |
 | timeout | [uint64](#uint64) | optional | Wait timeout for operation commit in seconds, if not specified - default value will be supplied |
+
+
+
+
+
+
+<a name="qdrant-CheckCollectionExistsRequest"></a>
+
+### CheckCollectionExistsRequest
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection_name | [string](#string) |  | Name of the collection |
+
+
+
+
+
+
+<a name="qdrant-CheckCollectionExistsResponse"></a>
+
+### CheckCollectionExistsResponse
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| exists | [bool](#bool) |  | If collection exists |
 
 
 
@@ -1508,6 +1540,7 @@ Note: 1kB = 1 vector of size 256. |
 | Method Name | Request Type | Response Type | Description |
 | ----------- | ------------ | ------------- | ------------|
 | Get | [GetCollectionInfoRequest](#qdrant-GetCollectionInfoRequest) | [GetCollectionInfoResponse](#qdrant-GetCollectionInfoResponse) | Get detailed information about specified existing collection |
+| CheckCollectionExists | [CheckCollectionExistsRequest](#qdrant-CheckCollectionExistsRequest) | [CheckCollectionExistsResponse](#qdrant-CheckCollectionExistsResponse) | Check if collection exists |
 | List | [ListCollectionsRequest](#qdrant-ListCollectionsRequest) | [ListCollectionsResponse](#qdrant-ListCollectionsResponse) | Get list name of all existing collections |
 | Create | [CreateCollection](#qdrant-CreateCollection) | [CollectionOperationResponse](#qdrant-CollectionOperationResponse) | Create new collection with given parameters |
 | Update | [UpdateCollection](#qdrant-UpdateCollection) | [CollectionOperationResponse](#qdrant-CollectionOperationResponse) | Update parameters of the existing collection |
