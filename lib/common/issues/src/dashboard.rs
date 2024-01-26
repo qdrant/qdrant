@@ -124,7 +124,7 @@ mod tests {
 
             assert!(!submit(DummyIssue::new("issue1")));
 
-            std::thread::sleep(std::time::Duration::from_millis(10));
+            std::thread::sleep(std::time::Duration::from_millis(40));
 
             assert!(solve("issue1"));
             assert!(solve("issue2"));
@@ -134,7 +134,7 @@ mod tests {
             assert!(solve("issue6"));
         });
 
-        std::thread::sleep(std::time::Duration::from_millis(70));
+        std::thread::sleep(std::time::Duration::from_millis(140));
 
         handle1.join()?;
         handle2.join()?;
