@@ -4,6 +4,7 @@ use actix_web::rt::time::Instant;
 use actix_web::{delete, get, patch, post, put, web, Responder};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::cluster_ops::ClusterOperations;
+use collection::operations::types::CollectionExistsInfo;
 use serde::Deserialize;
 use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CollectionMetaOperations, CreateCollection, CreateCollectionOperation,
@@ -43,7 +44,9 @@ async fn collection_exists(
     collection: Path<CollectionPath>,
 ) -> impl Responder {
     let timing = Instant::now();
-    let response = do_check_collection_exists(toc.get_ref(), &collection.name).await;
+    let response = do_check_collection_exists(toc.get_ref(), &collection.name)
+        .await
+        .map(|exists| CollectionExistsInfo { exists });
     process_response(response, timing)
 }
 

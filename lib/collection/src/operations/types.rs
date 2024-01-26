@@ -92,6 +92,19 @@ pub struct Record {
     pub shard_key: Option<ShardKey>,
 }
 
+/// Check if the collection exists
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
+pub struct CollectionExistsInfo {
+    /// Collection exists
+    pub exists: bool,
+}
+
+impl CollectionExistsInfo {
+    pub fn new(exists: bool) -> Self {
+        Self { exists }
+    }
+}
+
 /// Current statistics and configuration of the collection
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct CollectionInfo {

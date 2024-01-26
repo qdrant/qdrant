@@ -1193,7 +1193,7 @@
                       "type": "string"
                     },
                     "result": {
-                      "type": "boolean"
+                      "$ref": "#/components/schemas/CollectionExistsInfo"
                     }
                   }
                 }
@@ -10702,6 +10702,19 @@
           "commit": {
             "type": "string",
             "nullable": true
+          }
+        }
+      },
+      "CollectionExistsInfo": {
+        "description": "Check if the collection exists",
+        "type": "object",
+        "required": [
+          "exists"
+        ],
+        "properties": {
+          "exists": {
+            "description": "Collection exists",
+            "type": "boolean"
           }
         }
       }

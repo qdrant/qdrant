@@ -142,7 +142,7 @@ paths:
           required: true
           schema:
             type: string
-      responses: #@ response(type("boolean"))
+      responses: #@ response(reference("CollectionExistsInfo"))
 
   /collections/{collection_name}/index:
     put:

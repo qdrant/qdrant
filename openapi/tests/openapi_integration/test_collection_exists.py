@@ -23,7 +23,7 @@ def test_collection_exists():
         path_params={"collection_name": collection_name},
     )
     assert response.ok
-    result = response.json()["result"]
+    result = response.json()["result"]["exists"]
     assert result == True
 
 
