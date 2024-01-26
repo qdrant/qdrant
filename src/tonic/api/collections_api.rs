@@ -181,8 +181,7 @@ impl Collections for CollectionsService {
         let CollectionExistsRequest { collection_name } = request.into_inner();
         let response = do_collection_exists(self.dispatcher.toc(), &collection_name)
             .await
-            .map_err(error_to_status)?
-            .into();
+            .map_err(error_to_status)?;
 
         Ok(Response::new(response))
     }
