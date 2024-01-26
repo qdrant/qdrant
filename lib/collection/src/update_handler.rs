@@ -464,7 +464,7 @@ impl UpdateHandler {
                         "Blocking optimization check, waiting for CPU budget to be available"
                     );
                     let desired_cpus = num_rayon_threads(max_indexing_threads);
-                    optimizer_cpu_budget.block_until_budget(desired_cpus);
+                    optimizer_cpu_budget.wait_until_budget(desired_cpus).await;
                     log::trace!("Continue with optimizations, new CPU budget available");
 
                     // Determine optimization handle limit based on max handles we allow

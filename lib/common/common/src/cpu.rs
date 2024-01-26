@@ -1,6 +1,5 @@
 use std::cmp::Ordering;
 use std::sync::Arc;
-use std::thread;
 use std::time::Duration;
 
 #[cfg(target_os = "linux")]
@@ -8,6 +7,7 @@ use thiserror::Error;
 #[cfg(target_os = "linux")]
 use thread_priority::{set_current_thread_priority, ThreadPriority, ThreadPriorityValue};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, TryAcquireError};
+use tokio::time;
 
 use crate::defaults::default_cpu_budget_unallocated;
 
@@ -113,7 +113,7 @@ impl CpuBudget {
         self.semaphore.available_permits() >= budget
     }
 
-    /// Block until we have CPU budget available for the given number of desired CPUs.
+    /// Wait until we have CPU budget available for the given number of desired CPUs.
     ///
     /// Waits for at least the minimum number of permits based on the given desired CPUs. For
     /// example, if `desired_cpus` is 8, this will wait for at least 4 to be available. See
@@ -122,8 +122,8 @@ impl CpuBudget {
     /// - `1` to wait for any CPU budget to be available.
     /// - `0` will always return immediately.
     ///
-    /// Uses an exponential backoff strategy to avoid busy waiting.
-    pub fn block_until_budget(&self, desired_cpus: usize) {
+    /// Uses an exponential backoff strategy up to 10 seconds to avoid busy waiting.
+    pub async fn wait_until_budget(&self, desired_cpus: usize) {
         let min_required = self.min_permits(desired_cpus);
         if self.has_budget_exact(min_required) {
             return;
@@ -133,7 +133,7 @@ impl CpuBudget {
         // TODO: find better way, don't busy wait
         let mut delay = Duration::from_micros(100);
         while !self.has_budget_exact(min_required) {
-            thread::sleep(delay);
+            time::sleep(delay).await;
             delay = (delay * 2).min(Duration::from_secs(10));
         }
     }
