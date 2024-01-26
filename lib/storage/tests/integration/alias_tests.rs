@@ -47,6 +47,8 @@ fn test_alias_operation() {
             max_optimization_threads: 1,
             update_rate_limit: None,
             search_timeout_sec: None,
+            incoming_shard_transfers_limit: Some(1),
+            outgoing_shard_transfers_limit: Some(1),
         },
         hnsw_index: Default::default(),
         quantization: None,

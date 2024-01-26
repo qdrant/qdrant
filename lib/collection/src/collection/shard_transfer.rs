@@ -160,7 +160,7 @@ impl Collection {
             .stop_if_exists(&transfer.key())
             .await
             .is_finished();
-        log::debug!("transfer_finished: {}", transfer_finished);
+        log::debug!("transfer_finished: {transfer_finished}");
 
         let shards_holder_guard = self.shards_holder.read().await;
 
@@ -175,7 +175,7 @@ impl Collection {
                 transfer.sync,
             )
             .await?;
-            log::debug!("proxy_promoted: {}", proxy_promoted);
+            log::debug!("proxy_promoted: {proxy_promoted}");
         }
 
         // Should happen on receiving side
@@ -185,10 +185,9 @@ impl Collection {
                 transfer::driver::finalize_partial_shard(&shards_holder_guard, transfer.shard_id)
                     .await?;
             log::debug!(
-                "shard_promoted: {}, shard_id: {}, peer_id: {}",
-                shard_promoted,
+                "shard_promoted: {shard_promoted}, shard_id: {}, peer_id: {}",
                 transfer.shard_id,
-                self.this_peer_id
+                self.this_peer_id,
             );
         }
 
@@ -203,11 +202,11 @@ impl Collection {
                 transfer.sync,
             )
             .await?;
-            log::debug!("remote_shard_rerouted: {}", remote_shard_rerouted);
+            log::debug!("remote_shard_rerouted: {remote_shard_rerouted}");
         }
         let finish_was_registered =
             shards_holder_guard.register_finish_transfer(&transfer.key())?;
-        log::debug!("finish_was_registered: {}", finish_was_registered);
+        log::debug!("finish_was_registered: {finish_was_registered}");
         Ok(())
     }
 
@@ -356,5 +355,21 @@ impl Collection {
                 ))),
             }
         }
+    }
+
+    /// Whether we have reached the automatic shard transfer limit based on the given incoming and
+    /// outgoing transfers.
+    pub(super) fn check_auto_shard_transfer_limit(&self, incoming: usize, outgoing: usize) -> bool {
+        let incoming_shard_transfer_limit_reached = self
+            .shared_storage_config
+            .incoming_shard_transfers_limit
+            .map_or(false, |limit| incoming >= limit);
+
+        let outgoing_shard_transfer_limit_reached = self
+            .shared_storage_config
+            .outgoing_shard_transfers_limit
+            .map_or(false, |limit| outgoing >= limit);
+
+        incoming_shard_transfer_limit_reached || outgoing_shard_transfer_limit_reached
     }
 }

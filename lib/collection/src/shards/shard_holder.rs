@@ -282,6 +282,21 @@ impl ShardHolder {
         })?)
     }
 
+    /// The count of incoming and outgoing shard transfers on the given peer
+    ///
+    /// This only includes shard transfers that are in consensus for the current collection. A
+    /// shard transfer that has just been proposed may not be included yet.
+    pub fn count_shard_transfer_io(&self, peer_id: &PeerId) -> (usize, usize) {
+        let (mut incoming, mut outgoing) = (0, 0);
+
+        for transfer in self.shard_transfers.read().iter() {
+            incoming += (transfer.to == *peer_id) as usize;
+            outgoing += (transfer.from == *peer_id) as usize;
+        }
+
+        (incoming, outgoing)
+    }
+
     pub fn get_shard_transfer_info(&self) -> Vec<ShardTransferInfo> {
         let mut shard_transfers = vec![];
         for shard_transfer in self.shard_transfers.read().iter() {

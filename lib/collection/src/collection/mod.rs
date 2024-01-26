@@ -7,7 +7,7 @@ mod sharding_keys;
 mod snapshots;
 mod state_management;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -390,31 +390,6 @@ impl Collection {
             }
         }
 
-        // Try to request shard transfer if replicas on the current peer are dead
-        if state == ReplicaState::Dead && self.this_peer_id == peer_id {
-            let transfer_from = replica_set
-                .peers()
-                .into_iter()
-                .find(|(_, state)| state == &ReplicaState::Active)
-                .map(|(peer_id, _)| peer_id);
-            if let Some(transfer_from) = transfer_from {
-                self.request_shard_transfer(ShardTransfer {
-                    shard_id,
-                    from: transfer_from,
-                    to: self.this_peer_id,
-                    sync: true,
-                    // For automatic shard transfers, always select some default method from this point on
-                    method: Some(
-                        self.shared_storage_config
-                            .default_shard_transfer_method
-                            .unwrap_or_default(),
-                    ),
-                })
-            } else {
-                log::warn!("No alive replicas to recover shard {shard_id}");
-            }
-        }
-
         Ok(())
     }
 
@@ -497,6 +472,12 @@ impl Collection {
             }
         }
 
+        // Count how many transfers we are now proposing
+        // We must track this here so we can reference it when checking for tranfser limits,
+        // because transfers we propose now will not be in the consensus state within the lifetime
+        // of this function
+        let mut proposed = HashMap::<PeerId, usize>::new();
+
         // Check for proper replica states
         for replica_set in shard_holder.all_shards() {
             let this_peer_id = &replica_set.this_peer_id();
@@ -532,6 +513,14 @@ impl Collection {
             // Try to find dead replicas with no active transfers
             let transfers = shard_holder.get_transfers(|_| true);
 
+            // Respect shard transfer limit, consider already proposed transfers in our counts
+            let (mut incoming, outgoing) = shard_holder.count_shard_transfer_io(this_peer_id);
+            incoming += proposed.get(this_peer_id).copied().unwrap_or(0);
+            if self.check_auto_shard_transfer_limit(incoming, outgoing) {
+                log::trace!("Postponing automatic shard {shard_id} transfer to stay below limit on this node (incoming: {incoming}, outgoing: {outgoing})");
+                continue;
+            }
+
             // Try to find a replica to transfer from
             for replica_id in replica_set.active_remote_shards().await {
                 let transfer = ShardTransfer {
@@ -551,6 +540,14 @@ impl Collection {
                     continue; // this transfer won't work
                 }
 
+                // Respect shard transfer limit, consider already proposed transfers in our counts
+                let (incoming, mut outgoing) = shard_holder.count_shard_transfer_io(&replica_id);
+                outgoing += proposed.get(&replica_id).copied().unwrap_or(0);
+                if self.check_auto_shard_transfer_limit(incoming, outgoing) {
+                    log::trace!("Postponing automatic shard {shard_id} transfer to stay below limit on peer {replica_id} (incoming: {incoming}, outgoing: {outgoing})");
+                    continue;
+                }
+
                 // TODO: Should we, maybe, throttle/backoff this requests a bit?
                 if let Err(err) = replica_set.health_check(replica_id).await {
                     // TODO: This is rather verbose, not sure if we want to log this at all... :/
@@ -561,18 +558,17 @@ impl Collection {
                         self.id,
                         replica_set.shard_id,
                     );
-
                     continue;
                 }
 
                 log::debug!(
-                    "Recovering shard {}:{} on peer {} by requesting it from {}",
+                    "Recovering shard {}:{shard_id} on peer {this_peer_id} by requesting it from {replica_id}",
                     self.name(),
-                    shard_id,
-                    this_peer_id,
-                    replica_id
                 );
 
+                // Update our counters for proposed transfers, then request (propose) shard transfer
+                *proposed.entry(transfer.from).or_default() += 1;
+                *proposed.entry(transfer.to).or_default() += 1;
                 self.request_shard_transfer(transfer);
                 break;
             }

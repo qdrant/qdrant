@@ -39,6 +39,7 @@ storage:
   performance:
     # Number of parallel threads used for search operations. If 0 - auto selection.
     max_search_threads: 0
+
     # Max total number of threads, which can be used for running optimization processes across all collections.
     # Note: Each optimization thread will also use `max_indexing_threads` for index building.
     # So total number of threads used for optimization will be `max_optimization_threads * max_indexing_threads`
@@ -49,6 +50,18 @@ storage:
     # timings. For example, the health check timing and consensus timing.
     # If null - auto selection.
     update_rate_limit: null
+
+    # Limit for number of incoming automatic shard transfers per collection on this node, does not affect user-requested transfers.
+    # The same value should be used on all nodes in a cluster.
+    # Default is to allow 1 transfer.
+    # If null - allow unlimited transfers.
+    #incoming_shard_transfers_limit: 1
+
+    # Limit for number of outgoing automatic shard transfers per collection on this node, does not affect user-requested transfers.
+    # The same value should be used on all nodes in a cluster.
+    # Default is to allow 1 transfer.
+    # If null - allow unlimited transfers.
+    #outgoing_shard_transfers_limit: 1
 
   optimizers:
     # The minimal fraction of deleted vectors in a segment, required to perform segment optimization
