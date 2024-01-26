@@ -43,7 +43,7 @@ service Collections {
   */
   rpc CollectionClusterInfo (CollectionClusterInfoRequest) returns (CollectionClusterInfoResponse) {}
   /*
-  Get boolean for the existance of a collection
+  Check the existance of a collection
   */
   rpc CollectionExists (CollectionExistsRequest) returns (CollectionExistsResponse) {}
   /*

@@ -179,11 +179,12 @@ impl Collections for CollectionsService {
     ) -> Result<Response<CollectionExistsResponse>, Status> {
         validate(request.get_ref())?;
         let CollectionExistsRequest { collection_name } = request.into_inner();
-        let result = do_collection_exists(self.dispatcher.toc(), &collection_name)
+        let response = do_collection_exists(self.dispatcher.toc(), &collection_name)
             .await
-            .map_err(error_to_status)?;
+            .map_err(error_to_status)?
+            .into();
 
-        Ok(Response::new(CollectionExistsResponse { exists: result }))
+        Ok(Response::new(response))
     }
 
     async fn collection_cluster_info(

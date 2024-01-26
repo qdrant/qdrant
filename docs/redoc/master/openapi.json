@@ -1236,7 +1236,7 @@
         "tags": [
           "collections"
         ],
-        "summary": "Get boolean for the existance of a collection",
+        "summary": "Check the existance of a collection",
         "description": "Returns \"true\" if the given collection name exists, and \"false\" otherwise",
         "operationId": "collection_exists",
         "parameters": [
@@ -10709,10 +10709,10 @@
         "description": "State of existance of a collection, true = exists, false = does not exist",
         "type": "object",
         "required": [
-          "result"
+          "exists"
         ],
         "properties": {
-          "result": {
+          "exists": {
             "type": "boolean"
           }
         }
