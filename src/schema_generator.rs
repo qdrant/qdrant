@@ -11,7 +11,7 @@ use collection::operations::types::{
     CountRequest, CountResult, DiscoverRequest, DiscoverRequestBatch, GroupsResult, PointGroup,
     PointRequest, RecommendGroupsRequest, RecommendRequest, RecommendRequestBatch, Record,
     ScrollRequest, ScrollResult, SearchGroupsRequest, SearchRequest, SearchRequestBatch,
-    UpdateResult,
+    UpdateResult, CollectionExistance,
 };
 use collection::operations::vector_ops::{DeleteVectors, UpdateVectors};
 use schemars::gen::SchemaSettings;
@@ -79,6 +79,7 @@ struct AllDefinitions {
     ba: DiscoverRequest,
     bb: DiscoverRequestBatch,
     bc: VersionInfo,
+    bd: CollectionExistance,
 }
 
 fn save_schema<T: JsonSchema>() {

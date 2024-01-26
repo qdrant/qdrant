@@ -4,8 +4,9 @@ use std::time::{Duration, Instant};
 use api::grpc::qdrant::collections_server::Collections;
 use api::grpc::qdrant::{
     AliasDescription, ChangeAliases, CollectionClusterInfoRequest, CollectionClusterInfoResponse,
-    CollectionOperationResponse, CreateCollection, CreateShardKeyRequest, CreateShardKeyResponse,
-    DeleteCollection, DeleteShardKeyRequest, DeleteShardKeyResponse, GetCollectionInfoRequest,
+    CollectionExistsRequest, CollectionExistsResponse, CollectionOperationResponse,
+    CreateCollection, CreateShardKeyRequest, CreateShardKeyResponse, DeleteCollection,
+    DeleteShardKeyRequest, DeleteShardKeyResponse, GetCollectionInfoRequest,
     GetCollectionInfoResponse, ListAliasesRequest, ListAliasesResponse,
     ListCollectionAliasesRequest, ListCollectionsRequest, ListCollectionsResponse,
     UpdateCollection, UpdateCollectionClusterSetupRequest, UpdateCollectionClusterSetupResponse,
@@ -170,6 +171,19 @@ impl Collections for CollectionsService {
     ) -> Result<Response<ListAliasesResponse>, Status> {
         validate(request.get_ref())?;
         self.list_aliases(request).await
+    }
+
+    async fn collection_exists(
+        &self,
+        request: Request<CollectionExistsRequest>,
+    ) -> Result<Response<CollectionExistsResponse>, Status> {
+        validate(request.get_ref())?;
+        let CollectionExistsRequest { collection_name } = request.into_inner();
+        let result = do_collection_exists(self.dispatcher.toc(), &collection_name)
+            .await
+            .map_err(error_to_status)?;
+
+        Ok(Response::new(CollectionExistsResponse { exists: result }))
     }
 
     async fn collection_cluster_info(

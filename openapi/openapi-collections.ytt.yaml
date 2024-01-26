@@ -163,6 +163,22 @@ paths:
 
       responses: #@ response(reference("UpdateResult"))
 
+  /collections/{collection_name}/exists:
+    get:
+      tags:
+        - collections
+      summary: Get boolean for the existance of a collection
+      description: Returns "true" if the given collection name exists, and "false" otherwise
+      operationId: collection_exists
+      parameters:
+        - name: collection_name
+          in: path
+          description: Name of the collection
+          required: true
+          schema:
+            type: string
+      responses: #@ response(reference("CollectionExistance"))
+
   /collections/{collection_name}/index/{field_name}:
     delete:
       tags:

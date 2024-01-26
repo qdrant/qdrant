@@ -43,6 +43,10 @@ service Collections {
   */
   rpc CollectionClusterInfo (CollectionClusterInfoRequest) returns (CollectionClusterInfoResponse) {}
   /*
+  Get boolean for the existance of a collection
+  */
+  rpc CollectionExists (CollectionExistsRequest) returns (CollectionExistsResponse) {}
+  /*
   Update cluster setup for a collection
   */
   rpc UpdateCollectionClusterSetup (UpdateCollectionClusterSetupRequest) returns (UpdateCollectionClusterSetupResponse) {}

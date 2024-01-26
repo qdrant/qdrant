@@ -24,6 +24,17 @@ use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 
+pub async fn do_collection_exists(toc: &TableOfContent, name: &str) -> Result<bool, StorageError> {
+    // if this returns Ok, it means the collection exists.
+    // if not, we check that the error is NotFound
+    let Err(error) = toc.get_collection(name).await else { return Ok(true) };
+
+    match error {
+        StorageError::NotFound { .. } => Ok(false),
+        e => Err(e),
+    }
+}
+
 pub async fn do_get_collection(
     toc: &TableOfContent,
     name: &str,
