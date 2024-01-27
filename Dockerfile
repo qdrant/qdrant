@@ -31,7 +31,7 @@ COPY --from=xx / /
 # so, please, don't reorder them without prior consideration. 🥲
 
 RUN apt-get update \
-    && apt-get install --no-install-recommends -y clang lld cmake protobuf-compiler jq \
+    && apt-get install -y clang lld cmake protobuf-compiler jq \
     && rustup component add rustfmt \
     && rm -rf /var/lib/apt/lists/*
 
