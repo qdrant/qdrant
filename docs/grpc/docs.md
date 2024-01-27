@@ -12,6 +12,7 @@
     - [CollectionClusterInfoResponse](#qdrant-CollectionClusterInfoResponse)
     - [CollectionConfig](#qdrant-CollectionConfig)
     - [CollectionDescription](#qdrant-CollectionDescription)
+    - [CollectionExists](#qdrant-CollectionExists)
     - [CollectionExistsRequest](#qdrant-CollectionExistsRequest)
     - [CollectionExistsResponse](#qdrant-CollectionExistsResponse)
     - [CollectionInfo](#qdrant-CollectionInfo)
@@ -380,6 +381,21 @@
 
 
 
+<a name="qdrant-CollectionExists"></a>
+
+### CollectionExists
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| exists | [bool](#bool) |  |  |
+
+
+
+
+
+
 <a name="qdrant-CollectionExistsRequest"></a>
 
 ### CollectionExistsRequest
@@ -403,7 +419,7 @@
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| exists | [bool](#bool) |  |  |
+| result | [CollectionExists](#qdrant-CollectionExists) |  |  |
 | time | [double](#double) |  | Time spent to process |
 
 

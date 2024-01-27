@@ -142,9 +142,16 @@ pub struct CollectionExistsRequest {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CollectionExistsResponse {
+pub struct CollectionExists {
     #[prost(bool, tag = "1")]
     pub exists: bool,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CollectionExistsResponse {
+    #[prost(message, optional, tag = "1")]
+    pub result: ::core::option::Option<CollectionExists>,
     /// Time spent to process
     #[prost(double, tag = "2")]
     pub time: f64,

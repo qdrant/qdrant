@@ -54,8 +54,12 @@ message CollectionExistsRequest {
   string collection_name = 1;
 }
 
-message CollectionExistsResponse {
+message CollectionExists {
   bool exists = 1;
+}
+
+message CollectionExistsResponse {
+  CollectionExists result = 1;
   double time = 2; // Time spent to process
 }
 

@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use api::grpc::models::{CollectionDescription, CollectionsResponse};
-use api::grpc::qdrant::CollectionExistsResponse;
+use api::grpc::qdrant::CollectionExists;
 use collection::config::ShardingMethod;
 use collection::operations::cluster_ops::{
     AbortTransferOperation, ClusterOperations, DropReplicaOperation, MoveShardOperation,
@@ -28,20 +28,14 @@ use storage::dispatcher::Dispatcher;
 pub async fn do_collection_exists(
     toc: &TableOfContent,
     name: &str,
-) -> Result<CollectionExistsResponse, StorageError> {
+) -> Result<CollectionExists, StorageError> {
     // if this returns Ok, it means the collection exists.
     // if not, we check that the error is NotFound
     let Err(error) = toc.get_collection(name).await else {
-        return Ok(CollectionExistsResponse {
-            exists: true,
-            time: 0.0,
-        });
+        return Ok(CollectionExists { exists: true });
     };
     match error {
-        StorageError::NotFound { .. } => Ok(CollectionExistsResponse {
-            exists: false,
-            time: 0.0,
-        }),
+        StorageError::NotFound { .. } => Ok(CollectionExists { exists: false }),
         e => Err(e),
     }
 }
