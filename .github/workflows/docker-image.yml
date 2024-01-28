@@ -18,13 +18,23 @@ jobs:
     - name: Get current tag
       id: vars
       run: echo ::set-output name=tag::${GITHUB_REF#refs/*/}
+    - name: Extract Major and Minor Versions
+      id: version
+      run: |
+        FULL_VERSION=${{ steps.vars.outputs.tag }}
+        MAJOR_VERSION=$(echo $FULL_VERSION | cut -d '.' -f 1)
+        MINOR_VERSION=$(echo $FULL_VERSION | cut -d '.' -f 1,2)
+        echo ::set-output name=major::${MAJOR_VERSION}
+        echo ::set-output name=minor::${MINOR_VERSION}
     - name: Build the Docker image
       env:
         RELEASE_VERSION: ${{ steps.vars.outputs.tag }}
+        MAJOR_VERSION: ${{ steps.version.outputs.major }}
+        MINOR_VERSION: ${{ steps.version.outputs.minor }}
       run: |
         # Create build container
         docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-        docker buildx create --use
+        docker buildx create --us
 
         # Authenticate on registries
         docker login --username generall --password ${{ secrets.DOCKERHUB_TOKEN }}
@@ -32,8 +42,10 @@ jobs:
 
         # Build regular image for Docker Hub
         DOCKERHUB_TAG="qdrant/qdrant:${{ github.ref_name }}"
+        DOCKERHUB_TAG_MAJOR="qdrant/qdrant:${MAJOR_VERSION}"
+        DOCKERHUB_TAG_MINOR="qdrant/qdrant:${MINOR_VERSION}"
         DOCKERHUB_TAG_LATEST="qdrant/qdrant:latest"
-        TAGS="-t ${DOCKERHUB_TAG} -t ${DOCKERHUB_TAG_LATEST}"
+        TAGS="-t ${DOCKERHUB_TAG} -t ${DOCKERHUB_TAG_MAJOR} -t ${DOCKERHUB_TAG_MINOR} -t ${DOCKERHUB_TAG_LATEST}"
         GITHUB_TAG="docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}"
 
         # Pull, retag and push to GitHub packages
@@ -44,8 +56,10 @@ jobs:
 
         # Build unprivileged image for Docker Hub
         DOCKERHUB_TAG_UNPRIVILEGED="qdrant/qdrant:${{ github.ref_name }}-unprivileged"
+        DOCKERHUB_TAG_MAJOR_UNPRIVILEGED="qdrant/qdrant:${MAJOR_VERSION}-unprivileged"
+        DOCKERHUB_TAG_MINOR_UNPRIVILEGED="qdrant/qdrant:${MINOR_VERSION}-unprivileged"
         DOCKERHUB_TAG_LATEST_UNPRIVILEGED="qdrant/qdrant:latest-unprivileged"
-        TAGS_UNPRIVILEGED="-t ${DOCKERHUB_TAG_UNPRIVILEGED} -t ${DOCKERHUB_TAG_LATEST_UNPRIVILEGED}"
+        TAGS_UNPRIVILEGED="-t ${DOCKERHUB_TAG_UNPRIVILEGED} -t ${DOCKERHUB_TAG_MAJOR_UNPRIVILEGED} -t ${DOCKERHUB_TAG_MINOR_UNPRIVILEGED} -t ${DOCKERHUB_TAG_LATEST_UNPRIVILEGED}"
         GITHUB_TAG_UNPRIVILEGED="docker.pkg.github.com/qdrant/qdrant/qdrant:${{ github.ref_name }}-unprivileged"
 
         # Pull, retag and push to GitHub packages
@@ -53,3 +67,4 @@ jobs:
         docker pull $DOCKERHUB_TAG_UNPRIVILEGED
         docker tag $DOCKERHUB_TAG_UNPRIVILEGED $GITHUB_TAG_UNPRIVILEGED
         docker push $GITHUB_TAG_UNPRIVILEGED
+        
