@@ -34,7 +34,7 @@ jobs:
       run: |
         # Create build container
         docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-        docker buildx create --us
+        docker buildx create --use
 
         # Authenticate on registries
         docker login --username generall --password ${{ secrets.DOCKERHUB_TOKEN }}
@@ -67,4 +67,3 @@ jobs:
         docker pull $DOCKERHUB_TAG_UNPRIVILEGED
         docker tag $DOCKERHUB_TAG_UNPRIVILEGED $GITHUB_TAG_UNPRIVILEGED
         docker push $GITHUB_TAG_UNPRIVILEGED
-        
