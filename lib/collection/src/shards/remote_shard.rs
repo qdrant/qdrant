@@ -470,6 +470,7 @@ impl RemoteShard {
         shard_id: ShardId,
         url: &Url,
         snapshot_priority: SnapshotPriority,
+        checksum: &Option<String>,
     ) -> CollectionResult<RecoverSnapshotResponse> {
         let res = self
             .with_shard_snapshots_client_timeout(
@@ -484,7 +485,7 @@ impl RemoteShard {
                             snapshot_priority: api::grpc::qdrant::ShardSnapshotPriority::from(
                                 snapshot_priority,
                             ) as i32,
-                            checksum: None,
+                            checksum: checksum.clone(),
                         })
                         .await
                 },
