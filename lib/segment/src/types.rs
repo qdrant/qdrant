@@ -2806,23 +2806,25 @@ mod tests {
         let filter: Filter = serde_json::from_str(query).unwrap();
         let musts = filter.must.unwrap();
         assert_eq!(musts.len(), 1);
-        match musts.first() {
-            Some(Condition::Nested(nested_condition)) => {
-                assert_eq!(nested_condition.raw_key(), "country.cities");
-                assert_eq!(nested_condition.array_key(), "country.cities[]");
-                let nested_must = nested_condition.filter().must.as_ref().unwrap();
-                assert_eq!(nested_must.len(), 1);
-                let must = nested_must.first().unwrap();
-                match must {
-                    Condition::Field(c) => {
-                        assert_eq!(c.key, "population");
-                        assert!(c.range.is_some());
-                    }
-                    _ => panic!("Condition::Field expected"),
-                }
-            }
-            o => panic!("Condition::Nested expected but got {:?}", o),
+
+        let first_must = musts.first().unwrap();
+        let Condition::Nested(nested_condition) = first_must else {
+            panic!("Condition::Nested expected but got {:?}", first_must)
         };
+
+        assert_eq!(nested_condition.raw_key(), "country.cities");
+        assert_eq!(nested_condition.array_key(), "country.cities[]");
+
+        let nested_must = nested_condition.filter().must.as_ref().unwrap();
+        assert_eq!(nested_must.len(), 1);
+
+        let must = nested_must.first().unwrap();
+        let Condition::Field(c) = must else {
+            panic!("Condition::Field expected, got {:?}", must)
+        };
+
+        assert_eq!(c.key, "population");
+        assert!(c.range.is_some());
     }
 
     #[test]
