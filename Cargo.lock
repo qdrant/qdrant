@@ -2533,9 +2533,9 @@ checksum = "830d08ce1d1d941e6b30645f1a0eb5643013d835ce3779a5fc208261dbe10f55"
 
 [[package]]
 name = "libc"
-version = "0.2.150"
+version = "0.2.152"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89d92a4743f9a61002fae18374ed11e7973f530cb3a3255fb354818118b2203c"
+checksum = "13e3bf6590cbc649f4d1a3eefc9d5d6eb746f5200ffb04e5e142700b8faa56e7"
 
 [[package]]
 name = "libloading"
@@ -2900,9 +2900,9 @@ dependencies = [
 
 [[package]]
 name = "memmap2"
-version = "0.9.3"
+version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "45fd3a57831bf88bc63f8cebc0cf956116276e97fef3966103e96416209f7c92"
+checksum = "fe751422e4a8caa417e13c3ea66452215d7d63e19e604f4980461212f3ae1322"
 dependencies = [
  "libc",
 ]
@@ -2921,7 +2921,7 @@ name = "memory"
 version = "0.0.0"
 dependencies = [
  "log",
- "memmap2 0.9.3",
+ "memmap2 0.9.4",
  "parking_lot",
  "serde",
 ]
@@ -4503,7 +4503,7 @@ dependencies = [
  "itertools 0.12.0",
  "lazy_static",
  "log",
- "memmap2 0.9.3",
+ "memmap2 0.9.4",
  "memory",
  "num-derive",
  "num-traits",
@@ -4791,7 +4791,7 @@ dependencies = [
  "common",
  "io",
  "itertools 0.12.0",
- "memmap2 0.9.3",
+ "memmap2 0.9.4",
  "memory",
  "ordered-float 4.2.0",
  "rand 0.8.5",
@@ -5653,7 +5653,7 @@ dependencies = [
  "env_logger",
  "fs4",
  "log",
- "memmap2 0.9.3",
+ "memmap2 0.9.4",
  "rand 0.8.5",
  "rand_distr",
  "rustix 0.38.28",
