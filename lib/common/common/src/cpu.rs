@@ -101,6 +101,9 @@ impl CpuBudget {
 
     /// Check if there is enough CPU budget available for the given `desired_cpus`.
     ///
+    /// This checks for the minimum number of required permits based on the given desired CPUs,
+    /// based on `min_permits`. To check for an exact number, use `has_budget_exact` instead.
+    ///
     /// A desired CPU count of `0` will always return `true`.
     pub fn has_budget(&self, desired_cpus: usize) -> bool {
         self.has_budget_exact(self.min_permits(desired_cpus))

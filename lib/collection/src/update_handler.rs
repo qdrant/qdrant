@@ -14,7 +14,7 @@ use segment::types::SeqNumberType;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::{oneshot, Mutex as TokioMutex};
-use tokio::task::JoinHandle;
+use tokio::task::{self, JoinHandle};
 use tokio::time::error::Elapsed;
 use tokio::time::{timeout, Duration};
 
@@ -238,7 +238,7 @@ impl UpdateHandler {
     where
         F: FnOnce(bool) + Send + Clone + 'static,
     {
-        let mut scheduled_segment_ids: HashSet<_> = Default::default();
+        let mut scheduled_segment_ids = HashSet::<_>::default();
         let mut handles = vec![];
         'outer: for optimizer in optimizers.iter() {
             loop {
@@ -431,6 +431,9 @@ impl UpdateHandler {
             .map(|optimizer| optimizer.hnsw_config().max_indexing_threads)
             .unwrap_or_default();
 
+        // Asynchronous task to trigger optimizers once CPU budget is available again
+        let mut cpu_available_trigger: Option<JoinHandle<()>> = None;
+
         loop {
             let receiver = timeout(OPTIMIZER_CLEANUP_INTERVAL, receiver.recv());
             let result = receiver.await;
@@ -459,13 +462,23 @@ impl UpdateHandler {
                         continue;
                     }
 
-                    // Block optimization until CPU budget is available for it
-                    log::trace!(
-                        "Blocking optimization check, waiting for CPU budget to be available"
-                    );
+                    // Continue if we have enough CPU budget available to start an optimization
+                    // Otherwise skip now and start a task to trigger the optimizer again once CPU
+                    // budget becomes available
                     let desired_cpus = num_rayon_threads(max_indexing_threads);
-                    optimizer_cpu_budget.wait_until_budget(desired_cpus).await;
-                    log::trace!("Continue with optimizations, new CPU budget available");
+                    if !optimizer_cpu_budget.has_budget(desired_cpus) {
+                        let trigger_active = cpu_available_trigger
+                            .as_ref()
+                            .map_or(false, |t| !t.is_finished());
+                        if !trigger_active {
+                            cpu_available_trigger.replace(trigger_optimizers_on_cpu_budget(
+                                optimizer_cpu_budget.clone(),
+                                desired_cpus,
+                                sender.clone(),
+                            ));
+                        }
+                        continue;
+                    }
 
                     // Determine optimization handle limit based on max handles we allow
                     // Not related to the CPU budget, but a different limit for the maximum number
@@ -639,4 +652,22 @@ impl UpdateHandler {
             Some(failed_operation) => min(failed_operation, flushed_version),
         })
     }
+}
+
+/// Trigger optimizers when CPU budget is available
+fn trigger_optimizers_on_cpu_budget(
+    optimizer_cpu_budget: CpuBudget,
+    desired_cpus: usize,
+    sender: Sender<OptimizerSignal>,
+) -> JoinHandle<()> {
+    task::spawn(async move {
+        log::trace!("Skipping optimization checks, waiting for CPU budget to be available");
+        optimizer_cpu_budget.wait_until_budget(desired_cpus).await;
+        log::trace!("Continue optimization checks, new CPU budget available");
+
+        // Trigger optimizers with Nop operation
+        sender.send(OptimizerSignal::Nop).await.unwrap_or_else(|_| {
+            log::info!("Can't notify optimizers, assume process is dead. Restart is required")
+        });
+    })
 }

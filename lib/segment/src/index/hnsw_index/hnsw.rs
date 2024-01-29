@@ -646,7 +646,10 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         let total_vector_count = vector_storage.total_vector_count();
         let deleted_bitslice = vector_storage.deleted_vector_bitslice();
 
-        debug!("building HNSW for {} vectors", total_vector_count);
+        debug!(
+            "building HNSW for {total_vector_count} vectors with {} CPUs",
+            permit.num_cpus,
+        );
         let indexing_threshold = self.config.full_scan_threshold;
         let mut graph_layers_builder = GraphLayersBuilder::new(
             total_vector_count,
