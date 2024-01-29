@@ -149,38 +149,6 @@ impl Range {
     }
 }
 
-impl Range {
-    pub(in crate::index::field_index::numeric_index) fn as_bounds<T: Encodable + Numericable>(
-        &self,
-    ) -> (Bound<NumericIndexKey<T>>, Bound<NumericIndexKey<T>>) {
-        let start_bound = match self {
-            Range { gt: Some(gt), .. } => {
-                let v: T = T::from_f64(*gt);
-                Excluded(NumericIndexKey::new(v, PointOffsetType::MAX))
-            }
-            Range { gte: Some(gte), .. } => {
-                let v: T = T::from_f64(*gte);
-                Included(NumericIndexKey::new(v, PointOffsetType::MIN))
-            }
-            _ => Unbounded,
-        };
-
-        let end_bound = match self {
-            Range { lt: Some(lt), .. } => {
-                let v: T = T::from_f64(*lt);
-                Excluded(NumericIndexKey::new(v, PointOffsetType::MIN))
-            }
-            Range { lte: Some(lte), .. } => {
-                let v: T = T::from_f64(*lte);
-                Included(NumericIndexKey::new(v, PointOffsetType::MAX))
-            }
-            _ => Unbounded,
-        };
-
-        (start_bound, end_bound)
-    }
-}
-
 pub enum NumericIndex<T: Encodable + Numericable + Default> {
     Mutable(MutableNumericIndex<T>),
     Immutable(ImmutableNumericIndex<T>),
@@ -583,7 +551,7 @@ impl ValueIndexer<FloatPayloadType> for NumericIndex<FloatPayloadType> {
 
 impl<T> StreamRange<T> for NumericIndex<T>
 where
-    T: Encodable + Numericable,
+    T: Encodable + Numericable + Default,
 {
     fn stream_range(
         &self,

@@ -202,7 +202,7 @@ impl LocalShard {
         // Fetch with the requested payload and vector
         let point_ids = top_records.iter().map(|(_, id)| *id).collect_vec();
 
-        // include original order_by value in the payload
+        // include whole order_by value in the payload (not just the one from the BTree)
         let with_payload =
             with_payload.union(&WithPayload::from(&WithPayloadInterface::Fields(vec![
                 order_by.key.clone(),

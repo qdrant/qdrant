@@ -55,11 +55,6 @@ pub enum ExtendedPointId {
     Uuid(Uuid),
 }
 
-impl ExtendedPointId {
-    pub const MIN: Self = Self::NumId(u64::MIN);
-    pub const MAX: Self = Self::Uuid(Uuid::max());
-}
-
 impl std::fmt::Display for ExtendedPointId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -1093,11 +1088,6 @@ pub enum PayloadFieldSchema {
 impl PayloadFieldSchema {
     pub fn has_range_index(&self) -> bool {
         match self {
-            PayloadFieldSchema::FieldParams(PayloadSchemaParams::Integer(IntegerIndexParams {
-                range,
-                ..
-            })) => *range,
-
             PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)
             | PayloadFieldSchema::FieldType(PayloadSchemaType::Float) => true,
 
@@ -1106,6 +1096,11 @@ impl PayloadFieldSchema {
             | PayloadFieldSchema::FieldType(PayloadSchemaType::Text)
             | PayloadFieldSchema::FieldType(PayloadSchemaType::Geo)
             | PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(_)) => false,
+
+            PayloadFieldSchema::FieldParams(PayloadSchemaParams::Integer(IntegerIndexParams {
+                range,
+                ..
+            })) => *range,
         }
     }
 }
