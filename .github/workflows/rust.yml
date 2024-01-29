@@ -29,8 +29,6 @@ jobs:
       uses: taiki-e/install-action@nextest
     - name: Build
       run: cargo build --tests --workspace
-    - name: Run doc tests # nextest does not support doc tests yet
-      run: cargo test --workspace --doc
     - name: Run tests
       # Profile "ci" is configured in .config/nextest.toml
       run: cargo nextest run --workspace --profile ci
