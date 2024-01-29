@@ -54,6 +54,16 @@ async fn get_collection(
     process_response(response, timing)
 }
 
+#[get("/collections/{name}/exists")]
+async fn get_collection_existence(
+    toc: web::Data<TableOfContent>,
+    collection: Path<CollectionPath>,
+) -> impl Responder {
+    let timing = Instant::now();
+    let response = do_collection_exists(toc.get_ref(), &collection.name).await;
+    process_response(response, timing)
+}
+
 #[get("/collections/{name}/aliases")]
 async fn get_collection_aliases(
     toc: web::Data<TableOfContent>,
@@ -172,6 +182,7 @@ async fn update_collection_cluster(
 pub fn config_collections_api(cfg: &mut web::ServiceConfig) {
     cfg.service(get_collections)
         .service(get_collection)
+        .service(get_collection_existence)
         .service(create_collection)
         .service(update_collection)
         .service(delete_collection)

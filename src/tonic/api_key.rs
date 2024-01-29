@@ -12,7 +12,8 @@ use tower_layer::Layer;
 use crate::common::auth::AuthKeys;
 use crate::common::strings::ct_eq;
 
-const READ_ONLY_RPC_PATHS: [&str; 13] = [
+const READ_ONLY_RPC_PATHS: [&str; 14] = [
+    "/qdrant.Collections/CollectionExists",
     "/qdrant.Collections/List",
     "/qdrant.Collections/Get",
     "/qdrant.Points/Scroll",
