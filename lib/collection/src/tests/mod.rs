@@ -174,9 +174,13 @@ async fn test_cancel_optimization() {
     // The optimizers try to saturate the CPU, as number of optimizations tasks we should therefore
     // expect the amount that would fit within our CPU budget
     {
-        let expected_optimization_count = common::cpu::get_cpu_budget(0)
-            .div_ceil(num_rayon_threads(0))
-            .clamp(1, 3);
+        // We skip optimizations that use less than half of the preferred CPU budget
+        let expected_optimization_count = {
+            let cpus = common::cpu::get_cpu_budget(0);
+            let hnsw_threads = num_rayon_threads(0);
+            (cpus / hnsw_threads + ((cpus % hnsw_threads) >= hnsw_threads.div_ceil(2)) as usize)
+                .clamp(1, 3)
+        };
 
         let log = optimizers_log.lock().to_telemetry();
         assert_eq!(log.len(), expected_optimization_count);
