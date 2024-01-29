@@ -1,7 +1,6 @@
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -10,7 +9,7 @@ use std::thread::{self, JoinHandle};
 use atomic_refcell::AtomicRefCell;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use io::file_operations::{atomic_save_json, read_json};
-use itertools::Itertools;
+use itertools::{Either, Itertools};
 use memory::mmap_ops;
 use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
@@ -28,11 +27,11 @@ use crate::common::{
     check_named_vectors, check_query_vectors, check_stopped, check_vector, check_vector_name,
 };
 use crate::data_types::named_vectors::NamedVectors;
-use crate::data_types::order_by::{Direction, OrderBy, OrderedByFieldIterator};
+use crate::data_types::order_by::{Direction, OrderBy};
 use crate::data_types::vectors::{QueryVector, Vector};
 use crate::entry::entry_point::SegmentEntry;
 use crate::id_tracker::IdTrackerSS;
-use crate::index::field_index::numeric_index::StreamWithValue;
+use crate::index::field_index::numeric_index::StreamRange;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndex, VectorIndexEnum};
@@ -689,7 +688,6 @@ impl Segment {
     pub fn filtered_read_by_value_stream(
         &self,
         order_by: &OrderBy,
-        id_offset: Option<PointIdType>,
         limit: Option<usize>,
         filter: Option<&Filter>,
     ) -> OperationResult<Vec<(f64, PointIdType)>> {
@@ -701,36 +699,35 @@ impl Segment {
             .and_then(|indexes| indexes.iter().find_map(|index| index.as_numeric()))
             .ok_or_else(|| OperationError::ValidationError { description: "There is no range index for the `order_by` key, please create one to use `order_by`".to_string() })?;
 
+        let range_iter = numeric_index.stream_range(&order_by.as_range());
+
+        let directed_range_iter = match order_by.direction() {
+            Direction::Asc => Either::Left(range_iter),
+            Direction::Desc => Either::Right(range_iter.rev()),
+        };
+
         let id_tracker = self.id_tracker.borrow();
 
-        let range_iter = numeric_index.stream_with_value(&order_by.as_range());
+        let filtered_iter = match filter {
+            None => Either::Left(directed_range_iter),
+            Some(filter) => {
+                let filter_context = payload_index.filter_context(filter);
 
-        let offset_key = order_by.offset_key(id_offset);
-
-        let ordered_iter =
-            OrderedByFieldIterator::new(range_iter, id_tracker.deref(), order_by.direction())
-                .skip_while(|item| {
-                    let item_key = (item.value, item.external_id);
-                    match order_by.direction() {
-                        Direction::Asc => item_key < offset_key,
-                        Direction::Desc => item_key > offset_key,
-                    }
-                });
-
-        let reads = if let Some(filter) = filter {
-            let filter_context = payload_index.filter_context(filter);
-
-            ordered_iter
-                .filter(move |item| filter_context.check(item.internal_id))
-                .map(|item| (item.value, item.external_id))
-                .take(limit.unwrap_or(usize::MAX))
-                .collect()
-        } else {
-            ordered_iter
-                .map(|item| (item.value, item.external_id))
-                .take(limit.unwrap_or(usize::MAX))
-                .collect()
+                Either::Right(
+                    directed_range_iter
+                        .filter(move |(_, internal_id)| filter_context.check(*internal_id)),
+                )
+            }
         };
+
+        let reads = filtered_iter
+            .filter_map(|(value, internal_id)| {
+                id_tracker
+                    .external_id(internal_id)
+                    .map(|external_id| (value, external_id))
+            })
+            .take(limit.unwrap_or(usize::MAX))
+            .collect();
         Ok(reads)
     }
 
@@ -1142,22 +1139,16 @@ impl SegmentEntry for Segment {
 
     fn read_ordered_filtered<'a>(
         &'a self,
-        id_offset: Option<PointIdType>,
         limit: Option<usize>,
         filter: Option<&'a Filter>,
         order_by: &'a OrderBy,
     ) -> OperationResult<Vec<(OrderedFloat<f64>, PointIdType)>> {
         // TODO: make same optimization for high-constraining filters as in `read_filtered`
         let reads = self
-            .filtered_read_by_value_stream(order_by, id_offset, limit, filter)?
+            .filtered_read_by_value_stream(order_by, limit, filter)?
             .into_iter()
             .map(|(value, point_id)| (OrderedFloat(value), point_id))
             .collect_vec();
-
-        debug_assert!(match order_by.direction() {
-            Direction::Asc => reads.windows(2).all(|w| w[0] <= w[1]),
-            Direction::Desc => reads.windows(2).all(|w| w[0] >= w[1]),
-        });
 
         Ok(reads)
     }

@@ -292,7 +292,7 @@ impl From<OrderByInterface> for OrderBy {
             OrderByInterface::Key(key) => OrderBy {
                 key,
                 direction: None,
-                value_offset: None,
+                start_from: None,
             },
             OrderByInterface::Struct(order_by) => order_by,
         }

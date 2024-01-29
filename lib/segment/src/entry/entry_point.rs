@@ -124,12 +124,12 @@ pub trait SegmentEntry {
         filter: Option<&'a Filter>,
     ) -> Vec<PointIdType>;
 
-    /// Paginate over points which satisfies filtering condition starting with `order_by.value_offset` value including, ordered by the `order_by.key` field.
+    /// Return points which satisfies filtering condition ordered by the `order_by.key` field,
+    /// starting with `order_by.start_from` value including.
     ///
     /// Will fail if there is no index for the order_by key.
     fn read_ordered_filtered<'a>(
         &'a self,
-        id_offset: Option<PointIdType>,
         limit: Option<usize>,
         filter: Option<&'a Filter>,
         order_by: &'a OrderBy,

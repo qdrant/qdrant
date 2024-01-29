@@ -509,7 +509,6 @@ impl SegmentEntry for ProxySegment {
 
     fn read_ordered_filtered<'a>(
         &'a self,
-        offset: Option<PointIdType>,
         limit: Option<usize>,
         filter: Option<&'a Filter>,
         order_by: &'a segment::data_types::order_by::OrderBy,
@@ -519,12 +518,11 @@ impl SegmentEntry for ProxySegment {
             self.wrapped_segment
                 .get()
                 .read()
-                .read_ordered_filtered(offset, limit, filter, order_by)?
+                .read_ordered_filtered(limit, filter, order_by)?
         } else {
             let wrapped_filter =
                 self.add_deleted_points_condition_to_filter(filter, &deleted_points);
             self.wrapped_segment.get().read().read_ordered_filtered(
-                offset,
                 limit,
                 Some(&wrapped_filter),
                 order_by,
@@ -534,7 +532,7 @@ impl SegmentEntry for ProxySegment {
             .write_segment
             .get()
             .read()
-            .read_ordered_filtered(offset, limit, filter, order_by)?;
+            .read_ordered_filtered(limit, filter, order_by)?;
         read_points.append(&mut write_segment_points);
         read_points.sort_unstable();
         Ok(read_points)

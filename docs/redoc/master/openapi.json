@@ -7312,8 +7312,8 @@
               }
             ]
           },
-          "value_offset": {
-            "description": "Which payload value to start scrolling from. If not provided, this offset value is fetched from the offset id in the request",
+          "start_from": {
+            "description": "Which payload value to start scrolling from. Default is the lowest value for `asc` and the highest for `desc`",
             "type": "number",
             "format": "double",
             "nullable": true

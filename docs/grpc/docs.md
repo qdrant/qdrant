@@ -2407,6 +2407,7 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | ----- | ---- | ----- | ----------- |
 | key | [string](#string) |  | Payload key to order by |
 | direction | [Direction](#qdrant-Direction) | optional | Ascending or descending order |
+| start_from | [double](#double) | optional | Start from this value |
 
 
 

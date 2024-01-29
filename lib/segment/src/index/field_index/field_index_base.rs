@@ -5,7 +5,7 @@ use serde_json::Value;
 use smol_str::SmolStr;
 
 use super::map_index::MapIndex;
-use super::numeric_index::StreamWithValue;
+use super::numeric_index::StreamRange;
 use crate::common::operation_error::OperationResult;
 use crate::common::utils::MultiValue;
 use crate::common::Flusher;
@@ -381,16 +381,16 @@ pub enum NumericFieldIndex<'a> {
     FloatIndex(&'a NumericIndex<FloatPayloadType>),
 }
 
-impl<'a> StreamWithValue<f64> for NumericFieldIndex<'a> {
-    fn stream_with_value(
+impl<'a> StreamRange<f64> for NumericFieldIndex<'a> {
+    fn stream_range(
         &self,
         range: &Range,
     ) -> Box<dyn DoubleEndedIterator<Item = (f64, PointOffsetType)> + 'a> {
         match self {
             NumericFieldIndex::IntIndex(index) => {
-                Box::new(index.stream_with_value(range).map(|(v, p)| (v as f64, p)))
+                Box::new(index.stream_range(range).map(|(v, p)| (v as f64, p)))
             }
-            NumericFieldIndex::FloatIndex(index) => index.stream_with_value(range),
+            NumericFieldIndex::FloatIndex(index) => index.stream_range(range),
         }
     }
 }

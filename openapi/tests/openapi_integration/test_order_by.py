@@ -20,7 +20,7 @@ def upsert_points(collection_name, amount=100):
             yield repeated_float
 
     maybe_repeated_generator = maybe_repeated()
-    
+
     points = [
         {
             "id": i,
@@ -100,7 +100,8 @@ def test_order_by_int_ascending():
 
     ids = [x["id"] for x in result["points"]]
     assert [0, 1, 2, 3, 4] == ids
-    assert result["next_page_offset"] == 5
+    # Offset is not supported for order_by
+    assert result["next_page_offset"] == None
 
 
 def test_order_by_int_descending():
@@ -120,44 +121,63 @@ def test_order_by_int_descending():
 
     ids = [x["id"] for x in result["points"]]
     assert [999, 998, 997, 996, 995] == ids
-    assert result["next_page_offset"] == 994
+    # Offset is not supported for order_by
+    assert result["next_page_offset"] == None
 
 
-@pytest.mark.parametrize(
-    "key, direction",
-    [
-        ("payload_id", "asc"),
-        ("payload_id", "desc"),
-        ("price", "asc"),
-        ("price", "desc"),
-        ("maybe_repeated_float", "asc"),
-        ("maybe_repeated_float", "desc"),
-        #
-        # ...Multi-valued fields don't work but they shouldn't be expected to work with pagination anyway
-        # ("multi_id", "asc"),
-        # ("multi_id", "desc"),
-    ],
-)
-@pytest.mark.timeout(60)  # possibly break of an infinite loop
-def test_paginate_whole_collection(key, direction):
-    offset = None
-    limit = 30
+def paginate_whole_collection(key, direction, must=None):
+    limit = 33
     pages = 0
     points_count = 0
     points_set = set()
+    last_value = None
+    last_value_ids = set()
+    start_from = None
+
+    # Get filtered total points
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/count",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "filter": {"must": must},
+            "exact": True,
+        },
+    )
+    assert response.ok, response.json()
+
+    expected_points = response.json()["result"]["count"]
+
     while True:
         response = request_with_validation(
             api="/collections/{collection_name}/points/scroll",
             method="POST",
             path_params={"collection_name": collection_name},
             body={
-                "order_by": {"key": key, "direction": direction},
+                "order_by": {"key": key, "direction": direction, "start_from": start_from},
                 "limit": limit,
-                "offset": offset,
+                "filter": {
+                    "must": must,
+                    "must_not": [{"has_id": [id_ for id_ in last_value_ids]}],
+                },
             },
         )
         assert response.ok, response.json()
-        offset = response.json()["result"]["next_page_offset"]
+
+        points = response.json()["result"]["points"]
+
+        last_value = points[-1]["payload"][key]
+
+        # Exclude the ids we've already seen for the start_from value.
+        # This is what we expect the users to do in order to paginate with order_by
+        if start_from != last_value:
+            last_value_ids.clear()
+            start_from = last_value
+
+        same_value_points = [
+            point["id"] for point in points if point["payload"][key] == last_value
+        ]
+        last_value_ids.update(same_value_points)
 
         points_len = len(response.json()["result"]["points"])
 
@@ -165,17 +185,31 @@ def test_paginate_whole_collection(key, direction):
         pages += 1
 
         # Check no duplicates
-        for record in response.json()["result"]["points"]:
-            assert record["id"] not in points_set
-            points_set.add(record["id"])
+        for point in points:
+            assert point["id"] not in points_set
+            points_set.add(point["id"])
 
-        if offset is None:
+        if points_len < limit:
             break
-        else:
-            assert points_len == limit
 
-    assert math.ceil(total_points / limit) == pages
-    assert total_points == points_count
+    try:
+        assert math.ceil(expected_points / limit) == pages
+        assert expected_points == points_count
+    except AssertionError:
+        # Check which points we're missing
+        response = request_with_validation(
+            api="/collections/{collection_name}/points/scroll",
+            method="POST",
+            path_params={"collection_name": collection_name},
+            body={
+                "limit": total_points,
+                "filter": {"must": must},
+            },
+        )
+        assert response.ok, response.json()
+        filtered_points = set([point["id"] for point in response.json()["result"]["points"]])
+
+        assert filtered_points == points_set, f"Missing points: {filtered_points - points_set}"
 
 
 @pytest.mark.parametrize(
@@ -190,106 +224,49 @@ def test_paginate_whole_collection(key, direction):
     ],
 )
 @pytest.mark.timeout(60)  # possibly break of an infinite loop
-def test_order_by_with_filters(key, direction):
-    limit = 33
+def test_paginate_whole_collection(key, direction):
+    paginate_whole_collection(key, direction)
 
-    filters = [
-        {
-            "must": [
-                {
-                    "key": "city",
-                    "match": {
-                        "value": "London",
-                    },
-                }
-            ]
-        },
-        {
-            "must": [
-                {
-                    "key": "is_middle_split",
-                    "match": {
-                        "value": False,
-                    },
-                }
-            ]
-        },
+
+@pytest.mark.parametrize(
+    "key, direction",
+    [
+        ("payload_id", "asc"),
+        ("payload_id", "desc"),
+        ("price", "asc"),
+        ("price", "desc"),
+        ("maybe_repeated_float", "asc"),
+        ("maybe_repeated_float", "desc"),
+    ],
+)
+@pytest.mark.timeout(60)  # possibly break of an infinite loop
+def test_order_by_pagination_with_filters(key, direction):
+    musts = [
+        [
+            {
+                "key": "city",
+                "match": {
+                    "value": "London",
+                },
+            }
+        ],
+        [
+            {
+                "key": "is_middle_split",
+                "match": {
+                    "value": False,
+                },
+            }
+        ],
     ]
 
-    for filter_ in filters:
-        offset = None
-        pages = 0
-        points_count = 0
-        points_set = set()
-
-        # Get filtered total points
-        response = request_with_validation(
-            api="/collections/{collection_name}/points/count",
-            method="POST",
-            path_params={"collection_name": collection_name},
-            body={
-                "filter": filter_,
-                "exact": True,
-            },
-        )
-        assert response.ok, response.json()
-
-        expected_points = response.json()["result"]["count"]
-
-        while True:
-            response = request_with_validation(
-                api="/collections/{collection_name}/points/scroll",
-                method="POST",
-                path_params={"collection_name": collection_name},
-                body={
-                    "order_by": {"key": key, "direction": direction},
-                    "limit": limit,
-                    "offset": offset,
-                    "filter": filter_,
-                },
-            )
-            assert response.ok, response.json()
-            offset = response.json()["result"]["next_page_offset"]
-
-            points_len = len(response.json()["result"]["points"])
-
-            points_count += points_len
-            pages += 1
-
-            # Check no duplicates
-            for record in response.json()["result"]["points"]:
-                assert record["id"] not in points_set
-                points_set.add(record["id"])
-
-            if offset is None:
-                break
-            else:
-                assert points_len == limit
-
-        try:
-            assert math.ceil(expected_points / limit) == pages
-            assert expected_points == points_count
-        except AssertionError:
-            # Check which points we're missing
-            response = request_with_validation(
-                api="/collections/{collection_name}/points/scroll",
-                method="POST",
-                path_params={"collection_name": collection_name},
-                body={
-                    "limit": total_points,
-                    "filter": filter_,
-                },
-            )
-            assert response.ok, response.json()
-            filtered_points = set([point["id"] for point in response.json()["result"]["points"]])
-
-            assert filtered_points == points_set, f"Missing points: {filtered_points - points_set}"
+    for must in musts:
+        paginate_whole_collection(key, direction, must)
 
 
 def test_multi_values_appear_multiple_times():
-    
     limit = total_points * 2
-    
+
     response = request_with_validation(
         api="/collections/{collection_name}/points/scroll",
         method="POST",
@@ -300,10 +277,10 @@ def test_multi_values_appear_multiple_times():
         },
     )
     assert response.ok, response.json()
-    
+
     points = response.json()["result"]["points"]
     assert len(points) == limit
-    
+
     freqs = {}
     for point in points:
         id_ = point["id"]
@@ -311,5 +288,20 @@ def test_multi_values_appear_multiple_times():
             freqs[id_] += 1
         else:
             freqs[id_] = 1
-        
+
     assert all([count == 2 for count in freqs.values()])
+
+
+def test_cannot_use_offset_with_order_by():
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/scroll",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "order_by": "payload_id",
+            "offset": 10,
+            "limit": 10,
+        },
+    )
+    assert not response.ok
+    assert response.status_code == 400

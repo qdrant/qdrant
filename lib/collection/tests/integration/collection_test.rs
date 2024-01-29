@@ -15,8 +15,8 @@ use itertools::Itertools;
 use segment::data_types::order_by::{Direction, OrderBy};
 use segment::data_types::vectors::VectorStruct;
 use segment::types::{
-    Condition, FieldCondition, Filter, HasIdCondition, Payload, PayloadFieldSchema,
-    PayloadSchemaType, PointIdType, WithPayloadInterface,
+    Condition, ExtendedPointId, FieldCondition, Filter, HasIdCondition, Payload,
+    PayloadFieldSchema, PayloadSchemaType, PointIdType, WithPayloadInterface,
 };
 use serde_json::Map;
 use tempfile::Builder;
@@ -521,7 +521,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
         .await
         .unwrap();
 
-    // Test single-valued fields
+    ///////// Test single-valued fields ///////////
     for key in [PRICE_FLOAT_KEY, PRICE_INT_KEY].into_iter() {
         let result_asc = collection
             .scroll_by(
@@ -534,7 +534,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
                     order_by: Some(OrderByInterface::Struct(OrderBy {
                         key: key.into(),
                         direction: Some(Direction::Asc),
-                        value_offset: None,
+                        start_from: None,
                     })),
                 },
                 None,
@@ -544,7 +544,14 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
             .unwrap();
 
         assert_eq!(result_asc.points.len(), 3);
-        assert_eq!(result_asc.next_page_offset, Some(10.into()));
+        assert_eq!(result_asc.next_page_offset, None);
+        assert!(result_asc.points.iter().tuple_windows().all(|(a, b)| {
+            let a = a.payload.as_ref().unwrap();
+            let b = b.payload.as_ref().unwrap();
+            let a = a.0.get(key).unwrap().as_f64();
+            let b = b.0.get(key).unwrap().as_f64();
+            a <= b
+        }));
 
         let result_desc = collection
             .scroll_by(
@@ -557,7 +564,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
                     order_by: Some(OrderByInterface::Struct(OrderBy {
                         key: key.into(),
                         direction: Some(Direction::Desc),
-                        value_offset: None,
+                        start_from: None,
                     })),
                 },
                 None,
@@ -567,20 +574,36 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
             .unwrap();
 
         assert_eq!(result_desc.points.len(), 5);
-        assert_eq!(result_desc.next_page_offset, Some(5.into()));
+        assert_eq!(result_desc.next_page_offset, None);
+        assert!(
+            result_desc.points.iter().tuple_windows().all(|(a, b)| {
+                let a = a.payload.as_ref().unwrap();
+                let b = b.payload.as_ref().unwrap();
+                let a = a.0.get(key).unwrap().as_f64();
+                let b = b.0.get(key).unwrap().as_f64();
+                a >= b
+            }),
+            "got: {:#?}",
+            result_desc.points
+        );
 
+        let asc_already_seen: HashSet<_> = result_asc.points.iter().map(|x| x.id).collect();
+
+        dbg!(&asc_already_seen);
         let asc_second_page = collection
             .scroll_by(
                 ScrollRequestInternal {
-                    offset: Some(7.into()),
+                    offset: None,
                     limit: Some(5),
-                    filter: None,
+                    filter: Some(Filter::new_must_not(Condition::HasId(
+                        HasIdCondition::from(asc_already_seen),
+                    ))),
                     with_payload: Some(WithPayloadInterface::Bool(true)),
                     with_vector: false.into(),
                     order_by: Some(OrderByInterface::Struct(OrderBy {
                         key: key.into(),
                         direction: Some(Direction::Asc),
-                        value_offset: None,
+                        start_from: None,
                     })),
                 },
                 None,
@@ -589,21 +612,36 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
             .await
             .unwrap();
 
+        let asc_second_page_points = asc_second_page
+            .points
+            .iter()
+            .map(|x| x.id)
+            .collect::<HashSet<_>>();
+        let valid_asc_second_page_points = [10, 9, 8, 7, 6]
+            .into_iter()
+            .map(|x| x.into())
+            .collect::<HashSet<ExtendedPointId>>();
         assert_eq!(asc_second_page.points.len(), 5);
-        assert_eq!(asc_second_page.next_page_offset, Some(3.into()));
+        assert!(asc_second_page_points.is_subset(&valid_asc_second_page_points));
+
+        let desc_already_seen: HashSet<_> = result_desc.points.iter().map(|x| x.id).collect();
+
+        dbg!(&desc_already_seen);
 
         let desc_second_page = collection
             .scroll_by(
                 ScrollRequestInternal {
-                    offset: Some(7.into()),
+                    offset: None,
                     limit: Some(4),
-                    filter: None,
+                    filter: Some(Filter::new_must_not(Condition::HasId(
+                        HasIdCondition::from(desc_already_seen),
+                    ))),
                     with_payload: Some(WithPayloadInterface::Bool(true)),
                     with_vector: false.into(),
                     order_by: Some(OrderByInterface::Struct(OrderBy {
                         key: key.into(),
                         direction: Some(Direction::Desc),
-                        value_offset: None,
+                        start_from: None,
                     })),
                 },
                 None,
@@ -612,12 +650,27 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
             .await
             .unwrap();
 
+        let desc_second_page_points = desc_second_page
+            .points
+            .iter()
+            .map(|x| x.id)
+            .collect::<HashSet<_>>();
+
+        let valid_desc_second_page_points = [5, 6, 7, 8, 9]
+            .into_iter()
+            .map(|x| x.into())
+            .collect::<HashSet<ExtendedPointId>>();
+
         assert_eq!(desc_second_page.points.len(), 4);
-        // Order is in (value, id), so should return ids [7, 6, 10, 11] and then offset id is 12
-        assert_eq!(desc_second_page.next_page_offset, Some(12.into()));
+        assert!(
+            desc_second_page_points.is_subset(&valid_desc_second_page_points),
+            "expected: {:?}, got: {:?}",
+            valid_desc_second_page_points,
+            desc_second_page_points
+        );
     }
 
-    // Test multi-value field
+    ///////// Test multi-valued field ///////////
     let result_multi = collection
         .scroll_by(
             ScrollRequestInternal {
