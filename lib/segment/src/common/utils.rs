@@ -121,6 +121,8 @@ pub fn rev_range(a: usize, b: usize) -> impl Iterator<Item = usize> {
     (b + 1..=a).rev()
 }
 
+/// Alternative to [core::ops::Bound::map](https://doc.rust-lang.org/std/ops/enum.Bound.html#method.map)
+// TODO(luis): replace with the stabilized function. It is already merged, seems like it will be available in 1.76
 pub fn bound_map<T, U, F: FnOnce(T) -> U>(bound: Bound<T>, f: F) -> Bound<U> {
     match bound {
         Bound::Unbounded => Bound::Unbounded,

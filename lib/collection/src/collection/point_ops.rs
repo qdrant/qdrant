@@ -220,10 +220,10 @@ impl Collection {
             .unwrap_or_else(|| default_request.with_payload.clone().unwrap());
         let with_vector = request.with_vector;
 
-        let mut order_by = request.order_by.map(OrderBy::from);
+        let order_by = request.order_by.map(OrderBy::from);
 
         // Handle case of order_by
-        if let Some(order_by) = &mut order_by {
+        if let Some(order_by) = &order_by {
             // Validate we have a range index for the order_by key
             let has_range_index_for_order_by_field = self
                 .payload_index_schema
