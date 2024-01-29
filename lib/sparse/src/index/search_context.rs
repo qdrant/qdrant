@@ -27,7 +27,7 @@ pub struct SearchContext<'a> {
     result_queue: FixedLengthPriorityQueue<ScoredPointOffset>, // keep the largest elements and peek smallest
     min_record_id: Option<u32>, // min_record_id ids across all posting lists
     max_record_id: u32,         // max_record_id ids across all posting lists
-    batch_scores: Vec<Option<ScoreType>>, // scores for the current batch
+    batch_scores: Vec<ScoreType>, // scores for the current batch
     use_pruning: bool,
 }
 
@@ -63,7 +63,7 @@ impl<'a> SearchContext<'a> {
         // The max contribution per posting list that we calculate is not made to compute the max value of two negative numbers.
         // This is a limitation of the current pruning implementation.
         let use_pruning = query.values.iter().all(|v| *v >= 0.0);
-        // reuse batch scores vector
+        // TODO should this Vec be pooled to reuse across searches?
         let batch_scores = Vec::with_capacity(ADVANCE_BATCH_SIZE);
         SearchContext {
             postings_iterators,
@@ -129,11 +129,10 @@ impl<'a> SearchContext<'a> {
                     // reaching end of the batch
                     break;
                 }
+                let element_score = element.weight * posting.query_weight;
                 // update score for id
                 let local_id = (element_id - batch_start_id) as usize;
-                let local_id_score = self.batch_scores[local_id].unwrap_or(0.0);
-                let element_score = element.weight * posting.query_weight;
-                self.batch_scores[local_id] = Some(local_id_score + element_score);
+                self.batch_scores[local_id] += element_score;
             }
             // advance posting to the batch last id
             posting.posting_list_iterator.skip_to(batch_last_id + 1);
@@ -141,7 +140,7 @@ impl<'a> SearchContext<'a> {
 
         // publish scores
         for (local_index, score) in self.batch_scores.iter().enumerate() {
-            if let Some(score) = score {
+            if score != &0.0 {
                 let real_id = batch_start_id + local_index as PointOffsetType;
                 // do not score if filter condition is not satisfied
                 if !filter_condition(real_id) {
@@ -250,7 +249,7 @@ impl<'a> SearchContext<'a> {
 
             // init batch scores
             self.batch_scores.clear();
-            self.batch_scores.resize(batch_len as usize, None);
+            self.batch_scores.resize(batch_len as usize, 0.0);
 
             // advance and score posting lists iterators
             self.advance_batch(start_batch_id, last_batch_id, filter_condition);
