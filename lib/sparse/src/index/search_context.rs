@@ -138,16 +138,21 @@ impl<'a> SearchContext<'a> {
             posting.posting_list_iterator.skip_to(batch_last_id + 1);
         }
 
-        // publish scores
-        for (local_index, score) in self.batch_scores.iter().enumerate() {
-            if score != &0.0 {
+        // publish only the non-zero scores above the current min
+        let min_score_to_beat = if self.result_queue.len() == self.top {
+            self.result_queue.top().map(|e| e.score)
+        } else {
+            None
+        };
+        for (local_index, &score) in self.batch_scores.iter().enumerate() {
+            if score != 0.0 && Some(score) > min_score_to_beat {
                 let real_id = batch_start_id + local_index as PointOffsetType;
                 // do not score if filter condition is not satisfied
                 if !filter_condition(real_id) {
                     continue;
                 }
                 let score_point_offset = ScoredPointOffset {
-                    score: *score,
+                    score,
                     idx: real_id,
                 };
                 self.result_queue.push(score_point_offset);
