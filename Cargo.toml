@@ -42,37 +42,37 @@ rusty-hook = "^0.11.2"
 
 
 [dependencies]
-
-parking_lot = { version = "0.12.1", features = ["deadlock_detection"], optional = true }
+parking_lot = { workspace = true, optional = true }
 
 thiserror = "1.0"
 log = "0.4"
 colored = "2"
-serde = { version = "~1.0", features = ["derive"] }
-serde_json = "~1.0"
+serde = { workspace = true }
+serde_json = { workspace = true }
 chrono = { version = "~0.4", features = ["serde"] }
 rand = "0.8.5"
-schemars = { version = "0.8.16", features = ["uuid1", "preserve_order", "chrono"] }
+schemars = { workspace = true }
 itertools = "0.12"
 anyhow = "1.0.79"
-futures = "0.3.30"
-futures-util = "0.3.30"
+futures = { workspace = true }
+futures-util = { workspace = true }
 clap = { version = "4.4.18", features = ["derive"] }
-serde_cbor = { version = "0.11.2" }
-uuid = { version = "1.7", features = ["v4", "serde"] }
+serde_cbor = { workspace = true }
+uuid = { workspace = true }
 sys-info = "0.9.1"
 wal = { git = "https://github.com/qdrant/wal.git", rev = "fad0e7c48be58d8e7db4cc739acd9b1cf6735de0" }
 
 config = "~0.13.4"
 
-tokio = { version = "~1.35", features = ["full"] }
+tokio = { workspace = true }
 
-actix-web = { version = "4.4.1", optional = true, features = ["rustls-0_21", "actix-tls"] }
 actix-cors = "0.7.0"
 actix-files = "0.6.5"
+actix-web = { version = "4.4.1", optional = true, features = ["rustls-0_21", "actix-tls"] }
 actix-web-httpauth = "0.8.1"
-tonic = { version = "0.9.2", features = ["gzip", "tls"] }
-tonic-reflection = "0.9.2"
+actix-web-validator = "5.0.1"
+tonic = { workspace = true }
+tonic-reflection = { workspace = true }
 tower = "0.4.13"
 tower-layer = "0.3.2"
 tar = "0.4.40"
@@ -81,13 +81,12 @@ rustls = "0.21.10"
 rustls-pemfile = "2.0.0"
 prometheus = { version = "0.13.3", default-features = false }
 validator = { version = "0.16", features = ["derive"] }
-actix-web-validator = "5.0.1"
 
 # Consensus related crates
 raft = { version = "0.7.0", features = ["prost-codec"], default-features = false }
 slog = { version="2.7.0", features = ["max_level_trace", "release_max_level_debug"] }
 slog-stdlog = "4.1.1"
-prost = "0.11.9"
+prost = { workspace = true }
 raft-proto = { version = "0.7.0", features = ["prost-codec"], default-features = false }
 
 common = { path = "lib/common/common" }
@@ -101,7 +100,7 @@ actix-multipart = "0.6.1"
 constant_time_eq = "0.3.0"
 
 # Profiling
-tracing = { version = "0.1", features = ["async-await"] }
+tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-log = { version = "0.2", default-features = false, features = ["log-tracer", "std"] }
 console-subscriber = { version = "0.1", default-features = false, features = ["parking_lot"], optional = true }
@@ -113,6 +112,23 @@ rstack-self = { version = "0.3.0", optional = true }
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.5"
+
+[workspace.dependencies]
+futures = "0.3.30"
+futures-util = "0.3.30"
+parking_lot = { version = "0.12.1", features = ["deadlock_detection"] }
+prost = "0.11.9"
+prost-types = "0.11.9"
+schemars = { version = "0.8.16", features = ["uuid1", "preserve_order", "chrono", "url"] }
+serde = { version = "~1.0", features = ["derive"] }
+serde_cbor = { version = "0.11.2" }
+serde_json = "~1.0"
+tokio = { version = "~1.35", features = ["full"] }
+tokio-util = "0.7"
+tonic = { version = "0.9.2", features = ["gzip", "tls"] }
+tonic-reflection = "0.9.2"
+tracing = { version = "0.1", features = ["async-await"] }
+uuid = { version = "1.7", features = ["v4", "serde"] }
 
 [[bin]]
 name = "schema_generator"

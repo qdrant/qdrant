@@ -12,29 +12,29 @@ edition = "2021"
 tracing = ["dep:tracing", "segment/tracing"]
 
 [dependencies]
-tonic = { version = "0.9.2", features = ["gzip", "tls"] }
-prost = "0.11.9"
-prost-types = "0.11.9"
-serde = { version = "~1.0", features = ["derive"] }
-serde_json = "~1.0"
-schemars = { version = "0.8.16", features = ["uuid1", "preserve_order", "chrono"] }
-uuid = { version = "1.7", features = ["v4", "serde"] }
-tokio = "1.35.1"
+tonic = { workspace = true }
+prost = { workspace = true }
+prost-types = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+schemars = { workspace = true }
+uuid = { workspace = true }
+tokio = { workspace = true }
 rand = "0.8.5"
 chrono = { version = "~0.4", features = ["serde"] }
 thiserror = "1.0"
-parking_lot = "0.12"
+parking_lot = { workspace = true }
 validator = { version = "0.16", features = ["derive"] }
 
-common = {path = "../common/common"}
-segment = {path = "../segment"}
+common = { path = "../common/common" }
+segment = { path = "../segment" }
 sparse = { path = "../sparse" }
 
-tracing = { version = "0.1", features = ["async-await"], optional = true }
+tracing = { workspace = true, optional = true }
 
 [build-dependencies]
 tonic-build = { version = "0.10.2", features = ["prost"] }
 prost-build = { version = "0.11.8", features = ["cleanup-markdown"] }
 
 [dev-dependencies]
-tokio = { version = "~1.35", features = ["full"] }
+tokio = { workspace = true }
