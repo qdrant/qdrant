@@ -105,7 +105,7 @@ tracing = { version = "0.1", features = ["async-await"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-log = { version = "0.2", default-features = false, features = ["log-tracer", "std"] }
 console-subscriber = { version = "0.1", default-features = false, features = ["parking_lot"], optional = true }
-tracing-tracy = { version = "0.10.5", features = ["ondemand"], optional = true }
+tracing-tracy = { version = "0.11.0", features = ["ondemand"], optional = true }
 
 # Backtrace
 [target.'cfg(target_os = "linux")'.dependencies]
