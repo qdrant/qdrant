@@ -1,6 +1,7 @@
 use segment::common::operation_error::{OperationError, SegmentFailedState};
 use segment::data_types::vectors::only_default_vector;
 use segment::entry::entry_point::SegmentEntry;
+use segment::vector;
 use serde_json::json;
 use tempfile::Builder;
 
@@ -10,7 +11,7 @@ use crate::fixtures::segment::empty_segment;
 fn test_insert_fail_recovery() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
-    let vec1 = vec![1.0, 0.0, 1.0, 1.0];
+    let vec1 = vector![1.0, 0.0, 1.0, 1.0];
 
     let mut segment = empty_segment(dir.path());
 

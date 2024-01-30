@@ -1,22 +1,27 @@
 use common::types::ScoreType;
+#[cfg(not(feature = "use_f32"))]
+use num_traits::Float as _;
 
 use super::metric::Metric;
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(target_arch = "x86_64", feature = "use_f32"))]
 use super::simple_avx::*;
-#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+#[cfg(all(target_arch = "aarch64", target_feature = "neon", feature = "use_f32"))]
 use super::simple_neon::*;
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), feature = "use_f32"))]
 use super::simple_sse::*;
 use crate::data_types::vectors::{DenseVector, VectorElementType};
 use crate::types::Distance;
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(target_arch = "x86_64", feature = "use_f32"))]
 const MIN_DIM_SIZE_AVX: usize = 32;
 
-#[cfg(any(
-    target_arch = "x86",
-    target_arch = "x86_64",
-    all(target_arch = "aarch64", target_feature = "neon")
+#[cfg(all(
+    any(
+        target_arch = "x86",
+        target_arch = "x86_64",
+        all(target_arch = "aarch64", target_feature = "neon")
+    ),
+    feature = "use_f32",
 ))]
 const MIN_DIM_SIZE_SIMD: usize = 16;
 
@@ -38,7 +43,7 @@ impl Metric for EuclidMetric {
     }
 
     fn similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(all(target_arch = "x86_64", feature = "use_f32"))]
         {
             if is_x86_feature_detected!("avx")
                 && is_x86_feature_detected!("fma")
@@ -48,14 +53,14 @@ impl Metric for EuclidMetric {
             }
         }
 
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        #[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), feature = "use_f32"))]
         {
             if is_x86_feature_detected!("sse") && v1.len() >= MIN_DIM_SIZE_SIMD {
                 return unsafe { euclid_similarity_sse(v1, v2) };
             }
         }
 
-        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon", feature = "use_f32"))]
         {
             if std::arch::is_aarch64_feature_detected!("neon") && v1.len() >= MIN_DIM_SIZE_SIMD {
                 return unsafe { euclid_similarity_neon(v1, v2) };
@@ -80,7 +85,7 @@ impl Metric for ManhattanMetric {
     }
 
     fn similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(all(target_arch = "x86_64", feature = "use_f32"))]
         {
             if is_x86_feature_detected!("avx")
                 && is_x86_feature_detected!("fma")
@@ -90,14 +95,14 @@ impl Metric for ManhattanMetric {
             }
         }
 
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        #[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), feature = "use_f32"))]
         {
             if is_x86_feature_detected!("sse") && v1.len() >= MIN_DIM_SIZE_SIMD {
                 return unsafe { manhattan_similarity_sse(v1, v2) };
             }
         }
 
-        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon", feature = "use_f32"))]
         {
             if std::arch::is_aarch64_feature_detected!("neon") && v1.len() >= MIN_DIM_SIZE_SIMD {
                 return unsafe { manhattan_similarity_neon(v1, v2) };
@@ -122,7 +127,7 @@ impl Metric for DotProductMetric {
     }
 
     fn similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(all(target_arch = "x86_64", feature = "use_f32"))]
         {
             if is_x86_feature_detected!("avx")
                 && is_x86_feature_detected!("fma")
@@ -132,14 +137,14 @@ impl Metric for DotProductMetric {
             }
         }
 
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        #[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), feature = "use_f32"))]
         {
             if is_x86_feature_detected!("sse") && v1.len() >= MIN_DIM_SIZE_SIMD {
                 return unsafe { dot_similarity_sse(v1, v2) };
             }
         }
 
-        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon", feature = "use_f32"))]
         {
             if std::arch::is_aarch64_feature_detected!("neon") && v1.len() >= MIN_DIM_SIZE_SIMD {
                 return unsafe { dot_similarity_neon(v1, v2) };
@@ -164,7 +169,7 @@ impl Metric for CosineMetric {
     }
 
     fn similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(all(target_arch = "x86_64", feature = "use_f32"))]
         {
             if is_x86_feature_detected!("avx")
                 && is_x86_feature_detected!("fma")
@@ -174,14 +179,14 @@ impl Metric for CosineMetric {
             }
         }
 
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        #[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), feature = "use_f32"))]
         {
             if is_x86_feature_detected!("sse") && v1.len() >= MIN_DIM_SIZE_SIMD {
                 return unsafe { dot_similarity_sse(v1, v2) };
             }
         }
 
-        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon", feature = "use_f32"))]
         {
             if std::arch::is_aarch64_feature_detected!("neon") && v1.len() >= MIN_DIM_SIZE_SIMD {
                 return unsafe { dot_similarity_neon(v1, v2) };
@@ -192,7 +197,7 @@ impl Metric for CosineMetric {
     }
 
     fn preprocess(vector: DenseVector) -> DenseVector {
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(all(target_arch = "x86_64", feature = "use_f32"))]
         {
             if is_x86_feature_detected!("avx")
                 && is_x86_feature_detected!("fma")
@@ -202,14 +207,14 @@ impl Metric for CosineMetric {
             }
         }
 
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        #[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), feature = "use_f32"))]
         {
             if is_x86_feature_detected!("sse") && vector.len() >= MIN_DIM_SIZE_SIMD {
                 return unsafe { cosine_preprocess_sse(vector) };
             }
         }
 
-        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon", feature = "use_f32"))]
         {
             if std::arch::is_aarch64_feature_detected!("neon") && vector.len() >= MIN_DIM_SIZE_SIMD
             {
@@ -228,20 +233,20 @@ impl Metric for CosineMetric {
 pub fn euclid_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
     -v1.iter()
         .zip(v2)
-        .map(|(a, b)| (a - b).powi(2))
+        .map(|(a, b)| ScoreType::from((a - b).powi(2)))
         .sum::<ScoreType>()
 }
 
 pub fn manhattan_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
     -v1.iter()
         .zip(v2)
-        .map(|(a, b)| (a - b).abs())
+        .map(|(a, b)| ScoreType::from((a - b).abs()))
         .sum::<ScoreType>()
 }
 
 pub fn cosine_preprocess(vector: DenseVector) -> DenseVector {
-    let mut length: f32 = vector.iter().map(|x| x * x).sum();
-    if length < f32::EPSILON {
+    let mut length: VectorElementType = vector.iter().map(|x| x * x).sum();
+    if length < VectorElementType::EPSILON {
         return vector;
     }
     length = length.sqrt();
@@ -249,16 +254,17 @@ pub fn cosine_preprocess(vector: DenseVector) -> DenseVector {
 }
 
 pub fn dot_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
-    v1.iter().zip(v2).map(|(a, b)| a * b).sum()
+    v1.iter().zip(v2).map(|(a, b)| ScoreType::from(a * b)).sum()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::segment::vector;
 
     #[test]
     fn test_cosine_preprocessing() {
-        let res = CosineMetric::preprocess(vec![0.0, 0.0, 0.0, 0.0]);
-        assert_eq!(res, vec![0.0, 0.0, 0.0, 0.0]);
+        let res = CosineMetric::preprocess(vector![0.0, 0.0, 0.0, 0.0]);
+        assert_eq!(res, vector![0.0, 0.0, 0.0, 0.0]);
     }
 }

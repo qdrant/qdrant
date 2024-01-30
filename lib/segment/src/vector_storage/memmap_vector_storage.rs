@@ -220,10 +220,12 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
+    use crate::array;
     use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
     use crate::data_types::vectors::QueryVector;
     use crate::fixtures::payload_context_fixture::FixtureIdTracker;
     use crate::id_tracker::IdTracker;
+    use crate::segment::vector;
     use crate::types::{PointIdType, QuantizationConfig, ScalarQuantizationConfig};
     use crate::vector_storage::new_raw_scorer;
     use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
@@ -234,11 +236,11 @@ mod tests {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
         let points = vec![
-            vec![1.0, 0.0, 1.0, 1.0],
-            vec![1.0, 0.0, 1.0, 0.0],
-            vec![1.0, 1.0, 1.0, 1.0],
-            vec![1.0, 1.0, 0.0, 1.0],
-            vec![1.0, 0.0, 0.0, 0.0],
+            vector![1.0, 0.0, 1.0, 1.0],
+            vector![1.0, 0.0, 1.0, 0.0],
+            vector![1.0, 1.0, 1.0, 1.0],
+            vector![1.0, 1.0, 0.0, 1.0],
+            vector![1.0, 0.0, 0.0, 0.0],
         ];
         let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
         let storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
@@ -331,11 +333,11 @@ mod tests {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
         let points = vec![
-            vec![1.0, 0.0, 1.0, 1.0],
-            vec![1.0, 0.0, 1.0, 0.0],
-            vec![1.0, 1.0, 1.0, 1.0],
-            vec![1.0, 1.0, 0.0, 1.0],
-            vec![1.0, 0.0, 0.0, 0.0],
+            vector![1.0, 0.0, 1.0, 1.0],
+            vector![1.0, 0.0, 1.0, 0.0],
+            vector![1.0, 1.0, 1.0, 1.0],
+            vector![1.0, 1.0, 0.0, 1.0],
+            vector![1.0, 0.0, 0.0, 0.0],
         ];
         let delete_mask = [false, false, true, true, false];
         let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
@@ -383,7 +385,7 @@ mod tests {
             "2 vectors must be deleted"
         );
 
-        let vector = vec![0.0, 1.0, 1.1, 1.0];
+        let vector = vector![0.0, 1.0, 1.1, 1.0];
         let query = vector.as_slice().into();
         let closest = new_raw_scorer(
             query,
@@ -410,7 +412,7 @@ mod tests {
             "3 vectors must be deleted"
         );
 
-        let vector = vec![1.0, 0.0, 0.0, 0.0];
+        let vector = vector![1.0, 0.0, 0.0, 0.0];
         let query = vector.as_slice().into();
 
         let closest = new_raw_scorer(
@@ -437,7 +439,7 @@ mod tests {
             "all vectors must be deleted"
         );
 
-        let vector = vec![1.0, 0.0, 0.0, 0.0];
+        let vector = vector![1.0, 0.0, 0.0, 0.0];
         let query = vector.as_slice().into();
         let closest = new_raw_scorer(
             query,
@@ -455,11 +457,11 @@ mod tests {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
         let points = vec![
-            vec![1.0, 0.0, 1.0, 1.0],
-            vec![1.0, 0.0, 1.0, 0.0],
-            vec![1.0, 1.0, 1.0, 1.0],
-            vec![1.0, 1.0, 0.0, 1.0],
-            vec![1.0, 0.0, 0.0, 0.0],
+            vector![1.0, 0.0, 1.0, 1.0],
+            vector![1.0, 0.0, 1.0, 0.0],
+            vector![1.0, 1.0, 1.0, 1.0],
+            vector![1.0, 1.0, 0.0, 1.0],
+            vector![1.0, 0.0, 0.0, 0.0],
         ];
         let delete_mask = [false, false, true, true, false];
         let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
@@ -499,7 +501,7 @@ mod tests {
             "2 vectors must be deleted from other storage"
         );
 
-        let vector = vec![0.0, 1.0, 1.1, 1.0];
+        let vector = vector![0.0, 1.0, 1.1, 1.0];
         let query = vector.as_slice().into();
         let closest = new_raw_scorer(
             query,
@@ -535,11 +537,11 @@ mod tests {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
         let points = vec![
-            vec![1.0, 0.0, 1.0, 1.0],
-            vec![1.0, 0.0, 1.0, 0.0],
-            vec![1.0, 1.0, 1.0, 1.0],
-            vec![1.0, 1.0, 0.0, 1.0],
-            vec![1.0, 0.0, 0.0, 0.0],
+            vector![1.0, 0.0, 1.0, 1.0],
+            vector![1.0, 0.0, 1.0, 0.0],
+            vector![1.0, 1.0, 1.0, 1.0],
+            vector![1.0, 1.0, 0.0, 1.0],
+            vector![1.0, 0.0, 0.0, 0.0],
         ];
         let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
         let storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
@@ -567,7 +569,7 @@ mod tests {
                 .unwrap();
         }
 
-        let vector = vec![-1.0, -1.0, -1.0, -1.0];
+        let vector = vector![-1.0, -1.0, -1.0, -1.0];
         let query = vector.as_slice().into();
         let query_points: Vec<PointOffsetType> = vec![0, 2, 4];
 
@@ -592,7 +594,7 @@ mod tests {
 
     #[test]
     fn test_casts() {
-        let data: Vec<VectorElementType> = vec![0.42, 0.069, 333.1, 100500.];
+        let data: Vec<VectorElementType> = vector![0.42, 0.069, 333.1, 100500.];
 
         let raw_data = transmute_to_u8_slice(&data);
 
@@ -614,11 +616,11 @@ mod tests {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
         let points = vec![
-            vec![1.0, 0.0, 1.0, 1.0],
-            vec![1.0, 0.0, 1.0, 0.0],
-            vec![1.0, 1.0, 1.0, 1.0],
-            vec![1.0, 1.0, 0.0, 1.0],
-            vec![1.0, 0.0, 0.0, 0.0],
+            vector![1.0, 0.0, 1.0, 1.0],
+            vector![1.0, 0.0, 1.0, 0.0],
+            vector![1.0, 1.0, 1.0, 1.0],
+            vector![1.0, 1.0, 0.0, 1.0],
+            vector![1.0, 0.0, 0.0, 0.0],
         ];
         let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
         let storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
@@ -657,7 +659,7 @@ mod tests {
         let quantized_vectors =
             QuantizedVectors::create(&borrowed_storage, &config, dir.path(), 1, &stopped).unwrap();
 
-        let query: QueryVector = [0.5, 0.5, 0.5, 0.5].into();
+        let query: QueryVector = array![0.5, 0.5, 0.5, 0.5].into();
 
         let scorer_quant = quantized_vectors
             .raw_scorer(

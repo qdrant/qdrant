@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use itertools::Itertools;
+use segment::array;
 use segment::common::operation_error::OperationError;
 use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
@@ -29,7 +30,7 @@ fn test_building_new_segment() {
 
     // Include overlapping with segment1 to check the
     segment2
-        .upsert_point(100, 3.into(), only_default_vector(&[0., 0., 0., 0.]))
+        .upsert_point(100, 3.into(), only_default_vector(&array![0., 0., 0., 0.]))
         .unwrap();
 
     builder.update_from(&segment1, &stopped).unwrap();
@@ -139,18 +140,18 @@ fn test_building_cancellation() {
 
     for idx in 0..2000 {
         baseline_segment
-            .upsert_point(1, idx.into(), only_default_vector(&[0., 0., 0., 0.]))
+            .upsert_point(1, idx.into(), only_default_vector(&array![0., 0., 0., 0.]))
             .unwrap();
         segment
-            .upsert_point(1, idx.into(), only_default_vector(&[0., 0., 0., 0.]))
+            .upsert_point(1, idx.into(), only_default_vector(&array![0., 0., 0., 0.]))
             .unwrap();
         segment_2
-            .upsert_point(1, idx.into(), only_default_vector(&[0., 0., 0., 0.]))
+            .upsert_point(1, idx.into(), only_default_vector(&array![0., 0., 0., 0.]))
             .unwrap();
     }
 
     // Get normal build time
-    let (time_baseline, was_cancelled_baseline) = estimate_build_time(&baseline_segment, 20000);
+    let (time_baseline, was_cancelled_baseline) = estimate_build_time(&baseline_segment, 40000);
     assert!(!was_cancelled_baseline);
     eprintln!("baseline time: {}", time_baseline);
 

@@ -22,6 +22,7 @@ use segment::types::{
     ProductQuantizationConfig, QuantizationConfig, QuantizationSearchParams,
     ScalarQuantizationConfig, SearchParams, SegmentConfig, VectorDataConfig, VectorStorageType,
 };
+use segment::vector;
 use segment::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use serde_json::json;
 use tempfile::Builder;
@@ -164,7 +165,7 @@ fn hnsw_quantized_search_test(
 
     // check that rescoring is working
     // to check it, set all vectors to zero and expect zero scores
-    let zero_vector = vec![0.0; dim];
+    let zero_vector = vector![0.0; dim];
     for n in 0..num_vectors {
         let idx = n.into();
         segment
