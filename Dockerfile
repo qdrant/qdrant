@@ -16,7 +16,7 @@ COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
 
 
-FROM chef as builder
+FROM chef AS builder
 WORKDIR /qdrant
 
 COPY --from=xx / /
@@ -105,7 +105,7 @@ RUN mkdir /static ; STATIC_DIR='/static' ./tools/sync-web-ui.sh
 FROM debian:12-slim AS qdrant
 
 RUN apt-get update \
-    && apt-get install -y ca-certificates tzdata libunwind8 \
+    && apt-get install --no-install-recommends -y ca-certificates tzdata libunwind8 \
     && rm -rf /var/lib/apt/lists/*
 
 ARG APP=/qdrant
