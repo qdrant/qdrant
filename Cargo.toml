@@ -10,7 +10,6 @@ homepage = "https://qdrant.tech/"
 repository = "https://github.com/qdrant/qdrant"
 license = "Apache-2.0"
 edition = "2021"
-rust-version = "1.75"
 default-run = "qdrant"
 
 [features]
