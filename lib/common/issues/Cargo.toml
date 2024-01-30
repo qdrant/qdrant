@@ -10,6 +10,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
+chrono = "0.4.33"
 http = "1.0.0"
 http-serde = "2.0.0"
 log = "0.4.20"

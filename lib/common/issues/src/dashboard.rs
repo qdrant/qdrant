@@ -3,17 +3,17 @@ use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use serde::{Serialize, Serializer};
 
-use crate::issue::{CodeType, Issue};
+use crate::issue::{CodeType, Issue, IssueRecord};
 
 #[derive(Default, Serialize)]
 struct Dashboard {
-    pub issues: HashMap<CodeType, Issue>,
+    pub issues: HashMap<CodeType, IssueRecord>,
 }
 
 impl Dashboard {
     /// Activates an issue, returning true if the issue was not active before
-    fn add_issue(&mut self, issue: impl Into<Issue>) -> bool {
-        let issue = issue.into();
+    fn add_issue(&mut self, issue: impl Issue) -> bool {
+        let issue = IssueRecord::from(issue);
         self.issues.insert(issue.code.clone(), issue).is_none()
     }
 
@@ -47,7 +47,7 @@ fn dashboard<'a>() -> MutexGuard<'a, Dashboard> {
 }
 
 /// Submits an issue to the dashboard, returning true if the issue code was not active before
-pub fn submit(issue: impl Into<Issue>) -> bool {
+pub fn submit(issue: impl Issue) -> bool {
     dashboard().add_issue(issue)
 }
 
@@ -61,7 +61,7 @@ pub fn report<S: Serializer>(serializer: S) -> Result<S::Ok, S::Error> {
     dashboard().serialize(serializer)
 }
 
-pub fn all_issues() -> Vec<Issue> {
+pub fn all_issues() -> Vec<IssueRecord> {
     dashboard().issues.values().cloned().collect()
 }
 

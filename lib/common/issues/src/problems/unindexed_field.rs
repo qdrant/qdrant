@@ -1,6 +1,6 @@
 use http::{HeaderMap, Method, Uri};
 
-use crate::issue::Issue;
+use crate::issue::{CodeType, Issue};
 use crate::solution::{Action, ImmediateSolution, Solution};
 
 pub struct UnindexedField {
@@ -9,7 +9,21 @@ pub struct UnindexedField {
     collection: String,
 }
 
-impl UnindexedField {
+impl Issue for UnindexedField {
+    fn code(&self) -> CodeType {
+        format!(
+            "UNINDEXED_FIELD,{},{},{}",
+            self.collection, self.field_name, self.field_type
+        )
+    }
+
+    fn description(&self) -> String {
+        format!(
+            "Unindexed field '{}' of type '{}' is slowing down queries in collection '{}'",
+            self.field_name, self.field_type, self.collection
+        )
+    }
+
     fn solution(&self) -> Solution {
         let uri = match Uri::builder()
             .path_and_query(format!("/collection/{}/indexes", self.collection).as_str())
@@ -39,22 +53,5 @@ impl UnindexedField {
                         body: Some(request_body),
                     },
                 })
-    }
-}
-
-impl From<UnindexedField> for Issue {
-    fn from(val: UnindexedField) -> Self {
-        Issue {
-            code: format!(
-                "UNINDEXED_FIELD,{},{},{}",
-                val.collection, val.field_name, val.field_type
-            ),
-            description: format!(
-                "Unindexed field '{}' of type '{}' is slowing down queries in collection '{}'",
-                val.field_name, val.field_type, val.collection
-            ),
-
-            solution: val.solution(),
-        }
     }
 }

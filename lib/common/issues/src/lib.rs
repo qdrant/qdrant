@@ -43,5 +43,5 @@ pub mod problems;
 mod solution;
 
 pub use dashboard::{all_issues, clear, filter_solve, prefix_solve, report, solve, submit};
-pub use issue::Issue;
+pub use issue::IssueRecord;
 pub use solution::Solution;

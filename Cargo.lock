@@ -2550,6 +2550,7 @@ dependencies = [
 name = "issues"
 version = "0.0.0"
 dependencies = [
+ "chrono",
  "http 1.0.0",
  "http-serde",
  "log",
