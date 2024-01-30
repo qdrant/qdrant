@@ -13,7 +13,7 @@ edition = "2021"
 common = { path = "../common/common" }
 io = { path = "../common/io" }
 memory = { path = "../common/memory" }
-memmap2 = "0.9.3"
+memmap2 = "0.9.4"
 schemars = { version = "0.8.16" }
 serde = { version = "1", features = ["derive"] }
 tempfile = "3.9.0"
