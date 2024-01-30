@@ -19,7 +19,7 @@ env_logger = "0.10.2"
 [dependencies]
 thiserror = "1.0"
 rand = "0.8.5"
-wal = { git = "https://github.com/qdrant/wal.git", rev = "fad0e7c48be58d8e7db4cc739acd9b1cf6735de0" }
+wal = { git = "https://github.com/qdrant/wal.git", rev = "3f69dff6f32809e804293aa202f82f04323649ab" }
 tokio = { version = "~1.35", features = ["rt-multi-thread"] }
 serde = { version = "~1.0", features = ["derive"] }
 serde_json = "~1.0"

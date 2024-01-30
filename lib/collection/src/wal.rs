@@ -228,6 +228,15 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
     pub fn segment_capacity(&self) -> usize {
         self.options.segment_capacity
     }
+
+    pub fn copy_to_path<P>(&self, path: P) -> Result<()>
+    where
+        P: AsRef<Path>,
+    {
+        self.wal
+            .copy_to_path(path)
+            .map_err(|err| WalError::WriteWalError(format!("failed to save WAL to path: {err:?}")))
+    }
 }
 
 #[cfg(test)]

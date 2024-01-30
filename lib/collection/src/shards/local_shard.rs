@@ -355,7 +355,7 @@ impl LocalShard {
             ))
         })?;
 
-        let segments_path = shard_path.join("segments");
+        let segments_path = LocalShard::segments_path(shard_path);
 
         create_dir_all(&segments_path).await.map_err(|err| {
             CollectionError::service_error(format!(
@@ -606,7 +606,7 @@ impl LocalShard {
         let snapshot_shard_path = target_path;
 
         // snapshot all shard's segment
-        let snapshot_segments_shard_path = snapshot_shard_path.join("segments");
+        let snapshot_segments_shard_path = LocalShard::segments_path(snapshot_shard_path);
         create_dir_all(&snapshot_segments_shard_path).await?;
 
         let segments = self.segments.clone();
@@ -682,16 +682,17 @@ impl LocalShard {
     ///
     /// copies all WAL files into `snapshot_shard_path/wal`
     pub fn snapshot_wal(wal: LockedWal, snapshot_shard_path: &Path) -> CollectionResult<()> {
+        let wal_path = LocalShard::wal_path(snapshot_shard_path);
+        fs_extra::dir::create(&wal_path, true).map_err(|err| {
+            CollectionError::service_error(format!(
+                "Error while creating directory for WAL snapshot {wal_path:?} {err}"
+            ))
+        })?;
+
         // lock wal during snapshot
         let mut wal_guard = wal.lock();
         wal_guard.flush()?;
-        let source_wal_path = wal_guard.path();
-        let options = fs_extra::dir::CopyOptions::new();
-        fs_extra::dir::copy(source_wal_path, snapshot_shard_path, &options).map_err(|err| {
-            CollectionError::service_error(format!(
-                "Error while copy WAL {snapshot_shard_path:?} {err}"
-            ))
-        })?;
+        wal_guard.copy_to_path(wal_path)?;
         Ok(())
     }
 
