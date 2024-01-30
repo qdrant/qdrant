@@ -9,11 +9,13 @@ license = "Apache-2.0"
 edition = "2021"
 
 [dependencies]
+itertools = "0.12.0"
+
 common = { path = "../common/common" }
 io = { path = "../common/io" }
-itertools = "0.12.0"
-memmap2 = "0.9.3"
 memory = { path = "../common/memory" }
+
+memmap2 = "0.9.3"
 ordered-float = "4.2"
 rand = "0.8.5"
 schemars = { version = "0.8.16" }

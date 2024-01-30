@@ -17,32 +17,18 @@ tracing = [
 ]
 
 [dev-dependencies]
-env_logger = "0.10.1"
+env_logger = "0.10.2"
 proptest = "1.4.0"
 tempfile = "3.9.0"
 
 [dependencies]
 anyhow = "1.0.79"
-api = { path = "../api" }
-
-# Consensus related
-atomicwrites = { version = "0.4.3" }
-cancel = { path = "../common/cancel" }
 chrono = { version = "~0.4", features = ["serde"] }
-collection = { path = "../collection" }
-common = { path = "../common/common" }
 futures = "0.3.30"
 http = "0.2"
-io = { path = "../common/io" }
 itertools = "0.12"
 log = "0.4"
-memory = { path = "../common/memory" }
 parking_lot = { version = "0.12.1", features = ["deadlock_detection", "serde"] }
-prost = { version = "0.11.9" } # version of prost used by raft
-protobuf = "2.28.0" # version of protobuf used by raft
-raft = { version = "0.7.0", features = [
-    "prost-codec",
-], default-features = false }
 rand = "0.8.5"
 reqwest = { version = "0.11", default-features = false, features = [
     "stream",
@@ -53,9 +39,7 @@ schemars = { version = "0.8.16", features = [
     "preserve_order",
     "chrono",
 ] }
-segment = { path = "../segment" }
 serde = { version = "~1.0", features = ["derive"] }
-serde_cbor = { version = "0.11.2" }
 serde_json = "~1.0"
 tar = "0.4.40"
 tempfile = "3.9.0"
@@ -64,9 +48,26 @@ tokio = { version = "~1.35", features = ["rt-multi-thread"] }
 tonic = { version = "0.9.2", features = ["gzip", "tls"] }
 tracing = { version = "0.1", features = ["async-await"], optional = true }
 url = "2.5.0"
-uuid = "1.6.1"
+uuid = "1.7.0"
 validator = { version = "0.16", features = ["derive"] }
 wal = { git = "https://github.com/qdrant/wal.git", rev = "fad0e7c48be58d8e7db4cc739acd9b1cf6735de0" }
+
+# Consensus related
+atomicwrites = { version = "0.4.3" }
+prost = { version = "0.11.9" } # version of prost used by raft
+protobuf = "2.28.0" # version of protobuf used by raft
+raft = { version = "0.7.0", features = [
+    "prost-codec",
+], default-features = false }
+serde_cbor = { version = "0.11.2" }
+
+api = { path = "../api" }
+cancel = { path = "../common/cancel" }
+collection = { path = "../collection" }
+common = { path = "../common/common" }
+io = { path = "../common/io" }
+memory = { path = "../common/memory" }
+segment = { path = "../segment" }
 
 [package.metadata.cargo-machete]
 ignored = ["tracing"]

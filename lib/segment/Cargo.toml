@@ -35,16 +35,13 @@ charabia = { version = "0.8.5", default-features = false, features = [
     "thai",
 ] }
 chrono = { version = "0.4.31", features = ["serde"] }
-common = { path = "../common/common" }
 fs_extra = "1.3.0"
 geo = "0.27.0"
 geohash = "0.13.0"
-io = { path = "../common/io" }
 itertools = "0.12"
 lazy_static = "1.4"
 log = "0.4"
 memmap2 = "0.9.3"
-memory = { path = "../common/memory" }
 num-derive = "0.4.1"
 num-traits = "0.2.17"
 num_cpus = "1.16"
@@ -52,7 +49,7 @@ ordered-float = "4.2"
 parking_lot = "0.12"
 quantization = { git = "https://github.com/qdrant/quantization.git" }
 rand = "0.8"
-rayon = "1.8.0"
+rayon = "1.8.1"
 rocksdb = { version = "0.21.0", default-features = false, features = [
     "snappy",
 ] }
@@ -67,16 +64,21 @@ serde = { version = "~1.0", features = ["derive", "rc"] }
 serde-value = "0.7"
 serde_cbor = "0.11.2"
 serde_json = "~1.0"
-smol_str = "0.2.0"
-sparse = { path = "../sparse" }
+smol_str = "0.2.1"
 sysinfo = "0.30"
 tar = "0.4.40"
 tempfile = "3.9.0"
 thiserror = "1.0"
 tinyvec = { version = "1.6.0", features = ["alloc"] }
-tracing = { version = "0.1", features = ["async-await"], optional = true }
-uuid = { version = "1.6", features = ["v4", "serde"] }
+uuid = { version = "1.7", features = ["v4", "serde"] }
 validator = { version = "0.16", features = ["derive"] }
+
+common = { path = "../common/common" }
+io = { path = "../common/io" }
+memory = { path = "../common/memory" }
+sparse = { path = "../sparse" }
+
+tracing = { version = "0.1", features = ["async-await"], optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 cgroups-rs = "0.3"

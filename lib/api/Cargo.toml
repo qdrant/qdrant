@@ -13,26 +13,24 @@ tracing = ["dep:tracing", "segment/tracing"]
 
 [dependencies]
 chrono = { version = "~0.4", features = ["serde"] }
-common = { path = "../common/common" }
 parking_lot = "0.12"
 prost = "0.11.9"
 prost-types = "0.11.9"
 rand = "0.8.5"
-schemars = { version = "0.8.16", features = [
-    "uuid1",
-    "preserve_order",
-    "chrono",
-] }
-segment = { path = "../segment" }
+schemars = { version = "0.8.16", features = ["uuid1", "preserve_order", "chrono"] }
 serde = { version = "~1.0", features = ["derive"] }
 serde_json = "~1.0"
-sparse = { path = "../sparse" }
 thiserror = "1.0"
 tokio = "1.35.1"
 tonic = { version = "0.9.2", features = ["gzip", "tls"] }
-tracing = { version = "0.1", features = ["async-await"], optional = true }
-uuid = { version = "1.6", features = ["v4", "serde"] }
+uuid = { version = "1.7", features = ["v4", "serde"] }
 validator = { version = "0.16", features = ["derive"] }
+
+common = { path = "../common/common" }
+segment = { path = "../segment" }
+sparse = { path = "../sparse" }
+
+tracing = { version = "0.1", features = ["async-await"], optional = true }
 
 [build-dependencies]
 prost-build = { version = "0.11.8", features = ["cleanup-markdown"] }
