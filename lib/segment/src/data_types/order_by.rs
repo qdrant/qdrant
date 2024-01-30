@@ -2,9 +2,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
-use crate::types::Range;
+use crate::types::{Payload, Range};
 
-pub const INTERNAL_KEY_OF_ORDER_BY_VALUE: &str = "____ordered_with____";
+const INTERNAL_KEY_OF_ORDER_BY_VALUE: &str = "____ordered_with____";
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, Default)]
 #[serde(rename_all = "snake_case")]
@@ -61,5 +61,23 @@ impl OrderBy {
             Direction::Asc => f64::NEG_INFINITY,
             Direction::Desc => f64::INFINITY,
         })
+    }
+
+    pub fn insert_order_value_in_payload(payload: Option<Payload>, value: f64) -> Payload {
+        let mut new_payload = payload.unwrap_or_default();
+        new_payload
+            .0
+            .insert(INTERNAL_KEY_OF_ORDER_BY_VALUE.to_string(), value.into());
+        new_payload
+    }
+
+    pub fn remove_order_value_from_payload(&self, payload: Option<&mut Payload>) -> f64 {
+        payload
+            .and_then(|payload| payload.0.remove(INTERNAL_KEY_OF_ORDER_BY_VALUE))
+            .and_then(|v| v.as_f64())
+            .unwrap_or_else(|| match self.direction() {
+                Direction::Asc => std::f64::MAX,
+                Direction::Desc => std::f64::MIN,
+            })
     }
 }

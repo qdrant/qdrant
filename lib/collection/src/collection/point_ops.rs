@@ -3,7 +3,7 @@ use std::sync::Arc;
 use futures::stream::FuturesUnordered;
 use futures::{future, StreamExt as _, TryFutureExt, TryStreamExt as _};
 use itertools::Itertools;
-use segment::data_types::order_by::{Direction, OrderBy, INTERNAL_KEY_OF_ORDER_BY_VALUE};
+use segment::data_types::order_by::{Direction, OrderBy};
 use segment::types::{ShardKey, WithPayload, WithPayloadInterface};
 use validator::Validate as _;
 
@@ -251,7 +251,7 @@ impl Collection {
             });
         }
 
-        // order_by does not support offset
+        // `order_by` does not support offset
         if order_by.is_none() {
             // Needed to return next page offset.
             limit += 1;
@@ -288,36 +288,19 @@ impl Collection {
 
         let retrieved_iter = retrieved_points.into_iter();
 
-        let mut points = match order_by {
+        let mut points = match &order_by {
             None => retrieved_iter
                 .flatten()
                 .sorted_unstable_by_key(|point| point.id)
                 .take(limit)
                 .collect_vec(),
-            Some(ref order_by) => {
-                let default_value = match order_by.direction() {
-                    Direction::Asc => std::f64::MAX,
-                    Direction::Desc => std::f64::MIN,
-                };
-
-                let remove_order_value_from_payload = |record: &mut Record| {
-                    record
-                        .payload
-                        .as_mut()
-                        .and_then(|payload| {
-                            payload
-                                .0
-                                .remove(INTERNAL_KEY_OF_ORDER_BY_VALUE)
-                                .and_then(|v| v.as_f64())
-                        })
-                        .unwrap_or(default_value)
-                };
-
+            Some(order_by) => {
                 retrieved_iter
                     // Extract and remove order value from payload
-                    .map(|vec| {
-                        vec.into_iter().map(|mut record| {
-                            let value = remove_order_value_from_payload(&mut record);
+                    .map(|records| {
+                        records.into_iter().map(|mut record| {
+                            let value =
+                                order_by.remove_order_value_from_payload(record.payload.as_mut());
                             (value, record)
                         })
                     })
@@ -326,8 +309,8 @@ impl Collection {
                         Direction::Asc => value_a <= value_b,
                         Direction::Desc => value_a >= value_b,
                     })
-                    .take(limit)
                     .map(|(_, record)| record)
+                    .take(limit)
                     .collect_vec()
             }
         };

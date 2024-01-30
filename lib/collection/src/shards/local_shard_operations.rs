@@ -4,7 +4,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::future::try_join_all;
 use itertools::Itertools;
-use segment::data_types::order_by::{Direction, OrderBy, INTERNAL_KEY_OF_ORDER_BY_VALUE};
+use segment::data_types::order_by::{Direction, OrderBy};
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
@@ -150,7 +150,6 @@ impl LocalShard {
         Ok(points)
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn scroll_by_field(
         &self,
         limit: usize,
@@ -199,15 +198,9 @@ impl LocalShard {
 
         let with_payload = WithPayload::from(with_payload_interface);
 
-        // Fetch with the requested payload and vector
         let point_ids = top_records.iter().map(|(_, id)| *id).collect_vec();
 
-        // include whole order_by value in the payload (not just the one from the BTree)
-        let with_payload =
-            with_payload.union(&WithPayload::from(&WithPayloadInterface::Fields(vec![
-                order_by.key.clone(),
-            ])));
-
+        // Fetch with the requested vector and payload
         let mut records =
             SegmentsSearcher::retrieve(segments, &point_ids, &with_payload, with_vector)?;
 
@@ -216,10 +209,9 @@ impl LocalShard {
             .iter_mut()
             .zip(top_records)
             .for_each(|(record, (value, _))| {
-                let mut new_payload = record.payload.take().unwrap_or_default();
-                new_payload
-                    .0
-                    .insert(INTERNAL_KEY_OF_ORDER_BY_VALUE.to_string(), value.0.into());
+                let new_payload =
+                    OrderBy::insert_order_value_in_payload(record.payload.take(), value.0);
+
                 record.payload = Some(new_payload);
             });
 
