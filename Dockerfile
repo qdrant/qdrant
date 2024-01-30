@@ -32,8 +32,7 @@ COPY --from=xx / /
 
 RUN apt-get update \
     && apt-get install -y clang lld cmake protobuf-compiler jq \
-    && rustup component add rustfmt \
-    && rm -rf /var/lib/apt/lists/*
+    && rustup component add rustfmt
 
 # `ARG`/`ENV` pair is a workaround for `docker build` backward-compatibility.
 #
