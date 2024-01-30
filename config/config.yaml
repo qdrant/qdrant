@@ -2,14 +2,14 @@ log_level: INFO
 
 storage:
   # Where to store all the data
-  storage_path: ./storage
+  storage_path: /var/lib/qdrant/storage
 
   # Where to store snapshots
-  snapshots_path: ./snapshots
+  snapshots_path: /var/lib/qdrant/snapshots
 
   # Where to store temporary files
   # If null, temporary snapshot are stored in: storage/snapshots_temp/
-  temp_path: null
+  temp_path: /var/lib/qdrant/temp
 
   # If true - point's payload will not be stored in memory.
   # It will be read from the disk every time it is requested.

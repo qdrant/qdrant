@@ -29,12 +29,12 @@ And once you need a fine-grained setup, you can also define a storage path and c
 
 ```bash
 docker run -p 6333:6333 \
-    -v $(pwd)/path/to/data:/qdrant/storage \
+    -v $(pwd)/path/to/data:/var/lib/qdrant/storage \
     -v $(pwd)/path/to/custom_config.yaml:/qdrant/config/production.yaml \
     qdrant/qdrant
 ```
 
-- `/qdrant/storage` - is a place where Qdrant persists all your data.
+- `/var/lib/qdrant/storage` - is a place where Qdrant persists all your data.
   Make sure to mount it as a volume, otherwise docker will drop it with the container.
 - `/qdrant/config/production.yaml` - is the file with engine configuration. You can override any value from the [reference config](https://github.com/qdrant/qdrant/blob/master/config/config.yaml)
 
