@@ -18,13 +18,17 @@
 //!     }
 //! }
 //!
-//! impl From<DummyIssue> for Issue {
-//!    fn from(val: DummyIssue) -> Self {
-//!         Issue {
-//!             code: val.code.clone(),
-//!             description: "".to_string(),
-//!             solution: Solution::None,
-//!         }
+//! impl Issue for DummyIssue {
+//!     fn code(&self) -> String {
+//!         self.code.clone()
+//!     }
+//!
+//!     fn description(&self) -> String {
+//!         "".to_string()
+//!     }
+//!
+//!     fn solution(&self) -> Solution {
+//!         Solution::None
 //!     }
 //! }
 //!
@@ -43,5 +47,5 @@ pub mod problems;
 mod solution;
 
 pub use dashboard::{all_issues, clear, filter_solve, prefix_solve, report, solve, submit};
-pub use issue::IssueRecord;
+pub use issue::{Issue, IssueRecord};
 pub use solution::Solution;
