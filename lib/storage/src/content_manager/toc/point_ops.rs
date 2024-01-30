@@ -250,6 +250,9 @@ impl TableOfContent {
     /// # Cancel safety
     ///
     /// This method is cancel safe.
+    ///
+    /// When it is cancelled, the operation may not be applied on some shard keys. But, all nodes
+    /// are guaranteed to be consistent.
     async fn _update_shard_keys(
         collection: &Collection,
         shard_keys: Vec<ShardKey>,
@@ -258,8 +261,6 @@ impl TableOfContent {
         ordering: WriteOrdering,
     ) -> Result<UpdateResult, StorageError> {
         // `Collection::update_from_client` is cancel safe, so this method is cancel safe.
-
-        // TODO: Is this cancel safe!? I.e., is it safe to cancel *multiple* `update_from_client` requests?
 
         let updates: FuturesUnordered<_> = shard_keys
             .into_iter()
