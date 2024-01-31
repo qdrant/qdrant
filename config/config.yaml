@@ -41,8 +41,15 @@ storage:
     max_search_threads: 0
 
     # Max number of threads (jobs) for running optimizations across all collections, each thread runs one job.
+    # If 0 - have no limit and choose dynamically to saturate CPU.
     # Note: each optimization job will also use `max_indexing_threads` threads by itself for index building.
-    max_optimization_threads: 1
+    max_optimization_threads: 0
+
+    # CPU budget, how many CPUs (threads) to allocate for an optimization job.
+    # If 0 - auto selection, keep 1 or more CPUs unallocated depending on CPU size
+    # If negative - subtract this number of CPUs from the available CPUs.
+    # If positive - use this exact number of CPUs.
+    optimizer_cpu_budget: 0
 
     # Prevent DDoS of too many concurrent updates in distributed mode.
     # One external update usually triggers multiple internal updates, which breaks internal
@@ -109,8 +116,9 @@ storage:
 
     # Max number of threads (jobs) for running optimizations per shard.
     # Note: each optimization job will also use `max_indexing_threads` threads by itself for index building.
+    # If null - have no limit and choose dynamically to saturate CPU.
     # If 0 - no optimization threads, optimizations will be disabled.
-    max_optimization_threads: 1
+    max_optimization_threads: null
 
   # Default parameters of HNSW Index. Could be overridden for each collection or named vector individually
   hnsw_index:

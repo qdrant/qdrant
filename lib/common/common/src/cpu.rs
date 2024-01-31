@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -7,6 +8,8 @@ use thiserror::Error;
 use thread_priority::{set_current_thread_priority, ThreadPriority, ThreadPriorityValue};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, TryAcquireError};
 use tokio::time;
+
+use crate::defaults::default_cpu_budget_unallocated;
 
 /// Try to read number of CPUs from environment variable `QDRANT_NUM_CPUS`.
 /// If it is not set, use `num_cpus::get()`.
@@ -32,23 +35,19 @@ pub fn get_num_cpus() -> usize {
 /// If positive - use this exact number of CPUs.
 ///
 /// The returned value will always be at least 1.
-pub fn get_cpu_budget(_cpu_budget_param: isize) -> usize {
-    // TODO(1.8.0): temporarily imitate behavior in 1.7.0 of having an unlimited CPU budget.
-    // TODO(1.8.0): before the next minor release, remove this and switch to the heuristic below.
-    Semaphore::MAX_PERMITS
-
-    // match cpu_budget_param.cmp(&0) {
-    //     // If less than zero, subtract from available CPUs
-    //     Ordering::Less => get_num_cpus()
-    //         .saturating_sub(-cpu_budget_param as usize)
-    //         .max(1),
-    //     // If zero, use automatic selection
-    //     Ordering::Equal => get_num_cpus()
-    //         .saturating_sub(-default_cpu_budget_unallocated(get_num_cpus()) as usize)
-    //         .max(1),
-    //     // If greater than zero, use exact number
-    //     Ordering::Greater => cpu_budget_param as usize,
-    // }
+pub fn get_cpu_budget(cpu_budget_param: isize) -> usize {
+    match cpu_budget_param.cmp(&0) {
+        // If less than zero, subtract from available CPUs
+        Ordering::Less => get_num_cpus()
+            .saturating_sub(-cpu_budget_param as usize)
+            .max(1),
+        // If zero, use automatic selection
+        Ordering::Equal => get_num_cpus()
+            .saturating_sub(-default_cpu_budget_unallocated(get_num_cpus()) as usize)
+            .max(1),
+        // If greater than zero, use exact number
+        Ordering::Greater => cpu_budget_param as usize,
+    }
 }
 
 /// Structure managing global CPU budget for optimization tasks.

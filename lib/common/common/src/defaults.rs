@@ -31,13 +31,9 @@ pub fn default_cpu_budget_unallocated(num_cpu: usize) -> isize {
 /// Will be less if currently available CPU budget is lower.
 #[inline(always)]
 pub fn thread_count_for_hnsw(num_cpu: usize) -> usize {
-    // TODO(1.8.0): temporarily imitate behavior in 1.7.0 of always preferring 16 HNSW threads.
-    // TODO(1.8.0): before the next minor release, remove this and switch to the heuristic below.
-    16.min(num_cpu).max(1)
-
-    // match num_cpu {
-    //     0..=48 => 8.min(num_cpu).max(1),
-    //     49..=64 => 12,
-    //     65.. => 16,
-    // }
+    match num_cpu {
+        0..=48 => 8.min(num_cpu).max(1),
+        49..=64 => 12,
+        65.. => 16,
+    }
 }
