@@ -10,7 +10,7 @@ use api::grpc::transport_channel_pool::RequestError;
 use common::types::ScoreType;
 use common::validation::validate_range_generic;
 use io::file_operations::FileStorageError;
-use issues::Issue;
+use issues::IssueRecord;
 use merge::Merge;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
@@ -1776,7 +1776,8 @@ impl From<QueryEnum> for QueryVector {
     }
 }
 
-#[derive(Serialize, JsonSchema, Debug)]
+/// All the unresolved issues in a Qdrant instance
+#[derive(Serialize, Deserialize, JsonSchema, Debug)]
 pub struct IssuesReport {
-    pub issues: Vec<Issue>,
+    pub issues: Vec<IssueRecord>,
 }

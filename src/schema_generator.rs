@@ -7,11 +7,7 @@ use collection::operations::snapshot_ops::{
     ShardSnapshotRecover, SnapshotDescription, SnapshotRecover,
 };
 use collection::operations::types::{
-    AliasDescription, CollectionClusterInfo, CollectionExistence, CollectionInfo,
-    CollectionsAliasesResponse, CountRequest, CountResult, DiscoverRequest, DiscoverRequestBatch,
-    GroupsResult, PointGroup, PointRequest, RecommendGroupsRequest, RecommendRequest,
-    RecommendRequestBatch, Record, ScrollRequest, ScrollResult, SearchGroupsRequest, SearchRequest,
-    SearchRequestBatch, UpdateResult,
+    AliasDescription, CollectionClusterInfo, CollectionExistence, CollectionInfo, CollectionsAliasesResponse, CountRequest, CountResult, DiscoverRequest, DiscoverRequestBatch, GroupsResult, IssuesReport, PointGroup, PointRequest, RecommendGroupsRequest, RecommendRequest, RecommendRequestBatch, Record, ScrollRequest, ScrollResult, SearchGroupsRequest, SearchRequest, SearchRequestBatch, UpdateResult
 };
 use collection::operations::vector_ops::{DeleteVectors, UpdateVectors};
 use schemars::gen::SchemaSettings;
@@ -80,6 +76,7 @@ struct AllDefinitions {
     bb: DiscoverRequestBatch,
     bc: VersionInfo,
     bd: CollectionExistence,
+    be: IssuesReport,
 }
 
 fn save_schema<T: JsonSchema>() {
