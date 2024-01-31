@@ -673,10 +673,10 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     b = b.stack_size(stack_size);
                 }
                 b.spawn(|| {
-                    // On Linux, use lower thread priority so we don't interfere with serving traffic
+                    // On Linux, use lower thread priority so we interfere less with serving traffic
                     #[cfg(target_os = "linux")]
                     if let Err(err) = linux_low_thread_priority() {
-                        log::warn!(
+                        log::debug!(
                             "Failed to set low thread priority for HNSW building, ignoring: {err}"
                         );
                     }
