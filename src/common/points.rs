@@ -257,10 +257,9 @@ pub async fn do_delete_vectors(
     } = operation;
 
     let vector_names: Vec<_> = vector.into_iter().collect();
+    let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
 
     let mut result = None;
-
-    let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
 
     if let Some(filter) = filter {
         let vectors_operation =
