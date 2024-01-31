@@ -46,6 +46,10 @@ impl ClockGuard {
         self.clock.tick_once()
     }
 
+    pub fn advance_to(&mut self, tick: u64) -> u64 {
+        self.clock.advance_to(tick)
+    }
+
     pub fn release(self) {
         // Do not call `Clock::release` explicitly!
         //
@@ -79,6 +83,10 @@ impl Clock {
 
     pub fn tick_once(&self) -> u64 {
         self.clock.fetch_add(1, Ordering::Relaxed) + 1
+    }
+
+    pub fn advance_to(&self, tick: u64) -> u64 {
+        self.clock.fetch_max(tick, Ordering::Relaxed)
     }
 
     pub fn lock(&self) -> bool {
