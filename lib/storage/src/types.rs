@@ -24,20 +24,22 @@ pub type PeerAddressById = HashMap<PeerId, Uri>;
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct PerformanceConfig {
     pub max_search_threads: usize,
-    #[serde(default = "default_max_optimization_threads")]
+    #[serde(default)]
     pub max_optimization_threads: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub update_rate_limit: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub search_timeout_sec: Option<usize>,
+    /// CPU budget, how many CPUs (threads) to allocate for an optimization job.
+    /// If 0 - auto selection, keep 1 or more CPUs unallocated depending on CPU size
+    /// If negative - subtract this relative number of CPUs from the available CPUs.
+    /// If positive - use this absolute number of CPUs.
+    #[serde(default)]
+    pub optimizer_cpu_budget: isize,
     #[serde(default = "default_io_shard_transfers_limit")]
     pub incoming_shard_transfers_limit: Option<usize>,
     #[serde(default = "default_io_shard_transfers_limit")]
     pub outgoing_shard_transfers_limit: Option<usize>,
-}
-
-const fn default_max_optimization_threads() -> usize {
-    1
 }
 
 const fn default_io_shard_transfers_limit() -> Option<usize> {

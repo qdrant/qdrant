@@ -29,7 +29,6 @@ pprof = { version = "0.12", features = ["flamegraph", "prost-codec"] }
 tempfile = "3.9.0"
 parking_lot = { workspace = true }
 rayon = "1.8.1"
-num_cpus = "1.16"
 itertools = "0.12"
 rocksdb = { version = "0.21.0", default-features = false, features = [ "snappy" ] }
 uuid = { workspace = true }

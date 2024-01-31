@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::cpu::CpuPermit;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use parking_lot::Mutex;
 use schemars::_serde_json::Value;
@@ -271,7 +272,11 @@ impl VectorIndex for PlainIndex {
         }
     }
 
-    fn build_index(&mut self, _stopped: &AtomicBool) -> OperationResult<()> {
+    fn build_index(
+        &mut self,
+        _permit: Arc<CpuPermit>,
+        _stopped: &AtomicBool,
+    ) -> OperationResult<()> {
         Ok(())
     }
 

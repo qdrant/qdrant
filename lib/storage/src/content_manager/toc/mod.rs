@@ -27,9 +27,9 @@ use collection::shards::replica_set;
 use collection::shards::replica_set::{AbortShardTransfer, ReplicaState};
 use collection::shards::shard::{PeerId, ShardId};
 use collection::telemetry::CollectionTelemetry;
+use common::cpu::{get_num_cpus, CpuBudget};
 use futures::future::try_join_all;
 use futures::Future;
-use segment::common::cpu::get_num_cpus;
 use tokio::runtime::Runtime;
 use tokio::sync::{Mutex, RwLock, RwLockReadGuard, Semaphore};
 use tonic::codegen::InterceptedService;
@@ -59,6 +59,9 @@ pub struct TableOfContent {
     search_runtime: Runtime,
     update_runtime: Runtime,
     general_runtime: Runtime,
+    /// Global CPU budget in number of cores for all optimization tasks.
+    /// Assigns CPU permits to tasks to limit overall resource utilization.
+    optimizer_cpu_budget: CpuBudget,
     alias_persistence: RwLock<AliasPersistence>,
     pub this_peer_id: PeerId,
     channel_service: ChannelService,
@@ -87,6 +90,7 @@ impl TableOfContent {
         search_runtime: Runtime,
         update_runtime: Runtime,
         general_runtime: Runtime,
+        optimizer_cpu_budget: CpuBudget,
         channel_service: ChannelService,
         this_peer_id: PeerId,
         consensus_proposal_sender: Option<OperationSender>,
@@ -153,6 +157,7 @@ impl TableOfContent {
                 ),
                 Some(search_runtime.handle().clone()),
                 Some(update_runtime.handle().clone()),
+                optimizer_cpu_budget.clone(),
             ));
 
             collections.insert(collection_name, collection);
@@ -185,6 +190,7 @@ impl TableOfContent {
             search_runtime,
             update_runtime,
             general_runtime,
+            optimizer_cpu_budget,
             alias_persistence: RwLock::new(alias_persistence),
             this_peer_id,
             channel_service,
