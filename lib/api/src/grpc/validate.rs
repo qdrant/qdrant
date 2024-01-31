@@ -6,6 +6,9 @@ use validator::{Validate, ValidationError, ValidationErrors};
 
 use super::qdrant::{GeoLineString, NamedVectors};
 
+const TIMESTAMP_MIN_SECONDS: i64 = -62_135_596_800; // 0001-01-01T00:00:00Z
+const TIMESTAMP_MAX_SECONDS: i64 = 253_402_300_799; // 9999-12-31T23:59:59Z
+
 pub trait ValidateExt {
     fn validate(&self) -> Result<(), ValidationErrors>;
 }
@@ -319,6 +322,21 @@ pub fn validate_geo_polygon_interiors(lines: &Vec<GeoLineString>) -> Result<(), 
     for line in lines {
         validate_geo_polygon_line_helper(line)?;
     }
+    Ok(())
+}
+
+/// Validate that the timestamp is within the range specified in the protobuf docs.
+/// https://protobuf.dev/reference/protobuf/google.protobuf/#timestamp
+pub fn validate_timestamp(ts: &Option<prost_wkt_types::Timestamp>) -> Result<(), ValidationError> {
+    let Some(ts) = ts else {
+        return Ok(());
+    };
+    validate_range_generic(
+        ts.seconds,
+        Some(TIMESTAMP_MIN_SECONDS),
+        Some(TIMESTAMP_MAX_SECONDS),
+    )?;
+    validate_range_generic(ts.nanos, Some(0), Some(999_999_999))?;
     Ok(())
 }
 

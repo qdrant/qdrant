@@ -103,6 +103,7 @@ enum PayloadSchemaType {
   Geo = 4;
   Text = 5;
   Bool = 6;
+  Datetime = 7;
 }
 
 enum QuantizationType {
