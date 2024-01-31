@@ -662,7 +662,9 @@ fn trigger_optimizers_on_cpu_budget(
 ) -> JoinHandle<()> {
     task::spawn(async move {
         log::trace!("Skipping optimization checks, waiting for CPU budget to be available");
-        optimizer_cpu_budget.wait_until_budget(desired_cpus).await;
+        optimizer_cpu_budget
+            .notify_on_budget_available(desired_cpus)
+            .await;
         log::trace!("Continue optimization checks, new CPU budget available");
 
         // Trigger optimizers with Nop operation

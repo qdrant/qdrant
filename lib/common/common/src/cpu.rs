@@ -116,7 +116,9 @@ impl CpuBudget {
         self.semaphore.available_permits() >= budget
     }
 
-    /// Wait until we have CPU budget available for the given number of desired CPUs.
+    /// Notify when we have CPU budget available for the given number of desired CPUs.
+    ///
+    /// This will not resolve until the above condition is met.
     ///
     /// Waits for at least the minimum number of permits based on the given desired CPUs. For
     /// example, if `desired_cpus` is 8, this will wait for at least 4 to be available. See
@@ -125,8 +127,8 @@ impl CpuBudget {
     /// - `1` to wait for any CPU budget to be available.
     /// - `0` will always return immediately.
     ///
-    /// Uses an exponential backoff strategy up to 10 seconds to avoid busy waiting.
-    pub async fn wait_until_budget(&self, desired_cpus: usize) {
+    /// Uses an exponential backoff strategy up to 10 seconds to avoid busy polling.
+    pub async fn notify_on_budget_available(&self, desired_cpus: usize) {
         let min_required = self.min_permits(desired_cpus);
         if self.has_budget_exact(min_required) {
             return;
