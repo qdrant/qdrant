@@ -234,11 +234,10 @@ mod tests {
 
         assert_ne!(pre_split, post_split);
 
-        for (x,y) in pre_split.iter().zip(post_split.iter()) {
+        for (x, y) in pre_split.iter().zip(post_split.iter()) {
             if x != y {
                 assert_eq!(*y, 4);
             }
         }
-
     }
 }
