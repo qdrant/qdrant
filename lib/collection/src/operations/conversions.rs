@@ -903,7 +903,9 @@ impl TryFrom<i32> for UpdateStatus {
             api::grpc::qdrant::UpdateStatus::Completed => Self::Completed,
 
             api::grpc::qdrant::UpdateStatus::UnknownUpdateStatus => {
-                return Err(Status::invalid_argument("TODO")); // TODO!?
+                return Err(Status::invalid_argument(
+                    "Malformed UpdateStatus type: update status is unknown",
+                ));
             }
         };
 

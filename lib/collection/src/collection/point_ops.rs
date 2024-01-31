@@ -96,8 +96,12 @@ impl Collection {
             match ordering {
                 WriteOrdering::Weak => shard.update_local(operation, wait).await,
                 WriteOrdering::Medium | WriteOrdering::Strong => {
-                    if operation.clock_tag.is_some() {
-                        log::error!("TODO"); // TODO!
+                    if let Some(clock_tag) = operation.clock_tag {
+                        log::warn!(
+                            "Received update operation forwarded from another peer with {ordering:?} \
+                             with non-`None` clock tag {clock_tag:?} (operation: {:#?})",
+                             operation.operation,
+                        );
                     }
 
                     shard

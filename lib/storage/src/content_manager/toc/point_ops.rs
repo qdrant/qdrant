@@ -388,6 +388,7 @@ impl TableOfContent {
                     .await?
             }
         };
+
         Ok(res)
     }
 }
