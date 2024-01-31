@@ -204,4 +204,41 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_repartition() {
+        let mut ring = HashRing::fair(100);
+
+        ring.add(1);
+        ring.add(2);
+        ring.add(3);
+
+        let mut pre_split = Vec::new();
+        let mut post_split = Vec::new();
+
+        for i in 0..100 {
+            match ring.get(&i) {
+                None => panic!("Key {i} has no shard"),
+                Some(x) => pre_split.push(*x),
+            }
+        }
+
+        ring.add(4);
+
+        for i in 0..100 {
+            match ring.get(&i) {
+                None => panic!("Key {i} has no shard"),
+                Some(x) => post_split.push(*x),
+            }
+        }
+
+        assert_ne!(pre_split, post_split);
+
+        for (x,y) in pre_split.iter().zip(post_split.iter()) {
+            if x != y {
+                assert_eq!(*y, 4);
+            }
+        }
+
+    }
 }
