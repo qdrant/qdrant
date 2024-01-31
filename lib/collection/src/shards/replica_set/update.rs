@@ -8,7 +8,7 @@ use itertools::Itertools as _;
 use super::{ReplicaSetState, ReplicaState, ShardReplicaSet};
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{CollectionError, CollectionResult, UpdateResult};
-use crate::operations::{CollectionUpdateOperations, OperationWithClockTag};
+use crate::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
 use crate::shards::shard::PeerId;
 use crate::shards::shard_trait::ShardOperation as _;
 
@@ -133,6 +133,8 @@ impl ShardReplicaSet {
         let all_res: Vec<Result<_, _>> = {
             let remotes = self.remotes.read().await;
             let local = self.local.read().await;
+            let mut clock = self.clock_set.lock().await.get_clock();
+
             let this_peer_id = self.this_peer_id();
 
             // target all remote peers that can receive updates
@@ -152,7 +154,8 @@ impl ShardReplicaSet {
                 )));
             }
 
-            let operation = OperationWithClockTag::from(operation); // TODO: Assign clock tag!
+            let clock_tag = ClockTag::new(this_peer_id, clock.id() as _, clock.tick_once());
+            let operation = OperationWithClockTag::new(operation, Some(clock_tag));
 
             let mut update_futures = Vec::with_capacity(active_remote_shards.len() + 1);
 
