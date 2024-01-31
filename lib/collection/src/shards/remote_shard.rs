@@ -289,7 +289,7 @@ impl RemoteShard {
                 PointOperations::SyncPoints(operation) => {
                     let request = &internal_sync_points(
                         shard_id,
-                        operation.clock_tag,
+                        None, // TODO!?
                         collection_name,
                         operation,
                         wait,
