@@ -9,7 +9,8 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::*;
 use collection::operations::CollectionUpdateOperations;
 use collection::{discovery, recommendations};
-use futures::future::try_join_all;
+use futures::stream::FuturesUnordered;
+use futures::TryStreamExt as _;
 use segment::types::{ScoredPoint, ShardKey};
 
 use super::TableOfContent;
@@ -246,6 +247,12 @@ impl TableOfContent {
             .map_err(|err| err.into())
     }
 
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
+    ///
+    /// When it is cancelled, the operation may not be applied on some shard keys. But, all nodes
+    /// are guaranteed to be consistent.
     async fn _update_shard_keys(
         collection: &Collection,
         shard_keys: Vec<ShardKey>,
@@ -253,22 +260,27 @@ impl TableOfContent {
         wait: bool,
         ordering: WriteOrdering,
     ) -> Result<UpdateResult, StorageError> {
-        if shard_keys.is_empty() {
-            return Err(StorageError::bad_input("Empty shard keys selection"));
-        }
+        // `Collection::update_from_client` is cancel safe, so this method is cancel safe.
 
-        let updates: Vec<_> = shard_keys
+        let updates: FuturesUnordered<_> = shard_keys
             .into_iter()
             .map(|shard_key| {
                 collection.update_from_client(operation.clone(), wait, ordering, Some(shard_key))
             })
             .collect();
 
-        let results = try_join_all(updates).await?;
+        // `Collection::update_from_client` is cancel safe, so it's safe to use `TryStreamExt::try_collect`
+        let results: Vec<_> = updates.try_collect().await?;
 
-        Ok(results.into_iter().next().unwrap())
+        results
+            .into_iter()
+            .next()
+            .ok_or_else(|| StorageError::bad_input("Empty shard keys selection"))
     }
 
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
     pub async fn update(
         &self,
         collection_name: &str,
@@ -277,6 +289,9 @@ impl TableOfContent {
         ordering: WriteOrdering,
         shard_selector: ShardSelectorInternal,
     ) -> Result<UpdateResult, StorageError> {
+        // `TableOfContent::_update_shard_keys` and `Collection::update_from_*` are cancel safe,
+        // so this method is cancel safe.
+
         let collection = self.get_collection(collection_name).await?;
 
         // Ordered operation flow:
@@ -303,26 +318,30 @@ impl TableOfContent {
         // │ Updating node     │ <- update_from_peer
         // └───────────────────┘
 
-        let _rate_limit = match &self.update_rate_limiter {
-            None => None,
-            Some(rate_limiter) => {
+        let _update_rate_limiter = match &self.update_rate_limiter {
+            Some(update_rate_limiter) => {
                 // We only want to rate limit the first node in the chain
                 if !shard_selector.is_shard_id() {
-                    Some(rate_limiter.acquire().await)
+                    Some(update_rate_limiter.acquire().await)
                 } else {
                     None
                 }
             }
+
+            None => None,
         };
+
         if operation.is_write_operation() {
             self.check_write_lock()?;
         }
+
         let res = match shard_selector {
             ShardSelectorInternal::Empty => {
                 collection
                     .update_from_client(operation, wait, ordering, None)
                     .await?
             }
+
             ShardSelectorInternal::All => {
                 let shard_keys = collection.get_shard_keys().await;
                 if shard_keys.is_empty() {
@@ -334,20 +353,24 @@ impl TableOfContent {
                         .await?
                 }
             }
+
             ShardSelectorInternal::ShardKey(shard_key) => {
                 collection
                     .update_from_client(operation, wait, ordering, Some(shard_key))
                     .await?
             }
+
             ShardSelectorInternal::ShardKeys(shard_keys) => {
                 Self::_update_shard_keys(&collection, shard_keys, operation, wait, ordering).await?
             }
+
             ShardSelectorInternal::ShardId(shard_selection) => {
                 collection
                     .update_from_peer(operation, shard_selection, wait, ordering)
                     .await?
             }
         };
+
         Ok(res)
     }
 }

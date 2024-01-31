@@ -44,7 +44,7 @@ impl Points for PointsService {
         request: Request<UpsertPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
-        upsert(self.dispatcher.as_ref(), request.into_inner(), None).await
+        upsert(self.dispatcher.toc().clone(), request.into_inner(), None).await
     }
 
     async fn delete(
@@ -52,7 +52,7 @@ impl Points for PointsService {
         request: Request<DeletePoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
-        delete(self.dispatcher.as_ref(), request.into_inner(), None).await
+        delete(self.dispatcher.toc().clone(), request.into_inner(), None).await
     }
 
     async fn get(&self, request: Request<GetPoints>) -> Result<Response<GetResponse>, Status> {
@@ -65,7 +65,7 @@ impl Points for PointsService {
         request: Request<UpdatePointVectors>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
-        update_vectors(self.dispatcher.as_ref(), request.into_inner(), None).await
+        update_vectors(self.dispatcher.toc().clone(), request.into_inner(), None).await
     }
 
     async fn delete_vectors(
@@ -73,7 +73,7 @@ impl Points for PointsService {
         request: Request<DeletePointVectors>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
-        delete_vectors(self.dispatcher.as_ref(), request.into_inner(), None).await
+        delete_vectors(self.dispatcher.toc().clone(), request.into_inner(), None).await
     }
 
     async fn set_payload(
@@ -81,7 +81,7 @@ impl Points for PointsService {
         request: Request<SetPayloadPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
-        set_payload(self.dispatcher.as_ref(), request.into_inner(), None).await
+        set_payload(self.dispatcher.toc().clone(), request.into_inner(), None).await
     }
 
     async fn overwrite_payload(
@@ -89,7 +89,7 @@ impl Points for PointsService {
         request: Request<SetPayloadPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
-        overwrite_payload(self.dispatcher.as_ref(), request.into_inner(), None).await
+        overwrite_payload(self.dispatcher.toc().clone(), request.into_inner(), None).await
     }
 
     async fn delete_payload(
@@ -97,7 +97,7 @@ impl Points for PointsService {
         request: Request<DeletePayloadPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
-        delete_payload(self.dispatcher.as_ref(), request.into_inner(), None).await
+        delete_payload(self.dispatcher.toc().clone(), request.into_inner(), None).await
     }
 
     async fn clear_payload(
@@ -105,7 +105,7 @@ impl Points for PointsService {
         request: Request<ClearPayloadPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
-        clear_payload(self.dispatcher.as_ref(), request.into_inner(), None).await
+        clear_payload(self.dispatcher.toc().clone(), request.into_inner(), None).await
     }
 
     async fn update_batch(
@@ -113,7 +113,7 @@ impl Points for PointsService {
         request: Request<UpdateBatchPoints>,
     ) -> Result<Response<UpdateBatchResponse>, Status> {
         validate(request.get_ref())?;
-        update_batch(self.dispatcher.as_ref(), request.into_inner(), None).await
+        update_batch(self.dispatcher.toc().clone(), request.into_inner(), None).await
     }
 
     async fn create_field_index(
@@ -121,7 +121,7 @@ impl Points for PointsService {
         request: Request<CreateFieldIndexCollection>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
-        create_field_index(self.dispatcher.as_ref(), request.into_inner(), None).await
+        create_field_index(self.dispatcher.clone(), request.into_inner(), None).await
     }
 
     async fn delete_field_index(
@@ -129,7 +129,7 @@ impl Points for PointsService {
         request: Request<DeleteFieldIndexCollection>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
-        delete_field_index(self.dispatcher.as_ref(), request.into_inner(), None).await
+        delete_field_index(self.dispatcher.clone(), request.into_inner(), None).await
     }
 
     async fn search(
