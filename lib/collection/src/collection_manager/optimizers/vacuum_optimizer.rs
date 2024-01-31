@@ -220,9 +220,11 @@ mod tests {
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
 
+    use common::cpu::CpuPermit;
     use itertools::Itertools;
     use parking_lot::RwLock;
     use segment::entry::entry_point::SegmentEntry;
+    use segment::index::hnsw_index::num_rayon_threads;
     use segment::types::{Distance, PayloadContainer, PayloadSchemaType};
     use serde_json::{json, Value};
     use tempfile::Builder;
@@ -323,10 +325,14 @@ mod tests {
         // Check that only one segment is selected for optimization
         assert_eq!(suggested_to_optimize.len(), 1);
 
+        let permit_cpu_count = num_rayon_threads(0);
+        let permit = CpuPermit::dummy(permit_cpu_count as u32);
+
         vacuum_optimizer
             .optimize(
                 locked_holder.clone(),
                 suggested_to_optimize,
+                permit,
                 &AtomicBool::new(false),
             )
             .unwrap();
@@ -445,6 +451,9 @@ mod tests {
             payload_m: None,
         };
 
+        let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
+        let permit = CpuPermit::dummy(permit_cpu_count as u32);
+
         // Optimizers used in test
         let index_optimizer = IndexingOptimizer::new(
             thresholds_config.clone(),
@@ -467,7 +476,12 @@ mod tests {
 
         // Use indexing optimizer to build index for vacuum index test
         let changed = index_optimizer
-            .optimize(locked_holder.clone(), vec![segment_id], &false.into())
+            .optimize(
+                locked_holder.clone(),
+                vec![segment_id],
+                permit,
+                &false.into(),
+            )
             .unwrap();
         assert!(changed, "optimizer should have rebuilt this segment");
         assert!(
@@ -572,11 +586,17 @@ mod tests {
             });
 
         // Run vacuum index optimizer, make sure it optimizes properly
+        let permit = CpuPermit::dummy(permit_cpu_count as u32);
         let suggested_to_optimize =
             vacuum_optimizer.check_condition(locked_holder.clone(), &Default::default());
         assert_eq!(suggested_to_optimize.len(), 1);
         let changed = vacuum_optimizer
-            .optimize(locked_holder.clone(), suggested_to_optimize, &false.into())
+            .optimize(
+                locked_holder.clone(),
+                suggested_to_optimize,
+                permit,
+                &false.into(),
+            )
             .unwrap();
         assert!(changed, "optimizer should have rebuilt this segment");
 

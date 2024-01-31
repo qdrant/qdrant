@@ -289,12 +289,14 @@ mod tests {
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
 
+    use common::cpu::CpuPermit;
     use itertools::Itertools;
     use parking_lot::lock_api::RwLock;
     use rand::thread_rng;
     use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
     use segment::entry::entry_point::SegmentEntry;
     use segment::fixtures::index_fixtures::random_vector;
+    use segment::index::hnsw_index::num_rayon_threads;
     use segment::types::{Distance, Payload, PayloadSchemaType};
     use serde_json::json;
     use tempfile::Builder;
@@ -384,8 +386,16 @@ mod tests {
             index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
         assert!(suggested_to_optimize.contains(&large_segment_id));
 
+        let permit_cpu_count = num_rayon_threads(0);
+        let permit = CpuPermit::dummy(permit_cpu_count as u32);
+
         index_optimizer
-            .optimize(locked_holder.clone(), suggested_to_optimize, &stopped)
+            .optimize(
+                locked_holder.clone(),
+                suggested_to_optimize,
+                permit,
+                &stopped,
+            )
             .unwrap();
 
         let infos = locked_holder
@@ -516,22 +526,36 @@ mod tests {
         )
         .unwrap();
 
+        let permit_cpu_count = num_rayon_threads(0);
+        let permit = CpuPermit::dummy(permit_cpu_count as u32);
+
         // ------ Plain -> Mmap & Indexed payload
         let suggested_to_optimize =
             index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
         assert!(suggested_to_optimize.contains(&large_segment_id));
         eprintln!("suggested_to_optimize = {suggested_to_optimize:#?}");
         index_optimizer
-            .optimize(locked_holder.clone(), suggested_to_optimize, &stopped)
+            .optimize(
+                locked_holder.clone(),
+                suggested_to_optimize,
+                permit,
+                &stopped,
+            )
             .unwrap();
         eprintln!("Done");
 
         // ------ Plain -> Indexed payload
+        let permit = CpuPermit::dummy(permit_cpu_count as u32);
         let suggested_to_optimize =
             index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
         assert!(suggested_to_optimize.contains(&middle_segment_id));
         index_optimizer
-            .optimize(locked_holder.clone(), suggested_to_optimize, &stopped)
+            .optimize(
+                locked_holder.clone(),
+                suggested_to_optimize,
+                permit,
+                &stopped,
+            )
             .unwrap();
 
         // ------- Keep smallest segment without changes
@@ -643,12 +667,18 @@ mod tests {
         // ---- New appendable segment should be created if none left
 
         // Index even the smallest segment
+        let permit = CpuPermit::dummy(permit_cpu_count as u32);
         index_optimizer.thresholds_config.indexing_threshold = 20;
         let suggested_to_optimize =
             index_optimizer.check_condition(locked_holder.clone(), &Default::default());
         assert!(suggested_to_optimize.contains(&small_segment_id));
         index_optimizer
-            .optimize(locked_holder.clone(), suggested_to_optimize, &stopped)
+            .optimize(
+                locked_holder.clone(),
+                suggested_to_optimize,
+                permit,
+                &stopped,
+            )
             .unwrap();
 
         let new_infos2 = locked_holder
@@ -823,9 +853,17 @@ mod tests {
             Default::default(),
         );
 
+        let permit_cpu_count = num_rayon_threads(0);
+        let permit = CpuPermit::dummy(permit_cpu_count as u32);
+
         // Use indexing optimizer to build mmap
         let changed = index_optimizer
-            .optimize(locked_holder.clone(), vec![segment_id], &false.into())
+            .optimize(
+                locked_holder.clone(),
+                vec![segment_id],
+                permit,
+                &false.into(),
+            )
             .unwrap();
         assert!(
             changed,

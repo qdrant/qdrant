@@ -469,9 +469,8 @@ impl From<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfig {
             memmap_threshold: optimizer_config.memmap_threshold.map(|x| x as usize),
             indexing_threshold: optimizer_config.indexing_threshold.map(|x| x as usize),
             flush_interval_sec: optimizer_config.flush_interval_sec.unwrap_or_default(),
-            max_optimization_threads: optimizer_config
-                .max_optimization_threads
-                .unwrap_or_default() as usize,
+            max_optimization_threads: optimizer_config.max_optimization_threads.unwrap_or(1)
+                as usize,
         }
     }
 }

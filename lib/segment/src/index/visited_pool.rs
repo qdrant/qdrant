@@ -11,7 +11,7 @@ lazy_static! {
     /// This limit is implemented to prevent memory leakage.
     /// It matches the number of logical CPU cores, to best represent the expected number of
     /// concurrent requests. Clamped between 16 and 128 to prevent extreme values.
-    static ref POOL_KEEP_LIMIT: usize = num_cpus::get().clamp(16, 128);
+    static ref POOL_KEEP_LIMIT: usize = common::cpu::get_num_cpus().clamp(16, 128);
 }
 
 /// Visited list handle is an owner of the `VisitedList`, which is returned by `VisitedPool` and returned back to it
