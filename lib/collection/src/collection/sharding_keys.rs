@@ -42,6 +42,9 @@ impl Collection {
         .await
     }
 
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
     pub async fn create_shard_key(
         &self,
         shard_key: ShardKey,

@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use api::grpc::conversions::proto_to_payloads;
@@ -90,7 +91,7 @@ pub(crate) fn convert_shard_selector_for_read(
 }
 
 pub async fn upsert(
-    toc: &TableOfContent,
+    toc: Arc<TableOfContent>,
     upsert_points: UpsertPoints,
     shard_selection: Option<ShardId>,
 ) -> Result<Response<PointsOperationResponse>, Status> {
@@ -112,7 +113,7 @@ pub async fn upsert(
     let timing = Instant::now();
     let result = do_upsert_points(
         toc,
-        &collection_name,
+        collection_name,
         operation,
         shard_selection,
         wait.unwrap_or(false),
@@ -126,7 +127,7 @@ pub async fn upsert(
 }
 
 pub async fn sync(
-    toc: &TableOfContent,
+    toc: Arc<TableOfContent>,
     sync_points: SyncPoints,
     shard_selection: Option<ShardId>,
 ) -> Result<Response<PointsOperationResponse>, Status> {
@@ -177,7 +178,7 @@ pub async fn sync(
 }
 
 pub async fn delete(
-    toc: &TableOfContent,
+    toc: Arc<TableOfContent>,
     delete_points: DeletePoints,
     shard_selection: Option<ShardId>,
 ) -> Result<Response<PointsOperationResponse>, Status> {
@@ -197,7 +198,7 @@ pub async fn delete(
     let timing = Instant::now();
     let result = do_delete_points(
         toc,
-        &collection_name,
+        collection_name,
         points_selector,
         shard_selection,
         wait.unwrap_or(false),
@@ -211,7 +212,7 @@ pub async fn delete(
 }
 
 pub async fn update_vectors(
-    toc: &TableOfContent,
+    toc: Arc<TableOfContent>,
     update_point_vectors: UpdatePointVectors,
     shard_selection: Option<ShardId>,
 ) -> Result<Response<PointsOperationResponse>, Status> {
@@ -245,7 +246,7 @@ pub async fn update_vectors(
     let timing = Instant::now();
     let result = do_update_vectors(
         toc,
-        &collection_name,
+        collection_name,
         operation,
         shard_selection,
         wait.unwrap_or(false),
@@ -259,7 +260,7 @@ pub async fn update_vectors(
 }
 
 pub async fn delete_vectors(
-    toc: &TableOfContent,
+    toc: Arc<TableOfContent>,
     delete_point_vectors: DeletePointVectors,
     shard_selection: Option<ShardId>,
 ) -> Result<Response<PointsOperationResponse>, Status> {
@@ -288,7 +289,7 @@ pub async fn delete_vectors(
     let timing = Instant::now();
     let result = do_delete_vectors(
         toc,
-        &collection_name,
+        collection_name,
         operation,
         shard_selection,
         wait.unwrap_or(false),
@@ -302,7 +303,7 @@ pub async fn delete_vectors(
 }
 
 pub async fn set_payload(
-    toc: &TableOfContent,
+    toc: Arc<TableOfContent>,
     set_payload_points: SetPayloadPoints,
     shard_selection: Option<ShardId>,
 ) -> Result<Response<PointsOperationResponse>, Status> {
@@ -326,7 +327,7 @@ pub async fn set_payload(
     let timing = Instant::now();
     let result = do_set_payload(
         toc,
-        &collection_name,
+        collection_name,
         operation,
         shard_selection,
         wait.unwrap_or(false),
@@ -340,7 +341,7 @@ pub async fn set_payload(
 }
 
 pub async fn overwrite_payload(
-    toc: &TableOfContent,
+    toc: Arc<TableOfContent>,
     set_payload_points: SetPayloadPoints,
     shard_selection: Option<ShardId>,
 ) -> Result<Response<PointsOperationResponse>, Status> {
@@ -364,7 +365,7 @@ pub async fn overwrite_payload(
     let timing = Instant::now();
     let result = do_overwrite_payload(
         toc,
-        &collection_name,
+        collection_name,
         operation,
         shard_selection,
         wait.unwrap_or(false),
@@ -378,7 +379,7 @@ pub async fn overwrite_payload(
 }
 
 pub async fn delete_payload(
-    toc: &TableOfContent,
+    toc: Arc<TableOfContent>,
     delete_payload_points: DeletePayloadPoints,
     shard_selection: Option<ShardId>,
 ) -> Result<Response<PointsOperationResponse>, Status> {
@@ -402,7 +403,7 @@ pub async fn delete_payload(
     let timing = Instant::now();
     let result = do_delete_payload(
         toc,
-        &collection_name,
+        collection_name,
         operation,
         shard_selection,
         wait.unwrap_or(false),
@@ -416,7 +417,7 @@ pub async fn delete_payload(
 }
 
 pub async fn clear_payload(
-    toc: &TableOfContent,
+    toc: Arc<TableOfContent>,
     clear_payload_points: ClearPayloadPoints,
     shard_selection: Option<ShardId>,
 ) -> Result<Response<PointsOperationResponse>, Status> {
@@ -436,7 +437,7 @@ pub async fn clear_payload(
     let timing = Instant::now();
     let result = do_clear_payload(
         toc,
-        &collection_name,
+        collection_name,
         points_selector,
         shard_selection,
         wait.unwrap_or(false),
@@ -450,7 +451,7 @@ pub async fn clear_payload(
 }
 
 pub async fn update_batch(
-    toc: &TableOfContent,
+    toc: Arc<TableOfContent>,
     update_batch_points: UpdateBatchPoints,
     shard_selection: Option<ShardId>,
 ) -> Result<Response<UpdateBatchResponse>, Status> {
@@ -475,7 +476,7 @@ pub async fn update_batch(
                 shard_key_selector,
             }) => {
                 upsert(
-                    toc,
+                    toc.clone(),
                     UpsertPoints {
                         collection_name,
                         points,
@@ -489,7 +490,7 @@ pub async fn update_batch(
             }
             points_update_operation::Operation::DeleteDeprecated(points) => {
                 delete(
-                    toc,
+                    toc.clone(),
                     DeletePoints {
                         collection_name,
                         wait,
@@ -509,7 +510,7 @@ pub async fn update_batch(
                 },
             ) => {
                 set_payload(
-                    toc,
+                    toc.clone(),
                     SetPayloadPoints {
                         collection_name,
                         wait,
@@ -530,7 +531,7 @@ pub async fn update_batch(
                 },
             ) => {
                 overwrite_payload(
-                    toc,
+                    toc.clone(),
                     SetPayloadPoints {
                         collection_name,
                         wait,
@@ -551,7 +552,7 @@ pub async fn update_batch(
                 },
             ) => {
                 delete_payload(
-                    toc,
+                    toc.clone(),
                     DeletePayloadPoints {
                         collection_name,
                         wait,
@@ -569,7 +570,7 @@ pub async fn update_batch(
                 shard_key_selector,
             }) => {
                 clear_payload(
-                    toc,
+                    toc.clone(),
                     ClearPayloadPoints {
                         collection_name,
                         wait,
@@ -588,7 +589,7 @@ pub async fn update_batch(
                 },
             ) => {
                 update_vectors(
-                    toc,
+                    toc.clone(),
                     UpdatePointVectors {
                         collection_name,
                         wait,
@@ -608,7 +609,7 @@ pub async fn update_batch(
                 },
             ) => {
                 delete_vectors(
-                    toc,
+                    toc.clone(),
                     DeletePointVectors {
                         collection_name,
                         wait,
@@ -623,7 +624,7 @@ pub async fn update_batch(
             }
             Operation::ClearPayloadDeprecated(selector) => {
                 clear_payload(
-                    toc,
+                    toc.clone(),
                     ClearPayloadPoints {
                         collection_name,
                         wait,
@@ -640,7 +641,7 @@ pub async fn update_batch(
                 shard_key_selector,
             }) => {
                 delete(
-                    toc,
+                    toc.clone(),
                     DeletePoints {
                         collection_name,
                         wait,
@@ -719,7 +720,7 @@ fn convert_field_type(
 }
 
 pub async fn create_field_index(
-    toc: &Dispatcher,
+    dispatcher: Arc<Dispatcher>,
     create_field_index_collection: CreateFieldIndexCollection,
     shard_selection: Option<ShardId>,
 ) -> Result<Response<PointsOperationResponse>, Status> {
@@ -741,8 +742,8 @@ pub async fn create_field_index(
 
     let timing = Instant::now();
     let result = do_create_index(
-        toc,
-        &collection_name,
+        dispatcher,
+        collection_name,
         operation,
         shard_selection,
         wait.unwrap_or(false),
@@ -756,7 +757,7 @@ pub async fn create_field_index(
 }
 
 pub async fn create_field_index_internal(
-    toc: &TableOfContent,
+    toc: Arc<TableOfContent>,
     create_field_index_collection: CreateFieldIndexCollection,
     shard_selection: Option<ShardId>,
 ) -> Result<Response<PointsOperationResponse>, Status> {
@@ -774,7 +775,7 @@ pub async fn create_field_index_internal(
     let timing = Instant::now();
     let result = do_create_index_internal(
         toc,
-        &collection_name,
+        collection_name,
         field_name,
         field_schema,
         shard_selection,
@@ -789,7 +790,7 @@ pub async fn create_field_index_internal(
 }
 
 pub async fn delete_field_index(
-    toc: &Dispatcher,
+    dispatcher: Arc<Dispatcher>,
     delete_field_index_collection: DeleteFieldIndexCollection,
     shard_selection: Option<ShardId>,
 ) -> Result<Response<PointsOperationResponse>, Status> {
@@ -802,8 +803,8 @@ pub async fn delete_field_index(
 
     let timing = Instant::now();
     let result = do_delete_index(
-        toc,
-        &collection_name,
+        dispatcher,
+        collection_name,
         field_name,
         shard_selection,
         wait.unwrap_or(false),
@@ -817,7 +818,7 @@ pub async fn delete_field_index(
 }
 
 pub async fn delete_field_index_internal(
-    toc: &TableOfContent,
+    toc: Arc<TableOfContent>,
     delete_field_index_collection: DeleteFieldIndexCollection,
     shard_selection: Option<ShardId>,
 ) -> Result<Response<PointsOperationResponse>, Status> {
@@ -831,7 +832,7 @@ pub async fn delete_field_index_internal(
     let timing = Instant::now();
     let result = do_delete_index_internal(
         toc,
-        &collection_name,
+        collection_name,
         field_name,
         shard_selection,
         wait.unwrap_or(false),

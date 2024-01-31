@@ -61,7 +61,7 @@ pub struct Collection {
     // Lock to temporary block collection update operations while the collection is being migrated.
     // Lock is acquired for read on update operation and can be acquired for write externally,
     // which will block all update operations until the lock is released.
-    updates_lock: RwLock<()>,
+    updates_lock: Arc<RwLock<()>>,
     // Update runtime handle.
     update_runtime: Handle,
     // Search runtime handle.
@@ -142,8 +142,8 @@ impl Collection {
             notify_peer_failure_cb: on_replica_failure.clone(),
             abort_shard_transfer_cb: abort_shard_transfer,
             init_time: start_time.elapsed(),
-            is_initialized: Arc::new(Default::default()),
-            updates_lock: RwLock::new(()),
+            is_initialized: Default::default(),
+            updates_lock: Default::default(),
             update_runtime: update_runtime.unwrap_or_else(Handle::current),
             search_runtime: search_runtime.unwrap_or_else(Handle::current),
         })
@@ -236,8 +236,8 @@ impl Collection {
             notify_peer_failure_cb: on_replica_failure,
             abort_shard_transfer_cb: abort_shard_transfer,
             init_time: start_time.elapsed(),
-            is_initialized: Arc::new(Default::default()),
-            updates_lock: RwLock::new(()),
+            is_initialized: Default::default(),
+            updates_lock: Default::default(),
             update_runtime: update_runtime.unwrap_or_else(Handle::current),
             search_runtime: search_runtime.unwrap_or_else(Handle::current),
         }
