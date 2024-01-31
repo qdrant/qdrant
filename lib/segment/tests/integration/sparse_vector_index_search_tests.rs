@@ -204,6 +204,7 @@ fn sparse_vector_index_consistent_with_storage() {
             sparse_vector_ram_index.vector_storage.clone(),
             sparse_vector_ram_index.payload_index.clone(),
             mmap_index_dir.path(),
+            &stopped,
         )
         .unwrap();
 
@@ -232,6 +233,7 @@ fn sparse_vector_index_consistent_with_storage() {
         sparse_vector_ram_index.vector_storage.clone(),
         sparse_vector_ram_index.payload_index.clone(),
         mmap_index_dir.path(),
+        &stopped,
     )
     .unwrap();
 
@@ -248,7 +250,13 @@ fn sparse_vector_index_consistent_with_storage() {
 fn sparse_vector_index_load_missing_mmap() {
     let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
     let sparse_vector_index: OperationResult<SparseVectorIndex<InvertedIndexMmap>> =
-        fixture_open_sparse_index(data_dir.path(), 0, 10_000, SparseIndexType::Mmap);
+        fixture_open_sparse_index(
+            data_dir.path(),
+            0,
+            10_000,
+            SparseIndexType::Mmap,
+            &AtomicBool::new(false),
+        );
     // absent configuration file for mmap are ignored
     // a new index is created
     assert!(sparse_vector_index.is_ok())
@@ -514,6 +522,7 @@ fn handling_empty_sparse_vectors() {
         NUM_VECTORS,
         DEFAULT_SPARSE_FULL_SCAN_THRESHOLD,
         SparseIndexType::ImmutableRam,
+        &stopped,
     )
     .unwrap();
     let mut borrowed_storage = sparse_vector_index.vector_storage.borrow_mut();
@@ -616,7 +625,7 @@ fn sparse_vector_index_persistence_test() {
 
     // persistence using rebuild of inverted index
     // for appendable segment vector index has to be rebuilt
-    let segment = load_segment(&path).unwrap().unwrap();
+    let segment = load_segment(&path, &stopped).unwrap().unwrap();
     let search_after_reload_result = segment
         .search(
             SPARSE_VECTOR_NAME,
@@ -650,6 +659,7 @@ fn sparse_vector_index_persistence_test() {
             .clone(),
         segment.payload_index.clone(),
         inverted_index_dir.path(),
+        &stopped,
     )
     .unwrap();
     // call build index to create inverted index files
@@ -670,6 +680,7 @@ fn sparse_vector_index_persistence_test() {
             .clone(),
         segment.payload_index.clone(),
         inverted_index_dir.path(),
+        &stopped,
     )
     .unwrap();
 
@@ -708,6 +719,7 @@ fn sparse_vector_index_persistence_test() {
                 .clone(),
             segment.payload_index.clone(),
             inverted_index_dir.path(),
+            &stopped,
         )
         .unwrap();
     // call build index to create inverted index files
@@ -729,6 +741,7 @@ fn sparse_vector_index_persistence_test() {
             .clone(),
         segment.payload_index.clone(),
         inverted_index_dir.path(),
+        &stopped,
     )
     .unwrap();
 
@@ -780,6 +793,7 @@ fn sparse_vector_index_files() {
             sparse_vector_ram_index.vector_storage.clone(),
             sparse_vector_ram_index.payload_index.clone(),
             mmap_index_dir.path(),
+            &stopped,
         )
         .unwrap();
 
@@ -809,6 +823,7 @@ fn sparse_vector_index_files() {
             sparse_vector_ram_index.vector_storage.clone(),
             sparse_vector_ram_index.payload_index.clone(),
             mutable_index_dir.path(),
+            &stopped,
         )
         .unwrap();
 

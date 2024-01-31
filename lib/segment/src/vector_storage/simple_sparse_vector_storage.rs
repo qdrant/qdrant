@@ -45,6 +45,7 @@ struct StoredRecord {
 pub fn open_simple_sparse_vector_storage(
     database: Arc<RwLock<DB>>,
     database_column_name: &str,
+    stopped: &AtomicBool,
 ) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
     let (mut deleted, mut deleted_count) = (BitVec::new(), 0);
     let db_wrapper = DatabaseColumnWrapper::new(database, database_column_name);
@@ -65,6 +66,8 @@ pub fn open_simple_sparse_vector_storage(
         }
         total_vector_count = std::cmp::max(total_vector_count, point_id as usize + 1);
         total_sparse_size += stored_record.vector.values.len();
+
+        check_process_stopped(stopped)?;
     }
 
     Ok(Arc::new(AtomicRefCell::new(

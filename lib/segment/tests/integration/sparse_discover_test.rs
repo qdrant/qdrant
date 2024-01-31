@@ -173,6 +173,7 @@ fn sparse_index_discover_test() {
         vector_storage.clone(),
         payload_index_ptr.clone(),
         index_dir.path(),
+        &stopped,
     )
     .unwrap();
 

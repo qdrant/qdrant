@@ -29,6 +29,7 @@ pub fn fixture_open_sparse_index<I: InvertedIndex>(
     num_vectors: usize,
     full_scan_threshold: usize,
     index_type: SparseIndexType,
+    stopped: &AtomicBool,
 ) -> OperationResult<SparseVectorIndex<I>> {
     // directories
     let index_dir = &data_dir.join("index");
@@ -48,7 +49,7 @@ pub fn fixture_open_sparse_index<I: InvertedIndex>(
     let wrapped_payload_index = Arc::new(AtomicRefCell::new(payload_index));
 
     let db = open_db(storage_dir, &[DB_VECTOR_CF]).unwrap();
-    let vector_storage = open_simple_sparse_vector_storage(db, DB_VECTOR_CF)?;
+    let vector_storage = open_simple_sparse_vector_storage(db, DB_VECTOR_CF, stopped)?;
     let mut borrowed_storage = vector_storage.borrow_mut();
 
     // add empty points to storage
@@ -73,6 +74,7 @@ pub fn fixture_open_sparse_index<I: InvertedIndex>(
         vector_storage.clone(),
         wrapped_payload_index,
         index_dir,
+        stopped,
     )?;
 
     Ok(sparse_vector_index)
@@ -92,6 +94,7 @@ pub fn fixture_sparse_index_ram<R: Rng + ?Sized>(
         num_vectors,
         full_scan_threshold,
         SparseIndexType::ImmutableRam,
+        stopped,
     )
     .unwrap();
     let mut borrowed_storage = sparse_vector_index.vector_storage.borrow_mut();

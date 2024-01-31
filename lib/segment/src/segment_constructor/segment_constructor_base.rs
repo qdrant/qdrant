@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
@@ -11,7 +12,7 @@ use semver::Version;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use crate::common::version::StorageVersion;
 use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
@@ -69,6 +70,7 @@ fn create_segment(
     version: Option<SeqNumberType>,
     segment_path: &Path,
     config: &SegmentConfig,
+    stopped: &AtomicBool,
 ) -> OperationResult<Segment> {
     let vector_db_names: Vec<String> = config
         .vector_data
@@ -126,6 +128,7 @@ fn create_segment(
                     &db_column_name,
                     vector_config.size,
                     vector_config.distance,
+                    stopped,
                 )?
             }
             // Mmap on disk, not appendable
@@ -139,6 +142,7 @@ fn create_segment(
                 &vector_storage_path,
                 vector_config.size,
                 vector_config.distance,
+                stopped,
             )?,
         };
 
@@ -192,6 +196,8 @@ fn create_segment(
             }),
         };
 
+        check_process_stopped(stopped)?;
+
         vector_data.insert(
             vector_name.to_owned(),
             VectorData {
@@ -207,7 +213,8 @@ fn create_segment(
         let vector_index_path = get_vector_index_path(segment_path, vector_name);
 
         let db_column_name = get_vector_name_with_prefix(DB_VECTOR_CF, vector_name);
-        let vector_storage = open_simple_sparse_vector_storage(database.clone(), &db_column_name)?;
+        let vector_storage =
+            open_simple_sparse_vector_storage(database.clone(), &db_column_name, stopped)?;
 
         // Warn when number of points between ID tracker and storage differs
         let point_count = id_tracker.borrow().total_point_count();
@@ -226,6 +233,7 @@ fn create_segment(
                 vector_storage.clone(),
                 payload_index.clone(),
                 &vector_index_path,
+                stopped,
             )?)),
             SparseIndexType::MutableRam | SparseIndexType::ImmutableRam => {
                 sp(VectorIndexEnum::SparseRam(SparseVectorIndex::open(
@@ -234,9 +242,12 @@ fn create_segment(
                     vector_storage.clone(),
                     payload_index.clone(),
                     &vector_index_path,
+                    stopped,
                 )?))
             }
         };
+
+        check_process_stopped(stopped)?;
 
         vector_data.insert(
             vector_name.to_owned(),
@@ -270,7 +281,7 @@ fn create_segment(
     })
 }
 
-pub fn load_segment(path: &Path) -> OperationResult<Option<Segment>> {
+pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option<Segment>> {
     if path
         .extension()
         .and_then(|ext| ext.to_str())
@@ -324,7 +335,7 @@ pub fn load_segment(path: &Path) -> OperationResult<Option<Segment>> {
 
     let segment_state = Segment::load_state(path)?;
 
-    let segment = create_segment(segment_state.version, path, &segment_state.config)?;
+    let segment = create_segment(segment_state.version, path, &segment_state.config, stopped)?;
 
     Ok(Some(segment))
 }
@@ -346,7 +357,7 @@ pub fn build_segment(path: &Path, config: &SegmentConfig, ready: bool) -> Operat
 
     std::fs::create_dir_all(&segment_path)?;
 
-    let segment = create_segment(None, &segment_path, config)?;
+    let segment = create_segment(None, &segment_path, config, &AtomicBool::new(false))?;
     segment.save_current_state()?;
 
     // Version is the last file to save, as it will be used to check if segment was built correctly.
