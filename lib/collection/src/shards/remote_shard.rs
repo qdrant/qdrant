@@ -229,7 +229,7 @@ impl RemoteShard {
         &self,
         shard_id: Option<ShardId>,
         collection_name: String,
-        with_meta: OperationWithClockTag,
+        operation: OperationWithClockTag,
         wait: bool,
         ordering: Option<WriteOrdering>,
     ) -> CollectionResult<UpdateResult> {
@@ -239,12 +239,12 @@ impl RemoteShard {
         let mut timer = ScopeDurationMeasurer::new(&self.telemetry_update_durations);
         timer.set_success(false);
 
-        let point_operation_response = match with_meta.operation {
+        let point_operation_response = match operation.operation {
             CollectionUpdateOperations::PointOperation(point_ops) => match point_ops {
                 PointOperations::UpsertPoints(point_insert_operations) => {
                     let request = &internal_upsert_points(
                         shard_id,
-                        with_meta.clock_tag,
+                        operation.clock_tag,
                         collection_name,
                         point_insert_operations,
                         wait,
@@ -259,7 +259,7 @@ impl RemoteShard {
                 PointOperations::DeletePoints { ids } => {
                     let request = &internal_delete_points(
                         shard_id,
-                        with_meta.clock_tag,
+                        operation.clock_tag,
                         collection_name,
                         ids,
                         wait,
@@ -274,7 +274,7 @@ impl RemoteShard {
                 PointOperations::DeletePointsByFilter(filter) => {
                     let request = &internal_delete_points_by_filter(
                         shard_id,
-                        with_meta.clock_tag,
+                        operation.clock_tag,
                         collection_name,
                         filter,
                         wait,
@@ -289,7 +289,7 @@ impl RemoteShard {
                 PointOperations::SyncPoints(operation) => {
                     let request = &internal_sync_points(
                         shard_id,
-                        with_meta.clock_tag,
+                        operation.clock_tag,
                         collection_name,
                         operation,
                         wait,
@@ -306,7 +306,7 @@ impl RemoteShard {
                 VectorOperations::UpdateVectors(update_operation) => {
                     let request = &internal_update_vectors(
                         shard_id,
-                        with_meta.clock_tag,
+                        operation.clock_tag,
                         collection_name,
                         update_operation,
                         wait,
@@ -323,7 +323,7 @@ impl RemoteShard {
                 VectorOperations::DeleteVectors(ids, vector_names) => {
                     let request = &internal_delete_vectors(
                         shard_id,
-                        with_meta.clock_tag,
+                        operation.clock_tag,
                         collection_name,
                         ids.points,
                         vector_names.clone(),
@@ -341,7 +341,7 @@ impl RemoteShard {
                 VectorOperations::DeleteVectorsByFilter(filter, vector_names) => {
                     let request = &internal_delete_vectors_by_filter(
                         shard_id,
-                        with_meta.clock_tag,
+                        operation.clock_tag,
                         collection_name,
                         filter,
                         vector_names.clone(),
@@ -361,7 +361,7 @@ impl RemoteShard {
                 PayloadOps::SetPayload(set_payload) => {
                     let request = &internal_set_payload(
                         shard_id,
-                        with_meta.clock_tag,
+                        operation.clock_tag,
                         collection_name,
                         set_payload,
                         wait,
@@ -378,7 +378,7 @@ impl RemoteShard {
                 PayloadOps::DeletePayload(delete_payload) => {
                     let request = &internal_delete_payload(
                         shard_id,
-                        with_meta.clock_tag,
+                        operation.clock_tag,
                         collection_name,
                         delete_payload,
                         wait,
@@ -395,7 +395,7 @@ impl RemoteShard {
                 PayloadOps::ClearPayload { points } => {
                     let request = &internal_clear_payload(
                         shard_id,
-                        with_meta.clock_tag,
+                        operation.clock_tag,
                         collection_name,
                         points,
                         wait,
@@ -412,7 +412,7 @@ impl RemoteShard {
                 PayloadOps::ClearPayloadByFilter(filter) => {
                     let request = &internal_clear_payload_by_filter(
                         shard_id,
-                        with_meta.clock_tag,
+                        operation.clock_tag,
                         collection_name,
                         filter,
                         wait,
@@ -429,7 +429,7 @@ impl RemoteShard {
                 PayloadOps::OverwritePayload(set_payload) => {
                     let request = &internal_set_payload(
                         shard_id,
-                        with_meta.clock_tag,
+                        operation.clock_tag,
                         collection_name,
                         set_payload,
                         wait,
@@ -449,7 +449,7 @@ impl RemoteShard {
                 FieldIndexOperations::CreateIndex(create_index) => {
                     let request = &internal_create_index(
                         shard_id,
-                        with_meta.clock_tag,
+                        operation.clock_tag,
                         collection_name,
                         create_index,
                         wait,
@@ -466,7 +466,7 @@ impl RemoteShard {
                 FieldIndexOperations::DeleteIndex(delete_index) => {
                     let request = &internal_delete_index(
                         shard_id,
-                        with_meta.clock_tag,
+                        operation.clock_tag,
                         collection_name,
                         delete_index,
                         wait,

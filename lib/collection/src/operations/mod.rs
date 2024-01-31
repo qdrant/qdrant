@@ -83,17 +83,17 @@ impl ClockTag {
 }
 
 impl From<api::grpc::qdrant::ClockTag> for ClockTag {
-    fn from(meta: api::grpc::qdrant::ClockTag) -> Self {
-        Self::new(meta.peer_id, meta.clock_id, meta.clock_tick)
+    fn from(tag: api::grpc::qdrant::ClockTag) -> Self {
+        Self::new(tag.peer_id, tag.clock_id, tag.clock_tick)
     }
 }
 
 impl From<ClockTag> for api::grpc::qdrant::ClockTag {
-    fn from(meta: ClockTag) -> Self {
+    fn from(tag: ClockTag) -> Self {
         Self {
-            peer_id: meta.peer_id,
-            clock_id: meta.clock_id,
-            clock_tick: meta.clock_tick,
+            peer_id: tag.peer_id,
+            clock_id: tag.clock_id,
+            clock_tick: tag.clock_tick,
         }
     }
 }

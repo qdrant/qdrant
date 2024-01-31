@@ -247,6 +247,8 @@ pub async fn do_delete_vectors(
     wait: bool,
     ordering: WriteOrdering,
 ) -> Result<UpdateResult, StorageError> {
+    // TODO: Is this cancel safe!?
+
     let DeleteVectors {
         vector,
         filter,
@@ -263,7 +265,9 @@ pub async fn do_delete_vectors(
     if let Some(filter) = filter {
         let vectors_operation =
             VectorOperations::DeleteVectorsByFilter(filter, vector_names.clone());
+
         let collection_operation = CollectionUpdateOperations::VectorOperation(vectors_operation);
+
         result = Some(
             toc.update(
                 &collection_name,

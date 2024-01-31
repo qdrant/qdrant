@@ -346,6 +346,7 @@ impl TableOfContent {
                     .update_from_client(operation.operation, wait, ordering, None)
                     .await?
             }
+
             ShardSelectorInternal::All => {
                 let shard_keys = collection.get_shard_keys().await;
                 if shard_keys.is_empty() {
@@ -363,11 +364,13 @@ impl TableOfContent {
                     .await?
                 }
             }
+
             ShardSelectorInternal::ShardKey(shard_key) => {
                 collection
                     .update_from_client(operation.operation, wait, ordering, Some(shard_key))
                     .await?
             }
+
             ShardSelectorInternal::ShardKeys(shard_keys) => {
                 Self::_update_shard_keys(
                     &collection,
@@ -378,6 +381,7 @@ impl TableOfContent {
                 )
                 .await?
             }
+
             ShardSelectorInternal::ShardId(shard_selection) => {
                 collection
                     .update_from_peer(operation, shard_selection, wait, ordering)
