@@ -69,7 +69,7 @@ pub fn validate_collection_name(value: &str) -> Result<(), ValidationError> {
 }
 
 /// Validate a polygon has at least 4 points and is closed.
-pub fn validate_geo_polygon<T>(points: &Vec<T>) -> Result<(), ValidationError>
+pub fn validate_geo_polygon<T>(points: &[T]) -> Result<(), ValidationError>
 where
     T: PartialEq,
 {
