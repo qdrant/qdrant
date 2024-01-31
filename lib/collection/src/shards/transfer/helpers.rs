@@ -96,9 +96,14 @@ pub fn validate_transfer(
         )));
     }
 
-    if shard_state.get(&transfer.from) != Some(&ReplicaState::Active) {
+    // Only allow transfers from active or listeners peers
+    if shard_state
+        .get(&transfer.from)
+        .map(|replica_state| replica_state.is_active_or_listener())
+        .unwrap_or(false)
+    {
         return Err(CollectionError::bad_request(format!(
-            "Shard {} is not active on peer {}",
+            "Shard {} is not active or in listener mode on peer {}",
             transfer.shard_id, transfer.from,
         )));
     }
