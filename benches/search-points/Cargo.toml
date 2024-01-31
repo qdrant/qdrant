@@ -9,7 +9,7 @@ publish = false
 anyhow = "1.0"
 qdrant-client = { version = "0.11", default-features = false }
 rand = "0.8"
-tokio = { version = "1.23", features = ["rt"] }
+tokio = { workspace = true }
 
 [dependencies.criterion]
 version = "0.3"

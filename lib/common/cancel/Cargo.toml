@@ -11,5 +11,5 @@ publish = false
 
 [dependencies]
 thiserror = "1.0"
-tokio = "1.35"
-tokio-util = "0.7"
+tokio = { workspace = true }
+tokio-util = { workspace = true }

@@ -12,5 +12,5 @@ publish = false
 [dependencies]
 memmap2 = "0.9.4"
 log = "0.4"
-parking_lot = "0.12.1"
-serde = { version = "1", features = ["derive"] }
+parking_lot = { workspace = true }
+serde = { workspace = true }

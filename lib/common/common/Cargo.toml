@@ -11,7 +11,7 @@ publish = false
 
 [dependencies]
 ordered-float = "4.2"
-serde = { version = "~1.0", features = ["derive"] }
+serde = { workspace = true }
 validator = { version = "0.16", features = ["derive"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
