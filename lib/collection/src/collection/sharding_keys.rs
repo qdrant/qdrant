@@ -37,11 +37,15 @@ impl Collection {
             self.channel_service.clone(),
             self.update_runtime.clone(),
             self.search_runtime.clone(),
+            self.optimizer_cpu_budget.clone(),
             Some(ReplicaState::Active),
         )
         .await
     }
 
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
     pub async fn create_shard_key(
         &self,
         shard_key: ShardKey,

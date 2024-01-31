@@ -111,6 +111,7 @@
     - [CountResponse](#qdrant-CountResponse)
     - [CountResult](#qdrant-CountResult)
     - [CreateFieldIndexCollection](#qdrant-CreateFieldIndexCollection)
+    - [DatetimeRange](#qdrant-DatetimeRange)
     - [DeleteFieldIndexCollection](#qdrant-DeleteFieldIndexCollection)
     - [DeletePayloadPoints](#qdrant-DeletePayloadPoints)
     - [DeletePointVectors](#qdrant-DeletePointVectors)
@@ -1459,6 +1460,7 @@ Note: 1kB = 1 vector of size 256. |
 | Geo | 4 |  |
 | Text | 5 |  |
 | Bool | 6 |  |
+| Datetime | 7 |  |
 
 
 
@@ -1902,6 +1904,24 @@ The JSON representation for `Value` is a JSON value.
 
 
 
+<a name="qdrant-DatetimeRange"></a>
+
+### DatetimeRange
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| lt | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional |  |
+| gt | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional |  |
+| gte | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional |  |
+| lte | [google.protobuf.Timestamp](#google-protobuf-Timestamp) | optional |  |
+
+
+
+
+
+
 <a name="qdrant-DeleteFieldIndexCollection"></a>
 
 ### DeleteFieldIndexCollection
@@ -2072,6 +2092,7 @@ The JSON representation for `Value` is a JSON value.
 | geo_radius | [GeoRadius](#qdrant-GeoRadius) |  | Check if geo point is within a given radius |
 | values_count | [ValuesCount](#qdrant-ValuesCount) |  | Check number of values for a specific field |
 | geo_polygon | [GeoPolygon](#qdrant-GeoPolygon) |  | Check if geo point is within a given polygon |
+| datetime_range | [DatetimeRange](#qdrant-DatetimeRange) |  | Check if datetime is within a given range |
 
 
 
@@ -3488,6 +3509,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | FieldTypeGeo | 3 |  |
 | FieldTypeText | 4 |  |
 | FieldTypeBool | 5 |  |
+| FieldTypeDatetime | 6 |  |
 
 
 

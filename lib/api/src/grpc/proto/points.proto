@@ -3,8 +3,9 @@ syntax = "proto3";
 package qdrant;
 option csharp_namespace = "Qdrant.Client.Grpc";
 
-import "json_with_int.proto";
 import "collections.proto";
+import "google/protobuf/timestamp.proto";
+import "json_with_int.proto";
 
 
 enum WriteOrderingType {
@@ -145,6 +146,7 @@ enum FieldType {
   FieldTypeGeo = 3;
   FieldTypeText = 4;
   FieldTypeBool = 5;
+  FieldTypeDatetime = 6;
 }
 
 message CreateFieldIndexCollection {
@@ -204,12 +206,12 @@ message WithVectorsSelector {
 message QuantizationSearchParams {
   /*
   If set to true, search will ignore quantized vector data
-   */
+  */
   optional bool ignore = 1;
 
   /*
   If true, use original vectors to re-score top-k results. If ignored, qdrant decides automatically does rescore enabled or not.
-   */
+  */
   optional bool rescore = 2;
 
   /*
@@ -220,7 +222,7 @@ message QuantizationSearchParams {
 
   For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will be pre-selected using quantized index,
   and then top-100 will be returned after re-scoring.
-   */
+  */
   optional double oversampling = 3;
 }
 
@@ -228,7 +230,7 @@ message SearchParams {
   /*
   Params relevant to HNSW index. Size of the beam in a beam-search.
   Larger the value - more accurate the result, more time required for search.
-   */
+  */
   optional uint64 hnsw_ef = 1;
 
   /*
@@ -244,7 +246,7 @@ message SearchParams {
   If enabled, the engine will only perform search among indexed or small segments.
   Using this option prevents slow searches in case of delayed index, but does not
   guarantee that all uploaded vectors will be included in search results
-   */
+  */
   optional bool indexed_only = 4;
 }
 
@@ -661,6 +663,7 @@ message FieldCondition {
   GeoRadius geo_radius = 5; // Check if geo point is within a given radius
   ValuesCount values_count = 6; // Check number of values for a specific field
   GeoPolygon geo_polygon = 7; // Check if geo point is within a given polygon
+  DatetimeRange datetime_range = 8; // Check if datetime is within a given range
 }
 
 message Match {
@@ -689,6 +692,13 @@ message Range {
   optional double gt = 2;
   optional double gte = 3;
   optional double lte = 4;
+}
+
+message DatetimeRange {
+  optional google.protobuf.Timestamp lt = 1;
+  optional google.protobuf.Timestamp gt = 2;
+  optional google.protobuf.Timestamp gte = 3;
+  optional google.protobuf.Timestamp lte = 4;
 }
 
 message GeoBoundingBox {

@@ -152,11 +152,16 @@ impl QueueProxyShard {
 #[async_trait]
 impl ShardOperation for QueueProxyShard {
     /// Update `wrapped_shard` while keeping track of operations
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
     async fn update(
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
+        // `Inner::update` is cancel safe, so this is also cancel safe.
         self.inner
             .as_ref()
             .expect("Queue proxy has been finalized")
@@ -381,12 +386,19 @@ impl Inner {
 #[async_trait]
 impl ShardOperation for Inner {
     /// Update `wrapped_shard` while keeping track of operations
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
     async fn update(
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
+        // `LocalShard::update` is cancel safe, so this is also cancel safe.
+
         let _update_lock = self.update_lock.lock().await;
+
         let local_shard = &self.wrapped_shard;
         // Shard update is within a write lock scope, because we need a way to block the shard updates
         // during the transfer restart and finalization.

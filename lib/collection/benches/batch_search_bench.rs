@@ -13,6 +13,7 @@ use collection::operations::CollectionUpdateOperations;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::local_shard::LocalShard;
 use collection::shards::shard_trait::ShardOperation;
+use common::cpu::CpuBudget;
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::thread_rng;
 use segment::data_types::vectors::only_default_vector;
@@ -97,6 +98,7 @@ fn batch_search_bench(c: &mut Criterion) {
             shared_config,
             Default::default(),
             handle.clone(),
+            CpuBudget::default(),
         ))
         .unwrap();
 

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use futures::{future, TryFutureExt, TryStreamExt as _};
+use futures::stream::FuturesUnordered;
+use futures::{future, StreamExt as _, TryFutureExt, TryStreamExt as _};
 use itertools::Itertools as _;
 use segment::types::{ShardKey, WithPayload, WithPayloadInterface};
 use validator::Validate as _;
@@ -16,22 +17,48 @@ use crate::shards::shard::ShardId;
 impl Collection {
     /// Apply collection update operation to all local shards.
     /// Return None if there are no local shards
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
     pub async fn update_all_local(
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
     ) -> CollectionResult<Option<UpdateResult>> {
-        let _update_lock = self.updates_lock.read().await;
-        let shard_holder_guard = self.shards_holder.read().await;
+        let update_lock = self.updates_lock.clone().read_owned().await;
+        let shard_holder = self.shards_holder.clone().read_owned().await;
 
-        let res: Vec<_> = shard_holder_guard
-            .all_shards()
-            .map(|shard| shard.update_local(operation.clone(), wait))
-            .collect();
+        let results = tokio::task::spawn(async move {
+            let _update_lock = update_lock;
 
-        let results: Vec<_> = future::try_join_all(res).await?;
+            // `ShardReplicaSet::update_local` is *not* cancel safe, so we *have to* execute *all*
+            // `update_local` requests to completion.
+            //
+            // Note that `futures::try_join_all`/`TryStreamExt::try_collect` *cancel* pending
+            // requests if any of them returns an error, so we *have to* use
+            // `futures::join_all`/`TryStreamExt::collect` instead!
 
-        let result = results.into_iter().flatten().next();
+            let local_updates: FuturesUnordered<_> = shard_holder
+                .all_shards()
+                .map(|shard| shard.update_local(operation.clone(), wait))
+                .collect();
+
+            let results: Vec<_> = local_updates.collect().await;
+
+            results
+        })
+        .await?;
+
+        let mut result = None;
+
+        for collection_result in results {
+            let update_result = collection_result?;
+
+            if result.is_none() && update_result.is_some() {
+                result = update_result;
+            }
+        }
 
         Ok(result)
     }
@@ -39,6 +66,10 @@ impl Collection {
     /// Handle collection updates from peers.
     ///
     /// Shard transfer aware.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
     pub async fn update_from_peer(
         &self,
         operation: CollectionUpdateOperations,
@@ -46,23 +77,28 @@ impl Collection {
         wait: bool,
         ordering: WriteOrdering,
     ) -> CollectionResult<UpdateResult> {
-        let _update_lock = self.updates_lock.read().await;
-        let shard_holder_guard = self.shards_holder.read().await;
+        let update_lock = self.updates_lock.clone().read_owned().await;
+        let shard_holder = self.shards_holder.clone().read_owned().await;
 
-        let res = match shard_holder_guard.get_shard(&shard_selection) {
-            None => None,
-            Some(target_shard) => match ordering {
-                WriteOrdering::Weak => target_shard.update_local(operation, wait).await?,
-                WriteOrdering::Medium | WriteOrdering::Strong => Some(
-                    target_shard
-                        .update_with_consistency(operation, wait, ordering)
-                        .await?,
-                ),
-            },
-        };
+        let result = tokio::task::spawn(async move {
+            let _update_lock = update_lock;
 
-        if let Some(res) = res {
-            Ok(res)
+            let Some(shard) = shard_holder.get_shard(&shard_selection) else {
+                return Ok(None);
+            };
+
+            match ordering {
+                WriteOrdering::Weak => shard.update_local(operation, wait).await,
+                WriteOrdering::Medium | WriteOrdering::Strong => shard
+                    .update_with_consistency(operation, wait, ordering)
+                    .await
+                    .map(Some),
+            }
+        })
+        .await??;
+
+        if let Some(result) = result {
+            Ok(result)
         } else {
             Err(CollectionError::service_error(format!(
                 "No target shard {shard_selection} found for update"
@@ -70,16 +106,9 @@ impl Collection {
         }
     }
 
-    pub async fn update_from_client_simple(
-        &self,
-        operation: CollectionUpdateOperations,
-        wait: bool,
-        ordering: WriteOrdering,
-    ) -> CollectionResult<UpdateResult> {
-        self.update_from_client(operation, wait, ordering, None)
-            .await
-    }
-
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
     pub async fn update_from_client(
         &self,
         operation: CollectionUpdateOperations,
@@ -88,25 +117,32 @@ impl Collection {
         shard_keys_selection: Option<ShardKey>,
     ) -> CollectionResult<UpdateResult> {
         operation.validate()?;
-        let _update_lock = self.updates_lock.read().await;
 
-        let mut results = {
-            let shards_holder = self.shards_holder.read().await;
-            let shard_to_op = shards_holder.split_by_shard(operation, &shard_keys_selection)?;
+        let update_lock = self.updates_lock.clone().read_owned().await;
+        let shard_holder = self.shards_holder.clone().read_owned().await;
 
-            if shard_to_op.is_empty() {
-                return Err(CollectionError::bad_request(
-                    "Empty update request".to_string(),
-                ));
-            }
+        let mut results = tokio::task::spawn(async move {
+            let _update_lock = update_lock;
 
-            let shard_requests = shard_to_op
+            let updates: FuturesUnordered<_> = shard_holder
+                .split_by_shard(operation, &shard_keys_selection)?
                 .into_iter()
-                .map(move |(replica_set, operation)| {
-                    replica_set.update_with_consistency(operation, wait, ordering)
-                });
-            future::join_all(shard_requests).await
-        };
+                .map(move |(shard, operation)| {
+                    shard.update_with_consistency(operation, wait, ordering)
+                })
+                .collect();
+
+            let results: Vec<_> = updates.collect().await;
+
+            CollectionResult::Ok(results)
+        })
+        .await??;
+
+        if results.is_empty() {
+            return Err(CollectionError::bad_request(
+                "Empty update request".to_string(),
+            ));
+        }
 
         let with_error = results.iter().filter(|result| result.is_err()).count();
 
@@ -134,6 +170,19 @@ impl Collection {
             // At least one result is always present.
             results.pop().unwrap()
         }
+    }
+
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
+    pub async fn update_from_client_simple(
+        &self,
+        operation: CollectionUpdateOperations,
+        wait: bool,
+        ordering: WriteOrdering,
+    ) -> CollectionResult<UpdateResult> {
+        self.update_from_client(operation, wait, ordering, None)
+            .await
     }
 
     pub async fn scroll_by(

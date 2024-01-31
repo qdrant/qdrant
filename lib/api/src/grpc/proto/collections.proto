@@ -103,6 +103,7 @@ enum PayloadSchemaType {
   Geo = 4;
   Text = 5;
   Bool = 6;
+  Datetime = 7;
 }
 
 enum QuantizationType {
@@ -126,7 +127,7 @@ message OptimizerStatus {
 message HnswConfigDiff {
   /*
   Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
-   */
+  */
   optional uint64 m = 1;
   /*
   Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build the index.
@@ -141,15 +142,15 @@ message HnswConfigDiff {
   optional uint64 full_scan_threshold = 3;
   /*
   Number of parallel threads used for background index building. If 0 - auto selection.
-   */
+  */
   optional uint64 max_indexing_threads = 4;
   /*
   Store HNSW index on disk. If set to false, the index will be stored in RAM.
-   */
+  */
   optional bool on_disk = 5;
   /*
-   Number of additional payload-aware links per node in the index graph. If not set - regular M parameter will be used.
-   */
+  Number of additional payload-aware links per node in the index graph. If not set - regular M parameter will be used.
+  */
   optional uint64 payload_m = 6;
 }
 
@@ -173,11 +174,11 @@ message WalConfigDiff {
 message OptimizersConfigDiff {
   /*
   The minimal fraction of deleted vectors in a segment, required to perform segment optimization
-   */
+  */
   optional double deleted_threshold = 1;
   /*
   The minimal number of vectors in a segment, required to perform segment optimization
-   */
+  */
   optional uint64 vacuum_min_vector_number = 2;
   /*
   Target amount of segments the optimizer will try to keep.
@@ -194,7 +195,7 @@ message OptimizersConfigDiff {
   Do not create segments larger this size (in kilobytes).
   Large segments might require disproportionately long indexation times,
   therefore it makes sense to limit the size of segments.
-    
+
   If indexing speed is more important - make this parameter lower.
   If search speed is more important - make this parameter higher.
   Note: 1Kb = 1 vector of size 256
@@ -214,11 +215,11 @@ message OptimizersConfigDiff {
   optional uint64 memmap_threshold = 5;
   /*
   Maximum size (in kilobytes) of vectors allowed for plain index, exceeding this threshold will enable vector indexing
-  
+
   Default value is 20,000, based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>.
-  
+
   To disable vector indexing, set to `0`.
-  
+
   Note: 1kB = 1 vector of size 256.
   */
   optional uint64 indexing_threshold = 6;

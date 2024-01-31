@@ -22,29 +22,6 @@ use crate::types::{Condition, Filter};
 /// # Result
 ///
 /// * `CardinalityEstimation` - new cardinality estimation
-///
-/// # Example
-///
-/// ```
-/// use segment::index::field_index::CardinalityEstimation;
-/// let estimation = CardinalityEstimation {
-///    primary_clauses: vec![],
-///   min: 0,
-///   exp: 64,
-///   max: 100
-/// };
-///
-/// let new_estimation = segment::index::query_estimator::adjust_to_available_vectors(
-///     estimation,
-///     50,
-///     200
-/// );
-///
-/// assert_eq!(new_estimation.min, 0);
-/// assert_eq!(new_estimation.exp, 16);
-/// assert_eq!(new_estimation.max, 50);
-///
-/// ```
 pub fn adjust_to_available_vectors(
     estimation: CardinalityEstimation,
     available_vectors: usize,
@@ -270,6 +247,7 @@ mod tests {
         Condition::Field(FieldCondition {
             key,
             r#match: None,
+            datetime_range: None,
             range: None,
             geo_bounding_box: None,
             geo_radius: None,
@@ -484,5 +462,21 @@ mod tests {
 
         let res = combine_must_estimations(&estimations, 10_000);
         eprintln!("res = {res:#?}");
+    }
+
+    #[test]
+    fn test_adjust_to_available_vectors() {
+        let estimation = CardinalityEstimation {
+            primary_clauses: vec![],
+            min: 0,
+            exp: 64,
+            max: 100,
+        };
+
+        let new_estimation = adjust_to_available_vectors(estimation, 50, 200);
+
+        assert_eq!(new_estimation.min, 0);
+        assert_eq!(new_estimation.exp, 16);
+        assert_eq!(new_estimation.max, 50);
     }
 }

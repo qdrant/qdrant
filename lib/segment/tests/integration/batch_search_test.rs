@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
+use common::cpu::CpuPermit;
 use rand::prelude::StdRng;
 use rand::SeedableRng;
 use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
@@ -9,6 +11,7 @@ use segment::fixtures::index_fixtures::random_vector;
 use segment::fixtures::payload_fixtures::random_int_payload;
 use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::hnsw::HNSWIndex;
+use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::VectorIndex;
 use segment::segment_constructor::build_segment;
 use segment::types::{
@@ -140,6 +143,9 @@ fn test_batch_and_single_request_equivalency() {
         payload_m: None,
     };
 
+    let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
+    let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
+
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
     let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
     let mut hnsw_index = HNSWIndex::<GraphLinksRam>::open(
@@ -152,7 +158,7 @@ fn test_batch_and_single_request_equivalency() {
     )
     .unwrap();
 
-    hnsw_index.build_index(&stopped).unwrap();
+    hnsw_index.build_index(permit, &stopped).unwrap();
 
     for _ in 0..10 {
         let query_vector_1 = random_vector(&mut rnd, dim).into();

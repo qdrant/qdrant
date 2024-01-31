@@ -499,7 +499,7 @@ fn search_in_segment(
 
 fn execute_batch_search(
     segment: &LockedSegment,
-    vectors_batch: &Vec<QueryVector>,
+    vectors_batch: &[QueryVector],
     search_params: &BatchSearchParams,
     use_sampling: bool,
     total_points: usize,

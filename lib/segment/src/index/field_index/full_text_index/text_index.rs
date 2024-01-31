@@ -244,20 +244,9 @@ mod tests {
     use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
     use crate::common::utils::MultiValue;
     use crate::data_types::text_index::{TextIndexType, TokenizerType};
-    use crate::types::MatchText;
 
     fn filter_request(text: &str) -> FieldCondition {
-        FieldCondition {
-            key: "text".to_owned(),
-            r#match: Some(Match::Text(MatchText {
-                text: text.to_owned(),
-            })),
-            range: None,
-            geo_bounding_box: None,
-            geo_radius: None,
-            values_count: None,
-            geo_polygon: None,
-        }
+        FieldCondition::new_match("text", Match::new_text(text))
     }
 
     #[test]

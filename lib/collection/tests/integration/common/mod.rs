@@ -12,6 +12,7 @@ use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::{AbortShardTransfer, ChangePeerState, ReplicaState};
 use collection::shards::CollectionId;
+use common::cpu::CpuBudget;
 use segment::types::Distance;
 
 /// Test collections for this upper bound of shards.
@@ -109,6 +110,7 @@ pub async fn new_local_collection(
         dummy_abort_shard_transfer(),
         None,
         None,
+        CpuBudget::default(),
     )
     .await;
 
@@ -124,7 +126,7 @@ pub async fn new_local_collection(
 }
 
 /// Default to a collection with all the shards local
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn load_local_collection(
     id: CollectionId,
     path: &Path,
@@ -142,6 +144,7 @@ pub async fn load_local_collection(
         dummy_abort_shard_transfer(),
         None,
         None,
+        CpuBudget::default(),
     )
     .await
 }
