@@ -5872,7 +5872,8 @@
           "float",
           "geo",
           "text",
-          "bool"
+          "bool",
+          "datetime"
         ]
       },
       "PayloadSchemaParams": {
@@ -6454,6 +6455,17 @@
               }
             ]
           },
+          "datetime_range": {
+            "description": "Check if datetime is within a given range",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DatetimeRange"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "geo_bounding_box": {
             "description": "Check if points geo location lies in a given area",
             "anyOf": [
@@ -6622,6 +6634,36 @@
             "description": "point.key <= range.lte",
             "type": "number",
             "format": "double",
+            "nullable": true
+          }
+        }
+      },
+      "DatetimeRange": {
+        "description": "Range filter request",
+        "type": "object",
+        "properties": {
+          "lt": {
+            "description": "point.key < range.lt",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "gt": {
+            "description": "point.key > range.gt",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "gte": {
+            "description": "point.key >= range.gte",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lte": {
+            "description": "point.key <= range.lte",
+            "type": "string",
+            "format": "date-time",
             "nullable": true
           }
         }
