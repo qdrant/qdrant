@@ -49,10 +49,7 @@ impl Collection {
     {
         // Select transfer method
         if shard_transfer.method.is_none() {
-            let method = self
-                .shared_storage_config
-                .default_shard_transfer_method
-                .unwrap_or_default();
+            let method = ShardTransferMethod::WalDelta;
             log::warn!("No shard transfer method selected, defaulting to {method:?}");
             shard_transfer.method.replace(method);
         }
@@ -83,6 +80,7 @@ impl Collection {
                 ShardTransferMethod::StreamRecords => ReplicaState::Partial,
                 // TODO(1.9): switch into recovery state instead
                 ShardTransferMethod::Snapshot => ReplicaState::PartialSnapshot,
+                ShardTransferMethod::WalDelta => ReplicaState::Partial,
             };
 
             // Create local shard if it does not exist on receiver, or simply set replica state otherwise

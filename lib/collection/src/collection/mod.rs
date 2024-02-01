@@ -37,7 +37,7 @@ use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::{shard_not_found_error, LockedShardHolder, ShardHolder};
 use crate::shards::transfer::helpers::check_transfer_conflicts_strict;
 use crate::shards::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool};
-use crate::shards::transfer::ShardTransfer;
+use crate::shards::transfer::{ShardTransfer, ShardTransferMethod};
 use crate::shards::{replica_set, CollectionId};
 use crate::telemetry::CollectionTelemetry;
 
@@ -570,12 +570,8 @@ impl Collection {
                     to: *this_peer_id,
                     shard_id,
                     sync: true,
-                    // For automatic shard transfers, always select some default method from this point on
-                    method: Some(
-                        self.shared_storage_config
-                            .default_shard_transfer_method
-                            .unwrap_or_default(),
-                    ),
+                    // For automatic shard transfers, always attempt diff transfer from this point on
+                    method: Some(ShardTransferMethod::WalDelta),
                 };
 
                 if check_transfer_conflicts_strict(&transfer, transfers.iter()).is_some() {
