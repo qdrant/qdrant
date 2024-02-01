@@ -12,29 +12,28 @@ use crate::types::{
 pub struct UnindexedField {
     field_name: String,
     field_schemas: Vec<PayloadFieldSchema>,
-    collection: String,
+    collection_name: String,
 }
-
+impl UnindexedField {
+    pub fn get_code(collection_name: &str, field_name: &str) -> CodeType {
+        format!("UNINDEXED_FIELD:{collection_name}:{field_name}")
+    }
+}
 impl Issue for UnindexedField {
     fn code(&self) -> CodeType {
-        format!(
-            "UNINDEXED_FIELD,{},{},{}",
-            self.collection,
-            self.field_name,
-            serde_json::to_string(&self.field_schemas).unwrap()
-        )
+        Self::get_code(&self.collection_name, &self.field_name)
     }
 
     fn description(&self) -> String {
         format!(
             "Unindexed field '{}' is slowing down queries in collection '{}'",
-            self.field_name, self.collection
+            self.field_name, self.collection_name
         )
     }
 
     fn solution(&self) -> Solution {
         let uri = match Uri::builder()
-            .path_and_query(format!("/collection/{}/indexes", self.collection).as_str())
+            .path_and_query(format!("/collections/{}/index", self.collection_name).as_str())
             .build()
         {
             Ok(uri) => uri,
@@ -52,10 +51,10 @@ impl Issue for UnindexedField {
             ImmediateSolution {
                 message: format!(
                     "Create an index on field '{}' of schema '{}' in collection '{}'. Check the documentation for more details: https://qdrant.tech/documentation/concepts/indexing/#payload-index",
-                    self.field_name, serde_json::to_string(&field_schema).unwrap(), self.collection
+                    self.field_name, serde_json::to_string(&field_schema).unwrap(), self.collection_name
                 ),
                 action: Action {
-                    method: Method::POST,
+                    method: Method::PUT,
                     uri: uri.clone(),
                     headers: HeaderMap::new(),
                     body: Some(request_body),
@@ -150,10 +149,11 @@ impl TryFrom<(FieldCondition, String)> for UnindexedField {
     type Error = OperationError;
 
     /// Try to form an issue from a field condition and a collection name
-    /// 
+    ///
     /// # Failures
-    /// 
-    /// Will fail if the field condition cannot be used for inferring an appropriate schema
+    ///
+    /// Will fail if the field condition cannot be used for inferring an appropriate schema.
+    /// For example, when there is no index that can be built to improve performance.
     fn try_from(condition_collection_tuple: (FieldCondition, String)) -> Result<Self, Self::Error> {
         let (condition, collection) = condition_collection_tuple;
         let field_schemas = infer_type_from_field_condition(&condition);
@@ -167,7 +167,7 @@ impl TryFrom<(FieldCondition, String)> for UnindexedField {
         Ok(Self {
             field_name: condition.key,
             field_schemas,
-            collection,
+            collection_name: collection,
         })
     }
 }

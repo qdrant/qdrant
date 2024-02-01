@@ -17,6 +17,7 @@ use crate::common::telemetry_ops::requests_telemetry::{
 /// Contains selection of search, recommend and upsert endpoints.
 ///
 /// This array *must* be sorted.
+// TODO(luis) add discovery endpoints here, and also suggest looking at this on the endpoint ci checker
 const REST_ENDPOINT_WHITELIST: &[&str] = &[
     "/collections/{name}/index",
     "/collections/{name}/points",
