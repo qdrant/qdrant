@@ -11,9 +11,9 @@ use api::grpc::qdrant::shard_snapshots_client::ShardSnapshotsClient;
 use api::grpc::qdrant::{
     CollectionOperationResponse, CoreSearchBatchPointsInternal, CountPoints, CountPointsInternal,
     GetCollectionInfoRequest, GetCollectionInfoRequestInternal, GetPoints, GetPointsInternal,
-    HealthCheckRequest, InitiateShardTransferRequest, RecoverShardSnapshotRequest,
-    RecoverSnapshotResponse, ScrollPoints, ScrollPointsInternal, ShardSnapshotLocation,
-    WaitForShardStateRequest,
+    GetShardRecoveryPointRequest, GetShardRecoveryPointResponse, HealthCheckRequest,
+    InitiateShardTransferRequest, RecoverShardSnapshotRequest, RecoverSnapshotResponse,
+    ScrollPoints, ScrollPointsInternal, ShardSnapshotLocation, WaitForShardStateRequest,
 };
 use api::grpc::transport_channel_pool::{AddTimeout, MAX_GRPC_CHANNEL_TIMEOUT};
 use async_trait::async_trait;
@@ -548,6 +548,26 @@ impl RemoteShard {
                         shard_id,
                         state: api::grpc::qdrant::ReplicaState::from(state) as i32,
                         timeout: timeout.as_secs_f32().ceil() as u64,
+                    })
+                    .await
+            })
+            .await?
+            .into_inner();
+        Ok(res)
+    }
+
+    /// Request the recovery point on the remote shard
+    pub async fn shard_recovery_point(
+        &self,
+        collection_name: &str,
+        shard_id: ShardId,
+    ) -> CollectionResult<GetShardRecoveryPointResponse> {
+        let res = self
+            .with_collections_client(|mut client| async move {
+                client
+                    .get_shard_recovery_point(GetShardRecoveryPointRequest {
+                        collection_name: collection_name.into(),
+                        shard_id,
                     })
                     .await
             })
