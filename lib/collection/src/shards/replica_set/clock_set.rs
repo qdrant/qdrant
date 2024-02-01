@@ -1,3 +1,4 @@
+use std::cmp;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -46,18 +47,15 @@ impl ClockGuard {
         self.clock.tick_once()
     }
 
-    pub fn advance_to(&mut self, tick: u64) -> u64 {
-        self.clock.advance_to(tick)
+    pub fn advance_to(&mut self, new_tick: u64) -> u64 {
+        self.clock.advance_to(new_tick)
     }
 
     pub fn release(self) {
-        // Do not call `Clock::release` explicitly!
+        // Do not call `self.clock.release()` here!
         //
-        // `Drop` will be called when `self` goes out of scope at the end of this method
-        // and it will call `Clock::release`.
-        //
-        // If call `Clock::release` explicitly, then `ClockGuard::release` will call
-        // `Clock::release` *twice*! (Which is a bug! :D)
+        // `Drop` trait will automatically trigger `self.clock.release()`, when `self` goes out of
+        // scope at the end of the method.
     }
 }
 
@@ -85,8 +83,9 @@ impl Clock {
         self.clock.fetch_add(1, Ordering::Relaxed) + 1
     }
 
-    pub fn advance_to(&self, tick: u64) -> u64 {
-        self.clock.fetch_max(tick, Ordering::Relaxed)
+    pub fn advance_to(&self, new_tick: u64) -> u64 {
+        let current_tick = self.clock.fetch_max(new_tick, Ordering::Relaxed);
+        cmp::max(current_tick, new_tick)
     }
 
     pub fn lock(&self) -> bool {
