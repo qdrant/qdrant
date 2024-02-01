@@ -18,6 +18,10 @@ service CollectionsInternal {
   Wait for a shard to get into the given state
   */
   rpc WaitForShardState (WaitForShardStateRequest) returns (CollectionOperationResponse) {}
+  /*
+  Get shard recovery point
+  */
+  rpc GetShardRecoveryPoint (GetShardRecoveryPointRequest) returns (GetShardRecoveryPointResponse) {}
 }
 
 message GetCollectionInfoRequestInternal {
@@ -35,4 +39,15 @@ message WaitForShardStateRequest {
   uint32 shard_id = 2; // Id of the shard
   ReplicaState state = 3;  // Shard state to wait for
   uint64 timeout = 4; // Timeout in seconds
+}
+
+message GetShardRecoveryPointRequest {
+  string collection_name = 1; // Name of the collection
+  uint32 shard_id = 2; // Id of the shard
+}
+
+message GetShardRecoveryPointResponse {
+  // TODO: replace this with last seen clock map on remote
+  uint64 recovery_point = 1; // Recovery point of the shard
+  double time = 2; // Time spent to process
 }

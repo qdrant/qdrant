@@ -831,6 +831,14 @@ impl ShardReplicaSet {
 
         self.abort_shard_transfer_cb.deref()(transfer, reason)
     }
+
+    /// Get shard recovery point for WAL.
+    pub(crate) async fn shard_recovery_point(&self) -> CollectionResult<u64> {
+        let _local_shard = self.local.read().await;
+
+        // TODO: return actual recovery point here with right type
+        Ok(0)
+    }
 }
 
 /// Represents a replica set state

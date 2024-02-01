@@ -401,6 +401,19 @@ impl Collection {
         Ok(())
     }
 
+    pub async fn shard_recovery_point(&self, shard_id: ShardId) -> CollectionResult<u64> {
+        let shard_holder_read = self.shards_holder.read().await;
+
+        let shard = shard_holder_read.get_shard(&shard_id);
+        let Some(replica_set) = shard else {
+            return Err(CollectionError::NotFound {
+                what: "Shard {shard_id}".into(),
+            });
+        };
+
+        replica_set.shard_recovery_point().await
+    }
+
     pub async fn state(&self) -> State {
         let shards_holder = self.shards_holder.read().await;
         let transfers = shards_holder.shard_transfers.read().clone();
