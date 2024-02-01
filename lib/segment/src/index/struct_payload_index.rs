@@ -309,7 +309,18 @@ impl StructPayloadIndex {
             }
             Condition::Field(field_condition) => self
                 .estimate_field_condition(field_condition, nested_path)
-                .unwrap_or_else(|| CardinalityEstimation::unknown(self.available_point_count())),
+                .unwrap_or_else(|| {
+                    // Couldn't estimate cardinality, which means that there is no appropriate index
+                    // for the field, let's report an issue
+                    if let Ok(unindexed_field) = crate::problems::UnindexedField::try_from((
+                        field_condition.clone(),
+                        self.get_collection_name(),
+                    )) {
+                        issues::submit(unindexed_field);
+                    }
+
+                    CardinalityEstimation::unknown(self.available_point_count())
+                }),
         }
     }
 
@@ -330,6 +341,19 @@ impl StructPayloadIndex {
         segment_path: &Path,
     ) -> OperationResult<()> {
         crate::rocksdb_backup::restore(snapshot_path, &segment_path.join("payload_index"))
+    }
+
+    /// Hack to get collection name from the path, to avoid early refactoring on segment level
+    fn get_collection_name(&self) -> String {
+        // Root dir -> storage -> collections -> ⭐️collection_name⭐️
+        self.path
+            .components()
+            .nth(3)
+            .unwrap()
+            .as_os_str()
+            .to_str()
+            .unwrap()
+            .to_string()
     }
 }
 

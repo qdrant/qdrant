@@ -47,5 +47,5 @@ pub mod problems;
 mod solution;
 
 pub use dashboard::{all_issues, clear, solve, submit};
-pub use issue::{Issue, IssueRecord};
-pub use solution::Solution;
+pub use issue::{CodeType, Issue, IssueRecord};
+pub use solution::{Action, ImmediateSolution, Solution};
