@@ -71,11 +71,11 @@ impl ShardTransferKey {
 #[serde(rename_all = "snake_case")]
 pub enum ShardTransferMethod {
     /// Stream all shard records in batches until the whole shard is transferred.
-    #[default]
     StreamRecords,
     /// Snapshot the shard, transfer and restore it on the receiver.
     Snapshot,
     /// Attempt to transfer shard difference by WAL delta.
+    #[default]
     #[doc(hidden)]
     #[schemars(skip)]
     WalDelta,

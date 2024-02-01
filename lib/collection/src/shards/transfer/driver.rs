@@ -51,10 +51,7 @@ pub async fn transfer_shard(
     // Prepare the remote for receiving the shard, waits for the correct state on the remote
     remote_shard.initiate_transfer().await?;
 
-    match transfer_config
-        .method
-        .unwrap_or(ShardTransferMethod::WalDelta)
-    {
+    match transfer_config.method.unwrap_or_default() {
         // Transfer shard record in batches
         ShardTransferMethod::StreamRecords => {
             transfer_stream_records(shard_holder.clone(), progress, shard_id, remote_shard).await?;
@@ -76,17 +73,31 @@ pub async fn transfer_shard(
             .await?;
         }
 
-        // Attempt to transfer shard diff
+        // Attempt to transfer WAL delta
         ShardTransferMethod::WalDelta => {
-            transfer_wal_delta(
+            let result = transfer_wal_delta(
                 transfer_config,
                 shard_holder.clone(),
                 shard_id,
-                remote_shard,
+                remote_shard.clone(),
                 channel_service,
                 consensus,
             )
-            .await?;
+            .await;
+
+            // If WAL delta transfer failed, fall back to stream records
+            // TODO: fall back to preferred transfer method in config, snapshot transfer may be
+            // TODO: problematic if it expects a different shard replica set state
+            // TODO: let method = self.shared_storage_config
+            // TODO:     .default_shard_transfer_method
+            // TODO:     .unwrap_or_default();
+
+            if let Err(err) = result {
+                log::warn!(
+                    "Failed to do shard diff transfer, falling back to stream records: {err}"
+                );
+                transfer_stream_records(shard_holder.clone(), shard_id, remote_shard).await?;
+            }
         }
     }
 

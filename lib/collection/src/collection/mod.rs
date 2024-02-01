@@ -570,8 +570,8 @@ impl Collection {
                     to: *this_peer_id,
                     shard_id,
                     sync: true,
-                    // For automatic shard transfers, always attempt diff transfer from this point on
-                    method: Some(ShardTransferMethod::WalDelta),
+                    // For automatic shard transfers, always select some default method from this point on
+                    method: Some(ShardTransferMethod::default()),
                 };
 
                 if check_transfer_conflicts_strict(&transfer, transfers.iter()).is_some() {
