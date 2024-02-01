@@ -1,5 +1,3 @@
-import json
-
 import pytest
 
 from .helpers.helpers import request_with_validation
