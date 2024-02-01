@@ -18,6 +18,7 @@ pub mod helpers;
 pub mod snapshot;
 pub mod stream_records;
 pub mod transfer_tasks_pool;
+pub mod wal_delta;
 
 /// Number of retries for confirming a consensus operation.
 const CONSENSUS_CONFIRM_RETRIES: usize = 3;

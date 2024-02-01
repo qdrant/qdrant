@@ -1,0 +1,150 @@
+use std::sync::Arc;
+
+use common::defaults;
+use tokio::time::sleep;
+
+use super::{ShardTransfer, ShardTransferConsensus};
+use crate::operations::types::{CollectionError, CollectionResult};
+use crate::shards::channel_service::ChannelService;
+use crate::shards::remote_shard::RemoteShard;
+use crate::shards::replica_set::ReplicaState;
+use crate::shards::shard::{PeerId, ShardId};
+use crate::shards::shard_holder::LockedShardHolder;
+
+/// Orchestrate shard diff transfer
+///
+/// This is called on the sender and will arrange all that is needed for the shard diff transfer
+/// process to a receiver.
+///
+/// The order of operations here is critical for correctness. Explicit synchronization across nodes
+/// is used to ensure data consistency.
+///
+/// TODO: describe what happens in this function, similar to our snapshot transfer description
+///
+/// # Cancel safety
+///
+/// This function is cancel safe.
+///
+/// If cancelled - the remote shard may only be partially recovered/transferred and the local shard
+/// may be left in an unexpected state. This must be resolved manually in case of cancellation.
+pub(super) async fn _transfer_wal_delta(
+    transfer_config: ShardTransfer,
+    shard_holder: Arc<LockedShardHolder>,
+    shard_id: ShardId,
+    remote_shard: RemoteShard,
+    channel_service: ChannelService,
+    consensus: &dyn ShardTransferConsensus,
+    collection_name: &str,
+) -> CollectionResult<()> {
+    let remote_peer_id = remote_shard.peer_id;
+
+    log::debug!("Starting shard {shard_id} transfer to peer {remote_peer_id} using diff transfer");
+
+    // TODO: ask remote for recovery point
+
+    // TODO: find recovery point in local WAL
+
+    let shard_holder_read = shard_holder.read().await;
+
+    let transferring_shard = shard_holder_read.get_shard(&shard_id);
+    let Some(replica_set) = transferring_shard else {
+        return Err(CollectionError::service_error(format!(
+            "Shard {shard_id} cannot be queue proxied because it does not exist"
+        )));
+    };
+
+    // Queue proxy local shard
+    // TODO: we likely want a different proxy type here
+    replica_set
+        .queue_proxify_local(remote_shard.clone())
+        .await?;
+
+    debug_assert!(
+        replica_set.is_queue_proxy().await,
+        "Local shard must be a queue proxy",
+    );
+
+    // TODO: start transferring WAL to remote,
+
+    // Set shard state to Partial
+    log::trace!("Shard {shard_id} diff recovered on {remote_peer_id} for diff transfer, switching into next stage through consensus");
+    consensus
+        .snapshot_recovered_switch_to_partial_confirm_remote(
+            &transfer_config,
+            collection_name,
+            &remote_shard,
+        )
+        .await
+        .map_err(|err| {
+            CollectionError::service_error(format!(
+                "Can't switch shard {shard_id} to Partial state after diff transfer: {err}"
+            ))
+        })?;
+
+    // Transfer queued updates to remote, transform into forward proxy
+    // TODO: instead, clean up our custom proxy here and transfer WAL updates
+    log::trace!("Transfer all queue proxy updates and transform into forward proxy");
+    replica_set.queue_proxy_into_forward_proxy().await?;
+
+    // Wait for Partial state in our replica set
+    let partial_state = ReplicaState::Partial;
+    log::trace!("Wait for local shard to reach {partial_state:?} state");
+    replica_set
+        .wait_for_state(
+            transfer_config.to,
+            partial_state,
+            defaults::CONSENSUS_META_OP_WAIT,
+        )
+        .await
+        .map_err(|err| {
+            CollectionError::service_error(format!(
+                "Shard being transferred did not reach {partial_state:?} state in time: {err}",
+            ))
+        })?;
+
+    // Synchronize all nodes
+    await_consensus_sync(consensus, &channel_service, transfer_config.from).await;
+
+    log::debug!("Ending shard {shard_id} transfer to peer {remote_peer_id} using diff transfer");
+
+    Ok(())
+}
+
+/// Await for consensus to synchronize across all peers
+///
+/// This will take the current consensus state of this node. It then explicitly waits on all other
+/// nodes to reach the same (or later) consensus.
+///
+/// If awaiting on other nodes fails for any reason, this simply continues after the consensus
+/// timeout.
+///
+/// # Cancel safety
+///
+/// This function is cancel safe.
+// TODO: similar to shard snapshot transer, maybe we can reuse this
+async fn await_consensus_sync(
+    consensus: &dyn ShardTransferConsensus,
+    channel_service: &ChannelService,
+    this_peer_id: PeerId,
+) {
+    let sync_consensus = async {
+        let await_result = consensus
+            .await_consensus_sync(this_peer_id, channel_service)
+            .await;
+        if let Err(err) = &await_result {
+            log::warn!("All peers failed to synchronize consensus: {err}");
+        }
+        await_result
+    };
+    let timeout = sleep(defaults::CONSENSUS_META_OP_WAIT);
+
+    tokio::select! {
+        biased;
+        Ok(_) = sync_consensus => {
+            log::trace!("All peers reached consensus");
+        }
+        _ = timeout => {
+            log::warn!("All peers failed to synchronize consensus, continuing after timeout");
+        }
+    }
+}
