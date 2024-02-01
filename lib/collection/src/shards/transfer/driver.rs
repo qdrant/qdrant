@@ -9,6 +9,7 @@ use tokio::time::sleep;
 use super::snapshot::transfer_snapshot;
 use super::stream_records::transfer_stream_records;
 use super::transfer_tasks_pool::TransferTaskProgress;
+use super::wal_delta::transfer_wal_delta;
 use super::{ShardTransfer, ShardTransferConsensus, ShardTransferMethod};
 use crate::common::stoppable_task_async::{spawn_async_cancellable, CancellableAsyncTaskHandle};
 use crate::operations::types::CollectionResult;
@@ -50,14 +51,14 @@ pub async fn transfer_shard(
     // Prepare the remote for receiving the shard, waits for the correct state on the remote
     remote_shard.initiate_transfer().await?;
 
-    match transfer_config.method.unwrap_or_default() {
+    match transfer_config.method {
         // Transfer shard record in batches
-        ShardTransferMethod::StreamRecords => {
+        Some(ShardTransferMethod::StreamRecords) => {
             transfer_stream_records(shard_holder.clone(), progress, shard_id, remote_shard).await?;
         }
 
         // Transfer shard as snapshot
-        ShardTransferMethod::Snapshot => {
+        Some(ShardTransferMethod::Snapshot) => {
             transfer_snapshot(
                 transfer_config,
                 shard_holder.clone(),
@@ -68,6 +69,19 @@ pub async fn transfer_shard(
                 snapshots_path,
                 collection_name,
                 temp_dir,
+            )
+            .await?;
+        }
+
+        // Attempt to transfer shard diff
+        None => {
+            transfer_wal_delta(
+                transfer_config,
+                shard_holder.clone(),
+                shard_id,
+                remote_shard,
+                channel_service,
+                consensus,
             )
             .await?;
         }
