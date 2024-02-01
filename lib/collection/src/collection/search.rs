@@ -5,7 +5,10 @@ use std::time::Duration;
 use futures::{future, TryFutureExt};
 use segment::data_types::vectors::VectorStruct;
 use segment::spaces::tools;
-use segment::types::{ExtendedPointId, Order, ScoredPoint, WithPayloadInterface, WithVector};
+use segment::types::{
+    ExtendedPointId, Filter, Order, ScoredPoint, WithPayloadInterface, WithVector,
+};
+use tokio::time::Instant;
 
 use super::Collection;
 use crate::operations::consistency_params::ReadConsistency;
@@ -128,6 +131,8 @@ impl Collection {
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let request = Arc::new(request);
 
+        let instant = Instant::now();
+
         // query all shards concurrently
         let all_searches_res = {
             let shard_holder = self.shards_holder.read().await;
@@ -156,8 +161,23 @@ impl Collection {
             future::try_join_all(all_searches).await?
         };
 
-        self.merge_from_shards(all_searches_res, request, !shard_selection.is_shard_id())
-            .await
+        let result = self
+            .merge_from_shards(
+                all_searches_res,
+                Arc::clone(&request),
+                !shard_selection.is_shard_id(),
+            )
+            .await;
+
+        let filters = request
+            .searches
+            .iter()
+            .map(|req| req.filter.as_ref())
+            .collect::<Vec<_>>();
+
+        self.post_process_if_slow_request(instant.elapsed(), filters);
+
+        result
     }
 
     pub(crate) async fn fill_search_result_with_payload(
@@ -265,5 +285,28 @@ impl Collection {
             .collect::<CollectionResult<Vec<_>>>()?;
 
         Ok(top_results)
+    }
+
+    fn post_process_if_slow_request(&self, duration: Duration, filters: Vec<Option<&Filter>>) {
+        if duration > segment::problems::UnindexedField::slow_search_threshold() {
+            let Some(payload_schema) = self.payload_index_schema.try_read() else {
+                // Don't wait for read lock
+                return;
+            };
+
+            let filters = filters.into_iter().flatten().collect::<Vec<_>>();
+
+            if filters.is_empty() {
+                return;
+            }
+
+            for filter in filters {
+                segment::problems::UnindexedField::submit_possible_suspects(
+                    filter,
+                    &payload_schema.schema,
+                    self.id.clone(),
+                )
+            }
+        }
     }
 }

@@ -7,6 +7,7 @@ use collection::shards::collection_shard_distribution::CollectionShardDistributi
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::transfer::ShardTransfer;
 use collection::shards::{transfer, CollectionId};
+use segment::problems::UnindexedField;
 use uuid::Uuid;
 
 use super::TableOfContent;
@@ -178,6 +179,13 @@ impl TableOfContent {
                 .join(collection_name)
                 .with_extension(uuid);
             tokio::fs::rename(path, &deleted_path).await?;
+
+            // Solve all issues related to this collection
+            issues::solve_by_filter(|code| {
+                code.split('/')
+                    .nth(1)
+                    .map_or(false, |coll_name| coll_name == collection_name)
+            });
 
             // At this point collection is removed from memory and moved to ".deleted" folder.
             // Next time we load service the collection will not appear in the list of collections.
@@ -512,8 +520,15 @@ impl TableOfContent {
     ) -> Result<(), StorageError> {
         self.get_collection_unchecked(&operation.collection_name)
             .await?
-            .create_payload_index(operation.field_name, operation.field_schema)
+            .create_payload_index(operation.field_name.clone(), operation.field_schema)
             .await?;
+
+        // We can solve issues related to this missing index
+        issues::solve(UnindexedField::get_code(
+            &operation.collection_name,
+            &operation.field_name,
+        ));
+
         Ok(())
     }
 
