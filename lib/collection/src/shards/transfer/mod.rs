@@ -202,10 +202,48 @@ pub trait ShardTransferConsensus: Send + Sync {
 
         let (commit, term) = self.consensus_commit_term();
         log::trace!(
-            "Waiting on {other_peer_count} peer(s) to reach consensus (commit: {commit}, term: {term}) before finalizing shard snapshot transfer"
+            "Waiting on {other_peer_count} peer(s) to reach consensus (commit: {commit}, term: {term}) before finalizing shard transfer"
         );
         channel_service
             .await_commit_on_all_peers(this_peer_id, commit, term, defaults::CONSENSUS_META_OP_WAIT)
             .await
+    }
+}
+
+/// Await for consensus to synchronize across all peers
+///
+/// This will take the current consensus state of this node. It then explicitly waits on all other
+/// nodes to reach the same (or later) consensus.
+///
+/// If awaiting on other nodes fails for any reason, this simply continues after the consensus
+/// timeout.
+///
+/// # Cancel safety
+///
+/// This function is cancel safe.
+async fn await_consensus_sync(
+    consensus: &dyn ShardTransferConsensus,
+    channel_service: &ChannelService,
+    this_peer_id: PeerId,
+) {
+    let sync_consensus = async {
+        let await_result = consensus
+            .await_consensus_sync(this_peer_id, channel_service)
+            .await;
+        if let Err(err) = &await_result {
+            log::warn!("All peers failed to synchronize consensus: {err}");
+        }
+        await_result
+    };
+    let timeout = sleep(defaults::CONSENSUS_META_OP_WAIT);
+
+    tokio::select! {
+        biased;
+        Ok(_) = sync_consensus => {
+            log::trace!("All peers reached consensus");
+        }
+        _ = timeout => {
+            log::warn!("All peers failed to synchronize consensus, continuing after timeout");
+        }
     }
 }
