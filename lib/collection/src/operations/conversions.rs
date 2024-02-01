@@ -844,34 +844,72 @@ pub fn try_points_selector_from_grpc(
     }
 }
 
-impl From<UpdateResult> for api::grpc::qdrant::UpdateResult {
-    fn from(value: UpdateResult) -> Self {
+impl From<UpdateResult> for api::grpc::qdrant::UpdateResultInternal {
+    fn from(res: UpdateResult) -> Self {
         Self {
-            operation_id: value.operation_id,
-            status: match value.status {
-                UpdateStatus::Acknowledged => api::grpc::qdrant::UpdateStatus::Acknowledged as i32,
-                UpdateStatus::Completed => api::grpc::qdrant::UpdateStatus::Completed as i32,
-            },
+            operation_id: res.operation_id,
+            status: res.status.into(),
+            clock_tag: res.clock_tag.map(Into::into),
         }
+    }
+}
+
+impl From<UpdateResult> for api::grpc::qdrant::UpdateResult {
+    fn from(res: UpdateResult) -> Self {
+        api::grpc::qdrant::UpdateResultInternal::from(res).into()
+    }
+}
+
+impl TryFrom<api::grpc::qdrant::UpdateResultInternal> for UpdateResult {
+    type Error = Status;
+
+    fn try_from(res: api::grpc::qdrant::UpdateResultInternal) -> Result<Self, Self::Error> {
+        let res = Self {
+            operation_id: res.operation_id,
+            status: res.status.try_into()?,
+            clock_tag: res.clock_tag.map(Into::into),
+        };
+
+        Ok(res)
     }
 }
 
 impl TryFrom<api::grpc::qdrant::UpdateResult> for UpdateResult {
     type Error = Status;
 
-    fn try_from(value: api::grpc::qdrant::UpdateResult) -> Result<Self, Self::Error> {
-        Ok(Self {
-            operation_id: value.operation_id,
-            status: match value.status {
-                status if status == api::grpc::qdrant::UpdateStatus::Acknowledged as i32 => {
-                    UpdateStatus::Acknowledged
-                }
-                status if status == api::grpc::qdrant::UpdateStatus::Completed as i32 => {
-                    UpdateStatus::Completed
-                }
-                _ => return Err(Status::invalid_argument("Malformed UpdateStatus type")),
-            },
-        })
+    fn try_from(res: api::grpc::qdrant::UpdateResult) -> Result<Self, Self::Error> {
+        api::grpc::qdrant::UpdateResultInternal::from(res).try_into()
+    }
+}
+
+impl From<UpdateStatus> for i32 {
+    fn from(status: UpdateStatus) -> Self {
+        match status {
+            UpdateStatus::Acknowledged => api::grpc::qdrant::UpdateStatus::Acknowledged as i32,
+            UpdateStatus::Completed => api::grpc::qdrant::UpdateStatus::Completed as i32,
+        }
+    }
+}
+
+impl TryFrom<i32> for UpdateStatus {
+    type Error = Status;
+
+    fn try_from(status: i32) -> Result<Self, Self::Error> {
+        let status = api::grpc::qdrant::UpdateStatus::from_i32(status)
+            .ok_or_else(|| Status::invalid_argument("Malformed UpdateStatus type"))?;
+
+        let status = match status {
+            api::grpc::qdrant::UpdateStatus::Acknowledged => Self::Acknowledged,
+            api::grpc::qdrant::UpdateStatus::Completed => Self::Completed,
+
+            api::grpc::qdrant::UpdateStatus::UnknownUpdateStatus => {
+                return Err(Status::invalid_argument(
+                    "Malformed UpdateStatus type: update status is unknown",
+                ));
+            }
+        };
+
+        Ok(status)
     }
 }
 

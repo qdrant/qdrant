@@ -217,7 +217,7 @@ impl UpdateHandler {
             Some(first_failed_op) => {
                 let wal_lock = wal.lock();
                 for (op_num, operation) in wal_lock.read(first_failed_op) {
-                    CollectionUpdater::update(&segments, op_num, operation)?;
+                    CollectionUpdater::update(&segments, op_num, operation.operation)?;
                 }
             }
         };

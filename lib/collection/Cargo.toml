@@ -14,6 +14,7 @@ tracing = ["dep:tracing", "api/tracing", "segment/tracing"]
 [dev-dependencies]
 criterion = "0.5"
 rstest = "0.18.2"
+proptest = "1.4.0"
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
 pprof = { version = "0.12", features = ["flamegraph", "prost-codec"] }

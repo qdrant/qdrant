@@ -16,7 +16,9 @@ use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
     CountRequestInternal, CountResult, PointRequestInternal, Record, UpdateResult,
 };
-use crate::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
+use crate::operations::{
+    CollectionUpdateOperations, CreateIndex, FieldIndexOperations, OperationWithClockTag,
+};
 use crate::shards::local_shard::LocalShard;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard_trait::ShardOperation;
@@ -56,12 +58,13 @@ impl ForwardProxyShard {
             // TODO: Is cancelling `RemoteShard::update` safe for *receiver*?
             self.remote_shard
                 .update(
-                    CollectionUpdateOperations::FieldIndexOperation(
+                    // TODO: Assign clock tag!? 🤔
+                    OperationWithClockTag::from(CollectionUpdateOperations::FieldIndexOperation(
                         FieldIndexOperations::CreateIndex(CreateIndex {
                             field_name: index_key,
                             field_schema: Some(index_type.try_into()?),
                         }),
-                    ),
+                    )),
                     false,
                 )
                 .await?;
@@ -124,7 +127,7 @@ impl ForwardProxyShard {
 
         // TODO: Is cancelling `RemoteShard::update` safe for *receiver*?
         self.remote_shard
-            .update(insert_points_operation, wait)
+            .update(OperationWithClockTag::from(insert_points_operation), wait) // TODO: Assign clock tag!? 🤔
             .await?;
 
         Ok(next_page_offset)
@@ -168,7 +171,7 @@ impl ShardOperation for ForwardProxyShard {
     /// This method is *not* cancel safe.
     async fn update(
         &self,
-        operation: CollectionUpdateOperations,
+        operation: OperationWithClockTag,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
         // If we apply `local_shard` update, we *have to* execute `remote_shard` update to completion
