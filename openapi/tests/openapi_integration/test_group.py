@@ -1,5 +1,3 @@
-import json
-
 import pytest
 
 from .helpers.collection_setup import basic_collection_setup, drop_collection

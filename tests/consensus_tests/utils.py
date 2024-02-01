@@ -3,7 +3,7 @@ import os
 import shutil
 from subprocess import Popen
 import time
-from typing import Tuple, Callable, Dict, List, Optional
+from typing import Tuple, Callable, Dict, List
 import requests
 import socket
 from contextlib import closing
