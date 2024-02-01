@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use common::types::PointOffsetType;
+use issues::Issue;
 use log::debug;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -314,7 +315,10 @@ impl StructPayloadIndex {
                         field_condition.clone(),
                         self.get_collection_name(),
                     )) {
-                        issues::submit(unindexed_field);
+                        let description = unindexed_field.description();
+                        if issues::submit(unindexed_field) {
+                            log::warn!("Performance issue: {}", description);
+                        }
                     }
 
                     CardinalityEstimation::unknown(self.available_point_count())
