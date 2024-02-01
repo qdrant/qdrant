@@ -51,11 +51,9 @@ impl Collection {
             }),
         );
 
-        // This function is called from consensus, so we can't afford to wait for the result
-        // as indexation may take a long time
-        let wait = false;
-
-        let result = self.update_all_local(create_index_operation, wait).await?;
+        // This function is called from consensus, so we use `wait = false`, because we can't afford
+        // to wait for the result as indexation may take a long time
+        let result = self.update_all_local(create_index_operation, false).await?;
 
         Ok(result)
     }

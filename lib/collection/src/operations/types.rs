@@ -38,6 +38,7 @@ use tonic::codegen::http::uri::InvalidUri;
 use validator::{Validate, ValidationError, ValidationErrors};
 
 use super::config_diff::{self};
+use super::ClockTag;
 use crate::config::{CollectionConfig, CollectionParams};
 use crate::lookup::types::WithLookupInterface;
 use crate::operations::config_diff::{HnswConfigDiff, QuantizationConfigDiff};
@@ -256,8 +257,14 @@ pub struct UpdateResult {
     /// Sequential number of the operation
     #[serde(skip_serializing_if = "Option::is_none")]
     pub operation_id: Option<SeqNumberType>,
+
     /// Update status
     pub status: UpdateStatus,
+
+    /// Updated value for the external clock tick
+    /// Provided if incoming update request also specify clock tick
+    #[serde(skip)]
+    pub clock_tag: Option<ClockTag>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]

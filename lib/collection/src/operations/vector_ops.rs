@@ -23,7 +23,7 @@ pub struct UpdateVectors {
     pub shard_key: Option<ShardKeySelector>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
 pub struct PointVectors {
     /// Point id
     pub id: PointIdType,
@@ -61,7 +61,7 @@ pub struct DeleteVectors {
     pub shard_key: Option<ShardKeySelector>,
 }
 
-#[derive(Debug, Deserialize, Serialize, Validate, Clone)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Validate)]
 pub struct UpdateVectorsOp {
     /// Points with named vectors
     #[validate]
@@ -69,7 +69,7 @@ pub struct UpdateVectorsOp {
     pub points: Vec<PointVectors>,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum VectorOperations {
     /// Update vectors

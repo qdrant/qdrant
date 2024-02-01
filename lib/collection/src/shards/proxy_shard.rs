@@ -21,7 +21,7 @@ use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
     CountRequestInternal, CountResult, PointRequestInternal, Record, UpdateResult,
 };
-use crate::operations::CollectionUpdateOperations;
+use crate::operations::OperationWithClockTag;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::LocalShardTelemetry;
@@ -135,14 +135,14 @@ impl ShardOperation for ProxyShard {
     /// This method is *not* cancel safe.
     async fn update(
         &self,
-        operation: CollectionUpdateOperations,
+        operation: OperationWithClockTag,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
         // If we modify `self.changed_points`, we *have to* (?) execute `local_shard` update
         // to completion, so this method is not cancel safe.
 
         let local_shard = &self.wrapped_shard;
-        let estimate_effect = operation.estimate_effect_area();
+        let estimate_effect = operation.operation.estimate_effect_area();
         let points_operation_effect: PointsOperationEffect = match estimate_effect {
             OperationEffectArea::Empty => PointsOperationEffect::Empty,
             OperationEffectArea::Points(points) => PointsOperationEffect::Some(points),

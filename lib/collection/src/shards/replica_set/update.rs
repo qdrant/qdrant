@@ -8,7 +8,7 @@ use itertools::Itertools as _;
 use super::{ReplicaSetState, ReplicaState, ShardReplicaSet};
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{CollectionError, CollectionResult, UpdateResult};
-use crate::operations::CollectionUpdateOperations;
+use crate::operations::{CollectionUpdateOperations, OperationWithClockTag};
 use crate::shards::shard::PeerId;
 use crate::shards::shard_trait::ShardOperation as _;
 
@@ -22,7 +22,7 @@ impl ShardReplicaSet {
     /// This method is *not* cancel safe.
     pub async fn update_local(
         &self,
-        operation: CollectionUpdateOperations,
+        operation: OperationWithClockTag,
         wait: bool,
     ) -> CollectionResult<Option<UpdateResult>> {
         // `ShardOperations::update` is not guaranteed to be cancel safe, so this method is not
@@ -151,6 +151,8 @@ impl ShardReplicaSet {
                     self.shard_id, this_peer_id
                 )));
             }
+
+            let operation = OperationWithClockTag::from(operation); // TODO: Assign clock tag!
 
             let mut update_futures = Vec::with_capacity(active_remote_shards.len() + 1);
 
@@ -364,19 +366,17 @@ impl ShardReplicaSet {
         // `RemoteShard::forward_update` is cancel safe, so this method is cancel safe.
 
         let remotes_guard = self.remotes.read().await;
-        let remote_leader = remotes_guard.iter().find(|r| r.peer_id == leader_peer);
 
-        match remote_leader {
-            Some(remote_leader) => {
-                remote_leader
-                    .forward_update(operation, wait, ordering)
-                    .await
-            }
-            None => Err(CollectionError::service_error(format!(
+        let Some(remote_leader) = remotes_guard.iter().find(|r| r.peer_id == leader_peer) else {
+            return Err(CollectionError::service_error(format!(
                 "Cannot forward update to shard {} because was removed from the replica set",
                 self.shard_id
-            ))),
-        }
+            )));
+        };
+
+        remote_leader
+            .forward_update(OperationWithClockTag::from(operation), wait, ordering) // `clock_tag` *have to* be `None`!
+            .await
     }
 }
 

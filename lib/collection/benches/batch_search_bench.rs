@@ -104,7 +104,9 @@ fn batch_search_bench(c: &mut Criterion) {
 
     let rnd_batch = create_rnd_batch();
 
-    handle.block_on(shard.update(rnd_batch, true)).unwrap();
+    handle
+        .block_on(shard.update(rnd_batch.into(), true))
+        .unwrap();
 
     let mut group = c.benchmark_group("batch-search-bench");
 
