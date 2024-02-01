@@ -23,7 +23,7 @@ def test_collection_exists():
     )
     assert response.ok
     result = response.json()["result"]["exists"]
-    assert result == True
+    assert result
 
 
 def test_collection_not_found():
@@ -34,4 +34,4 @@ def test_collection_not_found():
     )
     assert response.ok
     result = response.json()["result"]["exists"]
-    assert result == False
+    assert not result

@@ -1,7 +1,6 @@
 import pathlib
-import shutil
 
-from .fixtures import create_collection, upsert_random_points, random_dense_vector, search
+from .fixtures import create_collection, upsert_random_points
 from .utils import *
 from .assertions import assert_http_ok
 
@@ -37,7 +36,7 @@ def test_collection_recovery_below_limit(tmp_path: pathlib.Path):
     upsert_random_points(peer_urls[0], N_POINTS)
 
     # Restart the peer, wait until it is up
-    peer_url = start_peer(peer_dirs[-1], f"peer_0_restarted.log", bootstrap_url)
+    peer_url = start_peer(peer_dirs[-1], "peer_0_restarted.log", bootstrap_url)
     wait_for_peer_online(peer_url)
 
     # Wait until all shards are active, never allow more than 1 shard transfer
@@ -84,7 +83,7 @@ def test_collection_recovery_reach_limit(tmp_path: pathlib.Path):
     upsert_random_points(peer_urls[0], N_POINTS)
 
     # Restart the peer, wait until it is up
-    peer_url = start_peer(peer_dirs[-1], f"peer_0_restarted.log", bootstrap_url, extra_env=env)
+    peer_url = start_peer(peer_dirs[-1], "peer_0_restarted.log", bootstrap_url, extra_env=env)
     wait_for_peer_online(peer_url)
 
     # We must see 3 transfers at one point with our customized limits
@@ -152,7 +151,7 @@ def test_collection_recovery_user_requests_above_limit(tmp_path: pathlib.Path):
         assert_http_ok(r)
 
     # Restart the peer, wait unil it is up
-    peer_url = start_peer(killed_peer_dir, f"peer_0_restarted.log", bootstrap_url)
+    peer_url = start_peer(killed_peer_dir, "peer_0_restarted.log", bootstrap_url)
     wait_for_peer_online(peer_url)
 
     # We must see N_SHARDS transfers on our new node

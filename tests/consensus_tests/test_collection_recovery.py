@@ -1,7 +1,6 @@
 import pathlib
-import shutil
 
-from .fixtures import create_collection, upsert_random_points, random_dense_vector, search
+from .fixtures import create_collection, upsert_random_points
 from .utils import *
 from .assertions import assert_http_ok
 
@@ -33,7 +32,7 @@ def test_collection_recovery(tmp_path: pathlib.Path):
     shutil.rmtree(collection_path)
 
     # Restart the peer
-    peer_url = start_peer(peer_dirs[-1], f"peer_0_restarted.log", bootstrap_url)
+    peer_url = start_peer(peer_dirs[-1], "peer_0_restarted.log", bootstrap_url)
 
     # Wait until peer is up
     wait_for_peer_online(peer_url)
