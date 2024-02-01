@@ -19,6 +19,8 @@ use crate::common::telemetry_ops::requests_telemetry::{
 const REST_ENDPOINT_WHITELIST: &[&str] = &[
     "/collections/{name}/index",
     "/collections/{name}/points",
+    "/collections/{name}/points/discover",
+    "/collections/{name}/points/discover/batch",
     "/collections/{name}/points/payload",
     "/collections/{name}/points/recommend",
     "/collections/{name}/points/recommend/batch",
@@ -33,6 +35,8 @@ const REST_ENDPOINT_WHITELIST: &[&str] = &[
 /// This array *must* be sorted.
 const GRPC_ENDPOINT_WHITELIST: &[&str] = &[
     "/qdrant.Points/OverwritePayload",
+    "/qdrant.Points/Discover",
+    "/qdrant.Points/DiscoverBatch",
     "/qdrant.Points/Recommend",
     "/qdrant.Points/RecommendBatch",
     "/qdrant.Points/Search",
