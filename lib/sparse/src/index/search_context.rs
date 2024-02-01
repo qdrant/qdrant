@@ -382,10 +382,6 @@ impl<'a> SearchContext<'a> {
 
 #[cfg(test)]
 mod tests {
-    //use std::collections::HashSet;
-
-    //use rand::rngs::StdRng;
-    //use rand::{Rng, SeedableRng};
     use rand::Rng;
 
     use super::*;
@@ -413,62 +409,6 @@ mod tests {
     fn match_all(_p: PointOffsetType) -> bool {
         true
     }
-
-    // fn _advance_test(inverted_index: &impl InvertedIndex) {
-    //     let is_stopped = AtomicBool::new(false);
-    //     let mut search_context = SearchContext::new(
-    //         SparseVector {
-    //             indices: vec![1, 2, 3],
-    //             values: vec![1.0, 1.0, 1.0],
-    //         },
-    //         10,
-    //         inverted_index,
-    //         &is_stopped,
-    //     );
-    //
-    //     assert_eq!(
-    //         search_context.advance_batch(),
-    //         Some(ScoredPointOffset {
-    //             score: 30.0,
-    //             idx: 1
-    //         })
-    //     );
-    //     assert_eq!(
-    //         search_context.advance_batch(),
-    //         Some(ScoredPointOffset {
-    //             score: 60.0,
-    //             idx: 2
-    //         })
-    //     );
-    //     assert_eq!(
-    //         search_context.advance_batch(),
-    //         Some(ScoredPointOffset {
-    //             score: 90.0,
-    //             idx: 3
-    //         })
-    //     );
-    // }
-    //
-    // #[test]
-    // fn advance_test() {
-    //     let inverted_index_ram = InvertedIndexBuilder::new()
-    //         .add(1, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
-    //         .add(2, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
-    //         .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
-    //         .build();
-    //
-    //     // test with ram index
-    //     _advance_test(&inverted_index_ram);
-    //
-    //     // test with mmap index
-    //     let tmp_dir_path = tempfile::Builder::new()
-    //         .prefix("test_index_dir")
-    //         .tempdir()
-    //         .unwrap();
-    //     let inverted_index_mmap =
-    //         InvertedIndexMmap::convert_and_save(&inverted_index_ram, &tmp_dir_path).unwrap();
-    //     _advance_test(&inverted_index_mmap);
-    // }
 
     fn _search_test(inverted_index: &impl InvertedIndex) {
         let is_stopped = AtomicBool::new(false);
@@ -694,124 +634,6 @@ mod tests {
         _search_with_hot_key_test(&inverted_index_mmap);
     }
 
-    // fn _prune_test(inverted_index: &impl InvertedIndex) {
-    //     let is_stopped = AtomicBool::new(false);
-    //     let mut search_context = SearchContext::new(
-    //         SparseVector {
-    //             indices: vec![1, 2, 3],
-    //             values: vec![1.0, 1.0, 1.0],
-    //         },
-    //         3,
-    //         inverted_index,
-    //         &is_stopped,
-    //     );
-    //
-    //     // initial state
-    //     assert_eq!(
-    //         search_context.postings_iterators[0]
-    //             .posting_list_iterator
-    //             .len_to_end(),
-    //         9
-    //     );
-    //     assert_eq!(
-    //         search_context.advance_batch(),
-    //         Some(ScoredPointOffset {
-    //             score: 30.0,
-    //             idx: 1
-    //         })
-    //     );
-    //     assert_eq!(
-    //         search_context.postings_iterators[0]
-    //             .posting_list_iterator
-    //             .len_to_end(),
-    //         8
-    //     );
-    //     assert!(!search_context.prune_longest_posting_list(30.0));
-    //     assert_eq!(
-    //         search_context.postings_iterators[0]
-    //             .posting_list_iterator
-    //             .len_to_end(),
-    //         8
-    //     );
-    //
-    //     assert_eq!(
-    //         search_context.advance_batch(),
-    //         Some(ScoredPointOffset {
-    //             score: 60.0,
-    //             idx: 2
-    //         })
-    //     );
-    //     assert_eq!(
-    //         search_context.postings_iterators[0]
-    //             .posting_list_iterator
-    //             .len_to_end(),
-    //         7
-    //     );
-    //     assert!(!search_context.prune_longest_posting_list(30.0));
-    //     assert_eq!(
-    //         search_context.postings_iterators[0]
-    //             .posting_list_iterator
-    //             .len_to_end(),
-    //         7
-    //     );
-    //
-    //     assert_eq!(
-    //         search_context.advance_batch(),
-    //         Some(ScoredPointOffset {
-    //             score: 90.0,
-    //             idx: 3
-    //         })
-    //     );
-    //     // pruning can take place
-    //     assert_eq!(
-    //         search_context.postings_iterators[0]
-    //             .posting_list_iterator
-    //             .len_to_end(),
-    //         6
-    //     );
-    //     assert!(search_context.prune_longest_posting_list(30.0));
-    //     assert_eq!(
-    //         search_context.postings_iterators[0]
-    //             .posting_list_iterator
-    //             .len_to_end(),
-    //         0
-    //     );
-    // }
-
-    // #[test]
-    // fn prune_test() {
-    //     let inverted_index_ram = InvertedIndexBuilder::new()
-    //         .add(
-    //             1,
-    //             PostingList::from(vec![
-    //                 (1, 10.0),
-    //                 (2, 20.0),
-    //                 (3, 30.0),
-    //                 (4, 1.0),
-    //                 (5, 2.0),
-    //                 (6, 3.0),
-    //                 (7, 4.0),
-    //                 (8, 5.0),
-    //                 (9, 6.0),
-    //             ]),
-    //         )
-    //         .add(2, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
-    //         .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
-    //         .build();
-    //
-    //     // test with ram index
-    //     _prune_test(&inverted_index_ram);
-    //
-    //     // test with mmap index
-    //     let tmp_dir_path = tempfile::Builder::new()
-    //         .prefix("test_index_dir")
-    //         .tempdir()
-    //         .unwrap();
-    //     let inverted_index_mmap =
-    //         InvertedIndexMmap::convert_and_save(&inverted_index_ram, &tmp_dir_path).unwrap();
-    //     _prune_test(&inverted_index_mmap);
-    // }
-
     #[test]
     fn pruning_single_to_end_test() {
         let inverted_index_ram = InvertedIndexBuilder::new()
@@ -995,72 +817,6 @@ mod tests {
         }
         inverted_index_ram
     }
-
-    // #[test]
-    // fn next_min_partial_scan_test() {
-    //     let num_vectors = 100;
-    //     let max_sparse_dimension = 25;
-    //     let mut rnd = StdRng::seed_from_u64(42);
-    //     let is_stopped = AtomicBool::new(false);
-    //     let inverted_index_ram = random_inverted_index(&mut rnd, num_vectors, max_sparse_dimension);
-    //     let mut search_context = SearchContext::new(
-    //         SparseVector {
-    //             indices: vec![1, 2, 3],
-    //             values: vec![1.0, 1.0, 1.0],
-    //         },
-    //         3,
-    //         &inverted_index_ram,
-    //         &is_stopped,
-    //     );
-    //
-    //     let mut all_next_min_observed = HashSet::new();
-    //
-    //     while let Some(next_min) =
-    //         SearchContext::next_min_id(search_context.postings_iterators.as_slice())
-    //     {
-    //         all_next_min_observed.insert(next_min);
-    //         let next_candidate_id = search_context.advance_batch().map(|s| s.idx);
-    //         assert_eq!(next_candidate_id, Some(next_min));
-    //     }
-    //
-    //     // Not all vectors are observed because only the indices of the query vector are explored.
-    //     assert!(all_next_min_observed.len() < num_vectors as usize);
-    // }
-    //
-    // #[test]
-    // fn next_min_full_scan_test() {
-    //     let num_vectors = 100;
-    //     let max_sparse_dimension = 25;
-    //     let mut rnd = StdRng::seed_from_u64(42);
-    //     let is_stopped = AtomicBool::new(false);
-    //     let inverted_index_ram = random_inverted_index(&mut rnd, num_vectors, max_sparse_dimension);
-    //     let mut search_context = SearchContext::new(
-    //         SparseVector {
-    //             indices: (1..=max_sparse_dimension as u32).collect(),
-    //             values: vec![1.0; max_sparse_dimension],
-    //         },
-    //         3,
-    //         &inverted_index_ram,
-    //         &is_stopped,
-    //     );
-    //
-    //     // initial state
-    //     let min = SearchContext::next_min_id(search_context.postings_iterators.as_slice());
-    //     // no side effect
-    //     assert_eq!(min, Some(1));
-    //     assert_eq!(min, Some(1));
-    //
-    //     // Complete scan over all vectors because the query vector contains all dimensions in the index.
-    //     for i in 1..num_vectors {
-    //         let before_min =
-    //             SearchContext::next_min_id(search_context.postings_iterators.as_slice());
-    //         assert_eq!(before_min, Some(i));
-    //         let next = search_context.advance_batch().map(|s| s.idx);
-    //         assert_eq!(next, Some(i));
-    //         let new_min = SearchContext::next_min_id(search_context.postings_iterators.as_slice());
-    //         assert_eq!(new_min, Some(i + 1));
-    //     }
-    // }
 
     #[test]
     fn promote_longest_test() {
