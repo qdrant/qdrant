@@ -17,7 +17,7 @@ use crate::common::health;
 use crate::common::helpers::LocksOption;
 use crate::common::metrics::MetricsData;
 use crate::common::stacktrace::get_stack_trace;
-use crate::common::telemetry::TelemetryCollector;
+use crate::common::telemetry::{TelemetryCollector, TelemetryData};
 
 #[derive(Deserialize, Serialize, JsonSchema)]
 pub struct TelemetryParam {
@@ -46,6 +46,7 @@ async fn telemetry(
 #[derive(Deserialize, Serialize, JsonSchema)]
 pub struct MetricsParam {
     pub anonymize: Option<bool>,
+    pub collection_name: Option<String>,
 }
 
 #[get("/metrics")]
@@ -53,9 +54,25 @@ async fn metrics(
     telemetry_collector: web::Data<Mutex<TelemetryCollector>>,
     params: Query<MetricsParam>,
 ) -> impl Responder {
+    let timing = Instant::now();
     let anonymize = params.anonymize.unwrap_or(false);
+    let collection_name = params.collection_name.clone();
     let telemetry_collector = telemetry_collector.lock().await;
-    let telemetry_data = telemetry_collector.prepare_data(1).await;
+
+    let telemetry_data = {
+        if let Some(n) = collection_name {
+            let r = telemetry_collector.prepare_data_for(2, n).await;
+            if let Err(e) = r {
+                return process_response::<TelemetryData>(Err(e), timing);
+            }
+            println!("tel: {r:#?}");
+            // safe to unwrap here
+            r.unwrap()
+        } else {
+            telemetry_collector.prepare_data(1).await
+        }
+    };
+
     let telemetry_data = if anonymize {
         telemetry_data.anonymize()
     } else {

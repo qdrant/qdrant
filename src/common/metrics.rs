@@ -1,6 +1,7 @@
 use prometheus::proto::{Counter, Gauge, LabelPair, Metric, MetricFamily, MetricType};
 use prometheus::TextEncoder;
 
+use super::telemetry::TelemetryDataCollectionType;
 use crate::common::telemetry::TelemetryData;
 use crate::common::telemetry_ops::app_telemetry::{AppBuildTelemetry, AppFeaturesTelemetry};
 use crate::common::telemetry_ops::cluster_telemetry::{ClusterStatusTelemetry, ClusterTelemetry};
@@ -68,6 +69,19 @@ trait MetricsProvider {
     fn add_metrics(&self, metrics: &mut Vec<MetricFamily>);
 }
 
+impl MetricsProvider for TelemetryDataCollectionType {
+    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
+        match self {
+            Self::Single(v) => {
+                v.add_metrics(metrics);
+            }
+            Self::Multiple(v) => {
+                v.add_metrics(metrics);
+            }
+        }
+    }
+}
+
 impl MetricsProvider for TelemetryData {
     fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
         self.app.add_metrics(metrics);
@@ -126,6 +140,33 @@ impl MetricsProvider for CollectionsTelemetry {
             MetricType::GAUGE,
             vec![gauge(vector_count as f64, &[])],
         ));
+    }
+}
+
+impl MetricsProvider for CollectionTelemetryEnum {
+    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
+        // todo
+        // let vector_count = self
+        //     .collections
+        //     .iter()
+        //     .flatten()
+        //     .map(|p| match p {
+        //         CollectionTelemetryEnum::Aggregated(a) => a.vectors,
+        //         CollectionTelemetryEnum::Full(c) => c.count_vectors(),
+        //     })
+        //     .sum::<usize>();
+        // metrics.push(metric_family(
+        //     "collections_total",
+        //     "number of collections",
+        //     MetricType::GAUGE,
+        //     vec![gauge(self.number_of_collections as f64, &[])],
+        // ));
+        // metrics.push(metric_family(
+        //     "collections_vector_total",
+        //     "total number of vectors in all collections",
+        //     MetricType::GAUGE,
+        //     vec![gauge(vector_count as f64, &[])],
+        // ));
     }
 }
 

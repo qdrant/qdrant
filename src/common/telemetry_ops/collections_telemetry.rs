@@ -60,7 +60,6 @@ impl CollectionsTelemetry {
                     }
                 })
                 .collect();
-
             Some(telemetry_data)
         } else {
             None
