@@ -1,4 +1,4 @@
-use std::cmp::{min, Ordering};
+use std::cmp::{max, min, Ordering};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 
@@ -17,7 +17,8 @@ pub struct IndexedPostingListIterator<'a> {
     query_weight: DimWeight,
 }
 
-const ADVANCE_BATCH_SIZE: usize = 10_000;
+/// Making this larger makes the search faster but uses more memory
+const ADVANCE_BATCH_SIZE: usize = 1_000;
 
 pub struct SearchContext<'a> {
     postings_iterators: Vec<IndexedPostingListIterator<'a>>,
@@ -39,32 +40,42 @@ impl<'a> SearchContext<'a> {
         is_stopped: &'a AtomicBool,
     ) -> SearchContext<'a> {
         let mut postings_iterators = Vec::new();
+        // track min and max record ids across all posting lists
         let mut max_record_id = 0;
+        let mut min_record_id = u32::MAX;
+        // iterate over query indices
         for (query_weight_offset, id) in query.indices.iter().enumerate() {
             if let Some(posting_list_iterator) = inverted_index.get(id) {
-                let query_index = *id;
-                let query_weight = query.values[query_weight_offset];
-                if let Some(max_posting_record_id) =
-                    posting_list_iterator.elements.last().map(|e| e.record_id)
-                {
-                    max_record_id = max_record_id.max(max_posting_record_id);
+                let posting_elements = posting_list_iterator.elements;
+                if !posting_elements.is_empty() {
+                    // check if new min
+                    let min_record_id_posting = posting_elements[0].record_id;
+                    min_record_id = min(min_record_id, min_record_id_posting);
+
+                    // check if new max
+                    let max_record_id_posting = posting_elements.last().unwrap().record_id;
+                    max_record_id = max(max_record_id, max_record_id_posting);
+
+                    // capture query info
+                    let query_index = *id;
+                    let query_weight = query.values[query_weight_offset];
+
+                    postings_iterators.push(IndexedPostingListIterator {
+                        posting_list_iterator,
+                        query_index,
+                        query_weight,
+                    });
                 }
-                postings_iterators.push(IndexedPostingListIterator {
-                    posting_list_iterator,
-                    query_index,
-                    query_weight,
-                });
             }
         }
-        // compute min_record_id
-        let min_record_id = Self::next_min_id(&postings_iterators);
         let result_queue = FixedLengthPriorityQueue::new(top);
         // Query vectors with negative values can NOT use the pruning mechanism which relies on the pre-computed `max_next_weight`.
         // The max contribution per posting list that we calculate is not made to compute the max value of two negative numbers.
         // This is a limitation of the current pruning implementation.
         let use_pruning = query.values.iter().all(|v| *v >= 0.0);
-        // TODO should this Vec be pooled to reuse across searches?
+        // TODO pool this Vec to reuse memory across searches
         let batch_scores = Vec::with_capacity(ADVANCE_BATCH_SIZE);
+        let min_record_id = Some(min_record_id);
         SearchContext {
             postings_iterators,
             query,
@@ -234,7 +245,7 @@ impl<'a> SearchContext<'a> {
         }
         let mut best_min_score = f32::MIN;
         loop {
-            // check for cancellation (amortized by batch)
+            // check for cancellation (atomic amortized by batch)
             if self.is_stopped.load(Relaxed) {
                 break;
             }
