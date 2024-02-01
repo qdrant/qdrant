@@ -107,7 +107,7 @@ FROM debian:12-slim AS qdrant
 RUN apt-get update \
     && apt-get install --no-install-recommends -y ca-certificates tzdata libunwind8 \
     && if [ "$USER_ID" == 0 ]; then \
-            apt-get install --no-install-recommends -y curl \
+            apt-get install --no-install-recommends -y curl; \
        fi \
     && rm -rf /var/lib/apt/lists/*
 
