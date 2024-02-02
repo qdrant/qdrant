@@ -74,7 +74,7 @@ pub struct LocalShard {
     pub(super) path: PathBuf,
     pub(super) optimizers: Arc<Vec<Arc<Optimizer>>>,
     pub(super) optimizers_log: Arc<ParkingMutex<TrackerLog>>,
-    clock_map: Mutex<ClockMap>,
+    clock_map: Arc<Mutex<ClockMap>>,
     update_runtime: Handle,
 }
 
@@ -126,6 +126,7 @@ impl LocalShard {
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         optimizer_cpu_budget: CpuBudget,
         shard_path: &Path,
+        clock_map: ClockMap,
         update_runtime: Handle,
     ) -> Self {
         let segment_holder = Arc::new(RwLock::new(segment_holder));
@@ -162,7 +163,7 @@ impl LocalShard {
             update_sender: ArcSwap::from_pointee(update_sender),
             update_tracker,
             path: shard_path.to_owned(),
-            clock_map: Default::default(),
+            clock_map: Arc::new(Mutex::new(clock_map)),
             update_runtime,
             optimizers,
             optimizers_log,
@@ -187,7 +188,7 @@ impl LocalShard {
 
         let wal_path = Self::wal_path(shard_path);
         let segments_path = Self::segments_path(shard_path);
-        let mut segment_holder = SegmentHolder::default();
+        let clock_map_path = Self::clock_map_path(shard_path);
 
         let wal: SerdeWal<OperationWithClockTag> = SerdeWal::new(
             wal_path.to_str().unwrap(),
@@ -227,6 +228,8 @@ impl LocalShard {
                     })?,
             );
         }
+
+        let mut segment_holder = SegmentHolder::default();
 
         for handler in load_handlers {
             let segment = handler.join().map_err(|err| {
@@ -276,6 +279,8 @@ impl LocalShard {
 
         drop(collection_config_read); // release `shared_config` from borrow checker
 
+        let clock_map = ClockMap::load_or_default(&clock_map_path)?;
+
         let collection = LocalShard::new(
             segment_holder,
             collection_config,
@@ -284,11 +289,12 @@ impl LocalShard {
             optimizers,
             optimizer_cpu_budget,
             shard_path,
+            clock_map,
             update_runtime,
         )
         .await;
 
-        collection.load_from_wal(collection_id)?;
+        collection.load_from_wal(collection_id).await?;
 
         let available_memory_bytes = Mem::new().available_memory_bytes() as usize;
         let vectors_size_bytes = collection.estimate_vector_data_size().await;
@@ -324,6 +330,10 @@ impl LocalShard {
 
     pub fn segments_path(shard_path: &Path) -> PathBuf {
         shard_path.join("segments")
+    }
+
+    pub fn clock_map_path(shard_path: &Path) -> PathBuf {
+        shard_path.join("clock_map.json")
     }
 
     pub async fn build_local(
@@ -443,6 +453,7 @@ impl LocalShard {
             optimizers,
             optimizer_cpu_budget,
             shard_path,
+            ClockMap::default(),
             update_runtime,
         )
         .await;
@@ -461,7 +472,8 @@ impl LocalShard {
     }
 
     /// Loads latest collection operations from WAL
-    pub fn load_from_wal(&self, collection_id: CollectionId) -> CollectionResult<()> {
+    pub async fn load_from_wal(&self, collection_id: CollectionId) -> CollectionResult<()> {
+        let mut clock_map = self.clock_map.lock().await;
         let wal = self.wal.lock();
         let bar = ProgressBar::new(wal.len());
 
@@ -497,6 +509,10 @@ impl LocalShard {
         // index *occasionally*), but the storage can handle it.
 
         for (op_num, update) in wal.read_all() {
+            if let Some(clock_tag) = &update.clock_tag {
+                clock_map.advance_clock(clock_tag);
+            }
+
             // Propagate `CollectionError::ServiceError`, but skip other error types.
             match &CollectionUpdater::update(segments, op_num, update.operation) {
                 Err(err @ CollectionError::ServiceError { error, backtrace }) => {
