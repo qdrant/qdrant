@@ -76,12 +76,12 @@ impl Clock {
 
     #[must_use = "new clock value must be used"]
     fn tick_once(&self) -> u64 {
-        self.clock.fetch_add(1, Ordering::Relaxed) + 1
+        self.clock.fetch_add(1, Ordering::Relaxed)
     }
 
     fn advance_to(&self, new_tick: u64) -> u64 {
-        let current_tick = self.clock.fetch_max(new_tick, Ordering::Relaxed);
-        cmp::max(current_tick, new_tick)
+        let current_tick = self.clock.fetch_max(new_tick + 1, Ordering::Relaxed);
+        cmp::max(current_tick, new_tick + 1)
     }
 
     fn lock(&self) -> bool {
