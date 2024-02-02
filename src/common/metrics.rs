@@ -34,9 +34,9 @@ const REST_ENDPOINT_WHITELIST: &[&str] = &[
 ///
 /// This array *must* be sorted.
 const GRPC_ENDPOINT_WHITELIST: &[&str] = &[
-    "/qdrant.Points/OverwritePayload",
     "/qdrant.Points/Discover",
     "/qdrant.Points/DiscoverBatch",
+    "/qdrant.Points/OverwritePayload",
     "/qdrant.Points/Recommend",
     "/qdrant.Points/RecommendBatch",
     "/qdrant.Points/Search",
