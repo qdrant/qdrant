@@ -11,16 +11,25 @@ pub struct ClockMap {
 }
 
 impl ClockMap {
-    pub fn advance_clock_and_correct_tag(&mut self, clock_tag: &mut ClockTag) {
+    pub fn advance_clock_and_correct_tag(&mut self, clock_tag: &mut ClockTag) -> u64 {
+        let current_tick = self.advance_clock(clock_tag);
+
+        if clock_tag.clock_tick == 0 {
+            clock_tag.clock_tick = current_tick;
+        }
+
+        current_tick
+    }
+
+    pub fn advance_clock(&mut self, clock_tag: &ClockTag) -> u64 {
         let clock_id = ClockId::from_tag(clock_tag);
+        let new_tick = clock_tag.clock_tick;
 
         if let Some(clock) = self.clocks.get(&clock_id) {
-            if clock_tag.clock_tick < clock.advance_to(clock_tag.clock_tick) {
-                clock_tag.clock_tick = clock.tick_once();
-            }
+            clock.advance_to(new_tick)
         } else {
-            self.clocks
-                .insert(clock_id, Clock::new(clock_tag.clock_tick));
+            self.clocks.insert(clock_id, Clock::new(new_tick));
+            new_tick
         }
     }
 }
@@ -50,10 +59,6 @@ impl Clock {
         Self {
             clock: AtomicU64::new(tick),
         }
-    }
-
-    pub fn tick_once(&self) -> u64 {
-        self.clock.fetch_add(1, Ordering::Relaxed) + 1
     }
 
     pub fn advance_to(&self, new_tick: u64) -> u64 {
