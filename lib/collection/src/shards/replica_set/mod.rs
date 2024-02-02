@@ -185,7 +185,7 @@ impl ShardReplicaSet {
             search_runtime,
             optimizer_cpu_budget,
             write_ordering_lock: Mutex::new(()),
-            clock_set: Mutex::new(ClockSet::new()),
+            clock_set: Default::default(),
         })
     }
 
@@ -296,7 +296,7 @@ impl ShardReplicaSet {
             search_runtime,
             optimizer_cpu_budget,
             write_ordering_lock: Mutex::new(()),
-            clock_set: Mutex::new(ClockSet::new()),
+            clock_set: Default::default(),
         };
 
         if local_load_failure && replica_set.active_remote_shards().await.is_empty() {
