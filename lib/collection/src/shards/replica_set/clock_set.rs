@@ -12,6 +12,7 @@ impl ClockSet {
         Self::default()
     }
 
+    /// Get the first available clock from this set.
     pub fn get_clock(&mut self) -> ClockGuard {
         for (id, clock) in self.clocks.iter().enumerate() {
             if clock.lock() {

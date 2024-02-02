@@ -96,6 +96,7 @@ pub struct ShardReplicaSet {
     optimizer_cpu_budget: CpuBudget,
     /// Lock to serialized write operations on the replicaset when a write ordering is used.
     write_ordering_lock: Mutex<()>,
+    /// Local clock set, used to tag new operations on this shard.
     clock_set: Mutex<ClockSet>,
 }
 
