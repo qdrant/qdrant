@@ -11,14 +11,14 @@ use serde::{Deserialize, Serialize};
 
 pub type HttpStatusCode = u16;
 
+pub type StatusCodeToAggregator = HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>;
+pub type StatusCodeToStatistics = HashMap<HttpStatusCode, OperationDurationStatistics>;
+pub type MethodsToStatusCode = HashMap<String, StatusCodeToStatistics>;
+pub type CollectionToMethods = HashMap<String, MethodsToStatusCode>;
+
 #[derive(Serialize, Deserialize, Clone, Default, Debug, JsonSchema, PartialEq)]
 pub struct WebApiTelemetry {
-    pub responses: HashMap<
-        // collection_name
-        String,
-        // k: method_name
-        HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
-    >,
+    pub responses: CollectionToMethods,
 }
 
 #[derive(Serialize, Deserialize, Clone, Default, Debug, JsonSchema)]
@@ -32,11 +32,12 @@ pub struct ActixTelemetryCollector {
 
 #[derive(Default)]
 pub struct ActixWorkerTelemetryCollector {
+    // collections: CollectionToMethods,
     collections: HashMap<
         // collection_name
         String,
         // k: method_name
-        HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
+        HashMap<String, StatusCodeToAggregator>,
     >,
 }
 
@@ -123,19 +124,10 @@ impl ActixWorkerTelemetryCollector {
     }
 
     pub fn get_telemetry_data(&self) -> WebApiTelemetry {
-        let mut responses: HashMap<
-            // collection_name
-            String,
-            // k: method_name
-            HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
-        > = HashMap::new();
+        let mut responses: CollectionToMethods = HashMap::new();
 
         for (collection, methods) in &self.collections {
-            let mut method_status_codes_map: HashMap<
-                // method_name
-                String,
-                HashMap<HttpStatusCode, OperationDurationStatistics>,
-            > = HashMap::new();
+            let mut method_status_codes_map: MethodsToStatusCode = HashMap::new();
 
             for (method_name, status_map) in methods {
                 for (status_code, aggregator) in status_map {
@@ -151,12 +143,7 @@ impl ActixWorkerTelemetryCollector {
 
     /// If the given collection are empty, will return data for all collections
     pub fn get_telemetry_data_for(&self, collections: &Vec<String>) -> WebApiTelemetry {
-        let mut responses: HashMap<
-            // collection_name
-            String,
-            // k: method_name
-            HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
-        > = HashMap::new();
+        let mut responses: CollectionToMethods = HashMap::new();
 
         if collections.is_empty() {
             return self.get_telemetry_data();
@@ -164,11 +151,7 @@ impl ActixWorkerTelemetryCollector {
 
         for collection in collections {
             if let Some(methods) = self.collections.get(collection) {
-                let mut method_status_codes_map: HashMap<
-                    // method_name
-                    String,
-                    HashMap<HttpStatusCode, OperationDurationStatistics>,
-                > = HashMap::new();
+                let mut method_status_codes_map: MethodsToStatusCode = HashMap::new();
 
                 for (method_name, status_map) in methods {
                     for (status_code, aggregator) in status_map {
@@ -284,6 +267,7 @@ mod tests {
     use segment::common::operation_time_statistics::OperationDurationStatistics;
 
     use super::WebApiTelemetry;
+    use crate::common::telemetry_ops::requests_telemetry::MethodsToStatusCode;
 
     #[test]
     fn can_web_api_telemetry_merge() {
@@ -291,13 +275,12 @@ mod tests {
         let method_name = "search".to_string();
 
         // we will merge "other_stats" into "my_stats"
-        let mut my_stats = OperationDurationStatistics::default();
         let my_stats = OperationDurationStatistics {
             count: 3,
             ..Default::default()
         };
         let status_code_to_statistics = HashMap::from([(200, my_stats)]);
-        let method_to_stats: HashMap<String, HashMap<u16, OperationDurationStatistics>> =
+        let method_to_stats: MethodsToStatusCode =
             HashMap::from([(method_name.clone(), status_code_to_statistics)]);
         let my_responses = HashMap::from([(collection_name.clone(), method_to_stats)]);
         let mut my_web_api_telemetry = WebApiTelemetry {
@@ -310,7 +293,7 @@ mod tests {
             ..Default::default()
         };
         let other_status_code_to_statistics = HashMap::from([(200, other_stats)]);
-        let other_method_to_stats: HashMap<String, HashMap<u16, OperationDurationStatistics>> =
+        let other_method_to_stats: MethodsToStatusCode =
             HashMap::from([(method_name.clone(), other_status_code_to_statistics)]);
         let other_responses = HashMap::from([(collection_name.clone(), other_method_to_stats)]);
         let other_web_api_telemetry = WebApiTelemetry {
