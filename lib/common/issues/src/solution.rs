@@ -1,9 +1,9 @@
 use http::{HeaderMap, Method, Uri};
 use schemars::JsonSchema;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[derive(Debug, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Clone)]
 pub enum Solution {
     /// A solution that can be applied immediately
     Immediate(ImmediateSolution),
@@ -18,13 +18,13 @@ pub enum Solution {
     None,
 }
 
-#[derive(Debug, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Clone)]
 pub struct ImmediateSolution {
     pub message: String,
     pub action: Action,
 }
 
-#[derive(Debug, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Clone)]
 pub struct Action {
     #[serde(with = "http_serde::method")]
     #[schemars(with = "http_schemars::Method")]
@@ -38,7 +38,7 @@ pub struct Action {
     #[schemars(with = "http_schemars::HeaderMap")]
     pub headers: HeaderMap,
 
-    pub body: Option<Value>,
+    pub body: Option<serde_json::Map<String, Value>>,
 }
 
 mod http_schemars {

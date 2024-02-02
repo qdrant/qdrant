@@ -39,7 +39,10 @@ impl Issue for UnindexedField {
         let request_body = serde_json::json!({
             "field_name": self.field_name,
             "field_schema": self.field_type,
-        });
+        })
+        .as_object()
+        .unwrap()
+        .clone();
 
         Solution::Immediate(ImmediateSolution {
                     message: format!(
