@@ -13,7 +13,6 @@ pub type HttpStatusCode = u16;
 
 #[derive(Serialize, Deserialize, Clone, Default, Debug, JsonSchema, PartialEq)]
 pub struct WebApiTelemetry {
-    // pub responses: HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
     pub responses: HashMap<
         // collection_name
         String,
@@ -39,7 +38,6 @@ pub struct ActixWorkerTelemetryCollector {
         // k: method_name
         HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
     >,
-    // methods: HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
 }
 
 pub struct TonicTelemetryCollector {
@@ -58,7 +56,7 @@ impl ActixTelemetryCollector {
         worker
     }
 
-    pub fn get_telemetry_data(&self) -> WebApiTelemetry {
+    pub fn get_telemetry_data(&self, collections: &Vec<String>) -> WebApiTelemetry {
         let mut result = WebApiTelemetry::default();
         for web_data in &self.workers {
             let lock = web_data.lock().get_telemetry_data();
@@ -150,6 +148,36 @@ impl ActixWorkerTelemetryCollector {
         }
         WebApiTelemetry { responses }
     }
+
+    pub fn get_telemetry_data_for(&self, collections: &Vec<String>) -> WebApiTelemetry {
+        let mut responses: HashMap<
+            // collection_name
+            String,
+            // k: method_name
+            HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
+        > = HashMap::new();
+
+        for collection in collections {
+            if let Some(methods) = self.collections.get(collection) {
+                let mut method_status_codes_map: HashMap<
+                    // method_name
+                    String,
+                    HashMap<HttpStatusCode, OperationDurationStatistics>,
+                > = HashMap::new();
+
+                for (method_name, status_map) in methods {
+                    for (status_code, aggregator) in status_map {
+                        let mut status_statistics = HashMap::new();
+                        status_statistics.insert(*status_code, aggregator.lock().get_statistics());
+                        method_status_codes_map.insert(method_name.clone(), status_statistics);
+                    }
+                }
+                responses.insert(collection.clone(), method_status_codes_map);
+            }
+        }
+
+        WebApiTelemetry { responses }
+    }
 }
 
 impl GrpcTelemetry {
@@ -194,8 +222,9 @@ impl RequestsTelemetry {
     pub fn collect(
         actix_collector: &ActixTelemetryCollector,
         tonic_collector: &TonicTelemetryCollector,
+        collections: &Vec<String>,
     ) -> Self {
-        let rest = actix_collector.get_telemetry_data();
+        let rest = actix_collector.get_telemetry_data(collections);
         let grpc = tonic_collector.get_telemetry_data();
         Self { rest, grpc }
     }

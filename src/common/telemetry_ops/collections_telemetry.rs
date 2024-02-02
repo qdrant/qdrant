@@ -4,6 +4,7 @@ use collection::telemetry::CollectionTelemetry;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::{Deserialize, Serialize};
+use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
@@ -60,6 +61,7 @@ impl CollectionsTelemetry {
                     }
                 })
                 .collect();
+
             Some(telemetry_data)
         } else {
             None
@@ -69,6 +71,34 @@ impl CollectionsTelemetry {
             number_of_collections,
             collections,
         }
+    }
+    pub async fn collect_for(
+        level: usize,
+        toc: &TableOfContent,
+        collection_names: &Vec<String>,
+    ) -> Result<Self, StorageError> {
+        let number_of_collections = collection_names.len();
+        let collections = {
+            let mut collections_telemetry = Vec::new();
+            if level > 0 {
+                for collection in collection_names {
+                    let collection = toc.get_collection(collection).await?;
+                    let telemetry = collection.get_telemetry_data().await;
+                    let collections = if level > 1 {
+                        CollectionTelemetryEnum::Full(telemetry)
+                    } else {
+                        CollectionTelemetryEnum::Aggregated(telemetry.into())
+                    };
+                    collections_telemetry.push(collections);
+                }
+            }
+            collections_telemetry
+        };
+
+        Ok(CollectionsTelemetry {
+            number_of_collections,
+            collections: Some(collections),
+        })
     }
 }
 

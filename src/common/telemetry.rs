@@ -30,39 +30,20 @@ pub struct TelemetryCollector {
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct TelemetryData {
     id: String,
-    // filters of collection names
-    pub(crate) filters: Vec<String>,
     pub(crate) app: AppBuildTelemetry,
-    pub(crate) collections: TelemetryDataCollectionType,
+    pub(crate) collections: CollectionsTelemetry,
     pub(crate) cluster: ClusterTelemetry,
     pub(crate) requests: RequestsTelemetry,
-}
-
-// If the [`TelemetryData`] is about one or more collections
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
-pub enum TelemetryDataCollectionType {
-    Single(CollectionTelemetryEnum),
-    Multiple(CollectionsTelemetry),
 }
 
 impl Anonymize for TelemetryData {
     fn anonymize(&self) -> Self {
         TelemetryData {
             id: self.id.clone(),
-            filters: self.filters.clone(),
             app: self.app.anonymize(),
             collections: self.collections.anonymize(),
             cluster: self.cluster.anonymize(),
             requests: self.requests.anonymize(),
-        }
-    }
-}
-
-impl Anonymize for TelemetryDataCollectionType {
-    fn anonymize(&self) -> Self {
-        match self {
-            Self::Single(v) => Self::Single(v.anonymize()),
-            Self::Multiple(v) => Self::Multiple(v.anonymize()),
         }
     }
 }
@@ -92,49 +73,48 @@ impl TelemetryCollector {
     }
 
     pub async fn prepare_data(&self, level: usize) -> TelemetryData {
-        let collections = TelemetryDataCollectionType::Multiple(
-            CollectionsTelemetry::collect(level, self.dispatcher.toc()).await,
-        );
+        let collections = CollectionsTelemetry::collect(level, self.dispatcher.toc()).await;
 
         TelemetryData {
             id: self.process_id.to_string(),
-            filters: Vec::new(),
             collections,
             app: AppBuildTelemetry::collect(level, &self.app_telemetry_collector, &self.settings),
             cluster: ClusterTelemetry::collect(level, &self.dispatcher, &self.settings),
             requests: RequestsTelemetry::collect(
                 &self.actix_telemetry_collector.lock(),
                 &self.tonic_telemetry_collector.lock(),
+                &Vec::new(),
             ),
         }
     }
 
+    /// Get [`TelemetryData`] for the given collection_names
+    /// # Important
+    /// If the list of collection_names is empty, the function will return data for all
+    /// collections.
     pub async fn prepare_data_for(
         &self,
         level: usize,
-        collection_name: String,
+        collection_names: &Vec<String>,
     ) -> Result<TelemetryData, StorageError> {
-        let collection = self
-            .dispatcher
-            .toc()
-            .get_collection(&collection_name)
-            .await?;
-        let telemetry = collection.get_telemetry_data().await;
-        let collections = TelemetryDataCollectionType::Single(if level > 1 {
-            CollectionTelemetryEnum::Full(telemetry)
-        } else {
-            CollectionTelemetryEnum::Aggregated(telemetry.into())
-        });
+        let collections = {
+            if collection_names.is_empty() {
+                CollectionsTelemetry::collect(level, self.dispatcher.toc()).await
+            } else {
+                CollectionsTelemetry::collect_for(level, self.dispatcher.toc(), collection_names)
+                    .await?
+            }
+        };
 
         Ok(TelemetryData {
             id: self.process_id.to_string(),
-            filters: vec![collection_name],
             collections,
             app: AppBuildTelemetry::collect(level, &self.app_telemetry_collector, &self.settings),
             cluster: ClusterTelemetry::collect(level, &self.dispatcher, &self.settings),
             requests: RequestsTelemetry::collect(
                 &self.actix_telemetry_collector.lock(),
                 &self.tonic_telemetry_collector.lock(),
+                collection_names,
             ),
         })
     }

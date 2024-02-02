@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::sync::Arc;
 
 use actix_web::http::header::ContentType;
@@ -18,6 +19,7 @@ use crate::common::helpers::LocksOption;
 use crate::common::metrics::MetricsData;
 use crate::common::stacktrace::get_stack_trace;
 use crate::common::telemetry::{TelemetryCollector, TelemetryData};
+use crate::common::telemetry_ops::collections_telemetry::CollectionTelemetryEnum;
 
 #[derive(Deserialize, Serialize, JsonSchema)]
 pub struct TelemetryParam {
@@ -46,32 +48,35 @@ async fn telemetry(
 #[derive(Deserialize, Serialize, JsonSchema)]
 pub struct MetricsParam {
     pub anonymize: Option<bool>,
-    pub collection_name: Option<String>,
+    pub collection_names: Option<Vec<String>>,
 }
 
 #[get("/metrics")]
 async fn metrics(
     telemetry_collector: web::Data<Mutex<TelemetryCollector>>,
-    params: Query<MetricsParam>,
+    params: actix_web_lab::extract::Query<MetricsParam>,
 ) -> impl Responder {
     let timing = Instant::now();
     let anonymize = params.anonymize.unwrap_or(false);
-    let collection_name = params.collection_name.clone();
+    let collection_names = params.collection_names.clone().unwrap_or_default();
+    println!("names: {collection_names:?}");
     let telemetry_collector = telemetry_collector.lock().await;
 
-    let telemetry_data = {
-        if let Some(n) = collection_name {
-            let r = telemetry_collector.prepare_data_for(2, n).await;
-            if let Err(e) = r {
-                return process_response::<TelemetryData>(Err(e), timing);
-            }
-            println!("tel: {r:#?}");
-            // safe to unwrap here
-            r.unwrap()
-        } else {
-            telemetry_collector.prepare_data(1).await
-        }
-    };
+    let resp = telemetry_collector
+        .prepare_data_for(2, &collection_names)
+        .await;
+    if let Err(e) = resp {
+        return process_response::<TelemetryData>(Err(e), timing);
+    }
+    // safe to unwrap here
+    let telemetry_data = resp.unwrap();
+    println!("{:#?}", telemetry_data.requests);
+    // for v in telemetry_data.collections.collections.clone().unwrap() {
+    //     match v {
+    //         CollectionTelemetryEnum::Full(v) => println!("full {:#?}", v.id),
+    //         CollectionTelemetryEnum::Aggregated(v) => println!("agg {:#?}", v.type_id()),
+    //     };
+    // }
 
     let telemetry_data = if anonymize {
         telemetry_data.anonymize()

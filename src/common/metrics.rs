@@ -1,7 +1,6 @@
 use prometheus::proto::{Counter, Gauge, LabelPair, Metric, MetricFamily, MetricType};
 use prometheus::TextEncoder;
 
-use super::telemetry::TelemetryDataCollectionType;
 use crate::common::telemetry::TelemetryData;
 use crate::common::telemetry_ops::app_telemetry::{AppBuildTelemetry, AppFeaturesTelemetry};
 use crate::common::telemetry_ops::cluster_telemetry::{ClusterStatusTelemetry, ClusterTelemetry};
@@ -67,37 +66,20 @@ impl From<TelemetryData> for MetricsData {
 trait MetricsProvider {
     /// Add metrics definitions for this.
     // fn add_metrics(&self, metrics: &mut Vec<MetricFamily>);
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, filters: Vec<String>);
-}
-
-trait MetricsProviderTelemetryData {
     fn add_metrics(&self, metrics: &mut Vec<MetricFamily>);
 }
 
-impl MetricsProvider for TelemetryDataCollectionType {
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, filters: Vec<String>) {
-        match self {
-            Self::Single(v) => {
-                v.add_metrics(metrics, filters);
-            }
-            Self::Multiple(v) => {
-                v.add_metrics(metrics, filters);
-            }
-        }
-    }
-}
-
-impl MetricsProviderTelemetryData for TelemetryData {
+impl MetricsProvider for TelemetryData {
     fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
-        self.app.add_metrics(metrics, self.filters.clone());
-        self.collections.add_metrics(metrics, self.filters.clone());
-        self.cluster.add_metrics(metrics, self.filters.clone());
-        self.requests.add_metrics(metrics, self.filters.clone());
+        self.app.add_metrics(metrics);
+        self.collections.add_metrics(metrics);
+        self.cluster.add_metrics(metrics);
+        self.requests.add_metrics(metrics);
     }
 }
 
 impl MetricsProvider for AppBuildTelemetry {
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, filters: Vec<String>) {
+    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
         metrics.push(metric_family(
             "app_info",
             "information about qdrant server",
@@ -107,14 +89,12 @@ impl MetricsProvider for AppBuildTelemetry {
                 &[("name", &self.name), ("version", &self.version)],
             )],
         ));
-        self.features
-            .iter()
-            .for_each(|f| f.add_metrics(metrics, filters.clone()));
+        self.features.iter().for_each(|f| f.add_metrics(metrics));
     }
 }
 
 impl MetricsProvider for AppFeaturesTelemetry {
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, _filters: Vec<String>) {
+    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
         metrics.push(metric_family(
             "app_status_recovery_mode",
             "features enabled in qdrant server",
@@ -125,7 +105,7 @@ impl MetricsProvider for AppFeaturesTelemetry {
 }
 
 impl MetricsProvider for CollectionsTelemetry {
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, _filters: Vec<String>) {
+    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
         let vector_count = self
             .collections
             .iter()
@@ -150,14 +130,8 @@ impl MetricsProvider for CollectionsTelemetry {
     }
 }
 
-impl MetricsProvider for CollectionTelemetryEnum {
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, filters: Vec<String>) {
-        // todo!
-    }
-}
-
 impl MetricsProvider for ClusterTelemetry {
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, filters: Vec<String>) {
+    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
         metrics.push(metric_family(
             "cluster_enabled",
             "is cluster support enabled",
@@ -166,13 +140,13 @@ impl MetricsProvider for ClusterTelemetry {
         ));
 
         if let Some(ref status) = self.status {
-            status.add_metrics(metrics, filters);
+            status.add_metrics(metrics);
         }
     }
 }
 
 impl MetricsProvider for ClusterStatusTelemetry {
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, filters: Vec<String>) {
+    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
         metrics.push(metric_family(
             "cluster_peers_total",
             "total number of cluster peers",
@@ -210,14 +184,14 @@ impl MetricsProvider for ClusterStatusTelemetry {
 }
 
 impl MetricsProvider for RequestsTelemetry {
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, filters: Vec<String>) {
-        self.rest.add_metrics(metrics, filters.clone());
-        self.grpc.add_metrics(metrics, filters);
+    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
+        self.rest.add_metrics(metrics);
+        self.grpc.add_metrics(metrics);
     }
 }
 
 impl MetricsProvider for WebApiTelemetry {
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, filters: Vec<String>) {
+    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
         let (mut total, mut fail_total, mut avg_secs, mut min_secs, mut max_secs) =
             (vec![], vec![], vec![], vec![], vec![]);
 
@@ -303,7 +277,7 @@ impl MetricsProvider for WebApiTelemetry {
 }
 
 impl MetricsProvider for GrpcTelemetry {
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, filters: Vec<String>) {
+    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
         let (mut total, mut fail_total, mut avg_secs, mut min_secs, mut max_secs) =
             (vec![], vec![], vec![], vec![], vec![]);
         for (endpoint, stats) in &self.responses {
