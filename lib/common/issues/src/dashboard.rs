@@ -1,49 +1,44 @@
-use std::collections::HashMap;
-use std::sync::{Mutex, MutexGuard, OnceLock};
+use std::sync::{Arc, OnceLock};
 
-use serde::{Serialize, Serializer};
+use dashmap::DashMap;
 
 use crate::issue::{CodeType, Issue, IssueRecord};
 
-#[derive(Default, Serialize)]
+#[derive(Default)]
 struct Dashboard {
-    pub issues: HashMap<CodeType, IssueRecord>,
+    pub issues: DashMap<CodeType, IssueRecord>,
 }
 
 impl Dashboard {
     /// Activates an issue, returning true if the issue was not active before
-    fn add_issue(&mut self, issue: impl Issue) -> bool {
+    fn add_issue(&self, issue: impl Issue) -> bool {
+        let code = issue.code();
+        if self.issues.contains_key(&code) {
+            return false;
+        }
         let issue = IssueRecord::from(issue);
-        self.issues.insert(issue.code.clone(), issue).is_none()
+        self.issues.insert(code, issue).is_none()
     }
 
     /// Deactivates an issue by its code, returning true if the issue was active before
-    fn remove_issue<S: AsRef<str>>(&mut self, code: S) -> bool {
-        self.issues.remove(code.as_ref()).is_some()
+    fn remove_issue<S: AsRef<str>>(&self, code: S) -> bool {
+        if self.issues.contains_key(code.as_ref()) {
+            return self.issues.remove(code.as_ref()).is_some();
+        }
+        false
+    }
+
+    /// Returns all issues in the dashboard. This operation clones every issue, so it is more expensive.
+    fn get_all_issues(&self) -> Vec<IssueRecord> {
+        self.issues.iter().map(|kv| kv.value().clone()).collect()
     }
 }
 
-fn dashboard<'a>() -> MutexGuard<'a, Dashboard> {
-    static DASHBOARD: OnceLock<Mutex<Dashboard>> = OnceLock::new();
-    match DASHBOARD
-        .get_or_init(|| Mutex::new(Dashboard::default()))
-        // this is a blocking attempt to get the dashboard
-        .lock()
-    {
-        Ok(guard) => guard,
-        Err(e) => {
-            log::warn!(
-                "Mutex to the issue dashboard is poisoned, restarting dashboard: {}",
-                e
-            );
-
-            // clear the dashboard
-            let mut guard = e.into_inner();
-            guard.issues.clear();
-
-            guard
-        }
-    }
+fn dashboard() -> Arc<Dashboard> {
+    static DASHBOARD: OnceLock<Arc<Dashboard>> = OnceLock::new();
+    DASHBOARD
+        .get_or_init(|| Arc::new(Dashboard::default()))
+        .clone()
 }
 
 /// Submits an issue to the dashboard, returning true if the issue code was not active before
@@ -56,13 +51,8 @@ pub fn solve<S: AsRef<str>>(code: S) -> bool {
     dashboard().remove_issue(code)
 }
 
-/// Generates serialized report of the issues in the dashboard, using the provided serializer
-pub fn report<S: Serializer>(serializer: S) -> Result<S::Ok, S::Error> {
-    dashboard().serialize(serializer)
-}
-
 pub fn all_issues() -> Vec<IssueRecord> {
-    dashboard().issues.values().cloned().collect()
+    dashboard().get_all_issues()
 }
 
 /// Clears all issues from the dashboard
@@ -91,7 +81,7 @@ mod tests {
 
     #[test]
     fn test_dashboard() {
-        let mut dashboard = Dashboard::default();
+        let dashboard = Dashboard::default();
         let issue = DummyIssue {
             code: "test".to_string(),
         };
@@ -155,8 +145,8 @@ mod tests {
         assert_eq!(dashboard().issues.len(), 1);
         assert!(dashboard()
             .issues
-            .keys()
-            .all(|code| !code.starts_with("issue")));
+            .iter()
+            .all(|kv| !kv.key().starts_with("issue")));
         clear();
     }
 
@@ -171,7 +161,7 @@ mod tests {
         filter_solve(|code| code.contains('2'));
 
         assert_eq!(dashboard().issues.len(), 2);
-        assert!(dashboard().issues.keys().all(|code| !code.contains('2')));
+        assert!(dashboard().issues.iter().all(|kv| !kv.key().contains('2')));
         clear();
     }
 }

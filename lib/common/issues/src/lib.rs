@@ -46,6 +46,6 @@ mod issue;
 pub mod problems;
 mod solution;
 
-pub use dashboard::{all_issues, clear, filter_solve, prefix_solve, report, solve, submit};
+pub use dashboard::{all_issues, clear, filter_solve, prefix_solve, solve, submit};
 pub use issue::{Issue, IssueRecord};
 pub use solution::Solution;
