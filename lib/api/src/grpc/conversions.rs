@@ -974,22 +974,28 @@ impl From<segment::types::FieldCondition> for FieldCondition {
             key,
             r#match,
             range,
-            datetime_range,
+            datetime_range: _,
             geo_bounding_box,
             geo_radius,
             geo_polygon,
             values_count,
         } = value;
 
+        let (range, datetime_range) = match range {
+            Some(segment::types::RangeInterface::Float(range)) => (Some(range.into()), None),
+            Some(segment::types::RangeInterface::DateTime(range)) => (None, Some(range.into())),
+            None => (None, None),
+        };
+
         Self {
             key,
             r#match: r#match.map(Into::into),
-            range: range.map(Into::into),
+            range,
             geo_bounding_box: geo_bounding_box.map(Into::into),
             geo_radius: geo_radius.map(Into::into),
             geo_polygon: geo_polygon.map(Into::into),
             values_count: values_count.map(Into::into),
-            datetime_range: datetime_range.map(Into::into),
+            datetime_range,
         }
     }
 }
@@ -1121,6 +1127,12 @@ impl From<segment::types::Range<FloatPayloadType>> for Range {
             gte: value.gte,
             lte: value.lte,
         }
+    }
+}
+
+impl From<Range> for segment::types::RangeInterface {
+    fn from(value: Range) -> Self {
+        Self::Float(value.into())
     }
 }
 

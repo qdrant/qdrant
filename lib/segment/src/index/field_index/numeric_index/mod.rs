@@ -34,6 +34,7 @@ use crate::index::key_encoding::{
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, Range,
+    RangeInterface,
 };
 
 const HISTOGRAM_MAX_BUCKET_SIZE: usize = 10_000;
@@ -236,26 +237,50 @@ impl<T: Encodable + Numericable + Default> NumericIndex<T> {
         }
     }
 
-    fn range_cardinality(&self, range: &Range<FloatPayloadType>) -> CardinalityEstimation {
+    fn range_cardinality(&self, range: &RangeInterface) -> CardinalityEstimation {
         let max_values_per_point = self.max_values_per_point();
         if max_values_per_point == 0 {
             return CardinalityEstimation::exact(0);
         }
 
-        let lbound = if let Some(lte) = range.lte {
-            Included(T::from_f64(lte))
-        } else if let Some(lt) = range.lt {
-            Excluded(T::from_f64(lt))
-        } else {
-            Unbounded
-        };
+        let (lbound, gbound) = match range {
+            RangeInterface::Float(float_range) => {
+                let lbound = if let Some(lte) = float_range.lte {
+                    Included(T::from_f64(lte))
+                } else if let Some(lt) = float_range.lt {
+                    Excluded(T::from_f64(lt))
+                } else {
+                    Unbounded
+                };
 
-        let gbound = if let Some(gte) = range.gte {
-            Included(T::from_f64(gte))
-        } else if let Some(gt) = range.gt {
-            Excluded(T::from_f64(gt))
-        } else {
-            Unbounded
+                let gbound = if let Some(gte) = float_range.gte {
+                    Included(T::from_f64(gte))
+                } else if let Some(gt) = float_range.gt {
+                    Excluded(T::from_f64(gt))
+                } else {
+                    Unbounded
+                };
+                (lbound, gbound)
+            }
+            // TODO: Maybe refactor `range_cardinality` out of `PayloadFieldIndex` to allow polymorphism, as in `ValueIndexer<T>`
+            RangeInterface::DateTime(datetime_range) => {
+                let lbound = if let Some(lte) = datetime_range.lte {
+                    Included(T::from_i64(lte.timestamp_micros()))
+                } else if let Some(lt) = datetime_range.lt {
+                    Excluded(T::from_i64(lt.timestamp_micros()))
+                } else {
+                    Unbounded
+                };
+
+                let gbound = if let Some(gte) = datetime_range.gte {
+                    Included(T::from_i64(gte.timestamp_micros()))
+                } else if let Some(gt) = datetime_range.gt {
+                    Excluded(T::from_i64(gt.timestamp_micros()))
+                } else {
+                    Unbounded
+                };
+                (lbound, gbound)
+            }
         };
 
         let histogram_estimation = self.get_histogram().estimate(gbound, lbound);
@@ -341,9 +366,63 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndex<T>
         let cond_range = condition
             .range
             .as_ref()
-            .ok_or_else(|| OperationError::service_error("failed to get condition range"))?;
+            .ok_or_else(|| OperationError::service_error("failed to get range condition"))?;
 
-        let (start_bound, end_bound) = cond_range.as_bounds();
+        let (start_bound, end_bound) = match cond_range {
+            RangeInterface::Float(float_range) => {
+                let start_bound = match float_range {
+                    Range { gt: Some(gt), .. } => {
+                        let v: T = T::from_f64(*gt);
+                        Excluded(NumericIndexKey::new(v, PointOffsetType::MAX))
+                    }
+                    Range { gte: Some(gte), .. } => {
+                        let v: T = T::from_f64(*gte);
+                        Included(NumericIndexKey::new(v, PointOffsetType::MIN))
+                    }
+                    _ => Unbounded,
+                };
+
+                let end_bound = match float_range {
+                    Range { lt: Some(lt), .. } => {
+                        let v: T = T::from_f64(*lt);
+                        Excluded(NumericIndexKey::new(v, PointOffsetType::MIN))
+                    }
+                    Range { lte: Some(lte), .. } => {
+                        let v: T = T::from_f64(*lte);
+                        Included(NumericIndexKey::new(v, PointOffsetType::MAX))
+                    }
+                    _ => Unbounded,
+                };
+                (start_bound, end_bound)
+            }
+            // TODO: Maybe refactor `filter` out of `PayloadFieldIndex` to allow polymorphism, as in `ValueIndexer<T>`
+            RangeInterface::DateTime(datetime_range) => {
+                let start_bound = match datetime_range {
+                    Range { gt: Some(gt), .. } => {
+                        let v: T = T::from_i64(gt.timestamp_micros());
+                        Excluded(NumericIndexKey::new(v, PointOffsetType::MAX))
+                    }
+                    Range { gte: Some(gte), .. } => {
+                        let v: T = T::from_i64(gte.timestamp_micros());
+                        Included(NumericIndexKey::new(v, PointOffsetType::MIN))
+                    }
+                    _ => Unbounded,
+                };
+
+                let end_bound = match datetime_range {
+                    Range { lt: Some(lt), .. } => {
+                        let v: T = T::from_i64(lt.timestamp_micros());
+                        Excluded(NumericIndexKey::new(v, PointOffsetType::MIN))
+                    }
+                    Range { lte: Some(lte), .. } => {
+                        let v: T = T::from_i64(lte.timestamp_micros());
+                        Included(NumericIndexKey::new(v, PointOffsetType::MAX))
+                    }
+                    _ => Unbounded,
+                };
+                (start_bound, end_bound)
+            }
+        };
 
         // map.range
         // Panics if range start > end. Panics if range start == end and both bounds are Excluded.
@@ -414,7 +493,7 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndex<T>
                         _ => None,
                     },
                 };
-                let cardinality = self.range_cardinality(&range);
+                let cardinality = self.range_cardinality(&RangeInterface::Float(range.clone()));
                 let condition = PayloadBlockCondition {
                     condition: FieldCondition::new_range(key.clone(), range),
                     cardinality: cardinality.exp,

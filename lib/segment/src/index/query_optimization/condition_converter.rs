@@ -15,7 +15,7 @@ use crate::payload_storage::query_checker::{
 use crate::types::{
     AnyVariants, Condition, DateTimePayloadType, FieldCondition, FloatPayloadType, GeoBoundingBox,
     GeoPolygon, GeoRadius, IntPayloadType, Match, MatchAny, MatchExcept, MatchText, MatchValue,
-    OwnedPayloadRef, PayloadContainer, Range, ValueVariants,
+    OwnedPayloadRef, PayloadContainer, Range, RangeInterface, ValueVariants,
 };
 
 pub fn condition_converter<'a>(
@@ -128,55 +128,50 @@ pub fn field_condition_index<'a>(
     index: &'a FieldIndex,
     field_condition: &FieldCondition,
 ) -> Option<ConditionCheckerFn<'a>> {
-    if let Some(checker) = field_condition
-        .r#match
-        .clone()
-        .and_then(|cond| get_match_checkers(index, cond))
-    {
-        return Some(checker);
-    }
+    match field_condition {
+        FieldCondition {
+            r#match: Some(cond_match),
+            ..
+        } => get_match_checkers(index, cond_match.clone()),
 
-    if let Some(checker) = field_condition
-        .range
-        .clone()
-        .and_then(|cond| get_range_checkers(index, cond))
-    {
-        return Some(checker);
-    }
+        FieldCondition {
+            range: Some(range), ..
+        } => match range {
+            RangeInterface::Float(cond) => get_range_checkers(index, cond.clone()),
+            RangeInterface::DateTime(cond) => get_datetime_range_checkers(index, cond.clone()),
+        },
 
-    if let Some(checker) = field_condition
-        .datetime_range
-        .clone()
-        .and_then(|cond| get_datetime_range_checkers(index, cond))
-    {
-        return Some(checker);
-    }
+        FieldCondition {
+            datetime_range: Some(range),
+            ..
+        } => get_datetime_range_checkers(index, range.clone()),
 
-    if let Some(checker) = field_condition
-        .geo_radius
-        .clone()
-        .and_then(|cond| get_geo_radius_checkers(index, cond))
-    {
-        return Some(checker);
-    }
+        FieldCondition {
+            geo_radius: Some(geo_radius),
+            ..
+        } => get_geo_radius_checkers(index, geo_radius.clone()),
 
-    if let Some(checker) = field_condition
-        .geo_bounding_box
-        .clone()
-        .and_then(|cond| get_geo_bounding_box_checkers(index, cond))
-    {
-        return Some(checker);
-    }
+        FieldCondition {
+            geo_bounding_box: Some(geo_bounding_box),
+            ..
+        } => get_geo_bounding_box_checkers(index, geo_bounding_box.clone()),
 
-    if let Some(checker) = field_condition
-        .geo_polygon
-        .clone()
-        .and_then(|cond| get_geo_polygon_checkers(index, cond))
-    {
-        return Some(checker);
-    }
+        FieldCondition {
+            geo_polygon: Some(geo_polygon),
+            ..
+        } => get_geo_polygon_checkers(index, geo_polygon.clone()),
 
-    None
+        FieldCondition {
+            key: _,
+            r#match: None,
+            range: None,
+            datetime_range: None,
+            geo_radius: None,
+            geo_bounding_box: None,
+            geo_polygon: None,
+            values_count: _, // No applicable index for values_count
+        } => None,
+    }
 }
 
 pub fn get_geo_polygon_checkers(
