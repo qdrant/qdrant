@@ -42,9 +42,12 @@ pub fn get_cpu_budget(cpu_budget_param: isize) -> usize {
             .saturating_sub(-cpu_budget_param as usize)
             .max(1),
         // If zero, use automatic selection
-        Ordering::Equal => get_num_cpus()
-            .saturating_sub(-default_cpu_budget_unallocated(get_num_cpus()) as usize)
-            .max(1),
+        Ordering::Equal => {
+            let num_cpus = get_num_cpus();
+            num_cpus
+                .saturating_sub(-default_cpu_budget_unallocated(num_cpus) as usize)
+                .max(1)
+        }
         // If greater than zero, use exact number
         Ordering::Greater => cpu_budget_param as usize,
     }
