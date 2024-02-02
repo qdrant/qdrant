@@ -59,7 +59,7 @@ impl ActixTelemetryCollector {
     pub fn get_telemetry_data(&self, collections: &Vec<String>) -> WebApiTelemetry {
         let mut result = WebApiTelemetry::default();
         for web_data in &self.workers {
-            let lock = web_data.lock().get_telemetry_data();
+            let lock = web_data.lock().get_telemetry_data_for(collections);
             result.merge(&lock);
         }
         result
@@ -149,6 +149,7 @@ impl ActixWorkerTelemetryCollector {
         WebApiTelemetry { responses }
     }
 
+    /// If the given collection are empty, will return data for all collections
     pub fn get_telemetry_data_for(&self, collections: &Vec<String>) -> WebApiTelemetry {
         let mut responses: HashMap<
             // collection_name
@@ -156,6 +157,10 @@ impl ActixWorkerTelemetryCollector {
             // k: method_name
             HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
         > = HashMap::new();
+
+        if collections.is_empty() {
+            return self.get_telemetry_data();
+        }
 
         for collection in collections {
             if let Some(methods) = self.collections.get(collection) {
@@ -249,7 +254,7 @@ impl Anonymize for WebApiTelemetry {
                     .map(|(key, value)| {
                         let new_value: HashMap<u16, OperationDurationStatistics> =
                             value.iter().map(|(k, v)| (*k, v.anonymize())).collect();
-                        return (key.clone(), new_value);
+                        (key.clone(), new_value)
                     })
                     .collect();
                 (key.clone(), value)
@@ -287,7 +292,10 @@ mod tests {
 
         // we will merge "other_stats" into "my_stats"
         let mut my_stats = OperationDurationStatistics::default();
-        my_stats.count = 3;
+        let my_stats = OperationDurationStatistics {
+            count: 3,
+            ..Default::default()
+        };
         let status_code_to_statistics = HashMap::from([(200, my_stats)]);
         let method_to_stats: HashMap<String, HashMap<u16, OperationDurationStatistics>> =
             HashMap::from([(method_name.clone(), status_code_to_statistics)]);
@@ -296,9 +304,11 @@ mod tests {
             responses: my_responses,
         };
 
-        let mut other_stats = OperationDurationStatistics::default();
-        other_stats.count = 2;
-        other_stats.fail_count = 5;
+        let other_stats = OperationDurationStatistics {
+            count: 2,
+            fail_count: 5,
+            ..Default::default()
+        };
         let other_status_code_to_statistics = HashMap::from([(200, other_stats)]);
         let other_method_to_stats: HashMap<String, HashMap<u16, OperationDurationStatistics>> =
             HashMap::from([(method_name.clone(), other_status_code_to_statistics)]);

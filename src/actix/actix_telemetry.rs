@@ -2,10 +2,11 @@ use std::future::{ready, Ready};
 use std::sync::Arc;
 
 use actix_web::dev::{Service, ServiceRequest, ServiceResponse, Transform};
-use actix_web::Error;
+use actix_web::{web, Error};
 use futures_util::future::LocalBoxFuture;
 use parking_lot::Mutex;
 
+use crate::actix::api::CollectionPath;
 use crate::common::telemetry_ops::requests_telemetry::{
     ActixTelemetryCollector, ActixWorkerTelemetryCollector,
 };
@@ -43,12 +44,27 @@ where
         let future = self.service.call(request);
         let telemetry_data = self.telemetry_data.clone();
 
-        // todo: get this collection from somewhere
-        let collection = "test_collection".to_string();
-
         Box::pin(async move {
             let instant = std::time::Instant::now();
             let response = future.await?;
+            let request = response.request();
+
+            // first try to get the collection name by the path,
+            // if not found, try to get it from the query params
+            let collection = {
+                let collection_name = request.match_info().get("name").map(|v| v.to_owned());
+                collection_name.unwrap_or_else(|| {
+                    let params = web::Query::<CollectionPath>::from_query(request.query_string());
+                    if let Ok(params) = params {
+                        params.name.clone()
+                    } else {
+                        "unknown".to_string()
+                    }
+                })
+            };
+
+            println!("collection: {collection:?}");
+
             let status = response.response().status().as_u16();
             telemetry_data
                 .lock()

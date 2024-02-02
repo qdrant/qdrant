@@ -31,8 +31,8 @@ struct StrictCollectionPath {
 /// Validation for collection paths has been made more strict over time.
 /// To prevent breaking changes on existing collections, this is only enforced for newly created
 /// collections. Basic validation is enforced everywhere else.
-#[derive(Deserialize, Validate)]
-struct CollectionPath {
+#[derive(Deserialize, Validate, Debug)]
+pub struct CollectionPath {
     #[validate(length(min = 1, max = 255))]
-    name: String,
+    pub name: String,
 }

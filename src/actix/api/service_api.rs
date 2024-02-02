@@ -48,20 +48,26 @@ async fn telemetry(
 #[derive(Deserialize, Serialize, JsonSchema)]
 pub struct MetricsParam {
     pub anonymize: Option<bool>,
-    pub collection_names: Option<Vec<String>>,
+    /// a string, or a list of strings separated by commas with no space in between.
+    pub collection_names: Option<String>,
 }
 
 #[get("/metrics")]
 async fn metrics(
     telemetry_collector: web::Data<Mutex<TelemetryCollector>>,
-    params: actix_web_lab::extract::Query<MetricsParam>,
+    params: Query<MetricsParam>,
 ) -> impl Responder {
     let timing = Instant::now();
     let anonymize = params.anonymize.unwrap_or(false);
-    let collection_names = params.collection_names.clone().unwrap_or_default();
-    println!("names: {collection_names:?}");
+    let collection_names: Vec<String> = params
+        .collection_names
+        .clone()
+        .unwrap_or_default()
+        .split(',')
+        .filter(|v| !v.is_empty())
+        .filter_map(|v| v.parse().ok())
+        .collect();
     let telemetry_collector = telemetry_collector.lock().await;
-
     let resp = telemetry_collector
         .prepare_data_for(2, &collection_names)
         .await;
@@ -70,19 +76,19 @@ async fn metrics(
     }
     // safe to unwrap here
     let telemetry_data = resp.unwrap();
-    println!("{:#?}", telemetry_data.requests);
-    // for v in telemetry_data.collections.collections.clone().unwrap() {
-    //     match v {
-    //         CollectionTelemetryEnum::Full(v) => println!("full {:#?}", v.id),
-    //         CollectionTelemetryEnum::Aggregated(v) => println!("agg {:#?}", v.type_id()),
-    //     };
-    // }
 
     let telemetry_data = if anonymize {
         telemetry_data.anonymize()
     } else {
         telemetry_data
     };
+    for v in telemetry_data.collections.collections.clone().unwrap() {
+        match v {
+            CollectionTelemetryEnum::Full(v) => println!("full {:#?}", v.id),
+            CollectionTelemetryEnum::Aggregated(v) => println!("agg {:#?}", v.type_id()),
+        };
+    }
+    // println!("{:#?}", telemetry_data.requests);
 
     HttpResponse::Ok()
         .content_type(ContentType::plaintext())

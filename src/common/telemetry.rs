@@ -8,7 +8,6 @@ use storage::content_manager::errors::StorageError;
 use storage::dispatcher::Dispatcher;
 use uuid::Uuid;
 
-use super::telemetry_ops::collections_telemetry::CollectionTelemetryEnum;
 use crate::common::telemetry_ops::app_telemetry::{AppBuildTelemetry, AppBuildTelemetryCollector};
 use crate::common::telemetry_ops::cluster_telemetry::ClusterTelemetry;
 use crate::common::telemetry_ops::collections_telemetry::CollectionsTelemetry;
