@@ -42,7 +42,11 @@ pub fn index_selector(
                     NumericIndex::<FloatPayloadType>::new(db, field, is_appendable),
                 )]
             }
-            PayloadSchemaType::Geo => vec![FieldIndex::GeoIndex(GeoMapIndex::new(db, field))],
+            PayloadSchemaType::Geo => vec![FieldIndex::GeoIndex(GeoMapIndex::new(
+                db,
+                field,
+                is_appendable,
+            ))],
             PayloadSchemaType::Text => vec![FieldIndex::FullTextIndex(FullTextIndex::new(
                 db,
                 Default::default(),
