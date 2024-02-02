@@ -1092,6 +1092,7 @@ impl PayloadFieldSchema {
             | PayloadFieldSchema::FieldType(PayloadSchemaType::Float) => true,
 
             PayloadFieldSchema::FieldType(PayloadSchemaType::Bool)
+            | PayloadFieldSchema::FieldType(PayloadSchemaType::Datetime) // TODO(luis): move to true section once we support order-by datetime
             | PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)
             | PayloadFieldSchema::FieldType(PayloadSchemaType::Text)
             | PayloadFieldSchema::FieldType(PayloadSchemaType::Geo)

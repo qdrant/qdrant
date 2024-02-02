@@ -10,9 +10,8 @@ use tonic::Status;
 use uuid::Uuid;
 
 use super::qdrant::{
-    
-    BinaryQuantization, CompressionRatio, DatetimeRange, Direction, GeoLineString, GroupId, OrderBy, SparseIndices,
-,
+    BinaryQuantization, CompressionRatio, DatetimeRange, Direction, GeoLineString, GroupId,
+    OrderBy, Range, SparseIndices,
 };
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
@@ -29,7 +28,7 @@ use crate::grpc::qdrant::{
     IsNullCondition, ListCollectionsResponse, ListValue, Match, NamedVectors, NestedCondition,
     PayloadExcludeSelector, PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo,
     PayloadSchemaType, PointId, PointsOperationResponse, PointsOperationResponseInternal,
-    ProductQuantization, QuantizationConfig, QuantizationSearchParams, QuantizationType, Range,
+    ProductQuantization, QuantizationConfig, QuantizationSearchParams, QuantizationType,
     RepeatedIntegers, RepeatedStrings, ScalarQuantization, ScoredPoint, SearchParams, ShardKey,
     Struct, TextIndexParams, TokenizerType, UpdateResult, UpdateResultInternal, Value, ValuesCount,
     Vector, Vectors, VectorsSelector, WithPayloadSelector, WithVectorsSelector,

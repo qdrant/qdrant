@@ -133,6 +133,7 @@ impl std::fmt::Debug for FieldIndex {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             FieldIndex::IntIndex(_index) => write!(f, "IntIndex"),
+            FieldIndex::DatetimeIndex(_index) => write!(f, "DatetimeIndex"),
             FieldIndex::IntMapIndex(_index) => write!(f, "IntMapIndex"),
             FieldIndex::KeywordIndex(_index) => write!(f, "KeywordIndex"),
             FieldIndex::FloatIndex(_index) => write!(f, "FloatIndex"),
@@ -368,6 +369,7 @@ impl FieldIndex {
             FieldIndex::IntIndex(index) => Some(NumericFieldIndex::IntIndex(index)),
             FieldIndex::FloatIndex(index) => Some(NumericFieldIndex::FloatIndex(index)),
             FieldIndex::IntMapIndex(_)
+            | FieldIndex::DatetimeIndex(_) // TODO(luis): move to Some(..) section when datetime index is enabled for order-by
             | FieldIndex::KeywordIndex(_)
             | FieldIndex::GeoIndex(_)
             | FieldIndex::BinaryIndex(_)
@@ -384,7 +386,7 @@ pub enum NumericFieldIndex<'a> {
 impl<'a> StreamRange<f64> for NumericFieldIndex<'a> {
     fn stream_range(
         &self,
-        range: &Range,
+        range: &Range<FloatPayloadType>,
     ) -> Box<dyn DoubleEndedIterator<Item = (f64, PointOffsetType)> + 'a> {
         match self {
             NumericFieldIndex::IntIndex(index) => {

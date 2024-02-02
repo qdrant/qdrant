@@ -42,7 +42,7 @@ const HISTOGRAM_PRECISION: f64 = 0.01;
 pub trait StreamRange<T> {
     fn stream_range(
         &self,
-        range: &Range,
+        range: &Range<FloatPayloadType>,
     ) -> Box<dyn DoubleEndedIterator<Item = (T, PointOffsetType)> + '_>;
 }
 
@@ -117,7 +117,7 @@ impl Encodable for DateTimePayloadType {
     }
 }
 
-impl Range {
+impl Range<FloatPayloadType> {
     pub(in crate::index::field_index::numeric_index) fn as_bounds<T: Encodable + Numericable>(
         &self,
     ) -> (Bound<NumericIndexKey<T>>, Bound<NumericIndexKey<T>>) {
@@ -499,33 +499,6 @@ impl ValueIndexer<DateTimePayloadType> for NumericIndex<IntPayloadType> {
     }
 }
 
-impl ValueIndexer<DateTimePayloadType> for NumericIndex<IntPayloadType> {
-    fn add_many(
-        &mut self,
-        id: PointOffsetType,
-        values: Vec<DateTimePayloadType>,
-    ) -> OperationResult<()> {
-        match self {
-            NumericIndex::Mutable(index) => {
-                index.add_many_to_list(id, values.into_iter().map(|x| x.timestamp_micros()))
-            }
-            NumericIndex::Immutable(_) => Err(OperationError::service_error(
-                "Can't add values to immutable numeric index",
-            )),
-        }
-    }
-
-    fn get_value(&self, value: &Value) -> Option<DateTimePayloadType> {
-        chrono::DateTime::parse_from_rfc3339(value.as_str()?)
-            .ok()
-            .map(|x| x.into())
-    }
-
-    fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
-        NumericIndex::remove_point(self, id)
-    }
-}
-
 impl ValueIndexer<FloatPayloadType> for NumericIndex<FloatPayloadType> {
     fn add_many(
         &mut self,
@@ -555,7 +528,7 @@ where
 {
     fn stream_range(
         &self,
-        range: &Range,
+        range: &Range<FloatPayloadType>,
     ) -> Box<dyn DoubleEndedIterator<Item = (T, PointOffsetType)> + '_> {
         let (start_bound, end_bound) = range.as_bounds();
 

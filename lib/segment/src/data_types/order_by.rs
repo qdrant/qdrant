@@ -2,7 +2,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
-use crate::types::{Payload, Range};
+use crate::types::{FloatPayloadType, Payload, Range};
 
 const INTERNAL_KEY_OF_ORDER_BY_VALUE: &str = "____ordered_with____";
 
@@ -15,7 +15,7 @@ pub enum Direction {
 }
 
 impl Direction {
-    pub fn as_range(&self, from: f64) -> Range {
+    pub fn as_range(&self, from: FloatPayloadType) -> Range<FloatPayloadType> {
         match self {
             Direction::Asc => Range {
                 gte: Some(from),
@@ -39,13 +39,13 @@ pub struct OrderBy {
     pub direction: Option<Direction>,
 
     /// Which payload value to start scrolling from. Default is the lowest value for `asc` and the highest for `desc`
-    pub start_from: Option<f64>,
+    pub start_from: Option<FloatPayloadType>,
 }
 
 impl OrderBy {
-    pub fn as_range(&self) -> Range {
+    pub fn as_range(&self) -> Range<FloatPayloadType> {
         match self.start_from {
-            Some(offset) => self.direction.unwrap().as_range(offset),
+            Some(start_from) => self.direction.unwrap().as_range(start_from),
             None => Range {
                 ..Default::default()
             },
