@@ -30,6 +30,8 @@ pub struct TelemetryCollector {
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct TelemetryData {
     id: String,
+    // filters of collection names
+    pub(crate) filters: Vec<String>,
     pub(crate) app: AppBuildTelemetry,
     pub(crate) collections: TelemetryDataCollectionType,
     pub(crate) cluster: ClusterTelemetry,
@@ -47,6 +49,7 @@ impl Anonymize for TelemetryData {
     fn anonymize(&self) -> Self {
         TelemetryData {
             id: self.id.clone(),
+            filters: self.filters.clone(),
             app: self.app.anonymize(),
             collections: self.collections.anonymize(),
             cluster: self.cluster.anonymize(),
@@ -95,6 +98,7 @@ impl TelemetryCollector {
 
         TelemetryData {
             id: self.process_id.to_string(),
+            filters: Vec::new(),
             collections,
             app: AppBuildTelemetry::collect(level, &self.app_telemetry_collector, &self.settings),
             cluster: ClusterTelemetry::collect(level, &self.dispatcher, &self.settings),
@@ -124,6 +128,7 @@ impl TelemetryCollector {
 
         Ok(TelemetryData {
             id: self.process_id.to_string(),
+            filters: vec![collection_name],
             collections,
             app: AppBuildTelemetry::collect(level, &self.app_telemetry_collector, &self.settings),
             cluster: ClusterTelemetry::collect(level, &self.dispatcher, &self.settings),

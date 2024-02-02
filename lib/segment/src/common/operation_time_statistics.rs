@@ -11,7 +11,7 @@ use crate::common::anonymize::Anonymize;
 const AVG_DATASET_LEN: usize = 128;
 const SLIDING_WINDOW_LEN: usize = 8;
 
-#[derive(Serialize, Deserialize, Clone, Default, Debug, JsonSchema)]
+#[derive(Serialize, Deserialize, Clone, Default, Debug, JsonSchema, PartialEq)]
 pub struct OperationDurationStatistics {
     pub count: usize,
 

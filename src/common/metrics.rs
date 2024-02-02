@@ -66,33 +66,38 @@ impl From<TelemetryData> for MetricsData {
 
 trait MetricsProvider {
     /// Add metrics definitions for this.
+    // fn add_metrics(&self, metrics: &mut Vec<MetricFamily>);
+    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, filters: Vec<String>);
+}
+
+trait MetricsProviderTelemetryData {
     fn add_metrics(&self, metrics: &mut Vec<MetricFamily>);
 }
 
 impl MetricsProvider for TelemetryDataCollectionType {
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
+    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, filters: Vec<String>) {
         match self {
             Self::Single(v) => {
-                v.add_metrics(metrics);
+                v.add_metrics(metrics, filters);
             }
             Self::Multiple(v) => {
-                v.add_metrics(metrics);
+                v.add_metrics(metrics, filters);
             }
         }
     }
 }
 
-impl MetricsProvider for TelemetryData {
+impl MetricsProviderTelemetryData for TelemetryData {
     fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
-        self.app.add_metrics(metrics);
-        self.collections.add_metrics(metrics);
-        self.cluster.add_metrics(metrics);
-        self.requests.add_metrics(metrics);
+        self.app.add_metrics(metrics, self.filters.clone());
+        self.collections.add_metrics(metrics, self.filters.clone());
+        self.cluster.add_metrics(metrics, self.filters.clone());
+        self.requests.add_metrics(metrics, self.filters.clone());
     }
 }
 
 impl MetricsProvider for AppBuildTelemetry {
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
+    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, filters: Vec<String>) {
         metrics.push(metric_family(
             "app_info",
             "information about qdrant server",
@@ -102,12 +107,14 @@ impl MetricsProvider for AppBuildTelemetry {
                 &[("name", &self.name), ("version", &self.version)],
             )],
         ));
-        self.features.iter().for_each(|f| f.add_metrics(metrics));
+        self.features
+            .iter()
+            .for_each(|f| f.add_metrics(metrics, filters.clone()));
     }
 }
 
 impl MetricsProvider for AppFeaturesTelemetry {
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
+    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, _filters: Vec<String>) {
         metrics.push(metric_family(
             "app_status_recovery_mode",
             "features enabled in qdrant server",
@@ -118,7 +125,7 @@ impl MetricsProvider for AppFeaturesTelemetry {
 }
 
 impl MetricsProvider for CollectionsTelemetry {
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
+    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, _filters: Vec<String>) {
         let vector_count = self
             .collections
             .iter()
@@ -144,34 +151,13 @@ impl MetricsProvider for CollectionsTelemetry {
 }
 
 impl MetricsProvider for CollectionTelemetryEnum {
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
-        // todo
-        // let vector_count = self
-        //     .collections
-        //     .iter()
-        //     .flatten()
-        //     .map(|p| match p {
-        //         CollectionTelemetryEnum::Aggregated(a) => a.vectors,
-        //         CollectionTelemetryEnum::Full(c) => c.count_vectors(),
-        //     })
-        //     .sum::<usize>();
-        // metrics.push(metric_family(
-        //     "collections_total",
-        //     "number of collections",
-        //     MetricType::GAUGE,
-        //     vec![gauge(self.number_of_collections as f64, &[])],
-        // ));
-        // metrics.push(metric_family(
-        //     "collections_vector_total",
-        //     "total number of vectors in all collections",
-        //     MetricType::GAUGE,
-        //     vec![gauge(vector_count as f64, &[])],
-        // ));
+    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, filters: Vec<String>) {
+        // todo!
     }
 }
 
 impl MetricsProvider for ClusterTelemetry {
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
+    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, filters: Vec<String>) {
         metrics.push(metric_family(
             "cluster_enabled",
             "is cluster support enabled",
@@ -180,13 +166,13 @@ impl MetricsProvider for ClusterTelemetry {
         ));
 
         if let Some(ref status) = self.status {
-            status.add_metrics(metrics);
+            status.add_metrics(metrics, filters);
         }
     }
 }
 
 impl MetricsProvider for ClusterStatusTelemetry {
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
+    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, filters: Vec<String>) {
         metrics.push(metric_family(
             "cluster_peers_total",
             "total number of cluster peers",
@@ -224,46 +210,51 @@ impl MetricsProvider for ClusterStatusTelemetry {
 }
 
 impl MetricsProvider for RequestsTelemetry {
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
-        self.rest.add_metrics(metrics);
-        self.grpc.add_metrics(metrics);
+    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, filters: Vec<String>) {
+        self.rest.add_metrics(metrics, filters.clone());
+        self.grpc.add_metrics(metrics, filters);
     }
 }
 
 impl MetricsProvider for WebApiTelemetry {
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
+    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, filters: Vec<String>) {
         let (mut total, mut fail_total, mut avg_secs, mut min_secs, mut max_secs) =
             (vec![], vec![], vec![], vec![], vec![]);
-        for (endpoint, responses) in &self.responses {
-            let (method, endpoint) = endpoint.split_once(' ').unwrap();
 
-            // Endpoint must be whitelisted
-            if REST_ENDPOINT_WHITELIST.binary_search(&endpoint).is_err() {
-                continue;
-            }
+        for (collection_name, method_to_status) in &self.responses {
+            for (method_name, status_code_to_statistics) in method_to_status {
+                println!("method_name {method_name}");
+                let (method, endpoint) = method_name.split_once(' ').unwrap();
+                println!("method {method} endpoint {endpoint}");
 
-            for (status, stats) in responses {
-                let labels = [
-                    ("method", method),
-                    ("endpoint", endpoint),
-                    ("status", &status.to_string()),
-                ];
-                total.push(counter(stats.count as f64, &labels));
-                fail_total.push(counter(stats.fail_count as f64, &labels));
+                // Endpoint must be whitelisted
+                if REST_ENDPOINT_WHITELIST.binary_search(&endpoint).is_err() {
+                    continue;
+                }
 
-                if *status == REST_TIMINGS_FOR_STATUS {
-                    avg_secs.push(gauge(
-                        stats.avg_duration_micros.unwrap_or(0.0) as f64 / 1_000_000.0,
-                        &labels,
-                    ));
-                    min_secs.push(gauge(
-                        stats.min_duration_micros.unwrap_or(0.0) as f64 / 1_000_000.0,
-                        &labels,
-                    ));
-                    max_secs.push(gauge(
-                        stats.max_duration_micros.unwrap_or(0.0) as f64 / 1_000_000.0,
-                        &labels,
-                    ));
+                for (status_code, statistics) in status_code_to_statistics {
+                    let labels = [
+                        ("method", method),
+                        ("endpoint", endpoint),
+                        ("status", &status_code.to_string()),
+                        ("collection", collection_name),
+                    ];
+                    total.push(counter(statistics.count as f64, &labels));
+                    fail_total.push(counter(statistics.fail_count as f64, &labels));
+                    if *status_code == REST_TIMINGS_FOR_STATUS {
+                        avg_secs.push(gauge(
+                            statistics.avg_duration_micros.unwrap_or(0.0) as f64 / 1_000_000.0,
+                            &labels,
+                        ));
+                        min_secs.push(gauge(
+                            statistics.min_duration_micros.unwrap_or(0.0) as f64 / 1_000_000.0,
+                            &labels,
+                        ));
+                        max_secs.push(gauge(
+                            statistics.max_duration_micros.unwrap_or(0.0) as f64 / 1_000_000.0,
+                            &labels,
+                        ));
+                    }
                 }
             }
         }
@@ -312,7 +303,7 @@ impl MetricsProvider for WebApiTelemetry {
 }
 
 impl MetricsProvider for GrpcTelemetry {
-    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
+    fn add_metrics(&self, metrics: &mut Vec<MetricFamily>, filters: Vec<String>) {
         let (mut total, mut fail_total, mut avg_secs, mut min_secs, mut max_secs) =
             (vec![], vec![], vec![], vec![], vec![]);
         for (endpoint, stats) in &self.responses {

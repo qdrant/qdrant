@@ -42,13 +42,17 @@ where
         let request_key = format!("{} {}", request.method(), match_pattern);
         let future = self.service.call(request);
         let telemetry_data = self.telemetry_data.clone();
+
+        // todo: get this collection from somewhere
+        let collection = "test_collection".to_string();
+
         Box::pin(async move {
             let instant = std::time::Instant::now();
             let response = future.await?;
             let status = response.response().status().as_u16();
             telemetry_data
                 .lock()
-                .add_response(request_key, status, instant);
+                .add_response(collection, request_key, status, instant);
             Ok(response)
         })
     }
