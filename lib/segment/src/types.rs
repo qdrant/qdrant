@@ -1607,8 +1607,6 @@ pub struct FieldCondition {
     pub r#match: Option<Match>,
     /// Check if points value lies in a given range
     pub range: Option<RangeInterface>,
-    /// Check if datetime is within a given range
-    pub datetime_range: Option<Range<DateTimePayloadType>>,
     /// Check if points geo location lies in a given area
     pub geo_bounding_box: Option<GeoBoundingBox>,
     /// Check if geo point is within a given radius
@@ -1625,7 +1623,6 @@ impl FieldCondition {
             key: key.into(),
             r#match: Some(r#match),
             range: None,
-            datetime_range: None,
             geo_bounding_box: None,
             geo_radius: None,
             geo_polygon: None,
@@ -1638,7 +1635,6 @@ impl FieldCondition {
             key: key.into(),
             r#match: None,
             range: Some(RangeInterface::Float(range)),
-            datetime_range: None,
             geo_bounding_box: None,
             geo_radius: None,
             geo_polygon: None,
@@ -1653,8 +1649,7 @@ impl FieldCondition {
         Self {
             key: key.into(),
             r#match: None,
-            range: None,
-            datetime_range: Some(datetime_range),
+            range: Some(RangeInterface::DateTime(datetime_range)),
             geo_bounding_box: None,
             geo_radius: None,
             geo_polygon: None,
@@ -1670,7 +1665,6 @@ impl FieldCondition {
             key: key.into(),
             r#match: None,
             range: None,
-            datetime_range: None,
             geo_bounding_box: Some(geo_bounding_box),
             geo_radius: None,
             geo_polygon: None,
@@ -1683,7 +1677,6 @@ impl FieldCondition {
             key: key.into(),
             r#match: None,
             range: None,
-            datetime_range: None,
             geo_bounding_box: None,
             geo_radius: Some(geo_radius),
             geo_polygon: None,
@@ -1696,7 +1689,6 @@ impl FieldCondition {
             key: key.into(),
             r#match: None,
             range: None,
-            datetime_range: None,
             geo_bounding_box: None,
             geo_radius: None,
             geo_polygon: Some(geo_polygon),
@@ -1709,7 +1701,6 @@ impl FieldCondition {
             key: key.into(),
             r#match: None,
             range: None,
-            datetime_range: None,
             geo_bounding_box: None,
             geo_radius: None,
             geo_polygon: None,
@@ -1720,7 +1711,6 @@ impl FieldCondition {
     pub fn all_fields_none(&self) -> bool {
         self.r#match.is_none()
             && self.range.is_none()
-            && self.datetime_range.is_none()
             && self.geo_bounding_box.is_none()
             && self.geo_radius.is_none()
             && self.geo_polygon.is_none()

@@ -30,7 +30,6 @@ impl ValueChecker for FieldCondition {
         let FieldCondition {
             r#match,
             range,
-            datetime_range,
             geo_radius,
             geo_bounding_box,
             geo_polygon,
@@ -47,9 +46,6 @@ impl ValueChecker for FieldCondition {
                     RangeInterface::Float(condition) => condition.check_match(payload),
                     RangeInterface::DateTime(condition) => condition.check_match(payload),
                 })
-            || datetime_range
-                .as_ref()
-                .is_some_and(|condition| condition.check_match(payload))
             || geo_radius
                 .as_ref()
                 .is_some_and(|condition| condition.check_match(payload))

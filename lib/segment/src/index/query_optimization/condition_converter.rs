@@ -135,16 +135,8 @@ pub fn field_condition_index<'a>(
         } => get_match_checkers(index, cond_match.clone()),
 
         FieldCondition {
-            range: Some(range), ..
-        } => match range {
-            RangeInterface::Float(cond) => get_range_checkers(index, cond.clone()),
-            RangeInterface::DateTime(cond) => get_datetime_range_checkers(index, cond.clone()),
-        },
-
-        FieldCondition {
-            datetime_range: Some(range),
-            ..
-        } => get_datetime_range_checkers(index, range.clone()),
+            range: Some(cond), ..
+        } => get_range_checkers(index, cond.clone()),
 
         FieldCondition {
             geo_radius: Some(geo_radius),
@@ -165,7 +157,6 @@ pub fn field_condition_index<'a>(
             key: _,
             r#match: None,
             range: None,
-            datetime_range: None,
             geo_radius: None,
             geo_bounding_box: None,
             geo_polygon: None,
@@ -224,7 +215,14 @@ pub fn get_geo_bounding_box_checkers(
     }
 }
 
-pub fn get_range_checkers(
+pub fn get_range_checkers(index: &FieldIndex, range: RangeInterface) -> Option<ConditionCheckerFn> {
+    match range {
+        RangeInterface::Float(range) => get_float_range_checkers(index, range),
+        RangeInterface::DateTime(range) => get_datetime_range_checkers(index, range),
+    }
+}
+
+pub fn get_float_range_checkers(
     index: &FieldIndex,
     range: Range<FloatPayloadType>,
 ) -> Option<ConditionCheckerFn> {
@@ -232,15 +230,15 @@ pub fn get_range_checkers(
         FieldIndex::IntIndex(num_index) => {
             let range = range.map(|f| f as IntPayloadType);
             Some(Box::new(move |point_id: PointOffsetType| {
-                num_index.get_values(point_id).map_or(false, |values| {
-                    values.iter().copied().any(|i| range.check_range(i))
-                })
+                num_index
+                    .get_values(point_id)
+                    .is_some_and(|values| values.iter().copied().any(|i| range.check_range(i)))
             }))
         }
         FieldIndex::FloatIndex(num_index) => Some(Box::new(move |point_id: PointOffsetType| {
-            num_index.get_values(point_id).map_or(false, |values| {
-                values.iter().copied().any(|f| range.check_range(f))
-            })
+            num_index
+                .get_values(point_id)
+                .is_some_and(|values| values.iter().copied().any(|f| range.check_range(f)))
         })),
         _ => None,
     }
@@ -254,9 +252,9 @@ pub fn get_datetime_range_checkers(
         FieldIndex::DatetimeIndex(num_index) => {
             let range = range.map(|ts| ts.timestamp_micros());
             Some(Box::new(move |point_id: PointOffsetType| {
-                num_index.get_values(point_id).map_or(false, |values| {
-                    values.iter().copied().any(|i| range.check_range(i))
-                })
+                num_index
+                    .get_values(point_id)
+                    .is_some_and(|values| values.iter().copied().any(|i| range.check_range(i)))
             }))
         }
         _ => None,

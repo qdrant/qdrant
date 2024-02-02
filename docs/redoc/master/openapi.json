@@ -6456,17 +6456,6 @@
               }
             ]
           },
-          "datetime_range": {
-            "description": "Check if datetime is within a given range",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/DatetimeRange"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
           "geo_bounding_box": {
             "description": "Check if points geo location lies in a given area",
             "anyOf": [
