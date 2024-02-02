@@ -60,18 +60,6 @@ pub fn clear() {
     dashboard().issues.clear();
 }
 
-/// Solves (clears) all issues with the given prefix in their code
-pub fn prefix_solve(prefix: &str) {
-    dashboard()
-        .issues
-        .retain(|code, _issue| !code.starts_with(prefix));
-}
-
-/// Solves all issues whose code satisfy the predicate
-pub fn filter_solve(f: impl Fn(&str) -> bool) {
-    dashboard().issues.retain(|code, _issue| !f(code));
-}
-
 #[cfg(test)]
 mod tests {
     use serial_test::serial;
@@ -129,39 +117,5 @@ mod tests {
         handle1.join()?;
         handle2.join()?;
         Ok(())
-    }
-
-    #[test]
-    #[serial]
-    fn test_prefix_solve() {
-        clear();
-        submit(DummyIssue::new("issue1"));
-        submit(DummyIssue::new("issue2"));
-        submit(DummyIssue::new("other_prefix_issue3"));
-
-        // solve all the issues starting with "issue"
-        prefix_solve("issue");
-
-        assert_eq!(dashboard().issues.len(), 1);
-        assert!(dashboard()
-            .issues
-            .iter()
-            .all(|kv| !kv.key().starts_with("issue")));
-        clear();
-    }
-
-    #[test]
-    #[serial]
-    fn test_filter_solve() {
-        clear();
-        submit(DummyIssue::new("issue1"));
-        submit(DummyIssue::new("issue2"));
-        submit(DummyIssue::new("issue3"));
-
-        filter_solve(|code| code.contains('2'));
-
-        assert_eq!(dashboard().issues.len(), 2);
-        assert!(dashboard().issues.iter().all(|kv| !kv.key().contains('2')));
-        clear();
     }
 }
