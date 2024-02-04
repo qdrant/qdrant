@@ -75,7 +75,10 @@ fn test_building_new_segment() {
     assert_eq!(merged_segment.point_version(3.into()), Some(100));
 }
 
-fn estimate_build_time(segment: &Segment, stop_delay_millis: u64) -> (u64, bool) {
+fn estimate_build_time_with_callback(
+    segment: &Segment,
+    build_callback: impl Fn(&Arc<AtomicBool>) + Sync + Send + 'static,
+) -> (u64, bool) {
     let stopped = Arc::new(AtomicBool::new(false));
 
     let dir = Builder::new().prefix("segment_dir1").tempdir().unwrap();
@@ -107,8 +110,7 @@ fn estimate_build_time(segment: &Segment, stop_delay_millis: u64) -> (u64, bool)
     std::thread::Builder::new()
         .name("build_estimator_timeout".to_string())
         .spawn(move || {
-            std::thread::sleep(Duration::from_millis(stop_delay_millis));
-            stopped_t.store(true, Ordering::Release);
+            build_callback(&stopped_t);
         })
         .unwrap();
 
@@ -116,6 +118,10 @@ fn estimate_build_time(segment: &Segment, stop_delay_millis: u64) -> (u64, bool)
     let permit = CpuPermit::dummy(permit_cpu_count as u32);
 
     let res = builder.build(permit, &stopped);
+
+    if let Err(e) = handle.join() {
+        eprintln!("Build estimator thread panicked: {:?}", e);
+    }
 
     let is_cancelled = match res {
         Ok(_) => false,
@@ -130,6 +136,15 @@ fn estimate_build_time(segment: &Segment, stop_delay_millis: u64) -> (u64, bool)
     };
 
     (now.elapsed().as_millis() as u64, is_cancelled)
+}
+
+fn estimate_build_time(segment: &Segment, stop_delay_millis: u64) -> (u64, bool) {
+    let build_callback = move |stopped: &Arc<AtomicBool>| {
+        std::thread::sleep(Duration::from_millis(stop_delay_millis));
+        stopped.store(true, Ordering::Release);
+    };
+
+    estimate_build_time_with_callback(segment, build_callback)
 }
 
 #[test]
@@ -158,7 +173,8 @@ fn test_building_cancellation() {
     }
 
     // Get normal build time
-    let (time_baseline, was_cancelled_baseline) = estimate_build_time(&baseline_segment, 20000);
+    let (time_baseline, was_cancelled_baseline) =
+        estimate_build_time_with_callback(&baseline_segment, |_| {});
     assert!(!was_cancelled_baseline);
     eprintln!("baseline time: {}", time_baseline);
 
