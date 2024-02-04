@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # This runs the auth integration tests in isolation
 
 set -eux
