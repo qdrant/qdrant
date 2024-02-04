@@ -187,6 +187,7 @@
     - [SetPayloadPoints.PayloadEntry](#qdrant-SetPayloadPoints-PayloadEntry)
     - [ShardKeySelector](#qdrant-ShardKeySelector)
     - [SparseIndices](#qdrant-SparseIndices)
+    - [StartFrom](#qdrant-StartFrom)
     - [TargetVector](#qdrant-TargetVector)
     - [UpdateBatchPoints](#qdrant-UpdateBatchPoints)
     - [UpdateBatchResponse](#qdrant-UpdateBatchResponse)
@@ -2407,7 +2408,7 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | ----- | ---- | ----- | ----------- |
 | key | [string](#string) |  | Payload key to order by |
 | direction | [Direction](#qdrant-Direction) | optional | Ascending or descending order |
-| start_from | [double](#double) | optional | Start from this value |
+| start_from | [StartFrom](#qdrant-StartFrom) | optional | Start from this value |
 
 
 
@@ -3259,6 +3260,22 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | data | [uint32](#uint32) | repeated |  |
+
+
+
+
+
+
+<a name="qdrant-StartFrom"></a>
+
+### StartFrom
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| float | [double](#double) |  |  |
+| integer | [int64](#int64) |  |  |
 
 
 
