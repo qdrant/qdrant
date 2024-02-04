@@ -10,7 +10,8 @@ use tonic::Status;
 use uuid::Uuid;
 
 use super::qdrant::{
-    BinaryQuantization, CompressionRatio, DatetimeRange, GeoLineString, GroupId, SparseIndices,
+    start_from, BinaryQuantization, CompressionRatio, DatetimeRange, Direction, GeoLineString,
+    GroupId, OrderBy, Range, SparseIndices, StartFrom,
 };
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
@@ -27,7 +28,7 @@ use crate::grpc::qdrant::{
     IsNullCondition, ListCollectionsResponse, ListValue, Match, NamedVectors, NestedCondition,
     PayloadExcludeSelector, PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo,
     PayloadSchemaType, PointId, PointsOperationResponse, PointsOperationResponseInternal,
-    ProductQuantization, QuantizationConfig, QuantizationSearchParams, QuantizationType, Range,
+    ProductQuantization, QuantizationConfig, QuantizationSearchParams, QuantizationType,
     RepeatedIntegers, RepeatedStrings, ScalarQuantization, ScoredPoint, SearchParams, ShardKey,
     Struct, TextIndexParams, TokenizerType, UpdateResult, UpdateResultInternal, Value, ValuesCount,
     Vector, Vectors, VectorsSelector, WithPayloadSelector, WithVectorsSelector,
@@ -1223,6 +1224,36 @@ impl From<segment::types::Match> for Match {
         };
         Self {
             match_value: Some(match_value),
+        }
+    }
+}
+
+impl From<Direction> for segment::data_types::order_by::Direction {
+    fn from(value: Direction) -> Self {
+        match value {
+            Direction::Asc => segment::data_types::order_by::Direction::Asc,
+            Direction::Desc => segment::data_types::order_by::Direction::Desc,
+        }
+    }
+}
+
+impl From<segment::data_types::order_by::Direction> for Direction {
+    fn from(value: segment::data_types::order_by::Direction) -> Self {
+        match value {
+            segment::data_types::order_by::Direction::Asc => Direction::Asc,
+            segment::data_types::order_by::Direction::Desc => Direction::Desc,
+        }
+    }
+}
+
+impl From<segment::data_types::order_by::OrderBy> for OrderBy {
+    fn from(value: segment::data_types::order_by::OrderBy) -> Self {
+        Self {
+            key: value.key,
+            direction: value.direction.map(|d| Direction::from(d) as i32),
+            start_from: value.start_from.map(|start_from| StartFrom {
+                value: Some(start_from::Value::Float(start_from)), // ToDo: take other types of orderable values into account (int, datetime, etc)
+            }),
         }
     }
 }

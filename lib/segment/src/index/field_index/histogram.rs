@@ -144,11 +144,11 @@ impl<T: Numericable> Histogram<T> {
         self.total_count
     }
 
-    /// Infers boundaries for bucket of given size and staring point.
+    /// Infers boundaries for bucket of given size and starting point.
     /// Returns `to` range of values starting provided `from`value which is expected to contain
     /// `range_size` values
     ///
-    /// Returns None if there are no points stored
+    /// Returns `Unbounded` if there are no points stored
     pub fn get_range_by_size(&self, from: Bound<T>, range_size: usize) -> Bound<T> {
         // bound_map is unstable, but can be used here
         // let from_ = from.map(|val| Point { val, idx: usize::MIN });
@@ -268,6 +268,7 @@ impl<T: Numericable> Histogram<T> {
                         0
                     };
                     let max_estimate = a_count.right + 1;
+
                     (min_estimate, estimate, max_estimate)
                 },
             )
