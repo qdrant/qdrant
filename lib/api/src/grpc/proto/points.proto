@@ -306,10 +306,17 @@ enum Direction {
   Desc = 1;
 }
 
+message StartFrom {
+  oneof value {
+    double float = 1;
+    int64 integer = 2;
+  }
+}
+
 message OrderBy {
   string key = 1; // Payload key to order by
   optional Direction direction = 2; // Ascending or descending order
-  optional double start_from = 3; // Start from this value
+  optional StartFrom start_from = 3; // Start from this value
 }
 
 message ScrollPoints {

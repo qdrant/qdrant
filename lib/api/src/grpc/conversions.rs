@@ -10,8 +10,8 @@ use tonic::Status;
 use uuid::Uuid;
 
 use super::qdrant::{
-    BinaryQuantization, CompressionRatio, DatetimeRange, Direction, GeoLineString, GroupId,
-    OrderBy, Range, SparseIndices,
+    start_from, BinaryQuantization, CompressionRatio, DatetimeRange, Direction, GeoLineString,
+    GroupId, OrderBy, Range, SparseIndices, StartFrom,
 };
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
@@ -1251,7 +1251,9 @@ impl From<segment::data_types::order_by::OrderBy> for OrderBy {
         Self {
             key: value.key,
             direction: value.direction.map(|d| Direction::from(d) as i32),
-            start_from: value.start_from,
+            start_from: value.start_from.map(|start_from| StartFrom {
+                value: Some(start_from::Value::Float(start_from)), // ToDo: take other types of orderable values into account (int, datetime, etc)
+            }),
         }
     }
 }

@@ -1761,7 +1761,12 @@ impl TryFrom<api::grpc::qdrant::OrderBy> for OrderByInterface {
         Ok(Self::Struct(OrderBy {
             key: value.key,
             direction,
-            start_from: value.start_from,
+            start_from: value.start_from.and_then(|value| {
+                value.value.map(|v| match v {
+                    api::grpc::qdrant::start_from::Value::Float(float) => float,
+                    api::grpc::qdrant::start_from::Value::Integer(int) => int as _,
+                })
+            }),
         }))
     }
 }

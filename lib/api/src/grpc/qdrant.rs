@@ -3873,6 +3873,25 @@ pub struct SearchPointGroups {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StartFrom {
+    #[prost(oneof = "start_from::Value", tags = "1, 2")]
+    pub value: ::core::option::Option<start_from::Value>,
+}
+/// Nested message and enum types in `StartFrom`.
+pub mod start_from {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Value {
+        #[prost(double, tag = "1")]
+        Float(f64),
+        #[prost(int64, tag = "2")]
+        Integer(i64),
+    }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct OrderBy {
     /// Payload key to order by
     #[prost(string, tag = "1")]
@@ -3881,8 +3900,8 @@ pub struct OrderBy {
     #[prost(enumeration = "Direction", optional, tag = "2")]
     pub direction: ::core::option::Option<i32>,
     /// Start from this value
-    #[prost(double, optional, tag = "3")]
-    pub start_from: ::core::option::Option<f64>,
+    #[prost(message, optional, tag = "3")]
+    pub start_from: ::core::option::Option<StartFrom>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
