@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use common::cpu::CpuBudget;
 use segment::types::Distance;
+use snapshot_manager::SnapshotManager;
 use tempfile::Builder;
 
 use crate::collection::{Collection, RequestShardTransfer};
@@ -89,11 +90,13 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         ..Default::default()
     };
 
+    let snapshot_manager = SnapshotManager::new(snapshots_path.path());
+
     let collection = Collection::new(
         collection_name,
         1,
         collection_dir.path(),
-        snapshots_path.path(),
+        snapshot_manager.clone(),
         &config,
         Arc::new(storage_config),
         CollectionShardDistribution { shards },
@@ -109,7 +112,7 @@ async fn _test_snapshot_collection(node_type: NodeType) {
     .unwrap();
 
     let snapshots_temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
-    let snapshot_description = collection
+    let (snapshot, snapshot_description) = collection
         .create_snapshot(snapshots_temp_dir.path(), 0)
         .await
         .unwrap();
@@ -117,19 +120,24 @@ async fn _test_snapshot_collection(node_type: NodeType) {
     assert_eq!(snapshot_description.checksum.unwrap().len(), 64);
     // Do not recover in local mode if some shards are remote
     assert!(Collection::restore_snapshot(
-        &snapshots_path.path().join(&snapshot_description.name),
+        snapshot_manager.clone(),
+        &snapshot,
         recover_dir.path(),
         0,
         false,
     )
+    .await
     .is_err());
 
     if let Err(err) = Collection::restore_snapshot(
-        &snapshots_path.path().join(snapshot_description.name),
+        snapshot_manager.clone(),
+        &snapshot,
         recover_dir.path(),
         0,
         true,
-    ) {
+    )
+    .await
+    {
         panic!("Failed to restore snapshot: {err}")
     }
 
@@ -137,7 +145,7 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         collection_name_rec,
         1,
         recover_dir.path(),
-        snapshots_path.path(),
+        snapshot_manager.clone(),
         Default::default(),
         ChannelService::default(),
         dummy_on_replica_failure(),

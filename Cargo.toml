@@ -65,6 +65,7 @@ wal = { git = "https://github.com/qdrant/wal.git", rev = "fad0e7c48be58d8e7db4cc
 config = "~0.13.4"
 
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 
 actix-cors = "0.7.0"
 actix-files = "0.6.5"
@@ -90,6 +91,7 @@ prost = { workspace = true }
 raft-proto = { version = "0.7.0", features = ["prost-codec"], default-features = false }
 
 common = { path = "lib/common/common" }
+snapshot-manager = { path = "lib/common/snapshot_manager" }
 cancel = { path = "lib/common/cancel" }
 memory = { path = "lib/common/memory" }
 segment = { path = "lib/segment" }

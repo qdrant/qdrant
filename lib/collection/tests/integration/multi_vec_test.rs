@@ -32,6 +32,8 @@ async fn test_multi_vec() {
 
 #[cfg(test)]
 pub async fn multi_vec_collection_fixture(collection_path: &Path, shard_number: u32) -> Collection {
+    use snapshot_manager::SnapshotManager;
+
     let wal_config = WalConfig {
         wal_capacity_mb: 1,
         wal_segments_ahead: 0,
@@ -71,13 +73,13 @@ pub async fn multi_vec_collection_fixture(collection_path: &Path, shard_number: 
         quantization_config: Default::default(),
     };
 
-    let snapshot_path = collection_path.join("snapshots");
+    let snapshot_manager = SnapshotManager::new(collection_path.join("snapshots"));
 
     // Default to a collection with all the shards local
     new_local_collection(
         "test".to_string(),
         collection_path,
-        &snapshot_path,
+        snapshot_manager,
         &collection_config,
     )
     .await

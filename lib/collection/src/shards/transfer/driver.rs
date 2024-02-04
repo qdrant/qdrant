@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use snapshot_manager::SnapshotManager;
 use tokio::time::sleep;
 
 use super::snapshot::transfer_snapshot;
@@ -31,7 +32,7 @@ pub async fn transfer_shard(
     collection_id: CollectionId,
     collection_name: &str,
     channel_service: ChannelService,
-    snapshots_path: &Path,
+    snapshot_manager: SnapshotManager,
     temp_dir: &Path,
 ) -> CollectionResult<()> {
     let shard_id = transfer_config.shard_id;
@@ -62,7 +63,7 @@ pub async fn transfer_shard(
                 remote_shard,
                 channel_service,
                 consensus,
-                snapshots_path,
+                snapshot_manager,
                 collection_name,
                 temp_dir,
             )
@@ -179,7 +180,7 @@ pub fn spawn_transfer_task<T, F>(
     consensus: Box<dyn ShardTransferConsensus>,
     collection_id: CollectionId,
     channel_service: ChannelService,
-    snapshots_path: PathBuf,
+    snapshot_manager: SnapshotManager,
     collection_name: String,
     temp_dir: PathBuf,
     on_finish: T,
@@ -211,7 +212,7 @@ where
                     collection_id.clone(),
                     &collection_name,
                     channel_service.clone(),
-                    &snapshots_path,
+                    snapshot_manager.clone(),
                     &temp_dir,
                 )
                 .await

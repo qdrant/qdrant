@@ -1,8 +1,11 @@
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::fs::File;
+use std::path::Path;
 
 use io::file_operations::read_json;
 use segment::common::version::StorageVersion as _;
+use snapshot_manager::file::SnapshotFile;
+use snapshot_manager::{SnapshotDescription, SnapshotManager};
 use tempfile::TempPath;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
@@ -11,7 +14,6 @@ use super::Collection;
 use crate::collection::CollectionVersion;
 use crate::common::sha_256::hash_file;
 use crate::config::{CollectionConfig, ShardingMethod};
-use crate::operations::snapshot_ops::{self, SnapshotDescription};
 use crate::operations::types::{CollectionError, CollectionResult, NodeType};
 use crate::shards::local_shard::LocalShard;
 use crate::shards::remote_shard::RemoteShard;
@@ -23,40 +25,30 @@ use crate::shards::shard_versioning;
 
 impl Collection {
     pub async fn list_snapshots(&self) -> CollectionResult<Vec<SnapshotDescription>> {
-        snapshot_ops::list_snapshots_in_directory(&self.snapshots_path).await
+        Ok(self
+            .snapshot_manager
+            .do_list_collection_snapshots(&self.name())
+            .await?)
     }
 
-    /// Creates a snapshot of the collection.
-    ///
-    /// The snapshot is created in three steps:
-    /// 1. Create a temporary directory and create a snapshot of each shard in it.
-    /// 2. Archive the temporary directory into a single file.
-    /// 3. Move the archive to the final location.
-    ///
-    /// # Arguments
-    ///
-    /// * `global_temp_dir`: directory used to host snapshots while they are being created
-    /// * `this_peer_id`: current peer id
-    ///
-    /// returns: Result<SnapshotDescription, CollectionError>
-    pub async fn create_snapshot(
+    pub async fn create_temp_snapshot(
         &self,
         global_temp_dir: &Path,
         this_peer_id: PeerId,
-    ) -> CollectionResult<SnapshotDescription> {
+    ) -> CollectionResult<(SnapshotFile, TempPath, TempPath)> {
         let snapshot_name = format!(
             "{}-{this_peer_id}-{}.snapshot",
             self.name(),
             chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S"),
         );
 
+        let base = self.snapshot_manager.temp_path();
+        let snapshot = SnapshotFile::new_full(&snapshot_name); // NOTE: new_full is used here to stay in an existing directory (./snapshots/tmp/)
+
         // Final location of snapshot
-        let snapshot_path = self.snapshots_path.join(&snapshot_name);
-        log::info!(
-            "Creating collection snapshot {} into {:?}",
-            snapshot_name,
-            snapshot_path
-        );
+        let snapshot_path = snapshot.get_path(&base);
+        tokio::fs::create_dir_all(snapshot_path.parent().unwrap()).await?;
+        log::info!("Creating collection snapshot {}", snapshot_name);
 
         // Dedicated temporary directory for this snapshot (deleted on drop)
         let snapshot_temp_target_dir = tempfile::Builder::new()
@@ -132,39 +124,104 @@ impl Collection {
         let snapshot_path_tmp_move = snapshot_path.with_extension("tmp");
 
         // Ensure that the temporary file is deleted on error
-        let _temp_path = TempPath::from_path(&snapshot_path_tmp_move);
+        let snapshot_file = TempPath::from_path(&snapshot_path_tmp_move);
         fs::copy(&snapshot_temp_arc_file.path(), &snapshot_path_tmp_move).await?;
 
         // compute and store the file's checksum before the final snapshot file is saved
         // to avoid making snapshot available without checksum
-        let checksum_path = snapshot_ops::get_checksum_path(&snapshot_path);
+        let checksum_path = snapshot.get_checksum_path(&base);
         let checksum = hash_file(&snapshot_path_tmp_move).await?;
         let checksum_file = tempfile::TempPath::from_path(&checksum_path);
         let mut file = tokio::fs::File::create(checksum_path.as_path()).await?;
         file.write_all(checksum.as_bytes()).await?;
 
-        let snapshot_file = tempfile::TempPath::from_path(&snapshot_path);
-        fs::rename(&snapshot_path_tmp_move, &snapshot_path).await?;
+        // Snapshot files are ready now, hand them off to the manager
+        let snapshot = SnapshotFile::new_collection(snapshot.name(), self.name());
 
-        // Snapshot files are ready now, so keep them
-        snapshot_file.keep()?;
-        checksum_file.keep()?;
+        Ok((snapshot, snapshot_file, checksum_file))
+    }
 
-        log::info!("Collection snapshot {snapshot_name} completed into {snapshot_path:?}");
-        snapshot_ops::get_snapshot_description(&snapshot_path).await
+    /// Creates a snapshot of the collection.
+    ///
+    /// The snapshot is created in three steps:
+    /// 1. Create a temporary directory and create a snapshot of each shard in it.
+    /// 2. Archive the temporary directory into a single file.
+    /// 3. Move the archive to the final location.
+    ///
+    /// # Arguments
+    ///
+    /// * `global_temp_dir`: directory used to host snapshots while they are being created
+    /// * `this_peer_id`: current peer id
+    ///
+    /// returns: Result<(SnapshotFile, SnapshotDescription), CollectionError>
+    pub async fn create_snapshot(
+        &self,
+        global_temp_dir: &Path,
+        this_peer_id: PeerId,
+    ) -> CollectionResult<(SnapshotFile, SnapshotDescription)> {
+        let (snapshot, snapshot_file, checksum_file) = self
+            .create_temp_snapshot(global_temp_dir, this_peer_id)
+            .await?;
+
+        self.snapshot_manager
+            .save_snapshot(&snapshot, snapshot_file, checksum_file)
+            .await?;
+
+        log::info!("Collection snapshot {} completed", snapshot.name());
+        Ok((
+            snapshot.clone(),
+            self.snapshot_manager
+                .get_snapshot_description(&snapshot)
+                .await?,
+        ))
+    }
+
+    /// Restore collection from snapshot
+    pub async fn restore_snapshot(
+        snapshot_manager: SnapshotManager,
+        snapshot: &SnapshotFile,
+        target_dir: &Path,
+        this_peer_id: PeerId,
+        is_distributed: bool,
+    ) -> CollectionResult<()> {
+        let ar = snapshot_manager.get_snapshot_file(snapshot).await?;
+
+        let target_dir = target_dir.to_owned();
+        tokio::task::spawn_blocking(move || {
+            // Unpack snapshot collection to the target folder
+            Self::_restore_snapshot(&target_dir, this_peer_id, is_distributed, ar)
+        })
+        .await??;
+
+        Ok(())
     }
 
     /// Restore collection from snapshot
     ///
     /// This method performs blocking IO.
-    pub fn restore_snapshot(
-        snapshot_path: &Path,
+    pub fn restore_snapshot_sync(
+        snapshot_manager: SnapshotManager,
+        snapshot: &SnapshotFile,
         target_dir: &Path,
         this_peer_id: PeerId,
         is_distributed: bool,
     ) -> CollectionResult<()> {
+        Self::_restore_snapshot(
+            target_dir,
+            this_peer_id,
+            is_distributed,
+            snapshot_manager.get_snapshot_file_sync(snapshot)?,
+        )
+    }
+
+    fn _restore_snapshot(
+        target_dir: &Path,
+        this_peer_id: PeerId,
+        is_distributed: bool,
+        (archive_file, archive_file_keep): (File, Option<TempPath>),
+    ) -> CollectionResult<()> {
         // decompress archive
-        let archive_file = std::fs::File::open(snapshot_path)?;
+
         let mut ar = tar::Archive::new(archive_file);
         ar.unpack(target_dir)?;
 
@@ -227,6 +284,11 @@ impl Collection {
             }
         }
 
+        // MOGTODO: is this needed? when would it be dropped?
+        if let Some(temp) = archive_file_keep {
+            let _ = temp.close();
+        }
+
         Ok(())
     }
 
@@ -252,37 +314,6 @@ impl Collection {
             .await
     }
 
-    pub async fn get_snapshot_path(&self, snapshot_name: &str) -> CollectionResult<PathBuf> {
-        let snapshot_path = self.snapshots_path.join(snapshot_name);
-
-        let absolute_snapshot_path =
-            snapshot_path
-                .canonicalize()
-                .map_err(|_| CollectionError::NotFound {
-                    what: format!("Snapshot {snapshot_name}"),
-                })?;
-
-        let absolute_snapshot_dir =
-            self.snapshots_path
-                .canonicalize()
-                .map_err(|_| CollectionError::NotFound {
-                    what: format!("Snapshot directory: {}", self.snapshots_path.display()),
-                })?;
-
-        if !absolute_snapshot_path.starts_with(absolute_snapshot_dir) {
-            return Err(CollectionError::NotFound {
-                what: format!("Snapshot {snapshot_name}"),
-            });
-        }
-
-        if !snapshot_path.exists() {
-            return Err(CollectionError::NotFound {
-                what: format!("Snapshot {snapshot_name}"),
-            });
-        }
-        Ok(snapshot_path)
-    }
-
     pub async fn list_shard_snapshots(
         &self,
         shard_id: ShardId,
@@ -290,7 +321,7 @@ impl Collection {
         self.shards_holder
             .read()
             .await
-            .list_shard_snapshots(&self.snapshots_path, shard_id)
+            .list_shard_snapshots(&self.snapshot_manager, &self.name(), shard_id)
             .await
     }
 
@@ -302,7 +333,7 @@ impl Collection {
         self.shards_holder
             .read()
             .await
-            .create_shard_snapshot(&self.snapshots_path, &self.name(), shard_id, temp_dir)
+            .create_shard_snapshot(&self.snapshot_manager, &self.name(), shard_id, temp_dir)
             .await
     }
 
@@ -347,15 +378,15 @@ impl Collection {
             .await
     }
 
-    pub async fn get_shard_snapshot_path(
+    pub async fn get_shard_snapshot(
         &self,
         shard_id: ShardId,
         snapshot_file_name: impl AsRef<Path>,
-    ) -> CollectionResult<PathBuf> {
+    ) -> CollectionResult<SnapshotFile> {
         self.shards_holder
             .read()
             .await
-            .get_shard_snapshot_path(&self.snapshots_path, shard_id, snapshot_file_name)
+            .get_shard_snapshot(&self.name(), shard_id, snapshot_file_name)
             .await
     }
 }

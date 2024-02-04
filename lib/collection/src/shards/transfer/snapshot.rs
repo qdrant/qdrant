@@ -2,11 +2,12 @@ use std::path::Path;
 use std::sync::Arc;
 
 use common::defaults;
+use snapshot_manager::SnapshotManager;
 use tempfile::TempPath;
 use tokio::time::sleep;
 
 use super::{ShardTransfer, ShardTransferConsensus};
-use crate::operations::snapshot_ops::{get_checksum_path, SnapshotPriority};
+use crate::operations::snapshot_ops::SnapshotPriority;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::channel_service::ChannelService;
 use crate::shards::remote_shard::RemoteShard;
@@ -158,7 +159,7 @@ pub(super) async fn transfer_snapshot(
     remote_shard: RemoteShard,
     channel_service: ChannelService,
     consensus: &dyn ShardTransferConsensus,
-    snapshots_path: &Path,
+    snapshot_manager: SnapshotManager,
     collection_name: &str,
     temp_dir: &Path,
 ) -> CollectionResult<()> {
@@ -191,20 +192,22 @@ pub(super) async fn transfer_snapshot(
     // Create shard snapshot
     log::trace!("Creating snapshot of shard {shard_id} for shard snapshot transfer");
     let snapshot_description = shard_holder_read
-        .create_shard_snapshot(snapshots_path, collection_name, shard_id, temp_dir)
+        .create_shard_snapshot(&snapshot_manager, collection_name, shard_id, temp_dir)
         .await?;
 
-    // TODO: If future is cancelled until `get_shard_snapshot_path` resolves, shard snapshot may not be cleaned up...
-    let snapshot_temp_path = shard_holder_read
-        .get_shard_snapshot_path(snapshots_path, shard_id, &snapshot_description.name)
+    let temp_base = snapshot_manager.temp_path();
+    // TODO: If future is cancelled until `get_shard_snapshot` resolves, shard snapshot may not be cleaned up...
+    let snapshot = shard_holder_read
+        .get_shard_snapshot(collection_name, shard_id, &snapshot_description.name)
         .await
-        .map(TempPath::from_path)
         .map_err(|err| {
             CollectionError::service_error(format!(
                 "Failed to determine snapshot path, cannot continue with shard snapshot recovery: {err}"
             ))
         })?;
-    let snapshot_checksum_temp_path = TempPath::from_path(get_checksum_path(&snapshot_temp_path));
+
+    let snapshot_temp_path = TempPath::from_path(snapshot.get_path(&temp_base));
+    let snapshot_checksum_temp_path = TempPath::from_path(snapshot.get_checksum_path(temp_base));
 
     // Recover shard snapshot on remote
     let mut shard_download_url = local_rest_address;

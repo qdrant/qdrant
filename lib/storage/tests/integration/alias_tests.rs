@@ -7,6 +7,7 @@ use collection::shards::channel_service::ChannelService;
 use common::cpu::CpuBudget;
 use memory::madvise;
 use segment::types::Distance;
+use snapshot_manager::SnapshotManager;
 use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CollectionMetaOperations, CreateAlias, CreateCollection,
     CreateCollectionOperation, DeleteAlias, RenameAlias,
@@ -77,6 +78,7 @@ fn test_alias_operation() {
 
     let toc = Arc::new(TableOfContent::new(
         &config,
+        SnapshotManager::new(&config.snapshots_path),
         search_runtime,
         update_runtime,
         general_runtime,

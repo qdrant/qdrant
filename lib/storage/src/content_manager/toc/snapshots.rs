@@ -1,9 +1,9 @@
-use std::path::{Path, PathBuf};
-
-use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::transfer::{ShardTransfer, ShardTransferMethod};
+use snapshot_manager::file::SnapshotFile;
+use snapshot_manager::SnapshotDescription;
+use tempfile::TempPath;
 
 use super::TableOfContent;
 use crate::content_manager::consensus::operation_sender::OperationSender;
@@ -11,41 +11,23 @@ use crate::content_manager::consensus_ops::ConsensusOperations;
 use crate::content_manager::errors::StorageError;
 
 impl TableOfContent {
-    pub fn snapshots_path(&self) -> &str {
-        &self.storage_config.snapshots_path
-    }
-
-    pub fn collection_snapshots_path(snapshots_path: &Path, collection_name: &str) -> PathBuf {
-        snapshots_path.join(collection_name)
-    }
-
-    pub fn snapshots_path_for_collection(&self, collection_name: &str) -> PathBuf {
-        Self::collection_snapshots_path(
-            Path::new(&self.storage_config.snapshots_path),
-            collection_name,
-        )
-    }
-
-    pub async fn create_snapshots_path(
+    pub async fn create_temp_snapshot(
         &self,
         collection_name: &str,
-    ) -> Result<PathBuf, StorageError> {
-        let snapshots_path = self.snapshots_path_for_collection(collection_name);
-        tokio::fs::create_dir_all(&snapshots_path)
-            .await
-            .map_err(|err| {
-                StorageError::service_error(format!(
-                    "Can't create directory for snapshots {collection_name}. Error: {err}"
-                ))
-            })?;
-
-        Ok(snapshots_path)
+    ) -> Result<(SnapshotFile, TempPath, TempPath), StorageError> {
+        let collection = self.get_collection(collection_name).await?;
+        // We want to use temp dir inside the temp_path (storage if not specified), because it is possible, that
+        // snapshot directory is mounted as network share and multiple writes to it could be slow
+        let temp_dir = self.optional_temp_or_storage_temp_path()?;
+        Ok(collection
+            .create_temp_snapshot(&temp_dir, self.this_peer_id)
+            .await?)
     }
 
     pub async fn create_snapshot(
         &self,
         collection_name: &str,
-    ) -> Result<SnapshotDescription, StorageError> {
+    ) -> Result<(SnapshotFile, SnapshotDescription), StorageError> {
         let collection = self.get_collection(collection_name).await?;
         // We want to use temp dir inside the temp_path (storage if not specified), because it is possible, that
         // snapshot directory is mounted as network share and multiple writes to it could be slow

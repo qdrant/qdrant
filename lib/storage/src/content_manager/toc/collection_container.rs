@@ -138,14 +138,14 @@ impl TableOfContent {
                 // Create collection if not present locally
                 if !collection_exists {
                     let collection_path = self.create_collection_path(id).await?;
-                    let snapshots_path = self.create_snapshots_path(id).await?;
+                    self.snapshot_manager.ensure_snapshots_path(id)?;
                     let shard_distribution =
                         CollectionShardDistribution::from_shards_info(state.shards.clone());
                     let collection = Collection::new(
                         id.to_string(),
                         self.this_peer_id,
                         &collection_path,
-                        &snapshots_path,
+                        self.snapshot_manager.clone(),
                         &state.config,
                         self.storage_config
                             .to_shared_storage_config(self.is_distributed())

@@ -10,11 +10,9 @@ use api::grpc::qdrant::{
     ListShardSnapshotsRequest, ListSnapshotsRequest, ListSnapshotsResponse,
     RecoverShardSnapshotRequest, RecoverSnapshotResponse,
 };
-use storage::content_manager::conversions::error_to_status;
-use storage::content_manager::snapshots::{
-    do_create_full_snapshot, do_delete_collection_snapshot, do_delete_full_snapshot,
-    do_list_full_snapshots,
-};
+use snapshot_manager::file::SnapshotFile;
+use storage::content_manager::conversions::{error_to_status, snapshot_error_to_status};
+use storage::content_manager::snapshots::do_create_full_snapshot;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use tonic::{async_trait, Request, Response, Status};
@@ -79,11 +77,14 @@ impl Snapshots for SnapshotsService {
             collection_name,
             snapshot_name,
         } = request.into_inner();
+        let snapshot = SnapshotFile::new_collection(snapshot_name, collection_name);
         let timing = Instant::now();
-        let _response =
-            do_delete_collection_snapshot(&self.dispatcher, &collection_name, &snapshot_name, true)
-                .await
-                .map_err(error_to_status)?;
+        let _response = self
+            .dispatcher
+            .snapshot_manager
+            .do_delete_snapshot(&snapshot, true)
+            .await
+            .map_err(snapshot_error_to_status)?;
         Ok(Response::new(DeleteSnapshotResponse {
             time: timing.elapsed().as_secs_f64(),
         }))
@@ -110,9 +111,12 @@ impl Snapshots for SnapshotsService {
     ) -> Result<Response<ListSnapshotsResponse>, Status> {
         validate(request.get_ref())?;
         let timing = Instant::now();
-        let snapshots = do_list_full_snapshots(&self.dispatcher)
+        let snapshots = self
+            .dispatcher
+            .snapshot_manager
+            .do_list_full_snapshots()
             .await
-            .map_err(error_to_status)?;
+            .map_err(snapshot_error_to_status)?;
         Ok(Response::new(ListSnapshotsResponse {
             snapshot_descriptions: snapshots.into_iter().map(|s| s.into()).collect(),
             time: timing.elapsed().as_secs_f64(),
@@ -125,10 +129,14 @@ impl Snapshots for SnapshotsService {
     ) -> Result<Response<DeleteSnapshotResponse>, Status> {
         validate(request.get_ref())?;
         let snapshot_name = request.into_inner().snapshot_name;
+        let snapshot = SnapshotFile::new_full(snapshot_name);
         let timing = Instant::now();
-        let _response = do_delete_full_snapshot(&self.dispatcher, &snapshot_name, true)
+        let _response = self
+            .dispatcher
+            .snapshot_manager
+            .do_delete_snapshot(&snapshot, true)
             .await
-            .map_err(error_to_status)?;
+            .map_err(snapshot_error_to_status)?;
         Ok(Response::new(DeleteSnapshotResponse {
             time: timing.elapsed().as_secs_f64(),
         }))
@@ -230,6 +238,7 @@ impl ShardSnapshots for ShardSnapshotsService {
             self.toc.clone(),
             request.collection_name,
             request.shard_id,
+            self.toc.snapshot_manager.clone(),
             request.snapshot_location.try_into()?,
             request.snapshot_priority.try_into()?,
             request.checksum,

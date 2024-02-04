@@ -1,11 +1,13 @@
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use common::cpu::CpuBudget;
 use itertools::Itertools;
 // TODO rename ReplicaShard to ReplicaSetShard
 use segment::types::ShardKey;
+use snapshot_manager::file::SnapshotFile;
+use snapshot_manager::{SnapshotDescription, SnapshotManager};
 use tar::Builder as TarBuilder;
 use tokio::io::AsyncWriteExt;
 use tokio::runtime::Handle;
@@ -18,9 +20,6 @@ use crate::config::{CollectionConfig, ShardingMethod};
 use crate::hash_ring::HashRing;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::shared_storage_config::SharedStorageConfig;
-use crate::operations::snapshot_ops::{
-    get_checksum_path, get_snapshot_description, list_snapshots_in_directory, SnapshotDescription,
-};
 use crate::operations::types::{CollectionError, CollectionResult, ShardTransferInfo};
 use crate::operations::{OperationToShard, SplitByShard};
 use crate::save_on_disk::SaveOnDisk;
@@ -665,18 +664,15 @@ impl ShardHolder {
     /// This method is cancel safe.
     pub async fn list_shard_snapshots(
         &self,
-        snapshots_path: &Path,
+        snapshot_manager: &SnapshotManager,
+        collection: &str,
         shard_id: ShardId,
     ) -> CollectionResult<Vec<SnapshotDescription>> {
         self.assert_shard_is_local(shard_id).await?;
 
-        let snapshots_path = self.snapshots_path_for_shard_unchecked(snapshots_path, shard_id);
-
-        if !snapshots_path.exists() {
-            return Ok(Vec::new());
-        }
-
-        list_snapshots_in_directory(&snapshots_path).await
+        Ok(snapshot_manager
+            .do_list_shard_snapshots(collection, shard_id)
+            .await?)
     }
 
     /// # Cancel safety
@@ -684,7 +680,7 @@ impl ShardHolder {
     /// This method is cancel safe.
     pub async fn create_shard_snapshot(
         &self,
-        snapshots_path: &Path,
+        snapshot_manager: &SnapshotManager,
         collection_name: &str,
         shard_id: ShardId,
         temp_dir: &Path,
@@ -766,17 +762,13 @@ impl ShardHolder {
 
         let temp_file = task_result??;
 
-        let snapshot_path =
-            self.shard_snapshot_path_unchecked(snapshots_path, shard_id, snapshot_file_name)?;
+        let snapshot = SnapshotFile::new_shard(snapshot_file_name, collection_name, shard_id);
+        let snapshot_path = snapshot.get_path(snapshot_manager.temp_path());
 
-        if let Some(snapshot_dir) = snapshot_path.parent() {
-            if !snapshot_dir.exists() {
-                std::fs::create_dir_all(snapshot_dir)?;
-            }
-        }
+        tokio::fs::create_dir_all(snapshot_path.parent().unwrap()).await?;
 
         // Compute and store the file's checksum
-        let checksum_path = get_checksum_path(&snapshot_path);
+        let checksum_path = snapshot.get_checksum_path(snapshot_manager.temp_path());
         let checksum = hash_file(temp_file.path()).await?;
         let checksum_file = tempfile::TempPath::from_path(&checksum_path);
         let mut file = tokio::fs::File::create(checksum_path.as_path()).await?;
@@ -787,15 +779,15 @@ impl ShardHolder {
         let snapshot_file = tempfile::TempPath::from_path(&snapshot_path);
         move_file(temp_file.path(), &snapshot_path).await?;
 
-        // Snapshot files are ready now, so keep them
-        snapshot_file.keep()?;
-        checksum_file.keep()?;
+        snapshot_manager
+            .save_snapshot(&snapshot, snapshot_file, checksum_file)
+            .await?;
 
         // We successfully moved `temp_file`, but `tempfile` will still try to delete the file on drop,
         // so we `keep` it and ignore the error
         let _ = temp_file.keep();
 
-        get_snapshot_description(&snapshot_path).await
+        Ok(snapshot_manager.get_snapshot_description(&snapshot).await?)
     }
 
     /// # Cancel safety
@@ -903,44 +895,27 @@ impl ShardHolder {
     /// # Cancel safety
     ///
     /// This method is cancel safe.
-    pub async fn get_shard_snapshot_path(
+    pub async fn get_shard_snapshot(
         &self,
-        snapshots_path: &Path,
+        collection: &str,
         shard_id: ShardId,
         snapshot_file_name: impl AsRef<Path>,
-    ) -> CollectionResult<PathBuf> {
+    ) -> CollectionResult<SnapshotFile> {
         self.assert_shard_is_local_or_queue_proxy(shard_id).await?;
-        self.shard_snapshot_path_unchecked(snapshots_path, shard_id, snapshot_file_name)
+        self.shard_snapshot_unchecked(collection, shard_id, snapshot_file_name)
     }
 
-    fn snapshots_path_for_shard_unchecked(
+    fn shard_snapshot_unchecked(
         &self,
-        snapshots_path: &Path,
-        shard_id: ShardId,
-    ) -> PathBuf {
-        snapshots_path.join(format!("shards/{shard_id}"))
-    }
-
-    fn shard_snapshot_path_unchecked(
-        &self,
-        snapshots_path: &Path,
+        collection: &str,
         shard_id: ShardId,
         snapshot_file_name: impl AsRef<Path>,
-    ) -> CollectionResult<PathBuf> {
-        let snapshots_path = self.snapshots_path_for_shard_unchecked(snapshots_path, shard_id);
-
-        let snapshot_file_name = snapshot_file_name.as_ref();
-
-        if snapshot_file_name.file_name() != Some(snapshot_file_name.as_os_str()) {
-            return Err(CollectionError::bad_input(format!(
-                "Invalid snapshot file name {}",
-                snapshot_file_name.display(),
-            )));
-        }
-
-        let snapshot_path = snapshots_path.join(snapshot_file_name);
-
-        Ok(snapshot_path)
+    ) -> CollectionResult<SnapshotFile> {
+        Ok(SnapshotFile::new_shard(
+            snapshot_file_name.as_ref().to_string_lossy().to_string(),
+            collection,
+            shard_id,
+        ))
     }
 
     pub async fn remove_shards_at_peer(&self, peer_id: PeerId) -> CollectionResult<()> {

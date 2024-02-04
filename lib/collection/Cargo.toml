@@ -50,6 +50,7 @@ actix-web-validator = "5.0.1"
 
 common = { path = "../common/common" }
 cancel = { path = "../common/cancel" }
+snapshot-manager = { path = "../common/snapshot_manager" }
 io = { path = "../common/io" }
 segment = {path = "../segment"}
 sparse = { path = "../sparse" }
