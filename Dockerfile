@@ -16,7 +16,7 @@ COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
 
 
-FROM chef as builder
+FROM chef AS builder
 WORKDIR /qdrant
 
 COPY --from=xx / /
@@ -62,7 +62,7 @@ RUN case "$BUILDPLATFORM" in \
 ARG TARGETPLATFORM
 ENV TARGETPLATFORM=${TARGETPLATFORM:-linux/amd64}
 
-RUN xx-apt-get install -y pkg-config gcc g++ libc6-dev libunwind-dev git
+RUN xx-apt-get install -y pkg-config gcc g++ libc6-dev libunwind-dev
 
 # Select Cargo profile (e.g., `release`, `dev` or `ci`)
 ARG PROFILE=release
@@ -77,7 +77,6 @@ ARG RUSTFLAGS
 ARG LINKER=mold
 
 COPY --from=planner /qdrant/recipe.json recipe.json
-COPY . .
 # `PKG_CONFIG=...` is a workaround for `xx-cargo` bug for crates based on `pkg-config`!
 #
 # https://github.com/tonistiigi/xx/issues/107
@@ -106,7 +105,7 @@ RUN mkdir /static ; STATIC_DIR='/static' ./tools/sync-web-ui.sh
 FROM debian:12-slim AS qdrant
 
 RUN apt-get update \
-    && apt-get install -y ca-certificates tzdata libunwind8 \
+    && apt-get install --no-install-recommends -y ca-certificates tzdata libunwind8 \
     && rm -rf /var/lib/apt/lists/*
 
 ARG APP=/qdrant

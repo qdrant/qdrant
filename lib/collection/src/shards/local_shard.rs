@@ -7,6 +7,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use arc_swap::ArcSwap;
+use common::cpu::CpuBudget;
 use common::panic;
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
@@ -38,7 +39,7 @@ use crate::operations::types::{
     check_sparse_compatible_with_segment_config, CollectionError, CollectionInfoInternal,
     CollectionResult, CollectionStatus, OptimizersStatus,
 };
-use crate::operations::CollectionUpdateOperations;
+use crate::operations::OperationWithClockTag;
 use crate::optimizers_builder::{build_optimizers, clear_temp_segments};
 use crate::shards::shard::ShardId;
 use crate::shards::shard_config::{ShardConfig, SHARD_CONFIG_FILE};
@@ -47,7 +48,7 @@ use crate::shards::CollectionId;
 use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
 
-pub type LockedWal = Arc<ParkingMutex<SerdeWal<CollectionUpdateOperations>>>;
+pub type LockedWal = Arc<ParkingMutex<SerdeWal<OperationWithClockTag>>>;
 
 /// If rendering WAL load progression in basic text form, report progression every 60 seconds.
 const WAL_LOAD_REPORT_EVERY: Duration = Duration::from_secs(60);
@@ -110,12 +111,14 @@ impl LocalShard {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         segment_holder: SegmentHolder,
         collection_config: Arc<TokioRwLock<CollectionConfig>>,
         shared_storage_config: Arc<SharedStorageConfig>,
-        wal: SerdeWal<CollectionUpdateOperations>,
+        wal: SerdeWal<OperationWithClockTag>,
         optimizers: Arc<Vec<Arc<Optimizer>>>,
+        optimizer_cpu_budget: CpuBudget,
         shard_path: &Path,
         update_runtime: Handle,
     ) -> Self {
@@ -128,11 +131,12 @@ impl LocalShard {
             shared_storage_config.clone(),
             optimizers.clone(),
             optimizers_log.clone(),
+            optimizer_cpu_budget.clone(),
             update_runtime.clone(),
             segment_holder.clone(),
             locked_wal.clone(),
             config.optimizer_config.flush_interval_sec,
-            config.optimizer_config.max_optimization_threads,
+            Some(config.optimizer_config.max_optimization_threads),
         );
 
         let (update_sender, update_receiver) =
@@ -170,6 +174,7 @@ impl LocalShard {
         collection_config: Arc<TokioRwLock<CollectionConfig>>,
         shared_storage_config: Arc<SharedStorageConfig>,
         update_runtime: Handle,
+        optimizer_cpu_budget: CpuBudget,
     ) -> CollectionResult<LocalShard> {
         let collection_config_read = collection_config.read().await;
 
@@ -177,7 +182,7 @@ impl LocalShard {
         let segments_path = Self::segments_path(shard_path);
         let mut segment_holder = SegmentHolder::default();
 
-        let wal: SerdeWal<CollectionUpdateOperations> = SerdeWal::new(
+        let wal: SerdeWal<OperationWithClockTag> = SerdeWal::new(
             wal_path.to_str().unwrap(),
             (&collection_config_read.wal_config).into(),
         )
@@ -270,6 +275,7 @@ impl LocalShard {
             shared_storage_config,
             wal,
             optimizers,
+            optimizer_cpu_budget,
             shard_path,
             update_runtime,
         )
@@ -320,6 +326,7 @@ impl LocalShard {
         collection_config: Arc<TokioRwLock<CollectionConfig>>,
         shared_storage_config: Arc<SharedStorageConfig>,
         update_runtime: Handle,
+        optimizer_cpu_budget: CpuBudget,
     ) -> CollectionResult<LocalShard> {
         // initialize local shard config file
         let local_shard_config = ShardConfig::new_replica_set();
@@ -330,6 +337,7 @@ impl LocalShard {
             collection_config,
             shared_storage_config,
             update_runtime,
+            optimizer_cpu_budget,
         )
         .await?;
         local_shard_config.save(shard_path)?;
@@ -344,6 +352,7 @@ impl LocalShard {
         collection_config: Arc<TokioRwLock<CollectionConfig>>,
         shared_storage_config: Arc<SharedStorageConfig>,
         update_runtime: Handle,
+        optimizer_cpu_budget: CpuBudget,
     ) -> CollectionResult<LocalShard> {
         let config = collection_config.read().await;
 
@@ -406,7 +415,7 @@ impl LocalShard {
             segment_holder.add(segment);
         }
 
-        let wal: SerdeWal<CollectionUpdateOperations> =
+        let wal: SerdeWal<OperationWithClockTag> =
             SerdeWal::new(wal_path.to_str().unwrap(), (&config.wal_config).into())?;
 
         let optimizers = build_optimizers(
@@ -425,6 +434,7 @@ impl LocalShard {
             shared_storage_config,
             wal,
             optimizers,
+            optimizer_cpu_budget,
             shard_path,
             update_runtime,
         )
@@ -481,7 +491,7 @@ impl LocalShard {
 
         for (op_num, update) in wal.read_all() {
             // Propagate `CollectionError::ServiceError`, but skip other error types.
-            match &CollectionUpdater::update(segments, op_num, update) {
+            match &CollectionUpdater::update(segments, op_num, update.operation) {
                 Err(err @ CollectionError::ServiceError { error, backtrace }) => {
                     let path = self.path.display();
 

@@ -1,11 +1,9 @@
-
-import os
 from random import random
 import subprocess
 import pytest
 
 from .helpers.helpers import request_with_validation
-from .helpers.collection_setup import basic_collection_setup, drop_collection
+from .helpers.collection_setup import drop_collection
 
 collection_name = 'test_collection_timeout'
 num_vectors = 200000

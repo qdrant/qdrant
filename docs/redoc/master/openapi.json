@@ -1231,6 +1231,72 @@
         }
       }
     },
+    "/collections/{collection_name}/exists": {
+      "get": {
+        "tags": [
+          "collections"
+        ],
+        "summary": "Check the existence of a collection",
+        "description": "Returns \"true\" if the given collection name exists, and \"false\" otherwise",
+        "operationId": "collection_exists",
+        "parameters": [
+          {
+            "name": "collection_name",
+            "in": "path",
+            "description": "Name of the collection",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/CollectionExistence"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/collections/{collection_name}/index/{field_name}": {
       "delete": {
         "tags": [
@@ -5806,7 +5872,8 @@
           "float",
           "geo",
           "text",
-          "bool"
+          "bool",
+          "datetime"
         ]
       },
       "PayloadSchemaParams": {
@@ -6388,6 +6455,17 @@
               }
             ]
           },
+          "datetime_range": {
+            "description": "Check if datetime is within a given range",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DatetimeRange"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
           "geo_bounding_box": {
             "description": "Check if points geo location lies in a given area",
             "anyOf": [
@@ -6556,6 +6634,36 @@
             "description": "point.key <= range.lte",
             "type": "number",
             "format": "double",
+            "nullable": true
+          }
+        }
+      },
+      "DatetimeRange": {
+        "description": "Range filter request",
+        "type": "object",
+        "properties": {
+          "lt": {
+            "description": "point.key < range.lt",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "gt": {
+            "description": "point.key > range.gt",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "gte": {
+            "description": "point.key >= range.gte",
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lte": {
+            "description": "point.key <= range.lte",
+            "type": "string",
+            "format": "date-time",
             "nullable": true
           }
         }
@@ -10636,6 +10744,18 @@
           "commit": {
             "type": "string",
             "nullable": true
+          }
+        }
+      },
+      "CollectionExistence": {
+        "description": "State of existence of a collection, true = exists, false = does not exist",
+        "type": "object",
+        "required": [
+          "exists"
+        ],
+        "properties": {
+          "exists": {
+            "type": "boolean"
           }
         }
       }

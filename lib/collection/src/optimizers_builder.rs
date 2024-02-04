@@ -2,7 +2,6 @@ use std::path::Path;
 use std::sync::Arc;
 
 use schemars::JsonSchema;
-use segment::common::cpu::get_num_cpus;
 use segment::types::{HnswConfig, QuantizationConfig};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
@@ -92,7 +91,7 @@ impl OptimizersConfig {
 
     pub fn get_number_segments(&self) -> usize {
         if self.default_segment_number == 0 {
-            let num_cpus = get_num_cpus();
+            let num_cpus = common::cpu::get_num_cpus();
             // Do not configure less than 2 and more than 8 segments
             // until it is not explicitly requested
             num_cpus.clamp(2, 8)
@@ -105,7 +104,7 @@ impl OptimizersConfig {
         if let Some(max_segment_size) = self.max_segment_size {
             max_segment_size
         } else {
-            let num_cpus = get_num_cpus();
+            let num_cpus = common::cpu::get_num_cpus();
             num_cpus.saturating_mul(DEFAULT_MAX_SEGMENT_PER_CPU_KB)
         }
     }

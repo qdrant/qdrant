@@ -5,11 +5,11 @@ use collection::operations::payload_ops::{DeletePayload, SetPayload};
 use collection::operations::point_ops::{PointInsertOperations, PointsSelector, WriteOrdering};
 use collection::operations::snapshot_ops::{ShardSnapshotRecover, SnapshotRecover};
 use collection::operations::types::{
-    AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionsAliasesResponse,
-    CountRequest, CountResult, DiscoverRequest, DiscoverRequestBatch, GroupsResult, PointGroup,
-    PointRequest, RecommendGroupsRequest, RecommendRequest, RecommendRequestBatch, Record,
-    ScrollRequest, ScrollResult, SearchGroupsRequest, SearchRequest, SearchRequestBatch,
-    UpdateResult,
+    AliasDescription, CollectionClusterInfo, CollectionExistence, CollectionInfo,
+    CollectionsAliasesResponse, CountRequest, CountResult, DiscoverRequest, DiscoverRequestBatch,
+    GroupsResult, PointGroup, PointRequest, RecommendGroupsRequest, RecommendRequest,
+    RecommendRequestBatch, Record, ScrollRequest, ScrollResult, SearchGroupsRequest, SearchRequest,
+    SearchRequestBatch, UpdateResult,
 };
 use collection::operations::vector_ops::{DeleteVectors, UpdateVectors};
 use schemars::gen::SchemaSettings;
@@ -78,6 +78,7 @@ struct AllDefinitions {
     ba: DiscoverRequest,
     bb: DiscoverRequestBatch,
     bc: VersionInfo,
+    bd: CollectionExistence,
 }
 
 fn save_schema<T: JsonSchema>() {

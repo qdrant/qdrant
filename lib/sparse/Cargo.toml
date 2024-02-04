@@ -8,16 +8,21 @@ authors = [
 license = "Apache-2.0"
 edition = "2021"
 
+[features]
+proptest = ["dep:proptest", "dep:proptest-derive"]
 
 [dependencies]
 common = { path = "../common/common" }
 io = { path = "../common/io" }
 memory = { path = "../common/memory" }
-memmap2 = "0.9.3"
-schemars = { version = "0.8.16" }
-serde = { version = "1", features = ["derive"] }
+memmap2 = "0.9.4"
+schemars = { workspace = true }
+serde = { workspace = true }
 tempfile = "3.9.0"
 ordered-float = "4.2"
 rand = "0.8.5"
 validator = "0.16"
-itertools = "0.12.0"
+itertools = "0.12.1"
+
+proptest = { version = "1.4", optional = true }
+proptest-derive = { version = "0.4", optional = true }

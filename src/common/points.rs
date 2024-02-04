@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use collection::common::batching::batch_requests;
@@ -20,7 +21,9 @@ use collection::operations::types::{
 use collection::operations::vector_ops::{
     DeleteVectors, UpdateVectors, UpdateVectorsOp, VectorOperations,
 };
-use collection::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
+use collection::operations::{
+    ClockTag, CollectionUpdateOperations, CreateIndex, FieldIndexOperations, OperationWithClockTag,
+};
 use collection::shards::shard::ShardId;
 use schemars::JsonSchema;
 use segment::types::{PayloadFieldSchema, PayloadKeyType, ScoredPoint};
@@ -154,9 +157,10 @@ fn get_shard_selector_for_update(
 }
 
 pub async fn do_upsert_points(
-    toc: &TableOfContent,
-    collection_name: &str,
+    toc: Arc<TableOfContent>,
+    collection_name: String,
     operation: PointInsertOperations,
+    clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
@@ -168,8 +172,8 @@ pub async fn do_upsert_points(
     let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
 
     toc.update(
-        collection_name,
-        collection_operation,
+        &collection_name,
+        OperationWithClockTag::new(collection_operation, clock_tag),
         wait,
         ordering,
         shard_selector,
@@ -178,9 +182,10 @@ pub async fn do_upsert_points(
 }
 
 pub async fn do_delete_points(
-    toc: &TableOfContent,
-    collection_name: &str,
+    toc: Arc<TableOfContent>,
+    collection_name: String,
     points: PointsSelector,
+    clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
@@ -197,8 +202,8 @@ pub async fn do_delete_points(
     let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
 
     toc.update(
-        collection_name,
-        collection_operation,
+        &collection_name,
+        OperationWithClockTag::new(collection_operation, clock_tag),
         wait,
         ordering,
         shard_selector,
@@ -207,9 +212,10 @@ pub async fn do_delete_points(
 }
 
 pub async fn do_update_vectors(
-    toc: &TableOfContent,
-    collection_name: &str,
+    toc: Arc<TableOfContent>,
+    collection_name: String,
     operation: UpdateVectors,
+    clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
@@ -223,8 +229,8 @@ pub async fn do_update_vectors(
     let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
 
     toc.update(
-        collection_name,
-        collection_operation,
+        &collection_name,
+        OperationWithClockTag::new(collection_operation, clock_tag),
         wait,
         ordering,
         shard_selector,
@@ -233,13 +239,16 @@ pub async fn do_update_vectors(
 }
 
 pub async fn do_delete_vectors(
-    toc: &TableOfContent,
-    collection_name: &str,
+    toc: Arc<TableOfContent>,
+    collection_name: String,
     operation: DeleteVectors,
+    clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
 ) -> Result<UpdateResult, StorageError> {
+    // TODO: Is this cancel safe!?
+
     let DeleteVectors {
         vector,
         filter,
@@ -248,19 +257,20 @@ pub async fn do_delete_vectors(
     } = operation;
 
     let vector_names: Vec<_> = vector.into_iter().collect();
+    let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
 
     let mut result = None;
-
-    let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
 
     if let Some(filter) = filter {
         let vectors_operation =
             VectorOperations::DeleteVectorsByFilter(filter, vector_names.clone());
+
         let collection_operation = CollectionUpdateOperations::VectorOperation(vectors_operation);
+
         result = Some(
             toc.update(
-                collection_name,
-                collection_operation,
+                &collection_name,
+                OperationWithClockTag::new(collection_operation, clock_tag),
                 wait,
                 ordering,
                 shard_selector.clone(),
@@ -274,8 +284,8 @@ pub async fn do_delete_vectors(
         let collection_operation = CollectionUpdateOperations::VectorOperation(vectors_operation);
         result = Some(
             toc.update(
-                collection_name,
-                collection_operation,
+                &collection_name,
+                OperationWithClockTag::new(collection_operation, clock_tag),
                 wait,
                 ordering,
                 shard_selector,
@@ -288,9 +298,10 @@ pub async fn do_delete_vectors(
 }
 
 pub async fn do_set_payload(
-    toc: &TableOfContent,
-    collection_name: &str,
+    toc: Arc<TableOfContent>,
+    collection_name: String,
     operation: SetPayload,
+    clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
@@ -312,8 +323,8 @@ pub async fn do_set_payload(
     let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
 
     toc.update(
-        collection_name,
-        collection_operation,
+        &collection_name,
+        OperationWithClockTag::new(collection_operation, clock_tag),
         wait,
         ordering,
         shard_selector,
@@ -322,9 +333,10 @@ pub async fn do_set_payload(
 }
 
 pub async fn do_overwrite_payload(
-    toc: &TableOfContent,
-    collection_name: &str,
+    toc: Arc<TableOfContent>,
+    collection_name: String,
     operation: SetPayload,
+    clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
@@ -346,8 +358,8 @@ pub async fn do_overwrite_payload(
     let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
 
     toc.update(
-        collection_name,
-        collection_operation,
+        &collection_name,
+        OperationWithClockTag::new(collection_operation, clock_tag),
         wait,
         ordering,
         shard_selector,
@@ -356,9 +368,10 @@ pub async fn do_overwrite_payload(
 }
 
 pub async fn do_delete_payload(
-    toc: &TableOfContent,
-    collection_name: &str,
+    toc: Arc<TableOfContent>,
+    collection_name: String,
     operation: DeletePayload,
+    clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
@@ -380,8 +393,8 @@ pub async fn do_delete_payload(
     let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
 
     toc.update(
-        collection_name,
-        collection_operation,
+        &collection_name,
+        OperationWithClockTag::new(collection_operation, clock_tag),
         wait,
         ordering,
         shard_selector,
@@ -390,9 +403,10 @@ pub async fn do_delete_payload(
 }
 
 pub async fn do_clear_payload(
-    toc: &TableOfContent,
-    collection_name: &str,
+    toc: Arc<TableOfContent>,
+    collection_name: String,
     points: PointsSelector,
+    clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
@@ -411,8 +425,8 @@ pub async fn do_clear_payload(
     let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
 
     toc.update(
-        collection_name,
-        collection_operation,
+        &collection_name,
+        OperationWithClockTag::new(collection_operation, clock_tag),
         wait,
         ordering,
         shard_selector,
@@ -421,9 +435,10 @@ pub async fn do_clear_payload(
 }
 
 pub async fn do_batch_update_points(
-    toc: &TableOfContent,
-    collection_name: &str,
+    toc: Arc<TableOfContent>,
+    collection_name: String,
     operations: Vec<UpdateOperation>,
+    clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
@@ -433,9 +448,10 @@ pub async fn do_batch_update_points(
         let result = match operation {
             UpdateOperation::Upsert(operation) => {
                 do_upsert_points(
-                    toc,
-                    collection_name,
+                    toc.clone(),
+                    collection_name.clone(),
                     operation.upsert,
+                    clock_tag,
                     shard_selection,
                     wait,
                     ordering,
@@ -444,9 +460,10 @@ pub async fn do_batch_update_points(
             }
             UpdateOperation::Delete(operation) => {
                 do_delete_points(
-                    toc,
-                    collection_name,
+                    toc.clone(),
+                    collection_name.clone(),
                     operation.delete,
+                    clock_tag,
                     shard_selection,
                     wait,
                     ordering,
@@ -455,9 +472,10 @@ pub async fn do_batch_update_points(
             }
             UpdateOperation::SetPayload(operation) => {
                 do_set_payload(
-                    toc,
-                    collection_name,
+                    toc.clone(),
+                    collection_name.clone(),
                     operation.set_payload,
+                    clock_tag,
                     shard_selection,
                     wait,
                     ordering,
@@ -466,9 +484,10 @@ pub async fn do_batch_update_points(
             }
             UpdateOperation::OverwritePayload(operation) => {
                 do_overwrite_payload(
-                    toc,
-                    collection_name,
+                    toc.clone(),
+                    collection_name.clone(),
                     operation.overwrite_payload,
+                    clock_tag,
                     shard_selection,
                     wait,
                     ordering,
@@ -477,9 +496,10 @@ pub async fn do_batch_update_points(
             }
             UpdateOperation::DeletePayload(operation) => {
                 do_delete_payload(
-                    toc,
-                    collection_name,
+                    toc.clone(),
+                    collection_name.clone(),
                     operation.delete_payload,
+                    clock_tag,
                     shard_selection,
                     wait,
                     ordering,
@@ -488,9 +508,10 @@ pub async fn do_batch_update_points(
             }
             UpdateOperation::ClearPayload(operation) => {
                 do_clear_payload(
-                    toc,
-                    collection_name,
+                    toc.clone(),
+                    collection_name.clone(),
                     operation.clear_payload,
+                    clock_tag,
                     shard_selection,
                     wait,
                     ordering,
@@ -499,9 +520,10 @@ pub async fn do_batch_update_points(
             }
             UpdateOperation::UpdateVectors(operation) => {
                 do_update_vectors(
-                    toc,
-                    collection_name,
+                    toc.clone(),
+                    collection_name.clone(),
                     operation.update_vectors,
+                    clock_tag,
                     shard_selection,
                     wait,
                     ordering,
@@ -510,9 +532,10 @@ pub async fn do_batch_update_points(
             }
             UpdateOperation::DeleteVectors(operation) => {
                 do_delete_vectors(
-                    toc,
-                    collection_name,
+                    toc.clone(),
+                    collection_name.clone(),
                     operation.delete_vectors,
+                    clock_tag,
                     shard_selection,
                     wait,
                     ordering,
@@ -525,11 +548,13 @@ pub async fn do_batch_update_points(
     Ok(results)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_create_index_internal(
-    toc: &TableOfContent,
-    collection_name: &str,
+    toc: Arc<TableOfContent>,
+    collection_name: String,
     field_name: PayloadKeyType,
     field_schema: Option<PayloadFieldSchema>,
+    clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
@@ -548,8 +573,8 @@ pub async fn do_create_index_internal(
     };
 
     toc.update(
-        collection_name,
-        collection_operation,
+        &collection_name,
+        OperationWithClockTag::new(collection_operation, clock_tag),
         wait,
         ordering,
         shard_selector,
@@ -558,13 +583,16 @@ pub async fn do_create_index_internal(
 }
 
 pub async fn do_create_index(
-    dispatcher: &Dispatcher,
-    collection_name: &str,
+    dispatcher: Arc<Dispatcher>,
+    collection_name: String,
     operation: CreateFieldIndex,
+    clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
 ) -> Result<UpdateResult, StorageError> {
+    // TODO: Is this cancel safe!?
+
     let Some(field_schema) = operation.field_schema else {
         return Err(StorageError::bad_request(
             "Can't auto-detect field type, please specify `field_schema` in the request",
@@ -580,6 +608,7 @@ pub async fn do_create_index(
     // Default consensus timeout will be used
     let wait_timeout = None; // ToDo: make it configurable
 
+    // TODO: Is `submit_collection_meta_op` cancel-safe!? Should be, I think?.. 🤔
     dispatcher
         .submit_collection_meta_op(consensus_op, wait_timeout)
         .await?;
@@ -589,10 +618,11 @@ pub async fn do_create_index(
     // The idea is to migrate from the point-like interface to consensus-like interface in the next few versions
 
     do_create_index_internal(
-        dispatcher.toc(),
+        dispatcher.toc().clone(),
         collection_name,
         operation.field_name,
         Some(field_schema),
+        clock_tag,
         shard_selection,
         wait,
         ordering,
@@ -601,9 +631,10 @@ pub async fn do_create_index(
 }
 
 pub async fn do_delete_index_internal(
-    toc: &TableOfContent,
-    collection_name: &str,
+    toc: Arc<TableOfContent>,
+    collection_name: String,
     index_name: String,
+    clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
@@ -619,8 +650,8 @@ pub async fn do_delete_index_internal(
     };
 
     toc.update(
-        collection_name,
-        collection_operation,
+        &collection_name,
+        OperationWithClockTag::new(collection_operation, clock_tag),
         wait,
         ordering,
         shard_selector,
@@ -629,13 +660,16 @@ pub async fn do_delete_index_internal(
 }
 
 pub async fn do_delete_index(
-    dispatcher: &Dispatcher,
-    collection_name: &str,
+    dispatcher: Arc<Dispatcher>,
+    collection_name: String,
     index_name: String,
+    clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
 ) -> Result<UpdateResult, StorageError> {
+    // TODO: Is this cancel safe!?
+
     let consensus_op = CollectionMetaOperations::DropPayloadIndex(DropPayloadIndex {
         collection_name: collection_name.to_string(),
         field_name: index_name.clone(),
@@ -644,14 +678,16 @@ pub async fn do_delete_index(
     // Default consensus timeout will be used
     let wait_timeout = None; // ToDo: make it configurable
 
+    // TODO: Is `submit_collection_meta_op` cancel-safe!? Should be, I think?.. 🤔
     dispatcher
         .submit_collection_meta_op(consensus_op, wait_timeout)
         .await?;
 
     do_delete_index_internal(
-        dispatcher.toc(),
+        dispatcher.toc().clone(),
         collection_name,
         index_name,
+        clock_tag,
         shard_selection,
         wait,
         ordering,

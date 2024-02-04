@@ -1,15 +1,17 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
-use chrono::{NaiveDateTime, Timelike};
+use chrono::{NaiveDateTime, TimeZone as _, Timelike};
 use segment::data_types::integer_index::IntegerIndexType;
 use segment::data_types::text_index::TextIndexType;
 use segment::data_types::vectors::VectorElementType;
-use segment::types::default_quantization_ignore_value;
+use segment::types::{default_quantization_ignore_value, DateTimePayloadType, FloatPayloadType};
 use tonic::Status;
 use uuid::Uuid;
 
-use super::qdrant::{BinaryQuantization, CompressionRatio, GeoLineString, GroupId, SparseIndices};
+use super::qdrant::{
+    BinaryQuantization, CompressionRatio, DatetimeRange, GeoLineString, GroupId, SparseIndices,
+};
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
 use crate::grpc::qdrant::payload_index_params::IndexParams;
@@ -24,10 +26,11 @@ use crate::grpc::qdrant::{
     HasIdCondition, HealthCheckReply, HnswConfigDiff, IntegerIndexParams, IsEmptyCondition,
     IsNullCondition, ListCollectionsResponse, ListValue, Match, NamedVectors, NestedCondition,
     PayloadExcludeSelector, PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo,
-    PayloadSchemaType, PointId, ProductQuantization, QuantizationConfig, QuantizationSearchParams,
-    QuantizationType, Range, RepeatedIntegers, RepeatedStrings, ScalarQuantization, ScoredPoint,
-    SearchParams, ShardKey, Struct, TextIndexParams, TokenizerType, Value, ValuesCount, Vector,
-    Vectors, VectorsSelector, WithPayloadSelector, WithVectorsSelector,
+    PayloadSchemaType, PointId, PointsOperationResponse, PointsOperationResponseInternal,
+    ProductQuantization, QuantizationConfig, QuantizationSearchParams, QuantizationType, Range,
+    RepeatedIntegers, RepeatedStrings, ScalarQuantization, ScoredPoint, SearchParams, ShardKey,
+    Struct, TextIndexParams, TokenizerType, UpdateResult, UpdateResultInternal, Value, ValuesCount,
+    Vector, Vectors, VectorsSelector, WithPayloadSelector, WithVectorsSelector,
 };
 
 pub fn payload_to_proto(payload: segment::types::Payload) -> HashMap<String, Value> {
@@ -222,6 +225,7 @@ impl From<segment::types::PayloadIndexInfo> for PayloadSchemaInfo {
                 segment::types::PayloadSchemaType::Geo => PayloadSchemaType::Geo,
                 segment::types::PayloadSchemaType::Text => PayloadSchemaType::Text,
                 segment::types::PayloadSchemaType::Bool => PayloadSchemaType::Bool,
+                segment::types::PayloadSchemaType::Datetime => PayloadSchemaType::Datetime,
             }
             .into(),
             params: schema.params.map(|params| match params {
@@ -312,6 +316,7 @@ impl TryFrom<PayloadSchemaInfo> for segment::types::PayloadIndexInfo {
                 PayloadSchemaType::Geo => segment::types::PayloadSchemaType::Geo,
                 PayloadSchemaType::Text => segment::types::PayloadSchemaType::Text,
                 PayloadSchemaType::Bool => segment::types::PayloadSchemaType::Bool,
+                PayloadSchemaType::Datetime => segment::types::PayloadSchemaType::Datetime,
                 PayloadSchemaType::UnknownType => {
                     return Err(Status::invalid_argument(
                         "Malformed payload schema".to_string(),
@@ -942,6 +947,7 @@ impl TryFrom<FieldCondition> for segment::types::FieldCondition {
             geo_radius,
             values_count,
             geo_polygon,
+            datetime_range,
         } = value;
 
         let geo_bounding_box =
@@ -952,6 +958,7 @@ impl TryFrom<FieldCondition> for segment::types::FieldCondition {
             key,
             r#match: r#match.map_or_else(|| Ok(None), |m| m.try_into().map(Some))?,
             range: range.map(Into::into),
+            datetime_range: datetime_range.map(TryInto::try_into).transpose()?,
             geo_bounding_box,
             geo_radius,
             geo_polygon,
@@ -966,23 +973,22 @@ impl From<segment::types::FieldCondition> for FieldCondition {
             key,
             r#match,
             range,
+            datetime_range,
             geo_bounding_box,
             geo_radius,
             geo_polygon,
             values_count,
         } = value;
 
-        let geo_bounding_box = geo_bounding_box.map(Into::into);
-        let geo_radius = geo_radius.map(Into::into);
-        let geo_polygon = geo_polygon.map(Into::into);
         Self {
             key,
             r#match: r#match.map(Into::into),
             range: range.map(Into::into),
-            geo_bounding_box,
-            geo_radius,
-            geo_polygon,
+            geo_bounding_box: geo_bounding_box.map(Into::into),
+            geo_radius: geo_radius.map(Into::into),
+            geo_polygon: geo_polygon.map(Into::into),
             values_count: values_count.map(Into::into),
+            datetime_range: datetime_range.map(Into::into),
         }
     }
 }
@@ -1095,7 +1101,7 @@ impl From<segment::types::GeoLineString> for GeoLineString {
     }
 }
 
-impl From<Range> for segment::types::Range {
+impl From<Range> for segment::types::Range<FloatPayloadType> {
     fn from(value: Range) -> Self {
         Self {
             lt: value.lt,
@@ -1106,13 +1112,37 @@ impl From<Range> for segment::types::Range {
     }
 }
 
-impl From<segment::types::Range> for Range {
-    fn from(value: segment::types::Range) -> Self {
+impl From<segment::types::Range<FloatPayloadType>> for Range {
+    fn from(value: segment::types::Range<FloatPayloadType>) -> Self {
         Self {
             lt: value.lt,
             gt: value.gt,
             gte: value.gte,
             lte: value.lte,
+        }
+    }
+}
+
+impl TryFrom<DatetimeRange> for segment::types::Range<DateTimePayloadType> {
+    type Error = Status;
+
+    fn try_from(value: DatetimeRange) -> Result<Self, Self::Error> {
+        Ok(Self {
+            lt: value.lt.map(date_time_from_proto).transpose()?,
+            gt: value.gt.map(date_time_from_proto).transpose()?,
+            gte: value.gte.map(date_time_from_proto).transpose()?,
+            lte: value.lte.map(date_time_from_proto).transpose()?,
+        })
+    }
+}
+
+impl From<segment::types::Range<DateTimePayloadType>> for DatetimeRange {
+    fn from(value: segment::types::Range<DateTimePayloadType>) -> Self {
+        Self {
+            lt: value.lt.map(date_time_to_proto),
+            gt: value.gt.map(date_time_to_proto),
+            gte: value.gte.map(date_time_to_proto),
+            lte: value.lte.map(date_time_to_proto),
         }
     }
 }
@@ -1210,11 +1240,26 @@ impl From<HnswConfigDiff> for segment::types::HnswConfig {
     }
 }
 
-pub fn date_time_to_proto(date_time: NaiveDateTime) -> prost_types::Timestamp {
-    prost_types::Timestamp {
+pub fn naive_date_time_to_proto(date_time: NaiveDateTime) -> prost_wkt_types::Timestamp {
+    prost_wkt_types::Timestamp {
         seconds: date_time.timestamp(), // number of non-leap seconds since the midnight on January 1, 1970.
         nanos: date_time.nanosecond() as i32,
     }
+}
+
+pub fn date_time_to_proto(date_time: chrono::DateTime<chrono::Utc>) -> prost_wkt_types::Timestamp {
+    naive_date_time_to_proto(date_time.naive_utc())
+}
+
+pub fn date_time_from_proto(
+    date_time: prost_wkt_types::Timestamp,
+) -> Result<chrono::DateTime<chrono::Utc>, Status> {
+    chrono::NaiveDateTime::from_timestamp_opt(
+        date_time.seconds,
+        date_time.nanos.try_into().unwrap_or(0),
+    )
+    .map(|naive_date_time| chrono::Utc.from_utc_datetime(&naive_date_time))
+    .ok_or_else(|| Status::invalid_argument(format!("Unable to parse timestamp: {date_time}")))
 }
 
 impl TryFrom<Distance> for segment::types::Distance {
@@ -1271,4 +1316,43 @@ pub fn into_named_vector_struct(
             }
         }
     })
+}
+
+impl From<PointsOperationResponseInternal> for PointsOperationResponse {
+    fn from(resp: PointsOperationResponseInternal) -> Self {
+        Self {
+            result: resp.result.map(Into::into),
+            time: resp.time,
+        }
+    }
+}
+
+// TODO: Make it explicit `from_operations_response` method instead of `impl From<PointsOperationResponse>`?
+impl From<PointsOperationResponse> for PointsOperationResponseInternal {
+    fn from(resp: PointsOperationResponse) -> Self {
+        Self {
+            result: resp.result.map(Into::into),
+            time: resp.time,
+        }
+    }
+}
+
+impl From<UpdateResultInternal> for UpdateResult {
+    fn from(res: UpdateResultInternal) -> Self {
+        Self {
+            operation_id: res.operation_id,
+            status: res.status,
+        }
+    }
+}
+
+// TODO: Make it explicit `from_update_result` method instead of `impl From<UpdateResult>`?
+impl From<UpdateResult> for UpdateResultInternal {
+    fn from(res: UpdateResult) -> Self {
+        Self {
+            operation_id: res.operation_id,
+            status: res.status,
+            clock_tag: None,
+        }
+    }
 }

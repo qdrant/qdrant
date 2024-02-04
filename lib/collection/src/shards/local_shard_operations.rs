@@ -17,7 +17,7 @@ use crate::operations::types::{
     CountRequestInternal, CountResult, PointRequestInternal, QueryEnum, Record, UpdateResult,
     UpdateStatus,
 };
-use crate::operations::CollectionUpdateOperations;
+use crate::operations::OperationWithClockTag;
 use crate::optimizers_builder::DEFAULT_INDEXING_THRESHOLD_KB;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
@@ -101,16 +101,24 @@ impl LocalShard {
         Ok(top_results)
     }
 }
+
 #[async_trait]
 impl ShardOperation for LocalShard {
     /// Imply interior mutability.
     /// Performs update operation on this collection asynchronously.
     /// Explicitly waits for result to be updated.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
     async fn update(
         &self,
-        operation: CollectionUpdateOperations,
+        operation: OperationWithClockTag,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
+        // `LocalShard::update` only has a single cancel safe `await`, WAL operations are blocking,
+        // and update is applied by a separate task, so, surprisingly, this method is cancel safe. :D
+
         let (callback_sender, callback_receiver) = if wait {
             let (tx, rx) = oneshot::channel();
             (Some(tx), Some(rx))
@@ -120,12 +128,14 @@ impl ShardOperation for LocalShard {
 
         let operation_id = {
             let update_sender = self.update_sender.load();
+
             let channel_permit = update_sender.reserve().await?;
+
             let mut wal_lock = self.wal.lock();
             let operation_id = wal_lock.write(&operation)?;
             channel_permit.send(UpdateSignal::Operation(OperationData {
                 op_num: operation_id,
-                operation,
+                operation: operation.operation,
                 sender: callback_sender,
                 wait,
             }));
@@ -137,11 +147,13 @@ impl ShardOperation for LocalShard {
             Ok(UpdateResult {
                 operation_id: Some(operation_id),
                 status: UpdateStatus::Completed,
+                clock_tag: None, // TODO: Add clock tag!
             })
         } else {
             Ok(UpdateResult {
                 operation_id: Some(operation_id),
                 status: UpdateStatus::Acknowledged,
+                clock_tag: None, // TODO: Add clock tag!
             })
         }
     }

@@ -97,7 +97,7 @@ def test_recover_dead_node(tmp_path: pathlib.Path):
     # 2 nodes majority should be enough for applying the status
     create_collection(peer_api_uris[0], "test_collection2", timeout=5)
 
-    new_url = start_peer(peer_dirs[-1], f"peer_0_restarted.log", bootstrap_uri)
+    new_url = start_peer(peer_dirs[-1], "peer_0_restarted.log", bootstrap_uri)
 
     # Wait for cluster to recover dead peers
     wait_for_all_replicas_active(peer_api_uris[0], "test_collection")

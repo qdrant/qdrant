@@ -1140,6 +1140,7 @@ mod tests {
 
     use collection::operations::types::VectorParams;
     use collection::shards::channel_service::ChannelService;
+    use common::cpu::CpuBudget;
     use segment::types::Distance;
     use slog::Drain;
     use snapshot_manager::SnapshotManager;
@@ -1186,6 +1187,7 @@ mod tests {
             search_runtime,
             update_runtime,
             general_runtime,
+            CpuBudget::default(),
             ChannelService::new(settings.service.http_port),
             persistent_state.this_peer_id(),
             Some(operation_sender.clone()),

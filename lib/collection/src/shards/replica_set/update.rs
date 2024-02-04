@@ -8,7 +8,7 @@ use itertools::Itertools as _;
 use super::{ReplicaSetState, ReplicaState, ShardReplicaSet};
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{CollectionError, CollectionResult, UpdateResult};
-use crate::operations::CollectionUpdateOperations;
+use crate::operations::{CollectionUpdateOperations, OperationWithClockTag};
 use crate::shards::shard::PeerId;
 use crate::shards::shard_trait::ShardOperation as _;
 
@@ -16,12 +16,21 @@ const DEFAULT_SHARD_DEACTIVATION_TIMEOUT: Duration = Duration::from_secs(30);
 
 impl ShardReplicaSet {
     /// Update local shard if any without forwarding to remote shards
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
     pub async fn update_local(
         &self,
-        operation: CollectionUpdateOperations,
+        operation: OperationWithClockTag,
         wait: bool,
     ) -> CollectionResult<Option<UpdateResult>> {
-        if let Some(local_shard) = &*self.local.read().await {
+        // `ShardOperations::update` is not guaranteed to be cancel safe, so this method is not
+        // cancel safe.
+
+        let local = self.local.read().await;
+
+        if let Some(local_shard) = local.deref() {
             match self.peer_state(&self.this_peer_id()) {
                 Some(ReplicaState::Active | ReplicaState::Partial | ReplicaState::Initializing) => {
                     Ok(Some(local_shard.get().update(operation, wait).await?))
@@ -36,45 +45,52 @@ impl ShardReplicaSet {
         }
     }
 
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
     pub async fn update_with_consistency(
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
         ordering: WriteOrdering,
     ) -> CollectionResult<UpdateResult> {
-        match self.leader_peer_for_update(ordering) {
-            None => Err(CollectionError::service_error(format!(
+        // `ShardReplicaSet::update` is not cancel safe, so this method is not cancel safe.
+
+        let Some(leader_peer) = self.leader_peer_for_update(ordering) else {
+            return Err(CollectionError::service_error(format!(
                 "Cannot update shard {}:{} with {ordering:?} ordering because no leader could be selected",
                 self.collection_id, self.shard_id
-            ))),
-            Some(leader_peer) => {
-                // If we are the leader, run the update from this replica set
-                if leader_peer == self.this_peer_id() {
-                    // lock updates if ordering is medium or strong
-                    let _guard = match ordering {
-                        WriteOrdering::Weak => None, // no locking required
-                        WriteOrdering::Medium | WriteOrdering::Strong => Some(self.write_ordering_lock.lock().await), // one request at a time
-                    };
-                    self.update(operation, wait).await
-                } else {
-                    // forward the update to the designated leader
-                    self.forward_update(leader_peer, operation, wait, ordering)
-                        .await
-                        .map_err(|err| {
-                            if err.is_transient() {
-                                // Deactivate the peer if forwarding failed with transient error
-                                self.add_locally_disabled(leader_peer);
+            )));
+        };
 
-                                // return service error
-                                CollectionError::service_error(format!(
-                                    "Failed to apply update with {ordering:?} ordering via leader peer {leader_peer}: {err}"
-                                ))
-                            } else {
-                                err
-                            }
-                        })
+        // If we are the leader, run the update from this replica set
+        if leader_peer == self.this_peer_id() {
+            // Lock updates if ordering is strong or medium
+            let _write_ordering_lock = match ordering {
+                WriteOrdering::Strong | WriteOrdering::Medium => {
+                    Some(self.write_ordering_lock.lock().await)
                 }
-            }
+                WriteOrdering::Weak => None,
+            };
+
+            self.update(operation, wait).await
+        } else {
+            // Forward the update to the designated leader
+            self.forward_update(leader_peer, operation, wait, ordering)
+                .await
+                .map_err(|err| {
+                    if err.is_transient() {
+                        // Deactivate the peer if forwarding failed with transient error
+                        self.add_locally_disabled(leader_peer);
+
+                        // Return service error
+                        CollectionError::service_error(format!(
+                            "Failed to apply update with {ordering:?} ordering via leader peer {leader_peer}: {err}"
+                        ))
+                    } else {
+                        err
+                    }
+                })
         }
     }
 
@@ -102,11 +118,18 @@ impl ShardReplicaSet {
         self.replica_state.read().peers.keys().max().cloned()
     }
 
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
     async fn update(
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
+        // `LocalShard::update` is not guaranteed to be cancel safe and it's impossible to cancel
+        // multiple parallel updates in a way that is *guaranteed* not to introduce inconsistencies
+        // between nodes, so this method is not cancel safe.
+
         let all_res: Vec<Result<_, _>> = {
             let remotes = self.remotes.read().await;
             let local = self.local.read().await;
@@ -128,6 +151,8 @@ impl ShardReplicaSet {
                     self.shard_id, this_peer_id
                 )));
             }
+
+            let operation = OperationWithClockTag::from(operation); // TODO: Assign clock tag!
 
             let mut update_futures = Vec::with_capacity(active_remote_shards.len() + 1);
 
@@ -325,7 +350,12 @@ impl ShardReplicaSet {
 
         wait_for_deactivation
     }
+
     /// Forward update to the leader replica
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
     async fn forward_update(
         &self,
         leader_peer: PeerId,
@@ -333,20 +363,20 @@ impl ShardReplicaSet {
         wait: bool,
         ordering: WriteOrdering,
     ) -> CollectionResult<UpdateResult> {
-        let remotes_guard = self.remotes.read().await;
-        let remote_leader = remotes_guard.iter().find(|r| r.peer_id == leader_peer);
+        // `RemoteShard::forward_update` is cancel safe, so this method is cancel safe.
 
-        match remote_leader {
-            Some(remote_leader) => {
-                remote_leader
-                    .forward_update(operation, wait, ordering)
-                    .await
-            }
-            None => Err(CollectionError::service_error(format!(
+        let remotes_guard = self.remotes.read().await;
+
+        let Some(remote_leader) = remotes_guard.iter().find(|r| r.peer_id == leader_peer) else {
+            return Err(CollectionError::service_error(format!(
                 "Cannot forward update to shard {} because was removed from the replica set",
                 self.shard_id
-            ))),
-        }
+            )));
+        };
+
+        remote_leader
+            .forward_update(OperationWithClockTag::from(operation), wait, ordering) // `clock_tag` *have to* be `None`!
+            .await
     }
 }
 
@@ -356,6 +386,7 @@ mod tests {
     use std::num::{NonZeroU32, NonZeroU64};
     use std::sync::Arc;
 
+    use common::cpu::CpuBudget;
     use segment::types::Distance;
     use tempfile::{Builder, TempDir};
     use tokio::runtime::Handle;
@@ -443,6 +474,7 @@ mod tests {
             Default::default(),
             update_runtime,
             search_runtime,
+            CpuBudget::default(),
             None,
         )
         .await

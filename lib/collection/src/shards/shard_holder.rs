@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 
+use common::cpu::CpuBudget;
 use itertools::Itertools;
 // TODO rename ReplicaShard to ReplicaSetShard
 use segment::types::ShardKey;
@@ -281,6 +282,21 @@ impl ShardHolder {
         })?)
     }
 
+    /// The count of incoming and outgoing shard transfers on the given peer
+    ///
+    /// This only includes shard transfers that are in consensus for the current collection. A
+    /// shard transfer that has just been proposed may not be included yet.
+    pub fn count_shard_transfer_io(&self, peer_id: &PeerId) -> (usize, usize) {
+        let (mut incoming, mut outgoing) = (0, 0);
+
+        for transfer in self.shard_transfers.read().iter() {
+            incoming += (transfer.to == *peer_id) as usize;
+            outgoing += (transfer.from == *peer_id) as usize;
+        }
+
+        (incoming, outgoing)
+    }
+
     pub fn get_shard_transfer_info(&self) -> Vec<ShardTransferInfo> {
         let mut shard_transfers = vec![];
         for shard_transfer in self.shard_transfers.read().iter() {
@@ -409,6 +425,7 @@ impl ShardHolder {
         this_peer_id: PeerId,
         update_runtime: Handle,
         search_runtime: Handle,
+        optimizer_cpu_budget: CpuBudget,
     ) {
         let shard_number = collection_config.read().await.params.shard_number.get();
 
@@ -452,6 +469,7 @@ impl ShardHolder {
                     this_peer_id,
                     update_runtime.clone(),
                     search_runtime.clone(),
+                    optimizer_cpu_budget.clone(),
                 )
                 .await;
 
@@ -466,6 +484,7 @@ impl ShardHolder {
                             collection_config.clone(),
                             shared_storage_config.clone(),
                             update_runtime.clone(),
+                            optimizer_cpu_budget.clone(),
                         )
                         .await
                         .unwrap();
@@ -490,6 +509,7 @@ impl ShardHolder {
                             collection_config.clone(),
                             shared_storage_config.clone(),
                             update_runtime.clone(),
+                            optimizer_cpu_budget.clone(),
                         )
                         .await
                         .unwrap();

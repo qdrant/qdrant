@@ -1,10 +1,8 @@
 import pathlib
-import shutil
 
 from requests import get, post, put, delete
-from .fixtures import create_collection, upsert_random_points, random_dense_vector, search
+from .fixtures import create_collection, upsert_random_points
 from .utils import *
-from .assertions import assert_http_ok
 
 N_PEERS = 3
 COLLECTION_NAME = "test_collection"
@@ -79,7 +77,7 @@ def start_cluster_with_corrupted_node(
         segment_json_file.write("borked")
 
     # Restart the peer
-    peer_url = start_peer(peer_dirs[-1], f"peer_0_restarted.log", bootstrap_url, extra_env={
+    peer_url = start_peer(peer_dirs[-1], "peer_0_restarted.log", bootstrap_url, extra_env={
         "QDRANT__STORAGE__HANDLE_COLLECTION_LOAD_ERRORS": "true"
     })
 

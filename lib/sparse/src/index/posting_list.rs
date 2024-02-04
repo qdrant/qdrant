@@ -5,7 +5,7 @@ use ordered_float::OrderedFloat;
 
 use crate::common::types::DimWeight;
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PostingElement {
     /// Record ID
     pub record_id: PointOffsetType,

@@ -9,6 +9,7 @@ use crate::shards::transfer::ShardTransferMethod;
 const DEFAULT_SEARCH_TIMEOUT: Duration = Duration::from_secs(60);
 const DEFAULT_UPDATE_QUEUE_SIZE: usize = 100;
 const DEFAULT_UPDATE_QUEUE_SIZE_LISTENER: usize = 10_000;
+pub const DEFAULT_IO_SHARD_TRANSFER_LIMIT: Option<usize> = Some(1);
 
 /// Storage configuration shared between all collections.
 /// Represents a per-node configuration, which might be changes with restart.
@@ -23,6 +24,8 @@ pub struct SharedStorageConfig {
     pub update_concurrency: Option<NonZeroUsize>,
     pub is_distributed: bool,
     pub default_shard_transfer_method: Option<ShardTransferMethod>,
+    pub incoming_shard_transfers_limit: Option<usize>,
+    pub outgoing_shard_transfers_limit: Option<usize>,
 }
 
 impl Default for SharedStorageConfig {
@@ -36,6 +39,8 @@ impl Default for SharedStorageConfig {
             update_concurrency: None,
             is_distributed: false,
             default_shard_transfer_method: None,
+            incoming_shard_transfers_limit: DEFAULT_IO_SHARD_TRANSFER_LIMIT,
+            outgoing_shard_transfers_limit: DEFAULT_IO_SHARD_TRANSFER_LIMIT,
         }
     }
 }
@@ -51,6 +56,8 @@ impl SharedStorageConfig {
         update_concurrency: Option<NonZeroUsize>,
         is_distributed: bool,
         default_shard_transfer_method: Option<ShardTransferMethod>,
+        incoming_shard_transfers_limit: Option<usize>,
+        outgoing_shard_transfers_limit: Option<usize>,
     ) -> Self {
         let update_queue_size = update_queue_size.unwrap_or(match node_type {
             NodeType::Normal => DEFAULT_UPDATE_QUEUE_SIZE,
@@ -65,6 +72,8 @@ impl SharedStorageConfig {
             update_concurrency,
             is_distributed,
             default_shard_transfer_method,
+            incoming_shard_transfers_limit,
+            outgoing_shard_transfers_limit,
         }
     }
 }

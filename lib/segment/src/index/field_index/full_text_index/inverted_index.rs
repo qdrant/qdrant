@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use super::posting_list::PostingList;
 use super::postings_iterator::intersect_postings_iterator;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
-use crate::types::{FieldCondition, Match, MatchText, PayloadKeyType};
+use crate::types::{FieldCondition, Match, PayloadKeyType};
 
 pub type TokenId = u32;
 
@@ -238,17 +238,7 @@ impl InvertedIndex {
                     )
                 })
                 .map(move |(token, posting)| PayloadBlockCondition {
-                    condition: FieldCondition {
-                        key: key.clone(),
-                        r#match: Some(Match::Text(MatchText {
-                            text: token.clone(),
-                        })),
-                        range: None,
-                        geo_bounding_box: None,
-                        geo_radius: None,
-                        geo_polygon: None,
-                        values_count: None,
-                    },
+                    condition: FieldCondition::new_match(key.clone(), Match::new_text(token)),
                     cardinality: posting.len(),
                 }),
         )

@@ -161,15 +161,9 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
     }
 
     let count_request = CountRequestInternal {
-        filter: Some(Filter::new_must(Condition::Field(FieldCondition {
-            key: "k".to_string(),
-            r#match: Some(serde_json::from_str(r#"{ "value": "v2" }"#).unwrap()),
-            range: None,
-            geo_bounding_box: None,
-            geo_radius: None,
-            values_count: None,
-            geo_polygon: None,
-        }))),
+        filter: Some(Filter::new_must(Condition::Field(
+            FieldCondition::new_match("k", serde_json::from_str(r#"{ "value": "v2" }"#).unwrap()),
+        ))),
         exact: true,
     };
 

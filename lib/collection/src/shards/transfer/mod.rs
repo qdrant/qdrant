@@ -52,7 +52,7 @@ impl ShardTransfer {
 }
 
 /// Unique identifier of a transfer, agnostic of transfer method
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ShardTransferKey {
     pub shard_id: ShardId,
     pub from: PeerId,
@@ -60,8 +60,8 @@ pub struct ShardTransferKey {
 }
 
 impl ShardTransferKey {
-    pub fn check(&self, transfer: &ShardTransfer) -> bool {
-        self.shard_id == transfer.shard_id && self.from == transfer.from && self.to == transfer.to
+    pub fn check(self, transfer: &ShardTransfer) -> bool {
+        self == transfer.key()
     }
 }
 

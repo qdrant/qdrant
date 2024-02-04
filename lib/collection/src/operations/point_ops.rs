@@ -33,7 +33,7 @@ pub enum WriteOrdering {
     Strong,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Validate)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct PointStruct {
     /// Point id
@@ -70,7 +70,7 @@ impl TryFrom<Record> for PointStruct {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct Batch {
     pub ids: Vec<PointIdType>,
@@ -96,7 +96,7 @@ impl Batch {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct PointIdsList {
     pub points: Vec<PointIdType>,
@@ -139,7 +139,7 @@ impl Validate for PointsSelector {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct PointSyncOperation {
     /// Minimal id of the sync range
     pub from_id: Option<PointIdType>,
@@ -191,7 +191,7 @@ impl PointInsertOperations {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PointInsertOperationsInternal {
     /// Inset points from a batch.
@@ -305,7 +305,7 @@ impl From<Vec<PointStruct>> for PointInsertOperationsInternal {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PointOperations {
     /// Insert or update points

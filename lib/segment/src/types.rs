@@ -42,6 +42,8 @@ pub type TagType = u64;
 pub type FloatPayloadType = f64;
 /// Type of integer point payload
 pub type IntPayloadType = i64;
+/// Type of datetime point payload
+pub type DateTimePayloadType = chrono::DateTime<chrono::Utc>;
 
 pub const VECTOR_ELEMENT_SIZE: usize = size_of::<VectorElementType>();
 
@@ -794,7 +796,7 @@ pub struct SegmentState {
 }
 
 /// Geo point payload schema
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Default)]
 #[serde(try_from = "GeoPointShadow")]
 pub struct GeoPoint {
     pub lon: f64,
@@ -1065,6 +1067,7 @@ pub enum PayloadSchemaType {
     Geo,
     Text,
     Bool,
+    Datetime,
 }
 
 /// Payload type with parameters
@@ -1224,8 +1227,7 @@ impl Match {
         Self::Value(MatchValue { value })
     }
 
-    #[cfg(test)]
-    fn new_text(text: &str) -> Self {
+    pub fn new_text(text: &str) -> Self {
         Self::Text(MatchText { text: text.into() })
     }
 
@@ -1322,21 +1324,35 @@ impl From<Vec<IntPayloadType>> for MatchExcept {
 }
 
 /// Range filter request
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Default, Clone, PartialEq)]
+#[macro_rules_attribute::macro_rules_derive(crate::common::macros::schemars_rename_generics)]
+#[derive_args(<FloatPayloadType> => "Range", <DateTimePayloadType> => "DatetimeRange")]
+#[derive(Debug, Deserialize, Serialize, Default, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
-pub struct Range {
+pub struct Range<T> {
     /// point.key < range.lt
-    pub lt: Option<FloatPayloadType>,
+    pub lt: Option<T>,
     /// point.key > range.gt
-    pub gt: Option<FloatPayloadType>,
+    pub gt: Option<T>,
     /// point.key >= range.gte
-    pub gte: Option<FloatPayloadType>,
+    pub gte: Option<T>,
     /// point.key <= range.lte
-    pub lte: Option<FloatPayloadType>,
+    pub lte: Option<T>,
 }
 
-impl Range {
-    pub fn check_range(&self, number: FloatPayloadType) -> bool {
+impl<T: Copy> Range<T> {
+    /// Convert range to a range of another type
+    pub fn map<U, F: Fn(T) -> U>(&self, f: F) -> Range<U> {
+        Range {
+            lt: self.lt.map(&f),
+            gt: self.gt.map(&f),
+            gte: self.gte.map(&f),
+            lte: self.lte.map(&f),
+        }
+    }
+}
+
+impl<T: Copy + PartialOrd> Range<T> {
+    pub fn check_range(&self, number: T) -> bool {
         self.lt.map_or(true, |x| number < x)
             && self.gt.map_or(true, |x| number > x)
             && self.lte.map_or(true, |x| number <= x)
@@ -1543,7 +1559,9 @@ pub struct FieldCondition {
     /// Check if point has field with a given value
     pub r#match: Option<Match>,
     /// Check if points value lies in a given range
-    pub range: Option<Range>,
+    pub range: Option<Range<FloatPayloadType>>,
+    /// Check if datetime is within a given range
+    pub datetime_range: Option<Range<DateTimePayloadType>>,
     /// Check if points geo location lies in a given area
     pub geo_bounding_box: Option<GeoBoundingBox>,
     /// Check if geo point is within a given radius
@@ -1560,6 +1578,7 @@ impl FieldCondition {
             key: key.into(),
             r#match: Some(r#match),
             range: None,
+            datetime_range: None,
             geo_bounding_box: None,
             geo_radius: None,
             geo_polygon: None,
@@ -1567,11 +1586,28 @@ impl FieldCondition {
         }
     }
 
-    pub fn new_range(key: impl Into<PayloadKeyType>, range: Range) -> Self {
+    pub fn new_range(key: impl Into<PayloadKeyType>, range: Range<FloatPayloadType>) -> Self {
         Self {
             key: key.into(),
             r#match: None,
             range: Some(range),
+            datetime_range: None,
+            geo_bounding_box: None,
+            geo_radius: None,
+            geo_polygon: None,
+            values_count: None,
+        }
+    }
+
+    pub fn new_datetime_range(
+        key: impl Into<PayloadKeyType>,
+        datetime_range: Range<DateTimePayloadType>,
+    ) -> Self {
+        Self {
+            key: key.into(),
+            r#match: None,
+            range: None,
+            datetime_range: Some(datetime_range),
             geo_bounding_box: None,
             geo_radius: None,
             geo_polygon: None,
@@ -1587,6 +1623,7 @@ impl FieldCondition {
             key: key.into(),
             r#match: None,
             range: None,
+            datetime_range: None,
             geo_bounding_box: Some(geo_bounding_box),
             geo_radius: None,
             geo_polygon: None,
@@ -1599,6 +1636,7 @@ impl FieldCondition {
             key: key.into(),
             r#match: None,
             range: None,
+            datetime_range: None,
             geo_bounding_box: None,
             geo_radius: Some(geo_radius),
             geo_polygon: None,
@@ -1611,6 +1649,7 @@ impl FieldCondition {
             key: key.into(),
             r#match: None,
             range: None,
+            datetime_range: None,
             geo_bounding_box: None,
             geo_radius: None,
             geo_polygon: Some(geo_polygon),
@@ -1623,6 +1662,7 @@ impl FieldCondition {
             key: key.into(),
             r#match: None,
             range: None,
+            datetime_range: None,
             geo_bounding_box: None,
             geo_radius: None,
             geo_polygon: None,
@@ -1633,6 +1673,7 @@ impl FieldCondition {
     pub fn all_fields_none(&self) -> bool {
         self.r#match.is_none()
             && self.range.is_none()
+            && self.datetime_range.is_none()
             && self.geo_bounding_box.is_none()
             && self.geo_radius.is_none()
             && self.geo_polygon.is_none()
