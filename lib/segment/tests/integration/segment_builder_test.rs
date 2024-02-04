@@ -107,7 +107,7 @@ fn estimate_build_time_with_callback(
 
     let stopped_t = stopped.clone();
 
-    std::thread::Builder::new()
+    let handle = std::thread::Builder::new()
         .name("build_estimator_timeout".to_string())
         .spawn(move || {
             build_callback(&stopped_t);
