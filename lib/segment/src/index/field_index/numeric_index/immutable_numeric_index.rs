@@ -232,6 +232,16 @@ impl<T: Encodable + Numericable + Default> ImmutableNumericIndex<T> {
             .map(|NumericIndexKey { idx, .. }| idx)
     }
 
+    pub(super) fn orderable_values_range(
+        &self,
+        start_bound: Bound<NumericIndexKey<T>>,
+        end_bound: Bound<NumericIndexKey<T>>,
+    ) -> impl DoubleEndedIterator<Item = (T, PointOffsetType)> + '_ {
+        self.map
+            .values_range(start_bound, end_bound)
+            .map(|NumericIndexKey { key, idx, .. }| (key, idx))
+    }
+
     pub(super) fn load(&mut self) -> OperationResult<bool> {
         let mut mutable = MutableNumericIndex::<T> {
             map: Default::default(),

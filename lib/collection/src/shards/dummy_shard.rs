@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use segment::data_types::order_by::OrderBy;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
@@ -69,6 +70,7 @@ impl ShardOperation for DummyShard {
         _: &WithVector,
         _: Option<&Filter>,
         _: &Handle,
+        _: Option<&OrderBy>,
     ) -> CollectionResult<Vec<Record>> {
         self.dummy()
     }
