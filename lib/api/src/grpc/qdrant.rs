@@ -7235,6 +7235,8 @@ pub struct ClockTag {
     pub clock_id: u32,
     #[prost(uint64, tag = "3")]
     pub clock_tick: u64,
+    #[prost(bool, tag = "4")]
+    pub force: bool,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
