@@ -9,9 +9,8 @@ use std::thread::{self, JoinHandle};
 use atomic_refcell::AtomicRefCell;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use io::file_operations::{atomic_save_json, read_json};
-use itertools::{Either, Itertools};
+use itertools::Either;
 use memory::mmap_ops;
-use ordered_float::OrderedFloat;
 use parking_lot::{Mutex, RwLock};
 use rocksdb::DB;
 use sparse::common::sparse_vector::SparseVector;
@@ -27,7 +26,7 @@ use crate::common::{
     check_named_vectors, check_query_vectors, check_stopped, check_vector, check_vector_name,
 };
 use crate::data_types::named_vectors::NamedVectors;
-use crate::data_types::order_by::{Direction, OrderBy};
+use crate::data_types::order_by::{Direction, OrderBy, OrderingValue};
 use crate::data_types::vectors::{QueryVector, Vector};
 use crate::entry::entry_point::SegmentEntry;
 use crate::id_tracker::IdTrackerSS;
@@ -690,7 +689,7 @@ impl Segment {
         order_by: &OrderBy,
         limit: Option<usize>,
         filter: Option<&Filter>,
-    ) -> OperationResult<Vec<(f64, PointIdType)>> {
+    ) -> OperationResult<Vec<(OrderingValue, PointIdType)>> {
         let payload_index = self.payload_index.borrow();
 
         let numeric_index = payload_index
@@ -1142,13 +1141,9 @@ impl SegmentEntry for Segment {
         limit: Option<usize>,
         filter: Option<&'a Filter>,
         order_by: &'a OrderBy,
-    ) -> OperationResult<Vec<(OrderedFloat<f64>, PointIdType)>> {
+    ) -> OperationResult<Vec<(OrderingValue, PointIdType)>> {
         // TODO: make same optimization for high-constraining filters as in `read_filtered`
-        let reads = self
-            .filtered_read_by_value_stream(order_by, limit, filter)?
-            .into_iter()
-            .map(|(value, point_id)| (OrderedFloat(value), point_id))
-            .collect_vec();
+        let reads = self.filtered_read_by_value_stream(order_by, limit, filter)?;
 
         Ok(reads)
     }

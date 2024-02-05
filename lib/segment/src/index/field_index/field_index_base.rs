@@ -9,6 +9,7 @@ use super::numeric_index::StreamRange;
 use crate::common::operation_error::OperationResult;
 use crate::common::utils::MultiValue;
 use crate::common::Flusher;
+use crate::data_types::order_by::OrderingValue;
 use crate::index::field_index::binary_index::BinaryIndex;
 use crate::index::field_index::full_text_index::text_index::FullTextIndex;
 use crate::index::field_index::geo_index::GeoMapIndex;
@@ -383,16 +384,22 @@ pub enum NumericFieldIndex<'a> {
     FloatIndex(&'a NumericIndex<FloatPayloadType>),
 }
 
-impl<'a> StreamRange<f64> for NumericFieldIndex<'a> {
+impl<'a> StreamRange<OrderingValue> for NumericFieldIndex<'a> {
     fn stream_range(
         &self,
         range: &Range<FloatPayloadType>,
-    ) -> Box<dyn DoubleEndedIterator<Item = (f64, PointOffsetType)> + 'a> {
+    ) -> Box<dyn DoubleEndedIterator<Item = (OrderingValue, PointOffsetType)> + 'a> {
         match self {
-            NumericFieldIndex::IntIndex(index) => {
-                Box::new(index.stream_range(range).map(|(v, p)| (v as f64, p)))
-            }
-            NumericFieldIndex::FloatIndex(index) => index.stream_range(range),
+            NumericFieldIndex::IntIndex(index) => Box::new(
+                index
+                    .stream_range(range)
+                    .map(|(v, p)| (OrderingValue::from(v), p)),
+            ),
+            NumericFieldIndex::FloatIndex(index) => Box::new(
+                index
+                    .stream_range(range)
+                    .map(|(v, p)| (OrderingValue::from(v), p)),
+            ),
         }
     }
 }
