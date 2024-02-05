@@ -56,7 +56,7 @@ fn cardinality_request(
     index: &NumericIndex<f64>,
     query: Range<FloatPayloadType>,
 ) -> CardinalityEstimation {
-    let estimation = index.range_cardinality(&query);
+    let estimation = index.range_cardinality(&RangeInterface::Float(query.clone()));
 
     let result = index
         .filter(&FieldCondition::new_range("".to_string(), query))

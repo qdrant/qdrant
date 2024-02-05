@@ -137,6 +137,7 @@ async fn scroll_points(
             &collection.name,
             scroll_request,
             params.consistency,
+            // TODO: handle params.timeout
             shard_selection,
         )
         .await;

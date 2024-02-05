@@ -13,6 +13,7 @@ use api::grpc::qdrant::update_collection_cluster_setup_request::{
 use api::grpc::qdrant::{CreateShardKey, SearchPoints};
 use common::types::ScoreType;
 use itertools::Itertools;
+use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{Named, NamedQuery, Vector, VectorStruct, DEFAULT_VECTOR_NAME};
 use segment::types::{Distance, QuantizationConfig};
 use segment::vector_storage::query::context_query::{ContextPair, ContextQuery};
@@ -23,9 +24,9 @@ use tonic::Status;
 use super::consistency_params::ReadConsistency;
 use super::types::{
     BaseGroupRequest, ContextExamplePair, CoreSearchRequest, DiscoverRequestInternal, GroupsResult,
-    PointGroup, QueryEnum, RecommendExample, RecommendGroupsRequestInternal, RecommendStrategy,
-    SearchGroupsRequestInternal, SparseIndexParams, SparseVectorParams, VectorParamsDiff,
-    VectorsConfigDiff,
+    OrderByInterface, PointGroup, QueryEnum, RecommendExample, RecommendGroupsRequestInternal,
+    RecommendStrategy, SearchGroupsRequestInternal, SparseIndexParams, SparseVectorParams,
+    VectorParamsDiff, VectorsConfigDiff,
 };
 use crate::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
@@ -412,9 +413,10 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                         .indexing_threshold
                         .map(|x| x as u64),
                     flush_interval_sec: Some(config.optimizer_config.flush_interval_sec),
-                    max_optimization_threads: Some(
-                        config.optimizer_config.max_optimization_threads as u64,
-                    ),
+                    max_optimization_threads: config
+                        .optimizer_config
+                        .max_optimization_threads
+                        .map(|n| n as u64),
                 }),
                 wal_config: Some(api::grpc::qdrant::WalConfigDiff {
                     wal_capacity_mb: Some(config.wal_config.wal_capacity_mb as u64),
@@ -469,8 +471,9 @@ impl From<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfig {
             memmap_threshold: optimizer_config.memmap_threshold.map(|x| x as usize),
             indexing_threshold: optimizer_config.indexing_threshold.map(|x| x as usize),
             flush_interval_sec: optimizer_config.flush_interval_sec.unwrap_or_default(),
-            max_optimization_threads: optimizer_config.max_optimization_threads.unwrap_or(1)
-                as usize,
+            max_optimization_threads: optimizer_config
+                .max_optimization_threads
+                .map(|n| n as usize),
         }
     }
 }
@@ -1745,5 +1748,27 @@ impl From<api::grpc::qdrant::ShardKeySelector> for ShardSelectorInternal {
         } else {
             ShardSelectorInternal::ShardKeys(shard_keys)
         }
+    }
+}
+
+impl TryFrom<api::grpc::qdrant::OrderBy> for OrderByInterface {
+    type Error = Status;
+
+    fn try_from(value: api::grpc::qdrant::OrderBy) -> Result<Self, Self::Error> {
+        let direction = value
+            .direction
+            .and_then(api::grpc::qdrant::Direction::from_i32)
+            .map(segment::data_types::order_by::Direction::from);
+
+        Ok(Self::Struct(OrderBy {
+            key: value.key,
+            direction,
+            start_from: value.start_from.and_then(|value| {
+                value.value.map(|v| match v {
+                    api::grpc::qdrant::start_from::Value::Float(float) => float,
+                    api::grpc::qdrant::start_from::Value::Integer(int) => int as _,
+                })
+            }),
+        }))
     }
 }

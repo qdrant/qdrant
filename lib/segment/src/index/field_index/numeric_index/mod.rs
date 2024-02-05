@@ -20,6 +20,7 @@ use self::immutable_numeric_index::{ImmutableNumericIndex, NumericIndexKey};
 use super::utils::check_boundaries;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
+use crate::common::utils::bound_map;
 use crate::common::Flusher;
 use crate::index::field_index::histogram::{Histogram, Numericable};
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
@@ -33,10 +34,18 @@ use crate::index::key_encoding::{
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, Range,
+    RangeInterface,
 };
 
 const HISTOGRAM_MAX_BUCKET_SIZE: usize = 10_000;
 const HISTOGRAM_PRECISION: f64 = 0.01;
+
+pub trait StreamRange<T> {
+    fn stream_range(
+        &self,
+        range: &Range<FloatPayloadType>,
+    ) -> Box<dyn DoubleEndedIterator<Item = (T, PointOffsetType)> + '_>;
+}
 
 pub trait Encodable: Copy {
     fn encode_key(&self, id: PointOffsetType) -> Vec<u8>;
@@ -106,6 +115,30 @@ impl Encodable for DateTimePayloadType {
 
     fn cmp_encoded(&self, other: &Self) -> std::cmp::Ordering {
         self.timestamp_micros().cmp(&other.timestamp_micros())
+    }
+}
+
+impl<T: Encodable + Numericable> Range<T> {
+    pub(in crate::index::field_index::numeric_index) fn as_index_key_bounds(
+        &self,
+    ) -> (Bound<NumericIndexKey<T>>, Bound<NumericIndexKey<T>>) {
+        let start_bound = match self {
+            Range { gt: Some(gt), .. } => Excluded(NumericIndexKey::new(*gt, PointOffsetType::MAX)),
+            Range { gte: Some(gte), .. } => {
+                Included(NumericIndexKey::new(*gte, PointOffsetType::MIN))
+            }
+            _ => Unbounded,
+        };
+
+        let end_bound = match self {
+            Range { lt: Some(lt), .. } => Excluded(NumericIndexKey::new(*lt, PointOffsetType::MIN)),
+            Range { lte: Some(lte), .. } => {
+                Included(NumericIndexKey::new(*lte, PointOffsetType::MAX))
+            }
+            _ => Unbounded,
+        };
+
+        (start_bound, end_bound)
     }
 }
 
@@ -196,24 +229,31 @@ impl<T: Encodable + Numericable + Default> NumericIndex<T> {
         }
     }
 
-    fn range_cardinality(&self, range: &Range<FloatPayloadType>) -> CardinalityEstimation {
+    fn range_cardinality(&self, range: &RangeInterface) -> CardinalityEstimation {
         let max_values_per_point = self.max_values_per_point();
         if max_values_per_point == 0 {
             return CardinalityEstimation::exact(0);
         }
 
+        let range = match range {
+            RangeInterface::Float(float_range) => float_range.map(T::from_f64),
+            RangeInterface::DateTime(datetime_range) => {
+                datetime_range.map(|dt| T::from_i64(dt.timestamp_micros()))
+            }
+        };
+
         let lbound = if let Some(lte) = range.lte {
-            Included(T::from_f64(lte))
+            Included(lte)
         } else if let Some(lt) = range.lt {
-            Excluded(T::from_f64(lt))
+            Excluded(lt)
         } else {
             Unbounded
         };
 
         let gbound = if let Some(gte) = range.gte {
-            Included(T::from_f64(gte))
+            Included(gte)
         } else if let Some(gt) = range.gt {
-            Excluded(T::from_f64(gt))
+            Excluded(gt)
         } else {
             Unbounded
         };
@@ -298,34 +338,18 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndex<T>
         &self,
         condition: &FieldCondition,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
-        let cond_range = condition
+        let range_cond = condition
             .range
             .as_ref()
-            .ok_or_else(|| OperationError::service_error("failed to get condition range"))?;
+            .ok_or_else(|| OperationError::service_error("failed to get range condition"))?;
 
-        let start_bound = match cond_range {
-            Range { gt: Some(gt), .. } => {
-                let v: T = T::from_f64(*gt);
-                Excluded(NumericIndexKey::new(v, PointOffsetType::MAX))
+        let (start_bound, end_bound) = match range_cond {
+            RangeInterface::Float(float_range) => float_range.map(T::from_f64),
+            RangeInterface::DateTime(datetime_range) => {
+                datetime_range.map(|dt| T::from_i64(dt.timestamp_micros()))
             }
-            Range { gte: Some(gte), .. } => {
-                let v: T = T::from_f64(*gte);
-                Included(NumericIndexKey::new(v, PointOffsetType::MIN))
-            }
-            _ => Unbounded,
-        };
-
-        let end_bound = match cond_range {
-            Range { lt: Some(lt), .. } => {
-                let v: T = T::from_f64(*lt);
-                Excluded(NumericIndexKey::new(v, PointOffsetType::MIN))
-            }
-            Range { lte: Some(lte), .. } => {
-                let v: T = T::from_f64(*lte);
-                Included(NumericIndexKey::new(v, PointOffsetType::MAX))
-            }
-            _ => Unbounded,
-        };
+        }
+        .as_index_key_bounds();
 
         // map.range
         // Panics if range start > end. Panics if range start == end and both bounds are Excluded.
@@ -335,16 +359,8 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndex<T>
 
         Ok(match self {
             NumericIndex::Mutable(index) => {
-                let start_bound = match start_bound {
-                    Included(k) => Included(k.encode()),
-                    Excluded(k) => Excluded(k.encode()),
-                    Unbounded => Unbounded,
-                };
-                let end_bound = match end_bound {
-                    Included(k) => Included(k.encode()),
-                    Excluded(k) => Excluded(k.encode()),
-                    Unbounded => Unbounded,
-                };
+                let start_bound = bound_map(start_bound, |k| k.encode());
+                let end_bound = bound_map(end_bound, |k| k.encode());
                 Box::new(index.values_range(start_bound, end_bound))
             }
             NumericIndex::Immutable(index) => Box::new(index.values_range(start_bound, end_bound)),
@@ -404,7 +420,7 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndex<T>
                         _ => None,
                     },
                 };
-                let cardinality = self.range_cardinality(&range);
+                let cardinality = self.range_cardinality(&RangeInterface::Float(range.clone()));
                 let condition = PayloadBlockCondition {
                     condition: FieldCondition::new_range(key.clone(), range),
                     cardinality: cardinality.exp,
@@ -454,10 +470,7 @@ impl ValueIndexer<IntPayloadType> for NumericIndex<IntPayloadType> {
     }
 
     fn get_value(&self, value: &Value) -> Option<IntPayloadType> {
-        if let Value::Number(num) = value {
-            return num.as_i64();
-        }
-        None
+        value.as_i64()
     }
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
@@ -507,13 +520,39 @@ impl ValueIndexer<FloatPayloadType> for NumericIndex<FloatPayloadType> {
     }
 
     fn get_value(&self, value: &Value) -> Option<FloatPayloadType> {
-        if let Value::Number(num) = value {
-            return num.as_f64();
-        }
-        None
+        value.as_f64()
     }
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
         NumericIndex::remove_point(self, id)
+    }
+}
+
+impl<T> StreamRange<T> for NumericIndex<T>
+where
+    T: Encodable + Numericable + Default,
+{
+    fn stream_range(
+        &self,
+        range: &Range<FloatPayloadType>,
+    ) -> Box<dyn DoubleEndedIterator<Item = (T, PointOffsetType)> + '_> {
+        let (start_bound, end_bound) = range.map(T::from_f64).as_index_key_bounds();
+
+        // map.range
+        // Panics if range start > end. Panics if range start == end and both bounds are Excluded.
+        if !check_boundaries(&start_bound, &end_bound) {
+            return Box::new(vec![].into_iter());
+        }
+
+        match self {
+            NumericIndex::Mutable(index) => {
+                let start_bound = bound_map(start_bound, |k| k.encode());
+                let end_bound = bound_map(end_bound, |k| k.encode());
+                Box::new(index.orderable_values_range(start_bound, end_bound))
+            }
+            NumericIndex::Immutable(index) => {
+                Box::new(index.orderable_values_range(start_bound, end_bound))
+            }
+        }
     }
 }

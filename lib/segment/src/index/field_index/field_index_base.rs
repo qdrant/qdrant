@@ -1,8 +1,11 @@
+use std::fmt::Formatter;
+
 use common::types::PointOffsetType;
 use serde_json::Value;
 use smol_str::SmolStr;
 
 use super::map_index::MapIndex;
+use super::numeric_index::StreamRange;
 use crate::common::operation_error::OperationResult;
 use crate::common::utils::MultiValue;
 use crate::common::Flusher;
@@ -14,7 +17,7 @@ use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, Match, MatchText,
-    PayloadKeyType,
+    PayloadKeyType, Range,
 };
 
 pub trait PayloadFieldIndex {
@@ -124,6 +127,21 @@ pub enum FieldIndex {
     GeoIndex(GeoMapIndex),
     FullTextIndex(FullTextIndex),
     BinaryIndex(BinaryIndex),
+}
+
+impl std::fmt::Debug for FieldIndex {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FieldIndex::IntIndex(_index) => write!(f, "IntIndex"),
+            FieldIndex::DatetimeIndex(_index) => write!(f, "DatetimeIndex"),
+            FieldIndex::IntMapIndex(_index) => write!(f, "IntMapIndex"),
+            FieldIndex::KeywordIndex(_index) => write!(f, "KeywordIndex"),
+            FieldIndex::FloatIndex(_index) => write!(f, "FloatIndex"),
+            FieldIndex::GeoIndex(_index) => write!(f, "GeoIndex"),
+            FieldIndex::BinaryIndex(_index) => write!(f, "BinaryIndex"),
+            FieldIndex::FullTextIndex(_index) => write!(f, "FullTextIndex"),
+        }
+    }
 }
 
 impl FieldIndex {
@@ -343,6 +361,38 @@ impl FieldIndex {
             FieldIndex::GeoIndex(index) => index.values_is_empty(point_id),
             FieldIndex::BinaryIndex(index) => index.values_is_empty(point_id),
             FieldIndex::FullTextIndex(index) => index.values_is_empty(point_id),
+        }
+    }
+
+    pub fn as_numeric(&self) -> Option<NumericFieldIndex> {
+        match self {
+            FieldIndex::IntIndex(index) => Some(NumericFieldIndex::IntIndex(index)),
+            FieldIndex::FloatIndex(index) => Some(NumericFieldIndex::FloatIndex(index)),
+            FieldIndex::IntMapIndex(_)
+            | FieldIndex::DatetimeIndex(_) // TODO(luis): move to Some(..) section when datetime index is enabled for order-by
+            | FieldIndex::KeywordIndex(_)
+            | FieldIndex::GeoIndex(_)
+            | FieldIndex::BinaryIndex(_)
+            | FieldIndex::FullTextIndex(_) => None,
+        }
+    }
+}
+
+pub enum NumericFieldIndex<'a> {
+    IntIndex(&'a NumericIndex<IntPayloadType>),
+    FloatIndex(&'a NumericIndex<FloatPayloadType>),
+}
+
+impl<'a> StreamRange<f64> for NumericFieldIndex<'a> {
+    fn stream_range(
+        &self,
+        range: &Range<FloatPayloadType>,
+    ) -> Box<dyn DoubleEndedIterator<Item = (f64, PointOffsetType)> + 'a> {
+        match self {
+            NumericFieldIndex::IntIndex(index) => {
+                Box::new(index.stream_range(range).map(|(v, p)| (v as f64, p)))
+            }
+            NumericFieldIndex::FloatIndex(index) => index.stream_range(range),
         }
     }
 }

@@ -5,7 +5,7 @@ use serde_json::Value;
 use crate::types::{
     AnyVariants, DateTimePayloadType, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoPoint,
     GeoPolygon, GeoRadius, Match, MatchAny, MatchExcept, MatchText, MatchValue, Range,
-    ValueVariants, ValuesCount,
+    RangeInterface, ValueVariants, ValuesCount,
 };
 
 pub trait ValueChecker {
@@ -26,44 +26,38 @@ pub trait ValueChecker {
 
 impl ValueChecker for FieldCondition {
     fn check_match(&self, payload: &Value) -> bool {
-        let mut res = false;
-        // ToDo: Convert onto iterator over checkers, so it would be impossible to forget a condition
-        res = res
-            || self
-                .r#match
+        // Destructuring so compiler can check that we don't forget a condition
+        let FieldCondition {
+            r#match,
+            range,
+            geo_radius,
+            geo_bounding_box,
+            geo_polygon,
+            values_count,
+            key: _,
+        } = self;
+
+        r#match
+            .as_ref()
+            .is_some_and(|condition| condition.check_match(payload))
+            || range
                 .as_ref()
-                .map_or(false, |condition| condition.check_match(payload));
-        res = res
-            || self
-                .range
+                .is_some_and(|range_interface| match range_interface {
+                    RangeInterface::Float(condition) => condition.check_match(payload),
+                    RangeInterface::DateTime(condition) => condition.check_match(payload),
+                })
+            || geo_radius
                 .as_ref()
-                .map_or(false, |condition| condition.check_match(payload));
-        res = res
-            || self
-                .datetime_range
+                .is_some_and(|condition| condition.check_match(payload))
+            || geo_bounding_box
                 .as_ref()
-                .map_or(false, |condition| condition.check_match(payload));
-        res = res
-            || self
-                .geo_radius
+                .is_some_and(|condition| condition.check_match(payload))
+            || geo_polygon
                 .as_ref()
-                .map_or(false, |condition| condition.check_match(payload));
-        res = res
-            || self
-                .geo_bounding_box
+                .is_some_and(|condition| condition.check_match(payload))
+            || values_count
                 .as_ref()
-                .map_or(false, |condition| condition.check_match(payload));
-        res = res
-            || self
-                .geo_polygon
-                .as_ref()
-                .map_or(false, |condition| condition.check_match(payload));
-        res = res
-            || self
-                .values_count
-                .as_ref()
-                .map_or(false, |condition| condition.check_match(payload));
-        res
+                .is_some_and(|condition| condition.check_match(payload))
     }
 
     fn check(&self, payload: &Value) -> bool {
@@ -132,7 +126,7 @@ impl ValueChecker for Range<DateTimePayloadType> {
         payload
             .as_str()
             .and_then(|x| chrono::DateTime::parse_from_rfc3339(x).ok())
-            .map_or(false, |x| self.check_range(x.into()))
+            .is_some_and(|x| self.check_range(x.into()))
     }
 }
 

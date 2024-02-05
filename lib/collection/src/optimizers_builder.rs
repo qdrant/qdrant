@@ -70,8 +70,12 @@ pub struct OptimizersConfig {
     pub indexing_threshold: Option<usize>,
     /// Minimum interval between forced flushes.
     pub flush_interval_sec: u64,
-    /// Maximum available threads for optimization workers
-    pub max_optimization_threads: usize,
+    /// Max number of threads (jobs) for running optimizations per shard.
+    /// Note: each optimization job will also use `max_indexing_threads` threads by itself for index building.
+    /// If null - have no limit and choose dynamically to saturate CPU.
+    /// If 0 - no optimization threads, optimizations will be disabled.
+    #[serde(default)]
+    pub max_optimization_threads: Option<usize>,
 }
 
 impl OptimizersConfig {
@@ -85,7 +89,7 @@ impl OptimizersConfig {
             memmap_threshold: None,
             indexing_threshold: Some(100_000),
             flush_interval_sec: 60,
-            max_optimization_threads: 0,
+            max_optimization_threads: Some(0),
         }
     }
 

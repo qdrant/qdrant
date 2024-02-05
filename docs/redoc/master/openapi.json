@@ -5526,7 +5526,7 @@
             "nullable": true
           },
           "max_indexing_threads": {
-            "description": "Number of parallel threads used for background index building. If 0 - auto selection.",
+            "description": "Number of parallel threads used for background index building. If 0 - automatically select from 8 to 16. Best to keep between 8 and 16 to prevent likelihood of building broken/inefficient HNSW graphs. On small CPUs, less threads are used.",
             "type": "integer",
             "format": "uint",
             "minimum": 0,
@@ -5726,7 +5726,7 @@
             "minimum": 0
           },
           "max_indexing_threads": {
-            "description": "Number of parallel threads used for background index building. If 0 - auto selection.",
+            "description": "Number of parallel threads used for background index building. If 0 - automatically select from 8 to 16. Best to keep between 8 and 16 to prevent likelihood of slow building or broken/inefficient HNSW graphs. On small CPUs, less threads are used.",
             "default": 0,
             "type": "integer",
             "format": "uint",
@@ -5752,7 +5752,6 @@
           "default_segment_number",
           "deleted_threshold",
           "flush_interval_sec",
-          "max_optimization_threads",
           "vacuum_min_vector_number"
         ],
         "properties": {
@@ -5806,10 +5805,12 @@
             "minimum": 0
           },
           "max_optimization_threads": {
-            "description": "Maximum available threads for optimization workers",
+            "description": "Max number of threads (jobs) for running optimizations per shard. Note: each optimization job will also use `max_indexing_threads` threads by itself for index building. If null - have no limit and choose dynamically to saturate CPU. If 0 - no optimization threads, optimizations will be disabled.",
+            "default": null,
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           }
         }
       },
@@ -6448,18 +6449,7 @@
             "description": "Check if points value lies in a given range",
             "anyOf": [
               {
-                "$ref": "#/components/schemas/Range"
-              },
-              {
-                "nullable": true
-              }
-            ]
-          },
-          "datetime_range": {
-            "description": "Check if datetime is within a given range",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/DatetimeRange"
+                "$ref": "#/components/schemas/RangeInterface"
               },
               {
                 "nullable": true
@@ -6607,6 +6597,16 @@
             "$ref": "#/components/schemas/AnyVariants"
           }
         }
+      },
+      "RangeInterface": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/Range"
+          },
+          {
+            "$ref": "#/components/schemas/DatetimeRange"
+          }
+        ]
       },
       "Range": {
         "description": "Range filter request",
@@ -7267,8 +7267,65 @@
           },
           "with_vector": {
             "$ref": "#/components/schemas/WithVector"
+          },
+          "order_by": {
+            "description": "Order the records by a payload field, then by the point id.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrderByInterface"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
+      },
+      "OrderByInterface": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "$ref": "#/components/schemas/OrderBy"
+          }
+        ]
+      },
+      "OrderBy": {
+        "type": "object",
+        "required": [
+          "key"
+        ],
+        "properties": {
+          "key": {
+            "description": "Payload key to order by",
+            "type": "string"
+          },
+          "direction": {
+            "description": "Direction of ordering: `asc` or `desc`. Default is ascending.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Direction"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "start_from": {
+            "description": "Which payload value to start scrolling from. Default is the lowest value for `asc` and the highest for `desc`",
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          }
+        }
+      },
+      "Direction": {
+        "type": "string",
+        "enum": [
+          "asc",
+          "desc"
+        ]
       },
       "ScrollResult": {
         "description": "Result of the points read request",
@@ -7484,7 +7541,7 @@
             "nullable": true
           },
           "max_optimization_threads": {
-            "description": "Maximum available threads for optimization workers",
+            "description": "Max number of threads (jobs) for running optimizations per shard. Note: each optimization job will also use `max_indexing_threads` threads by itself for index building. If null - have no limit and choose dynamically to saturate CPU. If 0 - no optimization threads, optimizations will be disabled.",
             "type": "integer",
             "format": "uint",
             "minimum": 0,

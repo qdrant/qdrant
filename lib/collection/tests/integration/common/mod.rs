@@ -19,7 +19,6 @@ use snapshot_manager::SnapshotManager;
 /// Test collections for this upper bound of shards.
 /// Testing with more shards is problematic due to `number of open files problem`
 /// See https://github.com/qdrant/qdrant/issues/379
-#[allow(dead_code)]
 pub const N_SHARDS: u32 = 3;
 
 pub const REST_PORT: u16 = 6333;
@@ -32,7 +31,7 @@ pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     memmap_threshold: None,
     indexing_threshold: Some(50_000),
     flush_interval_sec: 30,
-    max_optimization_threads: 2,
+    max_optimization_threads: Some(2),
 };
 
 #[cfg(test)]

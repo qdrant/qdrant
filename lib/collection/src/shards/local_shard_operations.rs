@@ -4,6 +4,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::future::try_join_all;
 use itertools::Itertools;
+use segment::data_types::order_by::{Direction, OrderBy};
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
@@ -100,6 +101,122 @@ impl LocalShard {
             .collect();
         Ok(top_results)
     }
+
+    async fn scroll_by_id(
+        &self,
+        offset: Option<ExtendedPointId>,
+        limit: usize,
+        with_payload_interface: &WithPayloadInterface,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
+        search_runtime_handle: &Handle,
+    ) -> CollectionResult<Vec<Record>> {
+        let segments = self.segments();
+
+        let read_handles: Vec<_> = {
+            let segments_guard = segments.read();
+            segments_guard
+                .iter()
+                .map(|(_, segment)| {
+                    let segment = segment.clone();
+                    let filter = filter.cloned();
+
+                    search_runtime_handle.spawn_blocking(move || {
+                        segment
+                            .get()
+                            .read()
+                            .read_filtered(offset, Some(limit), filter.as_ref())
+                    })
+                })
+                .collect()
+        };
+
+        let all_points = try_join_all(read_handles).await?;
+
+        let point_ids = all_points
+            .into_iter()
+            .flatten()
+            .sorted()
+            .dedup()
+            .take(limit)
+            .collect_vec();
+
+        let with_payload = WithPayload::from(with_payload_interface);
+        let mut points =
+            SegmentsSearcher::retrieve(segments, &point_ids, &with_payload, with_vector)?;
+
+        points.sort_by_key(|point| point.id);
+
+        Ok(points)
+    }
+
+    async fn scroll_by_field(
+        &self,
+        limit: usize,
+        with_payload_interface: &WithPayloadInterface,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
+        search_runtime_handle: &Handle,
+        order_by: &OrderBy,
+    ) -> CollectionResult<Vec<Record>> {
+        let segments = self.segments();
+        let read_handles: Vec<_> = {
+            let segments_guard = segments.read();
+            segments_guard
+                .iter()
+                .map(|(_, segment)| {
+                    let segment = segment.clone();
+                    let filter = filter.cloned();
+
+                    let order_by = order_by.clone();
+
+                    search_runtime_handle.spawn_blocking(move || {
+                        segment.get().read().read_ordered_filtered(
+                            Some(limit),
+                            filter.as_ref(),
+                            &order_by,
+                        )
+                    })
+                })
+                .collect()
+        };
+
+        let all_reads = try_join_all(read_handles)
+            .await?
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let top_records = all_reads
+            .into_iter()
+            .kmerge_by(|a, b| match order_by.direction() {
+                Direction::Asc => a <= b,
+                Direction::Desc => a >= b,
+            })
+            .dedup()
+            .take(limit)
+            .collect_vec();
+
+        let with_payload = WithPayload::from(with_payload_interface);
+
+        let point_ids = top_records.iter().map(|(_, id)| *id).collect_vec();
+
+        // Fetch with the requested vector and payload
+        let mut records =
+            SegmentsSearcher::retrieve(segments, &point_ids, &with_payload, with_vector)?;
+
+        // Add order_by value to the payload. It will be removed in the next step, after crossing the shard boundary.
+        records
+            .iter_mut()
+            .zip(top_records)
+            .for_each(|(record, (value, _))| {
+                let new_payload =
+                    OrderBy::insert_order_value_in_payload(record.payload.take(), value.0);
+
+                record.payload = Some(new_payload);
+            });
+
+        Ok(records)
+    }
 }
 
 #[async_trait]
@@ -166,41 +283,32 @@ impl ShardOperation for LocalShard {
         with_vector: &WithVector,
         filter: Option<&Filter>,
         search_runtime_handle: &Handle,
+        order_by: Option<&OrderBy>,
     ) -> CollectionResult<Vec<Record>> {
-        // ToDo: Make faster points selection with a set
-        let segments = self.segments();
-        let read_handles: Vec<_> = {
-            let segments_guard = segments.read();
-            segments_guard
-                .iter()
-                .map(|(_, segment)| {
-                    let segment = segment.clone();
-                    let filter = filter.cloned();
-                    search_runtime_handle.spawn_blocking(move || {
-                        segment
-                            .get()
-                            .read()
-                            .read_filtered(offset, Some(limit), filter.as_ref())
-                    })
-                })
-                .collect()
-        };
-        let all_points = try_join_all(read_handles).await?;
-
-        let point_ids = all_points
-            .into_iter()
-            .flatten()
-            .sorted()
-            .dedup()
-            .take(limit)
-            .collect_vec();
-
-        let with_payload = WithPayload::from(with_payload_interface);
-        let mut points =
-            SegmentsSearcher::retrieve(segments, &point_ids, &with_payload, with_vector)?;
-        points.sort_by_key(|point| point.id);
-
-        Ok(points)
+        match order_by {
+            None => {
+                self.scroll_by_id(
+                    offset,
+                    limit,
+                    with_payload_interface,
+                    with_vector,
+                    filter,
+                    search_runtime_handle,
+                )
+                .await
+            }
+            Some(order_by) => {
+                self.scroll_by_field(
+                    limit,
+                    with_payload_interface,
+                    with_vector,
+                    filter,
+                    search_runtime_handle,
+                    order_by,
+                )
+                .await
+            }
+        }
     }
 
     /// Collect overview information about the shard

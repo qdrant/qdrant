@@ -387,7 +387,10 @@ pub struct HnswConfig {
     /// Note: 1Kb = 1 vector of size 256
     #[serde(alias = "full_scan_threshold_kb")]
     pub full_scan_threshold: usize,
-    /// Number of parallel threads used for background index building. If 0 - auto selection.
+    /// Number of parallel threads used for background index building.
+    /// If 0 - automatically select from 8 to 16.
+    /// Best to keep between 8 and 16 to prevent likelihood of slow building or broken/inefficient HNSW graphs.
+    /// On small CPUs, less threads are used.
     #[serde(default = "default_max_indexing_threads")]
     pub max_indexing_threads: usize,
     /// Store HNSW index on disk. If set to false, index will be stored in RAM. Default: false
@@ -1085,6 +1088,27 @@ pub enum PayloadFieldSchema {
     FieldParams(PayloadSchemaParams),
 }
 
+impl PayloadFieldSchema {
+    pub fn has_range_index(&self) -> bool {
+        match self {
+            PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)
+            | PayloadFieldSchema::FieldType(PayloadSchemaType::Float) => true,
+
+            PayloadFieldSchema::FieldType(PayloadSchemaType::Bool)
+            | PayloadFieldSchema::FieldType(PayloadSchemaType::Datetime) // TODO(luis): move to true section once we support order-by datetime
+            | PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)
+            | PayloadFieldSchema::FieldType(PayloadSchemaType::Text)
+            | PayloadFieldSchema::FieldType(PayloadSchemaType::Geo)
+            | PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(_)) => false,
+
+            PayloadFieldSchema::FieldParams(PayloadSchemaParams::Integer(IntegerIndexParams {
+                range,
+                ..
+            })) => *range,
+        }
+    }
+}
+
 impl From<PayloadSchemaType> for PayloadFieldSchema {
     fn from(payload_schema_type: PayloadSchemaType) -> Self {
         PayloadFieldSchema::FieldType(payload_schema_type)
@@ -1323,6 +1347,13 @@ impl From<Vec<IntPayloadType>> for MatchExcept {
     }
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[serde(untagged)]
+pub enum RangeInterface {
+    Float(Range<FloatPayloadType>),
+    DateTime(Range<DateTimePayloadType>),
+}
+
 /// Range filter request
 #[macro_rules_attribute::macro_rules_derive(crate::common::macros::schemars_rename_generics)]
 #[derive_args(<FloatPayloadType> => "Range", <DateTimePayloadType> => "DatetimeRange")]
@@ -1559,9 +1590,7 @@ pub struct FieldCondition {
     /// Check if point has field with a given value
     pub r#match: Option<Match>,
     /// Check if points value lies in a given range
-    pub range: Option<Range<FloatPayloadType>>,
-    /// Check if datetime is within a given range
-    pub datetime_range: Option<Range<DateTimePayloadType>>,
+    pub range: Option<RangeInterface>,
     /// Check if points geo location lies in a given area
     pub geo_bounding_box: Option<GeoBoundingBox>,
     /// Check if geo point is within a given radius
@@ -1578,7 +1607,6 @@ impl FieldCondition {
             key: key.into(),
             r#match: Some(r#match),
             range: None,
-            datetime_range: None,
             geo_bounding_box: None,
             geo_radius: None,
             geo_polygon: None,
@@ -1590,8 +1618,7 @@ impl FieldCondition {
         Self {
             key: key.into(),
             r#match: None,
-            range: Some(range),
-            datetime_range: None,
+            range: Some(RangeInterface::Float(range)),
             geo_bounding_box: None,
             geo_radius: None,
             geo_polygon: None,
@@ -1606,8 +1633,7 @@ impl FieldCondition {
         Self {
             key: key.into(),
             r#match: None,
-            range: None,
-            datetime_range: Some(datetime_range),
+            range: Some(RangeInterface::DateTime(datetime_range)),
             geo_bounding_box: None,
             geo_radius: None,
             geo_polygon: None,
@@ -1623,7 +1649,6 @@ impl FieldCondition {
             key: key.into(),
             r#match: None,
             range: None,
-            datetime_range: None,
             geo_bounding_box: Some(geo_bounding_box),
             geo_radius: None,
             geo_polygon: None,
@@ -1636,7 +1661,6 @@ impl FieldCondition {
             key: key.into(),
             r#match: None,
             range: None,
-            datetime_range: None,
             geo_bounding_box: None,
             geo_radius: Some(geo_radius),
             geo_polygon: None,
@@ -1649,7 +1673,6 @@ impl FieldCondition {
             key: key.into(),
             r#match: None,
             range: None,
-            datetime_range: None,
             geo_bounding_box: None,
             geo_radius: None,
             geo_polygon: Some(geo_polygon),
@@ -1662,7 +1685,6 @@ impl FieldCondition {
             key: key.into(),
             r#match: None,
             range: None,
-            datetime_range: None,
             geo_bounding_box: None,
             geo_radius: None,
             geo_polygon: None,
@@ -1671,13 +1693,18 @@ impl FieldCondition {
     }
 
     pub fn all_fields_none(&self) -> bool {
-        self.r#match.is_none()
-            && self.range.is_none()
-            && self.datetime_range.is_none()
-            && self.geo_bounding_box.is_none()
-            && self.geo_radius.is_none()
-            && self.geo_polygon.is_none()
-            && self.values_count.is_none()
+        matches!(
+            self,
+            FieldCondition {
+                r#match: None,
+                range: None,
+                geo_bounding_box: None,
+                geo_radius: None,
+                geo_polygon: None,
+                values_count: None,
+                key: _,
+            }
+        )
     }
 }
 
@@ -1850,7 +1877,7 @@ pub enum WithVector {
 }
 
 impl WithVector {
-    pub fn is_some(&self) -> bool {
+    pub fn is_enabled(&self) -> bool {
         match self {
             WithVector::Bool(b) => *b,
             WithVector::Selector(_) => true,
