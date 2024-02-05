@@ -3,11 +3,8 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use common::types::TelemetryDetail;
 use parking_lot::Mutex;
-use segment::common::operation_time_statistics::{
-    OperationDurationStatistics, OperationDurationsAggregator,
-};
+use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use segment::index::sparse_index::sparse_index_config::SparseIndexType;
 use segment::types::{HnswConfig, Indexes, QuantizationConfig, SegmentType, VECTOR_ELEMENT_SIZE};
 
@@ -256,10 +253,6 @@ impl SegmentOptimizer for ConfigMismatchOptimizer {
         excluded_ids: &HashSet<SegmentId>,
     ) -> Vec<SegmentId> {
         self.worst_segment(segments, excluded_ids)
-    }
-
-    fn get_telemetry_data(&self, detail: TelemetryDetail) -> OperationDurationStatistics {
-        self.get_telemetry_counter().lock().get_statistics(detail)
     }
 
     fn get_telemetry_counter(&self) -> &Mutex<OperationDurationsAggregator> {
