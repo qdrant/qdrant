@@ -129,6 +129,7 @@ tonic = { version = "0.9.2", features = ["gzip", "tls"] }
 tonic-reflection = "0.9.2"
 tracing = { version = "0.1", features = ["async-await"] }
 uuid = { version = "1.7", features = ["v4", "serde"] }
+fnv = "1.0"
 
 [[bin]]
 name = "schema_generator"

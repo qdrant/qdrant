@@ -1,7 +1,7 @@
-use fnv::FnvBuildHasher;
 use std::collections::HashSet;
 use std::ops::{Range, RangeInclusive};
 
+use fnv::FnvBuildHasher;
 use itertools::Itertools;
 use rand::distributions::{Alphanumeric, DistString};
 use rand::seq::SliceRandom;

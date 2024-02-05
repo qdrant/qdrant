@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::time::Duration;
 
+use fnv::FnvBuildHasher;
 use segment::types::{
     AnyVariants, Condition, FieldCondition, Filter, Match, ScoredPoint, WithPayloadInterface,
 };
@@ -432,7 +433,7 @@ fn values_to_any_variants(values: Vec<Value>) -> Vec<AnyVariants> {
     }
 
     // gather string values
-    let strs: HashSet<_> = values
+    let strs: HashSet<_, FnvBuildHasher> = values
         .iter()
         .filter_map(|v| v.as_str().map(|s| s.into()))
         .collect();

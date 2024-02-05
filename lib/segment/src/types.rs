@@ -1,4 +1,3 @@
-use fnv::{FnvBuildHasher, FnvHashSet};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{Display, Formatter};
@@ -9,6 +8,7 @@ use std::rc::Rc;
 use std::str::FromStr;
 
 use common::types::ScoreType;
+use fnv::FnvBuildHasher;
 use geo::prelude::HaversineDistance;
 use geo::{Contains, Coord, LineString, Point, Polygon};
 use itertools::Itertools;

@@ -1067,6 +1067,7 @@ dependencies = [
  "common",
  "criterion",
  "env_logger 0.11.1",
+ "fnv",
  "fs_extra",
  "futures",
  "hashring",
