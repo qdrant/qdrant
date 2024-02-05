@@ -68,7 +68,7 @@ tokio = { workspace = true }
 
 actix-cors = "0.7.0"
 actix-files = "0.6.5"
-actix-web = { version = "4.4.1", optional = true, features = ["rustls-0_21", "actix-tls"] }
+actix-web = { version = "4.5.1", optional = true, features = ["rustls-0_21", "actix-tls"] }
 actix-web-httpauth = "0.8.1"
 actix-web-validator = "5.0.1"
 tonic = { workspace = true }
