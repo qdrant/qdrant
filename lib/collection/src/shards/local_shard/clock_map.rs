@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::{cmp, fs, io};
+use std::{fs, io};
 
 use serde::{Deserialize, Serialize};
 
@@ -40,13 +40,13 @@ impl ClockMap {
     }
 
     pub fn advance_clock_and_correct_tag(&mut self, clock_tag: &mut ClockTag) -> u64 {
-        let current_tick = self.advance_clock(clock_tag);
+        let prev_tick = self.advance_clock(clock_tag);
 
         if clock_tag.clock_tick == 0 {
-            clock_tag.clock_tick = current_tick;
+            clock_tag.clock_tick = prev_tick;
         }
 
-        current_tick
+        prev_tick
     }
 
     pub fn advance_clock(&mut self, clock_tag: &ClockTag) -> u64 {
@@ -57,7 +57,7 @@ impl ClockMap {
             clock.advance_to(new_tick)
         } else {
             self.clocks.insert(clock_id, Clock::new(new_tick));
-            new_tick
+            0
         }
     }
 }
@@ -90,8 +90,7 @@ impl Clock {
     }
 
     pub fn advance_to(&self, new_tick: u64) -> u64 {
-        let current_tick = self.clock.fetch_max(new_tick, Ordering::Relaxed);
-        cmp::max(current_tick, new_tick)
+        self.clock.fetch_max(new_tick, Ordering::Relaxed)
     }
 }
 
