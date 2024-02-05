@@ -48,8 +48,8 @@ pub struct OperationDurationsAggregator {
     last_response_date: Option<DateTime<Utc>>,
 }
 
-pub struct ScopeDurationMeasurer {
-    aggregator: Arc<Mutex<OperationDurationsAggregator>>,
+pub struct ScopeDurationMeasurer<'a> {
+    aggregator: &'a Mutex<OperationDurationsAggregator>,
     instant: Instant,
     success: bool,
 }
@@ -138,21 +138,21 @@ impl OperationDurationStatistics {
     }
 }
 
-impl ScopeDurationMeasurer {
-    pub fn new(aggregator: &Arc<Mutex<OperationDurationsAggregator>>) -> Self {
+impl<'a> ScopeDurationMeasurer<'a> {
+    pub fn new(aggregator: &'a Mutex<OperationDurationsAggregator>) -> Self {
         Self {
-            aggregator: aggregator.clone(),
+            aggregator,
             instant: Instant::now(),
             success: true,
         }
     }
 
     pub fn new_with_instant(
-        aggregator: &Arc<Mutex<OperationDurationsAggregator>>,
+        aggregator: &'a Mutex<OperationDurationsAggregator>,
         instant: Instant,
     ) -> Self {
         Self {
-            aggregator: aggregator.clone(),
+            aggregator,
             instant,
             success: true,
         }
@@ -163,7 +163,7 @@ impl ScopeDurationMeasurer {
     }
 }
 
-impl Drop for ScopeDurationMeasurer {
+impl Drop for ScopeDurationMeasurer<'_> {
     fn drop(&mut self) {
         self.aggregator
             .lock()

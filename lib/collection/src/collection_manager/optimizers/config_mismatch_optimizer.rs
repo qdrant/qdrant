@@ -262,8 +262,8 @@ impl SegmentOptimizer for ConfigMismatchOptimizer {
         self.get_telemetry_counter().lock().get_statistics(detail)
     }
 
-    fn get_telemetry_counter(&self) -> Arc<Mutex<OperationDurationsAggregator>> {
-        self.telemetry_durations_aggregator.clone()
+    fn get_telemetry_counter(&self) -> &Mutex<OperationDurationsAggregator> {
+        &self.telemetry_durations_aggregator
     }
 }
 
