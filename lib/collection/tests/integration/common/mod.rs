@@ -30,7 +30,7 @@ pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     memmap_threshold: None,
     indexing_threshold: Some(50_000),
     flush_interval_sec: 30,
-    max_optimization_threads: 2,
+    max_optimization_threads: Some(2),
 };
 
 #[cfg(test)]
