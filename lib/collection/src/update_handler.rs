@@ -547,7 +547,7 @@ impl UpdateHandler {
 
                     if let Some(feedback) = sender {
                         feedback.send(res).unwrap_or_else(|_| {
-                            info!(
+                            debug!(
                                 "Can't report operation {} result. Assume already not required",
                                 op_num
                             );
