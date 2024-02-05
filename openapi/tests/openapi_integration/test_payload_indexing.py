@@ -165,10 +165,10 @@ def test_datetime_indexing():
             path_params={"collection_name": collection_name},
             body={
                 "with_vector": False,
-                "filter": {"must": [{"key": datetime_key, "datetime_range": range_}]},
+                "filter": {"must": [{"key": datetime_key, "range": range_}]},
             },
         )
-        assert response.ok
+        assert response.ok, response.json()
         
         point_ids = [p["id"] for p in response.json()["result"]["points"]]
         assert all(id in point_ids for id in expected_ids)

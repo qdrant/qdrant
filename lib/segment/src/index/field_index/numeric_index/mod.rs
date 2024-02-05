@@ -34,6 +34,7 @@ use crate::index::key_encoding::{
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, Range,
+    RangeInterface,
 };
 
 const HISTOGRAM_MAX_BUCKET_SIZE: usize = 10_000;
@@ -117,30 +118,22 @@ impl Encodable for DateTimePayloadType {
     }
 }
 
-impl Range<FloatPayloadType> {
-    pub(in crate::index::field_index::numeric_index) fn as_bounds<T: Encodable + Numericable>(
+impl<T: Encodable + Numericable> Range<T> {
+    pub(in crate::index::field_index::numeric_index) fn as_index_key_bounds(
         &self,
     ) -> (Bound<NumericIndexKey<T>>, Bound<NumericIndexKey<T>>) {
         let start_bound = match self {
-            Range { gt: Some(gt), .. } => {
-                let v: T = T::from_f64(*gt);
-                Excluded(NumericIndexKey::new(v, PointOffsetType::MAX))
-            }
+            Range { gt: Some(gt), .. } => Excluded(NumericIndexKey::new(*gt, PointOffsetType::MAX)),
             Range { gte: Some(gte), .. } => {
-                let v: T = T::from_f64(*gte);
-                Included(NumericIndexKey::new(v, PointOffsetType::MIN))
+                Included(NumericIndexKey::new(*gte, PointOffsetType::MIN))
             }
             _ => Unbounded,
         };
 
         let end_bound = match self {
-            Range { lt: Some(lt), .. } => {
-                let v: T = T::from_f64(*lt);
-                Excluded(NumericIndexKey::new(v, PointOffsetType::MIN))
-            }
+            Range { lt: Some(lt), .. } => Excluded(NumericIndexKey::new(*lt, PointOffsetType::MIN)),
             Range { lte: Some(lte), .. } => {
-                let v: T = T::from_f64(*lte);
-                Included(NumericIndexKey::new(v, PointOffsetType::MAX))
+                Included(NumericIndexKey::new(*lte, PointOffsetType::MAX))
             }
             _ => Unbounded,
         };
@@ -236,24 +229,31 @@ impl<T: Encodable + Numericable + Default> NumericIndex<T> {
         }
     }
 
-    fn range_cardinality(&self, range: &Range<FloatPayloadType>) -> CardinalityEstimation {
+    fn range_cardinality(&self, range: &RangeInterface) -> CardinalityEstimation {
         let max_values_per_point = self.max_values_per_point();
         if max_values_per_point == 0 {
             return CardinalityEstimation::exact(0);
         }
 
+        let range = match range {
+            RangeInterface::Float(float_range) => float_range.map(T::from_f64),
+            RangeInterface::DateTime(datetime_range) => {
+                datetime_range.map(|dt| T::from_i64(dt.timestamp_micros()))
+            }
+        };
+
         let lbound = if let Some(lte) = range.lte {
-            Included(T::from_f64(lte))
+            Included(lte)
         } else if let Some(lt) = range.lt {
-            Excluded(T::from_f64(lt))
+            Excluded(lt)
         } else {
             Unbounded
         };
 
         let gbound = if let Some(gte) = range.gte {
-            Included(T::from_f64(gte))
+            Included(gte)
         } else if let Some(gt) = range.gt {
-            Excluded(T::from_f64(gt))
+            Excluded(gt)
         } else {
             Unbounded
         };
@@ -338,12 +338,18 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndex<T>
         &self,
         condition: &FieldCondition,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
-        let cond_range = condition
+        let range_cond = condition
             .range
             .as_ref()
-            .ok_or_else(|| OperationError::service_error("failed to get condition range"))?;
+            .ok_or_else(|| OperationError::service_error("failed to get range condition"))?;
 
-        let (start_bound, end_bound) = cond_range.as_bounds();
+        let (start_bound, end_bound) = match range_cond {
+            RangeInterface::Float(float_range) => float_range.map(T::from_f64),
+            RangeInterface::DateTime(datetime_range) => {
+                datetime_range.map(|dt| T::from_i64(dt.timestamp_micros()))
+            }
+        }
+        .as_index_key_bounds();
 
         // map.range
         // Panics if range start > end. Panics if range start == end and both bounds are Excluded.
@@ -414,7 +420,7 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndex<T>
                         _ => None,
                     },
                 };
-                let cardinality = self.range_cardinality(&range);
+                let cardinality = self.range_cardinality(&RangeInterface::Float(range.clone()));
                 let condition = PayloadBlockCondition {
                     condition: FieldCondition::new_range(key.clone(), range),
                     cardinality: cardinality.exp,
@@ -530,7 +536,7 @@ where
         &self,
         range: &Range<FloatPayloadType>,
     ) -> Box<dyn DoubleEndedIterator<Item = (T, PointOffsetType)> + '_> {
-        let (start_bound, end_bound) = range.as_bounds();
+        let (start_bound, end_bound) = range.map(T::from_f64).as_index_key_bounds();
 
         // map.range
         // Panics if range start > end. Panics if range start == end and both bounds are Excluded.

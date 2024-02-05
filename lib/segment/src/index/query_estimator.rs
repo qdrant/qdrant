@@ -247,7 +247,6 @@ mod tests {
         Condition::Field(FieldCondition {
             key,
             r#match: None,
-            datetime_range: None,
             range: None,
             geo_bounding_box: None,
             geo_radius: None,
