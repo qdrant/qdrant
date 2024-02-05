@@ -1,6 +1,7 @@
 pub mod immutable_map_index;
 pub mod mutable_map_index;
 
+use std::collections::HashSet;
 use std::fmt::Display;
 use std::hash::Hash;
 use std::str::FromStr;
@@ -291,16 +292,13 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> MapIndex<N> {
         }
     }
 
-    fn except_iterator<'a, Q>(
+    fn except_iterator<'a>(
         &'a self,
-        excluded: &'a [Q],
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a>
-    where
-        Q: PartialEq<N>,
-    {
+        excluded: &'a HashSet<N>,
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         Box::new(
             self.get_values_iterator()
-                .filter(|key| !excluded.iter().any(|e| e.eq(*key)))
+                .filter(|key| !excluded.contains(*key))
                 .flat_map(|key| self.get_iterator(key))
                 .unique(),
         )

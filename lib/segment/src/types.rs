@@ -1102,9 +1102,9 @@ impl PayloadFieldSchema {
             | PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(_)) => false,
 
             PayloadFieldSchema::FieldParams(PayloadSchemaParams::Integer(IntegerIndexParams {
-                range,
-                ..
-            })) => *range,
+                                                                             range,
+                                                                             ..
+                                                                         })) => *range,
         }
     }
 }
@@ -1188,8 +1188,8 @@ pub enum ValueVariants {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum AnyVariants {
-    Keywords(Vec<String>),
-    Integers(Vec<IntPayloadType>),
+    Keywords(HashSet<SmolStr>),
+    Integers(HashSet<IntPayloadType>),
 }
 
 /// Exact match of the given value
@@ -1317,6 +1317,7 @@ impl From<IntPayloadType> for Match {
 
 impl From<Vec<String>> for Match {
     fn from(keywords: Vec<String>) -> Self {
+        let keywords: HashSet<SmolStr> = keywords.into_iter().map(|i| i.into()).collect();
         Self::Any(MatchAny {
             any: AnyVariants::Keywords(keywords),
         })
@@ -1325,6 +1326,7 @@ impl From<Vec<String>> for Match {
 
 impl From<Vec<String>> for MatchExcept {
     fn from(keywords: Vec<String>) -> Self {
+        let keywords: HashSet<SmolStr> = keywords.into_iter().map(|i| i.into()).collect();
         MatchExcept {
             except: AnyVariants::Keywords(keywords),
         }
@@ -1333,6 +1335,7 @@ impl From<Vec<String>> for MatchExcept {
 
 impl From<Vec<IntPayloadType>> for Match {
     fn from(integers: Vec<IntPayloadType>) -> Self {
+        let integers: HashSet<_> = integers.into_iter().collect();
         Self::Any(MatchAny {
             any: AnyVariants::Integers(integers),
         })
@@ -1341,6 +1344,7 @@ impl From<Vec<IntPayloadType>> for Match {
 
 impl From<Vec<IntPayloadType>> for MatchExcept {
     fn from(integers: Vec<IntPayloadType>) -> Self {
+        let integers: HashSet<_> = integers.into_iter().collect();
         MatchExcept {
             except: AnyVariants::Integers(integers),
         }
@@ -1356,7 +1360,7 @@ pub enum RangeInterface {
 
 /// Range filter request
 #[macro_rules_attribute::macro_rules_derive(crate::common::macros::schemars_rename_generics)]
-#[derive_args(<FloatPayloadType> => "Range", <DateTimePayloadType> => "DatetimeRange")]
+#[derive_args(< FloatPayloadType > => "Range", < DateTimePayloadType > => "DatetimeRange")]
 #[derive(Debug, Deserialize, Serialize, Default, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct Range<T> {
@@ -1509,7 +1513,7 @@ impl GeoPolygon {
                 || (first.lon - last.lon).abs() > f64::EPSILON
             {
                 return Err(OperationError::ValidationError {
-                    description: String::from("polygon invalid, the first and the last points should be the same to form a closed line") 
+                    description: String::from("polygon invalid, the first and the last points should be the same to form a closed line")
                 });
             }
         }
@@ -2375,7 +2379,11 @@ mod tests {
         };
         if let AnyVariants::Keywords(kws) = &m.any {
             assert_eq!(kws.len(), 3);
-            assert_eq!(kws.to_owned(), vec!["Bourne", "Momoa", "Statham"]);
+            let expect: HashSet<SmolStr> = ["Bourne", "Momoa", "Statham"]
+                .iter()
+                .map(|i| (*i).into())
+                .collect();
+            assert_eq!(kws, &expect);
         } else {
             panic!("AnyVariants::Keywords expected");
         }

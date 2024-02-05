@@ -308,7 +308,7 @@ impl TryFrom<PayloadSchemaInfo> for segment::types::PayloadIndexInfo {
             None => {
                 return Err(Status::invalid_argument(
                     "Malformed payload schema".to_string(),
-                ))
+                ));
             }
             Some(data_type) => match data_type {
                 PayloadSchemaType::Keyword => segment::types::PayloadSchemaType::Keyword,
@@ -321,7 +321,7 @@ impl TryFrom<PayloadSchemaInfo> for segment::types::PayloadIndexInfo {
                 PayloadSchemaType::UnknownType => {
                     return Err(Status::invalid_argument(
                         "Malformed payload schema".to_string(),
-                    ))
+                    ));
                 }
             },
         };
@@ -645,7 +645,7 @@ impl TryFrom<ScalarQuantization> for segment::types::ScalarQuantization {
                 r#type: match QuantizationType::from_i32(value.r#type) {
                     Some(QuantizationType::Int8) => segment::types::ScalarType::Int8,
                     Some(QuantizationType::UnknownQuantization) | None => {
-                        return Err(Status::invalid_argument("Unknown quantization type"))
+                        return Err(Status::invalid_argument("Unknown quantization type"));
                     }
                 },
                 quantile: value.quantile,
@@ -681,7 +681,7 @@ impl TryFrom<ProductQuantization> for segment::types::ProductQuantization {
                     None => {
                         return Err(Status::invalid_argument(
                             "Unknown compression ratio".to_string(),
-                        ))
+                        ));
                     }
                     Some(CompressionRatio::X4) => segment::types::CompressionRatio::X4,
                     Some(CompressionRatio::X8) => segment::types::CompressionRatio::X8,
@@ -1223,17 +1223,21 @@ impl From<segment::types::Match> for Match {
             }
             segment::types::Match::Any(any) => match any.any {
                 segment::types::AnyVariants::Keywords(strings) => {
+                    let strings = strings.into_iter().map(|i| i.into()).collect();
                     MatchValue::Keywords(RepeatedStrings { strings })
                 }
                 segment::types::AnyVariants::Integers(integers) => {
+                    let integers = integers.into_iter().collect();
                     MatchValue::Integers(RepeatedIntegers { integers })
                 }
             },
             segment::types::Match::Except(except) => match except.except {
                 segment::types::AnyVariants::Keywords(strings) => {
+                    let strings = strings.into_iter().map(|i| i.into()).collect();
                     MatchValue::ExceptKeywords(RepeatedStrings { strings })
                 }
                 segment::types::AnyVariants::Integers(integers) => {
+                    let integers = integers.into_iter().collect();
                     MatchValue::ExceptIntegers(RepeatedIntegers { integers })
                 }
             },
@@ -1317,7 +1321,7 @@ impl TryFrom<Distance> for segment::types::Distance {
             Distance::UnknownDistance => {
                 return Err(Status::invalid_argument(
                     "Malformed distance parameter: UnknownDistance",
-                ))
+                ));
             }
             Distance::Cosine => segment::types::Distance::Cosine,
             Distance::Euclid => segment::types::Distance::Euclid,

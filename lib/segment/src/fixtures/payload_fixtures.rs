@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::ops::{Range, RangeInclusive};
 
 use itertools::Itertools;
@@ -5,6 +6,7 @@ use rand::distributions::{Alphanumeric, DistString};
 use rand::seq::SliceRandom;
 use rand::Rng;
 use serde_json::{json, Value};
+use smol_str::SmolStr;
 
 use crate::data_types::vectors::VectorElementType;
 use crate::types::{
@@ -210,14 +212,14 @@ pub fn random_match_any_filter<R: Rng + ?Sized>(
 ) -> Filter {
     let num_existing = (len as f32 * (percent_existing / 100.0)) as usize;
 
-    let mut values: Vec<_> = (0..len - num_existing)
+    let mut values: HashSet<SmolStr> = (0..len - num_existing)
         .map(|_| {
             let slen = rnd_gen.gen_range(1..15);
-            Alphanumeric.sample_string(rnd_gen, slen)
+            Alphanumeric.sample_string(rnd_gen, slen).into()
         })
         .collect();
 
-    values.extend((0..num_existing).map(|_| random_keyword(rnd_gen)));
+    values.extend((0..num_existing).map(|_| random_keyword(rnd_gen).into()));
 
     Filter {
         should: None,
