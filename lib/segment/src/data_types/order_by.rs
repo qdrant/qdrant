@@ -1,10 +1,11 @@
 use num_cmp::NumCmp;
 use ordered_float::OrderedFloat;
+use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
-use crate::types::{FloatPayloadType, Payload, Range};
+use crate::types::{Payload, Range, RangeInterface};
 
 const INTERNAL_KEY_OF_ORDER_BY_VALUE: &str = "____ordered_with____";
 
@@ -17,18 +18,29 @@ pub enum Direction {
 }
 
 impl Direction {
-    pub fn as_range(&self, from: FloatPayloadType) -> Range<FloatPayloadType> {
+    pub fn as_range_from<T>(&self, from: T) -> Range<T> {
         match self {
             Direction::Asc => Range {
                 gte: Some(from),
-                ..Default::default()
+                gt: None,
+                lte: None,
+                lt: None,
             },
             Direction::Desc => Range {
                 lte: Some(from),
-                ..Default::default()
+                gt: None,
+                gte: None,
+                lt: None,
             },
         }
     }
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(untagged)]
+pub enum StartFrom {
+    Float(f64),
+    Datetime(DateTime<Utc>),
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, Default)]
@@ -41,30 +53,25 @@ pub struct OrderBy {
     pub direction: Option<Direction>,
 
     /// Which payload value to start scrolling from. Default is the lowest value for `asc` and the highest for `desc`
-    pub start_from: Option<FloatPayloadType>,
+    pub start_from: Option<StartFrom>,
 }
 
 impl OrderBy {
-    pub fn as_range(&self) -> Range<FloatPayloadType> {
-        match self.start_from {
-            Some(start_from) => self.direction.unwrap().as_range(start_from),
-            None => Range {
-                ..Default::default()
-            },
-        }
+    /// If there is a start value, returns a range representation of OrderBy.
+    pub fn as_range(&self) -> RangeInterface {
+        self.start_from
+            .as_ref()
+            .map(|start_from| match start_from {
+                StartFrom::Float(f) => RangeInterface::Float(self.direction().as_range_from(*f)),
+                StartFrom::Datetime(dt) => {
+                    RangeInterface::DateTime(self.direction().as_range_from(*dt))
+                }
+            })
+            .unwrap_or_else(|| RangeInterface::Float(Range::default()))
     }
 
     pub fn direction(&self) -> Direction {
         self.direction.unwrap_or_default()
-    }
-
-    pub fn start_from(&self) -> OrderingValue {
-        self.start_from
-            .unwrap_or_else(|| match self.direction() {
-                Direction::Asc => f64::NEG_INFINITY,
-                Direction::Desc => f64::INFINITY,
-            })
-            .into()
     }
 
     pub fn insert_order_value_in_payload(

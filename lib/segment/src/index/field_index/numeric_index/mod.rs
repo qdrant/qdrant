@@ -43,7 +43,7 @@ const HISTOGRAM_PRECISION: f64 = 0.01;
 pub trait StreamRange<T> {
     fn stream_range(
         &self,
-        range: &Range<FloatPayloadType>,
+        range: &RangeInterface,
     ) -> Box<dyn DoubleEndedIterator<Item = (T, PointOffsetType)> + '_>;
 }
 
@@ -532,9 +532,15 @@ where
 {
     fn stream_range(
         &self,
-        range: &Range<FloatPayloadType>,
+        range: &RangeInterface,
     ) -> Box<dyn DoubleEndedIterator<Item = (T, PointOffsetType)> + '_> {
-        let (start_bound, end_bound) = range.map(T::from_f64).as_index_key_bounds();
+        let range = match range {
+            RangeInterface::Float(float_range) => float_range.map(T::from_f64),
+            RangeInterface::DateTime(datetime_range) => {
+                datetime_range.map(|dt| T::from_i64(dt.timestamp_micros()))
+            }
+        };
+        let (start_bound, end_bound) = range.as_index_key_bounds();
 
         // map.range
         // Panics if range start > end. Panics if range start == end and both bounds are Excluded.

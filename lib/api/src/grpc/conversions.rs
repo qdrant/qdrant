@@ -1271,8 +1271,21 @@ impl From<segment::data_types::order_by::OrderBy> for OrderBy {
         Self {
             key: value.key,
             direction: value.direction.map(|d| Direction::from(d) as i32),
-            start_from: value.start_from.map(|start_from| StartFrom {
-                value: Some(start_from::Value::Float(start_from)), // ToDo: take other types of orderable values into account (int, datetime, etc)
+            start_from: value.start_from.map(|start_from| start_from.into()),
+        }
+    }
+}
+
+impl From<segment::data_types::order_by::StartFrom> for StartFrom {
+    fn from(value: segment::data_types::order_by::StartFrom) -> Self {
+        Self {
+            value: Some(match value {
+                segment::data_types::order_by::StartFrom::Float(float) => {
+                    start_from::Value::Float(float)
+                }
+                segment::data_types::order_by::StartFrom::Datetime(datetime) => {
+                    start_from::Value::Datetime(date_time_to_proto(datetime))
+                }
             }),
         }
     }

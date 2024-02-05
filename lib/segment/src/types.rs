@@ -1094,10 +1094,10 @@ impl PayloadFieldSchema {
     pub fn has_range_index(&self) -> bool {
         match self {
             PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)
+            | PayloadFieldSchema::FieldType(PayloadSchemaType::Datetime)
             | PayloadFieldSchema::FieldType(PayloadSchemaType::Float) => true,
 
             PayloadFieldSchema::FieldType(PayloadSchemaType::Bool)
-            | PayloadFieldSchema::FieldType(PayloadSchemaType::Datetime) // TODO(luis): move to true section once we support order-by datetime
             | PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)
             | PayloadFieldSchema::FieldType(PayloadSchemaType::Text)
             | PayloadFieldSchema::FieldType(PayloadSchemaType::Geo)

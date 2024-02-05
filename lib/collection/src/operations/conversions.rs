@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use api::grpc::conversions::{
     convert_shard_key_from_grpc, convert_shard_key_from_grpc_opt, convert_shard_key_to_grpc,
-    from_grpc_dist, payload_to_proto, proto_to_payloads,
+    date_time_from_proto, from_grpc_dist, payload_to_proto, proto_to_payloads,
 };
 use api::grpc::qdrant::quantization_config_diff::Quantization;
 use api::grpc::qdrant::update_collection_cluster_setup_request::{
@@ -13,7 +13,7 @@ use api::grpc::qdrant::update_collection_cluster_setup_request::{
 use api::grpc::qdrant::{CreateShardKey, SearchPoints};
 use common::types::ScoreType;
 use itertools::Itertools;
-use segment::data_types::order_by::OrderBy;
+use segment::data_types::order_by::{OrderBy, StartFrom};
 use segment::data_types::vectors::{Named, NamedQuery, Vector, VectorStruct, DEFAULT_VECTOR_NAME};
 use segment::types::{Distance, QuantizationConfig};
 use segment::vector_storage::query::context_query::{ContextPair, ContextQuery};
@@ -1760,15 +1760,28 @@ impl TryFrom<api::grpc::qdrant::OrderBy> for OrderByInterface {
             .and_then(api::grpc::qdrant::Direction::from_i32)
             .map(segment::data_types::order_by::Direction::from);
 
+        let start_from = value
+            .start_from
+            .and_then(|value| value.value)
+            .map(|v| -> Result<StartFrom, Status> {
+                match v {
+                    api::grpc::qdrant::start_from::Value::Float(float) => {
+                        Ok(StartFrom::Float(float))
+                    }
+                    api::grpc::qdrant::start_from::Value::Integer(int) => {
+                        Ok(StartFrom::Float(int as _))
+                    }
+                    api::grpc::qdrant::start_from::Value::Datetime(datetime) => {
+                        Ok(StartFrom::Datetime(date_time_from_proto(datetime)?))
+                    }
+                }
+            })
+            .transpose()?;
+
         Ok(Self::Struct(OrderBy {
             key: value.key,
             direction,
-            start_from: value.start_from.and_then(|value| {
-                value.value.map(|v| match v {
-                    api::grpc::qdrant::start_from::Value::Float(float) => float,
-                    api::grpc::qdrant::start_from::Value::Integer(int) => int as _,
-                })
-            }),
+            start_from,
         }))
     }
 }

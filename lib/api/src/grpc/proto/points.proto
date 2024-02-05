@@ -310,6 +310,7 @@ message StartFrom {
   oneof value {
     double float = 1;
     int64 integer = 2;
+    google.protobuf.Timestamp datetime = 3;
   }
 }
 
