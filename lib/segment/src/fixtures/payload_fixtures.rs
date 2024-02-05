@@ -1,3 +1,4 @@
+use fnv::FnvBuildHasher;
 use std::collections::HashSet;
 use std::ops::{Range, RangeInclusive};
 
@@ -212,7 +213,7 @@ pub fn random_match_any_filter<R: Rng + ?Sized>(
 ) -> Filter {
     let num_existing = (len as f32 * (percent_existing / 100.0)) as usize;
 
-    let mut values: HashSet<SmolStr> = (0..len - num_existing)
+    let mut values: HashSet<SmolStr, FnvBuildHasher> = (0..len - num_existing)
         .map(|_| {
             let slen = rnd_gen.gen_range(1..15);
             Alphanumeric.sample_string(rnd_gen, slen).into()

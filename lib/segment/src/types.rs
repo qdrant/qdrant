@@ -1,3 +1,4 @@
+use fnv::{FnvBuildHasher, FnvHashSet};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{Display, Formatter};
@@ -1188,7 +1189,7 @@ pub enum ValueVariants {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum AnyVariants {
-    Keywords(HashSet<SmolStr>),
+    Keywords(HashSet<SmolStr, FnvBuildHasher>),
     Integers(HashSet<IntPayloadType>),
 }
 
@@ -1317,7 +1318,8 @@ impl From<IntPayloadType> for Match {
 
 impl From<Vec<String>> for Match {
     fn from(keywords: Vec<String>) -> Self {
-        let keywords: HashSet<SmolStr> = keywords.into_iter().map(|i| i.into()).collect();
+        let keywords: HashSet<SmolStr, FnvBuildHasher> =
+            keywords.into_iter().map(|i| i.into()).collect();
         Self::Any(MatchAny {
             any: AnyVariants::Keywords(keywords),
         })
@@ -1326,7 +1328,8 @@ impl From<Vec<String>> for Match {
 
 impl From<Vec<String>> for MatchExcept {
     fn from(keywords: Vec<String>) -> Self {
-        let keywords: HashSet<SmolStr> = keywords.into_iter().map(|i| i.into()).collect();
+        let keywords: HashSet<SmolStr, FnvBuildHasher> =
+            keywords.into_iter().map(|i| i.into()).collect();
         MatchExcept {
             except: AnyVariants::Keywords(keywords),
         }
@@ -2379,7 +2382,7 @@ mod tests {
         };
         if let AnyVariants::Keywords(kws) = &m.any {
             assert_eq!(kws.len(), 3);
-            let expect: HashSet<SmolStr> = ["Bourne", "Momoa", "Statham"]
+            let expect: HashSet<SmolStr, FnvBuildHasher> = ["Bourne", "Momoa", "Statham"]
                 .iter()
                 .map(|i| (*i).into())
                 .collect();

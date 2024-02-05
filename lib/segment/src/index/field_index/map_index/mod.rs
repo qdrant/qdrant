@@ -3,7 +3,7 @@ pub mod mutable_map_index;
 
 use std::collections::HashSet;
 use std::fmt::Display;
-use std::hash::Hash;
+use std::hash::{BuildHasher, Hash};
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -292,10 +292,13 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> MapIndex<N> {
         }
     }
 
-    fn except_iterator<'a>(
+    fn except_iterator<'a, A>(
         &'a self,
-        excluded: &'a HashSet<N>,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+        excluded: &'a HashSet<N, A>,
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a>
+    where
+        A: BuildHasher,
+    {
         Box::new(
             self.get_values_iterator()
                 .filter(|key| !excluded.contains(*key))

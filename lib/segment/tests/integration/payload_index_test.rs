@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use common::types::PointOffsetType;
+use fnv::FnvBuildHasher;
 use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
@@ -858,7 +859,8 @@ fn test_any_matcher_cardinality_estimation() {
 
     let (struct_segment, _) = build_test_segments(dir1.path(), dir2.path());
 
-    let keywords: HashSet<SmolStr> = ["value1", "value2"].iter().map(|i| (*i).into()).collect();
+    let keywords: HashSet<SmolStr, FnvBuildHasher> =
+        ["value1", "value2"].iter().map(|i| (*i).into()).collect();
     let any_match =
         FieldCondition::new_match(STR_KEY, Match::new_any(AnyVariants::Keywords(keywords)));
 
