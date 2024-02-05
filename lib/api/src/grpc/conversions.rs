@@ -955,11 +955,16 @@ impl TryFrom<FieldCondition> for segment::types::FieldCondition {
             geo_bounding_box.map_or_else(|| Ok(None), |g| g.try_into().map(Some))?;
         let geo_radius = geo_radius.map_or_else(|| Ok(None), |g| g.try_into().map(Some))?;
         let geo_polygon = geo_polygon.map_or_else(|| Ok(None), |g| g.try_into().map(Some))?;
+
+        let range = range.map(Into::into);
+        let datetime_range = datetime_range
+            .map(segment::types::RangeInterface::try_from)
+            .transpose()?;
+
         Ok(Self {
             key,
             r#match: r#match.map_or_else(|| Ok(None), |m| m.try_into().map(Some))?,
-            range: range.map(Into::into),
-            datetime_range: datetime_range.map(TryInto::try_into).transpose()?,
+            range: range.or(datetime_range),
             geo_bounding_box,
             geo_radius,
             geo_polygon,
@@ -974,22 +979,27 @@ impl From<segment::types::FieldCondition> for FieldCondition {
             key,
             r#match,
             range,
-            datetime_range,
             geo_bounding_box,
             geo_radius,
             geo_polygon,
             values_count,
         } = value;
 
+        let (range, datetime_range) = match range {
+            Some(segment::types::RangeInterface::Float(range)) => (Some(range.into()), None),
+            Some(segment::types::RangeInterface::DateTime(range)) => (None, Some(range.into())),
+            None => (None, None),
+        };
+
         Self {
             key,
             r#match: r#match.map(Into::into),
-            range: range.map(Into::into),
+            range,
             geo_bounding_box: geo_bounding_box.map(Into::into),
             geo_radius: geo_radius.map(Into::into),
             geo_polygon: geo_polygon.map(Into::into),
             values_count: values_count.map(Into::into),
-            datetime_range: datetime_range.map(Into::into),
+            datetime_range,
         }
     }
 }
@@ -1124,16 +1134,22 @@ impl From<segment::types::Range<FloatPayloadType>> for Range {
     }
 }
 
-impl TryFrom<DatetimeRange> for segment::types::Range<DateTimePayloadType> {
+impl From<Range> for segment::types::RangeInterface {
+    fn from(value: Range) -> Self {
+        Self::Float(value.into())
+    }
+}
+
+impl TryFrom<DatetimeRange> for segment::types::RangeInterface {
     type Error = Status;
 
     fn try_from(value: DatetimeRange) -> Result<Self, Self::Error> {
-        Ok(Self {
+        Ok(Self::DateTime(segment::types::Range {
             lt: value.lt.map(date_time_from_proto).transpose()?,
             gt: value.gt.map(date_time_from_proto).transpose()?,
             gte: value.gte.map(date_time_from_proto).transpose()?,
             lte: value.lte.map(date_time_from_proto).transpose()?,
-        })
+        }))
     }
 }
 
