@@ -1,6 +1,7 @@
 pub mod immutable_map_index;
 pub mod mutable_map_index;
 
+use std::borrow::Borrow;
 use std::collections::HashSet;
 use std::fmt::Display;
 use std::hash::{BuildHasher, Hash};
@@ -292,17 +293,20 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> MapIndex<N> {
         }
     }
 
-    fn except_iterator<'a, A>(
+    fn except_iterator<'a, A, K, S>(
         &'a self,
-        excluded: &'a HashSet<N, A>,
+        excluded: &'a HashSet<K, A>,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a>
     where
         A: BuildHasher,
+        K: Borrow<S> + Hash + Eq,
+        N: Borrow<S>,
+        S: ?Sized + Hash + Eq,
     {
         Box::new(
             self.get_values_iterator()
-                .filter(|key| !excluded.contains(*key))
-                .flat_map(|key| self.get_iterator(key))
+                .filter(|key| !excluded.contains((*key).borrow()))
+                .flat_map(|key| self.get_iterator(key.borrow()))
                 .unique(),
         )
     }
@@ -352,7 +356,7 @@ impl PayloadFieldIndex for MapIndex<SmolStr> {
             },
             Some(Match::Except(MatchExcept {
                 except: AnyVariants::Keywords(keywords),
-            })) => Ok(self.except_iterator(keywords)),
+            })) => Ok(self.except_iterator::<_, _, str>(keywords)),
             _ => Err(OperationError::service_error("failed to filter")),
         }
     }

@@ -1223,7 +1223,7 @@ impl From<segment::types::Match> for Match {
             }
             segment::types::Match::Any(any) => match any.any {
                 segment::types::AnyVariants::Keywords(strings) => {
-                    let strings = strings.into_iter().map(|i| i.into()).collect();
+                    let strings = strings.into_iter().collect();
                     MatchValue::Keywords(RepeatedStrings { strings })
                 }
                 segment::types::AnyVariants::Integers(integers) => {
@@ -1233,7 +1233,7 @@ impl From<segment::types::Match> for Match {
             },
             segment::types::Match::Except(except) => match except.except {
                 segment::types::AnyVariants::Keywords(strings) => {
-                    let strings = strings.into_iter().map(|i| i.into()).collect();
+                    let strings = strings.into_iter().collect();
                     MatchValue::ExceptKeywords(RepeatedStrings { strings })
                 }
                 segment::types::AnyVariants::Integers(integers) => {

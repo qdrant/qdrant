@@ -33,7 +33,6 @@ use segment::types::{
     VectorStorageType, WithPayload,
 };
 use serde_json::json;
-use smol_str::SmolStr;
 use tempfile::Builder;
 
 use crate::utils::scored_point_ties::ScoredPointTies;
@@ -859,8 +858,8 @@ fn test_any_matcher_cardinality_estimation() {
 
     let (struct_segment, _) = build_test_segments(dir1.path(), dir2.path());
 
-    let keywords: HashSet<SmolStr, FnvBuildHasher> =
-        ["value1", "value2"].iter().map(|i| (*i).into()).collect();
+    let keywords: HashSet<String, FnvBuildHasher> =
+        ["value1", "value2"].iter().map(|i| i.to_string()).collect();
     let any_match =
         FieldCondition::new_match(STR_KEY, Match::new_any(AnyVariants::Keywords(keywords)));
 

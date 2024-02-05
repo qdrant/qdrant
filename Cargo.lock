@@ -4571,7 +4571,8 @@ dependencies = [
 [[package]]
 name = "schemars"
 version = "0.8.16"
-source = "git+https://github.com/aumetra/schemars?branch=smol_strv0.2#5fd65e036cb3befda0611eac35094ec8450879c7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "45a28f4c49489add4ce10783f7911893516f15afe45d015608d41faca6bc4d29"
 dependencies = [
  "chrono",
  "dyn-clone",
@@ -4579,7 +4580,6 @@ dependencies = [
  "schemars_derive",
  "serde",
  "serde_json",
- "smol_str",
  "url",
  "uuid",
 ]
@@ -4587,7 +4587,8 @@ dependencies = [
 [[package]]
 name = "schemars_derive"
 version = "0.8.16"
-source = "git+https://github.com/aumetra/schemars?branch=smol_strv0.2#5fd65e036cb3befda0611eac35094ec8450879c7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c767fd6fa65d9ccf9cf026122c1b555f2ef9a4f0cea69da4d7dbc3e258d30967"
 dependencies = [
  "proc-macro2",
  "quote",

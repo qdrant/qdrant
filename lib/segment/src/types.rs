@@ -1189,7 +1189,7 @@ pub enum ValueVariants {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum AnyVariants {
-    Keywords(HashSet<SmolStr, FnvBuildHasher>),
+    Keywords(HashSet<String, FnvBuildHasher>),
     Integers(HashSet<IntPayloadType>),
 }
 
@@ -1318,8 +1318,7 @@ impl From<IntPayloadType> for Match {
 
 impl From<Vec<String>> for Match {
     fn from(keywords: Vec<String>) -> Self {
-        let keywords: HashSet<SmolStr, FnvBuildHasher> =
-            keywords.into_iter().map(|i| i.into()).collect();
+        let keywords: HashSet<String, FnvBuildHasher> = keywords.into_iter().collect();
         Self::Any(MatchAny {
             any: AnyVariants::Keywords(keywords),
         })
@@ -1328,8 +1327,7 @@ impl From<Vec<String>> for Match {
 
 impl From<Vec<String>> for MatchExcept {
     fn from(keywords: Vec<String>) -> Self {
-        let keywords: HashSet<SmolStr, FnvBuildHasher> =
-            keywords.into_iter().map(|i| i.into()).collect();
+        let keywords: HashSet<String, FnvBuildHasher> = keywords.into_iter().collect();
         MatchExcept {
             except: AnyVariants::Keywords(keywords),
         }
@@ -2141,6 +2139,7 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
+    use fnv::FnvHashSet;
     use serde::de::DeserializeOwned;
     use serde_json;
     use serde_json::json;
@@ -2382,10 +2381,11 @@ mod tests {
         };
         if let AnyVariants::Keywords(kws) = &m.any {
             assert_eq!(kws.len(), 3);
-            let expect: HashSet<SmolStr, FnvBuildHasher> = ["Bourne", "Momoa", "Statham"]
-                .iter()
-                .map(|i| (*i).into())
-                .collect();
+            let expect = FnvHashSet::from_iter(
+                ["Bourne", "Momoa", "Statham"]
+                    .into_iter()
+                    .map(|i| i.to_string()),
+            );
             assert_eq!(kws, &expect);
         } else {
             panic!("AnyVariants::Keywords expected");
