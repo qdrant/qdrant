@@ -413,9 +413,10 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                         .indexing_threshold
                         .map(|x| x as u64),
                     flush_interval_sec: Some(config.optimizer_config.flush_interval_sec),
-                    max_optimization_threads: Some(
-                        config.optimizer_config.max_optimization_threads as u64,
-                    ),
+                    max_optimization_threads: config
+                        .optimizer_config
+                        .max_optimization_threads
+                        .map(|n| n as u64),
                 }),
                 wal_config: Some(api::grpc::qdrant::WalConfigDiff {
                     wal_capacity_mb: Some(config.wal_config.wal_capacity_mb as u64),
@@ -470,8 +471,9 @@ impl From<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfig {
             memmap_threshold: optimizer_config.memmap_threshold.map(|x| x as usize),
             indexing_threshold: optimizer_config.indexing_threshold.map(|x| x as usize),
             flush_interval_sec: optimizer_config.flush_interval_sec.unwrap_or_default(),
-            max_optimization_threads: optimizer_config.max_optimization_threads.unwrap_or(1)
-                as usize,
+            max_optimization_threads: optimizer_config
+                .max_optimization_threads
+                .map(|n| n as usize),
         }
     }
 }
