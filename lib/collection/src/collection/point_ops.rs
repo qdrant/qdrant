@@ -234,7 +234,7 @@ impl Collection {
 
             if !has_range_index_for_order_by_field {
                 return Err(CollectionError::bad_request(format!(
-                    "No range index for `order_by` key: {}. Please create one to use `order_by`. Integer and float payloads can have range indexes, see https://qdrant.tech/documentation/concepts/indexing/#payload-index.",
+                    "No range index for `order_by` key: {}. Please create one to use `order_by`. Integer, float, and datetime payloads can have range indexes, see https://qdrant.tech/documentation/concepts/indexing/#payload-index.",
                     order_by.key.as_str()
                 )));
             }

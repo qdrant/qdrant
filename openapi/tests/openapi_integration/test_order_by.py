@@ -1,3 +1,4 @@
+import datetime
 import math
 import random
 
@@ -21,6 +22,15 @@ def upsert_points(collection_name, amount=100):
 
     maybe_repeated_generator = maybe_repeated()
 
+    def date():
+        date = datetime.datetime.now()
+        while True:
+            if random.random() > 0.5:
+                date += datetime.timedelta(days=1)
+            yield date.isoformat() + "Z"  # RFC-3339 format
+
+    date_generator = date()
+
     points = [
         {
             "id": i,
@@ -32,6 +42,7 @@ def upsert_points(collection_name, amount=100):
                 "payload_id": i,
                 "multi_id": [i, amount - i + 1],
                 "maybe_repeated_float": next(maybe_repeated_generator),
+                "date": next(date_generator),
             },
         }
         for i in range(amount)
@@ -78,6 +89,9 @@ def setup(on_disk_vectors):
     )
     create_payload_index(
         collection_name=collection_name, field_name="multi_id", field_schema="integer"
+    )
+    create_payload_index(
+        collection_name=collection_name, field_name="date", field_schema="datetime"
     )
     yield
     drop_collection(collection_name=collection_name)
@@ -169,7 +183,8 @@ def paginate_whole_collection(key, direction, must=None):
 
         points = response.json()["result"]["points"]
 
-        last_value = points[-1]["payload"][key]
+        if len(points) > 0:
+            last_value = points[-1]["payload"][key]
 
         # Exclude the ids we've already seen for the start_from value.
         # This is what we expect the users to do in order to paginate with order_by
@@ -224,6 +239,8 @@ def paginate_whole_collection(key, direction, must=None):
         ("price", "desc"),
         ("maybe_repeated_float", "asc"),
         ("maybe_repeated_float", "desc"),
+        ("date", "asc"),
+        ("date", "desc"),
     ],
 )
 @pytest.mark.timeout(60)  # possibly break of an infinite loop
