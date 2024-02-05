@@ -1354,22 +1354,6 @@ pub enum RangeInterface {
     DateTime(Range<DateTimePayloadType>),
 }
 
-impl RangeInterface {
-    pub fn to_float_range(self) -> Option<Range<FloatPayloadType>> {
-        match self {
-            RangeInterface::Float(range) => Some(range),
-            _ => None,
-        }
-    }
-
-    pub fn to_datetime_range(self) -> Option<Range<DateTimePayloadType>> {
-        match self {
-            RangeInterface::DateTime(range) => Some(range),
-            _ => None,
-        }
-    }
-}
-
 /// Range filter request
 #[macro_rules_attribute::macro_rules_derive(crate::common::macros::schemars_rename_generics)]
 #[derive_args(<FloatPayloadType> => "Range", <DateTimePayloadType> => "DatetimeRange")]
@@ -1709,12 +1693,18 @@ impl FieldCondition {
     }
 
     pub fn all_fields_none(&self) -> bool {
-        self.r#match.is_none()
-            && self.range.is_none()
-            && self.geo_bounding_box.is_none()
-            && self.geo_radius.is_none()
-            && self.geo_polygon.is_none()
-            && self.values_count.is_none()
+        matches!(
+            self,
+            FieldCondition {
+                r#match: None,
+                range: None,
+                geo_bounding_box: None,
+                geo_radius: None,
+                geo_polygon: None,
+                values_count: None,
+                key: _,
+            }
+        )
     }
 }
 
