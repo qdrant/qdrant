@@ -57,7 +57,7 @@ pub struct OrderBy {
 }
 
 impl OrderBy {
-    /// If there is a start value, returns a range representation of OrderBy.
+    /// Returns a range representation of OrderBy.
     pub fn as_range(&self) -> RangeInterface {
         self.start_from
             .as_ref()

@@ -257,6 +257,8 @@ def test_paginate_whole_collection(key, direction):
         ("price", "desc"),
         ("maybe_repeated_float", "asc"),
         ("maybe_repeated_float", "desc"),
+        ("date", "asc"),
+        ("date", "desc"),
     ],
 )
 @pytest.mark.timeout(60)  # possibly break of an infinite loop
