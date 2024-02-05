@@ -84,6 +84,22 @@ fn conditional_plain_search_benchmark(c: &mut Criterion) {
     let mut result_size = 0;
     let mut query_count = 0;
 
+    group.bench_function("conditional-search-match-any", |b| {
+        let filter = random_match_any_filter(&mut rng, 2, 51.0);
+        b.iter(|| {
+            let sample = (0..CHECK_SAMPLE_SIZE)
+                .map(|_| rng.gen_range(0..NUM_POINTS) as PointOffsetType)
+                .collect_vec();
+            let context = plain_index.filter_context(&filter);
+            let filtered_sample = sample
+                .into_iter()
+                .filter(|id| context.check(*id))
+                .collect_vec();
+            result_size += filtered_sample.len();
+            query_count += 1;
+        });
+    });
+
     group.bench_function("conditional-search-large-match-any", |b| {
         let filter = random_match_any_filter(&mut rng, 1000, 15.0);
         b.iter(|| {
