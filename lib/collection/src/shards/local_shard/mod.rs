@@ -1,4 +1,4 @@
-mod clock_map;
+pub mod clock_map;
 mod shard_ops;
 
 use std::collections::{BTreeSet, HashMap};
@@ -133,6 +133,8 @@ impl LocalShard {
         let config = collection_config.read().await;
         let locked_wal = Arc::new(ParkingMutex::new(wal));
         let optimizers_log = Arc::new(ParkingMutex::new(Default::default()));
+        let clock_map = Arc::new(Mutex::new(clock_map));
+        let clock_map_path = Self::clock_map_path(shard_path);
 
         let mut update_handler = UpdateHandler::new(
             shared_storage_config.clone(),
@@ -144,6 +146,8 @@ impl LocalShard {
             locked_wal.clone(),
             config.optimizer_config.flush_interval_sec,
             config.optimizer_config.max_optimization_threads,
+            clock_map.clone(),
+            clock_map_path,
         );
 
         let (update_sender, update_receiver) =
@@ -163,7 +167,7 @@ impl LocalShard {
             update_sender: ArcSwap::from_pointee(update_sender),
             update_tracker,
             path: shard_path.to_owned(),
-            clock_map: Arc::new(Mutex::new(clock_map)),
+            clock_map,
             update_runtime,
             optimizers,
             optimizers_log,
