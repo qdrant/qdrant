@@ -207,6 +207,9 @@ impl ShardReplicaSet {
             None => FuturesUnordered::from_iter(update_futures).collect().await,
         };
 
+        drop(remotes);
+        drop(local);
+
         let total_results = all_res.len();
 
         let write_consistency_factor = self
