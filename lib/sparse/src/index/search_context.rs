@@ -134,9 +134,9 @@ impl<'a> SearchContext<'a> {
         filter_condition: &F,
     ) {
         for posting in self.postings_iterators.iter_mut() {
-            // index at which the posting list stops contributing to the batch (relative to the batch start)
+            // offset at which the posting list stops contributing to the batch (relative to the batch start)
             let mut posting_stopped_at = None;
-            for (index, element) in posting
+            for (offset, element) in posting
                 .posting_list_iterator
                 .remaining_elements()
                 .iter()
@@ -145,7 +145,7 @@ impl<'a> SearchContext<'a> {
                 let element_id = element.record_id;
                 if element_id > batch_last_id {
                     // reaching end of the batch
-                    posting_stopped_at = Some(index);
+                    posting_stopped_at = Some(offset);
                     break;
                 }
                 let element_score = element.weight * posting.query_weight;
@@ -160,7 +160,7 @@ impl<'a> SearchContext<'a> {
                     posting.posting_list_iterator.skip_to_end();
                 }
                 Some(stopped_at) => {
-                    // posting list is not exhausted - skip to the next id
+                    // posting list is not exhausted - advance to last id
                     posting.posting_list_iterator.advance_by(stopped_at)
                 }
             };
