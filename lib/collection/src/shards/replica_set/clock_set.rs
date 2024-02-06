@@ -1,4 +1,3 @@
-use std::cmp;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -44,12 +43,14 @@ impl ClockGuard {
         self.id
     }
 
+    /// Advance clock by a single tick and return current tick.
     #[must_use = "new clock value must be used"]
     pub fn tick_once(&mut self) -> u64 {
         self.clock.tick_once()
     }
 
-    pub fn advance_to(&mut self, new_tick: u64) -> u64 {
+    /// Advance clock to `new_tick`, if `new_tick` is newer than current tick.
+    pub fn advance_to(&mut self, new_tick: u64) {
         self.clock.advance_to(new_tick)
     }
 }
@@ -62,7 +63,7 @@ impl Drop for ClockGuard {
 
 #[derive(Debug)]
 struct Clock {
-    /// Holds the next clock tick to use
+    /// Tracks the *next* clock tick
     next_tick: AtomicU64,
     available: AtomicBool,
 }
@@ -75,16 +76,19 @@ impl Clock {
         }
     }
 
-    /// Tick the clock and get the new clock tick to use
+    /// Advance clock by a single tick and return current tick
     #[must_use = "new clock tick value must be used"]
     fn tick_once(&self) -> u64 {
-        // Fetch the next clock tick to return, and increment it by 1 after
+        // `Clock` tracks *next* tick, so we increment `next_tick` by 1 and return *previous* value
+        // of `next_tick` (which is *exactly* what `fetch_add(1)` does)
         self.next_tick.fetch_add(1, Ordering::Relaxed)
     }
 
-    fn advance_to(&self, new_tick: u64) -> u64 {
-        let next_tick = self.next_tick.fetch_max(new_tick + 1, Ordering::Relaxed);
-        cmp::max(next_tick, new_tick + 1)
+    /// Advance clock to `new_tick`, if `new_tick` is newer than current tick
+    fn advance_to(&self, new_tick: u64) {
+        // `Clock` tracks *next* tick, so if we want to advance *current* tick to `new_tick`,
+        // we have to advance `next_tick` to `new_tick + 1`
+        self.next_tick.fetch_max(new_tick + 1, Ordering::Relaxed);
     }
 
     fn lock(&self) -> bool {
