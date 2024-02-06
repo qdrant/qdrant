@@ -1,6 +1,6 @@
-schemathesis~=3.21.0
-requests
-pytest==7.2.2
-pytest-timeout==2.1.0
-more-itertools==10.1.0
+schemathesis~=3.24.3
+requests==2.31.0
+pytest==7.4.4
+pytest-timeout==2.2.0
+more-itertools==10.2.0
 werkzeug>=3.0.1 # not directly required, pinned by Snyk to avoid a vulnerability
