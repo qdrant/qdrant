@@ -120,7 +120,9 @@ impl Eq for OrderingValue {}
 impl PartialEq for OrderingValue {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (OrderingValue::Float(a), OrderingValue::Float(b)) => a == b,
+            (OrderingValue::Float(a), OrderingValue::Float(b)) => {
+                OrderedFloat(*a) == OrderedFloat(*b)
+            }
             (OrderingValue::Int(a), OrderingValue::Int(b)) => a == b,
             (OrderingValue::Float(a), OrderingValue::Int(b)) => a.num_eq(*b),
             (OrderingValue::Int(a), OrderingValue::Float(b)) => a.num_eq(*b),
@@ -137,31 +139,18 @@ impl PartialOrd for OrderingValue {
 impl Ord for OrderingValue {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         match (self, other) {
-            (OrderingValue::Float(a), OrderingValue::Float(b)) => a
-                .num_cmp(*b)
-                .unwrap_or_else(|| OrderedFloat(*a).cmp(&OrderedFloat(*b))),
+            (OrderingValue::Float(a), OrderingValue::Float(b)) => {
+                OrderedFloat(*a).cmp(&OrderedFloat(*b))
+            }
             (OrderingValue::Int(a), OrderingValue::Int(b)) => a.cmp(b),
             (OrderingValue::Float(a), OrderingValue::Int(b)) => {
-                a.num_cmp(*b).unwrap_or_else(|| {
-                    if a.num_gt(*b) {
-                        std::cmp::Ordering::Greater
-                    } else if a.num_lt(*b) {
-                        std::cmp::Ordering::Less
-                    } else {
-                        std::cmp::Ordering::Equal
-                    }
-                })
+                // num_cmp() might return None only if the float value is NaN. We follow the
+                // OrderedFloat logic here: the NaN is always greater than any other value.
+                a.num_cmp(*b).unwrap_or(std::cmp::Ordering::Greater)
             }
             (OrderingValue::Int(a), OrderingValue::Float(b)) => {
-                a.num_cmp(*b).unwrap_or_else(|| {
-                    if a.num_gt(*b) {
-                        std::cmp::Ordering::Greater
-                    } else if a.num_lt(*b) {
-                        std::cmp::Ordering::Less
-                    } else {
-                        std::cmp::Ordering::Equal
-                    }
-                })
+                // Ditto, but the NaN is on the right side of the comparison.
+                a.num_cmp(*b).unwrap_or(std::cmp::Ordering::Less)
             }
         }
     }
