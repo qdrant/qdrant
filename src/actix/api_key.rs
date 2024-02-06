@@ -170,3 +170,18 @@ fn is_read_only(req: &ServiceRequest) -> bool {
         _ => false,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn read_only_post_patterns_sorted() {
+        let mut sorted = READ_ONLY_POST_PATTERNS;
+        sorted.sort_unstable();
+        assert_eq!(
+            READ_ONLY_POST_PATTERNS, sorted,
+            "The READ_ONLY_POST_PATTERNS list must be sorted"
+        );
+    }
+}
