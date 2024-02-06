@@ -70,6 +70,7 @@ pub struct ClockTag {
     peer_id: PeerId,
     clock_id: u32,
     clock_tick: u64,
+    force: bool,
 }
 
 impl ClockTag {
@@ -78,13 +79,19 @@ impl ClockTag {
             peer_id,
             clock_id,
             clock_tick,
+            force: false,
         }
+    }
+
+    pub fn force(mut self, force: bool) -> Self {
+        self.force = force;
+        self
     }
 }
 
 impl From<api::grpc::qdrant::ClockTag> for ClockTag {
     fn from(tag: api::grpc::qdrant::ClockTag) -> Self {
-        Self::new(tag.peer_id, tag.clock_id, tag.clock_tick)
+        Self::new(tag.peer_id, tag.clock_id, tag.clock_tick).force(tag.force)
     }
 }
 
@@ -94,6 +101,7 @@ impl From<ClockTag> for api::grpc::qdrant::ClockTag {
             peer_id: tag.peer_id,
             clock_id: tag.clock_id,
             clock_tick: tag.clock_tick,
+            force: tag.force,
         }
     }
 }
