@@ -492,6 +492,43 @@ mod tests {
     }
 
     #[test]
+    fn min_should_with_min_count_same_as_condition_count_is_equivalent_to_must() {
+        let conditions = vec![
+            test_condition("color".to_owned()),
+            test_condition("size".to_owned()),
+            test_condition("price".to_owned()),
+        ];
+        let min_should_query = Filter {
+            should: None,
+            min_should: Some(MinShould {
+                conditions: conditions.clone(),
+                min_count: 3,
+            }),
+            must: None,
+            must_not: None,
+        };
+
+        let estimation = estimate_filter(&test_estimator, &min_should_query, TOTAL);
+
+        let must_query = Filter {
+            should: None,
+            min_should: None,
+            must: Some(conditions),
+            must_not: None,
+        };
+
+        let expected_estimation = estimate_filter(&test_estimator, &must_query, TOTAL);
+
+        assert_eq!(
+            estimation.primary_clauses,
+            expected_estimation.primary_clauses
+        );
+        assert_eq!(estimation.max, expected_estimation.max);
+        assert_eq!(estimation.exp, expected_estimation.exp);
+        assert_eq!(estimation.min, expected_estimation.min);
+    }
+
+    #[test]
     fn complex_estimation_query_test() {
         let query = Filter {
             should: Some(vec![
