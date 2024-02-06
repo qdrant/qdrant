@@ -942,20 +942,24 @@ impl Payload {
     fn get_object_mut(&mut self, key: &str) -> OperationResult<&mut Map<String, Value>> {
         let segs = key.split('.').collect::<Vec<&str>>();
         if segs.is_empty() {
-            return Err(OperationError::WrongPayloadKey{ description: "Unexpected payload key: \"\"".to_string()});
+            return Err(OperationError::WrongPayloadKey {
+                description: "Unexpected payload key: \"\"".to_string(),
+            });
         }
         if segs.len() == 1 {
             return Ok(&mut self.0);
         }
         let mut v = &mut self.0;
         for seg in segs[..segs.len() - 1].iter() {
-            let v1 = v.get_mut(*seg).ok_or(
-                OperationError::WrongPayloadKey{ description: format!("Can't find payload key segment: \"{seg}\".")}
-            )?;
+            let v1 = v.get_mut(*seg).ok_or(OperationError::WrongPayloadKey {
+                description: format!("Can't find payload key segment: \"{seg}\"."),
+            })?;
             if let Value::Object(v2) = v1 {
                 v = v2;
             } else {
-                return Err(OperationError::WrongPayloadKey{ description: format!("Payload key segment: \"{seg}\" is not object.")});
+                return Err(OperationError::WrongPayloadKey {
+                    description: format!("Payload key segment: \"{seg}\" is not object."),
+                });
             }
         }
         Ok(v)
