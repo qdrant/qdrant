@@ -1,5 +1,6 @@
 use prometheus::proto::{Counter, Gauge, LabelPair, Metric, MetricFamily, MetricType};
 use prometheus::TextEncoder;
+use segment::common::operation_time_statistics::OperationDurationStatistics;
 
 use crate::common::telemetry::TelemetryData;
 use crate::common::telemetry_ops::app_telemetry::{AppBuildTelemetry, AppFeaturesTelemetry};
@@ -201,153 +202,147 @@ impl MetricsProvider for RequestsTelemetry {
 
 impl MetricsProvider for WebApiTelemetry {
     fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
-        let (mut total, mut fail_total, mut avg_secs, mut min_secs, mut max_secs) =
-            (vec![], vec![], vec![], vec![], vec![]);
+        let mut builder = OperationDurationMetricsBuilder::default();
         for (endpoint, responses) in &self.responses {
-            let (method, endpoint) = endpoint.split_once(' ').unwrap();
-
-            // Endpoint must be whitelisted
+            let Some((method, endpoint)) = endpoint.split_once(' ') else {
+                continue;
+            };
             if REST_ENDPOINT_WHITELIST.binary_search(&endpoint).is_err() {
                 continue;
             }
-
             for (status, stats) in responses {
-                let labels = [
-                    ("method", method),
-                    ("endpoint", endpoint),
-                    ("status", &status.to_string()),
-                ];
-                total.push(counter(stats.count as f64, &labels));
-                fail_total.push(counter(stats.fail_count as f64, &labels));
-
-                if *status == REST_TIMINGS_FOR_STATUS {
-                    avg_secs.push(gauge(
-                        stats.avg_duration_micros.unwrap_or(0.0) as f64 / 1_000_000.0,
-                        &labels,
-                    ));
-                    min_secs.push(gauge(
-                        stats.min_duration_micros.unwrap_or(0.0) as f64 / 1_000_000.0,
-                        &labels,
-                    ));
-                    max_secs.push(gauge(
-                        stats.max_duration_micros.unwrap_or(0.0) as f64 / 1_000_000.0,
-                        &labels,
-                    ));
-                }
+                builder.add(
+                    stats,
+                    &[
+                        ("method", method),
+                        ("endpoint", endpoint),
+                        ("status", &status.to_string()),
+                    ],
+                    *status == REST_TIMINGS_FOR_STATUS,
+                );
             }
         }
-
-        if !total.is_empty() {
-            metrics.push(metric_family(
-                "rest_responses_total",
-                "total number of responses",
-                MetricType::COUNTER,
-                total,
-            ));
-        }
-        if !fail_total.is_empty() {
-            metrics.push(metric_family(
-                "rest_responses_fail_total",
-                "total number of failed responses",
-                MetricType::COUNTER,
-                fail_total,
-            ));
-        }
-        if !avg_secs.is_empty() {
-            metrics.push(metric_family(
-                "rest_responses_avg_duration_seconds",
-                "average response duration",
-                MetricType::GAUGE,
-                avg_secs,
-            ));
-        }
-        if !min_secs.is_empty() {
-            metrics.push(metric_family(
-                "rest_responses_min_duration_seconds",
-                "minimum response duration",
-                MetricType::GAUGE,
-                min_secs,
-            ));
-        }
-        if !max_secs.is_empty() {
-            metrics.push(metric_family(
-                "rest_responses_max_duration_seconds",
-                "maximum response duration",
-                MetricType::GAUGE,
-                max_secs,
-            ));
-        }
+        builder.build("rest", metrics);
     }
 }
 
 impl MetricsProvider for GrpcTelemetry {
     fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
-        let (mut total, mut fail_total, mut avg_secs, mut min_secs, mut max_secs) =
-            (vec![], vec![], vec![], vec![], vec![]);
+        let mut builder = OperationDurationMetricsBuilder::default();
         for (endpoint, stats) in &self.responses {
-            // Endpoint must be whitelisted
             if GRPC_ENDPOINT_WHITELIST
                 .binary_search(&endpoint.as_str())
-                .is_err()
+                .is_ok()
             {
                 continue;
             }
+            builder.add(stats, &[("endpoint", endpoint.as_str())], true);
+        }
+        builder.build("grpc", metrics);
+    }
+}
 
-            let labels = [("endpoint", endpoint.as_str())];
-            total.push(counter(stats.count as f64, &labels));
-            fail_total.push(counter(stats.fail_count as f64, &labels));
-            avg_secs.push(gauge(
-                stats.avg_duration_micros.unwrap_or(0.0) as f64 / 1_000_000.0,
-                &labels,
-            ));
-            min_secs.push(gauge(
-                stats.min_duration_micros.unwrap_or(0.0) as f64 / 1_000_000.0,
-                &labels,
-            ));
-            max_secs.push(gauge(
-                stats.max_duration_micros.unwrap_or(0.0) as f64 / 1_000_000.0,
-                &labels,
-            ));
+/// A helper struct to build a vector of [`MetricFamily`] out of a collection of
+/// [`OperationDurationStatistics`].
+#[derive(Default)]
+struct OperationDurationMetricsBuilder {
+    total: Vec<Metric>,
+    fail_total: Vec<Metric>,
+    avg_secs: Vec<Metric>,
+    min_secs: Vec<Metric>,
+    max_secs: Vec<Metric>,
+    duration_histogram_secs: Vec<Metric>,
+}
+
+impl OperationDurationMetricsBuilder {
+    /// Add metrics for the provided statistics.
+    /// If `add_timings` is `false`, only the total and fail_total counters will be added.
+    pub fn add(
+        &mut self,
+        stat: &OperationDurationStatistics,
+        labels: &[(&str, &str)],
+        add_timings: bool,
+    ) {
+        self.total.push(counter(stat.count as f64, labels));
+        self.fail_total
+            .push(counter(stat.fail_count as f64, labels));
+
+        if !add_timings {
+            return;
         }
 
-        if !total.is_empty() {
+        self.avg_secs.push(gauge(
+            stat.avg_duration_micros.unwrap_or(0.0) as f64 / 1_000_000.0,
+            labels,
+        ));
+        self.min_secs.push(gauge(
+            stat.min_duration_micros.unwrap_or(0.0) as f64 / 1_000_000.0,
+            labels,
+        ));
+        self.max_secs.push(gauge(
+            stat.max_duration_micros.unwrap_or(0.0) as f64 / 1_000_000.0,
+            labels,
+        ));
+        self.duration_histogram_secs.push(histogram(
+            stat.count as u64,
+            stat.total_duration_micros as f64 / 1_000_000.0,
+            &stat
+                .duration_micros_histogram
+                .iter()
+                .map(|&(b, c)| (b as f64 / 1_000_000.0, c as u64))
+                .collect::<Vec<_>>(),
+            labels,
+        ));
+    }
+
+    /// Build metrics and add them to the provided vector.
+    pub fn build(self, prefix: &str, metrics: &mut Vec<MetricFamily>) {
+        if !self.total.is_empty() {
             metrics.push(metric_family(
-                "grpc_responses_total",
+                &format!("{prefix}_responses_total"),
                 "total number of responses",
                 MetricType::COUNTER,
-                total,
+                self.total,
             ));
         }
-        if !fail_total.is_empty() {
+        if !self.fail_total.is_empty() {
             metrics.push(metric_family(
-                "grpc_responses_fail_total",
+                &format!("{prefix}_responses_fail_total"),
                 "total number of failed responses",
                 MetricType::COUNTER,
-                fail_total,
+                self.fail_total,
             ));
         }
-        if !avg_secs.is_empty() {
+        if !self.avg_secs.is_empty() {
             metrics.push(metric_family(
-                "grpc_responses_avg_duration_seconds",
+                &format!("{prefix}_responses_avg_duration_seconds"),
                 "average response duration",
                 MetricType::GAUGE,
-                avg_secs,
+                self.avg_secs,
             ));
         }
-        if !min_secs.is_empty() {
+        if !self.min_secs.is_empty() {
             metrics.push(metric_family(
-                "grpc_responses_min_duration_seconds",
+                &format!("{prefix}_responses_min_duration_seconds"),
                 "minimum response duration",
                 MetricType::GAUGE,
-                min_secs,
+                self.min_secs,
             ));
         }
-        if !max_secs.is_empty() {
+        if !self.max_secs.is_empty() {
             metrics.push(metric_family(
-                "grpc_responses_max_duration_seconds",
+                &format!("{prefix}_responses_max_duration_seconds"),
                 "maximum response duration",
                 MetricType::GAUGE,
-                max_secs,
+                self.max_secs,
+            ));
+        }
+        if !self.duration_histogram_secs.is_empty() {
+            metrics.push(metric_family(
+                &format!("{prefix}_responses_duration_seconds"),
+                "response duration histogram",
+                MetricType::HISTOGRAM,
+                self.duration_histogram_secs,
             ));
         }
     }
@@ -380,6 +375,34 @@ fn gauge(value: f64, labels: &[(&str, &str)]) -> Metric {
         let mut gauge = Gauge::default();
         gauge.set_value(value);
         gauge
+    });
+    metric
+}
+
+fn histogram(
+    sample_count: u64,
+    sample_sum: f64,
+    bucktes: &[(f64, u64)],
+    labels: &[(&str, &str)],
+) -> Metric {
+    let mut metric = Metric::default();
+    metric.set_label(labels.iter().map(|(n, v)| label_pair(n, v)).collect());
+    metric.set_histogram({
+        let mut histogram = prometheus::proto::Histogram::default();
+        histogram.set_sample_count(sample_count);
+        histogram.set_sample_sum(sample_sum);
+        histogram.set_bucket(
+            bucktes
+                .iter()
+                .map(|&(upper_bound, cumulative_count)| {
+                    let mut bucket = prometheus::proto::Bucket::default();
+                    bucket.set_cumulative_count(cumulative_count);
+                    bucket.set_upper_bound(upper_bound);
+                    bucket
+                })
+                .collect(),
+        );
+        histogram
     });
     metric
 }

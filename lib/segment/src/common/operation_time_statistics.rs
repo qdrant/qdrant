@@ -6,6 +6,7 @@ use common::types::TelemetryDetail;
 use parking_lot::Mutex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use smallvec::SmallVec;
 
 use crate::common::anonymize::Anonymize;
 
@@ -20,21 +21,36 @@ pub struct OperationDurationStatistics {
     #[serde(default)]
     pub fail_count: usize,
 
+    /// The average time taken by 128 latest operations, calculated as a weighted mean.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub avg_duration_micros: Option<f32>,
 
+    /// The minimum duration of the operations across all the measurements.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub min_duration_micros: Option<f32>,
 
+    /// The maximum duration of the operations across all the measurements.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub max_duration_micros: Option<f32>,
 
+    /// The total duration of all operations in microseconds.
+    #[serde(default)]
+    pub total_duration_micros: u64,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub last_responded: Option<DateTime<Utc>>,
+
+    /// The cumulative histogram of the operation durations. Consists of a list of pairs of
+    /// [upper_boundary, cumulative_count], sorted by the upper boundary. Note that the last bucket
+    /// (aka `{le="+Inf"}` in Prometheus terms) is not stored in this list, and `count` should be
+    /// used instead.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
+    pub duration_micros_histogram: Vec<(f32, usize)>,
 }
 
 pub struct OperationDurationsAggregator {
@@ -45,9 +61,39 @@ pub struct OperationDurationsAggregator {
     timing_loops: usize,
     min_value: Option<f32>,
     max_value: Option<f32>,
+    total_value: u64,
     last_response_date: Option<DateTime<Utc>>,
+
+    /// The non-cumulative count of operations in each bucket.
+    /// The total operations count (aka the last bucket, or `{le="+Inf"}` in Prometheus terms) is
+    /// not stored in this vector, and `ok_count` should be used instead.
+    buckets: SmallVec<[usize; 16]>,
 }
 
+pub const DEFAULT_BUCKET_BOUNDARIES_MICROS: [f32; 16] = [
+    // Microseconds
+    1.0,
+    5.0,
+    10.0,
+    50.0,
+    100.0,
+    500.0,
+    // Milliseconds
+    1_000.0,
+    5_000.0,
+    10_000.0,
+    50_000.0,
+    100_000.0,
+    500_000.0,
+    // Seconds
+    1_000_000.0,
+    5_000_000.0,
+    10_000_000.0,
+    50_000_000.0,
+];
+
+/// A wrapper around [`OperationDurationsAggregator`] that calls
+/// [`OperationDurationsAggregator::add_operation_result()`] on drop.
 pub struct ScopeDurationMeasurer<'a> {
     aggregator: &'a Mutex<OperationDurationsAggregator>,
     instant: Instant,
@@ -60,6 +106,11 @@ impl Anonymize for OperationDurationStatistics {
             count: self.count.anonymize(),
             fail_count: self.fail_count.anonymize(),
             last_responded: self.last_responded.anonymize(),
+            duration_micros_histogram: self
+                .duration_micros_histogram
+                .iter()
+                .map(|&(le, count)| (le, count.anonymize()))
+                .collect(),
             ..*self
         }
     }
@@ -88,9 +139,39 @@ impl std::ops::Add for OperationDurationStatistics {
                 other.max_duration_micros,
                 |a, b| a > b,
             ),
+            total_duration_micros: self.total_duration_micros + other.total_duration_micros,
             last_responded: std::cmp::max(self.last_responded, other.last_responded),
+            duration_micros_histogram: merge_buckets(
+                self.duration_micros_histogram,
+                other.duration_micros_histogram,
+            ),
         }
     }
+}
+
+/// Merges two vectors of buckets, summing the counts of the same boundaries.
+/// # Panics
+/// Panics when merging buckets of different configurations.  In practice, we should stick to a
+/// single configuration so this should not happen.
+fn merge_buckets(mut a: Vec<(f32, usize)>, b: Vec<(f32, usize)>) -> Vec<(f32, usize)> {
+    if a.is_empty() {
+        return b;
+    }
+    if b.is_empty() {
+        return a;
+    }
+    if a.len() != b.len() {
+        eprintln!("a = {a:?}, b = {b:?}");
+        panic!("Cannot merge buckets of different lengths");
+    }
+    for ((a_le, a_count), (b_le, b_count)) in a.iter_mut().zip(b.iter()) {
+        if a_le != b_le {
+            eprintln!("a = {a:?}, b = {b:?}");
+            panic!("Cannot merge buckets with different boundaries");
+        }
+        *a_count += b_count;
+    }
+    a
 }
 
 impl OperationDurationStatistics {
@@ -181,12 +262,15 @@ impl OperationDurationsAggregator {
             timing_loops: 0,
             min_value: None,
             max_value: None,
+            total_value: 0,
             last_response_date: Some(Utc::now().round_subsecs(2)),
+            buckets: smallvec::smallvec![0; DEFAULT_BUCKET_BOUNDARIES_MICROS.len()],
         }))
     }
 
     pub fn add_operation_result(&mut self, success: bool, duration: Duration) {
         if success {
+            self.total_value += duration.as_micros() as u64;
             let duration = duration.as_micros() as f32;
             self.min_value = Some(match self.min_value {
                 Some(min_value) => min_value.min(duration),
@@ -196,6 +280,13 @@ impl OperationDurationsAggregator {
                 Some(max_value) => max_value.max(duration),
                 None => duration,
             });
+
+            if let Some(bucket_no) = DEFAULT_BUCKET_BOUNDARIES_MICROS
+                .iter()
+                .position(|&b| duration <= b)
+            {
+                self.buckets[bucket_no] += 1;
+            }
 
             self.ok_count += 1;
             self.timings[self.timing_index] = duration;
@@ -213,6 +304,14 @@ impl OperationDurationsAggregator {
 
     pub fn get_statistics(&self, detail: TelemetryDetail) -> OperationDurationStatistics {
         let _ = detail.histograms; // TODO: Will be used once histograms PR is merged
+        let mut duration_micros_histogram =
+            Vec::with_capacity(DEFAULT_BUCKET_BOUNDARIES_MICROS.len());
+        let mut cumulative_count = 0;
+        for (&count, &le) in self.buckets.iter().zip(&DEFAULT_BUCKET_BOUNDARIES_MICROS) {
+            cumulative_count += count;
+            duration_micros_histogram.push((le, cumulative_count));
+        }
+
         OperationDurationStatistics {
             count: self.ok_count,
             fail_count: self.fail_count,
@@ -223,7 +322,9 @@ impl OperationDurationsAggregator {
             },
             min_duration_micros: self.min_value,
             max_duration_micros: self.max_value,
+            total_duration_micros: self.total_value,
             last_responded: self.last_response_date,
+            duration_micros_histogram,
         }
     }
 
