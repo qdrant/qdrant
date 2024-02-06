@@ -62,7 +62,7 @@ uuid = { workspace = true }
 sys-info = "0.9.1"
 wal = { git = "https://github.com/qdrant/wal.git", rev = "fad0e7c48be58d8e7db4cc739acd9b1cf6735de0" }
 
-config = "~0.13.4"
+config = "~0.14.0"
 
 tokio = { workspace = true }
 
