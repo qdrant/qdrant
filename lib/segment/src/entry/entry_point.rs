@@ -83,6 +83,7 @@ pub trait SegmentEntry {
         op_num: SeqNumberType,
         point_id: PointIdType,
         payload: &Payload,
+        key: &Option<String>,
     ) -> OperationResult<bool>;
 
     fn set_full_payload(

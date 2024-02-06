@@ -372,12 +372,13 @@ impl SegmentEntry for ProxySegment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         payload: &Payload,
+        key: &Option<String>,
     ) -> OperationResult<bool> {
         self.move_if_exists(op_num, point_id)?;
         self.write_segment
             .get()
             .write()
-            .set_payload(op_num, point_id, payload)
+            .set_payload(op_num, point_id, payload, key)
     }
 
     fn delete_payload(
