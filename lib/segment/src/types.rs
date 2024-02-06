@@ -897,14 +897,16 @@ impl Payload {
                                             self.merge_maps(map2.clone(), map),
                                         ),
                                         _ => self.0.insert(key.to_owned(), value.to_owned()),
-                                    };
+                                    }
+                                } else {
+                                    self.0.insert(key.to_owned(), value.to_owned())
                                 }
-                                self.0.insert(key.to_owned(), value.to_owned())
                             }
                             _ => None,
-                        };
+                        }
+                    } else {
+                        self.0.insert(key.to_owned(), value.to_owned())
                     }
-                    self.0.insert(key.to_owned(), value.to_owned())
                 }
                 _ => self.0.insert(key.to_owned(), value.to_owned()),
             };
