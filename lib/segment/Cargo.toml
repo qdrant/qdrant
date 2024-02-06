@@ -75,7 +75,7 @@ macro_rules_attribute = "0.2.0"
 [target.'cfg(target_os = "linux")'.dependencies]
 cgroups-rs = "0.3"
 procfs = { version = "0.16", default-features = false }
-io-uring = "0.6.2"
+io-uring = "0.6.3"
 
 [[bench]]
 name = "vector_search"
