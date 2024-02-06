@@ -1,4 +1,3 @@
-use std::cmp;
 use std::ops::Deref as _;
 use std::time::Duration;
 
@@ -226,28 +225,29 @@ impl ShardReplicaSet {
 
         // Advance clock if some replica echoed *newer* tick
 
-        let mut new_clock_tick = current_clock_tick;
+        let new_clock_tick = successes
+            .iter()
+            .filter_map(|(_, result)| {
+                let echo_tag = result.clock_tag?;
 
-        for (_, result) in &successes {
-            let Some(echo_tag) = result.clock_tag else {
-                continue;
-            };
+                if echo_tag.peer_id != clock_tag.peer_id {
+                    // TODO: `log::warn`!?
+                    return None;
+                }
 
-            if echo_tag.peer_id != clock_tag.peer_id {
-                // TODO: `log::warn`!?
-                continue;
+                if echo_tag.clock_id != clock_tag.clock_id {
+                    // TODO: `log::warn`!?
+                    return None;
+                }
+
+                Some(echo_tag.clock_tick)
+            })
+            .max();
+
+        if let Some(new_clock_tick) = new_clock_tick {
+            if new_clock_tick > current_clock_tick || new_clock_tick == 0 {
+                clock.advance_to(new_clock_tick);
             }
-
-            if echo_tag.clock_id != clock_tag.clock_id {
-                // TODO: `log::warn`!?
-                continue;
-            }
-
-            new_clock_tick = cmp::max(new_clock_tick, echo_tag.clock_tick);
-        }
-
-        if new_clock_tick > current_clock_tick {
-            clock.advance_to(new_clock_tick);
         }
 
         // Notify consensus about failures if:

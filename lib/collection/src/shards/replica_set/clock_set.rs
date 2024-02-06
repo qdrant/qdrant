@@ -81,7 +81,18 @@ impl Clock {
     fn tick_once(&self) -> u64 {
         // `Clock` tracks *next* tick, so we increment `next_tick` by 1 and return *previous* value
         // of `next_tick` (which is *exactly* what `fetch_add(1)` does)
-        self.next_tick.fetch_add(1, Ordering::Relaxed)
+        let current_tick = self.next_tick.fetch_add(1, Ordering::Relaxed);
+
+        // If `current_tick` is `0`, then "revert" `next_tick` back to `0`.
+        // We expect that `advance_to` would be used to advance "past" the initial `0`.
+        //
+        // Executing multiple atomic operations sequentially is not strictly thread-safe,
+        // but we expect that `Clock` would be "locked" before calling `tick_once`.
+        if current_tick == 0 {
+            self.next_tick.store(0, Ordering::Relaxed);
+        }
+
+        current_tick
     }
 
     /// Advance clock to `new_tick`, if `new_tick` is newer than current tick
