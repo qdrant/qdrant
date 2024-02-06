@@ -877,6 +877,29 @@ pub trait PayloadContainer {
     fn get_value(&self, path: &str) -> MultiValue<&Value>;
 }
 
+fn merge_maps(mut original: Map<String, Value>, extension: &Map<String, Value>) -> Value {
+    for (key, value) in extension {
+        match value {
+            Value::Null => original.remove(key),
+            Value::Object(extension_map) => {
+                if let Some(MultiValue::Single(Some(Value::Object(original_map)))) =
+                    original.get_value_opt(key)
+                {
+                    original.insert(
+                        key.to_owned(),
+                        merge_maps(original_map.clone(), extension_map),
+                    )
+                } else {
+                    original.insert(key.to_owned(), value.to_owned())
+                }
+            }
+            _ => original.insert(key.to_owned(), value.to_owned()),
+        };
+    }
+
+    Value::Object(original)
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema)]
 pub struct Payload(pub Map<String, Value>);
 
@@ -886,55 +909,20 @@ impl Payload {
             match value {
                 Value::Null => self.0.remove(key),
                 Value::Object(extension_map) => {
-                    if let Some(current_value) = self.0.get_value_opt(key) {
-                        if let MultiValue::Single(single_value) = current_value {
-                            if let Some(original_value) = single_value {
-                                if let Value::Object(original_map) = original_value {
-                                    self.0.insert(
-                                        key.to_owned(),
-                                        self.merge_maps(original_map.clone(), extension_map),
-                                    );
-                                    continue;
-                                }
-                            }
-                        }
+                    if let Some(MultiValue::Single(Some(Value::Object(original_map)))) =
+                        self.0.get_value_opt(key)
+                    {
+                        self.0.insert(
+                            key.to_owned(),
+                            merge_maps(original_map.clone(), extension_map),
+                        )
+                    } else {
+                        self.0.insert(key.to_owned(), value.to_owned())
                     }
-                    self.0.insert(key.to_owned(), value.to_owned())
                 }
                 _ => self.0.insert(key.to_owned(), value.to_owned()),
             };
         }
-    }
-
-    fn merge_maps(
-        &self,
-        mut original: Map<String, Value>,
-        extension: &Map<String, Value>,
-    ) -> Value {
-        for (key, value) in extension {
-            match value {
-                Value::Null => original.remove(key),
-                Value::Object(extension_map) => {
-                    if let Some(current_value) = original.get_value_opt(key) {
-                        if let MultiValue::Single(single_value) = current_value {
-                            if let Some(original_value) = single_value {
-                                if let Value::Object(original_map) = original_value {
-                                    original.insert(
-                                        key.to_owned(),
-                                        self.merge_maps(original_map.clone(), extension_map),
-                                    );
-                                    continue;
-                                }
-                            }
-                        }
-                    }
-                    original.insert(key.to_owned(), value.to_owned())
-                }
-                _ => original.insert(key.to_owned(), value.to_owned()),
-            };
-        }
-
-        return Value::Object(original);
     }
 
     pub fn remove(&mut self, path: &str) -> Vec<Value> {
