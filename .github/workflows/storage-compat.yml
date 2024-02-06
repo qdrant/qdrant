@@ -23,7 +23,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - uses: actions/checkout@v4
       - name: Install Protoc
-        uses: arduino/setup-protoc@v2
+        uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: Swatinem/rust-cache@v2
