@@ -58,7 +58,14 @@ where
         Some(MinShould {
             conditions,
             min_count,
-        }) => conditions.iter().filter(|cond| check(cond)).count() >= *min_count,
+        }) => {
+            conditions
+                .iter()
+                .filter(|cond| check(cond))
+                .take(*min_count)
+                .count()
+                == *min_count
+        }
     }
 }
 
@@ -460,36 +467,16 @@ mod tests {
             },
         ));
 
-        let query = Filter {
-            should: None,
-            min_should: None,
-            must: Some(vec![match_red.clone()]),
-            must_not: None,
-        };
+        let query = Filter::new_must(match_red.clone());
         assert!(payload_checker.check(0, &query));
 
-        let query = Filter {
-            should: None,
-            min_should: None,
-            must: Some(vec![match_blue.clone()]),
-            must_not: None,
-        };
+        let query = Filter::new_must(match_blue.clone());
         assert!(!payload_checker.check(0, &query));
 
-        let query = Filter {
-            should: None,
-            min_should: None,
-            must: None,
-            must_not: Some(vec![match_blue.clone()]),
-        };
+        let query = Filter::new_must_not(match_blue.clone());
         assert!(payload_checker.check(0, &query));
 
-        let query = Filter {
-            should: None,
-            min_should: None,
-            must: None,
-            must_not: Some(vec![match_red.clone()]),
-        };
+        let query = Filter::new_must_not(match_red.clone());
         assert!(!payload_checker.check(0, &query));
 
         let query = Filter {
@@ -530,50 +517,35 @@ mod tests {
         assert!(!payload_checker.check(0, &query));
 
         // test cases for min_should
-        let query = Filter {
-            should: None,
-            min_should: Some(MinShould {
-                conditions: vec![match_blue.clone(), in_moscow.clone()],
-                min_count: 1,
-            }),
-            must: None,
-            must_not: None,
-        };
+        let query = Filter::new_min_should(MinShould {
+            conditions: vec![match_blue.clone(), in_moscow.clone()],
+            min_count: 1,
+        });
         assert!(!payload_checker.check(0, &query));
 
-        let query = Filter {
-            should: None,
-            min_should: Some(MinShould {
-                conditions: vec![match_red.clone(), in_berlin.clone(), in_moscow.clone()],
-                min_count: 2,
-            }),
-            must: None,
-            must_not: None,
-        };
+        let query = Filter::new_min_should(MinShould {
+            conditions: vec![match_red.clone(), in_berlin.clone(), in_moscow.clone()],
+            min_count: 2,
+        });
         assert!(payload_checker.check(0, &query));
 
-        let query = Filter {
-            should: None,
-            min_should: Some(MinShould {
-                conditions: vec![
-                    Condition::Filter(Filter {
-                        should: None,
-                        min_should: None,
-                        must: Some(vec![match_blue.clone(), in_moscow.clone()]),
-                        must_not: None,
-                    }),
-                    Condition::Filter(Filter {
-                        should: None,
-                        min_should: None,
-                        must: Some(vec![match_red.clone(), in_berlin.clone()]),
-                        must_not: None,
-                    }),
-                ],
-                min_count: 1,
-            }),
-            must: None,
-            must_not: None,
-        };
+        let query = Filter::new_min_should(MinShould {
+            conditions: vec![
+                Condition::Filter(Filter {
+                    should: None,
+                    min_should: None,
+                    must: Some(vec![match_blue.clone(), in_moscow.clone()]),
+                    must_not: None,
+                }),
+                Condition::Filter(Filter {
+                    should: None,
+                    min_should: None,
+                    must: Some(vec![match_red.clone(), in_berlin.clone()]),
+                    must_not: None,
+                }),
+            ],
+            min_count: 1,
+        });
         assert!(payload_checker.check(0, &query));
 
         let query = Filter {
@@ -597,42 +569,22 @@ mod tests {
         };
         assert!(payload_checker.check(0, &query));
 
-        let query = Filter {
-            should: None,
-            min_should: None,
-            must: None,
-            must_not: Some(vec![with_bad_rating]),
-        };
+        let query = Filter::new_must_not(with_bad_rating);
         assert!(!payload_checker.check(0, &query));
 
         let ids: HashSet<_> = vec![1, 2, 3].into_iter().map(|x| x.into()).collect();
 
-        let query = Filter {
-            should: None,
-            min_should: None,
-            must: None,
-            must_not: Some(vec![Condition::HasId(ids.into())]),
-        };
+        let query = Filter::new_must_not(Condition::HasId(ids.into()));
         assert!(!payload_checker.check(2, &query));
 
         let ids: HashSet<_> = vec![1, 2, 3].into_iter().map(|x| x.into()).collect();
 
-        let query = Filter {
-            should: None,
-            min_should: None,
-            must: None,
-            must_not: Some(vec![Condition::HasId(ids.into())]),
-        };
+        let query = Filter::new_must_not(Condition::HasId(ids.into()));
         assert!(payload_checker.check(10, &query));
 
         let ids: HashSet<_> = vec![1, 2, 3].into_iter().map(|x| x.into()).collect();
 
-        let query = Filter {
-            should: None,
-            min_should: None,
-            must: Some(vec![Condition::HasId(ids.into())]),
-            must_not: None,
-        };
+        let query = Filter::new_must(Condition::HasId(ids.into()));
         assert!(payload_checker.check(2, &query));
     }
 }

@@ -53,7 +53,14 @@ fn check_min_should(min_should: &Option<OptimizedMinShould>, point_id: PointOffs
         Some(OptimizedMinShould {
             conditions,
             min_count,
-        }) => conditions.iter().filter(|cond| check(cond)).count() >= *min_count,
+        }) => {
+            conditions
+                .iter()
+                .filter(|cond| check(cond))
+                .take(*min_count)
+                .count()
+                == *min_count
+        }
     }
 }
 
