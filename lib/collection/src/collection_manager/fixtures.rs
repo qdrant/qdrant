@@ -140,11 +140,21 @@ pub fn build_segment_1(path: &Path) -> Segment {
         json!({ payload_key: vec!["red".to_owned(), "blue".to_owned()] }).into();
     let payload_option3: Payload = json!({ payload_key: vec!["blue".to_owned()] }).into();
 
-    segment1.set_payload(6, 1.into(), &payload_option1, &None).unwrap();
-    segment1.set_payload(6, 2.into(), &payload_option1, &None).unwrap();
-    segment1.set_payload(6, 3.into(), &payload_option3, &None).unwrap();
-    segment1.set_payload(6, 4.into(), &payload_option2, &None).unwrap();
-    segment1.set_payload(6, 5.into(), &payload_option2, &None).unwrap();
+    segment1
+        .set_payload(6, 1.into(), &payload_option1, &None)
+        .unwrap();
+    segment1
+        .set_payload(6, 2.into(), &payload_option1, &None)
+        .unwrap();
+    segment1
+        .set_payload(6, 3.into(), &payload_option3, &None)
+        .unwrap();
+    segment1
+        .set_payload(6, 4.into(), &payload_option2, &None)
+        .unwrap();
+    segment1
+        .set_payload(6, 5.into(), &payload_option2, &None)
+        .unwrap();
 
     segment1
 }
