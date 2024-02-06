@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::io::Write as _;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::{fs, io};
@@ -10,6 +11,7 @@ use crate::operations::ClockTag;
 use crate::shards::shard::PeerId;
 
 #[derive(Debug, Default, Deserialize, Serialize)]
+#[serde(transparent)]
 pub struct ClockMap {
     clocks: HashMap<ClockId, Clock>,
 }
@@ -35,7 +37,11 @@ impl ClockMap {
 
     pub fn store(&self, path: &Path) -> Result<()> {
         let file = fs::File::create(path)?;
-        serde_json::to_writer(io::BufWriter::new(file), &self)?;
+
+        let mut writer = io::BufWriter::new(file);
+        serde_json::to_writer(&mut writer, &self)?;
+        writer.flush()?;
+
         Ok(())
     }
 

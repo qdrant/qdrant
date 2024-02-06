@@ -26,7 +26,7 @@ use segment::types::{
     QuantizationConfig, SegmentConfig, SegmentType,
 };
 use segment::utils::mem::Mem;
-use tokio::fs::{copy, create_dir_all, remove_dir_all};
+use tokio::fs::{copy, create_dir_all, remove_dir_all, remove_file};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{mpsc, oneshot, Mutex, RwLock as TokioRwLock};
@@ -37,7 +37,7 @@ use super::update_tracker::UpdateTracker;
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
 use crate::collection_manager::optimizers::TrackerLog;
-use crate::common::file_utils::move_dir;
+use crate::common::file_utils::{move_dir, move_file};
 use crate::config::CollectionConfig;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{
@@ -89,6 +89,12 @@ impl LocalShard {
         move_dir(wal_from, wal_to).await?;
         move_dir(segments_from, segments_to).await?;
 
+        let clock_map_from = Self::clock_map_path(from);
+        if clock_map_from.exists() {
+            let clock_map_to = Self::clock_map_path(to);
+            move_file(clock_map_from, clock_map_to).await?;
+        }
+
         Ok(())
     }
 
@@ -108,10 +114,17 @@ impl LocalShard {
         if wal_path.exists() {
             remove_dir_all(wal_path).await?;
         }
+
         // Delete segments
         let segments_path = Self::segments_path(shard_path);
         if segments_path.exists() {
             remove_dir_all(segments_path).await?;
+        }
+
+        // Delete clock map
+        let clock_map_path = Self::clock_map_path(shard_path);
+        if clock_map_path.exists() {
+            remove_file(clock_map_path).await?;
         }
 
         Ok(())
@@ -677,10 +690,19 @@ impl LocalShard {
         })
         .await??;
 
+        // copy clock map
+        let clock_map_path = Self::clock_map_path(&self.path);
+
+        if clock_map_path.exists() {
+            let target_clock_map_path = Self::clock_map_path(snapshot_shard_path);
+            copy(clock_map_path, target_clock_map_path).await?;
+        }
+
         // copy shard's config
         let shard_config_path = ShardConfig::get_config_path(&self.path);
         let target_shard_config_path = snapshot_shard_path.join(SHARD_CONFIG_FILE);
         copy(&shard_config_path, &target_shard_config_path).await?;
+
         Ok(())
     }
 
