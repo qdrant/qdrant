@@ -2974,7 +2974,7 @@ pub struct SetPayloadPoints {
     /// Option for custom sharding to specify used shard keys
     #[prost(message, optional, tag = "7")]
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
-    /// Option for custom sharding to specify used shard keys
+    /// Option for indicate property of payload
     #[prost(string, optional, tag = "8")]
     pub key: ::core::option::Option<::prost::alloc::string::String>,
 }

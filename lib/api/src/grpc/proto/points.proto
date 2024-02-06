@@ -119,6 +119,7 @@ message SetPayloadPoints {
   optional PointsSelector points_selector = 5; // Affected points
   optional WriteOrdering ordering = 6; // Write ordering guarantees
   optional ShardKeySelector shard_key_selector = 7; // Option for custom sharding to specify used shard keys
+  optional string key = 8; // Option for indicate property of payload
 }
 
 message DeletePayloadPoints {
@@ -465,6 +466,7 @@ message PointsUpdateOperation {
       map<string, Value> payload = 1;
       optional PointsSelector points_selector = 2; // Affected points
       optional ShardKeySelector shard_key_selector = 3; // Option for custom sharding to specify used shard keys
+      optional string key = 4; // Option for path to indicate property
   }
   message DeletePayload {
       repeated string keys = 1;
