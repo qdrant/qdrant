@@ -1,3 +1,4 @@
+use num_cmp::NumCmp;
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -86,16 +87,15 @@ impl OrderBy {
     }
 }
 
-#[derive(Eq)]
 pub enum OrderingValue {
-    Float(OrderedFloat<FloatPayloadType>),
+    Float(FloatPayloadType),
     Int(i64),
 }
 
 impl From<OrderingValue> for serde_json::Value {
     fn from(value: OrderingValue) -> Self {
         match value {
-            OrderingValue::Float(value) => serde_json::Number::from_f64(value.into_inner())
+            OrderingValue::Float(value) => serde_json::Number::from_f64(value)
                 .map(serde_json::Value::Number)
                 .unwrap_or(serde_json::Value::Null),
             OrderingValue::Int(value) => serde_json::Value::Number(serde_json::Number::from(value)),
@@ -105,7 +105,7 @@ impl From<OrderingValue> for serde_json::Value {
 
 impl From<FloatPayloadType> for OrderingValue {
     fn from(value: FloatPayloadType) -> Self {
-        OrderingValue::Float(OrderedFloat(value))
+        OrderingValue::Float(value)
     }
 }
 
@@ -115,13 +115,15 @@ impl From<i64> for OrderingValue {
     }
 }
 
+impl Eq for OrderingValue {}
+
 impl PartialEq for OrderingValue {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (OrderingValue::Float(a), OrderingValue::Float(b)) => a == b,
             (OrderingValue::Int(a), OrderingValue::Int(b)) => a == b,
-            (OrderingValue::Float(a), OrderingValue::Int(b)) => a == &OrderedFloat(*b as f64),
-            (OrderingValue::Int(a), OrderingValue::Float(b)) => OrderedFloat(*a as f64) == *b,
+            (OrderingValue::Float(a), OrderingValue::Int(b)) => a.num_eq(*b),
+            (OrderingValue::Int(a), OrderingValue::Float(b)) => a.num_eq(*b),
         }
     }
 }
@@ -135,10 +137,32 @@ impl PartialOrd for OrderingValue {
 impl Ord for OrderingValue {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         match (self, other) {
-            (OrderingValue::Float(a), OrderingValue::Float(b)) => a.cmp(b),
+            (OrderingValue::Float(a), OrderingValue::Float(b)) => a
+                .num_cmp(*b)
+                .unwrap_or_else(|| OrderedFloat(*a).cmp(&OrderedFloat(*b))),
             (OrderingValue::Int(a), OrderingValue::Int(b)) => a.cmp(b),
-            (OrderingValue::Float(a), OrderingValue::Int(b)) => a.cmp(&OrderedFloat(*b as f64)),
-            (OrderingValue::Int(a), OrderingValue::Float(b)) => OrderedFloat(*a as f64).cmp(b),
+            (OrderingValue::Float(a), OrderingValue::Int(b)) => {
+                a.num_cmp(*b).unwrap_or_else(|| {
+                    if a.num_gt(*b) {
+                        std::cmp::Ordering::Greater
+                    } else if a.num_lt(*b) {
+                        std::cmp::Ordering::Less
+                    } else {
+                        std::cmp::Ordering::Equal
+                    }
+                })
+            }
+            (OrderingValue::Int(a), OrderingValue::Float(b)) => {
+                a.num_cmp(*b).unwrap_or_else(|| {
+                    if a.num_gt(*b) {
+                        std::cmp::Ordering::Greater
+                    } else if a.num_lt(*b) {
+                        std::cmp::Ordering::Less
+                    } else {
+                        std::cmp::Ordering::Equal
+                    }
+                })
+            }
         }
     }
 }
