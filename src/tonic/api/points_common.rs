@@ -333,7 +333,7 @@ pub async fn set_payload(
         points,
         filter,
         shard_key: shard_key_selector.map(ShardKeySelector::from),
-        payload_selector: key,
+        key,
     };
 
     let timing = Instant::now();
@@ -376,7 +376,7 @@ pub async fn overwrite_payload(
         filter,
         shard_key: shard_key_selector.map(ShardKeySelector::from),
         // overwrite operation don't support indicate path of property
-        payload_selector: None,
+        key: None,
     };
 
     let timing = Instant::now();
