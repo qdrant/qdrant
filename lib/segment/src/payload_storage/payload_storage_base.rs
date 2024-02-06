@@ -17,6 +17,9 @@ pub trait PayloadStorage {
     /// Assign payload to a concrete point with a concrete payload value
     fn assign(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()>;
 
+    /// Assign payload to a concrete point with a concrete payload value by path
+    fn assign_by_key(&mut self, point_id: PointOffsetType, payload: &Payload, key: &str) -> OperationResult<()>;
+
     /// Get payload for point
     fn payload(&self, point_id: PointOffsetType) -> OperationResult<Payload>;
 

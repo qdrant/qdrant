@@ -20,6 +20,8 @@ pub struct SetPayload {
     pub filter: Option<Filter>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<ShardKeySelector>,
+    /// Assigns payload to each point that satisfy this path of property
+    pub payload_selector: Option<String>,
 }
 
 /// This data structure is used inside shard operations queue
@@ -34,6 +36,8 @@ pub struct SetPayloadOp {
     pub points: Option<Vec<PointIdType>>,
     /// Assigns payload to each point that satisfy this filter condition
     pub filter: Option<Filter>,
+    /// Payload selector to indicate property of payload, e.g. `a.b.c`
+    pub payload_selector: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -42,6 +46,7 @@ struct SetPayloadShadow {
     pub points: Option<Vec<PointIdType>>,
     pub filter: Option<Filter>,
     pub shard_key: Option<ShardKeySelector>,
+    pub payload_selector: Option<String>,
 }
 
 pub struct PointsSelectorValidationError;
@@ -65,6 +70,7 @@ impl TryFrom<SetPayloadShadow> for SetPayload {
                 points: value.points,
                 filter: value.filter,
                 shard_key: value.shard_key,
+                payload_selector: value.payload_selector,
             })
         } else {
             Err(PointsSelectorValidationError)
@@ -212,6 +218,7 @@ impl SplitByShard for SetPayloadOp {
                         points: Some(points),
                         payload: self.payload.clone(),
                         filter: self.filter.clone(),
+                        payload_selector: self.payload_selector.clone(),
                     }
                 })
             }

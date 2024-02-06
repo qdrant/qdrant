@@ -55,6 +55,14 @@ impl PayloadStorage for PayloadStorageEnum {
         }
     }
 
+    fn assign_by_key(&mut self, point_id: PointOffsetType, payload: &Payload, key: &str) -> OperationResult<()> {
+        match self {
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.assign_by_key(point_id, payload, key),
+            PayloadStorageEnum::SimplePayloadStorage(s) => s.assign_by_key(point_id, payload, key),
+            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.assign_by_key(point_id, payload, key),
+        }
+    }
+
     fn payload(&self, point_id: PointOffsetType) -> OperationResult<Payload> {
         match self {
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.payload(point_id),

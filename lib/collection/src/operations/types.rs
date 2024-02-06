@@ -1063,6 +1063,7 @@ impl From<OperationError> for CollectionError {
             OperationError::WrongSparse => Self::BadInput {
                 description: "Conversion between sparse and regular vectors failed".to_string(),
             },
+            OperationError::WrongPayloadKey { description } => Self::BadInput { description: description },
         }
     }
 }

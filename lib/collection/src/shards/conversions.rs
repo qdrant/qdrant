@@ -237,6 +237,7 @@ pub fn internal_set_payload(
             points_selector,
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
+            key: set_payload.payload_selector,
         }),
     }
 }
