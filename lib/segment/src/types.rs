@@ -943,15 +943,12 @@ impl Payload {
         let segs = key.split('.').collect::<Vec<&str>>();
         if segs.is_empty() {
             return Err(OperationError::WrongPayloadKey {
-                description: "Unexpected payload key: \"\"".to_string(),
+                description: format!("Unexpected payload key: \"{key}\""),
             });
         }
-        if segs.len() == 1 {
-            return Ok(&mut self.0);
-        }
         let mut v = &mut self.0;
-        for seg in segs[..segs.len() - 1].iter() {
-            let v1 = v.get_mut(*seg).ok_or(OperationError::WrongPayloadKey {
+        for seg in segs {
+            let v1 = v.get_mut(seg).ok_or(OperationError::WrongPayloadKey {
                 description: format!("Can't find payload key segment: \"{seg}\"."),
             })?;
             if let Value::Object(v2) = v1 {

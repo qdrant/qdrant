@@ -236,6 +236,83 @@ def test_payload_operations():
     assert response.ok
     assert len(response.json()['result']['points']) == 3
 
+    # set property of payload by empty key
+    # response = request_with_validation(
+        # api='/collections/{collection_name}/points/payload',
+        # method="POST",
+        # path_params={'collection_name': collection_name},
+        # body={
+            # "payload": {"key6": "xxx"},
+            # "points": [1],
+            # "key": ""
+        # }
+    # )
+    # assert not response.ok
+
+    # response = request_with_validation(
+        # api='/collections/{collection_name}/points/{id}',
+        # method="GET",
+        # path_params={'collection_name': collection_name, 'id': 1},
+    # )
+    # assert response.ok
+    # assert len(response.json()['result']['payload']) == 3
+
+    # set property of payload with top level
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/payload',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "payload": {"key6": {"subkey": "xxx", "subkey2": {"subkey3": "xxx"}}},
+            "points": [1],
+        }
+    )
+    assert response.ok
+
+    # set property of payload with top level key
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/payload',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "payload": {"subkey": "yyy"},
+            "points": [1],
+            "key": "key6",
+        }
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': 1},
+    )
+    assert response.ok
+    assert len(response.json()['result']['payload']) == 4
+    assert response.json()['result']['payload']["key6"]["subkey"] == "yyy"
+
+    # set property of payload with nested key
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/payload',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "payload": {"subkey3": "yyy"},
+            "points": [1],
+            "key": "key6.subkey2",
+        }
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': 1},
+    )
+    assert response.ok
+    assert len(response.json()['result']['payload']) == 4
+    assert response.json()['result']['payload']["key6"]["subkey2"]["subkey3"] == "yyy"
+
     response = request_with_validation(
         api='/collections/{collection_name}/points/payload/delete',
         method="POST",
