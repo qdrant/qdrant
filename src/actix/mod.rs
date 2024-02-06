@@ -157,10 +157,12 @@ pub fn init(
                 .configure(config_recommend_api)
                 .configure(config_discovery_api)
                 .configure(config_shards_api)
-                .service(get_point)
-                .service(get_points)
+                // Ordering of services is important for correct path pattern matching
+                // See: <https://github.com/qdrant/qdrant/issues/3543>
                 .service(scroll_points)
-                .service(count_points);
+                .service(count_points)
+                .service(get_point)
+                .service(get_points);
 
             if web_ui_available {
                 app = app.service(
