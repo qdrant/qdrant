@@ -86,10 +86,10 @@ impl ValueChecker for Match {
             },
             Match::Any(MatchAny { any }) => match (payload, any) {
                 (Value::String(stored), AnyVariants::Keywords(list)) => {
-                    if list.len() > 3 {
-                        list.contains(stored.as_str())
-                    } else {
+                    if list.len() < 13 {
                         list.iter().any(|i| i.as_str() == stored.as_str())
+                    } else {
+                        list.contains(stored.as_str())
                     }
                 }
                 (Value::Number(stored), AnyVariants::Integers(list)) => stored
@@ -100,10 +100,10 @@ impl ValueChecker for Match {
             },
             Match::Except(MatchExcept { except }) => match (payload, except) {
                 (Value::String(stored), AnyVariants::Keywords(list)) => {
-                    if list.len() > 3 {
-                        list.contains(stored.as_str())
+                    if list.len() < 13 {
+                        !list.iter().any(|i| i.as_str() == stored.as_str())
                     } else {
-                        list.iter().any(|i| i.as_str() == stored.as_str())
+                        !list.contains(stored.as_str())
                     }
                 }
                 (Value::Number(stored), AnyVariants::Integers(list)) => stored

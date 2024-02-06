@@ -1,7 +1,7 @@
-use std::collections::HashSet;
 use std::ops::{Range, RangeInclusive};
 
 use fnv::FnvBuildHasher;
+use indexmap::IndexSet;
 use itertools::Itertools;
 use rand::distributions::{Alphanumeric, DistString};
 use rand::seq::SliceRandom;
@@ -212,7 +212,7 @@ pub fn random_match_any_filter<R: Rng + ?Sized>(
 ) -> Filter {
     let num_existing = (len as f32 * (percent_existing / 100.0)) as usize;
 
-    let mut values: HashSet<String, FnvBuildHasher> = (0..len - num_existing)
+    let mut values: IndexSet<String, FnvBuildHasher> = (0..len - num_existing)
         .map(|_| {
             let slen = rnd_gen.gen_range(1..15);
             Alphanumeric.sample_string(rnd_gen, slen)

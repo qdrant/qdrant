@@ -1,10 +1,11 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use common::types::PointOffsetType;
 use fnv::FnvBuildHasher;
+use indexmap::IndexSet;
 use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
@@ -858,7 +859,7 @@ fn test_any_matcher_cardinality_estimation() {
 
     let (struct_segment, _) = build_test_segments(dir1.path(), dir2.path());
 
-    let keywords: HashSet<String, FnvBuildHasher> =
+    let keywords: IndexSet<String, FnvBuildHasher> =
         ["value1", "value2"].iter().map(|i| i.to_string()).collect();
     let any_match =
         FieldCondition::new_match(STR_KEY, Match::new_any(AnyVariants::Keywords(keywords)));

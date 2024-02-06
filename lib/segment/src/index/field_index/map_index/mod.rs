@@ -1,8 +1,6 @@
 pub mod immutable_map_index;
 pub mod mutable_map_index;
 
-use std::borrow::Borrow;
-use std::collections::HashSet;
 use std::fmt::Display;
 use std::hash::{BuildHasher, Hash};
 use std::str::FromStr;
@@ -10,6 +8,7 @@ use std::sync::Arc;
 
 use common::types::PointOffsetType;
 use immutable_map_index::ImmutableMapIndex;
+use indexmap::IndexSet;
 use itertools::Itertools;
 use mutable_map_index::MutableMapIndex;
 use parking_lot::RwLock;
@@ -293,14 +292,29 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> MapIndex<N> {
         }
     }
 
-    fn except_iterator<'a, A, K, S>(
+    fn except_iterator<'a, Q>(
         &'a self,
-        excluded: &'a HashSet<K, A>,
+        excluded: &'a [Q],
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a>
+    where
+        Q: PartialEq<N>,
+    {
+        Box::new(
+            self.get_values_iterator()
+                .filter(|key| !excluded.iter().any(|e| e.eq(*key)))
+                .flat_map(|key| self.get_iterator(key))
+                .unique(),
+        )
+    }
+
+    fn except_set<'a, A, K, S>(
+        &'a self,
+        excluded: &'a IndexSet<K, A>,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a>
     where
         A: BuildHasher,
-        K: Borrow<S> + Hash + Eq,
-        N: Borrow<S>,
+        K: std::borrow::Borrow<S> + Hash + Eq,
+        N: std::borrow::Borrow<S>,
         S: ?Sized + Hash + Eq,
     {
         Box::new(
@@ -356,7 +370,7 @@ impl PayloadFieldIndex for MapIndex<SmolStr> {
             },
             Some(Match::Except(MatchExcept {
                 except: AnyVariants::Keywords(keywords),
-            })) => Ok(self.except_iterator::<_, _, str>(keywords)),
+            })) => Ok(self.except_set::<_, _, str>(keywords)),
             _ => Err(OperationError::service_error("failed to filter")),
         }
     }

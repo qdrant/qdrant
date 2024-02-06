@@ -306,9 +306,13 @@ pub fn get_match_checkers(index: &FieldIndex, cond_match: Match) -> Option<Condi
             (AnyVariants::Keywords(list), FieldIndex::KeywordIndex(index)) => {
                 Some(Box::new(move |point_id: PointOffsetType| {
                     index.get_values(point_id).map_or(false, |values| {
-                        values
-                            .iter()
-                            .any(|k| list.iter().any(|s| s.as_str() == k.as_ref()))
+                        if list.len() < 13 {
+                            values
+                                .iter()
+                                .any(|k| list.iter().any(|s| s.as_str() == k.as_ref()))
+                        } else {
+                            values.iter().any(|k| list.contains(k.as_str()))
+                        }
                     })
                 }))
             }
@@ -325,9 +329,13 @@ pub fn get_match_checkers(index: &FieldIndex, cond_match: Match) -> Option<Condi
             (AnyVariants::Keywords(list), FieldIndex::KeywordIndex(index)) => {
                 Some(Box::new(move |point_id: PointOffsetType| {
                     index.get_values(point_id).map_or(false, |values| {
-                        values
-                            .iter()
-                            .any(|k| !list.iter().any(|s| s.as_str() == k.as_ref()))
+                        if list.len() < 13 {
+                            values
+                                .iter()
+                                .any(|k| !list.iter().any(|s| s.as_str() == k.as_ref()))
+                        } else {
+                            values.iter().any(|k| !list.contains(k.as_str()))
+                        }
                     })
                 }))
             }

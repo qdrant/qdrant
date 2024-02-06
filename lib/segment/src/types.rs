@@ -11,6 +11,7 @@ use common::types::ScoreType;
 use fnv::FnvBuildHasher;
 use geo::prelude::HaversineDistance;
 use geo::{Contains, Coord, LineString, Point, Polygon};
+use indexmap::IndexSet;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
@@ -1189,8 +1190,8 @@ pub enum ValueVariants {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum AnyVariants {
-    Keywords(HashSet<String, FnvBuildHasher>),
-    Integers(HashSet<IntPayloadType>),
+    Keywords(IndexSet<String, FnvBuildHasher>),
+    Integers(Vec<IntPayloadType>),
 }
 
 /// Exact match of the given value
@@ -1318,7 +1319,7 @@ impl From<IntPayloadType> for Match {
 
 impl From<Vec<String>> for Match {
     fn from(keywords: Vec<String>) -> Self {
-        let keywords: HashSet<String, FnvBuildHasher> = keywords.into_iter().collect();
+        let keywords: IndexSet<String, FnvBuildHasher> = keywords.into_iter().collect();
         Self::Any(MatchAny {
             any: AnyVariants::Keywords(keywords),
         })
@@ -1327,7 +1328,7 @@ impl From<Vec<String>> for Match {
 
 impl From<Vec<String>> for MatchExcept {
     fn from(keywords: Vec<String>) -> Self {
-        let keywords: HashSet<String, FnvBuildHasher> = keywords.into_iter().collect();
+        let keywords: IndexSet<String, FnvBuildHasher> = keywords.into_iter().collect();
         MatchExcept {
             except: AnyVariants::Keywords(keywords),
         }
@@ -1336,7 +1337,6 @@ impl From<Vec<String>> for MatchExcept {
 
 impl From<Vec<IntPayloadType>> for Match {
     fn from(integers: Vec<IntPayloadType>) -> Self {
-        let integers: HashSet<_> = integers.into_iter().collect();
         Self::Any(MatchAny {
             any: AnyVariants::Integers(integers),
         })
@@ -1345,7 +1345,6 @@ impl From<Vec<IntPayloadType>> for Match {
 
 impl From<Vec<IntPayloadType>> for MatchExcept {
     fn from(integers: Vec<IntPayloadType>) -> Self {
-        let integers: HashSet<_> = integers.into_iter().collect();
         MatchExcept {
             except: AnyVariants::Integers(integers),
         }
@@ -2139,7 +2138,6 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
-    use fnv::FnvHashSet;
     use serde::de::DeserializeOwned;
     use serde_json;
     use serde_json::json;
@@ -2381,7 +2379,7 @@ mod tests {
         };
         if let AnyVariants::Keywords(kws) = &m.any {
             assert_eq!(kws.len(), 3);
-            let expect = FnvHashSet::from_iter(
+            let expect: IndexSet<_, FnvBuildHasher> = IndexSet::from_iter(
                 ["Bourne", "Momoa", "Statham"]
                     .into_iter()
                     .map(|i| i.to_string()),

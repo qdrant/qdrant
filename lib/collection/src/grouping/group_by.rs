@@ -1,8 +1,9 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::future::Future;
 use std::time::Duration;
 
 use fnv::FnvBuildHasher;
+use indexmap::IndexSet;
 use segment::types::{
     AnyVariants, Condition, FieldCondition, Filter, Match, ScoredPoint, WithPayloadInterface,
 };
@@ -426,14 +427,14 @@ fn values_to_any_variants(values: Vec<Value>) -> Vec<AnyVariants> {
     let mut any_variants = Vec::new();
 
     // gather int values
-    let ints: HashSet<i64> = values.iter().filter_map(|v| v.as_i64()).collect();
+    let ints: Vec<_> = values.iter().filter_map(|v| v.as_i64()).collect();
 
     if !ints.is_empty() {
         any_variants.push(AnyVariants::Integers(ints));
     }
 
     // gather string values
-    let strs: HashSet<_, FnvBuildHasher> = values
+    let strs: IndexSet<_, FnvBuildHasher> = values
         .iter()
         .filter_map(|v| v.as_str().map(|s| s.into()))
         .collect();
