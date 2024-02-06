@@ -62,26 +62,29 @@ impl Drop for ClockGuard {
 
 #[derive(Debug)]
 struct Clock {
-    clock: AtomicU64,
+    /// Holds the next clock tick to use
+    next_tick: AtomicU64,
     available: AtomicBool,
 }
 
 impl Clock {
     fn new_locked() -> Self {
         Self {
-            clock: AtomicU64::new(0),
+            next_tick: AtomicU64::new(0),
             available: AtomicBool::new(false),
         }
     }
 
-    #[must_use = "new clock value must be used"]
+    /// Tick the clock and get the new clock tick to use
+    #[must_use = "new clock tick value must be used"]
     fn tick_once(&self) -> u64 {
-        self.clock.fetch_add(1, Ordering::Relaxed)
+        // Fetch the next clock tick to return, and increment it by 1 after
+        self.next_tick.fetch_add(1, Ordering::Relaxed)
     }
 
     fn advance_to(&self, new_tick: u64) -> u64 {
-        let current_tick = self.clock.fetch_max(new_tick + 1, Ordering::Relaxed);
-        cmp::max(current_tick, new_tick + 1)
+        let next_tick = self.next_tick.fetch_max(new_tick + 1, Ordering::Relaxed);
+        cmp::max(next_tick, new_tick + 1)
     }
 
     fn lock(&self) -> bool {
