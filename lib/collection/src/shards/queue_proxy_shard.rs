@@ -376,7 +376,7 @@ impl Inner {
 
     /// Set or release what WAL versions to keep preventing acknowledgment/truncation.
     ///
-    /// Because this proxy shard relies on the WAL to obtain operations history, it cannot be
+    /// Because this proxy shard relies on the WAL to obtain operations in the past, it cannot be
     /// truncated before all these update operations have been flushed.
     /// Using this function we set the WAL not to acknowledge and truncate from a specific point.
     ///
