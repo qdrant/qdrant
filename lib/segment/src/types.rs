@@ -885,9 +885,76 @@ impl Payload {
         for (key, value) in &value.0 {
             match value {
                 Value::Null => self.0.remove(key),
+                Value::Object(map) => {
+                    log::debug!("ladida map {:?}", map);
+                    if let Some(current_value) = self.0.get_value_opt(key) {
+                        match current_value {
+                            MultiValue::Single(single_value) => {
+                                if let Some(value2) = single_value {
+                                    match value2 {
+                                        Value::Object(map2) => self.0.insert(
+                                            key.to_owned(),
+                                            self.merge_maps(map2.clone(), map),
+                                        ),
+                                        _ => self.0.insert(key.to_owned(), value.to_owned()),
+                                    };
+                                }
+                                self.0.insert(key.to_owned(), value.to_owned())
+                            }
+                            _ => None,
+                        };
+                    }
+                    self.0.insert(key.to_owned(), value.to_owned())
+                }
                 _ => self.0.insert(key.to_owned(), value.to_owned()),
             };
         }
+    }
+
+    fn merge_maps(
+        &self,
+        mut original: Map<String, Value>,
+        extension: &Map<String, Value>,
+    ) -> Value {
+        log::debug!("Merging maps!");
+        for ket in original.keys() {
+            log::debug!("Original has key {}", ket);
+        }
+        for (key, value) in extension {
+            log::debug!("Changing key {}!", key);
+            match value {
+                Value::Null => original.remove(key),
+                Value::Object(map) => {
+                    if let Some(current_value) = original.get_value_opt(key) {
+                        match current_value {
+                            MultiValue::Single(single_value) => {
+                                if let Some(original_value) = single_value {
+                                    match original_value {
+                                        Value::Object(original_map) => original.insert(
+                                            key.to_owned(),
+                                            self.merge_maps(original_map.clone(), map),
+                                        ),
+                                        _ => original.insert(key.to_owned(), value.to_owned()),
+                                    }
+                                } else {
+                                    original.insert(key.to_owned(), value.to_owned())
+                                }
+                            }
+                            _ => original.insert(key.to_owned(), value.to_owned()),
+                        }
+                    } else {
+                        original.insert(key.to_owned(), value.to_owned())
+                    }
+                }
+                _ => original.insert(key.to_owned(), value.to_owned()),
+            };
+        }
+
+        for ket in original.keys() {
+            log::debug!("Original has key {}", ket);
+        }
+
+        return Value::Object(original);
     }
 
     pub fn remove(&mut self, path: &str) -> Vec<Value> {
