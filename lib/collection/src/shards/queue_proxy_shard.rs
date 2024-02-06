@@ -87,7 +87,7 @@ impl QueueProxyShard {
         let wal_lock = wal.lock();
 
         // If start version is not in current WAL bounds, we cannot reliably transfer WAL
-        let (first_idx, last_idx) = (wal_lock.first_index(), wal_lock.last_index());
+        let (first_idx, last_idx) = (wal_lock.first_physical_index(), wal_lock.last_index());
         if version < first_idx || version > last_idx {
             return Err((wrapped_shard, CollectionError::service_error(format!("Cannot create queue proxy shard from version {version} because it is out of WAL bounds ({first_idx}..={last_idx})"))));
         }
