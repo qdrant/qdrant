@@ -275,3 +275,69 @@ def test_payload_operations():
     )
     assert response.ok
     assert len(response.json()['result']['points']) == 0
+
+
+def test_set_payload_merge():
+    payload = {
+        "var1": 1,
+        "map1": {
+            "var2": 2,
+            "var3": 3,
+            "map2": {
+                "var4": 4,
+                "var5": 5
+            }
+        }
+    }
+    # create payload
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/payload',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "payload": payload,
+            "points": [6]
+        }
+    )
+    assert response.ok
+
+    # check payload
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': 6},
+    )
+    assert response.ok
+    assert response.json()['result']['payload'] == payload
+
+    # Test merge maps
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/payload',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "payload": {
+                "map1": {
+                    "map2": {
+                        "var5": 101
+                    }
+                }
+            },
+            "points": [6]
+        }
+    )
+
+    assert response.ok
+
+    # check payload
+    payload["map1"]["map2"]["var5"] = 101
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': 6},
+    )
+    assert response.ok
+    assert response.json()['result']['payload'] == payload
+
