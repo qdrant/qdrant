@@ -2041,7 +2041,6 @@ impl Filter {
         };
         Filter {
             should: merge_component(self.should.clone(), other.should.clone()),
-            // TODO
             min_should: {
                 match (self.min_should.clone(), other.min_should.clone()) {
                     (None, None) => None,
@@ -2049,7 +2048,11 @@ impl Filter {
                     (None, Some(other)) => Some(other),
                     (Some(mut this), Some(other)) => {
                         this.conditions.extend(other.conditions);
-                        Some(this) // min_count follows self.min_should.min_count
+
+                        // The union of conditions should be able to have at least the bigger of the two min_counts
+                        this.min_count = this.min_count.max(other.min_count);
+
+                        Some(this)
                     }
                 }
             },

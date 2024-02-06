@@ -464,12 +464,8 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
 
     // delete points with id (0, 3)
     let to_be_deleted: HashSet<PointIdType> = vec![0.into(), 3.into()].into_iter().collect();
-    let delete_filter = segment::types::Filter {
-        should: None,
-        min_should: None,
-        must: Some(vec![Condition::HasId(HasIdCondition::from(to_be_deleted))]),
-        must_not: None,
-    };
+    let delete_filter =
+        segment::types::Filter::new_must(Condition::HasId(HasIdCondition::from(to_be_deleted)));
 
     let delete_points = CollectionUpdateOperations::PointOperation(
         PointOperations::DeletePointsByFilter(delete_filter),

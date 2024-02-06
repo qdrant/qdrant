@@ -448,19 +448,13 @@ mod tests {
 
     #[test]
     fn min_should_estimation_query_test() {
-        let query = Filter {
-            should: None,
-            min_should: Some(MinShould {
-                conditions: vec![
-                    test_condition("color".to_owned()),
-                    test_condition("size".to_owned()),
-                ],
-                min_count: 1,
-            }),
-            must: None,
-            must_not: None,
-        };
-
+        let query = Filter::new_min_should(MinShould {
+            conditions: vec![
+                test_condition("color".to_owned()),
+                test_condition("size".to_owned()),
+            ],
+            min_count: 1,
+        });
         let estimation = estimate_filter(&test_estimator, &query, TOTAL);
         assert_eq!(estimation.primary_clauses.len(), 2);
         assert!(estimation.max <= TOTAL);
@@ -470,19 +464,14 @@ mod tests {
 
     #[test]
     fn another_min_should_estimation_query_test() {
-        let query = Filter {
-            should: None,
-            min_should: Some(MinShould {
-                conditions: vec![
-                    test_condition("color".to_owned()),
-                    test_condition("size".to_owned()),
-                    test_condition("price".to_owned()),
-                ],
-                min_count: 2,
-            }),
-            must: None,
-            must_not: None,
-        };
+        let query = Filter::new_min_should(MinShould {
+            conditions: vec![
+                test_condition("color".to_owned()),
+                test_condition("size".to_owned()),
+                test_condition("price".to_owned()),
+            ],
+            min_count: 2,
+        });
 
         let estimation = estimate_filter(&test_estimator, &query, TOTAL);
         assert_eq!(estimation.primary_clauses.len(), 3);
@@ -498,15 +487,10 @@ mod tests {
             test_condition("size".to_owned()),
             test_condition("price".to_owned()),
         ];
-        let min_should_query = Filter {
-            should: None,
-            min_should: Some(MinShould {
-                conditions: conditions.clone(),
-                min_count: 3,
-            }),
-            must: None,
-            must_not: None,
-        };
+        let min_should_query = Filter::new_min_should(MinShould {
+            conditions: conditions.clone(),
+            min_count: 3,
+        });
 
         let estimation = estimate_filter(&test_estimator, &min_should_query, TOTAL);
 

@@ -246,12 +246,7 @@ pub fn random_nested_filter<R: Rng + ?Sized>(rnd_gen: &mut R) -> Filter {
         nested_str_key,
         random_keyword(rnd_gen).into(),
     ));
-    Filter {
-        should: Some(vec![condition]),
-        min_should: None,
-        must: None,
-        must_not: None,
-    }
+    Filter::new_should(condition)
 }
 
 fn random_json<R: Rng + ?Sized>(rnd_gen: &mut R) -> Value {

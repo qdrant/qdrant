@@ -203,15 +203,7 @@ fn test_filtering_context_consistency() {
     {
         let nested_condition_3 = Condition::new_nested(
             "arr1",
-            Filter {
-                must: Some(vec![Condition::Field(FieldCondition::new_match(
-                    "b",
-                    1.into(),
-                ))]),
-                should: None,
-                min_should: None,
-                must_not: None,
-            },
+            Filter::new_must(Condition::Field(FieldCondition::new_match("b", 1.into()))),
         );
 
         let nester_condition_3_1 = Condition::new_nested(
@@ -219,15 +211,7 @@ fn test_filtering_context_consistency() {
             Filter {
                 must: Some(vec![Condition::new_nested(
                     "arr3",
-                    Filter {
-                        must: Some(vec![Condition::Field(FieldCondition::new_match(
-                            "b",
-                            10.into(),
-                        ))]),
-                        should: None,
-                        min_should: None,
-                        must_not: None,
-                    },
+                    Filter::new_must(Condition::Field(FieldCondition::new_match("b", 10.into()))),
                 )]),
                 should: None,
                 min_should: None,
