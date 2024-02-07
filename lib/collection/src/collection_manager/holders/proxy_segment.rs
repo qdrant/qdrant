@@ -4,10 +4,10 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use ordered_float::OrderedFloat;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::common::operation_error::{OperationResult, SegmentFailedState};
 use segment::data_types::named_vectors::NamedVectors;
+use segment::data_types::order_by::OrderingValue;
 use segment::data_types::vectors::{QueryVector, Vector};
 use segment::entry::entry_point::SegmentEntry;
 use segment::index::field_index::CardinalityEstimation;
@@ -512,7 +512,7 @@ impl SegmentEntry for ProxySegment {
         limit: Option<usize>,
         filter: Option<&'a Filter>,
         order_by: &'a segment::data_types::order_by::OrderBy,
-    ) -> OperationResult<Vec<(OrderedFloat<f64>, PointIdType)>> {
+    ) -> OperationResult<Vec<(OrderingValue, PointIdType)>> {
         let deleted_points = self.deleted_points.read();
         let mut read_points = if deleted_points.is_empty() {
             self.wrapped_segment

@@ -2,11 +2,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
-use ordered_float::OrderedFloat;
-
 use crate::common::operation_error::{OperationResult, SegmentFailedState};
 use crate::data_types::named_vectors::NamedVectors;
-use crate::data_types::order_by::OrderBy;
+use crate::data_types::order_by::{OrderBy, OrderingValue};
 use crate::data_types::vectors::{QueryVector, Vector};
 use crate::index::field_index::CardinalityEstimation;
 use crate::telemetry::SegmentTelemetry;
@@ -133,7 +131,7 @@ pub trait SegmentEntry {
         limit: Option<usize>,
         filter: Option<&'a Filter>,
         order_by: &'a OrderBy,
-    ) -> OperationResult<Vec<(OrderedFloat<f64>, PointIdType)>>;
+    ) -> OperationResult<Vec<(OrderingValue, PointIdType)>>;
 
     /// Read points in [from; to) range
     fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType>;

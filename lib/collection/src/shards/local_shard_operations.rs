@@ -210,7 +210,7 @@ impl LocalShard {
             .zip(top_records)
             .for_each(|(record, (value, _))| {
                 let new_payload =
-                    OrderBy::insert_order_value_in_payload(record.payload.take(), value.0);
+                    OrderBy::insert_order_value_in_payload(record.payload.take(), value);
 
                 record.payload = Some(new_payload);
             });
