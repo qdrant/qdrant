@@ -1,11 +1,11 @@
+use chrono::{DateTime, Utc};
 use num_cmp::NumCmp;
 use ordered_float::OrderedFloat;
-use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
-use crate::types::{Payload, Range, RangeInterface};
+use crate::types::{FloatPayloadType, IntPayloadType, Payload, Range, RangeInterface};
 
 const INTERNAL_KEY_OF_ORDER_BY_VALUE: &str = "____ordered_with____";
 
@@ -39,7 +39,7 @@ impl Direction {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(untagged)]
 pub enum StartFrom {
-    Float(f64),
+    Float(FloatPayloadType),
     Datetime(DateTime<Utc>),
 }
 
@@ -98,7 +98,7 @@ impl OrderBy {
 
 pub enum OrderingValue {
     Float(FloatPayloadType),
-    Int(i64),
+    Int(IntPayloadType),
 }
 
 impl From<OrderingValue> for serde_json::Value {
@@ -118,8 +118,8 @@ impl From<FloatPayloadType> for OrderingValue {
     }
 }
 
-impl From<i64> for OrderingValue {
-    fn from(value: i64) -> Self {
+impl From<IntPayloadType> for OrderingValue {
+    fn from(value: IntPayloadType) -> Self {
         OrderingValue::Int(value)
     }
 }
