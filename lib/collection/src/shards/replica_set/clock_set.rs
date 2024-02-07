@@ -108,7 +108,8 @@ impl Clock {
 
     /// Try to acquire exclusive lock over this clock.
     ///
-    /// Returns `true` if the lock was successfuly acquired, or `false` if the clock is already locked.
+    /// Returns `true` if the lock was successfully acquired, or `false` if the clock is already
+    /// locked.
     fn try_lock(&self) -> bool {
         self.available.swap(false, Ordering::Relaxed)
     }
