@@ -245,9 +245,7 @@ impl ShardReplicaSet {
             .max();
 
         if let Some(new_clock_tick) = new_clock_tick {
-            if new_clock_tick > current_clock_tick || new_clock_tick == 0 {
-                clock.advance_to(new_clock_tick);
-            }
+            clock.advance_to(new_clock_tick);
         }
 
         // Notify consensus about failures if:
