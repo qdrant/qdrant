@@ -1391,13 +1391,13 @@ where
     // YYY-MM-DD HH:MM
     // YYYY-MM-DD
     let datetime =
-        if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%d'T'%H:%M:%S") {
+        if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d'T'%H:%M:%S") {
             naive
-        } else if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S") {
+        } else if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
             naive
-        } else if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M") {
+        } else if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M") {
             naive
-        } else if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(&s, "%Y-%m-%d") {
+        } else if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d") {
             naive
         } else {
             return Err(serde::de::Error::custom("Invalid date/time format"));
@@ -1415,12 +1415,12 @@ where
     D: Deserializer<'de>,
 {
     let str_range = Range::<&str>::deserialize(deserializer)?;
-    let mut datetime_range = Range::default();
-    datetime_range.lt = deserialize_datetime_option::<D>(str_range.lt)?;
-    datetime_range.lte = deserialize_datetime_option::<D>(str_range.lte)?;
-    datetime_range.gt = deserialize_datetime_option::<D>(str_range.gt)?;
-    datetime_range.gte = deserialize_datetime_option::<D>(str_range.gte)?;
-
+    let datetime_range = Range::<chrono::DateTime<chrono::Utc>> {
+        lt: deserialize_datetime_option::<D>(str_range.lt)?,
+        lte: deserialize_datetime_option::<D>(str_range.lte)?,
+        gt: deserialize_datetime_option::<D>(str_range.gt)?,
+        gte: deserialize_datetime_option::<D>(str_range.gte)?,
+    };
     Ok(datetime_range)
 }
 
