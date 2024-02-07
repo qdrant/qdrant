@@ -14,7 +14,7 @@ tracing = ["dep:tracing", "api/tracing", "collection/tracing", "segment/tracing"
 [dev-dependencies]
 tempfile = "3.9.0"
 proptest = "1.4.0"
-env_logger = "0.10.2"
+env_logger = "0.11"
 
 [dependencies]
 thiserror = "1.0"
