@@ -64,7 +64,12 @@ pub fn open_db<T: AsRef<str>>(
     for vector_path in vector_paths {
         column_families.push(vector_path.as_ref());
     }
-    let db = DB::open_cf(&db_options(), path, column_families)?;
+    let options = db_options();
+    let column_with_options = column_families
+        .iter()
+        .map(|cf| (cf, options.clone()))
+        .collect::<Vec<_>>();
+    let db = DB::open_cf_with_opts(&options, path, column_with_options)?;
     Ok(Arc::new(RwLock::new(db)))
 }
 
