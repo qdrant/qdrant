@@ -12,12 +12,12 @@ use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::{AbortShardTransfer, ChangePeerState, ReplicaState};
 use collection::shards::CollectionId;
+use common::cpu::CpuBudget;
 use segment::types::Distance;
 
 /// Test collections for this upper bound of shards.
 /// Testing with more shards is problematic due to `number of open files problem`
 /// See https://github.com/qdrant/qdrant/issues/379
-#[allow(dead_code)]
 pub const N_SHARDS: u32 = 3;
 
 pub const REST_PORT: u16 = 6333;
@@ -30,7 +30,7 @@ pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     memmap_threshold: None,
     indexing_threshold: Some(50_000),
     flush_interval_sec: 30,
-    max_optimization_threads: 2,
+    max_optimization_threads: Some(2),
 };
 
 #[cfg(test)]
@@ -109,6 +109,7 @@ pub async fn new_local_collection(
         dummy_abort_shard_transfer(),
         None,
         None,
+        CpuBudget::default(),
     )
     .await;
 
@@ -124,7 +125,7 @@ pub async fn new_local_collection(
 }
 
 /// Default to a collection with all the shards local
-#[allow(dead_code)]
+#[cfg(test)]
 pub async fn load_local_collection(
     id: CollectionId,
     path: &Path,
@@ -142,6 +143,7 @@ pub async fn load_local_collection(
         dummy_abort_shard_transfer(),
         None,
         None,
+        CpuBudget::default(),
     )
     .await
 }

@@ -134,6 +134,32 @@ pub struct GetCollectionInfoRequest {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CollectionExistsRequest {
+    #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
+    pub collection_name: ::prost::alloc::string::String,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CollectionExists {
+    #[prost(bool, tag = "1")]
+    pub exists: bool,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CollectionExistsResponse {
+    #[prost(message, optional, tag = "1")]
+    pub result: ::core::option::Option<CollectionExists>,
+    /// Time spent to process
+    #[prost(double, tag = "2")]
+    pub time: f64,
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListCollectionsRequest {}
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -194,7 +220,10 @@ pub struct HnswConfigDiff {
     #[prost(uint64, optional, tag = "3")]
     pub full_scan_threshold: ::core::option::Option<u64>,
     ///
-    /// Number of parallel threads used for background index building. If 0 - auto selection.
+    /// Number of parallel threads used for background index building.
+    /// If 0 - automatically select from 8 to 16.
+    /// Best to keep between 8 and 16 to prevent likelihood of building broken/inefficient HNSW graphs.
+    /// On small CPUs, less threads are used.
     #[prost(uint64, optional, tag = "4")]
     pub max_indexing_threads: ::core::option::Option<u64>,
     ///
@@ -296,7 +325,10 @@ pub struct OptimizersConfigDiff {
     #[prost(uint64, optional, tag = "7")]
     pub flush_interval_sec: ::core::option::Option<u64>,
     ///
-    /// Max number of threads, which can be used for optimization. If 0 - `NUM_CPU - 1` will be used
+    /// Max number of threads (jobs) for running optimizations per shard.
+    /// Note: each optimization job will also use `max_indexing_threads` threads by itself for index building.
+    /// If null - have no limit and choose dynamically to saturate CPU.
+    /// If 0 - no optimization threads, optimizations will be disabled.
     #[prost(uint64, optional, tag = "8")]
     pub max_optimization_threads: ::core::option::Option<u64>,
 }
@@ -1098,6 +1130,7 @@ pub enum PayloadSchemaType {
     Geo = 4,
     Text = 5,
     Bool = 6,
+    Datetime = 7,
 }
 impl PayloadSchemaType {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -1113,6 +1146,7 @@ impl PayloadSchemaType {
             PayloadSchemaType::Geo => "Geo",
             PayloadSchemaType::Text => "Text",
             PayloadSchemaType::Bool => "Bool",
+            PayloadSchemaType::Datetime => "Datetime",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -1125,6 +1159,7 @@ impl PayloadSchemaType {
             "Geo" => Some(Self::Geo),
             "Text" => Some(Self::Text),
             "Bool" => Some(Self::Bool),
+            "Datetime" => Some(Self::Datetime),
             _ => None,
         }
     }
@@ -1649,6 +1684,33 @@ pub mod collections_client {
             self.inner.unary(req, path, codec).await
         }
         ///
+        /// Check the existence of a collection
+        pub async fn collection_exists(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CollectionExistsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CollectionExistsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.Collections/CollectionExists",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.Collections", "CollectionExists"));
+            self.inner.unary(req, path, codec).await
+        }
+        ///
         /// Update cluster setup for a collection
         pub async fn update_collection_cluster_setup(
             &mut self,
@@ -1819,6 +1881,15 @@ pub mod collections_server {
             request: tonic::Request<super::CollectionClusterInfoRequest>,
         ) -> std::result::Result<
             tonic::Response<super::CollectionClusterInfoResponse>,
+            tonic::Status,
+        >;
+        ///
+        /// Check the existence of a collection
+        async fn collection_exists(
+            &self,
+            request: tonic::Request<super::CollectionExistsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CollectionExistsResponse>,
             tonic::Status,
         >;
         ///
@@ -2329,6 +2400,52 @@ pub mod collections_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = CollectionClusterInfoSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.Collections/CollectionExists" => {
+                    #[allow(non_camel_case_types)]
+                    struct CollectionExistsSvc<T: Collections>(pub Arc<T>);
+                    impl<
+                        T: Collections,
+                    > tonic::server::UnaryService<super::CollectionExistsRequest>
+                    for CollectionExistsSvc<T> {
+                        type Response = super::CollectionExistsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CollectionExistsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Collections>::collection_exists(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = CollectionExistsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -3759,6 +3876,39 @@ pub struct SearchPointGroups {
     #[prost(message, optional, tag = "16")]
     pub sparse_indices: ::core::option::Option<SparseIndices>,
 }
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StartFrom {
+    #[prost(oneof = "start_from::Value", tags = "1, 2")]
+    pub value: ::core::option::Option<start_from::Value>,
+}
+/// Nested message and enum types in `StartFrom`.
+pub mod start_from {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Value {
+        #[prost(double, tag = "1")]
+        Float(f64),
+        #[prost(int64, tag = "2")]
+        Integer(i64),
+    }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct OrderBy {
+    /// Payload key to order by
+    #[prost(string, tag = "1")]
+    pub key: ::prost::alloc::string::String,
+    /// Ascending or descending order
+    #[prost(enumeration = "Direction", optional, tag = "2")]
+    pub direction: ::core::option::Option<i32>,
+    /// Start from this value
+    #[prost(message, optional, tag = "3")]
+    pub start_from: ::core::option::Option<StartFrom>,
+}
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3790,6 +3940,9 @@ pub struct ScrollPoints {
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[prost(message, optional, tag = "9")]
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
+    /// Order of the results by a payload key
+    #[prost(message, optional, tag = "10")]
+    pub order_by: ::core::option::Option<OrderBy>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4608,6 +4761,9 @@ pub struct FieldCondition {
     /// Check if geo point is within a given polygon
     #[prost(message, optional, tag = "7")]
     pub geo_polygon: ::core::option::Option<GeoPolygon>,
+    /// Check if datetime is within a given range
+    #[prost(message, optional, tag = "8")]
+    pub datetime_range: ::core::option::Option<DatetimeRange>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4674,6 +4830,24 @@ pub struct Range {
     pub gte: ::core::option::Option<f64>,
     #[prost(double, optional, tag = "4")]
     pub lte: ::core::option::Option<f64>,
+}
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DatetimeRange {
+    #[prost(message, optional, tag = "1")]
+    #[validate(custom = "crate::grpc::validate::validate_timestamp")]
+    pub lt: ::core::option::Option<::prost_wkt_types::Timestamp>,
+    #[prost(message, optional, tag = "2")]
+    #[validate(custom = "crate::grpc::validate::validate_timestamp")]
+    pub gt: ::core::option::Option<::prost_wkt_types::Timestamp>,
+    #[prost(message, optional, tag = "3")]
+    #[validate(custom = "crate::grpc::validate::validate_timestamp")]
+    pub gte: ::core::option::Option<::prost_wkt_types::Timestamp>,
+    #[prost(message, optional, tag = "4")]
+    #[validate(custom = "crate::grpc::validate::validate_timestamp")]
+    pub lte: ::core::option::Option<::prost_wkt_types::Timestamp>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4858,6 +5032,7 @@ pub enum FieldType {
     Geo = 3,
     Text = 4,
     Bool = 5,
+    Datetime = 6,
 }
 impl FieldType {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -4872,6 +5047,7 @@ impl FieldType {
             FieldType::Geo => "FieldTypeGeo",
             FieldType::Text => "FieldTypeText",
             FieldType::Bool => "FieldTypeBool",
+            FieldType::Datetime => "FieldTypeDatetime",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -4883,6 +5059,34 @@ impl FieldType {
             "FieldTypeGeo" => Some(Self::Geo),
             "FieldTypeText" => Some(Self::Text),
             "FieldTypeBool" => Some(Self::Bool),
+            "FieldTypeDatetime" => Some(Self::Datetime),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum Direction {
+    Asc = 0,
+    Desc = 1,
+}
+impl Direction {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Direction::Asc => "Asc",
+            Direction::Desc => "Desc",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "Asc" => Some(Self::Asc),
+            "Desc" => Some(Self::Desc),
             _ => None,
         }
     }
@@ -6953,6 +7157,8 @@ pub struct SyncPointsInternal {
     pub sync_points: ::core::option::Option<SyncPoints>,
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
+    #[prost(message, optional, tag = "3")]
+    pub clock_tag: ::core::option::Option<ClockTag>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -6964,6 +7170,8 @@ pub struct UpsertPointsInternal {
     pub upsert_points: ::core::option::Option<UpsertPoints>,
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
+    #[prost(message, optional, tag = "3")]
+    pub clock_tag: ::core::option::Option<ClockTag>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -6975,6 +7183,8 @@ pub struct DeletePointsInternal {
     pub delete_points: ::core::option::Option<DeletePoints>,
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
+    #[prost(message, optional, tag = "3")]
+    pub clock_tag: ::core::option::Option<ClockTag>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -6986,6 +7196,8 @@ pub struct UpdateVectorsInternal {
     pub update_vectors: ::core::option::Option<UpdatePointVectors>,
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
+    #[prost(message, optional, tag = "3")]
+    pub clock_tag: ::core::option::Option<ClockTag>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -6997,6 +7209,8 @@ pub struct DeleteVectorsInternal {
     pub delete_vectors: ::core::option::Option<DeletePointVectors>,
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
+    #[prost(message, optional, tag = "3")]
+    pub clock_tag: ::core::option::Option<ClockTag>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -7008,6 +7222,8 @@ pub struct SetPayloadPointsInternal {
     pub set_payload_points: ::core::option::Option<SetPayloadPoints>,
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
+    #[prost(message, optional, tag = "3")]
+    pub clock_tag: ::core::option::Option<ClockTag>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -7019,6 +7235,8 @@ pub struct DeletePayloadPointsInternal {
     pub delete_payload_points: ::core::option::Option<DeletePayloadPoints>,
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
+    #[prost(message, optional, tag = "3")]
+    pub clock_tag: ::core::option::Option<ClockTag>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -7030,6 +7248,8 @@ pub struct ClearPayloadPointsInternal {
     pub clear_payload_points: ::core::option::Option<ClearPayloadPoints>,
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
+    #[prost(message, optional, tag = "3")]
+    pub clock_tag: ::core::option::Option<ClockTag>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -7043,6 +7263,8 @@ pub struct CreateFieldIndexCollectionInternal {
     >,
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
+    #[prost(message, optional, tag = "3")]
+    pub clock_tag: ::core::option::Option<ClockTag>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -7056,6 +7278,46 @@ pub struct DeleteFieldIndexCollectionInternal {
     >,
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
+    #[prost(message, optional, tag = "3")]
+    pub clock_tag: ::core::option::Option<ClockTag>,
+}
+/// Has to be backward compatible with `PointsOperationResponse`!
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PointsOperationResponseInternal {
+    #[prost(message, optional, tag = "1")]
+    pub result: ::core::option::Option<UpdateResultInternal>,
+    /// Time spent to process
+    #[prost(double, tag = "2")]
+    pub time: f64,
+}
+/// Has to be backward compatible with `UpdateResult`!
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateResultInternal {
+    /// Number of operation
+    #[prost(uint64, optional, tag = "1")]
+    pub operation_id: ::core::option::Option<u64>,
+    /// Operation status
+    #[prost(enumeration = "UpdateStatus", tag = "2")]
+    pub status: i32,
+    #[prost(message, optional, tag = "3")]
+    pub clock_tag: ::core::option::Option<ClockTag>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ClockTag {
+    #[prost(uint64, tag = "1")]
+    pub peer_id: u64,
+    #[prost(uint32, tag = "2")]
+    pub clock_id: u32,
+    #[prost(uint64, tag = "3")]
+    pub clock_tick: u64,
+    #[prost(bool, tag = "4")]
+    pub force: bool,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -7338,7 +7600,7 @@ pub mod points_internal_client {
             &mut self,
             request: impl tonic::IntoRequest<super::UpsertPointsInternal>,
         ) -> std::result::Result<
-            tonic::Response<super::PointsOperationResponse>,
+            tonic::Response<super::PointsOperationResponseInternal>,
             tonic::Status,
         > {
             self.inner
@@ -7363,7 +7625,7 @@ pub mod points_internal_client {
             &mut self,
             request: impl tonic::IntoRequest<super::SyncPointsInternal>,
         ) -> std::result::Result<
-            tonic::Response<super::PointsOperationResponse>,
+            tonic::Response<super::PointsOperationResponseInternal>,
             tonic::Status,
         > {
             self.inner
@@ -7388,7 +7650,7 @@ pub mod points_internal_client {
             &mut self,
             request: impl tonic::IntoRequest<super::DeletePointsInternal>,
         ) -> std::result::Result<
-            tonic::Response<super::PointsOperationResponse>,
+            tonic::Response<super::PointsOperationResponseInternal>,
             tonic::Status,
         > {
             self.inner
@@ -7413,7 +7675,7 @@ pub mod points_internal_client {
             &mut self,
             request: impl tonic::IntoRequest<super::UpdateVectorsInternal>,
         ) -> std::result::Result<
-            tonic::Response<super::PointsOperationResponse>,
+            tonic::Response<super::PointsOperationResponseInternal>,
             tonic::Status,
         > {
             self.inner
@@ -7438,7 +7700,7 @@ pub mod points_internal_client {
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteVectorsInternal>,
         ) -> std::result::Result<
-            tonic::Response<super::PointsOperationResponse>,
+            tonic::Response<super::PointsOperationResponseInternal>,
             tonic::Status,
         > {
             self.inner
@@ -7463,7 +7725,7 @@ pub mod points_internal_client {
             &mut self,
             request: impl tonic::IntoRequest<super::SetPayloadPointsInternal>,
         ) -> std::result::Result<
-            tonic::Response<super::PointsOperationResponse>,
+            tonic::Response<super::PointsOperationResponseInternal>,
             tonic::Status,
         > {
             self.inner
@@ -7488,7 +7750,7 @@ pub mod points_internal_client {
             &mut self,
             request: impl tonic::IntoRequest<super::SetPayloadPointsInternal>,
         ) -> std::result::Result<
-            tonic::Response<super::PointsOperationResponse>,
+            tonic::Response<super::PointsOperationResponseInternal>,
             tonic::Status,
         > {
             self.inner
@@ -7513,7 +7775,7 @@ pub mod points_internal_client {
             &mut self,
             request: impl tonic::IntoRequest<super::DeletePayloadPointsInternal>,
         ) -> std::result::Result<
-            tonic::Response<super::PointsOperationResponse>,
+            tonic::Response<super::PointsOperationResponseInternal>,
             tonic::Status,
         > {
             self.inner
@@ -7538,7 +7800,7 @@ pub mod points_internal_client {
             &mut self,
             request: impl tonic::IntoRequest<super::ClearPayloadPointsInternal>,
         ) -> std::result::Result<
-            tonic::Response<super::PointsOperationResponse>,
+            tonic::Response<super::PointsOperationResponseInternal>,
             tonic::Status,
         > {
             self.inner
@@ -7563,7 +7825,7 @@ pub mod points_internal_client {
             &mut self,
             request: impl tonic::IntoRequest<super::CreateFieldIndexCollectionInternal>,
         ) -> std::result::Result<
-            tonic::Response<super::PointsOperationResponse>,
+            tonic::Response<super::PointsOperationResponseInternal>,
             tonic::Status,
         > {
             self.inner
@@ -7588,7 +7850,7 @@ pub mod points_internal_client {
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteFieldIndexCollectionInternal>,
         ) -> std::result::Result<
-            tonic::Response<super::PointsOperationResponse>,
+            tonic::Response<super::PointsOperationResponseInternal>,
             tonic::Status,
         > {
             self.inner
@@ -7784,77 +8046,77 @@ pub mod points_internal_server {
             &self,
             request: tonic::Request<super::UpsertPointsInternal>,
         ) -> std::result::Result<
-            tonic::Response<super::PointsOperationResponse>,
+            tonic::Response<super::PointsOperationResponseInternal>,
             tonic::Status,
         >;
         async fn sync(
             &self,
             request: tonic::Request<super::SyncPointsInternal>,
         ) -> std::result::Result<
-            tonic::Response<super::PointsOperationResponse>,
+            tonic::Response<super::PointsOperationResponseInternal>,
             tonic::Status,
         >;
         async fn delete(
             &self,
             request: tonic::Request<super::DeletePointsInternal>,
         ) -> std::result::Result<
-            tonic::Response<super::PointsOperationResponse>,
+            tonic::Response<super::PointsOperationResponseInternal>,
             tonic::Status,
         >;
         async fn update_vectors(
             &self,
             request: tonic::Request<super::UpdateVectorsInternal>,
         ) -> std::result::Result<
-            tonic::Response<super::PointsOperationResponse>,
+            tonic::Response<super::PointsOperationResponseInternal>,
             tonic::Status,
         >;
         async fn delete_vectors(
             &self,
             request: tonic::Request<super::DeleteVectorsInternal>,
         ) -> std::result::Result<
-            tonic::Response<super::PointsOperationResponse>,
+            tonic::Response<super::PointsOperationResponseInternal>,
             tonic::Status,
         >;
         async fn set_payload(
             &self,
             request: tonic::Request<super::SetPayloadPointsInternal>,
         ) -> std::result::Result<
-            tonic::Response<super::PointsOperationResponse>,
+            tonic::Response<super::PointsOperationResponseInternal>,
             tonic::Status,
         >;
         async fn overwrite_payload(
             &self,
             request: tonic::Request<super::SetPayloadPointsInternal>,
         ) -> std::result::Result<
-            tonic::Response<super::PointsOperationResponse>,
+            tonic::Response<super::PointsOperationResponseInternal>,
             tonic::Status,
         >;
         async fn delete_payload(
             &self,
             request: tonic::Request<super::DeletePayloadPointsInternal>,
         ) -> std::result::Result<
-            tonic::Response<super::PointsOperationResponse>,
+            tonic::Response<super::PointsOperationResponseInternal>,
             tonic::Status,
         >;
         async fn clear_payload(
             &self,
             request: tonic::Request<super::ClearPayloadPointsInternal>,
         ) -> std::result::Result<
-            tonic::Response<super::PointsOperationResponse>,
+            tonic::Response<super::PointsOperationResponseInternal>,
             tonic::Status,
         >;
         async fn create_field_index(
             &self,
             request: tonic::Request<super::CreateFieldIndexCollectionInternal>,
         ) -> std::result::Result<
-            tonic::Response<super::PointsOperationResponse>,
+            tonic::Response<super::PointsOperationResponseInternal>,
             tonic::Status,
         >;
         async fn delete_field_index(
             &self,
             request: tonic::Request<super::DeleteFieldIndexCollectionInternal>,
         ) -> std::result::Result<
-            tonic::Response<super::PointsOperationResponse>,
+            tonic::Response<super::PointsOperationResponseInternal>,
             tonic::Status,
         >;
         async fn search(
@@ -7981,7 +8243,7 @@ pub mod points_internal_server {
                         T: PointsInternal,
                     > tonic::server::UnaryService<super::UpsertPointsInternal>
                     for UpsertSvc<T> {
-                        type Response = super::PointsOperationResponse;
+                        type Response = super::PointsOperationResponseInternal;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -8027,7 +8289,7 @@ pub mod points_internal_server {
                         T: PointsInternal,
                     > tonic::server::UnaryService<super::SyncPointsInternal>
                     for SyncSvc<T> {
-                        type Response = super::PointsOperationResponse;
+                        type Response = super::PointsOperationResponseInternal;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -8073,7 +8335,7 @@ pub mod points_internal_server {
                         T: PointsInternal,
                     > tonic::server::UnaryService<super::DeletePointsInternal>
                     for DeleteSvc<T> {
-                        type Response = super::PointsOperationResponse;
+                        type Response = super::PointsOperationResponseInternal;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -8119,7 +8381,7 @@ pub mod points_internal_server {
                         T: PointsInternal,
                     > tonic::server::UnaryService<super::UpdateVectorsInternal>
                     for UpdateVectorsSvc<T> {
-                        type Response = super::PointsOperationResponse;
+                        type Response = super::PointsOperationResponseInternal;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -8165,7 +8427,7 @@ pub mod points_internal_server {
                         T: PointsInternal,
                     > tonic::server::UnaryService<super::DeleteVectorsInternal>
                     for DeleteVectorsSvc<T> {
-                        type Response = super::PointsOperationResponse;
+                        type Response = super::PointsOperationResponseInternal;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -8211,7 +8473,7 @@ pub mod points_internal_server {
                         T: PointsInternal,
                     > tonic::server::UnaryService<super::SetPayloadPointsInternal>
                     for SetPayloadSvc<T> {
-                        type Response = super::PointsOperationResponse;
+                        type Response = super::PointsOperationResponseInternal;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -8257,7 +8519,7 @@ pub mod points_internal_server {
                         T: PointsInternal,
                     > tonic::server::UnaryService<super::SetPayloadPointsInternal>
                     for OverwritePayloadSvc<T> {
-                        type Response = super::PointsOperationResponse;
+                        type Response = super::PointsOperationResponseInternal;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -8304,7 +8566,7 @@ pub mod points_internal_server {
                         T: PointsInternal,
                     > tonic::server::UnaryService<super::DeletePayloadPointsInternal>
                     for DeletePayloadSvc<T> {
-                        type Response = super::PointsOperationResponse;
+                        type Response = super::PointsOperationResponseInternal;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -8350,7 +8612,7 @@ pub mod points_internal_server {
                         T: PointsInternal,
                     > tonic::server::UnaryService<super::ClearPayloadPointsInternal>
                     for ClearPayloadSvc<T> {
-                        type Response = super::PointsOperationResponse;
+                        type Response = super::PointsOperationResponseInternal;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -8397,7 +8659,7 @@ pub mod points_internal_server {
                     > tonic::server::UnaryService<
                         super::CreateFieldIndexCollectionInternal,
                     > for CreateFieldIndexSvc<T> {
-                        type Response = super::PointsOperationResponse;
+                        type Response = super::PointsOperationResponseInternal;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -8447,7 +8709,7 @@ pub mod points_internal_server {
                     > tonic::server::UnaryService<
                         super::DeleteFieldIndexCollectionInternal,
                     > for DeleteFieldIndexSvc<T> {
-                        type Response = super::PointsOperationResponse;
+                        type Response = super::PointsOperationResponseInternal;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -9897,6 +10159,7 @@ pub struct DeleteSnapshotRequest {
     pub snapshot_name: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize)]
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SnapshotDescription {
@@ -9905,8 +10168,8 @@ pub struct SnapshotDescription {
     pub name: ::prost::alloc::string::String,
     /// Creation time of the snapshot
     #[prost(message, optional, tag = "2")]
-    #[serde(skip)]
-    pub creation_time: ::core::option::Option<::prost_types::Timestamp>,
+    #[validate(custom = "crate::grpc::validate::validate_timestamp")]
+    pub creation_time: ::core::option::Option<::prost_wkt_types::Timestamp>,
     /// Size of the snapshot in bytes
     #[prost(int64, tag = "3")]
     pub size: i64,

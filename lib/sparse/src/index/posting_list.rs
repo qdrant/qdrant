@@ -5,7 +5,7 @@ use ordered_float::OrderedFloat;
 
 use crate::common::types::DimWeight;
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PostingElement {
     /// Record ID
     pub record_id: PointOffsetType,
@@ -194,6 +194,11 @@ impl<'a> PostingListIterator<'a> {
         if self.current_index < self.elements.len() {
             self.current_index += 1;
         }
+    }
+
+    /// Advances the iterator by `count` elements.
+    pub fn advance_by(&mut self, count: usize) {
+        self.current_index = (self.current_index + count).min(self.elements.len());
     }
 
     /// Returns the next element without advancing the iterator.

@@ -34,6 +34,18 @@ impl Collection {
         field_name: String,
         field_schema: PayloadFieldSchema,
     ) -> CollectionResult<Option<UpdateResult>> {
+        // This function is called from consensus, so we use `wait = false`, because we can't afford
+        // to wait for the result as indexation may take a long time
+        self.create_payload_index_with_wait(field_name, field_schema, false)
+            .await
+    }
+
+    pub async fn create_payload_index_with_wait(
+        &self,
+        field_name: String,
+        field_schema: PayloadFieldSchema,
+        wait: bool,
+    ) -> CollectionResult<Option<UpdateResult>> {
         self.payload_index_schema.write(|schema| {
             schema
                 .schema
@@ -51,13 +63,7 @@ impl Collection {
             }),
         );
 
-        // This function is called from consensus, so we can't afford to wait for the result
-        // as indexation may take a long time
-        let wait = false;
-
-        let result = self.update_all_local(create_index_operation, wait).await?;
-
-        Ok(result)
+        self.update_all_local(create_index_operation, wait).await
     }
 
     pub async fn drop_payload_index(

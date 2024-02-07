@@ -4,6 +4,7 @@ use std::sync::Arc;
 use collection::operations::types::VectorParams;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::channel_service::ChannelService;
+use common::cpu::CpuBudget;
 use memory::madvise;
 use segment::types::Distance;
 use storage::content_manager::collection_meta_ops::{
@@ -39,14 +40,17 @@ fn test_alias_operation() {
             memmap_threshold: Some(100),
             indexing_threshold: Some(100),
             flush_interval_sec: 2,
-            max_optimization_threads: 2,
+            max_optimization_threads: Some(2),
         },
         wal: Default::default(),
         performance: PerformanceConfig {
             max_search_threads: 1,
             max_optimization_threads: 1,
+            optimizer_cpu_budget: 0,
             update_rate_limit: None,
             search_timeout_sec: None,
+            incoming_shard_transfers_limit: Some(1),
+            outgoing_shard_transfers_limit: Some(1),
         },
         hnsw_index: Default::default(),
         quantization: None,
@@ -76,6 +80,7 @@ fn test_alias_operation() {
         search_runtime,
         update_runtime,
         general_runtime,
+        CpuBudget::default(),
         ChannelService::new(6333),
         0,
         Some(propose_operation_sender),

@@ -15,6 +15,7 @@ use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::common::operation_error::OperationError;
 use segment::data_types::groups::GroupId;
+use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{
     DenseVector, Named, NamedQuery, NamedVectorStruct, QueryVector, Vector, VectorElementType,
     VectorRef, VectorStruct, DEFAULT_VECTOR_NAME,
@@ -38,6 +39,7 @@ use tonic::codegen::http::uri::InvalidUri;
 use validator::{Validate, ValidationError, ValidationErrors};
 
 use super::config_diff::{self};
+use super::ClockTag;
 use crate::config::{CollectionConfig, CollectionParams};
 use crate::lookup::types::WithLookupInterface;
 use crate::operations::config_diff::{HnswConfigDiff, QuantizationConfigDiff};
@@ -62,6 +64,13 @@ pub enum CollectionStatus {
     // Something is not OK:
     // - some operations failed and was not recovered
     Red,
+}
+
+/// State of existence of a collection,
+/// true = exists, false = does not exist
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+pub struct CollectionExistence {
+    pub exists: bool,
 }
 
 /// Current state of the collection
@@ -249,8 +258,14 @@ pub struct UpdateResult {
     /// Sequential number of the operation
     #[serde(skip_serializing_if = "Option::is_none")]
     pub operation_id: Option<SeqNumberType>,
+
     /// Update status
     pub status: UpdateStatus,
+
+    /// Updated value for the external clock tick
+    /// Provided if incoming update request also specify clock tick
+    #[serde(skip)]
+    pub clock_tag: Option<ClockTag>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
@@ -264,23 +279,50 @@ pub struct ScrollRequest {
     pub shard_key: Option<ShardKeySelector>,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(untagged)]
+pub enum OrderByInterface {
+    Key(String),
+    Struct(OrderBy),
+}
+
+impl From<OrderByInterface> for OrderBy {
+    fn from(order_by: OrderByInterface) -> Self {
+        match order_by {
+            OrderByInterface::Key(key) => OrderBy {
+                key,
+                direction: None,
+                start_from: None,
+            },
+            OrderByInterface::Struct(order_by) => order_by,
+        }
+    }
+}
+
 /// Scroll request - paginate over all points which matches given condition
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct ScrollRequestInternal {
     /// Start ID to read points from.
     pub offset: Option<PointIdType>,
+
     /// Page size. Default: 10
     #[validate(range(min = 1))]
     pub limit: Option<usize>,
+
     /// Look only for points which satisfies this conditions. If not provided - all points.
     #[validate]
     pub filter: Option<Filter>,
+
     /// Select which payload to return with the response. Default: All
     pub with_payload: Option<WithPayloadInterface>,
+
     /// Whether to return the point vector with the result?
     #[serde(default, alias = "with_vectors")]
     pub with_vector: WithVector,
+
+    /// Order the records by a payload field, then by the point id.
+    pub order_by: Option<OrderByInterface>,
 }
 
 impl Default for ScrollRequestInternal {
@@ -291,6 +333,7 @@ impl Default for ScrollRequestInternal {
             filter: None,
             with_payload: Some(WithPayloadInterface::Bool(true)),
             with_vector: WithVector::Bool(false),
+            order_by: None,
         }
     }
 }

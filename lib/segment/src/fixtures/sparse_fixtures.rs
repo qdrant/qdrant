@@ -3,6 +3,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::cpu::CpuPermit;
 use common::types::PointOffsetType;
 use rand::Rng;
 use sparse::common::sparse_vector::SparseVector;
@@ -13,6 +14,7 @@ use sparse::index::inverted_index::InvertedIndex;
 use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
+use crate::index::hnsw_index::num_rayon_threads;
 use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use crate::index::sparse_index::sparse_vector_index::SparseVectorIndex;
 use crate::index::struct_payload_index::StructPayloadIndex;
@@ -115,8 +117,11 @@ pub fn fixture_sparse_index_ram<R: Rng + ?Sized>(
     // assert no points are indexed following open for RAM index
     assert_eq!(sparse_vector_index.indexed_vector_count(), 0);
 
+    let permit_cpu_count = num_rayon_threads(0);
+    let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
+
     // build index to refresh RAM index
-    sparse_vector_index.build_index(stopped).unwrap();
+    sparse_vector_index.build_index(permit, stopped).unwrap();
     assert_eq!(sparse_vector_index.indexed_vector_count(), num_vectors);
     sparse_vector_index
 }

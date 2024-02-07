@@ -40,6 +40,8 @@ pub trait Numericable: Num + Signed + PartialEq + PartialOrd + Copy {
     fn max_value() -> Self;
     fn to_f64(self) -> f64;
     fn from_f64(x: f64) -> Self;
+    fn to_i64(self) -> i64;
+    fn from_i64(x: i64) -> Self;
     fn min(self, b: Self) -> Self {
         if self < b {
             self
@@ -76,6 +78,12 @@ impl Numericable for i64 {
     fn from_f64(x: f64) -> Self {
         x as Self
     }
+    fn to_i64(self) -> i64 {
+        self
+    }
+    fn from_i64(x: i64) -> Self {
+        x as Self
+    }
     fn abs_diff(self, b: Self) -> Self {
         i64::abs_diff(self, b) as i64
     }
@@ -93,6 +101,12 @@ impl Numericable for f64 {
     }
     fn from_f64(x: f64) -> Self {
         x
+    }
+    fn to_i64(self) -> i64 {
+        self as i64
+    }
+    fn from_i64(x: i64) -> Self {
+        x as Self
     }
 }
 
@@ -144,11 +158,11 @@ impl<T: Numericable> Histogram<T> {
         self.total_count
     }
 
-    /// Infers boundaries for bucket of given size and staring point.
+    /// Infers boundaries for bucket of given size and starting point.
     /// Returns `to` range of values starting provided `from`value which is expected to contain
     /// `range_size` values
     ///
-    /// Returns None if there are no points stored
+    /// Returns `Unbounded` if there are no points stored
     pub fn get_range_by_size(&self, from: Bound<T>, range_size: usize) -> Bound<T> {
         // bound_map is unstable, but can be used here
         // let from_ = from.map(|val| Point { val, idx: usize::MIN });
@@ -268,6 +282,7 @@ impl<T: Numericable> Histogram<T> {
                         0
                     };
                     let max_estimate = a_count.right + 1;
+
                     (min_estimate, estimate, max_estimate)
                 },
             )

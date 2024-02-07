@@ -51,7 +51,7 @@ def test_rejoin_cluster(tmp_path: pathlib.Path):
     )
 
     # Restart last node
-    new_url = start_peer(peer_dirs[-1], f"peer_0_restarted.log", bootstrap_uri, port=20000)
+    new_url = start_peer(peer_dirs[-1], "peer_0_restarted.log", bootstrap_uri, port=20000)
 
     peer_api_uris[-1] = new_url
 

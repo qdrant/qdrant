@@ -1,8 +1,11 @@
+use std::fmt::Formatter;
+
 use common::types::PointOffsetType;
 use serde_json::Value;
 use smol_str::SmolStr;
 
 use super::map_index::MapIndex;
+use super::numeric_index::StreamRange;
 use crate::common::operation_error::OperationResult;
 use crate::common::utils::MultiValue;
 use crate::common::Flusher;
@@ -13,7 +16,8 @@ use crate::index::field_index::numeric_index::NumericIndex;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
-    FieldCondition, FloatPayloadType, IntPayloadType, Match, MatchText, PayloadKeyType,
+    DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, Match, MatchText,
+    PayloadKeyType, Range,
 };
 
 pub trait PayloadFieldIndex {
@@ -116,12 +120,28 @@ pub trait ValueIndexer<T> {
 #[allow(clippy::enum_variant_names)]
 pub enum FieldIndex {
     IntIndex(NumericIndex<IntPayloadType>),
+    DatetimeIndex(NumericIndex<IntPayloadType>),
     IntMapIndex(MapIndex<IntPayloadType>),
     KeywordIndex(MapIndex<SmolStr>),
     FloatIndex(NumericIndex<FloatPayloadType>),
     GeoIndex(GeoMapIndex),
     FullTextIndex(FullTextIndex),
     BinaryIndex(BinaryIndex),
+}
+
+impl std::fmt::Debug for FieldIndex {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FieldIndex::IntIndex(_index) => write!(f, "IntIndex"),
+            FieldIndex::DatetimeIndex(_index) => write!(f, "DatetimeIndex"),
+            FieldIndex::IntMapIndex(_index) => write!(f, "IntMapIndex"),
+            FieldIndex::KeywordIndex(_index) => write!(f, "KeywordIndex"),
+            FieldIndex::FloatIndex(_index) => write!(f, "FloatIndex"),
+            FieldIndex::GeoIndex(_index) => write!(f, "GeoIndex"),
+            FieldIndex::BinaryIndex(_index) => write!(f, "BinaryIndex"),
+            FieldIndex::FullTextIndex(_index) => write!(f, "FullTextIndex"),
+        }
+    }
 }
 
 impl FieldIndex {
@@ -139,6 +159,7 @@ impl FieldIndex {
     ) -> Option<bool> {
         match self {
             FieldIndex::IntIndex(_) => None,
+            FieldIndex::DatetimeIndex(_) => None,
             FieldIndex::IntMapIndex(_) => None,
             FieldIndex::KeywordIndex(_) => None,
             FieldIndex::FloatIndex(_) => None,
@@ -163,6 +184,7 @@ impl FieldIndex {
     fn get_payload_field_index(&self) -> &dyn PayloadFieldIndex {
         match self {
             FieldIndex::IntIndex(payload_field_index) => payload_field_index,
+            FieldIndex::DatetimeIndex(payload_field_index) => payload_field_index,
             FieldIndex::IntMapIndex(payload_field_index) => payload_field_index,
             FieldIndex::KeywordIndex(payload_field_index) => payload_field_index,
             FieldIndex::FloatIndex(payload_field_index) => payload_field_index,
@@ -176,6 +198,7 @@ impl FieldIndex {
     fn get_payload_field_index_mut(&mut self) -> &mut dyn PayloadFieldIndex {
         match self {
             FieldIndex::IntIndex(ref mut payload_field_index) => payload_field_index,
+            FieldIndex::DatetimeIndex(ref mut payload_field_index) => payload_field_index,
             FieldIndex::IntMapIndex(ref mut payload_field_index) => payload_field_index,
             FieldIndex::KeywordIndex(ref mut payload_field_index) => payload_field_index,
             FieldIndex::FloatIndex(ref mut payload_field_index) => payload_field_index,
@@ -188,6 +211,7 @@ impl FieldIndex {
     pub fn load(&mut self) -> OperationResult<bool> {
         match self {
             FieldIndex::IntIndex(ref mut payload_field_index) => payload_field_index.load(),
+            FieldIndex::DatetimeIndex(ref mut payload_field_index) => payload_field_index.load(),
             FieldIndex::IntMapIndex(ref mut payload_field_index) => payload_field_index.load(),
             FieldIndex::KeywordIndex(ref mut payload_field_index) => payload_field_index.load(),
             FieldIndex::FloatIndex(ref mut payload_field_index) => payload_field_index.load(),
@@ -200,6 +224,7 @@ impl FieldIndex {
     pub fn clear(self) -> OperationResult<()> {
         match self {
             FieldIndex::IntIndex(index) => index.clear(),
+            FieldIndex::DatetimeIndex(index) => index.clear(),
             FieldIndex::IntMapIndex(index) => index.clear(),
             FieldIndex::KeywordIndex(index) => index.clear(),
             FieldIndex::FloatIndex(index) => index.clear(),
@@ -212,6 +237,7 @@ impl FieldIndex {
     pub fn recreate(&self) -> OperationResult<()> {
         match self {
             FieldIndex::IntIndex(index) => index.recreate(),
+            FieldIndex::DatetimeIndex(index) => index.recreate(),
             FieldIndex::IntMapIndex(index) => index.recreate(),
             FieldIndex::KeywordIndex(index) => index.recreate(),
             FieldIndex::FloatIndex(index) => index.recreate(),
@@ -260,7 +286,10 @@ impl FieldIndex {
     ) -> OperationResult<()> {
         match self {
             FieldIndex::IntIndex(ref mut payload_field_index) => {
-                payload_field_index.add_point(id, payload)
+                ValueIndexer::<IntPayloadType>::add_point(payload_field_index, id, payload)
+            }
+            FieldIndex::DatetimeIndex(ref mut payload_field_index) => {
+                ValueIndexer::<DateTimePayloadType>::add_point(payload_field_index, id, payload)
             }
             FieldIndex::IntMapIndex(ref mut payload_field_index) => {
                 payload_field_index.add_point(id, payload)
@@ -286,6 +315,7 @@ impl FieldIndex {
     pub fn remove_point(&mut self, point_id: PointOffsetType) -> OperationResult<()> {
         match self {
             FieldIndex::IntIndex(index) => index.remove_point(point_id),
+            FieldIndex::DatetimeIndex(index) => index.remove_point(point_id),
             FieldIndex::IntMapIndex(index) => index.remove_point(point_id),
             FieldIndex::KeywordIndex(index) => index.remove_point(point_id),
             FieldIndex::FloatIndex(index) => index.remove_point(point_id),
@@ -298,6 +328,7 @@ impl FieldIndex {
     pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
         match self {
             FieldIndex::IntIndex(index) => index.get_telemetry_data(),
+            FieldIndex::DatetimeIndex(index) => index.get_telemetry_data(),
             FieldIndex::IntMapIndex(index) => index.get_telemetry_data(),
             FieldIndex::KeywordIndex(index) => index.get_telemetry_data(),
             FieldIndex::FloatIndex(index) => index.get_telemetry_data(),
@@ -310,6 +341,7 @@ impl FieldIndex {
     pub fn values_count(&self, point_id: PointOffsetType) -> usize {
         match self {
             FieldIndex::IntIndex(index) => index.values_count(point_id),
+            FieldIndex::DatetimeIndex(index) => index.values_count(point_id),
             FieldIndex::IntMapIndex(index) => index.values_count(point_id),
             FieldIndex::KeywordIndex(index) => index.values_count(point_id),
             FieldIndex::FloatIndex(index) => index.values_count(point_id),
@@ -322,12 +354,45 @@ impl FieldIndex {
     pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
         match self {
             FieldIndex::IntIndex(index) => index.values_is_empty(point_id),
+            FieldIndex::DatetimeIndex(index) => index.values_is_empty(point_id),
             FieldIndex::IntMapIndex(index) => index.values_is_empty(point_id),
             FieldIndex::KeywordIndex(index) => index.values_is_empty(point_id),
             FieldIndex::FloatIndex(index) => index.values_is_empty(point_id),
             FieldIndex::GeoIndex(index) => index.values_is_empty(point_id),
             FieldIndex::BinaryIndex(index) => index.values_is_empty(point_id),
             FieldIndex::FullTextIndex(index) => index.values_is_empty(point_id),
+        }
+    }
+
+    pub fn as_numeric(&self) -> Option<NumericFieldIndex> {
+        match self {
+            FieldIndex::IntIndex(index) => Some(NumericFieldIndex::IntIndex(index)),
+            FieldIndex::FloatIndex(index) => Some(NumericFieldIndex::FloatIndex(index)),
+            FieldIndex::IntMapIndex(_)
+            | FieldIndex::DatetimeIndex(_) // TODO(luis): move to Some(..) section when datetime index is enabled for order-by
+            | FieldIndex::KeywordIndex(_)
+            | FieldIndex::GeoIndex(_)
+            | FieldIndex::BinaryIndex(_)
+            | FieldIndex::FullTextIndex(_) => None,
+        }
+    }
+}
+
+pub enum NumericFieldIndex<'a> {
+    IntIndex(&'a NumericIndex<IntPayloadType>),
+    FloatIndex(&'a NumericIndex<FloatPayloadType>),
+}
+
+impl<'a> StreamRange<f64> for NumericFieldIndex<'a> {
+    fn stream_range(
+        &self,
+        range: &Range<FloatPayloadType>,
+    ) -> Box<dyn DoubleEndedIterator<Item = (f64, PointOffsetType)> + 'a> {
+        match self {
+            NumericFieldIndex::IntIndex(index) => {
+                Box::new(index.stream_range(range).map(|(v, p)| (v as f64, p)))
+            }
+            NumericFieldIndex::FloatIndex(index) => index.stream_range(range),
         }
     }
 }

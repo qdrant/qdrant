@@ -2,12 +2,15 @@ use std::cmp;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
+
+use common::cpu::CpuPermit;
 
 use super::get_vector_storage_path;
 use crate::common::error_logging::LogError;
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::entry::entry_point::SegmentEntry;
-use crate::index::hnsw_index::max_rayon_threads;
+use crate::index::hnsw_index::num_rayon_threads;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::segment::Segment;
 use crate::segment_constructor::{build_segment, load_segment};
@@ -181,8 +184,15 @@ impl SegmentBuilder {
         Ok(true)
     }
 
-    pub fn build(mut self, stopped: &AtomicBool) -> Result<Segment, OperationError> {
+    pub fn build(
+        mut self,
+        permit: CpuPermit,
+        stopped: &AtomicBool,
+    ) -> Result<Segment, OperationError> {
         {
+            // Arc permit to share it with each vector store
+            let permit = Arc::new(permit);
+
             let mut segment = self.segment.take().ok_or(OperationError::service_error(
                 "Segment building error: created segment not found",
             ))?;
@@ -195,8 +205,19 @@ impl SegmentBuilder {
             Self::update_quantization(&mut segment, stopped)?;
 
             for vector_data in segment.vector_data.values_mut() {
-                vector_data.vector_index.borrow_mut().build_index(stopped)?;
+                vector_data
+                    .vector_index
+                    .borrow_mut()
+                    .build_index(permit.clone(), stopped)?;
             }
+
+            // We're done with CPU-intensive tasks, release CPU permit
+            debug_assert_eq!(
+                Arc::strong_count(&permit),
+                1,
+                "Must release CPU permit Arc everywhere",
+            );
+            drop(permit);
 
             segment.flush(true)?;
             drop(segment);
@@ -222,7 +243,7 @@ impl SegmentBuilder {
         for (vector_name, vector_data) in &mut segment.vector_data {
             let max_threads = if let Some(config) = config.vector_data.get(vector_name) {
                 match &config.index {
-                    Indexes::Hnsw(hnsw) => max_rayon_threads(hnsw.max_indexing_threads),
+                    Indexes::Hnsw(hnsw) => num_rayon_threads(hnsw.max_indexing_threads),
                     _ => 1,
                 }
             } else {

@@ -1,5 +1,4 @@
 import pathlib
-import time
 
 from .utils import *
 from .assertions import assert_http_ok

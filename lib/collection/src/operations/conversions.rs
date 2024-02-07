@@ -13,6 +13,7 @@ use api::grpc::qdrant::update_collection_cluster_setup_request::{
 use api::grpc::qdrant::{CreateShardKey, SearchPoints};
 use common::types::ScoreType;
 use itertools::Itertools;
+use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{Named, NamedQuery, Vector, VectorStruct, DEFAULT_VECTOR_NAME};
 use segment::types::{Distance, QuantizationConfig};
 use segment::vector_storage::query::context_query::{ContextPair, ContextQuery};
@@ -23,9 +24,9 @@ use tonic::Status;
 use super::consistency_params::ReadConsistency;
 use super::types::{
     BaseGroupRequest, ContextExamplePair, CoreSearchRequest, DiscoverRequestInternal, GroupsResult,
-    PointGroup, QueryEnum, RecommendExample, RecommendGroupsRequestInternal, RecommendStrategy,
-    SearchGroupsRequestInternal, SparseIndexParams, SparseVectorParams, VectorParamsDiff,
-    VectorsConfigDiff,
+    OrderByInterface, PointGroup, QueryEnum, RecommendExample, RecommendGroupsRequestInternal,
+    RecommendStrategy, SearchGroupsRequestInternal, SparseIndexParams, SparseVectorParams,
+    VectorParamsDiff, VectorsConfigDiff,
 };
 use crate::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
@@ -412,9 +413,10 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                         .indexing_threshold
                         .map(|x| x as u64),
                     flush_interval_sec: Some(config.optimizer_config.flush_interval_sec),
-                    max_optimization_threads: Some(
-                        config.optimizer_config.max_optimization_threads as u64,
-                    ),
+                    max_optimization_threads: config
+                        .optimizer_config
+                        .max_optimization_threads
+                        .map(|n| n as u64),
                 }),
                 wal_config: Some(api::grpc::qdrant::WalConfigDiff {
                     wal_capacity_mb: Some(config.wal_config.wal_capacity_mb as u64),
@@ -471,7 +473,7 @@ impl From<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfig {
             flush_interval_sec: optimizer_config.flush_interval_sec.unwrap_or_default(),
             max_optimization_threads: optimizer_config
                 .max_optimization_threads
-                .unwrap_or_default() as usize,
+                .map(|n| n as usize),
         }
     }
 }
@@ -845,34 +847,72 @@ pub fn try_points_selector_from_grpc(
     }
 }
 
-impl From<UpdateResult> for api::grpc::qdrant::UpdateResult {
-    fn from(value: UpdateResult) -> Self {
+impl From<UpdateResult> for api::grpc::qdrant::UpdateResultInternal {
+    fn from(res: UpdateResult) -> Self {
         Self {
-            operation_id: value.operation_id,
-            status: match value.status {
-                UpdateStatus::Acknowledged => api::grpc::qdrant::UpdateStatus::Acknowledged as i32,
-                UpdateStatus::Completed => api::grpc::qdrant::UpdateStatus::Completed as i32,
-            },
+            operation_id: res.operation_id,
+            status: res.status.into(),
+            clock_tag: res.clock_tag.map(Into::into),
         }
+    }
+}
+
+impl From<UpdateResult> for api::grpc::qdrant::UpdateResult {
+    fn from(res: UpdateResult) -> Self {
+        api::grpc::qdrant::UpdateResultInternal::from(res).into()
+    }
+}
+
+impl TryFrom<api::grpc::qdrant::UpdateResultInternal> for UpdateResult {
+    type Error = Status;
+
+    fn try_from(res: api::grpc::qdrant::UpdateResultInternal) -> Result<Self, Self::Error> {
+        let res = Self {
+            operation_id: res.operation_id,
+            status: res.status.try_into()?,
+            clock_tag: res.clock_tag.map(Into::into),
+        };
+
+        Ok(res)
     }
 }
 
 impl TryFrom<api::grpc::qdrant::UpdateResult> for UpdateResult {
     type Error = Status;
 
-    fn try_from(value: api::grpc::qdrant::UpdateResult) -> Result<Self, Self::Error> {
-        Ok(Self {
-            operation_id: value.operation_id,
-            status: match value.status {
-                status if status == api::grpc::qdrant::UpdateStatus::Acknowledged as i32 => {
-                    UpdateStatus::Acknowledged
-                }
-                status if status == api::grpc::qdrant::UpdateStatus::Completed as i32 => {
-                    UpdateStatus::Completed
-                }
-                _ => return Err(Status::invalid_argument("Malformed UpdateStatus type")),
-            },
-        })
+    fn try_from(res: api::grpc::qdrant::UpdateResult) -> Result<Self, Self::Error> {
+        api::grpc::qdrant::UpdateResultInternal::from(res).try_into()
+    }
+}
+
+impl From<UpdateStatus> for i32 {
+    fn from(status: UpdateStatus) -> Self {
+        match status {
+            UpdateStatus::Acknowledged => api::grpc::qdrant::UpdateStatus::Acknowledged as i32,
+            UpdateStatus::Completed => api::grpc::qdrant::UpdateStatus::Completed as i32,
+        }
+    }
+}
+
+impl TryFrom<i32> for UpdateStatus {
+    type Error = Status;
+
+    fn try_from(status: i32) -> Result<Self, Self::Error> {
+        let status = api::grpc::qdrant::UpdateStatus::from_i32(status)
+            .ok_or_else(|| Status::invalid_argument("Malformed UpdateStatus type"))?;
+
+        let status = match status {
+            api::grpc::qdrant::UpdateStatus::Acknowledged => Self::Acknowledged,
+            api::grpc::qdrant::UpdateStatus::Completed => Self::Completed,
+
+            api::grpc::qdrant::UpdateStatus::UnknownUpdateStatus => {
+                return Err(Status::invalid_argument(
+                    "Malformed UpdateStatus type: update status is unknown",
+                ));
+            }
+        };
+
+        Ok(status)
     }
 }
 
@@ -1708,5 +1748,27 @@ impl From<api::grpc::qdrant::ShardKeySelector> for ShardSelectorInternal {
         } else {
             ShardSelectorInternal::ShardKeys(shard_keys)
         }
+    }
+}
+
+impl TryFrom<api::grpc::qdrant::OrderBy> for OrderByInterface {
+    type Error = Status;
+
+    fn try_from(value: api::grpc::qdrant::OrderBy) -> Result<Self, Self::Error> {
+        let direction = value
+            .direction
+            .and_then(api::grpc::qdrant::Direction::from_i32)
+            .map(segment::data_types::order_by::Direction::from);
+
+        Ok(Self::Struct(OrderBy {
+            key: value.key,
+            direction,
+            start_from: value.start_from.and_then(|value| {
+                value.value.map(|v| match v {
+                    api::grpc::qdrant::start_from::Value::Float(float) => float,
+                    api::grpc::qdrant::start_from::Value::Integer(int) => int as _,
+                })
+            }),
+        }))
     }
 }

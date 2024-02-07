@@ -1,6 +1,7 @@
 use std::num::NonZeroU64;
 use std::sync::Arc;
 
+use common::cpu::CpuBudget;
 use segment::types::{Distance, PayloadFieldSchema, PayloadSchemaType};
 use tempfile::Builder;
 use tokio::runtime::Handle;
@@ -121,20 +122,21 @@ async fn test_delete_from_indexed_payload() {
         Arc::new(RwLock::new(config.clone())),
         Arc::new(Default::default()),
         current_runtime.clone(),
+        CpuBudget::default(),
     )
     .await
     .unwrap();
 
     let upsert_ops = upsert_operation();
 
-    shard.update(upsert_ops, true).await.unwrap();
+    shard.update(upsert_ops.into(), true).await.unwrap();
 
     let index_op = create_payload_index_operation();
 
-    shard.update(index_op, true).await.unwrap();
+    shard.update(index_op.into(), true).await.unwrap();
 
     let delete_point_op = delete_point_operation(4);
-    shard.update(delete_point_op, true).await.unwrap();
+    shard.update(delete_point_op.into(), true).await.unwrap();
 
     let info = shard.info().await.unwrap();
     eprintln!("info = {:#?}", info.payload_schema);
@@ -149,6 +151,7 @@ async fn test_delete_from_indexed_payload() {
         Arc::new(RwLock::new(config.clone())),
         Arc::new(Default::default()),
         current_runtime.clone(),
+        CpuBudget::default(),
     )
     .await
     .unwrap();
@@ -157,7 +160,7 @@ async fn test_delete_from_indexed_payload() {
 
     eprintln!("dropping point 5");
     let delete_point_op = delete_point_operation(5);
-    shard.update(delete_point_op, true).await.unwrap();
+    shard.update(delete_point_op.into(), true).await.unwrap();
 
     drop(shard);
 
@@ -168,6 +171,7 @@ async fn test_delete_from_indexed_payload() {
         Arc::new(RwLock::new(config)),
         Arc::new(Default::default()),
         current_runtime,
+        CpuBudget::default(),
     )
     .await
     .unwrap();

@@ -27,23 +27,22 @@ pprof = { version = "0.12", features = ["flamegraph", "prost-codec"] }
 
 [dependencies]
 tempfile = "3.9.0"
-parking_lot = "0.12"
+parking_lot = { workspace = true }
 rayon = "1.8.1"
-num_cpus = "1.16"
 itertools = "0.12"
 rocksdb = { version = "0.21.0", default-features = false, features = [ "snappy" ] }
-uuid = { version = "1.7", features = ["v4", "serde"] }
+uuid = { workspace = true }
 bincode = "1.3"
-serde = { version = "~1.0", features = ["derive", "rc"] }
-serde_json = "~1.0"
-serde_cbor = "0.11.2"
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_cbor = { workspace = true }
 serde-value = "0.7"
 ordered-float = "4.2"
 thiserror = "1.0"
 atomic_refcell = "0.1.13"
 atomicwrites = "0.4.3"
-memmap2 = "0.9.3"
-schemars = { version = "0.8.16", features = ["uuid1", "preserve_order", "chrono"] }
+memmap2 = "0.9.4"
+schemars = { workspace = true }
 log = "0.4"
 geo = "0.27.0"
 geohash = "0.13.0"
@@ -58,7 +57,7 @@ semver = "1.0.21"
 tinyvec = { version = "1.6.0", features = ["alloc"] }
 quantization = { git = "https://github.com/qdrant/quantization.git" }
 validator = { version = "0.16", features = ["derive"] }
-chrono = { version = "0.4.31", features = ["serde"] }
+chrono = { version = "0.4.33", features = ["serde"] }
 smol_str = "0.2.1"
 lazy_static = "1.4"
 
@@ -70,12 +69,13 @@ io = { path = "../common/io" }
 memory = { path = "../common/memory" }
 sparse = { path = "../sparse" }
 
-tracing = { version = "0.1", features = ["async-await"], optional = true }
+tracing = { workspace = true, optional = true }
+macro_rules_attribute = "0.2.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 cgroups-rs = "0.3"
 procfs = { version = "0.16", default-features = false }
-io-uring = "0.6.2"
+io-uring = "0.6.3"
 
 [[bench]]
 name = "vector_search"

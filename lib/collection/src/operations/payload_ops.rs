@@ -27,7 +27,7 @@ pub struct SetPayload {
 ///
 /// Unlike `SetPayload` it does not contain `shard_key` field
 /// as individual shard does not need to know about shard key
-#[derive(Debug, Deserialize, Serialize, Validate, Clone)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Validate)]
 pub struct SetPayloadOp {
     pub payload: Payload,
     /// Assigns payload to each point in this list
@@ -91,7 +91,7 @@ pub struct DeletePayload {
 ///
 /// Unlike `DeletePayload` it does not contain `shard_key` field
 /// as individual shard does not need to know about shard key
-#[derive(Debug, Deserialize, Serialize, Validate, Clone)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Validate)]
 pub struct DeletePayloadOp {
     /// List of payload keys to remove from payload
     pub keys: Vec<PayloadKeyType>,
@@ -127,7 +127,7 @@ impl TryFrom<DeletePayloadShadow> for DeletePayload {
 }
 
 /// Define operations description for point payloads manipulation
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PayloadOps {
     /// Set payload value, overrides if it is already exists

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ops::Bound;
 
 use serde_json::Value;
 
@@ -118,6 +119,16 @@ impl<T> IntoIterator for MultiValue<T> {
 
 pub fn rev_range(a: usize, b: usize) -> impl Iterator<Item = usize> {
     (b + 1..=a).rev()
+}
+
+/// Alternative to [core::ops::Bound::map](https://doc.rust-lang.org/std/ops/enum.Bound.html#method.map)
+// TODO(luis): replace with the stabilized function. It is already merged, seems like it will be available in 1.76
+pub fn bound_map<T, U, F: FnOnce(T) -> U>(bound: Bound<T>, f: F) -> Bound<U> {
+    match bound {
+        Bound::Unbounded => Bound::Unbounded,
+        Bound::Included(x) => Bound::Included(f(x)),
+        Bound::Excluded(x) => Bound::Excluded(f(x)),
+    }
 }
 
 /// Parse array path and index from path
@@ -326,14 +337,6 @@ pub fn remove_value_from_json_map(
 /// Check if a path is included in a list of patterns
 ///
 /// Basically, it checks if either the pattern or path is a prefix of the other.
-/// Examples:
-/// ```
-/// assert!(segment::common::utils::check_include_pattern("a.b.c", "a.b.c"));
-/// assert!(segment::common::utils::check_include_pattern("a.b.c", "a.b"));
-/// assert!(!segment::common::utils::check_include_pattern("a.b.c", "a.b.d"));
-/// assert!(segment::common::utils::check_include_pattern("a.b.c", "a"));
-/// assert!(segment::common::utils::check_include_pattern("a", "a.d"));
-/// ```
 pub fn check_include_pattern(pattern: &str, path: &str) -> bool {
     pattern
         .split(['.', '['])
@@ -344,15 +347,6 @@ pub fn check_include_pattern(pattern: &str, path: &str) -> bool {
 /// Check if a path should be excluded by a pattern
 ///
 /// Basically, it checks if pattern is a prefix of path, but not the other way around.
-///
-/// ```
-/// assert!(segment::common::utils::check_exclude_pattern("a.b.c", "a.b.c"));
-/// assert!(!segment::common::utils::check_exclude_pattern("a.b.c", "a.b"));
-/// assert!(!segment::common::utils::check_exclude_pattern("a.b.c", "a.b.d"));
-/// assert!(!segment::common::utils::check_exclude_pattern("a.b.c", "a"));
-/// assert!(segment::common::utils::check_exclude_pattern("a", "a.d"));
-/// ```
-
 pub fn check_exclude_pattern(pattern: &str, path: &str) -> bool {
     if pattern.len() > path.len() {
         return false;
@@ -779,5 +773,23 @@ mod tests {
             )
             .unwrap()
         );
+    }
+
+    #[test]
+    fn test_check_include_pattern() {
+        assert!(check_include_pattern("a.b.c", "a.b.c"));
+        assert!(check_include_pattern("a.b.c", "a.b"));
+        assert!(!check_include_pattern("a.b.c", "a.b.d"));
+        assert!(check_include_pattern("a.b.c", "a"));
+        assert!(check_include_pattern("a", "a.d"));
+    }
+
+    #[test]
+    fn test_check_exclude_pattern() {
+        assert!(check_exclude_pattern("a.b.c", "a.b.c"));
+        assert!(!check_exclude_pattern("a.b.c", "a.b"));
+        assert!(!check_exclude_pattern("a.b.c", "a.b.d"));
+        assert!(!check_exclude_pattern("a.b.c", "a"));
+        assert!(check_exclude_pattern("a", "a.d"));
     }
 }

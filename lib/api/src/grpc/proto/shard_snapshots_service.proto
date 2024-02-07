@@ -8,19 +8,19 @@ import "snapshots_service.proto";
 service ShardSnapshots {
   /*
   Create shard snapshot
-   */
+  */
   rpc Create (CreateShardSnapshotRequest) returns (CreateSnapshotResponse) {}
   /*
   List shard snapshots
-   */
+  */
   rpc List (ListShardSnapshotsRequest) returns (ListSnapshotsResponse) {}
   /*
   Delete shard snapshot
-   */
+  */
   rpc Delete (DeleteShardSnapshotRequest) returns (DeleteSnapshotResponse) {}
   /*
   Recover shard snapshot
-   */
+  */
   rpc Recover (RecoverShardSnapshotRequest) returns (RecoverSnapshotResponse) {}
 }
 

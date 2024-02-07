@@ -6,7 +6,7 @@ use api::grpc::qdrant::{
     ClearPayloadPointsInternal, CoreSearchBatchPointsInternal, CountPointsInternal, CountResponse,
     CreateFieldIndexCollectionInternal, DeleteFieldIndexCollectionInternal,
     DeletePayloadPointsInternal, DeletePointsInternal, DeleteVectorsInternal, GetPointsInternal,
-    GetResponse, PointsOperationResponse, RecommendPointsInternal, RecommendResponse,
+    GetResponse, PointsOperationResponseInternal, RecommendPointsInternal, RecommendResponse,
     ScrollPointsInternal, ScrollResponse, SearchBatchPointsInternal, SearchBatchResponse,
     SearchPointsInternal, SearchResponse, SetPayloadPointsInternal, SyncPointsInternal,
     UpdateVectorsInternal, UpsertPointsInternal,
@@ -38,145 +38,231 @@ impl PointsInternal for PointsInternalService {
     async fn upsert(
         &self,
         request: Request<UpsertPointsInternal>,
-    ) -> Result<Response<PointsOperationResponse>, Status> {
+    ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
         let UpsertPointsInternal {
             upsert_points,
             shard_id,
+            clock_tag,
         } = request.into_inner();
 
         let upsert_points =
             upsert_points.ok_or_else(|| Status::invalid_argument("UpsertPoints is missing"))?;
 
-        upsert(self.toc.as_ref(), upsert_points, shard_id).await
+        upsert(
+            self.toc.clone(),
+            upsert_points,
+            clock_tag.map(Into::into),
+            shard_id,
+        )
+        .await
     }
 
     async fn delete(
         &self,
         request: Request<DeletePointsInternal>,
-    ) -> Result<Response<PointsOperationResponse>, Status> {
+    ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
         let DeletePointsInternal {
             delete_points,
             shard_id,
+            clock_tag,
         } = request.into_inner();
 
         let delete_points =
             delete_points.ok_or_else(|| Status::invalid_argument("DeletePoints is missing"))?;
 
-        delete(self.toc.as_ref(), delete_points, shard_id).await
+        delete(
+            self.toc.clone(),
+            delete_points,
+            clock_tag.map(Into::into),
+            shard_id,
+        )
+        .await
     }
 
     async fn update_vectors(
         &self,
         request: Request<UpdateVectorsInternal>,
-    ) -> Result<Response<PointsOperationResponse>, Status> {
+    ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
         let request = request.into_inner();
-        let shard_id = request.shard_id;
-        let update_point_vectors = request.update_vectors;
 
-        let update_point_vectors = update_point_vectors
+        let shard_id = request.shard_id;
+        let clock_tag = request.clock_tag;
+
+        let update_point_vectors = request
+            .update_vectors
             .ok_or_else(|| Status::invalid_argument("UpdateVectors is missing"))?;
 
-        update_vectors(self.toc.as_ref(), update_point_vectors, shard_id).await
+        update_vectors(
+            self.toc.clone(),
+            update_point_vectors,
+            clock_tag.map(Into::into),
+            shard_id,
+        )
+        .await
     }
 
     async fn delete_vectors(
         &self,
         request: Request<DeleteVectorsInternal>,
-    ) -> Result<Response<PointsOperationResponse>, Status> {
+    ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
         let request = request.into_inner();
-        let shard_id = request.shard_id;
-        let delete_point_vectors = request.delete_vectors;
 
-        let delete_point_vectors = delete_point_vectors
+        let shard_id = request.shard_id;
+        let clock_tag = request.clock_tag;
+
+        let delete_point_vectors = request
+            .delete_vectors
             .ok_or_else(|| Status::invalid_argument("DeleteVectors is missing"))?;
 
-        delete_vectors(self.toc.as_ref(), delete_point_vectors, shard_id).await
+        delete_vectors(
+            self.toc.clone(),
+            delete_point_vectors,
+            clock_tag.map(Into::into),
+            shard_id,
+        )
+        .await
     }
 
     async fn set_payload(
         &self,
         request: Request<SetPayloadPointsInternal>,
-    ) -> Result<Response<PointsOperationResponse>, Status> {
+    ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
         let SetPayloadPointsInternal {
             set_payload_points,
             shard_id,
+            clock_tag,
         } = request.into_inner();
 
         let set_payload_points = set_payload_points
             .ok_or_else(|| Status::invalid_argument("SetPayloadPoints is missing"))?;
 
-        set_payload(self.toc.as_ref(), set_payload_points, shard_id).await
+        set_payload(
+            self.toc.clone(),
+            set_payload_points,
+            clock_tag.map(Into::into),
+            shard_id,
+        )
+        .await
+    }
+
+    async fn overwrite_payload(
+        &self,
+        request: Request<SetPayloadPointsInternal>,
+    ) -> Result<Response<PointsOperationResponseInternal>, Status> {
+        validate_and_log(request.get_ref());
+        let SetPayloadPointsInternal {
+            set_payload_points,
+            shard_id,
+            clock_tag,
+        } = request.into_inner();
+
+        let set_payload_points = set_payload_points
+            .ok_or_else(|| Status::invalid_argument("SetPayloadPoints is missing"))?;
+
+        overwrite_payload(
+            self.toc.clone(),
+            set_payload_points,
+            clock_tag.map(Into::into),
+            shard_id,
+        )
+        .await
     }
 
     async fn delete_payload(
         &self,
         request: Request<DeletePayloadPointsInternal>,
-    ) -> Result<Response<PointsOperationResponse>, Status> {
+    ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
         let DeletePayloadPointsInternal {
             delete_payload_points,
             shard_id,
+            clock_tag,
         } = request.into_inner();
 
         let delete_payload_points = delete_payload_points
             .ok_or_else(|| Status::invalid_argument("DeletePayloadPoints is missing"))?;
 
-        delete_payload(self.toc.as_ref(), delete_payload_points, shard_id).await
+        delete_payload(
+            self.toc.clone(),
+            delete_payload_points,
+            clock_tag.map(Into::into),
+            shard_id,
+        )
+        .await
     }
 
     async fn clear_payload(
         &self,
         request: Request<ClearPayloadPointsInternal>,
-    ) -> Result<Response<PointsOperationResponse>, Status> {
+    ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
         let ClearPayloadPointsInternal {
             clear_payload_points,
             shard_id,
+            clock_tag,
         } = request.into_inner();
 
         let clear_payload_points = clear_payload_points
             .ok_or_else(|| Status::invalid_argument("ClearPayloadPoints is missing"))?;
 
-        clear_payload(self.toc.as_ref(), clear_payload_points, shard_id).await
+        clear_payload(
+            self.toc.clone(),
+            clear_payload_points,
+            clock_tag.map(Into::into),
+            shard_id,
+        )
+        .await
     }
 
     async fn create_field_index(
         &self,
         request: Request<CreateFieldIndexCollectionInternal>,
-    ) -> Result<Response<PointsOperationResponse>, Status> {
+    ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
         let CreateFieldIndexCollectionInternal {
             create_field_index_collection,
             shard_id,
+            clock_tag,
         } = request.into_inner();
 
         let create_field_index_collection = create_field_index_collection
             .ok_or_else(|| Status::invalid_argument("CreateFieldIndexCollection is missing"))?;
 
-        create_field_index_internal(self.toc.as_ref(), create_field_index_collection, shard_id)
-            .await
+        create_field_index_internal(
+            self.toc.clone(),
+            create_field_index_collection,
+            clock_tag.map(Into::into),
+            shard_id,
+        )
+        .await
     }
 
     async fn delete_field_index(
         &self,
         request: Request<DeleteFieldIndexCollectionInternal>,
-    ) -> Result<Response<PointsOperationResponse>, Status> {
+    ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
         let DeleteFieldIndexCollectionInternal {
             delete_field_index_collection,
             shard_id,
+            clock_tag,
         } = request.into_inner();
 
         let delete_field_index_collection = delete_field_index_collection
             .ok_or_else(|| Status::invalid_argument("DeleteFieldIndexCollection is missing"))?;
 
-        delete_field_index_internal(self.toc.as_ref(), delete_field_index_collection, shard_id)
-            .await
+        delete_field_index_internal(
+            self.toc.clone(),
+            delete_field_index_collection,
+            clock_tag.map(Into::into),
+            shard_id,
+        )
+        .await
     }
 
     async fn search(
@@ -303,30 +389,22 @@ impl PointsInternal for PointsInternalService {
     async fn sync(
         &self,
         request: Request<SyncPointsInternal>,
-    ) -> Result<Response<PointsOperationResponse>, Status> {
+    ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
         let SyncPointsInternal {
             sync_points,
             shard_id,
+            clock_tag,
         } = request.into_inner();
+
         let sync_points =
             sync_points.ok_or_else(|| Status::invalid_argument("SyncPoints is missing"))?;
-        sync(self.toc.as_ref(), sync_points, shard_id).await
-    }
-
-    async fn overwrite_payload(
-        &self,
-        request: Request<SetPayloadPointsInternal>,
-    ) -> Result<Response<PointsOperationResponse>, Status> {
-        validate_and_log(request.get_ref());
-        let SetPayloadPointsInternal {
-            set_payload_points,
+        sync(
+            self.toc.clone(),
+            sync_points,
+            clock_tag.map(Into::into),
             shard_id,
-        } = request.into_inner();
-
-        let set_payload_points = set_payload_points
-            .ok_or_else(|| Status::invalid_argument("SetPayloadPoints is missing"))?;
-
-        overwrite_payload(self.toc.as_ref(), set_payload_points, shard_id).await
+        )
+        .await
     }
 }

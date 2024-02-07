@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use segment::data_types::order_by::OrderBy;
 use segment::types::{
     ExtendedPointId, Filter, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface,
     WithVector,
@@ -21,7 +22,7 @@ use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
     CountRequestInternal, CountResult, PointRequestInternal, Record, UpdateResult,
 };
-use crate::operations::CollectionUpdateOperations;
+use crate::operations::OperationWithClockTag;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::LocalShardTelemetry;
@@ -129,13 +130,20 @@ impl ProxyShard {
 #[async_trait]
 impl ShardOperation for ProxyShard {
     /// Update `wrapped_shard` while keeping track of the changed points
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
     async fn update(
         &self,
-        operation: CollectionUpdateOperations,
+        operation: OperationWithClockTag,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
+        // If we modify `self.changed_points`, we *have to* (?) execute `local_shard` update
+        // to completion, so this method is not cancel safe.
+
         let local_shard = &self.wrapped_shard;
-        let estimate_effect = operation.estimate_effect_area();
+        let estimate_effect = operation.operation.estimate_effect_area();
         let points_operation_effect: PointsOperationEffect = match estimate_effect {
             OperationEffectArea::Empty => PointsOperationEffect::Empty,
             OperationEffectArea::Points(points) => PointsOperationEffect::Some(points),
@@ -153,6 +161,7 @@ impl ShardOperation for ProxyShard {
 
         {
             let mut changed_points_guard = self.changed_points.write().await;
+
             match points_operation_effect {
                 PointsOperationEffect::Empty => {}
                 PointsOperationEffect::Some(points) => {
@@ -166,6 +175,7 @@ impl ShardOperation for ProxyShard {
                         .store(true, std::sync::atomic::Ordering::Relaxed);
                 }
             }
+
             // Shard update is within a write lock scope, because we need a way to block the shard updates
             // during the transfer restart and finalization.
             local_shard.update(operation, wait).await
@@ -181,6 +191,7 @@ impl ShardOperation for ProxyShard {
         with_vector: &WithVector,
         filter: Option<&Filter>,
         search_runtime_handle: &Handle,
+        order_by: Option<&OrderBy>,
     ) -> CollectionResult<Vec<Record>> {
         let local_shard = &self.wrapped_shard;
         local_shard
@@ -191,6 +202,7 @@ impl ShardOperation for ProxyShard {
                 with_vector,
                 filter,
                 search_runtime_handle,
+                order_by,
             )
             .await
     }

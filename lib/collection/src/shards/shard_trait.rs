@@ -2,22 +2,18 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use segment::types::{
-    ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
-};
+use segment::data_types::order_by::OrderBy;
+use segment::types::*;
 use tokio::runtime::Handle;
 
-use crate::operations::types::{
-    CollectionInfo, CollectionResult, CoreSearchRequestBatch, CountRequestInternal, CountResult,
-    PointRequestInternal, Record, UpdateResult,
-};
-use crate::operations::CollectionUpdateOperations;
+use crate::operations::types::*;
+use crate::operations::OperationWithClockTag;
 
 #[async_trait]
 pub trait ShardOperation {
     async fn update(
         &self,
-        operation: CollectionUpdateOperations,
+        operation: OperationWithClockTag,
         wait: bool,
     ) -> CollectionResult<UpdateResult>;
 
@@ -30,6 +26,7 @@ pub trait ShardOperation {
         with_vector: &WithVector,
         filter: Option<&Filter>,
         search_runtime_handle: &Handle,
+        order_by: Option<&OrderBy>,
     ) -> CollectionResult<Vec<Record>>;
 
     async fn info(&self) -> CollectionResult<CollectionInfo>;

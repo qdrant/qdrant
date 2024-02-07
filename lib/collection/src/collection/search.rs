@@ -56,7 +56,7 @@ impl Collection {
         let with_vectors = request.searches.iter().all(|s| {
             s.with_vector
                 .as_ref()
-                .map(|wv| wv.is_some())
+                .map(|wv| wv.is_enabled())
                 .unwrap_or(false)
         });
 

@@ -308,6 +308,7 @@ mod tests {
             "rating": vec![3, 7, 9, 9],
             "color": "red",
             "has_delivery": true,
+            "shipped_at": "2020-02-15T00:00:00Z",
             "parts": [],
             "packaging": null,
             "not_null": [null]
@@ -399,6 +400,40 @@ mod tests {
         let match_blue = Condition::Field(FieldCondition::new_match(
             "color".to_string(),
             "blue".to_owned().into(),
+        ));
+        let shipped_in_february = Condition::Field(FieldCondition::new_datetime_range(
+            "shipped_at".to_string(),
+            Range {
+                lt: Some(
+                    chrono::DateTime::parse_from_rfc3339("2020-03-01T00:00:00Z")
+                        .unwrap()
+                        .into(),
+                ),
+                gt: None,
+                gte: Some(
+                    chrono::DateTime::parse_from_rfc3339("2020-02-01T00:00:00Z")
+                        .unwrap()
+                        .into(),
+                ),
+                lte: None,
+            },
+        ));
+        let shipped_in_march = Condition::Field(FieldCondition::new_datetime_range(
+            "shipped_at".to_string(),
+            Range {
+                lt: Some(
+                    chrono::DateTime::parse_from_rfc3339("2020-04-01T00:00:00Z")
+                        .unwrap()
+                        .into(),
+                ),
+                gt: None,
+                gte: Some(
+                    chrono::DateTime::parse_from_rfc3339("2020-03-01T00:00:00Z")
+                        .unwrap()
+                        .into(),
+                ),
+                lte: None,
+            },
         ));
         let with_delivery = Condition::Field(FieldCondition::new_match(
             "has_delivery".to_string(),
@@ -516,7 +551,31 @@ mod tests {
         };
         assert!(!payload_checker.check(0, &query));
 
-        // test cases for min_should
+        let query = Filter {
+            should: Some(vec![
+                Condition::Filter(Filter {
+                    should: None,
+                    min_should: None,
+                    must: Some(vec![match_blue.clone(), in_moscow.clone()]),
+                    must_not: None,
+                }),
+                Condition::Filter(Filter {
+                    should: None,
+                    min_should: None,
+                    must: Some(vec![match_red.clone(), in_berlin.clone()]),
+                    must_not: None,
+                }),
+            ]),
+            min_should: None,
+            must: None,
+            must_not: None,
+        };
+        assert!(payload_checker.check(0, &query));
+
+        let query = Filter::new_must_not(with_bad_rating);
+        assert!(!payload_checker.check(0, &query));
+
+        // min_should
         let query = Filter::new_min_should(MinShould {
             conditions: vec![match_blue.clone(), in_moscow.clone()],
             min_count: 1,
@@ -534,25 +593,6 @@ mod tests {
                 Condition::Filter(Filter {
                     should: None,
                     min_should: None,
-                    must: Some(vec![match_blue.clone(), in_moscow.clone()]),
-                    must_not: None,
-                }),
-                Condition::Filter(Filter {
-                    should: None,
-                    min_should: None,
-                    must: Some(vec![match_red.clone(), in_berlin.clone()]),
-                    must_not: None,
-                }),
-            ],
-            min_count: 1,
-        });
-        assert!(payload_checker.check(0, &query));
-
-        let query = Filter {
-            should: Some(vec![
-                Condition::Filter(Filter {
-                    should: None,
-                    min_should: None,
                     must: Some(vec![match_blue, in_moscow]),
                     must_not: None,
                 }),
@@ -562,16 +602,19 @@ mod tests {
                     must: Some(vec![match_red, in_berlin]),
                     must_not: None,
                 }),
-            ]),
-            min_should: None,
-            must: None,
-            must_not: None,
-        };
+            ],
+            min_count: 1,
+        });
         assert!(payload_checker.check(0, &query));
 
-        let query = Filter::new_must_not(with_bad_rating);
+        // DateTime payload index
+        let query = Filter::new_must(shipped_in_february);
+        assert!(payload_checker.check(0, &query));
+
+        let query = Filter::new_must(shipped_in_march);
         assert!(!payload_checker.check(0, &query));
 
+        // id Filter
         let ids: HashSet<_> = vec![1, 2, 3].into_iter().map(|x| x.into()).collect();
 
         let query = Filter::new_must_not(Condition::HasId(ids.into()));
