@@ -1371,18 +1371,10 @@ pub struct Range<T> {
     pub lte: Option<T>,
 }
 
-fn deserialize_datetime_option<'de, D>(
-    s: Option<&str>,
-) -> Result<Option<DateTimePayloadType>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let Some(s) = s else {
-        return Ok(None);
-    };
+pub fn try_parse_datetime(s: &str) -> Option<DateTimePayloadType> {
     // Attempt to parse the input string in RFC 3339 format
     if let Ok(datetime) = chrono::DateTime::parse_from_rfc3339(s) {
-        return Ok(Some(datetime.into()));
+        return Some(datetime.into());
     }
 
     // Attempt to parse the input string in the specified formats
@@ -1397,15 +1389,33 @@ where
             naive
         } else if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M") {
             naive
-        } else if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d") {
-            naive
+        } else if let Ok(naive) = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+            naive.into()
         } else {
-            return Err(serde::de::Error::custom("Invalid date/time format"));
+            // parse error, return none
+            return None;
         };
 
     // Convert the parsed NaiveDateTime to a DateTime<Utc>
     let datetime_utc = datetime.and_utc();
-    Ok(Some(datetime_utc))
+    Some(datetime_utc)
+}
+
+fn deserialize_datetime_option<'de, D>(
+    s: Option<&str>,
+) -> Result<Option<DateTimePayloadType>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let Some(s) = s else {
+        return Ok(None);
+    };
+    // Attempt to parse the input string in RFC 3339 format
+    let parse_result = try_parse_datetime(s);
+    match parse_result {
+        Some(_) => Ok(parse_result),
+        None => Err(serde::de::Error::custom("Invalid date/time format")),
+    }
 }
 
 fn deserialize_datetime_range<'de, D>(

@@ -8,7 +8,8 @@ collection_name = 'test_collection_payload_indexing'
 
 @pytest.fixture(autouse=True)
 def setup(on_disk_vectors):
-    basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
+    basic_collection_setup(collection_name=collection_name,
+                           on_disk_vectors=on_disk_vectors)
     yield
     drop_collection(collection_name=collection_name)
 
@@ -53,13 +54,15 @@ def test_payload_indexing_operations():
         path_params={'collection_name': collection_name},
     )
     assert response.ok
-    assert response.json()['result']['payload_schema']['test_payload']['data_type'] == "keyword"
+    assert response.json()[
+        'result']['payload_schema']['test_payload']['data_type'] == "keyword"
 
     # Delete index
     response = request_with_validation(
         api='/collections/{collection_name}/index/{field_name}',
         method="DELETE",
-        path_params={'collection_name': collection_name, 'field_name': 'test_payload'},
+        path_params={'collection_name': collection_name,
+                     'field_name': 'test_payload'},
         query_params={'wait': 'true'},
     )
     assert response.ok
@@ -113,14 +116,16 @@ def test_boolean_index():
         path_params={'collection_name': collection_name},
     )
     assert response.ok
-    assert response.json()['result']['payload_schema'][bool_key]['data_type'] == "bool"
+    assert response.json()[
+        'result']['payload_schema'][bool_key]['data_type'] == "bool"
     assert response.json()['result']['payload_schema'][bool_key]['points'] == 7
 
     # Delete index
     response = request_with_validation(
         api='/collections/{collection_name}/index/{field_name}',
         method="DELETE",
-        path_params={'collection_name': collection_name, 'field_name': bool_key},
+        path_params={'collection_name': collection_name,
+                     'field_name': bool_key},
         query_params={'wait': 'true'},
     )
     assert response.ok
@@ -153,10 +158,12 @@ def test_datetime_indexing():
     )
     assert response.ok
 
+    # test with mixed datetime format
     data = [
-        ({"gte": "2015-01-01T00:00:00Z", "lte": "2015-01-01T00:00:00Z"}, [1]),
-        ({"gte": "2015-01-01T01:00:00+01:00", "lte": "2015-01-01T01:00:00+01:00"}, [1]),
-        ({"gte": "2015-02-01T06:00:00Z", "lte": "2015-02-01T06:00:00Z"}, [2]),
+        ({"gte": "2015-01-01", "lte": "2015-01-01 00:00"}, [1]),
+        ({"gte": "2015-01-01T01:00:00+01:00",
+         "lte": "2015-01-01T01:00:00+01:00"}, [1]),
+        ({"gte": "2015-02-01 06:00:00", "lte": "2015-02-01T06:00:00Z"}, [2]),
     ]
     for range_, expected_ids in data:
         response = request_with_validation(
@@ -169,9 +176,10 @@ def test_datetime_indexing():
             },
         )
         assert response.ok, response.json()
-        
+
         point_ids = [p["id"] for p in response.json()["result"]["points"]]
         assert all(id in point_ids for id in expected_ids)
+
 
 def test_update_payload_on_indexed_field():
     keyword_field = "city"
@@ -208,7 +216,7 @@ def test_update_payload_on_indexed_field():
             "with_vector": False,
             "filter": {
                 "must": [
-                    {"key": "city", "match": {"value": "Berlin"} }
+                    {"key": "city", "match": {"value": "Berlin"}}
                 ]
             }
         }
@@ -228,11 +236,10 @@ def test_update_payload_on_indexed_field():
             "with_vector": False,
             "filter": {
                 "must": [
-                    {"key": "city", "match": {"value": "Berlin"} }
+                    {"key": "city", "match": {"value": "Berlin"}}
                 ]
             }
         }
     )
     assert response.ok
     assert [p['id'] for p in response.json()['result']['points']] == [1, 2, 3]
-
