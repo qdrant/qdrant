@@ -152,7 +152,7 @@ impl Collection {
     /// * `global_temp_dir`: directory used to host snapshots while they are being created
     /// * `this_peer_id`: current peer id
     ///
-    /// returns: Result<(SnapshotFile, SnapshotDescription), CollectionError>
+    /// returns: Result<(PathBuf, SnapshotDescription), CollectionError>
     pub async fn create_snapshot(
         &self,
         global_temp_dir: &Path,
