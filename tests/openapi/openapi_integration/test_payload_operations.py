@@ -237,25 +237,26 @@ def test_payload_operations():
     assert len(response.json()['result']['points']) == 3
 
     # set property of payload by empty key
-    # response = request_with_validation(
-        # api='/collections/{collection_name}/points/payload',
-        # method="POST",
-        # path_params={'collection_name': collection_name},
-        # body={
-            # "payload": {"key6": "xxx"},
-            # "points": [1],
-            # "key": ""
-        # }
-    # )
-    # assert not response.ok
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/payload',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "payload": {"key6": "xxx"},
+            "points": [1],
+            "key": ""
+        }
+    )
+    assert not response.ok
 
-    # response = request_with_validation(
-        # api='/collections/{collection_name}/points/{id}',
-        # method="GET",
-        # path_params={'collection_name': collection_name, 'id': 1},
-    # )
-    # assert response.ok
-    # assert len(response.json()['result']['payload']) == 3
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': 1},
+    )
+    assert response.ok
+    assert len(response.json()['result']['payload']) == 3
 
     # set property of payload with top level
     response = request_with_validation(
