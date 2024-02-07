@@ -129,11 +129,11 @@ impl ShardReplicaSet {
             _ => unreachable!(),
         };
 
-        let max_ack_version = local_shard
+        let wal_keep_from = local_shard
             .update_handler
             .lock()
             .await
-            .max_ack_version
+            .wal_keep_from
             .clone();
 
         // Proxify local shard
@@ -145,7 +145,7 @@ impl ShardReplicaSet {
             _ => unreachable!(),
         };
 
-        let proxy_shard = QueueProxyShard::new(local_shard, remote_shard, max_ack_version);
+        let proxy_shard = QueueProxyShard::new(local_shard, remote_shard, wal_keep_from);
         let _ = local.insert(Shard::QueueProxy(proxy_shard));
 
         Ok(())

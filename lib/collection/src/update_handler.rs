@@ -97,11 +97,11 @@ pub struct UpdateHandler {
     runtime_handle: Handle,
     /// WAL, required for operations
     wal: LockedWal,
-    /// Maximum version to acknowledge to WAL to prevent truncating too early
-    /// This is used when another part still relies on part of the WAL, such as the queue proxy
-    /// shard.
+    /// Always keep this WAL version and later and prevent acknowledging/truncating from the WAL.
+    /// This is used when other bits of code still depend on information in the WAL, such as the
+    /// queue proxy shard.
     /// Defaults to `u64::MAX` to allow acknowledging all confirmed versions.
-    pub(super) max_ack_version: Arc<AtomicU64>,
+    pub(super) wal_keep_from: Arc<AtomicU64>,
     optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
     /// Maximum number of concurrent optimization jobs in this update handler.
     max_optimization_threads: Option<usize>,
@@ -132,7 +132,7 @@ impl UpdateHandler {
             flush_stop: None,
             runtime_handle,
             wal,
-            max_ack_version: Arc::new(u64::MAX.into()),
+            wal_keep_from: Arc::new(u64::MAX.into()),
             flush_interval_sec,
             optimization_handles: Arc::new(TokioMutex::new(vec![])),
             max_optimization_threads,
@@ -162,7 +162,7 @@ impl UpdateHandler {
         self.flush_worker = Some(self.runtime_handle.spawn(Self::flush_worker(
             self.segments.clone(),
             self.wal.clone(),
-            self.max_ack_version.clone(),
+            self.wal_keep_from.clone(),
             self.flush_interval_sec,
             flush_rx,
         )));
@@ -586,7 +586,7 @@ impl UpdateHandler {
     async fn flush_worker(
         segments: LockedSegmentHolder,
         wal: LockedWal,
-        max_ack: Arc<AtomicU64>,
+        wal_keep_from: Arc<AtomicU64>,
         flush_interval_sec: u64,
         mut stop_receiver: oneshot::Receiver<()>,
     ) {
@@ -624,16 +624,19 @@ impl UpdateHandler {
                 }
             };
 
-            // Acknowledge confirmed version in WAL, but don't exceed specified maximum
-            // This is to prevent truncating WAL entries that may still be used by other things
+            // Acknowledge confirmed version in WAL, but don't acknowledge the specified
+            // `keep_from` index or higher.
+            // This is to prevent truncating WAL entries that other bits of code still depend on
             // such as the queue proxy shard.
-            // Default maximum ack version is `u64::MAX` to allow acknowledging all confirmed.
-            let max_ack = max_ack.load(std::sync::atomic::Ordering::Relaxed);
-            if confirmed_version > max_ack {
-                trace!("Acknowledging message {max_ack} in WAL, {confirmed_version} is already confirmed but max_ack_version is set");
-            }
-            let ack = confirmed_version.min(max_ack);
+            // Default keep_from is `u64::MAX` to allow acknowledging all confirmed.
+            let keep_from = wal_keep_from.load(std::sync::atomic::Ordering::Relaxed);
 
+            // If we should keep the first message, do not acknowledge at all
+            if keep_from == 0 {
+                continue;
+            }
+
+            let ack = confirmed_version.min(keep_from.saturating_sub(1));
             if let Err(err) = wal.lock().ack(ack) {
                 segments.write().report_optimizer_error(err);
             }
