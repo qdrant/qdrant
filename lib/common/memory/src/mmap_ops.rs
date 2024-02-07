@@ -15,6 +15,7 @@ pub fn create_and_ensure_length(path: &Path, length: usize) -> io::Result<()> {
         .read(true)
         .write(true)
         .create(true)
+        .truncate(true)
         .open(path)?;
 
     file.set_len(length as u64)?;

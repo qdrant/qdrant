@@ -80,6 +80,7 @@ impl ChunkedMmapVectors {
             };
             let mut file = OpenOptions::new()
                 .create(true)
+                .truncate(true)
                 .write(true)
                 .open(&config_file)?;
             serde_json::to_writer(&mut file, &config)?;

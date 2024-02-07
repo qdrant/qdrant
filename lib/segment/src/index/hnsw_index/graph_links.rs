@@ -269,6 +269,7 @@ impl GraphLinksConverter {
                 .read(true)
                 .write(true)
                 .create(true)
+                .truncate(true)
                 .open(temp_path.as_path())?;
 
             file.set_len(self.data_size())?;
