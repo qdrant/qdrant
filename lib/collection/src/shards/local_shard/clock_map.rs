@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{hash_map, HashMap};
 use std::io::Write as _;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::{fs, io};
+use std::{cmp, fs, io};
 
 use serde::{Deserialize, Serialize};
 
@@ -13,7 +13,7 @@ use crate::shards::shard::PeerId;
 #[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(transparent)]
 pub struct ClockMap {
-    clocks: HashMap<ClockId, Clock>,
+    clocks: HashMap<Key, Clock>,
 }
 
 impl ClockMap {
@@ -45,36 +45,27 @@ impl ClockMap {
         Ok(())
     }
 
-    pub fn advance_clock_and_correct_tag(&mut self, clock_tag: &mut ClockTag) -> u64 {
-        let prev_tick = self.advance_clock(clock_tag);
-
-        if clock_tag.clock_tick == 0 {
-            clock_tag.clock_tick = prev_tick;
-        }
-
-        prev_tick
-    }
-
-    pub fn advance_clock(&mut self, clock_tag: &ClockTag) -> u64 {
-        let clock_id = ClockId::from_tag(clock_tag);
+    pub fn advance_clock(&mut self, clock_tag: &ClockTag) -> (bool, u64) {
+        let key = Key::from_tag(clock_tag);
         let new_tick = clock_tag.clock_tick;
 
-        if let Some(clock) = self.clocks.get(&clock_id) {
-            clock.advance_to(new_tick)
-        } else {
-            self.clocks.insert(clock_id, Clock::new(new_tick));
-            0
+        match self.clocks.entry(key) {
+            hash_map::Entry::Occupied(entry) => entry.get().advance_to(new_tick),
+            hash_map::Entry::Vacant(entry) => {
+                entry.insert(Clock::new(new_tick));
+                (true, new_tick)
+            }
         }
     }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize)]
-struct ClockId {
+struct Key {
     peer_id: PeerId,
     clock_id: u32,
 }
 
-impl ClockId {
+impl Key {
     pub fn from_tag(clock_tag: &ClockTag) -> Self {
         Self {
             peer_id: clock_tag.peer_id,
@@ -85,18 +76,23 @@ impl ClockId {
 
 #[derive(Debug, Deserialize, Serialize)]
 struct Clock {
-    clock: AtomicU64,
+    current_tick: AtomicU64,
 }
 
 impl Clock {
     pub fn new(tick: u64) -> Self {
         Self {
-            clock: tick.into(),
+            current_tick: tick.into(),
         }
     }
 
-    pub fn advance_to(&self, new_tick: u64) -> u64 {
-        self.clock.fetch_max(new_tick, Ordering::Relaxed)
+    pub fn advance_to(&self, new_tick: u64) -> (bool, u64) {
+        let old_tick = self.current_tick.fetch_max(new_tick, Ordering::Relaxed);
+
+        let clock_updated = old_tick < new_tick;
+        let current_tick = cmp::max(old_tick, new_tick);
+
+        (clock_updated, current_tick)
     }
 }
 
