@@ -1101,7 +1101,7 @@ dependencies = [
  "url",
  "uuid",
  "validator",
- "wal",
+ "wal 0.1.2 (git+https://github.com/qdrant/wal.git?rev=fad0e7c48be58d8e7db4cc739acd9b1cf6735de0)",
 ]
 
 [[package]]
@@ -3953,7 +3953,7 @@ dependencies = [
  "tracing-tracy",
  "uuid",
  "validator",
- "wal",
+ "wal 0.1.2 (git+https://github.com/qdrant/wal.git?rev=fad0e7c48be58d8e7db4cc739acd9b1cf6735de0)",
 ]
 
 [[package]]
@@ -5048,7 +5048,7 @@ dependencies = [
  "url",
  "uuid",
  "validator",
- "wal",
+ "wal 0.1.2 (git+https://github.com/qdrant/wal.git?rev=acaf1b2ebd5de3a871f4d2c48e13fc8788ffa43b)",
 ]
 
 [[package]]
@@ -5893,6 +5893,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f200f5b12eb75f8c1ed65abd4b2db8a6e1b138a20de009dacee265a2498f3f6"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "wal"
+version = "0.1.2"
+source = "git+https://github.com/qdrant/wal.git?rev=acaf1b2ebd5de3a871f4d2c48e13fc8788ffa43b#acaf1b2ebd5de3a871f4d2c48e13fc8788ffa43b"
+dependencies = [
+ "byteorder",
+ "crc32c",
+ "crossbeam-channel",
+ "docopt",
+ "env_logger 0.11.1",
+ "fs4",
+ "log",
+ "memmap2 0.9.4",
+ "rand 0.8.5",
+ "rand_distr",
+ "rustix 0.37.27",
+ "serde",
 ]
 
 [[package]]
