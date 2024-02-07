@@ -3,5 +3,4 @@
 skip = .git,*.pdf,*.svg,openapi.json,key.pem,Cargo.lock
 # hel - Query token
 # generall - the boss
-# ser - from serde::ser
-ignore-words-list = crate,hel,generall,ser
+ignore-words-list = crate,hel,generall
