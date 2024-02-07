@@ -8151,6 +8151,11 @@
                 "nullable": true
               }
             ]
+          },
+          "key": {
+            "description": "Assigns payload to each point that satisfy this path of property",
+            "type": "string",
+            "nullable": true
           }
         }
       },
