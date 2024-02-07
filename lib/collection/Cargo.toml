@@ -38,7 +38,7 @@ tokio-util = { workspace = true }
 futures = { workspace = true }
 atomicwrites = "0.4.3"
 log = "0.4"
-env_logger = "0.10.2"
+env_logger = "0.11"
 merge = "0.1.0"
 async-trait = "0.1.77"
 arc-swap = "1.6.0"

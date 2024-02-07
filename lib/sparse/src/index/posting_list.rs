@@ -196,6 +196,11 @@ impl<'a> PostingListIterator<'a> {
         }
     }
 
+    /// Advances the iterator by `count` elements.
+    pub fn advance_by(&mut self, count: usize) {
+        self.current_index = (self.current_index + count).min(self.elements.len());
+    }
+
     /// Returns the next element without advancing the iterator.
     pub fn peek(&self) -> Option<&PostingElement> {
         self.elements.get(self.current_index)

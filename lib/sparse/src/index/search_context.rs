@@ -134,10 +134,18 @@ impl<'a> SearchContext<'a> {
         filter_condition: &F,
     ) {
         for posting in self.postings_iterators.iter_mut() {
-            for element in posting.posting_list_iterator.remaining_elements() {
+            // offset at which the posting list stops contributing to the batch (relative to the batch start)
+            let mut posting_stopped_at = None;
+            for (offset, element) in posting
+                .posting_list_iterator
+                .remaining_elements()
+                .iter()
+                .enumerate()
+            {
                 let element_id = element.record_id;
                 if element_id > batch_last_id {
                     // reaching end of the batch
+                    posting_stopped_at = Some(offset);
                     break;
                 }
                 let element_score = element.weight * posting.query_weight;
@@ -145,8 +153,17 @@ impl<'a> SearchContext<'a> {
                 let local_id = (element_id - batch_start_id) as usize;
                 self.batch_scores[local_id] += element_score;
             }
-            // advance posting to the batch last id
-            posting.posting_list_iterator.skip_to(batch_last_id + 1);
+            // advance posting list iterator
+            match posting_stopped_at {
+                None => {
+                    // posting list is exhausted before reaching the end of the batch
+                    posting.posting_list_iterator.skip_to_end();
+                }
+                Some(stopped_at) => {
+                    // posting list is not exhausted - advance to last id
+                    posting.posting_list_iterator.advance_by(stopped_at)
+                }
+            };
         }
 
         // publish only the non-zero scores above the current min
