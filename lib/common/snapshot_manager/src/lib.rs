@@ -202,14 +202,6 @@ impl SnapshotManager {
         Ok((File::open(path)?, temp))
     }
 
-    pub fn get_snapshot_file_sync(
-        &self,
-        snapshot: impl AsRef<Path>,
-    ) -> Result<(File, Option<TempPath>), SnapshotManagerError> {
-        let (path, temp) = self.get_snapshot_path(snapshot)?;
-        Ok((File::open(path)?, temp))
-    }
-
     pub async fn do_save_uploaded_snapshot(
         &self,
         name: Option<String>,

@@ -195,11 +195,10 @@ impl Collection {
         Ok(())
     }
 
-    /// Restore collection from snapshot
+    /// Restore collection from snapshot. Only supports local files.
     ///
     /// This method performs blocking IO.
     pub fn restore_snapshot_sync(
-        snapshot_manager: SnapshotManager,
         snapshot: impl AsRef<Path>,
         target_dir: &Path,
         this_peer_id: PeerId,
@@ -209,7 +208,7 @@ impl Collection {
             target_dir,
             this_peer_id,
             is_distributed,
-            snapshot_manager.get_snapshot_file_sync(snapshot)?,
+            (File::open(snapshot)?, None),
         )
     }
 

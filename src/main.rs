@@ -25,7 +25,6 @@ use clap::Parser;
 use collection::shards::channel_service::ChannelService;
 use consensus::Consensus;
 use slog::Drain;
-use snapshot_manager::SnapshotManager;
 use startup::setup_panic_hook;
 use storage::content_manager::consensus::operation_sender::OperationSender;
 use storage::content_manager::consensus::persistent::Persistent;
@@ -129,8 +128,6 @@ fn main() -> anyhow::Result<()> {
 
     let settings = Settings::new(args.config_path)?;
 
-    let snapshot_manager = SnapshotManager::new(settings.storage.snapshots_path.clone());
-
     let reporting_enabled = !settings.telemetry_disabled && !args.disable_telemetry;
 
     let reporting_id = TelemetryCollector::generate_id();
@@ -167,7 +164,6 @@ fn main() -> anyhow::Result<()> {
             temp_path,
             &full_snapshot,
             &settings.storage.storage_path,
-            snapshot_manager,
             args.force_snapshot,
             persistent_consensus_state.this_peer_id(),
             is_distributed_deployment,
@@ -179,7 +175,6 @@ fn main() -> anyhow::Result<()> {
             args.force_snapshot,
             temp_path,
             &settings.storage.storage_path,
-            snapshot_manager,
             persistent_consensus_state.this_peer_id(),
             is_distributed_deployment,
         )
