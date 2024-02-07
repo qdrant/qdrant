@@ -419,9 +419,9 @@ checksum = "4b46cbb362ab8752921c97e041f5e366ee6297bd428a31275b9fcf1e380f7299"
 
 [[package]]
 name = "anstream"
-version = "0.6.7"
+version = "0.6.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4cd2405b3ac1faab2990b74d728624cd9fd115651fcecc7c2d8daf01376275ba"
+checksum = "6e2e1ebcb11de5c03c67de28a7df593d32191b44939c482e97702baaaa6ab6a5"
 dependencies = [
  "anstyle",
  "anstyle-parse",
@@ -433,9 +433,9 @@ dependencies = [
 
 [[package]]
 name = "anstyle"
-version = "1.0.0"
+version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41ed9a86bf92ae6580e0a31281f65a1b1d867c0cc68d5346e2ae128dddfa6a7d"
+checksum = "8901269c6307e8d93993578286ac0edf7f195079ffff5ebdeea6a59ffb7e36bc"
 
 [[package]]
 name = "anstyle-parse"
@@ -1066,7 +1066,7 @@ dependencies = [
  "chrono",
  "common",
  "criterion",
- "env_logger",
+ "env_logger 0.11.1",
  "fs_extra",
  "futures",
  "hashring",
@@ -1692,6 +1692,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "env_filter"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a009aa4810eb158359dda09d0c87378e4bbb89b5a801f016885a4707ba24f7ea"
+dependencies = [
+ "log",
+ "regex",
+]
+
+[[package]]
 name = "env_logger"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1702,6 +1712,19 @@ dependencies = [
  "log",
  "regex",
  "termcolor",
+]
+
+[[package]]
+name = "env_logger"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "05e7cf40684ae96ade6232ed84582f40ce0a66efcd43a5117aef610534f8e0b8"
+dependencies = [
+ "anstream",
+ "anstyle",
+ "env_filter",
+ "humantime",
+ "log",
 ]
 
 [[package]]
@@ -2656,7 +2679,7 @@ dependencies = [
  "byteorder",
  "csv",
  "encoding",
- "env_logger",
+ "env_logger 0.10.2",
  "glob",
  "lindera-core",
  "lindera-decompress",
@@ -2735,7 +2758,7 @@ dependencies = [
  "csv",
  "encoding_rs",
  "encoding_rs_io",
- "env_logger",
+ "env_logger 0.10.2",
  "glob",
  "lindera-core",
  "lindera-decompress",
@@ -2756,7 +2779,7 @@ dependencies = [
  "csv",
  "encoding_rs",
  "encoding_rs_io",
- "env_logger",
+ "env_logger 0.10.2",
  "glob",
  "lindera-core",
  "lindera-decompress",
@@ -2793,7 +2816,7 @@ dependencies = [
  "byteorder",
  "csv",
  "encoding",
- "env_logger",
+ "env_logger 0.10.2",
  "glob",
  "lindera-compress",
  "lindera-core",
@@ -2845,7 +2868,7 @@ dependencies = [
  "byteorder",
  "csv",
  "encoding",
- "env_logger",
+ "env_logger 0.10.2",
  "glob",
  "lindera-compress",
  "lindera-core",
@@ -4997,7 +5020,7 @@ dependencies = [
  "chrono",
  "collection",
  "common",
- "env_logger",
+ "env_logger 0.11.1",
  "futures",
  "http",
  "io",
@@ -5881,7 +5904,7 @@ dependencies = [
  "crc32c",
  "crossbeam-channel",
  "docopt",
- "env_logger",
+ "env_logger 0.10.2",
  "fs4",
  "log",
  "memmap2 0.9.4",
