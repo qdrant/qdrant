@@ -71,8 +71,8 @@ struct Clock {
 impl Clock {
     fn new_locked() -> Self {
         Self {
-            next_tick: AtomicU64::new(0),
-            available: AtomicBool::new(false),
+            next_tick: 0.into(),
+            available: false.into(),
         }
     }
 
