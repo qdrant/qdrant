@@ -1164,6 +1164,7 @@ mod tests {
                 101,
                 3.into(),
                 &json!({ "color": vec!["red".to_owned()] }).into(),
+                &None,
             )
             .unwrap();
         let proxy_res = proxy_segment.read_range(None, Some(10.into()));

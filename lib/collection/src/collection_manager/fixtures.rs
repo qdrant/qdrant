@@ -85,7 +85,9 @@ pub fn random_multi_vec_segment(
         let payload: Payload =
             json!({ payload_key: vec![payload_value], keyword_key: random_keyword}).into();
         segment.upsert_point(opnum, point_id, vectors).unwrap();
-        segment.set_payload(opnum, point_id, &payload).unwrap();
+        segment
+            .set_payload(opnum, point_id, &payload, &None)
+            .unwrap();
     }
     segment
 }
@@ -103,7 +105,9 @@ pub fn random_segment(path: &Path, opnum: SeqNumberType, num_vectors: u64, dim: 
         segment
             .upsert_point(opnum, point_id, only_default_vector(&random_vector))
             .unwrap();
-        segment.set_payload(opnum, point_id, &payload).unwrap();
+        segment
+            .set_payload(opnum, point_id, &payload, &None)
+            .unwrap();
     }
     segment
 }

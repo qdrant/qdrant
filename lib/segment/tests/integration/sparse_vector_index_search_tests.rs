@@ -418,7 +418,7 @@ fn sparse_vector_index_ram_filtered_search() {
     let mut payload_index = sparse_vector_index.payload_index.borrow_mut();
     for idx in 0..half_indexed_count {
         payload_index
-            .assign(idx as PointOffsetType, &payload)
+            .assign(idx as PointOffsetType, &payload, &None)
             .unwrap();
     }
     drop(payload_index);
@@ -488,7 +488,7 @@ fn sparse_vector_index_plain_search() {
     let mut payload_index = sparse_vector_index.payload_index.borrow_mut();
     for idx in 0..NUM_VECTORS {
         payload_index
-            .assign(idx as PointOffsetType, &payload)
+            .assign(idx as PointOffsetType, &payload, &None)
             .unwrap();
     }
     drop(payload_index);

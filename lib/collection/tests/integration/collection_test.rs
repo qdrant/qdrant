@@ -219,6 +219,7 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
                 payload,
                 points: Some(vec![2.into(), 3.into()]),
                 filter: None,
+                key: None,
             }));
 
         collection
