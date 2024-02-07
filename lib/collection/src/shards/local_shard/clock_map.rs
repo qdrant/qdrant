@@ -91,7 +91,7 @@ struct Clock {
 impl Clock {
     pub fn new(tick: u64) -> Self {
         Self {
-            clock: AtomicU64::new(tick),
+            clock: tick.into(),
         }
     }
 
