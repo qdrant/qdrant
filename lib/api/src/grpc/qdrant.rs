@@ -3789,7 +3789,7 @@ pub mod points_update_operation {
         /// Option for custom sharding to specify used shard keys
         #[prost(message, optional, tag = "3")]
         pub shard_key_selector: ::core::option::Option<super::ShardKeySelector>,
-        /// Option for path to indicate property
+        /// Option for indicate property of payload
         #[prost(string, optional, tag = "4")]
         pub key: ::core::option::Option<::prost::alloc::string::String>,
     }
