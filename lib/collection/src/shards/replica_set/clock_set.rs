@@ -14,7 +14,7 @@ impl ClockSet {
     /// Get the first available clock from the set, or create a new one.
     pub fn get_clock(&mut self) -> ClockGuard {
         for (id, clock) in self.clocks.iter().enumerate() {
-            if clock.lock() {
+            if clock.try_lock() {
                 return ClockGuard::new(id, clock.clone());
             }
         }
@@ -76,7 +76,11 @@ impl Clock {
         }
     }
 
-    /// Advance clock by a single tick and return current tick
+    /// Advance clock by a single tick and return current tick.
+    ///
+    /// # Thread safety
+    ///
+    /// Clock *has to* be locked (using [`Clock::lock`]) before calling `tick_once`!
     #[must_use = "new clock tick value must be used"]
     fn tick_once(&self) -> u64 {
         // `Clock` tracks *next* tick, so we increment `next_tick` by 1 and return *previous* value
@@ -95,17 +99,23 @@ impl Clock {
         current_tick
     }
 
-    /// Advance clock to `new_tick`, if `new_tick` is newer than current tick
+    /// Advance clock to `new_tick`, if `new_tick` is newer than current tick.
     fn advance_to(&self, new_tick: u64) {
         // `Clock` tracks *next* tick, so if we want to advance *current* tick to `new_tick`,
         // we have to advance `next_tick` to `new_tick + 1`
         self.next_tick.fetch_max(new_tick + 1, Ordering::Relaxed);
     }
 
-    fn lock(&self) -> bool {
+    /// Try to acquire exclusive lock over this clock.
+    ///
+    /// Returns `true` if the lock was successfuly acquired, or `false` if the clock is already locked.
+    fn try_lock(&self) -> bool {
         self.available.swap(false, Ordering::Relaxed)
     }
 
+    /// Release the exclusive lock over this clock.
+    ///
+    /// No-op if the clock is not locked.
     fn release(&self) {
         self.available.store(true, Ordering::Relaxed);
     }
