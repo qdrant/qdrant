@@ -1,4 +1,5 @@
 use std::fs::File;
+use std::path::{Path, PathBuf};
 
 use actix_files::NamedFile;
 use actix_multipart::form::tempfile::TempFile;
@@ -14,7 +15,7 @@ use collection::shards::shard::ShardId;
 use futures::{FutureExt as _, TryFutureExt as _};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use snapshot_manager::file::SnapshotFile;
+use snapshot_manager::SnapshotManager;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::snapshots::do_create_full_snapshot;
 use storage::content_manager::snapshots::recover::do_recover_from_snapshot;
@@ -59,25 +60,61 @@ pub struct SnapshottingForm {
 }
 
 // Actix specific code
-pub async fn do_get_snapshot(
-    toc: &TableOfContent,
-    snapshot: SnapshotFile,
+pub async fn _do_get_snapshot(
+    snapshot_manager: SnapshotManager,
+    snapshot: impl AsRef<Path>,
     req: &HttpRequest,
 ) -> Result<impl Responder> {
-    let (path, _temp) = toc
-        .snapshot_manager
+    let (path, _temp) = snapshot_manager
         .get_snapshot_path(&snapshot)
-        .await
         .map_err(snapshot_manager_into_actix_error)?;
 
-    let file = File::open(path).map_err(|x| snapshot_manager_into_actix_error(x.into()))?;
+    let file = File::open(&path).map_err(|x| snapshot_manager_into_actix_error(x.into()))?;
 
-    let file = NamedFile::from_file(file, snapshot.get_path("./"));
+    let file = NamedFile::from_file(file, PathBuf::from("./").join(path));
 
     // Need to pre-generate response so that TempPath doesn't drop the file before
     // the response can be generated.
     let res = file.respond_to(req);
     Ok(res)
+}
+
+pub async fn do_get_full_snapshot(
+    toc: &TableOfContent,
+    snapshot: impl AsRef<Path>,
+    req: &HttpRequest,
+) -> Result<impl Responder> {
+    _do_get_snapshot(toc.snapshot_manager(), snapshot, req).await
+}
+
+pub async fn do_get_collection_snapshot(
+    toc: &TableOfContent,
+    collection: String,
+    snapshot: impl AsRef<Path>,
+    req: &HttpRequest,
+) -> Result<impl Responder> {
+    _do_get_snapshot(
+        toc.snapshot_manager().scope(format!("{}/", collection)),
+        snapshot,
+        req,
+    )
+    .await
+}
+
+pub async fn do_get_shard_snapshot(
+    toc: &TableOfContent,
+    collection: String,
+    shard_id: ShardId,
+    snapshot: impl AsRef<Path>,
+    req: &HttpRequest,
+) -> Result<impl Responder> {
+    _do_get_snapshot(
+        toc.snapshot_manager()
+            .scope(format!("{}/shards/{}/", collection, shard_id)),
+        snapshot,
+        req,
+    )
+    .await
 }
 
 #[get("/collections/{name}/snapshots")]
@@ -133,8 +170,9 @@ async fn upload_snapshot(
     }
 
     let snapshot_location = match dispatcher
-        .snapshot_manager
-        .do_save_uploaded_snapshot(&collection.name, snapshot.file_name, snapshot.file)
+        .snapshot_manager()
+        .scope(format!("{}/", collection.name))
+        .do_save_uploaded_snapshot(snapshot.file_name, snapshot.file)
         .await
     {
         Ok(location) => location,
@@ -208,13 +246,12 @@ async fn get_snapshot(
     req: HttpRequest,
 ) -> impl Responder {
     let (collection_name, snapshot_name) = path.into_inner();
-    let snapshot = SnapshotFile::new_collection(snapshot_name, collection_name);
-    do_get_snapshot(&toc, snapshot, &req).await
+    do_get_collection_snapshot(&toc, collection_name, snapshot_name, &req).await
 }
 #[get("/snapshots")]
 async fn list_full_snapshots(toc: web::Data<TableOfContent>) -> impl Responder {
     let timing = Instant::now();
-    let response = toc.snapshot_manager.do_list_full_snapshots().await;
+    let response = toc.snapshot_manager().do_list_snapshots().await;
     process_response(response.map_err(|x| x.into()), timing)
 }
 
@@ -240,8 +277,7 @@ async fn get_full_snapshot(
     path: web::Path<String>,
     req: HttpRequest,
 ) -> impl Responder {
-    let snapshot = SnapshotFile::new_full(path.into_inner());
-    do_get_snapshot(&toc, snapshot, &req).await
+    do_get_full_snapshot(&toc, path.into_inner(), &req).await
 }
 
 #[delete("/snapshots/{snapshot_name}")]
@@ -250,13 +286,12 @@ async fn delete_full_snapshot(
     path: web::Path<String>,
     params: valid::Query<SnapshottingParam>,
 ) -> impl Responder {
-    let snapshot = SnapshotFile::new_full(path.into_inner());
     let timing = Instant::now();
     let wait = params.wait.unwrap_or(true);
 
     let response = dispatcher
-        .snapshot_manager
-        .do_delete_snapshot(&snapshot, wait)
+        .snapshot_manager()
+        .do_delete_snapshot(path.into_inner(), wait)
         .await
         .map_err(|x| x.into());
 
@@ -274,12 +309,12 @@ async fn delete_collection_snapshot(
     params: valid::Query<SnapshottingParam>,
 ) -> impl Responder {
     let (collection_name, snapshot_name) = path.into_inner();
-    let snapshot = SnapshotFile::new_collection(snapshot_name, collection_name);
     let timing = Instant::now();
     let wait = params.wait.unwrap_or(true);
     let response = dispatcher
-        .snapshot_manager
-        .do_delete_snapshot(&snapshot, wait)
+        .snapshot_manager()
+        .scope(format!("{}/", collection_name))
+        .do_delete_snapshot(snapshot_name, wait)
         .await
         .map_err(|x| x.into());
     match response {
@@ -323,9 +358,11 @@ async fn recover_shard_snapshot(
     query: web::Query<SnapshottingParam>,
     web::Json(request): web::Json<ShardSnapshotRecover>,
 ) -> impl Responder {
-    let snapshot_manager = toc.snapshot_manager.clone();
     let future = async move {
         let (collection, shard) = path.into_inner();
+        let snapshot_manager = toc
+            .snapshot_manager()
+            .scope(format!("{}/shards/{}/", collection, shard));
 
         common::snapshots::recover_shard_snapshot(
             toc.into_inner(),
@@ -407,8 +444,7 @@ async fn download_shard_snapshot(
     req: HttpRequest,
 ) -> impl Responder {
     let (collection, shard, snapshot) = path.into_inner();
-    let snapshot = SnapshotFile::new_shard(snapshot, collection, shard);
-    do_get_snapshot(&toc, snapshot, &req).await
+    do_get_shard_snapshot(&toc, collection, shard, snapshot, &req).await
 }
 
 #[delete("/collections/{collection}/shards/{shard}/snapshots/{snapshot}")]

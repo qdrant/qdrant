@@ -57,7 +57,6 @@ pub const FULL_SNAPSHOT_FILE_NAME: &str = "full-snapshot";
 pub struct TableOfContent {
     collections: Arc<RwLock<Collections>>,
     pub(super) storage_config: Arc<StorageConfig>,
-    pub snapshot_manager: SnapshotManager,
     search_runtime: Runtime,
     update_runtime: Runtime,
     general_runtime: Runtime,
@@ -89,7 +88,6 @@ impl TableOfContent {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         storage_config: &StorageConfig,
-        snapshot_manager: SnapshotManager,
         search_runtime: Runtime,
         update_runtime: Runtime,
         general_runtime: Runtime,
@@ -127,16 +125,16 @@ impl TableOfContent {
                 .to_str()
                 .expect("A filename of one of the collection files is not a valid UTF-8")
                 .to_string();
-            snapshot_manager
-                .ensure_snapshots_path(&collection_name)
-                .unwrap();
+            // MOGNOTE
+            // snapshot_manager
+            //     .ensure_snapshots_path(&collection_name)
+            //     .unwrap();
 
             log::info!("Loading collection: {}", collection_name);
             let collection = general_runtime.block_on(Collection::load(
                 collection_name.clone(),
                 this_peer_id,
                 &collection_path,
-                snapshot_manager.clone(),
                 storage_config
                     .to_shared_storage_config(is_distributed)
                     .into(),
@@ -187,7 +185,6 @@ impl TableOfContent {
         TableOfContent {
             collections: Arc::new(RwLock::new(collections)),
             storage_config: Arc::new(storage_config.clone()),
-            snapshot_manager,
             search_runtime,
             update_runtime,
             general_runtime,
@@ -211,6 +208,11 @@ impl TableOfContent {
 
     pub fn storage_path(&self) -> &str {
         &self.storage_config.storage_path
+    }
+
+    #[inline]
+    pub fn snapshot_manager(&self) -> SnapshotManager {
+        self.storage_config.snapshot_manager()
     }
 
     /// List of all collections

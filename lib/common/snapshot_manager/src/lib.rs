@@ -1,22 +1,17 @@
 use std::fs::File;
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use api::grpc::conversions::naive_date_time_to_proto;
 use chrono::NaiveDateTime;
 use error::SnapshotManagerError;
-use path_clean::PathClean;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tempfile::{NamedTempFile, TempPath};
 use url::Url;
 use uuid::Uuid;
 
-use self::file::SnapshotFile;
-
 pub mod error;
-pub mod file;
 mod helpers;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
@@ -40,26 +35,33 @@ impl From<SnapshotDescription> for api::grpc::qdrant::SnapshotDescription {
 }
 
 #[derive(Clone, Debug)]
-pub struct SnapshotManagerInner {
+pub struct SnapshotManager {
     path: PathBuf,
 }
 
-#[derive(Clone, Debug)]
-pub struct SnapshotManager(Arc<SnapshotManagerInner>);
-
 impl SnapshotManager {
     pub fn new(path: impl Into<PathBuf>) -> Self {
-        SnapshotManager(Arc::new(SnapshotManagerInner { path: path.into() }))
+        SnapshotManager { path: path.into() }
+    }
+
+    pub fn scope(&self, path: impl AsRef<Path>) -> Self {
+        SnapshotManager {
+            path: self.path.join(path.as_ref()),
+        }
+    }
+
+    pub fn checksum_path(&self, snapshot_path: impl AsRef<Path>) -> PathBuf {
+        PathBuf::from(format!("{}.checksum", snapshot_path.as_ref().display()))
     }
 
     pub async fn do_delete_snapshot(
         &self,
-        snapshot: &SnapshotFile,
+        snapshot: impl AsRef<Path>,
         wait: bool,
     ) -> Result<bool, SnapshotManagerError> {
         let _self = self.clone();
-        let snapshot = snapshot.clone();
-        let task = tokio::spawn(async move { _self._do_delete_snapshot(&snapshot).await });
+        let snapshot = self.use_base(snapshot);
+        let task = tokio::spawn(async move { _self._do_delete_snapshot(snapshot).await });
 
         if wait {
             task.await??;
@@ -70,44 +72,36 @@ impl SnapshotManager {
 
     async fn _do_delete_snapshot(
         &self,
-        snapshot: &SnapshotFile,
+        snapshot_path: PathBuf,
     ) -> Result<(), SnapshotManagerError> {
-        if !self.snapshot_exists(snapshot).await? {
+        if !self.snapshot_exists(&snapshot_path).await? {
             return Err(SnapshotManagerError::NotFound {
-                description: if let Some(collection) = &snapshot.collection() {
-                    format!(
-                        "Collection {:?} snapshot {} not found",
-                        collection,
-                        snapshot.name()
-                    )
-                } else {
-                    format!("Full storage snapshot {} not found", snapshot.name())
-                },
+                description: format!("Snapshot {:?} not found", snapshot_path),
             });
         }
 
-        self.remove_snapshot(snapshot).await?;
+        self.remove_snapshot(snapshot_path).await?;
 
         Ok(())
     }
 
     pub async fn get_snapshot_checksum(
         &self,
-        snapshot: &SnapshotFile,
+        snapshot: impl AsRef<Path>,
     ) -> Result<String, SnapshotManagerError> {
-        let path = snapshot.get_checksum_path(self.snapshots_path());
+        let path = self.checksum_path(self.use_base(snapshot));
 
         Ok(tokio::fs::read_to_string(&path).await?)
     }
 
     pub async fn get_snapshot_description(
         &self,
-        snapshot: &SnapshotFile,
+        snapshot: impl AsRef<Path>,
     ) -> Result<SnapshotDescription, SnapshotManagerError> {
-        let path = snapshot.get_path(self.snapshots_path());
-        let checksum = self.get_snapshot_checksum(snapshot).await.ok();
+        let path = self.use_base(snapshot);
+        let checksum = self.get_snapshot_checksum(&path).await.ok();
 
-        let meta = tokio::fs::metadata(path).await?;
+        let meta = tokio::fs::metadata(&path).await?;
         let creation_time = meta.created().ok().and_then(|created_time| {
             created_time
                 .duration_since(SystemTime::UNIX_EPOCH)
@@ -118,14 +112,17 @@ impl SnapshotManager {
         });
 
         Ok(SnapshotDescription {
-            name: snapshot.name(),
+            name: path
+                .file_name()
+                .map(|x| x.to_string_lossy().to_string())
+                .unwrap_or_else(|| String::with_capacity(0)),
             creation_time,
             size: meta.len(),
             checksum,
         })
     }
 
-    pub async fn do_list_full_snapshots(
+    pub async fn do_list_snapshots(
         &self,
     ) -> Result<Vec<SnapshotDescription>, SnapshotManagerError> {
         let directory = self.snapshots_path();
@@ -134,48 +131,7 @@ impl SnapshotManager {
         let mut out: Vec<SnapshotDescription> = Vec::with_capacity(filenames.len());
 
         for name in filenames {
-            let snapshot = SnapshotFile::new_full(name);
-            let desc = self.get_snapshot_description(&snapshot).await?;
-            out.push(desc);
-        }
-
-        Ok(out)
-    }
-
-    pub async fn do_list_collection_snapshots(
-        &self,
-        collection: &str,
-    ) -> Result<Vec<SnapshotDescription>, SnapshotManagerError> {
-        let directory = self.snapshots_path().join(collection);
-
-        let filenames = self.list_snapshots_in_directory(directory).await?;
-
-        let mut out: Vec<SnapshotDescription> = Vec::with_capacity(filenames.len());
-
-        for name in filenames {
-            let snapshot = SnapshotFile::new_collection(name, collection);
-            let desc = self.get_snapshot_description(&snapshot).await?;
-            out.push(desc);
-        }
-
-        Ok(out)
-    }
-
-    pub async fn do_list_shard_snapshots(
-        &self,
-        collection: &str,
-        shard: u32,
-    ) -> Result<Vec<SnapshotDescription>, SnapshotManagerError> {
-        let base = self.snapshots_path();
-        let directory = SnapshotFile::new_shard("", collection, shard).get_directory(base);
-
-        let filenames = self.list_snapshots_in_directory(directory).await?;
-
-        let mut out: Vec<SnapshotDescription> = Vec::with_capacity(filenames.len());
-
-        for name in filenames {
-            let snapshot = SnapshotFile::new_shard(name, collection, shard);
-            let desc = self.get_snapshot_description(&snapshot).await?;
+            let desc = self.get_snapshot_description(&PathBuf::from(name)).await?;
             out.push(desc);
         }
 
@@ -196,18 +152,21 @@ impl SnapshotManager {
 
     pub async fn save_snapshot(
         &self,
-        snapshot: &SnapshotFile,
         snapshot_file: TempPath,
         checksum_file: TempPath,
-    ) -> Result<(), SnapshotManagerError> {
+    ) -> Result<PathBuf, SnapshotManagerError> {
         // Snapshot files are ready now, move them into the right place
         let snapshot_temp = snapshot_file.keep()?;
         let checksum_temp = checksum_file.keep()?;
 
-        let base = self.snapshots_path();
+        let snapshot = PathBuf::from(snapshot_temp.file_name().ok_or(
+            SnapshotManagerError::BadInput {
+                description: "Received snapshot_file without filename?".to_string(),
+            },
+        )?);
 
-        let snapshot_path = snapshot.get_path(&base);
-        let checksum_path = snapshot.get_checksum_path(base);
+        let snapshot_path = self.use_base(&snapshot);
+        let checksum_path = self.checksum_path(&snapshot_path);
 
         let dir = snapshot_path.parent().unwrap();
         if !dir.exists() {
@@ -217,68 +176,48 @@ impl SnapshotManager {
         tokio::fs::rename(snapshot_temp, snapshot_path).await?;
         tokio::fs::rename(checksum_temp, checksum_path).await?;
 
-        Ok(())
+        Ok(snapshot)
     }
 
-    pub async fn get_snapshot_path(
+    pub fn get_snapshot_path(
         &self,
-        snapshot: &SnapshotFile,
+        snapshot: impl AsRef<Path>,
     ) -> Result<(PathBuf, Option<TempPath>), SnapshotManagerError> {
-        if snapshot.is_oop() {
-            return Ok((snapshot.get_path(self.snapshots_path()), None));
-        }
-
-        let path = snapshot.get_path(self.snapshots_path());
+        let path = self.use_base(&snapshot);
 
         if !path.exists() {
             Err(SnapshotManagerError::NotFound {
-                description: format!("Snapshot {} not found", snapshot.name()),
+                description: format!("Snapshot {} not found", snapshot.as_ref().display()),
             })
         } else {
             Ok((path, None))
         }
     }
 
-    pub fn get_snapshot_path_sync(
-        &self,
-        snapshot: &SnapshotFile,
-    ) -> Result<(PathBuf, Option<TempPath>), SnapshotManagerError> {
-        if snapshot.is_oop() {
-            return Ok((snapshot.get_path(self.snapshots_path()), None));
-        }
-
-        Ok((snapshot.get_path(self.snapshots_path()), None))
-    }
-
     pub async fn get_snapshot_file(
         &self,
-        snapshot: &SnapshotFile,
+        snapshot: impl AsRef<Path>,
     ) -> Result<(File, Option<TempPath>), SnapshotManagerError> {
-        let (path, temp) = self.get_snapshot_path(snapshot).await?;
+        let (path, temp) = self.get_snapshot_path(snapshot)?;
         Ok((File::open(path)?, temp))
     }
 
     pub fn get_snapshot_file_sync(
         &self,
-        snapshot: &SnapshotFile,
+        snapshot: impl AsRef<Path>,
     ) -> Result<(File, Option<TempPath>), SnapshotManagerError> {
-        let (path, temp) = self.get_snapshot_path_sync(snapshot)?;
+        let (path, temp) = self.get_snapshot_path(snapshot)?;
         Ok((File::open(path)?, temp))
     }
 
     pub async fn do_save_uploaded_snapshot(
         &self,
-        collection: &str,
         name: Option<String>,
         file: NamedTempFile<File>,
     ) -> Result<Url, SnapshotManagerError> {
         let name = name.unwrap_or_else(|| Uuid::new_v4().to_string());
 
-        let snapshot = SnapshotFile::new_collection(name, collection);
-
-        let path = snapshot
-            .get_path(self.snapshots_path().canonicalize()?)
-            .clean();
+        let path = self.use_base(name);
 
         let (_, temp_path) = file.keep()?;
 

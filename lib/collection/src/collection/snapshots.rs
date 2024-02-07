@@ -1,10 +1,9 @@
 use std::collections::HashSet;
 use std::fs::File;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use io::file_operations::read_json;
 use segment::common::version::StorageVersion as _;
-use snapshot_manager::file::SnapshotFile;
 use snapshot_manager::{SnapshotDescription, SnapshotManager};
 use tempfile::TempPath;
 use tokio::fs;
@@ -24,29 +23,32 @@ use crate::shards::shard_holder::{ShardKeyMapping, SHARD_KEY_MAPPING_FILE};
 use crate::shards::shard_versioning;
 
 impl Collection {
+    /// Returns a SnapshotManager scoped to the Collection directory
+    #[inline]
+    pub fn snapshot_manager(&self) -> SnapshotManager {
+        self.shared_storage_config
+            .snapshot_manager()
+            .scope(self.name())
+    }
+
     pub async fn list_snapshots(&self) -> CollectionResult<Vec<SnapshotDescription>> {
-        Ok(self
-            .snapshot_manager
-            .do_list_collection_snapshots(&self.name())
-            .await?)
+        Ok(self.snapshot_manager().do_list_snapshots().await?)
     }
 
     pub async fn create_temp_snapshot(
         &self,
         global_temp_dir: &Path,
         this_peer_id: PeerId,
-    ) -> CollectionResult<(SnapshotFile, TempPath, TempPath)> {
+    ) -> CollectionResult<(TempPath, TempPath)> {
         let snapshot_name = format!(
             "{}-{this_peer_id}-{}.snapshot",
             self.name(),
             chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S"),
         );
 
-        let base = self.snapshot_manager.temp_path();
-        let snapshot = SnapshotFile::new_full(&snapshot_name); // NOTE: new_full is used here to stay in an existing directory (./snapshots/tmp/)
-
+        let tmp_base = self.snapshot_manager().temp_path();
         // Final location of snapshot
-        let snapshot_path = snapshot.get_path(&base);
+        let snapshot_path = tmp_base.join(&snapshot_name);
         tokio::fs::create_dir_all(snapshot_path.parent().unwrap()).await?;
         log::info!("Creating collection snapshot {}", snapshot_name);
 
@@ -129,16 +131,13 @@ impl Collection {
 
         // compute and store the file's checksum before the final snapshot file is saved
         // to avoid making snapshot available without checksum
-        let checksum_path = snapshot.get_checksum_path(&base);
+        let checksum_path = tmp_base.join(self.snapshot_manager().checksum_path(&snapshot_name));
         let checksum = hash_file(&snapshot_path_tmp_move).await?;
         let checksum_file = tempfile::TempPath::from_path(&checksum_path);
         let mut file = tokio::fs::File::create(checksum_path.as_path()).await?;
         file.write_all(checksum.as_bytes()).await?;
 
-        // Snapshot files are ready now, hand them off to the manager
-        let snapshot = SnapshotFile::new_collection(snapshot.name(), self.name());
-
-        Ok((snapshot, snapshot_file, checksum_file))
+        Ok((snapshot_file, checksum_file))
     }
 
     /// Creates a snapshot of the collection.
@@ -158,28 +157,28 @@ impl Collection {
         &self,
         global_temp_dir: &Path,
         this_peer_id: PeerId,
-    ) -> CollectionResult<(SnapshotFile, SnapshotDescription)> {
-        let (snapshot, snapshot_file, checksum_file) = self
+    ) -> CollectionResult<(PathBuf, SnapshotDescription)> {
+        let (snapshot_file, checksum_file) = self
             .create_temp_snapshot(global_temp_dir, this_peer_id)
             .await?;
 
-        self.snapshot_manager
-            .save_snapshot(&snapshot, snapshot_file, checksum_file)
+        let snapshot_manager = self.snapshot_manager();
+
+        let snapshot = snapshot_manager
+            .save_snapshot(snapshot_file, checksum_file)
             .await?;
 
-        log::info!("Collection snapshot {} completed", snapshot.name());
+        log::info!("Collection snapshot {} completed", snapshot.display());
         Ok((
             snapshot.clone(),
-            self.snapshot_manager
-                .get_snapshot_description(&snapshot)
-                .await?,
+            snapshot_manager.get_snapshot_description(&snapshot).await?,
         ))
     }
 
     /// Restore collection from snapshot
     pub async fn restore_snapshot(
         snapshot_manager: SnapshotManager,
-        snapshot: &SnapshotFile,
+        snapshot: impl AsRef<Path>,
         target_dir: &Path,
         this_peer_id: PeerId,
         is_distributed: bool,
@@ -201,7 +200,7 @@ impl Collection {
     /// This method performs blocking IO.
     pub fn restore_snapshot_sync(
         snapshot_manager: SnapshotManager,
-        snapshot: &SnapshotFile,
+        snapshot: impl AsRef<Path>,
         target_dir: &Path,
         this_peer_id: PeerId,
         is_distributed: bool,
@@ -321,7 +320,7 @@ impl Collection {
         self.shards_holder
             .read()
             .await
-            .list_shard_snapshots(&self.snapshot_manager, &self.name(), shard_id)
+            .list_shard_snapshots(&self.shard_snapshot_manager(shard_id), shard_id)
             .await
     }
 
@@ -333,7 +332,7 @@ impl Collection {
         self.shards_holder
             .read()
             .await
-            .create_shard_snapshot(&self.snapshot_manager, &self.name(), shard_id, temp_dir)
+            .create_shard_snapshot(&self.snapshot_manager(), &self.name(), shard_id, temp_dir)
             .await
     }
 
@@ -378,15 +377,8 @@ impl Collection {
             .await
     }
 
-    pub async fn get_shard_snapshot(
-        &self,
-        shard_id: ShardId,
-        snapshot_file_name: impl AsRef<Path>,
-    ) -> CollectionResult<SnapshotFile> {
-        self.shards_holder
-            .read()
-            .await
-            .get_shard_snapshot(&self.name(), shard_id, snapshot_file_name)
-            .await
+    pub fn shard_snapshot_manager(&self, shard_id: ShardId) -> SnapshotManager {
+        self.snapshot_manager()
+            .scope(format!("shards/{}/", shard_id))
     }
 }

@@ -1,6 +1,8 @@
 use std::num::NonZeroUsize;
 use std::time::Duration;
 
+use snapshot_manager::SnapshotManager;
+
 use crate::operations::types::NodeType;
 use crate::shards::transfer::ShardTransferMethod;
 
@@ -26,6 +28,7 @@ pub struct SharedStorageConfig {
     pub default_shard_transfer_method: Option<ShardTransferMethod>,
     pub incoming_shard_transfers_limit: Option<usize>,
     pub outgoing_shard_transfers_limit: Option<usize>,
+    pub snapshots_path: String,
 }
 
 impl Default for SharedStorageConfig {
@@ -41,6 +44,7 @@ impl Default for SharedStorageConfig {
             default_shard_transfer_method: None,
             incoming_shard_transfers_limit: DEFAULT_IO_SHARD_TRANSFER_LIMIT,
             outgoing_shard_transfers_limit: DEFAULT_IO_SHARD_TRANSFER_LIMIT,
+            snapshots_path: "./snapshots".to_string(),
         }
     }
 }
@@ -58,6 +62,7 @@ impl SharedStorageConfig {
         default_shard_transfer_method: Option<ShardTransferMethod>,
         incoming_shard_transfers_limit: Option<usize>,
         outgoing_shard_transfers_limit: Option<usize>,
+        snapshots_path: String,
     ) -> Self {
         let update_queue_size = update_queue_size.unwrap_or(match node_type {
             NodeType::Normal => DEFAULT_UPDATE_QUEUE_SIZE,
@@ -74,6 +79,11 @@ impl SharedStorageConfig {
             default_shard_transfer_method,
             incoming_shard_transfers_limit,
             outgoing_shard_transfers_limit,
+            snapshots_path,
         }
+    }
+
+    pub fn snapshot_manager(&self) -> SnapshotManager {
+        SnapshotManager::new(&self.snapshots_path)
     }
 }

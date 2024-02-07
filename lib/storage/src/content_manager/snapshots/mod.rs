@@ -7,7 +7,6 @@ use std::path::PathBuf;
 use collection::common::sha_256::hash_file;
 use serde::{Deserialize, Serialize};
 use snapshot_manager::error::SnapshotManagerError;
-use snapshot_manager::file::SnapshotFile;
 use snapshot_manager::SnapshotDescription;
 use tar::Builder as TarBuilder;
 use tempfile::TempPath;
@@ -47,11 +46,11 @@ async fn _do_create_full_snapshot(
     let base: PathBuf = dispatcher.snapshots_temp_path()?;
 
     let all_collections = dispatcher.all_collections().await;
-    let mut created_snapshots: Vec<(SnapshotFile, TempPath, TempPath)> = vec![];
+    let mut created_snapshots: Vec<(String, TempPath, TempPath)> = vec![];
     for collection_name in &all_collections {
-        let (snapshot, snapshot_file, checksum_file) =
+        let (snapshot_file, checksum_file) =
             dispatcher.create_temp_snapshot(collection_name).await?;
-        created_snapshots.push((snapshot, snapshot_file, checksum_file));
+        created_snapshots.push((collection_name.to_owned(), snapshot_file, checksum_file));
     }
     let current_time = chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S").to_string();
 
@@ -59,12 +58,7 @@ async fn _do_create_full_snapshot(
 
     let collection_name_to_snapshot_path: HashMap<_, _> = created_snapshots
         .iter()
-        .map(|x| {
-            (
-                x.0.collection().unwrap(),
-                x.1.to_path_buf().to_string_lossy().to_string(),
-            )
-        })
+        .map(|x| (x.0.clone(), x.1.to_path_buf().to_string_lossy().to_string()))
         .collect();
 
     let mut alias_mapping: HashMap<String, String> = Default::default();
@@ -91,8 +85,7 @@ async fn _do_create_full_snapshot(
             .await?;
     }
 
-    let full_snapshot = SnapshotFile::new_full(snapshot_name);
-    let full_snapshot_path = full_snapshot.get_path(&base);
+    let full_snapshot_path = base.join(&snapshot_name);
     let snapshot_file = tempfile::TempPath::from_path(&full_snapshot_path);
 
     let config_path_clone = config_path.clone();
@@ -101,8 +94,8 @@ async fn _do_create_full_snapshot(
         // have to use std here, cause TarBuilder is not async
         let file = std::fs::File::create(&full_snapshot_path_clone)?;
         let mut builder = TarBuilder::new(file);
-        for (snapshot, snapshot_path, checksum_path) in created_snapshots {
-            builder.append_path_with_name(&snapshot_path, &snapshot.name())?;
+        for (_, snapshot_path, checksum_path) in created_snapshots {
+            builder.append_path_with_name(&snapshot_path, snapshot_path.file_name().unwrap())?;
             snapshot_path.close()?;
             if let Err(err) = checksum_path.close() {
                 log::warn!("Failed to delete checksum file for snapshot, ignoring: {err}");
@@ -116,7 +109,7 @@ async fn _do_create_full_snapshot(
     archiving.await??;
 
     // Compute and store the file's checksum
-    let checksum_path = full_snapshot.get_checksum_path(&base);
+    let checksum_path = PathBuf::from(format!("{}.checksum", full_snapshot_path.display()));
     let checksum = hash_file(full_snapshot_path.as_path()).await?;
     let checksum_file = tempfile::TempPath::from_path(&checksum_path);
     let mut file = tokio::fs::File::create(checksum_path.as_path()).await?;
@@ -124,14 +117,14 @@ async fn _do_create_full_snapshot(
 
     tokio::fs::remove_file(&config_path).await?;
 
-    dispatcher
-        .snapshot_manager
-        .save_snapshot(&full_snapshot, snapshot_file, checksum_file)
+    let snapshot = dispatcher
+        .snapshot_manager()
+        .save_snapshot(snapshot_file, checksum_file)
         .await?;
 
     let description = dispatcher
-        .snapshot_manager
-        .get_snapshot_description(&full_snapshot)
+        .snapshot_manager()
+        .get_snapshot_description(snapshot)
         .await?;
 
     Ok(description)

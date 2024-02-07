@@ -1,12 +1,15 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use super::file::SnapshotFile;
 use super::SnapshotManager;
 use crate::error::SnapshotManagerError;
 
 impl SnapshotManager {
     pub(super) fn snapshots_path(&self) -> PathBuf {
-        self.0.path.clone()
+        self.path.clone()
+    }
+
+    pub(super) fn use_base(&self, path: impl AsRef<Path>) -> PathBuf {
+        self.path.join(path)
     }
 
     pub fn temp_path(&self) -> PathBuf {
@@ -15,29 +18,20 @@ impl SnapshotManager {
 
     pub(super) async fn snapshot_exists(
         &self,
-        snapshot: &SnapshotFile,
+        snapshot_path: impl AsRef<Path>,
     ) -> Result<bool, SnapshotManagerError> {
-        Ok(snapshot.get_path(self.snapshots_path()).exists())
+        Ok(self.use_base(snapshot_path).exists())
     }
 
     /// Removes the specified snapshot and checksum files.
     pub(super) async fn remove_snapshot(
         &self,
-        snapshot: &SnapshotFile,
+        snapshot_path: impl AsRef<Path>,
     ) -> Result<(), SnapshotManagerError> {
-        if let Some(collection) = &snapshot.collection() {
-            log::info!(
-                "Deleting collection {:?} snapshot {:?}",
-                collection,
-                snapshot.name()
-            );
-        } else {
-            log::info!("Deleting full storage snapshot {:?}", snapshot.name());
-        }
+        log::info!("Deleting snapshot {:?}", snapshot_path.as_ref());
 
-        let base = self.snapshots_path();
-        let snapshot_path = snapshot.get_path(&base);
-        let checksum_path = snapshot.get_checksum_path(base);
+        let snapshot_path = self.use_base(snapshot_path);
+        let checksum_path = self.checksum_path(&snapshot_path);
 
         let (delete_snapshot, delete_checksum) = tokio::join!(
             tokio::fs::remove_file(snapshot_path),

@@ -71,7 +71,7 @@ impl TableOfContent {
         }
 
         let collection_path = self.create_collection_path(collection_name).await?;
-        self.snapshot_manager
+        self.snapshot_manager()
             .ensure_snapshots_path(collection_name)?;
 
         let shard_number = match sharding_method.unwrap_or_default() {
@@ -163,7 +163,6 @@ impl TableOfContent {
             collection_name.to_string(),
             self.this_peer_id,
             &collection_path,
-            self.snapshot_manager.clone(),
             &collection_config,
             storage_config,
             collection_shard_distribution,

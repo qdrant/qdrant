@@ -15,7 +15,6 @@ use collection::shards::collection_shard_distribution::CollectionShardDistributi
 use collection::shards::replica_set::ReplicaState;
 use common::cpu::CpuBudget;
 use segment::types::{Distance, WithPayloadInterface, WithVector};
-use snapshot_manager::SnapshotManager;
 use tempfile::Builder;
 
 use crate::common::{
@@ -57,10 +56,11 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
     let collection_name = "test".to_string();
     let collection_name_rec = "test_rec".to_string();
 
-    let storage_config: SharedStorageConfig = SharedStorageConfig {
+    let storage_config: Arc<SharedStorageConfig> = Arc::new(SharedStorageConfig {
         node_type,
+        snapshots_path: snapshots_path.path().to_string_lossy().to_string(),
         ..Default::default()
-    };
+    });
 
     let this_peer_id = 0;
     let shard_distribution = CollectionShardDistribution::all_local(
@@ -68,15 +68,12 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         this_peer_id,
     );
 
-    let snapshot_manager = SnapshotManager::new(snapshots_path.path());
-
     let collection = Collection::new(
         collection_name,
         this_peer_id,
         collection_dir.path(),
-        snapshot_manager.clone(),
         &config,
-        Arc::new(storage_config),
+        storage_config.clone(),
         shard_distribution,
         ChannelService::new(REST_PORT),
         dummy_on_replica_failure(),
@@ -122,7 +119,9 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         .unwrap();
 
     if let Err(err) = Collection::restore_snapshot(
-        snapshot_manager.clone(),
+        storage_config
+            .snapshot_manager()
+            .scope(format!("{}/", collection.name())),
         &snapshot,
         recover_dir.path(),
         0,
@@ -137,7 +136,6 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         collection_name_rec,
         this_peer_id,
         recover_dir.path(),
-        snapshot_manager.clone(),
         Default::default(),
         ChannelService::new(REST_PORT),
         dummy_on_replica_failure(),

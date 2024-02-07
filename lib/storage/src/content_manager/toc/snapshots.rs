@@ -1,7 +1,8 @@
+use std::path::PathBuf;
+
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::transfer::{ShardTransfer, ShardTransferMethod};
-use snapshot_manager::file::SnapshotFile;
 use snapshot_manager::SnapshotDescription;
 use tempfile::TempPath;
 
@@ -14,7 +15,7 @@ impl TableOfContent {
     pub async fn create_temp_snapshot(
         &self,
         collection_name: &str,
-    ) -> Result<(SnapshotFile, TempPath, TempPath), StorageError> {
+    ) -> Result<(TempPath, TempPath), StorageError> {
         let collection = self.get_collection(collection_name).await?;
         // We want to use temp dir inside the temp_path (storage if not specified), because it is possible, that
         // snapshot directory is mounted as network share and multiple writes to it could be slow
@@ -27,7 +28,7 @@ impl TableOfContent {
     pub async fn create_snapshot(
         &self,
         collection_name: &str,
-    ) -> Result<(SnapshotFile, SnapshotDescription), StorageError> {
+    ) -> Result<(PathBuf, SnapshotDescription), StorageError> {
         let collection = self.get_collection(collection_name).await?;
         // We want to use temp dir inside the temp_path (storage if not specified), because it is possible, that
         // snapshot directory is mounted as network share and multiple writes to it could be slow

@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use collection::collection::Collection;
 use collection::shards::shard::PeerId;
 use log::info;
-use snapshot_manager::file::SnapshotFile;
 use snapshot_manager::SnapshotManager;
 use storage::content_manager::alias_mapping::AliasPersistence;
 use storage::content_manager::snapshots::SnapshotConfig;
@@ -66,7 +65,7 @@ pub fn recover_snapshots(
             .unwrap_or_else(|| collection_path.with_extension("tmp"));
         if let Err(err) = Collection::restore_snapshot_sync(
             snapshot_manager.clone(),
-            &SnapshotFile::new_oop(snapshot_path),
+            snapshot_path,
             &collection_temp_path,
             this_peer_id,
             is_distributed,

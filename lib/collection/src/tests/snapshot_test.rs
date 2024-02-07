@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use common::cpu::CpuBudget;
 use segment::types::Distance;
-use snapshot_manager::SnapshotManager;
 use tempfile::Builder;
 
 use crate::collection::{Collection, RequestShardTransfer};
@@ -85,20 +84,18 @@ async fn _test_snapshot_collection(node_type: NodeType) {
     shards.insert(2, HashSet::from([10_000])); // remote shard
     shards.insert(3, HashSet::from([1, 20_000, 30_000]));
 
-    let storage_config: SharedStorageConfig = SharedStorageConfig {
+    let storage_config: Arc<SharedStorageConfig> = Arc::new(SharedStorageConfig {
         node_type,
+        snapshots_path: snapshots_path.path().to_string_lossy().to_string(),
         ..Default::default()
-    };
-
-    let snapshot_manager = SnapshotManager::new(snapshots_path.path());
+    });
 
     let collection = Collection::new(
         collection_name,
         1,
         collection_dir.path(),
-        snapshot_manager.clone(),
         &config,
-        Arc::new(storage_config),
+        storage_config.clone(),
         CollectionShardDistribution { shards },
         ChannelService::default(),
         dummy_on_replica_failure(),
@@ -117,10 +114,14 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         .await
         .unwrap();
 
+    println!("{:?}", snapshot);
+
     assert_eq!(snapshot_description.checksum.unwrap().len(), 64);
     // Do not recover in local mode if some shards are remote
     assert!(Collection::restore_snapshot(
-        snapshot_manager.clone(),
+        storage_config
+            .snapshot_manager()
+            .scope(format!("{}/", collection.name())),
         &snapshot,
         recover_dir.path(),
         0,
@@ -130,7 +131,9 @@ async fn _test_snapshot_collection(node_type: NodeType) {
     .is_err());
 
     if let Err(err) = Collection::restore_snapshot(
-        snapshot_manager.clone(),
+        storage_config
+            .snapshot_manager()
+            .scope(format!("{}/", collection.name())),
         &snapshot,
         recover_dir.path(),
         0,
@@ -145,7 +148,6 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         collection_name_rec,
         1,
         recover_dir.path(),
-        snapshot_manager.clone(),
         Default::default(),
         ChannelService::default(),
         dummy_on_replica_failure(),

@@ -1143,7 +1143,6 @@ mod tests {
     use common::cpu::CpuBudget;
     use segment::types::Distance;
     use slog::Drain;
-    use snapshot_manager::SnapshotManager;
     use storage::content_manager::collection_meta_ops::{
         CollectionMetaOperations, CreateCollection, CreateCollectionOperation,
     };
@@ -1180,7 +1179,6 @@ mod tests {
         let operation_sender = OperationSender::new(propose_sender);
         let toc = TableOfContent::new(
             &settings.storage,
-            SnapshotManager::new(&settings.storage.snapshots_path),
             search_runtime,
             update_runtime,
             general_runtime,

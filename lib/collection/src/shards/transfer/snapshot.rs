@@ -197,8 +197,8 @@ pub(super) async fn transfer_snapshot(
 
     let temp_base = snapshot_manager.temp_path();
     // TODO: If future is cancelled until `get_shard_snapshot` resolves, shard snapshot may not be cleaned up...
-    let snapshot = shard_holder_read
-        .get_shard_snapshot(collection_name, shard_id, &snapshot_description.name)
+    shard_holder_read
+        .assert_shard_is_local_or_queue_proxy(shard_id)
         .await
         .map_err(|err| {
             CollectionError::service_error(format!(
@@ -206,8 +206,9 @@ pub(super) async fn transfer_snapshot(
             ))
         })?;
 
-    let snapshot_temp_path = TempPath::from_path(snapshot.get_path(&temp_base));
-    let snapshot_checksum_temp_path = TempPath::from_path(snapshot.get_checksum_path(temp_base));
+    let snapshot_temp_path = TempPath::from_path(temp_base.join(&snapshot_description.name));
+    let snapshot_checksum_temp_path =
+        TempPath::from_path(snapshot_manager.checksum_path(&snapshot_temp_path));
 
     // Recover shard snapshot on remote
     let mut shard_download_url = local_rest_address;

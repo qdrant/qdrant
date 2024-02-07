@@ -167,7 +167,7 @@ fn main() -> anyhow::Result<()> {
             temp_path,
             &full_snapshot,
             &settings.storage.storage_path,
-            snapshot_manager.clone(),
+            snapshot_manager,
             args.force_snapshot,
             persistent_consensus_state.this_peer_id(),
             is_distributed_deployment,
@@ -179,7 +179,7 @@ fn main() -> anyhow::Result<()> {
             args.force_snapshot,
             temp_path,
             &settings.storage.storage_path,
-            snapshot_manager.clone(),
+            snapshot_manager,
             persistent_consensus_state.this_peer_id(),
             is_distributed_deployment,
         )
@@ -241,7 +241,6 @@ fn main() -> anyhow::Result<()> {
     // It is a main entry point for the storage.
     let toc = TableOfContent::new(
         &settings.storage,
-        snapshot_manager,
         search_runtime,
         update_runtime,
         general_runtime,

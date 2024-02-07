@@ -10,7 +10,6 @@ use api::grpc::qdrant::{
     ListShardSnapshotsRequest, ListSnapshotsRequest, ListSnapshotsResponse,
     RecoverShardSnapshotRequest, RecoverSnapshotResponse,
 };
-use snapshot_manager::file::SnapshotFile;
 use storage::content_manager::conversions::{error_to_status, snapshot_error_to_status};
 use storage::content_manager::snapshots::do_create_full_snapshot;
 use storage::content_manager::toc::TableOfContent;
@@ -77,12 +76,12 @@ impl Snapshots for SnapshotsService {
             collection_name,
             snapshot_name,
         } = request.into_inner();
-        let snapshot = SnapshotFile::new_collection(snapshot_name, collection_name);
         let timing = Instant::now();
         let _response = self
             .dispatcher
-            .snapshot_manager
-            .do_delete_snapshot(&snapshot, true)
+            .snapshot_manager()
+            .scope(format!("{}/", collection_name))
+            .do_delete_snapshot(snapshot_name, true)
             .await
             .map_err(snapshot_error_to_status)?;
         Ok(Response::new(DeleteSnapshotResponse {
@@ -113,8 +112,8 @@ impl Snapshots for SnapshotsService {
         let timing = Instant::now();
         let snapshots = self
             .dispatcher
-            .snapshot_manager
-            .do_list_full_snapshots()
+            .snapshot_manager()
+            .do_list_snapshots()
             .await
             .map_err(snapshot_error_to_status)?;
         Ok(Response::new(ListSnapshotsResponse {
@@ -129,12 +128,11 @@ impl Snapshots for SnapshotsService {
     ) -> Result<Response<DeleteSnapshotResponse>, Status> {
         validate(request.get_ref())?;
         let snapshot_name = request.into_inner().snapshot_name;
-        let snapshot = SnapshotFile::new_full(snapshot_name);
         let timing = Instant::now();
         let _response = self
             .dispatcher
-            .snapshot_manager
-            .do_delete_snapshot(&snapshot, true)
+            .snapshot_manager()
+            .do_delete_snapshot(snapshot_name, true)
             .await
             .map_err(snapshot_error_to_status)?;
         Ok(Response::new(DeleteSnapshotResponse {
@@ -238,7 +236,7 @@ impl ShardSnapshots for ShardSnapshotsService {
             self.toc.clone(),
             request.collection_name,
             request.shard_id,
-            self.toc.snapshot_manager.clone(),
+            self.toc.snapshot_manager(),
             request.snapshot_location.try_into()?,
             request.snapshot_priority.try_into()?,
             request.checksum,

@@ -6,10 +6,9 @@ use common::cpu::CpuBudget;
 use itertools::Itertools;
 // TODO rename ReplicaShard to ReplicaSetShard
 use segment::types::ShardKey;
-use snapshot_manager::file::SnapshotFile;
 use snapshot_manager::{SnapshotDescription, SnapshotManager};
 use tar::Builder as TarBuilder;
-use tokio::io::AsyncWriteExt;
+use tokio::io::AsyncWriteExt as _;
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 
@@ -574,7 +573,7 @@ impl ShardHolder {
         }
     }
 
-    async fn assert_shard_is_local_or_queue_proxy(
+    pub async fn assert_shard_is_local_or_queue_proxy(
         &self,
         shard_id: ShardId,
     ) -> CollectionResult<()> {
@@ -665,14 +664,11 @@ impl ShardHolder {
     pub async fn list_shard_snapshots(
         &self,
         snapshot_manager: &SnapshotManager,
-        collection: &str,
         shard_id: ShardId,
     ) -> CollectionResult<Vec<SnapshotDescription>> {
         self.assert_shard_is_local(shard_id).await?;
 
-        Ok(snapshot_manager
-            .do_list_shard_snapshots(collection, shard_id)
-            .await?)
+        Ok(snapshot_manager.do_list_snapshots().await?)
     }
 
     /// # Cancel safety
@@ -762,13 +758,12 @@ impl ShardHolder {
 
         let temp_file = task_result??;
 
-        let snapshot = SnapshotFile::new_shard(snapshot_file_name, collection_name, shard_id);
-        let snapshot_path = snapshot.get_path(snapshot_manager.temp_path());
+        let snapshot_path = snapshot_manager.temp_path().join(snapshot_file_name);
 
         tokio::fs::create_dir_all(snapshot_path.parent().unwrap()).await?;
 
         // Compute and store the file's checksum
-        let checksum_path = snapshot.get_checksum_path(snapshot_manager.temp_path());
+        let checksum_path = snapshot_manager.checksum_path(&snapshot_path);
         let checksum = hash_file(temp_file.path()).await?;
         let checksum_file = tempfile::TempPath::from_path(&checksum_path);
         let mut file = tokio::fs::File::create(checksum_path.as_path()).await?;
@@ -779,8 +774,8 @@ impl ShardHolder {
         let snapshot_file = tempfile::TempPath::from_path(&snapshot_path);
         move_file(temp_file.path(), &snapshot_path).await?;
 
-        snapshot_manager
-            .save_snapshot(&snapshot, snapshot_file, checksum_file)
+        let snapshot = snapshot_manager
+            .save_snapshot(snapshot_file, checksum_file)
             .await?;
 
         // We successfully moved `temp_file`, but `tempfile` will still try to delete the file on drop,
@@ -890,32 +885,6 @@ impl ShardHolder {
         replica_set
             .restore_local_replica_from(snapshot_shard_path, cancel)
             .await
-    }
-
-    /// # Cancel safety
-    ///
-    /// This method is cancel safe.
-    pub async fn get_shard_snapshot(
-        &self,
-        collection: &str,
-        shard_id: ShardId,
-        snapshot_file_name: impl AsRef<Path>,
-    ) -> CollectionResult<SnapshotFile> {
-        self.assert_shard_is_local_or_queue_proxy(shard_id).await?;
-        self.shard_snapshot_unchecked(collection, shard_id, snapshot_file_name)
-    }
-
-    fn shard_snapshot_unchecked(
-        &self,
-        collection: &str,
-        shard_id: ShardId,
-        snapshot_file_name: impl AsRef<Path>,
-    ) -> CollectionResult<SnapshotFile> {
-        Ok(SnapshotFile::new_shard(
-            snapshot_file_name.as_ref().to_string_lossy().to_string(),
-            collection,
-            shard_id,
-        ))
     }
 
     pub async fn remove_shards_at_peer(&self, peer_id: PeerId) -> CollectionResult<()> {

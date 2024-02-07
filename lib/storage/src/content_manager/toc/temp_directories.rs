@@ -36,7 +36,7 @@ impl TableOfContent {
     }
 
     fn get_snapshots_temp_path(&self) -> PathBuf {
-        self.snapshot_manager.temp_path()
+        self.snapshot_manager().temp_path()
     }
 
     fn get_storage_temp_path(&self) -> PathBuf {

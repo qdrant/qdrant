@@ -7,7 +7,6 @@ use collection::common::sha_256::hash_file;
 use collection::operations::snapshot_ops::{ShardSnapshotLocation, SnapshotPriority};
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::ShardId;
-use snapshot_manager::file::SnapshotFile;
 use snapshot_manager::{SnapshotDescription, SnapshotManager};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::snapshots;
@@ -54,9 +53,9 @@ pub async fn delete_shard_snapshot(
     shard_id: ShardId,
     snapshot_name: String,
 ) -> Result<(), StorageError> {
-    let snapshot = SnapshotFile::new_shard(snapshot_name, collection_name, shard_id);
-    toc.snapshot_manager
-        .do_delete_snapshot(&snapshot, true)
+    toc.snapshot_manager()
+        .scope(format!("{}/shards/{}/", collection_name, shard_id))
+        .do_delete_snapshot(snapshot_name, true)
         .await?;
     Ok(())
 }
@@ -108,10 +107,8 @@ pub async fn recover_shard_snapshot(
                 }
 
                 ShardSnapshotLocation::Path(path) => {
-                    let snapshot =
-                        SnapshotFile::new_shard(path.to_string_lossy(), &collection_name, shard_id);
                     let (snapshot_path, snapshot_temp_path) =
-                        snapshot_manager.get_snapshot_path(&snapshot).await?;
+                        snapshot_manager.get_snapshot_path(path)?;
                     check_shard_snapshot_file_exists(&snapshot_path)?;
                     (snapshot_path, snapshot_temp_path)
                 }

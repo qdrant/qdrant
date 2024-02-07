@@ -16,6 +16,7 @@ use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::types::{HnswConfig, QuantizationConfig};
 use serde::{Deserialize, Serialize};
+use snapshot_manager::SnapshotManager;
 use tonic::transport::Uri;
 use validator::Validate;
 
@@ -105,7 +106,12 @@ impl StorageConfig {
             self.shard_transfer_method,
             self.performance.incoming_shard_transfers_limit,
             self.performance.outgoing_shard_transfers_limit,
+            self.snapshots_path.clone(),
         )
+    }
+
+    pub fn snapshot_manager(&self) -> SnapshotManager {
+        SnapshotManager::new(&self.snapshots_path)
     }
 }
 
