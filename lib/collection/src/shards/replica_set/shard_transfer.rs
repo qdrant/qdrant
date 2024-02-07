@@ -11,6 +11,8 @@ use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard::Shard;
 
 impl ShardReplicaSet {
+    /// Convert `Local` shard into `ForwardProxy`.
+    ///
     /// # Cancel safety
     ///
     /// This method is cancel safe.

@@ -36,7 +36,7 @@ use crate::shards::replica_set::{ChangePeerState, ReplicaState, ShardReplicaSet}
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::{shard_not_found_error, LockedShardHolder, ShardHolder};
 use crate::shards::transfer::helpers::check_transfer_conflicts_strict;
-use crate::shards::transfer::transfer_tasks_pool::TransferTasksPool;
+use crate::shards::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool};
 use crate::shards::transfer::ShardTransfer;
 use crate::shards::{replica_set, CollectionId};
 use crate::telemetry::CollectionTelemetry;
@@ -468,24 +468,26 @@ impl Collection {
         let outgoing_transfers = shard_holder.get_outgoing_transfers(&self.this_peer_id);
         let tasks_lock = self.transfer_tasks.lock().await;
         for transfer in outgoing_transfers {
-            match tasks_lock.get_task_result(&transfer.key()) {
+            match tasks_lock
+                .get_task_status(&transfer.key())
+                .map(|s| s.result)
+            {
                 None => {
-                    if !tasks_lock.check_if_still_running(&transfer.key()) {
-                        log::debug!(
-                            "Transfer {:?} does not exist, but not reported as cancelled. Reporting now.",
-                            transfer.key()
-                        );
-                        on_transfer_failure(transfer, self.name(), "transfer task does not exist");
-                    }
+                    log::debug!(
+                        "Transfer {:?} does not exist, but not reported as cancelled. Reporting now.",
+                        transfer.key()
+                    );
+                    on_transfer_failure(transfer, self.name(), "transfer task does not exist");
                 }
-                Some(true) => {
+                Some(TaskResult::Running) => (),
+                Some(TaskResult::Finished) => {
                     log::debug!(
                         "Transfer {:?} is finished successfully, but not reported. Reporting now.",
                         transfer.key()
                     );
                     on_transfer_success(transfer, self.name());
                 }
-                Some(false) => {
+                Some(TaskResult::Failed) => {
                     log::debug!(
                         "Transfer {:?} is failed, but not reported as failed. Reporting now.",
                         transfer.key()
@@ -607,7 +609,10 @@ impl Collection {
             for shard in shards_holder.all_shards() {
                 shards_telemetry.push(shard.get_telemetry_data(detail).await)
             }
-            (shards_telemetry, shards_holder.get_shard_transfer_info())
+            (
+                shards_telemetry,
+                shards_holder.get_shard_transfer_info(&*self.transfer_tasks.lock().await),
+            )
         };
 
         CollectionTelemetry {

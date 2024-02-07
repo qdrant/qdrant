@@ -307,7 +307,8 @@ impl Collection {
                 });
             }
         }
-        let shard_transfers = shards_holder.get_shard_transfer_info();
+        let shard_transfers =
+            shards_holder.get_shard_transfer_info(&*self.transfer_tasks.lock().await);
 
         // sort by shard_id
         local_shards.sort_by_key(|k| k.shard_id);
