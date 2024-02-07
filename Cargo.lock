@@ -3154,6 +3154,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "num-cmp"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "63335b2e2c34fae2fb0aa2cecfd9f0832a1e24b3b32ecec612c3426d46dc8aaa"
+
+[[package]]
 name = "num-derive"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4646,6 +4652,7 @@ dependencies = [
  "macro_rules_attribute",
  "memmap2 0.9.4",
  "memory",
+ "num-cmp",
  "num-derive",
  "num-traits",
  "ordered-float 4.2.0",
