@@ -58,11 +58,13 @@ impl OrderBy {
         self.direction.unwrap_or_default()
     }
 
-    pub fn value_offset(&self) -> f64 {
-        self.start_from.unwrap_or_else(|| match self.direction() {
-            Direction::Asc => f64::NEG_INFINITY,
-            Direction::Desc => f64::INFINITY,
-        })
+    pub fn start_from(&self) -> OrderingValue {
+        self.start_from
+            .unwrap_or_else(|| match self.direction() {
+                Direction::Asc => f64::NEG_INFINITY,
+                Direction::Desc => f64::INFINITY,
+            })
+            .into()
     }
 
     pub fn insert_order_value_in_payload(

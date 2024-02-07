@@ -725,13 +725,20 @@ impl Segment {
             .and_then(|indexes| indexes.iter().find_map(|index| index.as_numeric()))
             .ok_or_else(|| OperationError::ValidationError { description: "There is no range index for the `order_by` key, please create one to use `order_by`".to_string() })?;
 
+        let start_from = order_by.start_from();
+
         let values_ids_iterator = payload_index
             .query_points(condition)
             .into_iter()
             .flat_map(|internal_id| {
-                // repeat point for as many values as it has
+                // Repeat a point for as many values as it has
                 numeric_index
                     .get_ordering_values(internal_id)
+                    // But only those which start from `start_from` 😛
+                    .filter(|value| match order_by.direction() {
+                        Direction::Asc => value >= &start_from,
+                        Direction::Desc => value <= &start_from,
+                    })
                     .map(move |ordering_value| (ordering_value, internal_id))
             })
             .filter_map(|(value, internal_id)| {
