@@ -35,9 +35,10 @@ pub struct LockedDatabaseColumnWrapper<'a> {
     column_name: &'a str,
 }
 
+/// RocksDB options (both global and for column families)
 pub fn db_options() -> Options {
     let mut options: Options = Options::default();
-    options.set_write_buffer_size(DB_CACHE_SIZE);
+    options.set_write_buffer_size(DB_CACHE_SIZE); // write_buffer_size is enforced per column family.
     options.create_if_missing(true);
     options.set_log_level(LogLevel::Error);
     options.set_recycle_log_file_num(1);
@@ -64,7 +65,13 @@ pub fn open_db<T: AsRef<str>>(
     for vector_path in vector_paths {
         column_families.push(vector_path.as_ref());
     }
-    let db = DB::open_cf(&db_options(), path, column_families)?;
+    let options = db_options();
+    // Make sure that all column families have the same options
+    let column_with_options = column_families
+        .into_iter()
+        .map(|cf| (cf, options.clone()))
+        .collect::<Vec<_>>();
+    let db = DB::open_cf_with_opts(&options, path, column_with_options)?;
     Ok(Arc::new(RwLock::new(db)))
 }
 
