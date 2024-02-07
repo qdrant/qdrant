@@ -725,6 +725,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "bitpacking"
+version = "0.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4c1d3e2bfd8d06048a179f7b17afc3188effa10385e7b00dc65af6aae732ea92"
+dependencies = [
+ "crunchy",
+]
+
+[[package]]
 name = "bitvec"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4695,6 +4704,7 @@ dependencies = [
  "atomic_refcell",
  "atomicwrites",
  "bincode",
+ "bitpacking",
  "bitvec",
  "cgroups-rs",
  "charabia",
