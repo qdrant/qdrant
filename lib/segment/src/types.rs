@@ -1191,7 +1191,7 @@ pub enum ValueVariants {
 #[serde(untagged)]
 pub enum AnyVariants {
     Keywords(IndexSet<String, FnvBuildHasher>),
-    Integers(Vec<IntPayloadType>),
+    Integers(IndexSet<IntPayloadType, FnvBuildHasher>),
 }
 
 /// Exact match of the given value
@@ -1337,6 +1337,7 @@ impl From<Vec<String>> for MatchExcept {
 
 impl From<Vec<IntPayloadType>> for Match {
     fn from(integers: Vec<IntPayloadType>) -> Self {
+        let integers: IndexSet<_, FnvBuildHasher> = integers.into_iter().collect();
         Self::Any(MatchAny {
             any: AnyVariants::Integers(integers),
         })
@@ -1345,6 +1346,7 @@ impl From<Vec<IntPayloadType>> for Match {
 
 impl From<Vec<IntPayloadType>> for MatchExcept {
     fn from(integers: Vec<IntPayloadType>) -> Self {
+        let integers: IndexSet<_, FnvBuildHasher> = integers.into_iter().collect();
         MatchExcept {
             except: AnyVariants::Integers(integers),
         }

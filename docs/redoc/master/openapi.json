@@ -6583,7 +6583,8 @@
             "items": {
               "type": "integer",
               "format": "int64"
-            }
+            },
+            "uniqueItems": true
           }
         ]
       },

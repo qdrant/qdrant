@@ -292,21 +292,6 @@ impl<N: Hash + Eq + Clone + Display + FromStr + Default> MapIndex<N> {
         }
     }
 
-    fn except_iterator<'a, Q>(
-        &'a self,
-        excluded: &'a [Q],
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a>
-    where
-        Q: PartialEq<N>,
-    {
-        Box::new(
-            self.get_values_iterator()
-                .filter(|key| !excluded.iter().any(|e| e.eq(*key)))
-                .flat_map(|key| self.get_iterator(key))
-                .unique(),
-        )
-    }
-
     fn except_set<'a, A, K, S>(
         &'a self,
         excluded: &'a IndexSet<K, A>,
@@ -484,7 +469,7 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
             },
             Some(Match::Except(MatchExcept {
                 except: AnyVariants::Integers(integers),
-            })) => Ok(self.except_iterator(integers)),
+            })) => Ok(self.except_set(integers)),
             _ => Err(OperationError::service_error("failed to filter")),
         }
     }

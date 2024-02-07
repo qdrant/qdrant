@@ -427,7 +427,7 @@ fn values_to_any_variants(values: Vec<Value>) -> Vec<AnyVariants> {
     let mut any_variants = Vec::new();
 
     // gather int values
-    let ints: Vec<_> = values.iter().filter_map(|v| v.as_i64()).collect();
+    let ints: IndexSet<_, FnvBuildHasher> = values.iter().filter_map(|v| v.as_i64()).collect();
 
     if !ints.is_empty() {
         any_variants.push(AnyVariants::Integers(ints));
