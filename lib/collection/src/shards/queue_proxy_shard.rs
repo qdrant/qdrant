@@ -381,9 +381,9 @@ impl Inner {
     /// Using this function we set the WAL not to acknowledge and truncate from a specific point.
     ///
     /// Providing `None` will release this limitation.
-    fn set_wal_keep_from(&self, max_version: Option<u64>) {
-        let max_version = max_version.unwrap_or(u64::MAX);
-        self.wal_keep_from.store(max_version, Ordering::Relaxed);
+    fn set_wal_keep_from(&self, version: Option<u64>) {
+        let version = version.unwrap_or(u64::MAX);
+        self.wal_keep_from.store(version, Ordering::Relaxed);
     }
 }
 
