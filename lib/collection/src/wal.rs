@@ -162,8 +162,7 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
     /// # Arguments
     ///
     /// * `until_index` - the newest no longer required record sequence number
-    ///
-    pub fn ack(&mut self, until_index: u64) -> Result<()> {
+    pub(super) fn ack(&mut self, until_index: u64) -> Result<()> {
         // Truncate WAL
         self.wal
             .prefix_truncate(until_index)
