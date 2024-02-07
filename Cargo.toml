@@ -82,6 +82,8 @@ rustls-pemfile = "2.0.0"
 prometheus = { version = "0.13.3", default-features = false }
 validator = { version = "0.16", features = ["derive"] }
 
+regex = "1.8.4"
+
 # Consensus related crates
 raft = { version = "0.7.0", features = ["prost-codec"], default-features = false }
 slog = { version="2.7.0", features = ["max_level_trace", "release_max_level_debug"] }

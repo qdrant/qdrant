@@ -7,6 +7,7 @@ use actix_web::http::Method;
 use actix_web::{Error, HttpResponse};
 use actix_web_httpauth::headers::authorization::{Authorization, Bearer};
 use futures_util::future::LocalBoxFuture;
+use regex::Regex;
 
 use crate::common::auth::AuthKeys;
 
@@ -156,17 +157,29 @@ where
     }
 }
 
+/// Matches a request path against a specified pattern.
+///
+/// This function transforms placeholders (`{}`) in the given pattern to a regex that matches any non-slash sequence.
+/// It returns `true` if the pattern matches the request path, otherwise `false` if the pattern is invalid or does not match.
+/// ```
+/// let is_matched = match_pattern_to_request_path("/user/123/profile", "/user/{id}/profile");
+/// assert!(is_matched, "The path should match the pattern.");
+/// ```
+/// This example checks if the path `/user/123/profile` matches the pattern `/user/{id}/profile`.
+fn match_pattern_to_request_path(req_path: &str, pattern: &str) -> bool {
+    let regex_result = Regex::new(&pattern.replace('{', "(?P<").replace('}', ">[^/]+)"));
+    match regex_result {
+        Ok(regex_pattern) => regex_pattern.is_match(req_path),
+        Err(_) => false,
+    }
+}
+
 fn is_read_only(req: &ServiceRequest) -> bool {
     match *req.method() {
         Method::GET => true,
-        Method::POST => req
-            .match_pattern()
-            .map(|pattern| {
-                READ_ONLY_POST_PATTERNS
-                    .binary_search(&pattern.as_str())
-                    .is_ok()
-            })
-            .unwrap_or_default(),
+        Method::POST => READ_ONLY_POST_PATTERNS
+            .iter()
+            .any(|&pattern| match_pattern_to_request_path(req.path(), pattern)),
         _ => false,
     }
 }
@@ -183,5 +196,91 @@ mod tests {
             READ_ONLY_POST_PATTERNS, sorted,
             "The READ_ONLY_POST_PATTERNS list must be sorted"
         );
+    }
+
+    #[test]
+    fn test_match_pattern_to_request_path() {
+        let test_cases = vec![
+            (
+                "/collections/test_collection/points",
+                "/collections/{any_place_holder}/points",
+                true,
+            ),
+            (
+                "/collections/test_collection/points/count",
+                "/collections/{collection_name}/points/count",
+                true,
+            ),
+            (
+                "/collections/test_collection/points/discover",
+                "/collections/{name}/points/discover",
+                true,
+            ),
+            (
+                "/collections/test_collection/points/discover/batch",
+                "/collections/{name}/points/discover/batch",
+                true,
+            ),
+            (
+                "/collections/test_collection/points/recommend",
+                "/collections/{name}/points/recommend",
+                true,
+            ),
+            (
+                "/collections/test_collection/points/recommend/batch",
+                "/collections/{name}/points/recommend/batch",
+                true,
+            ),
+            (
+                "/collections/test_collection/points/recommend/groups",
+                "/collections/{name}/points/recommend/groups",
+                true,
+            ),
+            (
+                "/collections/test_collection/points/scroll",
+                "/collections/{name}/points/scroll",
+                true,
+            ),
+            (
+                "/collections/test_collection/points/search",
+                "/collections/{name}/points/search",
+                true,
+            ),
+            (
+                "/collections/test_collection/points/search/batch",
+                "/collections/{name}/points/search/batch",
+                true,
+            ),
+            (
+                "/collections/test_collection/points/search/groups",
+                "/collections/{name}/points/search/groups",
+                true,
+            ),
+            (
+                "/collections/test_collection/points/123",
+                "/collections/{any_name}/points/{id}",
+                true,
+            ),
+            (
+                "/collections/some_collection/not_match",
+                "/collections/{test_collection}/points",
+                false,
+            ),
+            (
+                "/collections/some_collection/points/not_match",
+                "/collections/{test_collection}/points/scroll",
+                false,
+            ),
+        ];
+
+        for (req_path, pattern, expected) in test_cases {
+            assert_eq!(
+                match_pattern_to_request_path(req_path, pattern),
+                expected,
+                "Failed matching req_path: '{}' with pattern: '{}'",
+                req_path,
+                pattern
+            );
+        }
     }
 }
