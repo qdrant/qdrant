@@ -8,6 +8,7 @@ use atomic_refcell::AtomicRefCell;
 use common::cpu::CpuPermit;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use itertools::Itertools;
+use sparse::common::sparse_search_memory_pool::SparseSearchMemoryPool;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::inverted_index::InvertedIndex;
@@ -41,6 +42,7 @@ pub struct SparseVectorIndex<TInvertedIndex: InvertedIndex> {
     searches_telemetry: SparseSearchesTelemetry,
     is_appendable: bool,
     pub indices_tracker: IndicesTracker,
+    pub sparse_memory_pool: SparseSearchMemoryPool,
 }
 
 impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
@@ -83,6 +85,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
 
         let searches_telemetry = SparseSearchesTelemetry::new();
         let path = path.to_path_buf();
+        let sparse_memory_pool = SparseSearchMemoryPool::new();
         Ok(Self {
             config,
             id_tracker,
@@ -93,6 +96,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             searches_telemetry,
             is_appendable,
             indices_tracker,
+            sparse_memory_pool,
         })
     }
 
@@ -238,8 +242,14 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         .collect_vec();
 
         let sparse_vector = self.indices_tracker.remap_vector(sparse_vector.to_owned());
-        let mut search_context =
-            SearchContext::new(sparse_vector, top, &self.inverted_index, is_stopped);
+        let memory_handle = self.sparse_memory_pool.get();
+        let mut search_context = SearchContext::new(
+            sparse_vector,
+            top,
+            &self.inverted_index,
+            memory_handle,
+            is_stopped,
+        );
         Ok(search_context.plain_search(&ids))
     }
 
@@ -260,8 +270,14 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             check_deleted_condition(idx, deleted_vectors, deleted_point_bitslice)
         };
         let sparse_vector = self.indices_tracker.remap_vector(sparse_vector.to_owned());
-        let mut search_context =
-            SearchContext::new(sparse_vector, top, &self.inverted_index, is_stopped);
+        let memory_handle = self.sparse_memory_pool.get();
+        let mut search_context = SearchContext::new(
+            sparse_vector,
+            top,
+            &self.inverted_index,
+            memory_handle,
+            is_stopped,
+        );
 
         match filter {
             Some(filter) => {
