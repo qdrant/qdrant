@@ -403,3 +403,29 @@ impl<'a> StreamRange<OrderingValue> for NumericFieldIndex<'a> {
         }
     }
 }
+
+impl<'a> NumericFieldIndex<'a> {
+    pub fn get_ordering_values(
+        &self,
+        idx: PointOffsetType,
+    ) -> Box<dyn Iterator<Item = OrderingValue> + 'a> {
+        match self {
+            NumericFieldIndex::IntIndex(index) => Box::new(
+                index
+                    .get_values(idx)
+                    .into_iter()
+                    .flatten()
+                    .copied()
+                    .map(OrderingValue::Int),
+            ),
+            NumericFieldIndex::FloatIndex(index) => Box::new(
+                index
+                    .get_values(idx)
+                    .into_iter()
+                    .flatten()
+                    .copied()
+                    .map(OrderingValue::Float),
+            ),
+        }
+    }
+}
