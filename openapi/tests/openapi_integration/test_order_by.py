@@ -120,7 +120,10 @@ def test_order_by_int_descending():
     assert len(result["points"]) == 5
 
     ids = [x["id"] for x in result["points"]]
-    assert [999, 998, 997, 996, 995] == ids
+    
+    # We expect the last ids
+    expected_ids = [total_points - (i + 1) for i in range(5)]
+    assert expected_ids == ids
     # Offset is not supported for order_by
     assert result["next_page_offset"] == None
 

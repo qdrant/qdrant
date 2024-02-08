@@ -34,7 +34,7 @@ use crate::index::field_index::numeric_index::StreamRange;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndex, VectorIndexEnum};
-use crate::spaces::tools::peek_top_smallest_iterable;
+use crate::spaces::tools::{peek_top_largest_iterable, peek_top_smallest_iterable};
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef,
@@ -621,6 +621,49 @@ impl Segment {
             .collect()
     }
 
+    /// Estimates how many checks it would need for getting `limit` amount of points by streaming and then
+    /// filtering, versus getting all filtered points from the index and then sorting them afterwards.
+    ///
+    /// If the filter is restrictive enough to yield fewer points than the amount of points a streaming
+    /// approach would need to advance, it returns true.
+    fn should_pre_filter(&self, filter: &Filter, limit: Option<usize>) -> bool {
+        let query_cardinality = {
+            let payload_index = self.payload_index.borrow();
+            payload_index.estimate_cardinality(filter)
+        };
+
+        // ToDo: Add telemetry for this heuristics
+
+        // Calculate expected number of condition checks required for
+        // this scroll request with is stream strategy.
+        // Example:
+        //  - cardinality = 1000
+        //  - limit = 10
+        //  - total = 10000
+        //  - point filter prob = 1000 / 10000 = 0.1
+        //  - expected_checks = 10 / 0.1  = 100
+        //  -------------------------------
+        //  - cardinality = 10
+        //  - limit = 10
+        //  - total = 10000
+        //  - point filter prob = 10 / 10000 = 0.001
+        //  - expected_checks = 10 / 0.001  = 10000
+
+        let available_points = self.available_point_count() + 1 /* + 1 for division-by-zero */;
+        // Expected number of successful checks per point
+        let check_probability =
+            (query_cardinality.exp as f64 + 1.0/* protect from zero */) / available_points as f64;
+        let exp_stream_checks =
+            (limit.unwrap_or(available_points) as f64 / check_probability) as usize;
+
+        // Assume it would require about `query cardinality` checks.
+        // We are interested in approximate number of checks, so we can
+        // use `query cardinality` as a starting point.
+        let exp_index_checks = query_cardinality.max;
+
+        exp_stream_checks > exp_index_checks
+    }
+
     fn read_by_id_stream(
         &self,
         offset: Option<PointIdType>,
@@ -665,6 +708,65 @@ impl Segment {
         page.sort_unstable();
 
         page
+    }
+
+    pub fn filtered_read_by_index_ordered(
+        &self,
+        order_by: &OrderBy,
+        limit: Option<usize>,
+        condition: &Filter,
+    ) -> OperationResult<Vec<(OrderingValue, PointIdType)>> {
+        let payload_index = self.payload_index.borrow();
+        let id_tracker = self.id_tracker.borrow();
+
+        let numeric_index = payload_index
+            .field_indexes
+            .get(&order_by.key)
+            .and_then(|indexes| indexes.iter().find_map(|index| index.as_numeric()))
+            .ok_or_else(|| OperationError::ValidationError { description: "There is no range index for the `order_by` key, please create one to use `order_by`".to_string() })?;
+
+        let start_from = order_by.start_from();
+
+        let values_ids_iterator = payload_index
+            .query_points(condition)
+            .into_iter()
+            .flat_map(|internal_id| {
+                // Repeat a point for as many values as it has
+                numeric_index
+                    .get_ordering_values(internal_id)
+                    // But only those which start from `start_from` 😛
+                    .filter(|value| match order_by.direction() {
+                        Direction::Asc => value >= &start_from,
+                        Direction::Desc => value <= &start_from,
+                    })
+                    .map(move |ordering_value| (ordering_value, internal_id))
+            })
+            .filter_map(|(value, internal_id)| {
+                id_tracker
+                    .external_id(internal_id)
+                    .map(|external_id| (value, external_id))
+            });
+
+        let page = match order_by.direction() {
+            Direction::Asc => {
+                let mut page = match limit {
+                    Some(limit) => peek_top_smallest_iterable(values_ids_iterator, limit),
+                    None => values_ids_iterator.collect(),
+                };
+                page.sort_unstable_by(|(value_a, _), (value_b, _)| value_a.cmp(value_b));
+                page
+            }
+            Direction::Desc => {
+                let mut page = match limit {
+                    Some(limit) => peek_top_largest_iterable(values_ids_iterator, limit),
+                    None => values_ids_iterator.collect(),
+                };
+                page.sort_unstable_by(|(value_a, _), (value_b, _)| value_b.cmp(value_a));
+                page
+            }
+        };
+
+        Ok(page)
     }
 
     pub fn filtered_read_by_id_stream(
@@ -1093,41 +1195,7 @@ impl SegmentEntry for Segment {
         match filter {
             None => self.read_by_id_stream(offset, limit),
             Some(condition) => {
-                let query_cardinality = {
-                    let payload_index = self.payload_index.borrow();
-                    payload_index.estimate_cardinality(condition)
-                };
-
-                // ToDo: Add telemetry for this heuristics
-
-                // Calculate expected number of condition checks required for
-                // this scroll request with is stream strategy.
-                // Example:
-                //  - cardinality = 1000
-                //  - limit = 10
-                //  - total = 10000
-                //  - point filter prob = 1000 / 10000 = 0.1
-                //  - expected_checks = 10 / 0.1  = 100
-                //  -------------------------------
-                //  - cardinality = 10
-                //  - limit = 10
-                //  - total = 10000
-                //  - point filter prob = 10 / 10000 = 0.001
-                //  - expected_checks = 10 / 0.001  = 10000
-
-                let available_points = self.available_point_count() + 1 /* + 1 for division-by-zero */;
-                // Expected number of successful checks per point
-                let check_probability = (query_cardinality.exp as f64 + 1.0/* protect from zero */)
-                    / available_points as f64;
-                let exp_stream_checks =
-                    (limit.unwrap_or(available_points) as f64 / check_probability) as usize;
-
-                // Assume it would require about `query cardinality` checks.
-                // We are interested in approximate number of checks, so we can
-                // use `query cardinality` as a starting point.
-                let exp_index_checks = query_cardinality.max;
-
-                if exp_stream_checks > exp_index_checks {
+                if self.should_pre_filter(condition, limit) {
                     self.filtered_read_by_index(offset, limit, condition)
                 } else {
                     self.filtered_read_by_id_stream(offset, limit, condition)
@@ -1142,10 +1210,16 @@ impl SegmentEntry for Segment {
         filter: Option<&'a Filter>,
         order_by: &'a OrderBy,
     ) -> OperationResult<Vec<(OrderingValue, PointIdType)>> {
-        // TODO: make same optimization for high-constraining filters as in `read_filtered`
-        let reads = self.filtered_read_by_value_stream(order_by, limit, filter)?;
-
-        Ok(reads)
+        match filter {
+            None => self.filtered_read_by_value_stream(order_by, limit, None),
+            Some(filter) => {
+                if self.should_pre_filter(filter, limit) {
+                    self.filtered_read_by_index_ordered(order_by, limit, filter)
+                } else {
+                    self.filtered_read_by_value_stream(order_by, limit, Some(filter))
+                }
+            }
+        }
     }
 
     fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType> {
