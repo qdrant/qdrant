@@ -1384,7 +1384,7 @@ pub fn try_parse_datetime(s: &str) -> Option<DateTimePayloadType> {
     // - YYYY-MM-DD
     // See: <https://github.com/qdrant/qdrant/issues/3529>
     let datetime =
-        if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d'T'%H:%M:%S") {
+        if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S") {
             naive
         } else if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
             naive
