@@ -4,7 +4,7 @@ use std::fmt::Display;
 use std::future::Future;
 use std::ops::Deref;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use anyhow::{anyhow, Context};
 use chrono::Utc;
@@ -600,10 +600,27 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         consensus_tick: Duration,
         timeout: Duration,
     ) -> Result<(), ()> {
-        let start = Instant::now();
+        match tokio::time::timeout(
+            timeout,
+            self.inner_wait_for_consensus_commit(commit, term, consensus_tick),
+        )
+        .await
+        {
+            Ok(_) => Ok(()),
+            Err(_) => Err(()),
+        }
+    }
 
-        // TODO: naive approach with spinlock for waiting on commit/term, find better way
-        while start.elapsed() < timeout {
+    async fn inner_wait_for_consensus_commit(
+        &self,
+        commit: u64,
+        term: u64,
+        consensus_tick: Duration,
+    ) -> Result<(), ()> {
+        let mut interval = tokio::time::interval(consensus_tick);
+
+        loop {
+            interval.tick().await;
             let state = &self.hard_state();
 
             let last_applied_commit = self.persistent.read().last_applied_entry();
@@ -623,12 +640,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             if is_fail {
                 return Err(());
             }
-
-            tokio::time::sleep(consensus_tick).await
         }
-
-        // Fail on timeout
-        Err(())
     }
 
     /// Send operation to the consensus thread and listen for the result.
