@@ -19,7 +19,7 @@ env_logger = "0.11"
 [dependencies]
 thiserror = "1.0"
 rand = "0.8.5"
-wal = { git = "https://github.com/qdrant/wal.git", rev = "fad0e7c48be58d8e7db4cc739acd9b1cf6735de0" }
+wal = { git = "https://github.com/qdrant/wal.git", rev = "acaf1b2ebd5de3a871f4d2c48e13fc8788ffa43b" }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
