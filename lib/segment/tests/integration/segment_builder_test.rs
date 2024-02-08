@@ -168,7 +168,7 @@ fn test_building_cancellation() {
     let late_stop_delay = time_baseline / 5;
     let (time_long, was_cancelled_later) = estimate_build_time(&segment_2, late_stop_delay);
 
-    let acceptable_stopping_delay = 600; // millis
+    let acceptable_stopping_delay = time_baseline / 30; // millis
 
     assert!(was_cancelled_early);
     assert!(

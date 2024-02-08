@@ -7,6 +7,7 @@ use std::thread;
 
 use atomic_refcell::AtomicRefCell;
 #[cfg(target_os = "linux")]
+#[cfg(profile = "release")]
 use common::cpu::linux_low_thread_priority;
 use common::cpu::CpuPermit;
 use common::types::{PointOffsetType, ScoredPointOffset};
@@ -678,6 +679,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 b.spawn(|| {
                     // On Linux, use lower thread priority so we interfere less with serving traffic
                     #[cfg(target_os = "linux")]
+                    #[cfg(profile = "release")]
                     if let Err(err) = linux_low_thread_priority() {
                         log::debug!(
                             "Failed to set low thread priority for HNSW building, ignoring: {err}"
