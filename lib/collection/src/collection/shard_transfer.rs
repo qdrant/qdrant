@@ -140,7 +140,7 @@ impl Collection {
             consensus,
             collection_id,
             channel_service,
-            self.snapshots_path.clone(),
+            self.shard_snapshot_manager(transfer.shard_id),
             self.name(),
             temp_dir,
             on_finish,

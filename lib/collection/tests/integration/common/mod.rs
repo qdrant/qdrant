@@ -62,17 +62,10 @@ pub async fn simple_collection_fixture(collection_path: &Path, shard_number: u32
         quantization_config: Default::default(),
     };
 
-    let snapshot_path = collection_path.join("snapshots");
-
     // Default to a collection with all the shards local
-    new_local_collection(
-        "test".to_string(),
-        collection_path,
-        &snapshot_path,
-        &collection_config,
-    )
-    .await
-    .unwrap()
+    new_local_collection("test".to_string(), collection_path, &collection_config)
+        .await
+        .unwrap()
 }
 
 pub fn dummy_on_replica_failure() -> ChangePeerState {
@@ -92,14 +85,12 @@ pub fn dummy_abort_shard_transfer() -> AbortShardTransfer {
 pub async fn new_local_collection(
     id: CollectionId,
     path: &Path,
-    snapshots_path: &Path,
     config: &CollectionConfig,
 ) -> Result<Collection, CollectionError> {
     let collection = Collection::new(
         id,
         0,
         path,
-        snapshots_path,
         config,
         Default::default(),
         CollectionShardDistribution::all_local(Some(config.params.shard_number.into()), 0),
@@ -126,16 +117,11 @@ pub async fn new_local_collection(
 
 /// Default to a collection with all the shards local
 #[cfg(test)]
-pub async fn load_local_collection(
-    id: CollectionId,
-    path: &Path,
-    snapshots_path: &Path,
-) -> Collection {
+pub async fn load_local_collection(id: CollectionId, path: &Path) -> Collection {
     Collection::load(
         id,
         0,
         path,
-        snapshots_path,
         Default::default(),
         ChannelService::new(REST_PORT),
         dummy_on_replica_failure(),

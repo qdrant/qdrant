@@ -228,12 +228,7 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
     }
 
     let collection_path = collection_dir.path();
-    let loaded_collection = load_local_collection(
-        "test".to_string(),
-        collection_path,
-        &collection_path.join("snapshots"),
-    )
-    .await;
+    let loaded_collection = load_local_collection("test".to_string(), collection_path).await;
     let request = PointRequestInternal {
         ids: vec![1.into(), 2.into()],
         with_payload: Some(WithPayloadInterface::Bool(true)),
@@ -815,12 +810,7 @@ async fn test_collection_local_load_initializing_not_stuck() {
 
     // Reload collection
     let collection_path = collection_dir.path();
-    let loaded_collection = load_local_collection(
-        "test".to_string(),
-        collection_path,
-        &collection_path.join("snapshots"),
-    )
-    .await;
+    let loaded_collection = load_local_collection("test".to_string(), collection_path).await;
 
     // Local replica must be in Active state after loading (all replicas are local)
     let loaded_state = loaded_collection.state().await;

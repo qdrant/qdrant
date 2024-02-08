@@ -3,9 +3,7 @@ use collection::operations::cluster_ops::ClusterOperations;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
 use collection::operations::point_ops::{PointInsertOperations, PointsSelector, WriteOrdering};
-use collection::operations::snapshot_ops::{
-    ShardSnapshotRecover, SnapshotDescription, SnapshotRecover,
-};
+use collection::operations::snapshot_ops::{ShardSnapshotRecover, SnapshotRecover};
 use collection::operations::types::{
     AliasDescription, CollectionClusterInfo, CollectionExistence, CollectionInfo,
     CollectionsAliasesResponse, CountRequest, CountResult, DiscoverRequest, DiscoverRequestBatch,
@@ -18,6 +16,7 @@ use schemars::gen::SchemaSettings;
 use schemars::JsonSchema;
 use segment::types::ScoredPoint;
 use serde::{Deserialize, Serialize};
+use snapshot_manager::SnapshotDescription;
 use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CreateCollection, UpdateCollection,
 };

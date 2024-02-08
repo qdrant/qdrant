@@ -1,5 +1,6 @@
 use collection::operations::conversions::sharding_method_from_proto;
 use collection::operations::types::SparseVectorsConfig;
+use snapshot_manager::error::SnapshotManagerError;
 use tonic::Status;
 
 use crate::content_manager::collection_meta_ops::{
@@ -9,6 +10,18 @@ use crate::content_manager::collection_meta_ops::{
     UpdateCollection, UpdateCollectionOperation,
 };
 use crate::content_manager::errors::StorageError;
+
+pub fn snapshot_error_to_status(error: SnapshotManagerError) -> tonic::Status {
+    let error_code = match &error {
+        SnapshotManagerError::BadInput { .. } => tonic::Code::InvalidArgument,
+        SnapshotManagerError::NotFound { .. } => tonic::Code::NotFound,
+        SnapshotManagerError::ServiceError { .. } => tonic::Code::Internal,
+        SnapshotManagerError::BadRequest { .. } => tonic::Code::InvalidArgument,
+
+        SnapshotManagerError::Timeout { .. } => tonic::Code::DeadlineExceeded,
+    };
+    tonic::Status::new(error_code, format!("{error}"))
+}
 
 pub fn error_to_status(error: StorageError) -> tonic::Status {
     let error_code = match &error {

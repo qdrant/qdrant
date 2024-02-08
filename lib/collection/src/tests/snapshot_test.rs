@@ -84,18 +84,18 @@ async fn _test_snapshot_collection(node_type: NodeType) {
     shards.insert(2, HashSet::from([10_000])); // remote shard
     shards.insert(3, HashSet::from([1, 20_000, 30_000]));
 
-    let storage_config: SharedStorageConfig = SharedStorageConfig {
+    let storage_config: Arc<SharedStorageConfig> = Arc::new(SharedStorageConfig {
         node_type,
+        snapshots_path: snapshots_path.path().to_string_lossy().to_string(),
         ..Default::default()
-    };
+    });
 
     let collection = Collection::new(
         collection_name,
         1,
         collection_dir.path(),
-        snapshots_path.path(),
         &config,
-        Arc::new(storage_config),
+        storage_config.clone(),
         CollectionShardDistribution { shards },
         ChannelService::default(),
         dummy_on_replica_failure(),
@@ -109,27 +109,38 @@ async fn _test_snapshot_collection(node_type: NodeType) {
     .unwrap();
 
     let snapshots_temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
-    let snapshot_description = collection
+    let (snapshot, snapshot_description) = collection
         .create_snapshot(snapshots_temp_dir.path(), 0)
         .await
         .unwrap();
 
+    println!("{:?}", snapshot);
+
     assert_eq!(snapshot_description.checksum.unwrap().len(), 64);
     // Do not recover in local mode if some shards are remote
     assert!(Collection::restore_snapshot(
-        &snapshots_path.path().join(&snapshot_description.name),
+        storage_config
+            .snapshot_manager()
+            .scope(format!("{}/", collection.name())),
+        &snapshot,
         recover_dir.path(),
         0,
         false,
     )
+    .await
     .is_err());
 
     if let Err(err) = Collection::restore_snapshot(
-        &snapshots_path.path().join(snapshot_description.name),
+        storage_config
+            .snapshot_manager()
+            .scope(format!("{}/", collection.name())),
+        &snapshot,
         recover_dir.path(),
         0,
         true,
-    ) {
+    )
+    .await
+    {
         panic!("Failed to restore snapshot: {err}")
     }
 
@@ -137,7 +148,6 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         collection_name_rec,
         1,
         recover_dir.path(),
-        snapshots_path.path(),
         Default::default(),
         ChannelService::default(),
         dummy_on_replica_failure(),

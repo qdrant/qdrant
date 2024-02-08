@@ -56,10 +56,11 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
     let collection_name = "test".to_string();
     let collection_name_rec = "test_rec".to_string();
 
-    let storage_config: SharedStorageConfig = SharedStorageConfig {
+    let storage_config: Arc<SharedStorageConfig> = Arc::new(SharedStorageConfig {
         node_type,
+        snapshots_path: snapshots_path.path().to_string_lossy().to_string(),
         ..Default::default()
-    };
+    });
 
     let this_peer_id = 0;
     let shard_distribution = CollectionShardDistribution::all_local(
@@ -71,9 +72,8 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         collection_name,
         this_peer_id,
         collection_dir.path(),
-        snapshots_path.path(),
         &config,
-        Arc::new(storage_config),
+        storage_config.clone(),
         shard_distribution,
         ChannelService::new(REST_PORT),
         dummy_on_replica_failure(),
@@ -113,17 +113,22 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
 
     // Take a snapshot
     let snapshots_temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
-    let snapshot_description = collection
+    let (snapshot, _) = collection
         .create_snapshot(snapshots_temp_dir.path(), 0)
         .await
         .unwrap();
 
     if let Err(err) = Collection::restore_snapshot(
-        &snapshots_path.path().join(snapshot_description.name),
+        storage_config
+            .snapshot_manager()
+            .scope(format!("{}/", collection.name())),
+        &snapshot,
         recover_dir.path(),
         0,
         false,
-    ) {
+    )
+    .await
+    {
         panic!("Failed to restore snapshot: {err}")
     }
 
@@ -131,7 +136,6 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         collection_name_rec,
         this_peer_id,
         recover_dir.path(),
-        snapshots_path.path(),
         Default::default(),
         ChannelService::new(REST_PORT),
         dummy_on_replica_failure(),

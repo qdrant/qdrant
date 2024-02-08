@@ -44,6 +44,7 @@ common = { path = "../common/common" }
 cancel = { path = "../common/cancel" }
 io = { path = "../common/io" }
 memory = { path = "../common/memory" }
+snapshot-manager = { path = "../common/snapshot_manager" }
 segment = { path = "../segment" }
 collection = { path = "../collection" }
 api = { path = "../api" }

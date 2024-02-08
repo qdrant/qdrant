@@ -30,6 +30,7 @@ use collection::telemetry::CollectionTelemetry;
 use common::cpu::{get_num_cpus, CpuBudget};
 use futures::future::try_join_all;
 use futures::Future;
+use snapshot_manager::SnapshotManager;
 use tokio::runtime::Runtime;
 use tokio::sync::{Mutex, RwLock, RwLockReadGuard, Semaphore};
 use tonic::codegen::InterceptedService;
@@ -95,8 +96,6 @@ impl TableOfContent {
         this_peer_id: PeerId,
         consensus_proposal_sender: Option<OperationSender>,
     ) -> Self {
-        let snapshots_path = Path::new(&storage_config.snapshots_path.clone()).to_owned();
-        create_dir_all(&snapshots_path).expect("Can't create Snapshots directory");
         let collections_path = Path::new(&storage_config.storage_path).join(COLLECTIONS_DIR);
         create_dir_all(&collections_path).expect("Can't create Collections directory");
         if let Some(path) = storage_config.temp_path.as_deref() {
@@ -126,17 +125,16 @@ impl TableOfContent {
                 .to_str()
                 .expect("A filename of one of the collection files is not a valid UTF-8")
                 .to_string();
-            let collection_snapshots_path =
-                Self::collection_snapshots_path(&snapshots_path, &collection_name);
-            create_dir_all(&collection_snapshots_path).unwrap_or_else(|e| {
-                panic!("Can't create a directory for snapshot of {collection_name}: {e}")
-            });
+            // MOGNOTE
+            // snapshot_manager
+            //     .ensure_snapshots_path(&collection_name)
+            //     .unwrap();
+
             log::info!("Loading collection: {}", collection_name);
             let collection = general_runtime.block_on(Collection::load(
                 collection_name.clone(),
                 this_peer_id,
                 &collection_path,
-                &collection_snapshots_path,
                 storage_config
                     .to_shared_storage_config(is_distributed)
                     .into(),
@@ -210,6 +208,11 @@ impl TableOfContent {
 
     pub fn storage_path(&self) -> &str {
         &self.storage_config.storage_path
+    }
+
+    #[inline]
+    pub fn snapshot_manager(&self) -> SnapshotManager {
+        self.storage_config.snapshot_manager()
     }
 
     /// List of all collections
