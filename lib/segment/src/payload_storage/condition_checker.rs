@@ -3,7 +3,9 @@
 use serde_json::Value;
 
 use crate::types::{
-    try_parse_datetime, AnyVariants, DateTimePayloadType, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius, Match, MatchAny, MatchExcept, MatchText, MatchValue, Range, RangeInterface, ValueVariants, ValuesCount
+    try_parse_datetime, AnyVariants, DateTimePayloadType, FieldCondition, FloatPayloadType,
+    GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius, Match, MatchAny, MatchExcept, MatchText,
+    MatchValue, Range, RangeInterface, ValueVariants, ValuesCount,
 };
 
 pub trait ValueChecker {

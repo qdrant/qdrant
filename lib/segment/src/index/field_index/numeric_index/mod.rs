@@ -33,7 +33,8 @@ use crate::index::key_encoding::{
 };
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
-    try_parse_datetime, DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, Range, RangeInterface
+    try_parse_datetime, DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType,
+    PayloadKeyType, Range, RangeInterface,
 };
 
 const HISTOGRAM_MAX_BUCKET_SIZE: usize = 10_000;
