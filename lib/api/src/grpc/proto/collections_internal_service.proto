@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 import "collections.proto";
+import "points_internal_service.proto";
 
 package qdrant;
 option csharp_namespace = "Qdrant.Client.Grpc";
@@ -47,7 +48,11 @@ message GetShardRecoveryPointRequest {
 }
 
 message GetShardRecoveryPointResponse {
-  // TODO: replace this with last seen clock map on remote
-  uint64 recovery_point = 1; // Recovery point of the shard
+  RecoveryPoint recovery_point = 1; // Recovery point of the shard
   double time = 2; // Time spent to process
+}
+
+message RecoveryPoint {
+  // TODO: use different type here, that does not have force flag
+  repeated ClockTag clocks = 1;
 }

@@ -2,8 +2,9 @@ use core::marker::{Send, Sync};
 use std::future::{self, Future};
 use std::path::Path;
 
+use super::local_shard::clock_map::RecoveryPoint;
 use super::update_tracker::UpdateTracker;
-use crate::operations::types::CollectionResult;
+use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::dummy_shard::DummyShard;
 use crate::shards::forward_proxy_shard::ForwardProxyShard;
 use crate::shards::local_shard::LocalShard;
@@ -145,5 +146,23 @@ impl Shard {
         };
 
         Some(update_tracker)
+    }
+
+    pub async fn shard_recovery_point(&self) -> CollectionResult<RecoveryPoint> {
+        match self {
+            Self::Local(local_shard) => Ok(local_shard.shard_recovery_point().await),
+            Self::Proxy(_) => Err(CollectionError::service_error(
+                "Proxy shards do not support recovery point",
+            )),
+            Self::ForwardProxy(proxy_shard) => {
+                Ok(proxy_shard.wrapped_shard.shard_recovery_point().await)
+            }
+            Self::QueueProxy(_) => Err(CollectionError::service_error(
+                "Queue proxy shards do not support recovery point",
+            )),
+            Self::Dummy(_) => Err(CollectionError::service_error(
+                "Dummy shards do not support recovery point",
+            )),
+        }
     }
 }

@@ -98,6 +98,17 @@ impl ClockMap {
             }
         }
     }
+
+    /// Create a recovery point from the current clock map state
+    pub fn to_recovery_point(&self) -> RecoveryPoint {
+        RecoveryPoint {
+            clocks: self
+                .clocks
+                .iter()
+                .map(|(key, clock)| (*key, clock.current_tick.load(Ordering::Relaxed)))
+                .collect(),
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize)]
@@ -107,6 +118,10 @@ struct Key {
 }
 
 impl Key {
+    pub fn new(peer_id: PeerId, clock_id: u32) -> Self {
+        Self { peer_id, clock_id }
+    }
+
     pub fn from_tag(clock_tag: &ClockTag) -> Self {
         Self {
             peer_id: clock_tag.peer_id,
@@ -134,6 +149,35 @@ impl Clock {
         let clock_updated = self.current_tick < new_tick;
         self.current_tick = cmp::max(self.current_tick, new_tick);
         (clock_updated, self.current_tick)
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct RecoveryPoint {
+    clocks: HashMap<Key, u64>,
+}
+
+impl From<RecoveryPoint> for api::grpc::qdrant::RecoveryPoint {
+    fn from(value: RecoveryPoint) -> Self {
+        Self {
+            clocks: value
+                .clocks
+                .into_iter()
+                .map(|(key, tick)| ClockTag::new(key.peer_id, key.clock_id, tick).into())
+                .collect(),
+        }
+    }
+}
+
+impl From<api::grpc::qdrant::RecoveryPoint> for RecoveryPoint {
+    fn from(value: api::grpc::qdrant::RecoveryPoint) -> Self {
+        Self {
+            clocks: value
+                .clocks
+                .into_iter()
+                .map(|tag| (Key::new(tag.peer_id, tag.clock_id), tag.clock_tick))
+                .collect(),
+        }
     }
 }
 

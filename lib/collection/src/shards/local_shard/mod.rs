@@ -32,7 +32,7 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::{mpsc, oneshot, Mutex, RwLock as TokioRwLock};
 use wal::{Wal, WalOptions};
 
-use self::clock_map::ClockMap;
+use self::clock_map::{ClockMap, RecoveryPoint};
 use super::update_tracker::UpdateTracker;
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
@@ -911,6 +911,13 @@ impl LocalShard {
 
     pub fn update_tracker(&self) -> &UpdateTracker {
         &self.update_tracker
+    }
+
+    /// Get the recovery point for the current shard
+    ///
+    /// This is sourced from the last seen clocks from other nodes that we know about.
+    pub async fn shard_recovery_point(&self) -> RecoveryPoint {
+        self.clock_map.lock().await.to_recovery_point()
     }
 }
 

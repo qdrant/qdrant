@@ -150,7 +150,7 @@ impl CollectionsInternal for CollectionsInternalService {
             })?;
 
         let response = GetShardRecoveryPointResponse {
-            recovery_point,
+            recovery_point: Some(recovery_point.into()),
             time: timing.elapsed().as_secs_f64(),
         };
         Ok(Response::new(response))
