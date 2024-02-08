@@ -74,6 +74,19 @@ impl OrderBy {
         self.direction.unwrap_or_default()
     }
 
+    pub fn start_from(&self) -> OrderingValue {
+        self.start_from
+            .as_ref()
+            .map(|start_from| match start_from {
+                StartFrom::Float(f) => OrderingValue::Float(*f),
+                StartFrom::Datetime(dt) => OrderingValue::Int(dt.timestamp_micros()),
+            })
+            .unwrap_or_else(|| match self.direction() {
+                Direction::Asc => OrderingValue::Int(std::i64::MIN),
+                Direction::Desc => OrderingValue::Int(std::i64::MAX),
+            })
+    }
+
     pub fn insert_order_value_in_payload(
         payload: Option<Payload>,
         value: impl Into<serde_json::Value>,
