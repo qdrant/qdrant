@@ -311,10 +311,15 @@ impl StructPayloadIndex {
                 .unwrap_or_else(|| {
                     // Couldn't estimate cardinality, which means that there is no appropriate index
                     // for the field, let's report an issue
-                    if let Ok(unindexed_field) = crate::problems::UnindexedField::try_from((
-                        field_condition.clone(),
-                        self.get_collection_name(),
-                    )) {
+                    if let Some(unindexed_field) =
+                        self.get_collection_name().and_then(|collection_name| {
+                            crate::problems::UnindexedField::try_from((
+                                field_condition.clone(),
+                                collection_name,
+                            ))
+                            .ok()
+                        })
+                    {
                         let description = unindexed_field.description();
                         if issues::submit(unindexed_field) {
                             log::warn!("Performance issue: {}", description);
@@ -346,16 +351,13 @@ impl StructPayloadIndex {
     }
 
     /// Hack to get collection name from the path, to avoid early refactoring on segment level
-    fn get_collection_name(&self) -> String {
+    fn get_collection_name(&self) -> Option<String> {
         // Root dir -> storage -> collections -> ⭐️collection_name⭐️
         self.path
             .components()
             .nth(3)
-            .unwrap()
-            .as_os_str()
-            .to_str()
-            .unwrap()
-            .to_string()
+            .and_then(|c| c.as_os_str().to_str())
+            .map(|c| c.to_string())
     }
 }
 
