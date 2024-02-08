@@ -1067,9 +1067,11 @@ dependencies = [
  "common",
  "criterion",
  "env_logger 0.11.1",
+ "fnv",
  "fs_extra",
  "futures",
  "hashring",
+ "indexmap 2.0.1",
  "indicatif",
  "io",
  "itertools 0.12.1",
@@ -2417,6 +2419,7 @@ checksum = "ad227c3af19d4914570ad36d30409928b75967c298feb9ea1969db3a610bb14e"
 dependencies = [
  "equivalent",
  "hashbrown 0.14.2",
+ "serde",
 ]
 
 [[package]]
@@ -4576,6 +4579,7 @@ dependencies = [
  "chrono",
  "dyn-clone",
  "indexmap 1.9.2",
+ "indexmap 2.0.1",
  "schemars_derive",
  "serde",
  "serde_json",
@@ -4664,9 +4668,11 @@ dependencies = [
  "chrono",
  "common",
  "criterion",
+ "fnv",
  "fs_extra",
  "geo",
  "geohash",
+ "indexmap 2.0.1",
  "io",
  "io-uring",
  "itertools 0.12.1",

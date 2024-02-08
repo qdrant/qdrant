@@ -1,14 +1,17 @@
 use std::ops::{Range, RangeInclusive};
 
+use fnv::FnvBuildHasher;
+use indexmap::IndexSet;
 use itertools::Itertools;
+use rand::distributions::{Alphanumeric, DistString};
 use rand::seq::SliceRandom;
 use rand::Rng;
 use serde_json::{json, Value};
 
 use crate::data_types::vectors::VectorElementType;
 use crate::types::{
-    Condition, ExtendedPointId, FieldCondition, Filter, HasIdCondition, IsEmptyCondition, Match,
-    Payload, PayloadField, Range as RangeCondition, ValuesCount,
+    AnyVariants, Condition, ExtendedPointId, FieldCondition, Filter, HasIdCondition,
+    IsEmptyCondition, Match, MatchAny, Payload, PayloadField, Range as RangeCondition, ValuesCount,
 };
 
 const ADJECTIVE: &[&str] = &[
@@ -198,6 +201,34 @@ pub fn random_must_filter<R: Rng + ?Sized>(rnd_gen: &mut R, num_conditions: usiz
     Filter {
         should: None,
         must: Some(must_conditions),
+        must_not: None,
+    }
+}
+
+pub fn random_match_any_filter<R: Rng + ?Sized>(
+    rnd_gen: &mut R,
+    len: usize,
+    percent_existing: f32,
+) -> Filter {
+    let num_existing = (len as f32 * (percent_existing / 100.0)) as usize;
+
+    let mut values: IndexSet<String, FnvBuildHasher> = (0..len - num_existing)
+        .map(|_| {
+            let slen = rnd_gen.gen_range(1..15);
+            Alphanumeric.sample_string(rnd_gen, slen)
+        })
+        .collect();
+
+    values.extend((0..num_existing).map(|_| random_keyword(rnd_gen)));
+
+    Filter {
+        should: None,
+        must: Some(vec![Condition::Field(FieldCondition::new_match(
+            STR_KEY,
+            Match::Any(MatchAny {
+                any: AnyVariants::Keywords(values),
+            }),
+        ))]),
         must_not: None,
     }
 }

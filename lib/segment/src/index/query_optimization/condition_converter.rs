@@ -8,6 +8,7 @@ use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::FieldIndex;
 use crate::index::query_optimization::optimized_filter::ConditionCheckerFn;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
+use crate::payload_storage::condition_checker::INDEXSET_ITER_THRESHOLD;
 use crate::payload_storage::query_checker::{
     check_field_condition, check_is_empty_condition, check_is_null_condition, check_payload,
     select_nested_indexes,
@@ -306,17 +307,25 @@ pub fn get_match_checkers(index: &FieldIndex, cond_match: Match) -> Option<Condi
             (AnyVariants::Keywords(list), FieldIndex::KeywordIndex(index)) => {
                 Some(Box::new(move |point_id: PointOffsetType| {
                     index.get_values(point_id).map_or(false, |values| {
-                        values
-                            .iter()
-                            .any(|k| list.iter().any(|s| s.as_str() == k.as_ref()))
+                        if list.len() < INDEXSET_ITER_THRESHOLD {
+                            values
+                                .iter()
+                                .any(|k| list.iter().any(|s| s.as_str() == k.as_ref()))
+                        } else {
+                            values.iter().any(|k| list.contains(k.as_str()))
+                        }
                     })
                 }))
             }
             (AnyVariants::Integers(list), FieldIndex::IntMapIndex(index)) => {
                 Some(Box::new(move |point_id: PointOffsetType| {
-                    index
-                        .get_values(point_id)
-                        .map_or(false, |values| values.iter().any(|i| list.contains(i)))
+                    index.get_values(point_id).map_or(false, |values| {
+                        if list.len() < INDEXSET_ITER_THRESHOLD {
+                            values.iter().any(|i| list.iter().any(|k| k == i))
+                        } else {
+                            values.iter().any(|i| list.contains(i))
+                        }
+                    })
                 }))
             }
             _ => None,
@@ -325,17 +334,25 @@ pub fn get_match_checkers(index: &FieldIndex, cond_match: Match) -> Option<Condi
             (AnyVariants::Keywords(list), FieldIndex::KeywordIndex(index)) => {
                 Some(Box::new(move |point_id: PointOffsetType| {
                     index.get_values(point_id).map_or(false, |values| {
-                        values
-                            .iter()
-                            .any(|k| !list.iter().any(|s| s.as_str() == k.as_ref()))
+                        if list.len() < INDEXSET_ITER_THRESHOLD {
+                            values
+                                .iter()
+                                .any(|k| !list.iter().any(|s| s.as_str() == k.as_ref()))
+                        } else {
+                            values.iter().any(|k| !list.contains(k.as_str()))
+                        }
                     })
                 }))
             }
             (AnyVariants::Integers(list), FieldIndex::IntMapIndex(index)) => {
                 Some(Box::new(move |point_id: PointOffsetType| {
-                    index
-                        .get_values(point_id)
-                        .map_or(false, |values| values.iter().any(|i| !list.contains(i)))
+                    index.get_values(point_id).map_or(false, |values| {
+                        if list.len() < INDEXSET_ITER_THRESHOLD {
+                            values.iter().any(|i| !list.iter().any(|k| k == i))
+                        } else {
+                            values.iter().any(|i| !list.contains(i))
+                        }
+                    })
                 }))
             }
             (_, index) => Some(Box::new(|point_id: PointOffsetType| {
