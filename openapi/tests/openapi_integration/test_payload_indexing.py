@@ -163,7 +163,7 @@ def test_datetime_indexing():
         ({"gte": "2015-01-01", "lte": "2015-01-01 00:00"}, [1]),
         ({"gte": "2015-01-01T01:00:00+01:00",
          "lte": "2015-01-01T01:00:00+01:00"}, [1]),
-        ({"gte": "2015-02-01 06:00:00", "lte": "2015-02-01T06:00:00Z"}, [2]),
+        ({"gte": "2015-02-01T06:00:00", "lte": "2015-02-01T06:00:00Z"}, [2]),
     ]
     for range_, expected_ids in data:
         response = request_with_validation(
@@ -179,6 +179,44 @@ def test_datetime_indexing():
 
         point_ids = [p["id"] for p in response.json()["result"]["points"]]
         assert all(id in point_ids for id in expected_ids)
+
+    # test with wrong/unsupported datetime format
+    wrong_data = [
+        # RFC 2822 format
+        ({"gte": "Thu, 01 Jan 2015 01:00:00 +0100",
+         "lte": "Thu, 01 Jan 2015 01:00:00 +0100"}, [1]),
+        # Unix millisecond timestamp
+        ({"gte": "1422758400000", "lte": "1422758400000"}, [1]),
+        # Unix second timestamp
+        ({"gte": "1420070400", "lte": "1420070400"}, [1]),
+        # Human readable format
+        ({"gte": "2015-02-01 06:00:00 AM",
+         "lte": "2015-02-01 06:00:00 AM"}, [2]),
+        # Here are some elasticsearch built-in datetime format
+        # Reference: https://www.elastic.co/guide/en/elasticsearch/reference/current/mapping-date-format.html#built-in-date-formats
+        # date_optional_time
+        ({"gte": "2015-02-01T06:00:00.000000000",
+         "lte": "2015-02-01T06:00:00.000000000"}, [2]),
+        # basic_date
+        ({"gte": "20150201", "lte": "20150201"}, [2]),
+        # basic_date_time
+        ({"gte": "20150201T060000.000Z", "lte": "20150201T060000.000Z"}, [2]),
+        # basic_ordinal_date_time_no_millis
+        ({"gte": "2015032T060000Z", "lte": "2015032T060000Z"}, [2]),
+        # wrong format mixed with supported format
+        ({"gte": "2015032T060000Z", "lte": "2015-02-01T06:00:00"}, [2]),
+    ]
+    for range_, expected_ids in wrong_data:
+        response = request_with_validation(
+            api="/collections/{collection_name}/points/scroll",
+            method="POST",
+            path_params={"collection_name": collection_name},
+            body={
+                "with_vector": False,
+                "filter": {"must": [{"key": datetime_key, "range": range_}]},
+            },
+        )
+        assert not response.ok
 
 
 def test_update_payload_on_indexed_field():

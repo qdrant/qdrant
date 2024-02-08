@@ -1383,19 +1383,19 @@ pub fn try_parse_datetime(s: &str) -> Option<DateTimePayloadType> {
     // - YYYY-MM-DD HH:MM
     // - YYYY-MM-DD
     // See: <https://github.com/qdrant/qdrant/issues/3529>
-    let datetime =
-        if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S") {
-            naive
-        } else if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
-            naive
-        } else if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M") {
-            naive
-        } else if let Ok(naive) = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d") {
-            naive.into()
-        } else {
-            // parse error, return none
-            return None;
-        };
+    let datetime = if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S")
+    {
+        naive
+    } else if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
+        naive
+    } else if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M") {
+        naive
+    } else if let Ok(naive) = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+        naive.into()
+    } else {
+        // parse error, return none
+        return None;
+    };
 
     // Convert the parsed NaiveDateTime to a DateTime<Utc>
     let datetime_utc = datetime.and_utc();
@@ -1411,11 +1411,13 @@ where
     let Some(s) = s else {
         return Ok(None);
     };
-    // Attempt to parse the input string in RFC 3339 format
+    // Attempt to parse the input string to datetime
     let parse_result = try_parse_datetime(s);
     match parse_result {
         Some(_) => Ok(parse_result),
-        None => Err(serde::de::Error::custom(format!("'{s}' is not in a supported date/time format, please use RFC 3339"))),
+        None => Err(serde::de::Error::custom(format!(
+            "'{s}' is not in a supported date/time format, please use RFC 3339"
+        ))),
     }
 }
 
