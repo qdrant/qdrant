@@ -32,6 +32,7 @@ pub fn open_appendable_memmap_vector_storage(
     path: &Path,
     dim: usize,
     distance: Distance,
+    stopped: &AtomicBool,
 ) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
     create_dir_all(path)?;
 
@@ -50,6 +51,7 @@ pub fn open_appendable_memmap_vector_storage(
         if deleted.get(i) {
             deleted_count += 1;
         }
+        check_process_stopped(stopped)?;
     }
 
     let storage = AppendableMmapVectorStorage {

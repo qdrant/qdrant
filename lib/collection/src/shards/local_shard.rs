@@ -2,6 +2,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::mem::size_of;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -204,7 +205,7 @@ impl LocalShard {
                 thread::Builder::new()
                     .name(format!("shard-load-{collection_id}-{id}"))
                     .spawn(move || {
-                        let mut res = load_segment(&segments_path)?;
+                        let mut res = load_segment(&segments_path, &AtomicBool::new(false))?;
                         if let Some(segment) = &mut res {
                             segment.check_consistency_and_repair()?;
                         } else {

@@ -53,7 +53,7 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
     let wrapped_payload_index = Arc::new(AtomicRefCell::new(payload_index));
 
     let db = open_db(storage_dir.path(), &[DB_VECTOR_CF]).unwrap();
-    let vector_storage = open_simple_sparse_vector_storage(db, DB_VECTOR_CF).unwrap();
+    let vector_storage = open_simple_sparse_vector_storage(db, DB_VECTOR_CF, &stopped).unwrap();
     let mut borrowed_storage = vector_storage.borrow_mut();
 
     // add points to storage only once
@@ -81,6 +81,7 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
                     vector_storage.clone(),
                     wrapped_payload_index.clone(),
                     index_dir.path(),
+                    &stopped,
                 )
                 .unwrap();
             sparse_vector_index
@@ -97,6 +98,7 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
         vector_storage.clone(),
         wrapped_payload_index,
         index_dir.path(),
+        &stopped,
     )
     .unwrap();
 

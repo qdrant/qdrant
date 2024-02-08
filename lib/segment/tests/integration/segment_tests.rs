@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::iter::FromIterator;
+use std::sync::atomic::AtomicBool;
 
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
@@ -199,7 +200,9 @@ fn ordered_deletion_test() {
         segment.current_path.clone()
     };
 
-    let segment = load_segment(&path).unwrap().unwrap();
+    let segment = load_segment(&path, &AtomicBool::new(false))
+        .unwrap()
+        .unwrap();
     let query_vector = [1.0, 1.0, 1.0, 1.0].into();
 
     let res = segment
@@ -233,7 +236,7 @@ fn skip_deleted_segment() {
     let new_path = path.with_extension("deleted");
     std::fs::rename(&path, new_path).unwrap();
 
-    let segment = load_segment(&path).unwrap();
+    let segment = load_segment(&path, &AtomicBool::new(false)).unwrap();
 
     assert!(segment.is_none());
 }

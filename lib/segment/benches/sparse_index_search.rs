@@ -79,6 +79,7 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
             sparse_vector_index.vector_storage.clone(),
             sparse_vector_index.payload_index.clone(),
             mmap_index_dir.path(),
+            &stopped,
         )
         .unwrap();
     sparse_vector_index_mmap

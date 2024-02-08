@@ -1900,9 +1900,12 @@ mod tests {
         // restore snapshot
         Segment::restore_snapshot(&archive, segment_id).unwrap();
 
-        let restored_segment = load_segment(&snapshot_dir.path().join(segment_id))
-            .unwrap()
-            .unwrap();
+        let restored_segment = load_segment(
+            &snapshot_dir.path().join(segment_id),
+            &AtomicBool::new(false),
+        )
+        .unwrap()
+        .unwrap();
 
         // validate restored snapshot is the same as original segment
         assert_eq!(segment.vector_dims(), restored_segment.vector_dims());
