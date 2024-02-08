@@ -45,7 +45,38 @@ impl ClockMap {
         Ok(())
     }
 
-    pub fn advance_clock(&mut self, clock_tag: &ClockTag) -> (bool, u64) {
+    pub fn advance_clock_and_correct_tag(&mut self, clock_tag: &mut ClockTag) -> bool {
+        let (clock_updated, current_tick) = self.advance_clock_impl(clock_tag);
+
+        // We "accept" an operation, if it has `clock_tick` that is "newer" than `current_tick` in `ClockMap`
+        // (e.g., if `advance_clock_impl` *updated* the clock and returned `clock_updated = true`).
+        //
+        // If we "reject" an operation (because it has `clock_tick` that is "older" than `current_tick` in `ClockMap`),
+        // we have to update its clock tag with `current_tick`, so that it can be "echoed" back to the node.
+        //
+        // And we also *always* accept all operations with `clock_tick = 0` and *always* update their clock tags.
+
+        let operation_accepted = clock_updated || clock_tag.clock_tick == 0;
+        let update_tag = !clock_updated || clock_tag.clock_tick == 0;
+
+        let (operation_accepted, update_tag) = if clock_tag.clock_tick > 0 {
+            (clock_updated, !clock_updated)
+        } else {
+            (true, true)
+        };
+
+        if update_tag {
+            clock_tag.clock_tick = current_tick;
+        }
+
+        operation_accepted
+    }
+
+    pub fn advance_clock(&mut self, clock_tag: &ClockTag) {
+        self.advance_clock_impl(clock_tag);
+    }
+
+    fn advance_clock_impl(&mut self, clock_tag: &ClockTag) -> (bool, u64) {
         let key = Key::from_tag(clock_tag);
         let new_tick = clock_tag.clock_tick;
 
