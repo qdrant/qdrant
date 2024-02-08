@@ -1415,7 +1415,7 @@ where
     let parse_result = try_parse_datetime(s);
     match parse_result {
         Some(_) => Ok(parse_result),
-        None => Err(serde::de::Error::custom("Invalid date/time format")),
+        None => Err(serde::de::Error::custom(format!("'{s}' is not in a supported date/time format, please use RFC 3339"))),
     }
 }
 
