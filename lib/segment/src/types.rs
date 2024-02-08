@@ -15,7 +15,7 @@ use indexmap::IndexSet;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
 use smol_str::SmolStr;
 use uuid::Uuid;
@@ -1357,6 +1357,7 @@ impl From<Vec<IntPayloadType>> for MatchExcept {
 #[serde(untagged)]
 pub enum RangeInterface {
     Float(Range<FloatPayloadType>),
+    #[serde(deserialize_with = "deserialize_datetime_range")]
     DateTime(Range<DateTimePayloadType>),
 }
 
@@ -1374,6 +1375,72 @@ pub struct Range<T> {
     pub gte: Option<T>,
     /// point.key <= range.lte
     pub lte: Option<T>,
+}
+
+pub fn try_parse_datetime(s: &str) -> Option<DateTimePayloadType> {
+    // Attempt to parse the input string in RFC 3339 format
+    if let Ok(datetime) = chrono::DateTime::parse_from_rfc3339(s) {
+        return Some(datetime.into());
+    }
+
+    // Attempt to parse the input string in the specified formats:
+    // - YYYY-MM-DD'T'HH:MM:SS (without timezone or Z)
+    // - YYYY-MM-DD HH:MM:SS
+    // - YYYY-MM-DD HH:MM
+    // - YYYY-MM-DD
+    // See: <https://github.com/qdrant/qdrant/issues/3529>
+    let datetime = if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S")
+    {
+        naive
+    } else if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
+        naive
+    } else if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M") {
+        naive
+    } else if let Ok(naive) = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+        naive.into()
+    } else {
+        // parse error, return none
+        return None;
+    };
+
+    // Convert the parsed NaiveDateTime to a DateTime<Utc>
+    let datetime_utc = datetime.and_utc();
+    Some(datetime_utc)
+}
+
+fn deserialize_datetime_option<'de, D>(
+    s: Option<&str>,
+) -> Result<Option<DateTimePayloadType>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let Some(s) = s else {
+        return Ok(None);
+    };
+    // Attempt to parse the input string to datetime
+    let parse_result = try_parse_datetime(s);
+    match parse_result {
+        Some(_) => Ok(parse_result),
+        None => Err(serde::de::Error::custom(format!(
+            "'{s}' is not in a supported date/time format, please use RFC 3339"
+        ))),
+    }
+}
+
+fn deserialize_datetime_range<'de, D>(
+    deserializer: D,
+) -> Result<Range<DateTimePayloadType>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let str_range = Range::<&str>::deserialize(deserializer)?;
+    let datetime_range = Range::<chrono::DateTime<chrono::Utc>> {
+        lt: deserialize_datetime_option::<D>(str_range.lt)?,
+        lte: deserialize_datetime_option::<D>(str_range.lte)?,
+        gt: deserialize_datetime_option::<D>(str_range.gt)?,
+        gte: deserialize_datetime_option::<D>(str_range.gte)?,
+    };
+    Ok(datetime_range)
 }
 
 impl<T: Copy> Range<T> {
