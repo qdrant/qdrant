@@ -141,37 +141,14 @@ impl std::ops::Add for OperationDurationStatistics {
             ),
             total_duration_micros: self.total_duration_micros + other.total_duration_micros,
             last_responded: std::cmp::max(self.last_responded, other.last_responded),
-            duration_micros_histogram: merge_buckets(
-                self.duration_micros_histogram,
-                other.duration_micros_histogram,
+            duration_micros_histogram: merge_histograms(
+                &self.duration_micros_histogram,
+                &other.duration_micros_histogram,
+                self.count,
+                other.count,
             ),
         }
     }
-}
-
-/// Merges two vectors of buckets, summing the counts of the same boundaries.
-/// # Panics
-/// Panics when merging buckets of different configurations.  In practice, we should stick to a
-/// single configuration so this should not happen.
-fn merge_buckets(mut a: Vec<(f32, usize)>, b: Vec<(f32, usize)>) -> Vec<(f32, usize)> {
-    if a.is_empty() {
-        return b;
-    }
-    if b.is_empty() {
-        return a;
-    }
-    if a.len() != b.len() {
-        eprintln!("a = {a:?}, b = {b:?}");
-        panic!("Cannot merge buckets of different lengths");
-    }
-    for ((a_le, a_count), (b_le, b_count)) in a.iter_mut().zip(b.iter()) {
-        if a_le != b_le {
-            eprintln!("a = {a:?}, b = {b:?}");
-            panic!("Cannot merge buckets with different boundaries");
-        }
-        *a_count += b_count;
-    }
-    a
 }
 
 impl OperationDurationStatistics {
@@ -324,7 +301,11 @@ impl OperationDurationsAggregator {
             max_duration_micros: self.max_value,
             total_duration_micros: self.total_value,
             last_responded: self.last_response_date,
-            duration_micros_histogram,
+            duration_micros_histogram: convert_histogram(
+                &DEFAULT_BUCKET_BOUNDARIES_MICROS,
+                &self.buckets,
+                self.ok_count,
+            ),
         }
     }
 
@@ -353,5 +334,171 @@ impl OperationDurationsAggregator {
 
     fn simple_moving_average(data: &[f32]) -> f32 {
         data.iter().sum::<f32>() / data.len() as f32
+    }
+}
+
+/// Convert a fixed-size non-cumulative histogram to a sparse cumulative histogram.
+/// Omit repeated values to reduce the size of the histogram.
+fn convert_histogram(
+    le_boundaries: &[f32],
+    counts: &[usize],
+    total_count: usize,
+) -> Vec<(f32, usize)> {
+    let mut result = Vec::new();
+    let mut cumulative_count = 0;
+    let mut prev = None;
+    for (idx, &le) in le_boundaries.iter().enumerate() {
+        let count = counts.get(idx).copied().unwrap_or(0);
+        if count == 0 {
+            prev = Some(le);
+        } else {
+            if let Some(prev) = prev {
+                result.push((prev, cumulative_count));
+            }
+            cumulative_count += count;
+            result.push((le, cumulative_count));
+            prev = None;
+        }
+    }
+    if let Some(prev) = prev {
+        if cumulative_count != total_count {
+            result.push((prev, cumulative_count));
+        }
+    }
+    result
+}
+
+/// Merge two sparse cumulative histograms, summing the counts of the same boundaries.
+/// If one boundary is missing in one of the vectors, assume its value to be the same as the next
+/// boundary in the same vector. NOTE: This assumption should be correct when merging histograms
+/// produced by `convert_histogram` with the same set of boundaries, but it's not always the case.
+fn merge_histograms(
+    a: &[(f32, usize)],
+    b: &[(f32, usize)],
+    total_a: usize,
+    total_b: usize,
+) -> Vec<(f32, usize)> {
+    let mut it_a = a.iter().copied().peekable();
+    let mut it_b = b.iter().copied().peekable();
+    let mut result = Vec::new();
+    while it_a.peek().is_some() || it_b.peek().is_some() {
+        let (a_le, a_count) = it_a.peek().copied().unwrap_or((f32::INFINITY, total_a));
+        let (b_le, b_count) = it_b.peek().copied().unwrap_or((f32::INFINITY, total_b));
+        match a_le.partial_cmp(&b_le) {
+            Some(std::cmp::Ordering::Less) => {
+                result.push((a_le, a_count + b_count));
+                it_a.next();
+            }
+            Some(std::cmp::Ordering::Equal) => {
+                result.push((a_le, a_count + b_count));
+                it_a.next();
+                it_b.next();
+            }
+            Some(std::cmp::Ordering::Greater) => {
+                result.push((b_le, a_count + b_count));
+                it_b.next();
+            }
+            None => {
+                // One of the boundaries is NaN, which is not supposed to happen.
+                if a_le.is_nan() {
+                    it_a.next();
+                }
+                if b_le.is_nan() {
+                    it_b.next();
+                }
+            }
+        }
+    }
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_convert_histogram() {
+        // With all zeroes
+        assert_eq!(
+            convert_histogram(&[0., 1., 2., 3., 4., 5.], &[0, 0, 0, 0, 0, 0], 0),
+            vec![],
+        );
+
+        // With all zeroes except the total count
+        assert_eq!(
+            convert_histogram(&[0., 1., 2., 3., 4., 5.], &[0, 0, 0, 0, 0, 0], 100),
+            vec![(5., 0)],
+        );
+
+        // Full
+        assert_eq!(
+            convert_histogram(&[0., 1., 2., 3.], &[1, 20, 300, 4000], 5000),
+            vec![(0., 1), (1., 21), (2., 321), (3., 4321)],
+        );
+
+        // Sparse
+        assert_eq!(
+            convert_histogram(&[0., 1., 2., 3., 4., 5., 6.], &[0, 0, 1, 0, 0, 1, 0], 1),
+            vec![(1.0, 0), (2.0, 1), (4.0, 1), (5.0, 2), (6.0, 2)],
+        );
+    }
+
+    #[test]
+    fn test_merge_histograms() {
+        // Empty vectors
+        assert_eq!(merge_histograms(&[], &[], 9, 90), &[]);
+
+        // Simple case
+        #[rustfmt::skip]
+        let (a, b, result) = (
+            &[(0.0,  1), (1.0,  2), (2.0,  3)],
+            &[(0.0, 10), (1.0, 20), (2.0, 30)],
+            &[(0.0, 11), (1.0, 22), (2.0, 33)],
+        );
+        assert_eq!(merge_histograms(a, b, 9, 90), result);
+
+        // Missing boundary in the middle
+        #[rustfmt::skip]
+        let (a, b, result) = (
+            &[(0.0,  1), (1.0,  2),            (3.0,  3), (4.0,  4)],
+            &[(0.0, 10), (1.0, 20), (2.0, 30),            (4.0, 40)],
+            &[(0.0, 11), (1.0, 22), (2.0, 33), (3.0, 43), (4.0, 44)],
+        );
+        assert_eq!(merge_histograms(a, b, 9, 90), result);
+
+        // Missing boundary at the end
+        #[rustfmt::skip]
+        let (a, b, result) = (
+            &[(0.0,  1),          ],
+            &[(0.0, 10), (1.0, 20)],
+            &[(0.0, 11), (1.0, 29)],
+        );
+        assert_eq!(merge_histograms(a, b, 9, 90), result);
+    }
+
+    /// Check that convert-then-merge produces the same result as merge-then-convert, i.e. both
+    /// functions play well together.
+    #[test]
+    fn test_convert_and_merge_histograms() {
+        case(&[33, 23, 86, 39, 75], &[86, 50, 47, 84, 52], 256, 319);
+        case(&[00, 00, 00, 00, 00], &[86, 50, 47, 84, 52], 256, 319);
+        case(&[00, 23, 00, 00, 00], &[00, 00, 00, 84, 00], 30, 90);
+        case(&[00, 00, 00, 00, 00], &[86, 50, 47, 84, 52], 0, 319);
+
+        fn case(a: &[usize], b: &[usize], total_a: usize, total_b: usize) {
+            assert_eq!(
+                merge_histograms(
+                    &convert_histogram(&DEFAULT_BUCKET_BOUNDARIES_MICROS, a, total_a),
+                    &convert_histogram(&DEFAULT_BUCKET_BOUNDARIES_MICROS, b, total_b),
+                    total_a,
+                    total_b,
+                ),
+                convert_histogram(
+                    &DEFAULT_BUCKET_BOUNDARIES_MICROS,
+                    &std::iter::zip(a, b).map(|(a, b)| a + b).collect::<Vec<_>>(),
+                    total_a + total_b
+                ),
+            );
+        }
     }
 }
