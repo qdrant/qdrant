@@ -486,8 +486,14 @@ async fn transfer_operations_batch(
 ) -> CollectionResult<()> {
     // TODO: naive transfer approach, transfer batch of points instead
     for (_idx, operation) in batch {
+        let mut operation = operation.clone();
+
+        if let Some(clock_tag) = &mut operation.clock_tag {
+            clock_tag.force = true;
+        }
+
         remote_shard
-            .forward_update(operation.clone(), true, WriteOrdering::Weak)
+            .forward_update(operation, true, WriteOrdering::Weak)
             .await?;
     }
     Ok(())

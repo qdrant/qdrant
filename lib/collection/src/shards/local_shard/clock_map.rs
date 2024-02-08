@@ -74,10 +74,20 @@ impl ClockMap {
         //
         // And we also *always* accept all operations with `clock_tick = 0` and *always* update their clock tags.
 
-        let operation_accepted = clock_updated || clock_tag.clock_tick == 0;
-        let update_tag = !clock_updated || clock_tag.clock_tick == 0;
+        let operation_accepted = clock_updated || clock_tag.clock_tick == 0 || clock_tag.force;
+        let update_tag = (!clock_updated || clock_tag.clock_tick == 0) && !clock_tag.force;
+
+        if operation_accepted && !update_tag {
+            log::trace!("Accepting clock tag {clock_tag:?} (current tick: {current_tick})");
+        }
 
         if update_tag {
+            if operation_accepted {
+                log::trace!("Updating clock tag {clock_tag:?} (current tick: {current_tick})");
+            } else {
+                log::trace!("Rejecting clock tag {clock_tag:?} (current tick: {current_tick})")
+            }
+
             clock_tag.clock_tick = current_tick;
         }
 
