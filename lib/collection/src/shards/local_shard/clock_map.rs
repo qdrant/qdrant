@@ -157,6 +157,20 @@ pub struct RecoveryPoint {
     clocks: HashMap<Key, u64>,
 }
 
+impl RecoveryPoint {
+    /// Extend this recovery point with new clocks from `clock_map`
+    ///
+    /// Clocks that we already have in this recovery point are not updated, regardless of their
+    /// tick value.
+    pub fn extend_with_missing_clocks(&mut self, clock_map: &ClockMap) {
+        for (key, clock) in &clock_map.clocks {
+            self.clocks
+                .entry(*key)
+                .or_insert_with(|| clock.current_tick.load(Ordering::Relaxed));
+        }
+    }
+}
+
 impl From<RecoveryPoint> for api::grpc::qdrant::RecoveryPoint {
     fn from(value: RecoveryPoint) -> Self {
         Self {
