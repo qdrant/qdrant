@@ -173,7 +173,7 @@ impl ShardOperation for ForwardProxyShard {
     /// This method is *not* cancel safe.
     async fn update(
         &self,
-        mut operation: OperationWithClockTag,
+        operation: OperationWithClockTag,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
         // If we apply `local_shard` update, we *have to* execute `remote_shard` update to completion
@@ -187,10 +187,6 @@ impl ShardOperation for ForwardProxyShard {
         // Shard update is within a write lock scope, because we need a way to block the shard updates
         // during the transfer restart and finalization.
         let result = local_shard.update(operation.clone(), wait).await?;
-
-        if let Some(clock_tag) = &mut operation.clock_tag {
-            clock_tag.force = true;
-        }
 
         self.remote_shard
             .update(operation, false)

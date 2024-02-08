@@ -74,15 +74,15 @@ impl ClockMap {
         //
         // And we also *always* accept all operations with `clock_tick = 0` and *always* update their clock tags.
 
-        let operation_accepted = clock_updated || clock_tag.clock_tick == 0 || clock_tag.force;
+        let _operation_accepted = clock_updated || clock_tag.clock_tick == 0 || clock_tag.force;
         let update_tag = (!clock_updated || clock_tag.clock_tick == 0) && !clock_tag.force;
 
-        if operation_accepted && !update_tag {
+        if _operation_accepted && !update_tag {
             log::trace!("Accepting clock tag {clock_tag:?} (current tick: {current_tick})");
         }
 
         if update_tag {
-            if operation_accepted {
+            if _operation_accepted {
                 log::trace!("Updating clock tag {clock_tag:?} (current tick: {current_tick})");
             } else {
                 log::trace!("Rejecting clock tag {clock_tag:?} (current tick: {current_tick})")
@@ -91,7 +91,9 @@ impl ClockMap {
             clock_tag.clock_tick = current_tick;
         }
 
-        operation_accepted
+        // TODO: now accepts everything, start rejecting old clock values here
+        // TODO: return operation_accepted
+        true
     }
 
     /// Advance clock referenced by the `clock_tag` to `clock_tag.clock_tick`, if it's newer than
@@ -159,10 +161,12 @@ impl Clock {
     pub fn advance_to(&self, new_tick: u64) -> (bool, u64) {
         let old_tick = self.current_tick.fetch_max(new_tick, Ordering::Relaxed);
 
-        let clock_updated = old_tick < new_tick;
+        let _clock_updated = old_tick < new_tick;
         let current_tick = cmp::max(old_tick, new_tick);
 
-        (clock_updated, current_tick)
+        // TODO: now accepts everything, start rejecting old clock values here
+        // TODO: return (clock_updated, current_tick)
+        (true, current_tick)
     }
 }
 

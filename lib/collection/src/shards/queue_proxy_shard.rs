@@ -488,6 +488,8 @@ async fn transfer_operations_batch(
     for (_idx, operation) in batch {
         let mut operation = operation.clone();
 
+        // Set force flag because operations from WAL may be unordered if another node is sending
+        // new operations at the same time
         if let Some(clock_tag) = &mut operation.clock_tag {
             clock_tag.force = true;
         }
