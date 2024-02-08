@@ -51,6 +51,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
         payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
         path: &Path,
+        stopped: &AtomicBool,
     ) -> OperationResult<Self> {
         // create directory if it does not exist
         create_dir_all(path)?;
@@ -63,7 +64,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                 id_tracker.clone(),
                 vector_storage.clone(),
                 path,
-                &AtomicBool::new(false),
+                stopped,
             )?;
             (config, inverted_index, indices_tracker)
         } else if config_path.exists() {

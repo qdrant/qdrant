@@ -1,3 +1,4 @@
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
@@ -135,7 +136,8 @@ fn do_test_update_from_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnu
     {
         let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
         let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
-        let storage2 = open_simple_sparse_vector_storage(db, DB_VECTOR_CF).unwrap();
+        let storage2 =
+            open_simple_sparse_vector_storage(db, DB_VECTOR_CF, &AtomicBool::new(false)).unwrap();
         {
             let mut borrowed_storage2 = storage2.borrow_mut();
             points.iter().enumerate().for_each(|(i, vec)| {
@@ -210,12 +212,14 @@ fn test_delete_points_in_simple_sparse_vector_storage() {
 
     {
         let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-        let storage = open_simple_sparse_vector_storage(db, DB_VECTOR_CF).unwrap();
+        let storage =
+            open_simple_sparse_vector_storage(db, DB_VECTOR_CF, &AtomicBool::new(false)).unwrap();
         do_test_delete_points(storage.clone());
         storage.borrow().flusher()().unwrap();
     }
     let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-    let _storage = open_simple_sparse_vector_storage(db, DB_VECTOR_CF).unwrap();
+    let _storage =
+        open_simple_sparse_vector_storage(db, DB_VECTOR_CF, &AtomicBool::new(false)).unwrap();
 }
 
 #[test]
@@ -223,11 +227,13 @@ fn test_update_from_delete_points_simple_sparse_vector_storage() {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     {
         let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-        let storage = open_simple_sparse_vector_storage(db, DB_VECTOR_CF).unwrap();
+        let storage =
+            open_simple_sparse_vector_storage(db, DB_VECTOR_CF, &AtomicBool::new(false)).unwrap();
         do_test_update_from_delete_points(storage.clone());
         storage.borrow().flusher()().unwrap();
     }
 
     let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-    let _storage = open_simple_sparse_vector_storage(db, DB_VECTOR_CF).unwrap();
+    let _storage =
+        open_simple_sparse_vector_storage(db, DB_VECTOR_CF, &AtomicBool::new(false)).unwrap();
 }

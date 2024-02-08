@@ -257,7 +257,14 @@ mod tests {
         {
             let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
             let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
-            let storage2 = open_simple_vector_storage(db, DB_VECTOR_CF, 4, Distance::Dot).unwrap();
+            let storage2 = open_simple_vector_storage(
+                db,
+                DB_VECTOR_CF,
+                4,
+                Distance::Dot,
+                &AtomicBool::new(false),
+            )
+            .unwrap();
             {
                 let mut borrowed_storage2 = storage2.borrow_mut();
                 borrowed_storage2
@@ -287,7 +294,14 @@ mod tests {
         {
             let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
             let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
-            let storage2 = open_simple_vector_storage(db, DB_VECTOR_CF, 4, Distance::Dot).unwrap();
+            let storage2 = open_simple_vector_storage(
+                db,
+                DB_VECTOR_CF,
+                4,
+                Distance::Dot,
+                &AtomicBool::new(false),
+            )
+            .unwrap();
             {
                 let mut borrowed_storage2 = storage2.borrow_mut();
                 borrowed_storage2
@@ -346,7 +360,14 @@ mod tests {
         {
             let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
             let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
-            let storage2 = open_simple_vector_storage(db, DB_VECTOR_CF, 4, Distance::Dot).unwrap();
+            let storage2 = open_simple_vector_storage(
+                db,
+                DB_VECTOR_CF,
+                4,
+                Distance::Dot,
+                &AtomicBool::new(false),
+            )
+            .unwrap();
             {
                 let mut borrowed_storage2 = storage2.borrow_mut();
                 points.iter().enumerate().for_each(|(i, vec)| {
@@ -470,7 +491,14 @@ mod tests {
         {
             let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
             let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
-            let storage2 = open_simple_vector_storage(db, DB_VECTOR_CF, 4, Distance::Dot).unwrap();
+            let storage2 = open_simple_vector_storage(
+                db,
+                DB_VECTOR_CF,
+                4,
+                Distance::Dot,
+                &AtomicBool::new(false),
+            )
+            .unwrap();
             {
                 let mut borrowed_storage2 = storage2.borrow_mut();
                 points.iter().enumerate().for_each(|(i, vec)| {
@@ -549,7 +577,14 @@ mod tests {
         {
             let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
             let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
-            let storage2 = open_simple_vector_storage(db, DB_VECTOR_CF, 4, Distance::Dot).unwrap();
+            let storage2 = open_simple_vector_storage(
+                db,
+                DB_VECTOR_CF,
+                4,
+                Distance::Dot,
+                &AtomicBool::new(false),
+            )
+            .unwrap();
             {
                 let mut borrowed_storage2 = storage2.borrow_mut();
                 for (i, vec) in points.iter().enumerate() {
@@ -628,7 +663,14 @@ mod tests {
         {
             let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
             let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
-            let storage2 = open_simple_vector_storage(db, DB_VECTOR_CF, 4, Distance::Dot).unwrap();
+            let storage2 = open_simple_vector_storage(
+                db,
+                DB_VECTOR_CF,
+                4,
+                Distance::Dot,
+                &AtomicBool::new(false),
+            )
+            .unwrap();
             {
                 let mut borrowed_storage2 = storage2.borrow_mut();
                 for (i, vec) in points.iter().enumerate() {
