@@ -19,8 +19,6 @@ pub struct SaveOnDisk<T> {
     path: PathBuf,
 }
 
-pub struct WriteGuard<'a, T: Serialize>(&'a mut SaveOnDisk<T>);
-
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[error("Failed to save structure on disk with error: {0}")]
