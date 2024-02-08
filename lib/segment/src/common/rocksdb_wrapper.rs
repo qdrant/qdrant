@@ -18,6 +18,8 @@ pub const DB_VECTOR_CF: &str = "vector";
 pub const DB_PAYLOAD_CF: &str = "payload";
 pub const DB_MAPPING_CF: &str = "mapping";
 pub const DB_VERSIONS_CF: &str = "version";
+/// If there is no Column Family specified, key-value pair is associated with Column Family "default".
+pub const DB_DEFAULT_CF: &str = "default";
 
 #[derive(Clone)]
 pub struct DatabaseColumnWrapper {
@@ -61,7 +63,7 @@ pub fn open_db<T: AsRef<str>>(
     path: &Path,
     vector_paths: &[T],
 ) -> Result<Arc<RwLock<DB>>, rocksdb::Error> {
-    let mut column_families = vec![DB_PAYLOAD_CF, DB_MAPPING_CF, DB_VERSIONS_CF];
+    let mut column_families = vec![DB_PAYLOAD_CF, DB_MAPPING_CF, DB_VERSIONS_CF, DB_DEFAULT_CF];
     for vector_path in vector_paths {
         column_families.push(vector_path.as_ref());
     }
