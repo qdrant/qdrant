@@ -7316,9 +7316,14 @@
           },
           "start_from": {
             "description": "Which payload value to start scrolling from. Default is the lowest value for `asc` and the highest for `desc`",
-            "type": "number",
-            "format": "double",
-            "nullable": true
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StartFrom"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -7327,6 +7332,18 @@
         "enum": [
           "asc",
           "desc"
+        ]
+      },
+      "StartFrom": {
+        "anyOf": [
+          {
+            "type": "number",
+            "format": "double"
+          },
+          {
+            "type": "string",
+            "format": "date-time"
+          }
         ]
       },
       "ScrollResult": {
