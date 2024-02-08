@@ -1,3 +1,6 @@
+pub mod clock_map;
+mod shard_ops;
+
 use std::collections::{BTreeSet, HashMap};
 use std::mem::size_of;
 use std::ops::Deref;
@@ -23,17 +26,18 @@ use segment::types::{
     QuantizationConfig, SegmentConfig, SegmentType,
 };
 use segment::utils::mem::Mem;
-use tokio::fs::{copy, create_dir_all, remove_dir_all};
+use tokio::fs::{copy, create_dir_all, remove_dir_all, remove_file};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{mpsc, oneshot, Mutex, RwLock as TokioRwLock};
 use wal::{Wal, WalOptions};
 
+use self::clock_map::ClockMap;
 use super::update_tracker::UpdateTracker;
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
 use crate::collection_manager::optimizers::TrackerLog;
-use crate::common::file_utils::move_dir;
+use crate::common::file_utils::{move_dir, move_file};
 use crate::config::CollectionConfig;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{
@@ -70,6 +74,7 @@ pub struct LocalShard {
     pub(super) path: PathBuf,
     pub(super) optimizers: Arc<Vec<Arc<Optimizer>>>,
     pub(super) optimizers_log: Arc<ParkingMutex<TrackerLog>>,
+    clock_map: Arc<Mutex<ClockMap>>,
     update_runtime: Handle,
 }
 
@@ -83,6 +88,12 @@ impl LocalShard {
 
         move_dir(wal_from, wal_to).await?;
         move_dir(segments_from, segments_to).await?;
+
+        let clock_map_from = Self::clock_map_path(from);
+        if clock_map_from.exists() {
+            let clock_map_to = Self::clock_map_path(to);
+            move_file(clock_map_from, clock_map_to).await?;
+        }
 
         Ok(())
     }
@@ -103,10 +114,17 @@ impl LocalShard {
         if wal_path.exists() {
             remove_dir_all(wal_path).await?;
         }
+
         // Delete segments
         let segments_path = Self::segments_path(shard_path);
         if segments_path.exists() {
             remove_dir_all(segments_path).await?;
+        }
+
+        // Delete clock map
+        let clock_map_path = Self::clock_map_path(shard_path);
+        if clock_map_path.exists() {
+            remove_file(clock_map_path).await?;
         }
 
         Ok(())
@@ -121,12 +139,15 @@ impl LocalShard {
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         optimizer_cpu_budget: CpuBudget,
         shard_path: &Path,
+        clock_map: ClockMap,
         update_runtime: Handle,
     ) -> Self {
         let segment_holder = Arc::new(RwLock::new(segment_holder));
         let config = collection_config.read().await;
         let locked_wal = Arc::new(ParkingMutex::new(wal));
         let optimizers_log = Arc::new(ParkingMutex::new(Default::default()));
+        let clock_map = Arc::new(Mutex::new(clock_map));
+        let clock_map_path = Self::clock_map_path(shard_path);
 
         let mut update_handler = UpdateHandler::new(
             shared_storage_config.clone(),
@@ -138,6 +159,8 @@ impl LocalShard {
             locked_wal.clone(),
             config.optimizer_config.flush_interval_sec,
             config.optimizer_config.max_optimization_threads,
+            clock_map.clone(),
+            clock_map_path,
         );
 
         let (update_sender, update_receiver) =
@@ -157,6 +180,7 @@ impl LocalShard {
             update_sender: ArcSwap::from_pointee(update_sender),
             update_tracker,
             path: shard_path.to_owned(),
+            clock_map,
             update_runtime,
             optimizers,
             optimizers_log,
@@ -181,7 +205,7 @@ impl LocalShard {
 
         let wal_path = Self::wal_path(shard_path);
         let segments_path = Self::segments_path(shard_path);
-        let mut segment_holder = SegmentHolder::default();
+        let clock_map_path = Self::clock_map_path(shard_path);
 
         let wal: SerdeWal<OperationWithClockTag> = SerdeWal::new(
             wal_path.to_str().unwrap(),
@@ -221,6 +245,8 @@ impl LocalShard {
                     })?,
             );
         }
+
+        let mut segment_holder = SegmentHolder::default();
 
         for handler in load_handlers {
             let segment = handler.join().map_err(|err| {
@@ -270,6 +296,8 @@ impl LocalShard {
 
         drop(collection_config_read); // release `shared_config` from borrow checker
 
+        let clock_map = ClockMap::load_or_default(&clock_map_path)?;
+
         let collection = LocalShard::new(
             segment_holder,
             collection_config,
@@ -278,11 +306,12 @@ impl LocalShard {
             optimizers,
             optimizer_cpu_budget,
             shard_path,
+            clock_map,
             update_runtime,
         )
         .await;
 
-        collection.load_from_wal(collection_id)?;
+        collection.load_from_wal(collection_id).await?;
 
         let available_memory_bytes = Mem::new().available_memory_bytes() as usize;
         let vectors_size_bytes = collection.estimate_vector_data_size().await;
@@ -318,6 +347,10 @@ impl LocalShard {
 
     pub fn segments_path(shard_path: &Path) -> PathBuf {
         shard_path.join("segments")
+    }
+
+    pub fn clock_map_path(shard_path: &Path) -> PathBuf {
+        shard_path.join("clock_map.json")
     }
 
     pub async fn build_local(
@@ -437,6 +470,7 @@ impl LocalShard {
             optimizers,
             optimizer_cpu_budget,
             shard_path,
+            ClockMap::default(),
             update_runtime,
         )
         .await;
@@ -455,7 +489,8 @@ impl LocalShard {
     }
 
     /// Loads latest collection operations from WAL
-    pub fn load_from_wal(&self, collection_id: CollectionId) -> CollectionResult<()> {
+    pub async fn load_from_wal(&self, collection_id: CollectionId) -> CollectionResult<()> {
+        let mut clock_map = self.clock_map.lock().await;
         let wal = self.wal.lock();
         let bar = ProgressBar::new(wal.len());
 
@@ -491,6 +526,10 @@ impl LocalShard {
         // index *occasionally*), but the storage can handle it.
 
         for (op_num, update) in wal.read_all() {
+            if let Some(clock_tag) = &update.clock_tag {
+                clock_map.advance_clock(clock_tag);
+            }
+
             // Propagate `CollectionError::ServiceError`, but skip other error types.
             match &CollectionUpdater::update(segments, op_num, update.operation) {
                 Err(err @ CollectionError::ServiceError { error, backtrace }) => {
@@ -651,10 +690,19 @@ impl LocalShard {
         })
         .await??;
 
+        // copy clock map
+        let clock_map_path = Self::clock_map_path(&self.path);
+
+        if clock_map_path.exists() {
+            let target_clock_map_path = Self::clock_map_path(snapshot_shard_path);
+            copy(clock_map_path, target_clock_map_path).await?;
+        }
+
         // copy shard's config
         let shard_config_path = ShardConfig::get_config_path(&self.path);
         let target_shard_config_path = snapshot_shard_path.join(SHARD_CONFIG_FILE);
         copy(&shard_config_path, &target_shard_config_path).await?;
+
         Ok(())
     }
 

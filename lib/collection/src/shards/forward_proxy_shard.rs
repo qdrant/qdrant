@@ -186,12 +186,14 @@ impl ShardOperation for ForwardProxyShard {
 
         // Shard update is within a write lock scope, because we need a way to block the shard updates
         // during the transfer restart and finalization.
-        local_shard.update(operation.clone(), wait).await?;
+        let result = local_shard.update(operation.clone(), wait).await?;
 
         self.remote_shard
             .update(operation, false)
             .await
-            .map_err(|err| CollectionError::forward_proxy_error(self.remote_shard.peer_id, err))
+            .map_err(|err| CollectionError::forward_proxy_error(self.remote_shard.peer_id, err))?;
+
+        Ok(result)
     }
 
     /// Forward read-only `scroll_by` to `wrapped_shard`
