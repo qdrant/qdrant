@@ -127,6 +127,7 @@ impl Key {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+#[serde(transparent)]
 struct Clock {
     current_tick: AtomicU64,
 }
