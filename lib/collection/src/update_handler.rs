@@ -651,17 +651,7 @@ impl UpdateHandler {
 
             let ack = confirmed_version.min(keep_from.saturating_sub(1));
 
-            let clock_map_store_future = async {
-                let clock_map_tmp_file = tempfile::NamedTempFile::new()?;
-                let clock_map_tmp_path = clock_map_tmp_file.into_temp_path();
-
-                clock_map.lock().await.store(&clock_map_tmp_path)?;
-                tokio::fs::copy(&clock_map_tmp_path, &clock_map_path).await?;
-
-                CollectionResult::Ok(())
-            };
-
-            if let Err(err) = clock_map_store_future.await {
+            if let Err(err) = clock_map.lock().await.store(&clock_map_path) {
                 segments.write().report_optimizer_error(err);
             }
 

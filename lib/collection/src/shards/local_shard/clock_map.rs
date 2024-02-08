@@ -36,11 +36,15 @@ impl ClockMap {
     }
 
     pub fn store(&self, path: &Path) -> Result<()> {
-        let file = fs::File::create(path)?;
+        let file = atomicwrites::AtomicFile::new(path, atomicwrites::AllowOverwrite);
 
-        let mut writer = io::BufWriter::new(file);
-        serde_json::to_writer(&mut writer, &self)?;
-        writer.flush()?;
+        file.write(|file| -> Result<_> {
+            let mut writer = io::BufWriter::new(file);
+            serde_json::to_writer(&mut writer, &self)?;
+            writer.flush()?;
+
+            Ok(())
+        })?;
 
         Ok(())
     }
@@ -161,6 +165,15 @@ pub enum Error {
 
     #[error(transparent)]
     SerdeJson(#[from] serde_json::Error),
+}
+
+impl From<atomicwrites::Error<Error>> for Error {
+    fn from(err: atomicwrites::Error<Error>) -> Self {
+        match err {
+            atomicwrites::Error::Internal(err) => err.into(),
+            atomicwrites::Error::User(err) => err,
+        }
+    }
 }
 
 impl From<Error> for CollectionError {
