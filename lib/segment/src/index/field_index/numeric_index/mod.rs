@@ -33,8 +33,8 @@ use crate::index::key_encoding::{
 };
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
-    DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, Range,
-    RangeInterface,
+    try_parse_datetime, DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType,
+    PayloadKeyType, Range, RangeInterface,
 };
 
 const HISTOGRAM_MAX_BUCKET_SIZE: usize = 10_000;
@@ -495,9 +495,7 @@ impl ValueIndexer<DateTimePayloadType> for NumericIndex<IntPayloadType> {
     }
 
     fn get_value(&self, value: &Value) -> Option<DateTimePayloadType> {
-        chrono::DateTime::parse_from_rfc3339(value.as_str()?)
-            .ok()
-            .map(|x| x.into())
+        try_parse_datetime(value.as_str()?)
     }
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
