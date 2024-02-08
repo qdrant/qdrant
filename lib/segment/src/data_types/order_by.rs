@@ -5,7 +5,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
-use crate::types::{FloatPayloadType, IntPayloadType, Payload, Range, RangeInterface};
+use crate::types::{
+    deserialize_datetime, FloatPayloadType, IntPayloadType, Payload, Range, RangeInterface,
+};
 
 const INTERNAL_KEY_OF_ORDER_BY_VALUE: &str = "____ordered_with____";
 
@@ -40,6 +42,8 @@ impl Direction {
 #[serde(untagged)]
 pub enum StartFrom {
     Float(FloatPayloadType),
+
+    #[serde(deserialize_with = "deserialize_datetime")]
     Datetime(DateTime<Utc>),
 }
 
