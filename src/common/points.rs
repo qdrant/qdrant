@@ -627,7 +627,7 @@ pub async fn do_create_index_internal(
 
     if res.is_ok() {
         // We can deactivate issues related to this missing index
-        let code = segment::problems::UnindexedField::get_code(collection_name, &field_name);
+        let code = segment::problems::UnindexedField::get_code(&collection_name, &field_name);
         issues::solve(code);
     }
 
