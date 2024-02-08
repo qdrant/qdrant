@@ -18,7 +18,7 @@ use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, Match, MatchText,
-    PayloadKeyType, Range,
+    PayloadKeyType, RangeInterface,
 };
 
 pub trait PayloadFieldIndex {
@@ -368,9 +368,9 @@ impl FieldIndex {
     pub fn as_numeric(&self) -> Option<NumericFieldIndex> {
         match self {
             FieldIndex::IntIndex(index) => Some(NumericFieldIndex::IntIndex(index)),
+            FieldIndex::DatetimeIndex(index) => Some(NumericFieldIndex::IntIndex(index)),
             FieldIndex::FloatIndex(index) => Some(NumericFieldIndex::FloatIndex(index)),
             FieldIndex::IntMapIndex(_)
-            | FieldIndex::DatetimeIndex(_) // TODO(luis): move to Some(..) section when datetime index is enabled for order-by
             | FieldIndex::KeywordIndex(_)
             | FieldIndex::GeoIndex(_)
             | FieldIndex::BinaryIndex(_)
@@ -387,7 +387,7 @@ pub enum NumericFieldIndex<'a> {
 impl<'a> StreamRange<OrderingValue> for NumericFieldIndex<'a> {
     fn stream_range(
         &self,
-        range: &Range<FloatPayloadType>,
+        range: &RangeInterface,
     ) -> Box<dyn DoubleEndedIterator<Item = (OrderingValue, PointOffsetType)> + 'a> {
         match self {
             NumericFieldIndex::IntIndex(index) => Box::new(

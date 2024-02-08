@@ -1094,19 +1094,19 @@ impl PayloadFieldSchema {
     pub fn has_range_index(&self) -> bool {
         match self {
             PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)
+            | PayloadFieldSchema::FieldType(PayloadSchemaType::Datetime)
             | PayloadFieldSchema::FieldType(PayloadSchemaType::Float) => true,
 
             PayloadFieldSchema::FieldType(PayloadSchemaType::Bool)
-            | PayloadFieldSchema::FieldType(PayloadSchemaType::Datetime) // TODO(luis): move to true section once we support order-by datetime
             | PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)
             | PayloadFieldSchema::FieldType(PayloadSchemaType::Text)
             | PayloadFieldSchema::FieldType(PayloadSchemaType::Geo)
             | PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(_)) => false,
 
             PayloadFieldSchema::FieldParams(PayloadSchemaParams::Integer(IntegerIndexParams {
-                                                                             range,
-                                                                             ..
-                                                                         })) => *range,
+                range,
+                ..
+            })) => *range,
         }
     }
 }
@@ -1408,6 +1408,20 @@ pub fn try_parse_datetime(s: &str) -> Option<DateTimePayloadType> {
     Some(datetime_utc)
 }
 
+fn deserialize_datetime_str<'de, D>(s: &str) -> Result<DateTimePayloadType, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    // Attempt to parse the input string to datetime
+    let parse_result = try_parse_datetime(s);
+    match parse_result {
+        Some(datetime) => Ok(datetime),
+        None => Err(serde::de::Error::custom(format!(
+            "'{s}' is not in a supported date/time format, please use RFC 3339"
+        ))),
+    }
+}
+
 fn deserialize_datetime_option<'de, D>(
     s: Option<&str>,
 ) -> Result<Option<DateTimePayloadType>, D::Error>
@@ -1417,14 +1431,16 @@ where
     let Some(s) = s else {
         return Ok(None);
     };
+    Some(deserialize_datetime_str::<D>(s)).transpose()
+}
+
+pub(crate) fn deserialize_datetime<'de, D>(deserializer: D) -> Result<DateTimePayloadType, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let str_datetime = <&str>::deserialize(deserializer)?;
     // Attempt to parse the input string to datetime
-    let parse_result = try_parse_datetime(s);
-    match parse_result {
-        Some(_) => Ok(parse_result),
-        None => Err(serde::de::Error::custom(format!(
-            "'{s}' is not in a supported date/time format, please use RFC 3339"
-        ))),
-    }
+    deserialize_datetime_str::<D>(str_datetime)
 }
 
 fn deserialize_datetime_range<'de, D>(
