@@ -1,3 +1,3 @@
-pub mod unindexed_field;
+mod unindexed_field;
 
 pub use unindexed_field::UnindexedField;

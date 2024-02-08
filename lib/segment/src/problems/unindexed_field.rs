@@ -47,7 +47,11 @@ impl Issue for UnindexedField {
             let request_body = serde_json::json!({
                 "field_name": self.field_name,
                 "field_schema": field_schema,
-            });
+            })
+            .as_object()
+            .unwrap()
+            .clone();
+
             ImmediateSolution {
                 message: format!(
                     "Create an index on field '{}' of schema '{}' in collection '{}'. Check the documentation for more details: https://qdrant.tech/documentation/concepts/indexing/#payload-index",
