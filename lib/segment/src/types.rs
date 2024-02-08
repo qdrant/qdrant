@@ -1377,11 +1377,12 @@ pub fn try_parse_datetime(s: &str) -> Option<DateTimePayloadType> {
         return Some(datetime.into());
     }
 
-    // Attempt to parse the input string in the specified formats
-    // YYYY-MM-DD'T'HH:MM:SS (without timezone or Z)
-    // YYYY-MM-DD HH:MM:SS
-    // YYY-MM-DD HH:MM
-    // YYYY-MM-DD
+    // Attempt to parse the input string in the specified formats:
+    // - YYYY-MM-DD'T'HH:MM:SS (without timezone or Z)
+    // - YYYY-MM-DD HH:MM:SS
+    // - YYYY-MM-DD HH:MM
+    // - YYYY-MM-DD
+    // See: <https://github.com/qdrant/qdrant/issues/3529>
     let datetime =
         if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d'T'%H:%M:%S") {
             naive
