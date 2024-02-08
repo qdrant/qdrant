@@ -3880,7 +3880,7 @@ pub struct SearchPointGroups {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct StartFrom {
-    #[prost(oneof = "start_from::Value", tags = "1, 2, 3")]
+    #[prost(oneof = "start_from::Value", tags = "1, 2, 3, 4")]
     pub value: ::core::option::Option<start_from::Value>,
 }
 /// Nested message and enum types in `StartFrom`.
@@ -3894,7 +3894,9 @@ pub mod start_from {
         #[prost(int64, tag = "2")]
         Integer(i64),
         #[prost(message, tag = "3")]
-        Datetime(::prost_wkt_types::Timestamp),
+        Timestamp(::prost_wkt_types::Timestamp),
+        #[prost(string, tag = "4")]
+        Datetime(::prost::alloc::string::String),
     }
 }
 #[derive(serde::Serialize)]

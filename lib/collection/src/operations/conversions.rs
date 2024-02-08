@@ -15,7 +15,7 @@ use common::types::ScoreType;
 use itertools::Itertools;
 use segment::data_types::order_by::{OrderBy, StartFrom};
 use segment::data_types::vectors::{Named, NamedQuery, Vector, VectorStruct, DEFAULT_VECTOR_NAME};
-use segment::types::{Distance, QuantizationConfig};
+use segment::types::{try_parse_datetime, Distance, QuantizationConfig};
 use segment::vector_storage::query::context_query::{ContextPair, ContextQuery};
 use segment::vector_storage::query::discovery_query::DiscoveryQuery;
 use segment::vector_storage::query::reco_query::RecoQuery;
@@ -1771,8 +1771,14 @@ impl TryFrom<api::grpc::qdrant::OrderBy> for OrderByInterface {
                     api::grpc::qdrant::start_from::Value::Integer(int) => {
                         Ok(StartFrom::Float(int as _))
                     }
-                    api::grpc::qdrant::start_from::Value::Datetime(datetime) => {
-                        Ok(StartFrom::Datetime(date_time_from_proto(datetime)?))
+                    api::grpc::qdrant::start_from::Value::Timestamp(timestamp) => {
+                        Ok(StartFrom::Datetime(date_time_from_proto(timestamp)?))
+                    }
+                    api::grpc::qdrant::start_from::Value::Datetime(datetime_str) => {
+                        Ok(StartFrom::Datetime(
+                            try_parse_datetime(&datetime_str)
+                                .ok_or(Status::invalid_argument("Malformed datetime"))?,
+                        ))
                     }
                 }
             })

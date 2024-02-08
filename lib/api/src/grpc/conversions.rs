@@ -1284,7 +1284,7 @@ impl From<segment::data_types::order_by::StartFrom> for StartFrom {
                     start_from::Value::Float(float)
                 }
                 segment::data_types::order_by::StartFrom::Datetime(datetime) => {
-                    start_from::Value::Datetime(date_time_to_proto(datetime))
+                    start_from::Value::Timestamp(date_time_to_proto(datetime))
                 }
             }),
         }

@@ -310,7 +310,8 @@ message StartFrom {
   oneof value {
     double float = 1;
     int64 integer = 2;
-    google.protobuf.Timestamp datetime = 3;
+    google.protobuf.Timestamp timestamp = 3;
+    string datetime = 4;
   }
 }
 

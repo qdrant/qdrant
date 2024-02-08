@@ -3276,7 +3276,8 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | ----- | ---- | ----- | ----------- |
 | float | [double](#double) |  |  |
 | integer | [int64](#int64) |  |  |
-| datetime | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  |  |
+| timestamp | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  |  |
+| datetime | [string](#string) |  |  |
 
 
 

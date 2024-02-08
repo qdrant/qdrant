@@ -1104,9 +1104,9 @@ impl PayloadFieldSchema {
             | PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(_)) => false,
 
             PayloadFieldSchema::FieldParams(PayloadSchemaParams::Integer(IntegerIndexParams {
-                                                                             range,
-                                                                             ..
-                                                                         })) => *range,
+                range,
+                ..
+            })) => *range,
         }
     }
 }
