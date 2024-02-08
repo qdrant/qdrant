@@ -1,7 +1,6 @@
 use std::collections::{hash_map, HashMap};
 use std::io::Write as _;
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::{cmp, fs, io};
 
 use serde::{Deserialize, Serialize};
@@ -102,7 +101,7 @@ impl ClockMap {
         let new_tick = clock_tag.clock_tick;
 
         match self.clocks.entry(key) {
-            hash_map::Entry::Occupied(entry) => entry.get().advance_to(new_tick),
+            hash_map::Entry::Occupied(mut entry) => entry.get_mut().advance_to(new_tick),
             hash_map::Entry::Vacant(entry) => {
                 entry.insert(Clock::new(new_tick));
                 (true, new_tick)
@@ -129,27 +128,22 @@ impl Key {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(transparent)]
 struct Clock {
-    current_tick: AtomicU64,
+    current_tick: u64,
 }
 
 impl Clock {
     fn new(current_tick: u64) -> Self {
-        Self {
-            current_tick: current_tick.into(),
-        }
+        Self { current_tick }
     }
 
     /// Advance clock to `new_tick`, if `new_tick` is newer than current tick.
     ///
     /// Returns whether the clock was updated and the current tick.
     #[must_use = "clock update status and current tick must be used"]
-    fn advance_to(&self, new_tick: u64) -> (bool, u64) {
-        let old_tick = self.current_tick.fetch_max(new_tick, Ordering::Relaxed);
-
-        let clock_updated = old_tick < new_tick;
-        let current_tick = cmp::max(old_tick, new_tick);
-
-        (clock_updated, current_tick)
+    fn advance_to(&mut self, new_tick: u64) -> (bool, u64) {
+        let clock_updated = self.current_tick < new_tick;
+        self.current_tick = cmp::max(self.current_tick, new_tick);
+        (clock_updated, self.current_tick)
     }
 }
 
