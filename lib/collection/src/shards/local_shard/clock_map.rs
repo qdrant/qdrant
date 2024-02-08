@@ -2,6 +2,7 @@ use std::cmp;
 use std::collections::{hash_map, HashMap};
 use std::path::Path;
 
+use api::grpc::qdrant::RecoveryPointClockTag;
 use io::file_operations;
 use serde::{Deserialize, Serialize};
 
@@ -177,7 +178,11 @@ impl From<RecoveryPoint> for api::grpc::qdrant::RecoveryPoint {
             clocks: value
                 .clocks
                 .into_iter()
-                .map(|(key, tick)| ClockTag::new(key.peer_id, key.clock_id, tick).into())
+                .map(|(key, clock_tick)| RecoveryPointClockTag {
+                    peer_id: key.peer_id,
+                    clock_id: key.clock_id,
+                    clock_tick,
+                })
                 .collect(),
         }
     }

@@ -53,6 +53,11 @@ message GetShardRecoveryPointResponse {
 }
 
 message RecoveryPoint {
-  // TODO: use different type here, that does not have force flag
-  repeated ClockTag clocks = 1;
+  repeated RecoveryPointClockTag clocks = 1;
+}
+
+message RecoveryPointClockTag {
+  uint64 peer_id = 1;
+  uint32 clock_id = 2;
+  uint64 clock_tick = 3;
 }
