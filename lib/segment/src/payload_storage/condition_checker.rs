@@ -8,6 +8,11 @@ use crate::types::{
     RangeInterface, ValueVariants, ValuesCount,
 };
 
+/// Threshold representing the point to which iterating through an IndexSet is more efficient than using hashing.
+/// For sets smaller than this threshold iterating outperformes hashing.
+/// <For more information see https://github.com/qdrant/qdrant/pull/3525>
+pub const INDEXSET_ITER_THRESHOLD: usize = 13;
+
 pub trait ValueChecker {
     fn check_match(&self, payload: &Value) -> bool;
 
@@ -85,18 +90,42 @@ impl ValueChecker for Match {
                 _ => false,
             },
             Match::Any(MatchAny { any }) => match (payload, any) {
-                (Value::String(stored), AnyVariants::Keywords(list)) => list.contains(stored),
+                (Value::String(stored), AnyVariants::Keywords(list)) => {
+                    if list.len() < INDEXSET_ITER_THRESHOLD {
+                        list.iter().any(|i| i.as_str() == stored.as_str())
+                    } else {
+                        list.contains(stored.as_str())
+                    }
+                }
                 (Value::Number(stored), AnyVariants::Integers(list)) => stored
                     .as_i64()
-                    .map(|num| list.contains(&num))
+                    .map(|num| {
+                        if list.len() < INDEXSET_ITER_THRESHOLD {
+                            list.iter().any(|i| *i == num)
+                        } else {
+                            list.contains(&num)
+                        }
+                    })
                     .unwrap_or(false),
                 _ => false,
             },
             Match::Except(MatchExcept { except }) => match (payload, except) {
-                (Value::String(stored), AnyVariants::Keywords(list)) => !list.contains(stored),
+                (Value::String(stored), AnyVariants::Keywords(list)) => {
+                    if list.len() < INDEXSET_ITER_THRESHOLD {
+                        !list.iter().any(|i| i.as_str() == stored.as_str())
+                    } else {
+                        !list.contains(stored.as_str())
+                    }
+                }
                 (Value::Number(stored), AnyVariants::Integers(list)) => stored
                     .as_i64()
-                    .map(|num| !list.contains(&num))
+                    .map(|num| {
+                        if list.len() < INDEXSET_ITER_THRESHOLD {
+                            !list.iter().any(|i| *i == num)
+                        } else {
+                            !list.contains(&num)
+                        }
+                    })
                     .unwrap_or(true),
                 (Value::Null, _) => false,
                 (Value::Bool(_), _) => true,

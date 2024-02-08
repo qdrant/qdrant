@@ -4,6 +4,8 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use common::types::PointOffsetType;
+use fnv::FnvBuildHasher;
+use indexmap::IndexSet;
 use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
@@ -623,13 +625,13 @@ fn test_struct_payload_index() {
         struct_result_sorted_ties.sort();
 
         plain_result_sorted_ties
-                .into_iter()
-                .zip(struct_result_sorted_ties.into_iter())
-                .map(|(r1, r2)| (r1.scored_point, r2.scored_point))
-                .for_each(|(r1, r2)| {
-                    assert_eq!(r1.id, r2.id, "got different ScoredPoint {r1:?} and {r2:?} for\nquery vector {query_vector:?}\nquery filter {query_filter:?}\nplain result {plain_result:?}\nstruct result{struct_result:?}");
-                    assert!((r1.score - r2.score) < 0.0001)
-                });
+            .into_iter()
+            .zip(struct_result_sorted_ties.into_iter())
+            .map(|(r1, r2)| (r1.scored_point, r2.scored_point))
+            .for_each(|(r1, r2)| {
+                assert_eq!(r1.id, r2.id, "got different ScoredPoint {r1:?} and {r2:?} for\nquery vector {query_vector:?}\nquery filter {query_filter:?}\nplain result {plain_result:?}\nstruct result{struct_result:?}");
+                assert!((r1.score - r2.score) < 0.0001)
+            });
     }
 }
 
@@ -782,12 +784,12 @@ fn test_struct_payload_index_nested_fields() {
 
         // warning: report flakiness at https://github.com/qdrant/qdrant/issues/534
         plain_result
-                .iter()
-                .zip(struct_result.iter())
-                .for_each(|(r1, r2)| {
-                    assert_eq!(r1.id, r2.id, "got different ScoredPoint {r1:?} and {r2:?} for\nquery vector {query_vector:?}\nquery filter {query_filter:?}\nplain result {plain_result:?}\nstruct result{struct_result:?}");
-                    assert!((r1.score - r2.score) < 0.0001)
-                });
+            .iter()
+            .zip(struct_result.iter())
+            .for_each(|(r1, r2)| {
+                assert_eq!(r1.id, r2.id, "got different ScoredPoint {r1:?} and {r2:?} for\nquery vector {query_vector:?}\nquery filter {query_filter:?}\nplain result {plain_result:?}\nstruct result{struct_result:?}");
+                assert!((r1.score - r2.score) < 0.0001)
+            });
     }
 }
 
@@ -857,13 +859,10 @@ fn test_any_matcher_cardinality_estimation() {
 
     let (struct_segment, _) = build_test_segments(dir1.path(), dir2.path());
 
-    let any_match = FieldCondition::new_match(
-        STR_KEY,
-        Match::new_any(AnyVariants::Keywords(vec![
-            "value1".to_string(),
-            "value2".to_string(),
-        ])),
-    );
+    let keywords: IndexSet<String, FnvBuildHasher> =
+        ["value1", "value2"].iter().map(|i| i.to_string()).collect();
+    let any_match =
+        FieldCondition::new_match(STR_KEY, Match::new_any(AnyVariants::Keywords(keywords)));
 
     let filter = Filter::new_must(Condition::Field(any_match.clone()));
 
