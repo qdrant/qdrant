@@ -1,5 +1,6 @@
 use std::cmp::min;
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
@@ -26,6 +27,7 @@ use crate::common::stoppable_task::{spawn_stoppable, StoppableTaskHandle};
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
+use crate::shards::local_shard::clock_map::ClockMap;
 use crate::shards::local_shard::LockedWal;
 use crate::wal::WalError;
 
@@ -105,6 +107,9 @@ pub struct UpdateHandler {
     optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
     /// Maximum number of concurrent optimization jobs in this update handler.
     max_optimization_threads: Option<usize>,
+
+    clock_map: Arc<TokioMutex<ClockMap>>,
+    clock_map_path: PathBuf,
 }
 
 impl UpdateHandler {
@@ -119,6 +124,8 @@ impl UpdateHandler {
         wal: LockedWal,
         flush_interval_sec: u64,
         max_optimization_threads: Option<usize>,
+        clock_map: Arc<TokioMutex<ClockMap>>,
+        clock_map_path: PathBuf,
     ) -> UpdateHandler {
         UpdateHandler {
             shared_storage_config,
@@ -136,6 +143,8 @@ impl UpdateHandler {
             flush_interval_sec,
             optimization_handles: Arc::new(TokioMutex::new(vec![])),
             max_optimization_threads,
+            clock_map,
+            clock_map_path,
         }
     }
 
@@ -165,6 +174,8 @@ impl UpdateHandler {
             self.wal_keep_from.clone(),
             self.flush_interval_sec,
             flush_rx,
+            self.clock_map.clone(),
+            self.clock_map_path.clone(),
         )));
         self.flush_stop = Some(flush_tx);
     }
@@ -589,6 +600,8 @@ impl UpdateHandler {
         wal_keep_from: Arc<AtomicU64>,
         flush_interval_sec: u64,
         mut stop_receiver: oneshot::Receiver<()>,
+        clock_map: Arc<tokio::sync::Mutex<ClockMap>>,
+        clock_map_path: PathBuf,
     ) {
         loop {
             // Stop flush worker on signal or if sender was dropped
@@ -637,6 +650,11 @@ impl UpdateHandler {
             }
 
             let ack = confirmed_version.min(keep_from.saturating_sub(1));
+
+            if let Err(err) = clock_map.lock().await.store(&clock_map_path) {
+                segments.write().report_optimizer_error(err);
+            }
+
             if let Err(err) = wal.lock().ack(ack) {
                 segments.write().report_optimizer_error(err);
             }

@@ -230,7 +230,7 @@ impl ShardOperation for LocalShard {
     /// This method is cancel safe.
     async fn update(
         &self,
-        operation: OperationWithClockTag,
+        mut operation: OperationWithClockTag,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
         // `LocalShard::update` only has a single cancel safe `await`, WAL operations are blocking,
@@ -245,11 +245,29 @@ impl ShardOperation for LocalShard {
 
         let operation_id = {
             let update_sender = self.update_sender.load();
-
             let channel_permit = update_sender.reserve().await?;
+
+            // TODO: We better lock `wal` before `clock_map`, but it does not work, because `wal` use `parking_lot::Mutex`... :/
+
+            if let Some(clock_tag) = &mut operation.clock_tag {
+                let operation_accepted = self
+                    .clock_map
+                    .lock()
+                    .await
+                    .advance_clock_and_correct_tag(clock_tag);
+
+                if !operation_accepted {
+                    return Ok(UpdateResult {
+                        operation_id: None,
+                        status: UpdateStatus::Acknowledged,
+                        clock_tag: Some(*clock_tag),
+                    });
+                }
+            }
 
             let mut wal_lock = self.wal.lock();
             let operation_id = wal_lock.write(&operation)?;
+
             channel_permit.send(UpdateSignal::Operation(OperationData {
                 op_num: operation_id,
                 operation: operation.operation,
@@ -264,13 +282,13 @@ impl ShardOperation for LocalShard {
             Ok(UpdateResult {
                 operation_id: Some(operation_id),
                 status: UpdateStatus::Completed,
-                clock_tag: None, // TODO: Add clock tag!
+                clock_tag: operation.clock_tag,
             })
         } else {
             Ok(UpdateResult {
                 operation_id: Some(operation_id),
                 status: UpdateStatus::Acknowledged,
-                clock_tag: None, // TODO: Add clock tag!
+                clock_tag: operation.clock_tag,
             })
         }
     }
