@@ -49,69 +49,53 @@ impl ClockMap {
         Ok(())
     }
 
-    /// Advance clock referenced by the `clock_tag` to `clock_tag.clock_tick`, if it's newer than
-    /// the current tick tracked by the clock, or correct `clock_tag.clock_tick` if it's older than
-    /// the current tick.
-    ///
-    /// If the clock is not yet tracked by the `ClockMap`, it is initialized to
-    /// the `clock_tag.clock_tick` and added to the `ClockMap`.
+    /// Advance clock referenced by `clock_tag` to `clock_tick`, if it's newer than current tick.
+    /// Update `clock_tick` to current tick, if it's older.
     ///
     /// Returns whether operation should be accepted by the local shard and written into the WAL
     /// and applied to the storage, or rejected.
-    ///
-    /// Operations with `clock_tag.clock_tick = 0` is a special case that is *always* accepted,
-    /// *and* its `clock_tag.clock_tick` is *always* corrected and should be written into WAL with
-    /// the corrected clock tag!
     #[must_use = "operation accept status must be used"]
     pub fn advance_clock_and_correct_tag(&mut self, clock_tag: &mut ClockTag) -> bool {
         let (clock_updated, current_tick) = self.advance_clock_impl(clock_tag);
 
-        // We "accept" an operation, if it has `clock_tick` that is "newer" than `current_tick` in `ClockMap`
-        // (e.g., if `advance_clock_impl` *updated* the clock and returned `clock_updated = true`).
+        // We *accept* an operation, if its `clock_tick` is *newer* than `current_tick`.
         //
-        // If we "reject" an operation (because it has `clock_tick` that is "older" than `current_tick` in `ClockMap`),
-        // we have to update its clock tag with `current_tick`, so that it can be "echoed" back to the node.
+        // If we *reject* an operation, we have to update its `clock_tick` to `current_tick`,
+        // so that we can return updated clock tag to the sender node, so that the node can
+        // correct its clock.
         //
-        // And we also *always* accept all operations with `clock_tick = 0` and *always* update their clock tags.
+        // There are two special cases:
+        // - we *always* accept operations with `clock_tick = 0`, and also *always* update their `clock_tick`
+        // - and we *always* accept operations with `force = true`, but *never* update their `clock_tick`
 
-        let _operation_accepted = clock_updated || clock_tag.clock_tick == 0 || clock_tag.force;
-        let update_tag = (!clock_updated || clock_tag.clock_tick == 0) && !clock_tag.force;
-
-        if _operation_accepted && !update_tag {
-            log::trace!("Accepting clock tag {clock_tag:?} (current tick: {current_tick})");
+        if clock_tag.force {
+            return true;
         }
 
-        if update_tag {
-            if _operation_accepted {
-                log::trace!("Updating clock tag {clock_tag:?} (current tick: {current_tick})");
-            } else {
-                log::trace!("Rejecting clock tag {clock_tag:?} (current tick: {current_tick})")
-            }
+        let operation_accepted = clock_updated || clock_tag.clock_tick == 0;
+        let update_tag = !operation_accepted || clock_tag.clock_tick == 0;
 
+        if update_tag {
             clock_tag.clock_tick = current_tick;
         }
 
-        // TODO: now accepts everything, start rejecting old clock values here
-        // TODO: return operation_accepted
-        true
+        operation_accepted
     }
 
-    /// Advance clock referenced by the `clock_tag` to `clock_tag.clock_tick`, if it's newer than
-    /// the current tick tracked by the clock.
+    /// Advance clock referenced by `clock_tag` to `clock_tick`, if it's newer than current tick.
     ///
     /// If the clock is not yet tracked by the `ClockMap`, it is initialized to
-    /// the `clock_tag.clock_tick` and added to the `ClockMap`.
+    /// the `clock_tick` and added to the `ClockMap`.
     pub fn advance_clock(&mut self, clock_tag: &ClockTag) {
         let _ = self.advance_clock_impl(clock_tag);
     }
 
-    /// Advance clock referenced by the `clock_tag` to `clock_tag.clock_tick`, if it's newer than
-    /// the current tick tracked by the clock.
+    /// Advance clock referenced by `clock_tag` to `clock_tick`, if it's newer than current tick.
     ///
     /// If the clock is not yet tracked by the `ClockMap`, it is initialized to
-    /// the `clock_tag.clock_tick` and added to the `ClockMap`.
+    /// the `clock_tick` and added to the `ClockMap`.
     ///
-    /// Returns whether the clock was *initialized-or-updated* and the current tick.
+    /// Returns whether the clock was updated (or initialized) and the current tick.
     #[must_use = "clock update status and current tick must be used"]
     fn advance_clock_impl(&mut self, clock_tag: &ClockTag) -> (bool, u64) {
         let key = Key::from_tag(clock_tag);
@@ -148,9 +132,9 @@ struct Clock {
 }
 
 impl Clock {
-    pub fn new(tick: u64) -> Self {
+    fn new(current_tick: u64) -> Self {
         Self {
-            current_tick: tick.into(),
+            current_tick: current_tick.into(),
         }
     }
 
@@ -158,15 +142,13 @@ impl Clock {
     ///
     /// Returns whether the clock was updated and the current tick.
     #[must_use = "clock update status and current tick must be used"]
-    pub fn advance_to(&self, new_tick: u64) -> (bool, u64) {
+    fn advance_to(&self, new_tick: u64) -> (bool, u64) {
         let old_tick = self.current_tick.fetch_max(new_tick, Ordering::Relaxed);
 
-        let _clock_updated = old_tick < new_tick;
+        let clock_updated = old_tick < new_tick;
         let current_tick = cmp::max(old_tick, new_tick);
 
-        // TODO: now accepts everything, start rejecting old clock values here
-        // TODO: return (clock_updated, current_tick)
-        (true, current_tick)
+        (clock_updated, current_tick)
     }
 }
 
