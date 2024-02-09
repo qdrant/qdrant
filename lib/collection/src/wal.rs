@@ -163,10 +163,8 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
     /// records we still have on disk.
     pub fn read_from_last(&'s self, with_physical: bool) -> impl Iterator<Item = (u64, R)> + 's {
         let first_index = if with_physical {
-            self.first_index()
+            self.first_physical_index()
         } else {
-            // TODO: use first physical once queue proxy changes are merged
-            #[allow(clippy::if_same_then_else)]
             self.first_index()
         };
         let last_index = self.last_index();
