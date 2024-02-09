@@ -5,13 +5,15 @@ use chrono::{NaiveDateTime, TimeZone as _, Timelike};
 use segment::data_types::integer_index::IntegerIndexType;
 use segment::data_types::text_index::TextIndexType;
 use segment::data_types::vectors::VectorElementType;
-use segment::types::{default_quantization_ignore_value, DateTimePayloadType, FloatPayloadType};
+use segment::types::{
+    default_quantization_ignore_value, DateTimePayloadType, FloatPayloadType, IntPayloadType,
+};
 use tonic::Status;
 use uuid::Uuid;
 
 use super::qdrant::{
     start_from, BinaryQuantization, CompressionRatio, DatetimeRange, Direction, GeoLineString,
-    GroupId, OrderBy, Range, SparseIndices, StartFrom,
+    GroupId, IntegerRange, OrderBy, Range, SparseIndices, StartFrom,
 };
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
@@ -983,11 +985,12 @@ impl TryFrom<FieldCondition> for segment::types::FieldCondition {
             key,
             r#match,
             range,
+            integer_range,
+            datetime_range,
             geo_bounding_box,
             geo_radius,
             values_count,
             geo_polygon,
-            datetime_range,
         } = value;
 
         let geo_bounding_box =
@@ -995,15 +998,16 @@ impl TryFrom<FieldCondition> for segment::types::FieldCondition {
         let geo_radius = geo_radius.map_or_else(|| Ok(None), |g| g.try_into().map(Some))?;
         let geo_polygon = geo_polygon.map_or_else(|| Ok(None), |g| g.try_into().map(Some))?;
 
-        let range = range.map(Into::into);
+        let range = range.map(segment::types::RangeInterface::from);
         let datetime_range = datetime_range
             .map(segment::types::RangeInterface::try_from)
             .transpose()?;
+        let integer_range = integer_range.map(segment::types::RangeInterface::from);
 
         Ok(Self {
             key,
             r#match: r#match.map_or_else(|| Ok(None), |m| m.try_into().map(Some))?,
-            range: range.or(datetime_range),
+            range: range.or(integer_range).or(datetime_range),
             geo_bounding_box,
             geo_radius,
             geo_polygon,
@@ -1024,21 +1028,25 @@ impl From<segment::types::FieldCondition> for FieldCondition {
             values_count,
         } = value;
 
-        let (range, datetime_range) = match range {
-            Some(segment::types::RangeInterface::Float(range)) => (Some(range.into()), None),
-            Some(segment::types::RangeInterface::DateTime(range)) => (None, Some(range.into())),
-            None => (None, None),
+        let (float_range, integer_range, datetime_range) = match range {
+            Some(segment::types::RangeInterface::Float(range)) => (Some(range.into()), None, None),
+            Some(segment::types::RangeInterface::Int(range)) => (None, Some(range.into()), None),
+            Some(segment::types::RangeInterface::DateTime(range)) => {
+                (None, None, Some(range.into()))
+            }
+            None => (None, None, None),
         };
 
         Self {
             key,
             r#match: r#match.map(Into::into),
-            range,
+            range: float_range,
+            integer_range,
+            datetime_range,
             geo_bounding_box: geo_bounding_box.map(Into::into),
             geo_radius: geo_radius.map(Into::into),
             geo_polygon: geo_polygon.map(Into::into),
             values_count: values_count.map(Into::into),
-            datetime_range,
         }
     }
 }
@@ -1173,9 +1181,37 @@ impl From<segment::types::Range<FloatPayloadType>> for Range {
     }
 }
 
+impl From<IntegerRange> for segment::types::Range<IntPayloadType> {
+    fn from(value: IntegerRange) -> Self {
+        Self {
+            lt: value.lt,
+            gt: value.gt,
+            gte: value.gte,
+            lte: value.lte,
+        }
+    }
+}
+
+impl From<segment::types::Range<IntPayloadType>> for IntegerRange {
+    fn from(value: segment::types::Range<IntPayloadType>) -> Self {
+        Self {
+            lt: value.lt,
+            gt: value.gt,
+            gte: value.gte,
+            lte: value.lte,
+        }
+    }
+}
+
 impl From<Range> for segment::types::RangeInterface {
     fn from(value: Range) -> Self {
         Self::Float(value.into())
+    }
+}
+
+impl From<IntegerRange> for segment::types::RangeInterface {
+    fn from(value: IntegerRange) -> Self {
+        Self::Int(value.into())
     }
 }
 
@@ -1321,6 +1357,9 @@ impl From<segment::data_types::order_by::StartFrom> for StartFrom {
             value: Some(match value {
                 segment::data_types::order_by::StartFrom::Float(float) => {
                     start_from::Value::Float(float)
+                }
+                segment::data_types::order_by::StartFrom::Int(int) => {
+                    start_from::Value::Integer(int)
                 }
                 segment::data_types::order_by::StartFrom::Datetime(datetime) => {
                     start_from::Value::Timestamp(date_time_to_proto(datetime))

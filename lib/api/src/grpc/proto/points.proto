@@ -691,6 +691,7 @@ message FieldCondition {
   ValuesCount values_count = 6; // Check number of values for a specific field
   GeoPolygon geo_polygon = 7; // Check if geo point is within a given polygon
   DatetimeRange datetime_range = 8; // Check if datetime is within a given range
+  IntegerRange integer_range = 9; // Check if integer is within a given range
 }
 
 message Match {
@@ -719,6 +720,13 @@ message Range {
   optional double gt = 2;
   optional double gte = 3;
   optional double lte = 4;
+}
+
+message IntegerRange {
+  optional int64 lt = 1;
+  optional int64 gt = 2;
+  optional int64 gte = 3;
+  optional int64 lte = 4;
 }
 
 message DatetimeRange {

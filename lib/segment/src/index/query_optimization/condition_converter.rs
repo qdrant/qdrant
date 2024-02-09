@@ -219,6 +219,7 @@ pub fn get_geo_bounding_box_checkers(
 pub fn get_range_checkers(index: &FieldIndex, range: RangeInterface) -> Option<ConditionCheckerFn> {
     match range {
         RangeInterface::Float(range) => get_float_range_checkers(index, range),
+        RangeInterface::Int(range) => get_int_range_checkers(index, range),
         RangeInterface::DateTime(range) => get_datetime_range_checkers(index, range),
     }
 }
@@ -237,6 +238,26 @@ pub fn get_float_range_checkers(
             }))
         }
         FieldIndex::FloatIndex(num_index) => Some(Box::new(move |point_id: PointOffsetType| {
+            num_index
+                .get_values(point_id)
+                .is_some_and(|values| values.iter().copied().any(|f| range.check_range(f)))
+        })),
+        _ => None,
+    }
+}
+
+pub fn get_int_range_checkers(
+    index: &FieldIndex,
+    range: Range<IntPayloadType>,
+) -> Option<ConditionCheckerFn> {
+    match index {
+        FieldIndex::IntIndex(num_index) => Some(Box::new(move |point_id: PointOffsetType| {
+            num_index
+                .get_values(point_id)
+                .is_some_and(|values| values.iter().copied().any(|i| range.check_range(i)))
+        })),
+        FieldIndex::FloatIndex(num_index) => Some(Box::new(move |point_id: PointOffsetType| {
+            let range = range.map(|i| i as FloatPayloadType);
             num_index
                 .get_values(point_id)
                 .is_some_and(|values| values.iter().copied().any(|f| range.check_range(f)))

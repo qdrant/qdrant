@@ -1804,10 +1804,7 @@ impl TryFrom<api::grpc::qdrant::OrderBy> for OrderByInterface {
                     api::grpc::qdrant::start_from::Value::Float(float) => {
                         Ok(StartFrom::Float(float))
                     }
-                    // TODO(luis): make appropriate conversion once we allow int start_from
-                    api::grpc::qdrant::start_from::Value::Integer(int) => {
-                        Ok(StartFrom::Float(int as _))
-                    }
+                    api::grpc::qdrant::start_from::Value::Integer(int) => Ok(StartFrom::Int(int)),
                     api::grpc::qdrant::start_from::Value::Timestamp(timestamp) => {
                         Ok(StartFrom::Datetime(date_time_from_proto(timestamp)?))
                     }

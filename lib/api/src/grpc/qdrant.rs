@@ -4254,6 +4254,9 @@ pub struct FieldCondition {
     /// Check if datetime is within a given range
     #[prost(message, optional, tag = "8")]
     pub datetime_range: ::core::option::Option<DatetimeRange>,
+    /// Check if integer is within a given range
+    #[prost(message, optional, tag = "9")]
+    pub integer_range: ::core::option::Option<IntegerRange>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4320,6 +4323,19 @@ pub struct Range {
     pub gte: ::core::option::Option<f64>,
     #[prost(double, optional, tag = "4")]
     pub lte: ::core::option::Option<f64>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IntegerRange {
+    #[prost(int64, optional, tag = "1")]
+    pub lt: ::core::option::Option<i64>,
+    #[prost(int64, optional, tag = "2")]
+    pub gt: ::core::option::Option<i64>,
+    #[prost(int64, optional, tag = "3")]
+    pub gte: ::core::option::Option<i64>,
+    #[prost(int64, optional, tag = "4")]
+    pub lte: ::core::option::Option<i64>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

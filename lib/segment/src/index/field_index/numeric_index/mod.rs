@@ -241,6 +241,7 @@ impl<T: Encodable + Numericable + Default> NumericIndex<T> {
             RangeInterface::DateTime(datetime_range) => {
                 datetime_range.map(|dt| T::from_i64(dt.timestamp()))
             }
+            RangeInterface::Int(int_range) => int_range.map(T::from_i64),
         };
 
         let lbound = if let Some(lte) = range.lte {
@@ -339,18 +340,12 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndex<T>
         &self,
         condition: &FieldCondition,
     ) -> OperationResult<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
-        let range_cond = condition
+        let range_interface = condition
             .range
             .as_ref()
             .ok_or_else(|| OperationError::service_error("failed to get range condition"))?;
 
-        let (start_bound, end_bound) = match range_cond {
-            RangeInterface::Float(float_range) => float_range.map(T::from_f64),
-            RangeInterface::DateTime(datetime_range) => {
-                datetime_range.map(|dt| T::from_i64(dt.timestamp()))
-            }
-        }
-        .as_index_key_bounds();
+        let (start_bound, end_bound) = range_interface.to_range().as_index_key_bounds();
 
         // map.range
         // Panics if range start > end. Panics if range start == end and both bounds are Excluded.
@@ -527,20 +522,27 @@ impl ValueIndexer<FloatPayloadType> for NumericIndex<FloatPayloadType> {
     }
 }
 
+impl RangeInterface {
+    fn to_range<T: Numericable>(&self) -> Range<T> {
+        match self {
+            RangeInterface::Float(float_range) => float_range.map(T::from_f64),
+            RangeInterface::Int(int_range) => int_range.map(T::from_i64),
+            RangeInterface::DateTime(datetime_range) => {
+                datetime_range.map(|dt| T::from_i64(dt.timestamp()))
+            }
+        }
+    }
+}
+
 impl<T> StreamRange<T> for NumericIndex<T>
 where
     T: Encodable + Numericable + Default,
 {
     fn stream_range(
         &self,
-        range: &RangeInterface,
+        range_interface: &RangeInterface,
     ) -> Box<dyn DoubleEndedIterator<Item = (T, PointOffsetType)> + '_> {
-        let range = match range {
-            RangeInterface::Float(float_range) => float_range.map(T::from_f64),
-            RangeInterface::DateTime(datetime_range) => {
-                datetime_range.map(|dt| T::from_i64(dt.timestamp()))
-            }
-        };
+        let range = range_interface.to_range();
         let (start_bound, end_bound) = range.as_index_key_bounds();
 
         // map.range

@@ -42,6 +42,8 @@ impl Direction {
 pub enum StartFrom {
     Float(FloatPayloadType),
 
+    Int(IntPayloadType),
+    
     Datetime(DateTimePayloadType),
 }
 
@@ -65,6 +67,7 @@ impl OrderBy {
             .as_ref()
             .map(|start_from| match start_from {
                 StartFrom::Float(f) => RangeInterface::Float(self.direction().as_range_from(*f)),
+                StartFrom::Int(i) => RangeInterface::Int(self.direction().as_range_from(*i)),
                 StartFrom::Datetime(dt) => {
                     RangeInterface::DateTime(self.direction().as_range_from(*dt))
                 }
@@ -81,6 +84,7 @@ impl OrderBy {
             .as_ref()
             .map(|start_from| match start_from {
                 StartFrom::Float(f) => OrderingValue::Float(*f),
+                StartFrom::Int(i) => OrderingValue::Int(*i),
                 StartFrom::Datetime(dt) => OrderingValue::Int(dt.timestamp()),
             })
             .unwrap_or_else(|| match self.direction() {

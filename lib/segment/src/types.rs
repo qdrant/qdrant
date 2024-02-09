@@ -1391,12 +1391,13 @@ impl From<Vec<IntPayloadType>> for MatchExcept {
 #[serde(untagged)]
 pub enum RangeInterface {
     Float(Range<FloatPayloadType>),
+    Int(Range<IntPayloadType>),
     DateTime(Range<DateTimePayloadType>),
 }
 
 /// Range filter request
 #[macro_rules_attribute::macro_rules_derive(crate::common::macros::schemars_rename_generics)]
-#[derive_args(< FloatPayloadType > => "Range", < DateTimePayloadType > => "DatetimeRange")]
+#[derive_args(<FloatPayloadType> => "Range", <DateTimePayloadType> => "DatetimeRange", <IntPayloadType> => "IntegerRange")]
 #[derive(Debug, Deserialize, Serialize, Default, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct Range<T> {

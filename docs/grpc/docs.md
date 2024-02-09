@@ -132,6 +132,7 @@
     - [GroupId](#qdrant-GroupId)
     - [GroupsResult](#qdrant-GroupsResult)
     - [HasIdCondition](#qdrant-HasIdCondition)
+    - [IntegerRange](#qdrant-IntegerRange)
     - [IsEmptyCondition](#qdrant-IsEmptyCondition)
     - [IsNullCondition](#qdrant-IsNullCondition)
     - [LookupLocation](#qdrant-LookupLocation)
@@ -2097,6 +2098,7 @@ The JSON representation for `Value` is a JSON value.
 | values_count | [ValuesCount](#qdrant-ValuesCount) |  | Check number of values for a specific field |
 | geo_polygon | [GeoPolygon](#qdrant-GeoPolygon) |  | Check if geo point is within a given polygon |
 | datetime_range | [DatetimeRange](#qdrant-DatetimeRange) |  | Check if datetime is within a given range |
+| integer_range | [IntegerRange](#qdrant-IntegerRange) |  | Check if integer is within a given range |
 
 
 
@@ -2278,6 +2280,24 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | has_id | [PointId](#qdrant-PointId) | repeated |  |
+
+
+
+
+
+
+<a name="qdrant-IntegerRange"></a>
+
+### IntegerRange
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| lt | [int64](#int64) | optional |  |
+| gt | [int64](#int64) | optional |  |
+| gte | [int64](#int64) | optional |  |
+| lte | [int64](#int64) | optional |  |
 
 
 
