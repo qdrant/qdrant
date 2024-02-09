@@ -993,7 +993,7 @@ impl Drop for LocalShard {
 }
 
 #[derive(Error, Debug, Clone)]
-#[error("Cannot resolve WAL delta: {0}")]
+#[error("cannot resolve WAL delta: {0}")]
 pub enum WalDeltaError {
     #[error("recovery point has no clocks to resolve delta for")]
     Empty,
