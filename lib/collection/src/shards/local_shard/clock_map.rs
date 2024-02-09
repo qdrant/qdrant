@@ -178,6 +178,9 @@ impl RecoveryPoint {
 
     /// Extend this recovery point with new clocks from `clock_map`
     ///
+    /// Clocks that we have not seen yet are added with a tick of `0`, because we must recover all
+    /// records for it.
+    ///
     /// Clocks that we already have in this recovery point are not updated, regardless of their
     /// tick value.
     pub fn extend_with_missing_clocks(&mut self, other: &Self) {
@@ -213,13 +216,13 @@ impl RecoveryPoint {
 
 impl Display for RecoveryPoint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let entries = self
+        let clocks = self
             .clocks
             .iter()
             .map(|(key, tick)| format!("{}({}): {tick})", key.peer_id, key.clock_id))
             .collect::<Vec<_>>()
             .join(", ");
-        write!(f, "RecoveryPoint [ {entries} ]")
+        write!(f, "RecoveryPoint [ {clocks} ]")
     }
 }
 
