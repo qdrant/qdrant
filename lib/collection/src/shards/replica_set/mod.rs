@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock};
 
+use super::local_shard::clock_map::RecoveryPoint;
 use super::local_shard::LocalShard;
 use super::remote_shard::RemoteShard;
 use super::transfer::ShardTransfer;
@@ -830,6 +831,18 @@ impl ShardReplicaSet {
         );
 
         self.abort_shard_transfer_cb.deref()(transfer, reason)
+    }
+
+    /// Get shard recovery point for WAL.
+    pub(crate) async fn shard_recovery_point(&self) -> CollectionResult<RecoveryPoint> {
+        let local_shard = self.local.read().await;
+        let Some(local_shard) = local_shard.as_ref() else {
+            return Err(CollectionError::NotFound {
+                what: "Peer does not have local shard".into(),
+            });
+        };
+
+        local_shard.shard_recovery_point().await
     }
 }
 

@@ -4,7 +4,8 @@ use std::time::{Duration, Instant};
 use api::grpc::qdrant::collections_internal_server::CollectionsInternal;
 use api::grpc::qdrant::{
     CollectionOperationResponse, GetCollectionInfoRequestInternal, GetCollectionInfoResponse,
-    InitiateShardTransferRequest, WaitForShardStateRequest,
+    GetShardRecoveryPointRequest, GetShardRecoveryPointResponse, InitiateShardTransferRequest,
+    WaitForShardStateRequest,
 };
 use storage::content_manager::conversions::error_to_status;
 use storage::content_manager::toc::TableOfContent;
@@ -111,6 +112,45 @@ impl CollectionsInternal for CollectionsInternalService {
 
         let response = CollectionOperationResponse {
             result: true,
+            time: timing.elapsed().as_secs_f64(),
+        };
+        Ok(Response::new(response))
+    }
+
+    async fn get_shard_recovery_point(
+        &self,
+        request: Request<GetShardRecoveryPointRequest>,
+    ) -> Result<Response<GetShardRecoveryPointResponse>, Status> {
+        validate_and_log(request.get_ref());
+
+        let timing = Instant::now();
+        let GetShardRecoveryPointRequest {
+            collection_name,
+            shard_id,
+        } = request.into_inner();
+
+        let collection_read = self
+            .toc
+            .get_collection(&collection_name)
+            .await
+            .map_err(|err| {
+                Status::not_found(format!(
+                    "Collection {collection_name} could not be found: {err}"
+                ))
+            })?;
+
+        // Get shard recovery point
+        let recovery_point = collection_read
+            .shard_recovery_point(shard_id)
+            .await
+            .map_err(|err| {
+                Status::internal(format!(
+                    "Failed to get recovery point for shard {shard_id}: {err}"
+                ))
+            })?;
+
+        let response = GetShardRecoveryPointResponse {
+            recovery_point: Some(recovery_point.into()),
             time: timing.elapsed().as_secs_f64(),
         };
         Ok(Response::new(response))

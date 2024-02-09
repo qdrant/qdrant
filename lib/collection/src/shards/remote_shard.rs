@@ -11,9 +11,9 @@ use api::grpc::qdrant::shard_snapshots_client::ShardSnapshotsClient;
 use api::grpc::qdrant::{
     CollectionOperationResponse, CoreSearchBatchPointsInternal, CountPoints, CountPointsInternal,
     GetCollectionInfoRequest, GetCollectionInfoRequestInternal, GetPoints, GetPointsInternal,
-    HealthCheckRequest, InitiateShardTransferRequest, RecoverShardSnapshotRequest,
-    RecoverSnapshotResponse, ScrollPoints, ScrollPointsInternal, ShardSnapshotLocation,
-    WaitForShardStateRequest,
+    GetShardRecoveryPointRequest, HealthCheckRequest, InitiateShardTransferRequest,
+    RecoverShardSnapshotRequest, RecoverSnapshotResponse, ScrollPoints, ScrollPointsInternal,
+    ShardSnapshotLocation, WaitForShardStateRequest,
 };
 use api::grpc::transport_channel_pool::{AddTimeout, MAX_GRPC_CHANNEL_TIMEOUT};
 use async_trait::async_trait;
@@ -34,6 +34,7 @@ use url::Url;
 use super::conversions::{
     internal_delete_vectors, internal_delete_vectors_by_filter, internal_update_vectors,
 };
+use super::local_shard::clock_map::RecoveryPoint;
 use super::replica_set::ReplicaState;
 use crate::operations::conversions::try_record_from_grpc;
 use crate::operations::payload_ops::PayloadOps;
@@ -554,6 +555,33 @@ impl RemoteShard {
             .await?
             .into_inner();
         Ok(res)
+    }
+
+    /// Request the recovery point on the remote shard
+    pub async fn shard_recovery_point(
+        &self,
+        collection_name: &str,
+        shard_id: ShardId,
+    ) -> CollectionResult<RecoveryPoint> {
+        let res = self
+            .with_collections_client(|mut client| async move {
+                client
+                    .get_shard_recovery_point(GetShardRecoveryPointRequest {
+                        collection_name: collection_name.into(),
+                        shard_id,
+                    })
+                    .await
+            })
+            .await?
+            .into_inner();
+
+        let Some(recovery_point) = res.recovery_point else {
+            return Err(CollectionError::service_error(
+                "Recovery point data is missing in recovery point response",
+            ));
+        };
+
+        Ok(recovery_point.into())
     }
 
     pub async fn health_check(&self) -> CollectionResult<()> {

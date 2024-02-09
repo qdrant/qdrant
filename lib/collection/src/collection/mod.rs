@@ -29,6 +29,7 @@ use crate::operations::types::{CollectionError, CollectionResult, NodeType};
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::collection_shard_distribution::CollectionShardDistribution;
+use crate::shards::local_shard::clock_map::RecoveryPoint;
 use crate::shards::replica_set::ReplicaState::{Active, Dead, Initializing, Listener};
 use crate::shards::replica_set::{ChangePeerState, ReplicaState, ShardReplicaSet};
 use crate::shards::shard::{PeerId, ShardId};
@@ -399,6 +400,19 @@ impl Collection {
         }
 
         Ok(())
+    }
+
+    pub async fn shard_recovery_point(&self, shard_id: ShardId) -> CollectionResult<RecoveryPoint> {
+        let shard_holder_read = self.shards_holder.read().await;
+
+        let shard = shard_holder_read.get_shard(&shard_id);
+        let Some(replica_set) = shard else {
+            return Err(CollectionError::NotFound {
+                what: "Shard {shard_id}".into(),
+            });
+        };
+
+        replica_set.shard_recovery_point().await
     }
 
     pub async fn state(&self) -> State {
