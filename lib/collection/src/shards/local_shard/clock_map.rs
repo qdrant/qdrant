@@ -46,7 +46,7 @@ impl ClockMap {
     /// and applied to the storage, or rejected.
     #[must_use = "operation accept status must be used"]
     pub fn advance_clock_and_correct_tag(&mut self, clock_tag: &mut ClockTag) -> bool {
-        let (clock_updated, current_tick) = self.advance_clock_impl(clock_tag);
+        let (clock_updated, current_tick) = self.advance_clock_impl(*clock_tag);
 
         // We *accept* an operation, if its `clock_tick` is *newer* than `current_tick`.
         //
@@ -75,8 +75,8 @@ impl ClockMap {
     /// Advance clock referenced by `clock_tag` to `clock_tick`, if it's newer than current tick.
     ///
     /// If the clock is not yet tracked by the `ClockMap`, it is initialized to
-    /// the `clock_tick` and added to the `ClockMap`.
-    pub fn advance_clock(&mut self, clock_tag: &ClockTag) {
+    /// the `clock_tag.clock_tick` and added to the `ClockMap`.
+    pub fn advance_clock(&mut self, clock_tag: ClockTag) {
         let _ = self.advance_clock_impl(clock_tag);
     }
 
@@ -87,7 +87,7 @@ impl ClockMap {
     ///
     /// Returns whether the clock was updated (or initialized) and the current tick.
     #[must_use = "clock update status and current tick must be used"]
-    fn advance_clock_impl(&mut self, clock_tag: &ClockTag) -> (bool, u64) {
+    fn advance_clock_impl(&mut self, clock_tag: ClockTag) -> (bool, u64) {
         let key = Key::from_tag(clock_tag);
         let new_tick = clock_tag.clock_tick;
 
@@ -123,7 +123,7 @@ impl Key {
         Self { peer_id, clock_id }
     }
 
-    pub fn from_tag(clock_tag: &ClockTag) -> Self {
+    pub fn from_tag(clock_tag: ClockTag) -> Self {
         Self {
             peer_id: clock_tag.peer_id,
             clock_id: clock_tag.clock_id,
