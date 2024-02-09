@@ -53,6 +53,11 @@ impl ClockGuard {
     pub fn advance_to(&mut self, new_tick: u64) {
         self.clock.advance_to(new_tick)
     }
+
+    #[cfg(test)]
+    pub fn current_tick(&self) -> Option<u64> {
+        self.clock.current_tick()
+    }
 }
 
 impl Drop for ClockGuard {
@@ -104,6 +109,12 @@ impl Clock {
         // `Clock` tracks *next* tick, so if we want to advance *current* tick to `new_tick`,
         // we have to advance `next_tick` to `new_tick + 1`
         self.next_tick.fetch_max(new_tick + 1, Ordering::Relaxed);
+    }
+
+    #[cfg(test)]
+    fn current_tick(&self) -> Option<u64> {
+        let next_tick = self.next_tick.load(Ordering::Relaxed);
+        next_tick.checked_sub(1)
     }
 
     /// Try to acquire exclusive lock over this clock.
