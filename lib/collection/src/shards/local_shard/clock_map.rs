@@ -1,8 +1,8 @@
+use std::cmp;
 use std::collections::{hash_map, HashMap};
 use std::path::Path;
-use std::{cmp, io};
 
-use ::io::file_operations;
+use io::file_operations;
 use serde::{Deserialize, Serialize};
 
 use crate::operations::types::CollectionError;
@@ -20,7 +20,7 @@ impl ClockMap {
         let result = Self::load(path);
 
         if let Err(Error::Io(err)) = &result {
-            if err.kind() == io::ErrorKind::NotFound {
+            if err.kind() == std::io::ErrorKind::NotFound {
                 return Ok(Self::default());
             }
         }
@@ -142,7 +142,7 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 #[derive(Debug, thiserror::Error)]
 #[error("failed to load/store the clock map: {0}")]
 pub enum Error {
-    Io(#[from] io::Error),
+    Io(#[from] std::io::Error),
     SerdeJson(#[from] serde_json::Error),
 }
 
