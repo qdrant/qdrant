@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 
 use chrono::{DateTime, SubsecRound, Utc};
 use common::types::TelemetryDetail;
+use is_sorted::IsSorted;
 use itertools::Itertools as _;
 use parking_lot::Mutex;
 use schemars::JsonSchema;
@@ -383,6 +384,15 @@ fn merge_histograms(
     total_a: usize,
     total_b: usize,
 ) -> Vec<(f32, usize)> {
+    // TODO: drop is_sorted crate and use Iterator::is_sorted once it's stable
+    debug_assert!(
+        IsSorted::is_sorted(&mut a.iter().map(|(le, _)| le)),
+        "Boundaries are not sorted"
+    );
+    debug_assert!(
+        IsSorted::is_sorted(&mut b.iter().map(|(le, _)| le)),
+        "Boundaries are not sorted"
+    );
     let unique_boundaries =
         itertools::merge(a.iter().map(|(le, _)| le), b.iter().map(|(le, _)| le))
             .dedup()
