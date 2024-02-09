@@ -1,5 +1,6 @@
 use std::cmp;
 use std::collections::{hash_map, HashMap};
+use std::fmt::{self, Display};
 use std::path::Path;
 
 use api::grpc::qdrant::RecoveryPointClockTag;
@@ -169,6 +170,18 @@ impl RecoveryPoint {
                 .entry(*key)
                 .or_insert_with(|| clock.current_tick);
         }
+    }
+}
+
+impl Display for RecoveryPoint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let entries = self
+            .clocks
+            .iter()
+            .map(|(key, tick)| format!("{}({}): {tick})", key.peer_id, key.clock_id))
+            .collect::<Vec<_>>()
+            .join(", ");
+        write!(f, "RecoveryPoint [ {entries} ]")
     }
 }
 
