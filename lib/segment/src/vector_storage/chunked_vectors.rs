@@ -7,7 +7,7 @@ use std::path::Path;
 
 use common::types::PointOffsetType;
 
-use crate::common::vector_utils::TrySetCapacityExact;
+use crate::common::vector_utils::{TrySetCapacity, TrySetCapacityExact};
 
 // chunk size in bytes
 const CHUNK_SIZE: usize = 32 * 1024 * 1024;
@@ -66,9 +66,35 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
 
     pub fn insert(&mut self, key: PointOffsetType, vector: &[T]) -> Result<(), TryReserveError> {
         let key = key as usize;
-        self.len = max(self.len, key + 1);
-        self.chunks
-            .resize_with(self.len.div_ceil(self.chunk_capacity), Vec::new);
+        let desired_capacity = self.chunk_capacity * self.dim;
+        let new_len = max(self.len, key + 1);
+        let chunks_len = new_len.div_ceil(self.chunk_capacity);
+
+        if chunks_len > self.chunks.len() {
+            // All chunks except the last one should be fully allocated.
+            // If we are going to add new chunks, resize last one which may be partially allocated.
+            if let Some(last_chunk) = self.chunks.last_mut() {
+                last_chunk.try_set_capacity_exact(desired_capacity)?;
+                last_chunk.resize_with(desired_capacity, T::default);
+            }
+
+            self.chunks.try_set_capacity(chunks_len)?;
+
+            let new_chunks = chunks_len - self.chunks.len();
+            let skipped_chunks = new_chunks - 1;
+
+            // All skipped chunks should be fully allocated.
+            for _ in 0..skipped_chunks {
+                let mut chunk = Vec::new();
+                chunk.try_set_capacity_exact(desired_capacity)?;
+                chunk.resize_with(desired_capacity, T::default);
+                self.chunks.push(chunk);
+            }
+
+            // Add new chunk with lower capacity.
+            self.chunks.push(Default::default());
+            assert_eq!(self.chunks.len(), chunks_len);
+        }
 
         let chunk_idx = key / self.chunk_capacity;
         let chunk_data = &mut self.chunks[chunk_idx];
@@ -87,7 +113,6 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
         if chunk_data.len() < idx + self.dim {
             // If the chunk is not the first one, allocate it fully on first use
             if chunk_idx != 0 {
-                let desired_capacity = self.chunk_capacity * self.dim;
                 chunk_data.try_set_capacity_exact(desired_capacity)?;
             }
             chunk_data.resize_with(idx + self.dim, T::default);
@@ -95,6 +120,10 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
 
         let data = &mut chunk_data[idx..idx + self.dim];
         data.copy_from_slice(vector);
+
+        // Update `self.len` only after the vector is successfully inserted.
+        // In case of OOM, `self.len` will not be updated.
+        self.len = new_len;
 
         Ok(())
     }
@@ -180,5 +209,27 @@ impl quantization::EncodedStorageBuilder<ChunkedVectors<u8>> for ChunkedVectors<
         // Memory for ChunkedVectors are already pre-allocated,
         // so we do not expect any errors here.
         self.push(other).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_chunked_vectors_with_skipped_chunks() {
+        let mut vectors = ChunkedVectors::new(3);
+        vectors.insert(0, &[1, 2, 3]).unwrap();
+        vectors.insert(10_000_000, &[4, 5, 6]).unwrap();
+        assert!(vectors.chunks.len() > 3);
+
+        assert_eq!(vectors.get(0), &[1, 2, 3]);
+        assert_eq!(vectors.get(10_000_000), &[4, 5, 6]);
+
+        // check if first chunk is fully allocated
+        assert_eq!(vectors.get(100), &[0, 0, 0]);
+
+        // check if middle chunk is fully allocated
+        assert_eq!(vectors.get(5_000_000), &[0, 0, 0]);
     }
 }
