@@ -95,7 +95,7 @@ impl Encodable for FloatPayloadType {
 /// Encodes timestamps as i64 in microseconds
 impl Encodable for DateTimePayloadType {
     fn encode_key(&self, id: PointOffsetType) -> Vec<u8> {
-        encode_i64_key_ascending(self.timestamp_micros(), id)
+        encode_i64_key_ascending(self.timestamp(), id)
     }
 
     fn decode_key(key: &[u8]) -> (PointOffsetType, Self) {
@@ -110,11 +110,11 @@ impl Encodable for DateTimePayloadType {
                 NaiveDateTime::UNIX_EPOCH
             }),
         );
-        (id, datetime)
+        (id, datetime.into())
     }
 
     fn cmp_encoded(&self, other: &Self) -> std::cmp::Ordering {
-        self.timestamp_micros().cmp(&other.timestamp_micros())
+        self.timestamp().cmp(&other.timestamp())
     }
 }
 
@@ -238,7 +238,7 @@ impl<T: Encodable + Numericable + Default> NumericIndex<T> {
         let range = match range {
             RangeInterface::Float(float_range) => float_range.map(T::from_f64),
             RangeInterface::DateTime(datetime_range) => {
-                datetime_range.map(|dt| T::from_i64(dt.timestamp_micros()))
+                datetime_range.map(|dt| T::from_i64(dt.timestamp()))
             }
         };
 
@@ -346,7 +346,7 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndex<T>
         let (start_bound, end_bound) = match range_cond {
             RangeInterface::Float(float_range) => float_range.map(T::from_f64),
             RangeInterface::DateTime(datetime_range) => {
-                datetime_range.map(|dt| T::from_i64(dt.timestamp_micros()))
+                datetime_range.map(|dt| T::from_i64(dt.timestamp()))
             }
         }
         .as_index_key_bounds();
@@ -486,7 +486,7 @@ impl ValueIndexer<DateTimePayloadType> for NumericIndex<IntPayloadType> {
     ) -> OperationResult<()> {
         match self {
             NumericIndex::Mutable(index) => {
-                index.add_many_to_list(id, values.into_iter().map(|x| x.timestamp_micros()))
+                index.add_many_to_list(id, values.into_iter().map(|x| x.timestamp()))
             }
             NumericIndex::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable numeric index",
@@ -537,7 +537,7 @@ where
         let range = match range {
             RangeInterface::Float(float_range) => float_range.map(T::from_f64),
             RangeInterface::DateTime(datetime_range) => {
-                datetime_range.map(|dt| T::from_i64(dt.timestamp_micros()))
+                datetime_range.map(|dt| T::from_i64(dt.timestamp()))
             }
         };
         let (start_bound, end_bound) = range.as_index_key_bounds();

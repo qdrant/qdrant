@@ -267,7 +267,8 @@ mod tests {
     use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
     use crate::payload_storage::PayloadStorage;
     use crate::types::{
-        FieldCondition, GeoBoundingBox, GeoPoint, PayloadField, Range, ValuesCount,
+        try_parse_datetime, FieldCondition, GeoBoundingBox, GeoPoint, PayloadField, Range,
+        ValuesCount,
     };
 
     #[test]
@@ -382,34 +383,18 @@ mod tests {
         let shipped_in_february = Condition::Field(FieldCondition::new_datetime_range(
             "shipped_at".to_string(),
             Range {
-                lt: Some(
-                    chrono::DateTime::parse_from_rfc3339("2020-03-01T00:00:00Z")
-                        .unwrap()
-                        .into(),
-                ),
+                lt: Some(try_parse_datetime("2020-03-01T00:00:00Z").unwrap()),
                 gt: None,
-                gte: Some(
-                    chrono::DateTime::parse_from_rfc3339("2020-02-01T00:00:00Z")
-                        .unwrap()
-                        .into(),
-                ),
+                gte: Some(try_parse_datetime("2020-02-01T00:00:00Z").unwrap()),
                 lte: None,
             },
         ));
         let shipped_in_march = Condition::Field(FieldCondition::new_datetime_range(
             "shipped_at".to_string(),
             Range {
-                lt: Some(
-                    chrono::DateTime::parse_from_rfc3339("2020-04-01T00:00:00Z")
-                        .unwrap()
-                        .into(),
-                ),
+                lt: Some(try_parse_datetime("2020-04-01T00:00:00Z").unwrap()),
                 gt: None,
-                gte: Some(
-                    chrono::DateTime::parse_from_rfc3339("2020-03-01T00:00:00Z")
-                        .unwrap()
-                        .into(),
-                ),
+                gte: Some(try_parse_datetime("2020-03-01T00:00:00Z").unwrap()),
                 lte: None,
             },
         ));

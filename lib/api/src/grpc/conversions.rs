@@ -1311,18 +1311,18 @@ pub fn naive_date_time_to_proto(date_time: NaiveDateTime) -> prost_wkt_types::Ti
     }
 }
 
-pub fn date_time_to_proto(date_time: chrono::DateTime<chrono::Utc>) -> prost_wkt_types::Timestamp {
-    naive_date_time_to_proto(date_time.naive_utc())
+pub fn date_time_to_proto(date_time: DateTimePayloadType) -> prost_wkt_types::Timestamp {
+    naive_date_time_to_proto(date_time.0.naive_utc())
 }
 
 pub fn date_time_from_proto(
     date_time: prost_wkt_types::Timestamp,
-) -> Result<chrono::DateTime<chrono::Utc>, Status> {
+) -> Result<DateTimePayloadType, Status> {
     chrono::NaiveDateTime::from_timestamp_opt(
         date_time.seconds,
         date_time.nanos.try_into().unwrap_or(0),
     )
-    .map(|naive_date_time| chrono::Utc.from_utc_datetime(&naive_date_time))
+    .map(|naive_date_time| chrono::Utc.from_utc_datetime(&naive_date_time).into())
     .ok_or_else(|| Status::invalid_argument(format!("Unable to parse timestamp: {date_time}")))
 }
 
