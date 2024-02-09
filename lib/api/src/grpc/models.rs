@@ -4,6 +4,10 @@ use schemars::JsonSchema;
 use serde;
 use serde::{Deserialize, Serialize};
 
+pub fn get_git_commit_id() -> Option<&'static str> {
+    option_env!("GIT_COMMIT_ID")
+}
+
 #[derive(Serialize, Deserialize, JsonSchema)]
 pub struct VersionInfo {
     pub title: String,
@@ -17,7 +21,7 @@ impl Default for VersionInfo {
         VersionInfo {
             title: "qdrant - vector search engine".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
-            commit: option_env!("GIT_COMMIT_ID").map(ToString::to_string),
+            commit: get_git_commit_id().map(ToString::to_string),
         }
     }
 }
