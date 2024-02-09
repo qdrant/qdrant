@@ -7,6 +7,7 @@ mod tests;
 use std::cmp::{max, min};
 use std::ops::Bound;
 use std::ops::Bound::{Excluded, Included, Unbounded};
+use std::str::FromStr;
 use std::sync::Arc;
 
 use chrono::{NaiveDateTime, TimeZone};
@@ -33,8 +34,8 @@ use crate::index::key_encoding::{
 };
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
-    try_parse_datetime, DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType,
-    PayloadKeyType, Range, RangeInterface,
+    DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, PayloadKeyType, Range,
+    RangeInterface,
 };
 
 const HISTOGRAM_MAX_BUCKET_SIZE: usize = 10_000;
@@ -495,7 +496,7 @@ impl ValueIndexer<DateTimePayloadType> for NumericIndex<IntPayloadType> {
     }
 
     fn get_value(&self, value: &Value) -> Option<DateTimePayloadType> {
-        try_parse_datetime(value.as_str()?)
+        DateTimePayloadType::from_str(value.as_str()?).ok()
     }
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {

@@ -65,7 +65,7 @@ impl<'de> Deserialize<'de> for DateTimeWrapper {
         D: Deserializer<'de>,
     {
         let str_datetime = <&str>::deserialize(deserializer)?;
-        let parse_result = try_parse_datetime(str_datetime);
+        let parse_result = DateTimePayloadType::from_str(str_datetime).ok();
         match parse_result {
             Some(datetime) => Ok(datetime),
             None => Err(serde::de::Error::custom(format!(
@@ -1409,36 +1409,32 @@ pub struct Range<T> {
     /// point.key <= range.lte
     pub lte: Option<T>,
 }
+impl FromStr for DateTimePayloadType {
+    type Err = chrono::ParseError;
 
-pub fn try_parse_datetime(s: &str) -> Option<DateTimePayloadType> {
-    // Attempt to parse the input string in RFC 3339 format
-    if let Ok(datetime) = chrono::DateTime::parse_from_rfc3339(s) {
-        return Some(chrono::DateTime::<chrono::Utc>::from(datetime).into());
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // Attempt to parse the input string in RFC 3339 format
+        if let Ok(datetime) = chrono::DateTime::parse_from_rfc3339(s)
+            .map(|dt| chrono::DateTime::<chrono::Utc>::from(dt).into())
+        {
+            return Ok(datetime);
+        }
+
+        // Attempt to parse the input string in the specified formats:
+        // - YYYY-MM-DD'T'HH:MM:SS (without timezone or Z)
+        // - YYYY-MM-DD HH:MM:SS
+        // - YYYY-MM-DD HH:MM
+        // - YYYY-MM-DD
+        // See: <https://github.com/qdrant/qdrant/issues/3529>
+        let datetime = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S")
+            .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S"))
+            .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M"))
+            .or_else(|_| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").map(Into::into))?;
+
+        // Convert the parsed NaiveDateTime to a DateTime<Utc>
+        let datetime_utc = datetime.and_utc().into();
+        Ok(datetime_utc)
     }
-
-    // Attempt to parse the input string in the specified formats:
-    // - YYYY-MM-DD'T'HH:MM:SS (without timezone or Z)
-    // - YYYY-MM-DD HH:MM:SS
-    // - YYYY-MM-DD HH:MM
-    // - YYYY-MM-DD
-    // See: <https://github.com/qdrant/qdrant/issues/3529>
-    let datetime = if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S")
-    {
-        naive
-    } else if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
-        naive
-    } else if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M") {
-        naive
-    } else if let Ok(naive) = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d") {
-        naive.into()
-    } else {
-        // parse error, return none
-        return None;
-    };
-
-    // Convert the parsed NaiveDateTime to a DateTime<Utc>
-    let datetime_utc = datetime.and_utc().into();
-    Some(datetime_utc)
 }
 
 impl<T: Copy> Range<T> {
