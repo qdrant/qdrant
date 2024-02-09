@@ -144,4 +144,27 @@ mod tests {
         assert_eq!(clock_set.get_clock().tick_once(), 3);
         assert_eq!(clock_set.get_clock().tick_once(), 4);
     }
+
+    /// Test a single clock, but tick it multiple times on the same guard.
+    #[test]
+    fn test_clock_set_single_tick_twice() {
+        let mut clock_set = ClockSet::new();
+
+        // Don't tick from 0 unless we explicitly advance
+        {
+            let mut clock = clock_set.get_clock();
+            assert_eq!(clock.tick_once(), 0);
+            assert_eq!(clock.tick_once(), 0);
+            clock.advance_to(0);
+        }
+
+        // Following ticks should increment
+        {
+            let mut clock = clock_set.get_clock();
+            assert_eq!(clock.tick_once(), 1);
+            assert_eq!(clock.tick_once(), 2);
+            assert_eq!(clock.tick_once(), 3);
+            assert_eq!(clock.tick_once(), 4);
+        }
+    }
 }
