@@ -124,6 +124,9 @@ impl Clock {
 
 #[cfg(test)]
 mod tests {
+    use rand::prelude::*;
+    use std::iter;
+
     use super::*;
 
     /// Tick a single clock, it should increment after we advance it from 0 (or higher).
@@ -368,6 +371,82 @@ mod tests {
             assert_eq!(clock3.tick_once(), 3);
             assert_eq!(clock4.tick_once(), 2);
             assert_eq!(clock5.tick_once(), 0);
+        }
+    }
+
+    #[test]
+    fn test_clock_set_many() {
+        const N: usize = 5000;
+
+        let mut clock_set = ClockSet::new();
+
+        // Tick all clocks past 0
+        {
+            let mut clocks = iter::repeat_with(|| clock_set.get_clock())
+                .take(N)
+                .collect::<Vec<_>>();
+            clocks.shuffle(&mut rand::thread_rng());
+
+            for clock in &mut clocks {
+                assert_eq!(clock.tick_once(), 0);
+                clock.advance_to(0);
+            }
+        }
+
+        // Tick all clocks 10 times
+        {
+            for tick in 0..10 {
+                let mut clocks = iter::repeat_with(|| clock_set.get_clock())
+                    .take(N)
+                    .collect::<Vec<_>>();
+                clocks.shuffle(&mut rand::thread_rng());
+
+                for clock in &mut clocks {
+                    assert_eq!(clock.tick_once(), 1 + tick);
+                }
+            }
+        }
+
+        // Now the first 10% gets stuck
+        let mut stuck_clocks = iter::repeat_with(|| clock_set.get_clock())
+            .take(N / 10)
+            .collect::<Vec<_>>();
+        for clock in stuck_clocks.iter_mut() {
+            assert_eq!(clock.tick_once(), 11);
+        }
+
+        // Tick all other clocks 10 times
+        {
+            for tick in 0..10 {
+                let mut clocks = iter::repeat_with(|| clock_set.get_clock())
+                    .take(N - (N / 10))
+                    .collect::<Vec<_>>();
+                clocks.shuffle(&mut rand::thread_rng());
+
+                for clock in clocks.iter_mut() {
+                    assert_eq!(clock.tick_once(), 11 + tick);
+                }
+            }
+        }
+
+        // All stuck clocks resolve
+        drop(stuck_clocks);
+
+        // Test all clocks
+        {
+            let mut stuck_clocks = iter::repeat_with(|| clock_set.get_clock())
+                .take(N / 10)
+                .collect::<Vec<_>>();
+            let mut clocks = iter::repeat_with(|| clock_set.get_clock())
+                .take(N - (N / 10))
+                .collect::<Vec<_>>();
+
+            for clock in stuck_clocks.iter_mut() {
+                assert_eq!(clock.tick_once(), 12);
+            }
+            for clock in clocks.iter_mut() {
+                assert_eq!(clock.tick_once(), 21);
+            }
         }
     }
 }
