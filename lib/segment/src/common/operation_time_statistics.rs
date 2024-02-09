@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 
 use chrono::{DateTime, SubsecRound, Utc};
 use common::types::TelemetryDetail;
+use itertools::Itertools as _;
 use parking_lot::Mutex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -344,7 +345,11 @@ fn convert_histogram(
     counts: &[usize],
     total_count: usize,
 ) -> Vec<(f32, usize)> {
-    let mut result = Vec::new();
+    let rough_len_estimation = std::cmp::min(
+        le_boundaries.len(),
+        counts.iter().filter(|&&c| c != 0).count() * 2,
+    );
+    let mut result = Vec::with_capacity(rough_len_estimation);
     let mut cumulative_count = 0;
     let mut prev = None;
     for (idx, &le) in le_boundaries.iter().enumerate() {
@@ -378,9 +383,13 @@ fn merge_histograms(
     total_a: usize,
     total_b: usize,
 ) -> Vec<(f32, usize)> {
+    let unique_boundaries =
+        itertools::merge(a.iter().map(|(le, _)| le), b.iter().map(|(le, _)| le))
+            .dedup()
+            .count();
+    let mut result = Vec::with_capacity(unique_boundaries);
     let mut it_a = a.iter().copied().peekable();
     let mut it_b = b.iter().copied().peekable();
-    let mut result = Vec::new();
     while it_a.peek().is_some() || it_b.peek().is_some() {
         let (a_le, a_count) = it_a.peek().copied().unwrap_or((f32::INFINITY, total_a));
         let (b_le, b_count) = it_b.peek().copied().unwrap_or((f32::INFINITY, total_b));
