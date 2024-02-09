@@ -140,11 +140,9 @@ impl Clock {
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[derive(Debug, thiserror::Error)]
+#[error("failed to load/store the clock map: {0}")]
 pub enum Error {
-    #[error(transparent)]
     Io(#[from] io::Error),
-
-    #[error(transparent)]
     SerdeJson(#[from] serde_json::Error),
 }
 
