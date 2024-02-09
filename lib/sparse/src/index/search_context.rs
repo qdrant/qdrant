@@ -29,7 +29,7 @@ pub struct SearchContext<'a, 'b> {
     result_queue: FixedLengthPriorityQueue<ScoredPointOffset>, // keep the largest elements and peek smallest
     min_record_id: Option<PointOffsetType>, // min_record_id ids across all posting lists
     max_record_id: PointOffsetType,         // max_record_id ids across all posting lists
-    handle: PooledScoresHandle<'b>,         // memory handle used scoring batches
+    pooled: PooledScoresHandle<'b>,         // handle to pooled scores
     use_pruning: bool,
 }
 
@@ -38,7 +38,7 @@ impl<'a, 'b> SearchContext<'a, 'b> {
         query: SparseVector,
         top: usize,
         inverted_index: &'a impl InvertedIndex,
-        handle: PooledScoresHandle<'b>,
+        pooled: PooledScoresHandle<'b>,
         is_stopped: &'a AtomicBool,
     ) -> SearchContext<'a, 'b> {
         let mut postings_iterators = Vec::new();
@@ -84,7 +84,7 @@ impl<'a, 'b> SearchContext<'a, 'b> {
             result_queue,
             min_record_id,
             max_record_id,
-            handle,
+            pooled,
             use_pruning,
         }
     }
@@ -135,8 +135,8 @@ impl<'a, 'b> SearchContext<'a, 'b> {
     ) {
         // init batch scores
         let batch_len = batch_last_id - batch_start_id + 1;
-        self.handle.scores.clear(); // keep underlying allocated memory
-        self.handle.scores.resize(batch_len as usize, 0.0);
+        self.pooled.scores.clear(); // keep underlying allocated memory
+        self.pooled.scores.resize(batch_len as usize, 0.0);
 
         for posting in self.postings_iterators.iter_mut() {
             // offset at which the posting list stops contributing to the batch (relative to the batch start)
@@ -156,7 +156,7 @@ impl<'a, 'b> SearchContext<'a, 'b> {
                 let element_score = element.weight * posting.query_weight;
                 // update score for id
                 let local_id = (element_id - batch_start_id) as usize;
-                self.handle.scores[local_id] += element_score;
+                self.pooled.scores[local_id] += element_score;
             }
             // advance posting list iterator
             match posting_stopped_at {
@@ -177,7 +177,7 @@ impl<'a, 'b> SearchContext<'a, 'b> {
         } else {
             None
         };
-        for (local_index, &score) in self.handle.scores.iter().enumerate() {
+        for (local_index, &score) in self.pooled.scores.iter().enumerate() {
             if score != 0.0 && Some(score) > min_score_to_beat {
                 let real_id = batch_start_id + local_index as PointOffsetType;
                 // do not score if filter condition is not satisfied
@@ -412,10 +412,10 @@ mod tests {
     };
     use crate::index::posting_list::PostingList;
 
-    static TEST_SCORES_MEMORY_POOL: OnceLock<ScoresMemoryPool> = OnceLock::new();
+    static TEST_SCORES_POOL: OnceLock<ScoresMemoryPool> = OnceLock::new();
 
-    fn get_test_scores_handle() -> PooledScoresHandle<'static> {
-        TEST_SCORES_MEMORY_POOL
+    fn get_pooled_scores() -> PooledScoresHandle<'static> {
+        TEST_SCORES_POOL
             .get_or_init(ScoresMemoryPool::default)
             .get()
     }
@@ -428,7 +428,7 @@ mod tests {
             SparseVector::default(), // empty query vector
             10,
             &index,
-            get_test_scores_handle(),
+            get_pooled_scores(),
             &is_stopped,
         );
         assert_eq!(search_context.search(&match_all), Vec::new());
@@ -448,7 +448,7 @@ mod tests {
             },
             10,
             inverted_index,
-            get_test_scores_handle(),
+            get_pooled_scores(),
             &is_stopped,
         );
 
@@ -508,7 +508,7 @@ mod tests {
             },
             10,
             &inverted_index_ram,
-            get_test_scores_handle(),
+            get_pooled_scores(),
             &is_stopped,
         );
 
@@ -545,7 +545,7 @@ mod tests {
             },
             10,
             &inverted_index_ram,
-            get_test_scores_handle(),
+            get_pooled_scores(),
             &is_stopped,
         );
 
@@ -581,7 +581,7 @@ mod tests {
             },
             3,
             inverted_index,
-            get_test_scores_handle(),
+            get_pooled_scores(),
             &is_stopped,
         );
 
@@ -610,7 +610,7 @@ mod tests {
             },
             4,
             inverted_index,
-            get_test_scores_handle(),
+            get_pooled_scores(),
             &is_stopped,
         );
 
@@ -682,7 +682,7 @@ mod tests {
             },
             1,
             &inverted_index_ram,
-            get_test_scores_handle(),
+            get_pooled_scores(),
             &is_stopped,
         );
 
@@ -716,7 +716,7 @@ mod tests {
             },
             1,
             &inverted_index_ram,
-            get_test_scores_handle(),
+            get_pooled_scores(),
             &is_stopped,
         );
 
@@ -757,7 +757,7 @@ mod tests {
             },
             1,
             &inverted_index_ram,
-            get_test_scores_handle(),
+            get_pooled_scores(),
             &is_stopped,
         );
 
@@ -806,7 +806,7 @@ mod tests {
             },
             3,
             &inverted_index_ram,
-            get_test_scores_handle(),
+            get_pooled_scores(),
             &is_stopped,
         );
 
@@ -843,7 +843,7 @@ mod tests {
             },
             3,
             &inverted_index_ram,
-            get_test_scores_handle(),
+            get_pooled_scores(),
             &is_stopped,
         );
 
@@ -884,7 +884,7 @@ mod tests {
             },
             3,
             &inverted_index_ram,
-            get_test_scores_handle(),
+            get_pooled_scores(),
             &is_stopped,
         );
 

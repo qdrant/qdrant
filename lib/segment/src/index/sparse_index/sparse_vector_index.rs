@@ -85,7 +85,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
 
         let searches_telemetry = SparseSearchesTelemetry::new();
         let path = path.to_path_buf();
-        let sparse_memory_pool = ScoresMemoryPool::new();
+        let scores_memory_pool = ScoresMemoryPool::new();
         Ok(Self {
             config,
             id_tracker,
@@ -96,7 +96,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             searches_telemetry,
             is_appendable,
             indices_tracker,
-            scores_memory_pool: sparse_memory_pool,
+            scores_memory_pool,
         })
     }
 
