@@ -156,6 +156,30 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
         })
     }
 
+    /// Read all records from newest to oldest
+    ///
+    /// Normally this only iterates over our logical WAL, meaning all acknowledged records are
+    /// excluded. If `with_physical` is set to `true`, it will also iterate over all acknowledged
+    /// records we still have on disk.
+    pub fn read_from_last(&'s self, with_physical: bool) -> impl Iterator<Item = (u64, R)> + 's {
+        let first_index = if with_physical {
+            self.first_index()
+        } else {
+            // TODO: use first physical once queue proxy changes are merged
+            #[allow(clippy::if_same_then_else)]
+            self.first_index()
+        };
+        let last_index = self.last_index();
+
+        (first_index..=last_index).rev().map(move |idx| {
+            let record_bin = self.wal.entry(idx).expect("Can't read entry from WAL");
+            let record: R = serde_cbor::from_slice(&record_bin)
+                .or_else(|_err| rmp_serde::from_slice(&record_bin))
+                .expect("Can't deserialize entry, probably corrupted WAL on version mismatch");
+            (idx, record)
+        })
+    }
+
     /// Inform WAL, that records older than `until_index` are no longer required.
     /// If it is possible, WAL will remove unused files.
     ///
