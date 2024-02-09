@@ -121,3 +121,27 @@ impl Clock {
         self.available.store(true, Ordering::Relaxed);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Tick a single clock, it should increment after we advance it from 0 (or higher).
+    #[test]
+    fn test_clock_set_single_tick() {
+        let mut clock_set = ClockSet::new();
+
+        // Don't tick from 0 unless we explicitly advance
+        assert_eq!(clock_set.get_clock().tick_once(), 0);
+        assert_eq!(clock_set.get_clock().tick_once(), 0);
+        assert_eq!(clock_set.get_clock().tick_once(), 0);
+
+        clock_set.get_clock().advance_to(0);
+
+        // Following ticks should increment
+        assert_eq!(clock_set.get_clock().tick_once(), 1);
+        assert_eq!(clock_set.get_clock().tick_once(), 2);
+        assert_eq!(clock_set.get_clock().tick_once(), 3);
+        assert_eq!(clock_set.get_clock().tick_once(), 4);
+    }
+}
