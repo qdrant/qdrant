@@ -1,8 +1,8 @@
 use std::collections::{hash_map, HashMap};
-use std::io::Write as _;
 use std::path::Path;
-use std::{cmp, fs, io};
+use std::{cmp, io};
 
+use ::io::file_operations;
 use serde::{Deserialize, Serialize};
 
 use crate::operations::types::CollectionError;
@@ -29,22 +29,12 @@ impl ClockMap {
     }
 
     pub fn load(path: &Path) -> Result<Self> {
-        let file = fs::File::open(path)?;
-        let clock_map = serde_json::from_reader(io::BufReader::new(file))?;
+        let clock_map = file_operations::read_json(path)?;
         Ok(clock_map)
     }
 
     pub fn store(&self, path: &Path) -> Result<()> {
-        let file = atomicwrites::AtomicFile::new(path, atomicwrites::AllowOverwrite);
-
-        file.write(|file| -> Result<_> {
-            let mut writer = io::BufWriter::new(file);
-            serde_json::to_writer(&mut writer, &self)?;
-            writer.flush()?;
-
-            Ok(())
-        })?;
-
+        file_operations::atomic_save_json(path, self)?;
         Ok(())
     }
 
@@ -158,11 +148,12 @@ pub enum Error {
     SerdeJson(#[from] serde_json::Error),
 }
 
-impl From<atomicwrites::Error<Error>> for Error {
-    fn from(err: atomicwrites::Error<Error>) -> Self {
+impl From<file_operations::Error> for Error {
+    fn from(err: file_operations::Error) -> Self {
         match err {
-            atomicwrites::Error::Internal(err) => err.into(),
-            atomicwrites::Error::User(err) => err,
+            file_operations::Error::Io(err) => err.into(),
+            file_operations::Error::SerdeJson(err) => err.into(),
+            _ => unreachable!(),
         }
     }
 }
