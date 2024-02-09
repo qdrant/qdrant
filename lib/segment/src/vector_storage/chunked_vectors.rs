@@ -81,7 +81,7 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
             self.chunks.try_set_capacity(chunks_len)?;
             // Allocate new chunks in range [chunks.len()..chunks_len - 1).
             // All this new chunks will be fully allocated.
-            for _ in self.chunks.len() + 1..chunks_len {
+            for _ in self.chunks.len()..chunks_len - 1 {
                 let mut chunk = Vec::new();
                 chunk.try_set_capacity_exact(desired_capacity)?;
                 chunk.resize_with(desired_capacity, T::default);
