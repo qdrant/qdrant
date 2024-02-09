@@ -204,4 +204,105 @@ mod tests {
         clock_set.get_clock().advance_to(1);
         assert_eq!(clock_set.get_clock().tick_once(), 6);
     }
+
+    #[test]
+    fn test_clock_multi_tick() {
+        let mut clock_set = ClockSet::new();
+
+        // 2 parallel operations, that fails and doesn't advance
+        {
+            let mut clock1 = clock_set.get_clock();
+            let mut clock2 = clock_set.get_clock();
+            assert_eq!(clock1.tick_once(), 0);
+            assert_eq!(clock2.tick_once(), 0);
+        }
+
+        // 2 parallel operations
+        {
+            let mut clock1 = clock_set.get_clock();
+            let mut clock2 = clock_set.get_clock();
+            assert_eq!(clock1.tick_once(), 0);
+            assert_eq!(clock2.tick_once(), 0);
+            clock1.advance_to(0);
+            clock2.advance_to(0);
+        }
+
+        // 1 operation
+        {
+            let mut clock1 = clock_set.get_clock();
+            assert_eq!(clock1.tick_once(), 1);
+            clock1.advance_to(1);
+        }
+
+        // 1 operation, without advancing should still tick
+        {
+            let mut clock1 = clock_set.get_clock();
+            assert_eq!(clock1.tick_once(), 2);
+        }
+
+        // 2 parallel operations
+        {
+            let mut clock1 = clock_set.get_clock();
+            let mut clock2 = clock_set.get_clock();
+            assert_eq!(clock1.tick_once(), 3);
+            assert_eq!(clock2.tick_once(), 1);
+            clock1.advance_to(3);
+            clock2.advance_to(1);
+        }
+
+        // 3 parallel operations, but clock 2 was much newer on some node
+        {
+            let mut clock1 = clock_set.get_clock();
+            let mut clock2 = clock_set.get_clock();
+            let mut clock3 = clock_set.get_clock();
+            assert_eq!(clock1.tick_once(), 4);
+            assert_eq!(clock2.tick_once(), 2);
+            assert_eq!(clock3.tick_once(), 0);
+            clock1.advance_to(4);
+            clock2.advance_to(10);
+            clock3.advance_to(0);
+        }
+
+        // 3 parallel operations, advancing in a different order should not matter
+        {
+            let mut clock1 = clock_set.get_clock();
+            let mut clock2 = clock_set.get_clock();
+            let mut clock3 = clock_set.get_clock();
+            assert_eq!(clock1.tick_once(), 5);
+            assert_eq!(clock2.tick_once(), 11);
+            assert_eq!(clock3.tick_once(), 1);
+            clock3.advance_to(1);
+            clock2.advance_to(11);
+            clock1.advance_to(5);
+        }
+
+        // 3 parallel operations, advancing just some should still tick all
+        {
+            let mut clock1 = clock_set.get_clock();
+            let mut clock2 = clock_set.get_clock();
+            let mut clock3 = clock_set.get_clock();
+            assert_eq!(clock1.tick_once(), 6);
+            assert_eq!(clock2.tick_once(), 12);
+            assert_eq!(clock3.tick_once(), 2);
+            clock2.advance_to(12);
+        }
+
+        // 1 operation
+        {
+            let mut clock1 = clock_set.get_clock();
+            assert_eq!(clock1.tick_once(), 7);
+        }
+
+        // Test final state of all clocks
+        {
+            let mut clock1 = clock_set.get_clock();
+            let mut clock2 = clock_set.get_clock();
+            let mut clock3 = clock_set.get_clock();
+            let mut clock4 = clock_set.get_clock();
+            assert_eq!(clock1.tick_once(), 8);
+            assert_eq!(clock2.tick_once(), 13);
+            assert_eq!(clock3.tick_once(), 3);
+            assert_eq!(clock4.tick_once(), 0);
+        }
+    }
 }
