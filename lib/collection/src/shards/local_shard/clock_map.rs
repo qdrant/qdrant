@@ -160,15 +160,53 @@ pub struct RecoveryPoint {
 }
 
 impl RecoveryPoint {
+    pub fn is_empty(&self) -> bool {
+        self.clocks.is_empty()
+    }
+
+    /// Check whether this recovery point has any higher clock value than `other`
+    ///
+    /// A clock in this recovery point that is not in `other` is always considered to be higher.
+    pub fn has_any_higher(&mut self, other: &Self) -> bool {
+        self.clocks.iter().any(|(key, tick)| {
+            other
+                .clocks
+                .get(key)
+                .map_or(true, |other_tick| *tick > *other_tick)
+        })
+    }
+
     /// Extend this recovery point with new clocks from `clock_map`
     ///
     /// Clocks that we already have in this recovery point are not updated, regardless of their
     /// tick value.
-    pub fn extend_with_missing_clocks(&mut self, clock_map: &ClockMap) {
-        for (key, clock) in &clock_map.clocks {
-            self.clocks
-                .entry(*key)
-                .or_insert_with(|| clock.current_tick);
+    pub fn extend_with_missing_clocks(&mut self, other: &Self) {
+        // Clocks known on our node, that are not in the recovery point, are unknown on the
+        // recovering node. Add them here with tick 0, so that we include all records for it
+        for key in other.clocks.keys() {
+            self.clocks.entry(*key).or_insert(0);
+        }
+    }
+
+    /// Remove clocks from this recovery point, if they are equal in `other`
+    pub fn remove_equal_clocks(&mut self, other: &Self) {
+        for (key, tick) in &other.clocks {
+            if let Some(other_tick) = self.clocks.get(key) {
+                if tick == other_tick {
+                    self.clocks.remove(key);
+                }
+            }
+        }
+    }
+
+    /// Remove a clock from this recovery point, if the given `clock_tag` describes an equal or
+    /// lower clock value.
+    pub fn remove_equal_or_lower(&mut self, clock_tag: ClockTag) {
+        let key = Key::from_tag(clock_tag);
+        if let Some(tick) = self.clocks.get(&key) {
+            if *tick >= clock_tag.clock_tick {
+                self.clocks.remove(&key);
+            }
         }
     }
 }

@@ -919,6 +919,62 @@ impl LocalShard {
     pub async fn shard_recovery_point(&self) -> RecoveryPoint {
         self.clock_map.lock().await.to_recovery_point()
     }
+
+    /// Resolve the WAL delta on the current shard for the given `recovery_point`
+    ///
+    /// The delta can be sent over to the node which the recovery point is from, to restore its
+    /// WAL making it consistent with the current shard.
+    ///
+    /// Returns a WAL record number from which the delta can be resolved. `None` if no delta could
+    /// be resolved.
+    pub async fn resolve_wal_delta(&self, mut recovery_point: RecoveryPoint) -> Option<u64> {
+        // TODO: validate this logic based on design document
+
+        // Create a snapshot of the last seen clocks on this node
+        let last_seen_snapshot = self.clock_map.lock().await.to_recovery_point();
+
+        // If our current node has any lower last seen clock than the recovery point specifies,
+        // we cannot resolve a WAL delta
+        if recovery_point.has_any_higher(&last_seen_snapshot) {
+            log::warn!(
+                "Cannot resolve WAL delta, recovery point has higher clocks than current shard"
+            );
+            return None;
+        }
+
+        // Extend clock map with missing clocks this node know about
+        // Ensure the recovering node gets records for a clock it might not have seen yet
+        recovery_point.extend_with_missing_clocks(&last_seen_snapshot);
+
+        // Remove clocks that are equal to the current last seen
+        // We don't have to transfer any record for these
+        // TODO: maybe we can also remove higher clocks, as the recovery node already has all data?
+        recovery_point.remove_equal_clocks(&last_seen_snapshot);
+
+        // TODO: check truncated clock values or each clock we have:
+        // TODO: - if truncated is higher, we cannot resolve diff
+
+        // TODO: do not warn, but trace?
+        log::warn!("Resolving WAL delta for: {recovery_point:?}");
+
+        // Scroll back over the WAL and find a record that covered all clocks
+        // Drain satisfied clocks from the recovery point until we have nothing left
+        let delta_from = self
+            .wal
+            .lock()
+            .read_from_last(true)
+            .filter_map(|(op_num, update)| update.clock_tag.map(|clock_tag| (op_num, clock_tag)))
+            // Skip forced clock tags
+            .filter(|(_, clock_tag)| !clock_tag.force)
+            // Keep scrolling until we have no clocks left
+            .find(|(_, clock_tag)| {
+                recovery_point.remove_equal_or_lower(*clock_tag);
+                recovery_point.is_empty()
+            })
+            .map(|(op_num, _)| op_num);
+
+        delta_from
+    }
 }
 
 impl Drop for LocalShard {
