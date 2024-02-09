@@ -127,15 +127,12 @@ pub struct Key {
 }
 
 impl Key {
-    pub fn new(peer_id: PeerId, clock_id: u32) -> Self {
+    fn new(peer_id: PeerId, clock_id: u32) -> Self {
         Self { peer_id, clock_id }
     }
 
-    pub fn from_tag(clock_tag: ClockTag) -> Self {
-        Self {
-            peer_id: clock_tag.peer_id,
-            clock_id: clock_tag.clock_id,
-        }
+    fn from_tag(clock_tag: ClockTag) -> Self {
+        Self::new(clock_tag.peer_id, clock_tag.clock_id)
     }
 }
 
