@@ -184,4 +184,24 @@ mod tests {
         clock_set.get_clock().advance_to(100);
         assert_eq!(clock_set.get_clock().tick_once(), 101);
     }
+
+    #[test]
+    fn test_clock_set_single_advance_low() {
+        let mut clock_set = ClockSet::new();
+
+        // Bring the clock up to 4
+        assert_eq!(clock_set.get_clock().tick_once(), 0);
+        clock_set.get_clock().advance_to(0);
+        assert_eq!(clock_set.get_clock().tick_once(), 1);
+        assert_eq!(clock_set.get_clock().tick_once(), 2);
+        assert_eq!(clock_set.get_clock().tick_once(), 3);
+        assert_eq!(clock_set.get_clock().tick_once(), 4);
+
+        // If we advance to a low number, just continue
+        clock_set.get_clock().advance_to(0);
+        assert_eq!(clock_set.get_clock().tick_once(), 5);
+
+        clock_set.get_clock().advance_to(1);
+        assert_eq!(clock_set.get_clock().tick_once(), 6);
+    }
 }
