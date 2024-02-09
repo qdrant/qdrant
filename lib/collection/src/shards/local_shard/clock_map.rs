@@ -106,7 +106,7 @@ impl ClockMap {
             clocks: self
                 .clocks
                 .iter()
-                .map(|(key, clock)| (*key, clock.current_tick.load(Ordering::Relaxed)))
+                .map(|(key, clock)| (*key, clock.current_tick))
                 .collect(),
         }
     }
@@ -167,7 +167,7 @@ impl RecoveryPoint {
         for (key, clock) in &clock_map.clocks {
             self.clocks
                 .entry(*key)
-                .or_insert_with(|| clock.current_tick.load(Ordering::Relaxed));
+                .or_insert_with(|| clock.current_tick);
         }
     }
 }
