@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # This script generate model definitions for OpenAPI 3.0 documentation
 
 set -e

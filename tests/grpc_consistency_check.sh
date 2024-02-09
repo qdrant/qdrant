@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Some gRPC files in this repository are generated and based upon other
 # sources. When these sources change, the generated files must be generated
 # (and committed) again. It is the task of the contributing user to do this
