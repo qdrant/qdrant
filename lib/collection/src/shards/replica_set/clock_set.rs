@@ -124,8 +124,9 @@ impl Clock {
 
 #[cfg(test)]
 mod tests {
-    use rand::prelude::*;
     use std::iter;
+
+    use rand::prelude::*;
 
     use super::*;
 
