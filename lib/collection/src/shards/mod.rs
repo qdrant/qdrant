@@ -19,6 +19,9 @@ pub mod telemetry;
 pub mod transfer;
 pub mod update_tracker;
 
+#[cfg(test)]
+mod test;
+
 use std::path::{Path, PathBuf};
 
 use shard::ShardId;
