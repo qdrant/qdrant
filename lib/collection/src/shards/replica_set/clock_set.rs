@@ -171,6 +171,7 @@ mod tests {
         }
     }
 
+    /// Advance a clock to a higher number, which should increase it.
     #[test]
     fn test_clock_set_single_advance_high() {
         let mut clock_set = ClockSet::new();
@@ -188,6 +189,7 @@ mod tests {
         assert_eq!(clock_set.get_clock().tick_once(), 101);
     }
 
+    /// Advance a clock to a lower number, which should not do anything.
     #[test]
     fn test_clock_set_single_advance_low() {
         let mut clock_set = ClockSet::new();
@@ -208,6 +210,7 @@ mod tests {
         assert_eq!(clock_set.get_clock().tick_once(), 6);
     }
 
+    /// Test multiple clocks in various configurations.
     #[test]
     fn test_clock_multi_tick() {
         let mut clock_set = ClockSet::new();
@@ -374,6 +377,7 @@ mod tests {
         }
     }
 
+    /// Test and increment a lot of clocks, but at some point 10% of the clocks gets stuck.
     #[test]
     fn test_clock_set_many() {
         const N: usize = 5000;
@@ -450,6 +454,7 @@ mod tests {
         }
     }
 
+    /// Test and increment a lot of clocks, but each iteration, we get on more clock stuck.
     #[test]
     fn test_clock_set_many_staggered_stuck() {
         const N: usize = 500;
