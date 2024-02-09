@@ -1,7 +1,9 @@
+use std::cmp::min;
 use std::env;
 use std::io::{stdout, IsTerminal};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
+use api::grpc::models::get_git_commit_id;
 use colored::{Color, ColoredString, Colorize};
 
 use crate::settings::Settings;
@@ -65,6 +67,23 @@ pub fn welcome(settings: &Settings) {
     println!("{}", paint(r#" \__, |\__,_|_|  \__,_|_| |_|\__| "#, true_color));
     println!("{}", paint(r#"    |_|                           "#, true_color));
     println!();
+
+    // Print current version and, if available, first 8 characters of the git commit hash
+    let git_commit_info = get_git_commit_id()
+        .map(|git_commit| format!(
+            ", {} {}",
+            "build:".truecolor(134, 186, 144),
+             &git_commit[..min(8, git_commit.len())].bold().truecolor(82, 139, 183)
+        ))
+        .unwrap_or_default();
+
+    println!("{} {}{}",
+             "Version:".truecolor(134, 186, 144),
+             env!("CARGO_PKG_VERSION").bold().truecolor(82, 139, 183),
+             git_commit_info
+            );
+
+    // Print link to web UI
     let ui_link = format!(
         "http{}://{}:{}/dashboard",
         if settings.service.enable_tls { "s" } else { "" },
