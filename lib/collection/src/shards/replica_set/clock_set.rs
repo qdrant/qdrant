@@ -305,4 +305,69 @@ mod tests {
             assert_eq!(clock4.tick_once(), 0);
         }
     }
+
+    /// Test a number of parallel operations with some running for a long time. Clocks are resolved
+    /// unordered.
+    #[test]
+    fn test_clock_set_long_running_unordered() {
+        let mut clock_set = ClockSet::new();
+
+        // Clock 1 runs for a long while
+        let mut clock1 = clock_set.get_clock();
+        assert_eq!(clock1.tick_once(), 0);
+
+        // 2 quick parallel operations
+        {
+            let mut clock2 = clock_set.get_clock();
+            let mut clock3 = clock_set.get_clock();
+            assert_eq!(clock2.tick_once(), 0);
+            assert_eq!(clock3.tick_once(), 0);
+            clock2.advance_to(0);
+            clock3.advance_to(0);
+        }
+
+        // Clock 2 runs for a long while
+        let clock2 = clock_set.get_clock();
+        assert_eq!(clock1.tick_once(), 0);
+
+        // 2 quick parallel operations
+        {
+            let mut clock3 = clock_set.get_clock();
+            let mut clock4 = clock_set.get_clock();
+            assert_eq!(clock3.tick_once(), 1);
+            assert_eq!(clock4.tick_once(), 0);
+            clock4.advance_to(0);
+        }
+
+        // Clock 1 finally resolves
+        clock1.advance_to(0);
+        drop(clock1);
+
+        // 3 quick parallel operations
+        {
+            let mut clock1 = clock_set.get_clock();
+            let mut clock3 = clock_set.get_clock();
+            let mut clock4 = clock_set.get_clock();
+            assert_eq!(clock1.tick_once(), 1);
+            assert_eq!(clock3.tick_once(), 2);
+            assert_eq!(clock4.tick_once(), 1);
+        }
+
+        // Clock 2 finally resolves
+        drop(clock2);
+
+        // Test final state of all clocks
+        {
+            let mut clock1 = clock_set.get_clock();
+            let mut clock2 = clock_set.get_clock();
+            let mut clock3 = clock_set.get_clock();
+            let mut clock4 = clock_set.get_clock();
+            let mut clock5 = clock_set.get_clock();
+            assert_eq!(clock1.tick_once(), 2);
+            assert_eq!(clock2.tick_once(), 1);
+            assert_eq!(clock3.tick_once(), 3);
+            assert_eq!(clock4.tick_once(), 2);
+            assert_eq!(clock5.tick_once(), 0);
+        }
+    }
 }
