@@ -449,4 +449,47 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_clock_set_many_staggered_stuck() {
+        const N: usize = 500;
+
+        let mut clock_set = ClockSet::new();
+
+        let mut stuck_clocks = Vec::new();
+
+        for i in 0..N {
+            let mut clock_to_stuck = clock_set.get_clock();
+            let mut clocks = iter::repeat_with(|| clock_set.get_clock())
+                .take(N - i - 1)
+                .collect::<Vec<_>>();
+
+            if clock_to_stuck.tick_once() == 0 {
+                clock_to_stuck.advance_to(0);
+            }
+
+            for clock in clocks.iter_mut() {
+                if clock.tick_once() == 0 {
+                    clock.advance_to(0);
+                }
+            }
+
+            stuck_clocks.push(clock_to_stuck);
+        }
+
+        // All stuck clocks resolve now
+        drop(stuck_clocks);
+
+        // Test all clocks
+        {
+            let mut clocks = iter::repeat_with(|| clock_set.get_clock())
+                .take(N)
+                .enumerate()
+                .collect::<Vec<_>>();
+
+            for (i, clock) in clocks.iter_mut() {
+                assert_eq!(clock.tick_once(), *i as u64 + 1);
+            }
+        }
+    }
 }
