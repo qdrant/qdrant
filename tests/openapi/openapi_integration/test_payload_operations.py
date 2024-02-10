@@ -248,7 +248,7 @@ def test_payload_operations():
             "key": ""
         }
     )
-    assert not response.ok
+    assert response.ok
 
     response = request_with_validation(
         api='/collections/{collection_name}/points/{id}',
@@ -256,7 +256,8 @@ def test_payload_operations():
         path_params={'collection_name': collection_name, 'id': 1},
     )
     assert response.ok
-    assert len(response.json()['result']['payload']) == 3
+    assert len(response.json()['result']['payload']) == 4
+    assert response.json()['result']['payload']['key6'] == "xxx"
 
     # set property of payload with top level
     response = request_with_validation(
@@ -264,7 +265,7 @@ def test_payload_operations():
         method="POST",
         path_params={'collection_name': collection_name},
         body={
-            "payload": {"key6": {"subkey": "xxx", "subkey2": {"subkey3": "xxx"}}},
+            "payload": {"key6": {"subkey": "xxx", "arraykey": [{"a1": {"a1k": "xxx"}}, {"a2": {"a2k": "xxx"}}], "subkey2": {"subkey3": "xxx"}}},
             "points": [1],
         }
     )
@@ -313,6 +314,50 @@ def test_payload_operations():
     assert response.ok
     assert len(response.json()['result']['payload']) == 4
     assert response.json()['result']['payload']["key6"]["subkey2"]["subkey3"] == "yyy"
+
+    # set property of payload with array index
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/payload',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "payload": {"a1k": "yyy"},
+            "points": [1],
+            "key": "key6.arraykey[0].a1",
+        }
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': 1},
+    )
+    assert response.ok
+    assert len(response.json()['result']['payload']) == 4
+    assert response.json()['result']['payload']["key6"]["arraykey"][0]["a1"]["a1k"] == "yyy"
+
+    # set property of payload with array full index
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/payload',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "payload": {"a2k": "yyy"},
+            "points": [1],
+            "key": "key6.arraykey[].a2",
+        }
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': 1},
+    )
+    assert response.ok
+    assert len(response.json()['result']['payload']) == 4
+    assert response.json()['result']['payload']["key6"]["arraykey"][1]["a2"]["a2k"] == "yyy"
 
     response = request_with_validation(
         api='/collections/{collection_name}/points/payload/delete',

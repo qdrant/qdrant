@@ -231,6 +231,106 @@ pub fn get_value_from_json_map_opt<'a>(
     }
 }
 
+pub fn set_value_to_json_map<'a>(
+    path: &str,
+    dest: &'a mut serde_json::Map<String, Value>,
+    src: &'a serde_json::Map<String, Value>,
+) {
+    // check if leaf path element
+    match path.split_once('.') {
+        Some((element, rest_path)) => {
+            // check if targeting array
+            match parse_array_path(element) {
+                Some((array_element_path, array_index)) => {
+                    set_by_array_path(array_element_path, array_index, Some(rest_path), dest, src)
+                }
+                None => {
+                    // no array notation
+                    match dest.get_mut(element) {
+                        Some(Value::Object(map)) => set_value_to_json_map(rest_path, map, src),
+                        _ => (),
+                    }
+                }
+            }
+        }
+        None => match parse_array_path(path) {
+            Some((array_element_path, array_index)) => {
+                set_by_array_path(array_element_path, array_index, None, dest, src)
+            }
+            None => {
+                if path.is_empty() {
+                    merge_map(dest, src);
+                } else {
+                    if let Some(v) = dest.get_mut(path) {
+                        if let Value::Object(map) = v {
+                            merge_map(map, src);
+                        }
+                    } else {
+
+                    }
+                }
+            },
+        },
+    }
+}
+
+// Merge source map into destination map
+pub fn merge_map(dest: &mut serde_json::Map<String, Value>, source: &serde_json::Map<String, Value>) {
+    for (key, value) in source {
+        match value {
+            Value::Null => dest.remove(key),
+            _ => dest.insert(key.to_owned(), value.to_owned()),
+        };
+    }
+}
+
+fn set_by_array_path<'a>(
+    array_path: &str,
+    array_index: Option<u32>,
+    rest_path: Option<&str>,
+    dest: &'a mut serde_json::Map<String, Value>,
+    src: &'a serde_json::Map<String, Value>,
+) {
+    match dest.get_mut(array_path) {
+        Some(Value::Array(array)) => {
+            for (i, value) in array.iter_mut().enumerate() {
+                if let Some(array_index) = array_index {
+                    if i == array_index as usize {
+                        if let Some(rest_path) = rest_path {
+                            if let Value::Object(map) = value {
+                                set_value_to_json_map(rest_path, map, src);
+                            } else {
+
+                            }
+                        } else {
+                            if let Value::Object(map) = value {
+                                merge_map(map, src);
+                            } else {
+
+                            }
+                        }
+                    }
+                } else {
+                    if let Some(rest_path) = rest_path {
+                        if let Value::Object(map) = value {
+                            set_value_to_json_map(rest_path, map, src);
+                        } else {
+
+                        }
+                    } else {
+                        if let Value::Object(map) =  value {
+                            merge_map(map, src);                       
+                        } else {
+
+                        } 
+                    }
+                }
+            }
+        }
+        _ => (),
+    }
+}
+
 /// Focus on value references according to path
 /// Flatten intermediate arrays but keep leaf array values on demand.
 /// E.g

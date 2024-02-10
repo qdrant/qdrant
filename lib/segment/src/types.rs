@@ -921,45 +921,12 @@ pub struct Payload(pub Map<String, Value>);
 
 impl Payload {
     pub fn merge(&mut self, value: &Payload) {
-        Self::merge_map(&mut self.0, value)
+        utils::merge_map(&mut self.0, &value.0)
     }
 
     pub fn merge_by_key(&mut self, value: &Payload, key: &str) -> OperationResult<()> {
-        let v = self.get_object_mut(key)?;
-        Self::merge_map(v, value);
+        utils::set_value_to_json_map(key, &mut self.0, &value.0);
         Ok(())
-    }
-
-    fn merge_map(dest: &mut Map<String, Value>, source: &Payload) {
-        for (key, value) in &source.0 {
-            match value {
-                Value::Null => dest.remove(key),
-                _ => dest.insert(key.to_owned(), value.to_owned()),
-            };
-        }
-    }
-
-    fn get_object_mut(&mut self, key: &str) -> OperationResult<&mut Map<String, Value>> {
-        let segs = key.split('.').collect::<Vec<&str>>();
-        if segs.is_empty() {
-            return Err(OperationError::WrongPayloadKey {
-                description: format!("Unexpected payload key: \"{key}\""),
-            });
-        }
-        let mut v = &mut self.0;
-        for seg in segs {
-            let v1 = v.get_mut(seg).ok_or(OperationError::WrongPayloadKey {
-                description: format!("Can't find payload key segment: \"{seg}\"."),
-            })?;
-            if let Value::Object(v2) = v1 {
-                v = v2;
-            } else {
-                return Err(OperationError::WrongPayloadKey {
-                    description: format!("Payload key segment: \"{seg}\" is not object."),
-                });
-            }
-        }
-        Ok(v)
     }
 
     pub fn remove(&mut self, path: &str) -> Vec<Value> {
