@@ -642,9 +642,9 @@ message UpdateBatchResponse {
 
 message Filter {
   repeated Condition should = 1; // At least one of those conditions should match
-  optional MinShould min_should = 2; // At least minimum amount of given conditions should match 
-  repeated Condition must = 3; // All conditions must match
-  repeated Condition must_not = 4; // All conditions must NOT match
+  repeated Condition must = 2; // All conditions must match
+  repeated Condition must_not = 3; // All conditions must NOT match
+  optional MinShould min_should = 4; // At least minimum amount of given conditions should match 
 }
 
 message MinShould {

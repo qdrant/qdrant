@@ -2026,7 +2026,7 @@ pub struct WithPayload {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default)]
-#[serde(deny_unknown_fields, rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
 pub struct MinShould {
     pub conditions: Vec<Condition>,
     pub min_count: usize,

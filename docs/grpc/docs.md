@@ -2112,9 +2112,9 @@ The JSON representation for `Value` is a JSON value.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | should | [Condition](#qdrant-Condition) | repeated | At least one of those conditions should match |
-| min_should | [MinShould](#qdrant-MinShould) | optional | At least minimum amount of given conditions should match |
 | must | [Condition](#qdrant-Condition) | repeated | All conditions must match |
 | must_not | [Condition](#qdrant-Condition) | repeated | All conditions must NOT match |
+| min_should | [MinShould](#qdrant-MinShould) | optional | At least minimum amount of given conditions should match |
 
 
 
