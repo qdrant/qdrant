@@ -381,6 +381,51 @@ def test_payload_operations():
     assert len(response.json()['result']['payload']) == 4
     assert response.json()['result']['payload']["key6"]["subkey7"]["key"] == "xxx"
 
+    # Idempotence test.
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/payload',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "payload": {"key": "xxx"},
+            "points": [9],
+            "key": "key",
+        }
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': 9},
+    )
+    assert response.ok
+    assert len(response.json()['result']['payload']) == 1
+    assert response.json()['result']['payload']["key"] == "xxx"
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/payload',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "payload": {"key": "xxx"},
+            "points": [9],
+            "key": "key",
+        }
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': 9},
+    )
+    assert response.ok
+    assert len(response.json()['result']['payload']) == 1
+    assert response.json()['result']['payload']["key"] == "xxx"
+
     response = request_with_validation(
         api='/collections/{collection_name}/points/payload/delete',
         method="POST",
