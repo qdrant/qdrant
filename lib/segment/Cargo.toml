@@ -74,6 +74,7 @@ sparse = { path = "../sparse" }
 
 tracing = { workspace = true, optional = true }
 macro_rules_attribute = "0.2.0"
+serde-untagged = "0.1.5"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 cgroups-rs = "0.3"

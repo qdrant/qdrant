@@ -4749,6 +4749,7 @@ dependencies = [
  "seahash",
  "semver",
  "serde",
+ "serde-untagged",
  "serde-value",
  "serde_cbor",
  "serde_json",
@@ -4778,6 +4779,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "870026e60fa08c69f064aa766c10f10b1d62db9ccd4d0abb206472bee0ce3b32"
 dependencies = [
  "serde_derive",
+]
+
+[[package]]
+name = "serde-untagged"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a160535368dfc353348e7eaa299156bd508c60c45a9249725f5f6d370d82a66"
+dependencies = [
+ "erased-serde",
+ "serde",
 ]
 
 [[package]]
@@ -5988,7 +5999,7 @@ dependencies = [
  "memmap2 0.9.4",
  "rand 0.8.5",
  "rand_distr",
- "rustix 0.37.27",
+ "rustix 0.38.28",
  "serde",
 ]
 
