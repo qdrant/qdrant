@@ -359,6 +359,28 @@ def test_payload_operations():
     assert len(response.json()['result']['payload']) == 4
     assert response.json()['result']['payload']["key6"]["arraykey"][1]["a2"]["a2k"] == "yyy"
 
+    # set property of payload with not exists key
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/payload',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "payload": {"key": "xxx"},
+            "points": [1],
+            "key": "key6.subkey7",
+        }
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': 1},
+    )
+    assert response.ok
+    assert len(response.json()['result']['payload']) == 4
+    assert response.json()['result']['payload']["key6"]["subkey7"]["key"] == "xxx"
+
     response = request_with_validation(
         api='/collections/{collection_name}/points/payload/delete',
         method="POST",

@@ -246,9 +246,13 @@ pub fn set_value_to_json_map<'a>(
                 }
                 None => {
                     // no array notation
-                    match dest.get_mut(element) {
-                        Some(Value::Object(map)) => set_value_to_json_map(rest_path, map, src),
-                        _ => (),
+                    if let Some(v) = dest.get_mut(element) {
+                        if let Value::Object(map) = v {
+                            set_value_to_json_map(rest_path, map, src);
+                        }
+                    } else {
+                        // insert new one
+                        dest.insert(element.to_owned(), Value::Object(src.clone()));
                     }
                 }
             }
@@ -266,6 +270,8 @@ pub fn set_value_to_json_map<'a>(
                             merge_map(map, src);
                         }
                     } else {
+                        // insert new one
+                        dest.insert(path.to_owned(), Value::Object(src.clone()));
                     }
                 }
             }
@@ -293,39 +299,32 @@ fn set_by_array_path<'a>(
     dest: &'a mut serde_json::Map<String, Value>,
     src: &'a serde_json::Map<String, Value>,
 ) {
-    match dest.get_mut(array_path) {
-        Some(Value::Array(array)) => {
-            for (i, value) in array.iter_mut().enumerate() {
-                if let Some(array_index) = array_index {
-                    if i == array_index as usize {
-                        if let Some(rest_path) = rest_path {
-                            if let Value::Object(map) = value {
-                                set_value_to_json_map(rest_path, map, src);
-                            } else {
-                            }
-                        } else {
-                            if let Value::Object(map) = value {
-                                merge_map(map, src);
-                            } else {
-                            }
-                        }
-                    }
-                } else {
+    if let Some(Value::Array(array)) = dest.get_mut(array_path) {
+        for (i, value) in array.iter_mut().enumerate() {
+            if let Some(array_index) = array_index {
+                if i == array_index as usize {
                     if let Some(rest_path) = rest_path {
                         if let Value::Object(map) = value {
                             set_value_to_json_map(rest_path, map, src);
-                        } else {
                         }
                     } else {
                         if let Value::Object(map) = value {
                             merge_map(map, src);
-                        } else {
                         }
+                    }
+                }
+            } else {
+                if let Some(rest_path) = rest_path {
+                    if let Value::Object(map) = value {
+                        set_value_to_json_map(rest_path, map, src);
+                    }
+                } else {
+                    if let Value::Object(map) = value {
+                        merge_map(map, src);
                     }
                 }
             }
         }
-        _ => (),
     }
 }
 
