@@ -264,15 +264,13 @@ pub fn set_value_to_json_map<'a>(
             None => {
                 if path.is_empty() {
                     merge_map(dest, src);
-                } else {
-                    if let Some(v) = dest.get_mut(path) {
-                        if let Value::Object(map) = v {
-                            merge_map(map, src);
-                        }
-                    } else {
-                        // insert new one
-                        dest.insert(path.to_owned(), Value::Object(src.clone()));
+                } else if let Some(v) = dest.get_mut(path) {
+                    if let Value::Object(map) = v {
+                        merge_map(map, src);
                     }
+                } else {
+                    // insert new one
+                    dest.insert(path.to_owned(), Value::Object(src.clone()));
                 }
             }
         },
@@ -307,22 +305,16 @@ fn set_by_array_path<'a>(
                         if let Value::Object(map) = value {
                             set_value_to_json_map(rest_path, map, src);
                         }
-                    } else {
-                        if let Value::Object(map) = value {
-                            merge_map(map, src);
-                        }
-                    }
-                }
-            } else {
-                if let Some(rest_path) = rest_path {
-                    if let Value::Object(map) = value {
-                        set_value_to_json_map(rest_path, map, src);
-                    }
-                } else {
-                    if let Value::Object(map) = value {
+                    } else if let Value::Object(map) = value {
                         merge_map(map, src);
                     }
                 }
+            } else if let Some(rest_path) = rest_path {
+                if let Value::Object(map) = value {
+                    set_value_to_json_map(rest_path, map, src);
+                }
+            } else if let Value::Object(map) = value {
+                merge_map(map, src);
             }
         }
     }
