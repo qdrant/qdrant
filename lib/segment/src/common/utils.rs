@@ -266,16 +266,18 @@ pub fn set_value_to_json_map<'a>(
                             merge_map(map, src);
                         }
                     } else {
-
                     }
                 }
-            },
+            }
         },
     }
 }
 
 // Merge source map into destination map
-pub fn merge_map(dest: &mut serde_json::Map<String, Value>, source: &serde_json::Map<String, Value>) {
+pub fn merge_map(
+    dest: &mut serde_json::Map<String, Value>,
+    source: &serde_json::Map<String, Value>,
+) {
     for (key, value) in source {
         match value {
             Value::Null => dest.remove(key),
@@ -300,13 +302,11 @@ fn set_by_array_path<'a>(
                             if let Value::Object(map) = value {
                                 set_value_to_json_map(rest_path, map, src);
                             } else {
-
                             }
                         } else {
                             if let Value::Object(map) = value {
                                 merge_map(map, src);
                             } else {
-
                             }
                         }
                     }
@@ -315,14 +315,12 @@ fn set_by_array_path<'a>(
                         if let Value::Object(map) = value {
                             set_value_to_json_map(rest_path, map, src);
                         } else {
-
                         }
                     } else {
-                        if let Value::Object(map) =  value {
-                            merge_map(map, src);                       
+                        if let Value::Object(map) = value {
+                            merge_map(map, src);
                         } else {
-
-                        } 
+                        }
                     }
                 }
             }
