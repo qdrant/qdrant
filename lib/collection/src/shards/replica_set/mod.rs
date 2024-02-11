@@ -650,8 +650,10 @@ impl ShardReplicaSet {
                             .await?;
                     }
                     ReplicaState::Initializing => {
-                        self.set_local(local_shard, Some(ReplicaState::Initializing))
+                        // Same as `Active`, we report a failure to consensus
+                        self.set_local(local_shard, Some(ReplicaState::Active))
                             .await?;
+                        self.notify_peer_failure(peer_id);
                     }
                     ReplicaState::Listener => {
                         // Same as `Active`, we report a failure to consensus
