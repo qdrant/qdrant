@@ -284,11 +284,6 @@ impl Collection {
             }
         }
 
-        // MOGTODO: is this needed? when would it be dropped?
-        if let Some(temp) = archive_file_keep {
-            let _ = temp.close();
-        }
-
         Ok(())
     }
 

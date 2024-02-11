@@ -125,10 +125,6 @@ impl TableOfContent {
                 .to_str()
                 .expect("A filename of one of the collection files is not a valid UTF-8")
                 .to_string();
-            // MOGNOTE
-            // snapshot_manager
-            //     .ensure_snapshots_path(&collection_name)
-            //     .unwrap();
 
             log::info!("Loading collection: {}", collection_name);
             let collection = general_runtime.block_on(Collection::load(
