@@ -358,7 +358,7 @@ impl ShardReplicaSet {
                 continue;
             }
 
-            if err.is_transient() || peer_state == ReplicaState::Initializing {
+            if err.is_transient() {
                 // If the error is transient, we should not deactivate the peer
                 // before allowing other operations to continue.
                 // Otherwise, the failed node can become responsive again, before
