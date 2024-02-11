@@ -1087,8 +1087,8 @@ fn try_context_pair_from_grpc(
 ) -> Result<ContextPair<Vector>, Status> {
     match (pair.positive, pair.negative) {
         (Some(positive), Some(negative)) => Ok(ContextPair {
-            positive: positive.into(),
-            negative: negative.into(),
+            positive: positive.try_into()?,
+            negative: negative.try_into()?,
         }),
         _ => Err(Status::invalid_argument(
             "All context pairs must have both positive and negative parts",
@@ -1115,8 +1115,16 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
                     api::grpc::qdrant::query_enum::Query::RecommendBestScore(query) => {
                         QueryEnum::RecommendBestScore(NamedQuery {
                             query: RecoQuery::new(
-                                query.positives.into_iter().map(|v| v.into()).collect(),
-                                query.negatives.into_iter().map(|v| v.into()).collect(),
+                                query
+                                    .positives
+                                    .into_iter()
+                                    .map(TryInto::try_into)
+                                    .collect::<Result<_, _>>()?,
+                                query
+                                    .negatives
+                                    .into_iter()
+                                    .map(TryInto::try_into)
+                                    .collect::<Result<_, _>>()?,
                             ),
                             using: value.vector_name,
                         })
@@ -1136,7 +1144,7 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
                             .try_collect()?;
 
                         QueryEnum::Discover(NamedQuery {
-                            query: DiscoveryQuery::new(target.into(), pairs),
+                            query: DiscoveryQuery::new(target.try_into()?, pairs),
                             using: value.vector_name,
                         })
                     }
@@ -1344,13 +1352,15 @@ impl TryFrom<api::grpc::qdrant::PointId> for RecommendExample {
     }
 }
 
-impl From<api::grpc::qdrant::Vector> for RecommendExample {
-    fn from(value: api::grpc::qdrant::Vector) -> Self {
-        let vector: Vector = value.into();
-        match vector {
+impl TryFrom<api::grpc::qdrant::Vector> for RecommendExample {
+    type Error = Status;
+
+    fn try_from(value: api::grpc::qdrant::Vector) -> Result<Self, Self::Error> {
+        let vector: Vector = value.try_into()?;
+        Ok(match vector {
             Vector::Dense(vector) => Self::Dense(vector),
             Vector::Sparse(vector) => Self::Sparse(vector),
-        }
+        })
     }
 }
 
@@ -1384,7 +1394,11 @@ impl TryFrom<api::grpc::qdrant::RecommendPoints> for RecommendRequestInternal {
             .map(TryInto::try_into)
             .collect::<Result<Vec<RecommendExample>, Self::Error>>()?;
 
-        let positive_vectors = value.positive_vectors.into_iter().map(Into::into).collect();
+        let positive_vectors = value
+            .positive_vectors
+            .into_iter()
+            .map(TryInto::try_into)
+            .collect::<Result<_, _>>()?;
         let positive = [positive_ids, positive_vectors].concat();
 
         let negative_ids = value
@@ -1393,7 +1407,11 @@ impl TryFrom<api::grpc::qdrant::RecommendPoints> for RecommendRequestInternal {
             .map(TryInto::try_into)
             .collect::<Result<Vec<RecommendExample>, Self::Error>>()?;
 
-        let negative_vectors = value.negative_vectors.into_iter().map(Into::into).collect();
+        let negative_vectors = value
+            .negative_vectors
+            .into_iter()
+            .map(TryInto::try_into)
+            .collect::<Result<_, _>>()?;
         let negative = [negative_ids, negative_vectors].concat();
 
         Ok(RecommendRequestInternal {

@@ -173,4 +173,28 @@ if [[ $response != *"Sparse indices does not match sparse vector conditions"* ]]
     echo Unexpected response, expected validation error: $response
     exit 1
 fi
+
+response=$(
+  $docker_grpcurl -d '{
+    "collection_name": "test_sparse_collection",
+    "wait": true,
+    "ordering": null,
+    "points": [
+      {
+        "id": { "uuid": "f0e09527-b096-42a8-94e9-ea94d342b885" },
+        "vectors": {
+          "vectors": {
+            "vectors": {
+              "test": {"data": [0.35, 0.08], "indices": { "data": [0,1,2,3] }}
+            }
+          }
+        }
+      }
+    ]
+  }' $QDRANT_HOST qdrant.Points/Upsert 2>&1
+)
+if [[ $response != *"Sparse indices does not match sparse vector conditions"* ]]; then
+    echo Unexpected response, expected validation error: $response
+    exit 1
+fi
 set -e

@@ -447,17 +447,21 @@ impl From<segment::data_types::vectors::Vector> for Vector {
     }
 }
 
-impl From<Vector> for segment::data_types::vectors::Vector {
-    fn from(vector: Vector) -> Self {
-        match vector.indices {
+impl TryFrom<Vector> for segment::data_types::vectors::Vector {
+    type Error = Status;
+
+    fn try_from(vector: Vector) -> Result<Self, Self::Error> {
+        Ok(match vector.indices {
             None => segment::data_types::vectors::Vector::Dense(vector.data),
             Some(indices) => segment::data_types::vectors::Vector::Sparse(
-                sparse::common::sparse_vector::SparseVector {
-                    values: vector.data,
-                    indices: indices.data,
-                },
+                sparse::common::sparse_vector::SparseVector::new(indices.data, vector.data)
+                    .map_err(|_| {
+                        Status::invalid_argument(
+                            "Sparse indices does not match sparse vector conditions",
+                        )
+                    })?,
             ),
-        }
+        })
     }
 }
 
@@ -523,13 +527,20 @@ impl From<segment::data_types::groups::GroupId> for GroupId {
     }
 }
 
-impl From<NamedVectors> for HashMap<String, segment::data_types::vectors::Vector> {
-    fn from(vectors: NamedVectors) -> Self {
+impl TryFrom<NamedVectors> for HashMap<String, segment::data_types::vectors::Vector> {
+    type Error = Status;
+
+    fn try_from(vectors: NamedVectors) -> Result<Self, Self::Error> {
         vectors
             .vectors
             .into_iter()
-            .map(|(name, vector)| (name, segment::data_types::vectors::Vector::from(vector)))
-            .collect()
+            .map(
+                |(name, vector)| match segment::data_types::vectors::Vector::try_from(vector) {
+                    Ok(vector) => Ok((name, vector)),
+                    Err(err) => Err(err),
+                },
+            )
+            .collect::<Result<_, _>>()
     }
 }
 
@@ -543,7 +554,7 @@ impl TryFrom<Vectors> for segment::data_types::vectors::VectorStruct {
                     segment::data_types::vectors::VectorStruct::Single(vector.data)
                 }
                 VectorsOptions::Vectors(vectors) => {
-                    segment::data_types::vectors::VectorStruct::Multi(vectors.into())
+                    segment::data_types::vectors::VectorStruct::Multi(vectors.try_into()?)
                 }
             }),
             None => Err(Status::invalid_argument("No Provided")),
