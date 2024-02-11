@@ -915,7 +915,7 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for CoreSearchRequest {
 
         if let Some(sparse_indices) = &sparse_indices {
             validate_sparse_vector_impl(&sparse_indices.data, &vector).map_err(|_| {
-                Status::invalid_argument("Sparse_indices does not match sparse vector conditions")
+                Status::invalid_argument("Sparse indices does not match sparse vector conditions")
             })?;
         }
 
@@ -1226,7 +1226,7 @@ impl TryFrom<api::grpc::qdrant::SearchPointGroups> for SearchGroupsRequestIntern
             validate_sparse_vector_impl(&sparse_indices.data, &search_points.vector).map_err(
                 |_| {
                     Status::invalid_argument(
-                        "Sparse_indices does not match sparse vector conditions",
+                        "Sparse indices does not match sparse vector conditions",
                     )
                 },
             )?;

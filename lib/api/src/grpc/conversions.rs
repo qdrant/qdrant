@@ -1237,10 +1237,9 @@ pub fn into_named_vector_struct(
         Some(indices) => NamedVectorStruct::Sparse(NamedSparseVector {
             name: vector_name
                 .ok_or_else(|| Status::invalid_argument("Sparse vector must have a name"))?,
-            vector: SparseVector {
-                values: vector,
-                indices: indices.data,
-            },
+            vector: SparseVector::new(indices.data, vector).map_err(|_| {
+                Status::invalid_argument("Sparse indices does not match sparse vector conditions")
+            })?,
         }),
         None => {
             if let Some(vector_name) = vector_name {
