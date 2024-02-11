@@ -109,21 +109,27 @@ async fn _test_snapshot_collection(node_type: NodeType) {
     .unwrap();
 
     let snapshots_temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
-    let (snapshot, snapshot_description) = collection
+    let (_, snapshot_description) = collection
         .create_snapshot(snapshots_temp_dir.path(), 0)
         .await
         .unwrap();
 
-    let (snapshot_path, _) = collection
-        .snapshot_manager()
-        .get_snapshot_path(snapshot)
-        .unwrap();
-
     assert_eq!(snapshot_description.checksum.unwrap().len(), 64);
     // Do not recover in local mode if some shards are remote
-    assert!(Collection::restore_snapshot(&snapshot_path, recover_dir.path(), 0, false,).is_err());
+    assert!(Collection::restore_snapshot(
+        &snapshots_path.path().join(&snapshot_description.name),
+        recover_dir.path(),
+        0,
+        false,
+    )
+    .is_err());
 
-    if let Err(err) = Collection::restore_snapshot(&snapshot_path, recover_dir.path(), 0, true) {
+    if let Err(err) = Collection::restore_snapshot(
+        &snapshots_path.path().join(snapshot_description.name),
+        recover_dir.path(),
+        0,
+        true,
+    ) {
         panic!("Failed to restore snapshot: {err}")
     }
 
