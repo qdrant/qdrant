@@ -360,15 +360,11 @@ async fn recover_shard_snapshot(
 ) -> impl Responder {
     let future = async move {
         let (collection, shard) = path.into_inner();
-        let snapshot_manager = toc
-            .snapshot_manager()
-            .scope(format!("{}/shards/{}/", collection, shard));
 
         common::snapshots::recover_shard_snapshot(
             toc.into_inner(),
             collection,
             shard,
-            snapshot_manager,
             request.location,
             request.priority.unwrap_or_default(),
             request.checksum,

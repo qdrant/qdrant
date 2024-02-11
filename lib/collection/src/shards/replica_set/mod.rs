@@ -15,6 +15,7 @@ use std::time::Duration;
 use common::cpu::CpuBudget;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use snapshot_manager::SnapshotManager;
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock};
 
@@ -830,6 +831,13 @@ impl ShardReplicaSet {
         );
 
         self.abort_shard_transfer_cb.deref()(transfer, reason)
+    }
+
+    pub fn snapshot_manager(&self) -> SnapshotManager {
+        SnapshotManager::new(
+            PathBuf::from(self.shared_storage_config.snapshots_path.clone())
+                .join(format!("{}/shards/{}/", self.collection_id, self.shard_id)),
+        )
     }
 }
 

@@ -7,7 +7,7 @@ use collection::common::sha_256::hash_file;
 use collection::operations::snapshot_ops::{ShardSnapshotLocation, SnapshotPriority};
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::ShardId;
-use snapshot_manager::{SnapshotDescription, SnapshotManager};
+use snapshot_manager::SnapshotDescription;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::snapshots;
 use storage::content_manager::toc::TableOfContent;
@@ -68,7 +68,6 @@ pub async fn recover_shard_snapshot(
     toc: Arc<TableOfContent>,
     collection_name: String,
     shard_id: ShardId,
-    snapshot_manager: SnapshotManager,
     snapshot_location: ShardSnapshotLocation,
     snapshot_priority: SnapshotPriority,
     checksum: Option<String>,
@@ -107,8 +106,9 @@ pub async fn recover_shard_snapshot(
                 }
 
                 ShardSnapshotLocation::Path(path) => {
-                    let (snapshot_path, snapshot_temp_path) =
-                        snapshot_manager.get_snapshot_path(path)?;
+                    let (snapshot_path, snapshot_temp_path) = collection
+                        .shard_snapshot_manager(shard_id)
+                        .get_snapshot_path(path)?;
                     check_shard_snapshot_file_exists(&snapshot_path)?;
                     (snapshot_path, snapshot_temp_path)
                 }

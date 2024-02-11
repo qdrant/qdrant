@@ -676,7 +676,6 @@ impl ShardHolder {
     /// This method is cancel safe.
     pub async fn create_shard_snapshot(
         &self,
-        snapshot_manager: &SnapshotManager,
         collection_name: &str,
         shard_id: ShardId,
         temp_dir: &Path,
@@ -693,6 +692,8 @@ impl ShardHolder {
                 "Shard {shard_id} is not a local or queue proxy shard"
             )));
         }
+
+        let snapshot_manager = shard.snapshot_manager();
 
         let snapshot_file_name = format!(
             "{collection_name}-shard-{shard_id}-{}.snapshot",
@@ -894,6 +895,14 @@ impl ShardHolder {
             replica_set.remove_peer(peer_id).await?;
         }
         Ok(())
+    }
+
+    pub fn snapshot_manager(&self, shard_id: ShardId) -> CollectionResult<SnapshotManager> {
+        let shard = self
+            .get_shard(&shard_id)
+            .ok_or_else(|| shard_not_found_error(shard_id))?;
+
+        Ok(shard.snapshot_manager())
     }
 }
 

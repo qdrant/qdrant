@@ -2,7 +2,6 @@ use std::path::Path;
 use std::sync::Arc;
 
 use common::defaults;
-use snapshot_manager::SnapshotManager;
 use tempfile::TempPath;
 use tokio::time::sleep;
 
@@ -159,7 +158,6 @@ pub(super) async fn transfer_snapshot(
     remote_shard: RemoteShard,
     channel_service: ChannelService,
     consensus: &dyn ShardTransferConsensus,
-    snapshot_manager: SnapshotManager,
     collection_name: &str,
     temp_dir: &Path,
 ) -> CollectionResult<()> {
@@ -192,8 +190,10 @@ pub(super) async fn transfer_snapshot(
     // Create shard snapshot
     log::trace!("Creating snapshot of shard {shard_id} for shard snapshot transfer");
     let snapshot_description = shard_holder_read
-        .create_shard_snapshot(&snapshot_manager, collection_name, shard_id, temp_dir)
+        .create_shard_snapshot(collection_name, shard_id, temp_dir)
         .await?;
+
+    let snapshot_manager = shard_holder_read.snapshot_manager(shard_id)?;
 
     let temp_base = snapshot_manager.temp_path();
     // TODO: If future is cancelled until `get_shard_snapshot` resolves, shard snapshot may not be cleaned up...
