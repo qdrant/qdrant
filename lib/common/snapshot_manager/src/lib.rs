@@ -59,6 +59,12 @@ impl SnapshotManager {
         snapshot: impl AsRef<Path>,
         wait: bool,
     ) -> Result<bool, SnapshotManagerError> {
+        if !self.path.exists() {
+            return Err(SnapshotManagerError::NotFound {
+                description: format!("Snapshot {:?} not found", snapshot.as_ref()),
+            });
+        }
+
         let _self = self.clone();
         let snapshot = self.use_base(snapshot)?;
         let task = tokio::spawn(async move { _self._do_delete_snapshot(snapshot).await });
@@ -178,6 +184,12 @@ impl SnapshotManager {
         &self,
         snapshot: impl AsRef<Path>,
     ) -> Result<(PathBuf, Option<TempPath>), SnapshotManagerError> {
+        if !self.path.exists() {
+            return Err(SnapshotManagerError::NotFound {
+                description: format!("Snapshot {} not found", snapshot.as_ref().display()),
+            });
+        }
+
         let path = self.use_base(&snapshot)?;
 
         if !path.exists() {
@@ -204,11 +216,11 @@ impl SnapshotManager {
     ) -> Result<Url, SnapshotManagerError> {
         let name = name.unwrap_or_else(|| Uuid::new_v4().to_string());
 
+        tokio::fs::create_dir_all(&self.path).await?;
+
         let path = self.use_base(name)?;
 
         let (_, temp_path) = file.keep()?;
-
-        tokio::fs::create_dir_all(path.parent().unwrap()).await?;
 
         if tokio::fs::rename(&temp_path, &path).await.is_err() {
             tokio::fs::copy(&temp_path, &path).await?;
