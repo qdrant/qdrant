@@ -88,6 +88,7 @@ mod tests {
 
         let query = Filter {
             should: None,
+            min_should: None,
             must: Some(vec![
                 Condition::Field(FieldCondition::new_match("age".to_string(), 43.into())),
                 Condition::Field(FieldCondition::new_match(

@@ -136,6 +136,7 @@
     - [IsNullCondition](#qdrant-IsNullCondition)
     - [LookupLocation](#qdrant-LookupLocation)
     - [Match](#qdrant-Match)
+    - [MinShould](#qdrant-MinShould)
     - [NamedVectors](#qdrant-NamedVectors)
     - [NamedVectors.VectorsEntry](#qdrant-NamedVectors-VectorsEntry)
     - [NestedCondition](#qdrant-NestedCondition)
@@ -2113,6 +2114,7 @@ The JSON representation for `Value` is a JSON value.
 | should | [Condition](#qdrant-Condition) | repeated | At least one of those conditions should match |
 | must | [Condition](#qdrant-Condition) | repeated | All conditions must match |
 | must_not | [Condition](#qdrant-Condition) | repeated | All conditions must NOT match |
+| min_should | [MinShould](#qdrant-MinShould) | optional | At least minimum amount of given conditions should match |
 
 
 
@@ -2345,6 +2347,22 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | integers | [RepeatedIntegers](#qdrant-RepeatedIntegers) |  | Match multiple integers |
 | except_integers | [RepeatedIntegers](#qdrant-RepeatedIntegers) |  | Match any other value except those integers |
 | except_keywords | [RepeatedStrings](#qdrant-RepeatedStrings) |  | Match any other value except those keywords |
+
+
+
+
+
+
+<a name="qdrant-MinShould"></a>
+
+### MinShould
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| conditions | [Condition](#qdrant-Condition) | repeated |  |
+| min_count | [uint64](#uint64) |  |  |
 
 
 
