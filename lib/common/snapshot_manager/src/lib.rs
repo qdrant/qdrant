@@ -163,7 +163,7 @@ impl SnapshotManager {
             SnapshotManagerError::BadInput {
                 description: "Received snapshot_file without filename?".to_string(),
             },
-        )?);
+        )?).with_extension("snapshot");
 
         let snapshot_path = self.use_base(&snapshot)?;
         let checksum_path = self.checksum_path(&snapshot_path);
