@@ -333,7 +333,12 @@ impl Collection {
         self.shards_holder
             .read()
             .await
-            .create_shard_snapshot(&self.snapshot_manager(), &self.name(), shard_id, temp_dir)
+            .create_shard_snapshot(
+                &self.shard_snapshot_manager(shard_id),
+                &self.name(),
+                shard_id,
+                temp_dir,
+            )
             .await
     }
 
