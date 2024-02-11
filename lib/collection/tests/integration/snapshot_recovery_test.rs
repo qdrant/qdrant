@@ -118,17 +118,12 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         .await
         .unwrap();
 
-    if let Err(err) = Collection::restore_snapshot(
-        storage_config
-            .snapshot_manager()
-            .scope(format!("{}/", collection.name())),
-        &snapshot,
-        recover_dir.path(),
-        0,
-        false,
-    )
-    .await
-    {
+    let (snapshot_path, _) = collection
+        .snapshot_manager()
+        .get_snapshot_path(snapshot)
+        .unwrap();
+
+    if let Err(err) = Collection::restore_snapshot(&snapshot_path, recover_dir.path(), 0, false) {
         panic!("Failed to restore snapshot: {err}")
     }
 

@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::fs::File;
 use std::path::{Path, PathBuf};
 
 use io::file_operations::read_json;
@@ -178,50 +177,16 @@ impl Collection {
     }
 
     /// Restore collection from snapshot
-    pub async fn restore_snapshot(
-        snapshot_manager: SnapshotManager,
-        snapshot: impl AsRef<Path>,
-        target_dir: &Path,
-        this_peer_id: PeerId,
-        is_distributed: bool,
-    ) -> CollectionResult<()> {
-        let ar = snapshot_manager.get_snapshot_file(snapshot).await?;
-
-        let target_dir = target_dir.to_owned();
-        tokio::task::spawn_blocking(move || {
-            // Unpack snapshot collection to the target folder
-            Self::_restore_snapshot(&target_dir, this_peer_id, is_distributed, ar)
-        })
-        .await??;
-
-        Ok(())
-    }
-
-    /// Restore collection from snapshot. Only supports local files.
     ///
     /// This method performs blocking IO.
-    pub fn restore_snapshot_sync(
-        snapshot: impl AsRef<Path>,
+    pub fn restore_snapshot(
+        snapshot_path: &Path,
         target_dir: &Path,
         this_peer_id: PeerId,
         is_distributed: bool,
-    ) -> CollectionResult<()> {
-        Self::_restore_snapshot(
-            target_dir,
-            this_peer_id,
-            is_distributed,
-            (File::open(snapshot)?, None),
-        )
-    }
-
-    fn _restore_snapshot(
-        target_dir: &Path,
-        this_peer_id: PeerId,
-        is_distributed: bool,
-        (archive_file, archive_file_keep): (File, Option<TempPath>),
     ) -> CollectionResult<()> {
         // decompress archive
-
+        let archive_file = std::fs::File::open(snapshot_path)?;
         let mut ar = tar::Archive::new(archive_file);
         ar.unpack(target_dir)?;
 

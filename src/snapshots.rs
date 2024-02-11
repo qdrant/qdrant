@@ -61,7 +61,7 @@ pub fn recover_snapshots(
         let collection_temp_path = temp_dir
             .map(PathBuf::from)
             .unwrap_or_else(|| collection_path.with_extension("tmp"));
-        if let Err(err) = Collection::restore_snapshot_sync(
+        if let Err(err) = Collection::restore_snapshot(
             snapshot_path,
             &collection_temp_path,
             this_peer_id,
