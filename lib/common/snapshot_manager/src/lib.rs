@@ -60,7 +60,7 @@ impl SnapshotManager {
         wait: bool,
     ) -> Result<bool, SnapshotManagerError> {
         let _self = self.clone();
-        let snapshot = self.use_base(snapshot);
+        let snapshot = self.use_base(snapshot)?;
         let task = tokio::spawn(async move { _self._do_delete_snapshot(snapshot).await });
 
         if wait {
@@ -89,7 +89,7 @@ impl SnapshotManager {
         &self,
         snapshot: impl AsRef<Path>,
     ) -> Result<String, SnapshotManagerError> {
-        let path = self.checksum_path(self.use_base(snapshot));
+        let path = self.checksum_path(self.use_base(snapshot)?);
 
         Ok(tokio::fs::read_to_string(&path).await?)
     }
@@ -98,7 +98,7 @@ impl SnapshotManager {
         &self,
         snapshot: impl AsRef<Path>,
     ) -> Result<SnapshotDescription, SnapshotManagerError> {
-        let path = self.use_base(snapshot);
+        let path = self.use_base(snapshot)?;
         let checksum = self.get_snapshot_checksum(&path).await.ok();
 
         let meta = tokio::fs::metadata(&path).await?;
@@ -165,7 +165,7 @@ impl SnapshotManager {
             },
         )?);
 
-        let snapshot_path = self.use_base(&snapshot);
+        let snapshot_path = self.use_base(&snapshot)?;
         let checksum_path = self.checksum_path(&snapshot_path);
 
         let dir = snapshot_path.parent().unwrap();
@@ -183,7 +183,7 @@ impl SnapshotManager {
         &self,
         snapshot: impl AsRef<Path>,
     ) -> Result<(PathBuf, Option<TempPath>), SnapshotManagerError> {
-        let path = self.use_base(&snapshot);
+        let path = self.use_base(&snapshot)?;
 
         if !path.exists() {
             Err(SnapshotManagerError::NotFound {
@@ -209,7 +209,7 @@ impl SnapshotManager {
     ) -> Result<Url, SnapshotManagerError> {
         let name = name.unwrap_or_else(|| Uuid::new_v4().to_string());
 
-        let path = self.use_base(name);
+        let path = self.use_base(name)?;
 
         let (_, temp_path) = file.keep()?;
 

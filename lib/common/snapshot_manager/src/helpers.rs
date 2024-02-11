@@ -8,8 +8,8 @@ impl SnapshotManager {
         self.path.clone()
     }
 
-    pub(super) fn use_base(&self, path: impl AsRef<Path>) -> PathBuf {
-        self.path.join(path)
+    pub(super) fn use_base(&self, path: impl AsRef<Path>) -> Result<PathBuf, std::io::Error> {
+        Ok(self.path.canonicalize()?.join(path))
     }
 
     pub fn temp_path(&self) -> PathBuf {
@@ -20,7 +20,7 @@ impl SnapshotManager {
         &self,
         snapshot_path: impl AsRef<Path>,
     ) -> Result<bool, SnapshotManagerError> {
-        Ok(self.use_base(snapshot_path).exists())
+        Ok(self.use_base(snapshot_path)?.exists())
     }
 
     /// Removes the specified snapshot and checksum files.
@@ -30,7 +30,7 @@ impl SnapshotManager {
     ) -> Result<(), SnapshotManagerError> {
         log::info!("Deleting snapshot {:?}", snapshot_path.as_ref());
 
-        let snapshot_path = self.use_base(snapshot_path);
+        let snapshot_path = self.use_base(snapshot_path)?;
         let checksum_path = self.checksum_path(&snapshot_path);
 
         let (delete_snapshot, delete_checksum) = tokio::join!(
