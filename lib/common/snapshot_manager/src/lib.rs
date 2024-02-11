@@ -152,18 +152,13 @@ impl SnapshotManager {
 
     pub async fn save_snapshot(
         &self,
+        snapshot: impl AsRef<Path>,
         snapshot_file: TempPath,
         checksum_file: TempPath,
-    ) -> Result<PathBuf, SnapshotManagerError> {
+    ) -> Result<(), SnapshotManagerError> {
         // Snapshot files are ready now, move them into the right place
         let snapshot_temp = snapshot_file.keep()?;
         let checksum_temp = checksum_file.keep()?;
-
-        let snapshot = PathBuf::from(snapshot_temp.file_name().ok_or(
-            SnapshotManagerError::BadInput {
-                description: "Received snapshot_file without filename?".to_string(),
-            },
-        )?).with_extension("snapshot");
 
         let snapshot_path = self.use_base(&snapshot)?;
         let checksum_path = self.checksum_path(&snapshot_path);
@@ -176,7 +171,7 @@ impl SnapshotManager {
         tokio::fs::rename(snapshot_temp, snapshot_path).await?;
         tokio::fs::rename(checksum_temp, checksum_path).await?;
 
-        Ok(snapshot)
+        Ok(())
     }
 
     pub fn get_snapshot_path(

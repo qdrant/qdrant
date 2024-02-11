@@ -48,7 +48,7 @@ async fn _do_create_full_snapshot(
     let all_collections = dispatcher.all_collections().await;
     let mut created_snapshots: Vec<(String, TempPath, TempPath)> = vec![];
     for collection_name in &all_collections {
-        let (snapshot_file, checksum_file) =
+        let (_, snapshot_file, checksum_file) =
             dispatcher.create_temp_snapshot(collection_name).await?;
         created_snapshots.push((collection_name.to_owned(), snapshot_file, checksum_file));
     }
@@ -117,14 +117,14 @@ async fn _do_create_full_snapshot(
 
     tokio::fs::remove_file(&config_path).await?;
 
-    let snapshot = dispatcher
+    dispatcher
         .snapshot_manager()
-        .save_snapshot(snapshot_file, checksum_file)
+        .save_snapshot(&snapshot_name, snapshot_file, checksum_file)
         .await?;
 
     let description = dispatcher
         .snapshot_manager()
-        .get_snapshot_description(snapshot)
+        .get_snapshot_description(snapshot_name)
         .await?;
 
     Ok(description)

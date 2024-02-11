@@ -758,7 +758,7 @@ impl ShardHolder {
 
         let temp_file = task_result??;
 
-        let snapshot_path = snapshot_manager.temp_path().join(snapshot_file_name);
+        let snapshot_path = snapshot_manager.temp_path().join(&snapshot_file_name);
 
         tokio::fs::create_dir_all(snapshot_path.parent().unwrap()).await?;
 
@@ -774,15 +774,15 @@ impl ShardHolder {
         let snapshot_file = tempfile::TempPath::from_path(&snapshot_path);
         move_file(temp_file.path(), &snapshot_path).await?;
 
-        let snapshot = snapshot_manager
-            .save_snapshot(snapshot_file, checksum_file)
+        snapshot_manager
+            .save_snapshot(&snapshot_file_name, snapshot_file, checksum_file)
             .await?;
 
         // We successfully moved `temp_file`, but `tempfile` will still try to delete the file on drop,
         // so we `keep` it and ignore the error
         let _ = temp_file.keep();
 
-        Ok(snapshot_manager.get_snapshot_description(&snapshot).await?)
+        Ok(snapshot_manager.get_snapshot_description(snapshot_file_name).await?)
     }
 
     /// # Cancel safety

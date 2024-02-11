@@ -15,7 +15,7 @@ impl TableOfContent {
     pub async fn create_temp_snapshot(
         &self,
         collection_name: &str,
-    ) -> Result<(TempPath, TempPath), StorageError> {
+    ) -> Result<(PathBuf, TempPath, TempPath), StorageError> {
         let collection = self.get_collection(collection_name).await?;
         // We want to use temp dir inside the temp_path (storage if not specified), because it is possible, that
         // snapshot directory is mounted as network share and multiple writes to it could be slow

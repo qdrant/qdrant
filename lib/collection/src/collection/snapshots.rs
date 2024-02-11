@@ -39,7 +39,7 @@ impl Collection {
         &self,
         global_temp_dir: &Path,
         this_peer_id: PeerId,
-    ) -> CollectionResult<(TempPath, TempPath)> {
+    ) -> CollectionResult<(PathBuf, TempPath, TempPath)> {
         let snapshot_name = format!(
             "{}-{this_peer_id}-{}.snapshot",
             self.name(),
@@ -137,7 +137,7 @@ impl Collection {
         let mut file = tokio::fs::File::create(checksum_path.as_path()).await?;
         file.write_all(checksum.as_bytes()).await?;
 
-        Ok((snapshot_file, checksum_file))
+        Ok((PathBuf::from(snapshot_name), snapshot_file, checksum_file))
     }
 
     /// Creates a snapshot of the collection.
@@ -158,20 +158,20 @@ impl Collection {
         global_temp_dir: &Path,
         this_peer_id: PeerId,
     ) -> CollectionResult<(PathBuf, SnapshotDescription)> {
-        let (snapshot_file, checksum_file) = self
+        let (snapshot_name, snapshot_file, checksum_file) = self
             .create_temp_snapshot(global_temp_dir, this_peer_id)
             .await?;
 
         let snapshot_manager = self.snapshot_manager();
 
-        let snapshot = snapshot_manager
-            .save_snapshot(snapshot_file, checksum_file)
+        snapshot_manager
+            .save_snapshot(&snapshot_name, snapshot_file, checksum_file)
             .await?;
 
-        log::info!("Collection snapshot {} completed", snapshot.display());
+        log::info!("Collection snapshot {} completed", snapshot_name.display());
         Ok((
-            snapshot.clone(),
-            snapshot_manager.get_snapshot_description(&snapshot).await?,
+            snapshot_name.clone(),
+            snapshot_manager.get_snapshot_description(snapshot_name).await?,
         ))
     }
 
