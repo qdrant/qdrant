@@ -6,12 +6,15 @@ use crate::common::utils::IndexesMap;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::query_estimator::{
-    combine_must_estimations, combine_should_estimations, invert_estimation,
+    combine_min_should_estimations, combine_must_estimations, combine_should_estimations,
+    invert_estimation,
 };
 use crate::index::query_optimization::condition_converter::condition_converter;
-use crate::index::query_optimization::optimized_filter::{OptimizedCondition, OptimizedFilter};
+use crate::index::query_optimization::optimized_filter::{
+    OptimizedCondition, OptimizedFilter, OptimizedMinShould,
+};
 use crate::index::query_optimization::payload_provider::PayloadProvider;
-use crate::types::{Condition, Filter};
+use crate::types::{Condition, Filter, MinShould};
 
 /// Converts user-provided filtering condition into optimized representation
 ///
@@ -63,6 +66,31 @@ where
                 None
             }
         }),
+        min_should: filter.min_should.as_ref().and_then(
+            |MinShould {
+                 conditions,
+                 min_count,
+             }| {
+                if !conditions.is_empty() {
+                    let (optimized_conditions, estimation) = optimize_min_should(
+                        conditions,
+                        *min_count,
+                        id_tracker,
+                        field_indexes,
+                        payload_provider.clone(),
+                        estimator,
+                        total,
+                    );
+                    filter_estimations.push(estimation);
+                    Some(OptimizedMinShould {
+                        conditions: optimized_conditions,
+                        min_count: *min_count,
+                    })
+                } else {
+                    None
+                }
+            },
+        ),
         must: filter.must.as_ref().and_then(|conditions| {
             if !conditions.is_empty() {
                 let (optimized_conditions, estimation) = optimize_must(
@@ -166,6 +194,41 @@ where
     let (conditions, estimations): (Vec<_>, Vec<_>) = converted.into_iter().unzip();
 
     (conditions, combine_should_estimations(&estimations, total))
+}
+
+fn optimize_min_should<'a, F>(
+    conditions: &'a [Condition],
+    min_count: usize,
+    id_tracker: &IdTrackerSS,
+    field_indexes: &'a IndexesMap,
+    payload_provider: PayloadProvider,
+    estimator: &F,
+    total: usize,
+) -> (Vec<OptimizedCondition<'a>>, CardinalityEstimation)
+where
+    F: Fn(&Condition) -> CardinalityEstimation,
+{
+    let mut converted = convert_conditions(
+        conditions,
+        id_tracker,
+        field_indexes,
+        payload_provider,
+        estimator,
+        total,
+    );
+    // More probable conditions first if min_count < number of conditions
+    if min_count < conditions.len() / 2 {
+        converted.sort_by_key(|(_, estimation)| Reverse(estimation.exp));
+    } else {
+        // Less probable conditions first
+        converted.sort_by_key(|(_, estimation)| estimation.exp);
+    }
+    let (conditions, estimations): (Vec<_>, Vec<_>) = converted.into_iter().unzip();
+
+    (
+        conditions,
+        combine_min_should_estimations(&estimations, min_count, total),
+    )
 }
 
 fn optimize_must<'a, F>(

@@ -45,11 +45,7 @@ fn test_point_exclusion() {
 
     let ids: HashSet<_> = HashSet::from_iter([3.into()]);
 
-    let frt = Filter {
-        should: None,
-        must: None,
-        must_not: Some(vec![Condition::HasId(ids.into())]),
-    };
+    let frt = Filter::new_must_not(Condition::HasId(ids.into()));
 
     let res = segment
         .search(
@@ -106,6 +102,7 @@ fn test_named_vector_search() {
 
     let frt = Filter {
         should: None,
+        min_should: None,
         must: None,
         must_not: Some(vec![Condition::HasId(ids.into())]),
     };

@@ -15,7 +15,7 @@ info:
     This document describes CRUD and search operations on collections of points (vectors with payload).
 
 
-    Qdrant supports any combinations of `should`, `must` and `must_not` conditions,
+    Qdrant supports any combinations of `should`, `min_should`, `must` and `must_not` conditions,
     which makes it possible to use in applications when object could not be described solely by vector.
     It could be location features, availability flags, and other custom properties businesses should take into account.
 

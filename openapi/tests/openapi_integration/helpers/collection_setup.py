@@ -218,6 +218,90 @@ def basic_collection_setup(
     )
     assert response.ok
 
+def multipayload_collection_setup(
+    collection_name='test_collection',
+    on_disk_payload=False,
+    on_disk_vectors=False,
+):
+    drop_collection(collection_name)
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        body={
+            "vectors": {
+                "size": 4,
+                "distance": "Dot",
+                "on_disk": on_disk_vectors,
+            },
+            "sparse_vectors": {
+                "sparse-text": {},
+            },
+            "on_disk_payload": on_disk_payload
+        }
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="GET",
+        path_params={'collection_name': collection_name},
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "points": [
+                {
+                    "id": 1,
+                    "vector": [0.05, 0.61, 0.76, 0.74],
+                    "payload": {"city": "Berlin", "color": "red"}
+                },
+                {
+                    "id": 2,
+                    "vector": [0.19, 0.81, 0.75, 0.11],
+                    "payload": {"city": ["Berlin", "London"], "color": "green"}
+                },
+                {
+                    "id": 3,
+                    "vector": [0.36, 0.55, 0.47, 0.94],
+                    "payload": {"city": ["Berlin", "Moscow"], "color": "blue"}
+                },
+                {
+                    "id": 4,
+                    "vector": [0.18, 0.01, 0.85, 0.80],
+                    "payload": {"city": ["London", "Moscow"], "color": "red"}
+                },
+                {
+                    "id": 5,
+                    "vector": [0.24, 0.18, 0.22, 0.44],
+                    "payload": {"city": "Seoul", "color": "red", "count": 0}
+                },
+                {
+                    "id": 6,
+                    "vector": [0.35, 0.08, 0.11, 0.44],
+                    "payload": {"city": "Berlin", "color": "red", "count": 1, "price": 10.0}
+                },
+                {
+                    "id": 7,
+                    "vector": [0.25, 0.98, 0.14, 0.43],
+                    "payload": {"city": "London", "color": "red", "count": 0, "price": 50.0}
+                },
+                {
+                    "id": 8,
+                    "vector": [0.19, 0.53, 0.72, 0.15],
+                    "payload": {"city": "Moscow", "color": "red", "count": 1, "price": 100.0}
+                },
+            ]
+        }
+    )
+    assert response.ok
+
 
 def multivec_collection_setup(
         collection_name='test_collection',

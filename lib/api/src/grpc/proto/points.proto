@@ -646,6 +646,12 @@ message Filter {
   repeated Condition should = 1; // At least one of those conditions should match
   repeated Condition must = 2; // All conditions must match
   repeated Condition must_not = 3; // All conditions must NOT match
+  optional MinShould min_should = 4; // At least minimum amount of given conditions should match 
+}
+
+message MinShould {
+  repeated Condition conditions = 1; 
+  uint64 min_count = 2; 
 }
 
 message Condition {

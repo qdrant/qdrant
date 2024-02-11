@@ -320,6 +320,7 @@ fn recommend_by_avg_vector(
         )),
         filter: Some(Filter {
             should: None,
+            min_should: None,
             must: filter.clone().map(|filter| vec![Condition::Filter(filter)]),
             must_not: Some(vec![Condition::HasId(HasIdCondition {
                 has_id: reference_vectors_ids.iter().cloned().collect(),
@@ -383,6 +384,7 @@ fn recommend_by_best_score(
         query,
         filter: Some(Filter {
             should: None,
+            min_should: None,
             must: filter.map(|filter| vec![Condition::Filter(filter)]),
             must_not: Some(vec![Condition::HasId(HasIdCondition {
                 has_id: reference_vectors_ids.into_iter().collect(),

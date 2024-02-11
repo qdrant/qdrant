@@ -338,6 +338,7 @@ mod tests {
 
             let delete_by_filter = Self::DeletePointsByFilter(Filter {
                 should: None,
+                min_should: None,
                 must: None,
                 must_not: None,
             });
@@ -376,6 +377,7 @@ mod tests {
             let delete_by_filter = Self::DeleteVectorsByFilter(
                 Filter {
                     should: None,
+                    min_should: None,
                     must: None,
                     must_not: None,
                 },
@@ -413,6 +415,7 @@ mod tests {
 
             let clear_by_filter = Self::ClearPayloadByFilter(Filter {
                 should: None,
+                min_should: None,
                 must: None,
                 must_not: None,
             });

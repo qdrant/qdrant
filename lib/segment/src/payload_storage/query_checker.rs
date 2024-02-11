@@ -13,8 +13,8 @@ use crate::payload_storage::condition_checker::ValueChecker;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::ConditionChecker;
 use crate::types::{
-    Condition, FieldCondition, Filter, IsEmptyCondition, IsNullCondition, OwnedPayloadRef, Payload,
-    PayloadContainer, PayloadKeyType,
+    Condition, FieldCondition, Filter, IsEmptyCondition, IsNullCondition, MinShould,
+    OwnedPayloadRef, Payload, PayloadContainer, PayloadKeyType,
 };
 
 fn check_condition<F>(checker: &F, condition: &Condition) -> bool
@@ -32,6 +32,7 @@ where
     F: Fn(&Condition) -> bool,
 {
     check_should(checker, &filter.should)
+        && check_min_should(checker, &filter.min_should)
         && check_must(checker, &filter.must)
         && check_must_not(checker, &filter.must_not)
 }
@@ -44,6 +45,27 @@ where
     match should {
         None => true,
         Some(conditions) => conditions.iter().any(check),
+    }
+}
+
+fn check_min_should<F>(checker: &F, min_should: &Option<MinShould>) -> bool
+where
+    F: Fn(&Condition) -> bool,
+{
+    let check = |x| check_condition(checker, x);
+    match min_should {
+        None => true,
+        Some(MinShould {
+            conditions,
+            min_count,
+        }) => {
+            conditions
+                .iter()
+                .filter(|cond| check(cond))
+                .take(*min_count)
+                .count()
+                == *min_count
+        }
     }
 }
 
@@ -480,36 +502,21 @@ mod tests {
             },
         ));
 
-        let query = Filter {
-            should: None,
-            must: Some(vec![match_red.clone()]),
-            must_not: None,
-        };
+        let query = Filter::new_must(match_red.clone());
         assert!(payload_checker.check(0, &query));
 
-        let query = Filter {
-            should: None,
-            must: Some(vec![match_blue.clone()]),
-            must_not: None,
-        };
+        let query = Filter::new_must(match_blue.clone());
         assert!(!payload_checker.check(0, &query));
 
-        let query = Filter {
-            should: None,
-            must: None,
-            must_not: Some(vec![match_blue.clone()]),
-        };
+        let query = Filter::new_must_not(match_blue.clone());
         assert!(payload_checker.check(0, &query));
 
-        let query = Filter {
-            should: None,
-            must: None,
-            must_not: Some(vec![match_red.clone()]),
-        };
+        let query = Filter::new_must_not(match_red.clone());
         assert!(!payload_checker.check(0, &query));
 
         let query = Filter {
             should: Some(vec![match_red.clone(), match_blue.clone()]),
+            min_should: None,
             must: Some(vec![with_delivery.clone(), in_berlin.clone()]),
             must_not: None,
         };
@@ -517,6 +524,7 @@ mod tests {
 
         let query = Filter {
             should: Some(vec![match_red.clone(), match_blue.clone()]),
+            min_should: None,
             must: Some(vec![with_delivery, in_moscow.clone()]),
             must_not: None,
         };
@@ -526,15 +534,18 @@ mod tests {
             should: Some(vec![
                 Condition::Filter(Filter {
                     should: None,
+                    min_should: None,
                     must: Some(vec![match_red.clone(), in_moscow.clone()]),
                     must_not: None,
                 }),
                 Condition::Filter(Filter {
                     should: None,
+                    min_should: None,
                     must: Some(vec![match_blue.clone(), in_berlin.clone()]),
                     must_not: None,
                 }),
             ]),
+            min_should: None,
             must: None,
             must_not: None,
         };
@@ -544,65 +555,79 @@ mod tests {
             should: Some(vec![
                 Condition::Filter(Filter {
                     should: None,
+                    min_should: None,
+                    must: Some(vec![match_blue.clone(), in_moscow.clone()]),
+                    must_not: None,
+                }),
+                Condition::Filter(Filter {
+                    should: None,
+                    min_should: None,
+                    must: Some(vec![match_red.clone(), in_berlin.clone()]),
+                    must_not: None,
+                }),
+            ]),
+            min_should: None,
+            must: None,
+            must_not: None,
+        };
+        assert!(payload_checker.check(0, &query));
+
+        let query = Filter::new_must_not(with_bad_rating);
+        assert!(!payload_checker.check(0, &query));
+
+        // min_should
+        let query = Filter::new_min_should(MinShould {
+            conditions: vec![match_blue.clone(), in_moscow.clone()],
+            min_count: 1,
+        });
+        assert!(!payload_checker.check(0, &query));
+
+        let query = Filter::new_min_should(MinShould {
+            conditions: vec![match_red.clone(), in_berlin.clone(), in_moscow.clone()],
+            min_count: 2,
+        });
+        assert!(payload_checker.check(0, &query));
+
+        let query = Filter::new_min_should(MinShould {
+            conditions: vec![
+                Condition::Filter(Filter {
+                    should: None,
+                    min_should: None,
                     must: Some(vec![match_blue, in_moscow]),
                     must_not: None,
                 }),
                 Condition::Filter(Filter {
                     should: None,
+                    min_should: None,
                     must: Some(vec![match_red, in_berlin]),
                     must_not: None,
                 }),
-            ]),
-            must: None,
-            must_not: None,
-        };
+            ],
+            min_count: 1,
+        });
         assert!(payload_checker.check(0, &query));
 
-        let query = Filter {
-            should: None,
-            must: Some(vec![shipped_in_february]),
-            must_not: None,
-        };
+        // DateTime payload index
+        let query = Filter::new_must(shipped_in_february);
         assert!(payload_checker.check(0, &query));
-        let query = Filter {
-            should: None,
-            must: Some(vec![shipped_in_march]),
-            must_not: None,
-        };
+
+        let query = Filter::new_must(shipped_in_march);
         assert!(!payload_checker.check(0, &query));
 
-        let query = Filter {
-            should: None,
-            must: None,
-            must_not: Some(vec![with_bad_rating]),
-        };
-        assert!(!payload_checker.check(0, &query));
-
+        // id Filter
         let ids: HashSet<_> = vec![1, 2, 3].into_iter().map(|x| x.into()).collect();
 
-        let query = Filter {
-            should: None,
-            must: None,
-            must_not: Some(vec![Condition::HasId(ids.into())]),
-        };
+        let query = Filter::new_must_not(Condition::HasId(ids.into()));
         assert!(!payload_checker.check(2, &query));
 
         let ids: HashSet<_> = vec![1, 2, 3].into_iter().map(|x| x.into()).collect();
 
-        let query = Filter {
-            should: None,
-            must: None,
-            must_not: Some(vec![Condition::HasId(ids.into())]),
-        };
+        let query = Filter::new_must_not(Condition::HasId(ids.into()));
         assert!(payload_checker.check(10, &query));
 
         let ids: HashSet<_> = vec![1, 2, 3].into_iter().map(|x| x.into()).collect();
 
-        let query = Filter {
-            should: None,
-            must: Some(vec![Condition::HasId(ids.into())]),
-            must_not: None,
-        };
+        let query = Filter::new_must(Condition::HasId(ids.into()));
         assert!(payload_checker.check(2, &query));
     }
 }
