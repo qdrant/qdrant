@@ -782,7 +782,9 @@ impl ShardHolder {
         // so we `keep` it and ignore the error
         let _ = temp_file.keep();
 
-        Ok(snapshot_manager.get_snapshot_description(snapshot_file_name).await?)
+        Ok(snapshot_manager
+            .get_snapshot_description(snapshot_file_name)
+            .await?)
     }
 
     /// # Cancel safety

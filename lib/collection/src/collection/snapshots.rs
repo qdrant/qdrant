@@ -171,7 +171,9 @@ impl Collection {
         log::info!("Collection snapshot {} completed", snapshot_name.display());
         Ok((
             snapshot_name.clone(),
-            snapshot_manager.get_snapshot_description(snapshot_name).await?,
+            snapshot_manager
+                .get_snapshot_description(snapshot_name)
+                .await?,
         ))
     }
 
