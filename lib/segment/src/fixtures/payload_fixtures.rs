@@ -231,6 +231,7 @@ pub fn random_match_any_filter<R: Rng + ?Sized>(
             }),
         ))]),
         must_not: None,
+        min_should: None,
     }
 }
 
