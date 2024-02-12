@@ -1,5 +1,4 @@
 use std::cmp::max;
-use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use common::types::PointOffsetType;
@@ -125,72 +124,21 @@ impl InvertedIndexRam {
     }
 }
 
-/// Builder used in tests to validate `upsert` implementation
-pub struct InvertedIndexBuilder {
-    postings: HashMap<DimId, PostingList>,
-}
-
-impl Default for InvertedIndexBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl InvertedIndexBuilder {
-    pub fn new() -> InvertedIndexBuilder {
-        InvertedIndexBuilder {
-            postings: HashMap::new(),
-        }
-    }
-
-    pub fn add(&mut self, id: DimId, posting: PostingList) -> &mut Self {
-        self.postings.insert(id, posting);
-        self
-    }
-
-    pub fn build(&mut self) -> InvertedIndexRam {
-        // Get sorted keys
-        let mut keys: Vec<u32> = self.postings.keys().copied().collect();
-        keys.sort_unstable();
-
-        let last_key = *keys.last().unwrap_or(&0);
-        // Allocate postings of max key size
-        let mut postings = Vec::new();
-        postings.resize_with(last_key as usize + 1, PostingList::default);
-
-        // Move postings from hashmap to postings vector
-        for key in keys {
-            postings[key as usize] = self.postings.remove(&key).unwrap();
-        }
-
-        // Count unique ids
-        let unique_ids: HashSet<PointOffsetType> = postings
-            .iter()
-            .flat_map(|posting_list| posting_list.elements.iter())
-            .map(|posting| posting.record_id)
-            .collect();
-        let vector_count = unique_ids.len();
-
-        InvertedIndexRam {
-            postings,
-            vector_count,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use tempfile::Builder;
 
     use super::*;
+    use crate::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
 
     #[test]
     fn upsert_same_dimension_inverted_index_ram() {
         let mut inverted_index_ram = InvertedIndexBuilder::new()
-            .add(1, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
-            .add(2, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
-            .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+            .add(1, vec![(1, 10.0), (2, 10.0), (3, 10.0)].try_into().unwrap())
+            .add(2, vec![(1, 20.0), (2, 20.0), (3, 20.0)].try_into().unwrap())
+            .add(3, vec![(1, 30.0), (2, 30.0), (3, 30.0)].try_into().unwrap())
             .build();
+
         assert_eq!(inverted_index_ram.vector_count, 3);
 
         inverted_index_ram.upsert(
@@ -211,9 +159,9 @@ mod tests {
     #[test]
     fn upsert_new_dimension_inverted_index_ram() {
         let mut inverted_index_ram = InvertedIndexBuilder::new()
-            .add(1, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
-            .add(2, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
-            .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+            .add(1, vec![(1, 10.0), (2, 10.0), (3, 10.0)].try_into().unwrap())
+            .add(2, vec![(1, 20.0), (2, 20.0), (3, 20.0)].try_into().unwrap())
+            .add(3, vec![(1, 30.0), (2, 30.0), (3, 30.0)].try_into().unwrap())
             .build();
 
         assert_eq!(inverted_index_ram.vector_count, 3);
@@ -251,27 +199,21 @@ mod tests {
 
     #[test]
     fn test_upsert_insert_equivalence() {
+        let first_vec = SparseVector::new(vec![1, 2, 3], vec![10.0, 10.0, 10.0]).unwrap();
+        let second_vec = SparseVector::new(vec![1, 2, 3], vec![20.0, 20.0, 20.0]).unwrap();
+        let third_vec = SparseVector::new(vec![1, 2, 3], vec![30.0, 30.0, 30.0]).unwrap();
         let inverted_index_ram_built = InvertedIndexBuilder::new()
-            .add(1, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
-            .add(2, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
-            .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+            .add(1, first_vec.clone())
+            .add(2, second_vec.clone())
+            .add(3, third_vec.clone())
             .build();
 
         assert_eq!(inverted_index_ram_built.vector_count, 3);
 
         let mut inverted_index_ram_upserted = InvertedIndexRam::empty();
-        inverted_index_ram_upserted.upsert(
-            1,
-            SparseVector::new(vec![1, 2, 3], vec![10.0, 10.0, 10.0]).unwrap(),
-        );
-        inverted_index_ram_upserted.upsert(
-            2,
-            SparseVector::new(vec![1, 2, 3], vec![20.0, 20.0, 20.0]).unwrap(),
-        );
-        inverted_index_ram_upserted.upsert(
-            3,
-            SparseVector::new(vec![1, 2, 3], vec![30.0, 30.0, 30.0]).unwrap(),
-        );
+        inverted_index_ram_upserted.upsert(1, first_vec);
+        inverted_index_ram_upserted.upsert(2, second_vec);
+        inverted_index_ram_upserted.upsert(3, third_vec);
 
         assert_eq!(
             inverted_index_ram_built.postings.len(),
@@ -283,9 +225,9 @@ mod tests {
     #[test]
     fn inverted_index_ram_save_load() {
         let inverted_index_ram = InvertedIndexBuilder::new()
-            .add(1, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
-            .add(2, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
-            .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+            .add(1, vec![(1, 10.0), (2, 10.0), (3, 10.0)].try_into().unwrap())
+            .add(2, vec![(1, 20.0), (2, 20.0), (3, 20.0)].try_into().unwrap())
+            .add(3, vec![(1, 30.0), (2, 30.0), (3, 30.0)].try_into().unwrap())
             .build();
         assert_eq!(inverted_index_ram.vector_count, 3);
 

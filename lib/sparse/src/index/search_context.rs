@@ -407,10 +407,8 @@ mod tests {
     use crate::common::scores_memory_pool::ScoresMemoryPool;
     use crate::common::sparse_vector_fixture::random_sparse_vector;
     use crate::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
-    use crate::index::inverted_index::inverted_index_ram::{
-        InvertedIndexBuilder, InvertedIndexRam,
-    };
-    use crate::index::posting_list::PostingList;
+    use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
+    use crate::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
 
     static TEST_SCORES_POOL: OnceLock<ScoresMemoryPool> = OnceLock::new();
 
@@ -474,9 +472,9 @@ mod tests {
     #[test]
     fn search_test() {
         let inverted_index_ram = InvertedIndexBuilder::new()
-            .add(1, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
-            .add(2, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
-            .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+            .add(1, vec![(1, 10.0), (2, 10.0), (3, 10.0)].try_into().unwrap())
+            .add(2, vec![(1, 20.0), (2, 20.0), (3, 20.0)].try_into().unwrap())
+            .add(3, vec![(1, 30.0), (2, 30.0), (3, 30.0)].try_into().unwrap())
             .build();
 
         // test with ram index
@@ -496,9 +494,9 @@ mod tests {
     fn search_with_update_test() {
         let is_stopped = AtomicBool::new(false);
         let mut inverted_index_ram = InvertedIndexBuilder::new()
-            .add(1, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
-            .add(2, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
-            .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+            .add(1, vec![(1, 10.0), (2, 10.0), (3, 10.0)].try_into().unwrap())
+            .add(2, vec![(1, 20.0), (2, 20.0), (3, 20.0)].try_into().unwrap())
+            .add(3, vec![(1, 30.0), (2, 30.0), (3, 30.0)].try_into().unwrap())
             .build();
 
         let mut search_context = SearchContext::new(
@@ -637,22 +635,15 @@ mod tests {
     #[test]
     fn search_with_hot_key_test() {
         let inverted_index_ram = InvertedIndexBuilder::new()
-            .add(
-                1,
-                PostingList::from(vec![
-                    (1, 10.0),
-                    (2, 20.0),
-                    (3, 30.0),
-                    (4, 1.0),
-                    (5, 2.0),
-                    (6, 3.0),
-                    (7, 4.0),
-                    (8, 5.0),
-                    (9, 6.0),
-                ]),
-            )
-            .add(2, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
-            .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+            .add(1, vec![(1, 10.0), (2, 10.0), (3, 10.0)].try_into().unwrap())
+            .add(2, vec![(1, 20.0), (2, 20.0), (3, 20.0)].try_into().unwrap())
+            .add(3, vec![(1, 30.0), (2, 30.0), (3, 30.0)].try_into().unwrap())
+            .add(4, vec![(1, 1.0)].try_into().unwrap())
+            .add(5, vec![(1, 2.0)].try_into().unwrap())
+            .add(6, vec![(1, 3.0)].try_into().unwrap())
+            .add(7, vec![(1, 4.0)].try_into().unwrap())
+            .add(8, vec![(1, 5.0)].try_into().unwrap())
+            .add(9, vec![(1, 6.0)].try_into().unwrap())
             .build();
 
         // test with ram index
@@ -671,7 +662,9 @@ mod tests {
     #[test]
     fn pruning_single_to_end_test() {
         let inverted_index_ram = InvertedIndexBuilder::new()
-            .add(1, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+            .add(1, vec![(1, 10.0)].try_into().unwrap())
+            .add(2, vec![(1, 20.0)].try_into().unwrap())
+            .add(3, vec![(1, 30.0)].try_into().unwrap())
             .build();
 
         let is_stopped = AtomicBool::new(false);
@@ -700,12 +693,12 @@ mod tests {
     #[test]
     fn pruning_multi_to_end_test() {
         let inverted_index_ram = InvertedIndexBuilder::new()
-            .add(
-                1,
-                PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0), (4, 10.0)]),
-            )
-            .add(2, PostingList::from(vec![(6, 20.0), (7, 30.0)]))
-            .add(3, PostingList::from(vec![(5, 10.0), (6, 20.0), (7, 30.0)]))
+            .add(1, vec![(1, 10.0)].try_into().unwrap())
+            .add(2, vec![(1, 20.0)].try_into().unwrap())
+            .add(3, vec![(1, 30.0)].try_into().unwrap())
+            .add(5, vec![(3, 10.0)].try_into().unwrap())
+            .add(6, vec![(2, 20.0), (3, 20.0)].try_into().unwrap())
+            .add(7, vec![(2, 30.0), (3, 30.0)].try_into().unwrap())
             .build();
 
         let is_stopped = AtomicBool::new(false);
@@ -734,19 +727,13 @@ mod tests {
     #[test]
     fn pruning_multi_under_prune_test() {
         let inverted_index_ram = InvertedIndexBuilder::new()
-            .add(
-                1,
-                PostingList::from(vec![
-                    (1, 10.0),
-                    (2, 20.0),
-                    (3, 20.0),
-                    (4, 10.0),
-                    (6, 20.0),
-                    (7, 40.0),
-                ]),
-            )
-            .add(2, PostingList::from(vec![(6, 20.0), (7, 30.0)]))
-            .add(3, PostingList::from(vec![(5, 10.0), (6, 20.0), (7, 30.0)]))
+            .add(1, vec![(1, 10.0)].try_into().unwrap())
+            .add(2, vec![(1, 20.0)].try_into().unwrap())
+            .add(3, vec![(1, 20.0)].try_into().unwrap())
+            .add(4, vec![(1, 10.0)].try_into().unwrap())
+            .add(5, vec![(3, 10.0)].try_into().unwrap())
+            .add(6, vec![(1, 20.0), (2, 20.0), (3, 20.0)].try_into().unwrap())
+            .add(7, vec![(1, 40.0), (2, 30.0), (3, 30.0)].try_into().unwrap())
             .build();
 
         let is_stopped = AtomicBool::new(false);
@@ -794,9 +781,9 @@ mod tests {
     fn promote_longest_test() {
         let is_stopped = AtomicBool::new(false);
         let inverted_index_ram = InvertedIndexBuilder::new()
-            .add(1, PostingList::from(vec![(1, 10.0), (2, 20.0)]))
-            .add(2, PostingList::from(vec![(1, 10.0), (3, 30.0)]))
-            .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+            .add(1, vec![(1, 10.0), (2, 10.0), (3, 10.0)].try_into().unwrap())
+            .add(2, vec![(1, 20.0), (3, 20.0)].try_into().unwrap())
+            .add(3, vec![(2, 30.0), (3, 30.0)].try_into().unwrap())
             .build();
 
         let mut search_context = SearchContext::new(
@@ -831,9 +818,9 @@ mod tests {
     fn plain_search_all_test() {
         let is_stopped = AtomicBool::new(false);
         let inverted_index_ram = InvertedIndexBuilder::new()
-            .add(1, PostingList::from(vec![(1, 10.0), (2, 20.0)]))
-            .add(2, PostingList::from(vec![(1, 10.0), (3, 30.0)]))
-            .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+            .add(1, vec![(1, 10.0), (2, 10.0), (3, 10.0)].try_into().unwrap())
+            .add(2, vec![(1, 20.0), (3, 20.0)].try_into().unwrap())
+            .add(3, vec![(1, 30.0), (3, 30.0)].try_into().unwrap())
             .build();
 
         let mut search_context = SearchContext::new(
@@ -871,9 +858,9 @@ mod tests {
     fn plain_search_gap_test() {
         let is_stopped = AtomicBool::new(false);
         let inverted_index_ram = InvertedIndexBuilder::new()
-            .add(1, PostingList::from(vec![(1, 10.0), (2, 20.0)]))
-            .add(2, PostingList::from(vec![(1, 10.0), (3, 30.0)]))
-            .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
+            .add(1, vec![(1, 10.0), (2, 10.0), (3, 10.0)].try_into().unwrap())
+            .add(2, vec![(1, 20.0), (3, 20.0)].try_into().unwrap())
+            .add(3, vec![(2, 30.0), (3, 30.0)].try_into().unwrap())
             .build();
 
         // query vector has a gap for dimension 2
