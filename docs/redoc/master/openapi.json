@@ -7302,7 +7302,7 @@
             "$ref": "#/components/schemas/WithVector"
           },
           "order_by": {
-            "description": "Order the records by a payload field, then by the point id.",
+            "description": "Order the records by a payload field.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/OrderByInterface"
