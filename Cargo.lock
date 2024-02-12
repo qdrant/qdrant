@@ -3237,9 +3237,9 @@ checksum = "63335b2e2c34fae2fb0aa2cecfd9f0832a1e24b3b32ecec612c3426d46dc8aaa"
 
 [[package]]
 name = "num-derive"
-version = "0.4.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cfb77679af88f8b125209d354a202862602672222e7f2313fdd6dc349bad4712"
+checksum = "ed3955f1a9c7c0c15e092f9c887db08b1fc683305fdf6eb6684f22555355e202"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5989,7 +5989,7 @@ dependencies = [
  "memmap2 0.9.4",
  "rand 0.8.5",
  "rand_distr",
- "rustix 0.37.27",
+ "rustix 0.38.28",
  "serde",
 ]
 
