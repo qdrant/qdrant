@@ -903,7 +903,7 @@ mod tests {
 
         let src = serde_json::from_str::<serde_json::Map<String, Value>>(
             r#"
-            { "c": 5 },
+            { "c": 5 }
             "#,
         )
         .unwrap();
@@ -918,7 +918,7 @@ mod tests {
                     "a": {
                         "b": [
                             { "c": 1 },
-                            { "c": 5 },
+                            { "c": 2 },
                             { "d": { "e": 3 } }
                         ]
                     },
@@ -953,7 +953,7 @@ mod tests {
 
         let src = serde_json::from_str::<serde_json::Map<String, Value>>(
             r#"
-            { "b": 5 },
+            { "b": 5 }
             "#,
         )
         .unwrap();
@@ -998,7 +998,7 @@ mod tests {
 
         let src = serde_json::from_str::<serde_json::Map<String, Value>>(
             r#"
-            { "c": 5 },
+            { "c": 5 }
             "#,
         )
         .unwrap();
@@ -1047,7 +1047,7 @@ mod tests {
 
         let src = serde_json::from_str::<serde_json::Map<String, Value>>(
             r#"
-            {},
+            {}
             "#,
         )
         .unwrap();
@@ -1087,7 +1087,7 @@ mod tests {
 
         let src = serde_json::from_str::<serde_json::Map<String, Value>>(
             r#"
-            {"c": 1},
+            {"c": 1}
             "#,
         )
         .unwrap();
