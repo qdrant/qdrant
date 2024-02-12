@@ -42,7 +42,7 @@ pub struct SparseVectorIndex<TInvertedIndex: InvertedIndex> {
     searches_telemetry: SparseSearchesTelemetry,
     is_appendable: bool,
     pub indices_tracker: IndicesTracker,
-    pub scores_memory_pool: ScoresMemoryPool,
+    scores_memory_pool: ScoresMemoryPool,
 }
 
 impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {

@@ -1126,6 +1126,7 @@ dependencies = [
 name = "common"
 version = "0.0.0"
 dependencies = [
+ "lazy_static",
  "num_cpus",
  "ordered-float 4.2.0",
  "serde",
@@ -4676,7 +4677,6 @@ dependencies = [
  "io",
  "io-uring",
  "itertools 0.12.1",
- "lazy_static",
  "log",
  "macro_rules_attribute",
  "memmap2 0.9.4",
@@ -4976,7 +4976,6 @@ dependencies = [
  "common",
  "io",
  "itertools 0.12.1",
- "lazy_static",
  "memmap2 0.9.4",
  "memory",
  "ordered-float 4.2.0",
