@@ -74,10 +74,24 @@ impl ShardReplicaSet {
         Ok(())
     }
 
+    /// Queue proxy our local shard, pointing to the remote shard.
+    ///
+    /// A `from_version` may be provided to start queueing the WAL from a specific version. The
+    /// point may be in the past, but can never be outside the range of what we currently have in
+    /// WAL. If `None` is provided, it'll queue from the latest available WAL version at this time.
+    ///
+    /// For snapshot transfer we queue from the latest version, so we can send all new updates once
+    /// the remote shard has been recovered. For WAL delta transfer we queue from a specific
+    /// version based on our recovery point.
+    ///
     /// # Cancel safety
     ///
     /// This method is cancel safe.
-    pub async fn queue_proxify_local(&self, remote_shard: RemoteShard) -> CollectionResult<()> {
+    pub async fn queue_proxify_local(
+        &self,
+        remote_shard: RemoteShard,
+        from_version: Option<u64>,
+    ) -> CollectionResult<()> {
         let mut local = self.local.write().await;
 
         match local.deref() {
@@ -145,10 +159,34 @@ impl ShardReplicaSet {
             _ => unreachable!(),
         };
 
-        let proxy_shard = QueueProxyShard::new(local_shard, remote_shard, wal_keep_from);
-        let _ = local.insert(Shard::QueueProxy(proxy_shard));
+        // Try to queue proxify with or without version
+        let proxy_shard = match from_version {
+            None => Ok(QueueProxyShard::new(
+                local_shard,
+                remote_shard,
+                wal_keep_from,
+            )),
+            Some(from_version) => QueueProxyShard::new_from_version(
+                local_shard,
+                remote_shard,
+                wal_keep_from,
+                from_version,
+            ),
+        };
 
-        Ok(())
+        // Insert queue proxy shard on success or revert to local shard on failure
+        match proxy_shard {
+            // All good, insert queue proxy shard
+            Ok(proxy_shard) => {
+                let _ = local.insert(Shard::QueueProxy(proxy_shard));
+                Ok(())
+            }
+            Err((local_shard, err)) => {
+                log::warn!("Failed to queue proxify shard, reverting to local shard: {err}");
+                let _ = local.insert(Shard::Local(local_shard));
+                Err(err)
+            }
+        }
     }
 
     /// Un-proxify local shard wrapped as `ForwardProxy` or `QueueProxy`.
