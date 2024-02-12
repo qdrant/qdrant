@@ -296,8 +296,9 @@ struct Inner {
     pub(super) wrapped_shard: LocalShard,
     /// Wrapped remote shard, to transfer operations to.
     pub(super) remote_shard: RemoteShard,
-    /// ID of the last WAL operation we consider transferred.
-    last_update_idx: AtomicU64,
+    /// ID of the WAL operation we should transfer next. We consider everything before it to be
+    /// transferred.
+    transfer_from: AtomicU64,
     /// Lock required to protect transfer-in-progress updates.
     /// It should block data updating operations while the batch is being transferred.
     update_lock: Mutex<()>,
@@ -314,18 +315,18 @@ impl Inner {
         remote_shard: RemoteShard,
         wal_keep_from: Arc<AtomicU64>,
     ) -> Self {
-        let last_idx = wrapped_shard.wal.lock().last_index();
+        let start_from = wrapped_shard.wal.lock().last_index();
 
         let shard = Self {
             wrapped_shard,
             remote_shard,
-            last_update_idx: last_idx.into(),
+            transfer_from: start_from.into(),
             update_lock: Default::default(),
             wal_keep_from,
         };
 
         // Keep all new WAL entries so we don't truncate them off when we still need to transfer
-        shard.set_wal_keep_from(Some(last_idx + 1));
+        shard.set_wal_keep_from(Some(start_from));
 
         shard
     }
@@ -339,7 +340,7 @@ impl Inner {
         let shard = Self {
             wrapped_shard,
             remote_shard,
-            last_update_idx: version.into(),
+            transfer_from: version.into(),
             update_lock: Default::default(),
             wal_keep_from,
         };
@@ -364,9 +365,9 @@ impl Inner {
     pub async fn transfer_all_missed_updates(&self) -> CollectionResult<()> {
         while !self.transfer_wal_batch().await? {}
 
-        // Set max acknowledged version for WAL to last item we transferred
-        let last_idx = self.last_update_idx.load(Ordering::Relaxed);
-        self.set_wal_keep_from(Some(last_idx + 1));
+        // Set the WAL version to keep to the next item we should transfer
+        let transfer_from = self.transfer_from.load(Ordering::Relaxed);
+        self.set_wal_keep_from(Some(transfer_from));
 
         Ok(())
     }
@@ -387,13 +388,13 @@ impl Inner {
     /// idempotent.
     async fn transfer_wal_batch(&self) -> CollectionResult<bool> {
         let mut update_lock = Some(self.update_lock.lock().await);
-        let start_index = self.last_update_idx.load(Ordering::Relaxed) + 1;
+        let transfer_from = self.transfer_from.load(Ordering::Relaxed);
 
         // Lock wall, count pending items to transfer, grab batch
         let (pending_count, batch) = {
             let wal = self.wrapped_shard.wal.lock();
-            let items_left = wal.last_index().saturating_sub(start_index - 1);
-            let batch = wal.read(start_index).take(BATCH_SIZE).collect::<Vec<_>>();
+            let items_left = wal.last_index().saturating_sub(transfer_from - 1);
+            let batch = wal.read(transfer_from).take(BATCH_SIZE).collect::<Vec<_>>();
             (items_left, batch)
         };
 
@@ -427,7 +428,7 @@ impl Inner {
             }
 
             if let Some(idx) = last_idx {
-                self.last_update_idx.store(idx, Ordering::Relaxed);
+                self.transfer_from.store(idx + 1, Ordering::Relaxed);
             }
         }
 
