@@ -964,8 +964,6 @@ impl LocalShard {
             .lock()
             .read_from_last(true)
             .filter_map(|(op_num, update)| update.clock_tag.map(|clock_tag| (op_num, clock_tag)))
-            // Skip forced clock tags
-            .filter(|(_, clock_tag)| !clock_tag.force)
             // Keep scrolling until we have no clocks left
             .find(|(_, clock_tag)| {
                 recovery_point.remove_equal_or_lower(*clock_tag);
