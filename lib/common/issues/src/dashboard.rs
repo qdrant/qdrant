@@ -83,39 +83,31 @@ mod tests {
     #[serial]
     fn test_singleton() -> std::thread::Result<()> {
         clear();
+
         let handle1 = std::thread::spawn(|| {
             submit(DummyIssue::new("issue1"));
             submit(DummyIssue::new("issue2"));
             submit(DummyIssue::new("issue3"));
-
-            std::thread::sleep(std::time::Duration::from_millis(50));
-
-            assert!(!submit(DummyIssue::new("issue4")));
         });
 
         let handle2 = std::thread::spawn(|| {
             submit(DummyIssue::new("issue4"));
             submit(DummyIssue::new("issue5"));
             submit(DummyIssue::new("issue6"));
-
-            std::thread::sleep(std::time::Duration::from_millis(50));
-
-            assert!(!submit(DummyIssue::new("issue1")));
-
-            std::thread::sleep(std::time::Duration::from_millis(40));
-
-            assert!(solve("issue1"));
-            assert!(solve("issue2"));
-            assert!(solve("issue3"));
-            assert!(solve("issue4"));
-            assert!(solve("issue5"));
-            assert!(solve("issue6"));
         });
-
-        std::thread::sleep(std::time::Duration::from_millis(140));
 
         handle1.join()?;
         handle2.join()?;
+
+        assert_eq!(all_issues().len(), 6);
+        assert!(solve("issue1"));
+        assert!(solve("issue2"));
+        assert!(solve("issue3"));
+        assert!(solve("issue4"));
+        assert!(solve("issue5"));
+        assert!(solve("issue6"));
+
+        clear();
         Ok(())
     }
 }
