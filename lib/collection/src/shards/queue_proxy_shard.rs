@@ -416,7 +416,12 @@ impl Inner {
         let last_idx = batch.last().map(|(idx, _)| *idx);
         for remaining_attempts in (0..BATCH_RETRIES).rev() {
             match transfer_operations_batch(&batch, &self.remote_shard).await {
-                Ok(()) => {}
+                Ok(()) => {
+                    if let Some(idx) = last_idx {
+                        self.transfer_from.store(idx + 1, Ordering::Relaxed);
+                    }
+                    break;
+                }
                 Err(err) if remaining_attempts > 0 => {
                     log::error!(
                         "Failed to transfer batch of updates to peer {}, retrying: {err}",
@@ -425,10 +430,6 @@ impl Inner {
                     continue;
                 }
                 Err(err) => return Err(err),
-            }
-
-            if let Some(idx) = last_idx {
-                self.transfer_from.store(idx + 1, Ordering::Relaxed);
             }
         }
 
