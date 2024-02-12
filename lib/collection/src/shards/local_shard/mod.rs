@@ -1,5 +1,6 @@
 pub mod clock_map;
 mod shard_ops;
+pub mod wal_delta;
 
 use std::collections::{BTreeSet, HashMap};
 use std::mem::size_of;
@@ -26,7 +27,6 @@ use segment::types::{
     QuantizationConfig, SegmentConfig, SegmentType,
 };
 use segment::utils::mem::Mem;
-use thiserror::Error;
 use tokio::fs::{copy, create_dir_all, remove_dir_all, remove_file};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
@@ -920,59 +920,6 @@ impl LocalShard {
     pub async fn shard_recovery_point(&self) -> RecoveryPoint {
         self.clock_map.lock().await.to_recovery_point()
     }
-
-    /// Resolve the WAL delta on the current shard for the given `recovery_point`
-    ///
-    /// The delta can be sent over to the node which the recovery point is from, to restore its
-    /// WAL making it consistent with the current shard.
-    ///
-    /// On success, a WAL record number from which the delta is resolved is returned.
-    /// If a WAL delta could not be resolved, an error is returned describing the failure.
-    pub async fn resolve_wal_delta(
-        &self,
-        mut recovery_point: RecoveryPoint,
-    ) -> Result<u64, WalDeltaError> {
-        if recovery_point.is_empty() {
-            return Err(WalDeltaError::Empty);
-        }
-
-        let last_seen_snapshot = self.clock_map.lock().await.to_recovery_point();
-
-        // If our current node has any lower last seen clock than the recovery point specifies,
-        // we cannot resolve a WAL delta
-        if recovery_point.has_any_higher(&last_seen_snapshot) {
-            return Err(WalDeltaError::HigherThanCurrent);
-        }
-
-        // Extend clock map with missing clocks this node know about
-        // Ensure the recovering node gets records for a clock it might not have seen yet
-        recovery_point.extend_with_missing_clocks(&last_seen_snapshot);
-
-        // Remove clocks that are equal to the current last seen
-        // We don't have to transfer any record for these
-        // TODO: do we want to remove higher clocks too, as the recovery node already has all data?
-        recovery_point.remove_equal_clocks(&last_seen_snapshot);
-
-        // TODO: check truncated clock values or each clock we have:
-        // TODO: - if truncated is higher, we cannot resolve diff
-
-        // Scroll back over the WAL and find a record that covered all clocks
-        // Drain satisfied clocks from the recovery point until we have nothing left
-        log::trace!("Resolving WAL delta for: {recovery_point:?}");
-        let delta_from = self
-            .wal
-            .lock()
-            .read_from_last(true)
-            .filter_map(|(op_num, update)| update.clock_tag.map(|clock_tag| (op_num, clock_tag)))
-            // Keep scrolling until we have no clocks left
-            .find(|(_, clock_tag)| {
-                recovery_point.remove_equal_or_lower(*clock_tag);
-                recovery_point.is_empty()
-            })
-            .map(|(op_num, _)| op_num);
-
-        delta_from.ok_or(WalDeltaError::NotFound)
-    }
 }
 
 impl Drop for LocalShard {
@@ -988,17 +935,4 @@ impl Drop for LocalShard {
             handle.expect("Failed to create thread for shard drop");
         })
     }
-}
-
-#[derive(Error, Debug, Clone)]
-#[error("cannot resolve WAL delta: {0}")]
-pub enum WalDeltaError {
-    #[error("recovery point has no clocks to resolve delta for")]
-    Empty,
-    #[error("recovery point has higher clocks than current WAL")]
-    HigherThanCurrent,
-    #[error("some recovery point clocks are truncated in our WAL")]
-    Truncated,
-    #[error("some recovery point clocks are not found in our WAL")]
-    NotFound,
 }
