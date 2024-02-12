@@ -75,7 +75,7 @@ impl QueueProxyShard {
     /// # Errors
     ///
     /// This fails if the given `version` is not in bounds of our current WAL. If the given
-    /// `version` is to old or to new, queue proxy creation is rejected.
+    /// `version` is too old or too new, queue proxy creation is rejected.
     pub fn new_from_version(
         wrapped_shard: LocalShard,
         remote_shard: RemoteShard,
