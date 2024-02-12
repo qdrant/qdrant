@@ -881,4 +881,184 @@ mod tests {
         assert!(!check_exclude_pattern("a.b.c", "a"));
         assert!(check_exclude_pattern("a", "a.d"));
     }
+
+    #[test]
+    fn test_set_value_to_json_with_empty_key() {
+        let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            {
+                "a": {
+                    "b": [
+                        { "c": 1 },
+                        { "c": 2 },
+                        { "d": { "e": 3 } }
+                    ]
+                },
+                "f": 3,
+                "g": ["g0", "g1", "g2"]
+            }
+            "#,
+        )
+        .unwrap();
+
+        let src = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            { "c": 5 },
+            "#,
+        )
+        .unwrap();
+
+        set_value_to_json_map("", &mut map, &src);
+
+        assert_eq!(
+            map,
+            serde_json::from_str::<serde_json::Map<String, Value>>(
+                r#"
+                {
+                    "a": {
+                        "b": [
+                            { "c": 1 },
+                            { "c": 5 },
+                            { "d": { "e": 3 } }
+                        ]
+                    },
+                    "f": 3,
+                    "g": ["g0", "g1", "g2"],
+                    "c": 5
+                }
+                "#,
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_set_value_to_json_with_array_index() {
+        let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            {
+                "a": {
+                    "b": [
+                        { "c": 1 },
+                        { "c": 2 },
+                        { "d": { "e": 3 } }
+                    ]
+                },
+                "f": 3,
+                "g": ["g0", "g1", "g2"]
+            }
+            "#,
+        )
+        .unwrap();
+
+        let src = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            { "c": 5 },
+            "#,
+        )
+        .unwrap();
+
+        set_value_to_json_map("a.b[1]", &mut map, &src);
+
+        assert_eq!(
+            map,
+            serde_json::from_str::<serde_json::Map<String, Value>>(
+                r#"
+                {
+                    "a": {
+                        "b": [
+                            { "c": 1 },
+                            { "c": 5 },
+                            { "d": { "e": 3 } }
+                        ]
+                    },
+                    "f": 3,
+                    "g": ["g0", "g1", "g2"]
+                }
+                "#,
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_set_value_to_json_with_empty_src() {
+        let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            {
+                "a": {
+                    "b": [
+                        { "c": 1 },
+                        { "c": 2 },
+                        { "d": { "e": 3 } }
+                    ]
+                },
+                "f": 3,
+                "g": ["g0", "g1", "g2"]
+            }
+            "#,
+        )
+        .unwrap();
+
+        let src = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            {},
+            "#,
+        )
+        .unwrap();
+
+        set_value_to_json_map("a.b[1]", &mut map, &src);
+
+        assert_eq!(
+            map,
+            serde_json::from_str::<serde_json::Map<String, Value>>(
+                r#"
+                {
+                    "a": {
+                        "b": [
+                            { "c": 1 },
+                            { "c": 2 },
+                            { "d": { "e": 3 } }
+                        ]
+                    },
+                    "f": 3,
+                    "g": ["g0", "g1", "g2"]
+                }
+                "#,
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_set_value_to_json_with_empty_dest() {
+        let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            {
+            }
+            "#,
+        )
+        .unwrap();
+
+        let src = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            {"c": 1},
+            "#,
+        )
+        .unwrap();
+
+        set_value_to_json_map("", &mut map, &src);
+
+        assert_eq!(
+            map,
+            serde_json::from_str::<serde_json::Map<String, Value>>(
+                r#"
+                {
+                    "c": 1
+                }
+                "#,
+            )
+            .unwrap()
+        );
+    }
 }
