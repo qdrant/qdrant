@@ -58,8 +58,13 @@ pub(super) async fn transfer_wal_delta(
         )));
     };
 
-    // TODO: resolve diff point, define proper version here!
-    let from_version = 0;
+    // Resolve WAL delta, get the version to start the diff from
+    let from_version = replica_set
+        .resolve_wal_delta(recovery_point)
+        .await
+        .map_err(|err| {
+            CollectionError::service_error(format!("Failed to resolve shard diff: {err}"))
+        })?;
 
     // TODO: send our last seen clock map to remote, set it as truncation point
 
