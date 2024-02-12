@@ -12,6 +12,7 @@ use io::file_operations::{atomic_save_json, read_json};
 use itertools::Either;
 use memory::mmap_ops;
 use parking_lot::{Mutex, RwLock};
+use rocksdb::perf::get_memory_usage_stats;
 use rocksdb::DB;
 use sparse::common::sparse_vector::SparseVector;
 use tar::Builder;
@@ -35,7 +36,7 @@ use crate::index::field_index::CardinalityEstimation;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndex, VectorIndexEnum};
 use crate::spaces::tools::{peek_top_largest_iterable, peek_top_smallest_iterable};
-use crate::telemetry::SegmentTelemetry;
+use crate::telemetry::{RocksDBMemoryUsageStats, SegmentTelemetry};
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef,
     PayloadSchemaType, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
@@ -1687,6 +1688,24 @@ impl SegmentEntry for Segment {
     }
 
     fn get_telemetry_data(&self) -> SegmentTelemetry {
+        let db = self.database.read();
+
+        let stats = if let Ok(value) = get_memory_usage_stats(Some(&[&db]), Some(&[])) {
+            RocksDBMemoryUsageStats {
+                mem_table_total: value.mem_table_total,
+                mem_table_unflushed: value.mem_table_unflushed,
+                mem_table_readers_total: value.mem_table_readers_total,
+                cache_total: value.cache_total,
+            }
+        } else {
+            RocksDBMemoryUsageStats {
+                mem_table_total: 0,
+                mem_table_unflushed: 0,
+                mem_table_readers_total: 0,
+                cache_total: 0,
+            }
+        };
+
         let vector_index_searches: Vec<_> = self
             .vector_data
             .iter()
@@ -1702,6 +1721,7 @@ impl SegmentEntry for Segment {
             config: self.config().clone(),
             vector_index_searches,
             payload_field_indices: self.payload_index.borrow().get_telemetry_data(),
+            rocksdb_memory_usage_stats: stats,
         }
     }
 }

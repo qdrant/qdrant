@@ -14,11 +14,20 @@ pub struct VectorIndexesTelemetry {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+pub struct RocksDBMemoryUsageStats {
+    pub mem_table_total: u64,
+    pub mem_table_unflushed: u64,
+    pub mem_table_readers_total: u64,
+    pub cache_total: u64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct SegmentTelemetry {
     pub info: SegmentInfo,
     pub config: SegmentConfig,
     pub vector_index_searches: Vec<VectorIndexSearchesTelemetry>,
     pub payload_field_indices: Vec<PayloadIndexTelemetry>,
+    pub rocksdb_memory_usage_stats: RocksDBMemoryUsageStats,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
@@ -72,6 +81,17 @@ pub struct VectorIndexSearchesTelemetry {
     pub unfiltered_exact: OperationDurationStatistics,
 }
 
+impl Anonymize for RocksDBMemoryUsageStats {
+    fn anonymize(&self) -> Self {
+        Self {
+            mem_table_total: self.mem_table_total,
+            mem_table_unflushed: self.mem_table_unflushed,
+            mem_table_readers_total: self.mem_table_readers_total,
+            cache_total: self.cache_total,
+        }
+    }
+}
+
 impl Anonymize for SegmentTelemetry {
     fn anonymize(&self) -> Self {
         Self {
@@ -79,6 +99,7 @@ impl Anonymize for SegmentTelemetry {
             config: self.config.anonymize(),
             vector_index_searches: self.vector_index_searches.anonymize(),
             payload_field_indices: self.payload_field_indices.anonymize(),
+            rocksdb_memory_usage_stats: self.rocksdb_memory_usage_stats.anonymize(),
         }
     }
 }

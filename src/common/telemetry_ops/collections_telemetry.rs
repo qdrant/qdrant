@@ -3,6 +3,7 @@ use collection::operations::types::OptimizersStatus;
 use collection::telemetry::CollectionTelemetry;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
+use segment::telemetry::RocksDBMemoryUsageStats;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::toc::TableOfContent;
 
@@ -11,6 +12,7 @@ pub struct CollectionsAggregatedTelemetry {
     pub vectors: usize,
     pub optimizers_status: OptimizersStatus,
     pub params: CollectionParams,
+    pub rocksdb_memory_usage_stats: RocksDBMemoryUsageStats,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
@@ -36,10 +38,13 @@ impl From<CollectionTelemetry> for CollectionsAggregatedTelemetry {
             .max()
             .unwrap_or(OptimizersStatus::Ok);
 
+        let rocksdb_memory_usage_stats = telemetry.get_rocksdb_memory_usage_stats();
+
         CollectionsAggregatedTelemetry {
             vectors: telemetry.count_vectors(),
             optimizers_status,
             params: telemetry.config.params,
+            rocksdb_memory_usage_stats,
         }
     }
 }
@@ -101,6 +106,7 @@ impl Anonymize for CollectionsAggregatedTelemetry {
             optimizers_status: self.optimizers_status.clone(),
             vectors: self.vectors.anonymize(),
             params: self.params.anonymize(),
+            rocksdb_memory_usage_stats: self.rocksdb_memory_usage_stats.anonymize(),
         }
     }
 }

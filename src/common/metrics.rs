@@ -1,5 +1,6 @@
 use prometheus::proto::{Counter, Gauge, LabelPair, Metric, MetricFamily, MetricType};
 use prometheus::TextEncoder;
+use segment::telemetry::RocksDBMemoryUsageStats;
 
 use crate::common::telemetry::TelemetryData;
 use crate::common::telemetry_ops::app_telemetry::{AppBuildTelemetry, AppFeaturesTelemetry};
@@ -109,6 +110,76 @@ impl MetricsProvider for AppFeaturesTelemetry {
 
 impl MetricsProvider for CollectionsTelemetry {
     fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
+        let rocksdb_memory_usage_stats = self
+            .collections
+            .iter()
+            .flatten()
+            .map(|p| match p {
+                CollectionTelemetryEnum::Aggregated(a) => a.rocksdb_memory_usage_stats.clone(),
+                CollectionTelemetryEnum::Full(c) => c.get_rocksdb_memory_usage_stats(),
+            })
+            .collect::<Vec<RocksDBMemoryUsageStats>>();
+
+        let mut mem_table_total = vec![];
+        let mut mem_table_unflushed = vec![];
+        let mut mem_table_readers_total = vec![];
+        let mut cache_total = vec![];
+
+        let mut acc = RocksDBMemoryUsageStats {
+            mem_table_total: 0,
+            mem_table_unflushed: 0,
+            mem_table_readers_total: 0,
+            cache_total: 0,
+        };
+
+        for s in rocksdb_memory_usage_stats {
+            acc.mem_table_total += s.mem_table_total;
+            acc.mem_table_unflushed += s.mem_table_unflushed;
+            acc.mem_table_readers_total += s.mem_table_readers_total;
+            acc.cache_total += s.cache_total;
+        }
+
+        mem_table_total.push(gauge(acc.mem_table_total as f64, &[]));
+        mem_table_unflushed.push(gauge(acc.mem_table_unflushed as f64, &[]));
+        mem_table_readers_total.push(gauge(acc.mem_table_readers_total as f64, &[]));
+        cache_total.push(gauge(acc.cache_total as f64, &[]));
+
+        if !mem_table_total.is_empty() {
+            metrics.push(metric_family(
+                "rocksdb_mem_table_bytes_total",
+                "Approximate memory usage of all the mem-tables",
+                MetricType::GAUGE,
+                mem_table_total,
+            ));
+        }
+
+        if !mem_table_unflushed.is_empty() {
+            metrics.push(metric_family(
+                "rocksdb_mem_table_unflushed_bytes_total",
+                "Approximate memory usage of un-flushed mem-tables",
+                MetricType::GAUGE,
+                mem_table_unflushed,
+            ));
+        }
+
+        if !mem_table_readers_total.is_empty() {
+            metrics.push(metric_family(
+                "rocksdb_mem_table_readers_total",
+                "Approximate memory usage of all the table readers",
+                MetricType::GAUGE,
+                mem_table_readers_total,
+            ));
+        }
+
+        if !cache_total.is_empty() {
+            metrics.push(metric_family(
+                "rocksdb_cache_bytes_total",
+                "Approximate memory usage by cache",
+                MetricType::GAUGE,
+                cache_total,
+            ));
+        }
+
         let vector_count = self
             .collections
             .iter()
