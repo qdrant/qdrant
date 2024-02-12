@@ -251,7 +251,7 @@ pub fn get_datetime_range_checkers(
 ) -> Option<ConditionCheckerFn> {
     match index {
         FieldIndex::DatetimeIndex(num_index) => {
-            let range = range.map(|ts| ts.timestamp_micros());
+            let range = range.map(|dt| dt.timestamp());
             Some(Box::new(move |point_id: PointOffsetType| {
                 num_index
                     .get_values(point_id)

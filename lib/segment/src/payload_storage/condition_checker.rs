@@ -1,11 +1,13 @@
 //! Contains functions for interpreting filter queries and defining if given points pass the conditions
 
+use std::str::FromStr;
+
 use serde_json::Value;
 
 use crate::types::{
-    try_parse_datetime, AnyVariants, DateTimePayloadType, FieldCondition, FloatPayloadType,
-    GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius, Match, MatchAny, MatchExcept, MatchText,
-    MatchValue, Range, RangeInterface, ValueVariants, ValuesCount,
+    AnyVariants, DateTimePayloadType, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoPoint,
+    GeoPolygon, GeoRadius, Match, MatchAny, MatchExcept, MatchText, MatchValue, Range,
+    RangeInterface, ValueVariants, ValuesCount,
 };
 
 /// Threshold representing the point to which iterating through an IndexSet is more efficient than using hashing.
@@ -154,7 +156,7 @@ impl ValueChecker for Range<DateTimePayloadType> {
     fn check_match(&self, payload: &Value) -> bool {
         payload
             .as_str()
-            .and_then(try_parse_datetime)
+            .and_then(|s| DateTimePayloadType::from_str(s).ok())
             .is_some_and(|x| self.check_range(x))
     }
 }

@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 use std::num::{NonZeroU32, NonZeroU64};
+use std::str::FromStr;
 use std::time::Duration;
 
 use api::grpc::conversions::{
@@ -15,7 +16,7 @@ use common::types::ScoreType;
 use itertools::Itertools;
 use segment::data_types::order_by::{OrderBy, StartFrom};
 use segment::data_types::vectors::{Named, NamedQuery, Vector, VectorStruct, DEFAULT_VECTOR_NAME};
-use segment::types::{try_parse_datetime, Distance, QuantizationConfig};
+use segment::types::{DateTimeWrapper, Distance, QuantizationConfig};
 use segment::vector_storage::query::context_query::{ContextPair, ContextQuery};
 use segment::vector_storage::query::discovery_query::DiscoveryQuery;
 use segment::vector_storage::query::reco_query::RecoQuery;
@@ -1775,12 +1776,11 @@ impl TryFrom<api::grpc::qdrant::OrderBy> for OrderByInterface {
                     api::grpc::qdrant::start_from::Value::Timestamp(timestamp) => {
                         Ok(StartFrom::Datetime(date_time_from_proto(timestamp)?))
                     }
-                    api::grpc::qdrant::start_from::Value::Datetime(datetime_str) => {
-                        Ok(StartFrom::Datetime(
-                            try_parse_datetime(&datetime_str)
-                                .ok_or(Status::invalid_argument("Malformed datetime"))?,
-                        ))
-                    }
+                    api::grpc::qdrant::start_from::Value::Datetime(datetime_str) => Ok(
+                        StartFrom::Datetime(DateTimeWrapper::from_str(&datetime_str).map_err(
+                            |e| Status::invalid_argument(format!("Malformed datetime: {e}")),
+                        )?),
+                    ),
                 }
             })
             .transpose()?;
