@@ -26,7 +26,7 @@ pprof = { version = "0.12", features = ["flamegraph", "prost-codec"] }
 
 
 [dependencies]
-tempfile = "3.9.0"
+tempfile = "3.10.0"
 parking_lot = { workspace = true }
 rayon = "1.8.1"
 itertools = "0.12"
