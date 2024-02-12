@@ -1,7 +1,7 @@
 use std::env;
 use std::path::Path;
 
-use collection::operations::CollectionUpdateOperations;
+use collection::operations::OperationWithClockTag;
 use collection::wal::SerdeWal;
 use storage::content_manager::consensus::consensus_wal::ConsensusOpWal;
 use storage::content_manager::consensus_ops::ConsensusOperations;
@@ -53,7 +53,7 @@ fn print_consensus_wal(wal_path: &Path) {
 }
 
 fn print_collection_wal(wal_path: &Path) {
-    let wal: Result<SerdeWal<CollectionUpdateOperations>, _> =
+    let wal: Result<SerdeWal<OperationWithClockTag>, _> =
         SerdeWal::new(wal_path.to_str().unwrap(), WalOptions::default());
 
     match wal {
