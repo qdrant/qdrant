@@ -157,3 +157,44 @@ $docker_grpcurl -d '{
   "with_vectors": {"enable": true},
   "ids": [{ "num": 2 }, { "num": 3 }, { "num": 4 }]
 }' $QDRANT_HOST qdrant.Points/Get
+
+# validate search request when vector and indices have different sizes
+set +e
+response=$(
+  $docker_grpcurl -d '{
+    "collection_name": "test_sparse_collection",
+    "vector": [0.2,0.1],
+    "sparse_indices": { "data": [0,1,2,3] },
+    "vector_name": "test",
+    "limit": 3
+  }' $QDRANT_HOST qdrant.Points/Search 2>&1
+)
+if [[ $response != *"Sparse indices does not match sparse vector conditions"* ]]; then
+    echo Unexpected response, expected validation error: $response
+    exit 1
+fi
+
+response=$(
+  $docker_grpcurl -d '{
+    "collection_name": "test_sparse_collection",
+    "wait": true,
+    "ordering": null,
+    "points": [
+      {
+        "id": { "uuid": "f0e09527-b096-42a8-94e9-ea94d342b885" },
+        "vectors": {
+          "vectors": {
+            "vectors": {
+              "test": {"data": [0.35, 0.08], "indices": { "data": [0,1,2,3] }}
+            }
+          }
+        }
+      }
+    ]
+  }' $QDRANT_HOST qdrant.Points/Upsert 2>&1
+)
+if [[ $response != *"Sparse indices does not match sparse vector conditions"* ]]; then
+    echo Unexpected response, expected validation error: $response
+    exit 1
+fi
+set -e

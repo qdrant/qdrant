@@ -1102,7 +1102,10 @@ pub async fn recommend(
         .into_iter()
         .map(TryInto::try_into)
         .collect::<Result<Vec<RecommendExample>, Status>>()?;
-    let positive_vectors = positive_vectors.into_iter().map(Into::into).collect();
+    let positive_vectors = positive_vectors
+        .into_iter()
+        .map(TryInto::try_into)
+        .collect::<Result<_, _>>()?;
     let positive = [positive_ids, positive_vectors].concat();
 
     let negative_ids = negative

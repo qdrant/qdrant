@@ -20,6 +20,7 @@ use segment::types::{DateTimeWrapper, Distance, QuantizationConfig};
 use segment::vector_storage::query::context_query::{ContextPair, ContextQuery};
 use segment::vector_storage::query::discovery_query::DiscoveryQuery;
 use segment::vector_storage::query::reco_query::RecoQuery;
+use sparse::common::sparse_vector::validate_sparse_vector_impl;
 use tonic::Status;
 
 use super::consistency_params::ReadConsistency;
@@ -953,6 +954,12 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for CoreSearchRequest {
             sparse_indices,
         } = value;
 
+        if let Some(sparse_indices) = &sparse_indices {
+            validate_sparse_vector_impl(&sparse_indices.data, &vector).map_err(|_| {
+                Status::invalid_argument("Sparse indices does not match sparse vector conditions")
+            })?;
+        }
+
         let vector_struct =
             api::grpc::conversions::into_named_vector_struct(vector_name, vector, sparse_indices)?;
 
@@ -1121,8 +1128,8 @@ fn try_context_pair_from_grpc(
 ) -> Result<ContextPair<Vector>, Status> {
     match (pair.positive, pair.negative) {
         (Some(positive), Some(negative)) => Ok(ContextPair {
-            positive: positive.into(),
-            negative: negative.into(),
+            positive: positive.try_into()?,
+            negative: negative.try_into()?,
         }),
         _ => Err(Status::invalid_argument(
             "All context pairs must have both positive and negative parts",
@@ -1149,8 +1156,16 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
                     api::grpc::qdrant::query_enum::Query::RecommendBestScore(query) => {
                         QueryEnum::RecommendBestScore(NamedQuery {
                             query: RecoQuery::new(
-                                query.positives.into_iter().map(|v| v.into()).collect(),
-                                query.negatives.into_iter().map(|v| v.into()).collect(),
+                                query
+                                    .positives
+                                    .into_iter()
+                                    .map(TryInto::try_into)
+                                    .collect::<Result<_, _>>()?,
+                                query
+                                    .negatives
+                                    .into_iter()
+                                    .map(TryInto::try_into)
+                                    .collect::<Result<_, _>>()?,
                             ),
                             using: value.vector_name,
                         })
@@ -1170,7 +1185,7 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
                             .try_collect()?;
 
                         QueryEnum::Discover(NamedQuery {
-                            query: DiscoveryQuery::new(target.into(), pairs),
+                            query: DiscoveryQuery::new(target.try_into()?, pairs),
                             using: value.vector_name,
                         })
                     }
@@ -1255,6 +1270,16 @@ impl TryFrom<api::grpc::qdrant::SearchPointGroups> for SearchGroupsRequestIntern
             shard_key_selector: None,
             sparse_indices: value.sparse_indices,
         };
+
+        if let Some(sparse_indices) = &search_points.sparse_indices {
+            validate_sparse_vector_impl(&sparse_indices.data, &search_points.vector).map_err(
+                |_| {
+                    Status::invalid_argument(
+                        "Sparse indices does not match sparse vector conditions",
+                    )
+                },
+            )?;
+        }
 
         let SearchRequestInternal {
             vector,
@@ -1368,13 +1393,15 @@ impl TryFrom<api::grpc::qdrant::PointId> for RecommendExample {
     }
 }
 
-impl From<api::grpc::qdrant::Vector> for RecommendExample {
-    fn from(value: api::grpc::qdrant::Vector) -> Self {
-        let vector: Vector = value.into();
-        match vector {
+impl TryFrom<api::grpc::qdrant::Vector> for RecommendExample {
+    type Error = Status;
+
+    fn try_from(value: api::grpc::qdrant::Vector) -> Result<Self, Self::Error> {
+        let vector: Vector = value.try_into()?;
+        Ok(match vector {
             Vector::Dense(vector) => Self::Dense(vector),
             Vector::Sparse(vector) => Self::Sparse(vector),
-        }
+        })
     }
 }
 
@@ -1408,7 +1435,11 @@ impl TryFrom<api::grpc::qdrant::RecommendPoints> for RecommendRequestInternal {
             .map(TryInto::try_into)
             .collect::<Result<Vec<RecommendExample>, Self::Error>>()?;
 
-        let positive_vectors = value.positive_vectors.into_iter().map(Into::into).collect();
+        let positive_vectors = value
+            .positive_vectors
+            .into_iter()
+            .map(TryInto::try_into)
+            .collect::<Result<_, _>>()?;
         let positive = [positive_ids, positive_vectors].concat();
 
         let negative_ids = value
@@ -1417,7 +1448,11 @@ impl TryFrom<api::grpc::qdrant::RecommendPoints> for RecommendRequestInternal {
             .map(TryInto::try_into)
             .collect::<Result<Vec<RecommendExample>, Self::Error>>()?;
 
-        let negative_vectors = value.negative_vectors.into_iter().map(Into::into).collect();
+        let negative_vectors = value
+            .negative_vectors
+            .into_iter()
+            .map(TryInto::try_into)
+            .collect::<Result<_, _>>()?;
         let negative = [negative_ids, negative_vectors].concat();
 
         Ok(RecommendRequestInternal {
