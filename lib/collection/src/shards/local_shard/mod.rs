@@ -1,5 +1,6 @@
 pub mod clock_map;
 mod shard_ops;
+pub mod wal_delta;
 
 use std::collections::{BTreeSet, HashMap};
 use std::mem::size_of;
@@ -526,7 +527,7 @@ impl LocalShard {
         // index *occasionally*), but the storage can handle it.
 
         for (op_num, update) in wal.read_all() {
-            if let Some(clock_tag) = &update.clock_tag {
+            if let Some(clock_tag) = update.clock_tag {
                 clock_map.advance_clock(clock_tag);
             }
 

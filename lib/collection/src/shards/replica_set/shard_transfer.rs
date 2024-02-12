@@ -5,6 +5,7 @@ use segment::types::PointIdType;
 use super::ShardReplicaSet;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::forward_proxy_shard::ForwardProxyShard;
+use crate::shards::local_shard::clock_map::RecoveryPoint;
 use crate::shards::queue_proxy_shard::QueueProxyShard;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard::Shard;
@@ -422,5 +423,16 @@ impl ShardReplicaSet {
         let _ = local.insert(Shard::ForwardProxy(forward_proxy));
 
         Ok(())
+    }
+
+    pub async fn resolve_wal_delta(&self, recovery_point: RecoveryPoint) -> CollectionResult<u64> {
+        let local_shard_read = self.local.read().await;
+        let Some(local_shard) = local_shard_read.deref() else {
+            return Err(CollectionError::service_error(
+                "Cannot resolve WAL delta, shard replica set does not have local shard",
+            ));
+        };
+
+        local_shard.resolve_wal_delta(recovery_point).await
     }
 }
