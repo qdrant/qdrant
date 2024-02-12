@@ -25,8 +25,9 @@ parking_lot = { workspace = true }
 rand = "0.8.5"
 thiserror = "1.0"
 serde = { workspace = true }
-serde_json = { workspace = true }
 serde_cbor = { workspace = true }
+serde_json = { workspace = true }
+serde_with = "3.6.1"
 rmp-serde = "~1.1"
 wal = { git = "https://github.com/qdrant/wal.git", rev = "fad0e7c48be58d8e7db4cc739acd9b1cf6735de0" }
 ordered-float = "4.2"

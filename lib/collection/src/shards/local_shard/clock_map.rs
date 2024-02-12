@@ -6,6 +6,7 @@ use std::path::Path;
 use api::grpc::qdrant::RecoveryPointClockTag;
 use io::file_operations;
 use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
 
 use crate::operations::types::CollectionError;
 use crate::operations::ClockTag;
@@ -13,7 +14,9 @@ use crate::shards::shard::PeerId;
 
 #[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(transparent)]
+#[serde_as]
 pub struct ClockMap {
+    #[serde_as(as = "Vec<(_, _)>")]
     clocks: HashMap<Key, Clock>,
 }
 
