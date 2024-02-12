@@ -151,18 +151,39 @@ impl Shard {
     pub async fn shard_recovery_point(&self) -> CollectionResult<RecoveryPoint> {
         match self {
             Self::Local(local_shard) => Ok(local_shard.shard_recovery_point().await),
-            Self::Proxy(_) => Err(CollectionError::service_error(
-                "Proxy shards do not support recovery point",
-            )),
             Self::ForwardProxy(proxy_shard) => {
                 Ok(proxy_shard.wrapped_shard.shard_recovery_point().await)
             }
-            Self::QueueProxy(_) => Err(CollectionError::service_error(
-                "Queue proxy shards do not support recovery point",
-            )),
-            Self::Dummy(_) => Err(CollectionError::service_error(
-                "Dummy shards do not support recovery point",
-            )),
+            Self::Proxy(_) | Self::QueueProxy(_) | Self::Dummy(_) => {
+                Err(CollectionError::service_error(format!(
+                    "Recovery point not supported on {}",
+                    self.variant_name(),
+                )))
+            }
         }
+    }
+
+    pub async fn resolve_wal_delta(&self, recovery_point: RecoveryPoint) -> CollectionResult<u64> {
+        let resolve_result = match self {
+            Self::Local(local_shard) => local_shard.resolve_wal_delta(recovery_point).await,
+            Self::ForwardProxy(proxy_shard) => {
+                proxy_shard
+                    .wrapped_shard
+                    .resolve_wal_delta(recovery_point)
+                    .await
+            }
+            Self::Proxy(_) | Self::QueueProxy(_) | Self::Dummy(_) => {
+                return Err(CollectionError::service_error(format!(
+                    "Cannot resolve WAL delta on {}",
+                    self.variant_name(),
+                )));
+            }
+        };
+
+        resolve_result.map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to resolve WAL delta on local shard: {err}"
+            ))
+        })
     }
 }

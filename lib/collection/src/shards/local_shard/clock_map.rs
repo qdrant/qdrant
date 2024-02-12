@@ -1,5 +1,6 @@
 use std::cmp;
 use std::collections::{hash_map, HashMap};
+use std::fmt::{self, Display};
 use std::path::Path;
 
 use api::grpc::qdrant::RecoveryPointClockTag;
@@ -46,7 +47,7 @@ impl ClockMap {
     /// and applied to the storage, or rejected.
     #[must_use = "operation accept status must be used"]
     pub fn advance_clock_and_correct_tag(&mut self, clock_tag: &mut ClockTag) -> bool {
-        let (clock_updated, current_tick) = self.advance_clock_impl(clock_tag);
+        let (clock_updated, current_tick) = self.advance_clock_impl(*clock_tag);
 
         // We *accept* an operation, if its `clock_tick` is *newer* than `current_tick`.
         //
@@ -75,8 +76,8 @@ impl ClockMap {
     /// Advance clock referenced by `clock_tag` to `clock_tick`, if it's newer than current tick.
     ///
     /// If the clock is not yet tracked by the `ClockMap`, it is initialized to
-    /// the `clock_tick` and added to the `ClockMap`.
-    pub fn advance_clock(&mut self, clock_tag: &ClockTag) {
+    /// the `clock_tag.clock_tick` and added to the `ClockMap`.
+    pub fn advance_clock(&mut self, clock_tag: ClockTag) {
         let _ = self.advance_clock_impl(clock_tag);
     }
 
@@ -87,7 +88,7 @@ impl ClockMap {
     ///
     /// Returns whether the clock was updated (or initialized) and the current tick.
     #[must_use = "clock update status and current tick must be used"]
-    fn advance_clock_impl(&mut self, clock_tag: &ClockTag) -> (bool, u64) {
+    fn advance_clock_impl(&mut self, clock_tag: ClockTag) -> (bool, u64) {
         let key = Key::from_tag(clock_tag);
         let new_tick = clock_tag.clock_tick;
 
@@ -123,7 +124,7 @@ impl Key {
         Self { peer_id, clock_id }
     }
 
-    pub fn from_tag(clock_tag: &ClockTag) -> Self {
+    pub fn from_tag(clock_tag: ClockTag) -> Self {
         Self {
             peer_id: clock_tag.peer_id,
             clock_id: clock_tag.clock_id,
@@ -159,16 +160,69 @@ pub struct RecoveryPoint {
 }
 
 impl RecoveryPoint {
+    pub fn is_empty(&self) -> bool {
+        self.clocks.is_empty()
+    }
+
+    /// Check whether this recovery point has any higher clock value than `other`
+    ///
+    /// A clock in this recovery point that is not in `other` is always considered to be higher.
+    pub fn has_any_higher(&mut self, other: &Self) -> bool {
+        self.clocks.iter().any(|(key, tick)| {
+            other
+                .clocks
+                .get(key)
+                .map_or(true, |other_tick| *tick > *other_tick)
+        })
+    }
+
     /// Extend this recovery point with new clocks from `clock_map`
+    ///
+    /// Clocks that we have not seen yet are added with a tick of `0`, because we must recover all
+    /// records for it.
     ///
     /// Clocks that we already have in this recovery point are not updated, regardless of their
     /// tick value.
-    pub fn extend_with_missing_clocks(&mut self, clock_map: &ClockMap) {
-        for (key, clock) in &clock_map.clocks {
-            self.clocks
-                .entry(*key)
-                .or_insert_with(|| clock.current_tick);
+    pub fn extend_with_missing_clocks(&mut self, other: &Self) {
+        // Clocks known on our node, that are not in the recovery point, are unknown on the
+        // recovering node. Add them here with tick 0, so that we include all records for it
+        for key in other.clocks.keys() {
+            self.clocks.entry(*key).or_insert(0);
         }
+    }
+
+    /// Remove clocks from this recovery point, if they are equal in `other`
+    pub fn remove_equal_clocks(&mut self, other: &Self) {
+        for (key, tick) in &other.clocks {
+            if let Some(other_tick) = self.clocks.get(key) {
+                if tick == other_tick {
+                    self.clocks.remove(key);
+                }
+            }
+        }
+    }
+
+    /// Remove a clock from this recovery point, if the given `clock_tag` describes an equal or
+    /// lower clock value.
+    pub fn remove_equal_or_lower(&mut self, clock_tag: ClockTag) {
+        let key = Key::from_tag(clock_tag);
+        if let Some(tick) = self.clocks.get(&key) {
+            if *tick >= clock_tag.clock_tick {
+                self.clocks.remove(&key);
+            }
+        }
+    }
+}
+
+impl Display for RecoveryPoint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let clocks = self
+            .clocks
+            .iter()
+            .map(|(key, tick)| format!("{}({}): {tick})", key.peer_id, key.clock_id))
+            .collect::<Vec<_>>()
+            .join(", ");
+        write!(f, "RecoveryPoint [ {clocks} ]")
     }
 }
 
