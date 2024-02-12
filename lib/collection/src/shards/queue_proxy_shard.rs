@@ -393,7 +393,7 @@ impl Inner {
         // Lock wall, count pending items to transfer, grab batch
         let (pending_count, batch) = {
             let wal = self.wrapped_shard.wal.lock();
-            let items_left = wal.last_index().saturating_sub(transfer_from - 1);
+            let items_left = (wal.last_index() + 1).saturating_sub(transfer_from);
             let batch = wal.read(transfer_from).take(BATCH_SIZE).collect::<Vec<_>>();
             (items_left, batch)
         };
