@@ -933,6 +933,51 @@ mod tests {
     }
 
     #[test]
+    fn test_set_value_to_json_with_one_level_key() {
+        let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            {
+                "a": {
+                    "b": [
+                        { "c": 1 },
+                        { "c": 2 },
+                        { "d": { "e": 3 } }
+                    ]
+                },
+                "f": 3,
+                "g": ["g0", "g1", "g2"]
+            }
+            "#,
+        )
+        .unwrap();
+
+        let src = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            { "b": 5 },
+            "#,
+        )
+        .unwrap();
+
+        set_value_to_json_map("a", &mut map, &src);
+
+        assert_eq!(
+            map,
+            serde_json::from_str::<serde_json::Map<String, Value>>(
+                r#"
+                {
+                    "a": {
+                        "b": 5
+                    },
+                    "f": 3,
+                    "g": ["g0", "g1", "g2"]
+                }
+                "#,
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
     fn test_set_value_to_json_with_array_index() {
         let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
             r#"
