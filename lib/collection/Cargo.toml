@@ -56,7 +56,7 @@ sparse = { path = "../sparse" }
 api = { path = "../api" }
 
 itertools = "0.12"
-indicatif = "0.17.7"
+indicatif = "0.17.8"
 chrono = { version = "~0.4", features = ["serde"] }
 schemars = { workspace = true }
 tar = "0.4.40"
