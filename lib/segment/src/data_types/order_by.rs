@@ -43,7 +43,7 @@ pub enum StartFrom {
     Float(FloatPayloadType),
 
     Int(IntPayloadType),
-    
+
     Datetime(DateTimePayloadType),
 }
 

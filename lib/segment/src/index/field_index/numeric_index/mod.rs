@@ -343,9 +343,10 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndex<T>
         let range_interface = condition
             .range
             .as_ref()
-            .ok_or_else(|| OperationError::service_error("failed to get range condition"))?;
+            .ok_or_else(|| OperationError::service_error("failed to get range condition"))?
+            .to_owned();
 
-        let (start_bound, end_bound) = range_interface.to_range().as_index_key_bounds();
+        let (start_bound, end_bound) = Range::from(range_interface).as_index_key_bounds();
 
         // map.range
         // Panics if range start > end. Panics if range start == end and both bounds are Excluded.
@@ -521,10 +522,9 @@ impl ValueIndexer<FloatPayloadType> for NumericIndex<FloatPayloadType> {
         NumericIndex::remove_point(self, id)
     }
 }
-
-impl RangeInterface {
-    fn to_range<T: Numericable>(&self) -> Range<T> {
-        match self {
+impl<T: Numericable> From<RangeInterface> for Range<T> {
+    fn from(value: RangeInterface) -> Self {
+        match value {
             RangeInterface::Float(float_range) => float_range.map(T::from_f64),
             RangeInterface::Int(int_range) => int_range.map(T::from_i64),
             RangeInterface::DateTime(datetime_range) => {
@@ -542,7 +542,7 @@ where
         &self,
         range_interface: &RangeInterface,
     ) -> Box<dyn DoubleEndedIterator<Item = (T, PointOffsetType)> + '_> {
-        let range = range_interface.to_range();
+        let range = Range::from(range_interface.clone());
         let (start_bound, end_bound) = range.as_index_key_bounds();
 
         // map.range
