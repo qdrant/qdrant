@@ -159,11 +159,14 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
     /// Read all records from newest to oldest
     ///
     /// Normally this only iterates over our logical WAL, meaning all acknowledged records are
-    /// excluded. If `with_physical` is set to `true`, it will also iterate over all acknowledged
-    /// records we still have on disk.
-    pub fn read_from_last(&'s self, with_physical: bool) -> impl Iterator<Item = (u64, R)> + 's {
-        let first_index = if with_physical {
-            self.first_physical_index()
+    /// excluded. If `with_acknowledged` is set to `true`, it will also iterate over all acknowledged
+    /// records we still have in closed segments on disk.
+    pub fn read_from_last(
+        &'s self,
+        with_acknowledged: bool,
+    ) -> impl Iterator<Item = (u64, R)> + 's {
+        let first_index = if with_acknowledged {
+            self.first_closed_index()
         } else {
             self.first_index()
         };
@@ -239,15 +242,18 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
         self.wal.path()
     }
 
-    /// First index that is still available in physical WAL.
-    pub fn first_physical_index(&self) -> u64 {
+    /// First index that we still have in the first closed segment.
+    ///
+    /// If the index is lower than `first_index`, it means we have already acknowledged it but we
+    /// are still holding it in a closed segment until it gets truncated.
+    pub fn first_closed_index(&self) -> u64 {
         self.wal.first_index()
     }
 
-    /// First index that is still available in logical WAL.
+    /// First index that is in our logical WAL, right after the last acknowledged operation.
     pub fn first_index(&self) -> u64 {
         self.first_index
-            .unwrap_or_else(|| self.first_physical_index())
+            .unwrap_or_else(|| self.first_closed_index())
     }
 
     /// Last index that is still available in logical WAL.
