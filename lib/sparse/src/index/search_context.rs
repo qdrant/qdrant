@@ -19,7 +19,7 @@ pub struct IndexedPostingListIterator<'a> {
 }
 
 /// Making this larger makes the search faster but uses more (pooled) memory
-const ADVANCE_BATCH_SIZE: usize = 16_384;
+const ADVANCE_BATCH_SIZE: usize = 8192;
 
 pub struct SearchContext<'a, 'b> {
     postings_iterators: Vec<IndexedPostingListIterator<'a>>,
