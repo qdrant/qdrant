@@ -3,8 +3,9 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
-use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
+use common::types::{PointOffsetType, ScoredPointOffset};
 
+use crate::common::scores_memory_pool::PooledScoresHandle;
 use crate::common::sparse_vector::SparseVector;
 use crate::common::types::{DimId, DimWeight};
 use crate::index::inverted_index::InvertedIndex;
@@ -17,28 +18,29 @@ pub struct IndexedPostingListIterator<'a> {
     query_weight: DimWeight,
 }
 
-/// Making this larger makes the search faster but uses more memory
-const ADVANCE_BATCH_SIZE: usize = 1_000;
+/// Making this larger makes the search faster but uses more (pooled) memory
+const ADVANCE_BATCH_SIZE: usize = 10_000;
 
-pub struct SearchContext<'a> {
+pub struct SearchContext<'a, 'b> {
     postings_iterators: Vec<IndexedPostingListIterator<'a>>,
     query: SparseVector,
     top: usize,
     is_stopped: &'a AtomicBool,
     result_queue: FixedLengthPriorityQueue<ScoredPointOffset>, // keep the largest elements and peek smallest
-    min_record_id: Option<u32>, // min_record_id ids across all posting lists
-    max_record_id: u32,         // max_record_id ids across all posting lists
-    batch_scores: Vec<ScoreType>, // scores for the current batch
+    min_record_id: Option<PointOffsetType>, // min_record_id ids across all posting lists
+    max_record_id: PointOffsetType,         // max_record_id ids across all posting lists
+    pooled: PooledScoresHandle<'b>,         // handle to pooled scores
     use_pruning: bool,
 }
 
-impl<'a> SearchContext<'a> {
+impl<'a, 'b> SearchContext<'a, 'b> {
     pub fn new(
         query: SparseVector,
         top: usize,
         inverted_index: &'a impl InvertedIndex,
+        pooled: PooledScoresHandle<'b>,
         is_stopped: &'a AtomicBool,
-    ) -> SearchContext<'a> {
+    ) -> SearchContext<'a, 'b> {
         let mut postings_iterators = Vec::new();
         // track min and max record ids across all posting lists
         let mut max_record_id = 0;
@@ -73,8 +75,6 @@ impl<'a> SearchContext<'a> {
         // The max contribution per posting list that we calculate is not made to compute the max value of two negative numbers.
         // This is a limitation of the current pruning implementation.
         let use_pruning = query.values.iter().all(|v| *v >= 0.0);
-        // TODO pool this Vec to reuse memory across searches
-        let batch_scores = Vec::with_capacity(ADVANCE_BATCH_SIZE);
         let min_record_id = Some(min_record_id);
         SearchContext {
             postings_iterators,
@@ -84,7 +84,7 @@ impl<'a> SearchContext<'a> {
             result_queue,
             min_record_id,
             max_record_id,
-            batch_scores,
+            pooled,
             use_pruning,
         }
     }
@@ -133,6 +133,11 @@ impl<'a> SearchContext<'a> {
         batch_last_id: PointOffsetType,
         filter_condition: &F,
     ) {
+        // init batch scores
+        let batch_len = batch_last_id - batch_start_id + 1;
+        self.pooled.scores.clear(); // keep underlying allocated memory
+        self.pooled.scores.resize(batch_len as usize, 0.0);
+
         for posting in self.postings_iterators.iter_mut() {
             // offset at which the posting list stops contributing to the batch (relative to the batch start)
             let mut posting_stopped_at = None;
@@ -151,7 +156,7 @@ impl<'a> SearchContext<'a> {
                 let element_score = element.weight * posting.query_weight;
                 // update score for id
                 let local_id = (element_id - batch_start_id) as usize;
-                self.batch_scores[local_id] += element_score;
+                self.pooled.scores[local_id] += element_score;
             }
             // advance posting list iterator
             match posting_stopped_at {
@@ -172,7 +177,7 @@ impl<'a> SearchContext<'a> {
         } else {
             None
         };
-        for (local_index, &score) in self.batch_scores.iter().enumerate() {
+        for (local_index, &score) in self.pooled.scores.iter().enumerate() {
             if score != 0.0 && Some(score) > min_score_to_beat {
                 let real_id = batch_start_id + local_index as PointOffsetType;
                 // do not score if filter condition is not satisfied
@@ -208,7 +213,7 @@ impl<'a> SearchContext<'a> {
     /// Returns the next min record id from all posting list iterators
     ///
     /// returns None if all posting list iterators are exhausted
-    fn next_min_id(to_inspect: &[IndexedPostingListIterator<'_>]) -> Option<u32> {
+    fn next_min_id(to_inspect: &[IndexedPostingListIterator<'_>]) -> Option<PointOffsetType> {
         let mut min_record_id = None;
 
         // Iterate to find min record id at the head of the posting lists
@@ -278,11 +283,6 @@ impl<'a> SearchContext<'a> {
                 start_batch_id + ADVANCE_BATCH_SIZE as u32,
                 self.max_record_id,
             );
-            let batch_len = last_batch_id - start_batch_id + 1;
-
-            // init batch scores
-            self.batch_scores.clear();
-            self.batch_scores.resize(batch_len as usize, 0.0);
 
             // advance and score posting lists iterators
             self.advance_batch(start_batch_id, last_batch_id, filter_condition);
@@ -399,15 +399,26 @@ impl<'a> SearchContext<'a> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::OnceLock;
+
     use rand::Rng;
 
     use super::*;
+    use crate::common::scores_memory_pool::ScoresMemoryPool;
     use crate::common::sparse_vector_fixture::random_sparse_vector;
     use crate::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
     use crate::index::inverted_index::inverted_index_ram::{
         InvertedIndexBuilder, InvertedIndexRam,
     };
     use crate::index::posting_list::PostingList;
+
+    static TEST_SCORES_POOL: OnceLock<ScoresMemoryPool> = OnceLock::new();
+
+    fn get_pooled_scores() -> PooledScoresHandle<'static> {
+        TEST_SCORES_POOL
+            .get_or_init(ScoresMemoryPool::default)
+            .get()
+    }
 
     #[test]
     fn test_empty_query() {
@@ -417,6 +428,7 @@ mod tests {
             SparseVector::default(), // empty query vector
             10,
             &index,
+            get_pooled_scores(),
             &is_stopped,
         );
         assert_eq!(search_context.search(&match_all), Vec::new());
@@ -436,6 +448,7 @@ mod tests {
             },
             10,
             inverted_index,
+            get_pooled_scores(),
             &is_stopped,
         );
 
@@ -495,6 +508,7 @@ mod tests {
             },
             10,
             &inverted_index_ram,
+            get_pooled_scores(),
             &is_stopped,
         );
 
@@ -531,6 +545,7 @@ mod tests {
             },
             10,
             &inverted_index_ram,
+            get_pooled_scores(),
             &is_stopped,
         );
 
@@ -566,6 +581,7 @@ mod tests {
             },
             3,
             inverted_index,
+            get_pooled_scores(),
             &is_stopped,
         );
 
@@ -594,6 +610,7 @@ mod tests {
             },
             4,
             inverted_index,
+            get_pooled_scores(),
             &is_stopped,
         );
 
@@ -665,6 +682,7 @@ mod tests {
             },
             1,
             &inverted_index_ram,
+            get_pooled_scores(),
             &is_stopped,
         );
 
@@ -698,6 +716,7 @@ mod tests {
             },
             1,
             &inverted_index_ram,
+            get_pooled_scores(),
             &is_stopped,
         );
 
@@ -738,6 +757,7 @@ mod tests {
             },
             1,
             &inverted_index_ram,
+            get_pooled_scores(),
             &is_stopped,
         );
 
@@ -786,6 +806,7 @@ mod tests {
             },
             3,
             &inverted_index_ram,
+            get_pooled_scores(),
             &is_stopped,
         );
 
@@ -822,6 +843,7 @@ mod tests {
             },
             3,
             &inverted_index_ram,
+            get_pooled_scores(),
             &is_stopped,
         );
 
@@ -862,6 +884,7 @@ mod tests {
             },
             3,
             &inverted_index_ram,
+            get_pooled_scores(),
             &is_stopped,
         );
 
