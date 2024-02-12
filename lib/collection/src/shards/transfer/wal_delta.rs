@@ -33,12 +33,21 @@ pub(super) async fn transfer_wal_delta(
     remote_shard: RemoteShard,
     channel_service: ChannelService,
     consensus: &dyn ShardTransferConsensus,
+    collection_name: &str,
 ) -> CollectionResult<()> {
     let remote_peer_id = remote_shard.peer_id;
 
     log::debug!("Starting shard {shard_id} transfer to peer {remote_peer_id} using diff transfer");
 
-    // TODO: ask remote for recovery point
+    // Ask remote shard on failed node for recovery point
+    let recovery_point = remote_shard
+        .shard_recovery_point(collection_name, shard_id)
+        .await
+        .map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to request recovery point from remote shard: {err}"
+            ))
+        })?;
 
     let shard_holder_read = shard_holder.read().await;
 

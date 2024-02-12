@@ -82,6 +82,7 @@ pub async fn transfer_shard(
                 remote_shard.clone(),
                 channel_service,
                 consensus,
+                collection_name,
             )
             .await;
 
