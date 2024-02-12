@@ -5583,9 +5583,9 @@ dependencies = [
 
 [[package]]
 name = "tonic-build"
-version = "0.10.2"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d021fc044c18582b9a2408cd0dd05b1596e3ecdb5c4df822bb0183545683889"
+checksum = "be4ef6dd70a610078cb4e338a0f79d06bc759ff1b22d2120c2ff02ae264ba9c2"
 dependencies = [
  "prettyplease 0.2.4",
  "proc-macro2",
@@ -5989,7 +5989,7 @@ dependencies = [
  "memmap2 0.9.4",
  "rand 0.8.5",
  "rand_distr",
- "rustix 0.37.27",
+ "rustix 0.38.28",
  "serde",
 ]
 
