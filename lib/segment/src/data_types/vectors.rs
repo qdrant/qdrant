@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use sparse::common::sparse_vector::SparseVector;
 use validator::Validate;
 
@@ -205,11 +205,27 @@ pub fn only_default_vector(vec: &[VectorElementType]) -> NamedVectors {
 }
 
 /// Full vector data per point separator with single and multiple vector modes
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 #[serde(untagged, rename_all = "snake_case")]
 pub enum VectorStruct {
     Single(DenseVector),
     Multi(HashMap<String, Vector>),
+}
+
+impl<'de> Deserialize<'de> for VectorStruct {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let parse_result = serde_untagged::UntaggedEnumVisitor::new()
+            .seq(|vector| vector.deserialize().map(VectorStruct::Single))
+            .map(|map| map.deserialize().map(VectorStruct::Multi))
+            .deserialize(deserializer);
+        match parse_result {
+            Ok(vector) => Ok(vector),
+            Err(_) => Err(serde::de::Error::custom("Unexpected vector struct")),
+        }
+    }
 }
 
 impl VectorStruct {
@@ -518,6 +534,42 @@ impl From<SparseVector> for QueryVector {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn vector_struct_parse() {
+        // unsupported vector struct
+        let vector = r#"["1", "2", "3"]"#;
+        let result = serde_json::from_str::<VectorStruct>(vector);
+        let expected_error = "Unexpected vector struct".to_owned();
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap().to_string(), expected_error);
+
+        // supported vector struct
+        let vector = "[1.0, 2.0, 3.0]";
+        let result: Result<VectorStruct, serde_json::Error> =
+            serde_json::from_str::<VectorStruct>(vector);
+        assert!(result.is_ok());
+
+        // supported vector struct
+        let vector = r#"{ "data": [0.05, 0.61, 0.76, 0.74] }"#;
+        let result: Result<VectorStruct, serde_json::Error> =
+            serde_json::from_str::<VectorStruct>(vector);
+        assert!(result.is_ok());
+
+        let vector = r#"{
+            "sparse-image": {
+                "indices": [1, 2, 4, 8],
+                "values": [1.5, 1.5, 1.5, 1.5]
+            },
+            "sparse-text": {
+                "indices": [66, 12],
+                "values": [0.5, 0.5]
+            }
+        }"#;
+        let result: Result<VectorStruct, serde_json::Error> =
+            serde_json::from_str::<VectorStruct>(vector);
+        assert!(result.is_ok());
+    }
 
     #[test]
     fn vector_struct_merge_single_into_single() {
