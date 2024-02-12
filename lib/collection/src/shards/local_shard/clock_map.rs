@@ -219,10 +219,10 @@ impl Display for RecoveryPoint {
         let clocks = self
             .clocks
             .iter()
-            .map(|(key, tick)| format!("{}({}): {tick})", key.peer_id, key.clock_id))
+            .map(|(key, tick)| format!("{}({}): {tick}", key.peer_id, key.clock_id))
             .collect::<Vec<_>>()
             .join(", ");
-        write!(f, "RecoveryPoint [ {clocks} ]")
+        write!(f, "RecoveryPoint[{clocks}]")
     }
 }
 
