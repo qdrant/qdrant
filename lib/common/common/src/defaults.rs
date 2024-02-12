@@ -1,7 +1,17 @@
 use std::time::Duration;
 
+use lazy_static::lazy_static;
+
+use crate::cpu;
+
 /// Default timeout for consensus meta operations.
 pub const CONSENSUS_META_OP_WAIT: Duration = Duration::from_secs(10);
+
+lazy_static! {
+    /// Max number of pooled elements to preserve in memory.
+    /// Scaled according to the number of logical CPU cores to account for concurrent operations.
+    pub static ref POOL_KEEP_LIMIT: usize = cpu::get_num_cpus().clamp(16, 128);
+}
 
 /// Default value of CPU budget parameter.
 ///
