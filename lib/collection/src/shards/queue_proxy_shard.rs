@@ -315,7 +315,7 @@ impl Inner {
         remote_shard: RemoteShard,
         wal_keep_from: Arc<AtomicU64>,
     ) -> Self {
-        let start_from = wrapped_shard.wal.lock().last_index();
+        let start_from = wrapped_shard.wal.lock().last_index() + 1;
 
         let shard = Self {
             wrapped_shard,
