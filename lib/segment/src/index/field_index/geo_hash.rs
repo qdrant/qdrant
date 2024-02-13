@@ -229,6 +229,13 @@ pub fn circle_hashes(circle: &GeoRadius, max_regions: usize) -> OperationResult<
     }
 
     let geo_bounding_box = minimum_bounding_rectangle_for_circle(circle);
+    if geo_bounding_box.top_left.lat.is_nan()
+        || geo_bounding_box.top_left.lon.is_nan()
+        || geo_bounding_box.bottom_right.lat.is_nan()
+        || geo_bounding_box.bottom_right.lat.is_nan()
+    {
+        return Err(OperationError::service_error("Invalid circle"));
+    }
     let full_geohash_bounding_box: GeohashBoundingBox = geo_bounding_box.into();
 
     let mapping_fn = |precision| {
@@ -964,5 +971,28 @@ mod tests {
 
         let polygon_hashes = polygon_hashes(&sample_polygon, invalid_max_hashes);
         assert!(polygon_hashes.is_err());
+    }
+
+    #[test]
+    fn geo_radius_zero_division() {
+        let circle = GeoRadius {
+            center: GeoPoint {
+                lon: 45.0,
+                lat: 80.0,
+            },
+            radius: 1000.0,
+        };
+        let hashes = circle_hashes(&circle, GEOHASH_MAX_LENGTH);
+        assert!(hashes.is_ok());
+
+        let circle2 = GeoRadius {
+            center: GeoPoint {
+                lon: 45.0,
+                lat: 90.0,
+            },
+            radius: -1.0,
+        };
+        let hashes2 = circle_hashes(&circle2, GEOHASH_MAX_LENGTH);
+        assert!(hashes2.is_err());
     }
 }
