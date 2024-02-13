@@ -331,7 +331,7 @@ message ScrollPoints {
   optional WithVectorsSelector with_vectors = 7; // Options for specifying which vectors to include into response
   optional ReadConsistency read_consistency = 8; // Options for specifying read consistency guarantees
   optional ShardKeySelector shard_key_selector = 9; // Specify in which shards to look for the points, if not specified - look in all shards
-  optional OrderBy order_by = 10; // Order of the results by a payload key
+  optional OrderBy order_by = 10; // Order the records by a payload field
 }
 
 // How to use positive and negative vectors to find the results, default is `AverageVector`:
