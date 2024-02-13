@@ -8,8 +8,8 @@ impl LocalShard {
         &self,
         recovery_point: RecoveryPoint,
     ) -> Result<u64, WalDeltaError> {
-        let local_last_seen = self.clock_map.lock().await.to_recovery_point();
-        resolve_wal_delta(recovery_point, &self.wal, local_last_seen)
+        let local_recovery_point = self.clock_map.lock().await.to_recovery_point();
+        resolve_wal_delta(recovery_point, &self.wal, local_recovery_point)
     }
 }
 
@@ -28,26 +28,25 @@ impl LocalShard {
 pub fn resolve_wal_delta(
     mut recovery_point: RecoveryPoint,
     local_wal: &LockedWal,
-    local_last_seen: RecoveryPoint,
+    local_recovery_point: RecoveryPoint,
 ) -> Result<u64, WalDeltaError> {
     if recovery_point.is_empty() {
         return Err(WalDeltaError::Empty);
     }
 
-    // If our current node has any lower last seen clock than the recovery point specifies,
-    // we cannot resolve a WAL delta
-    if recovery_point.has_any_higher(&local_last_seen) {
+    // If our current node has any lower clock than the recovery point specifies,
+    // we're missing essential operations and cannot resolve a WAL delta
+    if recovery_point.has_any_higher(&local_recovery_point) {
         return Err(WalDeltaError::HigherThanCurrent);
     }
 
     // Extend clock map with missing clocks this node know about
     // Ensure the recovering node gets records for a clock it might not have seen yet
-    recovery_point.extend_with_missing_clocks(&local_last_seen);
+    recovery_point.extend_with_missing_clocks(&local_recovery_point);
 
-    // Remove clocks that are equal to the current last seen
-    // We don't have to transfer any record for these
+    // Remove clocks that are equal to this node, we don't have to transfer records for them
     // TODO: do we want to remove higher clocks too, as the recovery node already has all data?
-    recovery_point.remove_equal_clocks(&local_last_seen);
+    recovery_point.remove_equal_clocks(&local_recovery_point);
 
     // TODO: check truncated clock values or each clock we have:
     // TODO: - if truncated is higher, we cannot resolve diff
