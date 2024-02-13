@@ -66,6 +66,7 @@ pub struct SerdeWal<R> {
     record: PhantomData<R>,
     wal: Wal,
     options: WalOptions,
+    /// First index of our logical WAL.
     first_index: Option<u64>,
 }
 
