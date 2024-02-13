@@ -11,8 +11,8 @@ use crate::operations::types::CollectionError;
 use crate::operations::ClockTag;
 use crate::shards::shard::PeerId;
 
-#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
-#[serde(from = "ClockMapHelper")]
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[serde(from = "ClockMapHelper", into = "ClockMapHelper")]
 pub struct ClockMap {
     clocks: HashMap<Key, Clock>,
 }
@@ -121,20 +121,7 @@ impl ClockMap {
     }
 }
 
-impl Serialize for ClockMap {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.collect_seq(
-            self.clocks
-                .iter()
-                .map(|(&key, &clock)| KeyClockHelper::from((key, clock))),
-        )
-    }
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize)]
 struct Key {
     peer_id: PeerId,
     clock_id: u32,
@@ -153,7 +140,8 @@ impl Key {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(transparent)]
 struct Clock {
     current_tick: u64,
 }
@@ -279,41 +267,45 @@ impl From<api::grpc::qdrant::RecoveryPoint> for RecoveryPoint {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
-#[serde(transparent)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 struct ClockMapHelper {
     clocks: Vec<KeyClockHelper>,
 }
 
+impl From<ClockMap> for ClockMapHelper {
+    fn from(clock_map: ClockMap) -> Self {
+        Self {
+            clocks: clock_map.clocks.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
 impl From<ClockMapHelper> for ClockMap {
     fn from(helper: ClockMapHelper) -> Self {
-        let clocks = helper.clocks.into_iter().map(Into::into).collect();
-        Self { clocks }
+        Self {
+            clocks: helper.clocks.into_iter().map(Into::into).collect(),
+        }
     }
 }
 
 #[derive(Copy, Clone, Debug, Deserialize, Serialize)]
 struct KeyClockHelper {
-    peer_id: PeerId,
-    clock_id: u32,
-    current_tick: u64,
-}
+    #[serde(flatten)]
+    key: Key,
 
-impl From<KeyClockHelper> for (Key, Clock) {
-    fn from(helper: KeyClockHelper) -> Self {
-        let key = Key::new(helper.peer_id, helper.clock_id);
-        let clock = Clock::new(helper.current_tick);
-        (key, clock)
-    }
+    #[serde(flatten)]
+    clock: Clock,
 }
 
 impl From<(Key, Clock)> for KeyClockHelper {
     fn from((key, clock): (Key, Clock)) -> Self {
-        Self {
-            peer_id: key.peer_id,
-            clock_id: key.clock_id,
-            current_tick: clock.current_tick,
-        }
+        Self { key, clock }
+    }
+}
+
+impl From<KeyClockHelper> for (Key, Clock) {
+    fn from(helper: KeyClockHelper) -> Self {
+        (helper.key, helper.clock)
     }
 }
 
