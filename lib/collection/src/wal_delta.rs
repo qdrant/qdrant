@@ -201,7 +201,7 @@ mod tests {
         PointInsertOperationsInternal, PointOperations, PointStruct,
     };
     use crate::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
-    use crate::shards::local_shard::clock_map::ClockMap;
+    use crate::shards::local_shard::clock_map::{ClockMap, RecoveryPoint};
     use crate::shards::replica_set::clock_set::ClockSet;
     use crate::wal::SerdeWal;
 
@@ -299,5 +299,28 @@ mod tests {
         )
         .unwrap();
         assert_eq!(delta_from, 1);
+    }
+
+    /// Empty recovery point should not resolve any diff.
+    #[test]
+    fn test_empty_recovery_point() {
+        let wal_dir = Builder::new().prefix("wal_test").tempdir().unwrap();
+        let wal_options = WalOptions {
+            segment_capacity: 1024 * 1024,
+            segment_queue_len: 0,
+        };
+        let wal: SerdeWal<OperationWithClockTag> =
+            SerdeWal::new(wal_dir.path().to_str().unwrap(), wal_options).unwrap();
+        let wal = Arc::new(ParkingMutex::new(wal));
+
+        // Empty recovery points, should not resolve any diff
+        let recovery_point = RecoveryPoint::default();
+        let local_recovery_point = RecoveryPoint::default();
+
+        let resolve_result = resolve_wal_delta(recovery_point, wal, local_recovery_point);
+        assert_eq!(
+            resolve_result.unwrap_err().to_string(),
+            "recovery point has no clocks to resolve delta for",
+        );
     }
 }
