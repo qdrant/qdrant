@@ -323,4 +323,33 @@ mod tests {
             "recovery point has no clocks to resolve delta for",
         );
     }
+
+    /// Recovery point with a clock our source does not know about cannot resolve a diff.
+    #[test]
+    fn test_recover_point_has_unknown_clock() {
+        let wal_dir = Builder::new().prefix("wal_test").tempdir().unwrap();
+        let wal_options = WalOptions {
+            segment_capacity: 1024 * 1024,
+            segment_queue_len: 0,
+        };
+        let wal: SerdeWal<OperationWithClockTag> =
+            SerdeWal::new(wal_dir.path().to_str().unwrap(), wal_options).unwrap();
+        let wal = Arc::new(ParkingMutex::new(wal));
+
+        let mut recovery_point = RecoveryPoint::default();
+        let mut local_recovery_point = RecoveryPoint::default();
+
+        // Recovery point has a clock our source does not know about
+        recovery_point.insert(1, 0, 15);
+        recovery_point.insert(1, 1, 8);
+        recovery_point.insert(2, 1, 5);
+        local_recovery_point.insert(1, 0, 20);
+        local_recovery_point.insert(1, 1, 8);
+
+        let resolve_result = resolve_wal_delta(recovery_point, wal, local_recovery_point);
+        assert_eq!(
+            resolve_result.unwrap_err().to_string(),
+            "recovery point requests clocks this WAL does not know about",
+        );
+    }
 }
