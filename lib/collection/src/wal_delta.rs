@@ -129,6 +129,12 @@ fn resolve_wal_delta(
         return Err(WalDeltaError::Empty);
     }
 
+    // If the recovery point has clocks our current node does not know about
+    // we're missing essential operations and cannot resolve a WAL delta
+    if recovery_point.has_clocks_not_in(&local_recovery_point) {
+        return Err(WalDeltaError::UnknownClocks);
+    }
+
     // If our current node has any lower clock than the recovery point specifies,
     // we're missing essential operations and cannot resolve a WAL delta
     if recovery_point.has_any_higher(&local_recovery_point) {
@@ -170,6 +176,8 @@ fn resolve_wal_delta(
 pub enum WalDeltaError {
     #[error("recovery point has no clocks to resolve delta for")]
     Empty,
+    #[error("recovery point requests clocks this WAL does not know about")]
+    UnknownClocks,
     #[error("recovery point has higher clocks than current WAL")]
     HigherThanCurrent,
     #[error("some recovery point clocks are below the cutoff point in our WAL")]

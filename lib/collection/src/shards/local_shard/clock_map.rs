@@ -182,6 +182,13 @@ impl RecoveryPoint {
             .map(|(key, tick)| ClockTag::new(key.peer_id, key.clock_id, *tick))
     }
 
+    /// Check whether this recovery point has any clocks that are not in `other`
+    pub fn has_clocks_not_in(&mut self, other: &Self) -> bool {
+        self.clocks
+            .keys()
+            .any(|key| !other.clocks.contains_key(key))
+    }
+
     /// Check whether this recovery point has any higher clock value than `other`
     ///
     /// A clock in this recovery point that is not in `other` is always considered to be higher.
