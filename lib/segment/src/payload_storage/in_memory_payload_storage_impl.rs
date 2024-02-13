@@ -27,12 +27,14 @@ impl PayloadStorage for InMemoryPayloadStorage {
         key: &str,
     ) -> OperationResult<()> {
         match self.payload.get_mut(&point_id) {
-            Some(point_payload) => point_payload.merge_by_key(payload, key)?,
+            Some(point_payload) => point_payload.merge_by_key(payload, key),
             None => {
-                self.payload.insert(point_id, payload.to_owned());
+                let mut dest_payload = Payload::default();
+                dest_payload.merge_by_key(payload, key)?;
+                self.payload.insert(point_id, dest_payload);
+                Ok(())
             }
         }
-        Ok(())
     }
 
     fn payload(&self, point_id: PointOffsetType) -> OperationResult<Payload> {

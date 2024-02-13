@@ -252,7 +252,16 @@ pub fn set_value_to_json_map<'a>(
                         }
                     } else {
                         // insert new one
-                        dest.insert(element.to_owned(), Value::Object(src.clone()));
+                        if !rest_path.is_empty() {
+                            dest.insert(element.to_owned(), Value::Object(Default::default()));
+                            set_value_to_json_map(
+                                rest_path,
+                                dest.get_mut(element).unwrap().as_object_mut().unwrap(),
+                                src,
+                            );
+                        } else {
+                            dest.insert(element.to_owned(), Value::Object(src.clone()));
+                        }
                     }
                 }
             }
@@ -316,6 +325,19 @@ fn set_by_array_path<'a>(
             } else if let Value::Object(map) = value {
                 merge_map(map, src);
             }
+        }
+    } else if dest.is_empty() {
+        // insert new one
+        let array_len = array_index.map(|i| i + 1).unwrap_or(1);
+        let mut array = vec![Value::Null; (array_len - 1) as usize];
+        if let Some(rest_path) = rest_path {
+            array.push(Value::Object(Default::default()));
+            dest.insert(array_path.to_owned(), Value::Array(array));
+            set_by_array_path(array_path, array_index, Some(rest_path), dest, src);
+        } else {
+            array.push(Value::Object(src.clone()));
+            dest.insert(array_path.to_owned(), Value::Array(array));
+            set_by_array_path(array_path, array_index, None, dest, src);
         }
     }
 }
@@ -1100,6 +1122,70 @@ mod tests {
                 r#"
                 {
                     "c": 1
+                }
+                "#,
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_set_value_to_json_with_empty_dest_nested_key() {
+        let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            {
+            }
+            "#,
+        )
+        .unwrap();
+
+        let src = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            {"c": 1}
+            "#,
+        )
+        .unwrap();
+
+        set_value_to_json_map("key1.key2", &mut map, &src);
+
+        assert_eq!(
+            map,
+            serde_json::from_str::<serde_json::Map<String, Value>>(
+                r#"
+                {
+                    "key1": {"key2": { "c": 1 } }
+                }
+                "#,
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_set_value_to_json_with_empty_dest_nested_array_index_key() {
+        let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            {
+            }
+            "#,
+        )
+        .unwrap();
+
+        let src = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            {"c": 1}
+            "#,
+        )
+        .unwrap();
+
+        set_value_to_json_map("key1.key2[3]", &mut map, &src);
+
+        assert_eq!(
+            map,
+            serde_json::from_str::<serde_json::Map<String, Value>>(
+                r#"
+                {
+                    "key1": {"key2": [null, null, null, { "c": 1 }] }
                 }
                 "#,
             )
