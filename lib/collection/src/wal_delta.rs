@@ -179,7 +179,7 @@ pub enum WalDeltaError {
     Empty,
     #[error("recovery point requests clocks this WAL does not know about")]
     UnknownClocks,
-    #[error("recovery point has higher clocks than current WAL")]
+    #[error("recovery point requests higher clocks this WAL has")]
     HigherThanCurrent,
     #[error("some recovery point clocks are below the cutoff point in our WAL")]
     Cutoff,
@@ -350,6 +350,34 @@ mod tests {
         assert_eq!(
             resolve_result.unwrap_err().to_string(),
             "recovery point requests clocks this WAL does not know about",
+        );
+    }
+
+    /// Recovery point with higher clocks than the source cannot resolve a diff.
+    #[test]
+    fn test_recover_point_higher_than_source() {
+        let wal_dir = Builder::new().prefix("wal_test").tempdir().unwrap();
+        let wal_options = WalOptions {
+            segment_capacity: 1024 * 1024,
+            segment_queue_len: 0,
+        };
+        let wal: SerdeWal<OperationWithClockTag> =
+            SerdeWal::new(wal_dir.path().to_str().unwrap(), wal_options).unwrap();
+        let wal = Arc::new(ParkingMutex::new(wal));
+
+        let mut recovery_point = RecoveryPoint::default();
+        let mut local_recovery_point = RecoveryPoint::default();
+
+        // Recovery point asks tick 10, but source only has tick 8
+        recovery_point.insert(1, 0, 15);
+        recovery_point.insert(1, 1, 10);
+        local_recovery_point.insert(1, 0, 20);
+        local_recovery_point.insert(1, 1, 8);
+
+        let resolve_result = resolve_wal_delta(recovery_point, wal, local_recovery_point);
+        assert_eq!(
+            resolve_result.unwrap_err().to_string(),
+            "recovery point requests higher clocks this WAL has",
         );
     }
 }
