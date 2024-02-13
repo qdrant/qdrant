@@ -343,7 +343,7 @@ mod tests {
     fn clock_map_serde_empty() {
         let input = ClockMap::default();
 
-        let json = serde_json::to_value(&clock_map).unwrap();
+        let json = serde_json::to_value(&input).unwrap();
         let output = serde_json::from_value(json).unwrap();
 
         assert_eq!(input, output);
@@ -358,7 +358,7 @@ mod tests {
         input.advance_clock(ClockTag::new(2, 2, 12345));
 
         let json = serde_json::to_value(&input).unwrap();
-        let output = serde_json::form_value(json).unwrap();
+        let output = serde_json::from_value(json).unwrap();
 
         assert_eq!(input, output);
     }
