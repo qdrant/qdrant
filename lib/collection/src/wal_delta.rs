@@ -293,12 +293,27 @@ mod tests {
         // Recover node C from node B, assert delta point is correct
         let delta_from = resolve_wal_delta(
             c_recovery_point,
-            b_wal,
+            b_wal.clone(),
             b_recovery_point,
             RecoveryPoint::default(),
         )
         .unwrap();
         assert_eq!(delta_from, 1);
+
+        // Recover WAL by writing delta to it
+        b_wal.lock().read(delta_from).for_each(|(_, update)| {
+            c_wal.write(&update).unwrap();
+        });
+
+        // WALs should match up perfectly now
+        a_wal
+            .read(0)
+            .zip(b_wal.lock().read(0))
+            .zip(c_wal.read(0))
+            .for_each(|((a, b), c)| {
+                assert_eq!(a, b);
+                assert_eq!(b, c);
+            });
     }
 
     /// Empty recovery point should not resolve any diff.
