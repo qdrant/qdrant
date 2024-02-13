@@ -425,6 +425,118 @@ mod tests {
             });
     }
 
+    /// Test WAL delta resolution with a many intermixed operations on node C. Intermixed as in,
+    /// from multiple nodes.
+    ///
+    /// See: <https://www.notion.so/qdrant/Testing-suite-4e28a978ec05476080ff26ed07757def?pvs=4>
+    #[test]
+    fn test_resolve_wal_many_intermixed_operations() {
+        const N: usize = 3;
+        const M: usize = 50;
+
+        // Create WALs for peer A, B and C
+        let (mut a_wal, _a_wal_dir) = fixture_empty_wal();
+        let (mut b_wal, _b_wal_dir) = fixture_empty_wal();
+        let (mut c_wal, _c_wal_dir) = fixture_empty_wal();
+
+        // Create clock sets for peer A, B and C
+        let mut a_clock_set = ClockSet::new();
+        let mut b_clock_set = ClockSet::new();
+        let mut a_clock_map = ClockMap::default();
+        let mut b_clock_map = ClockMap::default();
+        let mut c_clock_map = ClockMap::default();
+
+        // Create N operation on peer A
+        for i in 0..N {
+            let mut a_clock_0 = a_clock_set.get_clock();
+            let clock_tick = a_clock_0.tick_once();
+            let clock_tag = ClockTag::new(1, 0, clock_tick);
+            let operation =
+                CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+                    PointInsertOperationsInternal::PointsList(vec![PointStruct {
+                        id: (i as u64).into(),
+                        vector: vec![i as f32, -(i as f32), 0.0].into(),
+                        payload: None,
+                    }]),
+                ));
+            let operation_with_clock_tag = OperationWithClockTag::new(operation, Some(clock_tag));
+
+            // Write operations to peer A, B and C, and advance clocks
+            a_wal.write(&operation_with_clock_tag).unwrap();
+            b_wal.write(&operation_with_clock_tag).unwrap();
+            c_wal.write(&operation_with_clock_tag).unwrap();
+            a_clock_0.advance_to(clock_tick);
+            a_clock_map.advance_clock(clock_tag);
+            b_clock_map.advance_clock(clock_tag);
+            c_clock_map.advance_clock(clock_tag);
+        }
+
+        // Create M operations on peer A, which are missed on node C
+        for i in N..N + M {
+            let is_node_a = i % 3 == 0;
+            let peer_id = if is_node_a { 1 } else { 2 };
+
+            let mut clock = if is_node_a {
+                a_clock_set.get_clock()
+            } else {
+                b_clock_set.get_clock()
+            };
+            let clock_tick = clock.tick_once();
+            let clock_tag = ClockTag::new(peer_id, 0, clock_tick);
+            let operation =
+                CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+                    PointInsertOperationsInternal::PointsList(vec![PointStruct {
+                        id: (i as u64).into(),
+                        vector: vec![i as f32, -(i as f32), 0.0].into(),
+                        payload: None,
+                    }]),
+                ));
+            let operation_with_clock_tag = OperationWithClockTag::new(operation, Some(clock_tag));
+
+            // Write operations to peer A and B, not C, and advance clocks
+            a_wal.write(&operation_with_clock_tag).unwrap();
+            b_wal.write(&operation_with_clock_tag).unwrap();
+            clock.advance_to(clock_tick);
+            a_clock_map.advance_clock(clock_tag);
+            b_clock_map.advance_clock(clock_tag);
+        }
+
+        let a_wal = Arc::new(ParkingMutex::new(a_wal));
+        let b_wal = Arc::new(ParkingMutex::new(b_wal));
+        let a_recovery_point = a_clock_map.to_recovery_point();
+        let b_recovery_point = b_clock_map.to_recovery_point();
+        let c_recovery_point = c_clock_map.to_recovery_point();
+
+        // Resolve delta on node A for node C, assert correctness
+        let delta_from =
+            resolve_wal_delta(c_recovery_point.clone(), a_wal.clone(), &a_recovery_point).unwrap();
+        assert_eq!(delta_from, N as u64);
+
+        // Resolve delta on node B for node C, assert correctness
+        let delta_from =
+            resolve_wal_delta(c_recovery_point, b_wal.clone(), &b_recovery_point).unwrap();
+        assert_eq!(delta_from, N as u64);
+
+        // Diff should have M operations, as node C missed M operations
+        assert_eq!(b_wal.lock().read(delta_from).count(), M);
+
+        // Recover WAL on node C by writing delta from node B to it
+        b_wal.lock().read(delta_from).for_each(|(_, update)| {
+            c_wal.write(&update).unwrap();
+        });
+
+        // WALs should match up perfectly now
+        a_wal
+            .lock()
+            .read(0)
+            .zip(b_wal.lock().read(0))
+            .zip(c_wal.read(0))
+            .for_each(|((a, b), c)| {
+                assert_eq!(a, b);
+                assert_eq!(b, c);
+            });
+    }
+
     /// Empty recovery point should not resolve any diff.
     #[test]
     fn test_empty_recovery_point() {
