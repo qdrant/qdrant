@@ -6,17 +6,14 @@ use std::path::Path;
 use api::grpc::qdrant::RecoveryPointClockTag;
 use io::file_operations;
 use serde::{Deserialize, Serialize};
-use serde_with::serde_as;
 
 use crate::operations::types::CollectionError;
 use crate::operations::ClockTag;
 use crate::shards::shard::PeerId;
 
-#[derive(Debug, Default, Deserialize, Serialize, PartialEq)]
-#[serde(transparent)]
-#[serde_as]
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[serde(from = "ClockMapHelper")]
 pub struct ClockMap {
-    #[serde_as(as = "Vec<(_, _)>")]
     clocks: HashMap<Key, Clock>,
 }
 
@@ -124,7 +121,20 @@ impl ClockMap {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize)]
+impl Serialize for ClockMap {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.collect_seq(
+            self.clocks
+                .iter()
+                .map(|(&key, &clock)| KeyClockHelper::from((key, clock))),
+        )
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 struct Key {
     peer_id: PeerId,
     clock_id: u32,
@@ -143,8 +153,7 @@ impl Key {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
-#[serde(transparent)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 struct Clock {
     current_tick: u64,
 }
@@ -170,7 +179,7 @@ impl Clock {
 /// The recovery point describes from what point we want to get operations from another node in
 /// case of recovery. In other words, the recovery point has the first clock tick values the
 /// recovering node has not seen yet.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct RecoveryPoint {
     clocks: HashMap<Key, u64>,
 }
@@ -266,6 +275,44 @@ impl From<api::grpc::qdrant::RecoveryPoint> for RecoveryPoint {
                 .into_iter()
                 .map(|tag| (Key::new(tag.peer_id, tag.clock_id), tag.clock_tick))
                 .collect(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(transparent)]
+struct ClockMapHelper {
+    clocks: Vec<KeyClockHelper>,
+}
+
+impl From<ClockMapHelper> for ClockMap {
+    fn from(helper: ClockMapHelper) -> Self {
+        let clocks = helper.clocks.into_iter().map(Into::into).collect();
+        Self { clocks }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
+struct KeyClockHelper {
+    peer_id: PeerId,
+    clock_id: u32,
+    current_tick: u64,
+}
+
+impl From<KeyClockHelper> for (Key, Clock) {
+    fn from(helper: KeyClockHelper) -> Self {
+        let key = Key::new(helper.peer_id, helper.clock_id);
+        let clock = Clock::new(helper.current_tick);
+        (key, clock)
+    }
+}
+
+impl From<(Key, Clock)> for KeyClockHelper {
+    fn from((key, clock): (Key, Clock)) -> Self {
+        Self {
+            peer_id: key.peer_id,
+            clock_id: key.clock_id,
+            current_tick: clock.current_tick,
         }
     }
 }

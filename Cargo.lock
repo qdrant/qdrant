@@ -1090,7 +1090,6 @@ dependencies = [
  "serde",
  "serde_cbor",
  "serde_json",
- "serde_with",
  "sha2",
  "sparse",
  "tar",
@@ -4875,36 +4874,6 @@ dependencies = [
  "itoa",
  "ryu",
  "serde",
-]
-
-[[package]]
-name = "serde_with"
-version = "3.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15d167997bd841ec232f5b2b8e0e26606df2e7caa4c31b95ea9ca52b200bd270"
-dependencies = [
- "base64 0.21.0",
- "chrono",
- "hex",
- "indexmap 1.9.2",
- "indexmap 2.2.3",
- "serde",
- "serde_derive",
- "serde_json",
- "serde_with_macros",
- "time",
-]
-
-[[package]]
-name = "serde_with_macros"
-version = "3.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "865f9743393e638991566a8b7a479043c2c8da94a33e0a31f18214c9cae0a64d"
-dependencies = [
- "darling",
- "proc-macro2",
- "quote",
- "syn 2.0.48",
 ]
 
 [[package]]
