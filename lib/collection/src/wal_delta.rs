@@ -189,6 +189,7 @@ pub enum WalDeltaError {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
     use std::sync::Arc;
 
     use parking_lot::Mutex as ParkingMutex;
@@ -535,6 +536,152 @@ mod tests {
                 assert_eq!(a, b);
                 assert_eq!(b, c);
             });
+    }
+
+    /// Test WAL delta resolution with operations in a different order on node A and B.
+    ///
+    /// See: <https://www.notion.so/qdrant/Testing-suite-4e28a978ec05476080ff26ed07757def?pvs=4>
+    #[test]
+    fn test_resolve_wal_unordered_operations() {
+        // Create WALs for peer A, B and C
+        let (mut a_wal, _a_wal_dir) = fixture_empty_wal();
+        let (mut b_wal, _b_wal_dir) = fixture_empty_wal();
+        let (mut c_wal, _c_wal_dir) = fixture_empty_wal();
+
+        // Create clock sets for peer A, B and C
+        let mut a_clock_set = ClockSet::new();
+        let mut b_clock_set = ClockSet::new();
+        let mut a_clock_map = ClockMap::default();
+        let mut b_clock_map = ClockMap::default();
+        let mut c_clock_map = ClockMap::default();
+
+        // Create operation on peer A
+        let mut a_clock_0 = a_clock_set.get_clock();
+        let clock_tick = a_clock_0.tick_once();
+        let clock_tag = ClockTag::new(1, 0, clock_tick);
+        let operation = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+            PointInsertOperationsInternal::PointsList(vec![PointStruct {
+                id: 1.into(),
+                vector: vec![1.0, 2.0, 3.0].into(),
+                payload: None,
+            }]),
+        ));
+        let operation_with_clock_tag = OperationWithClockTag::new(operation, Some(clock_tag));
+
+        // Write operations to peer A, B and C, and advance clocks
+        a_wal.write(&operation_with_clock_tag).unwrap();
+        b_wal.write(&operation_with_clock_tag).unwrap();
+        c_wal.write(&operation_with_clock_tag).unwrap();
+        a_clock_0.advance_to(clock_tick);
+        a_clock_map.advance_clock(clock_tag);
+        b_clock_map.advance_clock(clock_tag);
+        c_clock_map.advance_clock(clock_tag);
+        drop(a_clock_0);
+
+        // Create an operation on node A and B
+        let mut a_clock_0 = a_clock_set.get_clock();
+        let mut b_clock_0 = b_clock_set.get_clock();
+        let a_clock_tick = a_clock_0.tick_once();
+        let b_clock_tick = b_clock_0.tick_once();
+        let a_clock_tag = ClockTag::new(1, 0, a_clock_tick);
+        let b_clock_tag = ClockTag::new(2, 0, b_clock_tick);
+        let a_operation =
+            CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+                PointInsertOperationsInternal::PointsList(vec![PointStruct {
+                    id: 2.into(),
+                    vector: vec![3.0, 2.0, 1.0].into(),
+                    payload: None,
+                }]),
+            ));
+        let b_operation =
+            CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+                PointInsertOperationsInternal::PointsList(vec![PointStruct {
+                    id: 3.into(),
+                    vector: vec![9.0, 8.0, 7.0].into(),
+                    payload: None,
+                }]),
+            ));
+        let a_operation_with_clock_tag = OperationWithClockTag::new(a_operation, Some(a_clock_tag));
+        let b_operation_with_clock_tag = OperationWithClockTag::new(b_operation, Some(b_clock_tag));
+
+        // Write operations to node A and B in different order, but not on node C
+        a_wal.write(&a_operation_with_clock_tag).unwrap();
+        a_wal.write(&b_operation_with_clock_tag).unwrap();
+        b_wal.write(&b_operation_with_clock_tag).unwrap();
+        b_wal.write(&a_operation_with_clock_tag).unwrap();
+        a_clock_0.advance_to(a_clock_tick);
+        b_clock_0.advance_to(b_clock_tick);
+        a_clock_map.advance_clock(a_clock_tag);
+        a_clock_map.advance_clock(b_clock_tag);
+        b_clock_map.advance_clock(b_clock_tag);
+        b_clock_map.advance_clock(a_clock_tag);
+        drop(a_clock_0);
+        drop(b_clock_0);
+
+        let a_wal = Arc::new(ParkingMutex::new(a_wal));
+        let b_wal = Arc::new(ParkingMutex::new(b_wal));
+        let a_recovery_point = a_clock_map.to_recovery_point();
+        let b_recovery_point = b_clock_map.to_recovery_point();
+        let c_recovery_point = c_clock_map.to_recovery_point();
+
+        // Resolve delta on node A for node C, assert correctness
+        let delta_from =
+            resolve_wal_delta(c_recovery_point.clone(), a_wal.clone(), &a_recovery_point).unwrap();
+        assert_eq!(delta_from, 1);
+
+        // Resolve delta on node B for node C, assert correctness
+        let delta_from =
+            resolve_wal_delta(c_recovery_point, b_wal.clone(), &b_recovery_point).unwrap();
+        assert_eq!(delta_from, 1);
+
+        // Diff should have 2 operations on both nodes
+        assert_eq!(a_wal.lock().read(delta_from).count(), 2);
+        assert_eq!(b_wal.lock().read(delta_from).count(), 2);
+
+        // Recover WAL on node C by writing delta from node B to it
+        b_wal.lock().read(delta_from).for_each(|(_, update)| {
+            c_wal.write(&update).unwrap();
+        });
+
+        // WAL on node B and C will match, A is in different order
+        assert!(!a_wal.lock().read(0).zip(c_wal.read(0)).all(|(a, c)| a == c));
+        assert!(b_wal.lock().read(0).zip(c_wal.read(0)).all(|(b, c)| b == c));
+
+        // All WALs should have 3 operations
+        assert_eq!(a_wal.lock().read(0).count(), 3);
+        assert_eq!(b_wal.lock().read(0).count(), 3);
+        assert_eq!(c_wal.read(0).count(), 3);
+
+        // All WALs must have operations for point 1, 2 and 3
+        let get_point = |op| match op {
+            OperationWithClockTag {
+                operation:
+                    CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+                        PointInsertOperationsInternal::PointsList(points),
+                    )),
+                ..
+            } => points[0].clone(),
+            _ => unreachable!(),
+        };
+        let a_wal_point_ids = a_wal
+            .lock()
+            .read(0)
+            .map(|(_, op)| get_point(op).id)
+            .collect::<HashSet<_>>();
+        let b_wal_point_ids = b_wal
+            .lock()
+            .read(0)
+            .map(|(_, op)| get_point(op).id)
+            .collect::<HashSet<_>>();
+        let c_wal_point_ids = c_wal
+            .read(0)
+            .map(|(_, op)| get_point(op).id)
+            .collect::<HashSet<_>>();
+        (1..=3).for_each(|i| {
+            assert!(a_wal_point_ids.contains(&i.into()));
+            assert!(b_wal_point_ids.contains(&i.into()));
+            assert!(c_wal_point_ids.contains(&i.into()));
+        });
     }
 
     /// Empty recovery point should not resolve any diff.
