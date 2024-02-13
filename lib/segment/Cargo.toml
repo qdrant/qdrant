@@ -46,7 +46,7 @@ schemars = { workspace = true }
 log = "0.4"
 geo = "0.27.0"
 geohash = "0.13.0"
-num-traits = "0.2.17"
+num-traits = "0.2.18"
 num-derive = "0.4.2"
 num-cmp = "0.1.0"
 rand = "0.8"
