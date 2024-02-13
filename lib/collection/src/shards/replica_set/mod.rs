@@ -1,4 +1,4 @@
-mod clock_set;
+pub(crate) mod clock_set;
 mod execute_read_operation;
 mod locally_disabled_peers;
 mod read_ops;

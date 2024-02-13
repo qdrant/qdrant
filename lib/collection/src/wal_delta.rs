@@ -186,3 +186,118 @@ pub enum WalDeltaError {
     #[error("some recovery point clocks are not found in our WAL")]
     NotFound,
 }
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::sync::Arc;
+
+    use parking_lot::Mutex as ParkingMutex;
+    use tempfile::Builder;
+    use wal::WalOptions;
+
+    use super::*;
+    use crate::operations::point_ops::{
+        PointInsertOperationsInternal, PointOperations, PointStruct,
+    };
+    use crate::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
+    use crate::shards::local_shard::clock_map::ClockMap;
+    use crate::shards::replica_set::clock_set::ClockSet;
+    use crate::wal::SerdeWal;
+
+    /// Test WAL delta resolution with just one missed operation on node C.
+    ///
+    /// Simplified version of: <https://www.notion.so/qdrant/Testing-suite-4e28a978ec05476080ff26ed07757def?pvs=4>
+    #[test]
+    fn test_resolve_wal_one_operation() {
+        let wal_dir = Builder::new().prefix("wal_test").tempdir().unwrap();
+        let a_wal_options = WalOptions {
+            segment_capacity: 1024 * 1024,
+            segment_queue_len: 0,
+        };
+        let b_wal_options = WalOptions {
+            segment_capacity: 1024 * 1024,
+            segment_queue_len: 0,
+        };
+        let c_wal_options = WalOptions {
+            segment_capacity: 1024 * 1024,
+            segment_queue_len: 0,
+        };
+
+        fs::create_dir_all(wal_dir.path().join("a")).unwrap();
+        fs::create_dir_all(wal_dir.path().join("b")).unwrap();
+        fs::create_dir_all(wal_dir.path().join("c")).unwrap();
+
+        // Create WALs for peer A, B and C
+        let mut a_wal: SerdeWal<OperationWithClockTag> =
+            SerdeWal::new(wal_dir.path().join("a").to_str().unwrap(), a_wal_options).unwrap();
+        let mut b_wal: SerdeWal<OperationWithClockTag> =
+            SerdeWal::new(wal_dir.path().join("b").to_str().unwrap(), b_wal_options).unwrap();
+        let mut c_wal: SerdeWal<OperationWithClockTag> =
+            SerdeWal::new(wal_dir.path().join("c").to_str().unwrap(), c_wal_options).unwrap();
+
+        // Create clock sets for peer A, B and C
+        let mut a_clock_set = ClockSet::new();
+        let mut a_clock_map = ClockMap::default();
+        let mut b_clock_map = ClockMap::default();
+        let mut c_clock_map = ClockMap::default();
+
+        // Create operation on peer A
+        let mut a_clock_0 = a_clock_set.get_clock();
+        let clock_tick = a_clock_0.tick_once();
+        let clock_tag = ClockTag::new(1, 0, clock_tick);
+        let operation = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+            PointInsertOperationsInternal::PointsList(vec![PointStruct {
+                id: 1.into(),
+                vector: vec![1.0, 2.0, 3.0].into(),
+                payload: None,
+            }]),
+        ));
+        let operation_with_clock_tag = OperationWithClockTag::new(operation, Some(clock_tag));
+
+        // Write operations to peer A, B and C, and advance clocks
+        a_wal.write(&operation_with_clock_tag).unwrap();
+        b_wal.write(&operation_with_clock_tag).unwrap();
+        c_wal.write(&operation_with_clock_tag).unwrap();
+        a_clock_0.advance_to(0);
+        drop(a_clock_0);
+        a_clock_map.advance_clock(clock_tag);
+        b_clock_map.advance_clock(clock_tag);
+        c_clock_map.advance_clock(clock_tag);
+
+        // Create operation on peer A
+        let mut a_clock_0 = a_clock_set.get_clock();
+        let clock_tick = a_clock_0.tick_once();
+        let clock_tag = ClockTag::new(1, 0, clock_tick);
+        let operation = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+            PointInsertOperationsInternal::PointsList(vec![PointStruct {
+                id: 2.into(),
+                vector: vec![3.0, 2.0, 1.0].into(),
+                payload: None,
+            }]),
+        ));
+        let operation_with_clock_tag = OperationWithClockTag::new(operation, Some(clock_tag));
+
+        // Write operations to peer A and B, not C, and advance clocks
+        a_wal.write(&operation_with_clock_tag).unwrap();
+        b_wal.write(&operation_with_clock_tag).unwrap();
+        a_clock_0.advance_to(0);
+        drop(a_clock_0);
+        a_clock_map.advance_clock(clock_tag);
+        b_clock_map.advance_clock(clock_tag);
+
+        let b_wal = Arc::new(ParkingMutex::new(b_wal));
+        let b_recovery_point = b_clock_map.to_recovery_point();
+        let c_recovery_point = c_clock_map.to_recovery_point();
+
+        // Recover node C from node B, assert delta point is correct
+        let delta_from = resolve_wal_delta(
+            c_recovery_point,
+            b_wal,
+            b_recovery_point,
+            RecoveryPoint::default(),
+        )
+        .unwrap();
+        assert_eq!(delta_from, 1);
+    }
+}
