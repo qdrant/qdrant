@@ -6,7 +6,7 @@ use parking_lot::{RwLock, RwLockWriteGuard};
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::entry::entry_point::SegmentEntry;
-use segment::json_path::JsonPath;
+use segment::json_path::{JsonPath, JsonPathInterface};
 use segment::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
     SeqNumberType,
@@ -38,9 +38,11 @@ pub(crate) fn delete_points(
     ids: &[PointIdType],
 ) -> CollectionResult<usize> {
     segments
-        .apply_points(ids, |id, _idx, write_segment| {
-            write_segment.delete_point(op_num, id)
-        })
+        .apply_points(
+            ids,
+            |_| (),
+            |id, _idx, write_segment, ()| write_segment.delete_point(op_num, id),
+        )
         .map_err(Into::into)
 }
 
@@ -62,11 +64,15 @@ pub(crate) fn update_vectors(
             });
     let ids: Vec<PointIdType> = points_map.keys().copied().collect();
 
-    let updated_points =
-        segments.apply_points_to_appendable(op_num, &ids, |id, write_segment| {
+    let updated_points = segments.apply_points_and_reindex(
+        op_num,
+        &ids,
+        |id, write_segment| {
             let vectors = points_map[&id].vector.clone().into_all_vectors();
             write_segment.update_vectors(op_num, id, vectors)
-        })?;
+        },
+        |_| false,
+    )?;
     check_unprocessed_points(&ids, &updated_points)?;
     Ok(updated_points.len())
 }
@@ -79,13 +85,17 @@ pub(crate) fn delete_vectors(
     vector_names: &[String],
 ) -> CollectionResult<usize> {
     segments
-        .apply_points(points, |id, _idx, write_segment| {
-            let mut res = true;
-            for name in vector_names {
-                res &= write_segment.delete_vector(op_num, id, name)?;
-            }
-            Ok(res)
-        })
+        .apply_points(
+            points,
+            |_| (),
+            |id, _idx, write_segment, ()| {
+                let mut res = true;
+                for name in vector_names {
+                    res &= write_segment.delete_vector(op_num, id, name)?;
+                }
+                Ok(res)
+            },
+        )
         .map_err(Into::into)
 }
 
@@ -106,10 +116,12 @@ pub(crate) fn overwrite_payload(
     payload: &Payload,
     points: &[PointIdType],
 ) -> CollectionResult<usize> {
-    let updated_points =
-        segments.apply_points_to_appendable(op_num, points, |id, write_segment| {
-            write_segment.set_full_payload(op_num, id, payload)
-        })?;
+    let updated_points = segments.apply_points_and_reindex(
+        op_num,
+        points,
+        |id, write_segment| write_segment.set_full_payload(op_num, id, payload),
+        |segment| segment.get_indexed_fields().is_empty(),
+    )?;
 
     check_unprocessed_points(points, &updated_points)?;
     Ok(updated_points.len())
@@ -132,13 +144,46 @@ pub(crate) fn set_payload(
     points: &[PointIdType],
     key: &Option<JsonPath>,
 ) -> CollectionResult<usize> {
-    let updated_points =
-        segments.apply_points_to_appendable(op_num, points, |id, write_segment| {
-            write_segment.set_payload(op_num, id, payload, key)
-        })?;
+    let updated_points = segments.apply_points_and_reindex(
+        op_num,
+        points,
+        |id, write_segment| write_segment.set_payload(op_num, id, payload, key),
+        |segment| safe_to_set_payload(&segment.get_indexed_fields(), payload, key),
+    )?;
 
     check_unprocessed_points(points, &updated_points)?;
     Ok(updated_points.len())
+}
+
+fn safe_to_set_payload<P: JsonPathInterface>(
+    indexed_fields: &HashMap<P, PayloadFieldSchema>,
+    payload: &Payload,
+    key: &Option<P>,
+) -> bool {
+    if key.is_some() {
+        // Not supported yet
+        return false;
+    }
+    // Set is safe when the provided payload doesn't intersect with any of the indexed fields.
+    // Note that if we have, e.g., an index on "a.c" and the payload being set is `{"a": {"b": 1}}`,
+    // it is not safe because the whole value of "a" is being replaced.
+    indexed_fields
+        .keys()
+        .all(|path| !payload.0.contains_key(path.head()))
+}
+
+fn safe_to_delete_payload_keys<P: JsonPathInterface>(
+    indexed_fields: &HashMap<P, PayloadFieldSchema>,
+    keys_to_delete: &[P],
+) -> bool {
+    // Deletion is safe when the keys being deleted don't intersect with any of the indexed fields.
+    // Note that if we have, e.g., indexed field "a.b", then it is not safe to delete any of of "a",
+    // "a.b", or "a.b.c".
+    indexed_fields.keys().all(|indexed_path| {
+        keys_to_delete
+            .iter()
+            .all(|path_to_delete| !indexed_path.check_include_pattern(path_to_delete))
+    })
 }
 
 fn points_by_filter(
@@ -171,14 +216,18 @@ pub(crate) fn delete_payload(
     points: &[PointIdType],
     keys: &[PayloadKeyType],
 ) -> CollectionResult<usize> {
-    let updated_points =
-        segments.apply_points_to_appendable(op_num, points, |id, write_segment| {
+    let updated_points = segments.apply_points_and_reindex(
+        op_num,
+        points,
+        |id, write_segment| {
             let mut res = true;
             for key in keys {
                 res &= write_segment.delete_payload(op_num, id, key)?;
             }
             Ok(res)
-        })?;
+        },
+        |segment| safe_to_delete_payload_keys(&segment.get_indexed_fields(), keys),
+    )?;
 
     check_unprocessed_points(points, &updated_points)?;
     Ok(updated_points.len())
@@ -199,10 +248,12 @@ pub(crate) fn clear_payload(
     op_num: SeqNumberType,
     points: &[PointIdType],
 ) -> CollectionResult<usize> {
-    let updated_points =
-        segments.apply_points_to_appendable(op_num, points, |id, write_segment| {
-            write_segment.clear_payload(op_num, id)
-        })?;
+    let updated_points = segments.apply_points_and_reindex(
+        op_num,
+        points,
+        |id, write_segment| write_segment.clear_payload(op_num, id),
+        |segment| segment.get_indexed_fields().is_empty(),
+    )?;
 
     check_unprocessed_points(points, &updated_points)?;
     Ok(updated_points.len())
@@ -216,10 +267,11 @@ pub(crate) fn clear_payload_by_filter(
 ) -> CollectionResult<usize> {
     let points_to_clear = points_by_filter(segments, filter)?;
 
-    let updated_points = segments.apply_points_to_appendable(
+    let updated_points = segments.apply_points_and_reindex(
         op_num,
         points_to_clear.as_slice(),
         |id, write_segment| write_segment.clear_payload(op_num, id),
+        |segment| segment.get_indexed_fields().is_empty(),
     )?;
 
     Ok(updated_points.len())
@@ -360,8 +412,10 @@ where
     let ids: Vec<PointIdType> = points_map.keys().copied().collect();
 
     // Update points in writable segments
-    let updated_points =
-        segments.apply_points_to_appendable(op_num, &ids, |id, write_segment| {
+    let updated_points = segments.apply_points_and_reindex(
+        op_num,
+        &ids,
+        |id, write_segment| {
             let point = points_map[&id];
             upsert_with_payload(
                 write_segment,
@@ -370,7 +424,9 @@ where
                 point.get_vectors(),
                 point.payload.as_ref(),
             )
-        })?;
+        },
+        |_| false,
+    )?;
 
     let mut res = updated_points.len();
     // Insert new points, which was not updated or existed
@@ -551,4 +607,77 @@ pub(crate) fn delete_points_by_filter(
         Ok(true)
     })?;
     Ok(deleted)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_indexed_fields(keys: &[&str]) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
+        keys.iter()
+            .map(|&s| {
+                (
+                    s.parse().unwrap(),
+                    PayloadFieldSchema::FieldType(segment::types::PayloadSchemaType::Integer),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_safe_to_set_payload() {
+        assert!(safe_to_set_payload(
+            &make_indexed_fields(&[]),
+            &serde_json::json!({"a": 1}).into(),
+            &None,
+        ));
+        assert!(safe_to_set_payload(
+            &make_indexed_fields(&["a", "b"]),
+            &serde_json::json!({"c": 1, "d": 1}).into(),
+            &None,
+        ));
+        assert!(!safe_to_set_payload(
+            &make_indexed_fields(&["a", "b"]),
+            &serde_json::json!({"b": 1, "c": 1}).into(),
+            &None,
+        ));
+        assert!(!safe_to_set_payload(
+            &make_indexed_fields(&["a.x"]),
+            &serde_json::json!({"a": {"y": 1}}).into(),
+            &None,
+        ));
+        assert!(safe_to_set_payload(
+            &make_indexed_fields(&["a.x"]),
+            &serde_json::json!({"b": {"x": 1}}).into(),
+            &None,
+        ));
+    }
+
+    #[test]
+    fn test_safe_to_delete_payload_keys() {
+        assert!(safe_to_delete_payload_keys(
+            &make_indexed_fields(&[]),
+            &["a".parse().unwrap()],
+        ));
+        assert!(safe_to_delete_payload_keys(
+            &make_indexed_fields(&["a", "b"]),
+            &["c".parse().unwrap(), "d".parse().unwrap()],
+        ));
+        assert!(!safe_to_delete_payload_keys(
+            &make_indexed_fields(&["a", "b"]),
+            &["a".parse().unwrap(), "c".parse().unwrap()],
+        ));
+        assert!(!safe_to_delete_payload_keys(
+            &make_indexed_fields(&["a.b"]),
+            &["a".parse().unwrap()]
+        ));
+        assert!(!safe_to_delete_payload_keys(
+            &make_indexed_fields(&["a.b"]),
+            &["a.b".parse().unwrap()]
+        ));
+        assert!(!safe_to_delete_payload_keys(
+            &make_indexed_fields(&["a.b"]),
+            &["a.b.c".parse().unwrap()]
+        ));
+    }
 }

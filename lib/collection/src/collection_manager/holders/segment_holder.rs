@@ -290,12 +290,22 @@ impl<'s> SegmentHolder {
         Ok(processed_segments)
     }
 
-    pub fn apply_points<F>(&self, ids: &[PointIdType], mut f: F) -> OperationResult<usize>
+    /// Apply an operation `point_operation` to a set of points `ids`.
+    /// The `segment_data` function is called no more than once for each segment and its result is
+    /// passed to `point_operation`.
+    pub fn apply_points<T, O, D>(
+        &self,
+        ids: &[PointIdType],
+        mut segment_data: D,
+        mut point_operation: O,
+    ) -> OperationResult<usize>
     where
-        F: FnMut(
+        D: FnMut(&dyn SegmentEntry) -> T,
+        O: FnMut(
             PointIdType,
             SegmentId,
             &mut RwLockWriteGuard<dyn SegmentEntry>,
+            &T,
         ) -> OperationResult<bool>,
     {
         let _update_guard = self.update_tracker.update();
@@ -308,8 +318,10 @@ impl<'s> SegmentHolder {
             let segment_points = self.segment_points(ids, segment_lock.deref());
             if !segment_points.is_empty() {
                 let mut write_segment = RwLockUpgradableReadGuard::upgrade(segment_lock);
+                let segment_data = segment_data(write_segment.deref());
                 for point_id in segment_points {
-                    let is_applied = f(point_id, *idx, &mut write_segment)?;
+                    let is_applied =
+                        point_operation(point_id, *idx, &mut write_segment, &segment_data)?;
                     applied_points += is_applied as usize;
                 }
             }
@@ -376,17 +388,27 @@ impl<'s> SegmentHolder {
         apply(*segment_id, &mut segment_write)
     }
 
-    /// Update function wrapper, which ensures that updates are not applied written to un-appendable segment.
-    /// In case of such attempt, this function will move data into a mutable segment and remove data from un-appendable.
-    /// Returns: Set of point ids which were successfully(already) applied to segments
-    pub fn apply_points_to_appendable<F>(
+    /// Apply an operation `point_operation` to a set of points `ids`, moving the points into
+    /// appendable segments if necessary causing the data to be re-indexed.
+    ///
+    /// Moving is not performed in the following cases:
+    /// - The segment containing the point is appendable.
+    /// - The `update_nonappendable` function returns true for the segment.
+    ///   It's always safe to pass a closure that always returns false (i.e. `|_| false`).
+    ///   If it's known to be safe to update non-appendable segments, it can return true as a
+    ///   performance optimization.
+    ///
+    /// Returns set of point ids which were successfully (already) applied to segments.
+    pub fn apply_points_and_reindex<F, G>(
         &self,
         op_num: SeqNumberType,
         ids: &[PointIdType],
-        mut f: F,
+        mut point_operation: F,
+        mut update_nonappendable: G,
     ) -> OperationResult<HashSet<PointIdType>>
     where
         F: FnMut(PointIdType, &mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>,
+        G: FnMut(&dyn SegmentEntry) -> bool,
     {
         let _update_guard = self.update_tracker.update();
 
@@ -395,35 +417,40 @@ impl<'s> SegmentHolder {
 
         let mut applied_points: HashSet<PointIdType> = Default::default();
 
-        let _applied_points_count = self.apply_points(ids, |point_id, _idx, write_segment| {
-            if let Some(point_version) = write_segment.point_version(point_id) {
-                if point_version >= op_num {
-                    applied_points.insert(point_id);
-                    return Ok(false);
+        let _applied_points_count = self.apply_points(
+            ids,
+            |segment| update_nonappendable(segment),
+            |point_id, _idx, write_segment, &update_nonappendable| {
+                if let Some(point_version) = write_segment.point_version(point_id) {
+                    if point_version >= op_num {
+                        applied_points.insert(point_id);
+                        return Ok(false);
+                    }
                 }
-            }
 
-            let is_applied = if write_segment.is_appendable() {
-                f(point_id, write_segment)?
-            } else {
-                self.aloha_random_write(
-                    &appendable_segments,
-                    |_appendable_idx, appendable_write_segment| {
-                        let all_vectors = write_segment.all_vectors(point_id)?;
-                        let payload = write_segment.payload(point_id)?;
+                let is_applied = if update_nonappendable || write_segment.is_appendable() {
+                    point_operation(point_id, write_segment)?
+                } else {
+                    self.aloha_random_write(
+                        &appendable_segments,
+                        |_appendable_idx, appendable_write_segment| {
+                            let all_vectors = write_segment.all_vectors(point_id)?;
+                            let payload = write_segment.payload(point_id)?;
 
-                        appendable_write_segment.upsert_point(op_num, point_id, all_vectors)?;
-                        appendable_write_segment.set_full_payload(op_num, point_id, &payload)?;
+                            appendable_write_segment.upsert_point(op_num, point_id, all_vectors)?;
+                            appendable_write_segment
+                                .set_full_payload(op_num, point_id, &payload)?;
 
-                        write_segment.delete_point(op_num, point_id)?;
+                            write_segment.delete_point(op_num, point_id)?;
 
-                        f(point_id, appendable_write_segment)
-                    },
-                )?
-            };
-            applied_points.insert(point_id);
-            Ok(is_applied)
-        })?;
+                            point_operation(point_id, appendable_write_segment)
+                        },
+                    )?
+                };
+                applied_points.insert(point_id);
+                Ok(is_applied)
+            },
+        )?;
         Ok(applied_points)
     }
 
@@ -717,8 +744,10 @@ mod tests {
             .for_each(|s| s.drop_data().unwrap());
     }
 
-    #[test]
-    fn test_apply_to_appendable() {
+    #[rstest::rstest]
+    #[case::do_update_nonappendable(true)]
+    #[case::dont_update_nonappendable(false)]
+    fn test_apply_to_appendable(#[case] update_nonappendable: bool) {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
         let segment1 = build_segment_1(dir.path());
@@ -729,12 +758,12 @@ mod tests {
         let mut holder = SegmentHolder::default();
 
         let sid1 = holder.add(segment1);
-        let _sid2 = holder.add(segment2);
+        let sid2 = holder.add(segment2);
 
         let op_num = 100;
         let mut processed_points: Vec<PointIdType> = vec![];
         holder
-            .apply_points_to_appendable(
+            .apply_points_and_reindex(
                 op_num,
                 &[1.into(), 2.into(), 11.into(), 12.into()],
                 |point_id, segment| {
@@ -742,6 +771,7 @@ mod tests {
                     assert!(segment.has_point(point_id));
                     Ok(true)
                 },
+                |_| update_nonappendable,
             )
             .unwrap();
 
@@ -749,13 +779,17 @@ mod tests {
 
         let locked_segment_1 = holder.get(sid1).unwrap().get();
         let read_segment_1 = locked_segment_1.read();
+        let locked_segment_2 = holder.get(sid2).unwrap().get();
+        let read_segment_2 = locked_segment_2.read();
 
         assert!(read_segment_1.has_point(1.into()));
         assert!(read_segment_1.has_point(2.into()));
 
-        // Points moved on apply
-        assert!(read_segment_1.has_point(11.into()));
-        assert!(read_segment_1.has_point(12.into()));
+        // Points moved or don't moved on apply based on appendable flag
+        assert_eq!(read_segment_1.has_point(11.into()), !update_nonappendable);
+        assert_eq!(read_segment_1.has_point(12.into()), !update_nonappendable);
+        assert_eq!(read_segment_2.has_point(11.into()), update_nonappendable);
+        assert_eq!(read_segment_2.has_point(12.into()), update_nonappendable);
     }
 
     #[test]

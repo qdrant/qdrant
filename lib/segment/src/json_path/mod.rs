@@ -35,6 +35,10 @@ pub trait JsonPathInterface: Sized + Clone + FromStr<Err = ()> + Display {
 
     fn validate_not_empty(&self) -> Result<(), ValidationError>;
 
+    /// Get the first part of a path.
+    /// E.g., `"a.b.c"` -> `"a"`, `"a[0].b"` -> `"a"`.
+    fn head(&self) -> &str;
+
     fn strip_wildcard_suffix(&self) -> Self;
 
     fn strip_prefix(&self, prefix: &Self) -> Option<Self>;
