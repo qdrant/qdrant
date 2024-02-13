@@ -12,7 +12,7 @@ use crate::operations::types::CollectionError;
 use crate::operations::ClockTag;
 use crate::shards::shard::PeerId;
 
-#[derive(Debug, Default, Deserialize, Serialize)]
+#[derive(Debug, Default, Deserialize, Serialize, PartialEq)]
 #[serde(transparent)]
 #[serde_as]
 pub struct ClockMap {
@@ -143,7 +143,7 @@ impl Key {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 #[serde(transparent)]
 struct Clock {
     current_tick: u64,
@@ -295,5 +295,40 @@ impl From<Error> for CollectionError {
             Error::Io(err) => err.into(),
             Error::SerdeJson(err) => err.into(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_clock_map_serde_empty() {
+        let clock_map = ClockMap::default();
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("clock_map_empty.json");
+
+        clock_map.store(&path).unwrap();
+        let clock_map2 = ClockMap::load(&path).unwrap();
+
+        assert_eq!(clock_map, clock_map2);
+    }
+
+    #[test]
+    fn test_clock_map_serde() {
+        let mut clock_map = ClockMap::default();
+        clock_map.advance_clock(ClockTag::new(1, 1, 1));
+        clock_map.advance_clock(ClockTag::new(1, 2, 8));
+        clock_map.advance_clock(ClockTag::new(2, 1, 42));
+        clock_map.advance_clock(ClockTag::new(2, 2, 12345));
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("clock_map.json");
+
+        clock_map.store(&path).unwrap();
+        let clock_map2 = ClockMap::load(&path).unwrap();
+
+        assert_eq!(clock_map, clock_map2);
     }
 }
