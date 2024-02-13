@@ -346,7 +346,7 @@ mod tests {
         let json = serde_json::to_value(&clock_map).unwrap();
         let output = serde_json::from_value(json).unwrap();
 
-        assert_eq!(clock_map, clock_map2);
+        assert_eq!(input, output);
     }
 
     #[test]
