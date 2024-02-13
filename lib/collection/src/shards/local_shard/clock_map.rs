@@ -101,13 +101,21 @@ impl ClockMap {
         }
     }
 
-    /// Create a recovery point from the current clock map state
+    /// Create a recovery point based on the current clock map state, so that we can recover any
+    /// new operations with new clock values
+    ///
+    /// The recovery point will contain every clock that is in this clock map, but with a tick of
+    /// one higher. That is because we already have an operation for the current clock tick, but
+    /// would like to receive the operation with the next tick on recovery.
+    ///
+    /// In other words, the recovery point will contain the first clock tick values the clock map
+    /// has not seen yet.
     pub fn to_recovery_point(&self) -> RecoveryPoint {
         RecoveryPoint {
             clocks: self
                 .clocks
                 .iter()
-                .map(|(key, clock)| (*key, clock.current_tick))
+                .map(|(key, clock)| (*key, clock.current_tick + 1))
                 .collect(),
         }
     }
@@ -154,6 +162,11 @@ impl Clock {
     }
 }
 
+/// A recovery point, being a list of distributed clocks and their tick value
+///
+/// The recovery point describes from what point we want to get operations from another node in
+/// case of recovery. In other words, the recovery point has the first clock tick values the
+/// recovering node has not seen yet.
 #[derive(Debug, Clone, Default)]
 pub struct RecoveryPoint {
     clocks: HashMap<Key, u64>,
@@ -207,7 +220,7 @@ impl RecoveryPoint {
     pub fn remove_equal_or_lower(&mut self, clock_tag: ClockTag) {
         let key = Key::from_tag(clock_tag);
         if let Some(tick) = self.clocks.get(&key) {
-            if *tick >= clock_tag.clock_tick {
+            if clock_tag.clock_tick <= *tick {
                 self.clocks.remove(&key);
             }
         }
