@@ -18,7 +18,7 @@ memory = { path = "../common/memory" }
 memmap2 = "0.9.4"
 schemars = { workspace = true }
 serde = { workspace = true }
-tempfile = "3.9.0"
+tempfile = "3.10.0"
 ordered-float = "4.2"
 rand = "0.8.5"
 validator = "0.16"
