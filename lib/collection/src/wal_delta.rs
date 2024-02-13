@@ -125,10 +125,6 @@ fn resolve_wal_delta(
     local_recovery_point: RecoveryPoint,
     local_cutoff_point: RecoveryPoint,
 ) -> Result<u64, WalDeltaError> {
-    if recovery_point.is_empty() {
-        return Err(WalDeltaError::Empty);
-    }
-
     // If the recovery point has clocks our current node does not know about
     // we're missing essential operations and cannot resolve a WAL delta
     if recovery_point.has_clocks_not_in(&local_recovery_point) {
@@ -144,6 +140,11 @@ fn resolve_wal_delta(
     // Extend clock map with missing clocks this node know about
     // Ensure the recovering node gets records for a clock it might not have seen yet
     recovery_point.extend_with_missing_clocks(&local_recovery_point);
+
+    // If recovery point is empty, we cannot do a diff transfer
+    if recovery_point.is_empty() {
+        return Err(WalDeltaError::Empty);
+    }
 
     // Remove clocks that are equal to this node, we don't have to transfer records for them
     // TODO: do we want to remove higher clocks too, as the recovery node already has all data?
