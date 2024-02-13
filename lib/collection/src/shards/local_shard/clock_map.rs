@@ -141,7 +141,6 @@ impl Key {
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
-#[serde(transparent)]
 struct Clock {
     current_tick: u64,
 }
@@ -292,7 +291,6 @@ impl From<ClockMapHelper> for ClockMap {
 struct KeyClockHelper {
     #[serde(flatten)]
     key: Key,
-
     #[serde(flatten)]
     clock: Clock,
 }
