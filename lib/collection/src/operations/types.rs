@@ -321,7 +321,7 @@ pub struct ScrollRequestInternal {
     #[serde(default, alias = "with_vectors")]
     pub with_vector: WithVector,
 
-    /// Order the records by a payload field, then by the point id.
+    /// Order the records by a payload field.
     pub order_by: Option<OrderByInterface>,
 }
 

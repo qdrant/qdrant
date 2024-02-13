@@ -3050,7 +3050,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | with_vectors | [WithVectorsSelector](#qdrant-WithVectorsSelector) | optional | Options for specifying which vectors to include into response |
 | read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
 | shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Specify in which shards to look for the points, if not specified - look in all shards |
-| order_by | [OrderBy](#qdrant-OrderBy) | optional | Order of the results by a payload key |
+| order_by | [OrderBy](#qdrant-OrderBy) | optional | Order the records by a payload field |
 
 
 

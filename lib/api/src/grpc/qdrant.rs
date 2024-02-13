@@ -3430,7 +3430,7 @@ pub struct ScrollPoints {
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[prost(message, optional, tag = "9")]
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
-    /// Order of the results by a payload key
+    /// Order the records by a payload field
     #[prost(message, optional, tag = "10")]
     pub order_by: ::core::option::Option<OrderBy>,
 }
