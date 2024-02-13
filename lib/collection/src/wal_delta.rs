@@ -99,7 +99,7 @@ impl RecoverableWal {
     ) -> Result<u64, WalDeltaError> {
         resolve_wal_delta(
             recovery_point,
-            &self.wal,
+            self.wal.clone(),
             self.recovery_point().await,
             self.cutoff_clocks.lock().await.to_recovery_point(),
         )
@@ -121,7 +121,7 @@ impl RecoverableWal {
 /// If a WAL delta could not be resolved, an error is returned describing the failure.
 fn resolve_wal_delta(
     mut recovery_point: RecoveryPoint,
-    local_wal: &LockedWal,
+    local_wal: LockedWal,
     local_recovery_point: RecoveryPoint,
     local_cutoff_point: RecoveryPoint,
 ) -> Result<u64, WalDeltaError> {
