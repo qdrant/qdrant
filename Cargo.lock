@@ -1071,7 +1071,7 @@ dependencies = [
  "fs_extra",
  "futures",
  "hashring",
- "indexmap 2.0.1",
+ "indexmap 2.2.3",
  "indicatif",
  "io",
  "itertools 0.12.1",
@@ -2148,7 +2148,7 @@ dependencies = [
  "futures-sink",
  "futures-util",
  "http 0.2.9",
- "indexmap 2.0.1",
+ "indexmap 2.2.3",
  "slab",
  "tokio",
  "tokio-util",
@@ -2448,9 +2448,9 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.0.1"
+version = "2.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad227c3af19d4914570ad36d30409928b75967c298feb9ea1969db3a610bb14e"
+checksum = "233cf39063f058ea2caae4091bf4a3ef70a653afbc026f5c4a4135d114e3c177"
 dependencies = [
  "equivalent",
  "hashbrown 0.14.2",
@@ -2477,7 +2477,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "abfb2e51b23c338595ae0b6bdaaa7a4a8b860b8d788a4331cb07b50fe5dea71b"
 dependencies = [
  "ahash 0.8.5",
- "indexmap 2.0.1",
+ "indexmap 2.2.3",
  "is-terminal",
  "itoa",
  "log",
@@ -4629,7 +4629,7 @@ dependencies = [
  "chrono",
  "dyn-clone",
  "indexmap 1.9.2",
- "indexmap 2.0.1",
+ "indexmap 2.2.3",
  "schemars_derive",
  "serde",
  "serde_json",
@@ -4722,7 +4722,7 @@ dependencies = [
  "fs_extra",
  "geo",
  "geohash",
- "indexmap 2.0.1",
+ "indexmap 2.2.3",
  "io",
  "io-uring",
  "itertools 0.12.1",
@@ -5548,7 +5548,7 @@ version = "0.21.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a8534fd7f78b5405e860340ad6575217ce99f38d4d5c8f2442cb5ecb50090e1"
 dependencies = [
- "indexmap 2.0.1",
+ "indexmap 2.2.3",
  "serde",
  "serde_spanned",
  "toml_datetime",
@@ -5994,7 +5994,7 @@ dependencies = [
  "memmap2 0.9.4",
  "rand 0.8.5",
  "rand_distr",
- "rustix 0.38.28",
+ "rustix 0.37.27",
  "serde",
 ]
 
