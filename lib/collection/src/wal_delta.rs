@@ -189,11 +189,10 @@ pub enum WalDeltaError {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
     use std::sync::Arc;
 
     use parking_lot::Mutex as ParkingMutex;
-    use tempfile::Builder;
+    use tempfile::{Builder, TempDir};
     use wal::WalOptions;
 
     use super::*;
@@ -205,36 +204,24 @@ mod tests {
     use crate::shards::replica_set::clock_set::ClockSet;
     use crate::wal::SerdeWal;
 
+    fn fixture_empty_wal() -> (SerdeWal<OperationWithClockTag>, TempDir) {
+        let dir = Builder::new().prefix("wal_test").tempdir().unwrap();
+        let options = WalOptions {
+            segment_capacity: 1024 * 1024,
+            segment_queue_len: 0,
+        };
+        (SerdeWal::new(dir.path().to_str().unwrap(), options).unwrap(), dir)
+    }
+
     /// Test WAL delta resolution with just one missed operation on node C.
     ///
     /// Simplified version of: <https://www.notion.so/qdrant/Testing-suite-4e28a978ec05476080ff26ed07757def?pvs=4>
     #[test]
     fn test_resolve_wal_one_operation() {
-        let wal_dir = Builder::new().prefix("wal_test").tempdir().unwrap();
-        let a_wal_options = WalOptions {
-            segment_capacity: 1024 * 1024,
-            segment_queue_len: 0,
-        };
-        let b_wal_options = WalOptions {
-            segment_capacity: 1024 * 1024,
-            segment_queue_len: 0,
-        };
-        let c_wal_options = WalOptions {
-            segment_capacity: 1024 * 1024,
-            segment_queue_len: 0,
-        };
-
-        fs::create_dir_all(wal_dir.path().join("a")).unwrap();
-        fs::create_dir_all(wal_dir.path().join("b")).unwrap();
-        fs::create_dir_all(wal_dir.path().join("c")).unwrap();
-
         // Create WALs for peer A, B and C
-        let mut a_wal: SerdeWal<OperationWithClockTag> =
-            SerdeWal::new(wal_dir.path().join("a").to_str().unwrap(), a_wal_options).unwrap();
-        let mut b_wal: SerdeWal<OperationWithClockTag> =
-            SerdeWal::new(wal_dir.path().join("b").to_str().unwrap(), b_wal_options).unwrap();
-        let mut c_wal: SerdeWal<OperationWithClockTag> =
-            SerdeWal::new(wal_dir.path().join("c").to_str().unwrap(), c_wal_options).unwrap();
+        let (mut a_wal, _a_wal_dir) = fixture_empty_wal();
+        let (mut b_wal, _b_wal_dir) = fixture_empty_wal();
+        let (mut c_wal, _c_wal_dir) = fixture_empty_wal();
 
         // Create clock sets for peer A, B and C
         let mut a_clock_set = ClockSet::new();
@@ -300,7 +287,7 @@ mod tests {
         .unwrap();
         assert_eq!(delta_from, 1);
 
-        // Recover WAL by writing delta to it
+        // Recover WAL on node C by writing delta from node B to it
         b_wal.lock().read(delta_from).for_each(|(_, update)| {
             c_wal.write(&update).unwrap();
         });
