@@ -11,8 +11,8 @@ use crate::operations::types::CollectionError;
 use crate::operations::ClockTag;
 use crate::shards::shard::PeerId;
 
-#[derive(Debug, Default, Deserialize, Serialize)]
-#[serde(transparent)]
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[serde(from = "ClockMapHelper", into = "ClockMapHelper")]
 pub struct ClockMap {
     clocks: HashMap<Key, Clock>,
 }
@@ -140,8 +140,7 @@ impl Key {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(transparent)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 struct Clock {
     current_tick: u64,
 }
@@ -167,7 +166,7 @@ impl Clock {
 /// The recovery point describes from what point we want to get operations from another node in
 /// case of recovery. In other words, the recovery point has the first clock tick values the
 /// recovering node has not seen yet.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct RecoveryPoint {
     clocks: HashMap<Key, u64>,
 }
@@ -267,6 +266,47 @@ impl From<api::grpc::qdrant::RecoveryPoint> for RecoveryPoint {
     }
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct ClockMapHelper {
+    clocks: Vec<KeyClockHelper>,
+}
+
+impl From<ClockMap> for ClockMapHelper {
+    fn from(clock_map: ClockMap) -> Self {
+        Self {
+            clocks: clock_map.clocks.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<ClockMapHelper> for ClockMap {
+    fn from(helper: ClockMapHelper) -> Self {
+        Self {
+            clocks: helper.clocks.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
+struct KeyClockHelper {
+    #[serde(flatten)]
+    key: Key,
+    #[serde(flatten)]
+    clock: Clock,
+}
+
+impl From<(Key, Clock)> for KeyClockHelper {
+    fn from((key, clock): (Key, Clock)) -> Self {
+        Self { key, clock }
+    }
+}
+
+impl From<KeyClockHelper> for (Key, Clock) {
+    fn from(helper: KeyClockHelper) -> Self {
+        (helper.key, helper.clock)
+    }
+}
+
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[derive(Debug, thiserror::Error)]
@@ -292,5 +332,34 @@ impl From<Error> for CollectionError {
             Error::Io(err) => err.into(),
             Error::SerdeJson(err) => err.into(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clock_map_serde_empty() {
+        let input = ClockMap::default();
+
+        let json = serde_json::to_value(&input).unwrap();
+        let output = serde_json::from_value(json).unwrap();
+
+        assert_eq!(input, output);
+    }
+
+    #[test]
+    fn clock_map_serde() {
+        let mut input = ClockMap::default();
+        input.advance_clock(ClockTag::new(1, 1, 1));
+        input.advance_clock(ClockTag::new(1, 2, 8));
+        input.advance_clock(ClockTag::new(2, 1, 42));
+        input.advance_clock(ClockTag::new(2, 2, 12345));
+
+        let json = serde_json::to_value(&input).unwrap();
+        let output = serde_json::from_value(json).unwrap();
+
+        assert_eq!(input, output);
     }
 }

@@ -652,10 +652,12 @@ impl UpdateHandler {
             let ack = confirmed_version.min(keep_from.saturating_sub(1));
 
             if let Err(err) = clock_map.lock().await.store(&clock_map_path) {
+                log::warn!("Failed to store clock map to disk: {err}");
                 segments.write().report_optimizer_error(err);
             }
 
             if let Err(err) = wal.lock().ack(ack) {
+                log::warn!("Failed to acknowledge WAL version: {err}");
                 segments.write().report_optimizer_error(err);
             }
         }
