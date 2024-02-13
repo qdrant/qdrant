@@ -56,7 +56,7 @@ itertools = "0.12"
 anyhow = "1.0.79"
 futures = { workspace = true }
 futures-util = { workspace = true }
-clap = { version = "4.4.18", features = ["derive"] }
+clap = { version = "4.5.0", features = ["derive"] }
 serde_cbor = { workspace = true }
 uuid = { workspace = true }
 sys-info = "0.9.1"
