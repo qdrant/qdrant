@@ -161,9 +161,10 @@ def test_datetime_indexing():
     # test with mixed datetime format
     data = [
         ({"gte": "2015-01-01", "lte": "2015-01-01 00:00"}, [1]),
-        ({"gte": "2015-01-01T01:00:00+01:00",
-         "lte": "2015-01-01T01:00:00+01:00"}, [1]),
+        ({"gte": "2015-01-01T01:00:00+01:00", "lte": "2015-01-01T01:00:00+01:00"}, [1]),
         ({"gte": "2015-02-01T06:00:00", "lte": "2015-02-01T06:00:00Z"}, [2]),
+        # date_optional_time
+        ({"gte": "2015-02-01T06:00:00.000000000", "lte": "2015-02-01T06:00:00.000000000"}, [2]),
     ]
     for range_, expected_ids in data:
         response = request_with_validation(
@@ -194,9 +195,6 @@ def test_datetime_indexing():
          "lte": "2015-02-01 06:00:00 AM"}, [2]),
         # Here are some elasticsearch built-in datetime format
         # Reference: https://www.elastic.co/guide/en/elasticsearch/reference/current/mapping-date-format.html#built-in-date-formats
-        # date_optional_time
-        ({"gte": "2015-02-01T06:00:00.000000000",
-         "lte": "2015-02-01T06:00:00.000000000"}, [2]),
         # basic_date
         ({"gte": "20150201", "lte": "20150201"}, [2]),
         # basic_date_time
