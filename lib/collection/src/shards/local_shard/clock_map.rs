@@ -80,13 +80,6 @@ impl ClockMap {
         let _ = self.advance_clock_impl(clock_tag);
     }
 
-    #[cfg(test)]
-    pub fn current_tick(&self, peer_id: PeerId, clock_id: u32) -> Option<u64> {
-        self.clocks
-            .get(&Key::new(peer_id, clock_id))
-            .map(Clock::current_tick)
-    }
-
     /// Advance clock referenced by `clock_tag` to `clock_tick`, if it's newer than current tick.
     ///
     /// If the clock is not yet tracked by the `ClockMap`, it is initialized to
@@ -124,6 +117,13 @@ impl ClockMap {
                 .map(|(key, clock)| (*key, clock.current_tick + 1))
                 .collect(),
         }
+    }
+
+    #[cfg(test)]
+    pub fn current_tick(&self, peer_id: PeerId, clock_id: u32) -> Option<u64> {
+        self.clocks
+            .get(&Key::new(peer_id, clock_id))
+            .map(Clock::current_tick)
     }
 }
 
