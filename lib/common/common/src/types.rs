@@ -26,3 +26,35 @@ impl PartialOrd for ScoredPointOffset {
         Some(self.cmp(other))
     }
 }
+
+#[derive(Copy, Clone, Debug)]
+pub struct TelemetryDetail {
+    pub level: DetailsLevel,
+    pub histograms: bool,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum DetailsLevel {
+    Level0,
+    Level1,
+    Level2,
+}
+
+impl Default for TelemetryDetail {
+    fn default() -> Self {
+        TelemetryDetail {
+            level: DetailsLevel::Level0,
+            histograms: false,
+        }
+    }
+}
+
+impl From<usize> for DetailsLevel {
+    fn from(value: usize) -> Self {
+        match value {
+            0 => DetailsLevel::Level0,
+            1 => DetailsLevel::Level1,
+            _ => DetailsLevel::Level2,
+        }
+    }
+}

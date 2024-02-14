@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 use arc_swap::ArcSwap;
 use common::cpu::CpuBudget;
 use common::panic;
+use common::types::TelemetryDetail;
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
 use parking_lot::{Mutex as ParkingMutex, RwLock};
@@ -819,11 +820,11 @@ impl LocalShard {
         Ok(all_points)
     }
 
-    pub fn get_telemetry_data(&self) -> LocalShardTelemetry {
+    pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> LocalShardTelemetry {
         let segments_read_guard = self.segments.read();
         let segments: Vec<_> = segments_read_guard
             .iter()
-            .map(|(_id, segment)| segment.get().read().get_telemetry_data())
+            .map(|(_id, segment)| segment.get().read().get_telemetry_data(detail))
             .collect();
 
         let optimizer_status = match &segments_read_guard.optimizer_errors {
@@ -834,7 +835,7 @@ impl LocalShard {
         let optimizations = self
             .optimizers
             .iter()
-            .map(|optimizer| optimizer.get_telemetry_data())
+            .map(|optimizer| optimizer.get_telemetry_data(detail))
             .fold(Default::default(), |acc, x| acc + x);
 
         LocalShardTelemetry {

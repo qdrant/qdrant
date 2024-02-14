@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use common::types::TelemetryDetail;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::common::operation_error::{OperationResult, SegmentFailedState};
 use segment::data_types::named_vectors::NamedVectors;
@@ -824,8 +825,8 @@ impl SegmentEntry for ProxySegment {
         Ok(archive_path)
     }
 
-    fn get_telemetry_data(&self) -> SegmentTelemetry {
-        self.wrapped_segment.get().read().get_telemetry_data()
+    fn get_telemetry_data(&self, detail: TelemetryDetail) -> SegmentTelemetry {
+        self.wrapped_segment.get().read().get_telemetry_data(detail)
     }
 }
 

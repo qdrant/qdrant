@@ -17,6 +17,7 @@ use api::grpc::qdrant::{
 };
 use api::grpc::transport_channel_pool::{AddTimeout, MAX_GRPC_CHANNEL_TIMEOUT};
 use async_trait::async_trait;
+use common::types::TelemetryDetail;
 use parking_lot::Mutex;
 use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
@@ -179,12 +180,18 @@ impl RemoteShard {
             .map_err(|err| err.into())
     }
 
-    pub fn get_telemetry_data(&self) -> RemoteShardTelemetry {
+    pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> RemoteShardTelemetry {
         RemoteShardTelemetry {
             shard_id: self.id,
             peer_id: Some(self.peer_id),
-            searches: self.telemetry_search_durations.lock().get_statistics(),
-            updates: self.telemetry_update_durations.lock().get_statistics(),
+            searches: self
+                .telemetry_search_durations
+                .lock()
+                .get_statistics(detail),
+            updates: self
+                .telemetry_update_durations
+                .lock()
+                .get_statistics(detail),
         }
     }
 

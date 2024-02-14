@@ -9,7 +9,7 @@ use atomic_refcell::AtomicRefCell;
 #[cfg(target_os = "linux")]
 use common::cpu::linux_low_thread_priority;
 use common::cpu::CpuPermit;
-use common::types::{PointOffsetType, ScoredPointOffset};
+use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use log::debug;
 use memory::mmap_ops;
 use parking_lot::Mutex;
@@ -825,18 +825,18 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         self.save()
     }
 
-    fn get_telemetry_data(&self) -> VectorIndexSearchesTelemetry {
+    fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {
         let tm = &self.searches_telemetry;
         VectorIndexSearchesTelemetry {
             index_name: None,
-            unfiltered_plain: tm.unfiltered_plain.lock().get_statistics(),
+            unfiltered_plain: tm.unfiltered_plain.lock().get_statistics(detail),
             filtered_plain: Default::default(),
-            unfiltered_hnsw: tm.unfiltered_hnsw.lock().get_statistics(),
-            filtered_small_cardinality: tm.small_cardinality.lock().get_statistics(),
-            filtered_large_cardinality: tm.large_cardinality.lock().get_statistics(),
-            filtered_exact: tm.exact_filtered.lock().get_statistics(),
+            unfiltered_hnsw: tm.unfiltered_hnsw.lock().get_statistics(detail),
+            filtered_small_cardinality: tm.small_cardinality.lock().get_statistics(detail),
+            filtered_large_cardinality: tm.large_cardinality.lock().get_statistics(detail),
+            filtered_exact: tm.exact_filtered.lock().get_statistics(detail),
             filtered_sparse: Default::default(),
-            unfiltered_exact: tm.exact_unfiltered.lock().get_statistics(),
+            unfiltered_exact: tm.exact_unfiltered.lock().get_statistics(detail),
             unfiltered_sparse: Default::default(),
         }
     }

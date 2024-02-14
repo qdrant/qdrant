@@ -1,12 +1,16 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::types::{DetailsLevel, TelemetryDetail};
 use segment::common::anonymize::Anonymize;
 use tokio::sync::Mutex;
 
-use crate::common::telemetry::TelemetryCollector;
+use super::telemetry::TelemetryCollector;
 
-const DETAIL_LEVEL: usize = 5;
+const DETAIL: TelemetryDetail = TelemetryDetail {
+    level: DetailsLevel::Level2,
+    histograms: false,
+};
 const REPORTING_INTERVAL: Duration = Duration::from_secs(60 * 60); // One hour
 
 pub struct TelemetryReporter {
@@ -33,7 +37,7 @@ impl TelemetryReporter {
             .telemetry
             .lock()
             .await
-            .prepare_data(DETAIL_LEVEL)
+            .prepare_data(DETAIL)
             .await
             .anonymize();
         let client = reqwest::Client::new();
