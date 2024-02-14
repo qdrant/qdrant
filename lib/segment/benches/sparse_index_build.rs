@@ -26,8 +26,8 @@ use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::inverted_index::InvertedIndex;
 use tempfile::Builder;
 
-const NUM_VECTORS: usize = 100_000;
-const MAX_SPARSE_DIM: usize = 30_000;
+const NUM_VECTORS: usize = 10_000;
+const MAX_SPARSE_DIM: usize = 1_000;
 
 fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("sparse-vector-build-group");
