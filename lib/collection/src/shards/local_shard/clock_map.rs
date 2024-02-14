@@ -417,6 +417,7 @@ mod test {
     #[test_case(Helper::empty(); "with empty clock map")]
     #[test_case(Helper::at_tick_0(); "with clock map at tick 0")]
     fn clock_map_accept_tick_0(mut helper: Helper) {
+        // Accept tick `0`
         helper.advance(tag(0)).assert(true, 0);
     }
 
