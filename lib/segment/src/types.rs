@@ -1426,8 +1426,8 @@ impl FromStr for DateTimePayloadType {
         // - YYYY-MM-DD HH:MM
         // - YYYY-MM-DD
         // See: <https://github.com/qdrant/qdrant/issues/3529>
-        let datetime = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S")
-            .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S"))
+        let datetime = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f")
+            .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f"))
             .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M"))
             .or_else(|_| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").map(Into::into))?;
 
@@ -2247,6 +2247,7 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
     use serde::de::DeserializeOwned;
     use serde_json;
     use serde_json::json;
@@ -2273,6 +2274,29 @@ mod tests {
         let de_record: Payload = serde_cbor::from_slice(&raw).unwrap();
         eprintln!("payload = {payload:#?}");
         eprintln!("de_record = {de_record:#?}");
+    }
+
+    #[rstest]
+    #[case::rfc_3339("2020-03-01T00:00:00Z")]
+    #[case::rfc_3339_and_decimals("2020-03-01T00:00:00.123456Z")]
+    #[case::without_z("2020-03-01T00:00:00")]
+    #[case::without_z_and_decimals("2020-03-01T00:00:00.123456")]
+    fn test_datetime_deserialization(#[case] datetime: &str) {
+        let datetime = DateTimePayloadType::from_str(datetime).unwrap();
+        let serialized = serde_json::to_string(&datetime).unwrap();
+        let deserialized: DateTimePayloadType = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(datetime, deserialized);
+    }
+
+    #[test]
+    fn test_datetime_deserialization_equivalency() {
+        let datetime_str = "2020-03-01T01:02:03.123456Z";
+        let datetime_str_no_z = "2020-03-01T01:02:03.123456";
+        let datetime = DateTimePayloadType::from_str(datetime_str).unwrap();
+        let datetime_no_z = DateTimePayloadType::from_str(datetime_str_no_z).unwrap();
+
+        // Having or not the Z at the end of the string both mean UTC time
+        assert_eq!(datetime.timestamp(), datetime_no_z.timestamp());
     }
 
     #[test]
