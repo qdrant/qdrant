@@ -6,7 +6,6 @@ lib/segment/target
 lib/api/target
 lib/collection/target
 lib/storage/target
-openapi/tests/
 *.tar
 .git
 .github/
