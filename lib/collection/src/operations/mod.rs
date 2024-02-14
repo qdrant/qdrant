@@ -397,12 +397,14 @@ mod tests {
                 payload: Payload(Default::default()),
                 points: None,
                 filter: None,
+                key: None,
             });
 
             let overwrite = Self::OverwritePayload(SetPayloadOp {
                 payload: Payload(Default::default()),
                 points: None,
                 filter: None,
+                key: None,
             });
 
             let delete = Self::DeletePayload(DeletePayloadOp {
