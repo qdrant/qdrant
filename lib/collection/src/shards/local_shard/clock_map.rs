@@ -385,7 +385,7 @@ impl From<Error> for CollectionError {
 }
 
 #[cfg(test)]
-mod tests {
+mod test {
     use super::*;
 
     #[test]
@@ -410,5 +410,96 @@ mod tests {
         let output = serde_json::from_value(json).unwrap();
 
         assert_eq!(input, output);
+    }
+
+    const PEER_ID: PeerId = 1337;
+    const CLOCK_ID: u32 = 42;
+
+    #[test]
+    fn clock_map_accept_sequential() {
+        let mut clock_map = ClockMap::default();
+        let mut clock_tag = ClockTag::new(PEER_ID, CLOCK_ID, 0);
+
+        for tick in 0..10 {
+            clock_tag.clock_tick = tick;
+            assert!(clock_map.advance_clock_and_correct_tag(&mut clock_tag));
+            assert_eq!(clock_tag.peer_id, PEER_ID);
+            assert_eq!(clock_tag.clock_id, CLOCK_ID);
+            assert_eq!(clock_tag.clock_tick, tick);
+        }
+    }
+
+    #[test]
+    fn clock_map_accept_newer() {
+        let mut clock_map = ClockMap::default();
+        let mut clock_tag = ClockTag::new(PEER_ID, CLOCK_ID, 0);
+
+        for tick in [10, 20, 30, 40, 50] {
+            clock_tag.clock_tick = tick;
+            assert!(clock_map.advance_clock_and_correct_tag(&mut clock_tag));
+            assert_eq!(clock_tag.peer_id, PEER_ID);
+            assert_eq!(clock_tag.clock_id, CLOCK_ID);
+            assert_eq!(clock_tag.clock_tick, tick);
+        }
+    }
+
+    #[test]
+    fn clock_map_reject_older_and_current() {
+        let mut clock_map = ClockMap::default();
+        let mut clock_tag = ClockTag::new(PEER_ID, CLOCK_ID, 0);
+
+        for tick in [10, 20, 30, 40, 50] {
+            clock_tag.clock_tick = tick;
+            clock_map.advance_clock(clock_tag);
+
+            // Start from `1`, cause `0` is a special case that is always accepted
+            for older_tick in 1..=tick {
+                clock_tag.clock_tick = older_tick;
+                assert!(!clock_map.advance_clock_and_correct_tag(&mut clock_tag));
+                assert_eq!(clock_tag.peer_id, PEER_ID);
+                assert_eq!(clock_tag.clock_id, CLOCK_ID);
+                assert_eq!(clock_tag.clock_tick, tick);
+            }
+        }
+    }
+
+    #[test]
+    fn clock_map_accept_0() {
+        let mut clock_map = ClockMap::default();
+        let mut clock_tag = ClockTag::new(PEER_ID, CLOCK_ID, 0);
+
+        for tick in [10, 20, 30, 40, 50] {
+            clock_tag.clock_tick = tick;
+            clock_map.advance_clock(clock_tag);
+
+            clock_tag.clock_tick = 0;
+            assert!(clock_map.advance_clock_and_correct_tag(&mut clock_tag));
+            assert_eq!(clock_tag.peer_id, PEER_ID);
+            assert_eq!(clock_tag.clock_id, CLOCK_ID);
+            assert_eq!(clock_tag.clock_tick, tick);
+        }
+    }
+
+    #[test]
+    fn clock_map_accept_force() {
+        let mut clock_map = ClockMap::default();
+        let mut clock_tag = ClockTag::new(PEER_ID, CLOCK_ID, 0).force(true);
+
+        for tick in [10, 20, 30, 40, 50] {
+            clock_tag.clock_tick = tick;
+            assert!(clock_map.advance_clock_and_correct_tag(&mut clock_tag));
+            assert_eq!(clock_tag.peer_id, PEER_ID);
+            assert_eq!(clock_tag.clock_id, CLOCK_ID);
+            assert_eq!(clock_tag.clock_tick, tick);
+
+            // Start from `0`, cause `force = true` is "stronger" than `0` special case
+            for older_tick in 0..=tick {
+                clock_tag.clock_tick = older_tick;
+                assert!(clock_map.advance_clock_and_correct_tag(&mut clock_tag));
+                assert_eq!(clock_tag.peer_id, PEER_ID);
+                assert_eq!(clock_tag.clock_id, CLOCK_ID);
+                assert_eq!(clock_tag.clock_tick, older_tick);
+            }
+        }
     }
 }
