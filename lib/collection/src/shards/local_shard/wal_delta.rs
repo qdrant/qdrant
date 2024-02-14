@@ -1,15 +1,19 @@
 use thiserror::Error;
 
 use super::clock_map::RecoveryPoint;
-use super::{LocalShard, LockedWal};
+use super::LocalShard;
+use crate::wal::LockedWal;
 
 impl LocalShard {
     pub async fn resolve_wal_delta(
         &self,
         recovery_point: RecoveryPoint,
     ) -> Result<u64, WalDeltaError> {
-        let local_recovery_point = self.clock_map.lock().await.to_recovery_point();
-        resolve_wal_delta(recovery_point, &self.wal, local_recovery_point)
+        resolve_wal_delta(
+            recovery_point,
+            &self.wal.wal,
+            self.wal.recovery_point().await,
+        )
     }
 }
 

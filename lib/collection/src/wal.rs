@@ -2,13 +2,21 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::path::Path;
 use std::result;
+use std::sync::Arc;
 use std::thread::JoinHandle;
 
 use io::file_operations::{atomic_save_json, read_json};
+use parking_lot::Mutex as ParkingMutex;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use tokio::sync::Mutex;
 use wal::{Wal, WalOptions};
+
+use crate::operations::OperationWithClockTag;
+use crate::shards::local_shard::clock_map::{ClockMap, RecoveryPoint};
+
+pub type LockedWal = Arc<ParkingMutex<SerdeWal<OperationWithClockTag>>>;
 
 #[allow(clippy::enum_variant_names)]
 #[derive(Error, Debug)]
@@ -43,7 +51,7 @@ enum TestRecord {
     Struct2(TestInternalStruct2),
 }
 
-type Result<T> = result::Result<T, WalError>;
+pub(super) type Result<T> = result::Result<T, WalError>;
 
 #[derive(Debug, Deserialize, Serialize)]
 struct WalState {
@@ -263,6 +271,52 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
 
     pub fn segment_capacity(&self) -> usize {
         self.options.segment_capacity
+    }
+}
+
+/// A WAL that is recoverable, with operations having clock tags and a corresponding clock map.
+pub struct RecoverableWal {
+    pub(super) wal: LockedWal,
+    pub(super) clock_map: Arc<Mutex<ClockMap>>,
+}
+
+impl RecoverableWal {
+    pub fn from(wal: LockedWal, clock_map: Arc<Mutex<ClockMap>>) -> Self {
+        Self { wal, clock_map }
+    }
+
+    /// Write a record to the WAL but does guarantee durability.
+    pub async fn lock_and_write(&self, operation: &mut OperationWithClockTag) -> Result<u64> {
+        // Update last seen clock map and correct clock tag if necessary
+        if let Some(clock_tag) = &mut operation.clock_tag {
+            // TODO:
+            //
+            // Temporarily accept *all* operations, even if their `clock_tag` is older than
+            // current clock tracked by the clock map
+
+            // TODO: do not manually advance here!
+            let _operation_accepted = self
+                .clock_map
+                .lock()
+                .await
+                .advance_clock_and_correct_tag(clock_tag);
+
+            // if !operation_accepted {
+            //     return Ok(UpdateResult {
+            //         operation_id: None,
+            //         status: UpdateStatus::Acknowledged,
+            //         clock_tag: Some(*clock_tag),
+            //     });
+            // }
+        }
+
+        // Write operation to WAL
+        self.wal.lock().write(operation)
+    }
+
+    /// Get a recovery point for this WAL.
+    pub async fn recovery_point(&self) -> RecoveryPoint {
+        self.clock_map.lock().await.to_recovery_point()
     }
 }
 

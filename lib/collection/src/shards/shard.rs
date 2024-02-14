@@ -150,10 +150,8 @@ impl Shard {
 
     pub async fn shard_recovery_point(&self) -> CollectionResult<RecoveryPoint> {
         match self {
-            Self::Local(local_shard) => Ok(local_shard.shard_recovery_point().await),
-            Self::ForwardProxy(proxy_shard) => {
-                Ok(proxy_shard.wrapped_shard.shard_recovery_point().await)
-            }
+            Self::Local(local_shard) => Ok(local_shard.recovery_point().await),
+            Self::ForwardProxy(proxy_shard) => Ok(proxy_shard.wrapped_shard.recovery_point().await),
             Self::Proxy(_) | Self::QueueProxy(_) | Self::Dummy(_) => {
                 Err(CollectionError::service_error(format!(
                     "Recovery point not supported on {}",

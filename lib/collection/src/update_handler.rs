@@ -28,8 +28,7 @@ use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
 use crate::shards::local_shard::clock_map::ClockMap;
-use crate::shards::local_shard::LockedWal;
-use crate::wal::WalError;
+use crate::wal::{LockedWal, WalError};
 
 /// Interval at which the optimizer worker cleans up old optimization handles
 ///

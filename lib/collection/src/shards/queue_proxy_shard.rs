@@ -83,7 +83,7 @@ impl QueueProxyShard {
         version: u64,
     ) -> Result<Self, (LocalShard, CollectionError)> {
         // Lock WAL until we've successfully created the queue proxy shard
-        let wal = wrapped_shard.wal.clone();
+        let wal = wrapped_shard.wal.wal.clone();
         let wal_lock = wal.lock();
 
         // If start version is not in current WAL bounds [first_idx, last_idx], we cannot reliably transfer WAL
@@ -315,7 +315,7 @@ impl Inner {
         remote_shard: RemoteShard,
         wal_keep_from: Arc<AtomicU64>,
     ) -> Self {
-        let start_from = wrapped_shard.wal.lock().last_index() + 1;
+        let start_from = wrapped_shard.wal.wal.lock().last_index() + 1;
 
         let shard = Self {
             wrapped_shard,
@@ -392,7 +392,7 @@ impl Inner {
 
         // Lock wall, count pending items to transfer, grab batch
         let (pending_count, batch) = {
-            let wal = self.wrapped_shard.wal.lock();
+            let wal = self.wrapped_shard.wal.wal.lock();
             let items_left = (wal.last_index() + 1).saturating_sub(transfer_from);
             let batch = wal.read(transfer_from).take(BATCH_SIZE).collect::<Vec<_>>();
             (items_left, batch)

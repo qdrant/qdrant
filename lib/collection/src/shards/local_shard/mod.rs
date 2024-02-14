@@ -52,9 +52,7 @@ use crate::shards::shard_config::{ShardConfig, SHARD_CONFIG_FILE};
 use crate::shards::telemetry::{LocalShardTelemetry, OptimizerTelemetry};
 use crate::shards::CollectionId;
 use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal};
-use crate::wal::SerdeWal;
-
-pub type LockedWal = Arc<ParkingMutex<SerdeWal<OperationWithClockTag>>>;
+use crate::wal::{LockedWal, RecoverableWal, SerdeWal};
 
 /// If rendering WAL load progression in basic text form, report progression every 60 seconds.
 const WAL_LOAD_REPORT_EVERY: Duration = Duration::from_secs(60);
@@ -68,14 +66,13 @@ pub struct LocalShard {
     pub(super) segments: Arc<RwLock<SegmentHolder>>,
     pub(super) collection_config: Arc<TokioRwLock<CollectionConfig>>,
     pub(super) shared_storage_config: Arc<SharedStorageConfig>,
-    pub(super) wal: LockedWal,
+    pub(super) wal: RecoverableWal,
     pub(super) update_handler: Arc<Mutex<UpdateHandler>>,
     pub(super) update_sender: ArcSwap<Sender<UpdateSignal>>,
     pub(super) update_tracker: UpdateTracker,
     pub(super) path: PathBuf,
     pub(super) optimizers: Arc<Vec<Arc<Optimizer>>>,
     pub(super) optimizers_log: Arc<ParkingMutex<TrackerLog>>,
-    clock_map: Arc<Mutex<ClockMap>>,
     update_runtime: Handle,
 }
 
@@ -176,12 +173,11 @@ impl LocalShard {
             segments: segment_holder,
             collection_config,
             shared_storage_config,
-            wal: locked_wal,
+            wal: RecoverableWal::from(locked_wal, clock_map),
             update_handler: Arc::new(Mutex::new(update_handler)),
             update_sender: ArcSwap::from_pointee(update_sender),
             update_tracker,
             path: shard_path.to_owned(),
-            clock_map,
             update_runtime,
             optimizers,
             optimizers_log,
@@ -491,8 +487,8 @@ impl LocalShard {
 
     /// Loads latest collection operations from WAL
     pub async fn load_from_wal(&self, collection_id: CollectionId) -> CollectionResult<()> {
-        let mut clock_map = self.clock_map.lock().await;
-        let wal = self.wal.lock();
+        let mut clock_map = self.wal.clock_map.lock().await;
+        let wal = self.wal.wal.lock();
         let bar = ProgressBar::new(wal.len());
 
         let progress_style = ProgressStyle::default_bar()
@@ -661,7 +657,7 @@ impl LocalShard {
         create_dir_all(&snapshot_segments_shard_path).await?;
 
         let segments = self.segments.clone();
-        let wal = self.wal.clone();
+        let wal = self.wal.wal.clone();
         let snapshot_shard_path_owned = snapshot_shard_path.to_owned();
 
         if !save_wal {
@@ -917,8 +913,8 @@ impl LocalShard {
     /// Get the recovery point for the current shard
     ///
     /// This is sourced from the last seen clocks from other nodes that we know about.
-    pub async fn shard_recovery_point(&self) -> RecoveryPoint {
-        self.clock_map.lock().await.to_recovery_point()
+    pub async fn recovery_point(&self) -> RecoveryPoint {
+        self.wal.recovery_point().await
     }
 }
 
