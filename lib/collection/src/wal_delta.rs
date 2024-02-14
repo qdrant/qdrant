@@ -221,7 +221,7 @@ mod tests {
     ///
     /// See: <https://www.notion.so/qdrant/Testing-suite-4e28a978ec05476080ff26ed07757def?pvs=4>
     #[test]
-    fn test_resolve_wal_one_operation() {
+    fn test_resolve_wal_delta_one_operation() {
         // Create WALs for peer A, B and C
         let (mut a_wal, _a_wal_dir) = fixture_empty_wal();
         let (mut b_wal, _b_wal_dir) = fixture_empty_wal();
@@ -328,7 +328,7 @@ mod tests {
     ///
     /// See: <https://www.notion.so/qdrant/Testing-suite-4e28a978ec05476080ff26ed07757def?pvs=4>
     #[test]
-    fn test_resolve_wal_many_operations() {
+    fn test_resolve_wal_delta_many_operations() {
         const N: usize = 5;
         const M: usize = 25;
 
@@ -433,7 +433,7 @@ mod tests {
     ///
     /// See: <https://www.notion.so/qdrant/Testing-suite-4e28a978ec05476080ff26ed07757def?pvs=4>
     #[test]
-    fn test_resolve_wal_many_intermixed_operations() {
+    fn test_resolve_wal_delta_many_intermixed_operations() {
         const N: usize = 3;
         const M: usize = 50;
 
@@ -545,7 +545,7 @@ mod tests {
     ///
     /// See: <https://www.notion.so/qdrant/Testing-suite-4e28a978ec05476080ff26ed07757def?pvs=4>
     #[test]
-    fn test_resolve_wal_unordered_operations() {
+    fn test_resolve_wal_delta_unordered_operations() {
         // Create WALs for peer A, B and C
         let (mut a_wal, _a_wal_dir) = fixture_empty_wal();
         let (mut b_wal, _b_wal_dir) = fixture_empty_wal();
