@@ -223,7 +223,7 @@ pub enum WalDeltaError {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{HashMap, HashSet};
+    use std::collections::{HashMap, HashSet, VecDeque};
     use std::sync::Arc;
 
     use parking_lot::Mutex as ParkingMutex;
@@ -1193,8 +1193,8 @@ mod tests {
     ///
     /// Property:
     /// For each operation with peer+clock tick X, all following operations having the same
-    /// peer+clock must cover ticks X+1, X+2, ..., X+n up to the highest tick value of that
-    /// peer+clock in the WAL.
+    /// peer+clock must cover ticks X+1, X+2, ..., X+n in order up to the highest tick value of
+    /// that peer+clock in the WAL.
     ///
     /// This property may not be valid if a diff transfer has not been resolved correctly or
     /// completely, or if the WAL got malformed in another way.
@@ -1202,13 +1202,14 @@ mod tests {
         let wal = wal.lock().read(0).collect::<Vec<_>>();
 
         // Get the highest clock value for each clock+peer
-        let mut highest_clocks = HashMap::<_, u64>::new();
-        for (_, operation) in wal.iter() {
-            let clock_tag = operation.clock_tag.unwrap();
+        let highest_clocks = wal.iter().fold(HashMap::new(), |mut map, (_, op)| {
+            let clock_tag = op.clock_tag.unwrap();
             let key = Key::from_tag(clock_tag);
-            let highest = highest_clocks.entry(key).or_default();
-            *highest = (*highest).max(clock_tag.clock_tick);
-        }
+            map.entry(key)
+                .and_modify(|highest| *highest = clock_tag.clock_tick.max(*highest))
+                .or_insert(clock_tag.clock_tick);
+            map
+        });
 
         // Test each WAL operation for the ordering property
         for (op_num, operation) in wal.iter() {
@@ -1216,8 +1217,9 @@ mod tests {
             let key = Key::from_tag(clock_tag);
             let highest = highest_clocks[&key];
 
-            // Make a list of all tick values we must cover
-            let mut seen_ticks = ((clock_tag.clock_tick + 1)..=highest).collect::<HashSet<_>>();
+            // An ordered list of ticks we must see for this peer+clock
+            let mut must_see_ticks =
+                ((clock_tag.clock_tick + 1)..=highest).collect::<VecDeque<_>>();
 
             // For all the following operations of the same peer+clock, remove their tick value
             wal.iter()
@@ -1225,14 +1227,20 @@ mod tests {
                 .map(|(_, op)| op.clock_tag.unwrap())
                 .filter(|later_clock_tag| Key::from_tag(*later_clock_tag) == key)
                 .for_each(|later_clock_tag| {
-                    seen_ticks.remove(&later_clock_tag.clock_tick);
+                    // If this tick is the first we must see, remove it from the list
+                    if must_see_ticks
+                        .front()
+                        .map_or(false, |tick| *tick == later_clock_tag.clock_tick)
+                    {
+                        must_see_ticks.pop_front().unwrap();
+                    }
                 });
 
             // If list is not empty, we have not seen all numbers
             assert!(
-                seen_ticks.is_empty(),
+                must_see_ticks.is_empty(),
                 "WAL ordering property violated; following operations did not cover ticks [{}] (peer_id: {}, clock_id: {}, max_tick: {highest})",
-                seen_ticks.into_iter().map(|tick| tick.to_string()).collect::<Vec<_>>().join(", "),
+                must_see_ticks.into_iter().map(|tick| tick.to_string()).collect::<Vec<_>>().join(", "),
                 clock_tag.peer_id,
                 clock_tag.clock_id,
             );
