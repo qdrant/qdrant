@@ -33,9 +33,9 @@ docker run -p 6333:6333 \
     qdrant/qdrant
 ```
 
-* `/qdrant/storage` - is a place where Qdrant persists all your data. 
-Make sure to mount it as a volume, otherwise docker will drop it with the container. 
-* `/qdrant/config/production.yaml` - is the file with engine configuration. You can override any value from the [reference config](https://github.com/qdrant/qdrant/blob/master/config/config.yaml) 
+* `/qdrant/storage` - is a place where Qdrant persists all your data.
+Make sure to mount it as a volume, otherwise docker will drop it with the container.
+* `/qdrant/config/production.yaml` - is the file with engine configuration. You can override any value from the [reference config](https://github.com/qdrant/qdrant/blob/master/config/config.yaml)
 
 Now Qdrant should be accessible at [localhost:6333](http://localhost:6333/).
 
@@ -44,13 +44,13 @@ Now Qdrant should be accessible at [localhost:6333](http://localhost:6333/).
 #### Linux/Debian
 To run Qdrant on local development environment you need to install below:
 - Install Rust, follow: [install rust](https://www.rust-lang.org/tools/install)
-- Install `rustfmt` toolchain for Rust 
+- Install `rustfmt` toolchain for Rust
     ```shell
     rustup component add rustfmt
     ```
 - Install dependencies:
     ```shell
-    sudo apt-get update -y 
+    sudo apt-get update -y
     sudo apt-get upgrade -y
     sudo apt-get install -y curl unzip gcc-multilib \
         clang cmake jq \
@@ -61,7 +61,7 @@ To run Qdrant on local development environment you need to install below:
     ```shell
     PROTOC_VERSION=22.2
 
-    # curl `proto` source file 
+    # curl `proto` source file
     curl -LO https://github.com/protocolbuffers/protobuf/releases//download/v$PROTOC_VERSION/protoc-$PROTOC_VERSION-linux-x86_64.zip
 
     unzip protoc-$PROTOC_VERSION-linux-x86_64.zip -d $HOME/.local
@@ -70,7 +70,7 @@ To run Qdrant on local development environment you need to install below:
 
     # remove source file if not needed
     rm protoc-$PROTOC_VERSION-linux-x86_64.zip
-    
+
     # check installed `protoc` version
     protoc --version
     ```
@@ -81,7 +81,7 @@ To run Qdrant on local development environment you need to install below:
     ./target/release/qdrant
     ```
 - Use the web UI
-  
+
     Web UI repo is [in a separate repo](https://github.com/qdrant/qdrant-web-ui), but there's a utility script to sync it to the `static` folder:
     ```shell
     ./tools/sync-web-ui.sh
@@ -103,7 +103,7 @@ In this case you will see the execution timings and, if you launched this bench 
 Example output:
 
 ```
-scoring-vector/basic-score-point                                                                            
+scoring-vector/basic-score-point
                         time:   [111.81 us 112.07 us 112.31 us]
                         change: [+19.567% +20.454% +21.404%] (p = 0.00 < 0.05)
                         Performance has regressed.
@@ -112,7 +112,7 @@ Found 9 outliers among 100 measurements (9.00%)
   3 (3.00%) low mild
   2 (2.00%) high mild
   1 (1.00%) high severe
-scoring-vector/basic-score-point-10x                                                                            
+scoring-vector/basic-score-point-10x
                         time:   [111.86 us 112.44 us 113.04 us]
                         change: [-1.6120% -0.5554% +0.5103%] (p = 0.32 > 0.05)
                         No change in performance detected.
@@ -207,7 +207,7 @@ Here is a quick step-by-step guide:
 2. change specs in `/openapi/*ytt.yaml`
 3. add new schema definitions to `src/schema_generator.rs`
 4. run `/tools/generate_openapi_models.sh` to generate specs
-5. update integration tests `openapi/tests/openapi_integration` and run them with `./tests/openapi_integration_test.sh`
+5. update integration tests `tests/openapi/openapi_integration` and run them with `./tests/openapi_integration_test.sh`
 6. expose file by starting an HTTP server, for instance `python -m http.server`, in `/docs/redoc`
 7. validate specs by browsing redoc on `http://localhost:8000/?v=master`
 8. validate `openapi-merged.yaml` using [swagger editor](https://editor.swagger.io/)
