@@ -1,6 +1,5 @@
 pub mod clock_map;
 mod shard_ops;
-pub mod wal_delta;
 
 use std::collections::{BTreeSet, HashMap};
 use std::mem::size_of;
@@ -52,7 +51,8 @@ use crate::shards::shard_config::{ShardConfig, SHARD_CONFIG_FILE};
 use crate::shards::telemetry::{LocalShardTelemetry, OptimizerTelemetry};
 use crate::shards::CollectionId;
 use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal};
-use crate::wal::{LockedWal, RecoverableWal, SerdeWal};
+use crate::wal::SerdeWal;
+use crate::wal_delta::{LockedWal, RecoverableWal};
 
 /// If rendering WAL load progression in basic text form, report progression every 60 seconds.
 const WAL_LOAD_REPORT_EVERY: Duration = Duration::from_secs(60);

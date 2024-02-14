@@ -1,19 +1,70 @@
+use std::fmt::Debug;
+use std::sync::Arc;
+
+use parking_lot::Mutex as ParkingMutex;
 use thiserror::Error;
+use tokio::sync::Mutex;
 
-use super::clock_map::RecoveryPoint;
-use super::LocalShard;
-use crate::wal::LockedWal;
+use crate::operations::OperationWithClockTag;
+use crate::shards::local_shard::clock_map::{ClockMap, RecoveryPoint};
+use crate::wal::SerdeWal;
 
-impl LocalShard {
+pub type LockedWal = Arc<ParkingMutex<SerdeWal<OperationWithClockTag>>>;
+
+/// A WAL that is recoverable, with operations having clock tags and a corresponding clock map.
+pub struct RecoverableWal {
+    pub(super) wal: LockedWal,
+    /// Map of all last seen clocks for each peer and clock ID.
+    pub(super) last_clocks: Arc<Mutex<ClockMap>>,
+}
+
+impl RecoverableWal {
+    pub fn from(wal: LockedWal, last_clocks: Arc<Mutex<ClockMap>>) -> Self {
+        Self { wal, last_clocks }
+    }
+
+    /// Write a record to the WAL but does guarantee durability.
+    pub async fn lock_and_write(
+        &self,
+        operation: &mut OperationWithClockTag,
+    ) -> crate::wal::Result<u64> {
+        // Update last seen clock map and correct clock tag if necessary
+        if let Some(clock_tag) = &mut operation.clock_tag {
+            // TODO:
+            //
+            // Temporarily accept *all* operations, even if their `clock_tag` is older than
+            // current clock tracked by the clock map
+
+            // TODO: do not manually advance here!
+            let _operation_accepted = self
+                .last_clocks
+                .lock()
+                .await
+                .advance_clock_and_correct_tag(clock_tag);
+
+            // if !operation_accepted {
+            //     return Ok(UpdateResult {
+            //         operation_id: None,
+            //         status: UpdateStatus::Acknowledged,
+            //         clock_tag: Some(*clock_tag),
+            //     });
+            // }
+        }
+
+        // Write operation to WAL
+        self.wal.lock().write(operation)
+    }
+
+    /// Get a recovery point for this WAL.
+    pub async fn recovery_point(&self) -> RecoveryPoint {
+        self.last_clocks.lock().await.to_recovery_point()
+    }
+
     pub async fn resolve_wal_delta(
         &self,
         recovery_point: RecoveryPoint,
     ) -> Result<u64, WalDeltaError> {
-        resolve_wal_delta(
-            recovery_point,
-            &self.wal.wal,
-            self.wal.recovery_point().await,
-        )
+        resolve_wal_delta(recovery_point, &self.wal, self.recovery_point().await)
     }
 }
 
@@ -29,7 +80,7 @@ impl LocalShard {
 ///
 /// On success, a WAL record number from which the delta is resolved in the given WAL is returned.
 /// If a WAL delta could not be resolved, an error is returned describing the failure.
-pub fn resolve_wal_delta(
+fn resolve_wal_delta(
     mut recovery_point: RecoveryPoint,
     local_wal: &LockedWal,
     local_recovery_point: RecoveryPoint,
