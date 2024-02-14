@@ -429,6 +429,7 @@ impl From<SearchParams> for segment::types::SearchParams {
             exact: params.exact.unwrap_or(false),
             quantization: params.quantization.map(|q| q.into()),
             indexed_only: params.indexed_only.unwrap_or(false),
+            plain_search_limit: params.plain_search_limit.map(|x| x as usize),
         }
     }
 }
@@ -440,6 +441,7 @@ impl From<segment::types::SearchParams> for SearchParams {
             exact: Some(params.exact),
             quantization: params.quantization.map(|q| q.into()),
             indexed_only: Some(params.indexed_only),
+            plain_search_limit: params.plain_search_limit.map(|x| x as u64),
         }
     }
 }

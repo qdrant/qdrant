@@ -151,6 +151,7 @@ where
         &self,
         points: &mut dyn Iterator<Item = PointOffsetType>,
         top: usize,
+        limit: Option<usize>,
     ) -> Vec<ScoredPointOffset> {
         if top == 0 {
             return vec![];
@@ -159,6 +160,7 @@ where
         let mut pq = FixedLengthPriorityQueue::new(top);
         let points_stream = points
             .take_while(|_| !self.is_stopped.load(Ordering::Relaxed))
+            .take(limit.unwrap_or(usize::MAX))
             .filter(|point_id| self.check_vector(*point_id));
 
         self.storage
@@ -178,13 +180,14 @@ where
         pq.into_vec()
     }
 
-    fn peek_top_all(&self, top: usize) -> Vec<ScoredPointOffset> {
+    fn peek_top_all(&self, top: usize, limit: Option<usize>) -> Vec<ScoredPointOffset> {
         if top == 0 {
             return vec![];
         }
 
         let points_stream = (0..self.points_count)
             .take_while(|_| !self.is_stopped.load(Ordering::Relaxed))
+            .take(limit.unwrap_or(usize::MAX))
             .filter(|point_id| self.check_vector(*point_id));
 
         let mut pq = FixedLengthPriorityQueue::new(top);

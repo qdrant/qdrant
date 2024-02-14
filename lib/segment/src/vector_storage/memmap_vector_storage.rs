@@ -328,13 +328,13 @@ mod tests {
             borrowed_id_tracker.deleted_point_bitslice(),
         )
         .unwrap();
-        let res = raw_scorer.peek_top_all(2);
+        let res = raw_scorer.peek_top_all(2, None);
 
         assert_eq!(res.len(), 2);
 
         assert_ne!(res[0].idx, 2);
 
-        let res = raw_scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2);
+        let res = raw_scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2, None);
 
         assert_eq!(res.len(), 2);
         assert_ne!(res[0].idx, 2);
@@ -412,7 +412,7 @@ mod tests {
             borrowed_id_tracker.deleted_point_bitslice(),
         )
         .unwrap()
-        .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
+        .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5, None);
         assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
         assert_eq!(closest[0].idx, 0);
         assert_eq!(closest[1].idx, 1);
@@ -440,7 +440,7 @@ mod tests {
             borrowed_id_tracker.deleted_point_bitslice(),
         )
         .unwrap()
-        .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
+        .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5, None);
         assert_eq!(closest.len(), 2, "must have 2 vectors, 3 are deleted");
         assert_eq!(closest[0].idx, 4);
         assert_eq!(closest[1].idx, 0);
@@ -466,7 +466,7 @@ mod tests {
             borrowed_id_tracker.deleted_point_bitslice(),
         )
         .unwrap()
-        .peek_top_all(5);
+        .peek_top_all(5, None);
         assert!(closest.is_empty(), "must have no results, all deleted");
     }
 
@@ -535,7 +535,7 @@ mod tests {
             borrowed_id_tracker.deleted_point_bitslice(),
         )
         .unwrap()
-        .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
+        .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5, None);
         assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
         assert_eq!(closest[0].idx, 0);
         assert_eq!(closest[1].idx, 1);
