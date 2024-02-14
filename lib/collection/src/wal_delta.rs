@@ -227,6 +227,9 @@ mod tests {
     use std::sync::Arc;
 
     use parking_lot::Mutex as ParkingMutex;
+    use rand::rngs::StdRng;
+    use rand::seq::SliceRandom;
+    use rand::{Rng, SeedableRng};
     use tempfile::{Builder, TempDir};
     use wal::WalOptions;
 
@@ -1040,6 +1043,151 @@ mod tests {
         assert_wal_ordering_property(&a_wal).await;
         assert_wal_ordering_property(&b_wal).await;
         assert_wal_ordering_property(&e_wal).await;
+    }
+
+    /// A randomized and more extensive test for resolving a WAL delta.
+    ///
+    /// This randomizes:
+    /// - The number of operations
+    /// - What node is used as entry point
+    /// - What node dies
+    ///
+    /// This test does the following 25 times:
+    /// - insert random number of operations on all nodes
+    /// - randomly kill a node (or rather, mark as killed)
+    /// - write random number of operations some operations to all other nodes
+    /// - recover the killed node
+    /// - assert correctness
+    ///
+    /// See: <https://www.notion.so/qdrant/Testing-suite-4e28a978ec05476080ff26ed07757def?pvs=4>
+    #[tokio::test]
+    async fn test_resolve_wal_delta_randomized() {
+        const NODE_COUNT: usize = 3;
+        let mut rng = StdRng::seed_from_u64(42);
+        let mut point_id_source = 1..;
+
+        // Create WALs, clock sets and clock maps for each node
+        let mut wals = std::iter::repeat_with(fixture_empty_wal)
+            .take(NODE_COUNT)
+            .collect::<Vec<_>>();
+        let mut clock_sets = std::iter::repeat_with(ClockSet::new)
+            .take(NODE_COUNT)
+            .collect::<Vec<_>>();
+
+        // 25 times:
+        // - insert random number of operations on all nodes
+        // - randomly kill a node (or rather, mark as killed)
+        // - write random number of operations some operations to all other nodes
+        // - recover the killed node
+        // - assert correctness
+        for _ in 0..25 {
+            // Insert random number of operations on all nodes
+            for _ in 0..rng.gen_range(0..10) {
+                let entrypoint = rng.gen_range(0..NODE_COUNT);
+
+                let mut clock = clock_sets[entrypoint].get_clock();
+                let clock_tick = clock.tick_once();
+                let clock_tag = ClockTag::new(entrypoint as u64, clock.id(), clock_tick);
+
+                let bare_operation =
+                    CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+                        PointInsertOperationsInternal::PointsList(vec![PointStruct {
+                            id: point_id_source.next().unwrap().into(),
+                            vector: std::iter::repeat_with(|| rng.gen::<f32>())
+                                .take(3)
+                                .collect::<Vec<_>>()
+                                .into(),
+                            payload: None,
+                        }]),
+                    ));
+                let operation = OperationWithClockTag::new(bare_operation, Some(clock_tag));
+
+                // Write operations to all WALs
+                for (wal, _wal_dir) in wals.iter_mut() {
+                    let mut operation = operation.clone();
+                    wal.lock_and_write(&mut operation).await.unwrap();
+                    clock.advance_to(operation.clock_tag.unwrap().clock_tick);
+                }
+            }
+
+            // Mark a random node as dead
+            let dead_node = rng.gen_range(0..NODE_COUNT);
+            let alive_nodes = (0..NODE_COUNT)
+                .filter(|&n| n != dead_node)
+                .collect::<Vec<_>>();
+
+            // Insert random number of operations into all alive nodes
+            let operation_count = rng.gen_range(0..100);
+            for _ in 0..operation_count {
+                let entrypoint = *alive_nodes.choose(&mut rng).unwrap();
+
+                let mut clock = clock_sets[entrypoint].get_clock();
+                let clock_tick = clock.tick_once();
+                let clock_tag = ClockTag::new(entrypoint as u64, clock.id(), clock_tick);
+
+                let bare_operation =
+                    CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+                        PointInsertOperationsInternal::PointsList(vec![PointStruct {
+                            id: point_id_source.next().unwrap().into(),
+                            vector: std::iter::repeat_with(|| rng.gen::<f32>())
+                                .take(3)
+                                .collect::<Vec<_>>()
+                                .into(),
+                            payload: None,
+                        }]),
+                    ));
+                let operation = OperationWithClockTag::new(bare_operation, Some(clock_tag));
+
+                // Write operations to all WALs and clock maps on alive node
+                for &alive_node in &alive_nodes {
+                    let mut operation = operation.clone();
+                    wals[alive_node]
+                        .0
+                        .lock_and_write(&mut operation)
+                        .await
+                        .unwrap();
+                    clock.advance_to(operation.clock_tag.unwrap().clock_tick);
+                }
+            }
+
+            // Resolve WAL on every alive node, to recover the dead node
+            let dead_node_recovery_point = wals[dead_node].0.recovery_point().await;
+            let mut from_deltas = HashSet::new();
+            for &alive_node in &alive_nodes {
+                let delta_from = wals[alive_node]
+                    .0
+                    .resolve_wal_delta(dead_node_recovery_point.clone())
+                    .await
+                    .expect("failed to resolve WAL delta on alive node");
+                from_deltas.insert(delta_from);
+            }
+            assert_eq!(from_deltas.len(), 1, "found different delta starting points in different WALs, while all should be the same");
+            let delta_from = from_deltas.into_iter().next().unwrap().unwrap();
+
+            // Recover WAL on the dead node from a random alive node
+            let alive_node = *alive_nodes.choose(&mut rng).unwrap();
+            wals[dead_node]
+                .0
+                .append_from(&wals[alive_node].0, delta_from)
+                .await
+                .unwrap();
+
+            // All WALs must be equal, having exactly the same entries
+            wals.iter()
+                .map(|wal| wal.0.wal.lock())
+                .collect::<Vec<_>>()
+                .windows(2)
+                .for_each(|wals| {
+                    assert!(
+                        wals[0].read(0).eq(wals[1].read(0)),
+                        "all WALs must have the same entries",
+                    );
+                });
+        }
+
+        for (wal, _) in wals {
+            assert_wal_ordering_property(&wal).await;
+        }
     }
 
     /// Empty recovery point should not resolve any diff.
