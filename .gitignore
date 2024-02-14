@@ -12,3 +12,4 @@
 *.log
 .qdrant-initialized
 /.hypothesis
+**/__pycache__

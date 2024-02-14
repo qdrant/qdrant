@@ -4,4 +4,3 @@
 /openapi-merged.json
 /openapi-*.yaml
 !/openapi-*.ytt.yaml
-__pycache__/
