@@ -386,6 +386,8 @@ impl From<Error> for CollectionError {
 
 #[cfg(test)]
 mod test {
+    use test_case::test_case;
+
     use super::*;
 
     #[test]
@@ -412,94 +414,146 @@ mod test {
         assert_eq!(input, output);
     }
 
+    #[test_case(Helper::empty(); "with empty clock map")]
+    #[test_case(Helper::at_tick_0(); "with clock map at tick 0")]
+    fn clock_map_accept_tick_0(mut helper: Helper) {
+        helper.advance(tag(0)).assert(true, 0);
+    }
+
+    #[test_case(Helper::empty(); "with empty clock map")]
+    #[test_case(Helper::at_tick_0(); "with clock map at tick 0")]
+    fn clock_map_advance_to_next_tick(mut helper: Helper) {
+        // Advance to the next tick
+        for tick in 1..10 {
+            helper.advance(tag(tick)).assert(true, tick);
+        }
+    }
+
+    #[test_case(Helper::empty(); "with empty clock map")]
+    #[test_case(Helper::at_tick_0(); "with clock map at tick 0")]
+    fn clock_map_advance_to_newer_tick(mut helper: Helper) {
+        // Advance to a newer tick
+        for tick in [10, 20, 30, 40, 50] {
+            helper.advance(tag(tick)).assert(true, tick);
+        }
+    }
+
+    #[test]
+    fn clock_map_accept_tick_0_with_non_empty_clock_map() {
+        let mut helper = Helper::default();
+
+        for tick in [10, 20, 30, 40, 50] {
+            // Advance to a non-zero tick (already tested in `clock_map_advance_to_newer_tick`)
+            helper.advance(tag(tick));
+
+            // Accept tick `0`
+            helper.advance(tag(0)).assert(true, tick);
+        }
+    }
+
+    #[test]
+    fn clock_map_reject_older_or_current_tick() {
+        let mut helper = Helper::default();
+
+        // Advance to a newer tick (already tested in `clock_map_advance_to_newer_tick`)
+        helper.advance(tag(10));
+
+        // Reject older tick
+        //
+        // Start from tick `1`, cause tick `0` is a special case that is always accepted
+        for older_tick in 1..10 {
+            helper.advance(tag(older_tick)).assert(false, 10);
+        }
+
+        // Reject current tick
+        for current_tick in [10, 10, 10, 10, 10] {
+            helper.advance(tag(current_tick)).assert(false, 10);
+        }
+    }
+
+    #[test_case(Helper::empty(); "with empty clock map")]
+    #[test_case(Helper::at_tick_0(); "with clock map at tick 0")]
+    fn clock_map_advance_to_newer_tick_with_force_true(mut helper: Helper) {
+        // Advance to a newer tick with `force = true`
+        for tick in [10, 20, 30, 40, 50] {
+            helper.advance(tag(tick).force(true)).assert(true, tick);
+            assert_eq!(helper.clock_map.current_tick(PEER_ID, CLOCK_ID), Some(tick));
+        }
+    }
+
+    #[test]
+    fn clock_map_accept_older_or_current_tick_with_force_true() {
+        let mut helper = Helper::default();
+
+        // Advance to a newer tick (already tested in `clock_map_advance_to_newer_tick`)
+        helper.advance(tag(10));
+
+        // Accept older tick with `force = true`
+        //
+        // Start from `0`, cause `force = true` is "stronger" than tick `0` special case
+        for older_tick in 0..10 {
+            helper
+                .advance(tag(older_tick).force(true))
+                .assert(true, older_tick);
+        }
+
+        // Accept current tick with `force = true`
+        for current_tick in [10, 10, 10, 10, 10] {
+            helper
+                .advance(tag(current_tick).force(true))
+                .assert(true, current_tick);
+        }
+    }
+
+    #[derive(Clone, Debug, Default)]
+    struct Helper {
+        clock_map: ClockMap,
+    }
+
+    impl Helper {
+        pub fn empty() -> Self {
+            Self::default()
+        }
+
+        pub fn at_tick_0() -> Self {
+            let mut helper = Helper::default();
+            helper.advance(tag(0));
+            helper
+        }
+
+        pub fn advance(&mut self, mut clock_tag: ClockTag) -> Status {
+            let peer_id = clock_tag.peer_id;
+            let clock_id = clock_tag.clock_id;
+
+            let accepted = self.clock_map.advance_clock_and_correct_tag(&mut clock_tag);
+
+            assert_eq!(clock_tag.peer_id, peer_id);
+            assert_eq!(clock_tag.clock_id, clock_id);
+
+            Status {
+                accepted,
+                clock_tag,
+            }
+        }
+    }
+
     const PEER_ID: PeerId = 1337;
     const CLOCK_ID: u32 = 42;
 
-    #[test]
-    fn clock_map_accept_sequential() {
-        let mut clock_map = ClockMap::default();
-        let mut clock_tag = ClockTag::new(PEER_ID, CLOCK_ID, 0);
-
-        for tick in 0..10 {
-            clock_tag.clock_tick = tick;
-            assert!(clock_map.advance_clock_and_correct_tag(&mut clock_tag));
-            assert_eq!(clock_tag.peer_id, PEER_ID);
-            assert_eq!(clock_tag.clock_id, CLOCK_ID);
-            assert_eq!(clock_tag.clock_tick, tick);
-        }
+    fn tag(tick: u64) -> ClockTag {
+        ClockTag::new(PEER_ID, CLOCK_ID, tick)
     }
 
-    #[test]
-    fn clock_map_accept_newer() {
-        let mut clock_map = ClockMap::default();
-        let mut clock_tag = ClockTag::new(PEER_ID, CLOCK_ID, 0);
-
-        for tick in [10, 20, 30, 40, 50] {
-            clock_tag.clock_tick = tick;
-            assert!(clock_map.advance_clock_and_correct_tag(&mut clock_tag));
-            assert_eq!(clock_tag.peer_id, PEER_ID);
-            assert_eq!(clock_tag.clock_id, CLOCK_ID);
-            assert_eq!(clock_tag.clock_tick, tick);
-        }
+    #[derive(Copy, Clone, Debug)]
+    struct Status {
+        accepted: bool,
+        clock_tag: ClockTag,
     }
 
-    #[test]
-    fn clock_map_reject_older_and_current() {
-        let mut clock_map = ClockMap::default();
-        let mut clock_tag = ClockTag::new(PEER_ID, CLOCK_ID, 0);
-
-        for tick in [10, 20, 30, 40, 50] {
-            clock_tag.clock_tick = tick;
-            clock_map.advance_clock(clock_tag);
-
-            // Start from `1`, cause `0` is a special case that is always accepted
-            for older_tick in 1..=tick {
-                clock_tag.clock_tick = older_tick;
-                assert!(!clock_map.advance_clock_and_correct_tag(&mut clock_tag));
-                assert_eq!(clock_tag.peer_id, PEER_ID);
-                assert_eq!(clock_tag.clock_id, CLOCK_ID);
-                assert_eq!(clock_tag.clock_tick, tick);
-            }
-        }
-    }
-
-    #[test]
-    fn clock_map_accept_0() {
-        let mut clock_map = ClockMap::default();
-        let mut clock_tag = ClockTag::new(PEER_ID, CLOCK_ID, 0);
-
-        for tick in [10, 20, 30, 40, 50] {
-            clock_tag.clock_tick = tick;
-            clock_map.advance_clock(clock_tag);
-
-            clock_tag.clock_tick = 0;
-            assert!(clock_map.advance_clock_and_correct_tag(&mut clock_tag));
-            assert_eq!(clock_tag.peer_id, PEER_ID);
-            assert_eq!(clock_tag.clock_id, CLOCK_ID);
-            assert_eq!(clock_tag.clock_tick, tick);
-        }
-    }
-
-    #[test]
-    fn clock_map_accept_force() {
-        let mut clock_map = ClockMap::default();
-        let mut clock_tag = ClockTag::new(PEER_ID, CLOCK_ID, 0).force(true);
-
-        for tick in [10, 20, 30, 40, 50] {
-            clock_tag.clock_tick = tick;
-            assert!(clock_map.advance_clock_and_correct_tag(&mut clock_tag));
-            assert_eq!(clock_tag.peer_id, PEER_ID);
-            assert_eq!(clock_tag.clock_id, CLOCK_ID);
-            assert_eq!(clock_tag.clock_tick, tick);
-
-            // Start from `0`, cause `force = true` is "stronger" than `0` special case
-            for older_tick in 0..=tick {
-                clock_tag.clock_tick = older_tick;
-                assert!(clock_map.advance_clock_and_correct_tag(&mut clock_tag));
-                assert_eq!(clock_tag.peer_id, PEER_ID);
-                assert_eq!(clock_tag.clock_id, CLOCK_ID);
-                assert_eq!(clock_tag.clock_tick, older_tick);
-            }
+    impl Status {
+        pub fn assert(&self, expected_status: bool, expected_tick: u64) {
+            assert_eq!(self.accepted, expected_status);
+            assert_eq!(self.clock_tag.clock_tick, expected_tick);
         }
     }
 }
