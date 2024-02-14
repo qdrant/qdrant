@@ -5,7 +5,7 @@ set -ex
 # Ensure current path is project root
 cd "$(dirname "$0")/../"
 
-cp docs/redoc/master/openapi.json openapi/tests/openapi.json
+cp docs/redoc/master/openapi.json tests/openapi/openapi.json
 
 docker buildx build --load -q ./openapi/tests --tag=qdrant_openapi_test
 
