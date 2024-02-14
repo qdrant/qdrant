@@ -6614,45 +6614,15 @@
       "RangeInterface": {
         "anyOf": [
           {
-            "$ref": "#/components/schemas/Range"
+            "$ref": "#/components/schemas/IntegerRange"
           },
           {
-            "$ref": "#/components/schemas/IntegerRange"
+            "$ref": "#/components/schemas/Range"
           },
           {
             "$ref": "#/components/schemas/DatetimeRange"
           }
         ]
-      },
-      "Range": {
-        "description": "Range filter request",
-        "type": "object",
-        "properties": {
-          "lt": {
-            "description": "point.key < range.lt",
-            "type": "number",
-            "format": "double",
-            "nullable": true
-          },
-          "gt": {
-            "description": "point.key > range.gt",
-            "type": "number",
-            "format": "double",
-            "nullable": true
-          },
-          "gte": {
-            "description": "point.key >= range.gte",
-            "type": "number",
-            "format": "double",
-            "nullable": true
-          },
-          "lte": {
-            "description": "point.key <= range.lte",
-            "type": "number",
-            "format": "double",
-            "nullable": true
-          }
-        }
       },
       "IntegerRange": {
         "description": "Range filter request",
@@ -6680,6 +6650,36 @@
             "description": "point.key <= range.lte",
             "type": "integer",
             "format": "int64",
+            "nullable": true
+          }
+        }
+      },
+      "Range": {
+        "description": "Range filter request",
+        "type": "object",
+        "properties": {
+          "lt": {
+            "description": "point.key < range.lt",
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "gt": {
+            "description": "point.key > range.gt",
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "gte": {
+            "description": "point.key >= range.gte",
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "lte": {
+            "description": "point.key <= range.lte",
+            "type": "number",
+            "format": "double",
             "nullable": true
           }
         }
