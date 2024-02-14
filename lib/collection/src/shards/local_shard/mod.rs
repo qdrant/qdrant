@@ -487,7 +487,7 @@ impl LocalShard {
 
     /// Loads latest collection operations from WAL
     pub async fn load_from_wal(&self, collection_id: CollectionId) -> CollectionResult<()> {
-        let mut clock_map = self.wal.clock_map.lock().await;
+        let mut last_clocks = self.wal.last_clocks.lock().await;
         let wal = self.wal.wal.lock();
         let bar = ProgressBar::new(wal.len());
 
@@ -524,7 +524,7 @@ impl LocalShard {
 
         for (op_num, update) in wal.read_all() {
             if let Some(clock_tag) = update.clock_tag {
-                clock_map.advance_clock(clock_tag);
+                last_clocks.advance_clock(clock_tag);
             }
 
             // Propagate `CollectionError::ServiceError`, but skip other error types.

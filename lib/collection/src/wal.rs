@@ -277,12 +277,13 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
 /// A WAL that is recoverable, with operations having clock tags and a corresponding clock map.
 pub struct RecoverableWal {
     pub(super) wal: LockedWal,
-    pub(super) clock_map: Arc<Mutex<ClockMap>>,
+    /// Map of all last seen clocks for each peer and clock ID.
+    pub(super) last_clocks: Arc<Mutex<ClockMap>>,
 }
 
 impl RecoverableWal {
-    pub fn from(wal: LockedWal, clock_map: Arc<Mutex<ClockMap>>) -> Self {
-        Self { wal, clock_map }
+    pub fn from(wal: LockedWal, last_clocks: Arc<Mutex<ClockMap>>) -> Self {
+        Self { wal, last_clocks }
     }
 
     /// Write a record to the WAL but does guarantee durability.
@@ -296,7 +297,7 @@ impl RecoverableWal {
 
             // TODO: do not manually advance here!
             let _operation_accepted = self
-                .clock_map
+                .last_clocks
                 .lock()
                 .await
                 .advance_clock_and_correct_tag(clock_tag);
@@ -316,7 +317,7 @@ impl RecoverableWal {
 
     /// Get a recovery point for this WAL.
     pub async fn recovery_point(&self) -> RecoveryPoint {
-        self.clock_map.lock().await.to_recovery_point()
+        self.last_clocks.lock().await.to_recovery_point()
     }
 }
 
