@@ -402,7 +402,7 @@ def test_payload_operations():
     )
     assert response.ok
     assert len(response.json()['result']['payload']) == 1
-    assert response.json()['result']['payload']["key"] == "xxx"
+    assert response.json()['result']['payload']["key"] == {"key": "xxx"}
 
     response = request_with_validation(
         api='/collections/{collection_name}/points/payload',
@@ -424,7 +424,7 @@ def test_payload_operations():
     )
     assert response.ok
     assert len(response.json()['result']['payload']) == 1
-    assert response.json()['result']['payload']["key"] == "xxx"
+    assert response.json()['result']['payload']["key"] == {"key": "xxx"}
 
     response = request_with_validation(
         api='/collections/{collection_name}/points/payload/delete',
