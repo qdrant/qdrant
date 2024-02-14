@@ -15,11 +15,11 @@ impl ClockSet {
     pub fn get_clock(&mut self) -> ClockGuard {
         for (id, clock) in self.clocks.iter().enumerate() {
             if clock.try_lock() {
-                return ClockGuard::new(id, clock.clone());
+                return ClockGuard::new(id as u32, clock.clone());
             }
         }
 
-        let id = self.clocks.len();
+        let id = self.clocks.len() as u32;
         let clock = Arc::new(Clock::new_locked());
 
         self.clocks.push(clock.clone());
@@ -30,16 +30,16 @@ impl ClockSet {
 
 #[derive(Debug)]
 pub struct ClockGuard {
-    id: usize,
+    id: u32,
     clock: Arc<Clock>,
 }
 
 impl ClockGuard {
-    fn new(id: usize, clock: Arc<Clock>) -> Self {
+    fn new(id: u32, clock: Arc<Clock>) -> Self {
         Self { id, clock }
     }
 
-    pub fn id(&self) -> usize {
+    pub fn id(&self) -> u32 {
         self.id
     }
 

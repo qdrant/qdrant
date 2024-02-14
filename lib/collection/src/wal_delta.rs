@@ -236,7 +236,7 @@ mod tests {
         // Create operation on peer A
         let mut a_clock_0 = a_clock_set.get_clock();
         let clock_tick = a_clock_0.tick_once();
-        let clock_tag = ClockTag::new(1, 0, clock_tick);
+        let clock_tag = ClockTag::new(1, a_clock_0.id(), clock_tick);
         let operation = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
             PointInsertOperationsInternal::PointsList(vec![PointStruct {
                 id: 1.into(),
@@ -259,7 +259,7 @@ mod tests {
         // Create operation on peer A
         let mut a_clock_0 = a_clock_set.get_clock();
         let clock_tick = a_clock_0.tick_once();
-        let clock_tag = ClockTag::new(1, 0, clock_tick);
+        let clock_tag = ClockTag::new(1, a_clock_0.id(), clock_tick);
         let operation = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
             PointInsertOperationsInternal::PointsList(vec![PointStruct {
                 id: 2.into(),
@@ -346,7 +346,7 @@ mod tests {
         for i in 0..N {
             let mut a_clock_0 = a_clock_set.get_clock();
             let clock_tick = a_clock_0.tick_once();
-            let clock_tag = ClockTag::new(1, 0, clock_tick);
+            let clock_tag = ClockTag::new(1, a_clock_0.id(), clock_tick);
             let operation =
                 CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
                     PointInsertOperationsInternal::PointsList(vec![PointStruct {
@@ -371,7 +371,7 @@ mod tests {
         for i in N..N + M {
             let mut a_clock_0 = a_clock_set.get_clock();
             let clock_tick = a_clock_0.tick_once();
-            let clock_tag = ClockTag::new(1, 0, clock_tick);
+            let clock_tag = ClockTag::new(1, a_clock_0.id(), clock_tick);
             let operation =
                 CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
                     PointInsertOperationsInternal::PointsList(vec![PointStruct {
@@ -451,7 +451,7 @@ mod tests {
         for i in 0..N {
             let mut a_clock_0 = a_clock_set.get_clock();
             let clock_tick = a_clock_0.tick_once();
-            let clock_tag = ClockTag::new(1, 0, clock_tick);
+            let clock_tag = ClockTag::new(1, a_clock_0.id(), clock_tick);
             let operation =
                 CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
                     PointInsertOperationsInternal::PointsList(vec![PointStruct {
@@ -483,7 +483,7 @@ mod tests {
                 b_clock_set.get_clock()
             };
             let clock_tick = clock.tick_once();
-            let clock_tag = ClockTag::new(peer_id, 0, clock_tick);
+            let clock_tag = ClockTag::new(peer_id, clock.id(), clock_tick);
             let operation =
                 CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
                     PointInsertOperationsInternal::PointsList(vec![PointStruct {
@@ -558,7 +558,7 @@ mod tests {
         // Create operation on peer A
         let mut a_clock_0 = a_clock_set.get_clock();
         let clock_tick = a_clock_0.tick_once();
-        let clock_tag = ClockTag::new(1, 0, clock_tick);
+        let clock_tag = ClockTag::new(1, a_clock_0.id(), clock_tick);
         let operation = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
             PointInsertOperationsInternal::PointsList(vec![PointStruct {
                 id: 1.into(),
@@ -583,8 +583,8 @@ mod tests {
         let mut b_clock_0 = b_clock_set.get_clock();
         let a_clock_tick = a_clock_0.tick_once();
         let b_clock_tick = b_clock_0.tick_once();
-        let a_clock_tag = ClockTag::new(1, 0, a_clock_tick);
-        let b_clock_tag = ClockTag::new(2, 0, b_clock_tick);
+        let a_clock_tag = ClockTag::new(1, a_clock_0.id(), a_clock_tick);
+        let b_clock_tag = ClockTag::new(2, a_clock_0.id(), b_clock_tick);
         let a_operation =
             CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
                 PointInsertOperationsInternal::PointsList(vec![PointStruct {
