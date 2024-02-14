@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use actix_files::NamedFile;
 use actix_multipart::form::tempfile::TempFile;
 use actix_multipart::form::MultipartForm;
@@ -78,6 +80,12 @@ pub async fn do_save_uploaded_snapshot(
 ) -> std::result::Result<Url, StorageError> {
     let filename = snapshot
         .file_name
+        .and_then(|x| {
+            Path::new(&x)
+                .file_name()
+                .map(|filename| filename.to_owned())
+        })
+        .and_then(|x| x.to_str().map(|x| x.to_owned()))
         .unwrap_or_else(|| Uuid::new_v4().to_string());
     let collection_snapshot_path = toc.snapshots_path_for_collection(collection_name);
     if !collection_snapshot_path.exists() {
