@@ -386,6 +386,7 @@ impl From<Error> for CollectionError {
 
 #[cfg(test)]
 mod test {
+    use proptest::prelude::*;
     use test_case::test_case;
 
     use super::*;
@@ -503,6 +504,72 @@ mod test {
             helper
                 .advance(tag(current_tick).force(true))
                 .assert(true, current_tick);
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn clock_map_workflow(execution in proptest::collection::vec(clock_tag(), 0..4096)) {
+            let mut helper = Helper::default();
+
+            for clock_tag in execution {
+                let current_tick = helper.clock_map.current_tick(clock_tag.peer_id, clock_tag.clock_id);
+
+                let expected_status = current_tick.is_none()
+                    || current_tick < Some(clock_tag.clock_tick)
+                    || clock_tag.clock_tick == 0
+                    || clock_tag.force;
+
+                let expected_tick = if clock_tag.force {
+                    clock_tag.clock_tick
+                } else {
+                    clock_tag.clock_tick.max(current_tick.unwrap_or(0))
+                };
+
+                helper.advance(clock_tag).assert(expected_status, expected_tick);
+            }
+        }
+
+        #[ignore]
+        #[test]
+        fn clock_map_clocks_isolation(execution in proptest::collection::vec(clock_tag(), 4096)) {
+            let mut helper = Helper::default();
+
+            for clock_tag in execution {
+                // Back-up current state
+                let backup = helper.clone();
+
+                // Advance the clock map
+                helper.advance(clock_tag);
+
+                // Ensure that no more than a single entry in the clock map was updated during advance
+                let helper_len = helper.clock_map.clocks.len();
+                let backup_len = backup.clock_map.clocks.len();
+
+                assert!(helper_len == backup_len || helper_len == backup_len + 1);
+
+                for (key, clock) in backup.clock_map.clocks {
+                    if clock_tag.peer_id == key.peer_id && clock_tag.clock_id == key.clock_id {
+                        continue;
+                    }
+
+                    assert_eq!(
+                        Some(clock.current_tick),
+                        helper.clock_map.current_tick(key.peer_id, key.clock_id),
+                    );
+                }
+            }
+        }
+    }
+
+    prop_compose! {
+        fn clock_tag() (
+            peer_id in 0..128_u64,
+            clock_id in 0..64_u32,
+            clock_tick in any::<u64>(),
+            force in any::<bool>(),
+        ) -> ClockTag {
+            ClockTag::new(peer_id, clock_id, clock_tick).force(force)
         }
     }
 
