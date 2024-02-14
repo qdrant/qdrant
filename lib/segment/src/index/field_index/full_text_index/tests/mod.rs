@@ -1,10 +1,11 @@
 use common::types::PointOffsetType;
+use rstest::rstest;
 use tempfile::Builder;
 
 use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
 use crate::data_types::text_index::{TextIndexParams, TextIndexType, TokenizerType};
 use crate::index::field_index::full_text_index::text_index::FullTextIndex;
-use crate::index::field_index::ValueIndexer;
+use crate::index::field_index::{PayloadFieldIndex, ValueIndexer};
 
 fn get_texts() -> Vec<String> {
     vec![
@@ -149,8 +150,10 @@ fn get_texts() -> Vec<String> {
     ]
 }
 
-#[test]
-fn test_prefix_search() {
+#[rstest]
+#[case(true)]
+#[case(false)]
+fn test_prefix_search(#[case] immutable: bool) {
     let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
     let config = TextIndexParams {
         r#type: TextIndexType::Text,
@@ -161,7 +164,7 @@ fn test_prefix_search() {
     };
 
     let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
-    let mut index = FullTextIndex::new(db, config, "text");
+    let mut index = FullTextIndex::new(db.clone(), config.clone(), "text", true);
     index.recreate().unwrap();
 
     let texts = get_texts();
@@ -172,13 +175,17 @@ fn test_prefix_search() {
             .unwrap();
     }
 
+    if immutable {
+        index = FullTextIndex::new(db, config, "text", false);
+        index.load().unwrap();
+    }
+
     let res: Vec<_> = index.query("ROBO").collect();
 
     let query = index.parse_query("ROBO");
 
-    for idx in res.iter() {
-        let doc = index.get_doc(*idx).unwrap();
-        assert!(query.check_match(doc));
+    for idx in res.iter().copied() {
+        assert!(index.check_match(&query, idx));
     }
 
     assert_eq!(res.len(), 3);
@@ -188,8 +195,7 @@ fn test_prefix_search() {
     let query = index.parse_query("q231");
 
     for idx in [1, 2, 3] {
-        let doc = index.get_doc(idx).unwrap();
-        assert!(!query.check_match(doc));
+        assert!(!index.check_match(&query, idx));
     }
 
     assert_eq!(res.len(), 0);

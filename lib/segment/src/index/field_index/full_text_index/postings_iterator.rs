@@ -4,6 +4,7 @@ use super::posting_list::PostingList;
 
 pub fn intersect_postings_iterator<'a>(
     mut postings: Vec<&'a PostingList>,
+    filter: impl Fn(PointOffsetType) -> bool + 'a,
 ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
     let smallest_posting_idx = postings
         .iter()
@@ -14,7 +15,7 @@ pub fn intersect_postings_iterator<'a>(
     let smallest_posting = postings.remove(smallest_posting_idx);
 
     let and_iter = smallest_posting
-        .iter()
+        .iter(filter)
         .filter(move |doc_id| postings.iter().all(|posting| posting.contains(doc_id)));
 
     Box::new(and_iter)
@@ -45,7 +46,7 @@ mod tests {
         p3.insert(7);
 
         let postings = vec![&p1, &p2, &p3];
-        let merged = intersect_postings_iterator(postings);
+        let merged = intersect_postings_iterator(postings, |_| true);
 
         let res = merged.collect::<Vec<_>>();
 

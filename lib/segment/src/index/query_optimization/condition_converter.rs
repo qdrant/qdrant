@@ -296,9 +296,7 @@ pub fn get_match_checkers(index: &FieldIndex, cond_match: Match) -> Option<Condi
             FieldIndex::FullTextIndex(full_text_index) => {
                 let parsed_query = full_text_index.parse_query(&text);
                 Some(Box::new(move |point_id: PointOffsetType| {
-                    full_text_index
-                        .get_doc(point_id)
-                        .map_or(false, |doc| parsed_query.check_match(doc))
+                    full_text_index.check_match(&parsed_query, point_id)
                 }))
             }
             _ => None,

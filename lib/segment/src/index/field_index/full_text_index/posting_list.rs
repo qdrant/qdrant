@@ -35,8 +35,15 @@ impl PostingList {
         self.list.binary_search(val).is_ok()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = PointOffsetType> + '_ {
-        self.list.iter().copied()
+    pub fn iter<'a>(
+        &'a self,
+        filter: impl Fn(PointOffsetType) -> bool + 'a,
+    ) -> impl Iterator<Item = PointOffsetType> + 'a {
+        self.list.iter().copied().filter(move |&idx| filter(idx))
+    }
+
+    pub fn shrink_to_fit(&mut self) {
+        self.list.shrink_to_fit();
     }
 }
 
