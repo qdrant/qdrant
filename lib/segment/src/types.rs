@@ -2281,6 +2281,8 @@ mod tests {
     #[case::rfc_3339_and_decimals("2020-03-01T00:00:00.123456Z")]
     #[case::without_z("2020-03-01T00:00:00")]
     #[case::without_z_and_decimals("2020-03-01T00:00:00.123456")]
+    #[case::space_sep_without_z("2020-03-01 00:00:00")]
+    #[case::space_sep_without_z_and_decimals("2020-03-01 00:00:00.123456")]
     fn test_datetime_deserialization(#[case] datetime: &str) {
         let datetime = DateTimePayloadType::from_str(datetime).unwrap();
         let serialized = serde_json::to_string(&datetime).unwrap();
