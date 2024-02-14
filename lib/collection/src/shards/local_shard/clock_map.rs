@@ -549,14 +549,13 @@ mod test {
                 assert!(helper_len == backup_len || helper_len == backup_len + 1);
 
                 for (key, clock) in backup.clock_map.clocks {
-                    if clock_tag.peer_id == key.peer_id && clock_tag.clock_id == key.clock_id {
-                        continue;
-                    }
+                    let current_tick = helper.clock_map.current_tick(key.peer_id, key.clock_id);
 
-                    assert_eq!(
-                        Some(clock.current_tick),
-                        helper.clock_map.current_tick(key.peer_id, key.clock_id),
-                    );
+                    if clock_tag.peer_id == key.peer_id && clock_tag.clock_id == key.clock_id {
+                        assert!(current_tick.is_some());
+                    } else {
+                        assert_eq!(current_tick, Some(clock.current_tick));
+                    }
                 }
             }
         }
