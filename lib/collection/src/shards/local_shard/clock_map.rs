@@ -387,7 +387,7 @@ impl From<Error> for CollectionError {
 #[cfg(test)]
 mod test {
     use proptest::prelude::*;
-    use test_case::test_case;
+    use rstest::rstest;
 
     use super::*;
 
@@ -415,25 +415,28 @@ mod test {
         assert_eq!(input, output);
     }
 
-    #[test_case(Helper::empty(); "with empty clock map")]
-    #[test_case(Helper::at_tick_0(); "with clock map at tick 0")]
-    fn clock_map_accept_tick_0(mut helper: Helper) {
+    #[rstest]
+    #[case::with_empty_clock_map(Helper::empty())]
+    #[case::with_clock_map_at_tick_0(Helper::at_tick_0())]
+    fn clock_map_accept_tick_0(#[case] mut helper: Helper) {
         // Accept tick `0`
         helper.advance(tag(0)).assert(true, 0);
     }
 
-    #[test_case(Helper::empty(); "with empty clock map")]
-    #[test_case(Helper::at_tick_0(); "with clock map at tick 0")]
-    fn clock_map_advance_to_next_tick(mut helper: Helper) {
+    #[rstest]
+    #[case::with_empty_clock_map(Helper::empty())]
+    #[case::with_clock_map_at_tick_0(Helper::at_tick_0())]
+    fn clock_map_advance_to_next_tick(#[case] mut helper: Helper) {
         // Advance to the next tick
         for tick in 1..10 {
             helper.advance(tag(tick)).assert(true, tick);
         }
     }
 
-    #[test_case(Helper::empty(); "with empty clock map")]
-    #[test_case(Helper::at_tick_0(); "with clock map at tick 0")]
-    fn clock_map_advance_to_newer_tick(mut helper: Helper) {
+    #[rstest]
+    #[case::with_empty_clock_map(Helper::empty())]
+    #[case::with_clock_map_at_tick_0(Helper::at_tick_0())]
+    fn clock_map_advance_to_newer_tick(#[case] mut helper: Helper) {
         // Advance to a newer tick
         for tick in [10, 20, 30, 40, 50] {
             helper.advance(tag(tick)).assert(true, tick);
@@ -473,9 +476,10 @@ mod test {
         }
     }
 
-    #[test_case(Helper::empty(); "with empty clock map")]
-    #[test_case(Helper::at_tick_0(); "with clock map at tick 0")]
-    fn clock_map_advance_to_newer_tick_with_force_true(mut helper: Helper) {
+    #[rstest]
+    #[case::with_empty_clock_map(Helper::empty())]
+    #[case::with_clock_map_at_tick_0(Helper::at_tick_0())]
+    fn clock_map_advance_to_newer_tick_with_force_true(#[case] mut helper: Helper) {
         // Advance to a newer tick with `force = true`
         for tick in [10, 20, 30, 40, 50] {
             helper.advance(tag(tick).force(true)).assert(true, tick);
