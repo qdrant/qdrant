@@ -43,7 +43,7 @@ enum TestRecord {
     Struct2(TestInternalStruct2),
 }
 
-type Result<T> = result::Result<T, WalError>;
+pub(super) type Result<T> = result::Result<T, WalError>;
 
 #[derive(Debug, Deserialize, Serialize)]
 struct WalState {
