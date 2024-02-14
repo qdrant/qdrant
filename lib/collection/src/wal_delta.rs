@@ -250,10 +250,19 @@ mod tests {
         a_wal.write(&operation_with_clock_tag).unwrap();
         b_wal.write(&operation_with_clock_tag).unwrap();
         c_wal.write(&operation_with_clock_tag).unwrap();
-        a_clock_0.advance_to(clock_tick);
-        a_clock_map.advance_clock(clock_tag);
-        b_clock_map.advance_clock(clock_tag);
-        c_clock_map.advance_clock(clock_tag);
+
+        let mut clock_tag_a = clock_tag;
+        let mut clock_tag_b = clock_tag;
+        let mut clock_tag_c = clock_tag;
+
+        let _ = a_clock_map.advance_clock_and_correct_tag(&mut clock_tag_a);
+        let _ = b_clock_map.advance_clock_and_correct_tag(&mut clock_tag_b);
+        let _ = c_clock_map.advance_clock_and_correct_tag(&mut clock_tag_c);
+
+        a_clock_0.advance_to(clock_tag_a.clock_tick);
+        a_clock_0.advance_to(clock_tag_b.clock_tick);
+        a_clock_0.advance_to(clock_tag_c.clock_tick);
+
         drop(a_clock_0);
 
         // Create operation on peer A
