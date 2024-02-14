@@ -1239,7 +1239,7 @@ mod tests {
             // If list is not empty, we have not seen all numbers
             assert!(
                 must_see_ticks.is_empty(),
-                "WAL ordering property violated; following operations did not cover ticks [{}] (peer_id: {}, clock_id: {}, max_tick: {highest})",
+                "WAL ordering property violated; following operations did not cover ticks [{}] in order (peer_id: {}, clock_id: {}, max_tick: {highest})",
                 must_see_ticks.into_iter().map(|tick| tick.to_string()).collect::<Vec<_>>().join(", "),
                 clock_tag.peer_id,
                 clock_tag.clock_id,
