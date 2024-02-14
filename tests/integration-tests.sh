@@ -20,11 +20,8 @@ else
   ./target/debug/qdrant &
 fi
 
-# Sleep to make sure the process has started (workaround for empty pidof)
-sleep 5
-
 ## Capture PID of the run
-PID=$(pidof "./target/debug/qdrant")
+PID=$!
 echo $PID
 
 function clear_after_tests()
@@ -34,6 +31,7 @@ function clear_after_tests()
   echo "END"
 }
 
+trap clear_after_tests SIGINT
 trap clear_after_tests EXIT
 
 until curl --output /dev/null --silent --get --fail http://$QDRANT_HOST/collections; do

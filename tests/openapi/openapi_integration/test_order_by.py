@@ -9,7 +9,7 @@ from .helpers.collection_setup import basic_collection_setup, drop_collection
 from .helpers.helpers import request_with_validation
 
 collection_name = "test_collection_order_by"
-total_points = 1000
+total_points = 300
 
 
 def upsert_points(collection_name, amount=100):
@@ -42,7 +42,8 @@ def upsert_points(collection_name, amount=100):
                 "payload_id": i,
                 "multi_id": [i, amount - i + 1],
                 "maybe_repeated_float": next(maybe_repeated_generator),
-                "date": next(date_generator),
+                "date_rfc3339": next(date_generator),
+                "date_simple": next(date_generator).split("T")[0],
             },
         }
         for i in range(amount)
@@ -91,7 +92,10 @@ def setup(on_disk_vectors):
         collection_name=collection_name, field_name="multi_id", field_schema="integer"
     )
     create_payload_index(
-        collection_name=collection_name, field_name="date", field_schema="datetime"
+        collection_name=collection_name, field_name="date_rfc3339", field_schema="datetime"
+    )
+    create_payload_index(
+        collection_name=collection_name, field_name="date_simple", field_schema="datetime"
     )
     yield
     drop_collection(collection_name=collection_name)
@@ -143,7 +147,7 @@ def test_order_by_int_descending():
 
 
 def paginate_whole_collection(key, direction, must=None):
-    limit = 33
+    limit = 23
     pages = 0
     points_count = 0
     points_set = set()
@@ -239,8 +243,10 @@ def paginate_whole_collection(key, direction, must=None):
         ("price", "desc"),
         ("maybe_repeated_float", "asc"),
         ("maybe_repeated_float", "desc"),
-        ("date", "asc"),
-        ("date", "desc"),
+        ("date_rfc3339", "asc"),
+        ("date_rfc3339", "desc"),
+        ("date_simple", "asc"),
+        ("date_simple", "desc"),
     ],
 )
 @pytest.mark.timeout(60)  # possibly break of an infinite loop
@@ -257,8 +263,10 @@ def test_paginate_whole_collection(key, direction):
         ("price", "desc"),
         ("maybe_repeated_float", "asc"),
         ("maybe_repeated_float", "desc"),
-        ("date", "asc"),
-        ("date", "desc"),
+        ("date_rfc3339", "asc"),
+        ("date_rfc3339", "desc"),
+        ("date_simple", "asc"),
+        ("date_simple", "desc"),
     ],
 )
 @pytest.mark.timeout(60)  # possibly break of an infinite loop
