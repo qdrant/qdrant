@@ -71,19 +71,19 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
     let permit_cpu_count = num_rayon_threads(0);
     let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
 
+    let mut sparse_vector_index: SparseVectorIndex<InvertedIndexRam> = SparseVectorIndex::open(
+        index_config,
+        id_tracker.clone(),
+        vector_storage.clone(),
+        wrapped_payload_index.clone(),
+        index_dir.path(),
+        &stopped,
+    )
+    .unwrap();
+
     // intent: measure in-memory build time from storage
     group.bench_function("build-ram-index", |b| {
         b.iter(|| {
-            let mut sparse_vector_index: SparseVectorIndex<InvertedIndexRam> =
-                SparseVectorIndex::open(
-                    index_config,
-                    id_tracker.clone(),
-                    vector_storage.clone(),
-                    wrapped_payload_index.clone(),
-                    index_dir.path(),
-                    &stopped,
-                )
-                .unwrap();
             sparse_vector_index
                 .build_index(permit.clone(), &stopped)
                 .unwrap();
