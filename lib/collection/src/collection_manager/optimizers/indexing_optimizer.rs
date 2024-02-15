@@ -297,6 +297,7 @@ mod tests {
     use segment::entry::entry_point::SegmentEntry;
     use segment::fixtures::index_fixtures::random_vector;
     use segment::index::hnsw_index::num_rayon_threads;
+    use segment::json_path::JsonPath;
     use segment::types::{Distance, Payload, PayloadSchemaType};
     use serde_json::json;
     use tempfile::Builder;
@@ -431,7 +432,7 @@ mod tests {
         let mut rng = thread_rng();
         let mut holder = SegmentHolder::default();
 
-        let payload_field = "number".to_owned();
+        let payload_field: JsonPath = "number".parse().unwrap();
 
         let stopped = AtomicBool::new(false);
         let dim = 256;
@@ -520,7 +521,7 @@ mod tests {
             locked_holder.deref(),
             opnum.next().unwrap(),
             &FieldIndexOperations::CreateIndex(CreateIndex {
-                field_name: payload_field.to_owned(),
+                field_name: payload_field.clone(),
                 field_schema: Some(PayloadSchemaType::Integer.into()),
             }),
         )

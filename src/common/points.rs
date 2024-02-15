@@ -26,6 +26,7 @@ use collection::operations::{
 };
 use collection::shards::shard::ShardId;
 use schemars::JsonSchema;
+use segment::json_path::JsonPath;
 use segment::types::{PayloadFieldSchema, PayloadKeyType, ScoredPoint};
 use serde::{Deserialize, Serialize};
 use storage::content_manager::collection_meta_ops::{
@@ -638,7 +639,7 @@ pub async fn do_create_index(
 pub async fn do_delete_index_internal(
     toc: Arc<TableOfContent>,
     collection_name: String,
-    index_name: String,
+    index_name: JsonPath,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     wait: bool,
@@ -667,7 +668,7 @@ pub async fn do_delete_index_internal(
 pub async fn do_delete_index(
     dispatcher: Arc<Dispatcher>,
     collection_name: String,
-    index_name: String,
+    index_name: JsonPath,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     wait: bool,

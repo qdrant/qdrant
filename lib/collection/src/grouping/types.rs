@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use segment::data_types::groups::GroupId;
+use segment::json_path::JsonPath;
 use segment::types::{PointIdType, ScoredPoint};
 
 use crate::lookup::WithLookup;
@@ -44,7 +45,7 @@ pub struct CoreGroupRequest {
     pub source: CoreSearchRequest,
 
     /// Path to the field to group by
-    pub group_by: String,
+    pub group_by: JsonPath,
 
     /// Limit of points to return per group
     pub group_size: usize,

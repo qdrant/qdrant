@@ -485,8 +485,8 @@ mod tests {
 
     use super::*;
     use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
-    use crate::common::utils::MultiValue;
     use crate::fixtures::payload_fixtures::random_geo_payload;
+    use crate::json_path::path;
     use crate::types::test_utils::build_polygon;
     use crate::types::{GeoLineString, GeoPolygon, GeoRadius};
 
@@ -512,12 +512,12 @@ mod tests {
 
     const FIELD_NAME: &str = "test";
 
-    fn condition_for_geo_radius(key: String, geo_radius: GeoRadius) -> FieldCondition {
-        FieldCondition::new_geo_radius(key, geo_radius)
+    fn condition_for_geo_radius(key: &str, geo_radius: GeoRadius) -> FieldCondition {
+        FieldCondition::new_geo_radius(path(key), geo_radius)
     }
 
-    fn condition_for_geo_polygon(key: String, geo_polygon: GeoPolygon) -> FieldCondition {
-        FieldCondition::new_geo_polygon(key, geo_polygon)
+    fn condition_for_geo_polygon(key: &str, geo_polygon: GeoPolygon) -> FieldCondition {
+        FieldCondition::new_geo_polygon(path(key), geo_polygon)
     }
 
     fn build_random_index(
@@ -536,8 +536,9 @@ mod tests {
         for idx in 0..num_points {
             let geo_points = random_geo_payload(&mut rnd, num_geo_values..=num_geo_values);
             let array_payload = Value::Array(geo_points);
-            let payload = MultiValue::one(&array_payload);
-            index.add_point(idx as PointOffsetType, &payload).unwrap();
+            index
+                .add_point(idx as PointOffsetType, &[&array_payload])
+                .unwrap();
         }
         assert_eq!(index.points_count(), num_points);
         assert_eq!(index.points_values_count(), num_points * num_geo_values);
@@ -732,7 +733,7 @@ mod tests {
         };
         check_cardinality_match(
             polygon_hashes(&europe_no_berlin, GEO_QUERY_MAX_REGION).unwrap(),
-            condition_for_geo_polygon("test".to_string(), europe_no_berlin.clone()),
+            condition_for_geo_polygon("test", europe_no_berlin.clone()),
             is_appendable,
         );
     }
@@ -772,7 +773,7 @@ mod tests {
         let nyc_hashes = circle_hashes(&geo_radius, GEO_QUERY_MAX_REGION).unwrap();
         check_cardinality_match(
             nyc_hashes,
-            condition_for_geo_radius("test".to_string(), geo_radius.clone()),
+            condition_for_geo_radius("test", geo_radius.clone()),
             is_appendable,
         );
 
@@ -781,7 +782,7 @@ mod tests {
         let polygon_hashes = polygon_hashes(&geo_polygon, GEO_QUERY_MAX_REGION).unwrap();
         check_cardinality_match(
             polygon_hashes,
-            condition_for_geo_polygon("test".to_string(), geo_polygon),
+            condition_for_geo_polygon("test", geo_polygon),
             is_appendable,
         );
     }
@@ -822,7 +823,7 @@ mod tests {
             radius: r_meters,
         };
         check_geo_indexed_filtering(
-            condition_for_geo_radius("test".to_string(), geo_radius.clone()),
+            condition_for_geo_radius("test", geo_radius.clone()),
             |geo_point| geo_radius.check_point(geo_point),
             is_appendable,
         );
@@ -835,7 +836,7 @@ mod tests {
             (-60.0, 37.0),
         ]);
         check_geo_indexed_filtering(
-            condition_for_geo_polygon("test".to_string(), geo_polygon.clone()),
+            condition_for_geo_polygon("test", geo_polygon.clone()),
             |geo_point| geo_polygon.convert().check_point(geo_point),
             is_appendable,
         );
@@ -856,9 +857,7 @@ mod tests {
             assert!(size < 1000);
         }
 
-        let blocks = field_index
-            .payload_blocks(100, "test".to_string())
-            .collect_vec();
+        let blocks = field_index.payload_blocks(100, path("test")).collect_vec();
         blocks.iter().for_each(|block| {
             let block_points = field_index.filter(&block.condition).unwrap().collect_vec();
             assert_eq!(block_points.len(), block.cardinality);
@@ -885,23 +884,21 @@ mod tests {
                 "lat": NYC.lat
             }
         ]);
-        let payload = MultiValue::one(&geo_values);
-        index.add_point(1, &payload).unwrap();
+        index.add_point(1, &[&geo_values]).unwrap();
 
         // around NYC
         let nyc_geo_radius = GeoRadius {
             center: NYC,
             radius: r_meters,
         };
-        let field_condition = condition_for_geo_radius("test".to_string(), nyc_geo_radius.clone());
+        let field_condition = condition_for_geo_radius("test", nyc_geo_radius.clone());
         let card = index.estimate_cardinality(&field_condition);
         let card = card.unwrap();
         assert_eq!(card.min, 1);
         assert_eq!(card.max, 1);
         assert_eq!(card.exp, 1);
 
-        let field_condition =
-            condition_for_geo_polygon("test".to_string(), radius_to_polygon(&nyc_geo_radius));
+        let field_condition = condition_for_geo_polygon("test", radius_to_polygon(&nyc_geo_radius));
         let card = index.estimate_cardinality(&field_condition);
         let card = card.unwrap();
         assert_eq!(card.min, 1);
@@ -913,8 +910,7 @@ mod tests {
             center: BERLIN,
             radius: r_meters,
         };
-        let field_condition =
-            condition_for_geo_radius("test".to_string(), berlin_geo_radius.clone());
+        let field_condition = condition_for_geo_radius("test", berlin_geo_radius.clone());
         let card = index.estimate_cardinality(&field_condition);
         let card = card.unwrap();
         assert_eq!(card.min, 1);
@@ -922,7 +918,7 @@ mod tests {
         assert_eq!(card.exp, 1);
 
         let field_condition =
-            condition_for_geo_polygon("test".to_string(), radius_to_polygon(&berlin_geo_radius));
+            condition_for_geo_polygon("test", radius_to_polygon(&berlin_geo_radius));
         let card = index.estimate_cardinality(&field_condition);
         let card = card.unwrap();
         assert_eq!(card.min, 1);
@@ -934,8 +930,7 @@ mod tests {
             center: TOKYO,
             radius: r_meters,
         };
-        let field_condition =
-            condition_for_geo_radius("test".to_string(), tokyo_geo_radius.clone());
+        let field_condition = condition_for_geo_radius("test", tokyo_geo_radius.clone());
         let card = index.estimate_cardinality(&field_condition);
         let card = card.unwrap();
         // no points found
@@ -944,7 +939,7 @@ mod tests {
         assert_eq!(card.exp, 0);
 
         let field_condition =
-            condition_for_geo_polygon("test".to_string(), radius_to_polygon(&tokyo_geo_radius));
+            condition_for_geo_polygon("test", radius_to_polygon(&tokyo_geo_radius));
         let card = index.estimate_cardinality(&field_condition);
         let card = card.unwrap();
         // no points found
@@ -972,16 +967,14 @@ mod tests {
                 "lat": POTSDAM.lat
             }
         ]);
-        let payload = MultiValue::one(&geo_values);
-        index.add_point(1, &payload).unwrap();
+        index.add_point(1, &[&geo_values]).unwrap();
 
         let berlin_geo_radius = GeoRadius {
             center: BERLIN,
             radius: 50_000.0, // Berlin <-> Potsdam is 27 km
         };
         // check with geo_radius
-        let field_condition =
-            condition_for_geo_radius("test".to_string(), berlin_geo_radius.clone());
+        let field_condition = condition_for_geo_radius("test", berlin_geo_radius.clone());
         let card = index.estimate_cardinality(&field_condition);
         let card = card.unwrap();
         // handle properly that a single point matches via two different geo payloads
@@ -991,7 +984,7 @@ mod tests {
 
         // check with geo_polygon
         let field_condition =
-            condition_for_geo_polygon("test".to_string(), radius_to_polygon(&berlin_geo_radius));
+            condition_for_geo_polygon("test", radius_to_polygon(&berlin_geo_radius));
         let card = index.estimate_cardinality(&field_condition);
         let card = card.unwrap();
         assert_eq!(card.min, 1);
@@ -1021,8 +1014,7 @@ mod tests {
                     "lat": POTSDAM.lat
                 }
             ]);
-            let payload = MultiValue::one(&geo_values);
-            index.add_point(1, &payload).unwrap();
+            index.add_point(1, &[&geo_values]).unwrap();
             index.flusher()().unwrap();
             drop(index);
         }
@@ -1037,14 +1029,13 @@ mod tests {
         };
 
         // check with geo_radius
-        let field_condition =
-            condition_for_geo_radius("test".to_string(), berlin_geo_radius.clone());
+        let field_condition = condition_for_geo_radius("test", berlin_geo_radius.clone());
         let point_offsets = new_index.filter(&field_condition).unwrap().collect_vec();
         assert_eq!(point_offsets, vec![1]);
 
         // check with geo_polygon
         let field_condition =
-            condition_for_geo_polygon("test".to_string(), radius_to_polygon(&berlin_geo_radius));
+            condition_for_geo_polygon("test", radius_to_polygon(&berlin_geo_radius));
         let point_offsets = new_index.filter(&field_condition).unwrap().collect_vec();
         assert_eq!(point_offsets, vec![1]);
     }
@@ -1069,7 +1060,7 @@ mod tests {
                     "lat": POTSDAM.lat
                 }
             ]);
-            let payload = MultiValue::one(&geo_values);
+            let payload = [&geo_values];
             index.add_point(1, &payload).unwrap();
             index.add_point(2, &payload).unwrap();
             index.remove_point(1).unwrap();

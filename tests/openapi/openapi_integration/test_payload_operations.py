@@ -245,7 +245,7 @@ def test_payload_operations():
         body={
             "payload": {"key6": "xxx"},
             "points": [1],
-            "key": ""
+            "key": None,
         }
     )
     assert response.ok

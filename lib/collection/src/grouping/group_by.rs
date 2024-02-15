@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use fnv::FnvBuildHasher;
 use indexmap::IndexSet;
+use segment::json_path::{JsonPath, JsonPathItem};
 use segment::types::{
     AnyVariants, Condition, FieldCondition, Filter, Match, ScoredPoint, WithPayloadInterface,
 };
@@ -38,7 +39,7 @@ pub struct GroupRequest {
     pub source: SourceRequest,
 
     /// Path to the field to group by
-    pub group_by: String,
+    pub group_by: JsonPath,
 
     /// Limit of points to return per group
     pub group_size: usize,
@@ -53,7 +54,7 @@ pub struct GroupRequest {
 impl GroupRequest {
     pub fn with_limit_from_request(
         source: SourceRequest,
-        group_by: String,
+        group_by: JsonPath,
         group_size: usize,
     ) -> Self {
         let limit = match &source {
@@ -107,8 +108,10 @@ impl GroupRequest {
 
 impl CoreGroupRequest {
     /// Make `group_by` field selector work with as `with_payload`.
-    fn group_by_to_payload_selector(&self, group_by: &str) -> WithPayloadInterface {
-        let group_by = group_by.strip_suffix("[]").unwrap_or(group_by).to_owned();
+    fn group_by_to_payload_selector(&self, group_by: &JsonPath) -> WithPayloadInterface {
+        let group_by = group_by
+            .strip_suffix(&[JsonPathItem::WildcardIndex])
+            .unwrap_or_else(|| group_by.clone());
         WithPayloadInterface::Fields(vec![group_by])
     }
 
@@ -403,20 +406,25 @@ pub async fn group_by(
 }
 
 /// Uses the set of values to create Match::Except's, if possible
-fn except_on(path: &str, values: Vec<Value>) -> Vec<Condition> {
+fn except_on(path: &JsonPath, values: Vec<Value>) -> Vec<Condition> {
     values_to_any_variants(values)
         .into_iter()
-        .map(|v| Condition::Field(FieldCondition::new_match(path, Match::new_except(v))))
+        .map(|v| {
+            Condition::Field(FieldCondition::new_match(
+                path.clone(),
+                Match::new_except(v),
+            ))
+        })
         .collect()
 }
 
 /// Uses the set of values to create Match::Any's, if possible
-fn match_on(path: &str, values: Vec<Value>) -> Vec<Condition> {
+fn match_on(path: &JsonPath, values: Vec<Value>) -> Vec<Condition> {
     values_to_any_variants(values)
         .into_iter()
         .map(|any_variants| {
             Condition::Field(FieldCondition::new_match(
-                path,
+                path.clone(),
                 Match::new_any(any_variants),
             ))
         })

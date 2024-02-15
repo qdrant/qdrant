@@ -21,6 +21,7 @@ use segment::data_types::vectors::{
     DenseVector, Named, NamedQuery, NamedVectorStruct, QueryVector, Vector, VectorElementType,
     VectorRef, VectorStruct, DEFAULT_VECTOR_NAME,
 };
+use segment::json_path::JsonPath;
 use segment::types::{
     Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, QuantizationConfig,
     ScoredPoint, SearchParams, SeqNumberType, ShardKey, WithPayloadInterface, WithVector,
@@ -283,7 +284,7 @@ pub struct ScrollRequest {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(untagged)]
 pub enum OrderByInterface {
-    Key(String),
+    Key(JsonPath),
     Struct(OrderBy),
 }
 
@@ -1735,8 +1736,7 @@ pub struct BaseGroupRequest {
     /// Payload field to group by, must be a string or number field.
     /// If the field contains more than 1 value, all values will be used for grouping.
     /// One point can be in multiple groups.
-    #[validate(length(min = 1))]
-    pub group_by: String,
+    pub group_by: JsonPath,
 
     /// Maximum amount of points to return per group
     #[validate(range(min = 1))]

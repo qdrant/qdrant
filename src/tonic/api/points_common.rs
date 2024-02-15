@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use api::grpc::conversions::proto_to_payloads;
+use api::grpc::conversions::{json_path_from_proto, proto_to_payloads};
 use api::grpc::qdrant::payload_index_params::IndexParams;
 use api::grpc::qdrant::points_update_operation::{ClearPayload, Operation, PointStructList};
 use api::grpc::qdrant::{
@@ -32,6 +32,7 @@ use collection::operations::types::{
 use collection::operations::vector_ops::{DeleteVectors, PointVectors, UpdateVectors};
 use collection::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
 use collection::shards::shard::ShardId;
+use itertools::Itertools;
 use segment::types::{
     ExtendedPointId, Filter, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
 };
@@ -326,6 +327,7 @@ pub async fn set_payload(
         shard_key_selector,
         key,
     } = set_payload_points;
+    let key = key.map(|k| json_path_from_proto(&k)).transpose()?;
 
     let (points, filter) = extract_points_selector(points_selector)?;
     let operation = collection::operations::payload_ops::SetPayload {
@@ -410,6 +412,7 @@ pub async fn delete_payload(
         ordering,
         shard_key_selector,
     } = delete_payload_points;
+    let keys = keys.iter().map(|k| json_path_from_proto(k)).try_collect()?;
 
     let (points, filter) = extract_points_selector(points_selector)?;
     let operation = DeletePayload {
@@ -773,6 +776,7 @@ pub async fn create_field_index(
         ordering,
     } = create_field_index_collection;
 
+    let field_name = json_path_from_proto(&field_name)?;
     let field_schema = convert_field_type(field_type, field_index_params)?;
 
     let operation = CreateFieldIndex {
@@ -812,6 +816,7 @@ pub async fn create_field_index_internal(
         ordering,
     } = create_field_index_collection;
 
+    let field_name = json_path_from_proto(&field_name)?;
     let field_schema = convert_field_type(field_type, field_index_params)?;
 
     let timing = Instant::now();
@@ -845,6 +850,8 @@ pub async fn delete_field_index(
         ordering,
     } = delete_field_index_collection;
 
+    let field_name = json_path_from_proto(&field_name)?;
+
     let timing = Instant::now();
     let result = do_delete_index(
         dispatcher,
@@ -874,6 +881,8 @@ pub async fn delete_field_index_internal(
         field_name,
         ordering,
     } = delete_field_index_collection;
+
+    let field_name = json_path_from_proto(&field_name)?;
 
     let timing = Instant::now();
     let result = do_delete_index_internal(

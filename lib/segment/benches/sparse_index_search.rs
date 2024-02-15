@@ -111,7 +111,7 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
 
     // filter by field
     let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
-        field_name,
+        field_name.parse().unwrap(),
         field_value.to_owned().into(),
     )));
 
@@ -137,7 +137,7 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
 
     // create payload field index
     payload_index
-        .set_indexed(field_name, Keyword.into())
+        .set_indexed(&field_name.parse().unwrap(), Keyword.into())
         .unwrap();
 
     drop(payload_index);

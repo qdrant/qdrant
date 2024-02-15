@@ -6114,13 +6114,16 @@
             "description": "Specify which fields to return",
             "type": "array",
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/JsonPath"
             }
           },
           {
             "$ref": "#/components/schemas/PayloadSelector"
           }
         ]
+      },
+      "JsonPath": {
+        "type": "string"
       },
       "PayloadSelector": {
         "description": "Specifies how to treat payload selector",
@@ -6143,7 +6146,7 @@
             "description": "Only include this payload keys",
             "type": "array",
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/JsonPath"
             }
           }
         },
@@ -6159,7 +6162,7 @@
             "description": "Exclude this fields from returning payload",
             "type": "array",
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/JsonPath"
             }
           }
         },
@@ -6505,8 +6508,7 @@
         ],
         "properties": {
           "key": {
-            "description": "Payload key",
-            "type": "string"
+            "$ref": "#/components/schemas/JsonPath"
           },
           "match": {
             "description": "Check if point has field with a given value",
@@ -6885,8 +6887,7 @@
         ],
         "properties": {
           "key": {
-            "description": "Payload field name",
-            "type": "string"
+            "$ref": "#/components/schemas/JsonPath"
           }
         }
       },
@@ -6938,7 +6939,7 @@
         ],
         "properties": {
           "key": {
-            "type": "string"
+            "$ref": "#/components/schemas/JsonPath"
           },
           "filter": {
             "$ref": "#/components/schemas/Filter"
@@ -7380,7 +7381,7 @@
       "OrderByInterface": {
         "anyOf": [
           {
-            "type": "string"
+            "$ref": "#/components/schemas/JsonPath"
           },
           {
             "$ref": "#/components/schemas/OrderBy"
@@ -7394,8 +7395,7 @@
         ],
         "properties": {
           "key": {
-            "description": "Payload key to order by",
-            "type": "string"
+            "$ref": "#/components/schemas/JsonPath"
           },
           "direction": {
             "description": "Direction of ordering: `asc` or `desc`. Default is ascending.",
@@ -7961,7 +7961,7 @@
         ],
         "properties": {
           "field_name": {
-            "type": "string"
+            "$ref": "#/components/schemas/JsonPath"
           },
           "field_schema": {
             "anyOf": [
@@ -8217,8 +8217,14 @@
           },
           "key": {
             "description": "Assigns payload to each point that satisfy this path of property",
-            "type": "string",
-            "nullable": true
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JsonPath"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -8233,7 +8239,7 @@
             "description": "List of payload keys to remove from payload",
             "type": "array",
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/JsonPath"
             }
           },
           "points": {
@@ -10344,9 +10350,7 @@
             "nullable": true
           },
           "group_by": {
-            "description": "Payload field to group by, must be a string or number field. If the field contains more than 1 value, all values will be used for grouping. One point can be in multiple groups.",
-            "type": "string",
-            "minLength": 1
+            "$ref": "#/components/schemas/JsonPath"
           },
           "group_size": {
             "description": "Maximum amount of points to return per group",
@@ -10542,9 +10546,7 @@
             ]
           },
           "group_by": {
-            "description": "Payload field to group by, must be a string or number field. If the field contains more than 1 value, all values will be used for grouping. One point can be in multiple groups.",
-            "type": "string",
-            "minLength": 1
+            "$ref": "#/components/schemas/JsonPath"
           },
           "group_size": {
             "description": "Maximum amount of points to return per group",

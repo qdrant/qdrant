@@ -3,7 +3,8 @@ use serde_json::Value;
 
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
-use crate::types::{Filter, Payload, PayloadKeyTypeRef};
+use crate::json_path::JsonPath;
+use crate::types::{Filter, Payload};
 
 /// Trait for payload data storage. Should allow filter checks
 pub trait PayloadStorage {
@@ -22,7 +23,7 @@ pub trait PayloadStorage {
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
-        key: &str,
+        key: &JsonPath,
     ) -> OperationResult<()>;
 
     /// Get payload for point
@@ -30,11 +31,7 @@ pub trait PayloadStorage {
     fn payload(&self, point_id: PointOffsetType) -> OperationResult<Payload>;
 
     /// Delete payload by key
-    fn delete(
-        &mut self,
-        point_id: PointOffsetType,
-        key: PayloadKeyTypeRef,
-    ) -> OperationResult<Vec<Value>>;
+    fn delete(&mut self, point_id: PointOffsetType, key: &JsonPath) -> OperationResult<Vec<Value>>;
 
     /// Drop all payload of the point
     fn drop(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>>;

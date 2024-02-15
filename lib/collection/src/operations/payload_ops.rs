@@ -1,4 +1,5 @@
 use schemars::JsonSchema;
+use segment::json_path::JsonPath;
 use segment::types::{Filter, Payload, PayloadKeyType, PointIdType};
 use serde;
 use serde::{Deserialize, Serialize};
@@ -21,7 +22,7 @@ pub struct SetPayload {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<ShardKeySelector>,
     /// Assigns payload to each point that satisfy this path of property
-    pub key: Option<String>,
+    pub key: Option<JsonPath>,
 }
 
 /// This data structure is used inside shard operations queue
@@ -37,7 +38,7 @@ pub struct SetPayloadOp {
     /// Assigns payload to each point that satisfy this filter condition
     pub filter: Option<Filter>,
     /// Payload selector to indicate property of payload, e.g. `a.b.c`
-    pub key: Option<String>,
+    pub key: Option<JsonPath>,
 }
 
 #[derive(Deserialize)]
@@ -46,7 +47,7 @@ struct SetPayloadShadow {
     pub points: Option<Vec<PointIdType>>,
     pub filter: Option<Filter>,
     pub shard_key: Option<ShardKeySelector>,
-    pub key: Option<String>,
+    pub key: Option<JsonPath>,
 }
 
 pub struct PointsSelectorValidationError;
@@ -282,7 +283,7 @@ mod tests {
                 assert!(payload.contains_key("key1"));
 
                 let payload_type = payload
-                    .get_value("key1")
+                    .get_value(&"key1".parse().unwrap())
                     .into_iter()
                     .next()
                     .cloned()
@@ -293,7 +294,11 @@ mod tests {
                     _ => panic!("Wrong payload type"),
                 }
 
-                let payload_type_json = payload.get_value("key3").into_iter().next().cloned();
+                let payload_type_json = payload
+                    .get_value(&"key3".parse().unwrap())
+                    .into_iter()
+                    .next()
+                    .cloned();
 
                 assert!(matches!(payload_type_json, Some(Value::Object(_))))
             }

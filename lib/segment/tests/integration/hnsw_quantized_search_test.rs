@@ -29,6 +29,7 @@ use serde_json::json;
 use tempfile::Builder;
 
 use crate::fixtures::segment::build_segment_1;
+use crate::utils::path;
 
 fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> usize {
     a[0].iter()
@@ -87,7 +88,7 @@ fn hnsw_quantized_search_test(
     }
 
     segment
-        .create_field_index(op_num, STR_KEY, Some(&Keyword.into()))
+        .create_field_index(op_num, &path(STR_KEY), Some(&Keyword.into()))
         .unwrap();
     op_num += 1;
     for n in 0..payloads_count {
@@ -146,7 +147,7 @@ fn hnsw_quantized_search_test(
         .map(|_| random_vector(&mut rnd, dim).into())
         .collect::<Vec<_>>();
     let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
-        STR_KEY,
+        path(STR_KEY),
         STR_KEY.to_owned().into(),
     )));
 

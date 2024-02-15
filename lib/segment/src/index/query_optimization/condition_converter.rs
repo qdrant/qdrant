@@ -98,7 +98,7 @@ pub fn condition_converter<'a>(
 
             Box::new(move |point_id| {
                 payload_provider.with_payload(point_id, |payload| {
-                    let field_values = payload.get_value(&nested_path).values();
+                    let field_values = payload.get_value(&nested_path);
 
                     for value in field_values {
                         if let Value::Object(object) = value {

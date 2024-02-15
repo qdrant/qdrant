@@ -360,7 +360,11 @@ mod tests {
         for &point_id in &segment_points_to_assign1 {
             assert!(segment_guard.has_point(point_id));
             let payload = segment_guard.payload(point_id).unwrap();
-            let payload_color = &(*payload.get_value("color").into_iter().next().unwrap()).clone();
+            let payload_color = payload
+                .get_value(&"color".parse().unwrap())
+                .into_iter()
+                .next()
+                .unwrap();
 
             match payload_color {
                 Value::String(x) => assert_eq!(x, "red"),
@@ -436,7 +440,11 @@ mod tests {
         );
 
         segment
-            .create_field_index(101, "keyword", Some(&PayloadSchemaType::Keyword.into()))
+            .create_field_index(
+                101,
+                &"keyword".parse().unwrap(),
+                Some(&PayloadSchemaType::Keyword.into()),
+            )
             .unwrap();
 
         let mut segment_id = holder.add(segment);

@@ -5,9 +5,10 @@ use serde_json::Value;
 
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
+use crate::json_path::JsonPath;
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use crate::payload_storage::PayloadStorage;
-use crate::types::{Payload, PayloadKeyTypeRef};
+use crate::types::Payload;
 
 impl PayloadStorage for InMemoryPayloadStorage {
     fn assign(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
@@ -24,7 +25,7 @@ impl PayloadStorage for InMemoryPayloadStorage {
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
-        key: &str,
+        key: &JsonPath,
     ) -> OperationResult<()> {
         match self.payload.get_mut(&point_id) {
             Some(point_payload) => point_payload.merge_by_key(payload, key),
@@ -44,11 +45,7 @@ impl PayloadStorage for InMemoryPayloadStorage {
         }
     }
 
-    fn delete(
-        &mut self,
-        point_id: PointOffsetType,
-        key: PayloadKeyTypeRef,
-    ) -> OperationResult<Vec<Value>> {
+    fn delete(&mut self, point_id: PointOffsetType, key: &JsonPath) -> OperationResult<Vec<Value>> {
         match self.payload.get_mut(&point_id) {
             Some(payload) => {
                 let res = payload.remove(key);
@@ -82,6 +79,7 @@ mod tests {
     use super::*;
     use crate::common::utils::IndexesMap;
     use crate::fixtures::payload_context_fixture::FixtureIdTracker;
+    use crate::json_path::path;
     use crate::payload_storage::query_checker::check_payload;
     use crate::types::{Condition, FieldCondition, Filter, OwnedPayloadRef};
 
@@ -107,9 +105,9 @@ mod tests {
             should: None,
             min_should: None,
             must: Some(vec![
-                Condition::Field(FieldCondition::new_match("age".to_string(), 43.into())),
+                Condition::Field(FieldCondition::new_match(path("age"), 43.into())),
                 Condition::Field(FieldCondition::new_match(
-                    "name".to_string(),
+                    path("name"),
                     "John Doe".to_string().into(),
                 )),
             ]),

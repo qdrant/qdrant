@@ -87,6 +87,11 @@ pub fn dummy_abort_shard_transfer() -> AbortShardTransfer {
     Arc::new(|_transfer, _reason| {})
 }
 
+#[cfg(test)]
+pub fn path(p: &str) -> segment::json_path::JsonPath {
+    p.parse().unwrap()
+}
+
 /// Default to a collection with all the shards local
 #[cfg(test)]
 pub async fn new_local_collection(

@@ -14,7 +14,7 @@ use schemars::_serde_json::Value;
 use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
-use crate::common::utils::{IndexesMap, JsonPathPayload, MultiValue};
+use crate::common::utils::IndexesMap;
 use crate::common::Flusher;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::index_selector::index_selector;
@@ -27,6 +27,7 @@ use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::struct_filter_context::StructFilterContext;
 use crate::index::visited_pool::VisitedPool;
 use crate::index::PayloadIndex;
+use crate::json_path::JsonPath;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::{FilterContext, PayloadStorage};
 use crate::telemetry::PayloadIndexTelemetry;
@@ -58,13 +59,13 @@ impl StructPayloadIndex {
     pub fn estimate_field_condition(
         &self,
         condition: &FieldCondition,
-        nested_path: Option<&JsonPathPayload>,
+        nested_path: Option<&JsonPath>,
     ) -> Option<CardinalityEstimation> {
-        let full_path = JsonPathPayload::extend_or_new(nested_path, &condition.key);
-        self.field_indexes.get(&full_path.path).and_then(|indexes| {
+        let full_path = JsonPath::extend_or_new(nested_path, &condition.key);
+        self.field_indexes.get(&full_path).and_then(|indexes| {
             // rewrite condition with fullpath to enable cardinality estimation
             let full_path_condition = FieldCondition {
-                key: full_path.path,
+                key: full_path,
                 ..condition.clone()
             };
 
@@ -197,7 +198,7 @@ impl StructPayloadIndex {
         payload_schema: PayloadFieldSchema,
     ) -> OperationResult<()> {
         let field_indexes = self.build_field_indexes(field, payload_schema)?;
-        self.field_indexes.insert(field.into(), field_indexes);
+        self.field_indexes.insert(field.clone(), field_indexes);
         Ok(())
     }
 
@@ -225,19 +226,18 @@ impl StructPayloadIndex {
     fn condition_cardinality(
         &self,
         condition: &Condition,
-        nested_path: Option<&JsonPathPayload>,
+        nested_path: Option<&JsonPath>,
     ) -> CardinalityEstimation {
         match condition {
             Condition::Filter(_) => panic!("Unexpected branching"),
             Condition::Nested(nested) => {
                 // propagate complete nested path in case of multiple nested layers
-                let full_path = JsonPathPayload::extend_or_new(nested_path, &nested.array_key());
+                let full_path = JsonPath::extend_or_new(nested_path, &nested.array_key());
                 self.estimate_nested_cardinality(nested.filter(), &full_path)
             }
             Condition::IsEmpty(IsEmptyCondition { is_empty: field }) => {
                 let available_points = self.available_point_count();
-                let full_path = JsonPathPayload::extend_or_new(nested_path, &field.key);
-                let full_path = full_path.path;
+                let full_path = JsonPath::extend_or_new(nested_path, &field.key);
 
                 let mut indexed_points = 0;
                 if let Some(field_indexes) = self.field_indexes.get(&full_path) {
@@ -265,8 +265,7 @@ impl StructPayloadIndex {
             }
             Condition::IsNull(IsNullCondition { is_null: field }) => {
                 let available_points = self.available_point_count();
-                let full_path = JsonPathPayload::extend_or_new(nested_path, &field.key);
-                let full_path = full_path.path;
+                let full_path = JsonPath::extend_or_new(nested_path, &field.key);
 
                 let mut indexed_points = 0;
                 if let Some(field_indexes) = self.field_indexes.get(&full_path) {
@@ -383,7 +382,7 @@ impl PayloadIndex for StructPayloadIndex {
     fn estimate_nested_cardinality(
         &self,
         query: &Filter,
-        nested_path: &JsonPathPayload,
+        nested_path: &JsonPath,
     ) -> CardinalityEstimation {
         let available_points = self.available_point_count();
         let estimator =
@@ -477,7 +476,7 @@ impl PayloadIndex for StructPayloadIndex {
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
-        key: &Option<String>,
+        key: &Option<JsonPath>,
     ) -> OperationResult<()> {
         if let Some(key) = key {
             self.payload
@@ -489,10 +488,10 @@ impl PayloadIndex for StructPayloadIndex {
 
         let updated_payload = self.payload(point_id)?;
         for (field, field_index) in &mut self.field_indexes {
-            let field_value_opt = updated_payload.get_value_opt(field);
-            if let Some(field_value) = &field_value_opt {
+            let field_value = updated_payload.get_value(field);
+            if !field_value.is_empty() {
                 for index in field_index {
-                    index.add_point(point_id, field_value)?;
+                    index.add_point(point_id, &field_value)?;
                 }
             } else {
                 for index in field_index {
@@ -552,12 +551,11 @@ impl PayloadIndex for StructPayloadIndex {
         let mut schema = None;
         self.payload.borrow().iter(|_id, payload: &Payload| {
             let field_value = payload.get_value(key);
-            match field_value {
-                MultiValue::Single(field_value) => schema = field_value.and_then(infer_value_type),
-                MultiValue::Multiple(fields_values) => {
-                    schema = infer_collection_value_type(fields_values)
-                }
-            }
+            schema = match field_value.as_slice() {
+                [] => None,
+                [single] => infer_value_type(single),
+                multiple => infer_collection_value_type(multiple.iter().copied()),
+            };
             Ok(false)
         })?;
         Ok(schema)

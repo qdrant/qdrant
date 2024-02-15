@@ -14,7 +14,6 @@ use crate::common::operation_error::OperationResult;
 use crate::common::operation_time_statistics::{
     OperationDurationStatistics, OperationDurationsAggregator, ScopeDurationMeasurer,
 };
-use crate::common::utils::JsonPathPayload;
 use crate::common::Flusher;
 use crate::data_types::vectors::{QueryVector, VectorRef};
 use crate::id_tracker::IdTrackerSS;
@@ -22,6 +21,7 @@ use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::PayloadConfig;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndex};
+use crate::json_path::JsonPath;
 use crate::payload_storage::{ConditionCheckerSS, FilterContext};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{
@@ -123,7 +123,7 @@ impl PayloadIndex for PlainPayloadIndex {
     fn estimate_nested_cardinality(
         &self,
         query: &Filter,
-        _nested_path: &JsonPathPayload,
+        _nested_path: &JsonPath,
     ) -> CardinalityEstimation {
         self.estimate_cardinality(query)
     }
@@ -161,7 +161,7 @@ impl PayloadIndex for PlainPayloadIndex {
         &mut self,
         _point_id: PointOffsetType,
         _payload: &Payload,
-        _key: &Option<String>,
+        _key: &Option<JsonPath>,
     ) -> OperationResult<()> {
         unreachable!()
     }
