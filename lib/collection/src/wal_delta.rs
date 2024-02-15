@@ -350,9 +350,9 @@ mod tests {
                 assert_eq!(b, c);
             });
 
-        assert_wal_ordering_property(a_wal);
-        assert_wal_ordering_property(b_wal);
-        assert_wal_ordering_property(c_wal);
+        assert_wal_ordering_property(&a_wal);
+        assert_wal_ordering_property(&b_wal);
+        assert_wal_ordering_property(&c_wal);
     }
 
     /// Test WAL delta resolution with a many missed operations on node C.
@@ -444,9 +444,9 @@ mod tests {
                 assert_eq!(b, c);
             });
 
-        assert_wal_ordering_property(a_wal);
-        assert_wal_ordering_property(b_wal);
-        assert_wal_ordering_property(c_wal);
+        assert_wal_ordering_property(&a_wal);
+        assert_wal_ordering_property(&b_wal);
+        assert_wal_ordering_property(&c_wal);
     }
 
     /// Test WAL delta resolution with a many intermixed operations on node C. Intermixed as in,
@@ -547,9 +547,9 @@ mod tests {
                 assert_eq!(b, c);
             });
 
-        assert_wal_ordering_property(a_wal);
-        assert_wal_ordering_property(b_wal);
-        assert_wal_ordering_property(c_wal);
+        assert_wal_ordering_property(&a_wal);
+        assert_wal_ordering_property(&b_wal);
+        assert_wal_ordering_property(&c_wal);
     }
 
     /// Test WAL delta resolution with operations in a different order on node A and B.
@@ -692,9 +692,9 @@ mod tests {
             assert!(c_wal_point_ids.contains(&i.into()));
         });
 
-        assert_wal_ordering_property(a_wal);
-        assert_wal_ordering_property(b_wal);
-        assert_wal_ordering_property(c_wal);
+        assert_wal_ordering_property(&a_wal);
+        assert_wal_ordering_property(&b_wal);
+        assert_wal_ordering_property(&c_wal);
     }
 
     #[tokio::test]
@@ -1198,14 +1198,13 @@ mod tests {
     ///
     /// This property may not be valid if a diff transfer has not been resolved correctly or
     /// completely, or if the WAL got malformed in another way.
-    fn assert_wal_ordering_property(wal: LockedWal) {
-        let wal = wal.lock().read(0).collect::<Vec<_>>();
+    fn assert_wal_ordering_property(wal: &RecoverableWal) {
+        let wal = wal.wal.lock().read(0).collect::<Vec<_>>();
 
         // Get the highest clock value for each clock+peer
         let highest_clocks = wal.iter().fold(HashMap::new(), |mut map, (_, op)| {
             let clock_tag = op.clock_tag.unwrap();
-            let key = Key::from_tag(clock_tag);
-            map.entry(key)
+            map.entry((clock_tag.peer_id, clock_tag.clock_id))
                 .and_modify(|highest| *highest = clock_tag.clock_tick.max(*highest))
                 .or_insert(clock_tag.clock_tick);
             map
@@ -1214,7 +1213,7 @@ mod tests {
         // Test each WAL operation for the ordering property
         for (op_num, operation) in wal.iter() {
             let clock_tag = operation.clock_tag.unwrap();
-            let key = Key::from_tag(clock_tag);
+            let key = (clock_tag.peer_id, clock_tag.clock_id);
             let highest = highest_clocks[&key];
 
             // An ordered list of ticks we must see for this peer+clock
@@ -1225,7 +1224,7 @@ mod tests {
             wal.iter()
                 .skip(*op_num as usize + 1)
                 .map(|(_, op)| op.clock_tag.unwrap())
-                .filter(|later_clock_tag| Key::from_tag(*later_clock_tag) == key)
+                .filter(|later_clock_tag| (later_clock_tag.peer_id, later_clock_tag.clock_id) == key)
                 .for_each(|later_clock_tag| {
                     // If this tick is the first we must see, remove it from the list
                     if must_see_ticks
