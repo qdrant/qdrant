@@ -239,27 +239,17 @@ mod tests {
     #[test]
     fn test_inverted_index_mmap() {
         // skip 4th dimension
-        let inverted_index_ram = InvertedIndexBuilder::new()
-            .add(
-                1,
-                vec![(1, 10.0), (2, 10.0), (3, 10.0), (5, 10.0)]
-                    .try_into()
-                    .unwrap(),
-            )
-            .add(
-                2,
-                vec![(1, 20.0), (2, 20.0), (3, 20.0), (5, 20.0)]
-                    .try_into()
-                    .unwrap(),
-            )
-            .add(3, vec![(1, 30.0), (2, 30.0), (3, 30.0)].try_into().unwrap())
-            .add(4, vec![(1, 1.0), (2, 1.0)].try_into().unwrap())
-            .add(5, vec![(1, 2.0)].try_into().unwrap())
-            .add(6, vec![(1, 3.0)].try_into().unwrap())
-            .add(7, vec![(1, 4.0)].try_into().unwrap())
-            .add(8, vec![(1, 5.0)].try_into().unwrap())
-            .add(9, vec![(1, 6.0)].try_into().unwrap())
-            .build();
+        let mut builder = InvertedIndexBuilder::new();
+        builder.add(1, [(1, 10.0), (2, 10.0), (3, 10.0), (5, 10.0)].into());
+        builder.add(2, [(1, 20.0), (2, 20.0), (3, 20.0), (5, 20.0)].into());
+        builder.add(3, [(1, 30.0), (2, 30.0), (3, 30.0)].into());
+        builder.add(4, [(1, 1.0), (2, 1.0)].into());
+        builder.add(5, [(1, 2.0)].into());
+        builder.add(6, [(1, 3.0)].into());
+        builder.add(7, [(1, 4.0)].into());
+        builder.add(8, [(1, 5.0)].into());
+        builder.add(9, [(1, 6.0)].into());
+        let inverted_index_ram = builder.build();
 
         let tmp_dir_path = Builder::new().prefix("test_index_dir").tempdir().unwrap();
 

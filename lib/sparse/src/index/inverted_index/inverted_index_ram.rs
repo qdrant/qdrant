@@ -133,11 +133,11 @@ mod tests {
 
     #[test]
     fn upsert_same_dimension_inverted_index_ram() {
-        let mut inverted_index_ram = InvertedIndexBuilder::new()
-            .add(1, vec![(1, 10.0), (2, 10.0), (3, 10.0)].try_into().unwrap())
-            .add(2, vec![(1, 20.0), (2, 20.0), (3, 20.0)].try_into().unwrap())
-            .add(3, vec![(1, 30.0), (2, 30.0), (3, 30.0)].try_into().unwrap())
-            .build();
+        let mut builder = InvertedIndexBuilder::new();
+        builder.add(1, [(1, 10.0), (2, 10.0), (3, 10.0)].into());
+        builder.add(2, [(1, 20.0), (2, 20.0), (3, 20.0)].into());
+        builder.add(3, [(1, 30.0), (2, 30.0), (3, 30.0)].into());
+        let mut inverted_index_ram = builder.build();
 
         assert_eq!(inverted_index_ram.vector_count, 3);
 
@@ -158,11 +158,11 @@ mod tests {
 
     #[test]
     fn upsert_new_dimension_inverted_index_ram() {
-        let mut inverted_index_ram = InvertedIndexBuilder::new()
-            .add(1, vec![(1, 10.0), (2, 10.0), (3, 10.0)].try_into().unwrap())
-            .add(2, vec![(1, 20.0), (2, 20.0), (3, 20.0)].try_into().unwrap())
-            .add(3, vec![(1, 30.0), (2, 30.0), (3, 30.0)].try_into().unwrap())
-            .build();
+        let mut builder = InvertedIndexBuilder::new();
+        builder.add(1, [(1, 10.0), (2, 10.0), (3, 10.0)].into());
+        builder.add(2, [(1, 20.0), (2, 20.0), (3, 20.0)].into());
+        builder.add(3, [(1, 30.0), (2, 30.0), (3, 30.0)].into());
+        let mut inverted_index_ram = builder.build();
 
         assert_eq!(inverted_index_ram.vector_count, 3);
 
@@ -199,14 +199,15 @@ mod tests {
 
     #[test]
     fn test_upsert_insert_equivalence() {
-        let first_vec = SparseVector::new(vec![1, 2, 3], vec![10.0, 10.0, 10.0]).unwrap();
-        let second_vec = SparseVector::new(vec![1, 2, 3], vec![20.0, 20.0, 20.0]).unwrap();
-        let third_vec = SparseVector::new(vec![1, 2, 3], vec![30.0, 30.0, 30.0]).unwrap();
-        let inverted_index_ram_built = InvertedIndexBuilder::new()
-            .add(1, first_vec.clone())
-            .add(2, second_vec.clone())
-            .add(3, third_vec.clone())
-            .build();
+        let first_vec: SparseVector = [(1, 10.0), (2, 10.0), (3, 10.0)].into();
+        let second_vec: SparseVector = [(1, 20.0), (2, 20.0), (3, 20.0)].into();
+        let third_vec: SparseVector = [(1, 30.0), (2, 30.0), (3, 30.0)].into();
+
+        let mut builder = InvertedIndexBuilder::new();
+        builder.add(1, first_vec.clone());
+        builder.add(2, second_vec.clone());
+        builder.add(3, third_vec.clone());
+        let inverted_index_ram_built = builder.build();
 
         assert_eq!(inverted_index_ram_built.vector_count, 3);
 
@@ -224,11 +225,12 @@ mod tests {
 
     #[test]
     fn inverted_index_ram_save_load() {
-        let inverted_index_ram = InvertedIndexBuilder::new()
-            .add(1, vec![(1, 10.0), (2, 10.0), (3, 10.0)].try_into().unwrap())
-            .add(2, vec![(1, 20.0), (2, 20.0), (3, 20.0)].try_into().unwrap())
-            .add(3, vec![(1, 30.0), (2, 30.0), (3, 30.0)].try_into().unwrap())
-            .build();
+        let mut builder = InvertedIndexBuilder::new();
+        builder.add(1, vec![(1, 10.0), (2, 10.0), (3, 10.0)].try_into().unwrap());
+        builder.add(2, vec![(1, 20.0), (2, 20.0), (3, 20.0)].try_into().unwrap());
+        builder.add(3, vec![(1, 30.0), (2, 30.0), (3, 30.0)].try_into().unwrap());
+        let inverted_index_ram = builder.build();
+
         assert_eq!(inverted_index_ram.vector_count, 3);
 
         let tmp_dir_path = Builder::new().prefix("test_index_dir").tempdir().unwrap();

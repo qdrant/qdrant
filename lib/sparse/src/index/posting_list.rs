@@ -120,25 +120,6 @@ impl PostingList {
         // all elements were updated
         0
     }
-
-    /// Compute the max_next_weight for each element in the posting list.
-    pub fn compute_max_next_weights(&mut self) {
-        if self.elements.is_empty() {
-            return;
-        }
-        let mut to_sync = self.elements.len() - 1;
-        while to_sync > 0 {
-            to_sync = self.propagate_max_next_weight_to_the_left(to_sync);
-        }
-    }
-
-    /// Append posting element at the end of the list.
-    ///
-    /// Does NOT keep the list sorted.
-    /// Does NOT update max_next_weight of previous elements.
-    pub fn append(&mut self, posting_element: PostingElement) {
-        self.elements.push(posting_element);
-    }
 }
 
 pub struct PostingBuilder {
@@ -158,10 +139,12 @@ impl PostingBuilder {
         }
     }
 
+    /// Add a new record to the posting list.
     pub fn add(&mut self, record_id: PointOffsetType, weight: DimWeight) {
         self.elements.push(PostingElement::new(record_id, weight));
     }
 
+    /// Consume the builder and return the posting list.
     pub fn build(mut self) -> PostingList {
         // Sort by id
         self.elements.sort_unstable_by_key(|e| e.record_id);
@@ -178,7 +161,7 @@ impl PostingBuilder {
             }
         }
 
-        // Calculate max_next_weight
+        // Calculate the `max_next_weight` for all elements starting from the end
         let mut max_next_weight = f32::NEG_INFINITY;
         for element in self.elements.iter_mut().rev() {
             element.max_next_weight = max_next_weight;

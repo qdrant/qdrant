@@ -471,11 +471,11 @@ mod tests {
 
     #[test]
     fn search_test() {
-        let inverted_index_ram = InvertedIndexBuilder::new()
-            .add(1, vec![(1, 10.0), (2, 10.0), (3, 10.0)].try_into().unwrap())
-            .add(2, vec![(1, 20.0), (2, 20.0), (3, 20.0)].try_into().unwrap())
-            .add(3, vec![(1, 30.0), (2, 30.0), (3, 30.0)].try_into().unwrap())
-            .build();
+        let mut builder = InvertedIndexBuilder::new();
+        builder.add(1, [(1, 10.0), (2, 10.0), (3, 10.0)].into());
+        builder.add(2, [(1, 20.0), (2, 20.0), (3, 20.0)].into());
+        builder.add(3, [(1, 30.0), (2, 30.0), (3, 30.0)].into());
+        let inverted_index_ram = builder.build();
 
         // test with ram index
         _search_test(&inverted_index_ram);
@@ -493,11 +493,11 @@ mod tests {
     #[test]
     fn search_with_update_test() {
         let is_stopped = AtomicBool::new(false);
-        let mut inverted_index_ram = InvertedIndexBuilder::new()
-            .add(1, vec![(1, 10.0), (2, 10.0), (3, 10.0)].try_into().unwrap())
-            .add(2, vec![(1, 20.0), (2, 20.0), (3, 20.0)].try_into().unwrap())
-            .add(3, vec![(1, 30.0), (2, 30.0), (3, 30.0)].try_into().unwrap())
-            .build();
+        let mut builder = InvertedIndexBuilder::new();
+        builder.add(1, [(1, 10.0), (2, 10.0), (3, 10.0)].into());
+        builder.add(2, [(1, 20.0), (2, 20.0), (3, 20.0)].into());
+        builder.add(3, [(1, 30.0), (2, 30.0), (3, 30.0)].into());
+        let mut inverted_index_ram = builder.build();
 
         let mut search_context = SearchContext::new(
             SparseVector {
@@ -634,17 +634,17 @@ mod tests {
 
     #[test]
     fn search_with_hot_key_test() {
-        let inverted_index_ram = InvertedIndexBuilder::new()
-            .add(1, vec![(1, 10.0), (2, 10.0), (3, 10.0)].try_into().unwrap())
-            .add(2, vec![(1, 20.0), (2, 20.0), (3, 20.0)].try_into().unwrap())
-            .add(3, vec![(1, 30.0), (2, 30.0), (3, 30.0)].try_into().unwrap())
-            .add(4, vec![(1, 1.0)].try_into().unwrap())
-            .add(5, vec![(1, 2.0)].try_into().unwrap())
-            .add(6, vec![(1, 3.0)].try_into().unwrap())
-            .add(7, vec![(1, 4.0)].try_into().unwrap())
-            .add(8, vec![(1, 5.0)].try_into().unwrap())
-            .add(9, vec![(1, 6.0)].try_into().unwrap())
-            .build();
+        let mut builder = InvertedIndexBuilder::new();
+        builder.add(1, [(1, 10.0), (2, 10.0), (3, 10.0)].into());
+        builder.add(2, [(1, 20.0), (2, 20.0), (3, 20.0)].into());
+        builder.add(3, [(1, 30.0), (2, 30.0), (3, 30.0)].into());
+        builder.add(4, [(1, 1.0)].into());
+        builder.add(5, [(1, 2.0)].into());
+        builder.add(6, [(1, 3.0)].into());
+        builder.add(7, [(1, 4.0)].into());
+        builder.add(8, [(1, 5.0)].into());
+        builder.add(9, [(1, 6.0)].into());
+        let inverted_index_ram = builder.build();
 
         // test with ram index
         _search_with_hot_key_test(&inverted_index_ram);
@@ -661,11 +661,11 @@ mod tests {
 
     #[test]
     fn pruning_single_to_end_test() {
-        let inverted_index_ram = InvertedIndexBuilder::new()
-            .add(1, vec![(1, 10.0)].try_into().unwrap())
-            .add(2, vec![(1, 20.0)].try_into().unwrap())
-            .add(3, vec![(1, 30.0)].try_into().unwrap())
-            .build();
+        let mut builder = InvertedIndexBuilder::new();
+        builder.add(1, [(1, 10.0)].into());
+        builder.add(2, [(1, 20.0)].into());
+        builder.add(3, [(1, 30.0)].into());
+        let inverted_index_ram = builder.build();
 
         let is_stopped = AtomicBool::new(false);
         let mut search_context = SearchContext::new(
@@ -692,14 +692,14 @@ mod tests {
 
     #[test]
     fn pruning_multi_to_end_test() {
-        let inverted_index_ram = InvertedIndexBuilder::new()
-            .add(1, vec![(1, 10.0)].try_into().unwrap())
-            .add(2, vec![(1, 20.0)].try_into().unwrap())
-            .add(3, vec![(1, 30.0)].try_into().unwrap())
-            .add(5, vec![(3, 10.0)].try_into().unwrap())
-            .add(6, vec![(2, 20.0), (3, 20.0)].try_into().unwrap())
-            .add(7, vec![(2, 30.0), (3, 30.0)].try_into().unwrap())
-            .build();
+        let mut builder = InvertedIndexBuilder::new();
+        builder.add(1, [(1, 10.0)].into());
+        builder.add(2, [(1, 20.0)].into());
+        builder.add(3, [(1, 30.0)].into());
+        builder.add(5, [(3, 10.0)].into());
+        builder.add(6, [(2, 20.0), (3, 20.0)].into());
+        builder.add(7, [(2, 30.0), (3, 30.0)].into());
+        let inverted_index_ram = builder.build();
 
         let is_stopped = AtomicBool::new(false);
         let mut search_context = SearchContext::new(
@@ -726,15 +726,15 @@ mod tests {
 
     #[test]
     fn pruning_multi_under_prune_test() {
-        let inverted_index_ram = InvertedIndexBuilder::new()
-            .add(1, vec![(1, 10.0)].try_into().unwrap())
-            .add(2, vec![(1, 20.0)].try_into().unwrap())
-            .add(3, vec![(1, 20.0)].try_into().unwrap())
-            .add(4, vec![(1, 10.0)].try_into().unwrap())
-            .add(5, vec![(3, 10.0)].try_into().unwrap())
-            .add(6, vec![(1, 20.0), (2, 20.0), (3, 20.0)].try_into().unwrap())
-            .add(7, vec![(1, 40.0), (2, 30.0), (3, 30.0)].try_into().unwrap())
-            .build();
+        let mut builder = InvertedIndexBuilder::new();
+        builder.add(1, [(1, 10.0)].into());
+        builder.add(2, [(1, 20.0)].into());
+        builder.add(3, [(1, 20.0)].into());
+        builder.add(4, [(1, 10.0)].into());
+        builder.add(5, [(3, 10.0)].into());
+        builder.add(6, [(1, 20.0), (2, 20.0), (3, 20.0)].into());
+        builder.add(7, [(1, 40.0), (2, 30.0), (3, 30.0)].into());
+        let inverted_index_ram = builder.build();
 
         let is_stopped = AtomicBool::new(false);
         let mut search_context = SearchContext::new(
@@ -780,11 +780,11 @@ mod tests {
     #[test]
     fn promote_longest_test() {
         let is_stopped = AtomicBool::new(false);
-        let inverted_index_ram = InvertedIndexBuilder::new()
-            .add(1, vec![(1, 10.0), (2, 10.0), (3, 10.0)].try_into().unwrap())
-            .add(2, vec![(1, 20.0), (3, 20.0)].try_into().unwrap())
-            .add(3, vec![(2, 30.0), (3, 30.0)].try_into().unwrap())
-            .build();
+        let mut builder = InvertedIndexBuilder::new();
+        builder.add(1, [(1, 10.0), (2, 10.0), (3, 10.0)].into());
+        builder.add(2, [(1, 20.0), (3, 20.0)].into());
+        builder.add(3, [(2, 30.0), (3, 30.0)].into());
+        let inverted_index_ram = builder.build();
 
         let mut search_context = SearchContext::new(
             SparseVector {
@@ -817,11 +817,11 @@ mod tests {
     #[test]
     fn plain_search_all_test() {
         let is_stopped = AtomicBool::new(false);
-        let inverted_index_ram = InvertedIndexBuilder::new()
-            .add(1, vec![(1, 10.0), (2, 10.0), (3, 10.0)].try_into().unwrap())
-            .add(2, vec![(1, 20.0), (3, 20.0)].try_into().unwrap())
-            .add(3, vec![(1, 30.0), (3, 30.0)].try_into().unwrap())
-            .build();
+        let mut builder = InvertedIndexBuilder::new();
+        builder.add(1, [(1, 10.0), (2, 10.0), (3, 10.0)].into());
+        builder.add(2, [(1, 20.0), (3, 20.0)].into());
+        builder.add(3, [(1, 30.0), (3, 30.0)].into());
+        let inverted_index_ram = builder.build();
 
         let mut search_context = SearchContext::new(
             SparseVector {
@@ -857,11 +857,11 @@ mod tests {
     #[test]
     fn plain_search_gap_test() {
         let is_stopped = AtomicBool::new(false);
-        let inverted_index_ram = InvertedIndexBuilder::new()
-            .add(1, vec![(1, 10.0), (2, 10.0), (3, 10.0)].try_into().unwrap())
-            .add(2, vec![(1, 20.0), (3, 20.0)].try_into().unwrap())
-            .add(3, vec![(2, 30.0), (3, 30.0)].try_into().unwrap())
-            .build();
+        let mut builder = InvertedIndexBuilder::new();
+        builder.add(1, [(1, 10.0), (2, 10.0), (3, 10.0)].into());
+        builder.add(2, [(1, 20.0), (3, 20.0)].into());
+        builder.add(3, [(2, 30.0), (3, 30.0)].into());
+        let inverted_index_ram = builder.build();
 
         // query vector has a gap for dimension 2
         let mut search_context = SearchContext::new(
