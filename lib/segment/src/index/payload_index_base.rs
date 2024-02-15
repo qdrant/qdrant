@@ -60,12 +60,17 @@ pub trait PayloadIndex {
     /// Assign same payload to each given point
     fn assign_all(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
         self.drop(point_id)?;
-        self.assign(point_id, payload)?;
+        self.assign(point_id, payload, &None)?;
         Ok(())
     }
 
     /// Assign payload to a concrete point with a concrete payload value
-    fn assign(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()>;
+    fn assign(
+        &mut self,
+        point_id: PointOffsetType,
+        payload: &Payload,
+        key: &Option<String>,
+    ) -> OperationResult<()>;
 
     /// Get payload for point
     fn payload(&self, point_id: PointOffsetType) -> OperationResult<Payload>;

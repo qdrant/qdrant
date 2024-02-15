@@ -54,7 +54,7 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
     let mut payload_index = sparse_vector_index.payload_index.borrow_mut();
     for idx in 0..NUM_VECTORS {
         payload_index
-            .assign(idx as PointOffsetType, &payload)
+            .assign(idx as PointOffsetType, &payload, &None)
             .unwrap();
     }
     drop(payload_index);

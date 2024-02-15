@@ -324,6 +324,7 @@ pub async fn set_payload(
         points_selector,
         ordering,
         shard_key_selector,
+        key,
     } = set_payload_points;
 
     let (points, filter) = extract_points_selector(points_selector)?;
@@ -332,6 +333,7 @@ pub async fn set_payload(
         points,
         filter,
         shard_key: shard_key_selector.map(ShardKeySelector::from),
+        key,
     };
 
     let timing = Instant::now();
@@ -364,6 +366,7 @@ pub async fn overwrite_payload(
         points_selector,
         ordering,
         shard_key_selector,
+        ..
     } = set_payload_points;
 
     let (points, filter) = extract_points_selector(points_selector)?;
@@ -372,6 +375,8 @@ pub async fn overwrite_payload(
         points,
         filter,
         shard_key: shard_key_selector.map(ShardKeySelector::from),
+        // overwrite operation don't support indicate path of property
+        key: None,
     };
 
     let timing = Instant::now();
@@ -527,6 +532,7 @@ pub async fn update_batch(
                     payload,
                     points_selector,
                     shard_key_selector,
+                    key,
                 },
             ) => {
                 set_payload(
@@ -538,6 +544,7 @@ pub async fn update_batch(
                         points_selector,
                         ordering,
                         shard_key_selector,
+                        key,
                     },
                     clock_tag,
                     shard_selection,
@@ -549,6 +556,7 @@ pub async fn update_batch(
                     payload,
                     points_selector,
                     shard_key_selector,
+                    ..
                 },
             ) => {
                 overwrite_payload(
@@ -560,6 +568,8 @@ pub async fn update_batch(
                         points_selector,
                         ordering,
                         shard_key_selector,
+                        // overwrite operation don't support it
+                        key: None,
                     },
                     clock_tag,
                     shard_selection,

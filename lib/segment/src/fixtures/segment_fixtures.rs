@@ -29,7 +29,7 @@ pub fn random_segment(path: &Path, num_points: usize) -> Segment {
             )
             .unwrap();
         segment
-            .set_payload(100, (point_id as u64).into(), &payload)
+            .set_payload(100, (point_id as u64).into(), &payload, &None)
             .unwrap();
     }
 

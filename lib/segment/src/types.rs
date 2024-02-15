@@ -921,12 +921,12 @@ pub struct Payload(pub Map<String, Value>);
 
 impl Payload {
     pub fn merge(&mut self, value: &Payload) {
-        for (key, value) in &value.0 {
-            match value {
-                Value::Null => self.0.remove(key),
-                _ => self.0.insert(key.to_owned(), value.to_owned()),
-            };
-        }
+        utils::merge_map(&mut self.0, &value.0)
+    }
+
+    pub fn merge_by_key(&mut self, value: &Payload, key: &str) -> OperationResult<()> {
+        utils::set_value_to_json_map(key, &mut self.0, &value.0);
+        Ok(())
     }
 
     pub fn remove(&mut self, path: &str) -> Vec<Value> {

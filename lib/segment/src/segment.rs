@@ -1102,6 +1102,7 @@ impl SegmentEntry for Segment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         payload: &Payload,
+        key: &Option<String>,
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         self.handle_version_and_failure(op_num, internal_id, |segment| match internal_id {
@@ -1109,7 +1110,7 @@ impl SegmentEntry for Segment {
                 segment
                     .payload_index
                     .borrow_mut()
-                    .assign(internal_id, payload)?;
+                    .assign(internal_id, payload, key)?;
                 Ok((true, Some(internal_id)))
             }
             None => Err(OperationError::PointIdError {

@@ -157,7 +157,12 @@ impl PayloadIndex for PlainPayloadIndex {
         Box::new(vec![].into_iter())
     }
 
-    fn assign(&mut self, _point_id: PointOffsetType, _payload: &Payload) -> OperationResult<()> {
+    fn assign(
+        &mut self,
+        _point_id: PointOffsetType,
+        _payload: &Payload,
+        _key: &Option<String>,
+    ) -> OperationResult<()> {
         unreachable!()
     }
 

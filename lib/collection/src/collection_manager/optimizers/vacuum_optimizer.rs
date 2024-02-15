@@ -281,7 +281,7 @@ mod tests {
             segment
                 .get()
                 .write()
-                .set_payload(102, point_id, &json!({ "color": "red" }).into())
+                .set_payload(102, point_id, &json!({ "color": "red" }).into(), &None)
                 .unwrap();
         }
 
@@ -289,7 +289,7 @@ mod tests {
             segment
                 .get()
                 .write()
-                .set_payload(102, point_id, &json!({"size": 0.42}).into())
+                .set_payload(102, point_id, &json!({"size": 0.42}).into(), &None)
                 .unwrap();
         }
 

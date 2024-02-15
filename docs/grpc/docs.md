@@ -2709,6 +2709,7 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | payload | [PointsUpdateOperation.SetPayload.PayloadEntry](#qdrant-PointsUpdateOperation-SetPayload-PayloadEntry) | repeated |  |
 | points_selector | [PointsSelector](#qdrant-PointsSelector) | optional | Affected points |
 | shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Option for custom sharding to specify used shard keys |
+| key | [string](#string) | optional | Option for indicate property of payload |
 
 
 
@@ -3230,6 +3231,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | points_selector | [PointsSelector](#qdrant-PointsSelector) | optional | Affected points |
 | ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
 | shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Option for custom sharding to specify used shard keys |
+| key | [string](#string) | optional | Option for indicate property of payload |
 
 
 

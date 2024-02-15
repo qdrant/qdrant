@@ -146,6 +146,7 @@ impl SegmentBuilder {
                         payload_index.assign(
                             new_internal_id,
                             &other_payload_index.payload(old_internal_id)?,
+                            &None,
                         )?;
                     }
                     Some(existing_internal_id) => {
@@ -162,6 +163,7 @@ impl SegmentBuilder {
                             payload_index.assign(
                                 new_internal_id,
                                 &other_payload_index.payload(old_internal_id)?,
+                                &None,
                             )?;
                             existing_internal_id
                         } else {
