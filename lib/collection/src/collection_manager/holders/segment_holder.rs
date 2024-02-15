@@ -766,17 +766,17 @@ mod tests {
         let mut segment2 = build_segment_1(dir.path());
 
         segment1
-            .set_payload(100, 1.into(), &json!({}).into())
+            .set_payload(100, 1.into(), &json!({}).into(), &None)
             .unwrap();
         segment1
-            .set_payload(100, 2.into(), &json!({}).into())
+            .set_payload(100, 2.into(), &json!({}).into(), &None)
             .unwrap();
 
         segment2
-            .set_payload(200, 4.into(), &json!({}).into())
+            .set_payload(200, 4.into(), &json!({}).into(), &None)
             .unwrap();
         segment2
-            .set_payload(200, 5.into(), &json!({}).into())
+            .set_payload(200, 5.into(), &json!({}).into(), &None)
             .unwrap();
 
         let mut holder = SegmentHolder::default();

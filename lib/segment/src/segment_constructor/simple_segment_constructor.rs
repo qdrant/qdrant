@@ -134,6 +134,7 @@ mod tests {
                 3,
                 1.into(),
                 &json!({ "color": vec!["red".to_owned(), "green".to_owned()] }).into(),
+                &None,
             )
             .unwrap();
 
@@ -142,6 +143,7 @@ mod tests {
                 3,
                 2.into(),
                 &json!({ "color": vec!["red".to_owned(), "blue".to_owned()] }).into(),
+                &None,
             )
             .unwrap();
 
@@ -150,6 +152,7 @@ mod tests {
                 3,
                 3.into(),
                 &json!({ "color": vec!["red".to_owned(), "yellow".to_owned()] }).into(),
+                &None,
             )
             .unwrap();
 
@@ -158,6 +161,7 @@ mod tests {
                 3,
                 4.into(),
                 &json!({ "color": vec!["red".to_owned(), "green".to_owned()] }).into(),
+                &None,
             )
             .unwrap();
 

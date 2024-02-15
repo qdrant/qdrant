@@ -372,12 +372,13 @@ impl SegmentEntry for ProxySegment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         payload: &Payload,
+        key: &Option<String>,
     ) -> OperationResult<bool> {
         self.move_if_exists(op_num, point_id)?;
         self.write_segment
             .get()
             .write()
-            .set_payload(op_num, point_id, payload)
+            .set_payload(op_num, point_id, payload, key)
     }
 
     fn delete_payload(
@@ -1163,6 +1164,7 @@ mod tests {
                 101,
                 3.into(),
                 &json!({ "color": vec!["red".to_owned()] }).into(),
+                &None,
             )
             .unwrap();
         let proxy_res = proxy_segment.read_range(None, Some(10.into()));

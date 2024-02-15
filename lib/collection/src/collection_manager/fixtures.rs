@@ -85,7 +85,9 @@ pub fn random_multi_vec_segment(
         let payload: Payload =
             json!({ payload_key: vec![payload_value], keyword_key: random_keyword}).into();
         segment.upsert_point(opnum, point_id, vectors).unwrap();
-        segment.set_payload(opnum, point_id, &payload).unwrap();
+        segment
+            .set_payload(opnum, point_id, &payload, &None)
+            .unwrap();
     }
     segment
 }
@@ -103,7 +105,9 @@ pub fn random_segment(path: &Path, opnum: SeqNumberType, num_vectors: u64, dim: 
         segment
             .upsert_point(opnum, point_id, only_default_vector(&random_vector))
             .unwrap();
-        segment.set_payload(opnum, point_id, &payload).unwrap();
+        segment
+            .set_payload(opnum, point_id, &payload, &None)
+            .unwrap();
     }
     segment
 }
@@ -140,11 +144,21 @@ pub fn build_segment_1(path: &Path) -> Segment {
         json!({ payload_key: vec!["red".to_owned(), "blue".to_owned()] }).into();
     let payload_option3: Payload = json!({ payload_key: vec!["blue".to_owned()] }).into();
 
-    segment1.set_payload(6, 1.into(), &payload_option1).unwrap();
-    segment1.set_payload(6, 2.into(), &payload_option1).unwrap();
-    segment1.set_payload(6, 3.into(), &payload_option3).unwrap();
-    segment1.set_payload(6, 4.into(), &payload_option2).unwrap();
-    segment1.set_payload(6, 5.into(), &payload_option2).unwrap();
+    segment1
+        .set_payload(6, 1.into(), &payload_option1, &None)
+        .unwrap();
+    segment1
+        .set_payload(6, 2.into(), &payload_option1, &None)
+        .unwrap();
+    segment1
+        .set_payload(6, 3.into(), &payload_option3, &None)
+        .unwrap();
+    segment1
+        .set_payload(6, 4.into(), &payload_option2, &None)
+        .unwrap();
+    segment1
+        .set_payload(6, 5.into(), &payload_option2, &None)
+        .unwrap();
 
     segment1
 }

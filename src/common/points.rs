@@ -311,6 +311,7 @@ pub async fn do_set_payload(
         payload,
         filter,
         shard_key,
+        key,
     } = operation;
 
     let collection_operation =
@@ -318,6 +319,7 @@ pub async fn do_set_payload(
             payload,
             points,
             filter,
+            key,
         }));
 
     let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
@@ -346,6 +348,7 @@ pub async fn do_overwrite_payload(
         payload,
         filter,
         shard_key,
+        ..
     } = operation;
 
     let collection_operation =
@@ -353,6 +356,8 @@ pub async fn do_overwrite_payload(
             payload,
             points,
             filter,
+            // overwrite operation doesn't support payload selector
+            key: None,
         }));
 
     let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);

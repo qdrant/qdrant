@@ -473,16 +473,34 @@ impl PayloadIndex for StructPayloadIndex {
         }
     }
 
-    fn assign(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
+    fn assign(
+        &mut self,
+        point_id: PointOffsetType,
+        payload: &Payload,
+        key: &Option<String>,
+    ) -> OperationResult<()> {
+        if let Some(key) = key {
+            self.payload
+                .borrow_mut()
+                .assign_by_key(point_id, payload, key)?;
+        } else {
+            self.payload.borrow_mut().assign(point_id, payload)?;
+        };
+
+        let updated_payload = self.payload(point_id)?;
         for (field, field_index) in &mut self.field_indexes {
-            let field_value_opt = &payload.get_value_opt(field);
-            if let Some(field_value) = field_value_opt {
+            let field_value_opt = updated_payload.get_value_opt(field);
+            if let Some(field_value) = &field_value_opt {
                 for index in field_index {
                     index.add_point(point_id, field_value)?;
                 }
+            } else {
+                for index in field_index {
+                    index.remove_point(point_id)?;
+                }
             }
         }
-        self.payload.borrow_mut().assign(point_id, payload)
+        Ok(())
     }
 
     fn payload(&self, point_id: PointOffsetType) -> OperationResult<Payload> {
