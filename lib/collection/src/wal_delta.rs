@@ -1230,7 +1230,7 @@ mod tests {
                 map
             });
 
-        // Test each WAL operation for the ordering property
+        // Test each clock tag for the ordering property
         for (i, clock_tag) in clock_tags.iter().enumerate() {
             let key = (clock_tag.peer_id, clock_tag.clock_id);
             let highest = highest_clocks[&key];
@@ -1239,7 +1239,7 @@ mod tests {
             let mut must_see_ticks =
                 ((clock_tag.clock_tick + 1)..=highest).collect::<VecDeque<_>>();
 
-            // For all the following operations of the same peer+clock, remove their tick value
+            // For all the following clock tags of the same peer+clock, remove their tick value
             clock_tags
                 .iter()
                 .skip(i + 1)
@@ -1259,7 +1259,7 @@ mod tests {
             // If list is not empty, we have not seen all numbers
             if !must_see_ticks.is_empty() {
                 return Err(format!(
-                    "WAL ordering property violated; following operations did not cover ticks [{}] in order (peer_id: {}, clock_id: {}, max_tick: {highest})",
+                    "WAL ordering property violated; following clock tags did not cover ticks [{}] in order (peer_id: {}, clock_id: {}, max_tick: {highest})",
                     must_see_ticks.into_iter().map(|tick| tick.to_string()).collect::<Vec<_>>().join(", "),
                     clock_tag.peer_id,
                     clock_tag.clock_id,
@@ -1278,10 +1278,10 @@ mod tests {
         // Empty is fine
         check_clock_tag_ordering_property(&[]).unwrap();
 
-        // Any one operation is fine
+        // Any one clock tag is fine
         check_clock_tag_ordering_property(&[ClockTag::new(1, 2, 3)]).unwrap();
 
-        // Operations in order are allowed
+        // Clock tags in order are allowed
         check_clock_tag_ordering_property(&[
             ClockTag::new(1, 0, 0),
             ClockTag::new(1, 0, 1),
@@ -1290,7 +1290,7 @@ mod tests {
         ])
         .unwrap();
 
-        // Operations in order with gaps are not allowed
+        // Clock tags in order with gaps are not allowed
         check_clock_tag_ordering_property(&[
             ClockTag::new(1, 0, 0),
             ClockTag::new(1, 0, 1),
@@ -1303,13 +1303,14 @@ mod tests {
 
         // Not starting at zero (truncated) is allowed
         check_clock_tag_ordering_property(&[
+            // Truncated
             ClockTag::new(1, 0, 2),
             ClockTag::new(1, 0, 3),
             ClockTag::new(1, 0, 4),
         ])
         .unwrap();
 
-        // Repeated operations are allowed
+        // Repeated clock tags are allowed
         check_clock_tag_ordering_property(&[
             ClockTag::new(1, 0, 2),
             ClockTag::new(1, 0, 2),
@@ -1317,7 +1318,7 @@ mod tests {
         ])
         .unwrap();
 
-        // Repeating operation sequence is allowed
+        // Repeating clock tag sequence is allowed
         check_clock_tag_ordering_property(&[
             ClockTag::new(1, 0, 0),
             ClockTag::new(1, 0, 1),
@@ -1332,7 +1333,7 @@ mod tests {
         ])
         .unwrap();
 
-        // Repeating part of operation sequence is allowed
+        // Repeating part of clock tag sequence is allowed
         check_clock_tag_ordering_property(&[
             ClockTag::new(1, 0, 0),
             ClockTag::new(1, 0, 1),
@@ -1346,7 +1347,7 @@ mod tests {
         ])
         .unwrap();
 
-        // Repeating operation sequence with extra at the end is allowed
+        // Repeating clock tag sequence with new ones at the end is allowed
         check_clock_tag_ordering_property(&[
             ClockTag::new(1, 0, 0),
             ClockTag::new(1, 0, 1),
@@ -1363,7 +1364,7 @@ mod tests {
         ])
         .unwrap();
 
-        // Repeating operations in random order is allowed, as long as the end is in sequence
+        // Repeating clock tags in random order is allowed, as long as the end is in order
         check_clock_tag_ordering_property(&[
             ClockTag::new(1, 0, 0),
             ClockTag::new(1, 0, 1),
@@ -1385,7 +1386,7 @@ mod tests {
         ])
         .unwrap();
 
-        // Repeating sequence must not miss operations at the end
+        // Repeating clock tag sequence must not miss clock tags at the end
         check_clock_tag_ordering_property(&[
             ClockTag::new(1, 0, 0),
             ClockTag::new(1, 0, 1),
@@ -1396,7 +1397,7 @@ mod tests {
         ])
         .unwrap_err();
 
-        // Repeating sequence must not miss operations in the middle
+        // Repeating clock tag sequence must not miss clock tags in the middle
         check_clock_tag_ordering_property(&[
             ClockTag::new(1, 0, 0),
             ClockTag::new(1, 0, 1),
@@ -1419,7 +1420,7 @@ mod tests {
         ])
         .unwrap();
 
-        // Intermixed repeating operation sequence is allowed
+        // Intermixed repeating clock tag sequence is allowed
         check_clock_tag_ordering_property(&[
             ClockTag::new(1, 0, 0),
             ClockTag::new(1, 0, 1),
@@ -1442,7 +1443,7 @@ mod tests {
         ])
         .unwrap();
 
-        // Intermixed sequence where one tick for peer 2 is missing is not allowed
+        // Intermixed clock tag sequence where one tick for peer 2 is missing is not allowed
         check_clock_tag_ordering_property(&[
             ClockTag::new(1, 0, 0),
             ClockTag::new(2, 0, 0),
@@ -1455,7 +1456,7 @@ mod tests {
         ])
         .unwrap_err();
 
-        // Intermixed sequence where one tick for clock ID 1 is missing is not allowed
+        // Intermixed clock tag sequence where one tick for clock ID 1 is missing is not allowed
         check_clock_tag_ordering_property(&[
             ClockTag::new(1, 0, 0),
             ClockTag::new(1, 1, 0),
@@ -1468,7 +1469,7 @@ mod tests {
         ])
         .unwrap_err();
 
-        // Intermixed sequence where one tick is missing is not allowed
+        // Intermixed clock tag sequence where one tick is missing is not allowed
         check_clock_tag_ordering_property(&[
             ClockTag::new(1, 0, 0),
             ClockTag::new(2, 0, 0),
