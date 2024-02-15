@@ -328,16 +328,20 @@ fn set_by_array_path<'a>(
         }
     } else if dest.is_empty() {
         // insert new one
-        let array_len = array_index.map(|i| i + 1).unwrap_or(1);
-        let mut array = vec![Value::Null; (array_len - 1) as usize];
-        if let Some(rest_path) = rest_path {
-            array.push(Value::Object(Default::default()));
-            dest.insert(array_path.to_owned(), Value::Array(array));
-            set_by_array_path(array_path, array_index, Some(rest_path), dest, src);
+        if let Some(expected_array_len) = array_index.map(|i| i + 1) {
+            let mut array = vec![Value::Null; (expected_array_len - 1) as usize];
+            if let Some(rest_path) = rest_path {
+                array.push(Value::Object(Default::default()));
+                dest.insert(array_path.to_owned(), Value::Array(array));
+                set_by_array_path(array_path, array_index, Some(rest_path), dest, src);
+            } else {
+                array.push(Value::Object(src.clone()));
+                dest.insert(array_path.to_owned(), Value::Array(array));
+                set_by_array_path(array_path, array_index, None, dest, src);
+            }
         } else {
-            array.push(Value::Object(src.clone()));
+            let array = vec![];
             dest.insert(array_path.to_owned(), Value::Array(array));
-            set_by_array_path(array_path, array_index, None, dest, src);
         }
     }
 }
@@ -1186,6 +1190,38 @@ mod tests {
                 r#"
                 {
                     "key1": {"key2": [null, null, null, { "c": 1 }] }
+                }
+                "#,
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_expand_payload_with_non_existing_array() {
+        let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            {
+            }
+            "#,
+        )
+        .unwrap();
+
+        let src = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            {"c": 1}
+            "#,
+        )
+        .unwrap();
+
+        set_value_to_json_map("key1.key2[].key3", &mut map, &src);
+
+        assert_eq!(
+            map,
+            serde_json::from_str::<serde_json::Map<String, Value>>(
+                r#"
+                {
+                    "key1": { "key2": [] }
                 }
                 "#,
             )
