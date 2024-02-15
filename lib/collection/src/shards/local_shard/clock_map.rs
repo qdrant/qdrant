@@ -187,7 +187,7 @@ impl RecoveryPoint {
     }
 
     /// Check whether this recovery point has any clocks that are not in `other`
-    pub fn has_clocks_not_in(&mut self, other: &Self) -> bool {
+    pub fn has_clocks_not_in(&self, other: &Self) -> bool {
         self.clocks
             .keys()
             .any(|key| !other.clocks.contains_key(key))
