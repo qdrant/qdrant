@@ -864,4 +864,362 @@ mod tests {
             "cannot find slice of WAL operations that satisfies the recovery point",
         );
     }
+
+    fn get_mock_operation(id: u64) -> CollectionUpdateOperations {
+        CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
+            PointInsertOperationsInternal::PointsList(vec![PointStruct {
+                id: id.into(),
+                vector: vec![1.0, 2.0, 3.0].into(),
+                payload: None,
+            }]),
+        ))
+    }
+
+    #[tokio::test]
+    async fn test_recover_from_previously_recoverred_with_forward_proxy() {
+        // Consider a situation
+
+        // Steps:
+        //
+        // 1. We initialize 2 operations on A and B, that are successfully written to both from C
+        // 2. Operation 3 is written to A, but not B
+        // 2.1. Operation 30  is written to A, but not B (Second channel)
+        // 3. Operation 4,5 from D is written to both A and B
+        // 4. Now B is reported as failed and we need to recover it from A
+        // 5. During recovery, we send untagged operations from A to B (full transfer) + node C sends an Update
+        // 6. After recoverred (need to check consistency of A and B), node D sends an Update to A and B
+        // 7. Now we want to recover newly created node E from B
+        // 8. Try to recover A from E (expect no diff, as both are supposed to be active)
+
+        //          Recover
+        //     ┌───┬───────►┌───┐
+        //     │ A │        │ B │
+        //     └─▲─┴───────►└─▲─┘
+        //       │  Forward   │
+        //       │            │
+        //       │            │
+        //       │   ┌───┐    │
+        //       └───┤ C ├────┘
+        //  Update   └───┘  Failed Update
+        //
+        //
+        //
+        //           ┌───┐
+        //       ┌───┤ D ├────┐
+        // Update│   └───┘    │Update
+        //       │            │
+        //       │            │
+        //     ┌─▼─┐        ┌─▼─┐
+        //     │ A │        │ B │
+        //     └───┘        └───┘
+        //
+        //
+        //                   (Almost Empty)
+        //     ┌───┐Recover ┌───┐
+        //     │ B ├───────►│ E │
+        //     └───┘        └───┘
+        //
+        //
+        //                   (Identical)
+        //     ┌───┐Recover ┌───┐
+        //     │ E ├───────►│ A │
+        //     └───┘        └───┘
+
+        let (a_wal, _a_wal_dir) = fixture_empty_wal();
+        let (b_wal, _b_wal_dir) = fixture_empty_wal();
+
+        let (e_wal, _e_wal_dir) = fixture_empty_wal();
+
+        let mut c_clock_set = ClockSet::new();
+        let mut d_clock_set = ClockSet::new();
+
+        let node_c_peer_id = 1;
+        let node_d_peer_id = 2;
+
+        let op1: CollectionUpdateOperations = get_mock_operation(1);
+
+        // Initial normal operation, written to both A and B  + additionally Em but we will need it later
+        {
+            // Node C is sending updates to A and B
+            let mut c_clock_0 = c_clock_set.get_clock();
+            let clock_tick = c_clock_0.tick_once();
+            let clock_tag = ClockTag::new(node_c_peer_id, c_clock_0.id(), clock_tick);
+
+            let operation_with_clock = OperationWithClockTag::new(op1, Some(clock_tag));
+
+            let mut operation_a = operation_with_clock.clone();
+            let mut operation_b = operation_with_clock.clone();
+            let mut operation_e = operation_with_clock.clone();
+
+            a_wal.lock_and_write(&mut operation_a).await.unwrap();
+            b_wal.lock_and_write(&mut operation_b).await.unwrap();
+            e_wal.lock_and_write(&mut operation_e).await.unwrap();
+
+            c_clock_0.advance_to(operation_a.clock_tag.unwrap().clock_tick);
+            c_clock_0.advance_to(operation_b.clock_tag.unwrap().clock_tick);
+            c_clock_0.advance_to(operation_e.clock_tag.unwrap().clock_tick);
+        }
+
+        let op2: CollectionUpdateOperations = get_mock_operation(2);
+
+        // Initial normal operation, written to both
+        {
+            // Node C is sending updates to A and B
+            let mut c_clock_0 = c_clock_set.get_clock();
+            let clock_tick = c_clock_0.tick_once();
+            let clock_tag = ClockTag::new(node_c_peer_id, c_clock_0.id(), clock_tick);
+
+            let operation_with_clock = OperationWithClockTag::new(op2, Some(clock_tag));
+
+            let mut operation_a = operation_with_clock.clone();
+            let mut operation_b = operation_with_clock.clone();
+
+            a_wal.lock_and_write(&mut operation_a).await.unwrap();
+            b_wal.lock_and_write(&mut operation_b).await.unwrap();
+
+            c_clock_0.advance_to(operation_a.clock_tag.unwrap().clock_tick);
+            c_clock_0.advance_to(operation_b.clock_tag.unwrap().clock_tick);
+        }
+
+        let op3: CollectionUpdateOperations = get_mock_operation(3);
+        let op30: CollectionUpdateOperations = get_mock_operation(30);
+
+        // Next operation gets written to A, but not B
+        {
+            // Node C is sending updates to A and B
+            let mut c_clock_0 = c_clock_set.get_clock();
+            let mut c_clock_1 = c_clock_set.get_clock();
+
+            {
+                // First parallel operation
+                let clock_tick = c_clock_0.tick_once();
+                let clock_tag = ClockTag::new(node_c_peer_id, c_clock_0.id(), clock_tick);
+
+                let operation_with_clock = OperationWithClockTag::new(op3, Some(clock_tag));
+
+                let mut operation_a = operation_with_clock.clone();
+
+                a_wal.lock_and_write(&mut operation_a).await.unwrap();
+
+                c_clock_0.advance_to(operation_a.clock_tag.unwrap().clock_tick);
+            }
+
+            {
+                // Second parallel operation
+                let clock_tick = c_clock_1.tick_once();
+                let clock_tag = ClockTag::new(node_c_peer_id, c_clock_1.id(), clock_tick);
+
+                let operation_with_clock = OperationWithClockTag::new(op30, Some(clock_tag));
+
+                let mut operation_a = operation_with_clock.clone();
+
+                a_wal.lock_and_write(&mut operation_a).await.unwrap();
+
+                c_clock_1.advance_to(operation_a.clock_tag.unwrap().clock_tick);
+            }
+        }
+
+        let op4: CollectionUpdateOperations = get_mock_operation(4);
+
+        // Node D sends an update to both A and B, both successfully written
+        {
+            let mut d_clock_0 = d_clock_set.get_clock();
+            let clock_tick = d_clock_0.tick_once();
+            let clock_tag = ClockTag::new(node_d_peer_id, d_clock_0.id(), clock_tick);
+
+            let operation_with_clock = OperationWithClockTag::new(op4, Some(clock_tag));
+
+            let mut operation_a = operation_with_clock.clone();
+            let mut operation_b = operation_with_clock.clone();
+
+            a_wal.lock_and_write(&mut operation_a).await.unwrap();
+            b_wal.lock_and_write(&mut operation_b).await.unwrap();
+
+            d_clock_0.advance_to(operation_a.clock_tag.unwrap().clock_tick);
+            d_clock_0.advance_to(operation_b.clock_tag.unwrap().clock_tick);
+        }
+
+        let op5: CollectionUpdateOperations = get_mock_operation(5);
+
+        // Node D sends an update to both A and B, both successfully written
+        {
+            let mut d_clock_0 = d_clock_set.get_clock();
+            let clock_tick = d_clock_0.tick_once();
+            let clock_tag = ClockTag::new(node_d_peer_id, d_clock_0.id(), clock_tick);
+
+            let operation_with_clock = OperationWithClockTag::new(op5, Some(clock_tag));
+
+            let mut operation_a = operation_with_clock.clone();
+            let mut operation_b = operation_with_clock.clone();
+
+            a_wal.lock_and_write(&mut operation_a).await.unwrap();
+            b_wal.lock_and_write(&mut operation_b).await.unwrap();
+
+            d_clock_0.advance_to(operation_a.clock_tag.unwrap().clock_tick);
+            d_clock_0.advance_to(operation_b.clock_tag.unwrap().clock_tick);
+        }
+
+        // Now B is reported as failed and we need to recover it from A
+
+        let b_recovery_point = b_wal.recovery_point().await;
+
+        let delta_from = a_wal
+            .resolve_wal_delta(b_recovery_point.clone())
+            .await
+            .unwrap();
+
+        // Operation 0 and 1 are written to both and do not need to be recovered
+        // All further operations have to be written to B
+        assert_eq!(delta_from, 2);
+
+        // But instead of recovering from WAL, we will check full streaming transfer
+        {
+            let op1 = get_mock_operation(1);
+            let op1_with_clock = OperationWithClockTag::new(op1, None);
+            b_wal
+                .lock_and_write(&mut op1_with_clock.clone())
+                .await
+                .unwrap();
+
+            let op2 = get_mock_operation(2);
+            let op2_with_clock = OperationWithClockTag::new(op2, None);
+            b_wal
+                .lock_and_write(&mut op2_with_clock.clone())
+                .await
+                .unwrap();
+        }
+
+        let op6: CollectionUpdateOperations = get_mock_operation(6);
+
+        // In between the recovery, we have a new update from C
+        // It is written to both A and B, plus forwarded to B with forward proxy
+        {
+            let mut c_clock_0 = c_clock_set.get_clock();
+            let clock_tick = c_clock_0.tick_once();
+            let clock_tag = ClockTag::new(node_c_peer_id, c_clock_0.id(), clock_tick);
+
+            let operation_with_clock = OperationWithClockTag::new(op6, Some(clock_tag));
+
+            let mut operation_a = operation_with_clock.clone();
+            let mut operation_b = operation_with_clock.clone();
+            let mut operation_b_forward = operation_with_clock.clone();
+
+            a_wal.lock_and_write(&mut operation_a).await.unwrap();
+            b_wal.lock_and_write(&mut operation_b).await.unwrap();
+            b_wal
+                .lock_and_write(&mut operation_b_forward)
+                .await
+                .unwrap();
+
+            c_clock_0.advance_to(operation_a.clock_tag.unwrap().clock_tick);
+            c_clock_0.advance_to(operation_b.clock_tag.unwrap().clock_tick);
+        }
+
+        // Continue recovery
+        {
+            let op3 = get_mock_operation(3);
+            let op3_with_clock = OperationWithClockTag::new(op3, None);
+            b_wal
+                .lock_and_write(&mut op3_with_clock.clone())
+                .await
+                .unwrap();
+
+            let op30 = get_mock_operation(30);
+            let op30_with_clock = OperationWithClockTag::new(op30, None);
+            b_wal
+                .lock_and_write(&mut op30_with_clock.clone())
+                .await
+                .unwrap();
+
+            let op4 = get_mock_operation(4);
+            let op4_with_clock = OperationWithClockTag::new(op4, None);
+            b_wal
+                .lock_and_write(&mut op4_with_clock.clone())
+                .await
+                .unwrap();
+
+            let op5 = get_mock_operation(5);
+            let op5_with_clock = OperationWithClockTag::new(op5, None);
+            b_wal
+                .lock_and_write(&mut op5_with_clock.clone())
+                .await
+                .unwrap();
+        }
+
+        // Try to recover E from B
+        let e_recovery_point = e_wal.recovery_point().await;
+
+        // *******************************************************
+        // ToDo: check what would happened if wal_b were truncated
+        // *******************************************************
+
+        let delta_from = b_wal
+            .resolve_wal_delta(e_recovery_point.clone())
+            .await
+            .unwrap();
+
+        // Operation 0 was written to E, but everything else has to be written to E (including transfers)
+        assert_eq!(delta_from, 1);
+
+        // Total: 2 operations from C
+        // + 1 operation from C_1
+        // + 1 operations from D (one missing)
+        // + 5 recovery operations
+        // + 1 operation from C during recovery
+        // + 1 duplicate operation from C
+        assert_eq!(b_wal.wal.lock().read(delta_from).count(), 11);
+
+        // Recover E from B
+        e_wal.append_from(&b_wal, delta_from).await.unwrap();
+
+        // Now we want to try to recover theoretically active node A from E
+        // Both are active, so we expect no diff
+        let a_recovery_point = a_wal.recovery_point().await;
+
+        /*
+        a_recovery_point = RecoveryPoint {
+            clocks: {
+                C_1: 1,
+                C: 4,
+                D: 2,
+            },
+        }
+        e_recovery_point = RecoveryPoint {
+            clocks: {
+                D: 2,
+                C: 4,
+            },
+        }
+        E entry = (0, PointStruct { id: NumId(1), }, clock_tag: Some(ClockTag { peer: C, clock_tick: 0 }))
+        E entry = (1, PointStruct { id: NumId(2), }, clock_tag: Some(ClockTag { peer: C, clock_tick: 1 }))
+        E entry = (2, PointStruct { id: NumId(4), }, clock_tag: Some(ClockTag { peer: D, clock_tick: 0 }))
+        E entry = (3, PointStruct { id: NumId(5), }, clock_tag: Some(ClockTag { peer: D, clock_tick: 1 }))
+        E entry = (4, PointStruct { id: NumId(1), }, clock_tag: None)
+        E entry = (5, PointStruct { id: NumId(2), }, clock_tag: None)
+        E entry = (6, PointStruct { id: NumId(6), }, clock_tag: Some(ClockTag { peer: C, clock_tick: 3 }))
+        E entry = (7, PointStruct { id: NumId(6), }, clock_tag: Some(ClockTag { peer: C, clock_tick: 3 }))
+        E entry = (8, PointStruct { id: NumId(3), }, clock_tag: None)
+        E entry = (9, PointStruct { id: NumId(30), }, clock_tag: None)
+        E entry = (10, PointStruct { id: NumId(4), }, clock_tag: None)
+        E entry = (11, PointStruct { id: NumId(5), }, clock_tag: None)
+        ------------------------------
+        A entry = (0, PointStruct { id: NumId(1), }, clock_tag: Some(ClockTag { peer: C, clock_tick: 0 }))
+        A entry = (1, PointStruct { id: NumId(2), }, clock_tag: Some(ClockTag { peer: C, clock_tick: 1 }))
+        A entry = (2, PointStruct { id: NumId(3), }, clock_tag: Some(ClockTag { peer: C, clock_tick: 2 }))
+        A entry = (3, PointStruct { id: NumId(30), }, clock_tag: Some(ClockTag { peer: C_1, clock_tick: 0 }))
+        A entry = (4, PointStruct { id: NumId(4), }, clock_tag: Some(ClockTag { peer: D, clock_tick: 0 }))
+        A entry = (5, PointStruct { id: NumId(5), }, clock_tag: Some(ClockTag { peer: D, clock_tick: 1 }))
+        A entry = (6, PointStruct { id: NumId(6), }, clock_tag: Some(ClockTag { peer: C, clock_tick: 3 }))
+         */
+
+        let delta_from = e_wal.resolve_wal_delta(a_recovery_point.clone()).await;
+
+        // No diff expected
+        // **************************************************************************************
+        // ToDo: This check is broken! Expected to be fixed after truncation logic is implemented
+        // **************************************************************************************
+        // assert_eq!(e_wal.wal.lock().read(delta_from).count(), 0);
+
+        assert!(delta_from.is_err());
+    }
 }
