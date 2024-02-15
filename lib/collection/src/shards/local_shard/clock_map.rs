@@ -1,7 +1,6 @@
-use std::cmp;
 use std::collections::{hash_map, HashMap};
-use std::fmt::{self, Display};
 use std::path::Path;
+use std::{cmp, fmt};
 
 use api::grpc::qdrant::RecoveryPointClockTag;
 use io::file_operations;
@@ -226,43 +225,53 @@ impl RecoveryPoint {
     }
 }
 
-impl Display for RecoveryPoint {
+impl fmt::Display for RecoveryPoint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let clocks = self
-            .clocks
-            .iter()
-            .map(|(key, tick)| format!("{}({}): {tick}", key.peer_id, key.clock_id))
-            .collect::<Vec<_>>()
-            .join(", ");
-        write!(f, "RecoveryPoint[{clocks}]")
+        write!(f, "RecoveryPoint[")?;
+
+        let mut separator = "";
+
+        for (key, current_tick) in &self.clocks {
+            write!(
+                f,
+                "{separator}{}({}): {current_tick}",
+                key.peer_id, key.clock_id
+            )?;
+
+            separator = ", ";
+        }
+
+        write!(f, "]")?;
+
+        Ok(())
     }
 }
 
 impl From<RecoveryPoint> for api::grpc::qdrant::RecoveryPoint {
-    fn from(value: RecoveryPoint) -> Self {
-        Self {
-            clocks: value
-                .clocks
-                .into_iter()
-                .map(|(key, clock_tick)| RecoveryPointClockTag {
-                    peer_id: key.peer_id,
-                    clock_id: key.clock_id,
-                    clock_tick,
-                })
-                .collect(),
-        }
+    fn from(rp: RecoveryPoint) -> Self {
+        let clocks = rp
+            .clocks
+            .into_iter()
+            .map(|(key, clock_tick)| RecoveryPointClockTag {
+                peer_id: key.peer_id,
+                clock_id: key.clock_id,
+                clock_tick,
+            })
+            .collect();
+
+        Self { clocks }
     }
 }
 
 impl From<api::grpc::qdrant::RecoveryPoint> for RecoveryPoint {
-    fn from(value: api::grpc::qdrant::RecoveryPoint) -> Self {
-        Self {
-            clocks: value
-                .clocks
-                .into_iter()
-                .map(|tag| (Key::new(tag.peer_id, tag.clock_id), tag.clock_tick))
-                .collect(),
-        }
+    fn from(rp: api::grpc::qdrant::RecoveryPoint) -> Self {
+        let clocks = rp
+            .clocks
+            .into_iter()
+            .map(|tag| (Key::new(tag.peer_id, tag.clock_id), tag.clock_tick))
+            .collect();
+
+        Self { clocks }
     }
 }
 
