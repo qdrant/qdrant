@@ -425,7 +425,10 @@ impl ShardReplicaSet {
         Ok(())
     }
 
-    pub async fn resolve_wal_delta(&self, recovery_point: RecoveryPoint) -> CollectionResult<u64> {
+    pub async fn resolve_wal_delta(
+        &self,
+        recovery_point: RecoveryPoint,
+    ) -> CollectionResult<Option<u64>> {
         let local_shard_read = self.local.read().await;
         let Some(local_shard) = local_shard_read.deref() else {
             return Err(CollectionError::service_error(
