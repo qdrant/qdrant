@@ -80,6 +80,9 @@ pub async fn do_save_uploaded_snapshot(
 ) -> std::result::Result<Url, StorageError> {
     let filename = snapshot
         .file_name
+        // Sanitize the file name:
+        // - only take the top level path (no directories such as ../)
+        // - require the file name to be valid UTF-8
         .and_then(|x| {
             Path::new(&x)
                 .file_name()
