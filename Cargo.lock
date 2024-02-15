@@ -3,6 +3,76 @@
 version = 3
 
 [[package]]
+name = "Pieces_Qdrant_Server"
+version = "1.7.4"
+dependencies = [
+ "actix-cors",
+ "actix-files",
+ "actix-multipart",
+ "actix-web",
+ "actix-web-httpauth",
+ "actix-web-validator",
+ "anyhow",
+ "api",
+ "cancel",
+ "chrono",
+ "clap",
+ "collection",
+ "colored",
+ "common",
+ "config",
+ "console-subscriber",
+ "constant_time_eq 0.3.0",
+ "futures",
+ "futures-util",
+ "itertools 0.12.0",
+ "log",
+ "memory",
+ "num-traits",
+ "num_cpus",
+ "parking_lot",
+ "prometheus",
+ "prost 0.11.9",
+ "raft",
+ "raft-proto",
+ "rand 0.8.5",
+ "reqwest",
+ "rstack-self",
+ "rustls",
+ "rustls-pemfile",
+ "rusty-hook",
+ "schemars",
+ "sealed_test",
+ "segment",
+ "serde",
+ "serde_cbor",
+ "serde_json",
+ "serde_urlencoded",
+ "slog",
+ "slog-stdlog",
+ "sparse",
+ "storage",
+ "sys-info",
+ "tar",
+ "tempfile",
+ "thiserror",
+ "tikv-jemallocator",
+ "tokio",
+ "tonic",
+ "tonic-reflection",
+ "tower",
+ "tower-layer",
+ "tracing",
+ "tracing-log",
+ "tracing-subscriber",
+ "tracing-tracy",
+ "uuid",
+ "validator",
+ "wal",
+ "winres",
+]
+
+[[package]]
 name = "actix-codec"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3741,75 +3811,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "qdrant"
-version = "1.7.4"
-dependencies = [
- "actix-cors",
- "actix-files",
- "actix-multipart",
- "actix-web",
- "actix-web-httpauth",
- "actix-web-validator",
- "anyhow",
- "api",
- "cancel",
- "chrono",
- "clap",
- "collection",
- "colored",
- "common",
- "config",
- "console-subscriber",
- "constant_time_eq 0.3.0",
- "futures",
- "futures-util",
- "itertools 0.12.0",
- "log",
- "memory",
- "num-traits",
- "num_cpus",
- "parking_lot",
- "prometheus",
- "prost 0.11.9",
- "raft",
- "raft-proto",
- "rand 0.8.5",
- "reqwest",
- "rstack-self",
- "rustls",
- "rustls-pemfile",
- "rusty-hook",
- "schemars",
- "sealed_test",
- "segment",
- "serde",
- "serde_cbor",
- "serde_json",
- "serde_urlencoded",
- "slog",
- "slog-stdlog",
- "sparse",
- "storage",
- "sys-info",
- "tar",
- "tempfile",
- "thiserror",
- "tikv-jemallocator",
- "tokio",
- "tonic",
- "tonic-reflection",
- "tower",
- "tower-layer",
- "tracing",
- "tracing-log",
- "tracing-subscriber",
- "tracing-tracy",
- "uuid",
- "validator",
- "wal",
-]
-
-[[package]]
 name = "quantization"
 version = "0.1.0"
 source = "git+https://github.com/qdrant/quantization.git#939fdb627a8edcf92fd71e3c79017156690850e9"
@@ -6002,6 +6003,15 @@ checksum = "524e57b2c537c0f9b1e69f1965311ec12182b4122e45035b1508cd24d2adadb1"
 dependencies = [
  "cfg-if",
  "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "winres"
+version = "0.1.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b68db261ef59e9e52806f688020631e987592bd83619edccda9c47d42cde4f6c"
+dependencies = [
+ "toml",
 ]
 
 [[package]]
