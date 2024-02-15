@@ -256,12 +256,14 @@ pub fn get_int_range_checkers(
                 .get_values(point_id)
                 .is_some_and(|values| values.iter().copied().any(|i| range.check_range(i)))
         })),
-        FieldIndex::FloatIndex(num_index) => Some(Box::new(move |point_id: PointOffsetType| {
+        FieldIndex::FloatIndex(num_index) => {
             let range = range.map(|i| i as FloatPayloadType);
-            num_index
-                .get_values(point_id)
-                .is_some_and(|values| values.iter().copied().any(|f| range.check_range(f)))
-        })),
+            Some(Box::new(move |point_id: PointOffsetType| {
+                num_index
+                    .get_values(point_id)
+                    .is_some_and(|values| values.iter().copied().any(|f| range.check_range(f)))
+            }))
+        }
         _ => None,
     }
 }
