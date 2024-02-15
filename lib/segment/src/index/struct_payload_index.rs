@@ -479,23 +479,24 @@ impl PayloadIndex for StructPayloadIndex {
         payload: &Payload,
         key: &Option<String>,
     ) -> OperationResult<()> {
-        let mut _updated_payload = Payload::default();
-        let updated_payload_ref = if let Some(key) = key {
+        if let Some(key) = key {
             self.payload
                 .borrow_mut()
                 .assign_by_key(point_id, payload, key)?;
-            _updated_payload = self.payload(point_id)?;
-            &_updated_payload
         } else {
             self.payload.borrow_mut().assign(point_id, payload)?;
-            payload
         };
 
+        let updated_payload = self.payload(point_id)?;
         for (field, field_index) in &mut self.field_indexes {
-            let field_value_opt = updated_payload_ref.get_value_opt(field);
+            let field_value_opt = updated_payload.get_value_opt(field);
             if let Some(field_value) = &field_value_opt {
                 for index in field_index {
                     index.add_point(point_id, field_value)?;
+                }
+            } else {
+                for index in field_index {
+                    index.remove_point(point_id)?;
                 }
             }
         }
