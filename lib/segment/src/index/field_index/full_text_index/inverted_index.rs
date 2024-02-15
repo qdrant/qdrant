@@ -227,11 +227,7 @@ impl InvertedIndex {
         iter: impl Iterator<Item = OperationResult<(PointOffsetType, BTreeSet<String>)>>,
     ) -> OperationResult<()> {
         let mut index = MutableInvertedIndex::default();
-        for i in iter {
-            let (idx, tokens) = i?;
-            let doc = Self::document_from_tokens_impl(&mut index.vocab, &tokens);
-            index.index_document(idx, doc)?;
-        }
+        index.build_index(iter)?;
 
         match self {
             InvertedIndex::Mutable(i) => {
@@ -290,6 +286,53 @@ pub struct MutableInvertedIndex {
 }
 
 impl MutableInvertedIndex {
+    fn build_index(
+        &mut self,
+        iter: impl Iterator<Item = OperationResult<(PointOffsetType, BTreeSet<String>)>>,
+    ) -> OperationResult<()> {
+        self.points_count = 0;
+        self.vocab.clear();
+        self.postings.clear();
+        self.point_to_docs.clear();
+
+        // update point_to_docs
+        for i in iter {
+            self.points_count += 1;
+            let (idx, tokens) = i?;
+
+            if self.point_to_docs.len() <= idx as usize {
+                self.point_to_docs
+                    .resize_with(idx as usize + 1, Default::default);
+            }
+
+            let document = InvertedIndex::document_from_tokens_impl(&mut self.vocab, &tokens);
+            self.point_to_docs[idx as usize] = Some(document);
+        }
+
+        // build postings from point_to_docs
+        // build in order to increase document id
+        for (idx, doc) in self.point_to_docs.iter().enumerate() {
+            if let Some(doc) = doc {
+                for token_idx in doc.tokens() {
+                    if self.postings.len() <= *token_idx as usize {
+                        self.postings
+                            .resize_with(*token_idx as usize + 1, Default::default);
+                    }
+                    let posting = self
+                        .postings
+                        .get_mut(*token_idx as usize)
+                        .expect("posting must exist even if with None");
+                    match posting {
+                        None => *posting = Some(PostingList::new(idx as PointOffsetType)),
+                        Some(vec) => vec.insert(idx as PointOffsetType),
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     fn index_document(&mut self, idx: PointOffsetType, document: Document) -> OperationResult<()> {
         self.points_count += 1;
         if self.point_to_docs.len() <= idx as usize {
