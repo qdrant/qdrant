@@ -1215,6 +1215,8 @@ mod tests {
     /// check is that the sequence always ends in order at the end, going up to the highest clock
     /// clock tick.
     ///
+    /// This logic is validated with examples in `validate_clock_tag_ordering_property`.
+    ///
     /// This property may not be valid if a diff transfer has not been resolved correctly or
     /// completely, or if the WAL got malformed in another way.
     fn check_clock_tag_ordering_property(clock_tags: &[ClockTag]) -> Result<(), String> {
@@ -1240,7 +1242,7 @@ mod tests {
             // For all the following operations of the same peer+clock, remove their tick value
             clock_tags
                 .iter()
-                .skip(i as usize + 1)
+                .skip(i + 1)
                 .filter(|later_clock_tag| {
                     (later_clock_tag.peer_id, later_clock_tag.clock_id) == key
                 })
@@ -1266,5 +1268,226 @@ mod tests {
         }
 
         Ok(())
+    }
+
+    /// Validate that `check_clock_tag_ordering_property` works as expected.
+    ///
+    /// Yes, this is a test for a test for a test. (⌐■_■)
+    #[test]
+    fn validate_clock_tag_ordering_property() {
+        // Empty is fine
+        check_clock_tag_ordering_property(&[]).unwrap();
+
+        // Any one operation is fine
+        check_clock_tag_ordering_property(&[ClockTag::new(1, 2, 3)]).unwrap();
+
+        // Operations in order are allowed
+        check_clock_tag_ordering_property(&[
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 0, 3),
+        ])
+        .unwrap();
+
+        // Operations in order with gaps are not allowed
+        check_clock_tag_ordering_property(&[
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(1, 0, 2),
+            // Misses 1:0:3-9
+            ClockTag::new(1, 0, 10),
+            ClockTag::new(1, 0, 11),
+        ])
+        .unwrap_err();
+
+        // Not starting at zero (truncated) is allowed
+        check_clock_tag_ordering_property(&[
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 0, 3),
+            ClockTag::new(1, 0, 4),
+        ])
+        .unwrap();
+
+        // Repeated operations are allowed
+        check_clock_tag_ordering_property(&[
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 0, 2),
+        ])
+        .unwrap();
+
+        // Repeating operation sequence is allowed
+        check_clock_tag_ordering_property(&[
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(1, 0, 2),
+            // Repeats 1:0:0-2 two more times
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(1, 0, 2),
+        ])
+        .unwrap();
+
+        // Repeating part of operation sequence is allowed
+        check_clock_tag_ordering_property(&[
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 0, 3),
+            // Repeats 1:0:2-3 two more times
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 0, 3),
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 0, 3),
+        ])
+        .unwrap();
+
+        // Repeating operation sequence with extra at the end is allowed
+        check_clock_tag_ordering_property(&[
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(1, 0, 2),
+            // Repeats 1:0:0-2 one more time
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(1, 0, 2),
+            // Adds 1:0:3-6 on top of it
+            ClockTag::new(1, 0, 3),
+            ClockTag::new(1, 0, 4),
+            ClockTag::new(1, 0, 5),
+            ClockTag::new(1, 0, 6),
+        ])
+        .unwrap();
+
+        // Repeating operations in random order is allowed, as long as the end is in sequence
+        check_clock_tag_ordering_property(&[
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(1, 0, 2),
+            // Repeats 1:0:0-2 a few more times in random order
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(1, 0, 2),
+            // Adds 1:0:3 on top of it
+            ClockTag::new(1, 0, 3),
+        ])
+        .unwrap();
+
+        // Repeating sequence must not miss operations at the end
+        check_clock_tag_ordering_property(&[
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 0, 1),
+            // Misses 1:0:2
+        ])
+        .unwrap_err();
+
+        // Repeating sequence must not miss operations in the middle
+        check_clock_tag_ordering_property(&[
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 0, 0),
+            // Misses 1:0:1
+            ClockTag::new(1, 0, 2),
+        ])
+        .unwrap_err();
+
+        // Skipping a clock ID is allowed
+        check_clock_tag_ordering_property(&[
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(1, 0, 2),
+            // Skipped clock ID 1
+            ClockTag::new(1, 2, 10),
+            ClockTag::new(1, 2, 11),
+            ClockTag::new(1, 2, 12),
+        ])
+        .unwrap();
+
+        // Intermixed repeating operation sequence is allowed
+        check_clock_tag_ordering_property(&[
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 1, 0),
+            ClockTag::new(2, 0, 0),
+            ClockTag::new(2, 0, 1),
+            ClockTag::new(2, 0, 2),
+            ClockTag::new(1, 1, 1),
+            ClockTag::new(2, 0, 0),
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 1, 2),
+            ClockTag::new(1, 1, 3),
+            ClockTag::new(2, 0, 1),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(2, 0, 2),
+            ClockTag::new(1, 1, 4),
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 1, 5),
+        ])
+        .unwrap();
+
+        // Intermixed sequence where one tick for peer 2 is missing is not allowed
+        check_clock_tag_ordering_property(&[
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(2, 0, 0),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(2, 0, 1),
+            ClockTag::new(1, 0, 2),
+            // Misses 2:0:2
+            ClockTag::new(1, 0, 3),
+            ClockTag::new(2, 0, 3),
+        ])
+        .unwrap_err();
+
+        // Intermixed sequence where one tick for clock ID 1 is missing is not allowed
+        check_clock_tag_ordering_property(&[
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 1, 0),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(1, 1, 1),
+            ClockTag::new(1, 0, 2),
+            // Misses 1:1:2
+            ClockTag::new(1, 0, 3),
+            ClockTag::new(1, 1, 3),
+        ])
+        .unwrap_err();
+
+        // Intermixed sequence where one tick is missing is not allowed
+        check_clock_tag_ordering_property(&[
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(2, 0, 0),
+            ClockTag::new(3, 0, 0),
+            ClockTag::new(3, 0, 1),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(2, 0, 1),
+            ClockTag::new(3, 0, 2),
+            ClockTag::new(2, 0, 2),
+            ClockTag::new(1, 0, 2),
+            // Peer 2 only partially recovering here, missing 3:0:2
+            ClockTag::new(2, 0, 0),
+            ClockTag::new(2, 0, 1),
+            // Peer 1 and 3 continue
+            ClockTag::new(1, 0, 3),
+            ClockTag::new(1, 0, 4),
+            ClockTag::new(3, 0, 3),
+            ClockTag::new(3, 0, 4),
+        ])
+        .unwrap_err();
     }
 }
