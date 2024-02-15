@@ -230,6 +230,7 @@ mod tests {
     use rand::rngs::StdRng;
     use rand::seq::SliceRandom;
     use rand::{Rng, SeedableRng};
+    use rstest::rstest;
     use tempfile::{Builder, TempDir};
     use wal::WalOptions;
 
@@ -1047,6 +1048,8 @@ mod tests {
 
     /// A randomized and more extensive test for resolving a WAL delta.
     ///
+    /// This tests configurations from 2 up to 10 nodes.
+    ///
     /// This randomizes:
     /// - The number of operations
     /// - What node is used as entry point
@@ -1060,18 +1063,19 @@ mod tests {
     /// - assert correctness
     ///
     /// See: <https://www.notion.so/qdrant/Testing-suite-4e28a978ec05476080ff26ed07757def?pvs=4>
-    #[tokio::test]
-    async fn test_resolve_wal_delta_randomized() {
-        const NODE_COUNT: usize = 3;
+    #[rstest]
+    async fn test_resolve_wal_delta_randomized(
+        #[values(2, 3, 4, 5, 6, 7, 8, 9, 10)] node_count: usize,
+    ) {
         let mut rng = StdRng::seed_from_u64(42);
         let mut point_id_source = 1..;
 
         // Create WALs, clock sets and clock maps for each node
         let mut wals = std::iter::repeat_with(fixture_empty_wal)
-            .take(NODE_COUNT)
+            .take(node_count)
             .collect::<Vec<_>>();
         let mut clock_sets = std::iter::repeat_with(ClockSet::new)
-            .take(NODE_COUNT)
+            .take(node_count)
             .collect::<Vec<_>>();
 
         // 25 times:
@@ -1083,7 +1087,7 @@ mod tests {
         for _ in 0..25 {
             // Insert random number of operations on all nodes
             for _ in 0..rng.gen_range(0..10) {
-                let entrypoint = rng.gen_range(0..NODE_COUNT);
+                let entrypoint = rng.gen_range(0..node_count);
 
                 let mut clock = clock_sets[entrypoint].get_clock();
                 let clock_tick = clock.tick_once();
@@ -1111,8 +1115,8 @@ mod tests {
             }
 
             // Mark a random node as dead
-            let dead_node = rng.gen_range(0..NODE_COUNT);
-            let alive_nodes = (0..NODE_COUNT)
+            let dead_node = rng.gen_range(0..node_count);
+            let alive_nodes = (0..node_count)
                 .filter(|&n| n != dead_node)
                 .collect::<Vec<_>>();
 
