@@ -1166,15 +1166,22 @@ mod tests {
                 from_deltas.insert(delta_from);
             }
             assert_eq!(from_deltas.len(), 1, "found different delta starting points in different WALs, while all should be the same");
-            let delta_from = from_deltas.into_iter().next().unwrap().unwrap();
+            let delta_from = from_deltas.into_iter().next().unwrap();
+            assert_eq!(
+                delta_from.is_some(),
+                operation_count > 0,
+                "if we had operations to some node, we must find a delta, otherwise not",
+            );
 
             // Recover WAL on the dead node from a random alive node
-            let alive_node = *alive_nodes.choose(&mut rng).unwrap();
-            wals[dead_node]
-                .0
-                .append_from(&wals[alive_node].0, delta_from)
-                .await
-                .unwrap();
+            if let Some(delta_from) = delta_from {
+                let alive_node = *alive_nodes.choose(&mut rng).unwrap();
+                wals[dead_node]
+                    .0
+                    .append_from(&wals[alive_node].0, delta_from)
+                    .await
+                    .unwrap();
+            }
 
             // All WALs must be equal, having exactly the same entries
             wals.iter()
