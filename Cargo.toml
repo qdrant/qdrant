@@ -1,5 +1,5 @@
 [package]
-name = "qdrant"
+name = "Pieces_Qdrant_Server"
 version = "1.7.4"
 authors = [
     "Andrey Vasnetsov <andrey@vasnetsov.com>",
@@ -10,7 +10,7 @@ homepage = "https://qdrant.tech/"
 repository = "https://github.com/qdrant/qdrant"
 license = "Apache-2.0"
 edition = "2021"
-default-run = "qdrant"
+default-run = "Pieces_Qdrant_Server"
 
 [features]
 default = ["web", "parking_lot"]
@@ -161,3 +161,17 @@ opt-level = 3
 [patch.crates-io]
 # Temporary patch until <https://github.com/hyperium/tonic/pull/1401> is merged
 tonic = { git = 'https://github.com/qdrant/tonic', branch = "v0.9.2-patched" }
+
+[build-dependencies]
+winres = "0.1.12"
+
+[package.metadata.winres]
+CompanyName = "Mesh Intelligent Technologies, Inc."
+FileDescription = "Pieces Qdrant Server"
+FileVersion = "1.0.0.0"
+InternalName = "Pieces Qdrant Server"
+LegalCopyright = "Copyright (C) 2024 Mesh Intelligent Technologies, Inc. All rights reserved."
+OriginalFilename = "pieces_qdrant_server.exe"
+ProductName = "Pieces Qdrant Server"
+ProductVersion = "1.0"
+Publisher = "Mesh Intelligent Technologies, Inc."
