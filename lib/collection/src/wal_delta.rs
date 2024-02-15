@@ -224,6 +224,7 @@ pub enum WalDeltaError {
 #[cfg(test)]
 mod tests {
     use std::collections::{HashMap, HashSet, VecDeque};
+    use std::ops::Range;
     use std::sync::Arc;
 
     use parking_lot::Mutex as ParkingMutex;
@@ -1057,15 +1058,25 @@ mod tests {
     ///
     /// This test does the following 25 times:
     /// - insert random number of operations on all nodes
-    /// - randomly kill a node (or rather, mark as killed)
+    /// - randomly kill a number of nodes (or rather, mark as killed)
     /// - write random number of operations some operations to all other nodes
-    /// - recover the killed node
+    /// - recover the killed nodes
     /// - assert correctness
     ///
     /// See: <https://www.notion.so/qdrant/Testing-suite-4e28a978ec05476080ff26ed07757def?pvs=4>
     #[rstest]
+    #[case::two_nodes(2, 0..2)]
+    #[case::three_nodes(3, 0..3)]
+    #[case::four_nodes(4, 1..4)]
+    #[case::five_nodes(5, 1..5)]
+    #[case::six_nodes(6, 1..6)]
+    #[case::seven_nodes(7, 1..7)]
+    #[case::eight_nodes(8, 1..8)]
+    #[case::nine_nodes(9, 1..9)]
+    #[case::ten_nodes(10, 1..10)]
     async fn test_resolve_wal_delta_randomized(
-        #[values(2, 3, 4, 5, 6, 7, 8, 9, 10)] node_count: usize,
+        #[case] node_count: usize,
+        #[case] dead_nodes_range: Range<usize>,
     ) {
         let mut rng = StdRng::seed_from_u64(42);
         let mut point_id_source = 1..;
@@ -1114,11 +1125,12 @@ mod tests {
                 }
             }
 
-            // Mark a random node as dead
-            let dead_node = rng.gen_range(0..node_count);
-            let alive_nodes = (0..node_count)
-                .filter(|&n| n != dead_node)
-                .collect::<Vec<_>>();
+            // Make a random list of alive and dead nodes
+            let mut alive_nodes = (0..node_count).collect::<Vec<_>>();
+            alive_nodes.shuffle(&mut rng);
+            let dead_nodes = alive_nodes
+                .drain(0..rng.gen_range(dead_nodes_range.clone()))
+                .collect::<HashSet<_>>();
 
             // Insert random number of operations into all alive nodes
             let operation_count = rng.gen_range(0..100);
@@ -1154,33 +1166,36 @@ mod tests {
                 }
             }
 
-            // Resolve WAL on every alive node, to recover the dead node
-            let dead_node_recovery_point = wals[dead_node].0.recovery_point().await;
-            let mut from_deltas = HashSet::new();
-            for &alive_node in &alive_nodes {
-                let delta_from = wals[alive_node]
-                    .0
-                    .resolve_wal_delta(dead_node_recovery_point.clone())
-                    .await
-                    .expect("failed to resolve WAL delta on alive node");
-                from_deltas.insert(delta_from);
-            }
-            assert_eq!(from_deltas.len(), 1, "found different delta starting points in different WALs, while all should be the same");
-            let delta_from = from_deltas.into_iter().next().unwrap();
-            assert_eq!(
-                delta_from.is_some(),
-                operation_count > 0,
-                "if we had operations to some node, we must find a delta, otherwise not",
-            );
+            // Recover dead nodes
+            for dead_node in dead_nodes {
+                // Resolve WAL on every alive node, to recover the dead node
+                let recovery_point = wals[dead_node].0.recovery_point().await;
+                let mut from_deltas = HashSet::new();
+                for &alive_node in &alive_nodes {
+                    let delta_from = wals[alive_node]
+                        .0
+                        .resolve_wal_delta(recovery_point.clone())
+                        .await
+                        .expect("failed to resolve WAL delta on alive node");
+                    from_deltas.insert(delta_from);
+                }
+                assert_eq!(from_deltas.len(), 1, "found different delta starting points in different WALs, while all should be the same");
+                let delta_from = from_deltas.into_iter().next().unwrap();
+                assert_eq!(
+                    delta_from.is_some(),
+                    operation_count > 0,
+                    "if we had operations to some node, we must find a delta, otherwise not",
+                );
 
-            // Recover WAL on the dead node from a random alive node
-            if let Some(delta_from) = delta_from {
-                let alive_node = *alive_nodes.choose(&mut rng).unwrap();
-                wals[dead_node]
-                    .0
-                    .append_from(&wals[alive_node].0, delta_from)
-                    .await
-                    .unwrap();
+                // Recover WAL on the dead node from a random alive node
+                if let Some(delta_from) = delta_from {
+                    let alive_node = *alive_nodes.choose(&mut rng).unwrap();
+                    wals[dead_node]
+                        .0
+                        .append_from(&wals[alive_node].0, delta_from)
+                        .await
+                        .unwrap();
+                }
             }
 
             // All WALs must be equal, having exactly the same entries
