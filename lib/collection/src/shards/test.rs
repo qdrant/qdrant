@@ -1,5 +1,3 @@
-use std::iter;
-
 use super::local_shard::clock_map::ClockMap;
 use super::replica_set::clock_set::ClockSet;
 use super::shard::PeerId;
@@ -10,45 +8,68 @@ fn clock_set_clock_map_workflow() {
     let mut helper = Helper::new();
 
     // `ClockSet` and `ClockMap` "stick" to tick `0`, until `ClockSet` is advanced at least once
-    helper.test(Tick, Req(0));
-    helper.test(TickAndAdvance, [Req(0), Resp(0), Accepted]);
-    helper.test(TickAndAdvance, [Req(0), Resp(0), Accepted]);
-    helper.test(RoundTrip, [Req(0), Resp(0), Accepted]);
+    helper.tick_clock().assert(0);
+    helper.advance_clock_map(false).assert(0, 0, true);
+    helper.advance_clock_map(false).assert(0, 0, true);
+    helper.advance_clock(false).assert(0, 0, true);
 
-    // Everything ticks normally after that
-    helper.test(RoundTrip, [Req(1), Resp(1), Accepted]);
-    helper.test(RoundTrip, [Req(2), Resp(2), Accepted]);
-    helper.test(RoundTrip, [Req(3), Resp(3), Accepted]);
+    // `ClockSet` and `ClockMap` tick sequentially and in sync after that
+    for tick in 1..=10 {
+        helper.advance_clock(false).assert(tick, tick, true);
+    }
 
-    // `ClockMap` always advances to newer tick (regardless if `force` flag is set or not)
-    helper.test(Tick, Req(4));
-    helper.test(Tick, Req(5));
-    helper.test(RoundTrip, [Req(6), Resp(6), Accepted]);
-    helper.test(Tick, Req(7));
-    helper.test(Tick, Req(8));
-    helper.test(RoundTrip.force(), [Req(9), Resp(9), Accepted]);
+    // `ClockMap` advances to newer ticks
+    for tick in 11..=50 {
+        if tick % 10 != 0 {
+            // Tick `ClockSet` few times, without advancing `ClockMap`...
+            helper.tick_clock().assert(tick);
+        } else {
+            // ...then advance both `ClockMap` and `ClockSet`
+            helper.advance_clock(false).assert(tick, tick, true);
+        }
+    }
 
     // `ClockMap` accepts tick `0` and advances `ClockSet`
     helper.clock_set = Default::default();
-    helper.test(RoundTrip, [Req(0), Resp(9), Accepted]);
-    helper.test(Tick, Req(10));
+    helper.advance_clock(false).assert(0, 50, true);
+    helper.tick_clock().assert(51);
 
-    // `ClockMap` rejects older ticks and advances `ClockSet`
+    // `ClockMap` rejects older (or current) ticks...
     helper.clock_set = Default::default();
     helper.clock_set.get_clock().advance_to(0);
-    helper.test(TickAndAdvance, [Req(1), Resp(9), Rejected]);
-    helper.test(TickAndAdvance, [Req(2), Resp(9), Rejected]);
-    helper.test(RoundTrip, [Req(3), Resp(9), Rejected]);
-    helper.test(Tick, Req(10));
 
-    // `ClockMap` accepts older ticks, if `force` flag is set, but does not advance `ClockSet`
-    // (But it does "echo" the same tick)
+    for tick in 1..=50 {
+        helper.advance_clock_map(false).assert(tick, 50, false);
+    }
+
+    // ...and advances `ClockSet`
     helper.clock_set = Default::default();
-    helper.test(RoundTrip.force(), [Req(0), Resp(0), Accepted]);
-    helper.test(RoundTrip.force(), [Req(1), Resp(1), Accepted]);
-    helper.test(RoundTrip.force(), [Req(2), Resp(2), Accepted]);
-    helper.test(RoundTrip, [Req(3), Resp(9), Rejected]);
-    helper.test(Tick, Req(10));
+    helper.clock_set.get_clock().advance_to(42);
+
+    helper.advance_clock(false).assert(43, 50, false);
+    helper.tick_clock().assert(51);
+
+    // `ClockMap` advances to newer ticks with `force = true`
+    helper.clock_set = Default::default();
+    helper.advance_clock(false).assert(0, 50, true);
+
+    for tick in 51..=100 {
+        helper.advance_clock(true).assert(tick, tick, true);
+    }
+
+    // `ClockMap` accepts older (or current) ticks with `force = true`...
+    helper.clock_set = Default::default();
+
+    for tick in 0..=100 {
+        helper.advance_clock(true).assert(tick, tick, true);
+    }
+
+    // ...but it does not affect current tick of `ClockMap` in any way
+    helper.clock_set = Default::default();
+    helper.clock_set.get_clock().advance_to(42);
+
+    helper.advance_clock(false).assert(43, 100, false);
+    helper.tick_clock().assert(101);
 }
 
 #[derive(Clone, Debug)]
@@ -67,126 +88,67 @@ impl Helper {
         }
     }
 
-    pub fn test(&mut self, test: impl Into<Test>, assert: impl IntoIterator<Item = Assert>) {
-        let test = test.into();
-        let status = self.execute(test.action, test.force);
-
-        for assert in assert {
-            self.assert(&status, assert);
-        }
+    pub fn tick_clock(&mut self) -> TickClockStatus {
+        let mut clock = self.clock_set.get_clock();
+        let clock_tag = ClockTag::new(PEER_ID, clock.id() as _, clock.tick_once());
+        TickClockStatus { clock_tag }
     }
 
-    fn execute(&mut self, action: Action, force: bool) -> Status {
+    pub fn advance_clock_map(&mut self, force: bool) -> AdvanceStatus {
+        self.advance(force, false)
+    }
+
+    pub fn advance_clock(&mut self, force: bool) -> AdvanceStatus {
+        self.advance(force, true)
+    }
+
+    fn advance(&mut self, force: bool, advance_clock: bool) -> AdvanceStatus {
         let mut clock = self.clock_set.get_clock();
 
-        // Tick `ClockSet`
-        let request = ClockTag::new(PEER_ID, clock.id() as _, clock.tick_once()).force(force);
+        let clock_tag = ClockTag::new(PEER_ID, clock.id() as _, clock.tick_once()).force(force);
 
-        if matches!(action, Action::Tick) {
-            return Status::from_req(request);
+        let mut clock_map_tag = clock_tag;
+        let accepted = self
+            .clock_map
+            .advance_clock_and_correct_tag(&mut clock_map_tag);
+
+        assert_eq!(clock_tag.peer_id, clock_map_tag.peer_id);
+        assert_eq!(clock_tag.clock_id, clock_map_tag.clock_id);
+
+        if advance_clock {
+            clock.advance_to(clock_map_tag.clock_tick);
         }
 
-        // Advance `ClockMap`
-        let mut response = request;
-        let accepted = self.clock_map.advance_clock_and_correct_tag(&mut response);
-
-        let status = Status::new(request, response, accepted);
-
-        // Advance `ClockSet`
-        if matches!(action, Action::RoundTrip) {
-            clock.advance_to(status.response.clock_tick);
-        }
-
-        status
-    }
-
-    fn assert(&self, status: &Status, assert: Assert) {
-        match assert {
-            Assert::Req(clock_tick) => assert_eq!(status.request.clock_tick, clock_tick),
-            Assert::Resp(clock_tick) => assert_eq!(status.response.clock_tick, clock_tick),
-            Assert::Accepted => assert!(status.accepted),
-            Assert::Rejected => assert!(!status.accepted),
-        }
-    }
-}
-
-use Action::*;
-use Assert::*;
-
-#[derive(Copy, Clone, Debug)]
-enum Action {
-    Tick,
-    TickAndAdvance,
-    RoundTrip,
-}
-
-impl Action {
-    pub fn force(self) -> Test {
-        Test::new(self, true)
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-enum Assert {
-    Req(u64),
-    Resp(u64),
-    Accepted,
-    Rejected,
-}
-
-impl IntoIterator for Assert {
-    type Item = Self;
-    type IntoIter = iter::Once<Self>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        iter::once(self)
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-struct Test {
-    action: Action,
-    force: bool,
-}
-
-impl Test {
-    pub fn new(action: Action, force: bool) -> Self {
-        Self { action, force }
-    }
-}
-
-impl From<Action> for Test {
-    fn from(action: Action) -> Self {
-        Self::new(action, false)
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-struct Status {
-    request: ClockTag,
-    response: ClockTag,
-    accepted: bool,
-}
-
-impl Status {
-    pub fn new(request: ClockTag, response: ClockTag, accepted: bool) -> Self {
-        Self {
-            request,
-            response,
+        AdvanceStatus {
+            clock_tag,
+            clock_map_tag,
             accepted,
         }
     }
+}
 
-    pub fn from_req(request: ClockTag) -> Self {
-        Self::new(request, default_clock_tag(), false)
+#[derive(Copy, Clone, Debug)]
+struct TickClockStatus {
+    clock_tag: ClockTag,
+}
+
+impl TickClockStatus {
+    pub fn assert(&self, expected_tick: u64) {
+        assert_eq!(self.clock_tag.clock_tick, expected_tick)
     }
 }
 
-fn default_clock_tag() -> ClockTag {
-    ClockTag {
-        peer_id: 0,
-        clock_id: 0,
-        clock_tick: 0,
-        force: false,
+#[derive(Copy, Clone, Debug)]
+struct AdvanceStatus {
+    clock_tag: ClockTag,
+    clock_map_tag: ClockTag,
+    accepted: bool,
+}
+
+impl AdvanceStatus {
+    pub fn assert(&self, expected_tick: u64, expected_cm_tick: u64, expected_status: bool) {
+        assert_eq!(self.clock_tag.clock_tick, expected_tick);
+        assert_eq!(self.clock_map_tag.clock_tick, expected_cm_tick);
+        assert_eq!(self.accepted, expected_status);
     }
 }
