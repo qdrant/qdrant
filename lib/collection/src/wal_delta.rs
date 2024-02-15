@@ -1189,30 +1189,47 @@ mod tests {
         assert_eq!(resolve_result.unwrap_err(), WalDeltaError::NotFound);
     }
 
-    /// Assert that we satisfy the clock ordering property in the WAL.
+    /// Assert that we `check_clock_tag_ordering_property` on the WAL.
+    fn assert_wal_ordering_property(wal: &RecoverableWal) {
+        let clock_tags = wal
+            .wal
+            .lock()
+            .read(0)
+            .map(|(_, operation)| {
+                operation
+                    .clock_tag
+                    .expect("WAL operation does not have a clock tag")
+            })
+            .collect::<Vec<_>>();
+        check_clock_tag_ordering_property(&clock_tags).unwrap();
+    }
+
+    /// Test that we satisfy the clock ordering property, allowing WAL recovery resolution.
     ///
     /// Property:
     /// For each operation with peer+clock tick X, all following operations having the same
     /// peer+clock must cover ticks X+1, X+2, ..., X+n in order up to the highest tick value of
     /// that peer+clock in the WAL.
     ///
+    /// More specifically, this tests the property again on every clock tag. The result of this
+    /// check is that the sequence always ends in order at the end, going up to the highest clock
+    /// clock tick.
+    ///
     /// This property may not be valid if a diff transfer has not been resolved correctly or
     /// completely, or if the WAL got malformed in another way.
-    fn assert_wal_ordering_property(wal: &RecoverableWal) {
-        let wal = wal.wal.lock().read(0).collect::<Vec<_>>();
-
+    fn check_clock_tag_ordering_property(clock_tags: &[ClockTag]) -> Result<(), String> {
         // Get the highest clock value for each clock+peer
-        let highest_clocks = wal.iter().fold(HashMap::new(), |mut map, (_, op)| {
-            let clock_tag = op.clock_tag.unwrap();
-            map.entry((clock_tag.peer_id, clock_tag.clock_id))
-                .and_modify(|highest| *highest = clock_tag.clock_tick.max(*highest))
-                .or_insert(clock_tag.clock_tick);
-            map
-        });
+        let highest_clocks = clock_tags
+            .iter()
+            .fold(HashMap::new(), |mut map, clock_tag| {
+                map.entry((clock_tag.peer_id, clock_tag.clock_id))
+                    .and_modify(|highest| *highest = clock_tag.clock_tick.max(*highest))
+                    .or_insert(clock_tag.clock_tick);
+                map
+            });
 
         // Test each WAL operation for the ordering property
-        for (op_num, operation) in wal.iter() {
-            let clock_tag = operation.clock_tag.unwrap();
+        for (i, clock_tag) in clock_tags.iter().enumerate() {
             let key = (clock_tag.peer_id, clock_tag.clock_id);
             let highest = highest_clocks[&key];
 
@@ -1221,10 +1238,12 @@ mod tests {
                 ((clock_tag.clock_tick + 1)..=highest).collect::<VecDeque<_>>();
 
             // For all the following operations of the same peer+clock, remove their tick value
-            wal.iter()
-                .skip(*op_num as usize + 1)
-                .map(|(_, op)| op.clock_tag.unwrap())
-                .filter(|later_clock_tag| (later_clock_tag.peer_id, later_clock_tag.clock_id) == key)
+            clock_tags
+                .iter()
+                .skip(i as usize + 1)
+                .filter(|later_clock_tag| {
+                    (later_clock_tag.peer_id, later_clock_tag.clock_id) == key
+                })
                 .for_each(|later_clock_tag| {
                     // If this tick is the first we must see, remove it from the list
                     if must_see_ticks
@@ -1236,13 +1255,16 @@ mod tests {
                 });
 
             // If list is not empty, we have not seen all numbers
-            assert!(
-                must_see_ticks.is_empty(),
-                "WAL ordering property violated; following operations did not cover ticks [{}] in order (peer_id: {}, clock_id: {}, max_tick: {highest})",
-                must_see_ticks.into_iter().map(|tick| tick.to_string()).collect::<Vec<_>>().join(", "),
-                clock_tag.peer_id,
-                clock_tag.clock_id,
-            );
+            if !must_see_ticks.is_empty() {
+                return Err(format!(
+                    "WAL ordering property violated; following operations did not cover ticks [{}] in order (peer_id: {}, clock_id: {}, max_tick: {highest})",
+                    must_see_ticks.into_iter().map(|tick| tick.to_string()).collect::<Vec<_>>().join(", "),
+                    clock_tag.peer_id,
+                    clock_tag.clock_id,
+                ));
+            }
         }
+
+        Ok(())
     }
 }
