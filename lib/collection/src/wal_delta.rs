@@ -14,13 +14,30 @@ pub type LockedWal = Arc<ParkingMutex<SerdeWal<OperationWithClockTag>>>;
 /// A WAL that is recoverable, with operations having clock tags and a corresponding clock map.
 pub struct RecoverableWal {
     pub(super) wal: LockedWal,
-    /// Map of all last seen clocks for each peer and clock ID.
-    pub(super) last_clocks: Arc<Mutex<ClockMap>>,
+    /// Map of all highest seen clocks for each peer and clock ID.
+    pub(super) highest_clocks: Arc<Mutex<ClockMap>>,
+    /// Map of all clocks and ticks that are cut off.
+    ///
+    /// Clock ticks equal to those in this map are still recoverable, while clock ticks below those
+    /// in this map are not.
+    ///
+    /// This means two things:
+    /// - this WAL has at least all these clock versions (same as `highest_clocks`)
+    /// - this WAL cannot resolve any delta below any of these clocks
+    pub(super) cutoff_clocks: Arc<Mutex<ClockMap>>,
 }
 
 impl RecoverableWal {
-    pub fn from(wal: LockedWal, last_clocks: Arc<Mutex<ClockMap>>) -> Self {
-        Self { wal, last_clocks }
+    pub fn from(
+        wal: LockedWal,
+        highest_clocks: Arc<Mutex<ClockMap>>,
+        cutoff_clocks: Arc<Mutex<ClockMap>>,
+    ) -> Self {
+        Self {
+            wal,
+            highest_clocks,
+            cutoff_clocks,
+        }
     }
 
     /// Write a record to the WAL but does guarantee durability.
@@ -37,7 +54,7 @@ impl RecoverableWal {
 
             // TODO: do not manually advance here!
             let _operation_accepted = self
-                .last_clocks
+                .highest_clocks
                 .lock()
                 .await
                 .advance_clock_and_correct_tag(clock_tag);
@@ -55,25 +72,47 @@ impl RecoverableWal {
         self.wal.lock().write(operation)
     }
 
+    /// Update the cutoff clock map based on the given recovery point.
+    ///
+    /// This can only increase clock ticks in the cutoff clock map. If there already are higher
+    /// clock ticks, they're kept.
+    pub async fn update_cutoff(&self, recovery_point: RecoveryPoint) {
+        let mut cutoff_clocks = self.cutoff_clocks.lock().await;
+        recovery_point
+            .clock_tag_iter()
+            .filter(|clock_tag| clock_tag.clock_tick >= 1)
+            .for_each(|mut clock_tag| {
+                // A recovery point has every clock one higher, here we decrease it by one again
+                clock_tag.clock_tick -= 1;
+                cutoff_clocks.advance_clock(clock_tag);
+            });
+    }
+
     /// Get a recovery point for this WAL.
     pub async fn recovery_point(&self) -> RecoveryPoint {
-        self.last_clocks.lock().await.to_recovery_point()
+        self.highest_clocks.lock().await.to_recovery_point()
     }
 
     pub async fn resolve_wal_delta(
         &self,
         recovery_point: RecoveryPoint,
     ) -> Result<u64, WalDeltaError> {
-        resolve_wal_delta(recovery_point, &self.wal, self.recovery_point().await)
+        resolve_wal_delta(
+            recovery_point,
+            &self.wal,
+            self.recovery_point().await,
+            self.cutoff_clocks.lock().await.to_recovery_point(),
+        )
     }
 }
 
 /// Resolve the WAL delta for the given `recovery_point`
 ///
-/// A `local_wal` and `local_last_seen` are required to resolve the delta. These should be from the
-/// node being the source of recovery, likely the current one. The `local_wal` is used to resolve
-/// the diff. The `local_last_seen` is used to extend the given recovery point with clocks the
-/// failed node does not know about.
+/// A `local_wal`, `local_recovery_point` and `local_cutoff_point` are required to resolve the
+/// delta. These should be from the node being the source of recovery, likely the current one. The
+/// `local_wal` is used to resolve the diff. The `local_recovery_point` is used to extend the given
+/// recovery point with clocks the failed node does not know about. The `local_cutoff_point` is
+/// used as lower bound for WAL delta resolution.
 ///
 /// The delta can be sent over to the node which the recovery point is from, to restore its
 /// WAL making it consistent with the current shard.
@@ -84,6 +123,7 @@ fn resolve_wal_delta(
     mut recovery_point: RecoveryPoint,
     local_wal: &LockedWal,
     local_recovery_point: RecoveryPoint,
+    local_cutoff_point: RecoveryPoint,
 ) -> Result<u64, WalDeltaError> {
     if recovery_point.is_empty() {
         return Err(WalDeltaError::Empty);
@@ -103,8 +143,10 @@ fn resolve_wal_delta(
     // TODO: do we want to remove higher clocks too, as the recovery node already has all data?
     recovery_point.remove_equal_clocks(&local_recovery_point);
 
-    // TODO: check truncated clock values or each clock we have:
-    // TODO: - if truncated is higher, we cannot resolve diff
+    // Recovery point may not be below our cutoff point
+    if local_cutoff_point.has_any_higher(&recovery_point) {
+        return Err(WalDeltaError::Cutoff);
+    }
 
     // Scroll back over the WAL and find a record that covered all clocks
     // Drain satisfied clocks from the recovery point until we have nothing left
@@ -130,8 +172,8 @@ pub enum WalDeltaError {
     Empty,
     #[error("recovery point has higher clocks than current WAL")]
     HigherThanCurrent,
-    #[error("some recovery point clocks are truncated in our WAL")]
-    Truncated,
+    #[error("some recovery point clocks are below the cutoff point in our WAL")]
+    Cutoff,
     #[error("some recovery point clocks are not found in our WAL")]
     NotFound,
 }
