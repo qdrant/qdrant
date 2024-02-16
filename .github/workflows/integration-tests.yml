@@ -10,7 +10,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test-consensus:
+  test-snap-transfer-1:
 
     runs-on: ubuntu-latest
 
@@ -38,7 +38,212 @@ jobs:
       - name: Run integration tests - multiple peers - pytest
         run: |
           # Run the test in loop to catch flaky tests
-          for i in {1..30}; do
+          for i in {1..15}; do
+            echo "Running test iteration $i"
+            pytest ./tests/consensus_tests/test_shard_snapshot_transfer.py::test_shard_snapshot_transfer_fast_burst
+          done
+        timeout-minutes: 60
+      - name: upload logs in case of failure
+        uses: actions/upload-artifact@v4
+        if: failure() || cancelled()
+        with:
+          name: consensus-test-logs
+          retention-days: 90 # default max value
+          path: consensus_test_logs
+
+  test-snap-transfer-2:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v4
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Install dependencies
+        run: sudo apt-get install clang
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install pytest
+        run: pip install pytest requests
+      - name: Build
+        run: cargo build --features service_debug
+      - name: Run integration tests - 1 peer
+        run: ./tests/integration-tests.sh distributed
+        shell: bash
+      - name: Run integration tests - multiple peers - pytest
+        run: |
+          # Run the test in loop to catch flaky tests
+          for i in {1..15}; do
+            echo "Running test iteration $i"
+            pytest ./tests/consensus_tests/test_shard_snapshot_transfer.py::test_shard_snapshot_transfer_fast_burst
+          done
+        timeout-minutes: 60
+      - name: upload logs in case of failure
+        uses: actions/upload-artifact@v4
+        if: failure() || cancelled()
+        with:
+          name: consensus-test-logs
+          retention-days: 90 # default max value
+          path: consensus_test_logs
+
+  test-snap-transfer-3:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v4
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Install dependencies
+        run: sudo apt-get install clang
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install pytest
+        run: pip install pytest requests
+      - name: Build
+        run: cargo build --features service_debug
+      - name: Run integration tests - 1 peer
+        run: ./tests/integration-tests.sh distributed
+        shell: bash
+      - name: Run integration tests - multiple peers - pytest
+        run: |
+          # Run the test in loop to catch flaky tests
+          for i in {1..15}; do
+            echo "Running test iteration $i"
+            pytest ./tests/consensus_tests/test_shard_snapshot_transfer.py::test_shard_snapshot_transfer_fast_burst
+          done
+        timeout-minutes: 60
+      - name: upload logs in case of failure
+        uses: actions/upload-artifact@v4
+        if: failure() || cancelled()
+        with:
+          name: consensus-test-logs
+          retention-days: 90 # default max value
+          path: consensus_test_logs
+
+  test-snap-transfer-4:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v4
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Install dependencies
+        run: sudo apt-get install clang
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install pytest
+        run: pip install pytest requests
+      - name: Build
+        run: cargo build --features service_debug
+      - name: Run integration tests - 1 peer
+        run: ./tests/integration-tests.sh distributed
+        shell: bash
+      - name: Run integration tests - multiple peers - pytest
+        run: |
+          # Run the test in loop to catch flaky tests
+          for i in {1..15}; do
+            echo "Running test iteration $i"
+            pytest ./tests/consensus_tests/test_shard_snapshot_transfer.py::test_shard_snapshot_transfer_fast_burst
+          done
+        timeout-minutes: 60
+      - name: upload logs in case of failure
+        uses: actions/upload-artifact@v4
+        if: failure() || cancelled()
+        with:
+          name: consensus-test-logs
+          retention-days: 90 # default max value
+          path: consensus_test_logs
+
+  test-snap-transfer-5:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v4
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Install dependencies
+        run: sudo apt-get install clang
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install pytest
+        run: pip install pytest requests
+      - name: Build
+        run: cargo build --features service_debug
+      - name: Run integration tests - 1 peer
+        run: ./tests/integration-tests.sh distributed
+        shell: bash
+      - name: Run integration tests - multiple peers - pytest
+        run: |
+          # Run the test in loop to catch flaky tests
+          for i in {1..15}; do
+            echo "Running test iteration $i"
+            pytest ./tests/consensus_tests/test_shard_snapshot_transfer.py::test_shard_snapshot_transfer_fast_burst
+          done
+        timeout-minutes: 60
+      - name: upload logs in case of failure
+        uses: actions/upload-artifact@v4
+        if: failure() || cancelled()
+        with:
+          name: consensus-test-logs
+          retention-days: 90 # default max value
+          path: consensus_test_logs
+
+  test-snap-transfer-6:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v4
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Install dependencies
+        run: sudo apt-get install clang
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install pytest
+        run: pip install pytest requests
+      - name: Build
+        run: cargo build --features service_debug
+      - name: Run integration tests - 1 peer
+        run: ./tests/integration-tests.sh distributed
+        shell: bash
+      - name: Run integration tests - multiple peers - pytest
+        run: |
+          # Run the test in loop to catch flaky tests
+          for i in {1..15}; do
             echo "Running test iteration $i"
             pytest ./tests/consensus_tests/test_shard_snapshot_transfer.py::test_shard_snapshot_transfer_fast_burst
           done
