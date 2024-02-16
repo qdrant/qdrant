@@ -603,7 +603,7 @@ pub async fn do_create_index_internal(
 ) -> Result<UpdateResult, StorageError> {
     let collection_operation = CollectionUpdateOperations::FieldIndexOperation(
         FieldIndexOperations::CreateIndex(CreateIndex {
-            field_name: field_name.clone(),
+            field_name,
             field_schema,
         }),
     );
@@ -614,24 +614,15 @@ pub async fn do_create_index_internal(
         ShardSelectorInternal::All
     };
 
-    let res = toc
-        .update(
-            &collection_name,
-            OperationWithClockTag::new(collection_operation, clock_tag),
-            wait,
-            ordering,
-            shard_selector,
-            Access::full("Internal API"),
+    toc.update(
+        &collection_name,
+        OperationWithClockTag::new(collection_operation, clock_tag),
+        wait,
+        ordering,
+        shard_selector,
+        Access::full("Internal API"),
     )
-        .await;
-
-    if res.is_ok() {
-        // We can deactivate issues related to this missing index
-        let code = segment::problems::UnindexedField::get_code(&collection_name, &field_name);
-        issues::solve(code);
-    }
-
-    res
+    .await
 }
 
 #[allow(clippy::too_many_arguments)]

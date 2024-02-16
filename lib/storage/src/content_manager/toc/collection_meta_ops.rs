@@ -7,6 +7,7 @@ use collection::shards::collection_shard_distribution::CollectionShardDistributi
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::transfer::ShardTransfer;
 use collection::shards::{transfer, CollectionId};
+use segment::problems::UnindexedField;
 use uuid::Uuid;
 
 use super::TableOfContent;
@@ -59,7 +60,13 @@ impl TableOfContent {
             }
             CollectionMetaOperations::DeleteCollection(operation) => {
                 log::info!("Deleting collection {}", operation.0);
-                self.delete_collection(&operation.0).await
+                let res = self.delete_collection(&operation.0).await;
+
+                // We can solve all issues related to this collection
+                if *res.as_ref().unwrap_or(&false) {
+                    issues::solve_by_filter(|code| code.starts_with(&operation.0));
+                }
+                res
             }
             CollectionMetaOperations::ChangeAliases(operation) => {
                 log::debug!("Changing aliases");
@@ -87,9 +94,20 @@ impl TableOfContent {
             }
             CollectionMetaOperations::CreatePayloadIndex(create_payload_index) => {
                 log::debug!("Create payload index {:?}", create_payload_index);
-                self.create_payload_index(create_payload_index)
+                let collection_name = create_payload_index.collection_name.clone();
+                let field_name = create_payload_index.field_name.clone();
+
+                let res = self
+                    .create_payload_index(create_payload_index)
                     .await
-                    .map(|()| true)
+                    .map(|()| true);
+
+                // We can solve issues related to this missing index
+                if *res.as_ref().unwrap_or(&false) {
+                    issues::solve(UnindexedField::get_code(&collection_name, &field_name));
+                }
+
+                res
             }
             CollectionMetaOperations::DropPayloadIndex(drop_payload_index) => {
                 log::debug!("Drop payload index {:?}", drop_payload_index);

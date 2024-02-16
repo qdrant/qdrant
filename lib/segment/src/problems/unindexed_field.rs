@@ -16,7 +16,7 @@ pub struct UnindexedField {
 }
 impl UnindexedField {
     pub fn get_code(collection_name: &str, field_name: &str) -> CodeType {
-        format!("UNINDEXED_FIELD:{collection_name}:{field_name}")
+        format!("{collection_name}.UNINDEXED_FIELD.{field_name}")
     }
 }
 impl Issue for UnindexedField {

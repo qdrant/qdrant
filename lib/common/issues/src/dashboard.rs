@@ -60,6 +60,11 @@ pub fn clear() {
     dashboard().issues.clear();
 }
 
+/// Solves all issues that match the given predicate
+pub fn solve_by_filter<F: Fn(&CodeType) -> bool>(filter: F) {
+    dashboard().issues.retain(|key, _value| !filter(key))
+}
+
 #[cfg(test)]
 mod tests {
     use serial_test::serial;
@@ -109,5 +114,24 @@ mod tests {
 
         clear();
         Ok(())
+    }
+
+    #[test]
+    #[serial]
+    fn test_solve_by_filter() {
+        crate::clear();
+
+        submit(DummyIssue::new("DUMMY:my_collection:issue1"));
+        submit(DummyIssue::new("DUMMY:my_collection:issue2"));
+        submit(DummyIssue::new("DUMMY:my_collection:issue3"));
+        submit(DummyIssue::new("DUMMY_2:issue2"));
+        submit(DummyIssue::new("DUMMY_2:issue2"));
+        submit(DummyIssue::new("issue2"));
+        submit(DummyIssue::new("issue3"));
+
+        // Solve all issues that contain "my_collection", for example, when deleting a collection
+        solve_by_filter(|code| code.contains("my_collection"));
+        assert_eq!(all_issues().len(), 3);
+        assert!(solve("issue2"));
     }
 }
