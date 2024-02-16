@@ -91,7 +91,6 @@ raft-proto = { version = "0.7.0", features = ["prost-codec"], default-features =
 
 common = { path = "lib/common/common" }
 cancel = { path = "lib/common/cancel" }
-issues = { path = "lib/common/issues" }
 memory = { path = "lib/common/memory" }
 issues = { path = "lib/common/issues" }
 segment = { path = "lib/segment" }
