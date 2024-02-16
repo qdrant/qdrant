@@ -76,12 +76,19 @@ impl RecoverableWal {
     ///
     /// This can only increase clock ticks in the cutoff clock map. If there already are higher
     /// clock ticks, they're kept.
-    pub async fn update_cutoff(&self, recovery_point: RecoveryPoint) {
+    ///
+    /// It updates the highest seen clocks alongside with it.
+    pub async fn update_cutoff(&self, recovery_point: &RecoveryPoint) {
+        let mut highest_clocks = self.highest_clocks.lock().await;
         let mut cutoff_clocks = self.cutoff_clocks.lock().await;
         recovery_point
             .clock_tag_iter()
             .filter(|clock_tag| clock_tag.clock_tick >= 1)
             .for_each(|mut clock_tag| {
+                // Advance highest clocks we've seen
+                highest_clocks.advance_clock(clock_tag);
+
+                // Advance the cutoff point
                 // A recovery point has every clock one higher, here we decrease it by one again
                 clock_tag.clock_tick -= 1;
                 cutoff_clocks.advance_clock(clock_tag);
