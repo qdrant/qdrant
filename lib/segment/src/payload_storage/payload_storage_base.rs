@@ -26,6 +26,7 @@ pub trait PayloadStorage {
     ) -> OperationResult<()>;
 
     /// Get payload for point
+    /// If no payload found, return empty payload
     fn payload(&self, point_id: PointOffsetType) -> OperationResult<Payload>;
 
     /// Delete payload by key

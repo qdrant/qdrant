@@ -143,11 +143,11 @@ impl SegmentBuilder {
                         // New point, just insert
                         id_tracker.set_link(external_id, new_internal_id)?;
                         id_tracker.set_internal_version(new_internal_id, other_version)?;
-                        payload_index.assign(
-                            new_internal_id,
-                            &other_payload_index.payload(old_internal_id)?,
-                            &None,
-                        )?;
+                        let other_payload = other_payload_index.payload(old_internal_id)?;
+                        // Propagate payload to new segment
+                        if !other_payload.is_empty() {
+                            payload_index.assign(new_internal_id, &other_payload, &None)?;
+                        }
                     }
                     Some(existing_internal_id) => {
                         // Point exists in both: newly constructed and old segments, so we need to merge them
@@ -160,11 +160,11 @@ impl SegmentBuilder {
                             id_tracker.set_link(external_id, new_internal_id)?;
                             id_tracker.set_internal_version(new_internal_id, other_version)?;
                             payload_index.drop(existing_internal_id)?;
-                            payload_index.assign(
-                                new_internal_id,
-                                &other_payload_index.payload(old_internal_id)?,
-                                &None,
-                            )?;
+                            let other_payload = other_payload_index.payload(old_internal_id)?;
+                            // Propagate payload to new segment
+                            if !other_payload.is_empty() {
+                                payload_index.assign(new_internal_id, &other_payload, &None)?;
+                            }
                             existing_internal_id
                         } else {
                             // Old version is still good, do not move anything else
