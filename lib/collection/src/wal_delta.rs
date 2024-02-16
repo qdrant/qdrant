@@ -166,7 +166,7 @@ fn resolve_wal_delta(
     recovery_point.remove_equal_clocks(local_recovery_point);
 
     // Recovery point may not be below our cutoff point
-    if local_cutoff_point.has_any_higher(&recovery_point) {
+    if recovery_point.has_any_lower(local_cutoff_point) {
         return Err(WalDeltaError::Cutoff);
     }
 
@@ -1115,8 +1115,7 @@ mod tests {
         recovery_point.insert(1, 1, 10);
         local_recovery_point.insert(1, 0, 20);
         local_recovery_point.insert(1, 1, 12);
-        local_cutoff_point.insert(1, 0, 17);
-        local_cutoff_point.insert(1, 1, 10);
+        local_cutoff_point.insert(1, 0, 16);
 
         let resolve_result = resolve_wal_delta(
             recovery_point,

@@ -205,6 +205,18 @@ impl RecoveryPoint {
         })
     }
 
+    /// Check whether this recovery point has any lower clock value than `other`
+    ///
+    /// A clock in this recovery point that is not in `other` is not considered lower.
+    pub fn has_any_lower(&self, other: &Self) -> bool {
+        self.clocks.iter().any(|(key, tick)| {
+            other
+                .clocks
+                .get(key)
+                .map_or(false, |other_tick| *tick < *other_tick)
+        })
+    }
+
     /// Extend this recovery point with new clocks from `clock_map`
     ///
     /// Clocks that we have not seen yet are added with a tick of `0`, because we must recover all
