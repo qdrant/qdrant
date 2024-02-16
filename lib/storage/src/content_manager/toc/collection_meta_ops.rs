@@ -63,7 +63,11 @@ impl TableOfContent {
 
                 // We can solve all issues related to this collection
                 if *res.as_ref().unwrap_or(&false) {
-                    issues::solve_by_filter(|code| code.split('/').next().map_or(false, |collection_name| collection_name == operation.0));
+                    issues::solve_by_filter(|code| {
+                        code.split('/')
+                            .next()
+                            .map_or(false, |collection_name| collection_name == operation.0)
+                    });
                 }
                 res
             }

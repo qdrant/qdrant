@@ -26,7 +26,10 @@ impl UnindexedField {
     ///
     /// Will fail if the field condition cannot be used for inferring an appropriate schema.
     /// For example, when there is no index that can be built to improve performance.
-    pub fn try_new(condition: FieldCondition, collection_name: String) -> Result<Self, OperationError> {
+    pub fn try_new(
+        condition: FieldCondition,
+        collection_name: String,
+    ) -> Result<Self, OperationError> {
         let field_schemas = infer_type_from_field_condition(&condition);
 
         if field_schemas.is_empty() {
@@ -172,4 +175,3 @@ fn infer_type_from_field_condition(field_condition: &FieldCondition) -> Vec<Payl
         } => vec![],
     }
 }
-
