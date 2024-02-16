@@ -201,7 +201,7 @@ fn resolve_wal_delta(
     delta_from.map(Some).ok_or(WalDeltaError::NotFound)
 }
 
-#[derive(Error, Debug, Clone)]
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("cannot resolve WAL delta: {0}")]
 pub enum WalDeltaError {
     #[error("recovery point has no clocks to resolve delta for")]
@@ -688,7 +688,7 @@ mod tests {
         // 3. Operation 4,5 from D is written to both A and B
         // 4. Now B is reported as failed and we need to recover it from A
         // 5. During recovery, we send untagged operations from A to B (full transfer) + node C sends an Update
-        // 6. After recoverred (need to check consistency of A and B), node D sends an Update to A and B
+        // 6. After recovered (need to check consistency of A and B), node D sends an Update to A and B
         // 7. Now we want to recover newly created node E from B
         // 8. Try to recover A from E (expect no diff, as both are supposed to be active)
 
@@ -946,34 +946,44 @@ mod tests {
                 .lock_and_write(&mut op5_with_clock.clone())
                 .await
                 .unwrap();
+
+            // Once full transfer is done, we update cutoff point on B to the last seen of A
+            b_wal.update_cutoff(&a_wal.recovery_point().await).await;
         }
 
         // Try to recover E from B
         let e_recovery_point = e_wal.recovery_point().await;
 
-        // *******************************************************
-        // ToDo: check what would happened if wal_b were truncated
-        // *******************************************************
+        // Cannot recover E from B, because B has a high cutoff piont due to the full transfer
+        let delta_from = b_wal.resolve_wal_delta(e_recovery_point.clone()).await;
+        assert_eq!(
+            delta_from.unwrap_err().to_string(),
+            "some recovery point clocks are below the cutoff point in our WAL"
+        );
 
-        let delta_from = b_wal
-            .resolve_wal_delta(e_recovery_point.clone())
-            .await
-            .unwrap()
-            .unwrap();
+        // TODO: the following bit fails, because we cannot recover E from B here, since B has a
+        // TODO: high cutoff point due to the recent full transfer
+        {
+            let delta_from = b_wal
+                .resolve_wal_delta(e_recovery_point.clone())
+                .await
+                .unwrap()
+                .unwrap();
 
-        // Operation 0 was written to E, but everything else has to be written to E (including transfers)
-        assert_eq!(delta_from, 1);
+            // Operation 0 was written to E, but everything else has to be written to E (including transfers)
+            assert_eq!(delta_from, 1);
 
-        // Total: 2 operations from C
-        // + 1 operation from C_1
-        // + 1 operations from D (one missing)
-        // + 5 recovery operations
-        // + 1 operation from C during recovery
-        // + 1 duplicate operation from C
-        assert_eq!(b_wal.wal.lock().read(delta_from).count(), 11);
+            // Total: 2 operations from C
+            // + 1 operation from C_1
+            // + 1 operations from D (one missing)
+            // + 5 recovery operations
+            // + 1 operation from C during recovery
+            // + 1 duplicate operation from C
+            assert_eq!(b_wal.wal.lock().read(delta_from).count(), 11);
 
-        // Recover E from B
-        e_wal.append_from(&b_wal, delta_from).await.unwrap();
+            // Recover E from B
+            e_wal.append_from(&b_wal, delta_from).await.unwrap();
+        }
 
         // Now we want to try to recover theoretically active node A from E
         // Both are active, so we expect no diff
@@ -1013,7 +1023,7 @@ mod tests {
         A entry = (4, PointStruct { id: NumId(4), }, clock_tag: Some(ClockTag { peer: D, clock_tick: 0 }))
         A entry = (5, PointStruct { id: NumId(5), }, clock_tag: Some(ClockTag { peer: D, clock_tick: 1 }))
         A entry = (6, PointStruct { id: NumId(6), }, clock_tag: Some(ClockTag { peer: C, clock_tick: 3 }))
-         */
+        */
 
         let delta_from = e_wal.resolve_wal_delta(a_recovery_point.clone()).await;
 
@@ -1021,12 +1031,7 @@ mod tests {
         // **************************************************************************************
         // ToDo: This check is broken! Expected to be fixed after truncation logic is implemented
         // **************************************************************************************
-        // assert_eq!(e_wal.wal.lock().read(delta_from).count(), 0);
-
-        assert_eq!(
-            delta_from.unwrap_err().to_string(),
-            "recovery point requests clocks this WAL does not know about",
-        );
+        assert_eq!(delta_from, Ok(None));
     }
 
     /// Empty recovery point should not resolve any diff.
