@@ -1195,7 +1195,7 @@ mod tests {
 
     /// Assert that we `check_clock_tag_ordering_property` on the WAL.
     async fn assert_wal_ordering_property(wal: &RecoverableWal) {
-        // Grab list of clock tags from WAL records, skip non-existant or below cutoff tags
+        // Grab list of clock tags from WAL records, skip non-existent or below cutoff tags
         let clock_tags = {
             let cutoff = wal.cutoff_clocks.lock().await;
             wal.wal
