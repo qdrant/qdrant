@@ -956,10 +956,7 @@ mod tests {
 
         // Cannot recover E from B, because B has a high cutoff piont due to the full transfer
         let delta_from = b_wal.resolve_wal_delta(e_recovery_point.clone()).await;
-        assert_eq!(
-            delta_from.unwrap_err().to_string(),
-            "some recovery point clocks are below the cutoff point in our WAL"
-        );
+        assert_eq!(delta_from.unwrap_err(), WalDeltaError::Cutoff);
 
         // TODO: the following bit fails, because we cannot recover E from B here, since B has a
         // TODO: high cutoff point due to the recent full transfer
@@ -1056,10 +1053,7 @@ mod tests {
             &local_recovery_point,
             &RecoveryPoint::default(),
         );
-        assert_eq!(
-            resolve_result.unwrap_err().to_string(),
-            "recovery point has no clocks to resolve delta for",
-        );
+        assert_eq!(resolve_result.unwrap_err(), WalDeltaError::Empty);
     }
 
     /// Recovery point with a clock our source does not know about cannot resolve a diff.
@@ -1090,10 +1084,7 @@ mod tests {
             &local_recovery_point,
             &RecoveryPoint::default(),
         );
-        assert_eq!(
-            resolve_result.unwrap_err().to_string(),
-            "recovery point requests clocks this WAL does not know about",
-        );
+        assert_eq!(resolve_result.unwrap_err(), WalDeltaError::UnknownClocks);
     }
 
     /// Recovery point with higher clocks than the source cannot resolve a diff.
@@ -1124,8 +1115,8 @@ mod tests {
             &RecoveryPoint::default(),
         );
         assert_eq!(
-            resolve_result.unwrap_err().to_string(),
-            "recovery point requests higher clocks this WAL has",
+            resolve_result.unwrap_err(),
+            WalDeltaError::HigherThanCurrent
         );
     }
 
@@ -1158,10 +1149,7 @@ mod tests {
             &local_recovery_point,
             &local_cutoff_point,
         );
-        assert_eq!(
-            resolve_result.unwrap_err().to_string(),
-            "some recovery point clocks are below the cutoff point in our WAL",
-        );
+        assert_eq!(resolve_result.unwrap_err(), WalDeltaError::Cutoff);
     }
 
     /// Recovery point operations are not in our WAL.
@@ -1191,9 +1179,6 @@ mod tests {
             &local_recovery_point,
             &RecoveryPoint::default(),
         );
-        assert_eq!(
-            resolve_result.unwrap_err().to_string(),
-            "cannot find slice of WAL records that satisfies the recovery point",
-        );
+        assert_eq!(resolve_result.unwrap_err(), WalDeltaError::NotFound);
     }
 }
