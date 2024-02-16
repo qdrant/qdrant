@@ -350,9 +350,9 @@ mod tests {
                 assert_eq!(b, c);
             });
 
-        assert_wal_ordering_property(&a_wal);
-        assert_wal_ordering_property(&b_wal);
-        assert_wal_ordering_property(&c_wal);
+        assert_wal_ordering_property(&a_wal).await;
+        assert_wal_ordering_property(&b_wal).await;
+        assert_wal_ordering_property(&c_wal).await;
     }
 
     /// Test WAL delta resolution with a many missed operations on node C.
@@ -444,9 +444,9 @@ mod tests {
                 assert_eq!(b, c);
             });
 
-        assert_wal_ordering_property(&a_wal);
-        assert_wal_ordering_property(&b_wal);
-        assert_wal_ordering_property(&c_wal);
+        assert_wal_ordering_property(&a_wal).await;
+        assert_wal_ordering_property(&b_wal).await;
+        assert_wal_ordering_property(&c_wal).await;
     }
 
     /// Test WAL delta resolution with a many intermixed operations on node C. Intermixed as in,
@@ -547,9 +547,9 @@ mod tests {
                 assert_eq!(b, c);
             });
 
-        assert_wal_ordering_property(&a_wal);
-        assert_wal_ordering_property(&b_wal);
-        assert_wal_ordering_property(&c_wal);
+        assert_wal_ordering_property(&a_wal).await;
+        assert_wal_ordering_property(&b_wal).await;
+        assert_wal_ordering_property(&c_wal).await;
     }
 
     /// Test WAL delta resolution with operations in a different order on node A and B.
@@ -692,9 +692,9 @@ mod tests {
             assert!(c_wal_point_ids.contains(&i.into()));
         });
 
-        assert_wal_ordering_property(&a_wal);
-        assert_wal_ordering_property(&b_wal);
-        assert_wal_ordering_property(&c_wal);
+        assert_wal_ordering_property(&a_wal).await;
+        assert_wal_ordering_property(&b_wal).await;
+        assert_wal_ordering_property(&c_wal).await;
     }
 
     #[tokio::test]
@@ -1037,9 +1037,9 @@ mod tests {
         // Diff expected
         assert_eq!(b_wal.wal.lock().read(delta_from).count(), 1);
 
-        assert_wal_ordering_property(&a_wal);
-        assert_wal_ordering_property(&b_wal);
-        assert_wal_ordering_property(&e_wal);
+        assert_wal_ordering_property(&a_wal).await;
+        assert_wal_ordering_property(&b_wal).await;
+        assert_wal_ordering_property(&e_wal).await;
     }
 
     /// Empty recovery point should not resolve any diff.
@@ -1194,14 +1194,25 @@ mod tests {
     }
 
     /// Assert that we `check_clock_tag_ordering_property` on the WAL.
-    fn assert_wal_ordering_property(wal: &RecoverableWal) {
-        let clock_tags = wal
-            .wal
-            .lock()
-            .read(0)
-            .filter_map(|(_, operation)| operation.clock_tag)
-            .collect::<Vec<_>>();
-        check_clock_tag_ordering_property(&clock_tags).unwrap();
+    async fn assert_wal_ordering_property(wal: &RecoverableWal) {
+        // Grab list of clock tags from WAL records, skip non-existant or below cutoff tags
+        let clock_tags = {
+            let cutoff = wal.cutoff_clocks.lock().await;
+            wal.wal
+                .lock()
+                .read(0)
+                // Only take records with clock tags
+                .filter_map(|(_, operation)| operation.clock_tag)
+                // Clock tags must be equal or higher to cutoff point
+                .filter(|clock_tag| {
+                    cutoff
+                        .get_tick(clock_tag.peer_id, clock_tag.clock_id)
+                        .map_or(true, |a| clock_tag.clock_tick >= a)
+                })
+                .collect::<Vec<_>>()
+        };
+
+        check_clock_tag_ordering_property(&clock_tags).expect("WAL ordering property violated");
     }
 
     /// Test that we satisfy the clock ordering property, allowing WAL recovery resolution.
@@ -1259,7 +1270,7 @@ mod tests {
             // If list is not empty, we have not seen all numbers
             if !must_see_ticks.is_empty() {
                 return Err(format!(
-                    "WAL ordering property violated; following clock tags did not cover ticks [{}] in order (peer_id: {}, clock_id: {}, max_tick: {highest})",
+                    "following clock tags did not cover ticks [{}] in order (peer_id: {}, clock_id: {}, max_tick: {highest})",
                     must_see_ticks.into_iter().map(|tick| tick.to_string()).collect::<Vec<_>>().join(", "),
                     clock_tag.peer_id,
                     clock_tag.clock_id,

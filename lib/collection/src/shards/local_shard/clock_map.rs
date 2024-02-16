@@ -39,6 +39,13 @@ impl ClockMap {
         Ok(())
     }
 
+    #[cfg(test)]
+    pub fn get_tick(&self, peer_id: PeerId, clock_id: u32) -> Option<u64> {
+        self.clocks
+            .get(&Key::new(peer_id, clock_id))
+            .map(|clock| clock.current_tick)
+    }
+
     /// Advance clock referenced by `clock_tag` to `clock_tick`, if it's newer than current tick.
     /// Update `clock_tick` to current tick, if it's older.
     ///
