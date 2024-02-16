@@ -756,7 +756,12 @@ impl TryFrom<api::grpc::qdrant::PointStruct> for PointStruct {
             payload,
         } = value;
 
-        let converted_payload = proto_to_payloads(payload)?;
+        // empty payload means None in PointStruct
+        let converted_payload = if payload.is_empty() {
+            None
+        } else {
+            Some(proto_to_payloads(payload)?)
+        };
 
         let vector_struct: VectorStruct = match vectors {
             None => return Err(Status::invalid_argument("Expected some vectors")),
@@ -768,7 +773,7 @@ impl TryFrom<api::grpc::qdrant::PointStruct> for PointStruct {
                 .ok_or_else(|| Status::invalid_argument("Empty ID is not allowed"))?
                 .try_into()?,
             vector: vector_struct,
-            payload: Some(converted_payload),
+            payload: converted_payload,
         })
     }
 }
