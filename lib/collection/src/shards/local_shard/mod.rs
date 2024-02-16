@@ -124,7 +124,7 @@ impl LocalShard {
             remove_dir_all(segments_path).await?;
         }
 
-        // Delete clock map
+        // Delete clock maps
         let highest_clock_map = Self::highest_clock_map_path(shard_path);
         let cutoff_clock_map_path = Self::cutoff_clock_map_path(shard_path);
         if highest_clock_map.exists() {
@@ -509,7 +509,7 @@ impl LocalShard {
 
     /// Loads latest collection operations from WAL
     pub async fn load_from_wal(&self, collection_id: CollectionId) -> CollectionResult<()> {
-        let mut last_clocks = self.wal.last_clocks.lock().await;
+        let mut highest_clocks = self.wal.highest_clocks.lock().await;
         let wal = self.wal.wal.lock();
         let bar = ProgressBar::new(wal.len());
 
@@ -546,7 +546,7 @@ impl LocalShard {
 
         for (op_num, update) in wal.read_all() {
             if let Some(clock_tag) = update.clock_tag {
-                last_clocks.advance_clock(clock_tag);
+                highest_clocks.advance_clock(clock_tag);
             }
 
             // Propagate `CollectionError::ServiceError`, but skip other error types.
@@ -709,7 +709,7 @@ impl LocalShard {
         })
         .await??;
 
-        // copy clock maps
+        // Copy clock maps
         let highest_clock_map_path = Self::highest_clock_map_path(&self.path);
         let cutoff_clock_map_path = Self::cutoff_clock_map_path(&self.path);
 

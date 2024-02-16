@@ -14,15 +14,15 @@ pub type LockedWal = Arc<ParkingMutex<SerdeWal<OperationWithClockTag>>>;
 /// A WAL that is recoverable, with operations having clock tags and a corresponding clock map.
 pub struct RecoverableWal {
     pub(super) wal: LockedWal,
-    /// Map of all last seen clocks for each peer and clock ID.
-    pub(super) last_clocks: Arc<Mutex<ClockMap>>,
+    /// Map of all highest seen clocks for each peer and clock ID.
+    pub(super) highest_clocks: Arc<Mutex<ClockMap>>,
     /// Map of all clocks and ticks that are cut off.
     ///
     /// Clock ticks equal to those in this map are still recoverable, while clock ticks below those
     /// in this map are not.
     ///
     /// This means two things:
-    /// - this WAL has at least all these clock versions (same as `last_clocks`)
+    /// - this WAL has at least all these clock versions (same as `highest_clocks`)
     /// - this WAL cannot resolve any delta below any of these clocks
     pub(super) cutoff_clocks: Arc<Mutex<ClockMap>>,
 }
@@ -30,12 +30,12 @@ pub struct RecoverableWal {
 impl RecoverableWal {
     pub fn from(
         wal: LockedWal,
-        last_clocks: Arc<Mutex<ClockMap>>,
+        highest_clocks: Arc<Mutex<ClockMap>>,
         cutoff_clocks: Arc<Mutex<ClockMap>>,
     ) -> Self {
         Self {
             wal,
-            last_clocks,
+            highest_clocks,
             cutoff_clocks,
         }
     }
@@ -54,7 +54,7 @@ impl RecoverableWal {
 
             // TODO: do not manually advance here!
             let _operation_accepted = self
-                .last_clocks
+                .highest_clocks
                 .lock()
                 .await
                 .advance_clock_and_correct_tag(clock_tag);
@@ -90,7 +90,7 @@ impl RecoverableWal {
 
     /// Get a recovery point for this WAL.
     pub async fn recovery_point(&self) -> RecoveryPoint {
-        self.last_clocks.lock().await.to_recovery_point()
+        self.highest_clocks.lock().await.to_recovery_point()
     }
 
     pub async fn resolve_wal_delta(
