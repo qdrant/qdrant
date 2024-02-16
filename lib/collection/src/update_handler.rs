@@ -108,9 +108,9 @@ pub struct UpdateHandler {
     /// Maximum number of concurrent optimization jobs in this update handler.
     max_optimization_threads: Option<usize>,
 
-    last_seen_clock_map: Arc<TokioMutex<ClockMap>>,
+    highest_clock_map: Arc<TokioMutex<ClockMap>>,
     cutoff_clock_map: Arc<TokioMutex<ClockMap>>,
-    last_seen_clock_map_path: PathBuf,
+    highest_clock_map_path: PathBuf,
     cutoff_clock_map_path: PathBuf,
 }
 
@@ -126,9 +126,9 @@ impl UpdateHandler {
         wal: LockedWal,
         flush_interval_sec: u64,
         max_optimization_threads: Option<usize>,
-        last_seen_clock_map: Arc<TokioMutex<ClockMap>>,
+        highest_clock_map: Arc<TokioMutex<ClockMap>>,
         cutoff_clock_map: Arc<TokioMutex<ClockMap>>,
-        last_seen_clock_map_path: PathBuf,
+        highest_clock_map_path: PathBuf,
         cutoff_clock_map_path: PathBuf,
     ) -> UpdateHandler {
         UpdateHandler {
@@ -147,9 +147,9 @@ impl UpdateHandler {
             flush_interval_sec,
             optimization_handles: Arc::new(TokioMutex::new(vec![])),
             max_optimization_threads,
-            last_seen_clock_map,
+            highest_clock_map,
             cutoff_clock_map,
-            last_seen_clock_map_path,
+            highest_clock_map_path,
             cutoff_clock_map_path,
         }
     }
@@ -180,9 +180,9 @@ impl UpdateHandler {
             self.wal_keep_from.clone(),
             self.flush_interval_sec,
             flush_rx,
-            self.last_seen_clock_map.clone(),
+            self.highest_clock_map.clone(),
             self.cutoff_clock_map.clone(),
-            self.last_seen_clock_map_path.clone(),
+            self.highest_clock_map_path.clone(),
             self.cutoff_clock_map_path.clone(),
         )));
         self.flush_stop = Some(flush_tx);
@@ -602,15 +602,16 @@ impl UpdateHandler {
             .unwrap_or_else(|_| debug!("Optimizer already stopped"));
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn flush_worker(
         segments: LockedSegmentHolder,
         wal: LockedWal,
         wal_keep_from: Arc<AtomicU64>,
         flush_interval_sec: u64,
         mut stop_receiver: oneshot::Receiver<()>,
-        last_seen_clock_map: Arc<tokio::sync::Mutex<ClockMap>>,
+        highest_clock_map: Arc<tokio::sync::Mutex<ClockMap>>,
         cutoff_clock_map: Arc<tokio::sync::Mutex<ClockMap>>,
-        last_seen_clock_map_path: PathBuf,
+        highest_clock_map_path: PathBuf,
         cutoff_clock_map_path: PathBuf,
     ) {
         loop {
@@ -665,10 +666,10 @@ impl UpdateHandler {
                 log::warn!("Failed to store cutoff clock map to disk: {err}");
                 segments.write().report_optimizer_error(err);
             }
-            if let Err(err) = last_seen_clock_map
+            if let Err(err) = highest_clock_map
                 .lock()
                 .await
-                .store(&last_seen_clock_map_path)
+                .store(&highest_clock_map_path)
             {
                 log::warn!("Failed to store last seen clock map to disk: {err}");
                 segments.write().report_optimizer_error(err);

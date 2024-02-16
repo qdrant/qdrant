@@ -84,10 +84,10 @@ impl RecoverableWal {
 
 /// Resolve the WAL delta for the given `recovery_point`
 ///
-/// A `local_wal` and `local_last_seen` are required to resolve the delta. These should be from the
-/// node being the source of recovery, likely the current one. The `local_wal` is used to resolve
-/// the diff. The `local_last_seen` is used to extend the given recovery point with clocks the
-/// failed node does not know about.
+/// A `local_wal` and `local_recovery_point` are required to resolve the delta. These should be
+/// from the node being the source of recovery, likely the current one. The `local_wal` is used to
+/// resolve the diff. The `local_recovery_point` is used to extend the given recovery point with
+/// clocks the failed node does not know about.
 ///
 /// The delta can be sent over to the node which the recovery point is from, to restore its
 /// WAL making it consistent with the current shard.
