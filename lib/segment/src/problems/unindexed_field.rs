@@ -18,7 +18,30 @@ impl UnindexedField {
     pub fn get_code(collection_name: &str, field_name: &str) -> CodeType {
         format!("{collection_name}.UNINDEXED_FIELD.{field_name}")
     }
+
+    /// Try to form an issue from a field condition and a collection name
+    ///
+    /// # Errors
+    ///
+    /// Will fail if the field condition cannot be used for inferring an appropriate schema.
+    /// For example, when there is no index that can be built to improve performance.
+    pub fn try_new(condition: FieldCondition, collection_name: String) -> Result<Self, OperationError> {
+        let field_schemas = infer_type_from_field_condition(&condition);
+
+        if field_schemas.is_empty() {
+            return Err(OperationError::TypeInferenceError {
+                field_name: condition.key,
+            });
+        }
+
+        Ok(Self {
+            field_name: condition.key,
+            field_schemas,
+            collection_name,
+        })
+    }
 }
+
 impl Issue for UnindexedField {
     fn code(&self) -> CodeType {
         Self::get_code(&self.collection_name, &self.field_name)
@@ -149,29 +172,3 @@ fn infer_type_from_field_condition(field_condition: &FieldCondition) -> Vec<Payl
     }
 }
 
-impl TryFrom<(FieldCondition, String)> for UnindexedField {
-    type Error = OperationError;
-
-    /// Try to form an issue from a field condition and a collection name
-    ///
-    /// # Failures
-    ///
-    /// Will fail if the field condition cannot be used for inferring an appropriate schema.
-    /// For example, when there is no index that can be built to improve performance.
-    fn try_from(condition_collection_tuple: (FieldCondition, String)) -> Result<Self, Self::Error> {
-        let (condition, collection) = condition_collection_tuple;
-        let field_schemas = infer_type_from_field_condition(&condition);
-
-        if field_schemas.is_empty() {
-            return Err(OperationError::TypeInferenceError {
-                field_name: condition.key,
-            });
-        }
-
-        Ok(Self {
-            field_name: condition.key,
-            field_schemas,
-            collection_name: collection,
-        })
-    }
-}
