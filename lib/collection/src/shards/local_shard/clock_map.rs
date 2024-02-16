@@ -121,7 +121,7 @@ impl ClockMap {
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize)]
-struct Key {
+pub struct Key {
     peer_id: PeerId,
     clock_id: u32,
 }
@@ -171,6 +171,11 @@ pub struct RecoveryPoint {
 }
 
 impl RecoveryPoint {
+    #[cfg(test)]
+    pub(crate) fn insert(&mut self, peer_id: PeerId, clock_id: u32, clock_tick: u64) {
+        self.clocks.insert(Key::new(peer_id, clock_id), clock_tick);
+    }
+
     pub fn is_empty(&self) -> bool {
         self.clocks.is_empty()
     }
@@ -182,6 +187,13 @@ impl RecoveryPoint {
             .map(|(key, tick)| ClockTag::new(key.peer_id, key.clock_id, *tick))
     }
 
+    /// Check whether this recovery point has any clocks that are not in `other`
+    pub fn has_clocks_not_in(&self, other: &Self) -> bool {
+        self.clocks
+            .keys()
+            .any(|key| !other.clocks.contains_key(key))
+    }
+
     /// Check whether this recovery point has any higher clock value than `other`
     ///
     /// A clock in this recovery point that is not in `other` is always considered to be higher.
@@ -191,6 +203,18 @@ impl RecoveryPoint {
                 .clocks
                 .get(key)
                 .map_or(true, |other_tick| *tick > *other_tick)
+        })
+    }
+
+    /// Check whether this recovery point has any lower clock value than `other`
+    ///
+    /// A clock in this recovery point that is not in `other` is not considered lower.
+    pub fn has_any_lower(&self, other: &Self) -> bool {
+        self.clocks.iter().any(|(key, tick)| {
+            other
+                .clocks
+                .get(key)
+                .map_or(false, |other_tick| *tick < *other_tick)
         })
     }
 
