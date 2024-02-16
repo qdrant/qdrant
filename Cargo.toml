@@ -1,5 +1,5 @@
 [package]
-name = "Pieces_Qdrant_Server"
+name = "pieces_qdrant_server"
 version = "1.7.4"
 authors = [
     "Andrey Vasnetsov <andrey@vasnetsov.com>",
@@ -10,7 +10,7 @@ homepage = "https://qdrant.tech/"
 repository = "https://github.com/qdrant/qdrant"
 license = "Apache-2.0"
 edition = "2021"
-default-run = "Pieces_Qdrant_Server"
+default-run = "pieces_qdrant_server"
 
 [features]
 default = ["web", "parking_lot"]
