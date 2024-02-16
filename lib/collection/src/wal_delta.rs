@@ -85,12 +85,12 @@ impl RecoverableWal {
             .clock_tag_iter()
             .filter(|clock_tag| clock_tag.clock_tick >= 1)
             .for_each(|mut clock_tag| {
+                clock_tag.clock_tick -= 1; // ToDO: get rid of
                 // Advance highest clocks we've seen
                 highest_clocks.advance_clock(clock_tag);
 
                 // Advance the cutoff point
                 // A recovery point has every clock one higher, here we decrease it by one again
-                clock_tag.clock_tick -= 1;
                 cutoff_clocks.advance_clock(clock_tag);
             });
     }
@@ -98,6 +98,11 @@ impl RecoverableWal {
     /// Get a recovery point for this WAL.
     pub async fn recovery_point(&self) -> RecoveryPoint {
         self.highest_clocks.lock().await.to_recovery_point()
+    }
+
+    #[cfg(test)]
+    pub async fn cutoff_point(&self) -> RecoveryPoint {
+        self.cutoff_clocks.lock().await.to_recovery_point()
     }
 
     pub async fn resolve_wal_delta(
@@ -689,8 +694,9 @@ mod tests {
         // 4. Now B is reported as failed and we need to recover it from A
         // 5. During recovery, we send untagged operations from A to B (full transfer) + node C sends an Update
         // 6. After recovered (need to check consistency of A and B), node D sends an Update to A and B
-        // 7. Now we want to recover newly created node E from B
-        // 8. Try to recover A from E (expect no diff, as both are supposed to be active)
+        // 7. Now we want to recover newly created node E from B, it expectedly fails, because of cutoff point
+        // 8. Try to recover A from E (expect no diff, as both have same data)
+        // 9. Insert new operation to B but not A to make sure diff resolution starts working after full recovery
 
         //          Recover
         //     ┌───┬───────►┌───┐
@@ -957,33 +963,12 @@ mod tests {
         // Cannot recover E from B, because B has a high cutoff point due to the full transfer
         let delta_from = b_wal.resolve_wal_delta(e_recovery_point.clone()).await;
         assert_eq!(delta_from.unwrap_err(), WalDeltaError::Cutoff);
+        
 
-        // TODO: the following bit fails, because we cannot recover E from B here, since B has a
-        // TODO: high cutoff point due to the recent full transfer
-        {
-            let delta_from = b_wal
-                .resolve_wal_delta(e_recovery_point.clone())
-                .await
-                .unwrap()
-                .unwrap();
+        // Try to recover A from B
 
-            // Operation 0 was written to E, but everything else has to be written to E (including transfers)
-            assert_eq!(delta_from, 1);
+        // Which should also fail, because B has a high cutoff point due to the full transfer
 
-            // Total: 2 operations from C
-            // + 1 operation from C_1
-            // + 1 operations from D (one missing)
-            // + 5 recovery operations
-            // + 1 operation from C during recovery
-            // + 1 duplicate operation from C
-            assert_eq!(b_wal.wal.lock().read(delta_from).count(), 11);
-
-            // Recover E from B
-            e_wal.append_from(&b_wal, delta_from).await.unwrap();
-        }
-
-        // Now we want to try to recover theoretically active node A from E
-        // Both are active, so we expect no diff
         let a_recovery_point = a_wal.recovery_point().await;
 
         /*
@@ -994,41 +979,45 @@ mod tests {
                 D: 2,
             },
         }
-        e_recovery_point = RecoveryPoint {
+        cutoff_point_b = RecoveryPoint {
             clocks: {
-                D: 2,
+                C_1: 1,
                 C: 4,
+                D: 2,
             },
         }
-        E entry = (0, PointStruct { id: NumId(1), }, clock_tag: Some(ClockTag { peer: C, clock_tick: 0 }))
-        E entry = (1, PointStruct { id: NumId(2), }, clock_tag: Some(ClockTag { peer: C, clock_tick: 1 }))
-        E entry = (2, PointStruct { id: NumId(4), }, clock_tag: Some(ClockTag { peer: D, clock_tick: 0 }))
-        E entry = (3, PointStruct { id: NumId(5), }, clock_tag: Some(ClockTag { peer: D, clock_tick: 1 }))
-        E entry = (4, PointStruct { id: NumId(1), }, clock_tag: None)
-        E entry = (5, PointStruct { id: NumId(2), }, clock_tag: None)
-        E entry = (6, PointStruct { id: NumId(6), }, clock_tag: Some(ClockTag { peer: C, clock_tick: 3 }))
-        E entry = (7, PointStruct { id: NumId(6), }, clock_tag: Some(ClockTag { peer: C, clock_tick: 3 }))
-        E entry = (8, PointStruct { id: NumId(3), }, clock_tag: None)
-        E entry = (9, PointStruct { id: NumId(30), }, clock_tag: None)
-        E entry = (10, PointStruct { id: NumId(4), }, clock_tag: None)
-        E entry = (11, PointStruct { id: NumId(5), }, clock_tag: None)
-        ------------------------------
-        A entry = (0, PointStruct { id: NumId(1), }, clock_tag: Some(ClockTag { peer: C, clock_tick: 0 }))
-        A entry = (1, PointStruct { id: NumId(2), }, clock_tag: Some(ClockTag { peer: C, clock_tick: 1 }))
-        A entry = (2, PointStruct { id: NumId(3), }, clock_tag: Some(ClockTag { peer: C, clock_tick: 2 }))
-        A entry = (3, PointStruct { id: NumId(30), }, clock_tag: Some(ClockTag { peer: C_1, clock_tick: 0 }))
-        A entry = (4, PointStruct { id: NumId(4), }, clock_tag: Some(ClockTag { peer: D, clock_tick: 0 }))
-        A entry = (5, PointStruct { id: NumId(5), }, clock_tag: Some(ClockTag { peer: D, clock_tick: 1 }))
-        A entry = (6, PointStruct { id: NumId(6), }, clock_tag: Some(ClockTag { peer: C, clock_tick: 3 }))
         */
 
-        let delta_from = e_wal.resolve_wal_delta(a_recovery_point.clone()).await;
+        let delta_from = b_wal.resolve_wal_delta(a_recovery_point.clone()).await;
 
         // No diff expected
-        // **************************************************************************************
-        // ToDo: This check is broken! Expected to be fixed after truncation logic is implemented
-        // **************************************************************************************
         assert_eq!(delta_from, Ok(None));
+        
+
+        let op7 = mock_operation(7);
+        // Add operation to B but not A
+        {
+            // Node D is sending updates to B
+            let mut d_clock = c_clock_set.get_clock();
+
+            // First parallel operation
+            let clock_tick = d_clock.tick_once();
+            let clock_tag = ClockTag::new(node_d_peer_id, d_clock.id(), clock_tick);
+
+            let operation_with_clock = OperationWithClockTag::new(op7, Some(clock_tag));
+
+            let mut operation_b = operation_with_clock.clone();
+
+            b_wal.lock_and_write(&mut operation_b).await.unwrap();
+
+            d_clock.advance_to(operation_b.clock_tag.unwrap().clock_tick);
+        }
+
+        let a_recovery_point = a_wal.recovery_point().await;
+        let delta_from = b_wal.resolve_wal_delta(a_recovery_point.clone()).await.unwrap().unwrap();
+
+        // Diff expected
+        assert_eq!(b_wal.wal.lock().read(delta_from).count(), 1);
     }
 
     /// Empty recovery point should not resolve any diff.
