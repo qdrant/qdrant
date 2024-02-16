@@ -522,6 +522,61 @@
         }
       }
     },
+    "/issues": {
+      "get": {
+        "summary": "Beta feature. Get a list of unresolved issues.",
+        "description": "Beta feature. Gets the list of unresolved issues in this specific Qdrant instance.",
+        "operationId": "get_issues",
+        "tags": [
+          "beta"
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/IssuesReport"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/cluster": {
       "get": {
         "tags": [
@@ -5178,11 +5233,19 @@
     },
     {
       "name": "cluster",
-      "description": "Service distributed setup"
+      "description": "Service distributed setup."
     },
     {
       "name": "snapshots",
-      "description": "Storage and collections snapshots"
+      "description": "Storage and collections snapshots."
+    },
+    {
+      "name": "service",
+      "description": "Qdrant service utilities."
+    },
+    {
+      "name": "beta",
+      "description": "Beta features, do not depend on these yet."
     }
   ],
   "components": {
@@ -10869,6 +10932,153 @@
           "exists": {
             "type": "boolean"
           }
+        }
+      },
+      "IssuesReport": {
+        "description": "All the unresolved issues in a Qdrant instance",
+        "type": "object",
+        "required": [
+          "issues"
+        ],
+        "properties": {
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IssueRecord"
+            }
+          }
+        }
+      },
+      "IssueRecord": {
+        "description": "An issue that can be identified by its code",
+        "type": "object",
+        "required": [
+          "code",
+          "description",
+          "solution",
+          "timestamp"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "solution": {
+            "$ref": "#/components/schemas/Solution"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Solution": {
+        "oneOf": [
+          {
+            "description": "A solution that can be applied immediately",
+            "type": "object",
+            "required": [
+              "Immediate"
+            ],
+            "properties": {
+              "Immediate": {
+                "$ref": "#/components/schemas/ImmediateSolution"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Two or more solutions to choose from",
+            "type": "object",
+            "required": [
+              "ImmediateChoice"
+            ],
+            "properties": {
+              "ImmediateChoice": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ImmediateSolution"
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "A solution that requires manual intervention",
+            "type": "object",
+            "required": [
+              "Refactor"
+            ],
+            "properties": {
+              "Refactor": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Failed to generate solution",
+            "type": "string",
+            "enum": [
+              "None"
+            ]
+          }
+        ]
+      },
+      "ImmediateSolution": {
+        "type": "object",
+        "required": [
+          "action",
+          "message"
+        ],
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "action": {
+            "$ref": "#/components/schemas/Action"
+          }
+        }
+      },
+      "Action": {
+        "type": "object",
+        "required": [
+          "headers",
+          "method",
+          "uri"
+        ],
+        "properties": {
+          "method": {
+            "$ref": "#/components/schemas/Method"
+          },
+          "uri": {
+            "$ref": "#/components/schemas/Uri"
+          },
+          "headers": {
+            "$ref": "#/components/schemas/HeaderMap"
+          },
+          "body": {
+            "type": "object",
+            "additionalProperties": true,
+            "nullable": true
+          }
+        }
+      },
+      "Method": {
+        "description": "HTTP method",
+        "type": "string"
+      },
+      "Uri": {
+        "description": "HTTP URI",
+        "type": "string"
+      },
+      "HeaderMap": {
+        "description": "HTTP headers",
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
         }
       }
     }
