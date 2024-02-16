@@ -96,7 +96,7 @@ impl PostingList {
 
     /// Propagates `max_next_weight` from the entry at `up_to_index` to previous entries.
     /// If an entry has a weight larger than `max_next_weight`, the propagation stops.
-    fn propagate_max_next_weight_to_the_left(&mut self, up_to_index: usize) -> usize {
+    fn propagate_max_next_weight_to_the_left(&mut self, up_to_index: usize) {
         // used element at `up_to_index` as the starting point
         let starting_element = &self.elements[up_to_index];
         let mut max_next_weight = max(
@@ -106,19 +106,17 @@ impl PostingList {
         .0;
 
         // propagate max_next_weight update to the previous entries
-        for (id, element) in self.elements[..up_to_index].iter_mut().enumerate().rev() {
+        for element in self.elements[..up_to_index].iter_mut().rev() {
             // update max_next_weight for element
             element.max_next_weight = max_next_weight;
             if element.weight >= max_next_weight {
                 // no need to propagate further because the current element is larger
-                return id;
+                break;
             } else {
                 // update max_next_weight based on current element
                 max_next_weight = max_next_weight.max(element.weight);
             }
         }
-        // all elements were updated
-        0
     }
 }
 
