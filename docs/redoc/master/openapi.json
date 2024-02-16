@@ -528,7 +528,7 @@
         "description": "Beta feature. Gets the list of unresolved issues in this specific Qdrant instance.",
         "operationId": "get_issues",
         "tags": [
-          "service"
+          "beta"
         ],
         "responses": {
           "default": {
@@ -5233,11 +5233,19 @@
     },
     {
       "name": "cluster",
-      "description": "Service distributed setup"
+      "description": "Service distributed setup."
     },
     {
       "name": "snapshots",
-      "description": "Storage and collections snapshots"
+      "description": "Storage and collections snapshots."
+    },
+    {
+      "name": "service",
+      "description": "Qdrant service utilities."
+    },
+    {
+      "name": "beta",
+      "description": "Beta features, do not depend on these yet."
     }
   ],
   "components": {
