@@ -19,6 +19,8 @@ def update_points_in_loop(peer_url, collection_name, offset=0, throttle=False, d
         upsert_random_points(peer_url, limit, collection_name, offset=offset)
         offset += limit
 
+        print(f"Inserted at offset {offset}")
+
         if throttle:
             sleep(0.1)
         if duration is not None and (time.time() - start) > duration:
@@ -92,6 +94,31 @@ def test_shard_snapshot_transfer(tmp_path: pathlib.Path):
         assert_http_ok(r)
         counts.append(r.json()["result"]['count'])
     assert counts[0] == counts[1] == counts[2]
+
+
+def load_all_points(peer_api_uri: str):
+
+    next_page_offset = 0
+
+    all_points_ids = set()
+
+    while next_page_offset is not None:
+
+        r = requests.post(
+            f"{peer_api_uri}/collections/{COLLECTION_NAME}/points/scroll", json={
+                "limit": 1000,
+                "offset": next_page_offset
+            }
+        )
+        assert_http_ok(r)
+
+        points = r.json()["result"]["points"]
+        next_page_offset = r.json()["result"]["next_page_offset"]
+
+        for point in points:
+            all_points_ids.add(point["id"])
+    
+    return all_points_ids
 
 
 # Transfer shards from one node to another while applying throttled updates in parallel
@@ -190,9 +217,9 @@ def test_shard_snapshot_transfer_fast_burst(tmp_path: pathlib.Path):
     upsert_random_points(peer_api_uris[0], 10000)
 
     # Start pushing points to the cluster
-    upload_process_1 = run_update_points_in_background(peer_api_uris[0], COLLECTION_NAME, init_offset=100, duration=5)
-    upload_process_2 = run_update_points_in_background(peer_api_uris[1], COLLECTION_NAME, init_offset=10000, duration=5)
-    upload_process_3 = run_update_points_in_background(peer_api_uris[2], COLLECTION_NAME, init_offset=20000, throttle=True)
+    upload_process_1 = run_update_points_in_background(peer_api_uris[0], COLLECTION_NAME, init_offset=100000, duration=5)
+    upload_process_2 = run_update_points_in_background(peer_api_uris[1], COLLECTION_NAME, init_offset=200000, duration=5)
+    upload_process_3 = run_update_points_in_background(peer_api_uris[2], COLLECTION_NAME, init_offset=300000, throttle=True)
 
     transfer_collection_cluster_info = get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME)
     receiver_collection_cluster_info = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
@@ -222,7 +249,7 @@ def test_shard_snapshot_transfer_fast_burst(tmp_path: pathlib.Path):
     upload_process_1.kill()
     upload_process_2.kill()
     upload_process_3.kill()
-    sleep(1)
+    # sleep(1)
 
     receiver_collection_cluster_info = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
     number_local_shards = len(receiver_collection_cluster_info['local_shards'])
@@ -238,4 +265,21 @@ def test_shard_snapshot_transfer_fast_burst(tmp_path: pathlib.Path):
         )
         assert_http_ok(r)
         counts.append(r.json()["result"]['count'])
-    assert counts[0] == counts[1] == counts[2]
+
+
+    if not (counts[0] == counts[1] == counts[2]):
+        print(f"counts: {counts}")
+
+        uri_0_points = load_all_points(peer_api_uris[0])
+        uri_1_points = load_all_points(peer_api_uris[1])
+        uri_2_points = load_all_points(peer_api_uris[2])
+
+        print(f"uri_0_points: {len(uri_0_points)}")
+        print(f"uri_1_points: {len(uri_1_points)}")
+        print(f"uri_2_points: {len(uri_2_points)}")
+
+        print(f"uri_0_points - uri_1_points: {uri_0_points - uri_1_points}")
+        print(f"uri_0_points - uri_2_points: {uri_0_points - uri_2_points}")
+        print(f"uri_1_points - uri_0_points: {uri_1_points - uri_0_points}")
+
+    assert counts[0] == counts[1] == counts[2], f"counts: {counts}"
