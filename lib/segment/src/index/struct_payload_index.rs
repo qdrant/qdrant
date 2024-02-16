@@ -315,16 +315,16 @@ impl StructPayloadIndex {
                     // for the field, let's report an issue
                     if let Some(unindexed_field) =
                         self.get_collection_name().and_then(|collection_name| {
-                            crate::problems::UnindexedField::try_from((
+                            crate::problems::UnindexedField::try_new(
                                 field_condition.clone(),
                                 collection_name,
-                            ))
+                            )
                             .ok()
                         })
                     {
                         let description = unindexed_field.description();
                         if issues::submit(unindexed_field) {
-                            log::warn!("Performance issue: {}", description);
+                            log::warn!("Performance issue: {description}");
                         }
                     }
 
