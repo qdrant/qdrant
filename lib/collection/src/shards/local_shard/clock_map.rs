@@ -121,7 +121,7 @@ impl ClockMap {
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize)]
-pub(super) struct Key {
+pub struct Key {
     peer_id: PeerId,
     clock_id: u32,
 }
@@ -167,11 +167,11 @@ impl Clock {
 /// recovering node has not seen yet.
 #[derive(Clone, Debug, Default)]
 pub struct RecoveryPoint {
-    pub(super) clocks: HashMap<Key, u64>,
+    clocks: HashMap<Key, u64>,
 }
 
 impl RecoveryPoint {
-    pub fn insert(&mut self, peer_id: PeerId, clock_id: u32, clock_tick: u64) {
+    pub(crate) fn insert(&mut self, peer_id: PeerId, clock_id: u32, clock_tick: u64) {
         self.clocks.insert(Key::new(peer_id, clock_id), clock_tick);
     }
 
