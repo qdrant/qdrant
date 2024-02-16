@@ -384,25 +384,25 @@ fn main() -> anyhow::Result<()> {
     //
 
     #[cfg(feature = "web")]
-    {
-        let dispatcher_arc = dispatcher_arc.clone();
-        let settings = settings.clone();
-        let handle = thread::Builder::new()
-            .name("web".to_string())
-            .spawn(move || {
-                log_err_if_any(
-                    "REST",
-                    actix::init(
-                        dispatcher_arc.clone(),
-                        telemetry_collector,
-                        health_checker,
-                        settings,
-                    ),
-                )
-            })
-            .unwrap();
-        handles.push(handle);
-    }
+    // {
+    //     let dispatcher_arc = dispatcher_arc.clone();
+    //     let settings = settings.clone();
+    //     let handle = thread::Builder::new()
+    //         .name("web".to_string())
+    //         .spawn(move || {
+    //             log_err_if_any(
+    //                 "REST",
+    //                 actix::init(
+    //                     dispatcher_arc.clone(),
+    //                     telemetry_collector,
+    //                     health_checker,
+    //                     settings,
+    //                 ),
+    //             )
+    //         })
+    //         .unwrap();
+    //     handles.push(handle);
+    // }
 
     //
     // gRPC server
