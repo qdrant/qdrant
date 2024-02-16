@@ -41,7 +41,7 @@ Now Qdrant should be accessible at [localhost:6333](http://localhost:6333/).
 
 
 ### Local development
-#### Linux/Debian
+#### Linux/Debian/MacOS
 To run Qdrant on local development environment you need to install below:
 - Install Rust, follow: [install rust](https://www.rust-lang.org/tools/install)
 - Install `rustfmt` toolchain for Rust
@@ -60,16 +60,17 @@ To run Qdrant on local development environment you need to install below:
 - Install `protoc` from source
     ```shell
     PROTOC_VERSION=22.2
+    PKG_NAME=$(uname -s | awk '{print ($1 == "Darwin") ? "osx-universal_binary" : (($1 == "Linux") ? "linux-x86_64" : "")}')
 
     # curl `proto` source file
-    curl -LO https://github.com/protocolbuffers/protobuf/releases//download/v$PROTOC_VERSION/protoc-$PROTOC_VERSION-linux-x86_64.zip
+    curl -LO https://github.com/protocolbuffers/protobuf/releases//download/v$PROTOC_VERSION/protoc-$PROTOC_VERSION-$PKG_NAME.zip
 
-    unzip protoc-$PROTOC_VERSION-linux-x86_64.zip -d $HOME/.local
+    unzip protoc-$PROTOC_VERSION-$PKG_NAME.zip -d $HOME/.local
 
     export PATH="$PATH:$HOME/.local/bin"
 
     # remove source file if not needed
-    rm protoc-$PROTOC_VERSION-linux-x86_64.zip
+    rm protoc-$PROTOC_VERSION-$PKG_NAME.zip
 
     # check installed `protoc` version
     protoc --version
