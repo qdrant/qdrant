@@ -59,30 +59,33 @@ pub(super) async fn transfer_wal_delta(
     };
 
     // Resolve WAL delta, get the version to start the diff from
-    let from_version = replica_set
+    let wal_delta_version = replica_set
         .resolve_wal_delta(recovery_point)
         .await
         .map_err(|err| {
             CollectionError::service_error(format!("Failed to resolve shard diff: {err}"))
         })?;
 
-    // TODO: send our last seen clock map to remote, set it as truncation point
+    if let Some(wal_delta_version) = wal_delta_version {
+        // Queue proxy local shard
+        replica_set
+            .queue_proxify_local(remote_shard.clone(), Some(wal_delta_version))
+            .await?;
 
-    // Queue proxy local shard
-    // TODO: we might want a different proxy type here
-    replica_set
-        .queue_proxify_local(remote_shard.clone(), Some(from_version))
-        .await?;
+        debug_assert!(
+            replica_set.is_queue_proxy().await,
+            "Local shard must be a queue proxy",
+        );
 
-    debug_assert!(
-        replica_set.is_queue_proxy().await,
-        "Local shard must be a queue proxy",
-    );
+        // Transfer queued updates to remote, transform into forward proxy
+        // This way we send a complete WAL diff
+        log::trace!("Transfer WAL diff by transferring all queue proxy updates and transform into forward proxy");
+        replica_set.queue_proxy_into_forward_proxy().await?;
 
-    // Transfer queued updates to remote, transform into forward proxy
-    // This way we send a complete WAL diff
-    log::trace!("Transfer WAL diff by transferring all queue proxy updates and transform into forward proxy");
-    replica_set.queue_proxy_into_forward_proxy().await?;
+        // TODO: send our last seen clock map to remote, set it as truncation point
+    } else {
+        log::trace!("Shard is already up-to-date as WAL diff if zero records");
+    }
 
     // Wait for Partial state in our replica set
     let partial_state = ReplicaState::Partial;
