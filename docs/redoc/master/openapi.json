@@ -10980,10 +10980,10 @@
             "description": "A solution that can be applied immediately",
             "type": "object",
             "required": [
-              "Immediate"
+              "immediate"
             ],
             "properties": {
-              "Immediate": {
+              "immediate": {
                 "$ref": "#/components/schemas/ImmediateSolution"
               }
             },
@@ -10993,10 +10993,10 @@
             "description": "Two or more solutions to choose from",
             "type": "object",
             "required": [
-              "ImmediateChoice"
+              "immediate_choice"
             ],
             "properties": {
-              "ImmediateChoice": {
+              "immediate_choice": {
                 "type": "array",
                 "items": {
                   "$ref": "#/components/schemas/ImmediateSolution"
@@ -11009,10 +11009,10 @@
             "description": "A solution that requires manual intervention",
             "type": "object",
             "required": [
-              "Refactor"
+              "refactor"
             ],
             "properties": {
-              "Refactor": {
+              "refactor": {
                 "type": "string"
               }
             },
@@ -11022,7 +11022,7 @@
             "description": "Failed to generate solution",
             "type": "string",
             "enum": [
-              "None"
+              "none"
             ]
           }
         ]

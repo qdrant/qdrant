@@ -3961,6 +3961,7 @@ dependencies = [
  "constant_time_eq 0.3.0",
  "futures",
  "futures-util",
+ "issues",
  "itertools 0.12.1",
  "log",
  "memory",
