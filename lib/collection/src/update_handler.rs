@@ -108,8 +108,10 @@ pub struct UpdateHandler {
     /// Maximum number of concurrent optimization jobs in this update handler.
     max_optimization_threads: Option<usize>,
 
-    clock_map: Arc<TokioMutex<ClockMap>>,
-    clock_map_path: PathBuf,
+    last_seen_clock_map: Arc<TokioMutex<ClockMap>>,
+    cutoff_clock_map: Arc<TokioMutex<ClockMap>>,
+    last_seen_clock_map_path: PathBuf,
+    cutoff_clock_map_path: PathBuf,
 }
 
 impl UpdateHandler {
@@ -124,8 +126,10 @@ impl UpdateHandler {
         wal: LockedWal,
         flush_interval_sec: u64,
         max_optimization_threads: Option<usize>,
-        clock_map: Arc<TokioMutex<ClockMap>>,
-        clock_map_path: PathBuf,
+        last_seen_clock_map: Arc<TokioMutex<ClockMap>>,
+        cutoff_clock_map: Arc<TokioMutex<ClockMap>>,
+        last_seen_clock_map_path: PathBuf,
+        cutoff_clock_map_path: PathBuf,
     ) -> UpdateHandler {
         UpdateHandler {
             shared_storage_config,
@@ -143,8 +147,10 @@ impl UpdateHandler {
             flush_interval_sec,
             optimization_handles: Arc::new(TokioMutex::new(vec![])),
             max_optimization_threads,
-            clock_map,
-            clock_map_path,
+            last_seen_clock_map,
+            cutoff_clock_map,
+            last_seen_clock_map_path,
+            cutoff_clock_map_path,
         }
     }
 
@@ -174,8 +180,10 @@ impl UpdateHandler {
             self.wal_keep_from.clone(),
             self.flush_interval_sec,
             flush_rx,
-            self.clock_map.clone(),
-            self.clock_map_path.clone(),
+            self.last_seen_clock_map.clone(),
+            self.cutoff_clock_map.clone(),
+            self.last_seen_clock_map_path.clone(),
+            self.cutoff_clock_map_path.clone(),
         )));
         self.flush_stop = Some(flush_tx);
     }
@@ -600,8 +608,10 @@ impl UpdateHandler {
         wal_keep_from: Arc<AtomicU64>,
         flush_interval_sec: u64,
         mut stop_receiver: oneshot::Receiver<()>,
-        clock_map: Arc<tokio::sync::Mutex<ClockMap>>,
-        clock_map_path: PathBuf,
+        last_seen_clock_map: Arc<tokio::sync::Mutex<ClockMap>>,
+        cutoff_clock_map: Arc<tokio::sync::Mutex<ClockMap>>,
+        last_seen_clock_map_path: PathBuf,
+        cutoff_clock_map_path: PathBuf,
     ) {
         loop {
             // Stop flush worker on signal or if sender was dropped
@@ -651,8 +661,16 @@ impl UpdateHandler {
 
             let ack = confirmed_version.min(keep_from.saturating_sub(1));
 
-            if let Err(err) = clock_map.lock().await.store(&clock_map_path) {
-                log::warn!("Failed to store clock map to disk: {err}");
+            if let Err(err) = cutoff_clock_map.lock().await.store(&cutoff_clock_map_path) {
+                log::warn!("Failed to store cutoff clock map to disk: {err}");
+                segments.write().report_optimizer_error(err);
+            }
+            if let Err(err) = last_seen_clock_map
+                .lock()
+                .await
+                .store(&last_seen_clock_map_path)
+            {
+                log::warn!("Failed to store last seen clock map to disk: {err}");
                 segments.write().report_optimizer_error(err);
             }
 

@@ -16,11 +16,25 @@ pub struct RecoverableWal {
     pub(super) wal: LockedWal,
     /// Map of all last seen clocks for each peer and clock ID.
     pub(super) last_clocks: Arc<Mutex<ClockMap>>,
+    /// Map of all clocks and ticks that are cut off.
+    ///
+    /// This means two things:
+    /// - this WAL has at least all these clock versions (same as `last_clocks`)
+    /// - this WAL cannot resolve any delta below any of these clocks
+    pub(super) cutoff_clocks: Arc<Mutex<ClockMap>>,
 }
 
 impl RecoverableWal {
-    pub fn from(wal: LockedWal, last_clocks: Arc<Mutex<ClockMap>>) -> Self {
-        Self { wal, last_clocks }
+    pub fn from(
+        wal: LockedWal,
+        last_clocks: Arc<Mutex<ClockMap>>,
+        cutoff_clocks: Arc<Mutex<ClockMap>>,
+    ) -> Self {
+        Self {
+            wal,
+            last_clocks,
+            cutoff_clocks,
+        }
     }
 
     /// Write a record to the WAL but does guarantee durability.

@@ -87,10 +87,15 @@ impl LocalShard {
         move_dir(wal_from, wal_to).await?;
         move_dir(segments_from, segments_to).await?;
 
-        let clock_map_from = Self::clock_map_path(from);
-        if clock_map_from.exists() {
-            let clock_map_to = Self::clock_map_path(to);
-            move_file(clock_map_from, clock_map_to).await?;
+        let last_seen_clock_map_path = Self::last_seen_clock_map_path(from);
+        let cutoff_clock_map_path = Self::cutoff_clock_map_path(from);
+        if last_seen_clock_map_path.exists() {
+            let clock_map_to = Self::last_seen_clock_map_path(to);
+            move_file(last_seen_clock_map_path, clock_map_to).await?;
+        }
+        if cutoff_clock_map_path.exists() {
+            let clock_map_to = Self::cutoff_clock_map_path(to);
+            move_file(cutoff_clock_map_path, clock_map_to).await?;
         }
 
         Ok(())
@@ -120,9 +125,13 @@ impl LocalShard {
         }
 
         // Delete clock map
-        let clock_map_path = Self::clock_map_path(shard_path);
-        if clock_map_path.exists() {
-            remove_file(clock_map_path).await?;
+        let last_seen_clock_map = Self::last_seen_clock_map_path(shard_path);
+        let cutoff_clock_map_path = Self::cutoff_clock_map_path(shard_path);
+        if last_seen_clock_map.exists() {
+            remove_file(last_seen_clock_map).await?;
+        }
+        if cutoff_clock_map_path.exists() {
+            remove_file(cutoff_clock_map_path).await?;
         }
 
         Ok(())
@@ -137,15 +146,18 @@ impl LocalShard {
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         optimizer_cpu_budget: CpuBudget,
         shard_path: &Path,
-        clock_map: ClockMap,
+        last_seen_clock_map: ClockMap,
+        cutoff_clock_map: ClockMap,
         update_runtime: Handle,
     ) -> Self {
         let segment_holder = Arc::new(RwLock::new(segment_holder));
         let config = collection_config.read().await;
         let locked_wal = Arc::new(ParkingMutex::new(wal));
         let optimizers_log = Arc::new(ParkingMutex::new(Default::default()));
-        let clock_map = Arc::new(Mutex::new(clock_map));
-        let clock_map_path = Self::clock_map_path(shard_path);
+        let last_seen_clock_map = Arc::new(Mutex::new(last_seen_clock_map));
+        let cutoff_clock_map = Arc::new(Mutex::new(cutoff_clock_map));
+        let last_seen_clock_map_path = Self::last_seen_clock_map_path(shard_path);
+        let cutoff_clock_map_path = Self::cutoff_clock_map_path(shard_path);
 
         let mut update_handler = UpdateHandler::new(
             shared_storage_config.clone(),
@@ -157,8 +169,10 @@ impl LocalShard {
             locked_wal.clone(),
             config.optimizer_config.flush_interval_sec,
             config.optimizer_config.max_optimization_threads,
-            clock_map.clone(),
-            clock_map_path,
+            last_seen_clock_map.clone(),
+            cutoff_clock_map.clone(),
+            last_seen_clock_map_path,
+            cutoff_clock_map_path,
         );
 
         let (update_sender, update_receiver) =
@@ -173,7 +187,7 @@ impl LocalShard {
             segments: segment_holder,
             collection_config,
             shared_storage_config,
-            wal: RecoverableWal::from(locked_wal, clock_map),
+            wal: RecoverableWal::from(locked_wal, last_seen_clock_map, cutoff_clock_map),
             update_handler: Arc::new(Mutex::new(update_handler)),
             update_sender: ArcSwap::from_pointee(update_sender),
             update_tracker,
@@ -202,7 +216,8 @@ impl LocalShard {
 
         let wal_path = Self::wal_path(shard_path);
         let segments_path = Self::segments_path(shard_path);
-        let clock_map_path = Self::clock_map_path(shard_path);
+        let last_seen_clock_map_path = Self::last_seen_clock_map_path(shard_path);
+        let cutoff_clock_map_path = Self::cutoff_clock_map_path(shard_path);
 
         let wal: SerdeWal<OperationWithClockTag> = SerdeWal::new(
             wal_path.to_str().unwrap(),
@@ -293,7 +308,8 @@ impl LocalShard {
 
         drop(collection_config_read); // release `shared_config` from borrow checker
 
-        let clock_map = ClockMap::load_or_default(&clock_map_path)?;
+        let last_seen_clock_map = ClockMap::load_or_default(&last_seen_clock_map_path)?;
+        let cutoff_clock_map = ClockMap::load_or_default(&cutoff_clock_map_path)?;
 
         let collection = LocalShard::new(
             segment_holder,
@@ -303,7 +319,8 @@ impl LocalShard {
             optimizers,
             optimizer_cpu_budget,
             shard_path,
-            clock_map,
+            last_seen_clock_map,
+            cutoff_clock_map,
             update_runtime,
         )
         .await;
@@ -346,8 +363,12 @@ impl LocalShard {
         shard_path.join("segments")
     }
 
-    pub fn clock_map_path(shard_path: &Path) -> PathBuf {
+    pub fn last_seen_clock_map_path(shard_path: &Path) -> PathBuf {
         shard_path.join("clock_map.json")
+    }
+
+    pub fn cutoff_clock_map_path(shard_path: &Path) -> PathBuf {
+        shard_path.join("clock_map_cutoff.json")
     }
 
     pub async fn build_local(
@@ -467,6 +488,7 @@ impl LocalShard {
             optimizers,
             optimizer_cpu_budget,
             shard_path,
+            ClockMap::default(),
             ClockMap::default(),
             update_runtime,
         )
@@ -688,11 +710,16 @@ impl LocalShard {
         .await??;
 
         // copy clock map
-        let clock_map_path = Self::clock_map_path(&self.path);
+        let last_seen_clock_map_path = Self::last_seen_clock_map_path(&self.path);
+        let cutoff_clock_map_path = Self::cutoff_clock_map_path(&self.path);
 
-        if clock_map_path.exists() {
-            let target_clock_map_path = Self::clock_map_path(snapshot_shard_path);
-            copy(clock_map_path, target_clock_map_path).await?;
+        if last_seen_clock_map_path.exists() {
+            let target_clock_map_path = Self::last_seen_clock_map_path(snapshot_shard_path);
+            copy(last_seen_clock_map_path, target_clock_map_path).await?;
+        }
+        if cutoff_clock_map_path.exists() {
+            let target_clock_map_path = Self::cutoff_clock_map_path(snapshot_shard_path);
+            copy(cutoff_clock_map_path, target_clock_map_path).await?;
         }
 
         // copy shard's config
