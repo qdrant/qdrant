@@ -954,7 +954,7 @@ mod tests {
         // Try to recover E from B
         let e_recovery_point = e_wal.recovery_point().await;
 
-        // Cannot recover E from B, because B has a high cutoff piont due to the full transfer
+        // Cannot recover E from B, because B has a high cutoff point due to the full transfer
         let delta_from = b_wal.resolve_wal_delta(e_recovery_point.clone()).await;
         assert_eq!(delta_from.unwrap_err(), WalDeltaError::Cutoff);
 
