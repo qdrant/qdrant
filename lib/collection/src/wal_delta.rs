@@ -1036,6 +1036,10 @@ mod tests {
 
         // Diff expected
         assert_eq!(b_wal.wal.lock().read(delta_from).count(), 1);
+
+        assert_wal_ordering_property(&a_wal);
+        assert_wal_ordering_property(&b_wal);
+        assert_wal_ordering_property(&e_wal);
     }
 
     /// Empty recovery point should not resolve any diff.
@@ -1195,11 +1199,7 @@ mod tests {
             .wal
             .lock()
             .read(0)
-            .map(|(_, operation)| {
-                operation
-                    .clock_tag
-                    .expect("WAL operation does not have a clock tag")
-            })
+            .filter_map(|(_, operation)| operation.clock_tag)
             .collect::<Vec<_>>();
         check_clock_tag_ordering_property(&clock_tags).unwrap();
     }
