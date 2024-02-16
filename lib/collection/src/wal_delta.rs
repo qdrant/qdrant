@@ -86,7 +86,7 @@ impl RecoverableWal {
             .filter(|clock_tag| clock_tag.clock_tick >= 1)
             .for_each(|mut clock_tag| {
                 clock_tag.clock_tick -= 1; // ToDO: get rid of
-                // Advance highest clocks we've seen
+                                           // Advance highest clocks we've seen
                 highest_clocks.advance_clock(clock_tag);
 
                 // Advance the cutoff point
@@ -963,7 +963,6 @@ mod tests {
         // Cannot recover E from B, because B has a high cutoff point due to the full transfer
         let delta_from = b_wal.resolve_wal_delta(e_recovery_point.clone()).await;
         assert_eq!(delta_from.unwrap_err(), WalDeltaError::Cutoff);
-        
 
         // Try to recover A from B
 
@@ -992,7 +991,6 @@ mod tests {
 
         // No diff expected
         assert_eq!(delta_from, Ok(None));
-        
 
         let op7 = mock_operation(7);
         // Add operation to B but not A
@@ -1014,7 +1012,11 @@ mod tests {
         }
 
         let a_recovery_point = a_wal.recovery_point().await;
-        let delta_from = b_wal.resolve_wal_delta(a_recovery_point.clone()).await.unwrap().unwrap();
+        let delta_from = b_wal
+            .resolve_wal_delta(a_recovery_point.clone())
+            .await
+            .unwrap()
+            .unwrap();
 
         // Diff expected
         assert_eq!(b_wal.wal.lock().read(delta_from).count(), 1);
