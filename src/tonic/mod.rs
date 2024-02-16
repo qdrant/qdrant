@@ -5,8 +5,9 @@ mod tonic_telemetry;
 
 use std::io;
 use std::net::{IpAddr, SocketAddr};
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 
 use ::api::grpc::grpc_health_v1::health_check_response::ServingStatus;
 use ::api::grpc::grpc_health_v1::health_server::{Health, HealthServer};
@@ -62,8 +63,17 @@ impl Qdrant for QdrantService {
 }
 
 // Additional health check service that follows gRPC health check protocol as described in #2614
-#[derive(Default)]
-pub struct HealthService {}
+pub struct HealthService {
+    last_check: Arc<Mutex<Instant>>,
+}
+
+impl Default for HealthService {
+    fn default() -> Self {
+        HealthService {
+            last_check: Arc::new(Mutex::new(Instant::now())),
+        }
+    }
+}
 
 #[tonic::async_trait]
 impl Health for HealthService {
@@ -71,11 +81,26 @@ impl Health for HealthService {
         &self,
         _request: Request<ProtocolHealthCheckRequest>,
     ) -> Result<Response<ProtocolHealthCheckResponse>, Status> {
+        let mut last_check = self.last_check.lock().unwrap();
+        *last_check = Instant::now();
+
         let response = ProtocolHealthCheckResponse {
             status: ServingStatus::Serving as i32,
         };
 
         Ok(Response::new(response))
+    }
+}
+
+// Monitoring task for health checks
+async fn monitor_health_check(last_check: Arc<Mutex<Instant>>, shutdown_flag: Arc<AtomicBool>) {
+    loop {
+        tokio::time::sleep(Duration::from_secs(30)).await;
+        let last_check_time = last_check.lock().unwrap();
+        if last_check_time.elapsed() > Duration::from_secs(60) {
+            shutdown_flag.store(true, Ordering::SeqCst);
+            break;
+        }
     }
 }
 
@@ -149,6 +174,9 @@ pub fn init(
     grpc_port: u16,
     runtime: Handle,
 ) -> io::Result<()> {
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
+    let shutdown_flag_clone = shutdown_flag.clone();
+
     runtime.block_on(async {
         let socket =
             SocketAddr::from((settings.service.host.parse::<IpAddr>().unwrap(), grpc_port));
@@ -198,6 +226,17 @@ pub fn init(
             })
             .into_inner();
 
+        // Initialize HealthService with the shared state
+        let health_service = HealthService {
+            last_check: Arc::new(Mutex::new(Instant::now())),
+        };
+
+        // Start the health check monitoring task
+        let health_check_clone = health_service.last_check.clone();
+        tokio::spawn(async move {
+            monitor_health_check(health_check_clone, shutdown_flag_clone).await;
+        });
+
         server
             .layer(middleware_layer)
             .add_service(reflection_service)
@@ -232,7 +271,12 @@ pub fn init(
                     .max_decoding_message_size(usize::MAX),
             )
             .serve_with_shutdown(socket, async {
-                wait_stop_signal("gRPC service").await;
+                loop {
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    if shutdown_flag.load(Ordering::SeqCst) {
+                        break;
+                    }
+                }
             })
             .await
             .map_err(helpers::tonic_error_to_io_error)
