@@ -14,9 +14,10 @@ pub struct UnindexedField {
     field_schemas: Vec<PayloadFieldSchema>,
     collection_name: String,
 }
+
 impl UnindexedField {
     pub fn get_code(collection_name: &str, field_name: &str) -> CodeType {
-        format!("{collection_name}.UNINDEXED_FIELD.{field_name}")
+        format!("{collection_name}/UNINDEXED_FIELD/{field_name}")
     }
 
     /// Try to form an issue from a field condition and a collection name

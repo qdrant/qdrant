@@ -39,7 +39,7 @@ def search_with_city_filter():
 
 
 def test_unindexed_field_is_gone_when_deleting_collection():
-    expected_issue_code = "test_collection.UNINDEXED_FIELD.city"
+    expected_issue_code = "test_collection/UNINDEXED_FIELD/city"
     issues = get_issues()
     assert expected_issue_code not in [issue["code"] for issue in issues]
 
@@ -59,7 +59,7 @@ def test_unindexed_field_is_gone_when_deleting_collection():
 
 
 def test_unindexed_field_is_gone_when_indexing():
-    expected_issue_code = "test_collection.UNINDEXED_FIELD.city"
+    expected_issue_code = "test_collection/UNINDEXED_FIELD/city"
 
     issues = get_issues()
     assert expected_issue_code not in [issue["code"] for issue in issues]

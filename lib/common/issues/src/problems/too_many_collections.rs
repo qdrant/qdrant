@@ -5,7 +5,7 @@ pub struct TooManyCollections;
 
 impl Issue for TooManyCollections {
     fn code(&self) -> CodeType {
-        "TOO_MANY_COLLECTIONS".to_string()
+        "/TOO_MANY_COLLECTIONS".to_string()
     }
 
     fn description(&self) -> String {
