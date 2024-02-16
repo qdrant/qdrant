@@ -40,9 +40,9 @@ impl Direction {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(untagged)]
 pub enum StartFrom {
-    Float(FloatPayloadType),
-
     Int(IntPayloadType),
+
+    Float(FloatPayloadType),
 
     Datetime(DateTimePayloadType),
 }
