@@ -996,7 +996,7 @@ mod tests {
         // Add operation to B but not A
         {
             // Node D is sending updates to B
-            let mut d_clock = c_clock_set.get_clock();
+            let mut d_clock = d_clock_set.get_clock();
 
             // First parallel operation
             let clock_tick = d_clock.tick_once();
