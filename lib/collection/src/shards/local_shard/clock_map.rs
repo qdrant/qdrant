@@ -185,7 +185,7 @@ impl RecoveryPoint {
     /// Check whether this recovery point has any higher clock value than `other`
     ///
     /// A clock in this recovery point that is not in `other` is always considered to be higher.
-    pub fn has_any_higher(&mut self, other: &Self) -> bool {
+    pub fn has_any_higher(&self, other: &Self) -> bool {
         self.clocks.iter().any(|(key, tick)| {
             other
                 .clocks

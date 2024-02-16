@@ -18,6 +18,9 @@ pub struct RecoverableWal {
     pub(super) last_clocks: Arc<Mutex<ClockMap>>,
     /// Map of all clocks and ticks that are cut off.
     ///
+    /// Clock ticks equal to those in this map are still recoverable, while clock ticks below those
+    /// in this map are not.
+    ///
     /// This means two things:
     /// - this WAL has at least all these clock versions (same as `last_clocks`)
     /// - this WAL cannot resolve any delta below any of these clocks
@@ -79,6 +82,7 @@ impl RecoverableWal {
             .clock_tag_iter()
             .filter(|clock_tag| clock_tag.clock_tick >= 1)
             .for_each(|mut clock_tag| {
+                // A recovery point has every clock one higher, here we decrease it by one again
                 clock_tag.clock_tick -= 1;
                 cutoff_clocks.advance_clock(clock_tag);
             });
@@ -93,16 +97,22 @@ impl RecoverableWal {
         &self,
         recovery_point: RecoveryPoint,
     ) -> Result<u64, WalDeltaError> {
-        resolve_wal_delta(recovery_point, &self.wal, self.recovery_point().await)
+        resolve_wal_delta(
+            recovery_point,
+            &self.wal,
+            self.recovery_point().await,
+            self.cutoff_clocks.lock().await.to_recovery_point(),
+        )
     }
 }
 
 /// Resolve the WAL delta for the given `recovery_point`
 ///
-/// A `local_wal` and `local_recovery_point` are required to resolve the delta. These should be
-/// from the node being the source of recovery, likely the current one. The `local_wal` is used to
-/// resolve the diff. The `local_recovery_point` is used to extend the given recovery point with
-/// clocks the failed node does not know about.
+/// A `local_wal`, `local_recovery_point` and `local_cutoff_point` are required to resolve the
+/// delta. These should be from the node being the source of recovery, likely the current one. The
+/// `local_wal` is used to resolve the diff. The `local_recovery_point` is used to extend the given
+/// recovery point with clocks the failed node does not know about. The `local_cutoff_point` is
+/// used as lower bound for WAL delta resolution.
 ///
 /// The delta can be sent over to the node which the recovery point is from, to restore its
 /// WAL making it consistent with the current shard.
@@ -113,6 +123,7 @@ fn resolve_wal_delta(
     mut recovery_point: RecoveryPoint,
     local_wal: &LockedWal,
     local_recovery_point: RecoveryPoint,
+    local_cutoff_point: RecoveryPoint,
 ) -> Result<u64, WalDeltaError> {
     if recovery_point.is_empty() {
         return Err(WalDeltaError::Empty);
@@ -132,8 +143,10 @@ fn resolve_wal_delta(
     // TODO: do we want to remove higher clocks too, as the recovery node already has all data?
     recovery_point.remove_equal_clocks(&local_recovery_point);
 
-    // TODO: check truncated clock values or each clock we have:
-    // TODO: - if truncated is higher, we cannot resolve diff
+    // Recovery point may not be below our cutoff point
+    if local_cutoff_point.has_any_higher(&recovery_point) {
+        return Err(WalDeltaError::Cutoff);
+    }
 
     // Scroll back over the WAL and find a record that covered all clocks
     // Drain satisfied clocks from the recovery point until we have nothing left
@@ -159,8 +172,8 @@ pub enum WalDeltaError {
     Empty,
     #[error("recovery point has higher clocks than current WAL")]
     HigherThanCurrent,
-    #[error("some recovery point clocks are truncated in our WAL")]
-    Truncated,
+    #[error("some recovery point clocks are below the cutoff point in our WAL")]
+    Cutoff,
     #[error("some recovery point clocks are not found in our WAL")]
     NotFound,
 }
