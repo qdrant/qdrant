@@ -175,6 +175,13 @@ impl RecoveryPoint {
         self.clocks.is_empty()
     }
 
+    /// Iterate over all recovery point entries as clock tags.
+    pub fn clock_tag_iter(&self) -> impl Iterator<Item = ClockTag> + '_ {
+        self.clocks
+            .iter()
+            .map(|(key, tick)| ClockTag::new(key.peer_id, key.clock_id, *tick))
+    }
+
     /// Check whether this recovery point has any higher clock value than `other`
     ///
     /// A clock in this recovery point that is not in `other` is always considered to be higher.
