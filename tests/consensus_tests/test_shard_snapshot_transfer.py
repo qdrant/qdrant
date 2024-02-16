@@ -222,7 +222,7 @@ def test_shard_snapshot_transfer_fast_burst(tmp_path: pathlib.Path):
     upload_process_1.kill()
     upload_process_2.kill()
     upload_process_3.kill()
-    sleep(1)
+    # sleep(1)
 
     receiver_collection_cluster_info = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
     number_local_shards = len(receiver_collection_cluster_info['local_shards'])
