@@ -118,6 +118,13 @@ impl ClockMap {
                 .collect(),
         }
     }
+
+    #[cfg(test)]
+    pub fn current_tick(&self, peer_id: PeerId, clock_id: u32) -> Option<u64> {
+        self.clocks
+            .get(&Key::new(peer_id, clock_id))
+            .map(Clock::current_tick)
+    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize)]
@@ -127,15 +134,12 @@ pub struct Key {
 }
 
 impl Key {
-    pub fn new(peer_id: PeerId, clock_id: u32) -> Self {
+    fn new(peer_id: PeerId, clock_id: u32) -> Self {
         Self { peer_id, clock_id }
     }
 
-    pub fn from_tag(clock_tag: ClockTag) -> Self {
-        Self {
-            peer_id: clock_tag.peer_id,
-            clock_id: clock_tag.clock_id,
-        }
+    fn from_tag(clock_tag: ClockTag) -> Self {
+        Self::new(clock_tag.peer_id, clock_tag.clock_id)
     }
 }
 
@@ -157,6 +161,11 @@ impl Clock {
         let clock_updated = self.current_tick < new_tick;
         self.current_tick = cmp::max(self.current_tick, new_tick);
         (clock_updated, self.current_tick)
+    }
+
+    #[cfg(test)]
+    fn current_tick(&self) -> u64 {
+        self.current_tick
     }
 }
 
@@ -376,7 +385,10 @@ impl From<Error> for CollectionError {
 }
 
 #[cfg(test)]
-mod tests {
+mod test {
+    use proptest::prelude::*;
+    use rstest::rstest;
+
     use super::*;
 
     #[test]
@@ -401,5 +413,218 @@ mod tests {
         let output = serde_json::from_value(json).unwrap();
 
         assert_eq!(input, output);
+    }
+
+    #[rstest]
+    #[case::with_empty_clock_map(Helper::empty())]
+    #[case::with_clock_map_at_tick_0(Helper::at_tick_0())]
+    fn clock_map_accept_tick_0(#[case] mut helper: Helper) {
+        // Accept tick `0`
+        helper.advance(tag(0)).assert(true, 0);
+    }
+
+    #[rstest]
+    #[case::with_empty_clock_map(Helper::empty())]
+    #[case::with_clock_map_at_tick_0(Helper::at_tick_0())]
+    fn clock_map_advance_to_next_tick(#[case] mut helper: Helper) {
+        // Advance to the next tick
+        for tick in 1..10 {
+            helper.advance(tag(tick)).assert(true, tick);
+        }
+    }
+
+    #[rstest]
+    #[case::with_empty_clock_map(Helper::empty())]
+    #[case::with_clock_map_at_tick_0(Helper::at_tick_0())]
+    fn clock_map_advance_to_newer_tick(#[case] mut helper: Helper) {
+        // Advance to a newer tick
+        for tick in [10, 20, 30, 40, 50] {
+            helper.advance(tag(tick)).assert(true, tick);
+        }
+    }
+
+    #[test]
+    fn clock_map_accept_tick_0_with_non_empty_clock_map() {
+        let mut helper = Helper::default();
+
+        for tick in [10, 20, 30, 40, 50] {
+            // Advance to a non-zero tick (already tested in `clock_map_advance_to_newer_tick`)
+            helper.advance(tag(tick));
+
+            // Accept tick `0`
+            helper.advance(tag(0)).assert(true, tick);
+        }
+    }
+
+    #[test]
+    fn clock_map_reject_older_or_current_tick() {
+        let mut helper = Helper::default();
+
+        // Advance to a newer tick (already tested in `clock_map_advance_to_newer_tick`)
+        helper.advance(tag(10));
+
+        // Reject older tick
+        //
+        // Start from tick `1`, cause tick `0` is a special case that is always accepted
+        for older_tick in 1..10 {
+            helper.advance(tag(older_tick)).assert(false, 10);
+        }
+
+        // Reject current tick
+        for current_tick in [10, 10, 10, 10, 10] {
+            helper.advance(tag(current_tick)).assert(false, 10);
+        }
+    }
+
+    #[rstest]
+    #[case::with_empty_clock_map(Helper::empty())]
+    #[case::with_clock_map_at_tick_0(Helper::at_tick_0())]
+    fn clock_map_advance_to_newer_tick_with_force_true(#[case] mut helper: Helper) {
+        // Advance to a newer tick with `force = true`
+        for tick in [10, 20, 30, 40, 50] {
+            helper.advance(tag(tick).force(true)).assert(true, tick);
+            assert_eq!(helper.clock_map.current_tick(PEER_ID, CLOCK_ID), Some(tick));
+        }
+    }
+
+    #[test]
+    fn clock_map_accept_older_or_current_tick_with_force_true() {
+        let mut helper = Helper::default();
+
+        // Advance to a newer tick (already tested in `clock_map_advance_to_newer_tick`)
+        helper.advance(tag(10));
+
+        // Accept older tick with `force = true`
+        //
+        // Start from `0`, cause `force = true` is "stronger" than tick `0` special case
+        for older_tick in 0..10 {
+            helper
+                .advance(tag(older_tick).force(true))
+                .assert(true, older_tick);
+        }
+
+        // Accept current tick with `force = true`
+        for current_tick in [10, 10, 10, 10, 10] {
+            helper
+                .advance(tag(current_tick).force(true))
+                .assert(true, current_tick);
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn clock_map_workflow(execution in proptest::collection::vec(clock_tag(), 0..4096)) {
+            let mut helper = Helper::default();
+
+            for clock_tag in execution {
+                let current_tick = helper.clock_map.current_tick(clock_tag.peer_id, clock_tag.clock_id);
+
+                let expected_status = current_tick.is_none()
+                    || current_tick < Some(clock_tag.clock_tick)
+                    || clock_tag.clock_tick == 0
+                    || clock_tag.force;
+
+                let expected_tick = if clock_tag.force {
+                    clock_tag.clock_tick
+                } else {
+                    clock_tag.clock_tick.max(current_tick.unwrap_or(0))
+                };
+
+                helper.advance(clock_tag).assert(expected_status, expected_tick);
+            }
+        }
+
+        #[ignore]
+        #[test]
+        fn clock_map_clocks_isolation(execution in proptest::collection::vec(clock_tag(), 4096)) {
+            let mut helper = Helper::default();
+
+            for clock_tag in execution {
+                // Back-up current state
+                let backup = helper.clone();
+
+                // Advance the clock map
+                helper.advance(clock_tag);
+
+                // Ensure that no more than a single entry in the clock map was updated during advance
+                let helper_len = helper.clock_map.clocks.len();
+                let backup_len = backup.clock_map.clocks.len();
+
+                assert!(helper_len == backup_len || helper_len == backup_len + 1);
+
+                for (key, clock) in backup.clock_map.clocks {
+                    let current_tick = helper.clock_map.current_tick(key.peer_id, key.clock_id);
+
+                    if clock_tag.peer_id == key.peer_id && clock_tag.clock_id == key.clock_id {
+                        assert!(current_tick.is_some());
+                    } else {
+                        assert_eq!(current_tick, Some(clock.current_tick));
+                    }
+                }
+            }
+        }
+    }
+
+    prop_compose! {
+        fn clock_tag() (
+            peer_id in 0..128_u64,
+            clock_id in 0..64_u32,
+            clock_tick in any::<u64>(),
+            force in any::<bool>(),
+        ) -> ClockTag {
+            ClockTag::new(peer_id, clock_id, clock_tick).force(force)
+        }
+    }
+
+    #[derive(Clone, Debug, Default)]
+    struct Helper {
+        clock_map: ClockMap,
+    }
+
+    impl Helper {
+        pub fn empty() -> Self {
+            Self::default()
+        }
+
+        pub fn at_tick_0() -> Self {
+            let mut helper = Helper::default();
+            helper.advance(tag(0));
+            helper
+        }
+
+        pub fn advance(&mut self, mut clock_tag: ClockTag) -> Status {
+            let peer_id = clock_tag.peer_id;
+            let clock_id = clock_tag.clock_id;
+
+            let accepted = self.clock_map.advance_clock_and_correct_tag(&mut clock_tag);
+
+            assert_eq!(clock_tag.peer_id, peer_id);
+            assert_eq!(clock_tag.clock_id, clock_id);
+
+            Status {
+                accepted,
+                clock_tag,
+            }
+        }
+    }
+
+    const PEER_ID: PeerId = 1337;
+    const CLOCK_ID: u32 = 42;
+
+    fn tag(tick: u64) -> ClockTag {
+        ClockTag::new(PEER_ID, CLOCK_ID, tick)
+    }
+
+    #[derive(Copy, Clone, Debug)]
+    struct Status {
+        accepted: bool,
+        clock_tag: ClockTag,
+    }
+
+    impl Status {
+        pub fn assert(&self, expected_status: bool, expected_tick: u64) {
+            assert_eq!(self.accepted, expected_status);
+            assert_eq!(self.clock_tag.clock_tick, expected_tick);
+        }
     }
 }
