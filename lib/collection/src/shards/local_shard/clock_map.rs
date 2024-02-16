@@ -171,6 +171,7 @@ pub struct RecoveryPoint {
 }
 
 impl RecoveryPoint {
+    #[cfg(test)]
     pub(crate) fn insert(&mut self, peer_id: PeerId, clock_id: u32, clock_tick: u64) {
         self.clocks.insert(Key::new(peer_id, clock_id), clock_tick);
     }
