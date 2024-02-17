@@ -19,6 +19,8 @@ def update_points_in_loop(peer_url, collection_name, offset=0, throttle=False, d
         upsert_random_points(peer_url, limit, collection_name, offset=offset)
         offset += limit
 
+        print(f"Inserted at offset {offset}")
+
         if throttle:
             sleep(0.1)
         if duration is not None and (time.time() - start) > duration:
@@ -223,7 +225,7 @@ def test_shard_snapshot_transfer_fast_burst(tmp_path: pathlib.Path):
     receiver_collection_cluster_info = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
 
     from_peer_id = transfer_collection_cluster_info['peer_id']
-    to_peer_id = receiver_collection_cluster_info['peer_id']
+    to_peer_id = 0['peer_id']
 
     shard_id = transfer_collection_cluster_info['local_shards'][0]['shard_id']
 
