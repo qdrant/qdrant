@@ -94,6 +94,31 @@ def test_shard_snapshot_transfer(tmp_path: pathlib.Path):
     assert counts[0] == counts[1] == counts[2]
 
 
+def load_all_points(peer_api_uri: str):
+
+    next_page_offset = 0
+
+    all_points_ids = set()
+
+    while next_page_offset is not None:
+
+        r = requests.post(
+            f"{peer_api_uri}/collections/{COLLECTION_NAME}/points/scroll", json={
+                "limit": 1000,
+                "offset": next_page_offset
+            }
+        )
+        assert_http_ok(r)
+
+        points = r.json()["result"]["points"]
+        next_page_offset = r.json()["result"]["next_page_offset"]
+
+        for point in points:
+            all_points_ids.add(point["id"])
+    
+    return all_points_ids
+
+
 # Transfer shards from one node to another while applying throttled updates in parallel
 #
 # Updates are throttled to prevent sending updates faster than the queue proxy
@@ -238,4 +263,21 @@ def test_shard_snapshot_transfer_fast_burst(tmp_path: pathlib.Path):
         )
         assert_http_ok(r)
         counts.append(r.json()["result"]['count'])
-    assert counts[0] == counts[1] == counts[2]
+
+
+    if (counts[0] == counts[1] == counts[2]):
+        print(f"counts: {counts}")
+
+        uri_0_points = load_all_points(peer_api_uris[0])
+        uri_1_points = load_all_points(peer_api_uris[1])
+        uri_2_points = load_all_points(peer_api_uris[2])
+
+        print(f"uri_0_points: {len(uri_0_points)}")
+        print(f"uri_1_points: {len(uri_1_points)}")
+        print(f"uri_2_points: {len(uri_2_points)}")
+
+        print(f"uri_0_points - uri_1_points: {uri_0_points - uri_1_points}")
+        print(f"uri_0_points - uri_2_points: {uri_0_points - uri_2_points}")
+        print(f"uri_1_points - uri_0_points: {uri_1_points - uri_0_points}")
+
+    assert counts[0] == counts[1] == counts[2], f"counts: {counts}"
