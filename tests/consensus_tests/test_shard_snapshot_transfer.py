@@ -265,7 +265,7 @@ def test_shard_snapshot_transfer_fast_burst(tmp_path: pathlib.Path):
         counts.append(r.json()["result"]['count'])
 
 
-    if (counts[0] == counts[1] == counts[2]):
+    if not (counts[0] == counts[1] == counts[2]):
         print(f"counts: {counts}")
 
         uri_0_points = load_all_points(peer_api_uris[0])
