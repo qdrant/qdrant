@@ -225,7 +225,7 @@ def test_shard_snapshot_transfer_fast_burst(tmp_path: pathlib.Path):
     receiver_collection_cluster_info = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
 
     from_peer_id = transfer_collection_cluster_info['peer_id']
-    to_peer_id = 0['peer_id']
+    to_peer_id = receiver_collection_cluster_info['peer_id']
 
     shard_id = transfer_collection_cluster_info['local_shards'][0]['shard_id']
 
