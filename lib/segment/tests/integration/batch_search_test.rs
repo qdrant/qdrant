@@ -21,6 +21,8 @@ use segment::types::{
 use serde_json::json;
 use tempfile::Builder;
 
+use crate::utils::path;
+
 #[test]
 fn test_batch_and_single_request_equivalency() {
     let num_vectors: u64 = 1_000;
@@ -52,7 +54,7 @@ fn test_batch_and_single_request_equivalency() {
     let mut segment = build_segment(dir.path(), &config, true).unwrap();
 
     segment
-        .create_field_index(0, int_key, Some(&PayloadSchemaType::Integer.into()))
+        .create_field_index(0, &path(int_key), Some(&PayloadSchemaType::Integer.into()))
         .unwrap();
 
     for n in 0..num_vectors {
@@ -77,7 +79,7 @@ fn test_batch_and_single_request_equivalency() {
         let payload_value = random_int_payload(&mut rnd, 1..=1).pop().unwrap();
 
         let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
-            int_key,
+            path(int_key),
             payload_value.into(),
         )));
 
@@ -167,7 +169,7 @@ fn test_batch_and_single_request_equivalency() {
         let payload_value = random_int_payload(&mut rnd, 1..=1).pop().unwrap();
 
         let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
-            int_key,
+            path(int_key),
             payload_value.into(),
         )));
 

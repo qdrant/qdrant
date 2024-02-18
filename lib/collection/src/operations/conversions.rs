@@ -5,7 +5,8 @@ use std::time::Duration;
 
 use api::grpc::conversions::{
     convert_shard_key_from_grpc, convert_shard_key_from_grpc_opt, convert_shard_key_to_grpc,
-    date_time_from_proto, from_grpc_dist, payload_to_proto, proto_to_payloads,
+    date_time_from_proto, from_grpc_dist, json_path_from_proto, payload_to_proto,
+    proto_to_payloads,
 };
 use api::grpc::qdrant::quantization_config_diff::Quantization;
 use api::grpc::qdrant::update_collection_cluster_setup_request::{
@@ -428,7 +429,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
             }),
             payload_schema: payload_schema
                 .into_iter()
-                .map(|(k, v)| (k, v.into()))
+                .map(|(k, v)| (k.to_string(), v.into()))
                 .collect(),
         }
     }
@@ -739,7 +740,7 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
                 payload_schema: collection_info_response
                     .payload_schema
                     .into_iter()
-                    .map(|(k, v)| v.try_into().map(|v| (k, v)))
+                    .map(|(k, v)| Ok::<_, Status>((json_path_from_proto(&k)?, v.try_into()?)))
                     .try_collect()?,
             }),
         }
@@ -1305,7 +1306,7 @@ impl TryFrom<api::grpc::qdrant::SearchPointGroups> for SearchGroupsRequestIntern
             with_vector,
             score_threshold,
             group_request: BaseGroupRequest {
-                group_by: value.group_by,
+                group_by: json_path_from_proto(&value.group_by)?,
                 limit: value.limit,
                 group_size: value.group_size,
                 with_lookup: value.with_lookup.map(|l| l.try_into()).transpose()?,
@@ -1536,7 +1537,7 @@ impl TryFrom<api::grpc::qdrant::RecommendPointGroups> for RecommendGroupsRequest
             with_vector,
             score_threshold,
             group_request: BaseGroupRequest {
-                group_by: value.group_by,
+                group_by: json_path_from_proto(&value.group_by)?,
                 limit: value.limit,
                 group_size: value.group_size,
                 with_lookup: value.with_lookup.map(|l| l.try_into()).transpose()?,
@@ -1828,7 +1829,7 @@ impl TryFrom<api::grpc::qdrant::OrderBy> for OrderByInterface {
             .transpose()?;
 
         Ok(Self::Struct(OrderBy {
-            key: value.key,
+            key: json_path_from_proto(&value.key)?,
             direction,
             start_from,
         }))

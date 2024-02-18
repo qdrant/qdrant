@@ -9,6 +9,7 @@ use api::grpc::qdrant::{
     SyncPointsInternal, UpdatePointVectors, UpdateVectorsInternal, UpsertPoints,
     UpsertPointsInternal, VectorsSelector,
 };
+use segment::json_path::JsonPath;
 use segment::types::{Filter, PayloadFieldSchema, PayloadSchemaParams, PointIdType, ScoredPoint};
 use tonic::Status;
 
@@ -237,7 +238,7 @@ pub fn internal_set_payload(
             points_selector,
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
-            key: set_payload.key,
+            key: set_payload.key.map(|key| key.to_string()),
         }),
     }
 }
@@ -268,7 +269,11 @@ pub fn internal_delete_payload(
         delete_payload_points: Some(DeletePayloadPoints {
             collection_name,
             wait: Some(wait),
-            keys: delete_payload.keys,
+            keys: delete_payload
+                .keys
+                .into_iter()
+                .map(|key| key.to_string())
+                .collect(),
             points_selector,
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
@@ -381,7 +386,7 @@ pub fn internal_create_index(
         create_field_index_collection: Some(CreateFieldIndexCollection {
             collection_name,
             wait: Some(wait),
-            field_name: create_index.field_name,
+            field_name: create_index.field_name.to_string(),
             field_type,
             field_index_params,
             ordering: ordering.map(write_ordering_to_proto),
@@ -393,7 +398,7 @@ pub fn internal_delete_index(
     shard_id: Option<ShardId>,
     clock_tag: Option<ClockTag>,
     collection_name: String,
-    delete_index: String,
+    delete_index: JsonPath,
     wait: bool,
     ordering: Option<WriteOrdering>,
 ) -> DeleteFieldIndexCollectionInternal {
@@ -403,7 +408,7 @@ pub fn internal_delete_index(
         delete_field_index_collection: Some(DeleteFieldIndexCollection {
             collection_name,
             wait: Some(wait),
-            field_name: delete_index,
+            field_name: delete_index.to_string(),
             ordering: ordering.map(write_ordering_to_proto),
         }),
     }

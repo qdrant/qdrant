@@ -4,6 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
+use crate::json_path::JsonPath;
 use crate::types::{
     DateTimePayloadType, FloatPayloadType, IntPayloadType, Payload, Range, RangeInterface,
 };
@@ -45,11 +46,11 @@ pub enum StartFrom {
     Datetime(DateTimePayloadType),
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, Default)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct OrderBy {
     /// Payload key to order by
-    pub key: String,
+    pub key: JsonPath,
 
     /// Direction of ordering: `asc` or `desc`. Default is ascending.
     pub direction: Option<Direction>,

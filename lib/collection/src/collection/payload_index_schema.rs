@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use segment::json_path::JsonPath;
 use segment::types::{PayloadFieldSchema, PayloadKeyType};
 use serde::{Deserialize, Serialize};
 
@@ -31,7 +32,7 @@ impl Collection {
 
     pub async fn create_payload_index(
         &self,
-        field_name: String,
+        field_name: JsonPath,
         field_schema: PayloadFieldSchema,
     ) -> CollectionResult<Option<UpdateResult>> {
         // This function is called from consensus, so we use `wait = false`, because we can't afford
@@ -42,7 +43,7 @@ impl Collection {
 
     pub async fn create_payload_index_with_wait(
         &self,
-        field_name: String,
+        field_name: JsonPath,
         field_schema: PayloadFieldSchema,
         wait: bool,
     ) -> CollectionResult<Option<UpdateResult>> {
@@ -68,7 +69,7 @@ impl Collection {
 
     pub async fn drop_payload_index(
         &self,
-        field_name: String,
+        field_name: JsonPath,
     ) -> CollectionResult<Option<UpdateResult>> {
         self.payload_index_schema.write(|schema| {
             schema.schema.remove(&field_name);

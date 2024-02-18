@@ -125,7 +125,7 @@ pub fn random_uncommon_condition<R: Rng + ?Sized>(rnd_gen: &mut R) -> Condition 
     let switch = rnd_gen.gen_range(0..=3);
     match switch {
         0 => Condition::Field(FieldCondition::new_values_count(
-            STR_KEY.to_string(),
+            STR_KEY.parse().unwrap(),
             ValuesCount {
                 lt: None,
                 gt: None,
@@ -134,7 +134,7 @@ pub fn random_uncommon_condition<R: Rng + ?Sized>(rnd_gen: &mut R) -> Condition 
             },
         )),
         1 => Condition::Field(FieldCondition::new_values_count(
-            STR_KEY.to_string(),
+            STR_KEY.parse().unwrap(),
             ValuesCount {
                 lt: None,
                 gt: None,
@@ -149,7 +149,7 @@ pub fn random_uncommon_condition<R: Rng + ?Sized>(rnd_gen: &mut R) -> Condition 
         }),
         3 => Condition::IsEmpty(IsEmptyCondition {
             is_empty: PayloadField {
-                key: FLICKING_KEY.to_string(),
+                key: FLICKING_KEY.parse().unwrap(),
             },
         }),
         _ => unreachable!(),
@@ -162,18 +162,18 @@ pub fn random_simple_condition<R: Rng + ?Sized>(rnd_gen: &mut R) -> Condition {
         let kv_or_txt: bool = rnd_gen.gen();
         if kv_or_txt {
             Condition::Field(FieldCondition::new_match(
-                STR_KEY.to_string(),
+                STR_KEY.parse().unwrap(),
                 random_keyword(rnd_gen).into(),
             ))
         } else {
             Condition::Field(FieldCondition::new_match(
-                TEXT_KEY.to_string(),
+                TEXT_KEY.parse().unwrap(),
                 Match::Text(random_adj(rnd_gen).into()),
             ))
         }
     } else {
         Condition::Field(FieldCondition::new_range(
-            INT_KEY.to_string(),
+            INT_KEY.parse().unwrap(),
             RangeCondition {
                 lt: None,
                 gt: None,
@@ -225,7 +225,7 @@ pub fn random_match_any_filter<R: Rng + ?Sized>(
     Filter {
         should: None,
         must: Some(vec![Condition::Field(FieldCondition::new_match(
-            STR_KEY,
+            STR_KEY.parse().unwrap(),
             Match::Any(MatchAny {
                 any: AnyVariants::Keywords(values),
             }),
@@ -275,7 +275,7 @@ pub fn random_nested_filter<R: Rng + ?Sized>(rnd_gen: &mut R) -> Filter {
         format!("{}.{}[].{}", STR_PROJ_KEY, "nested_1", "nested_2")
     };
     let condition = Condition::Field(FieldCondition::new_match(
-        nested_str_key,
+        nested_str_key.parse().unwrap(),
         random_keyword(rnd_gen).into(),
     ));
     Filter::new_should(condition)

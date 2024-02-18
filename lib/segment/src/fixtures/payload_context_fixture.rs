@@ -229,24 +229,22 @@ pub fn create_struct_payload_index(
     let mut index = StructPayloadIndex::open(payload_storage, id_tracker, path, true).unwrap();
 
     index
-        .set_indexed(STR_KEY, PayloadSchemaType::Keyword.into())
+        .set_indexed(&STR_KEY.parse().unwrap(), PayloadSchemaType::Keyword.into())
         .unwrap();
     index
-        .set_indexed(INT_KEY, PayloadSchemaType::Integer.into())
+        .set_indexed(&INT_KEY.parse().unwrap(), PayloadSchemaType::Integer.into())
         .unwrap();
     index
-        .set_indexed(FLT_KEY, PayloadSchemaType::Float.into())
+        .set_indexed(&FLT_KEY.parse().unwrap(), PayloadSchemaType::Float.into())
         .unwrap();
     index
-        .set_indexed(GEO_KEY, PayloadSchemaType::Geo.into())
+        .set_indexed(&GEO_KEY.parse().unwrap(), PayloadSchemaType::Geo.into())
         .unwrap();
-
     index
-        .set_indexed(TEXT_KEY, PayloadSchemaType::Text.into())
+        .set_indexed(&TEXT_KEY.parse().unwrap(), PayloadSchemaType::Text.into())
         .unwrap();
-
     index
-        .set_indexed(BOOL_KEY, PayloadSchemaType::Bool.into())
+        .set_indexed(&BOOL_KEY.parse().unwrap(), PayloadSchemaType::Bool.into())
         .unwrap();
 
     index

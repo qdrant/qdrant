@@ -22,20 +22,18 @@ use uuid::Uuid;
 use validator::{Validate, ValidationError, ValidationErrors};
 
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::common::utils::{
-    self, check_exclude_pattern, check_include_pattern, filter_json_values,
-    get_value_from_json_map, MultiValue,
-};
+use crate::common::utils::{self, MultiValue};
 use crate::data_types::integer_index::IntegerIndexParams;
 use crate::data_types::text_index::TextIndexParams;
 use crate::data_types::vectors::{DenseVector, VectorElementType, VectorStruct};
 use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
+use crate::json_path::{JsonPath, JsonPathInterface};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::vector_storage::simple_sparse_vector_storage::SPARSE_VECTOR_DISTANCE;
 
-pub type PayloadKeyType = String;
-pub type PayloadKeyTypeRef<'a> = &'a str;
+pub type PayloadKeyType = JsonPath;
+pub type PayloadKeyTypeRef<'a> = &'a JsonPath;
 /// Sequential number of modification, applied to segment
 pub type SeqNumberType = u64;
 pub type TagType = u64;
@@ -900,7 +898,7 @@ impl TryFrom<GeoPointShadow> for GeoPoint {
 pub trait PayloadContainer {
     /// Return value from payload by path.
     /// If value is not present in the payload, returns empty vector.
-    fn get_value(&self, path: &str) -> MultiValue<&Value>;
+    fn get_value(&self, path: &JsonPath) -> MultiValue<&Value>;
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema)]
@@ -911,13 +909,13 @@ impl Payload {
         utils::merge_map(&mut self.0, &value.0)
     }
 
-    pub fn merge_by_key(&mut self, value: &Payload, key: &str) -> OperationResult<()> {
-        utils::set_value_to_json_map(key, &mut self.0, &value.0);
+    pub fn merge_by_key(&mut self, value: &Payload, key: &JsonPath) -> OperationResult<()> {
+        JsonPathInterface::value_set(Some(key), &mut self.0, &value.0);
         Ok(())
     }
 
-    pub fn remove(&mut self, path: &str) -> Vec<Value> {
-        utils::remove_value_from_json_map(path, &mut self.0).to_vec()
+    pub fn remove(&mut self, path: &JsonPath) -> Vec<Value> {
+        path.value_remove(&mut self.0).to_vec()
     }
 
     pub fn len(&self) -> usize {
@@ -938,20 +936,20 @@ impl Payload {
 }
 
 impl PayloadContainer for Map<String, Value> {
-    fn get_value(&self, path: &str) -> MultiValue<&Value> {
-        get_value_from_json_map(path, self)
+    fn get_value(&self, path: &JsonPath) -> MultiValue<&Value> {
+        path.value_get(self)
     }
 }
 
 impl PayloadContainer for Payload {
-    fn get_value(&self, path: &str) -> MultiValue<&Value> {
-        get_value_from_json_map(path, &self.0)
+    fn get_value(&self, path: &JsonPath) -> MultiValue<&Value> {
+        path.value_get(&self.0)
     }
 }
 
 impl<'a> PayloadContainer for OwnedPayloadRef<'a> {
-    fn get_value(&self, path: &str) -> MultiValue<&Value> {
-        get_value_from_json_map(path, self.deref())
+    fn get_value(&self, path: &JsonPath) -> MultiValue<&Value> {
+        path.value_get(self.as_ref())
     }
 }
 
@@ -1644,9 +1642,9 @@ pub struct FieldCondition {
 }
 
 impl FieldCondition {
-    pub fn new_match(key: impl Into<PayloadKeyType>, r#match: Match) -> Self {
+    pub fn new_match(key: JsonPath, r#match: Match) -> Self {
         Self {
-            key: key.into(),
+            key,
             r#match: Some(r#match),
             range: None,
             geo_bounding_box: None,
@@ -1656,9 +1654,9 @@ impl FieldCondition {
         }
     }
 
-    pub fn new_range(key: impl Into<PayloadKeyType>, range: Range<FloatPayloadType>) -> Self {
+    pub fn new_range(key: JsonPath, range: Range<FloatPayloadType>) -> Self {
         Self {
-            key: key.into(),
+            key,
             r#match: None,
             range: Some(RangeInterface::Float(range)),
             geo_bounding_box: None,
@@ -1668,12 +1666,9 @@ impl FieldCondition {
         }
     }
 
-    pub fn new_datetime_range(
-        key: impl Into<PayloadKeyType>,
-        datetime_range: Range<DateTimePayloadType>,
-    ) -> Self {
+    pub fn new_datetime_range(key: JsonPath, datetime_range: Range<DateTimePayloadType>) -> Self {
         Self {
-            key: key.into(),
+            key,
             r#match: None,
             range: Some(RangeInterface::DateTime(datetime_range)),
             geo_bounding_box: None,
@@ -1683,12 +1678,9 @@ impl FieldCondition {
         }
     }
 
-    pub fn new_geo_bounding_box(
-        key: impl Into<PayloadKeyType>,
-        geo_bounding_box: GeoBoundingBox,
-    ) -> Self {
+    pub fn new_geo_bounding_box(key: JsonPath, geo_bounding_box: GeoBoundingBox) -> Self {
         Self {
-            key: key.into(),
+            key,
             r#match: None,
             range: None,
             geo_bounding_box: Some(geo_bounding_box),
@@ -1698,9 +1690,9 @@ impl FieldCondition {
         }
     }
 
-    pub fn new_geo_radius(key: impl Into<PayloadKeyType>, geo_radius: GeoRadius) -> Self {
+    pub fn new_geo_radius(key: JsonPath, geo_radius: GeoRadius) -> Self {
         Self {
-            key: key.into(),
+            key,
             r#match: None,
             range: None,
             geo_bounding_box: None,
@@ -1710,9 +1702,9 @@ impl FieldCondition {
         }
     }
 
-    pub fn new_geo_polygon(key: impl Into<PayloadKeyType>, geo_polygon: GeoPolygon) -> Self {
+    pub fn new_geo_polygon(key: JsonPath, geo_polygon: GeoPolygon) -> Self {
         Self {
-            key: key.into(),
+            key,
             r#match: None,
             range: None,
             geo_bounding_box: None,
@@ -1722,9 +1714,9 @@ impl FieldCondition {
         }
     }
 
-    pub fn new_values_count(key: impl Into<PayloadKeyType>, values_count: ValuesCount) -> Self {
+    pub fn new_values_count(key: JsonPath, values_count: ValuesCount) -> Self {
         Self {
-            key: key.into(),
+            key,
             r#match: None,
             range: None,
             geo_bounding_box: None,
@@ -1779,16 +1771,16 @@ pub struct IsNullCondition {
     pub is_null: PayloadField,
 }
 
-impl From<String> for IsNullCondition {
-    fn from(key: String) -> Self {
+impl From<JsonPath> for IsNullCondition {
+    fn from(key: JsonPath) -> Self {
         IsNullCondition {
             is_null: PayloadField { key },
         }
     }
 }
 
-impl From<String> for IsEmptyCondition {
-    fn from(key: String) -> Self {
+impl From<JsonPath> for IsEmptyCondition {
+    fn from(key: JsonPath) -> Self {
         IsEmptyCondition {
             is_empty: PayloadField { key },
         }
@@ -1828,18 +1820,13 @@ impl NestedCondition {
     }
 
     /// Get the raw key without any modifications
-    pub fn raw_key(&self) -> &str {
+    pub fn raw_key(&self) -> &PayloadKeyType {
         &self.nested.key
     }
 
     /// Nested is made to be used with arrays, so we add `[]` to the key if it is not present for convenience
-    pub fn array_key(&self) -> String {
-        let raw = self.raw_key();
-        if raw.ends_with("[]") {
-            raw.to_string()
-        } else {
-            format!("{}[]", raw)
-        }
+    pub fn array_key(&self) -> PayloadKeyType {
+        self.raw_key().array_key()
     }
 
     pub fn filter(&self) -> &Filter {
@@ -1866,12 +1853,9 @@ pub enum Condition {
 }
 
 impl Condition {
-    pub fn new_nested(key: impl Into<String>, filter: Filter) -> Self {
+    pub fn new_nested(key: JsonPath, filter: Filter) -> Self {
         Self::Nested(NestedCondition {
-            nested: Nested {
-                key: key.into(),
-                filter,
-            },
+            nested: Nested { key, filter },
         })
     }
 }
@@ -1896,7 +1880,7 @@ pub enum WithPayloadInterface {
     /// If `false` - do not return payload
     Bool(bool),
     /// Specify which fields to return
-    Fields(Vec<String>),
+    Fields(Vec<JsonPath>),
     /// Specify included or excluded fields
     Selector(PayloadSelector),
 }
@@ -2040,18 +2024,18 @@ impl PayloadSelector {
     /// Process payload selector
     pub fn process(&self, x: Payload) -> Payload {
         match self {
-            PayloadSelector::Include(selector) => filter_json_values(&x.0, |key, _| {
+            PayloadSelector::Include(selector) => JsonPath::value_filter(&x.0, |key, _| {
                 selector
                     .include
                     .iter()
-                    .any(|pattern| check_include_pattern(pattern, key))
+                    .any(|pattern| pattern.check_include_pattern(key))
             })
             .into(),
-            PayloadSelector::Exclude(selector) => filter_json_values(&x.0, |key, _| {
+            PayloadSelector::Exclude(selector) => JsonPath::value_filter(&x.0, |key, _| {
                 selector
                     .exclude
                     .iter()
-                    .all(|pattern| !check_exclude_pattern(pattern, key))
+                    .all(|pattern| !pattern.check_exclude_pattern(key))
             })
             .into(),
         }
@@ -2229,7 +2213,8 @@ mod tests {
 
     use super::test_utils::build_polygon_with_interiors;
     use super::*;
-    use crate::common::utils::{check_is_empty, remove_value_from_json_map};
+    use crate::common::utils::check_is_empty;
+    use crate::json_path::{path, JsonPathString};
 
     #[allow(dead_code)]
     fn check_rms_serialization<T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug>(
@@ -2385,7 +2370,7 @@ mod tests {
     fn test_serialize_query() {
         let filter = Filter {
             must: Some(vec![Condition::Field(FieldCondition::new_match(
-                "hello".to_owned(),
+                path("hello"),
                 "world".to_owned().into(),
             ))]),
             must_not: None,
@@ -2482,7 +2467,7 @@ mod tests {
             _ => panic!("Condition::Field expected"),
         };
 
-        assert_eq!(c.key.as_str(), "Jason");
+        assert_eq!(c.key.to_string(), "Jason");
 
         let m = match c.r#match.as_ref().unwrap() {
             Match::Any(m) => m,
@@ -2592,7 +2577,7 @@ mod tests {
             _ => panic!("Condition::IsEmpty expected"),
         };
 
-        assert_eq!(c.is_empty.key.as_str(), "Jason");
+        assert_eq!(c.is_empty.key.to_string(), "Jason");
     }
 
     #[test]
@@ -2618,7 +2603,7 @@ mod tests {
             _ => panic!("Condition::IsNull expected"),
         };
 
-        assert_eq!(c.is_null.key.as_str(), "Jason");
+        assert_eq!(c.is_null.key.to_string(), "Jason");
     }
 
     #[test]
@@ -2655,14 +2640,14 @@ mod tests {
         assert_eq!(musts.len(), 1);
         match musts.first() {
             Some(Condition::Nested(nested_condition)) => {
-                assert_eq!(nested_condition.raw_key(), "country.cities");
-                assert_eq!(nested_condition.array_key(), "country.cities[]");
+                assert_eq!(nested_condition.raw_key().to_string(), "country.cities");
+                assert_eq!(nested_condition.array_key().to_string(), "country.cities[]");
                 let nested_musts = nested_condition.filter().must.as_ref().unwrap();
                 assert_eq!(nested_musts.len(), 2);
                 let first_must = nested_musts.first().unwrap();
                 match first_must {
                     Condition::Field(c) => {
-                        assert_eq!(c.key, "population");
+                        assert_eq!(c.key.to_string(), "population");
                         assert!(c.range.is_some());
                     }
                     _ => panic!("Condition::Field expected"),
@@ -2671,7 +2656,7 @@ mod tests {
                 let second_must = nested_musts.get(1).unwrap();
                 match second_must {
                     Condition::Field(c) => {
-                        assert_eq!(c.key, "sightseeing");
+                        assert_eq!(c.key.to_string(), "sightseeing");
                         assert!(c.values_count.is_some());
                     }
                     _ => panic!("Condition::Field expected"),
@@ -2983,7 +2968,12 @@ mod tests {
 
     #[test]
     fn test_remove_key() {
-        let mut payload: Payload = serde_json::from_str(
+        test_remove_key_impl::<JsonPathString>();
+        // TODO: test_remove_key_impl::<JsonPathV2>();
+    }
+
+    fn test_remove_key_impl<P: JsonPathInterface>() {
+        let mut payload: serde_json::Map<String, Value> = serde_json::from_str(
             r#"
         {
             "a": 1,
@@ -3010,26 +3000,28 @@ mod tests {
         "#,
         )
         .unwrap();
-        let removed = remove_value_from_json_map("b.c", &mut payload.0).into_vec();
+        let removed = path::<P>("b.c").value_remove(&mut payload).into_vec();
         assert_eq!(removed, vec![Value::Number(123.into())]);
         assert_ne!(payload, Default::default());
 
-        let removed = remove_value_from_json_map("b.e.f[1]", &mut payload.0).into_vec();
+        let removed = path::<P>("b.e.f[1]").value_remove(&mut payload).into_vec();
         assert_eq!(removed, vec![Value::Number(2.into())]);
         assert_ne!(payload, Default::default());
 
-        let removed = remove_value_from_json_map("b.e.i[0].j", &mut payload.0).into_vec();
+        let removed = path::<P>("b.e.i[0].j")
+            .value_remove(&mut payload)
+            .into_vec();
         assert_eq!(removed, vec![Value::Number(1.into())]);
         assert_ne!(payload, Default::default());
 
-        let removed = remove_value_from_json_map("b.e.i[].k", &mut payload.0).into_vec();
+        let removed = path::<P>("b.e.i[].k").value_remove(&mut payload).into_vec();
         assert_eq!(
             removed,
             vec![Value::Number(2.into()), Value::Number(4.into())]
         );
         assert_ne!(payload, Default::default());
 
-        let removed = remove_value_from_json_map("b.e.i[]", &mut payload.0).into_vec();
+        let removed = path::<P>("b.e.i[]").value_remove(&mut payload).into_vec();
         assert_eq!(
             removed,
             vec![Value::Array(vec![
@@ -3042,31 +3034,31 @@ mod tests {
         );
         assert_ne!(payload, Default::default());
 
-        let removed = remove_value_from_json_map("b.e.i", &mut payload.0).into_vec();
+        let removed = path::<P>("b.e.i").value_remove(&mut payload).into_vec();
         assert_eq!(removed, vec![Value::Array(vec![])]);
         assert_ne!(payload, Default::default());
 
-        let removed = remove_value_from_json_map("b.e.f", &mut payload.0).into_vec();
+        let removed = path::<P>("b.e.f").value_remove(&mut payload).into_vec();
         assert_eq!(removed, vec![Value::Array(vec![1.into(), 3.into()])]);
         assert_ne!(payload, Default::default());
 
-        let removed = remove_value_from_json_map("k", &mut payload.0);
+        let removed = path::<P>("k").value_remove(&mut payload);
         assert!(check_is_empty(&removed));
         assert_ne!(payload, Default::default());
 
-        let removed = remove_value_from_json_map("", &mut payload.0);
+        let removed = path::<P>("").value_remove(&mut payload);
         assert!(check_is_empty(&removed));
         assert_ne!(payload, Default::default());
 
-        let removed = remove_value_from_json_map("b.e.l", &mut payload.0);
+        let removed = path::<P>("b.e.l").value_remove(&mut payload);
         assert!(check_is_empty(&removed));
         assert_ne!(payload, Default::default());
 
-        let removed = remove_value_from_json_map("a", &mut payload.0).into_vec();
+        let removed = path::<P>("a").value_remove(&mut payload).into_vec();
         assert_eq!(removed, vec![Value::Number(1.into())]);
         assert_ne!(payload, Default::default());
 
-        let removed = remove_value_from_json_map("b.e", &mut payload.0).into_vec();
+        let removed = path::<P>("b.e").value_remove(&mut payload).into_vec();
         assert_eq!(
             removed,
             vec![Value::Object(serde_json::Map::from_iter(vec![
@@ -3077,7 +3069,7 @@ mod tests {
         );
         assert_ne!(payload, Default::default());
 
-        let removed = remove_value_from_json_map("b", &mut payload.0).into_vec();
+        let removed = path::<P>("b").value_remove(&mut payload).into_vec();
         assert_eq!(
             removed,
             vec![Value::Object(serde_json::Map::from_iter(vec![]))]
@@ -3103,14 +3095,14 @@ mod tests {
     #[test]
     fn merge_filters() {
         let condition1 = Condition::Field(FieldCondition::new_match(
-            "summary",
+            path("summary"),
             Match::new_text("Berlin"),
         ));
         let mut this = Filter::new_must(condition1.clone());
         this.should = Some(vec![condition1.clone()]);
 
         let condition2 = Condition::Field(FieldCondition::new_match(
-            "city",
+            path("city"),
             Match::new_value(ValueVariants::Keyword("Osaka".into())),
         ));
         let other = Filter::new_must(condition2.clone());
@@ -3154,7 +3146,7 @@ mod tests {
         });
 
         // include root & nested
-        let selector = PayloadSelector::new_include(vec!["a".to_string(), "b.e.f".to_string()]);
+        let selector = PayloadSelector::new_include(vec![path("a"), path("b.e.f")]);
         let payload = selector.process(payload.into());
 
         let expected = json!({
@@ -3179,7 +3171,7 @@ mod tests {
         });
 
         // handles duplicates
-        let selector = PayloadSelector::new_include(vec!["a".to_string(), "a".to_string()]);
+        let selector = PayloadSelector::new_include(vec![path("a"), path("a")]);
         let payload = selector.process(payload.into());
 
         let expected = json!({
@@ -3188,7 +3180,7 @@ mod tests {
         assert_eq!(payload, expected.into());
 
         // ignore path that points to array
-        let selector = PayloadSelector::new_include(vec!["b.f[0]".to_string()]);
+        let selector = PayloadSelector::new_include(vec![path("b.f[0]")]);
         let payload = selector.process(payload);
 
         // nothing included
@@ -3214,7 +3206,7 @@ mod tests {
             }
         });
 
-        let selector = PayloadSelector::new_include(vec!["b.c".to_string()]);
+        let selector = PayloadSelector::new_include(vec![path("b.c")]);
         let selected_payload = selector.process(payload.clone().into());
 
         let expected = json!({
@@ -3234,7 +3226,7 @@ mod tests {
         assert_eq!(selected_payload, expected.into());
 
         // with explicit array traversal ([] notation)
-        let selector = PayloadSelector::new_include(vec!["b.c[].d".to_string()]);
+        let selector = PayloadSelector::new_include(vec![path("b.c[].d")]);
         let selected_payload = selector.process(payload.clone().into());
 
         let expected = json!({
@@ -3248,7 +3240,7 @@ mod tests {
         assert_eq!(selected_payload, expected.into());
 
         // shortcuts implicit array traversal
-        let selector = PayloadSelector::new_include(vec!["b.c.d".to_string()]);
+        let selector = PayloadSelector::new_include(vec![path("b.c.d")]);
         let selected_payload = selector.process(payload.into());
 
         let expected = json!({
@@ -3285,7 +3277,7 @@ mod tests {
         });
 
         // exclude
-        let selector = PayloadSelector::new_exclude(vec!["a".to_string(), "b.e.f".to_string()]);
+        let selector = PayloadSelector::new_exclude(vec![path("a"), path("b.e.f")]);
         let payload = selector.process(payload.into());
 
         // root removal & nested removal
@@ -3323,7 +3315,7 @@ mod tests {
         });
 
         // handles duplicates
-        let selector = PayloadSelector::new_exclude(vec!["a".to_string(), "a".to_string()]);
+        let selector = PayloadSelector::new_exclude(vec![path("a"), path("a")]);
         let payload = selector.process(payload.into());
 
         // single removal
@@ -3336,7 +3328,8 @@ mod tests {
         assert_eq!(payload, expected.into());
 
         // ignore path that points to array
-        let selector = PayloadSelector::new_exclude(vec!["b.f[0]".to_string()]);
+        let selector = PayloadSelector::new_exclude(vec![path("b.f[0]")]);
+
         let payload = selector.process(payload);
 
         // no removal

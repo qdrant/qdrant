@@ -98,7 +98,7 @@ fn validate_error_sparse_vector_search_groups_request_internal() {
         with_vector: None,
         score_threshold: None,
         group_request: BaseGroupRequest {
-            group_by: "sparse".to_owned(),
+            group_by: "sparse".parse().unwrap(),
             group_size: 5,
             limit: 5,
             with_lookup: None,

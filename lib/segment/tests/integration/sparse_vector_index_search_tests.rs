@@ -34,6 +34,8 @@ use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::inverted_index::InvertedIndex;
 use tempfile::Builder;
 
+use crate::utils::path;
+
 /// Max dimension of sparse vectors used in tests
 const MAX_SPARSE_DIM: usize = 4096;
 
@@ -73,7 +75,7 @@ fn compare_sparse_vectors_search_with_without_filter(full_scan_threshold: usize)
 
     // filter matches everything
     let filter = Filter::new_must_not(Condition::Field(FieldCondition::new_match(
-        STR_KEY,
+        path(STR_KEY),
         STR_KEY.to_owned().into(),
     )));
 
@@ -380,7 +382,7 @@ fn sparse_vector_index_ram_filtered_search() {
     let field_name = "field";
     let field_value = "important value";
     let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
-        field_name,
+        path(field_name),
         field_value.to_owned().into(),
     )));
 
@@ -395,17 +397,20 @@ fn sparse_vector_index_ram_filtered_search() {
     // create payload field index
     let mut payload_index = sparse_vector_index.payload_index.borrow_mut();
     payload_index
-        .set_indexed(field_name, Keyword.into())
+        .set_indexed(&path(field_name), Keyword.into())
         .unwrap();
     drop(payload_index);
 
     // assert payload field index created and empty
     let payload_index = sparse_vector_index.payload_index.borrow();
     let indexed_fields = payload_index.indexed_fields();
-    assert_eq!(*indexed_fields.get(field_name).unwrap(), FieldType(Keyword));
+    assert_eq!(
+        *indexed_fields.get(&path(field_name)).unwrap(),
+        FieldType(Keyword)
+    );
 
     let field_indexes = &payload_index.field_indexes;
-    let field_index = field_indexes.get(field_name).unwrap();
+    let field_index = field_indexes.get(&path(field_name)).unwrap();
     assert_eq!(field_index[0].count_indexed_points(), 0);
     drop(payload_index);
 
@@ -426,7 +431,7 @@ fn sparse_vector_index_ram_filtered_search() {
     // assert payload index updated
     let payload_index = sparse_vector_index.payload_index.borrow();
     let field_indexes = &payload_index.field_indexes;
-    let field_index = field_indexes.get(field_name).unwrap();
+    let field_index = field_indexes.get(&path(field_name)).unwrap();
     assert_eq!(field_index[0].count_indexed_points(), half_indexed_count);
     drop(payload_index);
 
@@ -464,7 +469,7 @@ fn sparse_vector_index_plain_search() {
     let field_name = "field";
     let field_value = "important value";
     let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
-        field_name,
+        path(field_name),
         field_value.to_owned().into(),
     )));
 

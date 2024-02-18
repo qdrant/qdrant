@@ -5,6 +5,7 @@ use common::types::ScoreType;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use segment::data_types::groups::GroupId;
+use segment::json_path::JsonPath;
 use segment::spaces::tools::{peek_top_largest_iterable, peek_top_smallest_iterable};
 use segment::types::{ExtendedPointId, Order, PayloadContainer, PointIdType, ScoredPoint};
 use serde_json::Value;
@@ -16,7 +17,7 @@ type Hits = HashMap<PointIdType, ScoredPoint>;
 pub(super) struct GroupsAggregator {
     groups: HashMap<GroupId, Hits>,
     max_group_size: usize,
-    grouped_by: String,
+    grouped_by: JsonPath,
     max_groups: usize,
     full_groups: HashSet<GroupId>,
     group_best_scores: HashMap<GroupId, ScoreType>,
@@ -25,7 +26,12 @@ pub(super) struct GroupsAggregator {
 }
 
 impl GroupsAggregator {
-    pub(super) fn new(groups: usize, group_size: usize, grouped_by: String, order: Order) -> Self {
+    pub(super) fn new(
+        groups: usize,
+        group_size: usize,
+        grouped_by: JsonPath,
+        order: Order,
+    ) -> Self {
         Self {
             groups: HashMap::with_capacity(groups),
             max_group_size: group_size,
@@ -218,7 +224,8 @@ mod unit_tests {
             point(3, 0.75, json!("b")),
         ];
 
-        let mut aggregator = GroupsAggregator::new(3, 2, "docId".to_string(), Order::LargeBetter);
+        let mut aggregator =
+            GroupsAggregator::new(3, 2, "docId".parse().unwrap(), Order::LargeBetter);
         for point in scored_points {
             aggregator.add_point(point).unwrap();
         }
@@ -264,7 +271,8 @@ mod unit_tests {
 
     #[test]
     fn it_adds_single_points() {
-        let mut aggregator = GroupsAggregator::new(4, 3, "docId".to_string(), Order::LargeBetter);
+        let mut aggregator =
+            GroupsAggregator::new(4, 3, "docId".parse().unwrap(), Order::LargeBetter);
 
         // cases
         #[rustfmt::skip]
@@ -367,7 +375,8 @@ mod unit_tests {
 
     #[test]
     fn test_aggregate_less_groups() {
-        let mut aggregator = GroupsAggregator::new(3, 2, "docId".to_string(), Order::LargeBetter);
+        let mut aggregator =
+            GroupsAggregator::new(3, 2, "docId".parse().unwrap(), Order::LargeBetter);
 
         // cases
         [

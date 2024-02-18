@@ -2296,6 +2296,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "generic-tests"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eeb39ec0dacc89541b6eced815ab9e97f6b7d44078628abb090c6437763fd050"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.107",
+]
+
+[[package]]
 name = "geo"
 version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5041,6 +5052,7 @@ dependencies = [
  "criterion",
  "fnv",
  "fs_extra",
+ "generic-tests",
  "geo",
  "geohash",
  "indexmap 2.2.3",
