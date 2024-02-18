@@ -3381,7 +3381,7 @@ mod tests {
         if let Err(err) = r {
             assert_eq!(err.to_string(), "Unexpected variant of `PayloadVariant`.");
         } else {
-            assert!(false, "Expect error.");
+            panic!("Expect error.");
         }
     }
 }
