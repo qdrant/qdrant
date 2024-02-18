@@ -489,10 +489,10 @@ impl PayloadIndex for StructPayloadIndex {
 
         let updated_payload = self.payload(point_id)?;
         for (field, field_index) in &mut self.field_indexes {
-            let field_value_opt = updated_payload.get_value_opt(field);
-            if let Some(field_value) = &field_value_opt {
+            let field_value = updated_payload.get_value(field);
+            if !field_value.is_empty() {
                 for index in field_index {
-                    index.add_point(point_id, field_value)?;
+                    index.add_point(point_id, &field_value)?;
                 }
             } else {
                 for index in field_index {
