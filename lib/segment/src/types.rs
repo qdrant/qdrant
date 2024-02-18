@@ -1072,6 +1072,7 @@ impl<'a> From<&'a Map<String, Value>> for OwnedPayloadRef<'a> {
 /// ```
 #[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Clone)]
 #[serde(untagged, rename_all = "snake_case")]
+#[serde(expecting = "Unexpected variant of `PayloadVariant`.")]
 pub enum PayloadVariant<T> {
     List(Vec<T>),
     Value(T),
@@ -3372,6 +3373,16 @@ mod tests {
             }
         });
         assert_eq!(payload, expected.into());
+    }
+
+    #[test]
+    fn test_deserialize_unexpected_payload_variant() {
+        let r = serde_json::from_str::<PayloadVariant<i32>>("true");
+        if let Err(err) = r {
+            assert_eq!(err.to_string(), "Unexpected variant of `PayloadVariant`.");
+        } else {
+            assert!(false, "Expect error.");
+        }
     }
 }
 
