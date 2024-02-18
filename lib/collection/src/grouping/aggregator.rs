@@ -46,7 +46,6 @@ impl GroupsAggregator {
             .as_ref()
             .map(|p| {
                 p.get_value(&self.grouped_by)
-                    .values()
                     .into_iter()
                     .flat_map(|v| match v {
                         Value::Array(arr) => arr.iter().collect(),

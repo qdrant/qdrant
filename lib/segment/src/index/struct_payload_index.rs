@@ -14,7 +14,7 @@ use schemars::_serde_json::Value;
 use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
-use crate::common::utils::{IndexesMap, JsonPathPayload, MultiValue};
+use crate::common::utils::{IndexesMap, JsonPathPayload};
 use crate::common::Flusher;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::index_selector::index_selector;
@@ -552,12 +552,11 @@ impl PayloadIndex for StructPayloadIndex {
         let mut schema = None;
         self.payload.borrow().iter(|_id, payload: &Payload| {
             let field_value = payload.get_value(key);
-            match field_value {
-                MultiValue::Single(field_value) => schema = field_value.and_then(infer_value_type),
-                MultiValue::Multiple(fields_values) => {
-                    schema = infer_collection_value_type(fields_values)
-                }
-            }
+            schema = match field_value.as_slice() {
+                [] => None,
+                [single] => infer_value_type(single),
+                multiple => infer_collection_value_type(multiple.iter().copied()),
+            };
             Ok(false)
         })?;
         Ok(schema)

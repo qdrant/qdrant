@@ -238,5 +238,5 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
     {
         Value::String(value) => assert_eq!("v4", value),
         _ => panic!("unexpected type"),
-    }
+    };
 }

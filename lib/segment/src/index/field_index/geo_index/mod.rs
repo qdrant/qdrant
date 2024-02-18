@@ -485,7 +485,6 @@ mod tests {
 
     use super::*;
     use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
-    use crate::common::utils::MultiValue;
     use crate::fixtures::payload_fixtures::random_geo_payload;
     use crate::types::test_utils::build_polygon;
     use crate::types::{GeoLineString, GeoPolygon, GeoRadius};
@@ -536,8 +535,9 @@ mod tests {
         for idx in 0..num_points {
             let geo_points = random_geo_payload(&mut rnd, num_geo_values..=num_geo_values);
             let array_payload = Value::Array(geo_points);
-            let payload = MultiValue::one(&array_payload);
-            index.add_point(idx as PointOffsetType, &payload).unwrap();
+            index
+                .add_point(idx as PointOffsetType, &[&array_payload])
+                .unwrap();
         }
         assert_eq!(index.points_count(), num_points);
         assert_eq!(index.points_values_count(), num_points * num_geo_values);
@@ -885,8 +885,7 @@ mod tests {
                 "lat": NYC.lat
             }
         ]);
-        let payload = MultiValue::one(&geo_values);
-        index.add_point(1, &payload).unwrap();
+        index.add_point(1, &[&geo_values]).unwrap();
 
         // around NYC
         let nyc_geo_radius = GeoRadius {
@@ -972,8 +971,7 @@ mod tests {
                 "lat": POTSDAM.lat
             }
         ]);
-        let payload = MultiValue::one(&geo_values);
-        index.add_point(1, &payload).unwrap();
+        index.add_point(1, &[&geo_values]).unwrap();
 
         let berlin_geo_radius = GeoRadius {
             center: BERLIN,
@@ -1021,8 +1019,7 @@ mod tests {
                     "lat": POTSDAM.lat
                 }
             ]);
-            let payload = MultiValue::one(&geo_values);
-            index.add_point(1, &payload).unwrap();
+            index.add_point(1, &[&geo_values]).unwrap();
             index.flusher()().unwrap();
             drop(index);
         }
@@ -1069,7 +1066,7 @@ mod tests {
                     "lat": POTSDAM.lat
                 }
             ]);
-            let payload = MultiValue::one(&geo_values);
+            let payload = [&geo_values];
             index.add_point(1, &payload).unwrap();
             index.add_point(2, &payload).unwrap();
             index.remove_point(1).unwrap();
