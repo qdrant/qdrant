@@ -1,3 +1,5 @@
+use std::cmp::max;
+
 use common::types::PointOffsetType;
 
 use crate::common::sparse_vector::SparseVector;
@@ -28,21 +30,11 @@ impl InvertedIndexBuilder {
     pub fn add(&mut self, id: PointOffsetType, vector: SparseVector) {
         for (dim_id, weight) in vector.indices.into_iter().zip(vector.values.into_iter()) {
             let dim_id = dim_id as usize;
-            match self.posting_builders.get_mut(dim_id) {
-                Some(posting) => {
-                    // update existing posting list
-                    posting.add(id, weight);
-                }
-                None => {
-                    // resize postings vector (fill gaps with empty posting lists)
-                    self.posting_builders
-                        .resize_with(dim_id + 1, PostingBuilder::new);
-                    // initialize new posting for dimension
-                    let mut new_posting_builder = PostingBuilder::new();
-                    new_posting_builder.add(id, weight);
-                    self.posting_builders[dim_id] = new_posting_builder
-                }
-            }
+            self.posting_builders.resize_with(
+                max(dim_id + 1, self.posting_builders.len()),
+                PostingBuilder::new,
+            );
+            self.posting_builders[dim_id].add(id, weight);
         }
         self.vector_count += 1;
     }
