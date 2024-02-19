@@ -32,6 +32,13 @@ impl TableOfContent {
         match operation {
             CollectionMetaOperations::CreateCollection(mut operation) => {
                 log::info!("Creating collection {}", operation.collection_name);
+
+                // Check if there are already too many collections, submit issue if needed.
+                collection::problems::TooManyCollections::submit_if_too_many_collections(
+                    self.collections.read().await,
+                )
+                .await;
+
                 let distribution = match operation.take_distribution() {
                     None => match operation
                         .create_collection
@@ -68,6 +75,10 @@ impl TableOfContent {
                             .next()
                             .map_or(false, |collection_name| collection_name == operation.0)
                     });
+                    collection::problems::TooManyCollections::solve_if_sane_amount_of_collections(
+                        self.collections.read().await,
+                    )
+                    .await;
                 }
                 res
             }
