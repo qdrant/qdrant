@@ -125,7 +125,9 @@ impl ProxySegment {
         let mut write_segment = segment_arc.write();
 
         write_segment.upsert_point(op_num, point_id, all_vectors)?;
-        write_segment.set_full_payload(op_num, point_id, &payload)?;
+        if !payload.is_empty() {
+            write_segment.set_full_payload(op_num, point_id, &payload)?;
+        }
 
         Ok(true)
     }
