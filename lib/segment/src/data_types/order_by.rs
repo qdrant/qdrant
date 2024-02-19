@@ -19,7 +19,7 @@ pub enum Direction {
 }
 
 impl Direction {
-    pub fn as_range_from<T>(&self, from: T) -> Range<T> {
+    pub fn as_range_from<T: Copy>(&self, from: T) -> Range<T> {
         match self {
             Direction::Asc => Range {
                 gte: Some(from),

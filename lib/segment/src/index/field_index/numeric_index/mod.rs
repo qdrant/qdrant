@@ -417,7 +417,7 @@ impl<T: Encodable + Numericable + Default> PayloadFieldIndex for NumericIndex<T>
                         _ => None,
                     },
                 };
-                let cardinality = self.range_cardinality(&RangeInterface::Float(range.clone()));
+                let cardinality = self.range_cardinality(&RangeInterface::Float(range));
                 let condition = PayloadBlockCondition {
                     condition: FieldCondition::new_range(key.clone(), range),
                     cardinality: cardinality.exp,
@@ -542,7 +542,7 @@ where
         &self,
         range_interface: &RangeInterface,
     ) -> Box<dyn DoubleEndedIterator<Item = (T, PointOffsetType)> + '_> {
-        let range = Range::from(range_interface.clone());
+        let range = Range::from(*range_interface);
         let (start_bound, end_bound) = range.as_index_key_bounds();
 
         // map.range

@@ -1416,7 +1416,7 @@ impl From<Vec<IntPayloadType>> for MatchExcept {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Copy)]
 #[serde(untagged)]
 pub enum RangeInterface {
     Int(Range<IntPayloadType>),
@@ -1427,7 +1427,7 @@ pub enum RangeInterface {
 /// Range filter request
 #[macro_rules_attribute::macro_rules_derive(crate::common::macros::schemars_rename_generics)]
 #[derive_args(<FloatPayloadType> => "Range", <DateTimePayloadType> => "DatetimeRange", <IntPayloadType> => "IntegerRange")]
-#[derive(Debug, Deserialize, Serialize, Default, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Default, Clone, PartialEq, Copy)]
 #[serde(rename_all = "snake_case")]
 pub struct Range<T> {
     /// point.key < range.lt
@@ -1442,7 +1442,7 @@ pub struct Range<T> {
 
 impl<T: Copy> Range<T> {
     /// Convert range to a range of another type
-    pub fn map<U, F: Fn(T) -> U>(&self, f: F) -> Range<U> {
+    pub fn map<U: Copy, F: Fn(T) -> U>(&self, f: F) -> Range<U> {
         Range {
             lt: self.lt.map(&f),
             gt: self.gt.map(&f),

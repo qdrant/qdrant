@@ -137,7 +137,7 @@ pub fn field_condition_index<'a>(
 
         FieldCondition {
             range: Some(cond), ..
-        } => get_range_checkers(index, cond.clone()),
+        } => get_range_checkers(index, *cond),
 
         FieldCondition {
             geo_radius: Some(geo_radius),
