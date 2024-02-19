@@ -65,7 +65,7 @@ indexmap = { workspace = true }
 ahash = { version = "0.8.8", features = ["serde"] }
 
 sysinfo = "0.30"
-charabia = { version = "0.8.5", default-features = false, features = ["greek", "hebrew", "thai"] }
+charabia = { version = "0.8.7", default-features = false, features = ["greek", "hebrew", "thai"] }
 
 common = { path = "../common/common" }
 io = { path = "../common/io" }
