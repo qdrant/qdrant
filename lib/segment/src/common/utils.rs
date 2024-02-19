@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ops::Bound;
 
 use serde_json::Value;
 
@@ -120,6 +121,16 @@ pub fn rev_range(a: usize, b: usize) -> impl Iterator<Item = usize> {
     (b + 1..=a).rev()
 }
 
+/// Alternative to [core::ops::Bound::map](https://doc.rust-lang.org/std/ops/enum.Bound.html#method.map)
+// TODO(luis): replace with the stabilized function. It is already merged, seems like it will be available in 1.76
+pub fn bound_map<T, U, F: FnOnce(T) -> U>(bound: Bound<T>, f: F) -> Bound<U> {
+    match bound {
+        Bound::Unbounded => Bound::Unbounded,
+        Bound::Included(x) => Bound::Included(f(x)),
+        Bound::Excluded(x) => Bound::Excluded(f(x)),
+    }
+}
+
 /// Parse array path and index from path
 ///
 /// return Some((path, Some(index))) if path is an array path with index
@@ -217,6 +228,121 @@ pub fn get_value_from_json_map_opt<'a>(
             }
             None => json_map.get(path).map(MultiValue::one),
         },
+    }
+}
+
+pub fn set_value_to_json_map<'a>(
+    path: &str,
+    dest: &'a mut serde_json::Map<String, Value>,
+    src: &'a serde_json::Map<String, Value>,
+) {
+    // check if leaf path element
+    match path.split_once('.') {
+        Some((element, rest_path)) => {
+            // check if targeting array
+            match parse_array_path(element) {
+                Some((array_element_path, array_index)) => {
+                    set_by_array_path(array_element_path, array_index, Some(rest_path), dest, src)
+                }
+                None => {
+                    // no array notation
+                    if let Some(v) = dest.get_mut(element) {
+                        if let Value::Object(map) = v {
+                            set_value_to_json_map(rest_path, map, src);
+                        }
+                    } else {
+                        // insert new one
+                        if !rest_path.is_empty() {
+                            dest.insert(element.to_owned(), Value::Object(Default::default()));
+                            set_value_to_json_map(
+                                rest_path,
+                                dest.get_mut(element).unwrap().as_object_mut().unwrap(),
+                                src,
+                            );
+                        } else {
+                            dest.insert(element.to_owned(), Value::Object(src.clone()));
+                        }
+                    }
+                }
+            }
+        }
+        None => match parse_array_path(path) {
+            Some((array_element_path, array_index)) => {
+                set_by_array_path(array_element_path, array_index, None, dest, src)
+            }
+            None => {
+                if path.is_empty() {
+                    merge_map(dest, src);
+                } else if let Some(v) = dest.get_mut(path) {
+                    if let Value::Object(map) = v {
+                        merge_map(map, src);
+                    }
+                } else {
+                    // insert new one
+                    dest.insert(path.to_owned(), Value::Object(src.clone()));
+                }
+            }
+        },
+    }
+}
+
+// Merge source map into destination map
+pub fn merge_map(
+    dest: &mut serde_json::Map<String, Value>,
+    source: &serde_json::Map<String, Value>,
+) {
+    for (key, value) in source {
+        match value {
+            Value::Null => dest.remove(key),
+            _ => dest.insert(key.to_owned(), value.to_owned()),
+        };
+    }
+}
+
+fn set_by_array_path<'a>(
+    array_path: &str,
+    array_index: Option<u32>,
+    rest_path: Option<&str>,
+    dest: &'a mut serde_json::Map<String, Value>,
+    src: &'a serde_json::Map<String, Value>,
+) {
+    if let Some(Value::Array(array)) = dest.get_mut(array_path) {
+        for (i, value) in array.iter_mut().enumerate() {
+            if let Some(array_index) = array_index {
+                if i == array_index as usize {
+                    if let Some(rest_path) = rest_path {
+                        if let Value::Object(map) = value {
+                            set_value_to_json_map(rest_path, map, src);
+                        }
+                    } else if let Value::Object(map) = value {
+                        merge_map(map, src);
+                    }
+                }
+            } else if let Some(rest_path) = rest_path {
+                if let Value::Object(map) = value {
+                    set_value_to_json_map(rest_path, map, src);
+                }
+            } else if let Value::Object(map) = value {
+                merge_map(map, src);
+            }
+        }
+    } else if dest.is_empty() {
+        // insert new one
+        if let Some(expected_array_len) = array_index.map(|i| i + 1) {
+            let mut array = vec![Value::Null; (expected_array_len - 1) as usize];
+            if let Some(rest_path) = rest_path {
+                array.push(Value::Object(Default::default()));
+                dest.insert(array_path.to_owned(), Value::Array(array));
+                set_by_array_path(array_path, array_index, Some(rest_path), dest, src);
+            } else {
+                array.push(Value::Object(src.clone()));
+                dest.insert(array_path.to_owned(), Value::Array(array));
+                set_by_array_path(array_path, array_index, None, dest, src);
+            }
+        } else {
+            let array = vec![];
+            dest.insert(array_path.to_owned(), Value::Array(array));
+        }
     }
 }
 
@@ -326,14 +452,6 @@ pub fn remove_value_from_json_map(
 /// Check if a path is included in a list of patterns
 ///
 /// Basically, it checks if either the pattern or path is a prefix of the other.
-/// Examples:
-/// ```
-/// assert!(segment::common::utils::check_include_pattern("a.b.c", "a.b.c"));
-/// assert!(segment::common::utils::check_include_pattern("a.b.c", "a.b"));
-/// assert!(!segment::common::utils::check_include_pattern("a.b.c", "a.b.d"));
-/// assert!(segment::common::utils::check_include_pattern("a.b.c", "a"));
-/// assert!(segment::common::utils::check_include_pattern("a", "a.d"));
-/// ```
 pub fn check_include_pattern(pattern: &str, path: &str) -> bool {
     pattern
         .split(['.', '['])
@@ -344,15 +462,6 @@ pub fn check_include_pattern(pattern: &str, path: &str) -> bool {
 /// Check if a path should be excluded by a pattern
 ///
 /// Basically, it checks if pattern is a prefix of path, but not the other way around.
-///
-/// ```
-/// assert!(segment::common::utils::check_exclude_pattern("a.b.c", "a.b.c"));
-/// assert!(!segment::common::utils::check_exclude_pattern("a.b.c", "a.b"));
-/// assert!(!segment::common::utils::check_exclude_pattern("a.b.c", "a.b.d"));
-/// assert!(!segment::common::utils::check_exclude_pattern("a.b.c", "a"));
-/// assert!(segment::common::utils::check_exclude_pattern("a", "a.d"));
-/// ```
-
 pub fn check_exclude_pattern(pattern: &str, path: &str) -> bool {
     if pattern.len() > path.len() {
         return false;
@@ -774,6 +883,345 @@ mod tests {
                             {}
                         ]
                     }
+                }
+                "#,
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_check_include_pattern() {
+        assert!(check_include_pattern("a.b.c", "a.b.c"));
+        assert!(check_include_pattern("a.b.c", "a.b"));
+        assert!(!check_include_pattern("a.b.c", "a.b.d"));
+        assert!(check_include_pattern("a.b.c", "a"));
+        assert!(check_include_pattern("a", "a.d"));
+    }
+
+    #[test]
+    fn test_check_exclude_pattern() {
+        assert!(check_exclude_pattern("a.b.c", "a.b.c"));
+        assert!(!check_exclude_pattern("a.b.c", "a.b"));
+        assert!(!check_exclude_pattern("a.b.c", "a.b.d"));
+        assert!(!check_exclude_pattern("a.b.c", "a"));
+        assert!(check_exclude_pattern("a", "a.d"));
+    }
+
+    #[test]
+    fn test_set_value_to_json_with_empty_key() {
+        let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            {
+                "a": {
+                    "b": [
+                        { "c": 1 },
+                        { "c": 2 },
+                        { "d": { "e": 3 } }
+                    ]
+                },
+                "f": 3,
+                "g": ["g0", "g1", "g2"]
+            }
+            "#,
+        )
+        .unwrap();
+
+        let src = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            { "c": 5 }
+            "#,
+        )
+        .unwrap();
+
+        set_value_to_json_map("", &mut map, &src);
+
+        assert_eq!(
+            map,
+            serde_json::from_str::<serde_json::Map<String, Value>>(
+                r#"
+                {
+                    "a": {
+                        "b": [
+                            { "c": 1 },
+                            { "c": 2 },
+                            { "d": { "e": 3 } }
+                        ]
+                    },
+                    "f": 3,
+                    "g": ["g0", "g1", "g2"],
+                    "c": 5
+                }
+                "#,
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_set_value_to_json_with_one_level_key() {
+        let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            {
+                "a": {
+                    "b": [
+                        { "c": 1 },
+                        { "c": 2 },
+                        { "d": { "e": 3 } }
+                    ]
+                },
+                "f": 3,
+                "g": ["g0", "g1", "g2"]
+            }
+            "#,
+        )
+        .unwrap();
+
+        let src = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            { "b": 5 }
+            "#,
+        )
+        .unwrap();
+
+        set_value_to_json_map("a", &mut map, &src);
+
+        assert_eq!(
+            map,
+            serde_json::from_str::<serde_json::Map<String, Value>>(
+                r#"
+                {
+                    "a": {
+                        "b": 5
+                    },
+                    "f": 3,
+                    "g": ["g0", "g1", "g2"]
+                }
+                "#,
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_set_value_to_json_with_array_index() {
+        let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            {
+                "a": {
+                    "b": [
+                        { "c": 1 },
+                        { "c": 2 },
+                        { "d": { "e": 3 } }
+                    ]
+                },
+                "f": 3,
+                "g": ["g0", "g1", "g2"]
+            }
+            "#,
+        )
+        .unwrap();
+
+        let src = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            { "c": 5 }
+            "#,
+        )
+        .unwrap();
+
+        set_value_to_json_map("a.b[1]", &mut map, &src);
+
+        assert_eq!(
+            map,
+            serde_json::from_str::<serde_json::Map<String, Value>>(
+                r#"
+                {
+                    "a": {
+                        "b": [
+                            { "c": 1 },
+                            { "c": 5 },
+                            { "d": { "e": 3 } }
+                        ]
+                    },
+                    "f": 3,
+                    "g": ["g0", "g1", "g2"]
+                }
+                "#,
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_set_value_to_json_with_empty_src() {
+        let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            {
+                "a": {
+                    "b": [
+                        { "c": 1 },
+                        { "c": 2 },
+                        { "d": { "e": 3 } }
+                    ]
+                },
+                "f": 3,
+                "g": ["g0", "g1", "g2"]
+            }
+            "#,
+        )
+        .unwrap();
+
+        let src = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            {}
+            "#,
+        )
+        .unwrap();
+
+        set_value_to_json_map("a.b[1]", &mut map, &src);
+
+        assert_eq!(
+            map,
+            serde_json::from_str::<serde_json::Map<String, Value>>(
+                r#"
+                {
+                    "a": {
+                        "b": [
+                            { "c": 1 },
+                            { "c": 2 },
+                            { "d": { "e": 3 } }
+                        ]
+                    },
+                    "f": 3,
+                    "g": ["g0", "g1", "g2"]
+                }
+                "#,
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_set_value_to_json_with_empty_dest() {
+        let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            {
+            }
+            "#,
+        )
+        .unwrap();
+
+        let src = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            {"c": 1}
+            "#,
+        )
+        .unwrap();
+
+        set_value_to_json_map("", &mut map, &src);
+
+        assert_eq!(
+            map,
+            serde_json::from_str::<serde_json::Map<String, Value>>(
+                r#"
+                {
+                    "c": 1
+                }
+                "#,
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_set_value_to_json_with_empty_dest_nested_key() {
+        let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            {
+            }
+            "#,
+        )
+        .unwrap();
+
+        let src = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            {"c": 1}
+            "#,
+        )
+        .unwrap();
+
+        set_value_to_json_map("key1.key2", &mut map, &src);
+
+        assert_eq!(
+            map,
+            serde_json::from_str::<serde_json::Map<String, Value>>(
+                r#"
+                {
+                    "key1": {"key2": { "c": 1 } }
+                }
+                "#,
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_set_value_to_json_with_empty_dest_nested_array_index_key() {
+        let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            {
+            }
+            "#,
+        )
+        .unwrap();
+
+        let src = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            {"c": 1}
+            "#,
+        )
+        .unwrap();
+
+        set_value_to_json_map("key1.key2[3]", &mut map, &src);
+
+        assert_eq!(
+            map,
+            serde_json::from_str::<serde_json::Map<String, Value>>(
+                r#"
+                {
+                    "key1": {"key2": [null, null, null, { "c": 1 }] }
+                }
+                "#,
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_expand_payload_with_non_existing_array() {
+        let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            {
+            }
+            "#,
+        )
+        .unwrap();
+
+        let src = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            {"c": 1}
+            "#,
+        )
+        .unwrap();
+
+        set_value_to_json_map("key1.key2[].key3", &mut map, &src);
+
+        assert_eq!(
+            map,
+            serde_json::from_str::<serde_json::Map<String, Value>>(
+                r#"
+                {
+                    "key1": { "key2": [] }
                 }
                 "#,
             )

@@ -7,6 +7,7 @@ use std::sync::Arc;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::common::operation_error::{OperationResult, SegmentFailedState};
 use segment::data_types::named_vectors::NamedVectors;
+use segment::data_types::order_by::OrderingValue;
 use segment::data_types::vectors::{QueryVector, Vector};
 use segment::entry::entry_point::SegmentEntry;
 use segment::index::field_index::CardinalityEstimation;
@@ -371,12 +372,13 @@ impl SegmentEntry for ProxySegment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         payload: &Payload,
+        key: &Option<String>,
     ) -> OperationResult<bool> {
         self.move_if_exists(op_num, point_id)?;
         self.write_segment
             .get()
             .write()
-            .set_payload(op_num, point_id, payload)
+            .set_payload(op_num, point_id, payload, key)
     }
 
     fn delete_payload(
@@ -504,6 +506,37 @@ impl SegmentEntry for ProxySegment {
         read_points.append(&mut write_segment_points);
         read_points.sort_unstable();
         read_points
+    }
+
+    fn read_ordered_filtered<'a>(
+        &'a self,
+        limit: Option<usize>,
+        filter: Option<&'a Filter>,
+        order_by: &'a segment::data_types::order_by::OrderBy,
+    ) -> OperationResult<Vec<(OrderingValue, PointIdType)>> {
+        let deleted_points = self.deleted_points.read();
+        let mut read_points = if deleted_points.is_empty() {
+            self.wrapped_segment
+                .get()
+                .read()
+                .read_ordered_filtered(limit, filter, order_by)?
+        } else {
+            let wrapped_filter =
+                self.add_deleted_points_condition_to_filter(filter, &deleted_points);
+            self.wrapped_segment.get().read().read_ordered_filtered(
+                limit,
+                Some(&wrapped_filter),
+                order_by,
+            )?
+        };
+        let mut write_segment_points = self
+            .write_segment
+            .get()
+            .read()
+            .read_ordered_filtered(limit, filter, order_by)?;
+        read_points.append(&mut write_segment_points);
+        read_points.sort_unstable();
+        Ok(read_points)
     }
 
     /// Read points in [from; to) range
@@ -1131,6 +1164,7 @@ mod tests {
                 101,
                 3.into(),
                 &json!({ "color": vec!["red".to_owned()] }).into(),
+                &None,
             )
             .unwrap();
         let proxy_res = proxy_segment.read_range(None, Some(10.into()));

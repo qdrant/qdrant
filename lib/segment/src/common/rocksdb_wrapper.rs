@@ -18,6 +18,8 @@ pub const DB_VECTOR_CF: &str = "vector";
 pub const DB_PAYLOAD_CF: &str = "payload";
 pub const DB_MAPPING_CF: &str = "mapping";
 pub const DB_VERSIONS_CF: &str = "version";
+/// If there is no Column Family specified, key-value pair is associated with Column Family "default".
+pub const DB_DEFAULT_CF: &str = "default";
 
 #[derive(Clone)]
 pub struct DatabaseColumnWrapper {
@@ -35,9 +37,10 @@ pub struct LockedDatabaseColumnWrapper<'a> {
     column_name: &'a str,
 }
 
+/// RocksDB options (both global and for column families)
 pub fn db_options() -> Options {
     let mut options: Options = Options::default();
-    options.set_write_buffer_size(DB_CACHE_SIZE);
+    options.set_write_buffer_size(DB_CACHE_SIZE); // write_buffer_size is enforced per column family.
     options.create_if_missing(true);
     options.set_log_level(LogLevel::Error);
     options.set_recycle_log_file_num(1);
@@ -60,11 +63,17 @@ pub fn open_db<T: AsRef<str>>(
     path: &Path,
     vector_paths: &[T],
 ) -> Result<Arc<RwLock<DB>>, rocksdb::Error> {
-    let mut column_families = vec![DB_PAYLOAD_CF, DB_MAPPING_CF, DB_VERSIONS_CF];
+    let mut column_families = vec![DB_PAYLOAD_CF, DB_MAPPING_CF, DB_VERSIONS_CF, DB_DEFAULT_CF];
     for vector_path in vector_paths {
         column_families.push(vector_path.as_ref());
     }
-    let db = DB::open_cf(&db_options(), path, column_families)?;
+    let options = db_options();
+    // Make sure that all column families have the same options
+    let column_with_options = column_families
+        .into_iter()
+        .map(|cf| (cf, options.clone()))
+        .collect::<Vec<_>>();
+    let db = DB::open_cf_with_opts(&options, path, column_with_options)?;
     Ok(Arc::new(RwLock::new(db)))
 }
 

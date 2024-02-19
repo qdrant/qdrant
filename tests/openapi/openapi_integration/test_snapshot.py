@@ -1,4 +1,5 @@
 from time import sleep
+import hashlib
 import pytest
 
 from .helpers.collection_setup import basic_collection_setup, drop_collection
@@ -10,11 +11,33 @@ collection_name = 'test_collection_snapshot'
 @pytest.fixture(autouse=True)
 def setup(on_disk_vectors):
     basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
+    drop_snapshots(collection_name)
     yield
     drop_collection(collection_name=collection_name)
 
 
-def test_snapshot_operations():
+def drop_snapshots(collection_name: str) -> None:
+    """Delete all snapshots on the collection."""
+    response = request_with_validation(
+        api='/collections/{collection_name}/snapshots',
+        method="GET",
+        path_params={'collection_name': collection_name},
+    )
+    assert response.ok
+    for snapshot in response.json()['result']:
+        response = request_with_validation(
+            api='/collections/{collection_name}/snapshots/{snapshot_name}',
+            method="DELETE",
+            path_params={'collection_name': collection_name,
+                         'snapshot_name': snapshot['name']},
+            query_params={'wait': 'true'},
+        )
+        assert response.ok
+
+
+def test_collection_snapshot_operations(http_server):
+    (srv_dir, srv_url) = http_server
+
     # no snapshot on collection
     response = request_with_validation(
         api='/collections/{collection_name}/snapshots',
@@ -33,6 +56,7 @@ def test_snapshot_operations():
     )
     assert response.ok
     snapshot_name = response.json()['result']['name']
+    snapshot_checksum = response.json()['result']['checksum']
 
     # validate it exists
     response = request_with_validation(
@@ -43,6 +67,18 @@ def test_snapshot_operations():
     assert response.ok
     assert len(response.json()['result']) == 1
     assert response.json()['result'][0]['name'] == snapshot_name
+    assert response.json()['result'][0]['checksum'] == snapshot_checksum
+
+    # download it, save, and validate checksum
+    response = request_with_validation(
+        api='/collections/{collection_name}/snapshots/{snapshot_name}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'snapshot_name': snapshot_name},
+    )
+    assert response.ok
+    with open(srv_dir / "snapshot.tar", 'wb') as f:
+        f.write(response.content)
+    assert snapshot_checksum == hashlib.sha256(response.content).hexdigest()
 
     # delete it
     response = request_with_validation(
@@ -63,6 +99,70 @@ def test_snapshot_operations():
     assert response.ok
     assert len(response.json()['result']) == 0
 
+    # delete collection
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="DELETE",
+        path_params={'collection_name': collection_name},
+    )
+    assert response.ok
+
+    # validate that the collection is deleted
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/scroll',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={},
+    )
+    assert response.status_code == 404
+
+    # try to recover collection from snapshot with wrong checksum
+    response = request_with_validation(
+        api='/collections/{collection_name}/snapshots/recover',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        body={
+            "location": f"{srv_url}/snapshot.tar",
+            "checksum": "3" * len(snapshot_checksum),
+            "wait": "true",
+        },
+    )
+    assert response.status_code == 400
+
+    # validate that the collection is not recovered
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/scroll',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={},
+    )
+    assert response.status_code == 404
+
+    # recover collection from snapshot with correct checksum
+    response = request_with_validation(
+        api='/collections/{collection_name}/snapshots/recover',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        body={
+            "location": f"{srv_url}/snapshot.tar",
+            "checksum": snapshot_checksum,
+            "wait": "true",
+        },
+    )
+    assert response.ok
+
+    # validate that the collection is recovered
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/scroll',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={},
+    )
+    assert response.ok
+    assert len(response.json()['result']['points']) == 10
+
+
+def test_full_snapshot_operations():
     # no full snapshot
     response = request_with_validation(
         api='/snapshots',

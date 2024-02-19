@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
+use common::cpu::CpuPermit;
 use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
@@ -8,6 +10,7 @@ use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{QueryVector, VectorElementType};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::random_vector;
+use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::index::sparse_index::sparse_vector_index::SparseVectorIndex;
 use segment::index::VectorIndex;
@@ -143,6 +146,9 @@ fn sparse_index_discover_test() {
     let mut sparse_segment = build_segment(dir.path(), &sparse_config, true).unwrap();
     let mut dense_segment = build_segment(dir.path(), &dense_config, true).unwrap();
 
+    let permit_cpu_count = num_rayon_threads(0);
+    let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
+
     for n in 0..num_vectors {
         let (sparse_vector, dense_vector) = random_named_vector(&mut rnd, dim);
 
@@ -167,10 +173,11 @@ fn sparse_index_discover_test() {
         vector_storage.clone(),
         payload_index_ptr.clone(),
         index_dir.path(),
+        &stopped,
     )
     .unwrap();
 
-    sparse_index.build_index(&stopped).unwrap();
+    sparse_index.build_index(permit, &stopped).unwrap();
 
     let top = 3;
     let attempts = 100;

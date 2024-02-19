@@ -1,3 +1,4 @@
+pub mod clock_set;
 mod execute_read_operation;
 mod locally_disabled_peers;
 mod read_ops;
@@ -11,11 +12,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::cpu::CpuBudget;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock};
 
+use super::local_shard::clock_map::RecoveryPoint;
 use super::local_shard::LocalShard;
 use super::remote_shard::RemoteShard;
 use super::transfer::ShardTransfer;
@@ -26,6 +29,7 @@ use crate::operations::types::{CollectionError, CollectionResult};
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::dummy_shard::DummyShard;
+use crate::shards::replica_set::clock_set::ClockSet;
 use crate::shards::shard::{PeerId, Shard, ShardId};
 use crate::shards::shard_config::ShardConfig;
 use crate::shards::telemetry::ReplicaSetTelemetry;
@@ -90,8 +94,11 @@ pub struct ShardReplicaSet {
     shared_storage_config: Arc<SharedStorageConfig>,
     update_runtime: Handle,
     search_runtime: Handle,
+    optimizer_cpu_budget: CpuBudget,
     /// Lock to serialized write operations on the replicaset when a write ordering is used.
     write_ordering_lock: Mutex<()>,
+    /// Local clock set, used to tag new operations on this shard.
+    clock_set: Mutex<ClockSet>,
 }
 
 pub type AbortShardTransfer = Arc<dyn Fn(ShardTransfer, &str) + Send + Sync>;
@@ -116,6 +123,7 @@ impl ShardReplicaSet {
         channel_service: ChannelService,
         update_runtime: Handle,
         search_runtime: Handle,
+        optimizer_cpu_budget: CpuBudget,
         init_state: Option<ReplicaState>,
     ) -> CollectionResult<Self> {
         let shard_path = super::create_shard_dir(collection_path, shard_id).await?;
@@ -127,6 +135,7 @@ impl ShardReplicaSet {
                 collection_config.clone(),
                 shared_storage_config.clone(),
                 update_runtime.clone(),
+                optimizer_cpu_budget.clone(),
             )
             .await?;
             Some(Shard::Local(shard))
@@ -175,7 +184,9 @@ impl ShardReplicaSet {
             shared_storage_config,
             update_runtime,
             search_runtime,
+            optimizer_cpu_budget,
             write_ordering_lock: Mutex::new(()),
+            clock_set: Default::default(),
         })
     }
 
@@ -197,6 +208,7 @@ impl ShardReplicaSet {
         this_peer_id: PeerId,
         update_runtime: Handle,
         search_runtime: Handle,
+        optimizer_cpu_budget: CpuBudget,
     ) -> Self {
         let replica_state: SaveOnDisk<ReplicaSetState> =
             SaveOnDisk::load_or_init(shard_path.join(REPLICA_STATE_FILE)).unwrap();
@@ -236,6 +248,7 @@ impl ShardReplicaSet {
                     collection_config.clone(),
                     shared_storage_config.clone(),
                     update_runtime.clone(),
+                    optimizer_cpu_budget.clone(),
                 )
                 .await;
 
@@ -282,7 +295,9 @@ impl ShardReplicaSet {
             shared_storage_config,
             update_runtime,
             search_runtime,
+            optimizer_cpu_budget,
             write_ordering_lock: Mutex::new(()),
+            clock_set: Default::default(),
         };
 
         if local_load_failure && replica_set.active_remote_shards().await.is_empty() {
@@ -434,6 +449,7 @@ impl ShardReplicaSet {
             self.collection_config.clone(),
             self.shared_storage_config.clone(),
             self.update_runtime.clone(),
+            self.optimizer_cpu_budget.clone(),
         )
         .await;
 
@@ -614,6 +630,7 @@ impl ShardReplicaSet {
                     self.collection_config.clone(),
                     self.shared_storage_config.clone(),
                     self.update_runtime.clone(),
+                    self.optimizer_cpu_budget.clone(),
                 )
                 .await?;
                 match state {
@@ -814,6 +831,18 @@ impl ShardReplicaSet {
         );
 
         self.abort_shard_transfer_cb.deref()(transfer, reason)
+    }
+
+    /// Get shard recovery point for WAL.
+    pub(crate) async fn shard_recovery_point(&self) -> CollectionResult<RecoveryPoint> {
+        let local_shard = self.local.read().await;
+        let Some(local_shard) = local_shard.as_ref() else {
+            return Err(CollectionError::NotFound {
+                what: "Peer does not have local shard".into(),
+            });
+        };
+
+        local_shard.shard_recovery_point().await
     }
 }
 

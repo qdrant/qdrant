@@ -3,7 +3,7 @@ import os
 import shutil
 from subprocess import Popen
 import time
-from typing import Tuple, Callable, Dict, List, Optional
+from typing import Tuple, Callable, Dict, List
 import requests
 import socket
 from contextlib import closing
@@ -195,6 +195,11 @@ def get_collection_cluster_info(peer_api_uri: str, collection_name: str) -> dict
     assert_http_ok(r)
     res = r.json()["result"]
     return res
+
+
+def get_shard_transfer_count(peer_api_uri: str, collection_name: str) -> int:
+    info = get_collection_cluster_info(peer_api_uri, collection_name)
+    return len(info["shard_transfers"])
 
 
 def get_collection_info(peer_api_uri: str, collection_name: str) -> dict:
@@ -415,15 +420,15 @@ def wait_for_collection_local_shards_count(peer_api_uri: str, collection_name: s
         raise e
 
 
-def wait_for(condition: Callable[..., bool], *args):
+def wait_for(condition: Callable[..., bool], *args, wait_for_interval=RETRY_INTERVAL_SEC, **kwargs):
     start = time.time()
-    while not condition(*args):
+    while not condition(*args, **kwargs):
         elapsed = time.time() - start
         if elapsed > WAIT_TIME_SEC:
             raise Exception(
                 f"Timeout waiting for condition {condition.__name__} to be satisfied in {WAIT_TIME_SEC} seconds")
         else:
-            time.sleep(RETRY_INTERVAL_SEC)
+            time.sleep(wait_for_interval)
 
 
 def peer_is_online(peer_api_uri: str) -> bool:

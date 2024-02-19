@@ -10,9 +10,12 @@ edition = "2021"
 publish = false
 
 [dependencies]
+num_cpus = "1.16"
 ordered-float = "4.2"
-serde = { version = "~1.0", features = ["derive"] }
+serde = { workspace = true }
+tokio = { workspace = true }
 validator = { version = "0.16", features = ["derive"] }
+lazy_static = "1.4.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 thiserror = "1.0"

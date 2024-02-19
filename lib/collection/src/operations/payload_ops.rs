@@ -20,6 +20,8 @@ pub struct SetPayload {
     pub filter: Option<Filter>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<ShardKeySelector>,
+    /// Assigns payload to each point that satisfy this path of property
+    pub key: Option<String>,
 }
 
 /// This data structure is used inside shard operations queue
@@ -27,13 +29,15 @@ pub struct SetPayload {
 ///
 /// Unlike `SetPayload` it does not contain `shard_key` field
 /// as individual shard does not need to know about shard key
-#[derive(Debug, Deserialize, Serialize, Validate, Clone)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Validate)]
 pub struct SetPayloadOp {
     pub payload: Payload,
     /// Assigns payload to each point in this list
     pub points: Option<Vec<PointIdType>>,
     /// Assigns payload to each point that satisfy this filter condition
     pub filter: Option<Filter>,
+    /// Payload selector to indicate property of payload, e.g. `a.b.c`
+    pub key: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -42,6 +46,7 @@ struct SetPayloadShadow {
     pub points: Option<Vec<PointIdType>>,
     pub filter: Option<Filter>,
     pub shard_key: Option<ShardKeySelector>,
+    pub key: Option<String>,
 }
 
 pub struct PointsSelectorValidationError;
@@ -65,6 +70,7 @@ impl TryFrom<SetPayloadShadow> for SetPayload {
                 points: value.points,
                 filter: value.filter,
                 shard_key: value.shard_key,
+                key: value.key,
             })
         } else {
             Err(PointsSelectorValidationError)
@@ -91,7 +97,7 @@ pub struct DeletePayload {
 ///
 /// Unlike `DeletePayload` it does not contain `shard_key` field
 /// as individual shard does not need to know about shard key
-#[derive(Debug, Deserialize, Serialize, Validate, Clone)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Validate)]
 pub struct DeletePayloadOp {
     /// List of payload keys to remove from payload
     pub keys: Vec<PayloadKeyType>,
@@ -127,7 +133,7 @@ impl TryFrom<DeletePayloadShadow> for DeletePayload {
 }
 
 /// Define operations description for point payloads manipulation
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PayloadOps {
     /// Set payload value, overrides if it is already exists
@@ -212,6 +218,7 @@ impl SplitByShard for SetPayloadOp {
                         points: Some(points),
                         payload: self.payload.clone(),
                         filter: self.filter.clone(),
+                        key: self.key.clone(),
                     }
                 })
             }

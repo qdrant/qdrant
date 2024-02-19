@@ -4,7 +4,6 @@ mod conversions;
 pub mod dummy_shard;
 pub mod forward_proxy_shard;
 pub mod local_shard;
-pub mod local_shard_operations;
 pub mod proxy_shard;
 pub mod queue_proxy_shard;
 pub mod remote_shard;
@@ -19,6 +18,9 @@ pub mod shard_versioning;
 pub mod telemetry;
 pub mod transfer;
 pub mod update_tracker;
+
+#[cfg(test)]
+mod test;
 
 use std::path::{Path, PathBuf};
 

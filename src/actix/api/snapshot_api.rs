@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use actix_files::NamedFile;
 use actix_multipart::form::tempfile::TempFile;
 use actix_multipart::form::MultipartForm;
@@ -5,6 +7,7 @@ use actix_web::rt::time::Instant;
 use actix_web::{delete, get, post, put, web, Responder, Result};
 use actix_web_validator as valid;
 use collection::common::file_utils::move_file;
+use collection::common::sha_256::{hash_file, hashes_equal};
 use collection::operations::snapshot_ops::{
     ShardSnapshotRecover, SnapshotPriority, SnapshotRecover,
 };
@@ -44,6 +47,11 @@ struct SnapshotPath {
 pub struct SnapshotUploadingParam {
     pub wait: Option<bool>,
     pub priority: Option<SnapshotPriority>,
+
+    /// Optional SHA256 checksum to verify snapshot integrity before recovery.
+    #[serde(default)]
+    #[validate(custom = "::common::validation::validate_sha256_hash")]
+    pub checksum: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, JsonSchema, Validate)]
@@ -72,6 +80,15 @@ pub async fn do_save_uploaded_snapshot(
 ) -> std::result::Result<Url, StorageError> {
     let filename = snapshot
         .file_name
+        // Sanitize the file name:
+        // - only take the top level path (no directories such as ../)
+        // - require the file name to be valid UTF-8
+        .and_then(|x| {
+            Path::new(&x)
+                .file_name()
+                .map(|filename| filename.to_owned())
+        })
+        .and_then(|x| x.to_str().map(|x| x.to_owned()))
         .unwrap_or_else(|| Uuid::new_v4().to_string());
     let collection_snapshot_path = toc.snapshots_path_for_collection(collection_name);
     if !collection_snapshot_path.exists() {
@@ -156,6 +173,19 @@ async fn upload_snapshot(
     let snapshot = form.snapshot;
     let wait = params.wait.unwrap_or(true);
 
+    if let Some(checksum) = &params.checksum {
+        let snapshot_checksum = match hash_file(snapshot.file.path()).await {
+            Ok(checksum) => checksum,
+            Err(err) => return process_response::<()>(Err(err.into()), timing),
+        };
+        if !hashes_equal(snapshot_checksum.as_str(), checksum.as_str()) {
+            return process_response::<()>(
+                Err(StorageError::checksum_mismatch(snapshot_checksum, checksum)),
+                timing,
+            );
+        }
+    }
+
     let snapshot_location =
         match do_save_uploaded_snapshot(dispatcher.get_ref(), &collection.name, snapshot).await {
             Ok(location) => location,
@@ -170,6 +200,7 @@ async fn upload_snapshot(
     let snapshot_recover = SnapshotRecover {
         location: snapshot_location,
         priority: params.priority,
+        checksum: None,
     };
 
     let response = do_recover_from_snapshot(
@@ -339,11 +370,12 @@ async fn recover_shard_snapshot(
             shard,
             request.location,
             request.priority.unwrap_or_default(),
+            request.checksum,
             http_client.as_ref().clone(),
         )
         .await?;
 
-        Ok(())
+        Ok(true)
     };
 
     helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
@@ -358,12 +390,24 @@ async fn upload_shard_snapshot(
     MultipartForm(form): MultipartForm<SnapshottingForm>,
 ) -> impl Responder {
     let (collection, shard) = path.into_inner();
-    let SnapshotUploadingParam { wait, priority } = query.into_inner();
+    let SnapshotUploadingParam {
+        wait,
+        priority,
+        checksum,
+    } = query.into_inner();
 
     // - `recover_shard_snapshot_impl` is *not* cancel safe
     //   - but the task is *spawned* on the runtime and won't be cancelled, if request is cancelled
 
     let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
+        if let Some(checksum) = checksum {
+            let snapshot_checksum = hash_file(form.snapshot.file.path()).await?;
+            if !hashes_equal(snapshot_checksum.as_str(), checksum.as_str()) {
+                let err = StorageError::checksum_mismatch(snapshot_checksum, checksum);
+                return Result::<_, helpers::HttpError>::Err(err.into());
+            }
+        }
+
         let future = async {
             let collection = toc.get_collection(&collection).await?;
             collection.assert_shard_exists(shard).await?;

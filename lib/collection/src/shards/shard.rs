@@ -2,8 +2,9 @@ use core::marker::{Send, Sync};
 use std::future::{self, Future};
 use std::path::Path;
 
+use super::local_shard::clock_map::RecoveryPoint;
 use super::update_tracker::UpdateTracker;
-use crate::operations::types::CollectionResult;
+use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::dummy_shard::DummyShard;
 use crate::shards::forward_proxy_shard::ForwardProxyShard;
 use crate::shards::local_shard::LocalShard;
@@ -145,5 +146,46 @@ impl Shard {
         };
 
         Some(update_tracker)
+    }
+
+    pub async fn shard_recovery_point(&self) -> CollectionResult<RecoveryPoint> {
+        match self {
+            Self::Local(local_shard) => Ok(local_shard.recovery_point().await),
+            Self::ForwardProxy(proxy_shard) => Ok(proxy_shard.wrapped_shard.recovery_point().await),
+            Self::Proxy(_) | Self::QueueProxy(_) | Self::Dummy(_) => {
+                Err(CollectionError::service_error(format!(
+                    "Recovery point not supported on {}",
+                    self.variant_name(),
+                )))
+            }
+        }
+    }
+
+    pub async fn resolve_wal_delta(
+        &self,
+        recovery_point: RecoveryPoint,
+    ) -> CollectionResult<Option<u64>> {
+        let resolve_result = match self {
+            Self::Local(local_shard) => local_shard.wal.resolve_wal_delta(recovery_point).await,
+            Self::ForwardProxy(proxy_shard) => {
+                proxy_shard
+                    .wrapped_shard
+                    .wal
+                    .resolve_wal_delta(recovery_point)
+                    .await
+            }
+            Self::Proxy(_) | Self::QueueProxy(_) | Self::Dummy(_) => {
+                return Err(CollectionError::service_error(format!(
+                    "Cannot resolve WAL delta on {}",
+                    self.variant_name(),
+                )));
+            }
+        };
+
+        resolve_result.map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to resolve WAL delta on local shard: {err}"
+            ))
+        })
     }
 }

@@ -20,6 +20,23 @@ impl PayloadStorage for InMemoryPayloadStorage {
         Ok(())
     }
 
+    fn assign_by_key(
+        &mut self,
+        point_id: PointOffsetType,
+        payload: &Payload,
+        key: &str,
+    ) -> OperationResult<()> {
+        match self.payload.get_mut(&point_id) {
+            Some(point_payload) => point_payload.merge_by_key(payload, key),
+            None => {
+                let mut dest_payload = Payload::default();
+                dest_payload.merge_by_key(payload, key)?;
+                self.payload.insert(point_id, dest_payload);
+                Ok(())
+            }
+        }
+    }
+
     fn payload(&self, point_id: PointOffsetType) -> OperationResult<Payload> {
         match self.payload.get(&point_id) {
             Some(payload) => Ok(payload.to_owned()),
@@ -88,6 +105,7 @@ mod tests {
 
         let query = Filter {
             should: None,
+            min_should: None,
             must: Some(vec![
                 Condition::Field(FieldCondition::new_match("age".to_string(), 43.into())),
                 Condition::Field(FieldCondition::new_match(

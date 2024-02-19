@@ -1,18 +1,8 @@
 //! Structures for fast and tread-safe way to check if some points were visited or not
 
+use common::defaults::POOL_KEEP_LIMIT;
 use common::types::PointOffsetType;
-use lazy_static::lazy_static;
 use parking_lot::RwLock;
-
-lazy_static! {
-    /// Max number of visited lists to preserve in memory
-    ///
-    /// If there are more concurrent requests, a new temporary list is created dynamically.
-    /// This limit is implemented to prevent memory leakage.
-    /// It matches the number of logical CPU cores, to best represent the expected number of
-    /// concurrent requests. Clamped between 16 and 128 to prevent extreme values.
-    static ref POOL_KEEP_LIMIT: usize = num_cpus::get().clamp(16, 128);
-}
 
 /// Visited list handle is an owner of the `VisitedList`, which is returned by `VisitedPool` and returned back to it
 #[derive(Debug)]
@@ -118,6 +108,8 @@ impl VisitedPool {
     }
 
     pub fn get(&self, num_points: usize) -> VisitedListHandle {
+        // If there are more concurrent requests, a new temporary list is created dynamically.
+        // This limit is implemented to prevent memory leakage.
         match self.pool.write().pop() {
             None => VisitedListHandle::new(self, VisitedList::new(num_points)),
             Some(mut data) => {

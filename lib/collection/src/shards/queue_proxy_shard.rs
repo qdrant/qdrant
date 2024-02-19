@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use segment::data_types::order_by::OrderBy;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
@@ -15,10 +16,10 @@ use super::transfer::driver::MAX_RETRY_COUNT;
 use super::update_tracker::UpdateTracker;
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{
-    CollectionInfo, CollectionResult, CoreSearchRequestBatch, CountRequestInternal, CountResult,
-    PointRequestInternal, Record, UpdateResult,
+    CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
+    CountRequestInternal, CountResult, PointRequestInternal, Record, UpdateResult,
 };
-use crate::operations::CollectionUpdateOperations;
+use crate::operations::OperationWithClockTag;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::LocalShardTelemetry;
@@ -51,14 +52,54 @@ pub struct QueueProxyShard {
 }
 
 impl QueueProxyShard {
+    /// Queue proxy the given local shard and point to the remote shard.
+    ///
+    /// This starts queueing all new updates on the local shard at the point of creation.
     pub fn new(
         wrapped_shard: LocalShard,
         remote_shard: RemoteShard,
-        max_ack_version: Arc<AtomicU64>,
+        wal_keep_from: Arc<AtomicU64>,
     ) -> Self {
         Self {
-            inner: Some(Inner::new(wrapped_shard, remote_shard, max_ack_version)),
+            inner: Some(Inner::new(wrapped_shard, remote_shard, wal_keep_from)),
         }
+    }
+
+    /// Queue proxy the given local shard and point to the remote shard, from a specific WAL version.
+    ///
+    /// This queues all (existing) updates from a specific WAL `version` and onwards. In other
+    /// words, this will ensure we transfer updates we already have and all new updates from a
+    /// specific point in our WAL. The `version` may be in the past, but must always be within
+    /// range of the current WAL.
+    ///
+    /// # Errors
+    ///
+    /// This fails if the given `version` is not in bounds of our current WAL. If the given
+    /// `version` is too old or too new, queue proxy creation is rejected.
+    pub fn new_from_version(
+        wrapped_shard: LocalShard,
+        remote_shard: RemoteShard,
+        wal_keep_from: Arc<AtomicU64>,
+        version: u64,
+    ) -> Result<Self, (LocalShard, CollectionError)> {
+        // Lock WAL until we've successfully created the queue proxy shard
+        let wal = wrapped_shard.wal.wal.clone();
+        let wal_lock = wal.lock();
+
+        // If start version is not in current WAL bounds [first_idx, last_idx], we cannot reliably transfer WAL
+        let (first_idx, last_idx) = (wal_lock.first_closed_index(), wal_lock.last_index());
+        if !(first_idx..=last_idx).contains(&version) {
+            return Err((wrapped_shard, CollectionError::service_error(format!("Cannot create queue proxy shard from version {version} because it is out of WAL bounds ({first_idx}..={last_idx})"))));
+        }
+
+        Ok(Self {
+            inner: Some(Inner::new_from_version(
+                wrapped_shard,
+                remote_shard,
+                wal_keep_from,
+                version,
+            )),
+        })
     }
 
     pub async fn create_snapshot(
@@ -143,7 +184,7 @@ impl QueueProxyShard {
             .inner
             .take()
             .expect("Queue proxy has already been finalized");
-        queue_proxy.set_max_ack_version(None);
+        queue_proxy.set_wal_keep_from(None);
 
         (queue_proxy.wrapped_shard, queue_proxy.remote_shard)
     }
@@ -152,11 +193,16 @@ impl QueueProxyShard {
 #[async_trait]
 impl ShardOperation for QueueProxyShard {
     /// Update `wrapped_shard` while keeping track of operations
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
     async fn update(
         &self,
-        operation: CollectionUpdateOperations,
+        operation: OperationWithClockTag,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
+        // `Inner::update` is cancel safe, so this is also cancel safe.
         self.inner
             .as_ref()
             .expect("Queue proxy has been finalized")
@@ -173,6 +219,7 @@ impl ShardOperation for QueueProxyShard {
         with_vector: &WithVector,
         filter: Option<&Filter>,
         search_runtime_handle: &Handle,
+        order_by: Option<&OrderBy>,
     ) -> CollectionResult<Vec<Record>> {
         self.inner
             .as_ref()
@@ -184,6 +231,7 @@ impl ShardOperation for QueueProxyShard {
                 with_vector,
                 filter,
                 search_runtime_handle,
+                order_by,
             )
             .await
     }
@@ -248,35 +296,57 @@ struct Inner {
     pub(super) wrapped_shard: LocalShard,
     /// Wrapped remote shard, to transfer operations to.
     pub(super) remote_shard: RemoteShard,
-    /// ID of the last WAL operation we consider transferred.
-    last_update_idx: AtomicU64,
+    /// ID of the WAL operation we should transfer next. We consider everything before it to be
+    /// transferred.
+    transfer_from: AtomicU64,
     /// Lock required to protect transfer-in-progress updates.
     /// It should block data updating operations while the batch is being transferred.
     update_lock: Mutex<()>,
-    /// Maximum acknowledged WAL version of the wrapped shard.
-    /// We keep it here for access in `set_max_ack_version()` without needing async locks.
-    /// See `set_max_ack_version()` and `UpdateHandler::max_ack_version` for more details.
-    max_ack_version: Arc<AtomicU64>,
+    /// Always keep this WAL version and later and prevent acknowledgment/truncation from the WAL.
+    /// We keep it here for access in `set_wal_keep_from()` without needing async locks.
+    /// See `set_wal_keep_from()` and `UpdateHandler::wal_keep_from` for more details.
+    /// Defaults to `u64::MAX` to allow acknowledging all confirmed versions.
+    wal_keep_from: Arc<AtomicU64>,
 }
 
 impl Inner {
     pub fn new(
         wrapped_shard: LocalShard,
         remote_shard: RemoteShard,
-        max_ack_version: Arc<AtomicU64>,
+        wal_keep_from: Arc<AtomicU64>,
     ) -> Self {
-        let last_idx = wrapped_shard.wal.lock().last_index();
+        let start_from = wrapped_shard.wal.wal.lock().last_index() + 1;
 
         let shard = Self {
             wrapped_shard,
             remote_shard,
-            last_update_idx: last_idx.into(),
+            transfer_from: start_from.into(),
             update_lock: Default::default(),
-            max_ack_version,
+            wal_keep_from,
         };
 
-        // Set max acknowledged version for WAL to not truncate parts we still need to transfer later
-        shard.set_max_ack_version(Some(last_idx));
+        // Keep all new WAL entries so we don't truncate them off when we still need to transfer
+        shard.set_wal_keep_from(Some(start_from));
+
+        shard
+    }
+
+    pub fn new_from_version(
+        wrapped_shard: LocalShard,
+        remote_shard: RemoteShard,
+        wal_keep_from: Arc<AtomicU64>,
+        version: u64,
+    ) -> Self {
+        let shard = Self {
+            wrapped_shard,
+            remote_shard,
+            transfer_from: version.into(),
+            update_lock: Default::default(),
+            wal_keep_from,
+        };
+
+        // Keep all WAL entries from `version` so we don't truncate them off when we still need to transfer
+        shard.set_wal_keep_from(Some(version));
 
         shard
     }
@@ -295,9 +365,9 @@ impl Inner {
     pub async fn transfer_all_missed_updates(&self) -> CollectionResult<()> {
         while !self.transfer_wal_batch().await? {}
 
-        // Set max acknowledged version for WAL to last item we transferred
-        let last_idx = self.last_update_idx.load(Ordering::Relaxed);
-        self.set_max_ack_version(Some(last_idx));
+        // Set the WAL version to keep to the next item we should transfer
+        let transfer_from = self.transfer_from.load(Ordering::Relaxed);
+        self.set_wal_keep_from(Some(transfer_from));
 
         Ok(())
     }
@@ -318,13 +388,13 @@ impl Inner {
     /// idempotent.
     async fn transfer_wal_batch(&self) -> CollectionResult<bool> {
         let mut update_lock = Some(self.update_lock.lock().await);
-        let start_index = self.last_update_idx.load(Ordering::Relaxed) + 1;
+        let transfer_from = self.transfer_from.load(Ordering::Relaxed);
 
         // Lock wall, count pending items to transfer, grab batch
         let (pending_count, batch) = {
-            let wal = self.wrapped_shard.wal.lock();
-            let items_left = wal.last_index().saturating_sub(start_index - 1);
-            let batch = wal.read(start_index).take(BATCH_SIZE).collect::<Vec<_>>();
+            let wal = self.wrapped_shard.wal.wal.lock();
+            let items_left = (wal.last_index() + 1).saturating_sub(transfer_from);
+            let batch = wal.read(transfer_from).take(BATCH_SIZE).collect::<Vec<_>>();
             (items_left, batch)
         };
 
@@ -346,7 +416,12 @@ impl Inner {
         let last_idx = batch.last().map(|(idx, _)| *idx);
         for remaining_attempts in (0..BATCH_RETRIES).rev() {
             match transfer_operations_batch(&batch, &self.remote_shard).await {
-                Ok(()) => {}
+                Ok(()) => {
+                    if let Some(idx) = last_idx {
+                        self.transfer_from.store(idx + 1, Ordering::Relaxed);
+                    }
+                    break;
+                }
                 Err(err) if remaining_attempts > 0 => {
                     log::error!(
                         "Failed to transfer batch of updates to peer {}, retrying: {err}",
@@ -356,37 +431,40 @@ impl Inner {
                 }
                 Err(err) => return Err(err),
             }
-
-            if let Some(idx) = last_idx {
-                self.last_update_idx.store(idx, Ordering::Relaxed);
-            }
         }
 
         Ok(last_batch)
     }
 
-    /// Set or release maximum version to acknowledge in WAL
+    /// Set or release what WAL versions to keep preventing acknowledgment/truncation.
     ///
-    /// Because this proxy shard relies on the WAL to obtain operations history, it cannot be
+    /// Because this proxy shard relies on the WAL to obtain operations in the past, it cannot be
     /// truncated before all these update operations have been flushed.
-    /// Using this function we set the WAL not to truncate past the given point.
+    /// Using this function we set the WAL not to acknowledge and truncate from a specific point.
     ///
     /// Providing `None` will release this limitation.
-    fn set_max_ack_version(&self, max_version: Option<u64>) {
-        let max_version = max_version.unwrap_or(u64::MAX);
-        self.max_ack_version.store(max_version, Ordering::Relaxed);
+    fn set_wal_keep_from(&self, version: Option<u64>) {
+        let version = version.unwrap_or(u64::MAX);
+        self.wal_keep_from.store(version, Ordering::Relaxed);
     }
 }
 
 #[async_trait]
 impl ShardOperation for Inner {
     /// Update `wrapped_shard` while keeping track of operations
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
     async fn update(
         &self,
-        operation: CollectionUpdateOperations,
+        operation: OperationWithClockTag,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
+        // `LocalShard::update` is cancel safe, so this is also cancel safe.
+
         let _update_lock = self.update_lock.lock().await;
+
         let local_shard = &self.wrapped_shard;
         // Shard update is within a write lock scope, because we need a way to block the shard updates
         // during the transfer restart and finalization.
@@ -402,6 +480,7 @@ impl ShardOperation for Inner {
         with_vector: &WithVector,
         filter: Option<&Filter>,
         search_runtime_handle: &Handle,
+        order_by: Option<&OrderBy>,
     ) -> CollectionResult<Vec<Record>> {
         let local_shard = &self.wrapped_shard;
         local_shard
@@ -412,6 +491,7 @@ impl ShardOperation for Inner {
                 with_vector,
                 filter,
                 search_runtime_handle,
+                order_by,
             )
             .await
     }
@@ -463,13 +543,21 @@ impl ShardOperation for Inner {
 ///
 /// If cancelled - none, some or all operations of the batch may be transmitted to the remote.
 async fn transfer_operations_batch(
-    batch: &[(u64, CollectionUpdateOperations)],
+    batch: &[(u64, OperationWithClockTag)],
     remote_shard: &RemoteShard,
 ) -> CollectionResult<()> {
     // TODO: naive transfer approach, transfer batch of points instead
     for (_idx, operation) in batch {
+        let mut operation = operation.clone();
+
+        // Set force flag because operations from WAL may be unordered if another node is sending
+        // new operations at the same time
+        if let Some(clock_tag) = &mut operation.clock_tag {
+            clock_tag.force = true;
+        }
+
         remote_shard
-            .forward_update(operation.clone(), true, WriteOrdering::Weak)
+            .forward_update(operation, true, WriteOrdering::Weak)
             .await?;
     }
     Ok(())

@@ -4,6 +4,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::future::try_join_all;
 use itertools::Itertools;
+use segment::data_types::order_by::{Direction, OrderBy};
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
@@ -17,7 +18,7 @@ use crate::operations::types::{
     CountRequestInternal, CountResult, PointRequestInternal, QueryEnum, Record, UpdateResult,
     UpdateStatus,
 };
-use crate::operations::CollectionUpdateOperations;
+use crate::operations::OperationWithClockTag;
 use crate::optimizers_builder::DEFAULT_INDEXING_THRESHOLD_KB;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
@@ -100,53 +101,8 @@ impl LocalShard {
             .collect();
         Ok(top_results)
     }
-}
-#[async_trait]
-impl ShardOperation for LocalShard {
-    /// Imply interior mutability.
-    /// Performs update operation on this collection asynchronously.
-    /// Explicitly waits for result to be updated.
-    async fn update(
-        &self,
-        operation: CollectionUpdateOperations,
-        wait: bool,
-    ) -> CollectionResult<UpdateResult> {
-        let (callback_sender, callback_receiver) = if wait {
-            let (tx, rx) = oneshot::channel();
-            (Some(tx), Some(rx))
-        } else {
-            (None, None)
-        };
 
-        let operation_id = {
-            let update_sender = self.update_sender.load();
-            let channel_permit = update_sender.reserve().await?;
-            let mut wal_lock = self.wal.lock();
-            let operation_id = wal_lock.write(&operation)?;
-            channel_permit.send(UpdateSignal::Operation(OperationData {
-                op_num: operation_id,
-                operation,
-                sender: callback_sender,
-                wait,
-            }));
-            operation_id
-        };
-
-        if let Some(receiver) = callback_receiver {
-            let _res = receiver.await??;
-            Ok(UpdateResult {
-                operation_id: Some(operation_id),
-                status: UpdateStatus::Completed,
-            })
-        } else {
-            Ok(UpdateResult {
-                operation_id: Some(operation_id),
-                status: UpdateStatus::Acknowledged,
-            })
-        }
-    }
-
-    async fn scroll_by(
+    async fn scroll_by_id(
         &self,
         offset: Option<ExtendedPointId>,
         limit: usize,
@@ -155,8 +111,8 @@ impl ShardOperation for LocalShard {
         filter: Option<&Filter>,
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Record>> {
-        // ToDo: Make faster points selection with a set
         let segments = self.segments();
+
         let read_handles: Vec<_> = {
             let segments_guard = segments.read();
             segments_guard
@@ -164,6 +120,7 @@ impl ShardOperation for LocalShard {
                 .map(|(_, segment)| {
                     let segment = segment.clone();
                     let filter = filter.cloned();
+
                     search_runtime_handle.spawn_blocking(move || {
                         segment
                             .get()
@@ -173,6 +130,7 @@ impl ShardOperation for LocalShard {
                 })
                 .collect()
         };
+
         let all_points = try_join_all(read_handles).await?;
 
         let point_ids = all_points
@@ -186,9 +144,170 @@ impl ShardOperation for LocalShard {
         let with_payload = WithPayload::from(with_payload_interface);
         let mut points =
             SegmentsSearcher::retrieve(segments, &point_ids, &with_payload, with_vector)?;
+
         points.sort_by_key(|point| point.id);
 
         Ok(points)
+    }
+
+    async fn scroll_by_field(
+        &self,
+        limit: usize,
+        with_payload_interface: &WithPayloadInterface,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
+        search_runtime_handle: &Handle,
+        order_by: &OrderBy,
+    ) -> CollectionResult<Vec<Record>> {
+        let segments = self.segments();
+        let read_handles: Vec<_> = {
+            let segments_guard = segments.read();
+            segments_guard
+                .iter()
+                .map(|(_, segment)| {
+                    let segment = segment.clone();
+                    let filter = filter.cloned();
+
+                    let order_by = order_by.clone();
+
+                    search_runtime_handle.spawn_blocking(move || {
+                        segment.get().read().read_ordered_filtered(
+                            Some(limit),
+                            filter.as_ref(),
+                            &order_by,
+                        )
+                    })
+                })
+                .collect()
+        };
+
+        let all_reads = try_join_all(read_handles)
+            .await?
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let top_records = all_reads
+            .into_iter()
+            .kmerge_by(|a, b| match order_by.direction() {
+                Direction::Asc => a <= b,
+                Direction::Desc => a >= b,
+            })
+            .dedup()
+            .take(limit)
+            .collect_vec();
+
+        let with_payload = WithPayload::from(with_payload_interface);
+
+        let point_ids = top_records.iter().map(|(_, id)| *id).collect_vec();
+
+        // Fetch with the requested vector and payload
+        let mut records =
+            SegmentsSearcher::retrieve(segments, &point_ids, &with_payload, with_vector)?;
+
+        // Add order_by value to the payload. It will be removed in the next step, after crossing the shard boundary.
+        records
+            .iter_mut()
+            .zip(top_records)
+            .for_each(|(record, (value, _))| {
+                let new_payload =
+                    OrderBy::insert_order_value_in_payload(record.payload.take(), value);
+
+                record.payload = Some(new_payload);
+            });
+
+        Ok(records)
+    }
+}
+
+#[async_trait]
+impl ShardOperation for LocalShard {
+    /// Imply interior mutability.
+    /// Performs update operation on this collection asynchronously.
+    /// Explicitly waits for result to be updated.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
+    async fn update(
+        &self,
+        mut operation: OperationWithClockTag,
+        wait: bool,
+    ) -> CollectionResult<UpdateResult> {
+        // `LocalShard::update` only has a single cancel safe `await`, WAL operations are blocking,
+        // and update is applied by a separate task, so, surprisingly, this method is cancel safe. :D
+
+        let (callback_sender, callback_receiver) = if wait {
+            let (tx, rx) = oneshot::channel();
+            (Some(tx), Some(rx))
+        } else {
+            (None, None)
+        };
+
+        let operation_id = {
+            let update_sender = self.update_sender.load();
+            let channel_permit = update_sender.reserve().await?;
+
+            let operation_id = self.wal.lock_and_write(&mut operation).await?;
+
+            channel_permit.send(UpdateSignal::Operation(OperationData {
+                op_num: operation_id,
+                operation: operation.operation,
+                sender: callback_sender,
+                wait,
+            }));
+            operation_id
+        };
+
+        if let Some(receiver) = callback_receiver {
+            let _res = receiver.await??;
+            Ok(UpdateResult {
+                operation_id: Some(operation_id),
+                status: UpdateStatus::Completed,
+                clock_tag: operation.clock_tag,
+            })
+        } else {
+            Ok(UpdateResult {
+                operation_id: Some(operation_id),
+                status: UpdateStatus::Acknowledged,
+                clock_tag: operation.clock_tag,
+            })
+        }
+    }
+
+    async fn scroll_by(
+        &self,
+        offset: Option<ExtendedPointId>,
+        limit: usize,
+        with_payload_interface: &WithPayloadInterface,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
+        search_runtime_handle: &Handle,
+        order_by: Option<&OrderBy>,
+    ) -> CollectionResult<Vec<Record>> {
+        match order_by {
+            None => {
+                self.scroll_by_id(
+                    offset,
+                    limit,
+                    with_payload_interface,
+                    with_vector,
+                    filter,
+                    search_runtime_handle,
+                )
+                .await
+            }
+            Some(order_by) => {
+                self.scroll_by_field(
+                    limit,
+                    with_payload_interface,
+                    with_vector,
+                    filter,
+                    search_runtime_handle,
+                    order_by,
+                )
+                .await
+            }
+        }
     }
 
     /// Collect overview information about the shard

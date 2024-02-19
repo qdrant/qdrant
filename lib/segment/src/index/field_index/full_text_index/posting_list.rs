@@ -11,12 +11,14 @@ impl PostingList {
     }
 
     pub fn insert(&mut self, idx: PointOffsetType) {
-        if let Err(insertion_idx) = self.list.binary_search(&idx) {
+        if self.list.is_empty() || idx > *self.list.last().unwrap() {
+            self.list.push(idx);
+        } else if let Err(insertion_idx) = self.list.binary_search(&idx) {
             // Yes, this is O(n) but:
             // 1. That would give us maximal search performance with minimal memory usage
             // 2. Documents are inserted mostly sequentially, especially in large segments
             // 3. Vector indexing is more expensive anyway
-            // 4. We can separate updatable and remove-only indexes later
+            // 4. For loading, insertion is strictly in increasing order
             self.list.insert(insertion_idx, idx);
         }
     }
@@ -35,8 +37,15 @@ impl PostingList {
         self.list.binary_search(val).is_ok()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = PointOffsetType> + '_ {
-        self.list.iter().copied()
+    pub fn iter<'a>(
+        &'a self,
+        filter: impl Fn(PointOffsetType) -> bool + 'a,
+    ) -> impl Iterator<Item = PointOffsetType> + 'a {
+        self.list.iter().copied().filter(move |&idx| filter(idx))
+    }
+
+    pub fn shrink_to_fit(&mut self) {
+        self.list.shrink_to_fit();
     }
 }
 

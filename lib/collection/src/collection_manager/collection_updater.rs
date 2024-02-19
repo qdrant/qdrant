@@ -214,6 +214,7 @@ mod tests {
                 payload,
                 points: Some(points.clone()),
                 filter: None,
+                key: None,
             }),
         )
         .unwrap();

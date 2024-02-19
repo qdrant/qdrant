@@ -11,6 +11,8 @@ use thiserror::Error;
 pub enum StorageError {
     #[error("Wrong input: {description}")]
     BadInput { description: String },
+    #[error("Wrong input: {description}")]
+    AlreadyExists { description: String },
     #[error("Not found: {description}")]
     NotFound { description: String },
     #[error("Service internal error: {description}")]
@@ -24,6 +26,8 @@ pub enum StorageError {
     Locked { description: String },
     #[error("Timeout: {description}")]
     Timeout { description: String },
+    #[error("Checksum mismatch: expected {expected}, actual {actual}")]
+    ChecksumMismatch { expected: String, actual: String },
 }
 
 impl StorageError {
@@ -43,6 +47,19 @@ impl StorageError {
     pub fn bad_input(description: impl Into<String>) -> StorageError {
         StorageError::BadInput {
             description: description.into(),
+        }
+    }
+
+    pub fn already_exists(description: impl Into<String>) -> StorageError {
+        StorageError::AlreadyExists {
+            description: description.into(),
+        }
+    }
+
+    pub fn checksum_mismatch(expected: impl Into<String>, actual: impl Into<String>) -> Self {
+        StorageError::ChecksumMismatch {
+            expected: expected.into(),
+            actual: actual.into(),
         }
     }
 

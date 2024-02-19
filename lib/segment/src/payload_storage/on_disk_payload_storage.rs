@@ -81,6 +81,26 @@ impl PayloadStorage for OnDiskPayloadStorage {
         Ok(())
     }
 
+    fn assign_by_key(
+        &mut self,
+        point_id: PointOffsetType,
+        payload: &Payload,
+        key: &str,
+    ) -> OperationResult<()> {
+        let stored_payload = self.read_payload(point_id)?;
+        match stored_payload {
+            Some(mut point_payload) => {
+                point_payload.merge_by_key(payload, key)?;
+                self.update_storage(point_id, &point_payload)
+            }
+            None => {
+                let mut dest_payload = Payload::default();
+                dest_payload.merge_by_key(payload, key)?;
+                self.update_storage(point_id, &dest_payload)
+            }
+        }
+    }
+
     fn payload(&self, point_id: PointOffsetType) -> OperationResult<Payload> {
         let payload = self.read_payload(point_id)?;
         match payload {

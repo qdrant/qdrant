@@ -93,9 +93,12 @@ impl BuilderExt for Builder {
 #[rustfmt::skip]
 fn configure_validation(builder: Builder) -> Builder {
     builder
+        // prost_wkt_types needed for serde support
+        .extern_path(".google.protobuf.Timestamp", "::prost_wkt_types::Timestamp") 
         // Service: collections.proto
         .validates(&[
             ("GetCollectionInfoRequest.collection_name", "length(min = 1, max = 255)"),
+            ("CollectionExistsRequest.collection_name", "length(min = 1, max = 255)"),
             ("CreateCollection.collection_name", "length(min = 1, max = 255), custom = \"common::validation::validate_collection_name\""),
             ("CreateCollection.hnsw_config", ""),
             ("CreateCollection.wal_config", ""),
@@ -155,6 +158,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("InitiateShardTransferRequest.collection_name", "length(min = 1, max = 255)"),
             ("WaitForShardStateRequest.collection_name", "length(min = 1, max = 255)"),
             ("WaitForShardStateRequest.timeout", "range(min = 1)"),
+            ("GetShardRecoveryPointRequest.collection_name", "length(min = 1, max = 255)"),
         ], &[])
         // Service: points.proto
         .validates(&[
@@ -174,7 +178,6 @@ fn configure_validation(builder: Builder) -> Builder {
             ("CreateFieldIndexCollection.field_name", "length(min = 1)"),
             ("DeleteFieldIndexCollection.collection_name", "length(min = 1, max = 255)"),
             ("DeleteFieldIndexCollection.field_name", "length(min = 1)"),
-            // TODO(sparse) validate sparse vector for `SearchPoints`
             ("SearchPoints.collection_name", "length(min = 1, max = 255)"),
             ("SearchPoints.filter", ""),
             ("SearchPoints.limit", "range(min = 1)"),
@@ -183,7 +186,6 @@ fn configure_validation(builder: Builder) -> Builder {
             ("SearchBatchPoints.collection_name", "length(min = 1, max = 255)"),
             ("SearchBatchPoints.search_points", ""),
             ("SearchBatchPoints.timeout", "custom = \"crate::grpc::validate::validate_u64_range_min_1\""),
-            // TODO(sparse) validate sparse vector for `SearchPointGroups`
             ("SearchPointGroups.collection_name", "length(min = 1, max = 255)"),
             ("SearchPointGroups.group_by", "length(min = 1)"),
             ("SearchPointGroups.filter", ""),
@@ -240,6 +242,10 @@ fn configure_validation(builder: Builder) -> Builder {
             ("DiscoveryQuery.target", ""),
             ("DiscoveryQuery.context", ""),
             ("ContextQuery.context", ""),
+            ("DatetimeRange.lt", "custom = \"crate::grpc::validate::validate_timestamp\""),
+            ("DatetimeRange.gt", "custom = \"crate::grpc::validate::validate_timestamp\""),
+            ("DatetimeRange.lte", "custom = \"crate::grpc::validate::validate_timestamp\""),
+            ("DatetimeRange.gte", "custom = \"crate::grpc::validate::validate_timestamp\""),
         ], &[])
         .type_attribute(".", "#[derive(serde::Serialize)]")
         // Service: points_internal_service.proto
@@ -287,22 +293,19 @@ fn configure_validation(builder: Builder) -> Builder {
             ("DeleteShardSnapshotRequest.snapshot_name", "length(min = 1)"),
             ("RecoverShardSnapshotRequest.collection_name", "length(min = 1, max = 255)"),
             ("RecoverShardSnapshotRequest.snapshot_name", "length(min = 1)"),
+            ("RecoverShardSnapshotRequest.checksum", "custom = \"common::validation::validate_sha256_hash_option\""),
+            ("SnapshotDescription.creation_time", "custom = \"crate::grpc::validate::validate_timestamp\""),
         ], &[
             "CreateFullSnapshotRequest",
             "ListFullSnapshotsRequest",
         ])
-        .field_attribute("SnapshotDescription.creation_time", "#[serde(skip)]")
 }
 
 fn append_to_file(path: &str, line: &str) {
     use std::fs::OpenOptions;
     use std::io::prelude::*;
     writeln!(
-        OpenOptions::new()
-            .write(true)
-            .append(true)
-            .open(path)
-            .unwrap(),
+        OpenOptions::new().append(true).open(path).unwrap(),
         "{line}",
     )
     .unwrap()

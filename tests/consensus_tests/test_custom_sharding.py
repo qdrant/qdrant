@@ -1,6 +1,5 @@
 import pathlib
 
-from .fixtures import upsert_random_points, create_collection
 from .utils import *
 
 N_PEERS = 3

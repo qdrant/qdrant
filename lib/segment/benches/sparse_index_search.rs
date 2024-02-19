@@ -2,12 +2,15 @@
 mod prof;
 
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
+use common::cpu::CpuPermit;
 use common::types::PointOffsetType;
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use segment::fixtures::sparse_fixtures::fixture_sparse_index_ram;
+use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::index::sparse_index::sparse_vector_index::SparseVectorIndex;
 use segment::index::{PayloadIndex, VectorIndex};
@@ -51,7 +54,7 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
     let mut payload_index = sparse_vector_index.payload_index.borrow_mut();
     for idx in 0..NUM_VECTORS {
         payload_index
-            .assign(idx as PointOffsetType, &payload)
+            .assign(idx as PointOffsetType, &payload, &None)
             .unwrap();
     }
     drop(payload_index);
@@ -61,6 +64,9 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
     eprintln!("sparse_vector size = {:#?}", vector.values.len());
     let sparse_vector = vector.clone();
     let query_vector = vector.into();
+
+    let permit_cpu_count = num_rayon_threads(0);
+    let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
 
     // mmap inverted index
     let mmap_index_dir = Builder::new().prefix("mmap_index_dir").tempdir().unwrap();
@@ -73,9 +79,12 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
             sparse_vector_index.vector_storage.clone(),
             sparse_vector_index.payload_index.clone(),
             mmap_index_dir.path(),
+            &stopped,
         )
         .unwrap();
-    sparse_vector_index_mmap.build_index(&stopped).unwrap();
+    sparse_vector_index_mmap
+        .build_index(permit, &stopped)
+        .unwrap();
     assert_eq!(sparse_vector_index_mmap.indexed_vector_count(), NUM_VECTORS);
 
     // intent: bench `search` without filter on mmap inverted index

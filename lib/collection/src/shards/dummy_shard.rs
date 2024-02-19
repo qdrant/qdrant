@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use segment::data_types::order_by::OrderBy;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
@@ -12,7 +13,7 @@ use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
     CountRequestInternal, CountResult, PointRequestInternal, Record, UpdateResult,
 };
-use crate::operations::CollectionUpdateOperations;
+use crate::operations::OperationWithClockTag;
 use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::LocalShardTelemetry;
 
@@ -56,11 +57,7 @@ impl DummyShard {
 
 #[async_trait]
 impl ShardOperation for DummyShard {
-    async fn update(
-        &self,
-        _: CollectionUpdateOperations,
-        _: bool,
-    ) -> CollectionResult<UpdateResult> {
+    async fn update(&self, _: OperationWithClockTag, _: bool) -> CollectionResult<UpdateResult> {
         self.dummy()
     }
 
@@ -73,6 +70,7 @@ impl ShardOperation for DummyShard {
         _: &WithVector,
         _: Option<&Filter>,
         _: &Handle,
+        _: Option<&OrderBy>,
     ) -> CollectionResult<Vec<Record>> {
         self.dummy()
     }

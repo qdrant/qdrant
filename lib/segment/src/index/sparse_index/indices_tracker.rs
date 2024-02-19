@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use ahash::AHashMap;
 use io::file_operations::{atomic_save_json, read_json};
 use serde::{Deserialize, Serialize};
 use sparse::common::sparse_vector::SparseVector;
@@ -12,7 +12,7 @@ const INDICES_TRACKER_FILE_NAME: &str = "indices_tracker.json";
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct IndicesTracker {
-    pub map: HashMap<DimId, DimId>,
+    pub map: AHashMap<DimId, DimId>,
 }
 
 impl IndicesTracker {

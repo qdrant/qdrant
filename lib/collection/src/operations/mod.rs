@@ -20,16 +20,16 @@ use serde::{Deserialize, Serialize};
 use validator::Validate;
 
 use crate::hash_ring::HashRing;
-use crate::shards::shard::ShardId;
+use crate::shards::shard::{PeerId, ShardId};
 
-#[derive(Debug, Deserialize, Serialize, Validate, Default, Clone)]
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct CreateIndex {
     pub field_name: String,
     pub field_schema: Option<PayloadFieldSchema>,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FieldIndexOperations {
     /// Create index for payload field
@@ -38,9 +38,76 @@ pub enum FieldIndexOperations {
     DeleteIndex(String),
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+pub struct OperationWithClockTag {
+    #[serde(flatten)]
+    pub operation: CollectionUpdateOperations,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clock_tag: Option<ClockTag>,
+}
+
+impl OperationWithClockTag {
+    pub fn new(
+        operation: impl Into<CollectionUpdateOperations>,
+        clock_tag: Option<ClockTag>,
+    ) -> Self {
+        Self {
+            operation: operation.into(),
+            clock_tag,
+        }
+    }
+}
+
+impl From<CollectionUpdateOperations> for OperationWithClockTag {
+    fn from(operation: CollectionUpdateOperations) -> Self {
+        Self::new(operation, None)
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+pub struct ClockTag {
+    pub peer_id: PeerId,
+    pub clock_id: u32,
+    pub clock_tick: u64,
+    pub force: bool,
+}
+
+impl ClockTag {
+    pub fn new(peer_id: PeerId, clock_id: u32, clock_tick: u64) -> Self {
+        Self {
+            peer_id,
+            clock_id,
+            clock_tick,
+            force: false,
+        }
+    }
+
+    pub fn force(mut self, force: bool) -> Self {
+        self.force = force;
+        self
+    }
+}
+
+impl From<api::grpc::qdrant::ClockTag> for ClockTag {
+    fn from(tag: api::grpc::qdrant::ClockTag) -> Self {
+        Self::new(tag.peer_id, tag.clock_id, tag.clock_tick).force(tag.force)
+    }
+}
+
+impl From<ClockTag> for api::grpc::qdrant::ClockTag {
+    fn from(tag: ClockTag) -> Self {
+        Self {
+            peer_id: tag.peer_id,
+            clock_id: tag.clock_id,
+            clock_tick: tag.clock_tick,
+            force: tag.force,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(untagged, rename_all = "snake_case")]
 pub enum CollectionUpdateOperations {
     PointOperation(point_ops::PointOperations),
     VectorOperation(vector_ops::VectorOperations),
@@ -179,18 +246,206 @@ impl CollectionUpdateOperations {
 
 #[cfg(test)]
 mod tests {
-    use serde_json;
+    use proptest::prelude::*;
+    use segment::types::*;
 
+    use super::payload_ops::*;
+    use super::point_ops::*;
+    use super::vector_ops::*;
     use super::*;
 
-    #[test]
-    fn test_deserialize() {
-        let op =
-            CollectionUpdateOperations::PayloadOperation(payload_ops::PayloadOps::ClearPayload {
-                points: vec![1.into(), 2.into(), 3.into()],
+    proptest::proptest! {
+        #[test]
+        fn operation_with_clock_tag_json(operation in any::<OperationWithClockTag>()) {
+            // Assert that `OperationWithClockTag` can be serialized
+            let input = serde_json::to_string(&operation).unwrap();
+            let output: OperationWithClockTag = serde_json::from_str(&input).unwrap();
+            assert_eq!(operation, output);
+
+            // Assert that `OperationWithClockTag` can be deserialized from `CollectionUpdateOperation`
+            let input = serde_json::to_string(&operation.operation).unwrap();
+            let output: OperationWithClockTag = serde_json::from_str(&input).unwrap();
+            assert_eq!(operation.operation, output.operation);
+
+            // Assert that `CollectionUpdateOperation` serializes into JSON object with a single key
+            // (e.g., `{ "upsert_points": <upsert points object> }`)
+            match serde_json::to_value(&operation.operation).unwrap() {
+                serde_json::Value::Object(map) if map.len() == 1 => (),
+                _ => panic!("TODO"),
+            };
+        }
+
+        #[test]
+        fn operation_with_clock_tag_cbor(operation in any::<OperationWithClockTag>()) {
+            // Assert that `OperationWithClockTag` can be serialized
+            let input = serde_cbor::to_vec(&operation).unwrap();
+            let output: OperationWithClockTag = serde_cbor::from_slice(&input).unwrap();
+            assert_eq!(operation, output);
+
+            // Assert that `OperationWithClockTag` can be deserialized from `CollectionUpdateOperation`
+            let input = serde_cbor::to_vec(&operation.operation).unwrap();
+            let output: OperationWithClockTag = serde_cbor::from_slice(&input).unwrap();
+            assert_eq!(operation.operation, output.operation);
+        }
+    }
+
+    impl Arbitrary for OperationWithClockTag {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            any::<(CollectionUpdateOperations, Option<ClockTag>)>()
+                .prop_map(|(operation, clock_tag)| Self::new(operation, clock_tag))
+                .boxed()
+        }
+    }
+
+    impl Arbitrary for ClockTag {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            any::<(PeerId, u32, u64)>()
+                .prop_map(|(peer_id, clock_id, clock_tick)| {
+                    Self::new(peer_id, clock_id, clock_tick)
+                })
+                .boxed()
+        }
+    }
+
+    impl Arbitrary for CollectionUpdateOperations {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            prop_oneof![
+                any::<point_ops::PointOperations>().prop_map(Self::PointOperation),
+                any::<vector_ops::VectorOperations>().prop_map(Self::VectorOperation),
+                any::<payload_ops::PayloadOps>().prop_map(Self::PayloadOperation),
+                any::<FieldIndexOperations>().prop_map(Self::FieldIndexOperation),
+            ]
+            .boxed()
+        }
+    }
+
+    impl Arbitrary for point_ops::PointOperations {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            let upsert = Self::UpsertPoints(PointInsertOperationsInternal::PointsList(Vec::new()));
+            let delete = Self::DeletePoints { ids: Vec::new() };
+
+            let delete_by_filter = Self::DeletePointsByFilter(Filter {
+                should: None,
+                min_should: None,
+                must: None,
+                must_not: None,
             });
 
-        let json = serde_json::to_string_pretty(&op).unwrap();
-        println!("{json}")
+            let sync = Self::SyncPoints(PointSyncOperation {
+                from_id: None,
+                to_id: None,
+                points: Vec::new(),
+            });
+
+            prop_oneof![
+                Just(upsert),
+                Just(delete),
+                Just(delete_by_filter),
+                Just(sync),
+            ]
+            .boxed()
+        }
+    }
+
+    impl Arbitrary for vector_ops::VectorOperations {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            let update = Self::UpdateVectors(UpdateVectorsOp { points: Vec::new() });
+
+            let delete = Self::DeleteVectors(
+                PointIdsList {
+                    points: Vec::new(),
+                    shard_key: None,
+                },
+                Vec::new(),
+            );
+
+            let delete_by_filter = Self::DeleteVectorsByFilter(
+                Filter {
+                    should: None,
+                    min_should: None,
+                    must: None,
+                    must_not: None,
+                },
+                Vec::new(),
+            );
+
+            prop_oneof![Just(update), Just(delete), Just(delete_by_filter),].boxed()
+        }
+    }
+
+    impl Arbitrary for payload_ops::PayloadOps {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            let set = Self::SetPayload(SetPayloadOp {
+                payload: Payload(Default::default()),
+                points: None,
+                filter: None,
+                key: None,
+            });
+
+            let overwrite = Self::OverwritePayload(SetPayloadOp {
+                payload: Payload(Default::default()),
+                points: None,
+                filter: None,
+                key: None,
+            });
+
+            let delete = Self::DeletePayload(DeletePayloadOp {
+                keys: Vec::new(),
+                points: None,
+                filter: None,
+            });
+
+            let clear = Self::ClearPayload { points: Vec::new() };
+
+            let clear_by_filter = Self::ClearPayloadByFilter(Filter {
+                should: None,
+                min_should: None,
+                must: None,
+                must_not: None,
+            });
+
+            prop_oneof![
+                Just(set),
+                Just(overwrite),
+                Just(delete),
+                Just(clear),
+                Just(clear_by_filter),
+            ]
+            .boxed()
+        }
+    }
+
+    impl Arbitrary for FieldIndexOperations {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
+            let create = Self::CreateIndex(CreateIndex {
+                field_name: String::new(),
+                field_schema: None,
+            });
+
+            let delete = Self::DeleteIndex(String::new());
+
+            prop_oneof![Just(create), Just(delete),].boxed()
+        }
     }
 }

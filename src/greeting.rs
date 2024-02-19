@@ -1,16 +1,34 @@
+use std::cmp::min;
 use std::env;
 use std::io::{stdout, IsTerminal};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
+use api::grpc::models::get_git_commit_id;
 use colored::{Color, ColoredString, Colorize};
 
 use crate::settings::Settings;
 
-fn paint(text: &str, true_color: bool) -> ColoredString {
+fn paint_red(text: &str, true_color: bool) -> ColoredString {
     if true_color {
         text.bold().truecolor(184, 20, 56)
     } else {
         text.bold().color(Color::Red)
+    }
+}
+
+fn paint_green(text: &str, true_color: bool) -> ColoredString {
+    if true_color {
+        text.truecolor(134, 186, 144)
+    } else {
+        text.color(Color::Green)
+    }
+}
+
+fn paint_blue(text: &str, true_color: bool) -> ColoredString {
+    if true_color {
+        text.bold().truecolor(82, 139, 183)
+    } else {
+        text.bold().color(Color::Blue)
     }
 }
 
@@ -58,13 +76,31 @@ pub fn welcome(settings: &Settings) {
         Err(_) => true_color = false,
     }
 
-    println!("{}", paint(r#"           _                 _    "#, true_color));
-    println!("{}", paint(r#"  __ _  __| |_ __ __ _ _ __ | |_  "#, true_color));
-    println!("{}", paint(r#" / _` |/ _` | '__/ _` | '_ \| __| "#, true_color));
-    println!("{}", paint(r#"| (_| | (_| | | | (_| | | | | |_  "#, true_color));
-    println!("{}", paint(r#" \__, |\__,_|_|  \__,_|_| |_|\__| "#, true_color));
-    println!("{}", paint(r#"    |_|                           "#, true_color));
+    println!("{}", paint_red(r#"           _                 _    "#, true_color));
+    println!("{}", paint_red(r#"  __ _  __| |_ __ __ _ _ __ | |_  "#, true_color));
+    println!("{}", paint_red(r#" / _` |/ _` | '__/ _` | '_ \| __| "#, true_color));
+    println!("{}", paint_red(r#"| (_| | (_| | | | (_| | | | | |_  "#, true_color));
+    println!("{}", paint_red(r#" \__, |\__,_|_|  \__,_|_| |_|\__| "#, true_color));
+    println!("{}", paint_red(r#"    |_|                           "#, true_color));
     println!();
+
+    // Print current version and, if available, first 8 characters of the git commit hash
+    let git_commit_info = get_git_commit_id()
+        .map(|git_commit| format!(
+            ", {} {}",
+            paint_green("build:", true_color),
+            paint_blue(&git_commit[..min(8, git_commit.len())], true_color),
+        ))
+        .unwrap_or_default();
+
+    println!(
+        "{} {}{}",
+        paint_green("Version:", true_color),
+        paint_blue(env!("CARGO_PKG_VERSION"), true_color),
+        git_commit_info
+    );
+
+    // Print link to web UI
     let ui_link = format!(
         "http{}://{}:{}/dashboard",
         if settings.service.enable_tls { "s" } else { "" },
@@ -76,9 +112,11 @@ pub fn welcome(settings: &Settings) {
         settings.service.http_port
     );
 
-    println!("{} {}",
-             "Access web UI at".truecolor(134, 186, 144),
-             ui_link.bold().underline().truecolor(82, 139, 183));
+    println!(
+        "{} {}",
+        paint_green("Access web UI at", true_color),
+        paint_blue(&ui_link, true_color).underline()
+    );
     println!();
 }
 

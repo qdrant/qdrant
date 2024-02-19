@@ -13,6 +13,7 @@ use collection::operations::CollectionUpdateOperations;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::local_shard::LocalShard;
 use collection::shards::shard_trait::ShardOperation;
+use common::cpu::CpuBudget;
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::thread_rng;
 use segment::data_types::vectors::only_default_vector;
@@ -80,7 +81,7 @@ fn batch_search_bench(c: &mut Criterion) {
             memmap_threshold: Some(100_000),
             indexing_threshold: Some(50_000),
             flush_interval_sec: 30,
-            max_optimization_threads: 2,
+            max_optimization_threads: Some(2),
         },
         wal_config,
         hnsw_config: Default::default(),
@@ -97,12 +98,15 @@ fn batch_search_bench(c: &mut Criterion) {
             shared_config,
             Default::default(),
             handle.clone(),
+            CpuBudget::default(),
         ))
         .unwrap();
 
     let rnd_batch = create_rnd_batch();
 
-    handle.block_on(shard.update(rnd_batch, true)).unwrap();
+    handle
+        .block_on(shard.update(rnd_batch.into(), true))
+        .unwrap();
 
     let mut group = c.benchmark_group("batch-search-bench");
 

@@ -8,12 +8,14 @@ use std::rc::Rc;
 use std::str::FromStr;
 
 use common::types::ScoreType;
+use fnv::FnvBuildHasher;
 use geo::prelude::HaversineDistance;
 use geo::{Contains, Coord, LineString, Point, Polygon};
+use indexmap::IndexSet;
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
 use smol_str::SmolStr;
 use uuid::Uuid;
@@ -42,6 +44,42 @@ pub type TagType = u64;
 pub type FloatPayloadType = f64;
 /// Type of integer point payload
 pub type IntPayloadType = i64;
+/// Type of datetime point payload
+pub type DateTimePayloadType = DateTimeWrapper;
+
+/// Wraps `DateTime<Utc>` to allow more flexible deserialization
+#[derive(Clone, Copy, Serialize, JsonSchema, Debug, PartialEq, PartialOrd)]
+#[serde(transparent)]
+pub struct DateTimeWrapper(pub chrono::DateTime<chrono::Utc>);
+
+impl DateTimeWrapper {
+    /// Qdrant's representation of datetime as timestamp is an i64 of microseconds
+    pub fn timestamp(&self) -> i64 {
+        self.0.timestamp_micros()
+    }
+}
+
+impl<'de> Deserialize<'de> for DateTimeWrapper {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let str_datetime = <&str>::deserialize(deserializer)?;
+        let parse_result = DateTimePayloadType::from_str(str_datetime).ok();
+        match parse_result {
+            Some(datetime) => Ok(datetime),
+            None => Err(serde::de::Error::custom(format!(
+                "'{str_datetime}' is not in a supported date/time format, please use RFC 3339"
+            ))),
+        }
+    }
+}
+
+impl From<chrono::DateTime<chrono::Utc>> for DateTimeWrapper {
+    fn from(dt: chrono::DateTime<chrono::Utc>) -> Self {
+        DateTimeWrapper(dt)
+    }
+}
 
 pub const VECTOR_ELEMENT_SIZE: usize = size_of::<VectorElementType>();
 
@@ -385,7 +423,10 @@ pub struct HnswConfig {
     /// Note: 1Kb = 1 vector of size 256
     #[serde(alias = "full_scan_threshold_kb")]
     pub full_scan_threshold: usize,
-    /// Number of parallel threads used for background index building. If 0 - auto selection.
+    /// Number of parallel threads used for background index building.
+    /// If 0 - automatically select from 8 to 16.
+    /// Best to keep between 8 and 16 to prevent likelihood of slow building or broken/inefficient HNSW graphs.
+    /// On small CPUs, less threads are used.
     #[serde(default = "default_max_indexing_threads")]
     pub max_indexing_threads: usize,
     /// Store HNSW index on disk. If set to false, index will be stored in RAM. Default: false
@@ -794,7 +835,7 @@ pub struct SegmentState {
 }
 
 /// Geo point payload schema
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Default)]
 #[serde(try_from = "GeoPointShadow")]
 pub struct GeoPoint {
     pub lon: f64,
@@ -880,12 +921,12 @@ pub struct Payload(pub Map<String, Value>);
 
 impl Payload {
     pub fn merge(&mut self, value: &Payload) {
-        for (key, value) in &value.0 {
-            match value {
-                Value::Null => self.0.remove(key),
-                _ => self.0.insert(key.to_owned(), value.to_owned()),
-            };
-        }
+        utils::merge_map(&mut self.0, &value.0)
+    }
+
+    pub fn merge_by_key(&mut self, value: &Payload, key: &str) -> OperationResult<()> {
+        utils::set_value_to_json_map(key, &mut self.0, &value.0);
+        Ok(())
     }
 
     pub fn remove(&mut self, path: &str) -> Vec<Value> {
@@ -1065,6 +1106,7 @@ pub enum PayloadSchemaType {
     Geo,
     Text,
     Bool,
+    Datetime,
 }
 
 /// Payload type with parameters
@@ -1080,6 +1122,27 @@ pub enum PayloadSchemaParams {
 pub enum PayloadFieldSchema {
     FieldType(PayloadSchemaType),
     FieldParams(PayloadSchemaParams),
+}
+
+impl PayloadFieldSchema {
+    pub fn has_range_index(&self) -> bool {
+        match self {
+            PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)
+            | PayloadFieldSchema::FieldType(PayloadSchemaType::Datetime)
+            | PayloadFieldSchema::FieldType(PayloadSchemaType::Float) => true,
+
+            PayloadFieldSchema::FieldType(PayloadSchemaType::Bool)
+            | PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)
+            | PayloadFieldSchema::FieldType(PayloadSchemaType::Text)
+            | PayloadFieldSchema::FieldType(PayloadSchemaType::Geo)
+            | PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(_)) => false,
+
+            PayloadFieldSchema::FieldParams(PayloadSchemaParams::Integer(IntegerIndexParams {
+                range,
+                ..
+            })) => *range,
+        }
+    }
 }
 
 impl From<PayloadSchemaType> for PayloadFieldSchema {
@@ -1161,8 +1224,8 @@ pub enum ValueVariants {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum AnyVariants {
-    Keywords(Vec<String>),
-    Integers(Vec<IntPayloadType>),
+    Keywords(IndexSet<String, FnvBuildHasher>),
+    Integers(IndexSet<IntPayloadType, FnvBuildHasher>),
 }
 
 /// Exact match of the given value
@@ -1224,8 +1287,7 @@ impl Match {
         Self::Value(MatchValue { value })
     }
 
-    #[cfg(test)]
-    fn new_text(text: &str) -> Self {
+    pub fn new_text(text: &str) -> Self {
         Self::Text(MatchText { text: text.into() })
     }
 
@@ -1291,6 +1353,7 @@ impl From<IntPayloadType> for Match {
 
 impl From<Vec<String>> for Match {
     fn from(keywords: Vec<String>) -> Self {
+        let keywords: IndexSet<String, FnvBuildHasher> = keywords.into_iter().collect();
         Self::Any(MatchAny {
             any: AnyVariants::Keywords(keywords),
         })
@@ -1299,6 +1362,7 @@ impl From<Vec<String>> for Match {
 
 impl From<Vec<String>> for MatchExcept {
     fn from(keywords: Vec<String>) -> Self {
+        let keywords: IndexSet<String, FnvBuildHasher> = keywords.into_iter().collect();
         MatchExcept {
             except: AnyVariants::Keywords(keywords),
         }
@@ -1307,6 +1371,7 @@ impl From<Vec<String>> for MatchExcept {
 
 impl From<Vec<IntPayloadType>> for Match {
     fn from(integers: Vec<IntPayloadType>) -> Self {
+        let integers: IndexSet<_, FnvBuildHasher> = integers.into_iter().collect();
         Self::Any(MatchAny {
             any: AnyVariants::Integers(integers),
         })
@@ -1315,28 +1380,77 @@ impl From<Vec<IntPayloadType>> for Match {
 
 impl From<Vec<IntPayloadType>> for MatchExcept {
     fn from(integers: Vec<IntPayloadType>) -> Self {
+        let integers: IndexSet<_, FnvBuildHasher> = integers.into_iter().collect();
         MatchExcept {
             except: AnyVariants::Integers(integers),
         }
     }
 }
 
-/// Range filter request
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Default, Clone, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub struct Range {
-    /// point.key < range.lt
-    pub lt: Option<FloatPayloadType>,
-    /// point.key > range.gt
-    pub gt: Option<FloatPayloadType>,
-    /// point.key >= range.gte
-    pub gte: Option<FloatPayloadType>,
-    /// point.key <= range.lte
-    pub lte: Option<FloatPayloadType>,
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[serde(untagged)]
+pub enum RangeInterface {
+    Float(Range<FloatPayloadType>),
+    DateTime(Range<DateTimePayloadType>),
 }
 
-impl Range {
-    pub fn check_range(&self, number: FloatPayloadType) -> bool {
+/// Range filter request
+#[macro_rules_attribute::macro_rules_derive(crate::common::macros::schemars_rename_generics)]
+#[derive_args(< FloatPayloadType > => "Range", < DateTimePayloadType > => "DatetimeRange")]
+#[derive(Debug, Deserialize, Serialize, Default, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub struct Range<T> {
+    /// point.key < range.lt
+    pub lt: Option<T>,
+    /// point.key > range.gt
+    pub gt: Option<T>,
+    /// point.key >= range.gte
+    pub gte: Option<T>,
+    /// point.key <= range.lte
+    pub lte: Option<T>,
+}
+impl FromStr for DateTimePayloadType {
+    type Err = chrono::ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // Attempt to parse the input string in RFC 3339 format
+        if let Ok(datetime) = chrono::DateTime::parse_from_rfc3339(s)
+            .map(|dt| chrono::DateTime::<chrono::Utc>::from(dt).into())
+        {
+            return Ok(datetime);
+        }
+
+        // Attempt to parse the input string in the specified formats:
+        // - YYYY-MM-DD'T'HH:MM:SS (without timezone or Z)
+        // - YYYY-MM-DD HH:MM:SS
+        // - YYYY-MM-DD HH:MM
+        // - YYYY-MM-DD
+        // See: <https://github.com/qdrant/qdrant/issues/3529>
+        let datetime = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f")
+            .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f"))
+            .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M"))
+            .or_else(|_| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").map(Into::into))?;
+
+        // Convert the parsed NaiveDateTime to a DateTime<Utc>
+        let datetime_utc = datetime.and_utc().into();
+        Ok(datetime_utc)
+    }
+}
+
+impl<T: Copy> Range<T> {
+    /// Convert range to a range of another type
+    pub fn map<U, F: Fn(T) -> U>(&self, f: F) -> Range<U> {
+        Range {
+            lt: self.lt.map(&f),
+            gt: self.gt.map(&f),
+            gte: self.gte.map(&f),
+            lte: self.lte.map(&f),
+        }
+    }
+}
+
+impl<T: Copy + PartialOrd> Range<T> {
+    pub fn check_range(&self, number: T) -> bool {
         self.lt.map_or(true, |x| number < x)
             && self.gt.map_or(true, |x| number > x)
             && self.lte.map_or(true, |x| number <= x)
@@ -1462,7 +1576,7 @@ impl GeoPolygon {
                 || (first.lon - last.lon).abs() > f64::EPSILON
             {
                 return Err(OperationError::ValidationError {
-                    description: String::from("polygon invalid, the first and the last points should be the same to form a closed line") 
+                    description: String::from("polygon invalid, the first and the last points should be the same to form a closed line")
                 });
             }
         }
@@ -1543,7 +1657,7 @@ pub struct FieldCondition {
     /// Check if point has field with a given value
     pub r#match: Option<Match>,
     /// Check if points value lies in a given range
-    pub range: Option<Range>,
+    pub range: Option<RangeInterface>,
     /// Check if points geo location lies in a given area
     pub geo_bounding_box: Option<GeoBoundingBox>,
     /// Check if geo point is within a given radius
@@ -1567,11 +1681,26 @@ impl FieldCondition {
         }
     }
 
-    pub fn new_range(key: impl Into<PayloadKeyType>, range: Range) -> Self {
+    pub fn new_range(key: impl Into<PayloadKeyType>, range: Range<FloatPayloadType>) -> Self {
         Self {
             key: key.into(),
             r#match: None,
-            range: Some(range),
+            range: Some(RangeInterface::Float(range)),
+            geo_bounding_box: None,
+            geo_radius: None,
+            geo_polygon: None,
+            values_count: None,
+        }
+    }
+
+    pub fn new_datetime_range(
+        key: impl Into<PayloadKeyType>,
+        datetime_range: Range<DateTimePayloadType>,
+    ) -> Self {
+        Self {
+            key: key.into(),
+            r#match: None,
+            range: Some(RangeInterface::DateTime(datetime_range)),
             geo_bounding_box: None,
             geo_radius: None,
             geo_polygon: None,
@@ -1631,12 +1760,18 @@ impl FieldCondition {
     }
 
     pub fn all_fields_none(&self) -> bool {
-        self.r#match.is_none()
-            && self.range.is_none()
-            && self.geo_bounding_box.is_none()
-            && self.geo_radius.is_none()
-            && self.geo_polygon.is_none()
-            && self.values_count.is_none()
+        matches!(
+            self,
+            FieldCondition {
+                r#match: None,
+                range: None,
+                geo_bounding_box: None,
+                geo_radius: None,
+                geo_polygon: None,
+                values_count: None,
+                key: _,
+            }
+        )
     }
 }
 
@@ -1809,7 +1944,7 @@ pub enum WithVector {
 }
 
 impl WithVector {
-    pub fn is_some(&self) -> bool {
+    pub fn is_enabled(&self) -> bool {
         match self {
             WithVector::Bool(b) => *b,
             WithVector::Selector(_) => true,
@@ -1958,11 +2093,30 @@ pub struct WithPayload {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default)]
+#[serde(rename_all = "snake_case")]
+pub struct MinShould {
+    pub conditions: Vec<Condition>,
+    pub min_count: usize,
+}
+
+impl MinShould {
+    pub fn new_min_should(condition: Condition, min_count: usize) -> Self {
+        MinShould {
+            conditions: vec![condition],
+            min_count,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default)]
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub struct Filter {
     /// At least one of those conditions should match
     #[validate]
     pub should: Option<Vec<Condition>>,
+    /// At least minimum amount of given conditions should match
+    #[validate]
+    pub min_should: Option<MinShould>,
     /// All conditions must match
     #[validate]
     pub must: Option<Vec<Condition>>,
@@ -1975,6 +2129,16 @@ impl Filter {
     pub fn new_should(condition: Condition) -> Self {
         Filter {
             should: Some(vec![condition]),
+            min_should: None,
+            must: None,
+            must_not: None,
+        }
+    }
+
+    pub fn new_min_should(min_should: MinShould) -> Self {
+        Filter {
+            should: None,
+            min_should: Some(min_should),
             must: None,
             must_not: None,
         }
@@ -1983,6 +2147,7 @@ impl Filter {
     pub fn new_must(condition: Condition) -> Self {
         Filter {
             should: None,
+            min_should: None,
             must: Some(vec![condition]),
             must_not: None,
         }
@@ -1991,6 +2156,7 @@ impl Filter {
     pub fn new_must_not(condition: Condition) -> Self {
         Filter {
             should: None,
+            min_should: None,
             must: None,
             must_not: Some(vec![condition]),
         }
@@ -2010,6 +2176,21 @@ impl Filter {
         };
         Filter {
             should: merge_component(self.should.clone(), other.should.clone()),
+            min_should: {
+                match (self.min_should.clone(), other.min_should.clone()) {
+                    (None, None) => None,
+                    (Some(this), None) => Some(this),
+                    (None, Some(other)) => Some(other),
+                    (Some(mut this), Some(other)) => {
+                        this.conditions.extend(other.conditions);
+
+                        // The union of conditions should be able to have at least the bigger of the two min_counts
+                        this.min_count = this.min_count.max(other.min_count);
+
+                        Some(this)
+                    }
+                }
+            },
             must: merge_component(self.must.clone(), other.must.clone()),
             must_not: merge_component(self.must_not.clone(), other.must_not.clone()),
         }
@@ -2066,6 +2247,7 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
     use serde::de::DeserializeOwned;
     use serde_json;
     use serde_json::json;
@@ -2092,6 +2274,31 @@ mod tests {
         let de_record: Payload = serde_cbor::from_slice(&raw).unwrap();
         eprintln!("payload = {payload:#?}");
         eprintln!("de_record = {de_record:#?}");
+    }
+
+    #[rstest]
+    #[case::rfc_3339("2020-03-01T00:00:00Z")]
+    #[case::rfc_3339_and_decimals("2020-03-01T00:00:00.123456Z")]
+    #[case::without_z("2020-03-01T00:00:00")]
+    #[case::without_z_and_decimals("2020-03-01T00:00:00.123456")]
+    #[case::space_sep_without_z("2020-03-01 00:00:00")]
+    #[case::space_sep_without_z_and_decimals("2020-03-01 00:00:00.123456")]
+    fn test_datetime_deserialization(#[case] datetime: &str) {
+        let datetime = DateTimePayloadType::from_str(datetime).unwrap();
+        let serialized = serde_json::to_string(&datetime).unwrap();
+        let deserialized: DateTimePayloadType = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(datetime, deserialized);
+    }
+
+    #[test]
+    fn test_datetime_deserialization_equivalency() {
+        let datetime_str = "2020-03-01T01:02:03.123456Z";
+        let datetime_str_no_z = "2020-03-01T01:02:03.123456";
+        let datetime = DateTimePayloadType::from_str(datetime_str).unwrap();
+        let datetime_no_z = DateTimePayloadType::from_str(datetime_str_no_z).unwrap();
+
+        // Having or not the Z at the end of the string both mean UTC time
+        assert_eq!(datetime.timestamp(), datetime_no_z.timestamp());
     }
 
     #[test]
@@ -2208,6 +2415,7 @@ mod tests {
             ))]),
             must_not: None,
             should: None,
+            min_should: None,
         };
         let json = serde_json::to_string_pretty(&filter).unwrap();
         eprintln!("{json}")
@@ -2307,7 +2515,12 @@ mod tests {
         };
         if let AnyVariants::Keywords(kws) = &m.any {
             assert_eq!(kws.len(), 3);
-            assert_eq!(kws.to_owned(), vec!["Bourne", "Momoa", "Statham"]);
+            let expect: IndexSet<_, FnvBuildHasher> = IndexSet::from_iter(
+                ["Bourne", "Momoa", "Statham"]
+                    .into_iter()
+                    .map(|i| i.to_string()),
+            );
+            assert_eq!(kws, &expect);
         } else {
             panic!("AnyVariants::Keywords expected");
         }
@@ -2569,6 +2782,79 @@ mod tests {
         let filter: Filter = serde_json::from_str(query1).unwrap();
         let must = filter.must.unwrap();
         assert_eq!(must.len(), 2);
+    }
+
+    #[test]
+    fn test_min_should_query_parse() {
+        let query1 = r#"
+        {
+            "min_should": {
+                "conditions": [
+                    {
+                        "key": "hello.nested.world",
+                        "match": {
+                            "value": 42
+                        }
+                    },
+                    {
+                        "key": "foo.nested.bar",
+                        "match": {
+                            "value": 1
+                        }
+                    }
+                ],
+                "min_count": 2
+            }
+        }
+        "#;
+
+        let filter: Filter = serde_json::from_str(query1).unwrap();
+        let min_should = filter.min_should.unwrap();
+        assert_eq!(min_should.conditions.len(), 2);
+    }
+
+    #[test]
+    fn test_min_should_nested_parse() {
+        let query1 = r#"
+        {
+            "must": [
+                {
+                    "min_should": {
+                        "conditions": [
+                            {
+                                "key": "hello.nested.world",
+                                "match": {
+                                    "value": 42
+                                }
+                            },
+                            {
+                                "key": "foo.nested.bar",
+                                "match": {
+                                    "value": 1
+                                }
+                            }
+                        ],
+                        "min_count": 2
+                    }
+                }
+            ]
+        }
+        "#;
+
+        let filter: Filter = serde_json::from_str(query1).unwrap();
+        let must = filter.must.unwrap();
+        assert_eq!(must.len(), 1);
+
+        match must.first() {
+            Some(Condition::Filter(f)) => {
+                let min_should = &f.min_should;
+                match min_should {
+                    Some(v) => assert_eq!(v.conditions.len(), 2),
+                    None => panic!("Filter expected"),
+                }
+            }
+            _ => panic!("Condition expected"),
+        }
     }
 
     #[test]

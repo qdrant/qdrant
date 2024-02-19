@@ -43,7 +43,7 @@ enum TestRecord {
     Struct2(TestInternalStruct2),
 }
 
-type Result<T> = result::Result<T, WalError>;
+pub(super) type Result<T> = result::Result<T, WalError>;
 
 #[derive(Debug, Deserialize, Serialize)]
 struct WalState {
@@ -66,6 +66,7 @@ pub struct SerdeWal<R> {
     record: PhantomData<R>,
     wal: Wal,
     options: WalOptions,
+    /// First index of our logical WAL.
     first_index: Option<u64>,
 }
 
@@ -114,13 +115,17 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.len(false) == 0
     }
 
-    pub fn len(&self) -> u64 {
-        self.wal
-            .num_entries()
-            .saturating_sub(self.truncated_prefix_entries_num())
+    pub fn len(&self, with_acknowledged: bool) -> u64 {
+        if with_acknowledged {
+            self.wal.num_entries()
+        } else {
+            self.wal
+                .num_entries()
+                .saturating_sub(self.truncated_prefix_entries_num())
+        }
     }
 
     // WAL operates in *segments*, so when `Wal::prefix_truncate` is called (during `SerdeWal::ack`),
@@ -145,9 +150,34 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
 
     pub fn read(&'s self, start_from: u64) -> impl Iterator<Item = (u64, R)> + 's {
         let first_index = self.first_index();
-        let len = self.len();
+        let len = self.len(false);
 
         (start_from..(first_index + len)).map(move |idx| {
+            let record_bin = self.wal.entry(idx).expect("Can't read entry from WAL");
+            let record: R = serde_cbor::from_slice(&record_bin)
+                .or_else(|_err| rmp_serde::from_slice(&record_bin))
+                .expect("Can't deserialize entry, probably corrupted WAL on version mismatch");
+            (idx, record)
+        })
+    }
+
+    /// Read all records from newest to oldest
+    ///
+    /// Normally this only iterates over our logical WAL, meaning all acknowledged records are
+    /// excluded. If `with_acknowledged` is set to `true`, it will also iterate over all acknowledged
+    /// records we still have in closed segments on disk.
+    pub fn read_from_last(
+        &'s self,
+        with_acknowledged: bool,
+    ) -> impl Iterator<Item = (u64, R)> + 's {
+        let first_index = if with_acknowledged {
+            self.first_closed_index()
+        } else {
+            self.first_index()
+        };
+        let len = self.len(with_acknowledged);
+
+        (first_index..(first_index + len)).rev().map(move |idx| {
             let record_bin = self.wal.entry(idx).expect("Can't read entry from WAL");
             let record: R = serde_cbor::from_slice(&record_bin)
                 .or_else(|_err| rmp_serde::from_slice(&record_bin))
@@ -162,8 +192,7 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
     /// # Arguments
     ///
     /// * `until_index` - the newest no longer required record sequence number
-    ///
-    pub fn ack(&mut self, until_index: u64) -> Result<()> {
+    pub(super) fn ack(&mut self, until_index: u64) -> Result<()> {
         // Truncate WAL
         self.wal
             .prefix_truncate(until_index)
@@ -176,6 +205,7 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
                 .max(minimal_first_index)
                 .min(self.wal.last_index()),
         );
+
         // Update current `first_index`
         if self.first_index != new_first_index {
             self.first_index = new_first_index;
@@ -217,10 +247,21 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
         self.wal.path()
     }
 
-    pub fn first_index(&self) -> u64 {
-        self.first_index.unwrap_or_else(|| self.wal.first_index())
+    /// First index that we still have in the first closed segment.
+    ///
+    /// If the index is lower than `first_index`, it means we have already acknowledged it but we
+    /// are still holding it in a closed segment until it gets truncated.
+    pub fn first_closed_index(&self) -> u64 {
+        self.wal.first_index()
     }
 
+    /// First index that is in our logical WAL, right after the last acknowledged operation.
+    pub fn first_index(&self) -> u64 {
+        self.first_index
+            .unwrap_or_else(|| self.first_closed_index())
+    }
+
+    /// Last index that is still available in logical WAL.
     pub fn last_index(&self) -> u64 {
         self.wal.last_index()
     }

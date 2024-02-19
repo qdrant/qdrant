@@ -5,8 +5,10 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::cpu::CpuPermit;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use itertools::Itertools;
+use sparse::common::scores_memory_pool::ScoresMemoryPool;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::inverted_index::InvertedIndex;
@@ -40,6 +42,7 @@ pub struct SparseVectorIndex<TInvertedIndex: InvertedIndex> {
     searches_telemetry: SparseSearchesTelemetry,
     is_appendable: bool,
     pub indices_tracker: IndicesTracker,
+    scores_memory_pool: ScoresMemoryPool,
 }
 
 impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
@@ -50,6 +53,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
         payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
         path: &Path,
+        stopped: &AtomicBool,
     ) -> OperationResult<Self> {
         // create directory if it does not exist
         create_dir_all(path)?;
@@ -62,7 +66,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                 id_tracker.clone(),
                 vector_storage.clone(),
                 path,
-                &AtomicBool::new(false),
+                stopped,
             )?;
             (config, inverted_index, indices_tracker)
         } else if config_path.exists() {
@@ -81,6 +85,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
 
         let searches_telemetry = SparseSearchesTelemetry::new();
         let path = path.to_path_buf();
+        let scores_memory_pool = ScoresMemoryPool::new();
         Ok(Self {
             config,
             id_tracker,
@@ -91,6 +96,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             searches_telemetry,
             is_appendable,
             indices_tracker,
+            scores_memory_pool,
         })
     }
 
@@ -236,8 +242,14 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         .collect_vec();
 
         let sparse_vector = self.indices_tracker.remap_vector(sparse_vector.to_owned());
-        let mut search_context =
-            SearchContext::new(sparse_vector, top, &self.inverted_index, is_stopped);
+        let memory_handle = self.scores_memory_pool.get();
+        let mut search_context = SearchContext::new(
+            sparse_vector,
+            top,
+            &self.inverted_index,
+            memory_handle,
+            is_stopped,
+        );
         Ok(search_context.plain_search(&ids))
     }
 
@@ -258,8 +270,14 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             check_deleted_condition(idx, deleted_vectors, deleted_point_bitslice)
         };
         let sparse_vector = self.indices_tracker.remap_vector(sparse_vector.to_owned());
-        let mut search_context =
-            SearchContext::new(sparse_vector, top, &self.inverted_index, is_stopped);
+        let memory_handle = self.scores_memory_pool.get();
+        let mut search_context = SearchContext::new(
+            sparse_vector,
+            top,
+            &self.inverted_index,
+            memory_handle,
+            is_stopped,
+        );
 
         match filter {
             Some(filter) => {
@@ -365,7 +383,11 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         Ok(results)
     }
 
-    fn build_index(&mut self, stopped: &AtomicBool) -> OperationResult<()> {
+    fn build_index(
+        &mut self,
+        _permit: Arc<CpuPermit>,
+        stopped: &AtomicBool,
+    ) -> OperationResult<()> {
         let (inverted_index, indices_tracker) = Self::build_inverted_index(
             self.id_tracker.clone(),
             self.vector_storage.clone(),

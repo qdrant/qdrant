@@ -9,6 +9,7 @@ use std::thread::{self, JoinHandle};
 use atomic_refcell::AtomicRefCell;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use io::file_operations::{atomic_save_json, read_json};
+use itertools::Either;
 use memory::mmap_ops;
 use parking_lot::{Mutex, RwLock};
 use rocksdb::DB;
@@ -25,13 +26,15 @@ use crate::common::{
     check_named_vectors, check_query_vectors, check_stopped, check_vector, check_vector_name,
 };
 use crate::data_types::named_vectors::NamedVectors;
+use crate::data_types::order_by::{Direction, OrderBy, OrderingValue};
 use crate::data_types::vectors::{QueryVector, Vector};
 use crate::entry::entry_point::SegmentEntry;
 use crate::id_tracker::IdTrackerSS;
+use crate::index::field_index::numeric_index::StreamRange;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndex, VectorIndexEnum};
-use crate::spaces::tools::peek_top_smallest_iterable;
+use crate::spaces::tools::{peek_top_largest_iterable, peek_top_smallest_iterable};
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef,
@@ -618,6 +621,62 @@ impl Segment {
             .collect()
     }
 
+    /// Estimates how many checks it would need for getting `limit` amount of points by streaming and then
+    /// filtering, versus getting all filtered points from the index and then sorting them afterwards.
+    ///
+    /// If the filter is restrictive enough to yield fewer points than the amount of points a streaming
+    /// approach would need to advance, it returns true.
+    fn should_pre_filter(&self, filter: &Filter, limit: Option<usize>) -> bool {
+        let query_cardinality = {
+            let payload_index = self.payload_index.borrow();
+            payload_index.estimate_cardinality(filter)
+        };
+
+        // ToDo: Add telemetry for this heuristics
+
+        // Calculate expected number of condition checks required for
+        // this scroll request with is stream strategy.
+        // Example:
+        //  - cardinality = 1000
+        //  - limit = 10
+        //  - total = 10000
+        //  - point filter prob = 1000 / 10000 = 0.1
+        //  - expected_checks = 10 / 0.1  = 100
+        //  -------------------------------
+        //  - cardinality = 10
+        //  - limit = 10
+        //  - total = 10000
+        //  - point filter prob = 10 / 10000 = 0.001
+        //  - expected_checks = 10 / 0.001  = 10000
+
+        let available_points = self.available_point_count() + 1 /* + 1 for division-by-zero */;
+        // Expected number of successful checks per point
+        let check_probability =
+            (query_cardinality.exp as f64 + 1.0/* protect from zero */) / available_points as f64;
+        let exp_stream_checks =
+            (limit.unwrap_or(available_points) as f64 / check_probability) as usize;
+
+        // Assume it would require about `query cardinality` checks.
+        // We are interested in approximate number of checks, so we can
+        // use `query cardinality` as a starting point.
+        let exp_index_checks = query_cardinality.max;
+
+        exp_stream_checks > exp_index_checks
+    }
+
+    fn read_by_id_stream(
+        &self,
+        offset: Option<PointIdType>,
+        limit: Option<usize>,
+    ) -> Vec<PointIdType> {
+        self.id_tracker
+            .borrow()
+            .iter_from(offset)
+            .map(|x| x.0)
+            .take(limit.unwrap_or(usize::MAX))
+            .collect()
+    }
+
     pub fn filtered_read_by_index(
         &self,
         offset: Option<PointIdType>,
@@ -645,8 +704,69 @@ impl Segment {
             Some(limit) => peek_top_smallest_iterable(ids_iterator, limit),
             None => ids_iterator.collect(),
         };
+
         page.sort_unstable();
+
         page
+    }
+
+    pub fn filtered_read_by_index_ordered(
+        &self,
+        order_by: &OrderBy,
+        limit: Option<usize>,
+        condition: &Filter,
+    ) -> OperationResult<Vec<(OrderingValue, PointIdType)>> {
+        let payload_index = self.payload_index.borrow();
+        let id_tracker = self.id_tracker.borrow();
+
+        let numeric_index = payload_index
+            .field_indexes
+            .get(&order_by.key)
+            .and_then(|indexes| indexes.iter().find_map(|index| index.as_numeric()))
+            .ok_or_else(|| OperationError::ValidationError { description: "There is no range index for the `order_by` key, please create one to use `order_by`".to_string() })?;
+
+        let start_from = order_by.start_from();
+
+        let values_ids_iterator = payload_index
+            .query_points(condition)
+            .into_iter()
+            .flat_map(|internal_id| {
+                // Repeat a point for as many values as it has
+                numeric_index
+                    .get_ordering_values(internal_id)
+                    // But only those which start from `start_from` 😛
+                    .filter(|value| match order_by.direction() {
+                        Direction::Asc => value >= &start_from,
+                        Direction::Desc => value <= &start_from,
+                    })
+                    .map(move |ordering_value| (ordering_value, internal_id))
+            })
+            .filter_map(|(value, internal_id)| {
+                id_tracker
+                    .external_id(internal_id)
+                    .map(|external_id| (value, external_id))
+            });
+
+        let page = match order_by.direction() {
+            Direction::Asc => {
+                let mut page = match limit {
+                    Some(limit) => peek_top_smallest_iterable(values_ids_iterator, limit),
+                    None => values_ids_iterator.collect(),
+                };
+                page.sort_unstable_by(|(value_a, _), (value_b, _)| value_a.cmp(value_b));
+                page
+            }
+            Direction::Desc => {
+                let mut page = match limit {
+                    Some(limit) => peek_top_largest_iterable(values_ids_iterator, limit),
+                    None => values_ids_iterator.collect(),
+                };
+                page.sort_unstable_by(|(value_a, _), (value_b, _)| value_b.cmp(value_a));
+                page
+            }
+        };
+
+        Ok(page)
     }
 
     pub fn filtered_read_by_id_stream(
@@ -664,6 +784,52 @@ impl Segment {
             .map(|(external_id, _)| external_id)
             .take(limit.unwrap_or(usize::MAX))
             .collect()
+    }
+
+    pub fn filtered_read_by_value_stream(
+        &self,
+        order_by: &OrderBy,
+        limit: Option<usize>,
+        filter: Option<&Filter>,
+    ) -> OperationResult<Vec<(OrderingValue, PointIdType)>> {
+        let payload_index = self.payload_index.borrow();
+
+        let numeric_index = payload_index
+            .field_indexes
+            .get(&order_by.key)
+            .and_then(|indexes| indexes.iter().find_map(|index| index.as_numeric()))
+            .ok_or_else(|| OperationError::ValidationError { description: "There is no range index for the `order_by` key, please create one to use `order_by`".to_string() })?;
+
+        let range_iter = numeric_index.stream_range(&order_by.as_range());
+
+        let directed_range_iter = match order_by.direction() {
+            Direction::Asc => Either::Left(range_iter),
+            Direction::Desc => Either::Right(range_iter.rev()),
+        };
+
+        let id_tracker = self.id_tracker.borrow();
+
+        let filtered_iter = match filter {
+            None => Either::Left(directed_range_iter),
+            Some(filter) => {
+                let filter_context = payload_index.filter_context(filter);
+
+                Either::Right(
+                    directed_range_iter
+                        .filter(move |(_, internal_id)| filter_context.check(*internal_id)),
+                )
+            }
+        };
+
+        let reads = filtered_iter
+            .filter_map(|(value, internal_id)| {
+                id_tracker
+                    .external_id(internal_id)
+                    .map(|external_id| (value, external_id))
+            })
+            .take(limit.unwrap_or(usize::MAX))
+            .collect();
+        Ok(reads)
     }
 
     /// Check consistency of the segment's data and repair it if possible.
@@ -936,6 +1102,7 @@ impl SegmentEntry for Segment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         payload: &Payload,
+        key: &Option<String>,
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         self.handle_version_and_failure(op_num, internal_id, |segment| match internal_id {
@@ -943,7 +1110,7 @@ impl SegmentEntry for Segment {
                 segment
                     .payload_index
                     .borrow_mut()
-                    .assign(internal_id, payload)?;
+                    .assign(internal_id, payload, key)?;
                 Ok((true, Some(internal_id)))
             }
             None => Err(OperationError::PointIdError {
@@ -1027,52 +1194,30 @@ impl SegmentEntry for Segment {
         filter: Option<&'a Filter>,
     ) -> Vec<PointIdType> {
         match filter {
-            None => self
-                .id_tracker
-                .borrow()
-                .iter_from(offset)
-                .map(|x| x.0)
-                .take(limit.unwrap_or(usize::MAX))
-                .collect(),
+            None => self.read_by_id_stream(offset, limit),
             Some(condition) => {
-                let query_cardinality = {
-                    let payload_index = self.payload_index.borrow();
-                    payload_index.estimate_cardinality(condition)
-                };
-
-                // ToDo: Add telemetry for this heuristics
-
-                // Calculate expected number of condition checks required for
-                // this scroll request with is stream strategy.
-                // Example:
-                //  - cardinality = 1000
-                //  - limit = 10
-                //  - total = 10000
-                //  - point filter prob = 1000 / 10000 = 0.1
-                //  - expected_checks = 10 / 0.1  = 100
-                //  -------------------------------
-                //  - cardinality = 10
-                //  - limit = 10
-                //  - total = 10000
-                //  - point filter prob = 10 / 10000 = 0.001
-                //  - expected_checks = 10 / 0.001  = 10000
-
-                let available_points = self.available_point_count() + 1 /* + 1 for division-by-zero */;
-                // Expected number of successful checks per point
-                let check_probability = (query_cardinality.exp as f64 + 1.0/* protect from zero */)
-                    / available_points as f64;
-                let exp_stream_checks =
-                    (limit.unwrap_or(available_points) as f64 / check_probability) as usize;
-
-                // Assume it would require about `query cardinality` checks.
-                // We are interested in approximate number of checks, so we can
-                // use `query cardinality` as a starting point.
-                let exp_index_checks = query_cardinality.max;
-
-                if exp_stream_checks > exp_index_checks {
+                if self.should_pre_filter(condition, limit) {
                     self.filtered_read_by_index(offset, limit, condition)
                 } else {
                     self.filtered_read_by_id_stream(offset, limit, condition)
+                }
+            }
+        }
+    }
+
+    fn read_ordered_filtered<'a>(
+        &'a self,
+        limit: Option<usize>,
+        filter: Option<&'a Filter>,
+        order_by: &'a OrderBy,
+    ) -> OperationResult<Vec<(OrderingValue, PointIdType)>> {
+        match filter {
+            None => self.filtered_read_by_value_stream(order_by, limit, None),
+            Some(filter) => {
+                if self.should_pre_filter(filter, limit) {
+                    self.filtered_read_by_index_ordered(order_by, limit, filter)
+                } else {
+                    self.filtered_read_by_value_stream(order_by, limit, Some(filter))
                 }
             }
         }
@@ -1830,9 +1975,12 @@ mod tests {
         // restore snapshot
         Segment::restore_snapshot(&archive, segment_id).unwrap();
 
-        let restored_segment = load_segment(&snapshot_dir.path().join(segment_id))
-            .unwrap()
-            .unwrap();
+        let restored_segment = load_segment(
+            &snapshot_dir.path().join(segment_id),
+            &AtomicBool::new(false),
+        )
+        .unwrap()
+        .unwrap();
 
         // validate restored snapshot is the same as original segment
         assert_eq!(segment.vector_dims(), restored_segment.vector_dims());

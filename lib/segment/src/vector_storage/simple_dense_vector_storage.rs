@@ -46,6 +46,7 @@ pub fn open_simple_vector_storage(
     database_column_name: &str,
     dim: usize,
     distance: Distance,
+    stopped: &AtomicBool,
 ) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
     let mut vectors = ChunkedVectors::new(dim);
     let (mut deleted, mut deleted_count) = (BitVec::new(), 0);
@@ -64,6 +65,8 @@ pub fn open_simple_vector_storage(
             deleted_count += 1;
         }
         vectors.insert(point_id, &stored_record.vector)?;
+
+        check_process_stopped(stopped)?;
     }
 
     debug!("Segment vectors: {}", vectors.len());

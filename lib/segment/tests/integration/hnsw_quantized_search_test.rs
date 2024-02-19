@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::cpu::CpuPermit;
 use common::types::{ScoreType, ScoredPointOffset};
 use rand::rngs::StdRng;
 use rand::SeedableRng;
@@ -12,6 +13,7 @@ use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_vector, STR_KEY};
 use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::hnsw::HNSWIndex;
+use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::{VectorIndex, VectorIndexEnum};
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
@@ -121,6 +123,9 @@ fn hnsw_quantized_search_test(
         payload_m: None,
     };
 
+    let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
+    let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
+
     let mut hnsw_index = HNSWIndex::<GraphLinksRam>::open(
         hnsw_dir.path(),
         segment.id_tracker.clone(),
@@ -135,7 +140,7 @@ fn hnsw_quantized_search_test(
     )
     .unwrap();
 
-    hnsw_index.build_index(&stopped).unwrap();
+    hnsw_index.build_index(permit, &stopped).unwrap();
 
     let query_vectors = (0..attempts)
         .map(|_| random_vector(&mut rnd, dim).into())
@@ -414,11 +419,14 @@ fn test_build_hnsw_using_quantization() {
         payload_m: None,
     });
 
+    let permit_cpu_count = num_rayon_threads(0);
+    let permit = CpuPermit::dummy(permit_cpu_count as u32);
+
     let mut builder = SegmentBuilder::new(dir.path(), temp_dir.path(), &config).unwrap();
 
     builder.update_from(&segment1, &stopped).unwrap();
 
-    let built_segment: Segment = builder.build(&stopped).unwrap();
+    let built_segment: Segment = builder.build(permit, &stopped).unwrap();
 
     // check if built segment has quantization and index
     assert!(built_segment.vector_data[DEFAULT_VECTOR_NAME]

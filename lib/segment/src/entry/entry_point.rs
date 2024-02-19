@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 
 use crate::common::operation_error::{OperationResult, SegmentFailedState};
 use crate::data_types::named_vectors::NamedVectors;
+use crate::data_types::order_by::{OrderBy, OrderingValue};
 use crate::data_types::vectors::{QueryVector, Vector};
 use crate::index::field_index::CardinalityEstimation;
 use crate::telemetry::SegmentTelemetry;
@@ -82,6 +83,7 @@ pub trait SegmentEntry {
         op_num: SeqNumberType,
         point_id: PointIdType,
         payload: &Payload,
+        key: &Option<String>,
     ) -> OperationResult<bool>;
 
     fn set_full_payload(
@@ -120,6 +122,17 @@ pub trait SegmentEntry {
         limit: Option<usize>,
         filter: Option<&'a Filter>,
     ) -> Vec<PointIdType>;
+
+    /// Return points which satisfies filtering condition ordered by the `order_by.key` field,
+    /// starting with `order_by.start_from` value including.
+    ///
+    /// Will fail if there is no index for the order_by key.
+    fn read_ordered_filtered<'a>(
+        &'a self,
+        limit: Option<usize>,
+        filter: Option<&'a Filter>,
+        order_by: &'a OrderBy,
+    ) -> OperationResult<Vec<(OrderingValue, PointIdType)>>;
 
     /// Read points in [from; to) range
     fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType>;

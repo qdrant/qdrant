@@ -15,9 +15,11 @@ pub fn create_and_ensure_length(path: &Path, length: usize) -> io::Result<()> {
         .read(true)
         .write(true)
         .create(true)
+        // Don't truncate because we explicitly set the length later
+        .truncate(false)
         .open(path)?;
-
     file.set_len(length as u64)?;
+
     Ok(())
 }
 
@@ -27,6 +29,7 @@ pub fn open_read_mmap(path: &Path) -> io::Result<Mmap> {
         .write(false)
         .append(true)
         .create(true)
+        .truncate(false)
         .open(path)?;
 
     let mmap = unsafe { Mmap::map(&file)? };

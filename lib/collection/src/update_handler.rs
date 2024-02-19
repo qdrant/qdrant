@@ -1,18 +1,21 @@
 use std::cmp::min;
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
+use common::cpu::CpuBudget;
 use common::panic;
 use itertools::Itertools;
 use log::{debug, error, info, trace, warn};
 use parking_lot::Mutex;
 use segment::common::operation_error::OperationResult;
+use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::SeqNumberType;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::sync::{oneshot, Mutex as TokioMutex};
-use tokio::task::JoinHandle;
+use tokio::task::{self, JoinHandle};
 use tokio::time::error::Elapsed;
 use tokio::time::{timeout, Duration};
 
@@ -24,8 +27,9 @@ use crate::common::stoppable_task::{spawn_stoppable, StoppableTaskHandle};
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
-use crate::shards::local_shard::LockedWal;
+use crate::shards::local_shard::clock_map::ClockMap;
 use crate::wal::WalError;
+use crate::wal_delta::LockedWal;
 
 /// Interval at which the optimizer worker cleans up old optimization handles
 ///
@@ -78,6 +82,9 @@ pub struct UpdateHandler {
     pub optimizers: Arc<Vec<Arc<Optimizer>>>,
     /// Log of optimizer statuses
     optimizers_log: Arc<Mutex<TrackerLog>>,
+    /// Global CPU budget in number of cores for all optimization tasks.
+    /// Assigns CPU permits to tasks to limit overall resource utilization.
+    optimizer_cpu_budget: CpuBudget,
     /// How frequent can we flush data
     pub flush_interval_sec: u64,
     segments: LockedSegmentHolder,
@@ -92,13 +99,19 @@ pub struct UpdateHandler {
     runtime_handle: Handle,
     /// WAL, required for operations
     wal: LockedWal,
-    /// Maximum version to acknowledge to WAL to prevent truncating too early
-    /// This is used when another part still relies on part of the WAL, such as the queue proxy
-    /// shard.
+    /// Always keep this WAL version and later and prevent acknowledging/truncating from the WAL.
+    /// This is used when other bits of code still depend on information in the WAL, such as the
+    /// queue proxy shard.
     /// Defaults to `u64::MAX` to allow acknowledging all confirmed versions.
-    pub(super) max_ack_version: Arc<AtomicU64>,
+    pub(super) wal_keep_from: Arc<AtomicU64>,
     optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
-    max_optimization_threads: usize,
+    /// Maximum number of concurrent optimization jobs in this update handler.
+    max_optimization_threads: Option<usize>,
+
+    highest_clock_map: Arc<TokioMutex<ClockMap>>,
+    cutoff_clock_map: Arc<TokioMutex<ClockMap>>,
+    highest_clock_map_path: PathBuf,
+    cutoff_clock_map_path: PathBuf,
 }
 
 impl UpdateHandler {
@@ -107,11 +120,16 @@ impl UpdateHandler {
         shared_storage_config: Arc<SharedStorageConfig>,
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
+        optimizer_cpu_budget: CpuBudget,
         runtime_handle: Handle,
         segments: LockedSegmentHolder,
         wal: LockedWal,
         flush_interval_sec: u64,
-        max_optimization_threads: usize,
+        max_optimization_threads: Option<usize>,
+        highest_clock_map: Arc<TokioMutex<ClockMap>>,
+        cutoff_clock_map: Arc<TokioMutex<ClockMap>>,
+        highest_clock_map_path: PathBuf,
+        cutoff_clock_map_path: PathBuf,
     ) -> UpdateHandler {
         UpdateHandler {
             shared_storage_config,
@@ -120,14 +138,19 @@ impl UpdateHandler {
             update_worker: None,
             optimizer_worker: None,
             optimizers_log,
+            optimizer_cpu_budget,
             flush_worker: None,
             flush_stop: None,
             runtime_handle,
             wal,
-            max_ack_version: Arc::new(u64::MAX.into()),
+            wal_keep_from: Arc::new(u64::MAX.into()),
             flush_interval_sec,
             optimization_handles: Arc::new(TokioMutex::new(vec![])),
             max_optimization_threads,
+            highest_clock_map,
+            cutoff_clock_map,
+            highest_clock_map_path,
+            cutoff_clock_map_path,
         }
     }
 
@@ -141,6 +164,7 @@ impl UpdateHandler {
             self.wal.clone(),
             self.optimization_handles.clone(),
             self.optimizers_log.clone(),
+            self.optimizer_cpu_budget.clone(),
             self.max_optimization_threads,
         )));
         self.update_worker = Some(self.runtime_handle.spawn(Self::update_worker_fn(
@@ -153,9 +177,13 @@ impl UpdateHandler {
         self.flush_worker = Some(self.runtime_handle.spawn(Self::flush_worker(
             self.segments.clone(),
             self.wal.clone(),
-            self.max_ack_version.clone(),
+            self.wal_keep_from.clone(),
             self.flush_interval_sec,
             flush_rx,
+            self.highest_clock_map.clone(),
+            self.cutoff_clock_map.clone(),
+            self.highest_clock_map_path.clone(),
+            self.cutoff_clock_map_path.clone(),
         )));
         self.flush_stop = Some(flush_tx);
     }
@@ -208,7 +236,7 @@ impl UpdateHandler {
             Some(first_failed_op) => {
                 let wal_lock = wal.lock();
                 for (op_num, operation) in wal_lock.read(first_failed_op) {
-                    CollectionUpdater::update(&segments, op_num, operation)?;
+                    CollectionUpdater::update(&segments, op_num, operation.operation)?;
                 }
             }
         };
@@ -221,23 +249,54 @@ impl UpdateHandler {
     pub(crate) fn launch_optimization<F>(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
+        optimizer_cpu_budget: &CpuBudget,
         segments: LockedSegmentHolder,
         callback: F,
+        limit: Option<usize>,
     ) -> Vec<StoppableTaskHandle<bool>>
     where
-        F: FnOnce(bool),
-        F: Send + 'static,
-        F: Clone,
+        F: FnOnce(bool) + Send + Clone + 'static,
     {
-        let mut scheduled_segment_ids: HashSet<_> = Default::default();
+        let mut scheduled_segment_ids = HashSet::<_>::default();
         let mut handles = vec![];
-        for optimizer in optimizers.iter() {
+        'outer: for optimizer in optimizers.iter() {
             loop {
+                // Return early if we reached the optimization job limit
+                if limit.map(|extra| handles.len() >= extra).unwrap_or(false) {
+                    log::trace!("Reached optimization job limit, postponing other optimizations");
+                    break 'outer;
+                }
+
                 let nonoptimal_segment_ids =
                     optimizer.check_condition(segments.clone(), &scheduled_segment_ids);
                 if nonoptimal_segment_ids.is_empty() {
                     break;
                 }
+
+                // Determine how many CPUs we prefer for optimization task, acquire permit for it
+                let max_indexing_threads = optimizer.hnsw_config().max_indexing_threads;
+                let desired_cpus = num_rayon_threads(max_indexing_threads);
+                let permit = match optimizer_cpu_budget.try_acquire(desired_cpus) {
+                    Some(permit) => permit,
+                    // If there is no CPU budget, break outer loop and return early
+                    // If we have no handles (no optimizations) trigger callback so that we wake up
+                    // our optimization worker to try again later, otherwise it could get stuck
+                    None => {
+                        log::trace!(
+                            "No available CPU permit for {} optimizer, postponing",
+                            optimizer.name(),
+                        );
+                        if handles.is_empty() {
+                            callback(false);
+                        }
+                        break 'outer;
+                    }
+                };
+                log::trace!(
+                    "Acquired {} CPU permit for {} optimizer",
+                    permit.num_cpus,
+                    optimizer.name(),
+                );
 
                 let optimizer = optimizer.clone();
                 let optimizers_log = optimizers_log.clone();
@@ -257,7 +316,12 @@ impl UpdateHandler {
                             optimizers_log.lock().register(tracker);
 
                             // Optimize and handle result
-                            match optimizer.as_ref().optimize(segments.clone(), nsi, stopped) {
+                            match optimizer.as_ref().optimize(
+                                segments.clone(),
+                                nsi,
+                                permit,
+                                stopped,
+                            ) {
                                 // Perform some actions when optimization if finished
                                 Ok(result) => {
                                     tracker_handle.update(TrackerStatus::Done);
@@ -310,6 +374,7 @@ impl UpdateHandler {
                 handles.push(handle);
             }
         }
+
         handles
     }
 
@@ -318,11 +383,14 @@ impl UpdateHandler {
         segments: LockedSegmentHolder,
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
+        optimizer_cpu_budget: &CpuBudget,
         sender: Sender<OptimizerSignal>,
+        limit: usize,
     ) {
         let mut new_handles = Self::launch_optimization(
             optimizers.clone(),
             optimizers_log,
+            optimizer_cpu_budget,
             segments.clone(),
             move |_optimization_result| {
                 // After optimization is finished, we still need to check if there are
@@ -331,6 +399,7 @@ impl UpdateHandler {
                 // If channel is full - optimization will be triggered by some other signal
                 let _ = sender.try_send(OptimizerSignal::Nop);
             },
+            Some(limit),
         );
         let mut handles = optimization_handles.lock().await;
         handles.append(&mut new_handles);
@@ -372,8 +441,18 @@ impl UpdateHandler {
         wal: LockedWal,
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
-        max_handles: usize,
+        optimizer_cpu_budget: CpuBudget,
+        max_handles: Option<usize>,
     ) {
+        let max_handles = max_handles.unwrap_or(usize::MAX);
+        let max_indexing_threads = optimizers
+            .first()
+            .map(|optimizer| optimizer.hnsw_config().max_indexing_threads)
+            .unwrap_or_default();
+
+        // Asynchronous task to trigger optimizers once CPU budget is available again
+        let mut cpu_available_trigger: Option<JoinHandle<()>> = None;
+
         loop {
             let receiver = timeout(OPTIMIZER_CLEANUP_INTERVAL, receiver.recv());
             let result = receiver.await;
@@ -401,12 +480,46 @@ impl UpdateHandler {
                     {
                         continue;
                     }
+
+                    // Continue if we have enough CPU budget available to start an optimization
+                    // Otherwise skip now and start a task to trigger the optimizer again once CPU
+                    // budget becomes available
+                    let desired_cpus = num_rayon_threads(max_indexing_threads);
+                    if !optimizer_cpu_budget.has_budget(desired_cpus) {
+                        let trigger_active = cpu_available_trigger
+                            .as_ref()
+                            .map_or(false, |t| !t.is_finished());
+                        if !trigger_active {
+                            cpu_available_trigger.replace(trigger_optimizers_on_cpu_budget(
+                                optimizer_cpu_budget.clone(),
+                                desired_cpus,
+                                sender.clone(),
+                            ));
+                        }
+                        continue;
+                    }
+
+                    // Determine optimization handle limit based on max handles we allow
+                    // Not related to the CPU budget, but a different limit for the maximum number
+                    // of concurrent concrete optimizations per shard as configured by the user in
+                    // the Qdrant configuration.
+                    // Skip if we reached limit, an ongoing optimization that finishes will trigger this loop again
+                    let limit = max_handles.saturating_sub(optimization_handles.lock().await.len());
+                    if limit == 0 {
+                        log::trace!(
+                            "Skipping optimization check, we reached optimization thread limit"
+                        );
+                        continue;
+                    }
+
                     Self::process_optimization(
                         optimizers.clone(),
                         segments.clone(),
                         optimization_handles.clone(),
                         optimizers_log.clone(),
+                        &optimizer_cpu_budget,
                         sender.clone(),
+                        limit,
                     )
                     .await;
                 }
@@ -453,7 +566,7 @@ impl UpdateHandler {
 
                     if let Some(feedback) = sender {
                         feedback.send(res).unwrap_or_else(|_| {
-                            info!(
+                            debug!(
                                 "Can't report operation {} result. Assume already not required",
                                 op_num
                             );
@@ -489,12 +602,17 @@ impl UpdateHandler {
             .unwrap_or_else(|_| debug!("Optimizer already stopped"));
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn flush_worker(
         segments: LockedSegmentHolder,
         wal: LockedWal,
-        max_ack: Arc<AtomicU64>,
+        wal_keep_from: Arc<AtomicU64>,
         flush_interval_sec: u64,
         mut stop_receiver: oneshot::Receiver<()>,
+        highest_clock_map: Arc<tokio::sync::Mutex<ClockMap>>,
+        cutoff_clock_map: Arc<tokio::sync::Mutex<ClockMap>>,
+        highest_clock_map_path: PathBuf,
+        cutoff_clock_map_path: PathBuf,
     ) {
         loop {
             // Stop flush worker on signal or if sender was dropped
@@ -530,17 +648,35 @@ impl UpdateHandler {
                 }
             };
 
-            // Acknowledge confirmed version in WAL, but don't exceed specified maximum
-            // This is to prevent truncating WAL entries that may still be used by other things
+            // Acknowledge confirmed version in WAL, but don't acknowledge the specified
+            // `keep_from` index or higher.
+            // This is to prevent truncating WAL entries that other bits of code still depend on
             // such as the queue proxy shard.
-            // Default maximum ack version is `u64::MAX` to allow acknowledging all confirmed.
-            let max_ack = max_ack.load(std::sync::atomic::Ordering::Relaxed);
-            if confirmed_version > max_ack {
-                trace!("Acknowledging message {max_ack} in WAL, {confirmed_version} is already confirmed but max_ack_version is set");
+            // Default keep_from is `u64::MAX` to allow acknowledging all confirmed.
+            let keep_from = wal_keep_from.load(std::sync::atomic::Ordering::Relaxed);
+
+            // If we should keep the first message, do not acknowledge at all
+            if keep_from == 0 {
+                continue;
             }
-            let ack = confirmed_version.min(max_ack);
+
+            let ack = confirmed_version.min(keep_from.saturating_sub(1));
+
+            if let Err(err) = cutoff_clock_map.lock().await.store(&cutoff_clock_map_path) {
+                log::warn!("Failed to store cutoff clock map to disk: {err}");
+                segments.write().report_optimizer_error(err);
+            }
+            if let Err(err) = highest_clock_map
+                .lock()
+                .await
+                .store(&highest_clock_map_path)
+            {
+                log::warn!("Failed to store last seen clock map to disk: {err}");
+                segments.write().report_optimizer_error(err);
+            }
 
             if let Err(err) = wal.lock().ack(ack) {
+                log::warn!("Failed to acknowledge WAL version: {err}");
                 segments.write().report_optimizer_error(err);
             }
         }
@@ -558,4 +694,24 @@ impl UpdateHandler {
             Some(failed_operation) => min(failed_operation, flushed_version),
         })
     }
+}
+
+/// Trigger optimizers when CPU budget is available
+fn trigger_optimizers_on_cpu_budget(
+    optimizer_cpu_budget: CpuBudget,
+    desired_cpus: usize,
+    sender: Sender<OptimizerSignal>,
+) -> JoinHandle<()> {
+    task::spawn(async move {
+        log::trace!("Skipping optimization checks, waiting for CPU budget to be available");
+        optimizer_cpu_budget
+            .notify_on_budget_available(desired_cpus)
+            .await;
+        log::trace!("Continue optimization checks, new CPU budget available");
+
+        // Trigger optimizers with Nop operation
+        sender.send(OptimizerSignal::Nop).await.unwrap_or_else(|_| {
+            log::info!("Can't notify optimizers, assume process is dead. Restart is required")
+        });
+    })
 }

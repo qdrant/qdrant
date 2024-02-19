@@ -1,10 +1,11 @@
 use std::collections::{BTreeMap, HashMap};
 use std::num::{NonZeroU32, NonZeroU64};
+use std::str::FromStr;
 use std::time::Duration;
 
 use api::grpc::conversions::{
     convert_shard_key_from_grpc, convert_shard_key_from_grpc_opt, convert_shard_key_to_grpc,
-    from_grpc_dist, payload_to_proto, proto_to_payloads,
+    date_time_from_proto, from_grpc_dist, payload_to_proto, proto_to_payloads,
 };
 use api::grpc::qdrant::quantization_config_diff::Quantization;
 use api::grpc::qdrant::update_collection_cluster_setup_request::{
@@ -13,19 +14,21 @@ use api::grpc::qdrant::update_collection_cluster_setup_request::{
 use api::grpc::qdrant::{CreateShardKey, SearchPoints};
 use common::types::ScoreType;
 use itertools::Itertools;
+use segment::data_types::order_by::{OrderBy, StartFrom};
 use segment::data_types::vectors::{Named, NamedQuery, Vector, VectorStruct, DEFAULT_VECTOR_NAME};
-use segment::types::{Distance, QuantizationConfig};
+use segment::types::{DateTimeWrapper, Distance, QuantizationConfig};
 use segment::vector_storage::query::context_query::{ContextPair, ContextQuery};
 use segment::vector_storage::query::discovery_query::DiscoveryQuery;
 use segment::vector_storage::query::reco_query::RecoQuery;
+use sparse::common::sparse_vector::validate_sparse_vector_impl;
 use tonic::Status;
 
 use super::consistency_params::ReadConsistency;
 use super::types::{
     BaseGroupRequest, ContextExamplePair, CoreSearchRequest, DiscoverRequestInternal, GroupsResult,
-    PointGroup, QueryEnum, RecommendExample, RecommendGroupsRequestInternal, RecommendStrategy,
-    SearchGroupsRequestInternal, SparseIndexParams, SparseVectorParams, VectorParamsDiff,
-    VectorsConfigDiff,
+    OrderByInterface, PointGroup, QueryEnum, RecommendExample, RecommendGroupsRequestInternal,
+    RecommendStrategy, SearchGroupsRequestInternal, SparseIndexParams, SparseVectorParams,
+    VectorParamsDiff, VectorsConfigDiff,
 };
 use crate::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
@@ -412,9 +415,10 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                         .indexing_threshold
                         .map(|x| x as u64),
                     flush_interval_sec: Some(config.optimizer_config.flush_interval_sec),
-                    max_optimization_threads: Some(
-                        config.optimizer_config.max_optimization_threads as u64,
-                    ),
+                    max_optimization_threads: config
+                        .optimizer_config
+                        .max_optimization_threads
+                        .map(|n| n as u64),
                 }),
                 wal_config: Some(api::grpc::qdrant::WalConfigDiff {
                     wal_capacity_mb: Some(config.wal_config.wal_capacity_mb as u64),
@@ -471,7 +475,7 @@ impl From<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfig {
             flush_interval_sec: optimizer_config.flush_interval_sec.unwrap_or_default(),
             max_optimization_threads: optimizer_config
                 .max_optimization_threads
-                .unwrap_or_default() as usize,
+                .map(|n| n as usize),
         }
     }
 }
@@ -752,7 +756,12 @@ impl TryFrom<api::grpc::qdrant::PointStruct> for PointStruct {
             payload,
         } = value;
 
-        let converted_payload = proto_to_payloads(payload)?;
+        // empty payload means None in PointStruct
+        let converted_payload = if payload.is_empty() {
+            None
+        } else {
+            Some(proto_to_payloads(payload)?)
+        };
 
         let vector_struct: VectorStruct = match vectors {
             None => return Err(Status::invalid_argument("Expected some vectors")),
@@ -764,7 +773,7 @@ impl TryFrom<api::grpc::qdrant::PointStruct> for PointStruct {
                 .ok_or_else(|| Status::invalid_argument("Empty ID is not allowed"))?
                 .try_into()?,
             vector: vector_struct,
-            payload: Some(converted_payload),
+            payload: converted_payload,
         })
     }
 }
@@ -845,34 +854,72 @@ pub fn try_points_selector_from_grpc(
     }
 }
 
-impl From<UpdateResult> for api::grpc::qdrant::UpdateResult {
-    fn from(value: UpdateResult) -> Self {
+impl From<UpdateResult> for api::grpc::qdrant::UpdateResultInternal {
+    fn from(res: UpdateResult) -> Self {
         Self {
-            operation_id: value.operation_id,
-            status: match value.status {
-                UpdateStatus::Acknowledged => api::grpc::qdrant::UpdateStatus::Acknowledged as i32,
-                UpdateStatus::Completed => api::grpc::qdrant::UpdateStatus::Completed as i32,
-            },
+            operation_id: res.operation_id,
+            status: res.status.into(),
+            clock_tag: res.clock_tag.map(Into::into),
         }
+    }
+}
+
+impl From<UpdateResult> for api::grpc::qdrant::UpdateResult {
+    fn from(res: UpdateResult) -> Self {
+        api::grpc::qdrant::UpdateResultInternal::from(res).into()
+    }
+}
+
+impl TryFrom<api::grpc::qdrant::UpdateResultInternal> for UpdateResult {
+    type Error = Status;
+
+    fn try_from(res: api::grpc::qdrant::UpdateResultInternal) -> Result<Self, Self::Error> {
+        let res = Self {
+            operation_id: res.operation_id,
+            status: res.status.try_into()?,
+            clock_tag: res.clock_tag.map(Into::into),
+        };
+
+        Ok(res)
     }
 }
 
 impl TryFrom<api::grpc::qdrant::UpdateResult> for UpdateResult {
     type Error = Status;
 
-    fn try_from(value: api::grpc::qdrant::UpdateResult) -> Result<Self, Self::Error> {
-        Ok(Self {
-            operation_id: value.operation_id,
-            status: match value.status {
-                status if status == api::grpc::qdrant::UpdateStatus::Acknowledged as i32 => {
-                    UpdateStatus::Acknowledged
-                }
-                status if status == api::grpc::qdrant::UpdateStatus::Completed as i32 => {
-                    UpdateStatus::Completed
-                }
-                _ => return Err(Status::invalid_argument("Malformed UpdateStatus type")),
-            },
-        })
+    fn try_from(res: api::grpc::qdrant::UpdateResult) -> Result<Self, Self::Error> {
+        api::grpc::qdrant::UpdateResultInternal::from(res).try_into()
+    }
+}
+
+impl From<UpdateStatus> for i32 {
+    fn from(status: UpdateStatus) -> Self {
+        match status {
+            UpdateStatus::Acknowledged => api::grpc::qdrant::UpdateStatus::Acknowledged as i32,
+            UpdateStatus::Completed => api::grpc::qdrant::UpdateStatus::Completed as i32,
+        }
+    }
+}
+
+impl TryFrom<i32> for UpdateStatus {
+    type Error = Status;
+
+    fn try_from(status: i32) -> Result<Self, Self::Error> {
+        let status = api::grpc::qdrant::UpdateStatus::from_i32(status)
+            .ok_or_else(|| Status::invalid_argument("Malformed UpdateStatus type"))?;
+
+        let status = match status {
+            api::grpc::qdrant::UpdateStatus::Acknowledged => Self::Acknowledged,
+            api::grpc::qdrant::UpdateStatus::Completed => Self::Completed,
+
+            api::grpc::qdrant::UpdateStatus::UnknownUpdateStatus => {
+                return Err(Status::invalid_argument(
+                    "Malformed UpdateStatus type: update status is unknown",
+                ));
+            }
+        };
+
+        Ok(status)
     }
 }
 
@@ -911,6 +958,12 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for CoreSearchRequest {
             shard_key_selector: _,
             sparse_indices,
         } = value;
+
+        if let Some(sparse_indices) = &sparse_indices {
+            validate_sparse_vector_impl(&sparse_indices.data, &vector).map_err(|_| {
+                Status::invalid_argument("Sparse indices does not match sparse vector conditions")
+            })?;
+        }
 
         let vector_struct =
             api::grpc::conversions::into_named_vector_struct(vector_name, vector, sparse_indices)?;
@@ -1080,8 +1133,8 @@ fn try_context_pair_from_grpc(
 ) -> Result<ContextPair<Vector>, Status> {
     match (pair.positive, pair.negative) {
         (Some(positive), Some(negative)) => Ok(ContextPair {
-            positive: positive.into(),
-            negative: negative.into(),
+            positive: positive.try_into()?,
+            negative: negative.try_into()?,
         }),
         _ => Err(Status::invalid_argument(
             "All context pairs must have both positive and negative parts",
@@ -1108,8 +1161,16 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
                     api::grpc::qdrant::query_enum::Query::RecommendBestScore(query) => {
                         QueryEnum::RecommendBestScore(NamedQuery {
                             query: RecoQuery::new(
-                                query.positives.into_iter().map(|v| v.into()).collect(),
-                                query.negatives.into_iter().map(|v| v.into()).collect(),
+                                query
+                                    .positives
+                                    .into_iter()
+                                    .map(TryInto::try_into)
+                                    .collect::<Result<_, _>>()?,
+                                query
+                                    .negatives
+                                    .into_iter()
+                                    .map(TryInto::try_into)
+                                    .collect::<Result<_, _>>()?,
                             ),
                             using: value.vector_name,
                         })
@@ -1129,7 +1190,7 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
                             .try_collect()?;
 
                         QueryEnum::Discover(NamedQuery {
-                            query: DiscoveryQuery::new(target.into(), pairs),
+                            query: DiscoveryQuery::new(target.try_into()?, pairs),
                             using: value.vector_name,
                         })
                     }
@@ -1214,6 +1275,16 @@ impl TryFrom<api::grpc::qdrant::SearchPointGroups> for SearchGroupsRequestIntern
             shard_key_selector: None,
             sparse_indices: value.sparse_indices,
         };
+
+        if let Some(sparse_indices) = &search_points.sparse_indices {
+            validate_sparse_vector_impl(&sparse_indices.data, &search_points.vector).map_err(
+                |_| {
+                    Status::invalid_argument(
+                        "Sparse indices does not match sparse vector conditions",
+                    )
+                },
+            )?;
+        }
 
         let SearchRequestInternal {
             vector,
@@ -1327,13 +1398,15 @@ impl TryFrom<api::grpc::qdrant::PointId> for RecommendExample {
     }
 }
 
-impl From<api::grpc::qdrant::Vector> for RecommendExample {
-    fn from(value: api::grpc::qdrant::Vector) -> Self {
-        let vector: Vector = value.into();
-        match vector {
+impl TryFrom<api::grpc::qdrant::Vector> for RecommendExample {
+    type Error = Status;
+
+    fn try_from(value: api::grpc::qdrant::Vector) -> Result<Self, Self::Error> {
+        let vector: Vector = value.try_into()?;
+        Ok(match vector {
             Vector::Dense(vector) => Self::Dense(vector),
             Vector::Sparse(vector) => Self::Sparse(vector),
-        }
+        })
     }
 }
 
@@ -1367,7 +1440,11 @@ impl TryFrom<api::grpc::qdrant::RecommendPoints> for RecommendRequestInternal {
             .map(TryInto::try_into)
             .collect::<Result<Vec<RecommendExample>, Self::Error>>()?;
 
-        let positive_vectors = value.positive_vectors.into_iter().map(Into::into).collect();
+        let positive_vectors = value
+            .positive_vectors
+            .into_iter()
+            .map(TryInto::try_into)
+            .collect::<Result<_, _>>()?;
         let positive = [positive_ids, positive_vectors].concat();
 
         let negative_ids = value
@@ -1376,7 +1453,11 @@ impl TryFrom<api::grpc::qdrant::RecommendPoints> for RecommendRequestInternal {
             .map(TryInto::try_into)
             .collect::<Result<Vec<RecommendExample>, Self::Error>>()?;
 
-        let negative_vectors = value.negative_vectors.into_iter().map(Into::into).collect();
+        let negative_vectors = value
+            .negative_vectors
+            .into_iter()
+            .map(TryInto::try_into)
+            .collect::<Result<_, _>>()?;
         let negative = [negative_ids, negative_vectors].concat();
 
         Ok(RecommendRequestInternal {
@@ -1708,5 +1789,46 @@ impl From<api::grpc::qdrant::ShardKeySelector> for ShardSelectorInternal {
         } else {
             ShardSelectorInternal::ShardKeys(shard_keys)
         }
+    }
+}
+
+impl TryFrom<api::grpc::qdrant::OrderBy> for OrderByInterface {
+    type Error = Status;
+
+    fn try_from(value: api::grpc::qdrant::OrderBy) -> Result<Self, Self::Error> {
+        let direction = value
+            .direction
+            .and_then(api::grpc::qdrant::Direction::from_i32)
+            .map(segment::data_types::order_by::Direction::from);
+
+        let start_from = value
+            .start_from
+            .and_then(|value| value.value)
+            .map(|v| -> Result<StartFrom, Status> {
+                match v {
+                    api::grpc::qdrant::start_from::Value::Float(float) => {
+                        Ok(StartFrom::Float(float))
+                    }
+                    // TODO(luis): make appropriate conversion once we allow int start_from
+                    api::grpc::qdrant::start_from::Value::Integer(int) => {
+                        Ok(StartFrom::Float(int as _))
+                    }
+                    api::grpc::qdrant::start_from::Value::Timestamp(timestamp) => {
+                        Ok(StartFrom::Datetime(date_time_from_proto(timestamp)?))
+                    }
+                    api::grpc::qdrant::start_from::Value::Datetime(datetime_str) => Ok(
+                        StartFrom::Datetime(DateTimeWrapper::from_str(&datetime_str).map_err(
+                            |e| Status::invalid_argument(format!("Malformed datetime: {e}")),
+                        )?),
+                    ),
+                }
+            })
+            .transpose()?;
+
+        Ok(Self::Struct(OrderBy {
+            key: value.key,
+            direction,
+            start_from,
+        }))
     }
 }

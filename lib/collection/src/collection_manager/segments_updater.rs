@@ -129,10 +129,11 @@ pub(crate) fn set_payload(
     op_num: SeqNumberType,
     payload: &Payload,
     points: &[PointIdType],
+    key: &Option<String>,
 ) -> CollectionResult<usize> {
     let updated_points =
         segments.apply_points_to_appendable(op_num, points, |id, write_segment| {
-            write_segment.set_payload(op_num, id, payload)
+            write_segment.set_payload(op_num, id, payload, key)
         })?;
 
     check_unprocessed_points(points, &updated_points)?;
@@ -157,9 +158,10 @@ pub(crate) fn set_payload_by_filter(
     op_num: SeqNumberType,
     payload: &Payload,
     filter: &Filter,
+    key: &Option<String>,
 ) -> CollectionResult<usize> {
     let affected_points = points_by_filter(segments, filter)?;
-    set_payload(segments, op_num, payload, &affected_points)
+    set_payload(segments, op_num, payload, &affected_points, key)
 }
 
 pub(crate) fn delete_payload(
@@ -477,9 +479,9 @@ pub(crate) fn process_payload_operation(
         PayloadOps::SetPayload(sp) => {
             let payload: Payload = sp.payload;
             if let Some(points) = sp.points {
-                set_payload(&segments.read(), op_num, &payload, &points)
+                set_payload(&segments.read(), op_num, &payload, &points, &sp.key)
             } else if let Some(filter) = sp.filter {
-                set_payload_by_filter(&segments.read(), op_num, &payload, &filter)
+                set_payload_by_filter(&segments.read(), op_num, &payload, &filter, &sp.key)
             } else {
                 Err(CollectionError::BadRequest {
                     description: "No points or filter specified".to_string(),

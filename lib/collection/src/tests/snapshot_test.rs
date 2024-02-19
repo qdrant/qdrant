@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::num::{NonZeroU32, NonZeroU64};
 use std::sync::Arc;
 
+use common::cpu::CpuBudget;
 use segment::types::Distance;
 use tempfile::Builder;
 
@@ -22,7 +23,7 @@ pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     memmap_threshold: None,
     indexing_threshold: Some(50_000),
     flush_interval_sec: 30,
-    max_optimization_threads: 2,
+    max_optimization_threads: Some(2),
 };
 
 pub fn dummy_on_replica_failure() -> ChangePeerState {
@@ -102,6 +103,7 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         dummy_abort_shard_transfer(),
         None,
         None,
+        CpuBudget::default(),
     )
     .await
     .unwrap();
@@ -143,6 +145,7 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         dummy_abort_shard_transfer(),
         None,
         None,
+        CpuBudget::default(),
     )
     .await;
 

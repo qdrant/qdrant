@@ -1,5 +1,7 @@
+pub mod immutable_geo_index;
+pub mod mutable_geo_index;
+
 use std::cmp::{max, min};
-use std::collections::{BTreeMap, HashSet};
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -9,12 +11,14 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
 
+use self::immutable_geo_index::ImmutableGeoMapIndex;
+use self::mutable_geo_index::MutableGeoMapIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::index::field_index::geo_hash::{
-    circle_hashes, common_hash_prefix, encode_max_precision, geo_hash_to_box, polygon_hashes,
-    polygon_hashes_estimation, rectangle_hashes, GeoHash,
+    circle_hashes, common_hash_prefix, geo_hash_to_box, polygon_hashes, polygon_hashes_estimation,
+    rectangle_hashes, GeoHash,
 };
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
 use crate::index::field_index::{
@@ -29,330 +33,39 @@ use crate::types::{
 // TODO discuss value, should it be dynamically computed?
 const GEO_QUERY_MAX_REGION: usize = 12;
 
-pub struct MutableGeoMapIndex {
-    /*
-    {
-        "d": 10,
-        "dr": 10,
-        "dr5": 4,
-        "dr5r": 3,
-        "dr5ru": 1,
-        "dr5rr": 2,
-        ...
-    }
-     */
-    points_per_hash: BTreeMap<GeoHash, usize>,
-    values_per_hash: BTreeMap<GeoHash, usize>,
-    /*
-    {
-        "dr5ru": {1},
-        "dr5rr": {2, 3},
-        ...
-    }
-     */
-    points_map: BTreeMap<GeoHash, HashSet<PointOffsetType>>,
-    point_to_values: Vec<Vec<GeoPoint>>,
-    points_count: usize,
-    points_values_count: usize,
-    max_values_per_point: usize,
-    db_wrapper: DatabaseColumnWrapper,
-}
-
 pub enum GeoMapIndex {
     Mutable(MutableGeoMapIndex),
-}
-
-impl MutableGeoMapIndex {
-    fn new(db: Arc<RwLock<DB>>, field: &str) -> Self {
-        let store_cf_name = GeoMapIndex::storage_cf_name(field);
-        let db_wrapper = DatabaseColumnWrapper::new(db, &store_cf_name);
-        Self {
-            points_per_hash: Default::default(),
-            values_per_hash: Default::default(),
-            points_map: Default::default(),
-            point_to_values: vec![],
-            points_count: 0,
-            points_values_count: 0,
-            max_values_per_point: 0,
-            db_wrapper,
-        }
-    }
-
-    fn db_wrapper(&self) -> &DatabaseColumnWrapper {
-        &self.db_wrapper
-    }
-
-    fn get_values(&self, idx: PointOffsetType) -> Option<&[GeoPoint]> {
-        self.point_to_values.get(idx as usize).map(Vec::as_slice)
-    }
-
-    fn get_points_per_hash(&self) -> impl Iterator<Item = (&GeoHash, usize)> {
-        self.points_per_hash
-            .iter()
-            .map(|(hash, count)| (hash, *count))
-    }
-
-    fn get_points_of_hash(&self, hash: &GeoHash) -> usize {
-        self.points_per_hash.get(hash).cloned().unwrap_or(0)
-    }
-
-    fn get_values_of_hash(&self, hash: &GeoHash) -> usize {
-        self.values_per_hash.get(hash).cloned().unwrap_or(0)
-    }
-
-    fn load(&mut self) -> OperationResult<bool> {
-        if !self.db_wrapper.has_column_family()? {
-            return Ok(false);
-        };
-
-        let mut points_to_hashes: BTreeMap<PointOffsetType, Vec<GeoHash>> = Default::default();
-
-        for (key, value) in self.db_wrapper.lock_db().iter()? {
-            let key_str = std::str::from_utf8(&key).map_err(|_| {
-                OperationError::service_error("Index load error: UTF8 error while DB parsing")
-            })?;
-
-            let (geo_hash, idx) = GeoMapIndex::decode_db_key(key_str)?;
-            let geo_point = GeoMapIndex::decode_db_value(value)?;
-
-            if self.point_to_values.len() <= idx as usize {
-                self.point_to_values.resize_with(idx as usize + 1, Vec::new);
-            }
-
-            if self.point_to_values[idx as usize].is_empty() {
-                self.points_count += 1;
-            }
-
-            points_to_hashes
-                .entry(idx)
-                .or_default()
-                .push(geo_hash.clone());
-
-            self.point_to_values[idx as usize].push(geo_point);
-            self.points_map
-                .entry(geo_hash.clone())
-                .or_default()
-                .insert(idx);
-
-            self.points_values_count += 1;
-        }
-
-        for (_idx, geo_hashes) in points_to_hashes.into_iter() {
-            self.max_values_per_point = max(self.max_values_per_point, geo_hashes.len());
-            self.increment_hash_point_counts(&geo_hashes);
-            for geo_hash in geo_hashes {
-                self.increment_hash_value_counts(&geo_hash);
-            }
-        }
-        Ok(true)
-    }
-
-    fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
-        if self.point_to_values.len() <= idx as usize {
-            return Ok(()); // Already removed or never actually existed
-        }
-
-        let removed_geo_points = std::mem::take(&mut self.point_to_values[idx as usize]);
-
-        if removed_geo_points.is_empty() {
-            return Ok(());
-        }
-
-        self.points_count -= 1;
-        self.points_values_count -= removed_geo_points.len();
-        let mut removed_geo_hashes = Vec::with_capacity(removed_geo_points.len());
-
-        for removed_geo_point in removed_geo_points {
-            let removed_geo_hash: GeoHash =
-                encode_max_precision(removed_geo_point.lon, removed_geo_point.lat).unwrap();
-            removed_geo_hashes.push(removed_geo_hash.clone());
-
-            let key = GeoMapIndex::encode_db_key(&removed_geo_hash, idx);
-            self.db_wrapper.remove(key)?;
-
-            let is_last = if let Some(hash_ids) = self.points_map.get_mut(&removed_geo_hash) {
-                hash_ids.remove(&idx);
-                hash_ids.is_empty()
-            } else {
-                log::warn!(
-                    "Geo index error: no points for hash {} was found",
-                    removed_geo_hash
-                );
-                false
-            };
-
-            if is_last {
-                self.points_map.remove(&removed_geo_hash);
-            }
-
-            self.decrement_hash_value_counts(&removed_geo_hash);
-        }
-
-        self.decrement_hash_point_counts(&removed_geo_hashes);
-        Ok(())
-    }
-
-    fn add_many_geo_points(
-        &mut self,
-        idx: PointOffsetType,
-        values: &[GeoPoint],
-    ) -> OperationResult<()> {
-        if values.is_empty() {
-            return Ok(());
-        }
-
-        if self.point_to_values.len() <= idx as usize {
-            // That's a smart reallocation
-            self.point_to_values.resize_with(idx as usize + 1, Vec::new);
-        }
-
-        self.point_to_values[idx as usize] = values.to_vec();
-
-        let mut geo_hashes = vec![];
-
-        for added_point in values {
-            let added_geo_hash: GeoHash = encode_max_precision(added_point.lon, added_point.lat)
-                .map_err(|e| OperationError::service_error(format!("Malformed geo points: {e}")))?;
-
-            let key = GeoMapIndex::encode_db_key(&added_geo_hash, idx);
-            let value = GeoMapIndex::encode_db_value(added_point);
-
-            geo_hashes.push(added_geo_hash);
-
-            self.db_wrapper.put(key, value)?;
-        }
-
-        for geo_hash in &geo_hashes {
-            self.points_map
-                .entry(geo_hash.to_owned())
-                .or_default()
-                .insert(idx);
-
-            self.increment_hash_value_counts(geo_hash);
-        }
-
-        self.increment_hash_point_counts(&geo_hashes);
-
-        self.points_values_count += values.len();
-        self.points_count += 1;
-        self.max_values_per_point = self.max_values_per_point.max(values.len());
-        Ok(())
-    }
-
-    fn get_stored_sub_regions(
-        &self,
-        geo: &GeoHash,
-    ) -> Box<dyn Iterator<Item = (&GeoHash, &HashSet<PointOffsetType>)> + '_> {
-        let geo_clone = geo.clone();
-        Box::new(
-            self.points_map
-                .range(geo.clone()..)
-                .take_while(move |(p, _h)| p.starts_with(geo_clone.as_str())),
-        )
-    }
-
-    fn increment_hash_value_counts(&mut self, geo_hash: &GeoHash) {
-        for i in 0..=geo_hash.len() {
-            let sub_geo_hash = &geo_hash[0..i];
-            match self.values_per_hash.get_mut(sub_geo_hash) {
-                None => {
-                    self.values_per_hash.insert(sub_geo_hash.into(), 1);
-                }
-                Some(count) => {
-                    *count += 1;
-                }
-            };
-        }
-    }
-
-    fn increment_hash_point_counts(&mut self, geo_hashes: &[GeoHash]) {
-        let mut seen_hashes: HashSet<&str> = Default::default();
-
-        for geo_hash in geo_hashes {
-            for i in 0..=geo_hash.len() {
-                let sub_geo_hash = &geo_hash[0..i];
-                if seen_hashes.contains(sub_geo_hash) {
-                    continue;
-                }
-                seen_hashes.insert(sub_geo_hash);
-                match self.points_per_hash.get_mut(sub_geo_hash) {
-                    None => {
-                        self.points_per_hash.insert(sub_geo_hash.into(), 1);
-                    }
-                    Some(count) => {
-                        *count += 1;
-                    }
-                };
-            }
-        }
-    }
-
-    fn decrement_hash_value_counts(&mut self, geo_hash: &GeoHash) {
-        for i in 0..=geo_hash.len() {
-            let sub_geo_hash = &geo_hash[0..i];
-            match self.values_per_hash.get_mut(sub_geo_hash) {
-                None => {
-                    debug_assert!(
-                        false,
-                        "Hash value count is not found for hash: {}",
-                        sub_geo_hash
-                    );
-                    self.values_per_hash.insert(sub_geo_hash.into(), 0);
-                }
-                Some(count) => {
-                    *count -= 1;
-                }
-            };
-        }
-    }
-
-    fn decrement_hash_point_counts(&mut self, geo_hashes: &[GeoHash]) {
-        let mut seen_hashes: HashSet<&str> = Default::default();
-        for geo_hash in geo_hashes {
-            for i in 0..=geo_hash.len() {
-                let sub_geo_hash = &geo_hash[0..i];
-                if seen_hashes.contains(sub_geo_hash) {
-                    continue;
-                }
-                seen_hashes.insert(sub_geo_hash);
-                match self.points_per_hash.get_mut(sub_geo_hash) {
-                    None => {
-                        debug_assert!(
-                            false,
-                            "Hash point count is not found for hash: {}",
-                            sub_geo_hash
-                        );
-                        self.points_per_hash.insert(sub_geo_hash.into(), 0);
-                    }
-                    Some(count) => {
-                        *count -= 1;
-                    }
-                };
-            }
-        }
-    }
+    Immutable(ImmutableGeoMapIndex),
 }
 
 impl GeoMapIndex {
-    pub fn new(db: Arc<RwLock<DB>>, field: &str) -> Self {
-        GeoMapIndex::Mutable(MutableGeoMapIndex::new(db, field))
+    pub fn new(db: Arc<RwLock<DB>>, field: &str, is_appendable: bool) -> Self {
+        let store_cf_name = GeoMapIndex::storage_cf_name(field);
+        if is_appendable {
+            GeoMapIndex::Mutable(MutableGeoMapIndex::new(db, &store_cf_name))
+        } else {
+            GeoMapIndex::Immutable(ImmutableGeoMapIndex::new(db, &store_cf_name))
+        }
     }
 
     fn db_wrapper(&self) -> &DatabaseColumnWrapper {
         match self {
             GeoMapIndex::Mutable(index) => index.db_wrapper(),
+            GeoMapIndex::Immutable(index) => index.db_wrapper(),
         }
     }
 
     fn points_count(&self) -> usize {
         match self {
             GeoMapIndex::Mutable(index) => index.points_count,
+            GeoMapIndex::Immutable(index) => index.points_count,
         }
     }
 
     fn points_values_count(&self) -> usize {
         match self {
             GeoMapIndex::Mutable(index) => index.points_values_count,
+            GeoMapIndex::Immutable(index) => index.points_values_count,
         }
     }
 
@@ -364,33 +77,21 @@ impl GeoMapIndex {
     fn max_values_per_point(&self) -> usize {
         match self {
             GeoMapIndex::Mutable(index) => index.max_values_per_point,
-        }
-    }
-
-    fn get_points_per_hash(&self) -> impl Iterator<Item = (&GeoHash, usize)> {
-        match self {
-            GeoMapIndex::Mutable(index) => index.get_points_per_hash(),
+            GeoMapIndex::Immutable(index) => index.max_values_per_point,
         }
     }
 
     fn get_points_of_hash(&self, hash: &GeoHash) -> usize {
         match self {
             GeoMapIndex::Mutable(index) => index.get_points_of_hash(hash),
+            GeoMapIndex::Immutable(index) => index.get_points_of_hash(hash),
         }
     }
 
     fn get_values_of_hash(&self, hash: &GeoHash) -> usize {
         match self {
             GeoMapIndex::Mutable(index) => index.get_values_of_hash(hash),
-        }
-    }
-
-    fn get_stored_sub_regions(
-        &self,
-        geo: &GeoHash,
-    ) -> Box<dyn Iterator<Item = (&GeoHash, &HashSet<PointOffsetType>)> + '_> {
-        match self {
-            GeoMapIndex::Mutable(index) => index.get_stored_sub_regions(geo),
+            GeoMapIndex::Immutable(index) => index.get_values_of_hash(hash),
         }
     }
 
@@ -450,6 +151,7 @@ impl GeoMapIndex {
     pub fn get_values(&self, idx: PointOffsetType) -> Option<&[GeoPoint]> {
         match self {
             GeoMapIndex::Mutable(index) => index.get_values(idx),
+            GeoMapIndex::Immutable(index) => index.get_values(idx),
         }
     }
 
@@ -528,15 +230,28 @@ impl GeoMapIndex {
     }
 
     fn get_iterator(&self, values: Vec<GeoHash>) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        Box::new(
-            values
-                .into_iter()
-                .flat_map(|top_geo_hash| {
-                    self.get_stored_sub_regions(&top_geo_hash)
-                        .flat_map(|(_geohash, points)| points.iter().copied())
-                })
-                .unique(),
-        )
+        match self {
+            GeoMapIndex::Mutable(index) => Box::new(
+                values
+                    .into_iter()
+                    .flat_map(|top_geo_hash| {
+                        index
+                            .get_stored_sub_regions(&top_geo_hash)
+                            .flat_map(|(_geohash, points)| points.iter().copied())
+                    })
+                    .unique(),
+            ),
+            GeoMapIndex::Immutable(index) => Box::new(
+                values
+                    .into_iter()
+                    .flat_map(|top_geo_hash| {
+                        index
+                            .get_stored_sub_regions(&top_geo_hash)
+                            .flat_map(|(_geohash, points)| points.iter().copied())
+                    })
+                    .unique(),
+            ),
+        }
     }
 
     /// Get iterator over smallest geo-hash regions larger than `threshold` points
@@ -544,10 +259,18 @@ impl GeoMapIndex {
         &self,
         threshold: usize,
     ) -> Box<dyn Iterator<Item = (&GeoHash, usize)> + '_> {
-        let mut large_regions = self
-            .get_points_per_hash()
-            .filter(|(hash, size)| *size > threshold && !hash.is_empty())
-            .collect_vec();
+        let filter_condition =
+            |(hash, size): &(&GeoHash, usize)| *size > threshold && !hash.is_empty();
+        let mut large_regions = match self {
+            GeoMapIndex::Mutable(index) => index
+                .get_points_per_hash()
+                .filter(filter_condition)
+                .collect_vec(),
+            GeoMapIndex::Immutable(index) => index
+                .get_points_per_hash()
+                .filter(filter_condition)
+                .collect_vec(),
+        };
 
         // smallest regions first
         large_regions.sort_by(|a, b| b.cmp(a));
@@ -583,6 +306,9 @@ impl ValueIndexer<GeoPoint> for GeoMapIndex {
     fn add_many(&mut self, id: PointOffsetType, values: Vec<GeoPoint>) -> OperationResult<()> {
         match self {
             GeoMapIndex::Mutable(index) => index.add_many_geo_points(id, &values),
+            GeoMapIndex::Immutable(_) => Err(OperationError::service_error(
+                "Can't add values to immutable geo index",
+            )),
         }
     }
 
@@ -604,6 +330,7 @@ impl ValueIndexer<GeoPoint> for GeoMapIndex {
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
         match self {
             GeoMapIndex::Mutable(index) => index.remove_point(id),
+            GeoMapIndex::Immutable(index) => index.remove_point(id),
         }
     }
 }
@@ -616,6 +343,7 @@ impl PayloadFieldIndex for GeoMapIndex {
     fn load(&mut self) -> OperationResult<bool> {
         match self {
             GeoMapIndex::Mutable(index) => index.load(),
+            GeoMapIndex::Immutable(index) => index.load(),
         }
     }
 
@@ -751,6 +479,7 @@ mod tests {
     use itertools::Itertools;
     use rand::prelude::StdRng;
     use rand::SeedableRng;
+    use rstest::rstest;
     use serde_json::json;
     use tempfile::Builder;
 
@@ -791,12 +520,16 @@ mod tests {
         FieldCondition::new_geo_polygon(key, geo_polygon)
     }
 
-    fn build_random_index(num_points: usize, num_geo_values: usize) -> GeoMapIndex {
+    fn build_random_index(
+        num_points: usize,
+        num_geo_values: usize,
+        is_appendable: bool,
+    ) -> GeoMapIndex {
         let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
         let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
 
         let mut rnd = StdRng::seed_from_u64(42);
-        let mut index = GeoMapIndex::new(db, FIELD_NAME);
+        let mut index = GeoMapIndex::new(db.clone(), FIELD_NAME, true);
 
         index.recreate().unwrap();
 
@@ -809,7 +542,19 @@ mod tests {
         assert_eq!(index.points_count(), num_points);
         assert_eq!(index.points_values_count(), num_points * num_geo_values);
 
-        index
+        if !is_appendable {
+            index.flusher()().unwrap();
+            let mut immutable_index = GeoMapIndex::new(db, FIELD_NAME, false);
+            assert!(immutable_index.load().unwrap());
+            assert_eq!(immutable_index.points_count(), num_points);
+            assert_eq!(
+                immutable_index.points_values_count(),
+                num_points * num_geo_values
+            );
+            immutable_index
+        } else {
+            index
+        }
     }
 
     const EARTH_RADIUS_METERS: f64 = 6371.0 * 1000.;
@@ -853,10 +598,16 @@ mod tests {
         ])
     }
 
-    #[test]
-    fn test_polygon_with_exclusion() {
-        fn check_cardinality_match(hashes: Vec<GeoHash>, field_condition: FieldCondition) {
-            let field_index = build_random_index(500, 20);
+    #[rstest]
+    #[case(true)]
+    #[case(false)]
+    fn test_polygon_with_exclusion(#[case] is_appendable: bool) {
+        fn check_cardinality_match(
+            hashes: Vec<GeoHash>,
+            field_condition: FieldCondition,
+            is_appendable: bool,
+        ) {
+            let field_index = build_random_index(500, 20, is_appendable);
             let exact_points_for_hashes = field_index.get_iterator(hashes).collect_vec();
             let real_cardinality = exact_points_for_hashes.len();
 
@@ -982,13 +733,20 @@ mod tests {
         check_cardinality_match(
             polygon_hashes(&europe_no_berlin, GEO_QUERY_MAX_REGION).unwrap(),
             condition_for_geo_polygon("test".to_string(), europe_no_berlin.clone()),
+            is_appendable,
         );
     }
 
-    #[test]
-    fn match_cardinality() {
-        fn check_cardinality_match(hashes: Vec<GeoHash>, field_condition: FieldCondition) {
-            let field_index = build_random_index(500, 20);
+    #[rstest]
+    #[case(true)]
+    #[case(false)]
+    fn match_cardinality(#[case] is_appendable: bool) {
+        fn check_cardinality_match(
+            hashes: Vec<GeoHash>,
+            field_condition: FieldCondition,
+            is_appendable: bool,
+        ) {
+            let field_index = build_random_index(500, 20, is_appendable);
             let exact_points_for_hashes = field_index.get_iterator(hashes).collect_vec();
             let real_cardinality = exact_points_for_hashes.len();
 
@@ -1015,6 +773,7 @@ mod tests {
         check_cardinality_match(
             nyc_hashes,
             condition_for_geo_radius("test".to_string(), geo_radius.clone()),
+            is_appendable,
         );
 
         // geo_polygon cardinality check
@@ -1023,16 +782,22 @@ mod tests {
         check_cardinality_match(
             polygon_hashes,
             condition_for_geo_polygon("test".to_string(), geo_polygon),
+            is_appendable,
         );
     }
 
-    #[test]
-    fn geo_indexed_filtering() {
-        fn check_geo_indexed_filtering<F>(field_condition: FieldCondition, check_fn: F)
-        where
+    #[rstest]
+    #[case(true)]
+    #[case(false)]
+    fn geo_indexed_filtering(#[case] is_appendable: bool) {
+        fn check_geo_indexed_filtering<F>(
+            field_condition: FieldCondition,
+            check_fn: F,
+            is_appendable: bool,
+        ) where
             F: Fn(&GeoPoint) -> bool,
         {
-            let field_index = build_random_index(1000, 5);
+            let field_index = build_random_index(1000, 5, is_appendable);
 
             let mut matched_points = (0..field_index.count_indexed_points() as PointOffsetType)
                 .map(|idx| (idx, field_index.get_values(idx).unwrap()))
@@ -1059,6 +824,7 @@ mod tests {
         check_geo_indexed_filtering(
             condition_for_geo_radius("test".to_string(), geo_radius.clone()),
             |geo_point| geo_radius.check_point(geo_point),
+            is_appendable,
         );
 
         let geo_polygon: GeoPolygon = build_polygon(vec![
@@ -1071,12 +837,15 @@ mod tests {
         check_geo_indexed_filtering(
             condition_for_geo_polygon("test".to_string(), geo_polygon.clone()),
             |geo_point| geo_polygon.convert().check_point(geo_point),
+            is_appendable,
         );
     }
 
-    #[test]
-    fn test_payload_blocks() {
-        let field_index = build_random_index(1000, 5);
+    #[rstest]
+    #[case(true)]
+    #[case(false)]
+    fn test_payload_blocks(#[case] is_appendable: bool) {
+        let field_index = build_random_index(1000, 5, is_appendable);
         let top_level_points = field_index.get_points_of_hash(&Default::default());
         assert_eq!(top_level_points, 1_000);
         let block_hashes = field_index.get_large_hashes(100).collect_vec();
@@ -1101,7 +870,7 @@ mod tests {
         let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
         let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
 
-        let mut index = GeoMapIndex::new(db, FIELD_NAME);
+        let mut index = GeoMapIndex::new(db, FIELD_NAME, true);
 
         index.recreate().unwrap();
 
@@ -1189,7 +958,7 @@ mod tests {
         let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
         let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
 
-        let mut index = GeoMapIndex::new(db, FIELD_NAME);
+        let mut index = GeoMapIndex::new(db, FIELD_NAME, true);
 
         index.recreate().unwrap();
 
@@ -1230,13 +999,15 @@ mod tests {
         assert_eq!(card.exp, 1);
     }
 
-    #[test]
-    fn load_from_disk() {
+    #[rstest]
+    #[case(true)]
+    #[case(false)]
+    fn load_from_disk(#[case] is_appendable: bool) {
         let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
         {
             let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
 
-            let mut index = GeoMapIndex::new(db, FIELD_NAME);
+            let mut index = GeoMapIndex::new(db, FIELD_NAME, true);
 
             index.recreate().unwrap();
 
@@ -1257,7 +1028,7 @@ mod tests {
         }
 
         let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
-        let mut new_index = GeoMapIndex::new(db, FIELD_NAME);
+        let mut new_index = GeoMapIndex::new(db, FIELD_NAME, is_appendable);
         new_index.load().unwrap();
 
         let berlin_geo_radius = GeoRadius {
@@ -1278,12 +1049,14 @@ mod tests {
         assert_eq!(point_offsets, vec![1]);
     }
 
-    #[test]
-    fn same_geo_index_between_points_test() {
+    #[rstest]
+    #[case(true)]
+    #[case(false)]
+    fn same_geo_index_between_points_test(#[case] is_appendable: bool) {
         let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
         {
             let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
-            let mut index = GeoMapIndex::new(db, FIELD_NAME);
+            let mut index = GeoMapIndex::new(db, FIELD_NAME, true);
             index.recreate().unwrap();
 
             let geo_values = json!([
@@ -1308,14 +1081,16 @@ mod tests {
         }
 
         let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
-        let mut new_index = GeoMapIndex::new(db, FIELD_NAME);
+        let mut new_index = GeoMapIndex::new(db, FIELD_NAME, is_appendable);
         new_index.load().unwrap();
         assert_eq!(new_index.points_count(), 1);
         assert_eq!(new_index.points_values_count(), 2);
     }
 
-    #[test]
-    fn test_empty_index_cardinality() {
+    #[rstest]
+    #[case(true)]
+    #[case(false)]
+    fn test_empty_index_cardinality(#[case] is_appendable: bool) {
         let polygon = GeoPolygon {
             exterior: GeoLineString {
                 points: vec![
@@ -1366,7 +1141,7 @@ mod tests {
         let hashes_with_interior =
             polygon_hashes(&polygon_with_interior, GEO_QUERY_MAX_REGION).unwrap();
 
-        let field_index = build_random_index(0, 0);
+        let field_index = build_random_index(0, 0, is_appendable);
         assert!(field_index
             .match_cardinality(&hashes)
             .equals_min_exp_max(&CardinalityEstimation::exact(0)),);
@@ -1374,7 +1149,7 @@ mod tests {
             .match_cardinality(&hashes_with_interior)
             .equals_min_exp_max(&CardinalityEstimation::exact(0)),);
 
-        let field_index = build_random_index(0, 100);
+        let field_index = build_random_index(0, 100, is_appendable);
         assert!(field_index
             .match_cardinality(&hashes)
             .equals_min_exp_max(&CardinalityEstimation::exact(0)),);
@@ -1382,7 +1157,7 @@ mod tests {
             .match_cardinality(&hashes_with_interior)
             .equals_min_exp_max(&CardinalityEstimation::exact(0)),);
 
-        let field_index = build_random_index(100, 100);
+        let field_index = build_random_index(100, 100, is_appendable);
         assert!(!field_index
             .match_cardinality(&hashes)
             .equals_min_exp_max(&CardinalityEstimation::exact(0)),);

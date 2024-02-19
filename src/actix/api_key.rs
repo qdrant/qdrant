@@ -10,18 +10,19 @@ use futures_util::future::LocalBoxFuture;
 
 use crate::common::auth::AuthKeys;
 
+/// List of read-only POST request paths. List MUST be sorted.
 const READ_ONLY_POST_PATTERNS: [&str; 11] = [
     "/collections/{name}/points",
     "/collections/{name}/points/count",
-    "/collections/{name}/points/search",
-    "/collections/{name}/points/scroll",
-    "/collections/{name}/points/search/groups",
-    "/collections/{name}/points/search/batch",
-    "/collections/{name}/points/recommend",
-    "/collections/{name}/points/recommend/groups",
-    "/collections/{name}/points/recommend/batch",
     "/collections/{name}/points/discover",
     "/collections/{name}/points/discover/batch",
+    "/collections/{name}/points/recommend",
+    "/collections/{name}/points/recommend/batch",
+    "/collections/{name}/points/recommend/groups",
+    "/collections/{name}/points/scroll",
+    "/collections/{name}/points/search",
+    "/collections/{name}/points/search/batch",
+    "/collections/{name}/points/search/groups",
 ];
 
 pub struct ApiKey {
@@ -160,8 +161,27 @@ fn is_read_only(req: &ServiceRequest) -> bool {
         Method::GET => true,
         Method::POST => req
             .match_pattern()
-            .map(|pattern| READ_ONLY_POST_PATTERNS.iter().any(|pat| &pattern == pat))
+            .map(|pattern| {
+                READ_ONLY_POST_PATTERNS
+                    .binary_search(&pattern.as_str())
+                    .is_ok()
+            })
             .unwrap_or_default(),
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn read_only_post_patterns_sorted() {
+        let mut sorted = READ_ONLY_POST_PATTERNS;
+        sorted.sort_unstable();
+        assert_eq!(
+            READ_ONLY_POST_PATTERNS, sorted,
+            "The READ_ONLY_POST_PATTERNS list must be sorted"
+        );
     }
 }

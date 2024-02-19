@@ -2,7 +2,6 @@ use std::path::Path;
 use std::sync::Arc;
 
 use schemars::JsonSchema;
-use segment::common::cpu::get_num_cpus;
 use segment::types::{HnswConfig, QuantizationConfig};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
@@ -71,8 +70,12 @@ pub struct OptimizersConfig {
     pub indexing_threshold: Option<usize>,
     /// Minimum interval between forced flushes.
     pub flush_interval_sec: u64,
-    /// Maximum available threads for optimization workers
-    pub max_optimization_threads: usize,
+    /// Max number of threads (jobs) for running optimizations per shard.
+    /// Note: each optimization job will also use `max_indexing_threads` threads by itself for index building.
+    /// If null - have no limit and choose dynamically to saturate CPU.
+    /// If 0 - no optimization threads, optimizations will be disabled.
+    #[serde(default)]
+    pub max_optimization_threads: Option<usize>,
 }
 
 impl OptimizersConfig {
@@ -86,13 +89,13 @@ impl OptimizersConfig {
             memmap_threshold: None,
             indexing_threshold: Some(100_000),
             flush_interval_sec: 60,
-            max_optimization_threads: 0,
+            max_optimization_threads: Some(0),
         }
     }
 
     pub fn get_number_segments(&self) -> usize {
         if self.default_segment_number == 0 {
-            let num_cpus = get_num_cpus();
+            let num_cpus = common::cpu::get_num_cpus();
             // Do not configure less than 2 and more than 8 segments
             // until it is not explicitly requested
             num_cpus.clamp(2, 8)
@@ -105,7 +108,7 @@ impl OptimizersConfig {
         if let Some(max_segment_size) = self.max_segment_size {
             max_segment_size
         } else {
-            let num_cpus = get_num_cpus();
+            let num_cpus = common::cpu::get_num_cpus();
             num_cpus.saturating_mul(DEFAULT_MAX_SEGMENT_PER_CPU_KB)
         }
     }

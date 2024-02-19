@@ -1,12 +1,17 @@
+pub mod clock_map;
+mod shard_ops;
+
 use std::collections::{BTreeSet, HashMap};
 use std::mem::size_of;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
 use arc_swap::ArcSwap;
+use common::cpu::CpuBudget;
 use common::panic;
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
@@ -21,24 +26,25 @@ use segment::types::{
     QuantizationConfig, SegmentConfig, SegmentType,
 };
 use segment::utils::mem::Mem;
-use tokio::fs::{copy, create_dir_all, remove_dir_all};
+use tokio::fs::{copy, create_dir_all, remove_dir_all, remove_file};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{mpsc, oneshot, Mutex, RwLock as TokioRwLock};
 use wal::{Wal, WalOptions};
 
+use self::clock_map::{ClockMap, RecoveryPoint};
 use super::update_tracker::UpdateTracker;
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
 use crate::collection_manager::optimizers::TrackerLog;
-use crate::common::file_utils::move_dir;
+use crate::common::file_utils::{move_dir, move_file};
 use crate::config::CollectionConfig;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{
     check_sparse_compatible_with_segment_config, CollectionError, CollectionInfoInternal,
     CollectionResult, CollectionStatus, OptimizersStatus,
 };
-use crate::operations::CollectionUpdateOperations;
+use crate::operations::OperationWithClockTag;
 use crate::optimizers_builder::{build_optimizers, clear_temp_segments};
 use crate::shards::shard::ShardId;
 use crate::shards::shard_config::{ShardConfig, SHARD_CONFIG_FILE};
@@ -46,8 +52,7 @@ use crate::shards::telemetry::{LocalShardTelemetry, OptimizerTelemetry};
 use crate::shards::CollectionId;
 use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
-
-pub type LockedWal = Arc<ParkingMutex<SerdeWal<CollectionUpdateOperations>>>;
+use crate::wal_delta::{LockedWal, RecoverableWal};
 
 /// If rendering WAL load progression in basic text form, report progression every 60 seconds.
 const WAL_LOAD_REPORT_EVERY: Duration = Duration::from_secs(60);
@@ -61,7 +66,7 @@ pub struct LocalShard {
     pub(super) segments: Arc<RwLock<SegmentHolder>>,
     pub(super) collection_config: Arc<TokioRwLock<CollectionConfig>>,
     pub(super) shared_storage_config: Arc<SharedStorageConfig>,
-    pub(super) wal: LockedWal,
+    pub(super) wal: RecoverableWal,
     pub(super) update_handler: Arc<Mutex<UpdateHandler>>,
     pub(super) update_sender: ArcSwap<Sender<UpdateSignal>>,
     pub(super) update_tracker: UpdateTracker,
@@ -82,6 +87,17 @@ impl LocalShard {
         move_dir(wal_from, wal_to).await?;
         move_dir(segments_from, segments_to).await?;
 
+        let highest_clock_map_path = Self::highest_clock_map_path(from);
+        let cutoff_clock_map_path = Self::cutoff_clock_map_path(from);
+        if highest_clock_map_path.exists() {
+            let clock_map_to = Self::highest_clock_map_path(to);
+            move_file(highest_clock_map_path, clock_map_to).await?;
+        }
+        if cutoff_clock_map_path.exists() {
+            let clock_map_to = Self::cutoff_clock_map_path(to);
+            move_file(cutoff_clock_map_path, clock_map_to).await?;
+        }
+
         Ok(())
     }
 
@@ -101,38 +117,62 @@ impl LocalShard {
         if wal_path.exists() {
             remove_dir_all(wal_path).await?;
         }
+
         // Delete segments
         let segments_path = Self::segments_path(shard_path);
         if segments_path.exists() {
             remove_dir_all(segments_path).await?;
         }
 
+        // Delete clock maps
+        let highest_clock_map = Self::highest_clock_map_path(shard_path);
+        let cutoff_clock_map_path = Self::cutoff_clock_map_path(shard_path);
+        if highest_clock_map.exists() {
+            remove_file(highest_clock_map).await?;
+        }
+        if cutoff_clock_map_path.exists() {
+            remove_file(cutoff_clock_map_path).await?;
+        }
+
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         segment_holder: SegmentHolder,
         collection_config: Arc<TokioRwLock<CollectionConfig>>,
         shared_storage_config: Arc<SharedStorageConfig>,
-        wal: SerdeWal<CollectionUpdateOperations>,
+        wal: SerdeWal<OperationWithClockTag>,
         optimizers: Arc<Vec<Arc<Optimizer>>>,
+        optimizer_cpu_budget: CpuBudget,
         shard_path: &Path,
+        highest_clock_map: ClockMap,
+        cutoff_clock_map: ClockMap,
         update_runtime: Handle,
     ) -> Self {
         let segment_holder = Arc::new(RwLock::new(segment_holder));
         let config = collection_config.read().await;
         let locked_wal = Arc::new(ParkingMutex::new(wal));
         let optimizers_log = Arc::new(ParkingMutex::new(Default::default()));
+        let highest_clock_map = Arc::new(Mutex::new(highest_clock_map));
+        let cutoff_clock_map = Arc::new(Mutex::new(cutoff_clock_map));
+        let highest_clock_map_path = Self::highest_clock_map_path(shard_path);
+        let cutoff_clock_map_path = Self::cutoff_clock_map_path(shard_path);
 
         let mut update_handler = UpdateHandler::new(
             shared_storage_config.clone(),
             optimizers.clone(),
             optimizers_log.clone(),
+            optimizer_cpu_budget.clone(),
             update_runtime.clone(),
             segment_holder.clone(),
             locked_wal.clone(),
             config.optimizer_config.flush_interval_sec,
             config.optimizer_config.max_optimization_threads,
+            highest_clock_map.clone(),
+            cutoff_clock_map.clone(),
+            highest_clock_map_path,
+            cutoff_clock_map_path,
         );
 
         let (update_sender, update_receiver) =
@@ -147,7 +187,7 @@ impl LocalShard {
             segments: segment_holder,
             collection_config,
             shared_storage_config,
-            wal: locked_wal,
+            wal: RecoverableWal::from(locked_wal, highest_clock_map, cutoff_clock_map),
             update_handler: Arc::new(Mutex::new(update_handler)),
             update_sender: ArcSwap::from_pointee(update_sender),
             update_tracker,
@@ -170,14 +210,16 @@ impl LocalShard {
         collection_config: Arc<TokioRwLock<CollectionConfig>>,
         shared_storage_config: Arc<SharedStorageConfig>,
         update_runtime: Handle,
+        optimizer_cpu_budget: CpuBudget,
     ) -> CollectionResult<LocalShard> {
         let collection_config_read = collection_config.read().await;
 
         let wal_path = Self::wal_path(shard_path);
         let segments_path = Self::segments_path(shard_path);
-        let mut segment_holder = SegmentHolder::default();
+        let highest_clock_map_path = Self::highest_clock_map_path(shard_path);
+        let cutoff_clock_map_path = Self::cutoff_clock_map_path(shard_path);
 
-        let wal: SerdeWal<CollectionUpdateOperations> = SerdeWal::new(
+        let wal: SerdeWal<OperationWithClockTag> = SerdeWal::new(
             wal_path.to_str().unwrap(),
             (&collection_config_read.wal_config).into(),
         )
@@ -199,7 +241,7 @@ impl LocalShard {
                 thread::Builder::new()
                     .name(format!("shard-load-{collection_id}-{id}"))
                     .spawn(move || {
-                        let mut res = load_segment(&segments_path)?;
+                        let mut res = load_segment(&segments_path, &AtomicBool::new(false))?;
                         if let Some(segment) = &mut res {
                             segment.check_consistency_and_repair()?;
                         } else {
@@ -215,6 +257,8 @@ impl LocalShard {
                     })?,
             );
         }
+
+        let mut segment_holder = SegmentHolder::default();
 
         for handler in load_handlers {
             let segment = handler.join().map_err(|err| {
@@ -264,18 +308,24 @@ impl LocalShard {
 
         drop(collection_config_read); // release `shared_config` from borrow checker
 
+        let highest_clock_map = ClockMap::load_or_default(&highest_clock_map_path)?;
+        let cutoff_clock_map = ClockMap::load_or_default(&cutoff_clock_map_path)?;
+
         let collection = LocalShard::new(
             segment_holder,
             collection_config,
             shared_storage_config,
             wal,
             optimizers,
+            optimizer_cpu_budget,
             shard_path,
+            highest_clock_map,
+            cutoff_clock_map,
             update_runtime,
         )
         .await;
 
-        collection.load_from_wal(collection_id)?;
+        collection.load_from_wal(collection_id).await?;
 
         let available_memory_bytes = Mem::new().available_memory_bytes() as usize;
         let vectors_size_bytes = collection.estimate_vector_data_size().await;
@@ -313,6 +363,14 @@ impl LocalShard {
         shard_path.join("segments")
     }
 
+    pub fn highest_clock_map_path(shard_path: &Path) -> PathBuf {
+        shard_path.join("clock_map_highest.json")
+    }
+
+    pub fn cutoff_clock_map_path(shard_path: &Path) -> PathBuf {
+        shard_path.join("clock_map_cutoff.json")
+    }
+
     pub async fn build_local(
         id: ShardId,
         collection_id: CollectionId,
@@ -320,6 +378,7 @@ impl LocalShard {
         collection_config: Arc<TokioRwLock<CollectionConfig>>,
         shared_storage_config: Arc<SharedStorageConfig>,
         update_runtime: Handle,
+        optimizer_cpu_budget: CpuBudget,
     ) -> CollectionResult<LocalShard> {
         // initialize local shard config file
         let local_shard_config = ShardConfig::new_replica_set();
@@ -330,6 +389,7 @@ impl LocalShard {
             collection_config,
             shared_storage_config,
             update_runtime,
+            optimizer_cpu_budget,
         )
         .await?;
         local_shard_config.save(shard_path)?;
@@ -344,6 +404,7 @@ impl LocalShard {
         collection_config: Arc<TokioRwLock<CollectionConfig>>,
         shared_storage_config: Arc<SharedStorageConfig>,
         update_runtime: Handle,
+        optimizer_cpu_budget: CpuBudget,
     ) -> CollectionResult<LocalShard> {
         let config = collection_config.read().await;
 
@@ -406,7 +467,7 @@ impl LocalShard {
             segment_holder.add(segment);
         }
 
-        let wal: SerdeWal<CollectionUpdateOperations> =
+        let wal: SerdeWal<OperationWithClockTag> =
             SerdeWal::new(wal_path.to_str().unwrap(), (&config.wal_config).into())?;
 
         let optimizers = build_optimizers(
@@ -425,7 +486,10 @@ impl LocalShard {
             shared_storage_config,
             wal,
             optimizers,
+            optimizer_cpu_budget,
             shard_path,
+            ClockMap::default(),
+            ClockMap::default(),
             update_runtime,
         )
         .await;
@@ -444,9 +508,10 @@ impl LocalShard {
     }
 
     /// Loads latest collection operations from WAL
-    pub fn load_from_wal(&self, collection_id: CollectionId) -> CollectionResult<()> {
-        let wal = self.wal.lock();
-        let bar = ProgressBar::new(wal.len());
+    pub async fn load_from_wal(&self, collection_id: CollectionId) -> CollectionResult<()> {
+        let mut highest_clocks = self.wal.highest_clocks.lock().await;
+        let wal = self.wal.wal.lock();
+        let bar = ProgressBar::new(wal.len(false));
 
         let progress_style = ProgressStyle::default_bar()
             .template("{msg} [{elapsed_precise}] {wide_bar} {pos}/{len} (eta:{eta})")
@@ -462,7 +527,7 @@ impl LocalShard {
         if !show_progress_bar {
             log::info!(
                 "Recovering collection {collection_id}: 0/{} (0%)",
-                wal.len(),
+                wal.len(false),
             );
         }
 
@@ -480,8 +545,12 @@ impl LocalShard {
         // index *occasionally*), but the storage can handle it.
 
         for (op_num, update) in wal.read_all() {
+            if let Some(clock_tag) = update.clock_tag {
+                highest_clocks.advance_clock(clock_tag);
+            }
+
             // Propagate `CollectionError::ServiceError`, but skip other error types.
-            match &CollectionUpdater::update(segments, op_num, update) {
+            match &CollectionUpdater::update(segments, op_num, update.operation) {
                 Err(err @ CollectionError::ServiceError { error, backtrace }) => {
                     let path = self.path.display();
 
@@ -513,8 +582,8 @@ impl LocalShard {
                 let progress = bar.position();
                 log::info!(
                     "{progress}/{} ({}%)",
-                    wal.len(),
-                    (progress as f32 / wal.len() as f32 * 100.0) as usize,
+                    wal.len(false),
+                    (progress as f32 / wal.len(false) as f32 * 100.0) as usize,
                 );
                 last_progress_report = Instant::now();
             }
@@ -526,7 +595,7 @@ impl LocalShard {
         if !show_progress_bar {
             log::info!(
                 "Recovered collection {collection_id}: {0}/{0} (100%)",
-                wal.len(),
+                wal.len(false),
             );
         }
 
@@ -610,7 +679,7 @@ impl LocalShard {
         create_dir_all(&snapshot_segments_shard_path).await?;
 
         let segments = self.segments.clone();
-        let wal = self.wal.clone();
+        let wal = self.wal.wal.clone();
         let snapshot_shard_path_owned = snapshot_shard_path.to_owned();
 
         if !save_wal {
@@ -640,10 +709,24 @@ impl LocalShard {
         })
         .await??;
 
+        // Copy clock maps
+        let highest_clock_map_path = Self::highest_clock_map_path(&self.path);
+        let cutoff_clock_map_path = Self::cutoff_clock_map_path(&self.path);
+
+        if highest_clock_map_path.exists() {
+            let target_clock_map_path = Self::highest_clock_map_path(snapshot_shard_path);
+            copy(highest_clock_map_path, target_clock_map_path).await?;
+        }
+        if cutoff_clock_map_path.exists() {
+            let target_clock_map_path = Self::cutoff_clock_map_path(snapshot_shard_path);
+            copy(cutoff_clock_map_path, target_clock_map_path).await?;
+        }
+
         // copy shard's config
         let shard_config_path = ShardConfig::get_config_path(&self.path);
         let target_shard_config_path = snapshot_shard_path.join(SHARD_CONFIG_FILE);
         copy(&shard_config_path, &target_shard_config_path).await?;
+
         Ok(())
     }
 
@@ -852,6 +935,13 @@ impl LocalShard {
 
     pub fn update_tracker(&self) -> &UpdateTracker {
         &self.update_tracker
+    }
+
+    /// Get the recovery point for the current shard
+    ///
+    /// This is sourced from the last seen clocks from other nodes that we know about.
+    pub async fn recovery_point(&self) -> RecoveryPoint {
+        self.wal.recovery_point().await
     }
 }
 

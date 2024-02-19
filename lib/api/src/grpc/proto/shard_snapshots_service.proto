@@ -8,19 +8,19 @@ import "snapshots_service.proto";
 service ShardSnapshots {
   /*
   Create shard snapshot
-   */
+  */
   rpc Create (CreateShardSnapshotRequest) returns (CreateSnapshotResponse) {}
   /*
   List shard snapshots
-   */
+  */
   rpc List (ListShardSnapshotsRequest) returns (ListSnapshotsResponse) {}
   /*
   Delete shard snapshot
-   */
+  */
   rpc Delete (DeleteShardSnapshotRequest) returns (DeleteSnapshotResponse) {}
   /*
   Recover shard snapshot
-   */
+  */
   rpc Recover (RecoverShardSnapshotRequest) returns (RecoverSnapshotResponse) {}
 }
 
@@ -45,6 +45,7 @@ message RecoverShardSnapshotRequest {
   uint32 shard_id = 2; // Id of the shard
   ShardSnapshotLocation snapshot_location = 3; // Location of the shard snapshot
   ShardSnapshotPriority snapshot_priority = 4; // Priority of the shard snapshot
+  optional string checksum = 5; // SHA256 checksum for verifying snapshot integrity
 }
 
 message ShardSnapshotLocation {

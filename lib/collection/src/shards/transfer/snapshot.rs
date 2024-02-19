@@ -180,7 +180,7 @@ pub(super) async fn transfer_snapshot(
 
     // Queue proxy local shard
     replica_set
-        .queue_proxify_local(remote_shard.clone())
+        .queue_proxify_local(remote_shard.clone(), None)
         .await?;
 
     debug_assert!(

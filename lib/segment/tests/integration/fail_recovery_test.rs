@@ -32,6 +32,7 @@ fn test_insert_fail_recovery() {
         3,
         1.into(),
         &json!({ "color": vec!["red".to_string()] }).into(),
+        &None,
     );
     assert!(fail_res.is_err());
 
@@ -40,6 +41,7 @@ fn test_insert_fail_recovery() {
         3,
         2.into(),
         &json!({ "color": vec!["red".to_string()] }).into(),
+        &None,
     );
     assert!(fail_res.is_err());
 
@@ -48,6 +50,7 @@ fn test_insert_fail_recovery() {
         2,
         2.into(),
         &json!({ "color": vec!["red".to_string()] }).into(),
+        &None,
     );
     assert!(ok_res.is_ok());
     assert!(segment.error_status.is_some());
@@ -57,6 +60,7 @@ fn test_insert_fail_recovery() {
         2,
         1.into(),
         &json!({ "color": vec!["red".to_string()] }).into(),
+        &None,
     );
 
     assert!(recover_res.is_ok());

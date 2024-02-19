@@ -69,7 +69,7 @@ pub fn validate_collection_name(value: &str) -> Result<(), ValidationError> {
 }
 
 /// Validate a polygon has at least 4 points and is closed.
-pub fn validate_geo_polygon<T>(points: &Vec<T>) -> Result<(), ValidationError>
+pub fn validate_geo_polygon<T>(points: &[T]) -> Result<(), ValidationError>
 where
     T: PartialEq,
 {
@@ -112,6 +112,34 @@ pub fn validate_move_shard_different_peers(
         error
     });
     Err(errors)
+}
+
+/// Validate optional lowercase hexadecimal sha256 hash string.
+pub fn validate_sha256_hash(value: &str) -> Result<(), ValidationError> {
+    if value.len() != 64 {
+        let mut err = ValidationError::new("invalid_sha256_hash");
+        err.add_param(Cow::from("length"), &value.len());
+        err.add_param(Cow::from("expected_length"), &64);
+        return Err(err);
+    }
+
+    if !value.chars().all(|c| c.is_ascii_hexdigit()) {
+        let mut err = ValidationError::new("invalid_sha256_hash");
+        err.add_param(
+            Cow::from("message"),
+            &"invalid characters, expected 0-9, a-f, A-F",
+        );
+        return Err(err);
+    }
+
+    Ok(())
+}
+
+pub fn validate_sha256_hash_option(value: &Option<impl AsRef<str>>) -> Result<(), ValidationError> {
+    value
+        .as_ref()
+        .map(|v| validate_sha256_hash(v.as_ref()))
+        .unwrap_or(Ok(()))
 }
 
 #[cfg(test)]
@@ -202,5 +230,25 @@ mod tests {
             validate_geo_polygon(&good_polygon).is_ok(),
             "good polygon should not error on validation",
         );
+    }
+
+    #[test]
+    fn test_validate_sha256_hash() {
+        assert!(validate_sha256_hash(
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        )
+        .is_ok());
+        assert!(validate_sha256_hash(
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde"
+        )
+        .is_err());
+        assert!(validate_sha256_hash(
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0"
+        )
+        .is_err());
+        assert!(validate_sha256_hash(
+            "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEG"
+        )
+        .is_err());
     }
 }

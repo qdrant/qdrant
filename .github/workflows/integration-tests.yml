@@ -19,7 +19,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable 
       - uses: actions/checkout@v4
       - name: Install Protoc
-        uses: arduino/setup-protoc@v2
+        uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: Swatinem/rust-cache@v2
@@ -43,7 +43,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - uses: actions/checkout@v4
       - name: Install Protoc
-        uses: arduino/setup-protoc@v2
+        uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: Swatinem/rust-cache@v2
@@ -155,7 +155,7 @@ jobs:
           build-args: |
             PROFILE=ci
       - name: Install Protoc
-        uses: arduino/setup-protoc@v2
+        uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: gRPC file consistency check
@@ -177,7 +177,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: actions/checkout@v4
       - name: Install Protoc
-        uses: arduino/setup-protoc@v2
+        uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Set up Docker Buildx
@@ -212,7 +212,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: actions/checkout@v4
       - name: Install Protoc
-        uses: arduino/setup-protoc@v2
+        uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Set up Docker Buildx
@@ -243,7 +243,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: actions/checkout@v4
       - name: Install Protoc
-        uses: arduino/setup-protoc@v2
+        uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install dependencies

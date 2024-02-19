@@ -15,7 +15,7 @@ info:
     This document describes CRUD and search operations on collections of points (vectors with payload).
 
 
-    Qdrant supports any combinations of `should`, `must` and `must_not` conditions,
+    Qdrant supports any combinations of `should`, `min_should`, `must` and `must_not` conditions,
     which makes it possible to use in applications when object could not be described solely by vector.
     It could be location features, availability flags, and other custom properties businesses should take into account.
 
@@ -236,12 +236,15 @@ tags:
   - name: points
     description: Float-point vectors with payload.
   - name: cluster
-    description: Service distributed setup
+    description: Service distributed setup.
   - name: snapshots
-    description: Storage and collections snapshots
+    description: Storage and collections snapshots.
+  - name: service
+    description: Qdrant service utilities.
+  - name: beta
+    description: Beta features, do not depend on these yet.
 
 paths:
-
   /collections/{collection_name}/points/scroll:
     post:
       tags:
@@ -486,7 +489,7 @@ paths:
             type: integer
             minimum: 1
       responses: #@ response(reference("GroupsResult"))
-  
+
   /collections/{collection_name}/points/discover:
     post:
       tags:
@@ -494,7 +497,7 @@ paths:
       summary: Discover points
       description: >
         Use context and a target to find the most similar points to the target, constrained by the context.
-        
+
         When using only the context (without a target), a special search - called context search - is performed where
         pairs of points are used to generate a loss that guides the search towards the zone where
         most positive examples overlap. This means that the score minimizes the scenario of
@@ -502,7 +505,7 @@ paths:
 
         Since the score of a context relates to loss, the maximum score a point can get is 0.0,
         and it becomes normal that many points can have a score of 0.0.
-        
+
         When using target (with or without context), the score behaves a little different: The 
         integer part of the score represents the rank with respect to the context, while the
         decimal part of the score relates to the distance to the target. The context part of the score for 
@@ -537,7 +540,7 @@ paths:
             type: integer
             minimum: 1
       responses: #@ response(array(reference("ScoredPoint")))
-      
+
   /collections/{collection_name}/points/discover/batch:
     post:
       tags:

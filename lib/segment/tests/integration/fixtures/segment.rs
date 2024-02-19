@@ -46,11 +46,21 @@ pub fn build_segment_1(path: &Path) -> Segment {
     let payload_option2 = json!({ payload_key: vec!["red".to_owned(), "blue".to_owned()] }).into();
     let payload_option3 = json!({ payload_key: vec!["blue".to_owned()] }).into();
 
-    segment1.set_payload(6, 1.into(), &payload_option1).unwrap();
-    segment1.set_payload(6, 2.into(), &payload_option1).unwrap();
-    segment1.set_payload(6, 3.into(), &payload_option3).unwrap();
-    segment1.set_payload(6, 4.into(), &payload_option2).unwrap();
-    segment1.set_payload(6, 5.into(), &payload_option2).unwrap();
+    segment1
+        .set_payload(6, 1.into(), &payload_option1, &None)
+        .unwrap();
+    segment1
+        .set_payload(6, 2.into(), &payload_option1, &None)
+        .unwrap();
+    segment1
+        .set_payload(6, 3.into(), &payload_option3, &None)
+        .unwrap();
+    segment1
+        .set_payload(6, 4.into(), &payload_option2, &None)
+        .unwrap();
+    segment1
+        .set_payload(6, 5.into(), &payload_option2, &None)
+        .unwrap();
 
     segment1
 }
@@ -88,19 +98,19 @@ pub fn build_segment_2(path: &Path) -> Segment {
     let payload_option3 = json!({ payload_key: vec!["blue".to_owned()] }).into();
 
     segment2
-        .set_payload(16, 11.into(), &payload_option1)
+        .set_payload(16, 11.into(), &payload_option1, &None)
         .unwrap();
     segment2
-        .set_payload(16, 12.into(), &payload_option1)
+        .set_payload(16, 12.into(), &payload_option1, &None)
         .unwrap();
     segment2
-        .set_payload(16, 13.into(), &payload_option3)
+        .set_payload(16, 13.into(), &payload_option3, &None)
         .unwrap();
     segment2
-        .set_payload(16, 14.into(), &payload_option2)
+        .set_payload(16, 14.into(), &payload_option2, &None)
         .unwrap();
     segment2
-        .set_payload(16, 15.into(), &payload_option2)
+        .set_payload(16, 15.into(), &payload_option2, &None)
         .unwrap();
 
     segment2
@@ -206,11 +216,21 @@ pub fn build_segment_3(path: &Path) -> Segment {
     let payload_option2 = json!({ payload_key: vec!["red".to_owned(), "blue".to_owned()] }).into();
     let payload_option3 = json!({ payload_key: vec!["blue".to_owned()] }).into();
 
-    segment3.set_payload(6, 1.into(), &payload_option1).unwrap();
-    segment3.set_payload(6, 2.into(), &payload_option1).unwrap();
-    segment3.set_payload(6, 3.into(), &payload_option3).unwrap();
-    segment3.set_payload(6, 4.into(), &payload_option2).unwrap();
-    segment3.set_payload(6, 5.into(), &payload_option2).unwrap();
+    segment3
+        .set_payload(6, 1.into(), &payload_option1, &None)
+        .unwrap();
+    segment3
+        .set_payload(6, 2.into(), &payload_option1, &None)
+        .unwrap();
+    segment3
+        .set_payload(6, 3.into(), &payload_option3, &None)
+        .unwrap();
+    segment3
+        .set_payload(6, 4.into(), &payload_option2, &None)
+        .unwrap();
+    segment3
+        .set_payload(6, 5.into(), &payload_option2, &None)
+        .unwrap();
 
     segment3
 }

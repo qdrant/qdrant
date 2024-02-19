@@ -21,7 +21,7 @@ pub struct MutableNumericIndex<T: Encodable + Numericable> {
     pub(super) point_to_values: Vec<Vec<T>>,
 }
 
-impl<T: Encodable + Numericable> MutableNumericIndex<T> {
+impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
     pub fn new(db: Arc<RwLock<DB>>, field: &str) -> Self {
         let store_cf_name = NumericIndex::<T>::storage_cf_name(field);
         let db_wrapper = DatabaseColumnWrapper::new(db, &store_cf_name);
@@ -53,6 +53,19 @@ impl<T: Encodable + Numericable> MutableNumericIndex<T> {
         end_bound: Bound<Vec<u8>>,
     ) -> impl Iterator<Item = PointOffsetType> + '_ {
         self.map.range((start_bound, end_bound)).map(|(_, v)| *v)
+    }
+
+    pub fn orderable_values_range(
+        &self,
+        start_bound: Bound<Vec<u8>>,
+        end_bound: Bound<Vec<u8>>,
+    ) -> impl DoubleEndedIterator<Item = (T, PointOffsetType)> + '_ {
+        self.map
+            .range((start_bound, end_bound))
+            .map(|(encoded, idx)| {
+                let (_idx, value) = T::decode_key(encoded);
+                (value, *idx)
+            })
     }
 
     fn add_value(&mut self, id: PointOffsetType, value: T) -> OperationResult<()> {

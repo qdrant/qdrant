@@ -34,7 +34,7 @@ def test_cant_create_alias_if_collection_exists(on_disk_vectors):
         }
     )
     assert not response.ok
-    assert response.status_code == 400
+    assert response.status_code == 409
 
 
 def test_cant_create_collection_if_alias_exists(on_disk_vectors):

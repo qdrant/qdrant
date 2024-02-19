@@ -269,9 +269,11 @@ impl GraphLinksConverter {
                 .read(true)
                 .write(true)
                 .create(true)
+                // Don't truncate because we explicitly set the length later
+                .truncate(false)
                 .open(temp_path.as_path())?;
-
             file.set_len(self.data_size())?;
+
             let m = unsafe { MmapMut::map_mut(&file) };
             let mut mmap = m?;
 
