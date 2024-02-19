@@ -4,10 +4,10 @@ use schemars::JsonSchema;
 use serde;
 use serde::{Deserialize, Serialize};
 
-pub fn get_git_commit_id() -> Option<&'static str> {
+pub fn get_git_commit_id() -> Option<String> {
     option_env!("GIT_COMMIT_ID")
-      .map(ToString::to_string)
-      .filter(|s| !s.trim().is_empty())
+        .map(ToString::to_string)
+        .filter(|s| !s.trim().is_empty())
 }
 
 #[derive(Serialize, Deserialize, JsonSchema)]
