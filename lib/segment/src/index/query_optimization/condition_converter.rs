@@ -229,14 +229,11 @@ pub fn get_float_range_checkers(
     range: Range<FloatPayloadType>,
 ) -> Option<ConditionCheckerFn> {
     match index {
-        FieldIndex::IntIndex(num_index) => {
-            let range = range.map(|f| f as IntPayloadType);
-            Some(Box::new(move |point_id: PointOffsetType| {
-                num_index
-                    .get_values(point_id)
-                    .is_some_and(|values| values.iter().copied().any(|i| range.check_range(i)))
-            }))
-        }
+        FieldIndex::IntIndex(num_index) => Some(Box::new(move |point_id: PointOffsetType| {
+            num_index
+                .get_values(point_id)
+                .is_some_and(|values| values.iter().copied().any(|i| range.check_range_num_cmp(i)))
+        })),
         FieldIndex::FloatIndex(num_index) => Some(Box::new(move |point_id: PointOffsetType| {
             num_index
                 .get_values(point_id)
@@ -256,14 +253,11 @@ pub fn get_int_range_checkers(
                 .get_values(point_id)
                 .is_some_and(|values| values.iter().copied().any(|i| range.check_range(i)))
         })),
-        FieldIndex::FloatIndex(num_index) => {
-            let range = range.map(|i| i as FloatPayloadType);
-            Some(Box::new(move |point_id: PointOffsetType| {
-                num_index
-                    .get_values(point_id)
-                    .is_some_and(|values| values.iter().copied().any(|f| range.check_range(f)))
-            }))
-        }
+        FieldIndex::FloatIndex(num_index) => Some(Box::new(move |point_id: PointOffsetType| {
+            num_index
+                .get_values(point_id)
+                .is_some_and(|values| values.iter().copied().any(|f| range.check_range_num_cmp(f)))
+        })),
         _ => None,
     }
 }

@@ -13,6 +13,7 @@ use geo::prelude::HaversineDistance;
 use geo::{Contains, Coord, LineString, Point, Polygon};
 use indexmap::IndexSet;
 use itertools::Itertools;
+use num_cmp::NumCmp;
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -1457,6 +1458,15 @@ impl<T: Copy + PartialOrd> Range<T> {
             && self.gt.map_or(true, |x| number > x)
             && self.lte.map_or(true, |x| number <= x)
             && self.gte.map_or(true, |x| number >= x)
+    }
+}
+
+impl<T: Copy> Range<T> {
+    pub fn check_range_num_cmp(&self, number: impl NumCmp<T>) -> bool {
+        self.lt.map_or(true, |x| number.num_lt(x))
+            && self.gt.map_or(true, |x| number.num_gt(x))
+            && self.lte.map_or(true, |x| number.num_le(x))
+            && self.gte.map_or(true, |x| number.num_ge(x))
     }
 }
 

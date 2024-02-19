@@ -151,17 +151,17 @@ impl ValueChecker for Range<FloatPayloadType> {
     fn check_match(&self, payload: &Value) -> bool {
         payload
             .as_number()
-            .and_then(|x| x.as_f64().or_else(|| x.as_i64().map(|x| x as f64)))
-            .map_or(false, |x| self.check_range(x))
+            .and_then(|x| x.as_f64())
+            .is_some_and(|x| self.check_range(x))
     }
 }
 
 impl ValueChecker for Range<IntPayloadType> {
     fn check_match(&self, payload: &Value) -> bool {
-        payload
-            .as_number()
-            .and_then(|x| x.as_i64().or_else(|| x.as_f64().map(|x| x as i64)))
-            .map_or(false, |x| self.check_range(x))
+        payload.as_number().is_some_and(|x| {
+            x.as_i64().is_some_and(|x| self.check_range(x))
+                || x.as_f64().is_some_and(|x| self.check_range_num_cmp(x))
+        })
     }
 }
 
