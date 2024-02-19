@@ -25,23 +25,22 @@ fn main() -> std::io::Result<()> {
     append_to_file("src/grpc/qdrant.rs", "use super::validate::ValidateExt;");
 
     // Fetch git commit ID and pass it to the compiler
-    let git_commit_id_optional = option_env!("GIT_COMMIT_ID");
-    if git_commit_id_optional.is_none() {
+    let git_commit_id = option_env!("GIT_COMMIT_ID").or_else(|| {
         match Command::new("git").args(["rev-parse", "HEAD"]).output() {
             Ok(output) if output.status.success() => {
-                let git_commit_id = str::from_utf8(&output.stdout).unwrap().trim();
-                println!("cargo:rustc-env=GIT_COMMIT_ID={git_commit_id}");
+                Some(str::from_utf8(&output.stdout).unwrap().trim().to_string())
             }
-            Ok(_) | Err(_) => {
-                println!("cargo:warning=current git commit hash could not be determined")
+            _ => {
+                println!("cargo:warning=current git commit hash could not be determined");
+                None
             }
         }
+    });
+
+    if let Some(commit_id) = git_commit_id {
+        println!("cargo:rustc-env=GIT_COMMIT_ID={commit_id}");
     } else {
-        println!("cargo:info=using git commit hash from GIT_COMMIT_ID env var");
-        println!(
-            "cargo:rustc-env=GIT_COMMIT_ID={}",
-            git_commit_id_optional.unwrap()
-        );
+        println!("cargo:info=GIT_COMMIT_ID is not set");
     }
 
     Ok(())
