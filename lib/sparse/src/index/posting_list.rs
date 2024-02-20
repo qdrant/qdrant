@@ -137,10 +137,12 @@ impl PostingBuilder {
         }
     }
 
+    /// Add a new record to the posting list.
     pub fn add(&mut self, record_id: PointOffsetType, weight: DimWeight) {
         self.elements.push(PostingElement::new(record_id, weight));
     }
 
+    /// Consume the builder and return the posting list.
     pub fn build(mut self) -> PostingList {
         // Sort by id
         self.elements.sort_unstable_by_key(|e| e.record_id);
@@ -157,7 +159,7 @@ impl PostingBuilder {
             }
         }
 
-        // Calculate max_next_weight
+        // Calculate the `max_next_weight` for all elements starting from the end
         let mut max_next_weight = f32::NEG_INFINITY;
         for element in self.elements.iter_mut().rev() {
             element.max_next_weight = max_next_weight;

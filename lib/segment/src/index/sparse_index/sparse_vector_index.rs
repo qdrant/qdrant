@@ -11,6 +11,7 @@ use itertools::Itertools;
 use sparse::common::scores_memory_pool::ScoresMemoryPool;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
+use sparse::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
 use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::search_context::SearchContext;
 
@@ -115,8 +116,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         let borrowed_id_tracker = id_tracker.borrow();
         let deleted_bitslice = borrowed_vector_storage.deleted_vector_bitslice();
 
-        let mut ram_index = InvertedIndexRam::empty();
-        let mut index_point_count: usize = 0;
+        let mut ram_index_builder = InvertedIndexBuilder::new();
         let mut indices_tracker = IndicesTracker::default();
         for id in borrowed_id_tracker.iter_ids_excluding(deleted_bitslice) {
             check_process_stopped(stopped)?;
@@ -137,16 +137,12 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                     }
                     indices_tracker.register_indices(vector);
                     let vector = indices_tracker.remap_vector(vector.to_owned());
-                    ram_index.upsert(id, vector);
-                    index_point_count += 1;
+                    ram_index_builder.add(id, vector);
                 }
             }
         }
-        // the underlying upsert operation does not guarantee that the indexed vector count is correct
-        // so we set the indexed vector count to the number of points we have seen
-        ram_index.vector_count = index_point_count;
         Ok((
-            TInvertedIndex::from_ram_index(ram_index, path)?,
+            TInvertedIndex::from_ram_index(ram_index_builder.build(), path)?,
             indices_tracker,
         ))
     }
