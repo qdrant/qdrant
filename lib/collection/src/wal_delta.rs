@@ -1098,6 +1098,7 @@ mod tests {
     #[case::eight_nodes(8, 1..8)]
     #[case::nine_nodes(9, 1..9)]
     #[case::ten_nodes(10, 1..10)]
+    #[tokio::test]
     async fn test_resolve_wal_delta_randomized(
         #[case] node_count: usize,
         #[case] dead_nodes_range: Range<usize>,
