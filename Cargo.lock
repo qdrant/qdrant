@@ -3960,7 +3960,7 @@ dependencies = [
  "reqwest",
  "rstack-self",
  "rustls",
- "rustls-pemfile 2.0.0",
+ "rustls-pemfile 2.1.0",
  "rusty-hook",
  "schemars",
  "sealed_test",
@@ -4511,9 +4511,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-pemfile"
-version = "2.0.0"
+version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "35e4980fa29e4c4b212ffb3db068a564cbf560e51d3944b7c88bd8bf5bec64f4"
+checksum = "3c333bb734fcdedcea57de1602543590f545f127dc8b533324318fd492c5c70b"
 dependencies = [
  "base64 0.21.0",
  "rustls-pki-types",
@@ -4521,9 +4521,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-pki-types"
-version = "1.1.0"
+version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e9d979b3ce68192e42760c7810125eb6cf2ea10efae545a156063e61f314e2a"
+checksum = "048a63e5b3ac996d78d402940b5fa47973d2d080c6c6fffa1d0f19c4445310b7"
 
 [[package]]
 name = "rustls-webpki"
