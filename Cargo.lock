@@ -1055,7 +1055,7 @@ dependencies = [
  "chrono",
  "common",
  "criterion",
- "env_logger 0.11.1",
+ "env_logger 0.11.2",
  "fnv",
  "fs_extra",
  "futures",
@@ -1722,9 +1722,9 @@ dependencies = [
 
 [[package]]
 name = "env_logger"
-version = "0.11.1"
+version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05e7cf40684ae96ade6232ed84582f40ce0a66efcd43a5117aef610534f8e0b8"
+checksum = "6c012a26a7f605efc424dd53697843a72be7dc86ad2d01f7814337794a12231d"
 dependencies = [
  "anstream",
  "anstyle",
@@ -5082,7 +5082,7 @@ dependencies = [
  "chrono",
  "collection",
  "common",
- "env_logger 0.11.1",
+ "env_logger 0.11.2",
  "futures",
  "http 0.2.9",
  "io",
@@ -5971,7 +5971,7 @@ dependencies = [
  "crc32c",
  "crossbeam-channel",
  "docopt",
- "env_logger 0.11.1",
+ "env_logger 0.11.2",
  "fs4",
  "log",
  "memmap2 0.9.4",
