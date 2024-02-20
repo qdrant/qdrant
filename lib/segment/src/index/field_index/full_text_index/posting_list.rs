@@ -1,6 +1,8 @@
 use bitpacking::BitPacker;
 use common::types::PointOffsetType;
 
+type BitPackerImpl = bitpacking::BitPacker4x;
+
 #[derive(Clone, Debug, Default)]
 pub struct PostingList {
     list: Vec<PointOffsetType>,
@@ -65,28 +67,23 @@ impl CompressedPostingList {
         let len = posting_list.len();
         let last_doc_id = *posting_list.list.last().unwrap();
 
-        let bitpacker = bitpacking::BitPacker4x::new();
+        let bitpacker = BitPackerImpl::new();
         posting_list.list.sort_unstable();
 
         let last = *posting_list.list.last().unwrap();
-        while posting_list.list.len() % bitpacking::BitPacker4x::BLOCK_LEN != 0 {
+        while posting_list.list.len() % BitPackerImpl::BLOCK_LEN != 0 {
             posting_list.list.push(last);
         }
 
         // calculate chunks count
-        let chunks_count = posting_list
-            .len()
-            .div_ceil(bitpacking::BitPacker4x::BLOCK_LEN);
+        let chunks_count = posting_list.len().div_ceil(BitPackerImpl::BLOCK_LEN);
         // fill chunks data
         let mut chunks = Vec::with_capacity(chunks_count);
         let mut data_size = 0;
-        for chunk_data in posting_list
-            .list
-            .chunks_exact(bitpacking::BitPacker4x::BLOCK_LEN)
-        {
+        for chunk_data in posting_list.list.chunks_exact(BitPackerImpl::BLOCK_LEN) {
             let initial = chunk_data[0];
             let chunk_bits: u8 = bitpacker.num_bits_sorted(initial, chunk_data);
-            let chunk_size = bitpacking::BitPacker4x::compressed_block_size(chunk_bits);
+            let chunk_size = BitPackerImpl::compressed_block_size(chunk_bits);
             chunks.push(CompressedPostingChunk {
                 initial,
                 offset: data_size as u32,
@@ -97,31 +94,18 @@ impl CompressedPostingList {
         let mut data = vec![0u8; data_size];
         for (chunk_index, chunk_data) in posting_list
             .list
-            .chunks_exact(bitpacking::BitPacker4x::BLOCK_LEN)
+            .chunks_exact(BitPackerImpl::BLOCK_LEN)
             .enumerate()
         {
             let chunk = &chunks[chunk_index];
             let chunk_size = Self::get_chunk_size(&chunks, &data, chunk_index);
-            let chunk_bits = (chunk_size * 8) / bitpacking::BitPacker4x::BLOCK_LEN;
+            let chunk_bits = (chunk_size * 8) / BitPackerImpl::BLOCK_LEN;
             bitpacker.compress_sorted(
                 chunk.initial,
                 chunk_data,
                 &mut data[chunk.offset as usize..chunk.offset as usize + chunk_size],
                 chunk_bits as u8,
             );
-
-            // debug decompress check
-            // todo: remove
-            let mut decompressed = vec![0u32; bitpacking::BitPacker4x::BLOCK_LEN];
-            bitpacker.decompress_sorted(
-                chunk.initial,
-                &data[chunk.offset as usize..chunk.offset as usize + chunk_size],
-                &mut decompressed,
-                chunk_bits as u8,
-            );
-            if decompressed != chunk_data {
-                panic!("decompressed != chunk");
-            }
         }
 
         Self {
@@ -144,12 +128,8 @@ impl CompressedPostingList {
                 return true;
             }
 
-            let mut decompressed = [0u32; bitpacking::BitPacker4x::BLOCK_LEN];
-            self.decompress_chunk(
-                &bitpacking::BitPacker4x::new(),
-                chunk_index,
-                &mut decompressed,
-            );
+            let mut decompressed = [0u32; BitPackerImpl::BLOCK_LEN];
+            self.decompress_chunk(&BitPackerImpl::new(), chunk_index, &mut decompressed);
             decompressed.binary_search(val).is_ok()
         } else {
             false
@@ -161,10 +141,10 @@ impl CompressedPostingList {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = PointOffsetType> + '_ {
-        let bitpacker = bitpacking::BitPacker4x::new();
+        let bitpacker = BitPackerImpl::new();
         (0..self.chunks.len())
             .flat_map(move |chunk_index| {
-                let mut decompressed = [0u32; bitpacking::BitPacker4x::BLOCK_LEN];
+                let mut decompressed = [0u32; BitPackerImpl::BLOCK_LEN];
                 self.decompress_chunk(&bitpacker, chunk_index, &mut decompressed);
                 decompressed.into_iter()
             })
@@ -203,13 +183,13 @@ impl CompressedPostingList {
 
     fn decompress_chunk(
         &self,
-        bitpacker: &bitpacking::BitPacker4x,
+        bitpacker: &BitPackerImpl,
         chunk_index: usize,
         decompressed: &mut [PointOffsetType],
     ) {
         let chunk = &self.chunks[chunk_index];
         let chunk_size = Self::get_chunk_size(&self.chunks, &self.data, chunk_index);
-        let chunk_bits = (chunk_size * 8) / bitpacking::BitPacker4x::BLOCK_LEN;
+        let chunk_bits = (chunk_size * 8) / BitPackerImpl::BLOCK_LEN;
         bitpacker.decompress_sorted(
             chunk.initial,
             &self.data[chunk.offset as usize..chunk.offset as usize + chunk_size],
@@ -219,12 +199,24 @@ impl CompressedPostingList {
     }
 }
 
+// Help structure to check if set of sorted values are in the compressed posting list
+// This help structure reuse the decompressed chunk to avoid unnecessary decompression
 pub struct CompressedPostingVisitor<'a> {
-    bitpacker: bitpacking::BitPacker4x,
+    bitpacker: BitPackerImpl,
     postings: &'a CompressedPostingList,
-    decompressed_chunk: [PointOffsetType; bitpacking::BitPacker4x::BLOCK_LEN],
+
+    // Data for the decompressed chunk.
+    decompressed_chunk: [PointOffsetType; BitPackerImpl::BLOCK_LEN],
+
+    // Index of the decompressed chunk.
+    // It is used to shorten the search range of chunk index for the next value.
     decompressed_chunk_idx: Option<usize>,
+
+    // start index of the decompressed chunk.
+    // It is used to shorten the search range in decompressed chunk for the next value.
     decompressed_chunk_start_index: usize,
+
+    // Check if the checked values are in the increasing order.
     #[cfg(test)]
     last_checked: Option<PointOffsetType>,
 }
@@ -232,9 +224,9 @@ pub struct CompressedPostingVisitor<'a> {
 impl<'a> CompressedPostingVisitor<'a> {
     pub fn new(postings: &'a CompressedPostingList) -> CompressedPostingVisitor<'a> {
         CompressedPostingVisitor {
-            bitpacker: bitpacking::BitPacker4x::new(),
+            bitpacker: BitPackerImpl::new(),
             postings,
-            decompressed_chunk: [0; bitpacking::BitPacker4x::BLOCK_LEN],
+            decompressed_chunk: [0; BitPackerImpl::BLOCK_LEN],
             decompressed_chunk_idx: None,
             decompressed_chunk_start_index: 0,
             #[cfg(test)]
@@ -260,8 +252,7 @@ impl<'a> CompressedPostingVisitor<'a> {
         if self.decompressed_chunk_idx.is_some() {
             // check if value is in decompressed chunk range
             // check for max value in the chunk only because we already checked for min value while decompression
-            let last_decompressed =
-                &self.decompressed_chunk[bitpacking::BitPacker4x::BLOCK_LEN - 1];
+            let last_decompressed = &self.decompressed_chunk[BitPackerImpl::BLOCK_LEN - 1];
             match val.cmp(last_decompressed) {
                 std::cmp::Ordering::Less => {
                     // value is less than the last decompressed value
