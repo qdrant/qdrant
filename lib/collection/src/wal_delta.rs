@@ -1207,7 +1207,7 @@ mod tests {
                 .filter(|clock_tag| {
                     cutoff
                         .get_tick(clock_tag.peer_id, clock_tag.clock_id)
-                        .map_or(true, |a| clock_tag.clock_tick >= a)
+                        .map_or(true, |cutoff_tick| clock_tag.clock_tick >= cutoff_tick)
                 })
                 .collect::<Vec<_>>()
         };
@@ -1491,7 +1491,7 @@ mod tests {
             ClockTag::new(3, 0, 2),
             ClockTag::new(2, 0, 2),
             ClockTag::new(1, 0, 2),
-            // Peer 2 only partially recovering here, missing 3:0:2
+            // Peer 2 only partially recovering here, missing 2:0:2
             ClockTag::new(2, 0, 0),
             ClockTag::new(2, 0, 1),
             // Peer 1 and 3 continue
