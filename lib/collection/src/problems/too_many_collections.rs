@@ -11,7 +11,7 @@ pub struct TooManyCollections;
 
 impl Issue for TooManyCollections {
     fn code(&self) -> String {
-        "TOO_MANY_COLLECTIONS".to_string()
+        "/TOO_MANY_COLLECTIONS".to_string()
     }
 
     fn description(&self) -> String {
@@ -20,17 +20,17 @@ impl Issue for TooManyCollections {
 
     fn solution(&self) -> Solution {
         Solution::Refactor(
-            "Restructure your solution into a fixed number of collections".to_string(),
+            "Restructure your usage of Qdrant into a fixed number of collections".to_string(),
         )
     }
 }
 
 impl TooManyCollections {
     /// Defines how many collections are considered too many. Below this number, the issue is not submitted
-    const MANY_COLLECTIONS: usize = 50;
+    const MANY_COLLECTIONS: usize = 30;
 
     /// Defines how many points are considered too few as an average per collection
-    const FEW_POINTS: usize = 500;
+    const FEW_POINTS: usize = 300;
 
     /// Defines how concentrated the data is, in relation to the amount of collections.
     /// This metric is calculated with the average number of points per collection divided by the amount of collections
