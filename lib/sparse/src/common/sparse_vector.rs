@@ -148,6 +148,13 @@ impl TryFrom<Vec<(u32, f32)>> for SparseVector {
     }
 }
 
+#[cfg(test)]
+impl<const N: usize> From<[(u32, f32); N]> for SparseVector {
+    fn from(value: [(u32, f32); N]) -> Self {
+        value.to_vec().try_into().unwrap()
+    }
+}
+
 impl Validate for SparseVector {
     fn validate(&self) -> Result<(), ValidationErrors> {
         validate_sparse_vector_impl(&self.indices, &self.values)

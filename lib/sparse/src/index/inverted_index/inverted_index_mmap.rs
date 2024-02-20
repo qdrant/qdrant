@@ -220,8 +220,7 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::index::inverted_index::inverted_index_ram::InvertedIndexBuilder;
-    use crate::index::posting_list::PostingList;
+    use crate::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
 
     fn compare_indexes(
         inverted_index_ram: &InvertedIndexRam,
@@ -239,28 +238,18 @@ mod tests {
 
     #[test]
     fn test_inverted_index_mmap() {
-        let inverted_index_ram = InvertedIndexBuilder::new()
-            .add(
-                1,
-                PostingList::from(vec![
-                    (1, 10.0),
-                    (2, 20.0),
-                    (3, 30.0),
-                    (4, 1.0),
-                    (5, 2.0),
-                    (6, 3.0),
-                    (7, 4.0),
-                    (8, 5.0),
-                    (9, 6.0),
-                ]),
-            )
-            .add(
-                2,
-                PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0), (4, 1.0)]),
-            )
-            .add(3, PostingList::from(vec![(1, 10.0), (2, 20.0), (3, 30.0)]))
-            .add(5, PostingList::from(vec![(1, 10.0), (2, 20.0)])) // skip 4
-            .build();
+        // skip 4th dimension
+        let mut builder = InvertedIndexBuilder::new();
+        builder.add(1, [(1, 10.0), (2, 10.0), (3, 10.0), (5, 10.0)].into());
+        builder.add(2, [(1, 20.0), (2, 20.0), (3, 20.0), (5, 20.0)].into());
+        builder.add(3, [(1, 30.0), (2, 30.0), (3, 30.0)].into());
+        builder.add(4, [(1, 1.0), (2, 1.0)].into());
+        builder.add(5, [(1, 2.0)].into());
+        builder.add(6, [(1, 3.0)].into());
+        builder.add(7, [(1, 4.0)].into());
+        builder.add(8, [(1, 5.0)].into());
+        builder.add(9, [(1, 6.0)].into());
+        let inverted_index_ram = builder.build();
 
         let tmp_dir_path = Builder::new().prefix("test_index_dir").tempdir().unwrap();
 

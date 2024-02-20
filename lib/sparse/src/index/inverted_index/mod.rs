@@ -9,6 +9,7 @@ use crate::index::posting_list::PostingListIterator;
 
 pub mod inverted_index_mmap;
 pub mod inverted_index_ram;
+pub mod inverted_index_ram_builder;
 
 pub trait InvertedIndex: Sized {
     /// Open existing index based on path
