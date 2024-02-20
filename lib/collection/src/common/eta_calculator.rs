@@ -1,11 +1,10 @@
 use std::time::{Duration, Instant};
 
+use ringbuffer::{ConstGenericRingBuffer, RingBuffer as _};
+
 /// A progress ETA calculator.
 /// Calculates the ETA roughly based on the last ten seconds of measurements.
-pub struct EtaCalculator {
-    ring: [(Instant, usize); Self::SIZE],
-    ring_pos: usize,
-}
+pub struct EtaCalculator(ConstGenericRingBuffer<(Instant, usize), { Self::SIZE }>);
 
 impl EtaCalculator {
     const SIZE: usize = 16;
@@ -27,25 +26,30 @@ impl EtaCalculator {
     }
 
     fn new_raw(now: Instant) -> Self {
-        Self {
-            ring: [(now, 0); Self::SIZE],
-            ring_pos: 0,
-        }
+        Self([(now, 0)].as_ref().into())
     }
 
     fn set_progress_raw(&mut self, now: Instant, current_progress: usize) {
-        if current_progress < self.ring[self.ring_pos].1 {
+        if self.0.back().map_or(false, |(_, l)| current_progress < *l) {
             // Progress went backwards, reset the state.
             *self = Self::new();
         }
-        if now - self.ring[(self.ring_pos + Self::SIZE - 1) % Self::SIZE].0 >= Self::DURATION {
-            self.ring_pos = (self.ring_pos + 1) % Self::SIZE;
+
+        // Consider this progress history: `[recent, older, even_older, ..., oldest]`.
+        // Based on the age of `older`, we decide whether to update the `recent` or push a new item.
+        //
+        // NOTE: When `len() == 1`, calling `get_signed(-2)` would return the same value as
+        // `get_signed(-1)`, but this is not what we want. Thus, we explicitly check for length.
+        // Unwraps are safe because the length is checked.
+        if self.0.len() >= 2 && now - self.0.get_signed(-2).unwrap().0 < Self::DURATION {
+            *self.0.back_mut().unwrap() = (now, current_progress);
+        } else {
+            self.0.push((now, current_progress));
         }
-        self.ring[self.ring_pos] = (now, current_progress);
     }
 
     fn estimate_raw(&self, now: Instant, target_progress: usize) -> Option<Duration> {
-        let (last_time, last_progress) = self.ring[self.ring_pos];
+        let &(last_time, last_progress) = self.0.back()?;
 
         // Check if the progress is already reached.
         let value_diff = match target_progress.checked_sub(last_progress) {
@@ -54,17 +58,10 @@ impl EtaCalculator {
         };
 
         // Find the oldest measurement that is not too old.
-        let mut i = self.ring_pos;
-        let (old_time, old_progress) = loop {
-            i = (i + 1) % Self::SIZE;
-            if i == self.ring_pos {
-                // No valid measurements.
-                return None;
-            }
-            if now - self.ring[i].0 <= Self::DURATION * Self::SIZE as u32 {
-                break self.ring[i];
-            }
-        };
+        let &(old_time, old_progress) = self
+            .0
+            .iter()
+            .find(|(time, _)| now - *time <= Self::DURATION * Self::SIZE as u32)?;
 
         if last_progress == old_progress {
             // No progress, no rate.
@@ -87,7 +84,7 @@ mod tests {
     #[test]
     fn test_eta_calculator() {
         let mut now = Instant::now();
-        let mut eta = EtaCalculator::new_raw(now);
+        let mut eta = EtaCalculator::new();
 
         let delta = Duration::from_millis(500);
         for i in 0..=40 {
