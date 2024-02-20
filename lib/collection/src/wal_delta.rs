@@ -223,7 +223,7 @@ pub enum WalDeltaError {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet, VecDeque};
     use std::sync::Arc;
 
     use parking_lot::Mutex as ParkingMutex;
@@ -349,6 +349,10 @@ mod tests {
                 assert_eq!(a, b);
                 assert_eq!(b, c);
             });
+
+        assert_wal_ordering_property(&a_wal).await;
+        assert_wal_ordering_property(&b_wal).await;
+        assert_wal_ordering_property(&c_wal).await;
     }
 
     /// Test WAL delta resolution with a many missed operations on node C.
@@ -439,6 +443,10 @@ mod tests {
                 assert_eq!(a, b);
                 assert_eq!(b, c);
             });
+
+        assert_wal_ordering_property(&a_wal).await;
+        assert_wal_ordering_property(&b_wal).await;
+        assert_wal_ordering_property(&c_wal).await;
     }
 
     /// Test WAL delta resolution with a many intermixed operations on node C. Intermixed as in,
@@ -538,6 +546,10 @@ mod tests {
                 assert_eq!(a, b);
                 assert_eq!(b, c);
             });
+
+        assert_wal_ordering_property(&a_wal).await;
+        assert_wal_ordering_property(&b_wal).await;
+        assert_wal_ordering_property(&c_wal).await;
     }
 
     /// Test WAL delta resolution with operations in a different order on node A and B.
@@ -679,6 +691,10 @@ mod tests {
             assert!(b_wal_point_ids.contains(&i.into()));
             assert!(c_wal_point_ids.contains(&i.into()));
         });
+
+        assert_wal_ordering_property(&a_wal).await;
+        assert_wal_ordering_property(&b_wal).await;
+        assert_wal_ordering_property(&c_wal).await;
     }
 
     #[tokio::test]
@@ -1020,6 +1036,10 @@ mod tests {
 
         // Diff expected
         assert_eq!(b_wal.wal.lock().read(delta_from).count(), 1);
+
+        assert_wal_ordering_property(&a_wal).await;
+        assert_wal_ordering_property(&b_wal).await;
+        assert_wal_ordering_property(&e_wal).await;
     }
 
     /// Empty recovery point should not resolve any diff.
@@ -1171,5 +1191,313 @@ mod tests {
             &RecoveryPoint::default(),
         );
         assert_eq!(resolve_result.unwrap_err(), WalDeltaError::NotFound);
+    }
+
+    /// Assert that we `check_clock_tag_ordering_property` on the WAL.
+    async fn assert_wal_ordering_property(wal: &RecoverableWal) {
+        // Grab list of clock tags from WAL records, skip non-existent or below cutoff tags
+        let clock_tags = {
+            let cutoff = wal.cutoff_clocks.lock().await;
+            wal.wal
+                .lock()
+                .read(0)
+                // Only take records with clock tags
+                .filter_map(|(_, operation)| operation.clock_tag)
+                // Clock tags must be equal or higher to cutoff point
+                .filter(|clock_tag| {
+                    cutoff
+                        .current_tick(clock_tag.peer_id, clock_tag.clock_id)
+                        .map_or(true, |cutoff_tick| clock_tag.clock_tick >= cutoff_tick)
+                })
+                .collect::<Vec<_>>()
+        };
+
+        check_clock_tag_ordering_property(&clock_tags).expect("WAL ordering property violated");
+    }
+
+    /// Test that we satisfy the clock ordering property, allowing WAL recovery resolution.
+    ///
+    /// Property:
+    /// For each operation with peer+clock tick X, all following operations having the same
+    /// peer+clock must cover ticks X+1, X+2, ..., X+n in order up to the highest tick value of
+    /// that peer+clock in the WAL.
+    ///
+    /// More specifically, this tests the property again on every clock tag. The result of this
+    /// check is that the sequence always ends in order at the end, going up to the highest clock
+    /// clock tick.
+    ///
+    /// This logic is validated with examples in `validate_clock_tag_ordering_property`.
+    ///
+    /// This property may not be valid if a diff transfer has not been resolved correctly or
+    /// completely, or if the WAL got malformed in another way.
+    fn check_clock_tag_ordering_property(clock_tags: &[ClockTag]) -> Result<(), String> {
+        // Get the highest clock value for each clock+peer
+        let mut highest_clocks = HashMap::new();
+        for clock_tag in clock_tags {
+            highest_clocks
+                .entry((clock_tag.peer_id, clock_tag.clock_id))
+                .and_modify(|highest| *highest = clock_tag.clock_tick.max(*highest))
+                .or_insert(clock_tag.clock_tick);
+        }
+
+        // Test each clock tag for the ordering property
+        for (i, clock_tag) in clock_tags.iter().enumerate() {
+            let key = (clock_tag.peer_id, clock_tag.clock_id);
+            let highest = highest_clocks[&key];
+
+            // An ordered list of ticks we must see for this peer+clock
+            let mut must_see_ticks =
+                ((clock_tag.clock_tick + 1)..=highest).collect::<VecDeque<_>>();
+
+            // For all the following clock tags of the same peer+clock, remove their tick value
+            for newer in clock_tags.iter().skip(i + 1) {
+                // Skip other peer and clock pairs
+                if (newer.peer_id, newer.clock_id) != key {
+                    continue;
+                }
+
+                // If this tick is the first we must see, remove it from the list
+                if must_see_ticks
+                    .front()
+                    .map_or(false, |&tick| tick == newer.clock_tick)
+                {
+                    must_see_ticks.pop_front().unwrap();
+                }
+            }
+
+            // If list is not empty, we have not seen all numbers
+            if !must_see_ticks.is_empty() {
+                return Err(format!(
+                    "following clock tags did not cover ticks [{}] in order (peer_id: {}, clock_id: {}, max_tick: {highest})",
+                    must_see_ticks.into_iter().map(|tick| tick.to_string()).collect::<Vec<_>>().join(", "),
+                    clock_tag.peer_id,
+                    clock_tag.clock_id,
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Validate that `check_clock_tag_ordering_property` works as expected.
+    ///
+    /// Yes, this is a test for a test for a test. (⌐■_■)
+    #[test]
+    fn validate_clock_tag_ordering_property() {
+        // Empty is fine
+        check_clock_tag_ordering_property(&[]).unwrap();
+
+        // Any one clock tag is fine
+        check_clock_tag_ordering_property(&[ClockTag::new(1, 2, 3)]).unwrap();
+
+        // Clock tags in order are allowed
+        check_clock_tag_ordering_property(&[
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 0, 3),
+        ])
+        .unwrap();
+
+        // Clock tags in order with gaps are not allowed
+        check_clock_tag_ordering_property(&[
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(1, 0, 2),
+            // Misses 1:0:3-9
+            ClockTag::new(1, 0, 10),
+            ClockTag::new(1, 0, 11),
+        ])
+        .unwrap_err();
+
+        // Not starting at zero (truncated) is allowed
+        check_clock_tag_ordering_property(&[
+            // Truncated
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 0, 3),
+            ClockTag::new(1, 0, 4),
+        ])
+        .unwrap();
+
+        // Repeated clock tags are allowed
+        check_clock_tag_ordering_property(&[
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 0, 2),
+        ])
+        .unwrap();
+
+        // Repeating clock tag sequence is allowed
+        check_clock_tag_ordering_property(&[
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(1, 0, 2),
+            // Repeats 1:0:0-2 two more times
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(1, 0, 2),
+        ])
+        .unwrap();
+
+        // Repeating part of clock tag sequence is allowed
+        check_clock_tag_ordering_property(&[
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 0, 3),
+            // Repeats 1:0:2-3 two more times
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 0, 3),
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 0, 3),
+        ])
+        .unwrap();
+
+        // Repeating clock tag sequence with new ones at the end is allowed
+        check_clock_tag_ordering_property(&[
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(1, 0, 2),
+            // Repeats 1:0:0-2 one more time
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(1, 0, 2),
+            // Adds 1:0:3-6 on top of it
+            ClockTag::new(1, 0, 3),
+            ClockTag::new(1, 0, 4),
+            ClockTag::new(1, 0, 5),
+            ClockTag::new(1, 0, 6),
+        ])
+        .unwrap();
+
+        // Repeating clock tags in random order is allowed, as long as the end is in order
+        check_clock_tag_ordering_property(&[
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(1, 0, 2),
+            // Repeats 1:0:0-2 a few more times in random order
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(1, 0, 2),
+            // Adds 1:0:3 on top of it
+            ClockTag::new(1, 0, 3),
+        ])
+        .unwrap();
+
+        // Repeating clock tag sequence must not miss clock tags at the end
+        check_clock_tag_ordering_property(&[
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 0, 1),
+            // Misses 1:0:2
+        ])
+        .unwrap_err();
+
+        // Repeating clock tag sequence must not miss clock tags in the middle
+        check_clock_tag_ordering_property(&[
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 0, 0),
+            // Misses 1:0:1
+            ClockTag::new(1, 0, 2),
+        ])
+        .unwrap_err();
+
+        // Skipping a clock ID is allowed
+        check_clock_tag_ordering_property(&[
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(1, 0, 2),
+            // Skipped clock ID 1
+            ClockTag::new(1, 2, 10),
+            ClockTag::new(1, 2, 11),
+            ClockTag::new(1, 2, 12),
+        ])
+        .unwrap();
+
+        // Intermixed repeating clock tag sequence is allowed
+        check_clock_tag_ordering_property(&[
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 1, 0),
+            ClockTag::new(2, 0, 0),
+            ClockTag::new(2, 0, 1),
+            ClockTag::new(2, 0, 2),
+            ClockTag::new(1, 1, 1),
+            ClockTag::new(2, 0, 0),
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 1, 2),
+            ClockTag::new(1, 1, 3),
+            ClockTag::new(2, 0, 1),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(2, 0, 2),
+            ClockTag::new(1, 1, 4),
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 1, 5),
+        ])
+        .unwrap();
+
+        // Intermixed clock tag sequence where one tick for peer 2 is missing is not allowed
+        check_clock_tag_ordering_property(&[
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(2, 0, 0),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(2, 0, 1),
+            ClockTag::new(1, 0, 2),
+            // Misses 2:0:2
+            ClockTag::new(1, 0, 3),
+            ClockTag::new(2, 0, 3),
+        ])
+        .unwrap_err();
+
+        // Intermixed clock tag sequence where one tick for clock ID 1 is missing is not allowed
+        check_clock_tag_ordering_property(&[
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 1, 0),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(1, 1, 1),
+            ClockTag::new(1, 0, 2),
+            // Misses 1:1:2
+            ClockTag::new(1, 0, 3),
+            ClockTag::new(1, 1, 3),
+        ])
+        .unwrap_err();
+
+        // Intermixed clock tag sequence where one tick is missing is not allowed
+        check_clock_tag_ordering_property(&[
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(2, 0, 0),
+            ClockTag::new(3, 0, 0),
+            ClockTag::new(3, 0, 1),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(2, 0, 1),
+            ClockTag::new(3, 0, 2),
+            ClockTag::new(2, 0, 2),
+            ClockTag::new(1, 0, 2),
+            // Peer 2 only partially recovering here, missing 2:0:2
+            ClockTag::new(2, 0, 0),
+            ClockTag::new(2, 0, 1),
+            // Peer 1 and 3 continue
+            ClockTag::new(1, 0, 3),
+            ClockTag::new(1, 0, 4),
+            ClockTag::new(3, 0, 3),
+            ClockTag::new(3, 0, 4),
+        ])
+        .unwrap_err();
     }
 }
