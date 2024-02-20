@@ -53,7 +53,7 @@ chrono = { version = "~0.4", features = ["serde"] }
 rand = "0.8.5"
 schemars = { workspace = true }
 itertools = "0.12"
-anyhow = "1.0.79"
+anyhow = "1.0.80"
 futures = { workspace = true }
 futures-util = { workspace = true }
 clap = { version = "4.5.1", features = ["derive"] }
