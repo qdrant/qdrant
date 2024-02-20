@@ -320,7 +320,9 @@ impl ShardHolder {
                 started_at: status.as_ref().map(|p| p.started_at),
                 points_transferred: status.as_ref().map(|p| p.points_transferred),
                 points_total: status.as_ref().map(|p| p.points_total),
-                eta_seconds: status.as_ref().map(|p| p.eta.map(|t| t.as_secs_f64())),
+                eta_seconds: status
+                    .as_ref()
+                    .map(|p| p.eta.map(|t| (t.as_secs_f64() * 100.0).round() / 100.0)),
             })
         }
         shard_transfers.sort_by_key(|k| k.shard_id);
