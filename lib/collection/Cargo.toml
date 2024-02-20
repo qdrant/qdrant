@@ -12,9 +12,10 @@ edition = "2021"
 tracing = ["dep:tracing", "api/tracing", "segment/tracing"]
 
 [dev-dependencies]
+async-std = { version = "1.12", features = ["attributes"] }
 criterion = "0.5"
-rstest = "0.18.2"
 proptest = "1.4.0"
+rstest = "0.18.2"
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
 pprof = { version = "0.12", features = ["flamegraph", "prost-codec"] }
