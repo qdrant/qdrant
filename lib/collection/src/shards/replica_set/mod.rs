@@ -913,12 +913,9 @@ impl ReplicaState {
     pub fn is_active_or_listener(self) -> bool {
         // Use explicit match, to catch future changes to `ReplicaState`
         match self {
-            ReplicaState::Active | ReplicaState::Listener => true,
+            ReplicaState::Active | ReplicaState::Listener | ReplicaState::Initializing => true,
 
-            ReplicaState::Dead
-            | ReplicaState::Initializing
-            | ReplicaState::Partial
-            | ReplicaState::PartialSnapshot => false,
+            ReplicaState::Dead | ReplicaState::Partial | ReplicaState::PartialSnapshot => false,
         }
     }
 
