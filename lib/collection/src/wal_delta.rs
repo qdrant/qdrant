@@ -1232,14 +1232,13 @@ mod tests {
     /// completely, or if the WAL got malformed in another way.
     fn check_clock_tag_ordering_property(clock_tags: &[ClockTag]) -> Result<(), String> {
         // Get the highest clock value for each clock+peer
-        let highest_clocks = clock_tags
-            .iter()
-            .fold(HashMap::new(), |mut map, clock_tag| {
-                map.entry((clock_tag.peer_id, clock_tag.clock_id))
-                    .and_modify(|highest| *highest = clock_tag.clock_tick.max(*highest))
-                    .or_insert(clock_tag.clock_tick);
-                map
-            });
+        let mut highest_clocks = HashMap::new();
+        for clock_tag in clock_tags {
+            highest_clocks
+                .entry((clock_tag.peer_id, clock_tag.clock_id))
+                .and_modify(|highest| *highest = clock_tag.clock_tick.max(*highest))
+                .or_insert(clock_tag.clock_tick);
+        }
 
         // Test each clock tag for the ordering property
         for (i, clock_tag) in clock_tags.iter().enumerate() {
@@ -1251,21 +1250,20 @@ mod tests {
                 ((clock_tag.clock_tick + 1)..=highest).collect::<VecDeque<_>>();
 
             // For all the following clock tags of the same peer+clock, remove their tick value
-            clock_tags
-                .iter()
-                .skip(i + 1)
-                .filter(|later_clock_tag| {
-                    (later_clock_tag.peer_id, later_clock_tag.clock_id) == key
-                })
-                .for_each(|later_clock_tag| {
-                    // If this tick is the first we must see, remove it from the list
-                    if must_see_ticks
-                        .front()
-                        .map_or(false, |tick| *tick == later_clock_tag.clock_tick)
-                    {
-                        must_see_ticks.pop_front().unwrap();
-                    }
-                });
+            for newer in clock_tags.iter().skip(i + 1) {
+                // Skip other peer and clock pairs
+                if (newer.peer_id, newer.clock_id) != key {
+                    continue;
+                }
+
+                // If this tick is the first we must see, remove it from the list
+                if must_see_ticks
+                    .front()
+                    .map_or(false, |&tick| tick == newer.clock_tick)
+                {
+                    must_see_ticks.pop_front().unwrap();
+                }
+            }
 
             // If list is not empty, we have not seen all numbers
             if !must_see_ticks.is_empty() {
