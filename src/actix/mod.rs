@@ -23,6 +23,7 @@ use crate::actix::api::cluster_api::config_cluster_api;
 use crate::actix::api::collections_api::config_collections_api;
 use crate::actix::api::count_api::count_points;
 use crate::actix::api::discovery_api::config_discovery_api;
+use crate::actix::api::issues_api::config_issues_api;
 use crate::actix::api::recommend_api::config_recommend_api;
 use crate::actix::api::retrieve_api::{get_point, get_points, scroll_points};
 use crate::actix::api::search_api::config_search_api;
@@ -157,6 +158,7 @@ pub fn init(
                 .configure(config_recommend_api)
                 .configure(config_discovery_api)
                 .configure(config_shards_api)
+                .configure(config_issues_api)
                 // Ordering of services is important for correct path pattern matching
                 // See: <https://github.com/qdrant/qdrant/issues/3543>
                 .service(scroll_points)

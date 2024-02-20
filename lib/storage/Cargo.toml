@@ -43,6 +43,7 @@ serde_cbor = { workspace = true }
 common = { path = "../common/common" }
 cancel = { path = "../common/cancel" }
 io = { path = "../common/io" }
+issues = { path = "../common/issues" }
 memory = { path = "../common/memory" }
 segment = { path = "../segment" }
 collection = { path = "../collection" }
