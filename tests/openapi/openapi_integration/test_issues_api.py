@@ -110,3 +110,29 @@ def test_unindexed_field_is_gone_when_indexing():
     # check the issue is not triggered again
     issues = get_issues()
     assert expected_issue_code not in [issue["code"] for issue in issues]
+
+
+def test_too_many_collections():
+    num_collections = 31
+    # create 31 collections
+    for i in range(num_collections):
+        collection_name = f"test_collection_{i}"
+        basic_collection_setup(collection_name=collection_name)
+
+    # check the issue is active
+    issues = get_issues()
+    assert "/TOO_MANY_COLLECTIONS" in [issue["code"] for issue in issues]
+
+    # leave less than 30 collections
+    for i in range(num_collections-2, num_collections):
+        collection_name = f"test_collection_{i}"
+        drop_collection(collection_name=collection_name)
+
+    # check that the issue is not active anymore
+    issues = get_issues()
+    assert "/TOO_MANY_COLLECTIONS" not in [issue["code"] for issue in issues]
+
+    # Teardown
+    for i in range(num_collections):
+        collection_name = f"test_collection_{i}"
+        drop_collection(collection_name=collection_name)
