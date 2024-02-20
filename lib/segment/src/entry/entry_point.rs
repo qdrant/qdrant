@@ -110,6 +110,8 @@ pub trait SegmentEntry {
 
     fn all_vectors(&self, point_id: PointIdType) -> OperationResult<NamedVectors>;
 
+    /// Retrieve payload for the point
+    /// If not found, return empty payload
     fn payload(&self, point_id: PointIdType) -> OperationResult<Payload>;
 
     /// Iterator over all points in segment in ascending order.
