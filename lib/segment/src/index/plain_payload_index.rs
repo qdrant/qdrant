@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use common::cpu::CpuPermit;
-use common::types::{PointOffsetType, ScoredPointOffset};
+use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use parking_lot::Mutex;
 use schemars::_serde_json::Value;
 
@@ -285,11 +285,17 @@ impl VectorIndex for PlainIndex {
         Ok(())
     }
 
-    fn get_telemetry_data(&self) -> VectorIndexSearchesTelemetry {
+    fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {
         VectorIndexSearchesTelemetry {
             index_name: None,
-            unfiltered_plain: self.unfiltered_searches_telemetry.lock().get_statistics(),
-            filtered_plain: self.filtered_searches_telemetry.lock().get_statistics(),
+            unfiltered_plain: self
+                .unfiltered_searches_telemetry
+                .lock()
+                .get_statistics(detail),
+            filtered_plain: self
+                .filtered_searches_telemetry
+                .lock()
+                .get_statistics(detail),
             unfiltered_hnsw: OperationDurationStatistics::default(),
             filtered_small_cardinality: OperationDurationStatistics::default(),
             filtered_large_cardinality: OperationDurationStatistics::default(),

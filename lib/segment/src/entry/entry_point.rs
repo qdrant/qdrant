@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+use common::types::TelemetryDetail;
+
 use crate::common::operation_error::{OperationResult, SegmentFailedState};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{OrderBy, OrderingValue};
@@ -217,5 +219,5 @@ pub trait SegmentEntry {
         -> OperationResult<PathBuf>;
 
     // Get collected telemetry data of segment
-    fn get_telemetry_data(&self) -> SegmentTelemetry;
+    fn get_telemetry_data(&self, detail: TelemetryDetail) -> SegmentTelemetry;
 }

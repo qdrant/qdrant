@@ -135,14 +135,20 @@ impl MetricsProvider for CollectionsTelemetry {
 
 impl MetricsProvider for ClusterTelemetry {
     fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
+        let ClusterTelemetry {
+            enabled,
+            status,
+            config: _,
+        } = self;
+
         metrics.push(metric_family(
             "cluster_enabled",
             "is cluster support enabled",
             MetricType::COUNTER,
-            vec![counter(if self.enabled { 1.0 } else { 0.0 }, &[])],
+            vec![counter(if *enabled { 1.0 } else { 0.0 }, &[])],
         ));
 
-        if let Some(ref status) = self.status {
+        if let Some(ref status) = status {
             status.add_metrics(metrics);
         }
     }

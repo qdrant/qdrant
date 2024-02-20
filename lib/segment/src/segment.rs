@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
 use atomic_refcell::AtomicRefCell;
-use common::types::{PointOffsetType, ScoredPointOffset};
+use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use io::file_operations::{atomic_save_json, read_json};
 use itertools::Either;
 use memory::mmap_ops;
@@ -1687,12 +1687,12 @@ impl SegmentEntry for Segment {
         Ok(archive_path)
     }
 
-    fn get_telemetry_data(&self) -> SegmentTelemetry {
+    fn get_telemetry_data(&self, detail: TelemetryDetail) -> SegmentTelemetry {
         let vector_index_searches: Vec<_> = self
             .vector_data
             .iter()
             .map(|(k, v)| {
-                let mut telemetry = v.vector_index.borrow().get_telemetry_data();
+                let mut telemetry = v.vector_index.borrow().get_telemetry_data(detail);
                 telemetry.index_name = Some(k.clone());
                 telemetry
             })

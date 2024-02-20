@@ -1,4 +1,5 @@
 mod collection_container;
+use common::types::TelemetryDetail;
 mod collection_meta_ops;
 mod create_collection;
 mod locks;
@@ -401,12 +402,12 @@ impl TableOfContent {
         false
     }
 
-    pub async fn get_telemetry_data(&self) -> Vec<CollectionTelemetry> {
+    pub async fn get_telemetry_data(&self, detail: TelemetryDetail) -> Vec<CollectionTelemetry> {
         let mut result = Vec::new();
         let all_collections = self.all_collections().await;
         for collection_name in &all_collections {
             if let Ok(collection) = self.get_collection(collection_name).await {
-                result.push(collection.get_telemetry_data().await);
+                result.push(collection.get_telemetry_data(detail).await);
             }
         }
         result

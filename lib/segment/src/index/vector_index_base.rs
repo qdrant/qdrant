@@ -3,7 +3,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use common::cpu::CpuPermit;
-use common::types::{PointOffsetType, ScoredPointOffset};
+use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use sparse::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 
@@ -31,7 +31,7 @@ pub trait VectorIndex {
     /// Force internal index rebuild.
     fn build_index(&mut self, permit: Arc<CpuPermit>, stopped: &AtomicBool) -> OperationResult<()>;
 
-    fn get_telemetry_data(&self) -> VectorIndexSearchesTelemetry;
+    fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry;
 
     fn files(&self) -> Vec<PathBuf>;
 
@@ -98,13 +98,13 @@ impl VectorIndex for VectorIndexEnum {
         }
     }
 
-    fn get_telemetry_data(&self) -> VectorIndexSearchesTelemetry {
+    fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {
         match self {
-            VectorIndexEnum::Plain(index) => index.get_telemetry_data(),
-            VectorIndexEnum::HnswRam(index) => index.get_telemetry_data(),
-            VectorIndexEnum::HnswMmap(index) => index.get_telemetry_data(),
-            VectorIndexEnum::SparseRam(index) => index.get_telemetry_data(),
-            VectorIndexEnum::SparseMmap(index) => index.get_telemetry_data(),
+            VectorIndexEnum::Plain(index) => index.get_telemetry_data(detail),
+            VectorIndexEnum::HnswRam(index) => index.get_telemetry_data(detail),
+            VectorIndexEnum::HnswMmap(index) => index.get_telemetry_data(detail),
+            VectorIndexEnum::SparseRam(index) => index.get_telemetry_data(detail),
+            VectorIndexEnum::SparseMmap(index) => index.get_telemetry_data(detail),
         }
     }
 

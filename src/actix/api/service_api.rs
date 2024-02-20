@@ -6,6 +6,7 @@ use actix_web::rt::time::Instant;
 use actix_web::web::Query;
 use actix_web::{get, post, web, HttpResponse, Responder};
 use actix_web_validator::Json;
+use common::types::{DetailsLevel, TelemetryDetail};
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::{Deserialize, Serialize};
@@ -32,9 +33,14 @@ async fn telemetry(
 ) -> impl Responder {
     let timing = Instant::now();
     let anonymize = params.anonymize.unwrap_or(false);
-    let details_level = params.details_level.unwrap_or(0);
+    let detail = TelemetryDetail {
+        level: params
+            .details_level
+            .map_or(DetailsLevel::Level0, Into::into),
+        histograms: false,
+    };
     let telemetry_collector = telemetry_collector.lock().await;
-    let telemetry_data = telemetry_collector.prepare_data(details_level).await;
+    let telemetry_data = telemetry_collector.prepare_data(detail).await;
     let telemetry_data = if anonymize {
         telemetry_data.anonymize()
     } else {
@@ -55,7 +61,12 @@ async fn metrics(
 ) -> impl Responder {
     let anonymize = params.anonymize.unwrap_or(false);
     let telemetry_collector = telemetry_collector.lock().await;
-    let telemetry_data = telemetry_collector.prepare_data(1).await;
+    let telemetry_data = telemetry_collector
+        .prepare_data(TelemetryDetail {
+            level: DetailsLevel::Level1,
+            histograms: true,
+        })
+        .await;
     let telemetry_data = if anonymize {
         telemetry_data.anonymize()
     } else {

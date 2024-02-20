@@ -3,6 +3,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use common::cpu::CpuPermit;
+use common::types::TelemetryDetail;
 use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
@@ -220,7 +221,7 @@ fn sparse_index_discover_test() {
             .unwrap();
 
         // check that nearest search uses sparse index
-        let telemetry = sparse_index.get_telemetry_data();
+        let telemetry = sparse_index.get_telemetry_data(TelemetryDetail::default());
         assert_eq!(telemetry.unfiltered_sparse.count, i + 1);
 
         // check id only because scores can be epsilon-size different

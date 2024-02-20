@@ -4,7 +4,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use common::cpu::CpuPermit;
-use common::types::PointOffsetType;
+use common::types::{PointOffsetType, TelemetryDetail};
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use segment::common::operation_error::OperationResult;
@@ -504,7 +504,7 @@ fn sparse_vector_index_plain_search() {
     // check that plain searchers were used
     assert_eq!(
         sparse_vector_index
-            .get_telemetry_data()
+            .get_telemetry_data(TelemetryDetail::default())
             .filtered_small_cardinality
             .count,
         2
