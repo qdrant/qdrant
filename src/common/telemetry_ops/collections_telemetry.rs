@@ -1,6 +1,7 @@
 use collection::config::CollectionParams;
 use collection::operations::types::OptimizersStatus;
 use collection::telemetry::CollectionTelemetry;
+use common::types::{DetailsLevel, TelemetryDetail};
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::{Deserialize, Serialize};
@@ -45,15 +46,15 @@ impl From<CollectionTelemetry> for CollectionsAggregatedTelemetry {
 }
 
 impl CollectionsTelemetry {
-    pub async fn collect(level: usize, toc: &TableOfContent) -> Self {
+    pub async fn collect(detail: TelemetryDetail, toc: &TableOfContent) -> Self {
         let number_of_collections = toc.all_collections().await.len();
-        let collections = if level > 0 {
+        let collections = if detail.level >= DetailsLevel::Level1 {
             let telemetry_data = toc
-                .get_telemetry_data()
+                .get_telemetry_data(detail)
                 .await
                 .into_iter()
                 .map(|telemetry| {
-                    if level > 1 {
+                    if detail.level >= DetailsLevel::Level2 {
                         CollectionTelemetryEnum::Full(telemetry)
                     } else {
                         CollectionTelemetryEnum::Aggregated(telemetry.into())

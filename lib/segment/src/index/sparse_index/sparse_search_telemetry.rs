@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common::types::TelemetryDetail;
 use parking_lot::Mutex;
 
 use crate::common::operation_time_statistics::OperationDurationsAggregator;
@@ -23,27 +24,25 @@ impl SparseSearchesTelemetry {
             small_cardinality: OperationDurationsAggregator::new(),
         }
     }
+
+    pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {
+        VectorIndexSearchesTelemetry {
+            index_name: None,
+            unfiltered_plain: self.unfiltered_plain.lock().get_statistics(detail),
+            filtered_plain: self.filtered_plain.lock().get_statistics(detail),
+            unfiltered_hnsw: Default::default(),
+            filtered_small_cardinality: self.small_cardinality.lock().get_statistics(detail),
+            filtered_large_cardinality: Default::default(),
+            filtered_exact: Default::default(),
+            filtered_sparse: self.filtered_sparse.lock().get_statistics(detail),
+            unfiltered_sparse: self.unfiltered_sparse.lock().get_statistics(detail),
+            unfiltered_exact: Default::default(),
+        }
+    }
 }
 
 impl Default for SparseSearchesTelemetry {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl From<&SparseSearchesTelemetry> for VectorIndexSearchesTelemetry {
-    fn from(value: &SparseSearchesTelemetry) -> Self {
-        VectorIndexSearchesTelemetry {
-            index_name: None,
-            unfiltered_plain: value.unfiltered_plain.lock().get_statistics(),
-            filtered_plain: value.filtered_plain.lock().get_statistics(),
-            unfiltered_hnsw: Default::default(),
-            filtered_small_cardinality: value.small_cardinality.lock().get_statistics(),
-            filtered_large_cardinality: Default::default(),
-            filtered_exact: Default::default(),
-            filtered_sparse: value.filtered_sparse.lock().get_statistics(),
-            unfiltered_sparse: value.unfiltered_sparse.lock().get_statistics(),
-            unfiltered_exact: Default::default(),
-        }
     }
 }

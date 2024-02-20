@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use common::types::TelemetryDetail;
 use segment::data_types::order_by::OrderBy;
 use segment::types::{
     ExtendedPointId, Filter, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface,
@@ -155,8 +156,8 @@ impl ForwardProxyShard {
         self.wrapped_shard.on_optimizer_config_update().await
     }
 
-    pub fn get_telemetry_data(&self) -> LocalShardTelemetry {
-        self.wrapped_shard.get_telemetry_data()
+    pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> LocalShardTelemetry {
+        self.wrapped_shard.get_telemetry_data(detail)
     }
 
     pub fn update_tracker(&self) -> &UpdateTracker {

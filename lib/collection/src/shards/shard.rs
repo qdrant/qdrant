@@ -2,6 +2,8 @@ use core::marker::{Send, Sync};
 use std::future::{self, Future};
 use std::path::Path;
 
+use common::types::TelemetryDetail;
+
 use super::local_shard::clock_map::RecoveryPoint;
 use super::update_tracker::UpdateTracker;
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -63,12 +65,12 @@ impl Shard {
         }
     }
 
-    pub fn get_telemetry_data(&self) -> LocalShardTelemetry {
+    pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> LocalShardTelemetry {
         let mut telemetry = match self {
-            Shard::Local(local_shard) => local_shard.get_telemetry_data(),
-            Shard::Proxy(proxy_shard) => proxy_shard.get_telemetry_data(),
-            Shard::ForwardProxy(proxy_shard) => proxy_shard.get_telemetry_data(),
-            Shard::QueueProxy(proxy_shard) => proxy_shard.get_telemetry_data(),
+            Shard::Local(local_shard) => local_shard.get_telemetry_data(detail),
+            Shard::Proxy(proxy_shard) => proxy_shard.get_telemetry_data(detail),
+            Shard::ForwardProxy(proxy_shard) => proxy_shard.get_telemetry_data(detail),
+            Shard::QueueProxy(proxy_shard) => proxy_shard.get_telemetry_data(detail),
             Shard::Dummy(dummy_shard) => dummy_shard.get_telemetry_data(),
         };
         telemetry.variant_name = Some(self.variant_name().to_string());

@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, SubsecRound, Utc};
+use common::types::TelemetryDetail;
 use parking_lot::Mutex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -210,7 +211,8 @@ impl OperationDurationsAggregator {
         self.last_response_date = Some(Utc::now().round_subsecs(2));
     }
 
-    pub fn get_statistics(&self) -> OperationDurationStatistics {
+    pub fn get_statistics(&self, detail: TelemetryDetail) -> OperationDurationStatistics {
+        let _ = detail.histograms; // TODO: Will be used once histograms PR is merged
         OperationDurationStatistics {
             count: self.ok_count,
             fail_count: self.fail_count,

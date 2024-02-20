@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use common::types::TelemetryDetail;
 use segment::data_types::order_by::OrderBy;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
@@ -144,12 +145,12 @@ impl QueueProxyShard {
             .await
     }
 
-    pub fn get_telemetry_data(&self) -> LocalShardTelemetry {
+    pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> LocalShardTelemetry {
         self.inner
             .as_ref()
             .expect("Queue proxy has been finalized")
             .wrapped_shard
-            .get_telemetry_data()
+            .get_telemetry_data(detail)
     }
 
     pub fn update_tracker(&self) -> &UpdateTracker {

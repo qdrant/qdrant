@@ -14,6 +14,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::cpu::CpuBudget;
+use common::types::TelemetryDetail;
 use segment::common::version::StorageVersion;
 use segment::types::ShardKey;
 use semver::Version;
@@ -599,12 +600,12 @@ impl Collection {
         Ok(())
     }
 
-    pub async fn get_telemetry_data(&self) -> CollectionTelemetry {
+    pub async fn get_telemetry_data(&self, detail: TelemetryDetail) -> CollectionTelemetry {
         let (shards_telemetry, transfers) = {
             let mut shards_telemetry = Vec::new();
             let shards_holder = self.shards_holder.read().await;
             for shard in shards_holder.all_shards() {
-                shards_telemetry.push(shard.get_telemetry_data().await)
+                shards_telemetry.push(shard.get_telemetry_data(detail).await)
             }
             (shards_telemetry, shards_holder.get_shard_transfer_info())
         };

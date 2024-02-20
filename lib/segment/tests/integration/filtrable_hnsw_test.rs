@@ -3,7 +3,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use common::cpu::CpuPermit;
-use common::types::PointOffsetType;
+use common::types::{PointOffsetType, TelemetryDetail};
 use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
@@ -243,7 +243,7 @@ fn _test_filterable_hnsw(
         // check that search was performed using HNSW index
         assert_eq!(
             hnsw_index
-                .get_telemetry_data()
+                .get_telemetry_data(TelemetryDetail::default())
                 .filtered_large_cardinality
                 .count,
             i + 1

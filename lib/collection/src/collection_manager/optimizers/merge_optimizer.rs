@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use common::types::TelemetryDetail;
 use itertools::Itertools;
 use parking_lot::Mutex;
 use segment::common::operation_time_statistics::{
@@ -150,8 +151,8 @@ impl SegmentOptimizer for MergeOptimizer {
         candidates
     }
 
-    fn get_telemetry_data(&self) -> OperationDurationStatistics {
-        self.get_telemetry_counter().lock().get_statistics()
+    fn get_telemetry_data(&self, detail: TelemetryDetail) -> OperationDurationStatistics {
+        self.get_telemetry_counter().lock().get_statistics(detail)
     }
 
     fn get_telemetry_counter(&self) -> Arc<Mutex<OperationDurationsAggregator>> {

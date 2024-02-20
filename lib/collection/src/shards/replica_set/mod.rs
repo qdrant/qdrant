@@ -13,6 +13,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::cpu::CpuBudget;
+use common::types::TelemetryDetail;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
@@ -719,11 +720,11 @@ impl ShardReplicaSet {
         Ok(())
     }
 
-    pub(crate) async fn get_telemetry_data(&self) -> ReplicaSetTelemetry {
+    pub(crate) async fn get_telemetry_data(&self, detail: TelemetryDetail) -> ReplicaSetTelemetry {
         let local_shard = self.local.read().await;
         let local = local_shard
             .as_ref()
-            .map(|local_shard| local_shard.get_telemetry_data());
+            .map(|local_shard| local_shard.get_telemetry_data(detail));
         ReplicaSetTelemetry {
             id: self.shard_id,
             local,
@@ -732,7 +733,7 @@ impl ShardReplicaSet {
                 .read()
                 .await
                 .iter()
-                .map(|remote| remote.get_telemetry_data())
+                .map(|remote| remote.get_telemetry_data(detail))
                 .collect(),
             replicate_states: self.replica_state.read().peers(),
         }

@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use common::cpu::CpuPermit;
-use common::types::{PointOffsetType, ScoredPointOffset};
+use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use itertools::Itertools;
 use sparse::common::scores_memory_pool::ScoresMemoryPool;
 use sparse::common::sparse_vector::SparseVector;
@@ -405,9 +405,8 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         Ok(())
     }
 
-    fn get_telemetry_data(&self) -> VectorIndexSearchesTelemetry {
-        let tm = &self.searches_telemetry;
-        tm.into()
+    fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {
+        self.searches_telemetry.get_telemetry_data(detail)
     }
 
     fn files(&self) -> Vec<PathBuf> {
