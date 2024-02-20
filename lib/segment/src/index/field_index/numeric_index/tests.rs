@@ -6,7 +6,6 @@ use tempfile::{Builder, TempDir};
 
 use super::*;
 use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
-use crate::common::utils::MultiValue;
 
 const COLUMN_NAME: &str = "test";
 
@@ -82,9 +81,7 @@ fn test_set_empty_payload() {
     assert!(!value.is_empty());
 
     let payload = serde_json::json!(null);
-    index
-        .add_point(point_id, &MultiValue::one(&payload))
-        .unwrap();
+    index.add_point(point_id, &[&payload]).unwrap();
 
     let value = index.get_values(point_id).unwrap();
 

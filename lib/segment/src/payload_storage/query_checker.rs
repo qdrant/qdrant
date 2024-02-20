@@ -6,7 +6,7 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use common::types::PointOffsetType;
 
-use crate::common::utils::IndexesMap;
+use crate::common::utils::{check_is_empty, check_is_null, IndexesMap};
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::FieldIndex;
 use crate::payload_storage::condition_checker::ValueChecker;
@@ -133,7 +133,6 @@ where
             let nested_indexes = select_nested_indexes(&nested_path, field_indexes);
             get_payload()
                 .get_value(&nested_path)
-                .values()
                 .iter()
                 .filter_map(|value| value.as_object())
                 .any(|object| {
@@ -156,11 +155,11 @@ pub fn check_is_empty_condition(
     is_empty: &IsEmptyCondition,
     payload: &impl PayloadContainer,
 ) -> bool {
-    payload.get_value(&is_empty.is_empty.key).check_is_empty()
+    check_is_empty(payload.get_value(&is_empty.is_empty.key).iter().copied())
 }
 
 pub fn check_is_null_condition(is_null: &IsNullCondition, payload: &impl PayloadContainer) -> bool {
-    payload.get_value(&is_null.is_null.key).check_is_null()
+    check_is_null(payload.get_value(&is_null.is_null.key).iter().copied())
 }
 
 pub fn check_field_condition<R>(

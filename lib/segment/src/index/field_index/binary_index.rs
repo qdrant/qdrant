@@ -354,7 +354,6 @@ mod tests {
 
     use super::BinaryIndex;
     use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
-    use crate::common::utils::MultiValue;
     use crate::index::field_index::{PayloadFieldIndex, ValueIndexer};
 
     const FIELD_NAME: &str = "bool_field";
@@ -397,7 +396,7 @@ mod tests {
     fn filter(given: serde_json::Value, match_on: bool, expected_count: usize) {
         let (_tmp_dir, mut index) = new_binary_index();
 
-        index.add_point(0, &MultiValue::one(&given)).unwrap();
+        index.add_point(0, &[&given]).unwrap();
 
         let count = index.filter(&match_bool(match_on)).unwrap().count();
 
@@ -438,8 +437,7 @@ mod tests {
             .into_iter()
             .enumerate()
             .for_each(|(i, value)| {
-                let payload = MultiValue::one(&value);
-                index.add_point(i as u32, &payload).unwrap();
+                index.add_point(i as u32, &[&value]).unwrap();
             });
 
         index.flusher()().unwrap();
@@ -463,12 +461,12 @@ mod tests {
         let (_tmp_dir, mut index) = new_binary_index();
 
         let idx = 1000;
-        index.add_point(idx, &MultiValue::one(&before)).unwrap();
+        index.add_point(idx, &[&before]).unwrap();
 
         let point_offsets = index.filter(&match_bool(false)).unwrap().collect_vec();
         assert_eq!(point_offsets, vec![idx]);
 
-        index.add_point(idx, &MultiValue::one(&after)).unwrap();
+        index.add_point(idx, &[&after]).unwrap();
 
         let point_offsets = index.filter(&match_bool(true)).unwrap().collect_vec();
         assert_eq!(point_offsets, vec![idx]);
@@ -484,8 +482,7 @@ mod tests {
             .into_iter()
             .enumerate()
             .for_each(|(i, value)| {
-                let payload = MultiValue::one(&value);
-                index.add_point(i as u32, &payload).unwrap();
+                index.add_point(i as u32, &[&value]).unwrap();
             });
 
         assert_eq!(index.count_indexed_points(), 9);
@@ -499,8 +496,7 @@ mod tests {
             .into_iter()
             .enumerate()
             .for_each(|(i, value)| {
-                let payload = MultiValue::one(&value);
-                index.add_point(i as u32, &payload).unwrap();
+                index.add_point(i as u32, &[&value]).unwrap();
             });
 
         let blocks = index
@@ -519,8 +515,7 @@ mod tests {
             .into_iter()
             .enumerate()
             .for_each(|(i, value)| {
-                let payload = MultiValue::one(&value);
-                index.add_point(i as u32, &payload).unwrap();
+                index.add_point(i as u32, &[&value]).unwrap();
             });
 
         let cardinality = index.estimate_cardinality(&match_bool(true)).unwrap();

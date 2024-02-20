@@ -22,10 +22,9 @@ use uuid::Uuid;
 use validator::{Validate, ValidationError, ValidationErrors};
 
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::common::utils;
 use crate::common::utils::{
-    check_exclude_pattern, check_include_pattern, filter_json_values, get_value_from_json_map,
-    get_value_from_json_map_opt, MultiValue,
+    self, check_exclude_pattern, check_include_pattern, filter_json_values,
+    get_value_from_json_map, get_value_from_json_map_opt, MultiValue,
 };
 use crate::data_types::integer_index::IntegerIndexParams;
 use crate::data_types::text_index::TextIndexParams;
@@ -930,7 +929,7 @@ impl Payload {
     }
 
     pub fn remove(&mut self, path: &str) -> Vec<Value> {
-        utils::remove_value_from_json_map(path, &mut self.0).values()
+        utils::remove_value_from_json_map(path, &mut self.0).to_vec()
     }
 
     pub fn len(&self) -> usize {
@@ -2254,7 +2253,7 @@ mod tests {
 
     use super::test_utils::build_polygon_with_interiors;
     use super::*;
-    use crate::common::utils::remove_value_from_json_map;
+    use crate::common::utils::{check_is_empty, remove_value_from_json_map};
 
     #[allow(dead_code)]
     fn check_rms_serialization<T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug>(
@@ -3035,26 +3034,26 @@ mod tests {
         "#,
         )
         .unwrap();
-        let removed = remove_value_from_json_map("b.c", &mut payload.0).values();
+        let removed = remove_value_from_json_map("b.c", &mut payload.0).into_vec();
         assert_eq!(removed, vec![Value::Number(123.into())]);
         assert_ne!(payload, Default::default());
 
-        let removed = remove_value_from_json_map("b.e.f[1]", &mut payload.0).values();
+        let removed = remove_value_from_json_map("b.e.f[1]", &mut payload.0).into_vec();
         assert_eq!(removed, vec![Value::Number(2.into())]);
         assert_ne!(payload, Default::default());
 
-        let removed = remove_value_from_json_map("b.e.i[0].j", &mut payload.0).values();
+        let removed = remove_value_from_json_map("b.e.i[0].j", &mut payload.0).into_vec();
         assert_eq!(removed, vec![Value::Number(1.into())]);
         assert_ne!(payload, Default::default());
 
-        let removed = remove_value_from_json_map("b.e.i[].k", &mut payload.0).values();
+        let removed = remove_value_from_json_map("b.e.i[].k", &mut payload.0).into_vec();
         assert_eq!(
             removed,
             vec![Value::Number(2.into()), Value::Number(4.into())]
         );
         assert_ne!(payload, Default::default());
 
-        let removed = remove_value_from_json_map("b.e.i[]", &mut payload.0).values();
+        let removed = remove_value_from_json_map("b.e.i[]", &mut payload.0).into_vec();
         assert_eq!(
             removed,
             vec![Value::Array(vec![
@@ -3067,31 +3066,31 @@ mod tests {
         );
         assert_ne!(payload, Default::default());
 
-        let removed = remove_value_from_json_map("b.e.i", &mut payload.0).values();
+        let removed = remove_value_from_json_map("b.e.i", &mut payload.0).into_vec();
         assert_eq!(removed, vec![Value::Array(vec![])]);
         assert_ne!(payload, Default::default());
 
-        let removed = remove_value_from_json_map("b.e.f", &mut payload.0).values();
+        let removed = remove_value_from_json_map("b.e.f", &mut payload.0).into_vec();
         assert_eq!(removed, vec![Value::Array(vec![1.into(), 3.into()])]);
         assert_ne!(payload, Default::default());
 
         let removed = remove_value_from_json_map("k", &mut payload.0);
-        assert!(removed.as_ref().check_is_empty());
+        assert!(check_is_empty(&removed));
         assert_ne!(payload, Default::default());
 
         let removed = remove_value_from_json_map("", &mut payload.0);
-        assert!(removed.as_ref().check_is_empty());
+        assert!(check_is_empty(&removed));
         assert_ne!(payload, Default::default());
 
         let removed = remove_value_from_json_map("b.e.l", &mut payload.0);
-        assert!(removed.as_ref().check_is_empty());
+        assert!(check_is_empty(&removed));
         assert_ne!(payload, Default::default());
 
-        let removed = remove_value_from_json_map("a", &mut payload.0).values();
+        let removed = remove_value_from_json_map("a", &mut payload.0).into_vec();
         assert_eq!(removed, vec![Value::Number(1.into())]);
         assert_ne!(payload, Default::default());
 
-        let removed = remove_value_from_json_map("b.e", &mut payload.0).values();
+        let removed = remove_value_from_json_map("b.e", &mut payload.0).into_vec();
         assert_eq!(
             removed,
             vec![Value::Object(serde_json::Map::from_iter(vec![
@@ -3102,7 +3101,7 @@ mod tests {
         );
         assert_ne!(payload, Default::default());
 
-        let removed = remove_value_from_json_map("b", &mut payload.0).values();
+        let removed = remove_value_from_json_map("b", &mut payload.0).into_vec();
         assert_eq!(
             removed,
             vec![Value::Object(serde_json::Map::from_iter(vec![]))]

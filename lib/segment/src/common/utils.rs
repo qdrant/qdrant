@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::ops::Bound;
 
 use serde_json::Value;
+use smallvec::{smallvec, SmallVec};
 
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::Vector;
@@ -10,111 +11,22 @@ use crate::types::PayloadKeyType;
 
 pub type IndexesMap = HashMap<PayloadKeyType, Vec<FieldIndex>>;
 
-/// Avoids allocating Vec with a single element
-#[derive(Debug)]
-pub enum MultiValue<T> {
-    Single(Option<T>),
-    Multiple(Vec<T>),
+/// A container for JSON values, optimized for the common case of a single value.
+pub type MultiValue<T> = SmallVec<[T; 1]>;
+
+pub fn check_is_empty<'a>(values: impl IntoIterator<Item = &'a Value>) -> bool {
+    values.into_iter().all(|x| match x {
+        serde_json::Value::Null => true,
+        serde_json::Value::Array(arr) => arr.is_empty(),
+        _ => false,
+    })
 }
 
-impl<T> Default for MultiValue<T> {
-    fn default() -> Self {
-        Self::Single(None)
-    }
-}
-
-impl<T> MultiValue<T> {
-    pub(crate) fn one(value: T) -> Self {
-        Self::Single(Some(value))
-    }
-
-    fn option(value: Option<T>) -> Self {
-        Self::Single(value)
-    }
-
-    fn push(&mut self, value: T) {
-        match self {
-            Self::Single(opt) => match opt.take() {
-                Some(v) => {
-                    *self = Self::Multiple(vec![v, value]);
-                }
-                None => {
-                    *self = Self::Single(Some(value));
-                }
-            },
-            Self::Multiple(vec) => {
-                vec.push(value);
-            }
-        }
-    }
-
-    fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
-        for value in iter {
-            self.push(value);
-        }
-    }
-
-    pub fn values(self) -> Vec<T> {
-        match self {
-            Self::Single(opt) => opt.into_iter().collect(),
-            Self::Multiple(vec) => vec,
-        }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn as_ref(&self) -> MultiValue<&T> {
-        match self {
-            Self::Single(opt) => MultiValue::option(opt.as_ref()),
-            Self::Multiple(vec) => MultiValue::Multiple(vec.iter().collect()),
-        }
-    }
-}
-
-impl MultiValue<&Value> {
-    pub(crate) fn check_is_empty(&self) -> bool {
-        match self {
-            Self::Multiple(vec) => vec.iter().all(|x| match x {
-                Value::Array(vec) => vec.is_empty(),
-                Value::Null => true,
-                _ => false,
-            }),
-            Self::Single(val) => match val {
-                None => true,
-                Some(Value::Array(vec)) => vec.is_empty(),
-                Some(Value::Null) => true,
-                _ => false,
-            },
-        }
-    }
-
-    pub(crate) fn check_is_null(&self) -> bool {
-        match self {
-            MultiValue::Single(val) => {
-                if let Some(val) = val {
-                    return val.is_null();
-                }
-                false
-            }
-            // { "a": [ { "b": null }, { "b": 1 } ] } => true
-            // { "a": [ { "b": 1 }, { "b": null } ] } => true
-            // { "a": [ { "b": 1 }, { "b": 2 } ] } => false
-            MultiValue::Multiple(vals) => vals.iter().any(|val| val.is_null()),
-        }
-    }
-}
-
-impl<T> IntoIterator for MultiValue<T> {
-    type Item = T;
-    // propagate to Vec internal iterator
-    type IntoIter = std::vec::IntoIter<Self::Item>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        match self {
-            Self::Single(None) => vec![].into_iter(),
-            Self::Single(Some(a)) => vec![a].into_iter(),
-            Self::Multiple(vec) => vec.into_iter(),
-        }
-    }
+pub fn check_is_null<'a>(values: impl IntoIterator<Item = &'a Value>) -> bool {
+    values.into_iter().any(|x| x.is_null())
+    // { "a": [ { "b": null }, { "b": 1 } ] } => true
+    // { "a": [ { "b": 1 }, { "b": null } ] } => true
+    // { "a": [ { "b": 1 }, { "b": 2 } ] } => false
 }
 
 pub fn rev_range(a: usize, b: usize) -> impl Iterator<Item = usize> {
@@ -168,7 +80,7 @@ fn focus_array_path<'a>(
 ) -> Option<MultiValue<&'a Value>> {
     match json_map.get(array_path) {
         Some(Value::Array(array)) => {
-            let mut values: MultiValue<_> = MultiValue::default();
+            let mut values = SmallVec::new();
             for (i, value) in array.iter().enumerate() {
                 if let Some(array_index) = array_index {
                     if i == array_index as usize {
@@ -216,7 +128,7 @@ pub fn get_value_from_json_map_opt<'a>(
                     // no array notation
                     match json_map.get(element) {
                         Some(Value::Object(map)) => get_value_from_json_map_opt(rest_path, map),
-                        Some(value) => rest_path.is_empty().then_some(MultiValue::one(value)),
+                        Some(value) => rest_path.is_empty().then_some(smallvec![value]),
                         None => None,
                     }
                 }
@@ -226,7 +138,7 @@ pub fn get_value_from_json_map_opt<'a>(
             Some((array_element_path, array_index)) => {
                 focus_array_path(array_element_path, array_index, None, json_map)
             }
-            None => json_map.get(path).map(MultiValue::one),
+            None => json_map.get(path).map(|v| smallvec![v]),
         },
     }
 }
@@ -383,15 +295,15 @@ fn delete_array_path(
                 // end of path - delete and collect
                 if let Some(array_index) = array_index {
                     if array.len() > array_index as usize {
-                        return MultiValue::one(array.remove(array_index as usize));
+                        return smallvec![array.remove(array_index as usize)];
                     }
                 } else {
-                    return MultiValue::one(Value::Array(std::mem::take(array)));
+                    return smallvec![Value::Array(std::mem::take(array))];
                 }
             }
             Some(rest_path) => {
                 // dig deeper
-                let mut values = MultiValue::default();
+                let mut values = SmallVec::new();
                 for (i, value) in array.iter_mut().enumerate() {
                     if let Value::Object(map) = value {
                         if let Some(array_index) = array_index {
@@ -408,7 +320,7 @@ fn delete_array_path(
         }
     }
     // no array found
-    MultiValue::default()
+    SmallVec::new()
 }
 
 /// Remove value at a given JSON path from JSON map
@@ -429,12 +341,12 @@ pub fn remove_value_from_json_map(
                 None => {
                     // no array notation
                     if rest_path.is_empty() {
-                        MultiValue::option(json_map.remove(element))
+                        json_map.remove(element).into_iter().collect()
                     } else {
                         match json_map.get_mut(element) {
-                            None => MultiValue::default(),
+                            None => SmallVec::new(),
                             Some(Value::Object(map)) => remove_value_from_json_map(rest_path, map),
-                            Some(_value) => MultiValue::default(),
+                            Some(_value) => SmallVec::new(),
                         }
                     }
                 }
@@ -444,7 +356,7 @@ pub fn remove_value_from_json_map(
             Some((array_element_path, array_index)) => {
                 delete_array_path(array_element_path, array_index, None, json_map)
             }
-            None => MultiValue::option(json_map.remove(path)),
+            None => json_map.remove(path).into_iter().collect(),
         },
     }
 }
@@ -595,7 +507,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            get_value_from_json_map("a.b", &map).values(),
+            get_value_from_json_map("a.b", &map).into_vec(),
             vec![&Value::Object(serde_json::Map::from_iter(vec![(
                 "c".to_string(),
                 Value::Number(1.into())
@@ -604,12 +516,14 @@ mod tests {
 
         // going deeper
         assert_eq!(
-            get_value_from_json_map("a.b.c", &map).values(),
+            get_value_from_json_map("a.b.c", &map).into_vec(),
             vec![&Value::Number(1.into())]
         );
 
         // missing path
-        assert!(get_value_from_json_map("a.b.c.d", &map).check_is_empty());
+        assert!(check_is_empty(
+            get_value_from_json_map("a.b.c.d", &map).iter().copied()
+        ));
     }
 
     #[test]
@@ -630,21 +544,21 @@ mod tests {
         )
         .unwrap();
         let multivalue = get_value_from_json_map("a[].b", &map);
-        let is_empty = multivalue.check_is_empty();
+        let is_empty = check_is_empty(multivalue.iter().copied());
 
         assert!(!is_empty, "a[].b is not empty");
 
         let multivalue = get_value_from_json_map("a[].c", &map);
-        let is_empty = multivalue.check_is_empty();
+        let is_empty = check_is_empty(multivalue.iter().copied());
 
         assert!(is_empty, "a[].c is empty");
 
         let multivalue = get_value_from_json_map("a[].d", &map);
-        let is_empty = multivalue.check_is_empty();
+        let is_empty = check_is_empty(multivalue.iter().copied());
         assert!(is_empty, "a[].d is empty");
 
         let multivalue = get_value_from_json_map("a[].f", &map);
-        let is_empty = multivalue.check_is_empty();
+        let is_empty = check_is_empty(multivalue.iter().copied());
         assert!(is_empty, "a[].f is empty");
     }
 
@@ -669,7 +583,7 @@ mod tests {
 
         // get JSON array
         assert_eq!(
-            get_value_from_json_map("a.b", &map).values(),
+            get_value_from_json_map("a.b", &map).into_vec(),
             vec![&Value::Array(vec![
                 Value::Object(serde_json::Map::from_iter(vec![(
                     "c".to_string(),
@@ -691,7 +605,7 @@ mod tests {
 
         // a.b[] extract all elements from array
         assert_eq!(
-            get_value_from_json_map("a.b[]", &map).values(),
+            get_value_from_json_map("a.b[]", &map).into_vec(),
             vec![
                 &Value::Object(serde_json::Map::from_iter(vec![(
                     "c".to_string(),
@@ -713,13 +627,13 @@ mod tests {
 
         // project scalar field through array
         assert_eq!(
-            get_value_from_json_map("a.b[].c", &map).values(),
+            get_value_from_json_map("a.b[].c", &map).into_vec(),
             vec![&Value::Number(1.into()), &Value::Number(2.into())]
         );
 
         // project object field through array
         assert_eq!(
-            get_value_from_json_map("a.b[].d", &map).values(),
+            get_value_from_json_map("a.b[].d", &map).into_vec(),
             vec![&Value::Object(serde_json::Map::from_iter(vec![(
                 "e".to_string(),
                 Value::Number(3.into())
@@ -728,7 +642,7 @@ mod tests {
 
         // select scalar element from array
         assert_eq!(
-            get_value_from_json_map("a.b[0]", &map).values(),
+            get_value_from_json_map("a.b[0]", &map).into_vec(),
             vec![&Value::Object(serde_json::Map::from_iter(vec![(
                 "c".to_string(),
                 Value::Number(1.into())
@@ -737,7 +651,7 @@ mod tests {
 
         // select scalar object from array different index
         assert_eq!(
-            get_value_from_json_map("a.b[1]", &map).values(),
+            get_value_from_json_map("a.b[1]", &map).into_vec(),
             vec![&Value::Object(serde_json::Map::from_iter(vec![(
                 "c".to_string(),
                 Value::Number(2.into())
@@ -746,19 +660,19 @@ mod tests {
 
         // select field element from array different index
         assert_eq!(
-            get_value_from_json_map("a.b[1].c", &map).values(),
+            get_value_from_json_map("a.b[1].c", &map).into_vec(),
             vec![&Value::Number(2.into())]
         );
 
         // select scalar element from array different index
         assert_eq!(
-            get_value_from_json_map("g[2]", &map).values(),
+            get_value_from_json_map("g[2]", &map).into_vec(),
             vec![&Value::String("g2".to_string())]
         );
 
         // select object element from array
         assert_eq!(
-            get_value_from_json_map("a.b[2]", &map).values(),
+            get_value_from_json_map("a.b[2]", &map).into_vec(),
             vec![&Value::Object(serde_json::Map::from_iter(vec![(
                 "d".to_string(),
                 Value::Object(serde_json::Map::from_iter(vec![(
@@ -769,10 +683,14 @@ mod tests {
         );
 
         // select out of bound index from array
-        assert!(get_value_from_json_map("a.b[3]", &map).check_is_empty());
+        assert!(check_is_empty(
+            get_value_from_json_map("a.b[3]", &map).iter().copied()
+        ));
 
         // select bad index from array
-        assert!(get_value_from_json_map("a.b[z]", &map).check_is_empty());
+        assert!(check_is_empty(
+            get_value_from_json_map("a.b[z]", &map).iter().copied()
+        ));
     }
 
     #[test]
@@ -800,7 +718,7 @@ mod tests {
 
         // extract and flatten all elements from arrays
         assert_eq!(
-            get_value_from_json_map("arr1[].arr2[].a", &map).values(),
+            get_value_from_json_map("arr1[].arr2[].a", &map).into_vec(),
             vec![
                 &Value::Number(1.into()),
                 &Value::Number(3.into()),
@@ -826,7 +744,7 @@ mod tests {
 
         // extract and retain structure for arrays arrays
         assert_eq!(
-            get_value_from_json_map("arr[].a", &map).values(),
+            get_value_from_json_map("arr[].a", &map).into_vec(),
             vec![
                 &Value::Array(vec![
                     Value::Number(1.into()),
@@ -839,7 +757,7 @@ mod tests {
 
         // expect an array as leaf, ignore non arrays
         assert_eq!(
-            get_value_from_json_map("arr[].a[]", &map).values(),
+            get_value_from_json_map("arr[].a[]", &map).into_vec(),
             vec![
                 &Value::Number(1.into()),
                 &Value::Number(2.into()),
