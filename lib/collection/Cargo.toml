@@ -12,7 +12,6 @@ edition = "2021"
 tracing = ["dep:tracing", "api/tracing", "segment/tracing"]
 
 [dev-dependencies]
-async-std = { version = "1.12", features = ["attributes"] }
 criterion = "0.5"
 proptest = "1.4.0"
 rstest = "0.18.2"
