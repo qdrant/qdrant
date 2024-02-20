@@ -13,16 +13,27 @@ impl EtaCalculator {
 
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
-        let now = Instant::now();
+        Self::new_raw(Instant::now())
+    }
+
+    /// Capture the current progress and time.
+    pub fn set_progress(&mut self, current_progress: usize) {
+        self.set_progress_raw(Instant::now(), current_progress);
+    }
+
+    /// Calculate the ETA to reach the target progress.
+    pub fn estimate(&self, target_progress: usize) -> Option<Duration> {
+        self.estimate_raw(Instant::now(), target_progress)
+    }
+
+    fn new_raw(now: Instant) -> Self {
         Self {
             ring: [(now, 0); Self::SIZE],
             ring_pos: 0,
         }
     }
 
-    /// Capture the current progress and time.
-    pub fn set_progress(&mut self, current_progress: usize) {
-        let now = Instant::now();
+    fn set_progress_raw(&mut self, now: Instant, current_progress: usize) {
         if current_progress < self.ring[self.ring_pos].1 {
             // Progress went backwards, reset the state.
             *self = Self::new();
@@ -33,10 +44,7 @@ impl EtaCalculator {
         self.ring[self.ring_pos] = (now, current_progress);
     }
 
-    /// Calculate the ETA to reach the target progress.
-    pub fn estimate(&self, target_progress: usize) -> Option<Duration> {
-        let now = Instant::now();
-
+    fn estimate_raw(&self, now: Instant, target_progress: usize) -> Option<Duration> {
         let (last_time, last_progress) = self.ring[self.ring_pos];
 
         // Check if the progress is already reached.
@@ -67,5 +75,49 @@ impl EtaCalculator {
         let elapsed = (now - last_time).as_secs_f64();
         let eta = (value_diff as f64 / rate - elapsed).max(0.0);
         Duration::try_from_secs_f64(eta).ok()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use approx::assert_relative_eq;
+
+    use super::*;
+
+    #[test]
+    fn test_eta_calculator() {
+        let mut now = Instant::now();
+        let mut eta = EtaCalculator::new_raw(now);
+
+        let delta = Duration::from_millis(500);
+        for i in 0..=40 {
+            now += delta;
+            eta.set_progress_raw(now, i);
+        }
+        assert_relative_eq!(
+            eta.estimate_raw(now, 100).unwrap().as_secs_f64(),
+            ((100 - 40) * delta).as_secs_f64(),
+            max_relative = 0.02,
+        );
+        // Emulate a stall.
+        assert!(eta
+            .estimate_raw(now + Duration::from_secs(20), 100)
+            .is_none());
+
+        // Change the speed.
+        let delta = Duration::from_millis(5000);
+        for i in 41..=60 {
+            now += delta;
+            eta.set_progress_raw(now, i);
+        }
+        assert_relative_eq!(
+            eta.estimate_raw(now, 100).unwrap().as_secs_f64(),
+            ((100 - 60) * delta).as_secs_f64(),
+            max_relative = 0.02,
+        );
+
+        // Should be 0 when the target progress is reached or overreached.
+        assert_eq!(eta.estimate_raw(now, 60).unwrap(), Duration::from_secs(0));
+        assert_eq!(eta.estimate_raw(now, 50).unwrap(), Duration::from_secs(0));
     }
 }
