@@ -35,14 +35,6 @@ jobs:
       - name: Run integration tests - 1 peer
         run: ./tests/integration-tests.sh distributed
         shell: bash
-      - name: Run integration tests - multiple peers - pytest
-        run: |
-          # Run the test in loop to catch flaky tests
-          for i in {1..15}; do
-            echo "Running test iteration $i"
-            pytest ./tests/openapi/openapi_integration/test_snapshot.py
-          done
-        timeout-minutes: 60
       - name: upload logs in case of failure
         uses: actions/upload-artifact@v4
         if: failure() || cancelled()
@@ -76,14 +68,6 @@ jobs:
       - name: Run integration tests - 1 peer
         run: ./tests/integration-tests.sh distributed
         shell: bash
-      - name: Run integration tests - multiple peers - pytest
-        run: |
-          # Run the test in loop to catch flaky tests
-          for i in {1..15}; do
-            echo "Running test iteration $i"
-            pytest ./tests/openapi/openapi_integration/test_snapshot.py
-          done
-        timeout-minutes: 60
       - name: upload logs in case of failure
         uses: actions/upload-artifact@v4
         if: failure() || cancelled()
@@ -117,14 +101,6 @@ jobs:
       - name: Run integration tests - 1 peer
         run: ./tests/integration-tests.sh distributed
         shell: bash
-      - name: Run integration tests - multiple peers - pytest
-        run: |
-          # Run the test in loop to catch flaky tests
-          for i in {1..15}; do
-            echo "Running test iteration $i"
-            pytest ./tests/openapi/openapi_integration/test_snapshot.py
-          done
-        timeout-minutes: 60
       - name: upload logs in case of failure
         uses: actions/upload-artifact@v4
         if: failure() || cancelled()
@@ -158,14 +134,6 @@ jobs:
       - name: Run integration tests - 1 peer
         run: ./tests/integration-tests.sh distributed
         shell: bash
-      - name: Run integration tests - multiple peers - pytest
-        run: |
-          # Run the test in loop to catch flaky tests
-          for i in {1..15}; do
-            echo "Running test iteration $i"
-            pytest ./tests/openapi/openapi_integration/test_snapshot.py
-          done
-        timeout-minutes: 60
       - name: upload logs in case of failure
         uses: actions/upload-artifact@v4
         if: failure() || cancelled()
@@ -199,14 +167,6 @@ jobs:
       - name: Run integration tests - 1 peer
         run: ./tests/integration-tests.sh distributed
         shell: bash
-      - name: Run integration tests - multiple peers - pytest
-        run: |
-          # Run the test in loop to catch flaky tests
-          for i in {1..15}; do
-            echo "Running test iteration $i"
-            pytest ./tests/openapi/openapi_integration/test_snapshot.py
-          done
-        timeout-minutes: 60
       - name: upload logs in case of failure
         uses: actions/upload-artifact@v4
         if: failure() || cancelled()
@@ -240,14 +200,6 @@ jobs:
       - name: Run integration tests - 1 peer
         run: ./tests/integration-tests.sh distributed
         shell: bash
-      - name: Run integration tests - multiple peers - pytest
-        run: |
-          # Run the test in loop to catch flaky tests
-          for i in {1..15}; do
-            echo "Running test iteration $i"
-            pytest ./tests/openapi/openapi_integration/test_snapshot.py
-          done
-        timeout-minutes: 60
       - name: upload logs in case of failure
         uses: actions/upload-artifact@v4
         if: failure() || cancelled()

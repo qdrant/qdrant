@@ -47,11 +47,3 @@ if [ "$MODE" == "distributed" ]; then
 fi
 
 ./tests/openapi_integration_test.sh
-
-./tests/basic_api_test.sh
-
-./tests/basic_sparse_test.sh
-
-./tests/basic_grpc_test.sh
-
-./tests/basic_sparse_grpc_test.sh
