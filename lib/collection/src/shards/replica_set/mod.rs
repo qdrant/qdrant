@@ -635,38 +635,18 @@ impl ShardReplicaSet {
                 )
                 .await?;
                 match state {
-                    ReplicaState::Active => {
+                    ReplicaState::Active | ReplicaState::Listener => {
                         // No way we can provide up-to-date replica right away at this point,
                         // so we report a failure to consensus
-                        self.set_local(local_shard, Some(ReplicaState::Active))
-                            .await?;
+                        self.set_local(local_shard, Some(state)).await?;
                         self.notify_peer_failure(peer_id);
                     }
-                    ReplicaState::Dead => {
-                        self.set_local(local_shard, Some(ReplicaState::Dead))
-                            .await?;
-                    }
-                    ReplicaState::Partial => {
-                        self.set_local(local_shard, Some(ReplicaState::Partial))
-                            .await?;
-                    }
-                    ReplicaState::Initializing => {
-                        self.set_local(local_shard, Some(ReplicaState::Initializing))
-                            .await?;
-                    }
-                    ReplicaState::Listener => {
-                        // Same as `Active`, we report a failure to consensus
-                        self.set_local(local_shard, Some(ReplicaState::Listener))
-                            .await?;
-                        self.notify_peer_failure(peer_id);
-                    }
-                    ReplicaState::PartialSnapshot => {
-                        self.set_local(local_shard, Some(ReplicaState::PartialSnapshot))
-                            .await?;
-                    }
-                    ReplicaState::Recovery => {
-                        self.set_local(local_shard, Some(ReplicaState::Recovery))
-                            .await?;
+                    ReplicaState::Dead
+                    | ReplicaState::Partial
+                    | ReplicaState::Initializing
+                    | ReplicaState::PartialSnapshot
+                    | ReplicaState::Recovery => {
+                        self.set_local(local_shard, Some(state)).await?;
                     }
                 }
                 continue;
