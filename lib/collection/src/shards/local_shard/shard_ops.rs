@@ -247,7 +247,7 @@ impl ShardOperation for LocalShard {
             let update_sender = self.update_sender.load();
             let channel_permit = update_sender.reserve().await?;
 
-            let operation_id = self.wal.lock_and_write(&mut operation).await?;
+            let (operation_id, wal_lock) = self.wal.lock_and_write(&mut operation).await?;
 
             channel_permit.send(UpdateSignal::Operation(OperationData {
                 op_num: operation_id,
@@ -255,6 +255,7 @@ impl ShardOperation for LocalShard {
                 sender: callback_sender,
                 wait,
             }));
+            drop(wal_lock);
             operation_id
         };
 
