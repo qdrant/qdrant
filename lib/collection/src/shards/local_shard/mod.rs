@@ -88,16 +88,7 @@ impl LocalShard {
         move_dir(wal_from, wal_to).await?;
         move_dir(segments_from, segments_to).await?;
 
-        let highest_clock_map_path = LocalShardClocks::highest_clock_map_path(from);
-        let cutoff_clock_map_path = LocalShardClocks::cutoff_clock_map_path(from);
-        if highest_clock_map_path.exists() {
-            let clock_map_to = LocalShardClocks::highest_clock_map_path(to);
-            move_file(highest_clock_map_path, clock_map_to).await?;
-        }
-        if cutoff_clock_map_path.exists() {
-            let clock_map_to = LocalShardClocks::cutoff_clock_map_path(to);
-            move_file(cutoff_clock_map_path, clock_map_to).await?;
-        }
+        LocalShardClocks::move_data(from, to).await?;
 
         Ok(())
     }
@@ -125,15 +116,7 @@ impl LocalShard {
             remove_dir_all(segments_path).await?;
         }
 
-        // Delete clock maps
-        let highest_clock_map = LocalShardClocks::highest_clock_map_path(shard_path);
-        let cutoff_clock_map_path = LocalShardClocks::cutoff_clock_map_path(shard_path);
-        if highest_clock_map.exists() {
-            remove_file(highest_clock_map).await?;
-        }
-        if cutoff_clock_map_path.exists() {
-            remove_file(cutoff_clock_map_path).await?;
-        }
+        LocalShardClocks::delete_data(shard_path).await?;
 
         Ok(())
     }
@@ -696,20 +679,7 @@ impl LocalShard {
         })
         .await??;
 
-        // Copy clock maps
-        let highest_clock_map_path = LocalShardClocks::highest_clock_map_path(&self.path);
-        let cutoff_clock_map_path = LocalShardClocks::cutoff_clock_map_path(&self.path);
-
-        if highest_clock_map_path.exists() {
-            let target_clock_map_path =
-                LocalShardClocks::highest_clock_map_path(snapshot_shard_path);
-            copy(highest_clock_map_path, target_clock_map_path).await?;
-        }
-        if cutoff_clock_map_path.exists() {
-            let target_clock_map_path =
-                LocalShardClocks::cutoff_clock_map_path(snapshot_shard_path);
-            copy(cutoff_clock_map_path, target_clock_map_path).await?;
-        }
+        LocalShardClocks::copy_data(&self.path, snapshot_shard_path).await?;
 
         // copy shard's config
         let shard_config_path = ShardConfig::get_config_path(&self.path);
@@ -989,5 +959,48 @@ impl LocalShardClocks {
 
     pub fn cutoff_clock_map_path(shard_path: &Path) -> PathBuf {
         shard_path.join("clock_map_cutoff.json")
+    }
+
+    /// Copy clock data on disk from one shard path to another.
+    pub async fn copy_data(from: &Path, to: &Path) -> CollectionResult<()> {
+        let highest_path_from = Self::highest_clock_map_path(from);
+        let cutoff_clock_map_path = Self::cutoff_clock_map_path(from);
+        if highest_path_from.exists() {
+            let highest_path_to = Self::highest_clock_map_path(to);
+            copy(highest_path_from, highest_path_to).await?;
+        }
+        if cutoff_clock_map_path.exists() {
+            let cutoff_path_to = Self::cutoff_clock_map_path(to);
+            copy(cutoff_clock_map_path, cutoff_path_to).await?;
+        }
+        Ok(())
+    }
+
+    /// Move clock data on disk from one shard path to another.
+    pub async fn move_data(from: &Path, to: &Path) -> CollectionResult<()> {
+        let highest_path_from = Self::highest_clock_map_path(from);
+        let cutoff_path_from = Self::cutoff_clock_map_path(from);
+        if highest_path_from.exists() {
+            let highest_path_to = Self::highest_clock_map_path(to);
+            move_file(highest_path_from, highest_path_to).await?;
+        }
+        if cutoff_path_from.exists() {
+            let cutoff_path_to = Self::cutoff_clock_map_path(to);
+            move_file(cutoff_path_from, cutoff_path_to).await?;
+        }
+        Ok(())
+    }
+
+    /// Delete clock data from disk at the given shard path.
+    pub async fn delete_data(shard_path: &Path) -> CollectionResult<()> {
+        let highest_path = Self::highest_clock_map_path(shard_path);
+        let cutoff_path = Self::cutoff_clock_map_path(shard_path);
+        if highest_path.exists() {
+            remove_file(highest_path).await?;
+        }
+        if cutoff_path.exists() {
+            remove_file(cutoff_path).await?;
+        }
+        Ok(())
     }
 }
