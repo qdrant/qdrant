@@ -660,8 +660,12 @@ impl ShardReplicaSet {
                             .await?;
                         self.notify_peer_failure(peer_id);
                     }
-                    ReplicaState::PartialSnapshot | ReplicaState::Recovery => {
+                    ReplicaState::PartialSnapshot => {
                         self.set_local(local_shard, Some(ReplicaState::PartialSnapshot))
+                            .await?;
+                    }
+                    ReplicaState::Recovery => {
+                        self.set_local(local_shard, Some(ReplicaState::Recovery))
                             .await?;
                     }
                 }
