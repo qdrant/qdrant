@@ -10,68 +10,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test-snapshot-openapi-integration-1:
-
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Install minimal stable
-        uses: dtolnay/rust-toolchain@stable
-      - uses: actions/checkout@v4
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v3
-	@@ -25,16 +25,33 @@ jobs:
-      - uses: Swatinem/rust-cache@v2
-      - name: Install dependencies
-        run: sudo apt-get install clang
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-      - name: Install pytest
-        run: pip install pytest requests
-      - name: Build
-        run: cargo build --features service_debug
-      - name: Run integration tests - 1 peer
-        run: ./tests/integration-tests.sh distributed
-        shell: bash
-      - name: Run integration tests - multiple peers - pytest
-        run: |
-          # Run the test in loop to catch flaky tests
-          for i in {1..15}; do
-            echo "Running test iteration $i"
-            pytest ./tests/openapi/openapi_integration/test_snapshot.py
-          done
-        timeout-minutes: 60
-      - name: upload logs in case of failure
-        uses: actions/upload-artifact@v4
-        if: failure() || cancelled()
-        with:
-          name: consensus-test-logs
-          retention-days: 90 # default max value
-          path: consensus_test_logs
-
-  test-snapshot-openapi-integration-2:
-
-    runs-on: ubuntu-latest
-
-	@@ -60,7 +77,12 @@ jobs:
-        run: ./tests/integration-tests.sh distributed
-        shell: bash
-      - name: Run integration tests - multiple peers - pytest
-        run: |
-          # Run the test in loop to catch flaky tests
-          for i in {1..15}; do
-            echo "Running test iteration $i"
-            pytest ./tests/openapi/openapi_integration/test_snapshot.py
-          done
-        timeout-minutes: 60
-      - name: upload logs in case of failure
-        uses: actions/upload-artifact@v4
-	@@ -70,190 +92,166 @@ jobs:
-          retention-days: 90 # default max value
-          path: consensus_test_logs
-
-  test-snapshot-openapi-integration-3:
+  test-snap-integration-1:
 
     runs-on: ubuntu-latest
 
@@ -112,7 +51,7 @@ jobs:
           retention-days: 90 # default max value
           path: consensus_test_logs
 
-  test-snapshot-openapi-integration-4:
+  test-snap-integration-2:
 
     runs-on: ubuntu-latest
 
@@ -153,7 +92,7 @@ jobs:
           retention-days: 90 # default max value
           path: consensus_test_logs
 
-  test-snapshot-openapi-integration-5:
+  test-snap-integration-3:
 
     runs-on: ubuntu-latest
 
@@ -194,7 +133,89 @@ jobs:
           retention-days: 90 # default max value
           path: consensus_test_logs
 
-  test-snapshot-openapi-integration-6:
+  test-snap-integration-4:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v4
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Install dependencies
+        run: sudo apt-get install clang
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install pytest
+        run: pip install pytest requests
+      - name: Build
+        run: cargo build --features service_debug
+      - name: Run integration tests - 1 peer
+        run: ./tests/integration-tests.sh distributed
+        shell: bash
+      - name: Run integration tests - multiple peers - pytest
+        run: |
+          # Run the test in loop to catch flaky tests
+          for i in {1..15}; do
+            echo "Running test iteration $i"
+            pytest ./tests/openapi/openapi_integration/test_snapshot.py
+          done
+        timeout-minutes: 60
+      - name: upload logs in case of failure
+        uses: actions/upload-artifact@v4
+        if: failure() || cancelled()
+        with:
+          name: consensus-test-logs
+          retention-days: 90 # default max value
+          path: consensus_test_logs
+
+  test-snap-integration-5:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v4
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Install dependencies
+        run: sudo apt-get install clang
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install pytest
+        run: pip install pytest requests
+      - name: Build
+        run: cargo build --features service_debug
+      - name: Run integration tests - 1 peer
+        run: ./tests/integration-tests.sh distributed
+        shell: bash
+      - name: Run integration tests - multiple peers - pytest
+        run: |
+          # Run the test in loop to catch flaky tests
+          for i in {1..15}; do
+            echo "Running test iteration $i"
+            pytest ./tests/openapi/openapi_integration/test_snapshot.py
+          done
+        timeout-minutes: 60
+      - name: upload logs in case of failure
+        uses: actions/upload-artifact@v4
+        if: failure() || cancelled()
+        with:
+          name: consensus-test-logs
+          retention-days: 90 # default max value
+          path: consensus_test_logs
+
+  test-snap-integration-6:
 
     runs-on: ubuntu-latest
 
