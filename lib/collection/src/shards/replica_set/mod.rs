@@ -914,7 +914,7 @@ pub enum ReplicaState {
     // TODO(1.9): deprecate this state
     PartialSnapshot,
     // Shard is undergoing recovery by an external node
-    // Normally rejects updates, allows updates if force is true.
+    // Normally rejects updates, accepts updates if force is true
     Recovery,
 }
 

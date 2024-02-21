@@ -355,6 +355,7 @@ impl TableOfContent {
                 )?;
 
                 // Set shard state from `PartialSnapshot` to `Partial`
+                // TODO(1.9): get into Partial state from PartialSnapshot or Recovery
                 let operation = SetShardReplicaState {
                     collection_name: collection_id,
                     shard_id: transfer.shard_id,
