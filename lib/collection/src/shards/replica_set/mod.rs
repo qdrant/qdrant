@@ -845,6 +845,21 @@ impl ShardReplicaSet {
 
         local_shard.shard_recovery_point().await
     }
+
+    /// Update the cutoff point for the local shard.
+    pub(crate) async fn update_shard_cutoff_point(
+        &self,
+        cutoff: &RecoveryPoint,
+    ) -> CollectionResult<()> {
+        let local_shard = self.local.read().await;
+        let Some(local_shard) = local_shard.as_ref() else {
+            return Err(CollectionError::NotFound {
+                what: "Peer does not have local shard".into(),
+            });
+        };
+
+        local_shard.update_cutoff(cutoff).await
+    }
 }
 
 /// Represents a replica set state

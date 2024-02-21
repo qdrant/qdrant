@@ -907,6 +907,13 @@ impl LocalShard {
     pub async fn recovery_point(&self) -> RecoveryPoint {
         self.wal.recovery_point().await
     }
+
+    /// Update the cutoff point on the current shard
+    ///
+    /// This also updates the highest seen clocks.
+    pub async fn update_cutoff(&self, cutoff: &RecoveryPoint) {
+        self.wal.update_cutoff(cutoff).await
+    }
 }
 
 impl Drop for LocalShard {
