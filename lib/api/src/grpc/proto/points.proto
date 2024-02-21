@@ -493,15 +493,18 @@ message PointsUpdateOperation {
 
   oneof operation {
     PointStructList upsert = 1;
-    PointsSelector delete_deprecated = 2 [deprecated=true];
     SetPayload set_payload = 3;
     SetPayload overwrite_payload = 4;
     DeletePayload delete_payload = 5;
-    PointsSelector clear_payload_deprecated = 6 [deprecated=true];
     UpdateVectors update_vectors = 7;
     DeleteVectors delete_vectors = 8;
     DeletePoints delete_points = 9;
     ClearPayload clear_payload = 10;
+
+    /* ⬇⬇⬇ Proto spec does not allow reserved fields in oneOf, so we can keep track of them here ⬇⬇⬇ 
+    PointsSelector delete_deprecated = 2 [deprecated=true];
+    PointsSelector clear_payload_deprecated = 6 [deprecated=true];
+    */
   }
 }
 

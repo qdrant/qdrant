@@ -3758,7 +3758,7 @@ pub struct CountPoints {
 pub struct PointsUpdateOperation {
     #[prost(
         oneof = "points_update_operation::Operation",
-        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10"
+        tags = "1, 3, 4, 5, 7, 8, 9, 10"
     )]
     pub operation: ::core::option::Option<points_update_operation::Operation>,
 }
@@ -3860,16 +3860,12 @@ pub mod points_update_operation {
     pub enum Operation {
         #[prost(message, tag = "1")]
         Upsert(PointStructList),
-        #[prost(message, tag = "2")]
-        DeleteDeprecated(super::PointsSelector),
         #[prost(message, tag = "3")]
         SetPayload(SetPayload),
         #[prost(message, tag = "4")]
         OverwritePayload(SetPayload),
         #[prost(message, tag = "5")]
         DeletePayload(DeletePayload),
-        #[prost(message, tag = "6")]
-        ClearPayloadDeprecated(super::PointsSelector),
         #[prost(message, tag = "7")]
         UpdateVectors(UpdateVectors),
         #[prost(message, tag = "8")]

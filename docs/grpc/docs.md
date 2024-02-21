@@ -2601,11 +2601,9 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | upsert | [PointsUpdateOperation.PointStructList](#qdrant-PointsUpdateOperation-PointStructList) |  |  |
-| delete_deprecated | [PointsSelector](#qdrant-PointsSelector) |  | **Deprecated.**  |
 | set_payload | [PointsUpdateOperation.SetPayload](#qdrant-PointsUpdateOperation-SetPayload) |  |  |
 | overwrite_payload | [PointsUpdateOperation.SetPayload](#qdrant-PointsUpdateOperation-SetPayload) |  |  |
 | delete_payload | [PointsUpdateOperation.DeletePayload](#qdrant-PointsUpdateOperation-DeletePayload) |  |  |
-| clear_payload_deprecated | [PointsSelector](#qdrant-PointsSelector) |  | **Deprecated.**  |
 | update_vectors | [PointsUpdateOperation.UpdateVectors](#qdrant-PointsUpdateOperation-UpdateVectors) |  |  |
 | delete_vectors | [PointsUpdateOperation.DeleteVectors](#qdrant-PointsUpdateOperation-DeleteVectors) |  |  |
 | delete_points | [PointsUpdateOperation.DeletePoints](#qdrant-PointsUpdateOperation-DeletePoints) |  |  |

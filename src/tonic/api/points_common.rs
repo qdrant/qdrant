@@ -512,21 +512,6 @@ pub async fn update_batch(
                 )
                 .await
             }
-            points_update_operation::Operation::DeleteDeprecated(points) => {
-                delete(
-                    toc.clone(),
-                    DeletePoints {
-                        collection_name,
-                        wait,
-                        points: Some(points),
-                        ordering,
-                        shard_key_selector: None,
-                    },
-                    clock_tag,
-                    shard_selection,
-                )
-                .await
-            }
             points_update_operation::Operation::SetPayload(
                 points_update_operation::SetPayload {
                     payload,
@@ -652,21 +637,6 @@ pub async fn update_batch(
                         vectors,
                         ordering,
                         shard_key_selector,
-                    },
-                    clock_tag,
-                    shard_selection,
-                )
-                .await
-            }
-            Operation::ClearPayloadDeprecated(selector) => {
-                clear_payload(
-                    toc.clone(),
-                    ClearPayloadPoints {
-                        collection_name,
-                        wait,
-                        points: Some(selector),
-                        ordering,
-                        shard_key_selector: None,
                     },
                     clock_tag,
                     shard_selection,
