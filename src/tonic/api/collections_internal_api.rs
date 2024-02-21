@@ -5,7 +5,7 @@ use api::grpc::qdrant::collections_internal_server::CollectionsInternal;
 use api::grpc::qdrant::{
     CollectionOperationResponse, GetCollectionInfoRequestInternal, GetCollectionInfoResponse,
     GetShardRecoveryPointRequest, GetShardRecoveryPointResponse, InitiateShardTransferRequest,
-    WaitForShardStateRequest,
+    UpdateShardCutoffPointRequest, WaitForShardStateRequest,
 };
 use storage::content_manager::conversions::error_to_status;
 use storage::content_manager::toc::TableOfContent;
@@ -151,6 +151,48 @@ impl CollectionsInternal for CollectionsInternalService {
 
         let response = GetShardRecoveryPointResponse {
             recovery_point: Some(recovery_point.into()),
+            time: timing.elapsed().as_secs_f64(),
+        };
+        Ok(Response::new(response))
+    }
+
+    async fn update_shard_cutoff_point(
+        &self,
+        request: Request<UpdateShardCutoffPointRequest>,
+    ) -> Result<Response<CollectionOperationResponse>, Status> {
+        validate_and_log(request.get_ref());
+
+        let timing = Instant::now();
+        let UpdateShardCutoffPointRequest {
+            collection_name,
+            shard_id,
+            cutoff,
+        } = request.into_inner();
+
+        let cutoff = cutoff.ok_or_else(|| Status::invalid_argument("Missing cutoff point"))?;
+
+        let collection_read = self
+            .toc
+            .get_collection(&collection_name)
+            .await
+            .map_err(|err| {
+                Status::not_found(format!(
+                    "Collection {collection_name} could not be found: {err}"
+                ))
+            })?;
+
+        // Set the shard cutoff point
+        collection_read
+            .update_shard_cutoff_point(shard_id, &cutoff.into())
+            .await
+            .map_err(|err| {
+                Status::internal(format!(
+                    "Failed to set shard cutoff point for shard {shard_id}: {err}"
+                ))
+            })?;
+
+        let response = CollectionOperationResponse {
+            result: true,
             time: timing.elapsed().as_secs_f64(),
         };
         Ok(Response::new(response))
