@@ -64,7 +64,7 @@ pub(crate) fn update_vectors(
             });
     let ids: Vec<PointIdType> = points_map.keys().copied().collect();
 
-    let updated_points = segments.apply_points_and_reindex(
+    let updated_points = segments.apply_points_with_conditional_move(
         op_num,
         &ids,
         |id, write_segment| {
@@ -116,7 +116,7 @@ pub(crate) fn overwrite_payload(
     payload: &Payload,
     points: &[PointIdType],
 ) -> CollectionResult<usize> {
-    let updated_points = segments.apply_points_and_reindex(
+    let updated_points = segments.apply_points_with_conditional_move(
         op_num,
         points,
         |id, write_segment| write_segment.set_full_payload(op_num, id, payload),
@@ -144,7 +144,7 @@ pub(crate) fn set_payload(
     points: &[PointIdType],
     key: &Option<JsonPath>,
 ) -> CollectionResult<usize> {
-    let updated_points = segments.apply_points_and_reindex(
+    let updated_points = segments.apply_points_with_conditional_move(
         op_num,
         points,
         |id, write_segment| write_segment.set_payload(op_num, id, payload, key),
@@ -216,7 +216,7 @@ pub(crate) fn delete_payload(
     points: &[PointIdType],
     keys: &[PayloadKeyType],
 ) -> CollectionResult<usize> {
-    let updated_points = segments.apply_points_and_reindex(
+    let updated_points = segments.apply_points_with_conditional_move(
         op_num,
         points,
         |id, write_segment| {
@@ -248,7 +248,7 @@ pub(crate) fn clear_payload(
     op_num: SeqNumberType,
     points: &[PointIdType],
 ) -> CollectionResult<usize> {
-    let updated_points = segments.apply_points_and_reindex(
+    let updated_points = segments.apply_points_with_conditional_move(
         op_num,
         points,
         |id, write_segment| write_segment.clear_payload(op_num, id),
@@ -267,7 +267,7 @@ pub(crate) fn clear_payload_by_filter(
 ) -> CollectionResult<usize> {
     let points_to_clear = points_by_filter(segments, filter)?;
 
-    let updated_points = segments.apply_points_and_reindex(
+    let updated_points = segments.apply_points_with_conditional_move(
         op_num,
         points_to_clear.as_slice(),
         |id, write_segment| write_segment.clear_payload(op_num, id),
@@ -412,7 +412,7 @@ where
     let ids: Vec<PointIdType> = points_map.keys().copied().collect();
 
     // Update points in writable segments
-    let updated_points = segments.apply_points_and_reindex(
+    let updated_points = segments.apply_points_with_conditional_move(
         op_num,
         &ids,
         |id, write_segment| {

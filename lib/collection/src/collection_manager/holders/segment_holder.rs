@@ -388,23 +388,28 @@ impl<'s> SegmentHolder {
         apply(*segment_id, &mut segment_write)
     }
 
-    /// Apply an operation `point_operation` to a set of points `ids`, moving the points into
-    /// appendable segments if necessary causing the data to be re-indexed.
+    /// Apply an operation `point_operation` to a set of points `ids`, and, if necessary, move the
+    /// points into appendable segments.
     ///
     /// Moving is not performed in the following cases:
     /// - The segment containing the point is appendable.
     /// - The `update_nonappendable` function returns true for the segment.
-    ///   It's always safe to pass a closure that always returns false (i.e. `|_| false`).
-    ///   If it's known to be safe to update non-appendable segments, it can return true as a
-    ///   performance optimization.
+    /// Otherwise, the operation is applied to the containing segment in place.
+    ///
+    /// Rationale: non-appendable segments may contain immutable indexes that could be left in an
+    /// inconsistent state after applying the operation. When it's known that the operation will not
+    /// affect the indexes, `update_nonappendable` can return true to avoid moving the points as a
+    /// performance optimization.
+    ///
+    /// It's always safe to pass a closure that always returns false (i.e. `|_| false`).
     ///
     /// Returns set of point ids which were successfully (already) applied to segments.
-    pub fn apply_points_and_reindex<F, G>(
+    pub fn apply_points_with_conditional_move<F, G>(
         &self,
         op_num: SeqNumberType,
         ids: &[PointIdType],
         mut point_operation: F,
-        mut update_nonappendable: G,
+        update_nonappendable: G,
     ) -> OperationResult<HashSet<PointIdType>>
     where
         F: FnMut(PointIdType, &mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>,
@@ -419,7 +424,7 @@ impl<'s> SegmentHolder {
 
         let _applied_points_count = self.apply_points(
             ids,
-            |segment| update_nonappendable(segment),
+            update_nonappendable,
             |point_id, _idx, write_segment, &update_nonappendable| {
                 if let Some(point_version) = write_segment.point_version(point_id) {
                     if point_version >= op_num {
@@ -763,7 +768,7 @@ mod tests {
         let op_num = 100;
         let mut processed_points: Vec<PointIdType> = vec![];
         holder
-            .apply_points_and_reindex(
+            .apply_points_with_conditional_move(
                 op_num,
                 &[1.into(), 2.into(), 11.into(), 12.into()],
                 |point_id, segment| {
@@ -785,7 +790,7 @@ mod tests {
         assert!(read_segment_1.has_point(1.into()));
         assert!(read_segment_1.has_point(2.into()));
 
-        // Points moved or don't moved on apply based on appendable flag
+        // Points moved or not moved on apply based on appendable flag
         assert_eq!(read_segment_1.has_point(11.into()), !update_nonappendable);
         assert_eq!(read_segment_1.has_point(12.into()), !update_nonappendable);
         assert_eq!(read_segment_2.has_point(11.into()), update_nonappendable);
