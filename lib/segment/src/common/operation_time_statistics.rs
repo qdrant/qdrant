@@ -282,14 +282,22 @@ impl OperationDurationsAggregator {
     }
 
     pub fn get_statistics(&self, detail: TelemetryDetail) -> OperationDurationStatistics {
-        let _ = detail.histograms; // TODO: Will be used once histograms PR is merged
-        let mut duration_micros_histogram =
-            Vec::with_capacity(DEFAULT_BUCKET_BOUNDARIES_MICROS.len());
-        let mut cumulative_count = 0;
-        for (&count, &le) in self.buckets.iter().zip(&DEFAULT_BUCKET_BOUNDARIES_MICROS) {
-            cumulative_count += count;
-            duration_micros_histogram.push((le, cumulative_count));
-        }
+        let duration_micros_histogram = if detail.histograms {
+            let mut duration_micros_histogram =
+                Vec::with_capacity(DEFAULT_BUCKET_BOUNDARIES_MICROS.len());
+            let mut cumulative_count = 0;
+            for (&count, &le) in self.buckets.iter().zip(&DEFAULT_BUCKET_BOUNDARIES_MICROS) {
+                cumulative_count += count;
+                duration_micros_histogram.push((le, cumulative_count));
+            }
+            convert_histogram(
+                &DEFAULT_BUCKET_BOUNDARIES_MICROS,
+                &self.buckets,
+                self.ok_count,
+            )
+        } else {
+            Vec::new()
+        };
 
         OperationDurationStatistics {
             count: self.ok_count,
@@ -303,11 +311,7 @@ impl OperationDurationsAggregator {
             max_duration_micros: self.max_value,
             total_duration_micros: self.total_value,
             last_responded: self.last_response_date,
-            duration_micros_histogram: convert_histogram(
-                &DEFAULT_BUCKET_BOUNDARIES_MICROS,
-                &self.buckets,
-                self.ok_count,
-            ),
+            duration_micros_histogram,
         }
     }
 
