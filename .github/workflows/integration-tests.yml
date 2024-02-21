@@ -207,3 +207,205 @@ jobs:
           name: consensus-test-logs
           retention-days: 90 # default max value
           path: consensus_test_logs
+
+  test-snap-integration-7:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v4
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Install dependencies
+        run: sudo apt-get install clang
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install pytest
+        run: pip install pytest requests
+      - name: Build
+        run: cargo build --features service_debug
+      - name: Run integration tests - 1 peer
+        run: ./tests/integration-tests.sh distributed
+        shell: bash
+      - name: upload logs in case of failure
+        uses: actions/upload-artifact@v4
+        if: failure() || cancelled()
+        with:
+          name: consensus-test-logs
+          retention-days: 90 # default max value
+          path: consensus_test_logs
+
+
+  test-snap-integration-8:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v4
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Install dependencies
+        run: sudo apt-get install clang
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install pytest
+        run: pip install pytest requests
+      - name: Build
+        run: cargo build --features service_debug
+      - name: Run integration tests - 1 peer
+        run: ./tests/integration-tests.sh distributed
+        shell: bash
+      - name: upload logs in case of failure
+        uses: actions/upload-artifact@v4
+        if: failure() || cancelled()
+        with:
+          name: consensus-test-logs
+          retention-days: 90 # default max value
+          path: consensus_test_logs
+
+
+  test-snap-integration-9:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v4
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Install dependencies
+        run: sudo apt-get install clang
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install pytest
+        run: pip install pytest requests
+      - name: Build
+        run: cargo build --features service_debug
+      - name: Run integration tests - 1 peer
+        run: ./tests/integration-tests.sh distributed
+        shell: bash
+      - name: upload logs in case of failure
+        uses: actions/upload-artifact@v4
+        if: failure() || cancelled()
+        with:
+          name: consensus-test-logs
+          retention-days: 90 # default max value
+          path: consensus_test_logs
+
+
+  test-snap-integration-A:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v4
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Install dependencies
+        run: sudo apt-get install clang
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install pytest
+        run: pip install pytest requests
+      - name: Build
+        run: cargo build --features service_debug
+      - name: Run integration tests - 1 peer
+        run: ./tests/integration-tests.sh distributed
+        shell: bash
+      - name: upload logs in case of failure
+        uses: actions/upload-artifact@v4
+        if: failure() || cancelled()
+        with:
+          name: consensus-test-logs
+          retention-days: 90 # default max value
+          path: consensus_test_logs
+
+
+  test-snap-integration-B:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v4
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Install dependencies
+        run: sudo apt-get install clang
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install pytest
+        run: pip install pytest requests
+      - name: Build
+        run: cargo build --features service_debug
+      - name: Run integration tests - 1 peer
+        run: ./tests/integration-tests.sh distributed
+        shell: bash
+      - name: upload logs in case of failure
+        uses: actions/upload-artifact@v4
+        if: failure() || cancelled()
+        with:
+          name: consensus-test-logs
+          retention-days: 90 # default max value
+          path: consensus_test_logs
+
+  test-snap-integration-C:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v4
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Install dependencies
+        run: sudo apt-get install clang
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install pytest
+        run: pip install pytest requests
+      - name: Build
+        run: cargo build --features service_debug
+      - name: Run integration tests - 1 peer
+        run: ./tests/integration-tests.sh distributed
+        shell: bash
+      - name: upload logs in case of failure
+        uses: actions/upload-artifact@v4
+        if: failure() || cancelled()
+        with:
+          name: consensus-test-logs
+          retention-days: 90 # default max value
+          path: consensus_test_logs
