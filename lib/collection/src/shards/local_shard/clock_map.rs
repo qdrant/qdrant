@@ -103,18 +103,14 @@ impl ClockMap {
     /// Create a recovery point based on the current clock map state, so that we can recover any
     /// new operations with new clock values
     ///
-    /// The recovery point will contain every clock that is in this clock map, but with a tick of
-    /// one higher. That is because we already have an operation for the current clock tick, but
-    /// would like to receive the operation with the next tick on recovery.
-    ///
-    /// In other words, the recovery point will contain the first clock tick values the clock map
-    /// has not seen yet.
+    /// The recovery point contains every clock that is in this clock map. So, it represents all
+    /// the clock ticks we have.
     pub fn to_recovery_point(&self) -> RecoveryPoint {
         RecoveryPoint {
             clocks: self
                 .clocks
                 .iter()
-                .map(|(key, clock)| (*key, clock.current_tick + 1))
+                .map(|(key, clock)| (*key, clock.current_tick))
                 .collect(),
         }
     }
@@ -194,6 +190,11 @@ impl RecoveryPoint {
         self.clocks
             .iter()
             .map(|(key, tick)| ClockTag::new(key.peer_id, key.clock_id, *tick))
+    }
+
+    /// Increase all existing clocks in this recovery point by the given amount
+    pub fn increase_by(&mut self, amount: u64) {
+        self.clocks.values_mut().for_each(|tick| *tick += amount);
     }
 
     /// Check whether this recovery point has any clocks that are not in `other`
