@@ -26,7 +26,7 @@ use crate::common::stoppable_task::{spawn_stoppable, StoppableTaskHandle};
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
-use crate::shards::local_shard::ShardClocks;
+use crate::shards::local_shard::LocalShardClocks;
 use crate::wal::WalError;
 use crate::wal_delta::LockedWal;
 
@@ -107,7 +107,7 @@ pub struct UpdateHandler {
     /// Maximum number of concurrent optimization jobs in this update handler.
     max_optimization_threads: Option<usize>,
     /// Highest and cutoff clocks for the shard WAL.
-    clocks: ShardClocks,
+    clocks: LocalShardClocks,
 }
 
 impl UpdateHandler {
@@ -122,7 +122,7 @@ impl UpdateHandler {
         wal: LockedWal,
         flush_interval_sec: u64,
         max_optimization_threads: Option<usize>,
-        clocks: ShardClocks,
+        clocks: LocalShardClocks,
     ) -> UpdateHandler {
         UpdateHandler {
             shared_storage_config,
@@ -596,7 +596,7 @@ impl UpdateHandler {
         wal_keep_from: Arc<AtomicU64>,
         flush_interval_sec: u64,
         mut stop_receiver: oneshot::Receiver<()>,
-        clocks: ShardClocks,
+        clocks: LocalShardClocks,
     ) {
         loop {
             // Stop flush worker on signal or if sender was dropped

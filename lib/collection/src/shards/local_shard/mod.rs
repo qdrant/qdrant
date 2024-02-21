@@ -88,14 +88,14 @@ impl LocalShard {
         move_dir(wal_from, wal_to).await?;
         move_dir(segments_from, segments_to).await?;
 
-        let highest_clock_map_path = ShardClocks::highest_clock_map_path(from);
-        let cutoff_clock_map_path = ShardClocks::cutoff_clock_map_path(from);
+        let highest_clock_map_path = LocalShardClocks::highest_clock_map_path(from);
+        let cutoff_clock_map_path = LocalShardClocks::cutoff_clock_map_path(from);
         if highest_clock_map_path.exists() {
-            let clock_map_to = ShardClocks::highest_clock_map_path(to);
+            let clock_map_to = LocalShardClocks::highest_clock_map_path(to);
             move_file(highest_clock_map_path, clock_map_to).await?;
         }
         if cutoff_clock_map_path.exists() {
-            let clock_map_to = ShardClocks::cutoff_clock_map_path(to);
+            let clock_map_to = LocalShardClocks::cutoff_clock_map_path(to);
             move_file(cutoff_clock_map_path, clock_map_to).await?;
         }
 
@@ -126,8 +126,8 @@ impl LocalShard {
         }
 
         // Delete clock maps
-        let highest_clock_map = ShardClocks::highest_clock_map_path(shard_path);
-        let cutoff_clock_map_path = ShardClocks::cutoff_clock_map_path(shard_path);
+        let highest_clock_map = LocalShardClocks::highest_clock_map_path(shard_path);
+        let cutoff_clock_map_path = LocalShardClocks::cutoff_clock_map_path(shard_path);
         if highest_clock_map.exists() {
             remove_file(highest_clock_map).await?;
         }
@@ -155,7 +155,7 @@ impl LocalShard {
         let config = collection_config.read().await;
         let locked_wal = Arc::new(ParkingMutex::new(wal));
         let optimizers_log = Arc::new(ParkingMutex::new(Default::default()));
-        let clocks = ShardClocks::new_at(highest_clock_map, cutoff_clock_map, shard_path);
+        let clocks = LocalShardClocks::new_at(highest_clock_map, cutoff_clock_map, shard_path);
 
         let mut update_handler = UpdateHandler::new(
             shared_storage_config.clone(),
@@ -211,8 +211,8 @@ impl LocalShard {
 
         let wal_path = Self::wal_path(shard_path);
         let segments_path = Self::segments_path(shard_path);
-        let highest_clock_map_path = ShardClocks::highest_clock_map_path(shard_path);
-        let cutoff_clock_map_path = ShardClocks::cutoff_clock_map_path(shard_path);
+        let highest_clock_map_path = LocalShardClocks::highest_clock_map_path(shard_path);
+        let cutoff_clock_map_path = LocalShardClocks::cutoff_clock_map_path(shard_path);
 
         let wal: SerdeWal<OperationWithClockTag> = SerdeWal::new(
             wal_path.to_str().unwrap(),
@@ -697,15 +697,17 @@ impl LocalShard {
         .await??;
 
         // Copy clock maps
-        let highest_clock_map_path = ShardClocks::highest_clock_map_path(&self.path);
-        let cutoff_clock_map_path = ShardClocks::cutoff_clock_map_path(&self.path);
+        let highest_clock_map_path = LocalShardClocks::highest_clock_map_path(&self.path);
+        let cutoff_clock_map_path = LocalShardClocks::cutoff_clock_map_path(&self.path);
 
         if highest_clock_map_path.exists() {
-            let target_clock_map_path = ShardClocks::highest_clock_map_path(snapshot_shard_path);
+            let target_clock_map_path =
+                LocalShardClocks::highest_clock_map_path(snapshot_shard_path);
             copy(highest_clock_map_path, target_clock_map_path).await?;
         }
         if cutoff_clock_map_path.exists() {
-            let target_clock_map_path = ShardClocks::cutoff_clock_map_path(snapshot_shard_path);
+            let target_clock_map_path =
+                LocalShardClocks::cutoff_clock_map_path(snapshot_shard_path);
             copy(cutoff_clock_map_path, target_clock_map_path).await?;
         }
 
@@ -951,14 +953,14 @@ impl Drop for LocalShard {
 ///
 /// Holds a clock map for tracking the highest clocks and the cutoff clocks.
 #[derive(Clone)]
-pub struct ShardClocks {
+pub struct LocalShardClocks {
     highest_clocks: Arc<Mutex<ClockMap>>,
     cutoff_clocks: Arc<Mutex<ClockMap>>,
     highest_clocks_path: PathBuf,
     cutoff_clocks_path: PathBuf,
 }
 
-impl ShardClocks {
+impl LocalShardClocks {
     pub fn new_at(highest_clocks: ClockMap, cutoff_clocks: ClockMap, shard_path: &Path) -> Self {
         Self {
             highest_clocks: Arc::new(Mutex::new(highest_clocks)),
