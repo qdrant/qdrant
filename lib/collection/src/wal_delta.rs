@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use parking_lot::Mutex as ParkingMutex;
+use parking_lot::{Mutex as ParkingMutex, MutexGuard as ParkingMutexGuard};
 use thiserror::Error;
 use tokio::sync::Mutex;
 
@@ -40,11 +40,15 @@ impl RecoverableWal {
         }
     }
 
-    /// Write a record to the WAL but does guarantee durability.
-    pub async fn lock_and_write(
-        &self,
+    /// Write a record to the WAL, guarantee durability.
+    ///
+    /// On success, this returns the WAL record number of the written operation along with a WAL
+    /// lock guard.
+    #[must_use = "returned record number and WAL lock must be used carefully"]
+    pub async fn lock_and_write<'a>(
+        &'a self,
         operation: &mut OperationWithClockTag,
-    ) -> crate::wal::Result<u64> {
+    ) -> crate::wal::Result<(u64, ParkingMutexGuard<'a, SerdeWal<OperationWithClockTag>>)> {
         // Update last seen clock map and correct clock tag if necessary
         if let Some(clock_tag) = &mut operation.clock_tag {
             // TODO:
@@ -69,7 +73,8 @@ impl RecoverableWal {
         }
 
         // Write operation to WAL
-        self.wal.lock().write(operation)
+        let mut wal_lock = self.wal.lock();
+        wal_lock.write(operation).map(|op_num| (op_num, wal_lock))
     }
 
     /// Update the cutoff clock map based on the given recovery point.
@@ -127,7 +132,7 @@ impl RecoverableWal {
             .map(|(_, op)| op)
             .collect::<Vec<_>>();
         for update in operations.iter_mut() {
-            self.lock_and_write(update).await?;
+            let (_, _) = self.lock_and_write(update).await?;
         }
         Ok(())
     }
@@ -295,9 +300,9 @@ mod tests {
         let mut a_operation = operation.clone();
         let mut b_operation = operation.clone();
         let mut c_operation = operation.clone();
-        a_wal.lock_and_write(&mut a_operation).await.unwrap();
-        b_wal.lock_and_write(&mut b_operation).await.unwrap();
-        c_wal.lock_and_write(&mut c_operation).await.unwrap();
+        let (_, _) = a_wal.lock_and_write(&mut a_operation).await.unwrap();
+        let (_, _) = b_wal.lock_and_write(&mut b_operation).await.unwrap();
+        let (_, _) = c_wal.lock_and_write(&mut c_operation).await.unwrap();
         a_clock_0.advance_to(a_operation.clock_tag.unwrap().clock_tick);
         a_clock_0.advance_to(b_operation.clock_tag.unwrap().clock_tick);
         a_clock_0.advance_to(c_operation.clock_tag.unwrap().clock_tick);
@@ -313,8 +318,8 @@ mod tests {
         // Write operations to peer A and B, not C, and advance clocks
         let mut a_operation = operation.clone();
         let mut b_operation = operation.clone();
-        a_wal.lock_and_write(&mut a_operation).await.unwrap();
-        b_wal.lock_and_write(&mut b_operation).await.unwrap();
+        let (_, _) = a_wal.lock_and_write(&mut a_operation).await.unwrap();
+        let (_, _) = b_wal.lock_and_write(&mut b_operation).await.unwrap();
         a_clock_0.advance_to(a_operation.clock_tag.unwrap().clock_tick);
         a_clock_0.advance_to(b_operation.clock_tag.unwrap().clock_tick);
         drop(a_clock_0);
@@ -388,9 +393,9 @@ mod tests {
             let mut a_operation = operation.clone();
             let mut b_operation = operation.clone();
             let mut c_operation = operation.clone();
-            a_wal.lock_and_write(&mut a_operation).await.unwrap();
-            b_wal.lock_and_write(&mut b_operation).await.unwrap();
-            c_wal.lock_and_write(&mut c_operation).await.unwrap();
+            let (_, _) = a_wal.lock_and_write(&mut a_operation).await.unwrap();
+            let (_, _) = b_wal.lock_and_write(&mut b_operation).await.unwrap();
+            let (_, _) = c_wal.lock_and_write(&mut c_operation).await.unwrap();
             a_clock_0.advance_to(a_operation.clock_tag.unwrap().clock_tick);
             a_clock_0.advance_to(b_operation.clock_tag.unwrap().clock_tick);
             a_clock_0.advance_to(c_operation.clock_tag.unwrap().clock_tick);
@@ -407,8 +412,8 @@ mod tests {
             // Write operations to peer A and B, not C, and advance clocks
             let mut a_operation = operation.clone();
             let mut b_operation = operation.clone();
-            a_wal.lock_and_write(&mut a_operation).await.unwrap();
-            b_wal.lock_and_write(&mut b_operation).await.unwrap();
+            let (_, _) = a_wal.lock_and_write(&mut a_operation).await.unwrap();
+            let (_, _) = b_wal.lock_and_write(&mut b_operation).await.unwrap();
             a_clock_0.advance_to(a_operation.clock_tag.unwrap().clock_tick);
             a_clock_0.advance_to(b_operation.clock_tag.unwrap().clock_tick);
         }
@@ -484,9 +489,9 @@ mod tests {
             let mut a_operation = operation.clone();
             let mut b_operation = operation.clone();
             let mut c_operation = operation.clone();
-            a_wal.lock_and_write(&mut a_operation).await.unwrap();
-            b_wal.lock_and_write(&mut b_operation).await.unwrap();
-            c_wal.lock_and_write(&mut c_operation).await.unwrap();
+            let (_, _) = a_wal.lock_and_write(&mut a_operation).await.unwrap();
+            let (_, _) = b_wal.lock_and_write(&mut b_operation).await.unwrap();
+            let (_, _) = c_wal.lock_and_write(&mut c_operation).await.unwrap();
             a_clock_0.advance_to(a_operation.clock_tag.unwrap().clock_tick);
             a_clock_0.advance_to(b_operation.clock_tag.unwrap().clock_tick);
             a_clock_0.advance_to(c_operation.clock_tag.unwrap().clock_tick);
@@ -510,8 +515,8 @@ mod tests {
             // Write operations to peer A and B, not C, and advance clocks
             let mut a_operation = operation.clone();
             let mut b_operation = operation.clone();
-            a_wal.lock_and_write(&mut a_operation).await.unwrap();
-            b_wal.lock_and_write(&mut b_operation).await.unwrap();
+            let (_, _) = a_wal.lock_and_write(&mut a_operation).await.unwrap();
+            let (_, _) = b_wal.lock_and_write(&mut b_operation).await.unwrap();
             clock.advance_to(a_operation.clock_tag.unwrap().clock_tick);
             clock.advance_to(b_operation.clock_tag.unwrap().clock_tick);
         }
@@ -582,9 +587,9 @@ mod tests {
         let mut a_operation = operation.clone();
         let mut b_operation = operation.clone();
         let mut c_operation = operation.clone();
-        a_wal.lock_and_write(&mut a_operation).await.unwrap();
-        b_wal.lock_and_write(&mut b_operation).await.unwrap();
-        c_wal.lock_and_write(&mut c_operation).await.unwrap();
+        let (_, _) = a_wal.lock_and_write(&mut a_operation).await.unwrap();
+        let (_, _) = b_wal.lock_and_write(&mut b_operation).await.unwrap();
+        let (_, _) = c_wal.lock_and_write(&mut c_operation).await.unwrap();
         a_clock_0.advance_to(a_operation.clock_tag.unwrap().clock_tick);
         a_clock_0.advance_to(b_operation.clock_tag.unwrap().clock_tick);
         a_clock_0.advance_to(c_operation.clock_tag.unwrap().clock_tick);
@@ -607,10 +612,10 @@ mod tests {
         let mut a_operation_2 = operation_2.clone();
         let mut b_operation_1 = operation_1.clone();
         let mut b_operation_2 = operation_2.clone();
-        a_wal.lock_and_write(&mut a_operation_1).await.unwrap();
-        a_wal.lock_and_write(&mut a_operation_2).await.unwrap();
-        b_wal.lock_and_write(&mut b_operation_2).await.unwrap();
-        b_wal.lock_and_write(&mut b_operation_1).await.unwrap();
+        let (_, _) = a_wal.lock_and_write(&mut a_operation_1).await.unwrap();
+        let (_, _) = a_wal.lock_and_write(&mut a_operation_2).await.unwrap();
+        let (_, _) = b_wal.lock_and_write(&mut b_operation_2).await.unwrap();
+        let (_, _) = b_wal.lock_and_write(&mut b_operation_1).await.unwrap();
         a_clock_0.advance_to(a_operation_1.clock_tag.unwrap().clock_tick);
         a_clock_0.advance_to(a_operation_2.clock_tag.unwrap().clock_tick);
         b_clock_0.advance_to(b_operation_2.clock_tag.unwrap().clock_tick);
@@ -779,9 +784,9 @@ mod tests {
             let mut operation_b = operation_with_clock.clone();
             let mut operation_e = operation_with_clock.clone();
 
-            a_wal.lock_and_write(&mut operation_a).await.unwrap();
-            b_wal.lock_and_write(&mut operation_b).await.unwrap();
-            e_wal.lock_and_write(&mut operation_e).await.unwrap();
+            let (_, _) = a_wal.lock_and_write(&mut operation_a).await.unwrap();
+            let (_, _) = b_wal.lock_and_write(&mut operation_b).await.unwrap();
+            let (_, _) = e_wal.lock_and_write(&mut operation_e).await.unwrap();
 
             c_clock_0.advance_to(operation_a.clock_tag.unwrap().clock_tick);
             c_clock_0.advance_to(operation_b.clock_tag.unwrap().clock_tick);
@@ -802,8 +807,8 @@ mod tests {
             let mut operation_a = operation_with_clock.clone();
             let mut operation_b = operation_with_clock.clone();
 
-            a_wal.lock_and_write(&mut operation_a).await.unwrap();
-            b_wal.lock_and_write(&mut operation_b).await.unwrap();
+            let (_, _) = a_wal.lock_and_write(&mut operation_a).await.unwrap();
+            let (_, _) = b_wal.lock_and_write(&mut operation_b).await.unwrap();
 
             c_clock_0.advance_to(operation_a.clock_tag.unwrap().clock_tick);
             c_clock_0.advance_to(operation_b.clock_tag.unwrap().clock_tick);
@@ -827,7 +832,7 @@ mod tests {
 
                 let mut operation_a = operation_with_clock.clone();
 
-                a_wal.lock_and_write(&mut operation_a).await.unwrap();
+                let (_, _) = a_wal.lock_and_write(&mut operation_a).await.unwrap();
 
                 c_clock_0.advance_to(operation_a.clock_tag.unwrap().clock_tick);
             }
@@ -841,7 +846,7 @@ mod tests {
 
                 let mut operation_a = operation_with_clock.clone();
 
-                a_wal.lock_and_write(&mut operation_a).await.unwrap();
+                let (_, _) = a_wal.lock_and_write(&mut operation_a).await.unwrap();
 
                 c_clock_1.advance_to(operation_a.clock_tag.unwrap().clock_tick);
             }
@@ -860,8 +865,8 @@ mod tests {
             let mut operation_a = operation_with_clock.clone();
             let mut operation_b = operation_with_clock.clone();
 
-            a_wal.lock_and_write(&mut operation_a).await.unwrap();
-            b_wal.lock_and_write(&mut operation_b).await.unwrap();
+            let (_, _) = a_wal.lock_and_write(&mut operation_a).await.unwrap();
+            let (_, _) = b_wal.lock_and_write(&mut operation_b).await.unwrap();
 
             d_clock_0.advance_to(operation_a.clock_tag.unwrap().clock_tick);
             d_clock_0.advance_to(operation_b.clock_tag.unwrap().clock_tick);
@@ -880,8 +885,8 @@ mod tests {
             let mut operation_a = operation_with_clock.clone();
             let mut operation_b = operation_with_clock.clone();
 
-            a_wal.lock_and_write(&mut operation_a).await.unwrap();
-            b_wal.lock_and_write(&mut operation_b).await.unwrap();
+            let (_, _) = a_wal.lock_and_write(&mut operation_a).await.unwrap();
+            let (_, _) = b_wal.lock_and_write(&mut operation_b).await.unwrap();
 
             d_clock_0.advance_to(operation_a.clock_tag.unwrap().clock_tick);
             d_clock_0.advance_to(operation_b.clock_tag.unwrap().clock_tick);
@@ -905,14 +910,14 @@ mod tests {
         {
             let op1 = mock_operation(1);
             let op1_with_clock = OperationWithClockTag::new(op1, None);
-            b_wal
+            let (_, _) = b_wal
                 .lock_and_write(&mut op1_with_clock.clone())
                 .await
                 .unwrap();
 
             let op2 = mock_operation(2);
             let op2_with_clock = OperationWithClockTag::new(op2, None);
-            b_wal
+            let (_, _) = b_wal
                 .lock_and_write(&mut op2_with_clock.clone())
                 .await
                 .unwrap();
@@ -933,9 +938,9 @@ mod tests {
             let mut operation_b = operation_with_clock.clone();
             let mut operation_b_forward = operation_with_clock.clone();
 
-            a_wal.lock_and_write(&mut operation_a).await.unwrap();
-            b_wal.lock_and_write(&mut operation_b).await.unwrap();
-            b_wal
+            let (_, _) = a_wal.lock_and_write(&mut operation_a).await.unwrap();
+            let (_, _) = b_wal.lock_and_write(&mut operation_b).await.unwrap();
+            let (_, _) = b_wal
                 .lock_and_write(&mut operation_b_forward)
                 .await
                 .unwrap();
@@ -948,28 +953,28 @@ mod tests {
         {
             let op3 = mock_operation(3);
             let op3_with_clock = OperationWithClockTag::new(op3, None);
-            b_wal
+            let (_, _) = b_wal
                 .lock_and_write(&mut op3_with_clock.clone())
                 .await
                 .unwrap();
 
             let op30 = mock_operation(30);
             let op30_with_clock = OperationWithClockTag::new(op30, None);
-            b_wal
+            let (_, _) = b_wal
                 .lock_and_write(&mut op30_with_clock.clone())
                 .await
                 .unwrap();
 
             let op4 = mock_operation(4);
             let op4_with_clock = OperationWithClockTag::new(op4, None);
-            b_wal
+            let (_, _) = b_wal
                 .lock_and_write(&mut op4_with_clock.clone())
                 .await
                 .unwrap();
 
             let op5 = mock_operation(5);
             let op5_with_clock = OperationWithClockTag::new(op5, None);
-            b_wal
+            let (_, _) = b_wal
                 .lock_and_write(&mut op5_with_clock.clone())
                 .await
                 .unwrap();
@@ -1027,7 +1032,7 @@ mod tests {
 
             let mut operation_b = operation_with_clock.clone();
 
-            b_wal.lock_and_write(&mut operation_b).await.unwrap();
+            let (_, _) = b_wal.lock_and_write(&mut operation_b).await.unwrap();
 
             d_clock.advance_to(operation_b.clock_tag.unwrap().clock_tick);
         }
@@ -1123,7 +1128,7 @@ mod tests {
                 // Write operations to all WALs
                 for (wal, _wal_dir) in wals.iter_mut() {
                     let mut operation = operation.clone();
-                    wal.lock_and_write(&mut operation).await.unwrap();
+                    let (_, _) = wal.lock_and_write(&mut operation).await.unwrap();
                     clock.advance_to(operation.clock_tag.unwrap().clock_tick);
                 }
 
@@ -1166,7 +1171,7 @@ mod tests {
                 // Write operations to all WALs and clock maps on alive node
                 for &alive_node in &alive_nodes {
                     let mut operation = operation.clone();
-                    wals[alive_node]
+                    let (_, _) = wals[alive_node]
                         .0
                         .lock_and_write(&mut operation)
                         .await
