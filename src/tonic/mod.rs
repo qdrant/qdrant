@@ -95,7 +95,7 @@ impl Health for HealthService {
 // Monitoring task for health checks
 async fn monitor_health_check(last_check: Arc<Mutex<Instant>>, shutdown_flag: Arc<AtomicBool>) {
     loop {
-        tokio::time::sleep(Duration::from_millis(750)).await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
         let last_check_time = last_check.lock().unwrap();
         if last_check_time.elapsed() > Duration::from_secs(2) {
             shutdown_flag.store(true, Ordering::SeqCst);
