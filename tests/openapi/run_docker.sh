@@ -14,4 +14,4 @@ cd "$(dirname "$0")"
 
 trap clear_after_tests EXIT
 
-pytest -s
+pytest --loop=1000 openapi_integration/test_snapshot*

@@ -13,3 +13,4 @@
 .qdrant-initialized
 /.hypothesis
 **/__pycache__
+**/.python-version

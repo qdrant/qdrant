@@ -24,15 +24,21 @@ def drop_snapshots(collection_name: str) -> None:
         path_params={'collection_name': collection_name},
     )
     assert response.ok
+    snapshots = response.json()['result']
+    len_snapshots = len(snapshots)
+    if len_snapshots != 0:
+        print(f"Found {len_snapshots} snapshots on collection {collection_name}, deleting them")
+
     for snapshot in response.json()['result']:
+        snapshot_name = snapshot['name']
         response = request_with_validation(
             api='/collections/{collection_name}/snapshots/{snapshot_name}',
             method="DELETE",
             path_params={'collection_name': collection_name,
-                         'snapshot_name': snapshot['name']},
+                         'snapshot_name': snapshot_name},
             query_params={'wait': 'true'},
         )
-        assert response.ok
+        assert response.ok, f"Expected snapshot {snapshot_name} to be deleted"
 
 
 def test_collection_snapshot_operations(http_server):

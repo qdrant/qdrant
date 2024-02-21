@@ -26,6 +26,7 @@ pluggy==1.0.0
 pyrate-limiter==2.10.0
 pyrsistent==0.19.3
 pytest==7.4.4
+pytest-loop==1.0.6
 pytest-subtests==0.7.0
 pytest-timeout==2.2.0
 PyYAML==6.0
