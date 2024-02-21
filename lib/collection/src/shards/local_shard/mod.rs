@@ -951,11 +951,11 @@ impl Drop for LocalShard {
 ///
 /// Holds a clock map for tracking the highest clocks and the cutoff clocks.
 #[derive(Clone)]
-pub(crate) struct ShardClocks {
-    pub(crate) highest_clocks: Arc<Mutex<ClockMap>>,
-    pub(crate) cutoff_clocks: Arc<Mutex<ClockMap>>,
-    pub(crate) highest_clocks_path: PathBuf,
-    pub(crate) cutoff_clocks_path: PathBuf,
+pub struct ShardClocks {
+    highest_clocks: Arc<Mutex<ClockMap>>,
+    cutoff_clocks: Arc<Mutex<ClockMap>>,
+    highest_clocks_path: PathBuf,
+    cutoff_clocks_path: PathBuf,
 }
 
 impl ShardClocks {
