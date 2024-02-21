@@ -660,7 +660,7 @@ impl ShardReplicaSet {
                             .await?;
                         self.notify_peer_failure(peer_id);
                     }
-                    ReplicaState::PartialSnapshot => {
+                    ReplicaState::PartialSnapshot | ReplicaState::Recovery => {
                         self.set_local(local_shard, Some(ReplicaState::PartialSnapshot))
                             .await?;
                     }
@@ -906,7 +906,12 @@ pub enum ReplicaState {
     // Useful for backup shards
     Listener,
     // Snapshot shard transfer is in progress, updates aren't sent to the shard
+    // Normally rejects updates. Since 1.8 it allows updates if force is true.
+    // TODO(1.9): deprecate this state
     PartialSnapshot,
+    // Shard is undergoing recovery by an external node
+    // Normally rejects updates, allows updates if force is true.
+    Recovery,
 }
 
 impl ReplicaState {
@@ -919,15 +924,16 @@ impl ReplicaState {
             ReplicaState::Dead
             | ReplicaState::Initializing
             | ReplicaState::Partial
-            | ReplicaState::PartialSnapshot => false,
+            | ReplicaState::PartialSnapshot
+            | ReplicaState::Recovery => false,
         }
     }
 
     /// Check whether the replica state is partial or partial-like.
-    pub fn is_partial_like(self) -> bool {
+    pub fn is_partial_or_recovery(self) -> bool {
         // Use explicit match, to catch future changes to `ReplicaState`
         match self {
-            ReplicaState::Partial | ReplicaState::PartialSnapshot => true,
+            ReplicaState::Partial | ReplicaState::PartialSnapshot | ReplicaState::Recovery => true,
 
             ReplicaState::Active
             | ReplicaState::Dead

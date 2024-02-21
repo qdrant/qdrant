@@ -8650,7 +8650,8 @@
           "Partial",
           "Initializing",
           "Listener",
-          "PartialSnapshot"
+          "PartialSnapshot",
+          "Recovery"
         ]
       },
       "RemoteShardInfo": {

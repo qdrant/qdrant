@@ -38,7 +38,16 @@ impl ShardReplicaSet {
                 Some(ReplicaState::Listener) => {
                     Ok(Some(local_shard.get().update(operation, false).await?))
                 }
-                Some(ReplicaState::PartialSnapshot | ReplicaState::Dead) | None => Ok(None),
+                // In recovery state, only allow operations with force flag
+                Some(ReplicaState::Recovery)
+                    if operation.clock_tag.map_or(false, |tag| tag.force) =>
+                {
+                    Ok(Some(local_shard.get().update(operation, wait).await?))
+                }
+                Some(
+                    ReplicaState::PartialSnapshot | ReplicaState::Recovery | ReplicaState::Dead,
+                )
+                | None => Ok(None),
             }
         } else {
             Ok(None)
@@ -329,6 +338,7 @@ impl ShardReplicaSet {
             Some(ReplicaState::Dead) => false,
             Some(ReplicaState::Listener) => true,
             Some(ReplicaState::PartialSnapshot) => false,
+            Some(ReplicaState::Recovery) => false,
             None => false,
         };
         res && !self.is_locally_disabled(peer_id)
