@@ -919,7 +919,7 @@ impl Drop for LocalShard {
     }
 }
 
-/// Convenience struct for combining clock maps beloning to a shard
+/// Convenience struct for combining clock maps belonging to a shard
 ///
 /// Holds a clock map for tracking the highest clocks and the cutoff clocks.
 #[derive(Clone)]
