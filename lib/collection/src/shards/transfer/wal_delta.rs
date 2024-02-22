@@ -91,6 +91,22 @@ pub(super) async fn transfer_wal_delta(
         log::trace!("Shard is already up-to-date as WAL diff if zero records");
     }
 
+    // Set shard state to Partial
+    log::trace!("Shard {shard_id} diff recovered on {remote_peer_id} for diff transfer, switching into next stage through consensus");
+    consensus
+        // Note: once we migrate from partial snapshot to recovery, we give this method a proper name
+        .snapshot_recovered_switch_to_partial_confirm_remote(
+            &transfer_config,
+            collection_name,
+            &remote_shard,
+        )
+        .await
+        .map_err(|err| {
+            CollectionError::service_error(format!(
+                "Can't switch shard {shard_id} to Partial state after diff transfer: {err}"
+            ))
+        })?;
+
     // Wait for Partial state in our replica set
     let partial_state = ReplicaState::Partial;
     log::trace!("Wait for local shard to reach {partial_state:?} state");
