@@ -26,6 +26,7 @@ pub(super) async fn transfer_stream_records(
     progress: Arc<Mutex<TransferTaskProgress>>,
     shard_id: ShardId,
     remote_shard: RemoteShard,
+    collection_name: &str,
 ) -> CollectionResult<()> {
     let remote_peer_id = remote_shard.peer_id;
 
@@ -41,7 +42,7 @@ pub(super) async fn transfer_stream_records(
             )));
         };
 
-        replica_set.proxify_local(remote_shard).await?;
+        replica_set.proxify_local(remote_shard.clone()).await?;
 
         let Some(count_result) = replica_set
             .count_local(Arc::new(CountRequestInternal {
@@ -87,10 +88,27 @@ pub(super) async fn transfer_stream_records(
             progress.eta.set_progress(transferred);
         }
 
+        // If this is the last batch, finalize
         if offset.is_none() {
-            // That was the last batch, all look good
             break;
         }
+    }
+
+    // Update cutoff point on remote shard, disallow recovery before our current last seen
+    {
+        let shard_holder = shard_holder.read().await;
+        let Some(replica_set) = shard_holder.get_shard(&shard_id) else {
+            // Forward proxy gone?!
+            // That would be a programming error.
+            return Err(CollectionError::service_error(format!(
+                "Shard {shard_id} is not found"
+            )));
+        };
+
+        let cutoff = replica_set.shard_recovery_point().await?;
+        remote_shard
+            .update_shard_cutoff_point(collection_name, shard_id, &cutoff)
+            .await?;
     }
 
     log::debug!("Ending shard {shard_id} transfer to peer {remote_peer_id} by streaming records");

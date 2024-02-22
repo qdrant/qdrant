@@ -54,7 +54,14 @@ pub async fn transfer_shard(
     match transfer_config.method.unwrap_or_default() {
         // Transfer shard record in batches
         ShardTransferMethod::StreamRecords => {
-            transfer_stream_records(shard_holder.clone(), progress, shard_id, remote_shard).await?;
+            transfer_stream_records(
+                shard_holder.clone(),
+                progress,
+                shard_id,
+                remote_shard,
+                collection_name,
+            )
+            .await?;
         }
 
         // Transfer shard as snapshot
@@ -97,7 +104,13 @@ pub async fn transfer_shard(
                 log::warn!(
                     "Failed to do shard diff transfer, falling back to stream records: {err}"
                 );
-                transfer_stream_records(shard_holder.clone(), shard_id, remote_shard).await?;
+                transfer_stream_records(
+                    shard_holder.clone(),
+                    shard_id,
+                    remote_shard,
+                    collection_name,
+                )
+                .await?;
             }
         }
     }
