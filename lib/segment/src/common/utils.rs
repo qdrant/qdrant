@@ -767,6 +767,48 @@ mod tests {
     }
 
     #[test]
+    fn test_get_null_and_absent_values() {
+        let map = serde_json::from_str::<serde_json::Map<String, Value>>(
+            r#"
+            {
+                "a": null,
+                "b": [null, null],
+                "c": []
+            }
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            get_value_from_json_map("a", &map).as_slice(),
+            &[&Value::Null],
+        );
+
+        assert!(get_value_from_json_map("a[]", &map).is_empty());
+
+        assert_eq!(
+            get_value_from_json_map("b", &map).as_slice(),
+            &[&Value::Array(vec![Value::Null, Value::Null])],
+        );
+
+        assert_eq!(
+            get_value_from_json_map("b[]", &map).as_slice(),
+            &[&Value::Null, &Value::Null],
+        );
+
+        assert_eq!(
+            get_value_from_json_map("c", &map).as_slice(),
+            &[&Value::Array(vec![])],
+        );
+
+        assert!(get_value_from_json_map("c[]", &map).is_empty());
+
+        assert!(get_value_from_json_map("d", &map).is_empty());
+
+        assert!(get_value_from_json_map("d[]", &map).is_empty());
+    }
+
+    #[test]
     fn test_filter_json() {
         let map = serde_json::from_str::<serde_json::Map<String, Value>>(
             r#"

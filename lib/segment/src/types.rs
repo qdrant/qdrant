@@ -24,7 +24,7 @@ use validator::{Validate, ValidationError, ValidationErrors};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::{
     self, check_exclude_pattern, check_include_pattern, filter_json_values,
-    get_value_from_json_map, get_value_from_json_map_opt, MultiValue,
+    get_value_from_json_map, MultiValue,
 };
 use crate::data_types::integer_index::IntegerIndexParams;
 use crate::data_types::text_index::TextIndexParams;
@@ -898,20 +898,8 @@ impl TryFrom<GeoPointShadow> for GeoPoint {
 }
 
 pub trait PayloadContainer {
-    /// Return value from payload by path if it is present in the payload.
-    /// If value is not present in the payload, returns `None`.
-    ///
-    /// # Warning
-    ///
-    /// Absence of value and value `null` is NOT the same in this function.
-    fn get_value_opt(&self, path: &str) -> Option<MultiValue<&Value>>;
-
     /// Return value from payload by path.
-    /// If value is not present in the payload, returns empty value.
-    ///
-    /// # Warning
-    ///
-    /// Absence of value and value `null` is considered same in this function.
+    /// If value is not present in the payload, returns empty vector.
     fn get_value(&self, path: &str) -> MultiValue<&Value>;
 }
 
@@ -950,30 +938,18 @@ impl Payload {
 }
 
 impl PayloadContainer for Map<String, Value> {
-    fn get_value_opt(&self, path: &str) -> Option<MultiValue<&Value>> {
-        get_value_from_json_map_opt(path, self)
-    }
-
     fn get_value(&self, path: &str) -> MultiValue<&Value> {
         get_value_from_json_map(path, self)
     }
 }
 
 impl PayloadContainer for Payload {
-    fn get_value_opt(&self, path: &str) -> Option<MultiValue<&Value>> {
-        get_value_from_json_map_opt(path, &self.0)
-    }
-
     fn get_value(&self, path: &str) -> MultiValue<&Value> {
         get_value_from_json_map(path, &self.0)
     }
 }
 
 impl<'a> PayloadContainer for OwnedPayloadRef<'a> {
-    fn get_value_opt(&self, path: &str) -> Option<MultiValue<&Value>> {
-        get_value_from_json_map_opt(path, self.as_ref())
-    }
-
     fn get_value(&self, path: &str) -> MultiValue<&Value> {
         get_value_from_json_map(path, self.deref())
     }
