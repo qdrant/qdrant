@@ -84,12 +84,20 @@ impl RecoverableWal {
     ///
     /// It updates the highest seen clocks alongside with it.
     pub async fn update_cutoff(&self, cutoff: &RecoveryPoint) {
-        let mut highest_clocks = self.highest_clocks.lock().await;
-        let mut cutoff_clocks = self.cutoff_clocks.lock().await;
-        cutoff.clock_tag_iter().for_each(|clock_tag| {
-            highest_clocks.advance_clock(clock_tag);
-            cutoff_clocks.advance_clock(clock_tag);
-        });
+        // Lock highest and cutoff maps separately to avoid deadlocks
+        {
+            let mut highest_clocks = self.highest_clocks.lock().await;
+            for clock_tag in cutoff.clock_tag_iter() {
+                highest_clocks.advance_clock(clock_tag);
+            }
+        }
+
+        {
+            let mut cutoff_clocks = self.cutoff_clocks.lock().await;
+            for clock_tag in cutoff.clock_tag_iter() {
+                cutoff_clocks.advance_clock(clock_tag);
+            }
+        }
     }
 
     /// Get a recovery point for this WAL.
