@@ -82,7 +82,11 @@ pub(super) async fn transfer_wal_delta(
         log::trace!("Transfer WAL diff by transferring all queue proxy updates and transform into forward proxy");
         replica_set.queue_proxy_into_forward_proxy().await?;
 
-        // TODO: send our last seen clock map to remote, set it as truncation point
+        // Update cutoff point on remote shard, disallow recovery before our current last seen
+        let cutoff = replica_set.shard_recovery_point().await?;
+        remote_shard
+            .update_shard_cutoff_point(collection_name, shard_id, &cutoff)
+            .await?;
     } else {
         log::trace!("Shard is already up-to-date as WAL diff if zero records");
     }

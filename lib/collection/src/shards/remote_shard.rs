@@ -13,7 +13,7 @@ use api::grpc::qdrant::{
     GetCollectionInfoRequest, GetCollectionInfoRequestInternal, GetPoints, GetPointsInternal,
     GetShardRecoveryPointRequest, HealthCheckRequest, InitiateShardTransferRequest,
     RecoverShardSnapshotRequest, RecoverSnapshotResponse, ScrollPoints, ScrollPointsInternal,
-    ShardSnapshotLocation, WaitForShardStateRequest,
+    ShardSnapshotLocation, UpdateShardCutoffPointRequest, WaitForShardStateRequest,
 };
 use api::grpc::transport_channel_pool::{AddTimeout, MAX_GRPC_CHANNEL_TIMEOUT};
 use async_trait::async_trait;
@@ -589,6 +589,26 @@ impl RemoteShard {
         };
 
         Ok(recovery_point.into())
+    }
+
+    /// Update the shard cutoff point on the remote shard
+    pub async fn update_shard_cutoff_point(
+        &self,
+        collection_name: &str,
+        shard_id: ShardId,
+        cutoff: &RecoveryPoint,
+    ) -> CollectionResult<()> {
+        self.with_collections_client(|mut client| async move {
+            client
+                .update_shard_cutoff_point(UpdateShardCutoffPointRequest {
+                    collection_name: collection_name.into(),
+                    shard_id,
+                    cutoff: Some(cutoff.into()),
+                })
+                .await
+        })
+        .await?;
+        Ok(())
     }
 
     pub async fn health_check(&self) -> CollectionResult<()> {
