@@ -23,6 +23,10 @@ service CollectionsInternal {
   Get shard recovery point
   */
   rpc GetShardRecoveryPoint (GetShardRecoveryPointRequest) returns (GetShardRecoveryPointResponse) {}
+  /*
+  Update shard cutoff point
+  */
+  rpc UpdateShardCutoffPoint (UpdateShardCutoffPointRequest) returns (CollectionOperationResponse) {}
 }
 
 message GetCollectionInfoRequestInternal {
@@ -60,4 +64,10 @@ message RecoveryPointClockTag {
   uint64 peer_id = 1;
   uint32 clock_id = 2;
   uint64 clock_tick = 3;
+}
+
+message UpdateShardCutoffPointRequest {
+  string collection_name = 1; // Name of the collection
+  uint32 shard_id = 2; // Id of the shard
+  RecoveryPoint cutoff = 3; // Cutoff point of the shard
 }

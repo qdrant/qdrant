@@ -6732,6 +6732,22 @@ pub struct RecoveryPointClockTag {
     #[prost(uint64, tag = "3")]
     pub clock_tick: u64,
 }
+#[derive(validator::Validate)]
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateShardCutoffPointRequest {
+    /// Name of the collection
+    #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Id of the shard
+    #[prost(uint32, tag = "2")]
+    pub shard_id: u32,
+    /// Cutoff point of the shard
+    #[prost(message, optional, tag = "3")]
+    pub cutoff: ::core::option::Option<RecoveryPoint>,
+}
 /// Generated client implementations.
 pub mod collections_internal_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
@@ -6932,6 +6948,38 @@ pub mod collections_internal_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        ///
+        /// Update shard cutoff point
+        pub async fn update_shard_cutoff_point(
+            &mut self,
+            request: impl tonic::IntoRequest<super::UpdateShardCutoffPointRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CollectionOperationResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.CollectionsInternal/UpdateShardCutoffPoint",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "qdrant.CollectionsInternal",
+                        "UpdateShardCutoffPoint",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -6975,6 +7023,15 @@ pub mod collections_internal_server {
             request: tonic::Request<super::GetShardRecoveryPointRequest>,
         ) -> std::result::Result<
             tonic::Response<super::GetShardRecoveryPointResponse>,
+            tonic::Status,
+        >;
+        ///
+        /// Update shard cutoff point
+        async fn update_shard_cutoff_point(
+            &self,
+            request: tonic::Request<super::UpdateShardCutoffPointRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CollectionOperationResponse>,
             tonic::Status,
         >;
     }
@@ -7237,6 +7294,56 @@ pub mod collections_internal_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = GetShardRecoveryPointSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.CollectionsInternal/UpdateShardCutoffPoint" => {
+                    #[allow(non_camel_case_types)]
+                    struct UpdateShardCutoffPointSvc<T: CollectionsInternal>(pub Arc<T>);
+                    impl<
+                        T: CollectionsInternal,
+                    > tonic::server::UnaryService<super::UpdateShardCutoffPointRequest>
+                    for UpdateShardCutoffPointSvc<T> {
+                        type Response = super::CollectionOperationResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::UpdateShardCutoffPointRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as CollectionsInternal>::update_shard_cutoff_point(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = UpdateShardCutoffPointSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
