@@ -206,10 +206,11 @@ fn resolve_wal_delta(
     let delta_from = local_wal
         .lock()
         .read_from_last(true)
-        .filter_map(|(op_num, update)| update.clock_tag.map(|clock_tag| (op_num, clock_tag)))
+        // We cannot resolve a delta if we have untagged records
+        .take_while(|(_, update)| update.clock_tag.is_some())
         // Keep scrolling until we have no clocks left
-        .find(|(_, clock_tag)| {
-            recovery_point.remove_equal_or_lower(*clock_tag);
+        .find(|(_, update)| {
+            recovery_point.remove_equal_or_lower(update.clock_tag.unwrap());
             recovery_point.is_empty()
         })
         .map(|(op_num, _)| op_num);
