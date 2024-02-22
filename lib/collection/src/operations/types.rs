@@ -7,7 +7,6 @@ use std::num::NonZeroU64;
 use std::time::SystemTimeError;
 
 use api::grpc::transport_channel_pool::RequestError;
-use chrono::{DateTime, Utc};
 use common::types::ScoreType;
 use common::validation::validate_range_generic;
 use io::file_operations::FileStorageError;
@@ -222,22 +221,9 @@ pub struct ShardTransferInfo {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub method: Option<ShardTransferMethod>,
 
-    /// Time when the transfer was started. Available only on the source peer.
+    /// A human-readable report of the transfer progress. Available only on the source peer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub started_at: Option<DateTime<Utc>>,
-
-    /// Amount of points transferred. Available only on the source peer.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub points_transferred: Option<usize>,
-
-    /// Total amount of points to transfer. Available only on the source peer.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub points_total: Option<usize>,
-
-    /// Estimated time of arrival. Available only on the source peer.
-    /// Null when the transfer is stalled or not started yet.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub eta_seconds: Option<Option<f64>>,
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]

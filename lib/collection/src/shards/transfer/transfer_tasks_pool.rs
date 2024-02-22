@@ -1,6 +1,6 @@
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::sync::Arc;
-use std::time::Duration;
 
 use parking_lot::Mutex;
 
@@ -35,10 +35,7 @@ pub enum TaskResult {
 
 pub struct TransferTaskStatus {
     pub result: TaskResult,
-    pub started_at: chrono::DateTime<chrono::Utc>,
-    pub points_transferred: usize,
-    pub points_total: usize,
-    pub eta: Option<Duration>,
+    pub comment: String,
 }
 
 impl TransferTaskProgress {
@@ -69,14 +66,23 @@ impl TransferTasksPool {
             None if task.task.is_finished() => TaskResult::Failed,
             None => TaskResult::Running,
         };
+
         let progress = task.progress.lock();
-        Some(TransferTaskStatus {
-            result,
-            started_at: task.started_at,
-            points_transferred: progress.points_transferred,
-            points_total: progress.points_total,
-            eta: progress.eta.estimate(progress.points_total),
-        })
+        let mut comment = format!(
+            "Transferring records ({}/{}), started {}s ago, ETA: ",
+            progress.points_transferred,
+            progress.points_total,
+            chrono::Utc::now()
+                .signed_duration_since(task.started_at)
+                .num_seconds(),
+        );
+        if let Some(eta) = progress.eta.estimate(progress.points_total) {
+            write!(comment, "{:.2}s", eta.as_secs_f64()).unwrap();
+        } else {
+            comment.push('-');
+        }
+
+        Some(TransferTaskStatus { result, comment })
     }
 
     /// Stop the task and return the result. If the task is not found, return None.
