@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use async_recursion::async_recursion;
 use parking_lot::Mutex;
 use tokio::time::sleep;
 
@@ -27,8 +28,9 @@ pub(crate) const MAX_RETRY_COUNT: usize = 3;
 ///
 /// This function is cancel safe.
 #[allow(clippy::too_many_arguments)]
+#[async_recursion]
 pub async fn transfer_shard(
-    transfer_config: ShardTransfer,
+    mut transfer_config: ShardTransfer,
     progress: Arc<Mutex<TransferTaskProgress>>,
     shard_holder: Arc<LockedShardHolder>,
     consensus: &dyn ShardTransferConsensus,
@@ -83,34 +85,54 @@ pub async fn transfer_shard(
         // Attempt to transfer WAL delta
         ShardTransferMethod::WalDelta => {
             let result = transfer_wal_delta(
-                transfer_config,
+                transfer_config.clone(),
                 shard_holder.clone(),
                 shard_id,
                 remote_shard.clone(),
-                channel_service,
+                channel_service.clone(),
                 consensus,
                 collection_name,
             )
             .await;
 
-            // If WAL delta transfer failed, fall back to stream records
-            // TODO: fall back to preferred transfer method in config, snapshot transfer may be
-            // TODO: problematic if it expects a different shard replica set state
-            // TODO: let method = self.shared_storage_config
-            // TODO:     .default_shard_transfer_method
-            // TODO:     .unwrap_or_default();
-
+            // Handle failure, fall back to default transfer method
             if let Err(err) = result {
+                // TODO: fall back to default transfer method as specified in configuration
                 log::warn!(
                     "Failed to do shard diff transfer, falling back to stream records: {err}"
                 );
-                transfer_stream_records(
-                    shard_holder.clone(),
-                    shard_id,
-                    remote_shard,
+
+                // Temporary hack for remote shard to get from PartialSnapshot back into Partial state
+                log::trace!("Shard {shard_id} diff recovered on {} for diff transfer, switching into next stage through consensus", remote_shard.peer_id);
+                consensus
+                    .snapshot_recovered_switch_to_partial_confirm_remote(
+                        &transfer_config,
+                        collection_name,
+                        &remote_shard,
+                    )
+                    .await
+                    .map_err(|err| {
+                        crate::operations::types::CollectionError::service_error(format!(
+                            "Can't switch shard {shard_id} to Partial state after diff transfer: {err}"
+                        ))
+                    })?;
+
+                // Redo the transfer but set a different method
+                transfer_config
+                    .method
+                    .replace(ShardTransferMethod::StreamRecords);
+                return transfer_shard(
+                    transfer_config,
+                    progress,
+                    shard_holder,
+                    consensus,
+                    collection_id,
                     collection_name,
+                    channel_service,
+                    snapshots_path,
+                    temp_dir,
                 )
-                .await?;
+                .await;
             }
         }
     }
