@@ -1362,6 +1362,7 @@ impl From<api::grpc::qdrant::ReplicaState> for ReplicaState {
             api::grpc::qdrant::ReplicaState::Initializing => Self::Initializing,
             api::grpc::qdrant::ReplicaState::Listener => Self::Listener,
             api::grpc::qdrant::ReplicaState::PartialSnapshot => Self::PartialSnapshot,
+            api::grpc::qdrant::ReplicaState::Recovery => Self::Recovery,
         }
     }
 }
@@ -1375,6 +1376,7 @@ impl From<ReplicaState> for api::grpc::qdrant::ReplicaState {
             ReplicaState::Initializing => Self::Initializing,
             ReplicaState::Listener => Self::Listener,
             ReplicaState::PartialSnapshot => Self::PartialSnapshot,
+            ReplicaState::Recovery => Self::Recovery,
         }
     }
 }
