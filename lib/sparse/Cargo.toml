@@ -8,9 +8,6 @@ authors = [
 license = "Apache-2.0"
 edition = "2021"
 
-[features]
-proptest = ["dep:proptest", "dep:proptest-derive"]
-
 [dependencies]
 common = { path = "../common/common" }
 io = { path = "../common/io" }
@@ -24,6 +21,3 @@ rand = "0.8.5"
 validator = "0.16"
 itertools = "0.12.1"
 parking_lot = "0.12.1"
-
-proptest = { version = "1.4", optional = true }
-proptest-derive = { version = "0.4", optional = true }
