@@ -80,7 +80,8 @@ impl Collection {
                 ShardTransferMethod::StreamRecords => ReplicaState::Partial,
                 // TODO(1.9): switch into recovery state instead
                 ShardTransferMethod::Snapshot => ReplicaState::PartialSnapshot,
-                ShardTransferMethod::WalDelta => ReplicaState::Partial,
+                // TODO(1.9): switch into recovery state instead
+                ShardTransferMethod::WalDelta => ReplicaState::PartialSnapshot,
             };
 
             // Create local shard if it does not exist on receiver, or simply set replica state otherwise
