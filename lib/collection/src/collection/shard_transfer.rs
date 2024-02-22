@@ -77,6 +77,7 @@ impl Collection {
 
             let initial_state = match shard_transfer.method.unwrap_or_default() {
                 ShardTransferMethod::StreamRecords => ReplicaState::Partial,
+                // TODO(1.9): switch into recovery state instead
                 ShardTransferMethod::Snapshot => ReplicaState::PartialSnapshot,
             };
 
@@ -330,7 +331,7 @@ impl Collection {
                         |state| {
                             state
                                 .get_peer_state(&this_peer_id)
-                                .map_or(false, |peer_state| peer_state.is_partial_like())
+                                .map_or(false, |peer_state| peer_state.is_partial_or_recovery())
                         },
                         defaults::CONSENSUS_META_OP_WAIT,
                     )
