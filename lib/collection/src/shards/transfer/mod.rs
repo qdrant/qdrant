@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use common::defaults;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use tokio::time::sleep;
+use tokio::time::{sleep, sleep_until, timeout_at};
 
 use super::channel_service::ChannelService;
 use super::remote_shard::RemoteShard;
@@ -226,24 +226,25 @@ async fn await_consensus_sync(
     channel_service: &ChannelService,
     this_peer_id: PeerId,
 ) {
-    let sync_consensus = async {
-        let await_result = consensus
-            .await_consensus_sync(this_peer_id, channel_service)
-            .await;
-        if let Err(err) = &await_result {
-            log::warn!("All peers failed to synchronize consensus: {err}");
-        }
-        await_result
-    };
-    let timeout = sleep(defaults::CONSENSUS_META_OP_WAIT);
+    let wait_until = tokio::time::Instant::now() + defaults::CONSENSUS_META_OP_WAIT;
+    let sync_consensus = timeout_at(
+        wait_until,
+        consensus.await_consensus_sync(this_peer_id, channel_service),
+    )
+    .await;
 
-    tokio::select! {
-        biased;
-        Ok(_) = sync_consensus => {
-            log::trace!("All peers reached consensus");
+    match sync_consensus {
+        Ok(Ok(_)) => log::trace!("All peers reached consensus"),
+        // Failed to sync explicitly, waiting until timeout to assume synchronization
+        Ok(Err(err)) => {
+            log::warn!("All peers failed to synchronize consensus, waiting until timeout: {err}");
+            sleep_until(wait_until).await;
         }
-        _ = timeout => {
-            log::warn!("All peers failed to synchronize consensus, continuing after timeout");
+        // Reached timeout, assume consensus is synchronized
+        Err(err) => {
+            log::warn!(
+                "All peers failed to synchronize consensus, continuing after timeout: {err}"
+            );
         }
     }
 }
