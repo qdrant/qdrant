@@ -163,6 +163,22 @@ impl Shard {
         }
     }
 
+    pub async fn update_cutoff(&self, cutoff: &RecoveryPoint) -> CollectionResult<()> {
+        match self {
+            Self::Local(local_shard) => local_shard.update_cutoff(cutoff).await,
+            Self::ForwardProxy(proxy_shard) => {
+                proxy_shard.wrapped_shard.update_cutoff(cutoff).await
+            }
+            Self::Proxy(_) | Self::QueueProxy(_) | Self::Dummy(_) => {
+                return Err(CollectionError::service_error(format!(
+                    "Setting cutoff point not supported on {}",
+                    self.variant_name(),
+                )));
+            }
+        }
+        Ok(())
+    }
+
     pub async fn resolve_wal_delta(
         &self,
         recovery_point: RecoveryPoint,

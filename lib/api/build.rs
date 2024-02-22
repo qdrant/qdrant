@@ -159,6 +159,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("WaitForShardStateRequest.collection_name", "length(min = 1, max = 255)"),
             ("WaitForShardStateRequest.timeout", "range(min = 1)"),
             ("GetShardRecoveryPointRequest.collection_name", "length(min = 1, max = 255)"),
+            ("UpdateShardCutoffPointRequest.collection_name", "length(min = 1, max = 255)"),
         ], &[])
         // Service: points.proto
         .validates(&[
