@@ -433,7 +433,7 @@ def wait_for(condition: Callable[..., bool], *args, wait_for_interval=RETRY_INTE
 
 def peer_is_online(peer_api_uri: str) -> bool:
     try:
-        r = requests.get(f"{peer_api_uri}")
+        r = requests.get(f"{peer_api_uri}/readyz")
         return r.status_code == 200
     except:
         return False
