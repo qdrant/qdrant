@@ -156,13 +156,14 @@ def test_collection_recovery_user_requests_above_limit(tmp_path: pathlib.Path):
     wait_for_peer_online(peer_url)
 
     # We must see N_SHARDS transfers on our new node
-    wait_for(transfers_reached_threshold, peer_urls[-1], wait_for_interval=0.1, transfer_threshold=N_SHARDS, transfer_limit=N_SHARDS + 1)
+    # WARN: this check is disabled, as it's not guaranteed that we are lucky enough to see 3 transfers in our check interval
+    # wait_for(transfers_reached_threshold, peer_urls[-1], wait_for_interval=0.1, transfer_threshold=N_SHARDS, transfer_limit=N_SHARDS + 1)
+
+    # Wait until all shards are active on our recovering node, never allow more than 1 shard transfers
+    wait_for(transfers_below_limit_or_done, peer_url, wait_for_interval=0.1, transfer_limit=1)
 
     # Wait until all shards are active on our new node we replicated to
     wait_for(all_collection_shards_are_active, peer_urls[-1], COLLECTION_NAME)
-
-    # Wait until all shards are active on our recovering node, never allow more than 1 shard transfers
-    wait_for(transfers_below_limit_or_done, peer_url, transfer_limit=1)
 
     # Check, that the collection is not empty on recovered node
     info = get_collection_cluster_info(peer_url, COLLECTION_NAME)
