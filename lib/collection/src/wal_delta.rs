@@ -1249,6 +1249,66 @@ mod tests {
         }
     }
 
+    /// We cannot resolve a WAL delta if the slice contains records without a clock tag.
+    #[tokio::test]
+    async fn test_cannot_resolve_delta_over_untagged_record() {
+        let (wal, _wal_dir) = fixture_empty_wal();
+
+        // Insert 3 operations with clocks
+        let (_, _) = wal
+            .lock_and_write(&mut OperationWithClockTag::new(
+                mock_operation(1),
+                Some(ClockTag::new(1, 0, 0)),
+            ))
+            .await
+            .unwrap();
+        let (_, _) = wal
+            .lock_and_write(&mut OperationWithClockTag::new(
+                mock_operation(2),
+                Some(ClockTag::new(1, 0, 1)),
+            ))
+            .await
+            .unwrap();
+        let (_, _) = wal
+            .lock_and_write(&mut OperationWithClockTag::new(
+                mock_operation(3),
+                Some(ClockTag::new(1, 0, 2)),
+            ))
+            .await
+            .unwrap();
+
+        // Can resolve a delta for the last clock
+        let mut recovery_point = RecoveryPoint::default();
+        recovery_point.insert(1, 0, 1);
+        let resolve_result = wal.resolve_wal_delta(recovery_point).await.unwrap();
+        assert_eq!(resolve_result, Some(2));
+
+        // Insert operation 4 and 5, where operation 4 does not have a clock tag
+        let (_, _) = wal
+            .lock_and_write(&mut OperationWithClockTag::new(mock_operation(4), None))
+            .await
+            .unwrap();
+        let (_, _) = wal
+            .lock_and_write(&mut OperationWithClockTag::new(
+                mock_operation(5),
+                Some(ClockTag::new(1, 0, 3)),
+            ))
+            .await
+            .unwrap();
+
+        // Can still resolve a delta for the last clock
+        let mut recovery_point = RecoveryPoint::default();
+        recovery_point.insert(1, 0, 3);
+        let resolve_result = wal.resolve_wal_delta(recovery_point).await.unwrap();
+        assert_eq!(resolve_result, None);
+
+        // Cannot resolve a delta for our previous clock, it now has an untagged record after it
+        let mut recovery_point = RecoveryPoint::default();
+        recovery_point.insert(1, 0, 1);
+        let resolve_result = wal.resolve_wal_delta(recovery_point).await;
+        assert_eq!(resolve_result.unwrap_err(), WalDeltaError::NotFound);
+    }
+
     /// Empty recovery point should not resolve any diff.
     #[test]
     fn test_empty_recovery_point() {
