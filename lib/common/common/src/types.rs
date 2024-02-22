@@ -38,6 +38,7 @@ pub enum DetailsLevel {
     Level0,
     Level1,
     Level2,
+    Level3,
 }
 
 impl Default for TelemetryDetail {
@@ -54,7 +55,8 @@ impl From<usize> for DetailsLevel {
         match value {
             0 => DetailsLevel::Level0,
             1 => DetailsLevel::Level1,
-            _ => DetailsLevel::Level2,
+            2 => DetailsLevel::Level2,
+            _ => DetailsLevel::Level3,
         }
     }
 }

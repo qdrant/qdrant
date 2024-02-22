@@ -4,12 +4,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use common::cpu::CpuPermit;
-use common::types::TelemetryDetail;
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
 use segment::common::operation_error::check_process_stopped;
 use segment::common::operation_time_statistics::{
-    OperationDurationStatistics, OperationDurationsAggregator, ScopeDurationMeasurer,
+    OperationDurationsAggregator, ScopeDurationMeasurer,
 };
 use segment::common::version::StorageVersion;
 use segment::entry::entry_point::SegmentEntry;
@@ -76,9 +75,7 @@ pub trait SegmentOptimizer {
         excluded_ids: &HashSet<SegmentId>,
     ) -> Vec<SegmentId>;
 
-    fn get_telemetry_data(&self, detail: TelemetryDetail) -> OperationDurationStatistics;
-
-    fn get_telemetry_counter(&self) -> Arc<Mutex<OperationDurationsAggregator>>;
+    fn get_telemetry_counter(&self) -> &Mutex<OperationDurationsAggregator>;
 
     /// Build temp segment
     fn temp_segment(&self, save_version: bool) -> CollectionResult<LockedSegment> {
@@ -437,7 +434,7 @@ pub trait SegmentOptimizer {
     ) -> CollectionResult<bool> {
         check_process_stopped(stopped)?;
 
-        let mut timer = ScopeDurationMeasurer::new(&self.get_telemetry_counter());
+        let mut timer = ScopeDurationMeasurer::new(self.get_telemetry_counter());
         timer.set_success(false);
 
         // On the one hand - we want to check consistently if all provided segments are
