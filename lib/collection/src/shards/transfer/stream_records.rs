@@ -95,6 +95,7 @@ pub(super) async fn transfer_stream_records(
     }
 
     // Update cutoff point on remote shard, disallow recovery before our current last seen
+    // Allow but warn about errors, the remote shard may not support this operation
     {
         let shard_holder = shard_holder.read().await;
         let Some(replica_set) = shard_holder.get_shard(&shard_id) else {
@@ -106,9 +107,12 @@ pub(super) async fn transfer_stream_records(
         };
 
         let cutoff = replica_set.shard_recovery_point().await?;
-        remote_shard
+        let result = remote_shard
             .update_shard_cutoff_point(collection_name, shard_id, &cutoff)
-            .await?;
+            .await;
+        if let Err(err) = result {
+            log::warn!("Failed to update cutoff point on remote shard, ignoring: {err}");
+        }
     }
 
     log::debug!("Ending shard {shard_id} transfer to peer {remote_peer_id} by streaming records");
