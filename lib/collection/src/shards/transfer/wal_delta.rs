@@ -18,7 +18,49 @@ use crate::shards::shard_holder::LockedShardHolder;
 /// The order of operations here is critical for correctness. Explicit synchronization across nodes
 /// is used to ensure data consistency.
 ///
-/// TODO: describe what happens in this function, similar to our snapshot transfer description
+/// Before this function, this has happened:
+///
+/// - The existing shard is kept on the remote
+/// - Set the remote shard state to `PartialSnapshot`
+///   In `PartialSnapshot` state, the remote shard will ignore all operations by default and other
+///   nodes will prevent sending operations to it. Only operations that are forced will be
+///   accepted. This is critical not to mess with the order of operations while recovery is
+///   happening.
+///
+/// During this function, this happens in order:
+///
+/// - Request recovery point on remote shard
+///   We use the recovery point to try and resolve a WAL delta to transfer to the remote.
+/// - Resolve WAL delta locally
+///   Find a point in our current WAL to transfer all operations from to the remote. If we cannot
+///   resolve a WAL delta, the transfer is aborted.
+/// - Queue proxy local shard
+///   We queue all operations from the WAL delta point for the remote.
+/// - Transfer queued updates to remote, transform into forward proxy
+///   We transfer all accumulated updates in the queue proxy to the remote. This ensures all
+///   operations reach the recovered shard on the remote to make it consistent again. When all
+///   updates are transferred, we transform the queue proxy into a forward proxy to start
+///   forwarding new updates to the remote right away. We transfer the queue and transform into a
+///   forward proxy right now so that we can catch any errors as early as possible. The forward
+///   proxy shard we end up with will not error again once we un-proxify.
+/// - Set shard state to `Partial`
+///   After recovery, we set the shard state from `PartialSnapshot` to `Partial`. We propose an
+///   operation to consensus for this. Our logic explicitly confirms that the remote reaches the
+///   `Partial` state.
+/// - Wait for Partial state in our replica set
+///   Wait for the remote shard to be set to `Partial` in our local replica set. That way we
+///   confirm consensus has also propagated on this node.
+/// - Synchronize all nodes
+///   After confirming consensus propagation on this node, synchronize all nodes to reach the same
+///   consensus state before finalizing the transfer. That way, we ensure we have a consistent
+///   replica set state across all nodes. All nodes will have the `Partial` state, which makes the
+///   shard participate on all nodes.
+///
+/// After this function, the following will happen:
+///
+/// - The local shard is un-proxified
+/// - The shard transfer is finished
+/// - The remote shard state is set to `Active` through consensus
 ///
 /// # Cancel safety
 ///
