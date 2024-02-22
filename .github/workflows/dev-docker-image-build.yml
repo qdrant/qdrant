@@ -14,6 +14,7 @@ jobs:
         - uses: Swatinem/rust-cache@v2
         - name: Build the Docker image
           run: |
+
             # Create build container
             docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
             docker buildx create --use
@@ -25,7 +26,7 @@ jobs:
             GITHUB_TAG="-t ghcr.io/qdrant/qdrant:dev-${{ github.sha }} -t ghcr.io/qdrant/qdrant:dev"
 
             # Pull, retag and push to GitHub packages
-            docker buildx build --platform='linux/amd64,linux/arm64' $GITHUB_TAG --push --label "org.opencontainers.image.revision"=${{ github.sha }} .
+            docker buildx build --platform='linux/amd64,linux/arm64' --build-arg GIT_COMMIT_ID=${{ github.sha }} $GITHUB_TAG --push --label "org.opencontainers.image.revision"=${{ github.sha }} .
 
             docker container rm -f $(docker container ls -qf "name=buildx_buildkit")
             docker volume rm $(docker volume ls -qf "name=buildx_buildkit")

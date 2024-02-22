@@ -62,6 +62,9 @@ RUN case "$BUILDPLATFORM" in \
 ARG TARGETPLATFORM
 ENV TARGETPLATFORM=${TARGETPLATFORM:-linux/amd64}
 
+ARG GIT_COMMIT_ID
+ENV GIT_COMMIT_ID=${GIT_COMMIT_ID}
+
 RUN xx-apt-get install -y pkg-config gcc g++ libc6-dev libunwind-dev
 
 # Select Cargo profile (e.g., `release`, `dev` or `ci`)

@@ -25,12 +25,21 @@ fn main() -> std::io::Result<()> {
     append_to_file("src/grpc/qdrant.rs", "use super::validate::ValidateExt;");
 
     // Fetch git commit ID and pass it to the compiler
-    match Command::new("git").args(["rev-parse", "HEAD"]).output() {
-        Ok(output) => {
-            let git_commit_id = str::from_utf8(&output.stdout).unwrap().trim();
-            println!("cargo:rustc-env=GIT_COMMIT_ID={git_commit_id}");
-        }
-        Err(_) => println!("cargo:warning=current git commit hash could not be determined"),
+    let git_commit_id =
+        option_env!("GIT_COMMIT_ID").map(Into::into).or_else(|| {
+            match Command::new("git").args(["rev-parse", "HEAD"]).output() {
+                Ok(output) if output.status.success() => {
+                    Some(str::from_utf8(&output.stdout).unwrap().trim().to_string())
+                }
+                _ => {
+                    println!("cargo:warning=current git commit hash could not be determined");
+                    None
+                }
+            }
+        });
+
+    if let Some(commit_id) = git_commit_id {
+        println!("cargo:rustc-env=GIT_COMMIT_ID={commit_id}");
     }
 
     Ok(())
@@ -94,7 +103,7 @@ impl BuilderExt for Builder {
 fn configure_validation(builder: Builder) -> Builder {
     builder
         // prost_wkt_types needed for serde support
-        .extern_path(".google.protobuf.Timestamp", "::prost_wkt_types::Timestamp") 
+        .extern_path(".google.protobuf.Timestamp", "::prost_wkt_types::Timestamp")
         // Service: collections.proto
         .validates(&[
             ("GetCollectionInfoRequest.collection_name", "length(min = 1, max = 255)"),
