@@ -1251,14 +1251,7 @@ mod tests {
     /// Empty recovery point should not resolve any diff.
     #[test]
     fn test_empty_recovery_point() {
-        let wal_dir = Builder::new().prefix("wal_test").tempdir().unwrap();
-        let wal_options = WalOptions {
-            segment_capacity: 1024 * 1024,
-            segment_queue_len: 0,
-        };
-        let wal: SerdeWal<OperationWithClockTag> =
-            SerdeWal::new(wal_dir.path().to_str().unwrap(), wal_options).unwrap();
-        let wal = Arc::new(ParkingMutex::new(wal));
+        let (wal, _wal_dir) = fixture_empty_wal();
 
         // Empty recovery points, should not resolve any diff
         let recovery_point = RecoveryPoint::default();
@@ -1266,7 +1259,7 @@ mod tests {
 
         let resolve_result = resolve_wal_delta(
             recovery_point,
-            wal,
+            wal.wal,
             local_recovery_point,
             RecoveryPoint::default(),
         );
@@ -1276,14 +1269,7 @@ mod tests {
     /// Recovery point with a clock our source does not know about cannot resolve a diff.
     #[test]
     fn test_recover_point_has_unknown_clock() {
-        let wal_dir = Builder::new().prefix("wal_test").tempdir().unwrap();
-        let wal_options = WalOptions {
-            segment_capacity: 1024 * 1024,
-            segment_queue_len: 0,
-        };
-        let wal: SerdeWal<OperationWithClockTag> =
-            SerdeWal::new(wal_dir.path().to_str().unwrap(), wal_options).unwrap();
-        let wal = Arc::new(ParkingMutex::new(wal));
+        let (wal, _wal_dir) = fixture_empty_wal();
 
         let mut recovery_point = RecoveryPoint::default();
         let mut local_recovery_point = RecoveryPoint::default();
@@ -1297,7 +1283,7 @@ mod tests {
 
         let resolve_result = resolve_wal_delta(
             recovery_point,
-            wal,
+            wal.wal,
             local_recovery_point,
             RecoveryPoint::default(),
         );
@@ -1307,14 +1293,7 @@ mod tests {
     /// Recovery point with higher clocks than the source cannot resolve a diff.
     #[test]
     fn test_recover_point_higher_than_source() {
-        let wal_dir = Builder::new().prefix("wal_test").tempdir().unwrap();
-        let wal_options = WalOptions {
-            segment_capacity: 1024 * 1024,
-            segment_queue_len: 0,
-        };
-        let wal: SerdeWal<OperationWithClockTag> =
-            SerdeWal::new(wal_dir.path().to_str().unwrap(), wal_options).unwrap();
-        let wal = Arc::new(ParkingMutex::new(wal));
+        let (wal, _wal_dir) = fixture_empty_wal();
 
         let mut recovery_point = RecoveryPoint::default();
         let mut local_recovery_point = RecoveryPoint::default();
@@ -1327,7 +1306,7 @@ mod tests {
 
         let resolve_result = resolve_wal_delta(
             recovery_point,
-            wal,
+            wal.wal,
             local_recovery_point,
             RecoveryPoint::default(),
         );
@@ -1340,14 +1319,7 @@ mod tests {
     /// Recovery point requests clocks that are already truncated
     #[test]
     fn test_recover_point_cutoff() {
-        let wal_dir = Builder::new().prefix("wal_test").tempdir().unwrap();
-        let wal_options = WalOptions {
-            segment_capacity: 1024 * 1024,
-            segment_queue_len: 0,
-        };
-        let wal: SerdeWal<OperationWithClockTag> =
-            SerdeWal::new(wal_dir.path().to_str().unwrap(), wal_options).unwrap();
-        let wal = Arc::new(ParkingMutex::new(wal));
+        let (wal, _wal_dir) = fixture_empty_wal();
 
         let mut recovery_point = RecoveryPoint::default();
         let mut local_recovery_point = RecoveryPoint::default();
@@ -1362,7 +1334,7 @@ mod tests {
 
         let resolve_result = resolve_wal_delta(
             recovery_point,
-            wal,
+            wal.wal,
             local_recovery_point,
             local_cutoff_point,
         );
@@ -1372,14 +1344,7 @@ mod tests {
     /// Recovery point operations are not in our WAL.
     #[test]
     fn test_recover_point_not_in_wal() {
-        let wal_dir = Builder::new().prefix("wal_test").tempdir().unwrap();
-        let wal_options = WalOptions {
-            segment_capacity: 1024 * 1024,
-            segment_queue_len: 0,
-        };
-        let wal: SerdeWal<OperationWithClockTag> =
-            SerdeWal::new(wal_dir.path().to_str().unwrap(), wal_options).unwrap();
-        let wal = Arc::new(ParkingMutex::new(wal));
+        let (wal, _wal_dir) = fixture_empty_wal();
 
         let mut recovery_point = RecoveryPoint::default();
         let mut local_recovery_point = RecoveryPoint::default();
@@ -1392,7 +1357,7 @@ mod tests {
 
         let resolve_result = resolve_wal_delta(
             recovery_point,
-            wal,
+            wal.wal,
             local_recovery_point,
             RecoveryPoint::default(),
         );
