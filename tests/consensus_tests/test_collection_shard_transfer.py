@@ -137,7 +137,7 @@ def test_collection_shard_transfer(tmp_path: pathlib.Path):
     # Wait for end of shard transfer
     wait_for_collection_shard_transfers_count(source_uri, "test_collection", 0)
 
-    # Check the number of local shard goes down by 1
+    # Check the number of local shards goes down by 1
     assert check_collection_local_shards_count(source_uri, "test_collection", before_local_shard_count - 1)
     assert check_collection_local_shards_count(target_uri, "test_collection", target_before_local_shard_count + 1)
 

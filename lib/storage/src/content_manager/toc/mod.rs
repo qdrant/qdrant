@@ -357,11 +357,7 @@ impl TableOfContent {
     ) -> Result<(), StorageError> {
         // TODO: Ensure cancel safety!
 
-        log::info!(
-            "Initiating receiving shard {}:{}",
-            collection_name,
-            shard_id
-        );
+        log::info!("Initiating receiving shard {collection_name}:{shard_id}");
 
         // TODO: Ensure cancel safety!
         let initiate_shard_transfer_future = self
