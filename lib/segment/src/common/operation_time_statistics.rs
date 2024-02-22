@@ -3,9 +3,12 @@ use std::time::{Duration, Instant};
 
 use chrono::{DateTime, SubsecRound, Utc};
 use common::types::TelemetryDetail;
+use is_sorted::IsSorted;
+use itertools::Itertools as _;
 use parking_lot::Mutex;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use smallvec::SmallVec;
 
 use crate::common::anonymize::Anonymize;
 
@@ -20,21 +23,36 @@ pub struct OperationDurationStatistics {
     #[serde(default)]
     pub fail_count: usize,
 
+    /// The average time taken by 128 latest operations, calculated as a weighted mean.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub avg_duration_micros: Option<f32>,
 
+    /// The minimum duration of the operations across all the measurements.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub min_duration_micros: Option<f32>,
 
+    /// The maximum duration of the operations across all the measurements.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub max_duration_micros: Option<f32>,
 
+    /// The total duration of all operations in microseconds.
+    #[serde(default)]
+    pub total_duration_micros: u64,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub last_responded: Option<DateTime<Utc>>,
+
+    /// The cumulative histogram of the operation durations. Consists of a list of pairs of
+    /// [upper_boundary, cumulative_count], sorted by the upper boundary. Note that the last bucket
+    /// (aka `{le="+Inf"}` in Prometheus terms) is not stored in this list, and `count` should be
+    /// used instead.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
+    pub duration_micros_histogram: Vec<(f32, usize)>,
 }
 
 pub struct OperationDurationsAggregator {
@@ -45,11 +63,41 @@ pub struct OperationDurationsAggregator {
     timing_loops: usize,
     min_value: Option<f32>,
     max_value: Option<f32>,
+    total_value: u64,
     last_response_date: Option<DateTime<Utc>>,
+
+    /// The non-cumulative count of operations in each bucket.
+    /// The total operations count (aka the last bucket, or `{le="+Inf"}` in Prometheus terms) is
+    /// not stored in this vector, and `ok_count` should be used instead.
+    buckets: SmallVec<[usize; 16]>,
 }
 
-pub struct ScopeDurationMeasurer {
-    aggregator: Arc<Mutex<OperationDurationsAggregator>>,
+pub const DEFAULT_BUCKET_BOUNDARIES_MICROS: [f32; 16] = [
+    // Microseconds
+    1.0,
+    5.0,
+    10.0,
+    50.0,
+    100.0,
+    500.0,
+    // Milliseconds
+    1_000.0,
+    5_000.0,
+    10_000.0,
+    50_000.0,
+    100_000.0,
+    500_000.0,
+    // Seconds
+    1_000_000.0,
+    5_000_000.0,
+    10_000_000.0,
+    50_000_000.0,
+];
+
+/// A wrapper around [`OperationDurationsAggregator`] that calls
+/// [`OperationDurationsAggregator::add_operation_result()`] on drop.
+pub struct ScopeDurationMeasurer<'a> {
+    aggregator: &'a Mutex<OperationDurationsAggregator>,
     instant: Instant,
     success: bool,
 }
@@ -60,6 +108,11 @@ impl Anonymize for OperationDurationStatistics {
             count: self.count.anonymize(),
             fail_count: self.fail_count.anonymize(),
             last_responded: self.last_responded.anonymize(),
+            duration_micros_histogram: self
+                .duration_micros_histogram
+                .iter()
+                .map(|&(le, count)| (le, count.anonymize()))
+                .collect(),
             ..*self
         }
     }
@@ -88,7 +141,14 @@ impl std::ops::Add for OperationDurationStatistics {
                 other.max_duration_micros,
                 |a, b| a > b,
             ),
+            total_duration_micros: self.total_duration_micros + other.total_duration_micros,
             last_responded: std::cmp::max(self.last_responded, other.last_responded),
+            duration_micros_histogram: merge_histograms(
+                &self.duration_micros_histogram,
+                &other.duration_micros_histogram,
+                self.count,
+                other.count,
+            ),
         }
     }
 }
@@ -138,21 +198,21 @@ impl OperationDurationStatistics {
     }
 }
 
-impl ScopeDurationMeasurer {
-    pub fn new(aggregator: &Arc<Mutex<OperationDurationsAggregator>>) -> Self {
+impl<'a> ScopeDurationMeasurer<'a> {
+    pub fn new(aggregator: &'a Mutex<OperationDurationsAggregator>) -> Self {
         Self {
-            aggregator: aggregator.clone(),
+            aggregator,
             instant: Instant::now(),
             success: true,
         }
     }
 
     pub fn new_with_instant(
-        aggregator: &Arc<Mutex<OperationDurationsAggregator>>,
+        aggregator: &'a Mutex<OperationDurationsAggregator>,
         instant: Instant,
     ) -> Self {
         Self {
-            aggregator: aggregator.clone(),
+            aggregator,
             instant,
             success: true,
         }
@@ -163,7 +223,7 @@ impl ScopeDurationMeasurer {
     }
 }
 
-impl Drop for ScopeDurationMeasurer {
+impl Drop for ScopeDurationMeasurer<'_> {
     fn drop(&mut self) {
         self.aggregator
             .lock()
@@ -181,12 +241,15 @@ impl OperationDurationsAggregator {
             timing_loops: 0,
             min_value: None,
             max_value: None,
+            total_value: 0,
             last_response_date: Some(Utc::now().round_subsecs(2)),
+            buckets: smallvec::smallvec![0; DEFAULT_BUCKET_BOUNDARIES_MICROS.len()],
         }))
     }
 
     pub fn add_operation_result(&mut self, success: bool, duration: Duration) {
         if success {
+            self.total_value += duration.as_micros() as u64;
             let duration = duration.as_micros() as f32;
             self.min_value = Some(match self.min_value {
                 Some(min_value) => min_value.min(duration),
@@ -196,6 +259,13 @@ impl OperationDurationsAggregator {
                 Some(max_value) => max_value.max(duration),
                 None => duration,
             });
+
+            if let Some(bucket_no) = DEFAULT_BUCKET_BOUNDARIES_MICROS
+                .iter()
+                .position(|&b| duration <= b)
+            {
+                self.buckets[bucket_no] += 1;
+            }
 
             self.ok_count += 1;
             self.timings[self.timing_index] = duration;
@@ -212,7 +282,23 @@ impl OperationDurationsAggregator {
     }
 
     pub fn get_statistics(&self, detail: TelemetryDetail) -> OperationDurationStatistics {
-        let _ = detail.histograms; // TODO: Will be used once histograms PR is merged
+        let duration_micros_histogram = if detail.histograms {
+            let mut duration_micros_histogram =
+                Vec::with_capacity(DEFAULT_BUCKET_BOUNDARIES_MICROS.len());
+            let mut cumulative_count = 0;
+            for (&count, &le) in self.buckets.iter().zip(&DEFAULT_BUCKET_BOUNDARIES_MICROS) {
+                cumulative_count += count;
+                duration_micros_histogram.push((le, cumulative_count));
+            }
+            convert_histogram(
+                &DEFAULT_BUCKET_BOUNDARIES_MICROS,
+                &self.buckets,
+                self.ok_count,
+            )
+        } else {
+            Vec::new()
+        };
+
         OperationDurationStatistics {
             count: self.ok_count,
             fail_count: self.fail_count,
@@ -223,7 +309,9 @@ impl OperationDurationsAggregator {
             },
             min_duration_micros: self.min_value,
             max_duration_micros: self.max_value,
+            total_duration_micros: self.total_value,
             last_responded: self.last_response_date,
+            duration_micros_histogram,
         }
     }
 
@@ -252,5 +340,188 @@ impl OperationDurationsAggregator {
 
     fn simple_moving_average(data: &[f32]) -> f32 {
         data.iter().sum::<f32>() / data.len() as f32
+    }
+}
+
+/// Convert a fixed-size non-cumulative histogram to a sparse cumulative histogram.
+/// Omit repeated values to reduce the size of the histogram.
+fn convert_histogram(
+    le_boundaries: &[f32],
+    counts: &[usize],
+    total_count: usize,
+) -> Vec<(f32, usize)> {
+    let rough_len_estimation = std::cmp::min(
+        le_boundaries.len(),
+        counts.iter().filter(|&&c| c != 0).count() * 2,
+    );
+    let mut result = Vec::with_capacity(rough_len_estimation);
+    let mut cumulative_count = 0;
+    let mut prev = None;
+    for (idx, &le) in le_boundaries.iter().enumerate() {
+        let count = counts.get(idx).copied().unwrap_or(0);
+        if count == 0 {
+            prev = Some(le);
+        } else {
+            if let Some(prev) = prev {
+                result.push((prev, cumulative_count));
+            }
+            cumulative_count += count;
+            result.push((le, cumulative_count));
+            prev = None;
+        }
+    }
+    if let Some(prev) = prev {
+        if cumulative_count != total_count {
+            result.push((prev, cumulative_count));
+        }
+    }
+    result
+}
+
+/// Merge two sparse cumulative histograms, summing the counts of the same boundaries.
+/// If one boundary is missing in one of the vectors, assume its value to be the same as the next
+/// boundary in the same vector. NOTE: This assumption should be correct when merging histograms
+/// produced by `convert_histogram` with the same set of boundaries, but it's not always the case.
+fn merge_histograms(
+    a: &[(f32, usize)],
+    b: &[(f32, usize)],
+    total_a: usize,
+    total_b: usize,
+) -> Vec<(f32, usize)> {
+    // TODO: drop is_sorted crate and use Iterator::is_sorted once it's stable
+    debug_assert!(
+        IsSorted::is_sorted(&mut a.iter().map(|(le, _)| le)),
+        "Boundaries are not sorted"
+    );
+    debug_assert!(
+        IsSorted::is_sorted(&mut b.iter().map(|(le, _)| le)),
+        "Boundaries are not sorted"
+    );
+    let unique_boundaries =
+        itertools::merge(a.iter().map(|(le, _)| le), b.iter().map(|(le, _)| le))
+            .dedup()
+            .count();
+    let mut result = Vec::with_capacity(unique_boundaries);
+    let mut it_a = a.iter().copied().peekable();
+    let mut it_b = b.iter().copied().peekable();
+    while it_a.peek().is_some() || it_b.peek().is_some() {
+        let (a_le, a_count) = it_a.peek().copied().unwrap_or((f32::INFINITY, total_a));
+        let (b_le, b_count) = it_b.peek().copied().unwrap_or((f32::INFINITY, total_b));
+        match a_le.partial_cmp(&b_le) {
+            Some(std::cmp::Ordering::Less) => {
+                result.push((a_le, a_count + b_count));
+                it_a.next();
+            }
+            Some(std::cmp::Ordering::Equal) => {
+                result.push((a_le, a_count + b_count));
+                it_a.next();
+                it_b.next();
+            }
+            Some(std::cmp::Ordering::Greater) => {
+                result.push((b_le, a_count + b_count));
+                it_b.next();
+            }
+            None => {
+                // One of the boundaries is NaN, which is not supposed to happen.
+                if a_le.is_nan() {
+                    it_a.next();
+                }
+                if b_le.is_nan() {
+                    it_b.next();
+                }
+            }
+        }
+    }
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_convert_histogram() {
+        // With all zeroes
+        assert_eq!(
+            convert_histogram(&[0., 1., 2., 3., 4., 5.], &[0, 0, 0, 0, 0, 0], 0),
+            vec![],
+        );
+
+        // With all zeroes except the total count
+        assert_eq!(
+            convert_histogram(&[0., 1., 2., 3., 4., 5.], &[0, 0, 0, 0, 0, 0], 100),
+            vec![(5., 0)],
+        );
+
+        // Full
+        assert_eq!(
+            convert_histogram(&[0., 1., 2., 3.], &[1, 20, 300, 4000], 5000),
+            vec![(0., 1), (1., 21), (2., 321), (3., 4321)],
+        );
+
+        // Sparse
+        assert_eq!(
+            convert_histogram(&[0., 1., 2., 3., 4., 5., 6.], &[0, 0, 1, 0, 0, 1, 0], 1),
+            vec![(1.0, 0), (2.0, 1), (4.0, 1), (5.0, 2), (6.0, 2)],
+        );
+    }
+
+    #[test]
+    fn test_merge_histograms() {
+        // Empty vectors
+        assert_eq!(merge_histograms(&[], &[], 9, 90), &[]);
+
+        // Simple case
+        #[rustfmt::skip]
+        let (a, b, result) = (
+            &[(0.0,  1), (1.0,  2), (2.0,  3)],
+            &[(0.0, 10), (1.0, 20), (2.0, 30)],
+            &[(0.0, 11), (1.0, 22), (2.0, 33)],
+        );
+        assert_eq!(merge_histograms(a, b, 9, 90), result);
+
+        // Missing boundary in the middle
+        #[rustfmt::skip]
+        let (a, b, result) = (
+            &[(0.0,  1), (1.0,  2),            (3.0,  3), (4.0,  4)],
+            &[(0.0, 10), (1.0, 20), (2.0, 30),            (4.0, 40)],
+            &[(0.0, 11), (1.0, 22), (2.0, 33), (3.0, 43), (4.0, 44)],
+        );
+        assert_eq!(merge_histograms(a, b, 9, 90), result);
+
+        // Missing boundary at the end
+        #[rustfmt::skip]
+        let (a, b, result) = (
+            &[(0.0,  1),          ],
+            &[(0.0, 10), (1.0, 20)],
+            &[(0.0, 11), (1.0, 29)],
+        );
+        assert_eq!(merge_histograms(a, b, 9, 90), result);
+    }
+
+    /// Check that convert-then-merge produces the same result as merge-then-convert, i.e. both
+    /// functions play well together.
+    #[test]
+    fn test_convert_and_merge_histograms() {
+        case(&[33, 23, 86, 39, 75], &[86, 50, 47, 84, 52], 256, 319);
+        case(&[00, 00, 00, 00, 00], &[86, 50, 47, 84, 52], 256, 319);
+        case(&[00, 23, 00, 00, 00], &[00, 00, 00, 84, 00], 30, 90);
+        case(&[00, 00, 00, 00, 00], &[86, 50, 47, 84, 52], 0, 319);
+
+        fn case(a: &[usize], b: &[usize], total_a: usize, total_b: usize) {
+            assert_eq!(
+                merge_histograms(
+                    &convert_histogram(&DEFAULT_BUCKET_BOUNDARIES_MICROS, a, total_a),
+                    &convert_histogram(&DEFAULT_BUCKET_BOUNDARIES_MICROS, b, total_b),
+                    total_a,
+                    total_b,
+                ),
+                convert_histogram(
+                    &DEFAULT_BUCKET_BOUNDARIES_MICROS,
+                    &std::iter::zip(a, b).map(|(a, b)| a + b).collect::<Vec<_>>(),
+                    total_a + total_b
+                ),
+            );
+        }
     }
 }

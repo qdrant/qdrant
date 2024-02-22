@@ -33,11 +33,12 @@ async fn telemetry(
 ) -> impl Responder {
     let timing = Instant::now();
     let anonymize = params.anonymize.unwrap_or(false);
+    let details_level = params
+        .details_level
+        .map_or(DetailsLevel::Level0, Into::into);
     let detail = TelemetryDetail {
-        level: params
-            .details_level
-            .map_or(DetailsLevel::Level0, Into::into),
-        histograms: false,
+        level: details_level,
+        histograms: details_level >= DetailsLevel::Level3,
     };
     let telemetry_collector = telemetry_collector.lock().await;
     let telemetry_data = telemetry_collector.prepare_data(detail).await;

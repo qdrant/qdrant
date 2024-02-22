@@ -9417,24 +9417,54 @@
             "minimum": 0
           },
           "avg_duration_micros": {
+            "description": "The average time taken by 128 latest operations, calculated as a weighted mean.",
             "type": "number",
             "format": "float",
             "nullable": true
           },
           "min_duration_micros": {
+            "description": "The minimum duration of the operations across all the measurements.",
             "type": "number",
             "format": "float",
             "nullable": true
           },
           "max_duration_micros": {
+            "description": "The maximum duration of the operations across all the measurements.",
             "type": "number",
             "format": "float",
             "nullable": true
+          },
+          "total_duration_micros": {
+            "description": "The total duration of all operations in microseconds.",
+            "default": 0,
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
           },
           "last_responded": {
             "type": "string",
             "format": "date-time",
             "nullable": true
+          },
+          "duration_micros_histogram": {
+            "description": "The cumulative histogram of the operation durations. Consists of a list of pairs of [upper_boundary, cumulative_count], sorted by the upper boundary. Note that the last bucket (aka `{le=\"+Inf\"}` in Prometheus terms) is not stored in this list, and `count` should be used instead.",
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": [
+                {
+                  "type": "number",
+                  "format": "float"
+                },
+                {
+                  "type": "integer",
+                  "format": "uint",
+                  "minimum": 0
+                }
+              ],
+              "maxItems": 2,
+              "minItems": 2
+            }
           }
         }
       },
