@@ -77,35 +77,46 @@ Expected response:
 {
   "result": {
     "status": "green",
+    "optimizer_status": "ok",
     "vectors_count": 0,
-    "segments_count": 5,
-    "disk_data_size": 0,
-    "ram_data_size": 0,
+    "indexed_vectors_count": 0,
+    "points_count": 0,
+    "segments_count": 8,
     "config": {
       "params": {
         "vectors": {
           "size": 4,
           "distance": "Dot"
-        }
+        },
+        "shard_number": 1,
+        "replication_factor": 1,
+        "write_consistency_factor": 1,
+        "on_disk_payload": true
       },
       "hnsw_config": {
         "m": 16,
         "ef_construct": 100,
-        "full_scan_threshold": 10000
+        "full_scan_threshold": 10000,
+        "max_indexing_threads": 0,
+        "on_disk": false
       },
       "optimizer_config": {
         "deleted_threshold": 0.2,
         "vacuum_min_vector_number": 1000,
-        "max_segment_number": 5,
-        "memmap_threshold": 50000,
+        "default_segment_number": 0,
+        "max_segment_size": null,
+        "memmap_threshold": null,
         "indexing_threshold": 20000,
-        "flush_interval_sec": 1
+        "flush_interval_sec": 5,
+        "max_optimization_threads": null
       },
       "wal_config": {
         "wal_capacity_mb": 32,
         "wal_segments_ahead": 0
-      }
-    }
+      },
+      "quantization_config": null
+    },
+    "payload_schema": {}
   },
   "status": "ok",
   "time": 2.1199e-5
@@ -153,7 +164,7 @@ curl -L -X POST 'http://localhost:6333/collections/test_collection/points/search
     -H 'Content-Type: application/json' \
     --data-raw '{
         "vector": [0.2,0.1,0.9,0.7],
-        "top": 3
+        "limit": 3
     }'
 ```
 
@@ -162,9 +173,9 @@ Expected response:
 ```json
 {
   "result": [
-    { "id": 4, "score": 1.362, "payload": null, "version": 0 },
-    { "id": 1, "score": 1.273, "payload": null, "version": 0 },
-    { "id": 3, "score": 1.208, "payload": null, "version": 0 }
+    {"id": 4, "version": 0, "score": 1.362, "payload": null, "vector": null},
+    {"id": 1, "version": 0, "score": 1.273, "payload": null, "vector": null},
+    {"id": 3, "version": 0, "score": 1.208, "payload": null, "vector": null}
   ],
   "status": "ok",
   "time": 0.000055785
@@ -188,7 +199,7 @@ curl -L -X POST 'http://localhost:6333/collections/test_collection/points/search
           ]
       },
       "vector": [0.2, 0.1, 0.9, 0.7],
-      "top": 3
+      "limit": 3
   }'
 ```
 
@@ -197,8 +208,8 @@ Expected response:
 ```json
 {
   "result": [
-    { "id": 4, "score": 1.362 },
-    { "id": 2, "score": 0.871 }
+    {"id": 4, "version": 0, "score": 1.362, "payload": null, "vector": null},
+    {"id": 2, "version": 0, "score": 0.871, "payload": null, "vector": null}
   ],
   "status": "ok",
   "time": 0.000093972
