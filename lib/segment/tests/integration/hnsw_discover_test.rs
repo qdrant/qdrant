@@ -23,6 +23,8 @@ use segment::vector_storage::query::discovery_query::DiscoveryQuery;
 use serde_json::json;
 use tempfile::Builder;
 
+use crate::utils::path;
+
 const MAX_EXAMPLE_PAIRS: usize = 3;
 
 fn random_discovery_query<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> QueryVector {
@@ -237,7 +239,7 @@ fn filtered_hnsw_discover_precision() {
 
     payload_index_ptr
         .borrow_mut()
-        .set_indexed(keyword_key, PayloadSchemaType::Keyword.into())
+        .set_indexed(&path(keyword_key), PayloadSchemaType::Keyword.into())
         .unwrap();
 
     hnsw_index.build_index(permit, &stopped).unwrap();
@@ -247,7 +249,7 @@ fn filtered_hnsw_discover_precision() {
     let attempts = 100;
     for _i in 0..attempts {
         let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
-            keyword_key.to_owned(),
+            path(keyword_key),
             get_random_keyword_of(num_payload_values, &mut rnd).into(),
         )));
 

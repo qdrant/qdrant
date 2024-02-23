@@ -3,11 +3,12 @@ use serde_json::Value;
 
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
+use crate::json_path::JsonPath;
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::payload_storage::PayloadStorage;
-use crate::types::{Payload, PayloadKeyTypeRef};
+use crate::types::Payload;
 
 pub enum PayloadStorageEnum {
     InMemoryPayloadStorage(InMemoryPayloadStorage),
@@ -59,7 +60,7 @@ impl PayloadStorage for PayloadStorageEnum {
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
-        key: &str,
+        key: &JsonPath,
     ) -> OperationResult<()> {
         match self {
             PayloadStorageEnum::InMemoryPayloadStorage(s) => {
@@ -78,11 +79,7 @@ impl PayloadStorage for PayloadStorageEnum {
         }
     }
 
-    fn delete(
-        &mut self,
-        point_id: PointOffsetType,
-        key: PayloadKeyTypeRef,
-    ) -> OperationResult<Vec<Value>> {
+    fn delete(&mut self, point_id: PointOffsetType, key: &JsonPath) -> OperationResult<Vec<Value>> {
         match self {
             PayloadStorageEnum::InMemoryPayloadStorage(s) => s.delete(point_id, key),
             PayloadStorageEnum::SimplePayloadStorage(s) => s.delete(point_id, key),
@@ -121,6 +118,7 @@ mod tests {
 
     use super::*;
     use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
+    use crate::json_path::path;
     use crate::types::Payload;
 
     #[test]
@@ -168,7 +166,7 @@ mod tests {
             let partial_payload: Payload = serde_json::from_str(r#"{ "age": 53 }"#).unwrap();
             storage.assign(100, &partial_payload).unwrap();
 
-            storage.delete(100, "location.geo").unwrap();
+            storage.delete(100, &path("location.geo")).unwrap();
 
             let res = storage.payload(100).unwrap();
 
@@ -192,8 +190,8 @@ mod tests {
                 serde_json::from_str(r#"{ "hobby": "vector search" }"#).unwrap();
             storage.assign(100, &partial_payload).unwrap();
 
-            storage.delete(100, "location.city").unwrap();
-            storage.delete(100, "location").unwrap();
+            storage.delete(100, &path("location.city")).unwrap();
+            storage.delete(100, &path("location")).unwrap();
 
             let res = storage.payload(100).unwrap();
 

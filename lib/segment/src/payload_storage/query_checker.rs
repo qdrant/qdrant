@@ -9,6 +9,7 @@ use common::types::PointOffsetType;
 use crate::common::utils::{check_is_empty, check_is_null, IndexesMap};
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::FieldIndex;
+use crate::json_path::JsonPathInterface as _;
 use crate::payload_storage::condition_checker::ValueChecker;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::ConditionChecker;
@@ -92,18 +93,17 @@ where
 }
 
 pub fn select_nested_indexes<'a, R>(
-    nested_path: &str,
+    nested_path: &PayloadKeyType,
     field_indexes: &'a HashMap<PayloadKeyType, R>,
 ) -> HashMap<PayloadKeyType, &'a Vec<FieldIndex>>
 where
     R: AsRef<Vec<FieldIndex>>,
 {
-    let nested_prefix = format!("{}.", nested_path);
     let nested_indexes: HashMap<_, _> = field_indexes
         .iter()
         .filter_map(|(key, indexes)| {
-            key.strip_prefix(&nested_prefix)
-                .map(|key| (key.into(), indexes.as_ref()))
+            key.strip_prefix(nested_path)
+                .map(|key| (key, indexes.as_ref()))
         })
         .collect();
     nested_indexes
@@ -286,6 +286,7 @@ mod tests {
     use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
     use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
     use crate::id_tracker::IdTracker;
+    use crate::json_path::path;
     use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
     use crate::payload_storage::PayloadStorage;
     use crate::types::{
@@ -331,78 +332,72 @@ mod tests {
         );
 
         let is_empty_condition = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
-            is_empty: PayloadField {
-                key: "price".to_string(),
-            },
+            is_empty: PayloadField { key: path("price") },
         }));
         assert!(!payload_checker.check(0, &is_empty_condition));
 
         let is_empty_condition = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
             is_empty: PayloadField {
-                key: "something_new".to_string(),
+                key: path("something_new"),
             },
         }));
         assert!(payload_checker.check(0, &is_empty_condition));
 
         let is_empty_condition = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
-            is_empty: PayloadField {
-                key: "parts".to_string(),
-            },
+            is_empty: PayloadField { key: path("parts") },
         }));
         assert!(payload_checker.check(0, &is_empty_condition));
 
         let is_empty_condition = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
             is_empty: PayloadField {
-                key: "not_null".to_string(),
+                key: path("not_null"),
             },
         }));
         assert!(!payload_checker.check(0, &is_empty_condition));
 
         let is_null_condition = Filter::new_must(Condition::IsNull(IsNullCondition {
             is_null: PayloadField {
-                key: "amount".to_string(),
+                key: path("amount"),
+            },
+        }));
+        assert!(!payload_checker.check(0, &is_null_condition));
+
+        let is_null_condition = Filter::new_must(Condition::IsNull(IsNullCondition {
+            is_null: PayloadField { key: path("parts") },
+        }));
+        assert!(!payload_checker.check(0, &is_null_condition));
+
+        let is_null_condition = Filter::new_must(Condition::IsNull(IsNullCondition {
+            is_null: PayloadField {
+                key: path("something_else"),
             },
         }));
         assert!(!payload_checker.check(0, &is_null_condition));
 
         let is_null_condition = Filter::new_must(Condition::IsNull(IsNullCondition {
             is_null: PayloadField {
-                key: "parts".to_string(),
-            },
-        }));
-        assert!(!payload_checker.check(0, &is_null_condition));
-
-        let is_null_condition = Filter::new_must(Condition::IsNull(IsNullCondition {
-            is_null: PayloadField {
-                key: "something_else".to_string(),
-            },
-        }));
-        assert!(!payload_checker.check(0, &is_null_condition));
-
-        let is_null_condition = Filter::new_must(Condition::IsNull(IsNullCondition {
-            is_null: PayloadField {
-                key: "packaging".to_string(),
+                key: path("packaging"),
             },
         }));
         assert!(payload_checker.check(0, &is_null_condition));
 
         let is_null_condition = Filter::new_must(Condition::IsNull(IsNullCondition {
             is_null: PayloadField {
-                key: "not_null".to_string(),
+                key: path("not_null"),
             },
         }));
         assert!(!payload_checker.check(0, &is_null_condition));
 
         let match_red = Condition::Field(FieldCondition::new_match(
-            "color".to_string(),
+            path("color"),
             "red".to_owned().into(),
         ));
         let match_blue = Condition::Field(FieldCondition::new_match(
-            "color".to_string(),
+            path("color"),
             "blue".to_owned().into(),
         ));
         let shipped_in_february = Condition::Field(FieldCondition::new_datetime_range(
-            "shipped_at".to_string(),
+            path("shipped_at"),
             Range {
                 lt: Some(DateTimeWrapper::from_str("2020-03-01T00:00:00Z").unwrap()),
                 gt: None,
@@ -411,7 +406,7 @@ mod tests {
             },
         ));
         let shipped_in_march = Condition::Field(FieldCondition::new_datetime_range(
-            "shipped_at".to_string(),
+            path("shipped_at"),
             Range {
                 lt: Some(DateTimeWrapper::from_str("2020-04-01T00:00:00Z").unwrap()),
                 gt: None,
@@ -419,14 +414,12 @@ mod tests {
                 lte: None,
             },
         ));
-        let with_delivery = Condition::Field(FieldCondition::new_match(
-            "has_delivery".to_string(),
-            true.into(),
-        ));
+        let with_delivery =
+            Condition::Field(FieldCondition::new_match(path("has_delivery"), true.into()));
 
         let many_value_count_condition =
             Filter::new_must(Condition::Field(FieldCondition::new_values_count(
-                "rating".to_string(),
+                path("rating"),
                 ValuesCount {
                     lt: None,
                     gt: None,
@@ -438,7 +431,7 @@ mod tests {
 
         let few_value_count_condition =
             Filter::new_must(Condition::Field(FieldCondition::new_values_count(
-                "rating".to_string(),
+                path("rating"),
                 ValuesCount {
                     lt: Some(5),
                     gt: None,
@@ -449,7 +442,7 @@ mod tests {
         assert!(payload_checker.check(0, &few_value_count_condition));
 
         let in_berlin = Condition::Field(FieldCondition::new_geo_bounding_box(
-            "location".to_string(),
+            path("location"),
             GeoBoundingBox {
                 top_left: GeoPoint {
                     lon: 13.08835,
@@ -463,7 +456,7 @@ mod tests {
         ));
 
         let in_moscow = Condition::Field(FieldCondition::new_geo_bounding_box(
-            "location".to_string(),
+            path("location"),
             GeoBoundingBox {
                 top_left: GeoPoint {
                     lon: 37.0366,
@@ -477,7 +470,7 @@ mod tests {
         ));
 
         let with_bad_rating = Condition::Field(FieldCondition::new_range(
-            "rating".to_string(),
+            path("rating"),
             Range {
                 lt: None,
                 gt: None,

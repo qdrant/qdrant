@@ -9,17 +9,21 @@ use crate::index::field_index::geo_index::GeoMapIndex;
 use crate::index::field_index::map_index::MapIndex;
 use crate::index::field_index::numeric_index::NumericIndex;
 use crate::index::field_index::FieldIndex;
+use crate::json_path::JsonPath;
 use crate::types::{
     FloatPayloadType, IntPayloadType, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
 };
 
 /// Selects index types based on field type
 pub fn index_selector(
-    field: &str,
+    field: &JsonPath,
     payload_schema: &PayloadFieldSchema,
     db: Arc<RwLock<DB>>,
     is_appendable: bool,
 ) -> Vec<FieldIndex> {
+    let field: String = field.to_string();
+    let field = field.as_str();
+
     match payload_schema {
         PayloadFieldSchema::FieldType(payload_type) => match payload_type {
             PayloadSchemaType::Keyword => {

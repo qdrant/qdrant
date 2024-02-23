@@ -5,6 +5,7 @@ use serde_json::Value;
 
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
+use crate::json_path::JsonPath;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::payload_storage::PayloadStorage;
 use crate::types::{Payload, PayloadKeyTypeRef};
@@ -27,7 +28,7 @@ impl PayloadStorage for SimplePayloadStorage {
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
-        key: &str,
+        key: &JsonPath,
     ) -> OperationResult<()> {
         match self.payload.get_mut(&point_id) {
             Some(point_payload) => point_payload.merge_by_key(payload, key),

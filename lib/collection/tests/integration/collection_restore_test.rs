@@ -9,7 +9,7 @@ use segment::types::{PayloadContainer, PayloadSelectorExclude, WithPayloadInterf
 use serde_json::Value;
 use tempfile::Builder;
 
-use crate::common::{load_local_collection, simple_collection_fixture, N_SHARDS};
+use crate::common::{load_local_collection, path, simple_collection_fixture, N_SHARDS};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_collection_reloading() {
@@ -112,7 +112,7 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
         .payload
         .as_ref()
         .expect("has payload")
-        .get_value("k")
+        .get_value(&path("k"))
         .into_iter()
         .next()
         .expect("has value")
@@ -123,7 +123,11 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
 
     eprintln!(
         "res = {:#?}",
-        res.points[0].payload.as_ref().unwrap().get_value("k")
+        res.points[0]
+            .payload
+            .as_ref()
+            .unwrap()
+            .get_value(&path("k"))
     );
 }
 
@@ -168,7 +172,7 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
                 offset: None,
                 limit: Some(10),
                 filter: None,
-                with_payload: Some(WithPayloadInterface::Fields(vec![String::from("k2")])),
+                with_payload: Some(WithPayloadInterface::Fields(vec![path("k2")])),
                 with_vector: true.into(),
                 order_by: None,
             },
@@ -187,7 +191,7 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
         .payload
         .as_ref()
         .expect("has payload")
-        .get_value("k2")
+        .get_value(&path("k2"))
         .into_iter()
         .next()
         .expect("has value")
@@ -203,7 +207,7 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
                 offset: None,
                 limit: Some(10),
                 filter: None,
-                with_payload: Some(PayloadSelectorExclude::new(vec!["k1".to_string()]).into()),
+                with_payload: Some(PayloadSelectorExclude::new(vec![path("k1")]).into()),
                 with_vector: false.into(),
                 order_by: None,
             },
@@ -231,7 +235,7 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
         .payload
         .as_ref()
         .expect("has payload")
-        .get_value("k3")
+        .get_value(&path("k3"))
         .into_iter()
         .next()
         .expect("has value")

@@ -164,7 +164,10 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
 
     let count_request = CountRequestInternal {
         filter: Some(Filter::new_must(Condition::Field(
-            FieldCondition::new_match("k", serde_json::from_str(r#"{ "value": "v2" }"#).unwrap()),
+            FieldCondition::new_match(
+                "k".parse().unwrap(),
+                serde_json::from_str(r#"{ "value": "v2" }"#).unwrap(),
+            ),
         ))),
         exact: true,
     };
@@ -497,7 +500,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
 
     collection
         .create_payload_index_with_wait(
-            PRICE_FLOAT_KEY.to_string(),
+            PRICE_FLOAT_KEY.parse().unwrap(),
             PayloadFieldSchema::FieldType(PayloadSchemaType::Float),
             true,
         )
@@ -506,7 +509,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
 
     collection
         .create_payload_index_with_wait(
-            PRICE_INT_KEY.to_string(),
+            PRICE_INT_KEY.parse().unwrap(),
             PayloadFieldSchema::FieldType(PayloadSchemaType::Integer),
             true,
         )
@@ -515,7 +518,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
 
     collection
         .create_payload_index_with_wait(
-            MULTI_VALUE_KEY.to_string(),
+            MULTI_VALUE_KEY.parse().unwrap(),
             PayloadFieldSchema::FieldType(PayloadSchemaType::Float),
             true,
         )
@@ -533,7 +536,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
                     with_payload: Some(WithPayloadInterface::Bool(true)),
                     with_vector: false.into(),
                     order_by: Some(OrderByInterface::Struct(OrderBy {
-                        key: key.into(),
+                        key: key.parse().unwrap(),
                         direction: Some(Direction::Asc),
                         start_from: None,
                     })),
@@ -563,7 +566,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
                     with_payload: Some(WithPayloadInterface::Bool(true)),
                     with_vector: false.into(),
                     order_by: Some(OrderByInterface::Struct(OrderBy {
-                        key: key.into(),
+                        key: key.parse().unwrap(),
                         direction: Some(Direction::Desc),
                         start_from: None,
                     })),
@@ -602,7 +605,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
                     with_payload: Some(WithPayloadInterface::Bool(true)),
                     with_vector: false.into(),
                     order_by: Some(OrderByInterface::Struct(OrderBy {
-                        key: key.into(),
+                        key: key.parse().unwrap(),
                         direction: Some(Direction::Asc),
                         start_from: None,
                     })),
@@ -640,7 +643,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
                     with_payload: Some(WithPayloadInterface::Bool(true)),
                     with_vector: false.into(),
                     order_by: Some(OrderByInterface::Struct(OrderBy {
-                        key: key.into(),
+                        key: key.parse().unwrap(),
                         direction: Some(Direction::Desc),
                         start_from: None,
                     })),
@@ -680,7 +683,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
                 filter: None,
                 with_payload: Some(WithPayloadInterface::Bool(true)),
                 with_vector: false.into(),
-                order_by: Some(OrderByInterface::Key(MULTI_VALUE_KEY.into())),
+                order_by: Some(OrderByInterface::Key(MULTI_VALUE_KEY.parse().unwrap())),
             },
             None,
             &ShardSelectorInternal::All,

@@ -283,13 +283,14 @@ mod tests {
     use std::iter::FromIterator;
 
     use super::*;
+    use crate::json_path::path;
     use crate::types::{FieldCondition, HasIdCondition};
 
     const TOTAL: usize = 1000;
 
-    fn test_condition(key: String) -> Condition {
+    fn test_condition(key: &str) -> Condition {
         Condition::Field(FieldCondition {
-            key,
+            key: path(key),
             r#match: None,
             range: None,
             geo_bounding_box: None,
@@ -303,7 +304,7 @@ mod tests {
         match condition {
             Condition::Filter(_) => panic!("unexpected Filter"),
             Condition::Nested(_) => panic!("unexpected Nested"),
-            Condition::Field(field) => match field.key.as_str() {
+            Condition::Field(field) => match field.key.to_string().as_str() {
                 "color" => CardinalityEstimation {
                     primary_clauses: vec![PrimaryCondition::Condition(field.clone())],
                     min: 100,
@@ -353,7 +354,7 @@ mod tests {
 
     #[test]
     fn simple_query_estimation_test() {
-        let query = Filter::new_must(test_condition("color".to_owned()));
+        let query = Filter::new_must(test_condition("color"));
         let estimation = estimate_filter(&test_estimator, &query, TOTAL);
         assert_eq!(estimation.exp, 200);
         assert!(!estimation.primary_clauses.is_empty());
@@ -365,9 +366,9 @@ mod tests {
             should: None,
             min_should: None,
             must: Some(vec![
-                test_condition("color".to_owned()),
-                test_condition("size".to_owned()),
-                test_condition("un-indexed".to_owned()),
+                test_condition("color"),
+                test_condition("size"),
+                test_condition("un-indexed"),
             ]),
             must_not: None,
         };
@@ -375,7 +376,7 @@ mod tests {
         let estimation = estimate_filter(&test_estimator, &query, TOTAL);
         assert_eq!(estimation.primary_clauses.len(), 1);
         match &estimation.primary_clauses[0] {
-            PrimaryCondition::Condition(field) => assert_eq!(&field.key, "size"),
+            PrimaryCondition::Condition(field) => assert_eq!(&field.key.to_string(), "size"),
             _ => panic!(),
         }
         assert!(estimation.max <= TOTAL);
@@ -386,10 +387,7 @@ mod tests {
     #[test]
     fn should_estimation_query_test() {
         let query = Filter {
-            should: Some(vec![
-                test_condition("color".to_owned()),
-                test_condition("size".to_owned()),
-            ]),
+            should: Some(vec![test_condition("color"), test_condition("size")]),
             min_should: None,
             must: None,
             must_not: None,
@@ -406,9 +404,9 @@ mod tests {
     fn another_should_estimation_query_test() {
         let query = Filter {
             should: Some(vec![
-                test_condition("color".to_owned()),
-                test_condition("size".to_owned()),
-                test_condition("un-indexed".to_owned()),
+                test_condition("color"),
+                test_condition("size"),
+                test_condition("un-indexed"),
             ]),
             min_should: None,
             must: None,
@@ -426,10 +424,7 @@ mod tests {
     #[test]
     fn min_should_estimation_query_test() {
         let query = Filter::new_min_should(MinShould {
-            conditions: vec![
-                test_condition("color".to_owned()),
-                test_condition("size".to_owned()),
-            ],
+            conditions: vec![test_condition("color"), test_condition("size")],
             min_count: 1,
         });
         let estimation = estimate_filter(&test_estimator, &query, TOTAL);
@@ -443,9 +438,9 @@ mod tests {
     fn another_min_should_estimation_query_test() {
         let query = Filter::new_min_should(MinShould {
             conditions: vec![
-                test_condition("color".to_owned()),
-                test_condition("size".to_owned()),
-                test_condition("price".to_owned()),
+                test_condition("color"),
+                test_condition("size"),
+                test_condition("price"),
             ],
             min_count: 2,
         });
@@ -460,9 +455,9 @@ mod tests {
     #[test]
     fn min_should_with_min_count_same_as_condition_count_is_equivalent_to_must() {
         let conditions = vec![
-            test_condition("color".to_owned()),
-            test_condition("size".to_owned()),
-            test_condition("price".to_owned()),
+            test_condition("color"),
+            test_condition("size"),
+            test_condition("price"),
         ];
         let min_should_query = Filter::new_min_should(MinShould {
             conditions: conditions.clone(),
@@ -496,19 +491,13 @@ mod tests {
                 Condition::Filter(Filter {
                     should: None,
                     min_should: None,
-                    must: Some(vec![
-                        test_condition("color".to_owned()),
-                        test_condition("size".to_owned()),
-                    ]),
+                    must: Some(vec![test_condition("color"), test_condition("size")]),
                     must_not: None,
                 }),
                 Condition::Filter(Filter {
                     should: None,
                     min_should: None,
-                    must: Some(vec![
-                        test_condition("price".to_owned()),
-                        test_condition("size".to_owned()),
-                    ]),
+                    must: Some(vec![test_condition("price"), test_condition("size")]),
                     must_not: None,
                 }),
             ]),
@@ -534,19 +523,13 @@ mod tests {
             must: Some(vec![
                 Condition::Filter(Filter {
                     must: None,
-                    should: Some(vec![
-                        test_condition("color".to_owned()),
-                        test_condition("size".to_owned()),
-                    ]),
+                    should: Some(vec![test_condition("color"), test_condition("size")]),
                     min_should: None,
                     must_not: None,
                 }),
                 Condition::Filter(Filter {
                     must: None,
-                    should: Some(vec![
-                        test_condition("price".to_owned()),
-                        test_condition("size".to_owned()),
-                    ]),
+                    should: Some(vec![test_condition("price"), test_condition("size")]),
                     min_should: None,
                     must_not: None,
                 }),
@@ -560,7 +543,7 @@ mod tests {
         assert_eq!(estimation.primary_clauses.len(), 2);
         estimation.primary_clauses.iter().for_each(|x| match x {
             PrimaryCondition::Condition(field) => {
-                assert!(["price".to_owned(), "size".to_owned()].contains(&field.key))
+                assert!(["price", "size"].contains(&field.key.to_string().as_str()))
             }
             _ => panic!("Should not go here"),
         });

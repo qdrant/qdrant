@@ -21,6 +21,8 @@ use segment::types::{
 use serde_json::json;
 use tempfile::Builder;
 
+use crate::utils::path;
+
 #[test]
 fn exact_search_test() {
     let stopped = AtomicBool::new(false);
@@ -106,11 +108,11 @@ fn exact_search_test() {
 
     payload_index_ptr
         .borrow_mut()
-        .set_indexed(int_key, PayloadSchemaType::Integer.into())
+        .set_indexed(&path(int_key), PayloadSchemaType::Integer.into())
         .unwrap();
     let borrowed_payload_index = payload_index_ptr.borrow();
     let blocks = borrowed_payload_index
-        .payload_blocks(int_key, indexing_threshold)
+        .payload_blocks(&path(int_key), indexing_threshold)
         .collect_vec();
     for block in blocks.iter() {
         assert!(
@@ -178,7 +180,7 @@ fn exact_search_test() {
         let right_range = left_range + range_size;
 
         let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(
-            int_key.to_owned(),
+            path(int_key),
             Range {
                 lt: None,
                 gt: None,

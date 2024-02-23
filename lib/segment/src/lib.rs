@@ -12,6 +12,7 @@ pub mod telemetry;
 
 mod compat;
 pub mod data_types;
+pub mod json_path;
 pub mod types;
 pub mod utils;
 pub mod vector_storage;

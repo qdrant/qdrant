@@ -5,6 +5,7 @@ use chrono::{NaiveDateTime, TimeZone as _, Timelike};
 use segment::data_types::integer_index::IntegerIndexType;
 use segment::data_types::text_index::TextIndexType;
 use segment::data_types::vectors::VectorElementType;
+use segment::json_path::JsonPath;
 use segment::types::{default_quantization_ignore_value, DateTimePayloadType, FloatPayloadType};
 use tonic::Status;
 use uuid::Uuid;
@@ -73,6 +74,10 @@ fn json_to_proto(json_value: serde_json::Value) -> Value {
             }
         }
     }
+}
+
+pub fn json_path_from_proto(a: &str) -> Result<JsonPath, Status> {
+    JsonPath::try_from(a).map_err(|_| Status::invalid_argument("Invalid json path"))
 }
 
 pub fn proto_to_payloads(proto: HashMap<String, Value>) -> Result<segment::types::Payload, Status> {
@@ -368,12 +373,20 @@ impl TryFrom<WithPayloadSelector> for segment::types::WithPayloadInterface {
         match value.selector_options {
             Some(options) => Ok(match options {
                 SelectorOptions::Enable(flag) => segment::types::WithPayloadInterface::Bool(flag),
-                SelectorOptions::Exclude(s) => {
-                    segment::types::PayloadSelectorExclude::new(s.fields).into()
-                }
-                SelectorOptions::Include(s) => {
-                    segment::types::PayloadSelectorInclude::new(s.fields).into()
-                }
+                SelectorOptions::Exclude(s) => segment::types::PayloadSelectorExclude::new(
+                    s.fields
+                        .iter()
+                        .map(|i| json_path_from_proto(i))
+                        .collect::<Result<_, _>>()?,
+                )
+                .into(),
+                SelectorOptions::Include(s) => segment::types::PayloadSelectorInclude::new(
+                    s.fields
+                        .iter()
+                        .map(|i| json_path_from_proto(i))
+                        .collect::<Result<_, _>>()?,
+                )
+                .into(),
             }),
             _ => Err(Status::invalid_argument("No PayloadSelector".to_string())),
         }
@@ -385,14 +398,20 @@ impl From<segment::types::WithPayloadInterface> for WithPayloadSelector {
         let selector_options = match value {
             segment::types::WithPayloadInterface::Bool(flag) => SelectorOptions::Enable(flag),
             segment::types::WithPayloadInterface::Fields(fields) => {
-                SelectorOptions::Include(PayloadIncludeSelector { fields })
+                SelectorOptions::Include(PayloadIncludeSelector {
+                    fields: fields.iter().map(|f| f.to_string()).collect(),
+                })
             }
             segment::types::WithPayloadInterface::Selector(selector) => match selector {
                 segment::types::PayloadSelector::Include(s) => {
-                    SelectorOptions::Include(PayloadIncludeSelector { fields: s.include })
+                    SelectorOptions::Include(PayloadIncludeSelector {
+                        fields: s.include.iter().map(|f| f.to_string()).collect(),
+                    })
                 }
                 segment::types::PayloadSelector::Exclude(s) => {
-                    SelectorOptions::Exclude(PayloadExcludeSelector { fields: s.exclude })
+                    SelectorOptions::Exclude(PayloadExcludeSelector {
+                        fields: s.exclude.iter().map(|f| f.to_string()).collect(),
+                    })
                 }
             },
         };
@@ -863,10 +882,10 @@ impl TryFrom<Condition> for segment::types::Condition {
                     Ok(segment::types::Condition::Filter(filter.try_into()?))
                 }
                 ConditionOneOf::IsEmpty(is_empty) => {
-                    Ok(segment::types::Condition::IsEmpty(is_empty.into()))
+                    Ok(segment::types::Condition::IsEmpty(is_empty.try_into()?))
                 }
                 ConditionOneOf::IsNull(is_null) => {
-                    Ok(segment::types::Condition::IsNull(is_null.into()))
+                    Ok(segment::types::Condition::IsNull(is_null.try_into()?))
                 }
                 ConditionOneOf::Nested(nested) => Ok(segment::types::Condition::Nested(
                     segment::types::NestedCondition::new(nested.try_into()?),
@@ -907,7 +926,7 @@ impl TryFrom<NestedCondition> for segment::types::Nested {
                 "Nested condition must have a filter",
             )),
             Some(filter) => Ok(Self {
-                key: value.key,
+                key: json_path_from_proto(&value.key)?,
                 filter: filter.try_into()?,
             }),
         }
@@ -917,40 +936,48 @@ impl TryFrom<NestedCondition> for segment::types::Nested {
 impl From<segment::types::Nested> for NestedCondition {
     fn from(value: segment::types::Nested) -> Self {
         Self {
-            key: value.key,
+            key: value.key.to_string(),
             filter: Some(value.filter.into()),
         }
     }
 }
 
-impl From<IsEmptyCondition> for segment::types::IsEmptyCondition {
-    fn from(value: IsEmptyCondition) -> Self {
-        segment::types::IsEmptyCondition {
-            is_empty: segment::types::PayloadField { key: value.key },
-        }
+impl TryFrom<IsEmptyCondition> for segment::types::IsEmptyCondition {
+    type Error = Status;
+
+    fn try_from(value: IsEmptyCondition) -> Result<Self, Status> {
+        Ok(segment::types::IsEmptyCondition {
+            is_empty: segment::types::PayloadField {
+                key: json_path_from_proto(&value.key)?,
+            },
+        })
     }
 }
 
 impl From<segment::types::IsEmptyCondition> for IsEmptyCondition {
     fn from(value: segment::types::IsEmptyCondition) -> Self {
         Self {
-            key: value.is_empty.key,
+            key: value.is_empty.key.to_string(),
         }
     }
 }
 
-impl From<IsNullCondition> for segment::types::IsNullCondition {
-    fn from(value: IsNullCondition) -> Self {
-        segment::types::IsNullCondition {
-            is_null: segment::types::PayloadField { key: value.key },
-        }
+impl TryFrom<IsNullCondition> for segment::types::IsNullCondition {
+    type Error = Status;
+
+    fn try_from(value: IsNullCondition) -> Result<Self, Status> {
+        Ok(segment::types::IsNullCondition {
+            is_null: segment::types::PayloadField {
+                key: json_path_from_proto(&value.key)?,
+            },
+        })
     }
 }
 
 impl From<segment::types::IsNullCondition> for IsNullCondition {
     fn from(value: segment::types::IsNullCondition) -> Self {
         Self {
-            key: value.is_null.key,
+            key: value.is_null.key.to_string(),
         }
     }
 }
@@ -1001,7 +1028,7 @@ impl TryFrom<FieldCondition> for segment::types::FieldCondition {
             .transpose()?;
 
         Ok(Self {
-            key,
+            key: json_path_from_proto(&key)?,
             r#match: r#match.map_or_else(|| Ok(None), |m| m.try_into().map(Some))?,
             range: range.or(datetime_range),
             geo_bounding_box,
@@ -1031,7 +1058,7 @@ impl From<segment::types::FieldCondition> for FieldCondition {
         };
 
         Self {
-            key,
+            key: key.to_string(),
             r#match: r#match.map(Into::into),
             range,
             geo_bounding_box: geo_bounding_box.map(Into::into),
@@ -1308,7 +1335,7 @@ impl From<segment::data_types::order_by::Direction> for Direction {
 impl From<segment::data_types::order_by::OrderBy> for OrderBy {
     fn from(value: segment::data_types::order_by::OrderBy) -> Self {
         Self {
-            key: value.key,
+            key: value.key.to_string(),
             direction: value.direction.map(|d| Direction::from(d) as i32),
             start_from: value.start_from.map(|start_from| start_from.into()),
         }

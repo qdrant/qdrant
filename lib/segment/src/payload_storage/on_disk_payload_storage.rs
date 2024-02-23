@@ -8,8 +8,9 @@ use serde_json::Value;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, DB_PAYLOAD_CF};
 use crate::common::Flusher;
+use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorage;
-use crate::types::{Payload, PayloadKeyTypeRef};
+use crate::types::Payload;
 
 /// On-disk implementation of `PayloadStorage`.
 /// Persists all changes to disk using `store`, does not keep payload in memory
@@ -85,7 +86,7 @@ impl PayloadStorage for OnDiskPayloadStorage {
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
-        key: &str,
+        key: &JsonPath,
     ) -> OperationResult<()> {
         let stored_payload = self.read_payload(point_id)?;
         match stored_payload {
@@ -109,11 +110,7 @@ impl PayloadStorage for OnDiskPayloadStorage {
         }
     }
 
-    fn delete(
-        &mut self,
-        point_id: PointOffsetType,
-        key: PayloadKeyTypeRef,
-    ) -> OperationResult<Vec<Value>> {
+    fn delete(&mut self, point_id: PointOffsetType, key: &JsonPath) -> OperationResult<Vec<Value>> {
         let stored_payload = self.read_payload(point_id)?;
 
         match stored_payload {

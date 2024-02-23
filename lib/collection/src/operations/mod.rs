@@ -15,6 +15,7 @@ pub mod vector_ops;
 
 use std::collections::HashMap;
 
+use segment::json_path::JsonPath;
 use segment::types::{ExtendedPointId, PayloadFieldSchema};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
@@ -22,10 +23,10 @@ use validator::Validate;
 use crate::hash_ring::HashRing;
 use crate::shards::shard::{PeerId, ShardId};
 
-#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize, Validate)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct CreateIndex {
-    pub field_name: String,
+    pub field_name: JsonPath,
     pub field_schema: Option<PayloadFieldSchema>,
 }
 
@@ -35,7 +36,7 @@ pub enum FieldIndexOperations {
     /// Create index for payload field
     CreateIndex(CreateIndex),
     /// Delete index for the field
-    DeleteIndex(String),
+    DeleteIndex(JsonPath),
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
@@ -439,11 +440,11 @@ mod tests {
 
         fn arbitrary_with(_: Self::Parameters) -> Self::Strategy {
             let create = Self::CreateIndex(CreateIndex {
-                field_name: String::new(),
+                field_name: "field_name".parse().unwrap(),
                 field_schema: None,
             });
 
-            let delete = Self::DeleteIndex(String::new());
+            let delete = Self::DeleteIndex("field_name".parse().unwrap());
 
             prop_oneof![Just(create), Just(delete),].boxed()
         }
