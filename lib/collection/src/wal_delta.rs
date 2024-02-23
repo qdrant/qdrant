@@ -213,14 +213,16 @@ fn resolve_wal_delta(
     // Scroll back over the WAL and find a record that covered all clocks
     // Drain satisfied clocks from the recovery point until we have nothing left
     log::trace!("Resolving WAL delta for: {recovery_point}");
+
     let delta_from = local_wal
         .lock()
         .read_from_last(true)
         // We cannot resolve a delta if we have untagged records
-        .take_while(|(_, update)| update.clock_tag.is_some())
+        .take_while(|(_, op)| op.clock_tag.is_some())
         // Keep scrolling until we have no clocks left
-        .find(|(_, update)| {
-            recovery_point.remove_clock_if_newer_than_or_equal_to_tag(update.clock_tag.unwrap());
+        .filter_map(|(op_num, op)| Some((op_num, op.clock_tag?)))
+        .find(|&(_, clock_tag)| {
+            recovery_point.remove_clock_if_newer_than_or_equal_to_tag(clock_tag);
             recovery_point.is_empty()
         })
         .map(|(op_num, _)| op_num);
