@@ -26,6 +26,7 @@ impl JsonPathInterface for JsonPathString {
         #[allow(deprecated)]
         crate::common::utils::get_value_from_json_map(&self.0, json_map)
     }
+
     fn value_set<'a>(
         path: Option<&Self>,
         dest: &'a mut serde_json::Map<String, Value>,
@@ -38,10 +39,12 @@ impl JsonPathInterface for JsonPathString {
             src,
         )
     }
+
     fn value_remove(&self, json_map: &mut serde_json::Map<String, Value>) -> MultiValue<Value> {
         #[allow(deprecated)]
         crate::common::utils::remove_value_from_json_map(&self.0, json_map)
     }
+
     fn value_filter(
         json_map: &serde_json::Map<String, Value>,
         filter: impl Fn(&Self, &Value) -> bool,
@@ -49,6 +52,7 @@ impl JsonPathInterface for JsonPathString {
         #[allow(deprecated)]
         crate::common::utils::filter_json_values(json_map, filter)
     }
+
     fn validate_not_empty(&self) -> Result<(), ValidationError> {
         if self.0.is_empty() {
             let mut err = ValidationError::new("length");

@@ -20,6 +20,7 @@ impl JsonPathInterface for JsonPathV2 {
     ) -> MultiValue<&'a Value> {
         unimplemented!()
     }
+
     fn value_set<'a>(
         _path: Option<&Self>,
         _dest: &'a mut serde_json::Map<String, Value>,
@@ -27,33 +28,42 @@ impl JsonPathInterface for JsonPathV2 {
     ) {
         unimplemented!()
     }
+
     fn value_remove(&self, _json_map: &mut serde_json::Map<String, Value>) -> MultiValue<Value> {
         unimplemented!()
     }
+
     fn value_filter(
         _json_map: &serde_json::Map<String, Value>,
         _filter: impl Fn(&Self, &Value) -> bool,
     ) -> serde_json::Map<String, Value> {
         unimplemented!()
     }
+
     fn validate_not_empty(&self) -> Result<(), ValidationError> {
         Ok(())
     }
+
     fn strip_wildcard_suffix(&self) -> Self {
         unimplemented!()
     }
+
     fn strip_prefix(&self, _prefix: &Self) -> Option<Self> {
         unimplemented!()
     }
+
     fn extend(&self, _other: &Self) -> Self {
         unimplemented!()
     }
+
     fn array_key(&self) -> Self {
         unimplemented!()
     }
+
     fn check_include_pattern(&self, _pattern: &Self) -> bool {
         unimplemented!()
     }
+
     fn check_exclude_pattern(&self, _pattern: &Self) -> bool {
         unimplemented!()
     }
