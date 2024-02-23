@@ -130,15 +130,13 @@ impl LocalShard {
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         optimizer_cpu_budget: CpuBudget,
         shard_path: &Path,
-        highest_clock_map: ClockMap,
-        cutoff_clock_map: ClockMap,
+        clocks: LocalShardClocks,
         update_runtime: Handle,
     ) -> Self {
         let segment_holder = Arc::new(RwLock::new(segment_holder));
         let config = collection_config.read().await;
         let locked_wal = Arc::new(ParkingMutex::new(wal));
         let optimizers_log = Arc::new(ParkingMutex::new(Default::default()));
-        let clocks = LocalShardClocks::new_at(highest_clock_map, cutoff_clock_map, shard_path);
 
         let mut update_handler = UpdateHandler::new(
             shared_storage_config.clone(),
@@ -151,6 +149,7 @@ impl LocalShard {
             config.optimizer_config.flush_interval_sec,
             config.optimizer_config.max_optimization_threads,
             clocks.clone(),
+            shard_path.into(),
         );
 
         let (update_sender, update_receiver) =
@@ -165,7 +164,11 @@ impl LocalShard {
             segments: segment_holder,
             collection_config,
             shared_storage_config,
-            wal: RecoverableWal::new(locked_wal, clocks.highest_clocks, clocks.cutoff_clocks),
+            wal: RecoverableWal::new(
+                locked_wal,
+                clocks.newest_observed_clocks,
+                clocks.oldest_resolvable_clocks,
+            ),
             update_handler: Arc::new(Mutex::new(update_handler)),
             update_sender: ArcSwap::from_pointee(update_sender),
             update_tracker,
@@ -194,8 +197,6 @@ impl LocalShard {
 
         let wal_path = Self::wal_path(shard_path);
         let segments_path = Self::segments_path(shard_path);
-        let highest_clock_map_path = LocalShardClocks::highest_clock_map_path(shard_path);
-        let cutoff_clock_map_path = LocalShardClocks::cutoff_clock_map_path(shard_path);
 
         let wal: SerdeWal<OperationWithClockTag> = SerdeWal::new(
             wal_path.to_str().unwrap(),
@@ -286,8 +287,7 @@ impl LocalShard {
 
         drop(collection_config_read); // release `shared_config` from borrow checker
 
-        let highest_clock_map = ClockMap::load_or_default(&highest_clock_map_path)?;
-        let cutoff_clock_map = ClockMap::load_or_default(&cutoff_clock_map_path)?;
+        let clocks = LocalShardClocks::load(shard_path)?;
 
         let collection = LocalShard::new(
             segment_holder,
@@ -297,8 +297,7 @@ impl LocalShard {
             optimizers,
             optimizer_cpu_budget,
             shard_path,
-            highest_clock_map,
-            cutoff_clock_map,
+            clocks,
             update_runtime,
         )
         .await;
@@ -458,8 +457,7 @@ impl LocalShard {
             optimizers,
             optimizer_cpu_budget,
             shard_path,
-            ClockMap::default(),
-            ClockMap::default(),
+            LocalShardClocks::default(),
             update_runtime,
         )
         .await;
@@ -479,7 +477,7 @@ impl LocalShard {
 
     /// Loads latest collection operations from WAL
     pub async fn load_from_wal(&self, collection_id: CollectionId) -> CollectionResult<()> {
-        let mut highest_clocks = self.wal.highest_clocks.lock().await;
+        let mut highest_clocks = self.wal.newest_observed_clocks.lock().await;
         let wal = self.wal.wal.lock();
         let bar = ProgressBar::new(wal.len(false));
 
@@ -934,85 +932,105 @@ impl Drop for LocalShard {
 /// Convenience struct for combining clock maps belonging to a shard
 ///
 /// Holds a clock map for tracking the highest clocks and the cutoff clocks.
-#[derive(Clone)]
+#[derive(Clone, Debug, Default)]
 pub struct LocalShardClocks {
-    highest_clocks: Arc<Mutex<ClockMap>>,
-    cutoff_clocks: Arc<Mutex<ClockMap>>,
-    highest_clocks_path: PathBuf,
-    cutoff_clocks_path: PathBuf,
+    newest_observed_clocks: Arc<Mutex<ClockMap>>,
+    oldest_resolvable_clocks: Arc<Mutex<ClockMap>>,
 }
 
 impl LocalShardClocks {
-    pub fn new_at(highest_clocks: ClockMap, cutoff_clocks: ClockMap, shard_path: &Path) -> Self {
+    fn new(newest_observed_clocks: ClockMap, oldest_resolvable_clocks: ClockMap) -> Self {
         Self {
-            highest_clocks: Arc::new(Mutex::new(highest_clocks)),
-            cutoff_clocks: Arc::new(Mutex::new(cutoff_clocks)),
-            highest_clocks_path: Self::highest_clock_map_path(shard_path),
-            cutoff_clocks_path: Self::cutoff_clock_map_path(shard_path),
+            newest_observed_clocks: Arc::new(Mutex::new(newest_observed_clocks)),
+            oldest_resolvable_clocks: Arc::new(Mutex::new(oldest_resolvable_clocks)),
         }
     }
 
+    // Load clock maps from disk
+    pub fn load(shard_path: &Path) -> CollectionResult<Self> {
+        let newest_observed_clocks =
+            ClockMap::load_or_default(&Self::newest_observed_clock_map_path(shard_path))?;
+
+        let oldest_resolvable_clocks =
+            ClockMap::load_or_default(&Self::oldest_resolvable_clock_map_path(shard_path))?;
+
+        Ok(Self::new(newest_observed_clocks, oldest_resolvable_clocks))
+    }
+
     /// Persist clock maps to disk
-    pub async fn store(&self) -> CollectionResult<()> {
-        self.cutoff_clocks
+    pub async fn store(&self, shard_path: &Path) -> CollectionResult<()> {
+        // TODO: Is order important here!? If it is, it should be documented with a comment!
+
+        self.oldest_resolvable_clocks
             .lock()
             .await
-            .store(&self.cutoff_clocks_path)?;
-        self.highest_clocks
+            .store(&Self::oldest_resolvable_clock_map_path(shard_path))?;
+
+        self.newest_observed_clocks
             .lock()
             .await
-            .store(&self.highest_clocks_path)?;
+            .store(&Self::newest_observed_clock_map_path(shard_path))?;
+
         Ok(())
-    }
-
-    pub fn highest_clock_map_path(shard_path: &Path) -> PathBuf {
-        shard_path.join("clock_map_highest.json")
-    }
-
-    pub fn cutoff_clock_map_path(shard_path: &Path) -> PathBuf {
-        shard_path.join("clock_map_cutoff.json")
     }
 
     /// Copy clock data on disk from one shard path to another.
     pub async fn copy_data(from: &Path, to: &Path) -> CollectionResult<()> {
-        let highest_path_from = Self::highest_clock_map_path(from);
-        let cutoff_clock_map_path = Self::cutoff_clock_map_path(from);
-        if highest_path_from.exists() {
-            let highest_path_to = Self::highest_clock_map_path(to);
-            copy(highest_path_from, highest_path_to).await?;
+        let newest_observed_from = Self::newest_observed_clock_map_path(from);
+        let oldest_resolvable_from = Self::oldest_resolvable_clock_map_path(from);
+
+        if newest_observed_from.exists() {
+            let newest_observed_to = Self::newest_observed_clock_map_path(to);
+            copy(newest_observed_from, newest_observed_to).await?;
         }
-        if cutoff_clock_map_path.exists() {
-            let cutoff_path_to = Self::cutoff_clock_map_path(to);
-            copy(cutoff_clock_map_path, cutoff_path_to).await?;
+
+        if oldest_resolvable_from.exists() {
+            let oldest_resolvable_to = Self::oldest_resolvable_clock_map_path(to);
+            copy(oldest_resolvable_from, oldest_resolvable_to).await?;
         }
+
         Ok(())
     }
 
     /// Move clock data on disk from one shard path to another.
     pub async fn move_data(from: &Path, to: &Path) -> CollectionResult<()> {
-        let highest_path_from = Self::highest_clock_map_path(from);
-        let cutoff_path_from = Self::cutoff_clock_map_path(from);
-        if highest_path_from.exists() {
-            let highest_path_to = Self::highest_clock_map_path(to);
-            move_file(highest_path_from, highest_path_to).await?;
+        let newest_observed_from = Self::newest_observed_clock_map_path(from);
+        let oldest_resolvable_from = Self::oldest_resolvable_clock_map_path(from);
+
+        if newest_observed_from.exists() {
+            let newest_observed_to = Self::newest_observed_clock_map_path(to);
+            move_file(newest_observed_from, newest_observed_to).await?;
         }
-        if cutoff_path_from.exists() {
-            let cutoff_path_to = Self::cutoff_clock_map_path(to);
-            move_file(cutoff_path_from, cutoff_path_to).await?;
+
+        if oldest_resolvable_from.exists() {
+            let oldest_resolvable_to = Self::oldest_resolvable_clock_map_path(to);
+            move_file(oldest_resolvable_from, oldest_resolvable_to).await?;
         }
+
         Ok(())
     }
 
     /// Delete clock data from disk at the given shard path.
     pub async fn delete_data(shard_path: &Path) -> CollectionResult<()> {
-        let highest_path = Self::highest_clock_map_path(shard_path);
-        let cutoff_path = Self::cutoff_clock_map_path(shard_path);
-        if highest_path.exists() {
-            remove_file(highest_path).await?;
+        let newest_observed_path = Self::newest_observed_clock_map_path(shard_path);
+        let oldest_resolvable_path = Self::oldest_resolvable_clock_map_path(shard_path);
+
+        if newest_observed_path.exists() {
+            remove_file(newest_observed_path).await?;
         }
-        if cutoff_path.exists() {
-            remove_file(cutoff_path).await?;
+
+        if oldest_resolvable_path.exists() {
+            remove_file(oldest_resolvable_path).await?;
         }
+
         Ok(())
+    }
+
+    fn newest_observed_clock_map_path(shard_path: &Path) -> PathBuf {
+        shard_path.join("newest_observed_clocks.json")
+    }
+
+    fn oldest_resolvable_clock_map_path(shard_path: &Path) -> PathBuf {
+        shard_path.join("oldest_resolvable_clocks.json")
     }
 }

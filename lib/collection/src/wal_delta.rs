@@ -14,17 +14,20 @@ pub type LockedWal = Arc<ParkingMutex<SerdeWal<OperationWithClockTag>>>;
 /// A WAL that is recoverable, with operations having clock tags and a corresponding clock map.
 pub struct RecoverableWal {
     pub(super) wal: LockedWal,
+
     /// Map of all highest seen clocks for each peer and clock ID.
-    pub(super) highest_clocks: Arc<Mutex<ClockMap>>,
+    pub(super) newest_observed_clocks: Arc<Mutex<ClockMap>>,
+
     /// Map of all clocks and ticks that are cut off.
     ///
     /// Clock ticks equal to those in this map are still recoverable, while clock ticks below those
     /// in this map are not.
     ///
     /// This means two things:
-    /// - this WAL has at least all these clock versions (same as `highest_clocks`)
+    /// - this WAL has at least all these clock versions
+    ///   - (so if we advance these clocks, we have to advance `newest_observed_clocks` as well)
     /// - this WAL cannot resolve any delta below any of these clocks
-    pub(super) cutoff_clocks: Arc<Mutex<ClockMap>>,
+    pub(super) oldest_resolvable_clocks: Arc<Mutex<ClockMap>>,
 }
 
 impl RecoverableWal {
@@ -35,8 +38,8 @@ impl RecoverableWal {
     ) -> Self {
         Self {
             wal,
-            highest_clocks,
-            cutoff_clocks,
+            newest_observed_clocks: highest_clocks,
+            oldest_resolvable_clocks: cutoff_clocks,
         }
     }
 
@@ -58,7 +61,7 @@ impl RecoverableWal {
 
             // TODO: do not manually advance here!
             let _operation_accepted = self
-                .highest_clocks
+                .newest_observed_clocks
                 .lock()
                 .await
                 .advance_clock_and_correct_tag(clock_tag);
@@ -85,29 +88,33 @@ impl RecoverableWal {
     /// It updates the highest seen clocks alongside with it.
     pub async fn update_cutoff(&self, cutoff: &RecoveryPoint) {
         // Lock highest and cutoff maps separately to avoid deadlocks
+
         {
-            let mut highest_clocks = self.highest_clocks.lock().await;
+            let mut newest_observed_clocks = self.newest_observed_clocks.lock().await;
             for clock_tag in cutoff.iter_as_clock_tags() {
-                highest_clocks.advance_clock(clock_tag);
+                newest_observed_clocks.advance_clock(clock_tag);
             }
         }
 
         {
-            let mut cutoff_clocks = self.cutoff_clocks.lock().await;
+            let mut oldest_resolvable_clocks = self.oldest_resolvable_clocks.lock().await;
             for clock_tag in cutoff.iter_as_clock_tags() {
-                cutoff_clocks.advance_clock(clock_tag);
+                oldest_resolvable_clocks.advance_clock(clock_tag);
             }
         }
     }
 
     /// Get a recovery point for this WAL.
     pub async fn recovery_point(&self) -> RecoveryPoint {
-        self.highest_clocks.lock().await.to_recovery_point()
+        self.newest_observed_clocks.lock().await.to_recovery_point()
     }
 
     #[cfg(test)]
     pub async fn cutoff_point(&self) -> RecoveryPoint {
-        self.cutoff_clocks.lock().await.to_recovery_point()
+        self.oldest_resolvable_clocks
+            .lock()
+            .await
+            .to_recovery_point()
     }
 
     pub async fn resolve_wal_delta(
@@ -118,7 +125,10 @@ impl RecoverableWal {
             recovery_point,
             self.wal.clone(),
             self.recovery_point().await,
-            self.cutoff_clocks.lock().await.to_recovery_point(),
+            self.oldest_resolvable_clocks
+                .lock()
+                .await
+                .to_recovery_point(),
         )
     }
 
@@ -1429,7 +1439,7 @@ mod tests {
     async fn assert_wal_ordering_property(wal: &RecoverableWal) {
         // Grab list of clock tags from WAL records, skip non-existent or below cutoff tags
         let clock_tags = {
-            let cutoff = wal.cutoff_clocks.lock().await;
+            let cutoff = wal.oldest_resolvable_clocks.lock().await;
             wal.wal
                 .lock()
                 .read(0)
