@@ -43,6 +43,8 @@ impl RecoverableWal {
         }
     }
 
+    // TODO: More meaningful method name and documentation
+    //
     /// Write a record to the WAL, guarantee durability.
     ///
     /// On success, this returns the WAL record number of the written operation along with a WAL
@@ -60,6 +62,8 @@ impl RecoverableWal {
             // current clock tracked by the clock map
 
             // TODO: do not manually advance here!
+            //
+            // TODO: What does the above `TODO` mean? "Make sure to call `advance_clock_and_correct_tag`, but not `advance_clock`?"
             let _operation_accepted = self
                 .newest_observed_clocks
                 .lock()
@@ -315,7 +319,7 @@ mod tests {
         let bare_operation = mock_operation(1);
         let operation = OperationWithClockTag::new(bare_operation, Some(clock_tag));
 
-        // Write operations to peer A, B and C, and advance clocks
+        // Write operation to peer A, B and C, and advance clocks
         let mut a_operation = operation.clone();
         let mut b_operation = operation.clone();
         let mut c_operation = operation.clone();
@@ -334,7 +338,7 @@ mod tests {
         let bare_operation = mock_operation(2);
         let operation = OperationWithClockTag::new(bare_operation, Some(clock_tag));
 
-        // Write operations to peer A and B, not C, and advance clocks
+        // Write operation to peer A and B, not C, and advance clocks
         let mut a_operation = operation.clone();
         let mut b_operation = operation.clone();
         let (_, _) = a_wal.lock_and_write(&mut a_operation).await.unwrap();
@@ -400,7 +404,7 @@ mod tests {
         // Create clock set for peer A
         let mut a_clock_set = ClockSet::new();
 
-        // Create N operation on peer A
+        // Create N operations on peer A
         for i in 0..N {
             let mut a_clock_0 = a_clock_set.get_clock();
             let clock_tick = a_clock_0.tick_once();
@@ -478,7 +482,7 @@ mod tests {
         assert_wal_ordering_property(&c_wal).await;
     }
 
-    /// Test WAL delta resolution with a many intermixed operations on node C. Intermixed as in,
+    /// Test WAL delta resolution with many intermixed operations on node C. Intermixed as in,
     /// from multiple nodes.
     ///
     /// See: <https://www.notion.so/qdrant/Testing-suite-4e28a978ec05476080ff26ed07757def?pvs=4>
@@ -496,7 +500,7 @@ mod tests {
         let mut a_clock_set = ClockSet::new();
         let mut b_clock_set = ClockSet::new();
 
-        // Create N operation on peer A
+        // Create N operations on peer A
         for i in 0..N {
             let mut a_clock_0 = a_clock_set.get_clock();
             let clock_tick = a_clock_0.tick_once();
@@ -516,7 +520,7 @@ mod tests {
             a_clock_0.advance_to(c_operation.clock_tag.unwrap().clock_tick);
         }
 
-        // Create M operations on peer A, which are missed on node C
+        // Create M operations on peers A and B, which are missed on node C
         for i in N..N + M {
             let is_node_a = i % 3 == 0;
             let peer_id = if is_node_a { 1 } else { 2 };
@@ -602,7 +606,7 @@ mod tests {
         let bare_operation = mock_operation(1);
         let operation = OperationWithClockTag::new(bare_operation, Some(clock_tag));
 
-        // Write operations to peer A, B and C, and advance clocks
+        // Write operation to peer A, B and C, and advance clocks
         let mut a_operation = operation.clone();
         let mut b_operation = operation.clone();
         let mut c_operation = operation.clone();
@@ -614,7 +618,7 @@ mod tests {
         a_clock_0.advance_to(c_operation.clock_tag.unwrap().clock_tick);
         drop(a_clock_0);
 
-        // Create an operation on node A and B
+        // Create operations on nodes A and B
         let mut a_clock_0 = a_clock_set.get_clock();
         let mut b_clock_0 = b_clock_set.get_clock();
         let a_clock_tick = a_clock_0.tick_once();
@@ -626,7 +630,7 @@ mod tests {
         let operation_1 = OperationWithClockTag::new(bare_operation_1, Some(a_clock_tag));
         let operation_2 = OperationWithClockTag::new(bare_operation_2, Some(b_clock_tag));
 
-        // Write operations to node A and B in different order, but not on node C
+        // Write operations to nodes A and B in different order, but not to node C
         let mut a_operation_1 = operation_1.clone();
         let mut a_operation_2 = operation_2.clone();
         let mut b_operation_1 = operation_1.clone();
