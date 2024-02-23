@@ -28,7 +28,7 @@ pub struct RecoverableWal {
 }
 
 impl RecoverableWal {
-    pub fn from(
+    pub fn new(
         wal: LockedWal,
         highest_clocks: Arc<Mutex<ClockMap>>,
         cutoff_clocks: Arc<Mutex<ClockMap>>,
@@ -264,7 +264,7 @@ mod tests {
         };
         let wal = SerdeWal::new(dir.path().to_str().unwrap(), options).unwrap();
         (
-            RecoverableWal::from(
+            RecoverableWal::new(
                 Arc::new(ParkingMutex::new(wal)),
                 Arc::new(Mutex::new(ClockMap::default())),
                 Arc::new(Mutex::new(ClockMap::default())),

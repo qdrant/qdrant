@@ -165,7 +165,7 @@ impl LocalShard {
             segments: segment_holder,
             collection_config,
             shared_storage_config,
-            wal: RecoverableWal::from(locked_wal, clocks.highest_clocks, clocks.cutoff_clocks),
+            wal: RecoverableWal::new(locked_wal, clocks.highest_clocks, clocks.cutoff_clocks),
             update_handler: Arc::new(Mutex::new(update_handler)),
             update_sender: ArcSwap::from_pointee(update_sender),
             update_tracker,
