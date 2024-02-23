@@ -5,7 +5,7 @@ use parking_lot::{Mutex as ParkingMutex, MutexGuard as ParkingMutexGuard};
 use thiserror::Error;
 use tokio::sync::Mutex;
 
-use crate::operations::OperationWithClockTag;
+use crate::operations::{ClockTag, OperationWithClockTag};
 use crate::shards::local_shard::clock_map::{ClockMap, RecoveryPoint};
 use crate::wal::SerdeWal;
 
@@ -126,8 +126,11 @@ impl RecoverableWal {
         recovery_point: RecoveryPoint,
     ) -> Result<Option<u64>, WalDeltaError> {
         resolve_wal_delta(
+            self.wal
+                .lock()
+                .read_all(true)
+                .map(|(op_num, op)| (op_num, op.clock_tag)),
             recovery_point,
-            self.wal.clone(),
             self.recovery_point().await,
             self.oldest_resolvable_clocks
                 .lock()
@@ -168,8 +171,8 @@ impl RecoverableWal {
 /// If `None` - the remote WAL is already equal, and we don't have to send any records.
 /// If `Err` - no delta can be resolved.
 fn resolve_wal_delta(
+    operations: impl DoubleEndedIterator<Item = (u64, Option<ClockTag>)>,
     mut recovery_point: RecoveryPoint,
-    local_wal: LockedWal,
     mut newest_observed_clocks: RecoveryPoint,
     mut oldest_resolvable_clocks: RecoveryPoint,
 ) -> Result<Option<u64>, WalDeltaError> {
@@ -218,14 +221,12 @@ fn resolve_wal_delta(
     // Drain satisfied clocks from the recovery point until we have nothing left
     log::trace!("Resolving WAL delta for: {recovery_point}");
 
-    let delta_from = local_wal
-        .lock()
-        .read_all(true)
+    let delta_from = operations
         .rev()
         // We cannot resolve a delta if we have untagged records
-        .take_while(|(_, op)| op.clock_tag.is_some())
+        .take_while(|(_, clock_tag)| clock_tag.is_some())
         // Keep scrolling until we have no clocks left
-        .filter_map(|(op_num, op)| Some((op_num, op.clock_tag?)))
+        .filter_map(|(op_num, clock_tag)| Some((op_num, clock_tag?)))
         .find(|&(_, clock_tag)| {
             recovery_point.remove_clock_if_newer_than_or_equal_to_tag(clock_tag);
             recovery_point.is_empty()
@@ -1337,8 +1338,11 @@ mod tests {
         let newest_observed_clocks = RecoveryPoint::default();
 
         let resolve_result = resolve_wal_delta(
+            wal.wal
+                .lock()
+                .read_all(true)
+                .map(|(op_num, op)| (op_num, op.clock_tag)),
             recovery_point,
-            wal.wal,
             newest_observed_clocks,
             RecoveryPoint::default(),
         );
@@ -1361,8 +1365,11 @@ mod tests {
         newest_observed_clocks.insert(1, 1, 8);
 
         let resolve_result = resolve_wal_delta(
+            wal.wal
+                .lock()
+                .read_all(true)
+                .map(|(op_num, op)| (op_num, op.clock_tag)),
             recovery_point,
-            wal.wal,
             newest_observed_clocks,
             RecoveryPoint::default(),
         );
@@ -1384,8 +1391,11 @@ mod tests {
         newest_observed_clocks.insert(1, 1, 8);
 
         let resolve_result = resolve_wal_delta(
+            wal.wal
+                .lock()
+                .read_all(true)
+                .map(|(op_num, op)| (op_num, op.clock_tag)),
             recovery_point,
-            wal.wal,
             newest_observed_clocks,
             RecoveryPoint::default(),
         );
@@ -1412,8 +1422,11 @@ mod tests {
         oldest_resolvable_clocks.insert(1, 0, 16);
 
         let resolve_result = resolve_wal_delta(
+            wal.wal
+                .lock()
+                .read_all(true)
+                .map(|(op_num, op)| (op_num, op.clock_tag)),
             recovery_point,
-            wal.wal,
             newest_observed_clocks,
             oldest_resolvable_clocks,
         );
@@ -1435,8 +1448,11 @@ mod tests {
         newest_observed_clocks.insert(1, 1, 12);
 
         let resolve_result = resolve_wal_delta(
+            wal.wal
+                .lock()
+                .read_all(true)
+                .map(|(op_num, op)| (op_num, op.clock_tag)),
             recovery_point,
-            wal.wal,
             newest_observed_clocks,
             RecoveryPoint::default(),
         );
