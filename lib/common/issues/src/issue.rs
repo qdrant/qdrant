@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::solution::Solution;
 
@@ -16,7 +16,7 @@ pub trait Issue {
 }
 
 /// An issue that can be identified by its code
-#[derive(Debug, Serialize, Deserialize, JsonSchema, Clone)]
+#[derive(Debug, Serialize, JsonSchema, Clone)]
 pub struct IssueRecord {
     pub code: CodeType,
     pub description: String,

@@ -7,7 +7,7 @@ use is_sorted::IsSorted;
 use itertools::Itertools as _;
 use parking_lot::Mutex;
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use smallvec::SmallVec;
 
 use crate::common::anonymize::Anonymize;
@@ -15,7 +15,7 @@ use crate::common::anonymize::Anonymize;
 const AVG_DATASET_LEN: usize = 128;
 const SLIDING_WINDOW_LEN: usize = 8;
 
-#[derive(Serialize, Deserialize, Clone, Default, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Default, Debug, JsonSchema)]
 pub struct OperationDurationStatistics {
     pub count: usize,
 
@@ -25,25 +25,20 @@ pub struct OperationDurationStatistics {
 
     /// The average time taken by 128 latest operations, calculated as a weighted mean.
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
     pub avg_duration_micros: Option<f32>,
 
     /// The minimum duration of the operations across all the measurements.
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
     pub min_duration_micros: Option<f32>,
 
     /// The maximum duration of the operations across all the measurements.
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
     pub max_duration_micros: Option<f32>,
 
     /// The total duration of all operations in microseconds.
-    #[serde(default)]
     pub total_duration_micros: u64,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
     pub last_responded: Option<DateTime<Utc>>,
 
     /// The cumulative histogram of the operation durations. Consists of a list of pairs of

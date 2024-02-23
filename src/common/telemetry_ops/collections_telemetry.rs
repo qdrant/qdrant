@@ -4,24 +4,24 @@ use collection::telemetry::CollectionTelemetry;
 use common::types::{DetailsLevel, TelemetryDetail};
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use storage::content_manager::toc::TableOfContent;
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema)]
 pub struct CollectionsAggregatedTelemetry {
     pub vectors: usize,
     pub optimizers_status: OptimizersStatus,
     pub params: CollectionParams,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema)]
 #[serde(untagged)]
 pub enum CollectionTelemetryEnum {
     Full(CollectionTelemetry),
     Aggregated(CollectionsAggregatedTelemetry),
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema)]
 pub struct CollectionsTelemetry {
     pub number_of_collections: usize,
     #[serde(skip_serializing_if = "Option::is_none")]

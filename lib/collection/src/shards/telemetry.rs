@@ -4,14 +4,14 @@ use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::common::operation_time_statistics::OperationDurationStatistics;
 use segment::telemetry::SegmentTelemetry;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::collection_manager::optimizers::TrackerTelemetry;
 use crate::operations::types::OptimizersStatus;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema)]
 pub struct ReplicaSetTelemetry {
     pub id: ShardId,
     pub local: Option<LocalShardTelemetry>,
@@ -19,7 +19,7 @@ pub struct ReplicaSetTelemetry {
     pub replicate_states: HashMap<PeerId, ReplicaState>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema)]
 pub struct RemoteShardTelemetry {
     pub shard_id: ShardId,
     pub peer_id: Option<PeerId>,
@@ -27,14 +27,14 @@ pub struct RemoteShardTelemetry {
     pub updates: OperationDurationStatistics,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema)]
 pub struct LocalShardTelemetry {
     pub variant_name: Option<String>,
     pub segments: Vec<SegmentTelemetry>,
     pub optimizations: OptimizerTelemetry,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, Default)]
+#[derive(Serialize, Clone, Debug, JsonSchema, Default)]
 pub struct OptimizerTelemetry {
     pub status: OptimizersStatus,
     pub optimizations: OperationDurationStatistics,

@@ -9411,7 +9411,8 @@
       "OperationDurationStatistics": {
         "type": "object",
         "required": [
-          "count"
+          "count",
+          "total_duration_micros"
         ],
         "properties": {
           "count": {
@@ -9444,7 +9445,6 @@
           },
           "total_duration_micros": {
             "description": "The total duration of all operations in microseconds.",
-            "default": 0,
             "type": "integer",
             "format": "uint64",
             "minimum": 0

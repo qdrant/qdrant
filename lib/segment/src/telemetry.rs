@@ -1,5 +1,5 @@
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::common::anonymize::Anonymize;
 use crate::common::operation_time_statistics::OperationDurationStatistics;
@@ -8,12 +8,12 @@ use crate::types::{
     VectorDataInfo,
 };
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema)]
 pub struct VectorIndexesTelemetry {
     vector_index_searches: Vec<VectorIndexSearchesTelemetry>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema)]
 pub struct SegmentTelemetry {
     pub info: SegmentInfo,
     pub config: SegmentConfig,
@@ -21,14 +21,13 @@ pub struct SegmentTelemetry {
     pub payload_field_indices: Vec<PayloadIndexTelemetry>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema)]
 pub struct PayloadIndexTelemetry {
     pub field_name: Option<String>,
     pub points_values_count: usize,
     pub points_count: usize,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
     pub histogram_bucket_size: Option<usize>,
 }
 
@@ -39,7 +38,7 @@ impl PayloadIndexTelemetry {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, Default)]
+#[derive(Serialize, Clone, Debug, JsonSchema, Default)]
 pub struct VectorIndexSearchesTelemetry {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub index_name: Option<String>,

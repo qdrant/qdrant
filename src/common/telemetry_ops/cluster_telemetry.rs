@@ -2,25 +2,25 @@ use collection::shards::shard::PeerId;
 use common::types::{DetailsLevel, TelemetryDetail};
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use storage::dispatcher::Dispatcher;
 use storage::types::{ClusterStatus, ConsensusThreadStatus, StateRole};
 
 use crate::settings::Settings;
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema)]
 pub struct P2pConfigTelemetry {
     connection_pool_size: usize,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema)]
 pub struct ConsensusConfigTelemetry {
     max_message_queue_size: usize,
     tick_period_ms: u64,
     bootstrap_timeout_sec: u64,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema)]
 pub struct ClusterConfigTelemetry {
     grpc_timeout_ms: u64,
     p2p: P2pConfigTelemetry,
@@ -43,7 +43,7 @@ impl From<&Settings> for ClusterConfigTelemetry {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema)]
 pub struct ClusterStatusTelemetry {
     pub number_of_peers: usize,
     pub term: u64,
@@ -55,7 +55,7 @@ pub struct ClusterStatusTelemetry {
     pub consensus_thread_status: ConsensusThreadStatus,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema)]
 pub struct ClusterTelemetry {
     pub enabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]

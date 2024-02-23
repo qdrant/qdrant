@@ -4,7 +4,7 @@ use chrono::{DateTime, SubsecRound, Utc};
 use common::types::{DetailsLevel, TelemetryDetail};
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::settings::Settings;
 
@@ -20,7 +20,7 @@ impl AppBuildTelemetryCollector {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema)]
 pub struct AppFeaturesTelemetry {
     pub debug: bool,
     pub web_feature: bool,
@@ -28,7 +28,7 @@ pub struct AppFeaturesTelemetry {
     pub recovery_mode: bool,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema)]
 pub struct RunningEnvironmentTelemetry {
     distribution: Option<String>,
     distribution_version: Option<String>,
@@ -39,15 +39,13 @@ pub struct RunningEnvironmentTelemetry {
     cpu_flags: String,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema)]
 pub struct AppBuildTelemetry {
     pub name: String,
     pub version: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
     pub features: Option<AppFeaturesTelemetry>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
     pub system: Option<RunningEnvironmentTelemetry>,
     pub startup: DateTime<Utc>,
 }
