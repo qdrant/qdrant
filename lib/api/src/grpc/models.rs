@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use schemars::JsonSchema;
 use serde;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 pub fn get_git_commit_id() -> Option<String> {
     option_env!("GIT_COMMIT_ID")
@@ -10,7 +10,7 @@ pub fn get_git_commit_id() -> Option<String> {
         .filter(|s| !s.trim().is_empty())
 }
 
-#[derive(Serialize, Deserialize, JsonSchema)]
+#[derive(Serialize, JsonSchema)]
 pub struct VersionInfo {
     pub title: String,
     pub version: String,
@@ -40,7 +40,7 @@ impl VersionInfo {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ApiStatus {
     Ok,
@@ -57,13 +57,13 @@ pub struct ApiResponse<D> {
     pub time: f64,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct CollectionDescription {
     pub name: String,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct CollectionsResponse {
     pub collections: Vec<CollectionDescription>,

@@ -54,9 +54,7 @@ use crate::wal::WalError;
 
 /// Current state of the collection.
 /// `Green` - all good. `Yellow` - optimization is running, `Red` - some operations failed and was not recovered
-#[derive(
-    Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord, Copy, Clone,
-)]
+#[derive(Debug, Serialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum CollectionStatus {
     // Collection if completely ready for requests
@@ -70,15 +68,13 @@ pub enum CollectionStatus {
 
 /// State of existence of a collection,
 /// true = exists, false = does not exist
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Serialize, JsonSchema, Clone)]
 pub struct CollectionExistence {
     pub exists: bool,
 }
 
 /// Current state of the collection
-#[derive(
-    Debug, Default, Deserialize, Serialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord, Clone,
-)]
+#[derive(Debug, Default, Serialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum OptimizersStatus {
     /// Optimizers are reporting as expected
@@ -89,7 +85,7 @@ pub enum OptimizersStatus {
 }
 
 /// Point data
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct Record {
     /// Id of the point
@@ -99,12 +95,12 @@ pub struct Record {
     /// Vector of the point
     pub vector: Option<VectorStruct>,
     /// Shard Key
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<ShardKey>,
 }
 
 /// Current statistics and configuration of the collection
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct CollectionInfo {
     /// Status of the collection
     pub status: CollectionStatus,
@@ -126,7 +122,6 @@ pub struct CollectionInfo {
     /// Each segment has independent vector as payload indexes
     pub segments_count: usize,
     /// Collection settings
-    #[validate]
     pub config: CollectionConfig,
     /// Types of stored payload
     pub payload_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
@@ -191,7 +186,7 @@ pub struct CollectionInfoInternal {
 }
 
 /// Current clustering distribution for the collection
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct CollectionClusterInfo {
     /// ID of this peer
     pub peer_id: PeerId,
@@ -205,7 +200,7 @@ pub struct CollectionClusterInfo {
     pub shard_transfers: Vec<ShardTransferInfo>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Serialize, JsonSchema, Clone)]
 pub struct ShardTransferInfo {
     pub shard_id: ShardId,
 
@@ -219,15 +214,15 @@ pub struct ShardTransferInfo {
     /// If `false` transfer is a moving of a shard from one peer to another
     pub sync: bool,
 
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub method: Option<ShardTransferMethod>,
 
     /// A human-readable report of the transfer progress. Available only on the source peer.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub comment: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct LocalShardInfo {
     /// Local shard id
@@ -241,7 +236,7 @@ pub struct LocalShardInfo {
     pub state: ReplicaState,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct RemoteShardInfo {
     /// Remote shard id
@@ -257,14 +252,14 @@ pub struct RemoteShardInfo {
 
 /// `Acknowledged` - Request is saved to WAL and will be process in a queue.
 /// `Completed` - Request is completed, changes are actual.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[derive(Debug, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum UpdateStatus {
     Acknowledged,
     Completed,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct UpdateResult {
     /// Sequential number of the operation
@@ -351,7 +346,7 @@ impl Default for ScrollRequestInternal {
 }
 
 /// Result of the points read request
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct ScrollResult {
     /// List of retrieved points
@@ -851,7 +846,7 @@ pub struct DiscoverRequestBatch {
     pub searches: Vec<DiscoverRequest>,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema, Clone)]
+#[derive(Debug, Serialize, JsonSchema, Clone)]
 pub struct PointGroup {
     /// Scored points that have the same value of the group_by key
     pub hits: Vec<ScoredPoint>,
@@ -862,7 +857,7 @@ pub struct PointGroup {
     pub lookup: Option<Record>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Serialize, JsonSchema)]
 pub struct GroupsResult {
     pub groups: Vec<PointGroup>,
 }
@@ -897,7 +892,7 @@ pub const fn default_exact_count() -> bool {
     true
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct CountResult {
     /// Number of points which satisfy the conditions
@@ -1717,14 +1712,14 @@ impl Validate for SparseVectorsConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct AliasDescription {
     pub alias_name: String,
     pub collection_name: String,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct CollectionsAliasesResponse {
     pub aliases: Vec<AliasDescription>,
@@ -1789,7 +1784,7 @@ impl From<QueryEnum> for QueryVector {
 }
 
 /// All the unresolved issues in a Qdrant instance
-#[derive(Serialize, Deserialize, JsonSchema, Debug)]
+#[derive(Serialize, JsonSchema, Debug)]
 pub struct IssuesReport {
     pub issues: Vec<IssueRecord>,
 }

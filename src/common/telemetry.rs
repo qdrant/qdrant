@@ -4,7 +4,7 @@ use common::types::TelemetryDetail;
 use parking_lot::Mutex;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use storage::dispatcher::Dispatcher;
 use uuid::Uuid;
 
@@ -26,7 +26,7 @@ pub struct TelemetryCollector {
 }
 
 // Whole telemetry data
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema)]
 pub struct TelemetryData {
     id: String,
     pub(crate) app: AppBuildTelemetry,
