@@ -150,10 +150,10 @@ impl RecoverableWal {
 
 /// Resolve the WAL delta for the given `recovery_point`
 ///
-/// A `local_wal`, `local_recovery_point` and `local_cutoff_point` are required to resolve the
+/// A `local_wal`, `newest_observed_clocks` and `oldest_resolvable_clocks` are required to resolve the
 /// delta. These should be from the node being the source of recovery, likely the current one. The
-/// `local_wal` is used to resolve the diff. The `local_recovery_point` is used to extend the given
-/// recovery point with clocks the failed node does not know about. The `local_cutoff_point` is
+/// `local_wal` is used to resolve the diff. The `newest_observed_clocks` is used to extend the given
+/// recovery point with clocks the failed node does not know about. The `oldest_resolvable_clocks` is
 /// used as lower bound for WAL delta resolution.
 ///
 /// The delta can be sent over to the node which the recovery point is from, to restore its
@@ -166,8 +166,8 @@ impl RecoverableWal {
 fn resolve_wal_delta(
     mut recovery_point: RecoveryPoint,
     local_wal: LockedWal,
-    mut local_recovery_point: RecoveryPoint,
-    mut local_cutoff_point: RecoveryPoint,
+    mut newest_observed_clocks: RecoveryPoint,
+    mut oldest_resolvable_clocks: RecoveryPoint,
 ) -> Result<Option<u64>, WalDeltaError> {
     // If recovery point is empty, we cannot do a diff transfer
     if recovery_point.is_empty() {
@@ -176,32 +176,32 @@ fn resolve_wal_delta(
 
     // If the recovery point has clocks our current node does not know about
     // we're missing essential records and cannot resolve a WAL delta
-    if recovery_point.has_clocks_not_in(&local_recovery_point) {
+    if recovery_point.has_clocks_not_in(&newest_observed_clocks) {
         return Err(WalDeltaError::UnknownClocks);
     }
 
     // If our current node has any lower clock than the recovery point specifies,
     // we're missing essential records and cannot resolve a WAL delta
-    if recovery_point.has_any_newer_clocks_than(&local_recovery_point) {
+    if recovery_point.has_any_newer_clocks_than(&newest_observed_clocks) {
         return Err(WalDeltaError::HigherThanCurrent);
     }
 
     // From this point, increase all clocks by one
     // We must do that so we can specify clock tick 0 as needing everything from that clock
     recovery_point.increase_all_clocks_by(1);
-    local_recovery_point.increase_all_clocks_by(1);
-    local_cutoff_point.increase_all_clocks_by(1);
+    newest_observed_clocks.increase_all_clocks_by(1);
+    oldest_resolvable_clocks.increase_all_clocks_by(1);
 
     // Extend clock map with missing clocks this node know about
     // Ensure the recovering node gets records for a clock it might not have seen yet
-    recovery_point.initialize_clocks_missing_from(&local_recovery_point);
+    recovery_point.initialize_clocks_missing_from(&newest_observed_clocks);
 
     // Remove clocks that are equal to this node, we don't have to transfer records for them
     // TODO: do we want to remove higher clocks too, as the recovery node already has all data?
-    recovery_point.remove_clocks_equal_to(&local_recovery_point);
+    recovery_point.remove_clocks_equal_to(&newest_observed_clocks);
 
     // Recovery point may not be below our cutoff point
-    if recovery_point.has_any_older_clocks_than(&local_cutoff_point) {
+    if recovery_point.has_any_older_clocks_than(&oldest_resolvable_clocks) {
         return Err(WalDeltaError::Cutoff);
     }
 
@@ -1326,12 +1326,12 @@ mod tests {
 
         // Empty recovery points, should not resolve any diff
         let recovery_point = RecoveryPoint::default();
-        let local_recovery_point = RecoveryPoint::default();
+        let newest_observed_clocks = RecoveryPoint::default();
 
         let resolve_result = resolve_wal_delta(
             recovery_point,
             wal.wal,
-            local_recovery_point,
+            newest_observed_clocks,
             RecoveryPoint::default(),
         );
         assert_eq!(resolve_result.unwrap_err(), WalDeltaError::Empty);
@@ -1343,19 +1343,19 @@ mod tests {
         let (wal, _wal_dir) = fixture_empty_wal();
 
         let mut recovery_point = RecoveryPoint::default();
-        let mut local_recovery_point = RecoveryPoint::default();
+        let mut newest_observed_clocks = RecoveryPoint::default();
 
         // Recovery point has a clock our source does not know about
         recovery_point.insert(1, 0, 15);
         recovery_point.insert(1, 1, 8);
         recovery_point.insert(2, 1, 5);
-        local_recovery_point.insert(1, 0, 20);
-        local_recovery_point.insert(1, 1, 8);
+        newest_observed_clocks.insert(1, 0, 20);
+        newest_observed_clocks.insert(1, 1, 8);
 
         let resolve_result = resolve_wal_delta(
             recovery_point,
             wal.wal,
-            local_recovery_point,
+            newest_observed_clocks,
             RecoveryPoint::default(),
         );
         assert_eq!(resolve_result.unwrap_err(), WalDeltaError::UnknownClocks);
@@ -1367,18 +1367,18 @@ mod tests {
         let (wal, _wal_dir) = fixture_empty_wal();
 
         let mut recovery_point = RecoveryPoint::default();
-        let mut local_recovery_point = RecoveryPoint::default();
+        let mut newest_observed_clocks = RecoveryPoint::default();
 
         // Recovery point asks tick 10, but source only has tick 8
         recovery_point.insert(1, 0, 15);
         recovery_point.insert(1, 1, 10);
-        local_recovery_point.insert(1, 0, 20);
-        local_recovery_point.insert(1, 1, 8);
+        newest_observed_clocks.insert(1, 0, 20);
+        newest_observed_clocks.insert(1, 1, 8);
 
         let resolve_result = resolve_wal_delta(
             recovery_point,
             wal.wal,
-            local_recovery_point,
+            newest_observed_clocks,
             RecoveryPoint::default(),
         );
         assert_eq!(
@@ -1393,21 +1393,21 @@ mod tests {
         let (wal, _wal_dir) = fixture_empty_wal();
 
         let mut recovery_point = RecoveryPoint::default();
-        let mut local_recovery_point = RecoveryPoint::default();
-        let mut local_cutoff_point = RecoveryPoint::default();
+        let mut newest_observed_clocks = RecoveryPoint::default();
+        let mut oldest_resolvable_clocks = RecoveryPoint::default();
 
         // Recovery point asks clock tick that has been truncated already
         recovery_point.insert(1, 0, 15);
         recovery_point.insert(1, 1, 10);
-        local_recovery_point.insert(1, 0, 20);
-        local_recovery_point.insert(1, 1, 12);
-        local_cutoff_point.insert(1, 0, 16);
+        newest_observed_clocks.insert(1, 0, 20);
+        newest_observed_clocks.insert(1, 1, 12);
+        oldest_resolvable_clocks.insert(1, 0, 16);
 
         let resolve_result = resolve_wal_delta(
             recovery_point,
             wal.wal,
-            local_recovery_point,
-            local_cutoff_point,
+            newest_observed_clocks,
+            oldest_resolvable_clocks,
         );
         assert_eq!(resolve_result.unwrap_err(), WalDeltaError::Cutoff);
     }
@@ -1418,18 +1418,18 @@ mod tests {
         let (wal, _wal_dir) = fixture_empty_wal();
 
         let mut recovery_point = RecoveryPoint::default();
-        let mut local_recovery_point = RecoveryPoint::default();
+        let mut newest_observed_clocks = RecoveryPoint::default();
 
         // Recovery point asks tick 10, but source only has tick 8
         recovery_point.insert(1, 0, 15);
         recovery_point.insert(1, 1, 10);
-        local_recovery_point.insert(1, 0, 20);
-        local_recovery_point.insert(1, 1, 12);
+        newest_observed_clocks.insert(1, 0, 20);
+        newest_observed_clocks.insert(1, 1, 12);
 
         let resolve_result = resolve_wal_delta(
             recovery_point,
             wal.wal,
-            local_recovery_point,
+            newest_observed_clocks,
             RecoveryPoint::default(),
         );
         assert_eq!(resolve_result.unwrap_err(), WalDeltaError::NotFound);
