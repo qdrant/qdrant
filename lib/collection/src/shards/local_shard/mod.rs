@@ -217,7 +217,7 @@ impl LocalShard {
             let segments_path = entry.unwrap().path();
             load_handlers.push(
                 thread::Builder::new()
-                    .name(format!("shard-load-{id}-{collection_id}"))
+                    .name(format!("load-{id}-{collection_id}"))
                     .spawn(move || {
                         let mut res = load_segment(&segments_path, &AtomicBool::new(false))?;
                         if let Some(segment) = &mut res {
