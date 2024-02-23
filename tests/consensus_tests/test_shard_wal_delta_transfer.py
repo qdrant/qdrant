@@ -37,7 +37,7 @@ def run_update_points_in_background(peer_url, collection_name, init_offset=0, th
 # assert that property in this test however. It is tested both ways.
 #
 # Test that data on the both sides is consistent
-def test_empty_shard_wal_delta_transfer(tmp_path: pathlib.Path):
+def test_empty_shard_wal_delta_transfer(capfd, tmp_path: pathlib.Path):
     assert_project_root()
 
     # seed port to reuse the same port for the restarted nodes
@@ -72,6 +72,10 @@ def test_empty_shard_wal_delta_transfer(tmp_path: pathlib.Path):
     # Wait for end of shard transfer
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
 
+    # Confirm emtpy WAL delta based on debug message in stdout
+    stdout, stderr = capfd.readouterr()
+    assert "Resolved WAL delta that is empty" in stdout
+
     # Doing it the other way around should result in exactly the same
     r = requests.post(
         f"{peer_api_uris[1]}/collections/{COLLECTION_NAME}/cluster", json={
@@ -86,6 +90,10 @@ def test_empty_shard_wal_delta_transfer(tmp_path: pathlib.Path):
 
     # Wait for end of shard transfer
     wait_for_collection_shard_transfers_count(peer_api_uris[1], COLLECTION_NAME, 0)
+
+    # Confirm emtpy WAL delta based on debug message in stdout
+    stdout, stderr = capfd.readouterr()
+    assert "Resolved WAL delta that is empty" in stdout
 
     cluster_info_0 = get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME)
     cluster_info_1 = get_collection_cluster_info(peer_api_uris[1], COLLECTION_NAME)

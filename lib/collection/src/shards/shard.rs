@@ -183,15 +183,9 @@ impl Shard {
         &self,
         recovery_point: RecoveryPoint,
     ) -> CollectionResult<Option<u64>> {
-        let resolve_result = match self {
-            Self::Local(local_shard) => local_shard.wal.resolve_wal_delta(recovery_point).await,
-            Self::ForwardProxy(proxy_shard) => {
-                proxy_shard
-                    .wrapped_shard
-                    .wal
-                    .resolve_wal_delta(recovery_point)
-                    .await
-            }
+        let wal = match self {
+            Self::Local(local_shard) => &local_shard.wal,
+            Self::ForwardProxy(proxy_shard) => &proxy_shard.wrapped_shard.wal,
             Self::Proxy(_) | Self::QueueProxy(_) | Self::Dummy(_) => {
                 return Err(CollectionError::service_error(format!(
                     "Cannot resolve WAL delta on {}",
@@ -200,10 +194,20 @@ impl Shard {
             }
         };
 
-        resolve_result.map_err(|err| {
-            CollectionError::service_error(format!(
+        // Resolve WAL delta and report
+        match wal.resolve_wal_delta(recovery_point).await {
+            Ok(Some(version)) => {
+                let size = wal.wal.lock().last_index().saturating_sub(version);
+                log::debug!("Resolved WAL delta from {version}, which counts {size} records");
+                Ok(Some(version))
+            }
+            Ok(None) => {
+                log::debug!("Resolved WAL delta that is empty");
+                Ok(None)
+            }
+            Err(err) => Err(CollectionError::service_error(format!(
                 "Failed to resolve WAL delta on local shard: {err}"
-            ))
-        })
+            ))),
+        }
     }
 }
