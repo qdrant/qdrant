@@ -8,16 +8,16 @@ use segment::common::anonymize::Anonymize;
 use segment::common::operation_time_statistics::{
     OperationDurationStatistics, OperationDurationsAggregator, ScopeDurationMeasurer,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 pub type HttpStatusCode = u16;
 
-#[derive(Serialize, Deserialize, Clone, Default, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Default, Debug, JsonSchema)]
 pub struct WebApiTelemetry {
     pub responses: HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Default, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Default, Debug, JsonSchema)]
 pub struct GrpcTelemetry {
     pub responses: HashMap<String, OperationDurationStatistics>,
 }
@@ -144,7 +144,7 @@ impl WebApiTelemetry {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema)]
 pub struct RequestsTelemetry {
     pub rest: WebApiTelemetry,
     pub grpc: GrpcTelemetry,

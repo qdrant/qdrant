@@ -217,7 +217,7 @@ pub enum Order {
 }
 
 /// Search result
-#[derive(Deserialize, Serialize, JsonSchema, Clone, Debug)]
+#[derive(Serialize, JsonSchema, Clone, Debug)]
 pub struct ScoredPoint {
     /// Point id
     pub id: PointIdType,
@@ -230,7 +230,7 @@ pub struct ScoredPoint {
     /// Vector of the point
     pub vector: Option<VectorStruct>,
     /// Shard Key
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<ShardKey>,
 }
 
@@ -255,7 +255,7 @@ impl PartialEq for ScoredPoint {
 }
 
 /// Type of segment
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum SegmentType {
     // There are no index built for the segment, all operations are available
@@ -267,11 +267,11 @@ pub enum SegmentType {
 }
 
 /// Display payload field type & index information
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct PayloadIndexInfo {
     pub data_type: PayloadSchemaType,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub params: Option<PayloadSchemaParams>,
     /// Number of points indexed with this index
     pub points: usize,
@@ -301,7 +301,7 @@ impl PayloadIndexInfo {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct VectorDataInfo {
     pub num_vectors: usize,
@@ -310,7 +310,7 @@ pub struct VectorDataInfo {
 }
 
 /// Aggregated information about segment
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentInfo {
     pub segment_type: SegmentType,

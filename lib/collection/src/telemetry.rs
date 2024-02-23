@@ -1,12 +1,12 @@
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::config::CollectionConfig;
 use crate::operations::types::ShardTransferInfo;
 use crate::shards::telemetry::ReplicaSetTelemetry;
 
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema)]
 pub struct CollectionTelemetry {
     pub id: String,
     pub init_time_ms: u64,

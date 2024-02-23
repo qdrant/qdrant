@@ -122,7 +122,7 @@ const fn default_mmap_advice() -> madvise::Advice {
 }
 
 /// Information of a peer in the cluster
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Serialize, JsonSchema, Clone)]
 pub struct PeerInfo {
     pub uri: String,
     // ToDo: How long ago was the last communication? In milliseconds
@@ -130,7 +130,7 @@ pub struct PeerInfo {
 }
 
 /// Summary information about the current raft state
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Serialize, JsonSchema, Clone)]
 pub struct RaftInfo {
     /// Raft divides time into terms of arbitrary length, each beginning with an election.
     /// If a candidate wins the election, it remains the leader for the rest of the term.
@@ -150,7 +150,7 @@ pub struct RaftInfo {
 }
 
 /// Role of the peer in the consensus
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, JsonSchema, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, JsonSchema)]
 pub enum StateRole {
     // The node is a follower of the leader.
     Follower,
@@ -174,7 +174,7 @@ impl From<raft::StateRole> for StateRole {
 }
 
 /// Message send failures for a particular peer
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Default)]
+#[derive(Debug, Serialize, JsonSchema, Clone, Default)]
 pub struct MessageSendErrors {
     pub count: usize,
     pub latest_error: Option<String>,
@@ -183,7 +183,7 @@ pub struct MessageSendErrors {
 }
 
 /// Description of enabled cluster
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Serialize, JsonSchema, Clone)]
 pub struct ClusterInfo {
     /// ID of this peer
     pub peer_id: PeerId,
@@ -199,7 +199,7 @@ pub struct ClusterInfo {
 }
 
 /// Information about current cluster status and structure
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Serialize, JsonSchema, Clone)]
 #[serde(tag = "status")]
 #[serde(rename_all = "snake_case")]
 pub enum ClusterStatus {
@@ -208,7 +208,7 @@ pub enum ClusterStatus {
 }
 
 /// Information about current consensus thread status
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Serialize, JsonSchema, Clone)]
 #[serde(tag = "consensus_thread_status")]
 #[serde(rename_all = "snake_case")]
 pub enum ConsensusThreadStatus {

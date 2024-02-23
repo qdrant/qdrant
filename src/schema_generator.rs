@@ -17,7 +17,7 @@ use collection::operations::vector_ops::{DeleteVectors, UpdateVectors};
 use schemars::gen::SchemaSettings;
 use schemars::JsonSchema;
 use segment::types::ScoredPoint;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CreateCollection, UpdateCollection,
 };
@@ -31,7 +31,7 @@ mod actix;
 mod common;
 mod settings;
 
-#[derive(Deserialize, Serialize, JsonSchema)]
+#[derive(Serialize, JsonSchema)]
 struct AllDefinitions {
     a1: CollectionsResponse,
     a2: CollectionInfo,
