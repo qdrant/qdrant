@@ -465,3 +465,127 @@ def test_payload_operations():
     )
     assert response.ok
     assert len(response.json()['result']['points']) == 0
+
+
+def test_payload_index_overwrite():
+    drop_collection(collection_name)
+    response = request_with_validation(
+        api="/collections/{collection_name}",
+        method="PUT",
+        path_params={"collection_name": collection_name},
+        body={
+            "vectors": {
+                "size": 4,
+                "distance": "Dot",
+            },
+        },
+    )
+    assert response.ok
+
+    for field in ["a.x", "a.y", "b", "nested.a.x", "nested.a.y", "nested.b"]:
+        response = request_with_validation(
+            api="/collections/{collection_name}/index",
+            method="PUT",
+            path_params={"collection_name": collection_name},
+            query_params={"wait": "true"},
+            body={
+                "field_name": field,
+                "field_schema": "integer",
+            },
+        )
+        assert response.ok
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points",
+        method="PUT",
+        path_params={"collection_name": collection_name},
+        query_params={"wait": "true"},
+        body={
+            "points": [
+                {
+                    "id": 1,
+                    "vector": [1, 2, 3, 4],
+                    "payload": {
+                        "a": {"x": 1},
+                        "b": 1,
+                        "nested": {
+                            "a": {"x": 1},
+                            "b": 1,
+                        },
+                    },
+                },
+            ]
+        },
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/payload",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "payload": {"a": {"y": 1}},
+            "points": [1],
+        },
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/scroll",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "with_payload": True,
+            "filter": {"must": [{"key": "a.x", "match": {"value": 1}}]},
+        },
+    )
+    assert response.ok
+    assert len(response.json()["result"]["points"]) == 0
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/scroll",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "with_payload": True,
+            "filter": {"must": [{"key": "a.y", "match": {"value": 1}}]},
+        },
+    )
+    assert response.ok
+    assert len(response.json()["result"]["points"]) == 1
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/payload",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "payload": {"a": {"y": 1}},
+            "points": [1],
+            "key": "nested",
+        },
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/scroll",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "with_payload": True,
+            "filter": {"must": [{"key": "nested.a.x", "match": {"value": 1}}]},
+        },
+    )
+    assert response.ok
+    assert len(response.json()["result"]["points"]) == 0
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/scroll",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "with_payload": True,
+            "filter": {"must": [{"key": "nested.a.y", "match": {"value": 1}}]},
+        },
+    )
+    assert response.ok
+    assert len(response.json()["result"]["points"]) == 1
