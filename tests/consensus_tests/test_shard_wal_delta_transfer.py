@@ -71,7 +71,7 @@ def test_empty_shard_wal_delta_transfer(capfd, tmp_path: pathlib.Path):
     # Wait for end of shard transfer
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
 
-    # Confirm emtpy WAL delta based on debug message in stdout
+    # Confirm empty WAL delta based on debug message in stdout
     stdout, stderr = capfd.readouterr()
     assert "Resolved WAL delta that is empty" in stdout
 
@@ -90,7 +90,7 @@ def test_empty_shard_wal_delta_transfer(capfd, tmp_path: pathlib.Path):
     # Wait for end of shard transfer
     wait_for_collection_shard_transfers_count(peer_api_uris[1], COLLECTION_NAME, 0)
 
-    # Confirm emtpy WAL delta based on debug message in stdout
+    # Confirm empty WAL delta based on debug message in stdout
     stdout, stderr = capfd.readouterr()
     assert "Resolved WAL delta that is empty" in stdout
 
