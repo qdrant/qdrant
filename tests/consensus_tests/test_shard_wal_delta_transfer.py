@@ -99,17 +99,19 @@ def test_empty_shard_wal_delta_transfer(capfd, tmp_path: pathlib.Path):
     assert len(cluster_info_0['local_shards']) == 1
     assert len(cluster_info_1['local_shards']) == 1
 
-    # Point counts must be consistent across nodes
-    counts = []
+    # Match all points on all nodes exactly
+    data = []
     for uri in peer_api_uris:
         r = requests.post(
-            f"{uri}/collections/{COLLECTION_NAME}/points/count", json={
-                "exact": True
+            f"{uri}/collections/{COLLECTION_NAME}/points/scroll", json={
+                "limit": 999999999,
+                "with_vectors": True,
+                "with_payload": True,
             }
         )
         assert_http_ok(r)
-        counts.append(r.json()["result"]['count'])
-    assert counts[0] == counts[1]
+        data.append(r.json()["result"])
+    assert data[0] == data[1]
 
 
 # Test node recovery with a WAL delta transfer.
@@ -190,17 +192,19 @@ def test_shard_wal_delta_transfer_manual_recovery(tmp_path: pathlib.Path, capfd)
     upload_process_2.kill()
     sleep(1)
 
-    # Point counts must be consistent across nodes
-    counts = []
+    # Match all points on all nodes exactly
+    data = []
     for uri in peer_api_uris:
         r = requests.post(
-            f"{uri}/collections/{COLLECTION_NAME}/points/count", json={
-                "exact": True
+            f"{uri}/collections/{COLLECTION_NAME}/points/scroll", json={
+                "limit": 999999999,
+                "with_vectors": True,
+                "with_payload": True,
             }
         )
         assert_http_ok(r)
-        counts.append(r.json()["result"]['count'])
-    assert counts[0] == counts[1] == counts[2]
+        data.append(r.json()["result"])
+    assert data[0] == data[1] == data[2]
 
 
 # Test the shard transfer fallback for WAL delta transfer.
@@ -258,14 +262,16 @@ def test_shard_wal_delta_transfer_fallback(capfd, tmp_path: pathlib.Path):
     number_local_shards = len(receiver_collection_cluster_info['local_shards'])
     assert number_local_shards == 2
 
-    # Point counts must be consistent across nodes
-    counts = []
+    # Match all points on all nodes exactly
+    data = []
     for uri in peer_api_uris:
         r = requests.post(
-            f"{uri}/collections/{COLLECTION_NAME}/points/count", json={
-                "exact": True
+            f"{uri}/collections/{COLLECTION_NAME}/points/scroll", json={
+                "limit": 999999999,
+                "with_vectors": True,
+                "with_payload": True,
             }
         )
         assert_http_ok(r)
-        counts.append(r.json()["result"]['count'])
-    assert counts[0] == counts[1] == counts[2]
+        data.append(r.json()["result"])
+    assert data[0] == data[1] == data[2]
