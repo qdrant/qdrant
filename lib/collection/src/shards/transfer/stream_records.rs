@@ -111,6 +111,7 @@ pub(super) async fn transfer_stream_records(
             .await;
 
         // Warn and ignore if remote shard is running an older version, error otherwise
+        // TODO: this is fragile, improve this with stricter matches/checks
         match result {
             // This string match is fragile but there does not seem to be a better way
             Err(err)
