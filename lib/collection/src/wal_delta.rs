@@ -220,7 +220,8 @@ fn resolve_wal_delta(
 
     let delta_from = local_wal
         .lock()
-        .read_from_last(true)
+        .read_all(true)
+        .rev()
         // We cannot resolve a delta if we have untagged records
         .take_while(|(_, op)| op.clock_tag.is_some())
         // Keep scrolling until we have no clocks left
