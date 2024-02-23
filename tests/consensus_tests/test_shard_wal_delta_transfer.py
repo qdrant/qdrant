@@ -186,6 +186,10 @@ def test_shard_wal_delta_transfer_manual_recovery(tmp_path: pathlib.Path, capfd)
     number_local_shards = len(receiver_collection_cluster_info['local_shards'])
     assert number_local_shards == 1
 
+    upload_process_1.kill()
+    upload_process_2.kill()
+    sleep(1)
+
     # Point counts must be consistent across nodes
     counts = []
     for uri in peer_api_uris:
