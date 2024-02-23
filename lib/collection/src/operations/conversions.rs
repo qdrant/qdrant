@@ -1670,6 +1670,7 @@ impl From<api::grpc::qdrant::ShardTransferMethod> for ShardTransferMethod {
                 ShardTransferMethod::StreamRecords
             }
             api::grpc::qdrant::ShardTransferMethod::Snapshot => ShardTransferMethod::Snapshot,
+            api::grpc::qdrant::ShardTransferMethod::WalDelta => ShardTransferMethod::WalDelta,
         }
     }
 }
