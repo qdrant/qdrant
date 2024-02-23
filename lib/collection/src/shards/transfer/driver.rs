@@ -3,10 +3,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use parking_lot::Mutex;
 use tokio::time::sleep;
 
 use super::snapshot::transfer_snapshot;
 use super::stream_records::transfer_stream_records;
+use super::transfer_tasks_pool::TransferTaskProgress;
 use super::{ShardTransfer, ShardTransferConsensus, ShardTransferMethod};
 use crate::common::stoppable_task_async::{spawn_async_cancellable, CancellableAsyncTaskHandle};
 use crate::operations::types::CollectionResult;
@@ -26,6 +28,7 @@ pub(crate) const MAX_RETRY_COUNT: usize = 3;
 #[allow(clippy::too_many_arguments)]
 pub async fn transfer_shard(
     transfer_config: ShardTransfer,
+    progress: Arc<Mutex<TransferTaskProgress>>,
     shard_holder: Arc<LockedShardHolder>,
     consensus: &dyn ShardTransferConsensus,
     collection_id: CollectionId,
@@ -50,7 +53,7 @@ pub async fn transfer_shard(
     match transfer_config.method.unwrap_or_default() {
         // Transfer shard record in batches
         ShardTransferMethod::StreamRecords => {
-            transfer_stream_records(shard_holder.clone(), shard_id, remote_shard).await?;
+            transfer_stream_records(shard_holder.clone(), progress, shard_id, remote_shard).await?;
         }
 
         // Transfer shard as snapshot
@@ -175,6 +178,7 @@ pub async fn handle_transferred_shard_proxy(
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_transfer_task<T, F>(
     shards_holder: Arc<LockedShardHolder>,
+    progress: Arc<Mutex<TransferTaskProgress>>,
     transfer: ShardTransfer,
     consensus: Box<dyn ShardTransferConsensus>,
     collection_id: CollectionId,
@@ -206,6 +210,7 @@ where
 
                 transfer_shard(
                     transfer.clone(),
+                    progress.clone(),
                     shards_holder.clone(),
                     consensus.as_ref(),
                     collection_id.clone(),

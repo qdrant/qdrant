@@ -207,13 +207,23 @@ pub struct CollectionClusterInfo {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 pub struct ShardTransferInfo {
     pub shard_id: ShardId,
+
+    /// Source peer id
     pub from: PeerId,
+
+    /// Destination peer id
     pub to: PeerId,
+
     /// If `true` transfer is a synchronization of a replicas
     /// If `false` transfer is a moving of a shard from one peer to another
     pub sync: bool,
+
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub method: Option<ShardTransferMethod>,
+
+    /// A human-readable report of the transfer progress. Available only on the source peer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]

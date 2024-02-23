@@ -8705,11 +8705,13 @@
             "minimum": 0
           },
           "from": {
+            "description": "Source peer id",
             "type": "integer",
             "format": "uint64",
             "minimum": 0
           },
           "to": {
+            "description": "Destination peer id",
             "type": "integer",
             "format": "uint64",
             "minimum": 0
@@ -8727,6 +8729,11 @@
                 "nullable": true
               }
             ]
+          },
+          "comment": {
+            "description": "A human-readable report of the transfer progress. Available only on the source peer.",
+            "type": "string",
+            "nullable": true
           }
         }
       },
