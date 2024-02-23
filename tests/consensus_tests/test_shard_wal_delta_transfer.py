@@ -7,9 +7,6 @@ from time import sleep
 from .fixtures import upsert_random_points, create_collection
 from .utils import *
 
-N_PEERS = 3
-N_SHARDS = 3
-N_REPLICA = 1
 COLLECTION_NAME = "test_collection"
 
 
@@ -213,7 +210,7 @@ def test_shard_wal_delta_transfer_fallback(capfd, tmp_path: pathlib.Path):
     assert_project_root()
 
     # seed port to reuse the same port for the restarted nodes
-    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, 20000)
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, 3, 20000)
 
     create_collection(peer_api_uris[0], shard_number=3, replication_factor=1)
     wait_collection_exists_and_active_on_all_peers(
