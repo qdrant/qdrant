@@ -95,7 +95,6 @@ pub(super) async fn transfer_stream_records(
     }
 
     // Update cutoff point on remote shard, disallow recovery before our current last seen
-    // Allow but warn about errors, the remote shard may not support this operation
     {
         let shard_holder = shard_holder.read().await;
         let Some(replica_set) = shard_holder.get_shard(&shard_id) else {
@@ -110,9 +109,19 @@ pub(super) async fn transfer_stream_records(
         let result = remote_shard
             .update_shard_cutoff_point(collection_name, shard_id, &cutoff)
             .await;
-        if let Err(err) = result {
-            // TODO: only ignore 'API unimplemented' errors here!
-            log::warn!("Failed to update cutoff point on remote shard, ignoring: {err}");
+
+        // Warn and ignore if remote shard is running an older version, error otherwise
+        match result {
+            // This string match is fragile but there does not seem to be a better way
+            Err(err)
+                if err.to_string().starts_with(
+                    "Service internal error: Tonic status error: status: Unimplemented",
+                ) =>
+            {
+                log::warn!("Cannot update cutoff point on remote shard because it is running an older version, ignoring: {err}");
+            }
+            Err(err) => return Err(err),
+            Ok(()) => {}
         }
     }
 
