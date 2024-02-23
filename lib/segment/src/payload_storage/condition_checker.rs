@@ -6,8 +6,8 @@ use serde_json::Value;
 
 use crate::types::{
     AnyVariants, DateTimePayloadType, FieldCondition, FloatPayloadType, GeoBoundingBox, GeoPoint,
-    GeoPolygon, GeoRadius, Match, MatchAny, MatchExcept, MatchText, MatchValue, Range,
-    RangeInterface, ValueVariants, ValuesCount,
+    GeoPolygon, GeoRadius, IntPayloadType, Match, MatchAny, MatchExcept, MatchText, MatchValue,
+    Range, RangeInterface, ValueVariants, ValuesCount,
 };
 
 /// Threshold representing the point to which iterating through an IndexSet is more efficient than using hashing.
@@ -49,10 +49,7 @@ impl ValueChecker for FieldCondition {
             .is_some_and(|condition| condition.check_match(payload))
             || range
                 .as_ref()
-                .is_some_and(|range_interface| match range_interface {
-                    RangeInterface::Float(condition) => condition.check_match(payload),
-                    RangeInterface::DateTime(condition) => condition.check_match(payload),
-                })
+                .is_some_and(|condition| condition.check_match(payload))
             || geo_radius
                 .as_ref()
                 .is_some_and(|condition| condition.check_match(payload))
@@ -140,15 +137,31 @@ impl ValueChecker for Match {
     }
 }
 
+impl ValueChecker for RangeInterface {
+    fn check_match(&self, payload: &Value) -> bool {
+        match self {
+            RangeInterface::Float(condition) => condition.check_match(payload),
+            RangeInterface::Int(condition) => condition.check_match(payload),
+            RangeInterface::DateTime(condition) => condition.check_match(payload),
+        }
+    }
+}
+
 impl ValueChecker for Range<FloatPayloadType> {
     fn check_match(&self, payload: &Value) -> bool {
-        match payload {
-            Value::Number(num) => num
-                .as_f64()
-                .map(|number| self.check_range(number))
-                .unwrap_or(false),
-            _ => false,
-        }
+        payload
+            .as_number()
+            .and_then(|x| x.as_f64())
+            .is_some_and(|x| self.check_range(x))
+    }
+}
+
+impl ValueChecker for Range<IntPayloadType> {
+    fn check_match(&self, payload: &Value) -> bool {
+        payload.as_number().is_some_and(|x| {
+            x.as_i64().is_some_and(|x| self.check_range(x))
+                || x.as_f64().is_some_and(|x| self.check_range_num_cmp(x))
+        })
     }
 }
 

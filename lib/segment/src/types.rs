@@ -13,6 +13,7 @@ use geo::prelude::HaversineDistance;
 use geo::{Contains, Coord, LineString, Point, Polygon};
 use indexmap::IndexSet;
 use itertools::Itertools;
+use num_cmp::NumCmp;
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -55,6 +56,34 @@ impl DateTimeWrapper {
     /// Qdrant's representation of datetime as timestamp is an i64 of microseconds
     pub fn timestamp(&self) -> i64 {
         self.0.timestamp_micros()
+    }
+}
+
+impl FromStr for DateTimePayloadType {
+    type Err = chrono::ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // Attempt to parse the input string in RFC 3339 format
+        if let Ok(datetime) = chrono::DateTime::parse_from_rfc3339(s)
+            .map(|dt| chrono::DateTime::<chrono::Utc>::from(dt).into())
+        {
+            return Ok(datetime);
+        }
+
+        // Attempt to parse the input string in the specified formats:
+        // - YYYY-MM-DD'T'HH:MM:SS (without timezone or Z)
+        // - YYYY-MM-DD HH:MM:SS
+        // - YYYY-MM-DD HH:MM
+        // - YYYY-MM-DD
+        // See: <https://github.com/qdrant/qdrant/issues/3529>
+        let datetime = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f")
+            .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f"))
+            .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M"))
+            .or_else(|_| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").map(Into::into))?;
+
+        // Convert the parsed NaiveDateTime to a DateTime<Utc>
+        let datetime_utc = datetime.and_utc().into();
+        Ok(datetime_utc)
     }
 }
 
@@ -1362,17 +1391,18 @@ impl From<Vec<IntPayloadType>> for MatchExcept {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Copy)]
 #[serde(untagged)]
 pub enum RangeInterface {
+    Int(Range<IntPayloadType>),
     Float(Range<FloatPayloadType>),
     DateTime(Range<DateTimePayloadType>),
 }
 
 /// Range filter request
 #[macro_rules_attribute::macro_rules_derive(crate::common::macros::schemars_rename_generics)]
-#[derive_args(< FloatPayloadType > => "Range", < DateTimePayloadType > => "DatetimeRange")]
-#[derive(Debug, Deserialize, Serialize, Default, Clone, PartialEq)]
+#[derive_args(<FloatPayloadType> => "Range", <DateTimePayloadType> => "DatetimeRange", <IntPayloadType> => "IntegerRange")]
+#[derive(Debug, Deserialize, Serialize, Default, Clone, PartialEq, Copy)]
 #[serde(rename_all = "snake_case")]
 pub struct Range<T> {
     /// point.key < range.lt
@@ -1384,37 +1414,10 @@ pub struct Range<T> {
     /// point.key <= range.lte
     pub lte: Option<T>,
 }
-impl FromStr for DateTimePayloadType {
-    type Err = chrono::ParseError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // Attempt to parse the input string in RFC 3339 format
-        if let Ok(datetime) = chrono::DateTime::parse_from_rfc3339(s)
-            .map(|dt| chrono::DateTime::<chrono::Utc>::from(dt).into())
-        {
-            return Ok(datetime);
-        }
-
-        // Attempt to parse the input string in the specified formats:
-        // - YYYY-MM-DD'T'HH:MM:SS (without timezone or Z)
-        // - YYYY-MM-DD HH:MM:SS
-        // - YYYY-MM-DD HH:MM
-        // - YYYY-MM-DD
-        // See: <https://github.com/qdrant/qdrant/issues/3529>
-        let datetime = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f")
-            .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f"))
-            .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M"))
-            .or_else(|_| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").map(Into::into))?;
-
-        // Convert the parsed NaiveDateTime to a DateTime<Utc>
-        let datetime_utc = datetime.and_utc().into();
-        Ok(datetime_utc)
-    }
-}
 
 impl<T: Copy> Range<T> {
     /// Convert range to a range of another type
-    pub fn map<U, F: Fn(T) -> U>(&self, f: F) -> Range<U> {
+    pub fn map<U: Copy, F: Fn(T) -> U>(&self, f: F) -> Range<U> {
         Range {
             lt: self.lt.map(&f),
             gt: self.gt.map(&f),
@@ -1430,6 +1433,15 @@ impl<T: Copy + PartialOrd> Range<T> {
             && self.gt.map_or(true, |x| number > x)
             && self.lte.map_or(true, |x| number <= x)
             && self.gte.map_or(true, |x| number >= x)
+    }
+}
+
+impl<T: Copy> Range<T> {
+    pub fn check_range_num_cmp(&self, number: impl NumCmp<T>) -> bool {
+        self.lt.map_or(true, |x| number.num_lt(x))
+            && self.gt.map_or(true, |x| number.num_gt(x))
+            && self.lte.map_or(true, |x| number.num_le(x))
+            && self.gte.map_or(true, |x| number.num_ge(x))
     }
 }
 
@@ -3347,6 +3359,70 @@ mod tests {
             }
         });
         assert_eq!(payload, expected.into());
+    }
+
+    #[rstest]
+    #[case(r#"{"gte": -10, "lte": 15}"#, -10, 15)]
+    #[case(
+        r#"{"gte": -8223372036854775807, "lte": 9223372036854775807}"#,
+        -8_223_372_036_854_775_807i64,
+        9_223_372_036_854_775_807i64
+    )]
+    fn test_int_range_deserialization(
+        #[case] json_range: &str,
+        #[case] expected_gte: i64,
+        #[case] expected_lte: i64,
+    ) {
+        let range_interface: RangeInterface = serde_json::from_str(json_range).unwrap();
+
+        let RangeInterface::Int(range) = range_interface else {
+            panic!("RangeInterface::Int expected, got {:?}", range_interface);
+        };
+
+        assert_eq!(range.gte, Some(expected_gte));
+        assert_eq!(range.lte, Some(expected_lte));
+    }
+
+    #[rstest]
+    #[case(r#"{"gte": 0.1, "lte": 10}"#, 0.1, 10.0)]
+    #[case(r#"{"gte": 10, "lte": 0.1}"#, 10.0, 0.1)]
+    #[case(
+        r#"{"gte": 0.1, "lte": 9223372036854775807}"#,
+        0.1,
+        // i64::MAX (large ints) gets truncated to its closest representation in f64
+        9.223372036854776e18
+    )]
+    #[case(
+        r#"{"gte": 9223372036854775807, "lte": 0.1}"#,
+        // i64::MAX (large ints) gets truncated to its closest representation in f64
+        9.223372036854776e18,
+        0.1
+    )]
+    fn test_int_with_float_range_deserialization(
+        #[case] json_range: &str,
+        #[case] expected_gte: f64,
+        #[case] expected_lte: f64,
+    ) {
+        let range_interface: RangeInterface = serde_json::from_str(json_range).unwrap();
+
+        let RangeInterface::Float(range) = range_interface else {
+            panic!("RangeInterface::Float expected");
+        };
+
+        assert_eq!(range.gte, Some(expected_gte));
+        assert_eq!(range.lte, Some(expected_lte));
+    }
+
+    #[rstest]
+    #[case(r#"{"gte": 10, "lte": "2024-02-14T11:56:32.8888"}"#)]
+    #[case(r#"{"gte": 0.101, "lte": "2024-02-14T11:56:32.8888"}"#)]
+    fn test_cross_type_range_deserialization(#[case] json_range: &str) {
+        let deserialized = serde_json::from_str::<RangeInterface>(json_range);
+        assert!(
+            deserialized.is_err(),
+            "Expected error, got {:?}",
+            deserialized
+        );
     }
 }
 

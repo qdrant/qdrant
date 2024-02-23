@@ -178,7 +178,7 @@ def basic_collection_setup(
                 {
                     "id": 5,
                     "vector": [0.24, 0.18, 0.22, 0.44],
-                    "payload": {"count": 0}
+                    "payload": {"count": 0, "price": 12.5}
                 },
                 {
                     "id": 6,

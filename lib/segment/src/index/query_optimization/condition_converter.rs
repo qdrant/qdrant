@@ -137,7 +137,7 @@ pub fn field_condition_index<'a>(
 
         FieldCondition {
             range: Some(cond), ..
-        } => get_range_checkers(index, cond.clone()),
+        } => get_range_checkers(index, *cond),
 
         FieldCondition {
             geo_radius: Some(geo_radius),
@@ -219,6 +219,7 @@ pub fn get_geo_bounding_box_checkers(
 pub fn get_range_checkers(index: &FieldIndex, range: RangeInterface) -> Option<ConditionCheckerFn> {
     match range {
         RangeInterface::Float(range) => get_float_range_checkers(index, range),
+        RangeInterface::Int(range) => get_int_range_checkers(index, range),
         RangeInterface::DateTime(range) => get_datetime_range_checkers(index, range),
     }
 }
@@ -228,18 +229,34 @@ pub fn get_float_range_checkers(
     range: Range<FloatPayloadType>,
 ) -> Option<ConditionCheckerFn> {
     match index {
-        FieldIndex::IntIndex(num_index) => {
-            let range = range.map(|f| f as IntPayloadType);
-            Some(Box::new(move |point_id: PointOffsetType| {
-                num_index
-                    .get_values(point_id)
-                    .is_some_and(|values| values.iter().copied().any(|i| range.check_range(i)))
-            }))
-        }
+        FieldIndex::IntIndex(num_index) => Some(Box::new(move |point_id: PointOffsetType| {
+            num_index
+                .get_values(point_id)
+                .is_some_and(|values| values.iter().copied().any(|i| range.check_range_num_cmp(i)))
+        })),
         FieldIndex::FloatIndex(num_index) => Some(Box::new(move |point_id: PointOffsetType| {
             num_index
                 .get_values(point_id)
                 .is_some_and(|values| values.iter().copied().any(|f| range.check_range(f)))
+        })),
+        _ => None,
+    }
+}
+
+pub fn get_int_range_checkers(
+    index: &FieldIndex,
+    range: Range<IntPayloadType>,
+) -> Option<ConditionCheckerFn> {
+    match index {
+        FieldIndex::IntIndex(num_index) => Some(Box::new(move |point_id: PointOffsetType| {
+            num_index
+                .get_values(point_id)
+                .is_some_and(|values| values.iter().copied().any(|i| range.check_range(i)))
+        })),
+        FieldIndex::FloatIndex(num_index) => Some(Box::new(move |point_id: PointOffsetType| {
+            num_index
+                .get_values(point_id)
+                .is_some_and(|values| values.iter().copied().any(|f| range.check_range_num_cmp(f)))
         })),
         _ => None,
     }

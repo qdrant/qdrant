@@ -19,7 +19,7 @@ pub enum Direction {
 }
 
 impl Direction {
-    pub fn as_range_from<T>(&self, from: T) -> Range<T> {
+    pub fn as_range_from<T: Copy>(&self, from: T) -> Range<T> {
         match self {
             Direction::Asc => Range {
                 gte: Some(from),
@@ -40,6 +40,8 @@ impl Direction {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(untagged)]
 pub enum StartFrom {
+    Int(IntPayloadType),
+
     Float(FloatPayloadType),
 
     Datetime(DateTimePayloadType),
@@ -65,6 +67,7 @@ impl OrderBy {
             .as_ref()
             .map(|start_from| match start_from {
                 StartFrom::Float(f) => RangeInterface::Float(self.direction().as_range_from(*f)),
+                StartFrom::Int(i) => RangeInterface::Int(self.direction().as_range_from(*i)),
                 StartFrom::Datetime(dt) => {
                     RangeInterface::DateTime(self.direction().as_range_from(*dt))
                 }
@@ -81,6 +84,7 @@ impl OrderBy {
             .as_ref()
             .map(|start_from| match start_from {
                 StartFrom::Float(f) => OrderingValue::Float(*f),
+                StartFrom::Int(i) => OrderingValue::Int(*i),
                 StartFrom::Datetime(dt) => OrderingValue::Int(dt.timestamp()),
             })
             .unwrap_or_else(|| match self.direction() {
