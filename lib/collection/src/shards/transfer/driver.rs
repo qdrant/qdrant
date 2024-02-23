@@ -104,7 +104,7 @@ pub async fn transfer_shard(
 
                 // Temporary hack for remote shard to get from PartialSnapshot back into Partial state
                 log::trace!("Shard {shard_id} diff recovered on {} for diff transfer, switching into next stage through consensus", remote_shard.peer_id);
-                consensus
+                let result = consensus
                     .snapshot_recovered_switch_to_partial_confirm_remote(
                         &transfer_config,
                         collection_name,
@@ -115,7 +115,10 @@ pub async fn transfer_shard(
                         crate::operations::types::CollectionError::service_error(format!(
                             "Can't switch shard {shard_id} to Partial state after diff transfer: {err}"
                         ))
-                    })?;
+                    });
+                if let Err(err) = result {
+                    log::warn!("Shard {shard_id} coult not be switched from PartialSnapshot to Partial state, ignoring: {err}");
+                }
 
                 // Redo the transfer but set a different method
                 transfer_config
