@@ -1,7 +1,6 @@
 syntax = "proto3";
 
 import "collections.proto";
-import "points_internal_service.proto";
 
 package qdrant;
 option csharp_namespace = "Qdrant.Client.Grpc";
