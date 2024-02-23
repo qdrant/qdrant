@@ -121,8 +121,16 @@ impl<R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
         }
     }
 
-    pub fn read(&self, start_index: u64) -> impl DoubleEndedIterator<Item = (u64, R)> + '_ {
-        (start_index..=self.last_index()).map(move |idx| {
+    pub fn read(&self, from: u64) -> impl DoubleEndedIterator<Item = (u64, R)> + '_ {
+        // We have to explicitly do `from..self.first_index() + self.len(false)`, instead of more
+        // concise `from..=self.last_index()`, because if the WAL is empty, `Wal::last_index`
+        // returns `Wal::first_index`, so we end up with `1..=1` instead of an empty range. 😕
+        //
+        // TODO: Refactor `SerdeWal::last_index`/`Wal::last_index` to return `Option<u64>`? 🤔
+
+        let to = self.first_index() + self.len(false);
+
+        (from..to).map(move |idx| {
             let record_bin = self.wal.entry(idx).expect("Can't read entry from WAL");
 
             let record: R = serde_cbor::from_slice(&record_bin)
@@ -245,6 +253,8 @@ impl<R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
     }
 
     /// Last index that is still available in logical WAL.
+    //
+    // TODO: Refactor `SerdeWal::last_index`/`Wal::last_index` to return `Option<u64>`? 🤔
     pub fn last_index(&self) -> u64 {
         self.wal.last_index()
     }
