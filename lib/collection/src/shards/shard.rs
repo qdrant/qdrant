@@ -153,8 +153,8 @@ impl Shard {
     pub async fn shard_recovery_point(&self) -> CollectionResult<RecoveryPoint> {
         match self {
             Self::Local(local_shard) => Ok(local_shard.recovery_point().await),
-            Self::ForwardProxy(proxy_shard) => Ok(proxy_shard.wrapped_shard.recovery_point().await),
-            Self::Proxy(_) | Self::QueueProxy(_) | Self::Dummy(_) => {
+
+            Self::Proxy(_) | Self::ForwardProxy(_) | Self::QueueProxy(_) | Self::Dummy(_) => {
                 Err(CollectionError::service_error(format!(
                     "Recovery point not supported on {}",
                     self.variant_name(),
@@ -185,14 +185,8 @@ impl Shard {
     ) -> CollectionResult<Option<u64>> {
         let resolve_result = match self {
             Self::Local(local_shard) => local_shard.wal.resolve_wal_delta(recovery_point).await,
-            Self::ForwardProxy(proxy_shard) => {
-                proxy_shard
-                    .wrapped_shard
-                    .wal
-                    .resolve_wal_delta(recovery_point)
-                    .await
-            }
-            Self::Proxy(_) | Self::QueueProxy(_) | Self::Dummy(_) => {
+
+            Self::Proxy(_) | Self::ForwardProxy(_) | Self::QueueProxy(_) | Self::Dummy(_) => {
                 return Err(CollectionError::service_error(format!(
                     "Cannot resolve WAL delta on {}",
                     self.variant_name(),
