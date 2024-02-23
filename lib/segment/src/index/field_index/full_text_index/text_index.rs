@@ -243,9 +243,10 @@ mod tests {
     use super::*;
     use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
     use crate::data_types::text_index::{TextIndexType, TokenizerType};
+    use crate::json_path::path;
 
     fn filter_request(text: &str) -> FieldCondition {
-        FieldCondition::new_match("text", Match::new_text(text))
+        FieldCondition::new_match(path("text"), Match::new_text(text))
     }
 
     #[rstest]

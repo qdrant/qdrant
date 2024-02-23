@@ -6,6 +6,7 @@ use parking_lot::{RwLock, RwLockWriteGuard};
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::entry::entry_point::SegmentEntry;
+use segment::json_path::JsonPath;
 use segment::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
     SeqNumberType,
@@ -129,7 +130,7 @@ pub(crate) fn set_payload(
     op_num: SeqNumberType,
     payload: &Payload,
     points: &[PointIdType],
-    key: &Option<String>,
+    key: &Option<JsonPath>,
 ) -> CollectionResult<usize> {
     let updated_points =
         segments.apply_points_to_appendable(op_num, points, |id, write_segment| {
@@ -158,7 +159,7 @@ pub(crate) fn set_payload_by_filter(
     op_num: SeqNumberType,
     payload: &Payload,
     filter: &Filter,
-    key: &Option<String>,
+    key: &Option<JsonPath>,
 ) -> CollectionResult<usize> {
     let affected_points = points_by_filter(segments, filter)?;
     set_payload(segments, op_num, payload, &affected_points, key)

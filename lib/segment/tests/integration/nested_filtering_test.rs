@@ -12,6 +12,8 @@ use segment::types::{Condition, FieldCondition, Filter, Match, Payload, PayloadS
 use serde_json::json;
 use tempfile::Builder;
 
+use crate::utils::path;
+
 const NUM_POINTS: usize = 200;
 
 fn nested_payloads() -> Vec<Payload> {
@@ -74,37 +76,37 @@ fn test_filtering_context_consistency() {
         StructPayloadIndex::open(wrapped_payload_storage, id_tracker, dir.path(), true).unwrap();
 
     index
-        .set_indexed("f", PayloadSchemaType::Integer.into())
+        .set_indexed(&path("f"), PayloadSchemaType::Integer.into())
         .unwrap();
     index
-        .set_indexed("arr1[].a", PayloadSchemaType::Integer.into())
+        .set_indexed(&path("arr1[].a"), PayloadSchemaType::Integer.into())
         .unwrap();
     index
-        .set_indexed("arr1[].b", PayloadSchemaType::Integer.into())
+        .set_indexed(&path("arr1[].b"), PayloadSchemaType::Integer.into())
         .unwrap();
     index
-        .set_indexed("arr1[].c", PayloadSchemaType::Integer.into())
+        .set_indexed(&path("arr1[].c"), PayloadSchemaType::Integer.into())
         .unwrap();
     index
-        .set_indexed("arr1[].d", PayloadSchemaType::Integer.into())
+        .set_indexed(&path("arr1[].d"), PayloadSchemaType::Integer.into())
         .unwrap();
     index
-        .set_indexed("arr1[].text", PayloadSchemaType::Text.into())
+        .set_indexed(&path("arr1[].text"), PayloadSchemaType::Text.into())
         .unwrap();
 
     {
         let nested_condition_0 = Condition::new_nested(
-            "arr1",
+            path("arr1"),
             Filter {
                 must: Some(vec![
                     // E.g. idx = 6 => { "a" = 1, "b" = 7, "c" = 1, "d" = 0 }
-                    Condition::Field(FieldCondition::new_match("a", 1.into())),
-                    Condition::Field(FieldCondition::new_match("c", 1.into())),
+                    Condition::Field(FieldCondition::new_match(path("a"), 1.into())),
+                    Condition::Field(FieldCondition::new_match(path("c"), 1.into())),
                 ]),
                 should: None,
                 min_should: None,
                 must_not: Some(vec![Condition::Field(FieldCondition::new_range(
-                    "d",
+                    path("d"),
                     Range {
                         lte: Some(1.into()),
                         ..Default::default()
@@ -136,13 +138,13 @@ fn test_filtering_context_consistency() {
 
     {
         let nested_condition_1 = Condition::new_nested(
-            "arr1",
+            path("arr1"),
             Filter {
                 must: Some(vec![
                     // E.g. idx = 6 => { "a" = 1, "b" = 7, "c" = 1, "d" = 0 }
-                    Condition::Field(FieldCondition::new_match("a", 1.into())),
-                    Condition::Field(FieldCondition::new_match("c", 1.into())),
-                    Condition::Field(FieldCondition::new_match("d", 0.into())),
+                    Condition::Field(FieldCondition::new_match(path("a"), 1.into())),
+                    Condition::Field(FieldCondition::new_match(path("c"), 1.into())),
+                    Condition::Field(FieldCondition::new_match(path("d"), 0.into())),
                 ]),
                 should: None,
                 min_should: None,
@@ -168,16 +170,16 @@ fn test_filtering_context_consistency() {
 
     {
         let nested_condition_2 = Condition::new_nested(
-            "arr1",
+            path("arr1"),
             Filter {
                 must: Some(vec![
                     // E.g. idx = 6 => { "a" = 1, "b" = 7, "c" = 1, "d" = 0 }
-                    Condition::Field(FieldCondition::new_match("a", 1.into())),
+                    Condition::Field(FieldCondition::new_match(path("a"), 1.into())),
                     Condition::Field(FieldCondition::new_match(
-                        "text",
+                        path("text"),
                         Match::Text("c1".to_string().into()),
                     )),
-                    Condition::Field(FieldCondition::new_match("d", 0.into())),
+                    Condition::Field(FieldCondition::new_match(path("d"), 0.into())),
                 ]),
                 should: None,
                 min_should: None,
@@ -202,16 +204,22 @@ fn test_filtering_context_consistency() {
 
     {
         let nested_condition_3 = Condition::new_nested(
-            "arr1",
-            Filter::new_must(Condition::Field(FieldCondition::new_match("b", 1.into()))),
+            path("arr1"),
+            Filter::new_must(Condition::Field(FieldCondition::new_match(
+                path("b"),
+                1.into(),
+            ))),
         );
 
         let nester_condition_3_1 = Condition::new_nested(
-            "arr2",
+            path("arr2"),
             Filter {
                 must: Some(vec![Condition::new_nested(
-                    "arr3",
-                    Filter::new_must(Condition::Field(FieldCondition::new_match("b", 10.into()))),
+                    path("arr3"),
+                    Filter::new_must(Condition::Field(FieldCondition::new_match(
+                        path("b"),
+                        10.into(),
+                    ))),
                 )]),
                 should: None,
                 min_should: None,

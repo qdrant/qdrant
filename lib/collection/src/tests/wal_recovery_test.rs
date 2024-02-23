@@ -93,7 +93,7 @@ fn upsert_operation() -> CollectionUpdateOperations {
 fn create_payload_index_operation() -> CollectionUpdateOperations {
     CollectionUpdateOperations::FieldIndexOperation(FieldIndexOperations::CreateIndex(
         CreateIndex {
-            field_name: "location".to_string(),
+            field_name: "location".parse().unwrap(),
             field_schema: Some(PayloadFieldSchema::FieldType(PayloadSchemaType::Geo)),
         },
     ))
@@ -140,7 +140,11 @@ async fn test_delete_from_indexed_payload() {
 
     let info = shard.info().await.unwrap();
     eprintln!("info = {:#?}", info.payload_schema);
-    let number_of_indexed_points = info.payload_schema.get("location").unwrap().points;
+    let number_of_indexed_points = info
+        .payload_schema
+        .get(&"location".parse().unwrap())
+        .unwrap()
+        .points;
 
     drop(shard);
 
@@ -179,7 +183,11 @@ async fn test_delete_from_indexed_payload() {
     let info = shard.info().await.unwrap();
     eprintln!("info = {:#?}", info.payload_schema);
 
-    let number_of_indexed_points_after_load = info.payload_schema.get("location").unwrap().points;
+    let number_of_indexed_points_after_load = info
+        .payload_schema
+        .get(&"location".parse().unwrap())
+        .unwrap()
+        .points;
 
     assert_eq!(number_of_indexed_points, 4);
     assert_eq!(number_of_indexed_points_after_load, 3);

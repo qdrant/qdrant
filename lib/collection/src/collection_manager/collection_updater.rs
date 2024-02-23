@@ -241,7 +241,7 @@ mod tests {
             101,
             PayloadOps::DeletePayload(DeletePayloadOp {
                 points: Some(vec![3.into()]),
-                keys: vec!["color".to_string(), "empty".to_string()],
+                keys: vec!["color".parse().unwrap(), "empty".parse().unwrap()],
                 filter: None,
             }),
         )

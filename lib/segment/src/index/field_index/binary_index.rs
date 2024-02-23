@@ -355,6 +355,7 @@ mod tests {
     use super::BinaryIndex;
     use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
     use crate::index::field_index::{PayloadFieldIndex, ValueIndexer};
+    use crate::json_path::path;
 
     const FIELD_NAME: &str = "bool_field";
     const DB_NAME: &str = "test_db";
@@ -369,7 +370,7 @@ mod tests {
 
     fn match_bool(value: bool) -> crate::types::FieldCondition {
         crate::types::FieldCondition::new_match(
-            FIELD_NAME.to_string(),
+            path(FIELD_NAME),
             crate::types::Match::Value(crate::types::MatchValue {
                 value: crate::types::ValueVariants::Bool(value),
             }),
@@ -499,9 +500,7 @@ mod tests {
                 index.add_point(i as u32, &[&value]).unwrap();
             });
 
-        let blocks = index
-            .payload_blocks(0, FIELD_NAME.to_string())
-            .collect_vec();
+        let blocks = index.payload_blocks(0, path(FIELD_NAME)).collect_vec();
         assert_eq!(blocks.len(), 2);
         assert_eq!(blocks[0].cardinality, 6);
         assert_eq!(blocks[1].cardinality, 6);

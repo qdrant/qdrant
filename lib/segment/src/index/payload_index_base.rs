@@ -5,9 +5,9 @@ use common::types::PointOffsetType;
 use serde_json::Value;
 
 use crate::common::operation_error::OperationResult;
-use crate::common::utils::JsonPathPayload;
 use crate::common::Flusher;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
+use crate::json_path::JsonPath;
 use crate::payload_storage::FilterContext;
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
@@ -36,7 +36,7 @@ pub trait PayloadIndex {
     fn estimate_nested_cardinality(
         &self,
         query: &Filter,
-        nested_path: &JsonPathPayload,
+        nested_path: &JsonPath,
     ) -> CardinalityEstimation;
 
     /// Return list of all point ids, which satisfy filtering criteria
@@ -69,7 +69,7 @@ pub trait PayloadIndex {
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
-        key: &Option<String>,
+        key: &Option<JsonPath>,
     ) -> OperationResult<()>;
 
     /// Get payload for point

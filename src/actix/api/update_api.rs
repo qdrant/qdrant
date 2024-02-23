@@ -5,6 +5,7 @@ use collection::operations::payload_ops::{DeletePayload, SetPayload};
 use collection::operations::point_ops::{PointInsertOperations, PointsSelector, WriteOrdering};
 use collection::operations::vector_ops::{DeleteVectors, UpdateVectors};
 use schemars::JsonSchema;
+use segment::json_path::{JsonPath, JsonPathInterface};
 use serde::{Deserialize, Serialize};
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
@@ -21,8 +22,8 @@ use crate::common::points::{
 #[derive(Deserialize, Validate)]
 struct FieldPath {
     #[serde(rename = "field_name")]
-    #[validate(length(min = 1))]
-    name: String,
+    #[validate(custom = "JsonPath::validate_not_empty")]
+    name: JsonPath,
 }
 
 #[derive(Deserialize, Serialize, JsonSchema, Validate)]

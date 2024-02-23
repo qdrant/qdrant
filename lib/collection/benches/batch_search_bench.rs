@@ -113,11 +113,11 @@ fn batch_search_bench(c: &mut Criterion) {
     let filters = vec![
         None,
         Some(Filter::new_must(Condition::Field(
-            FieldCondition::new_match("a".to_string(), 3.into()),
+            FieldCondition::new_match("a".parse().unwrap(), 3.into()),
         ))),
         Some(Filter::new_must(Condition::Field(
             FieldCondition::new_range(
-                "a".to_string(),
+                "a".parse().unwrap(),
                 Range {
                     lt: None,
                     gt: Some(-1.),

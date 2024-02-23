@@ -13,7 +13,7 @@ use segment::data_types::vectors::DenseVector;
 use segment::types::{Filter, Payload, WithPayloadInterface, WithVector};
 use serde_json::json;
 
-use crate::common::simple_collection_fixture;
+use crate::common::{path, simple_collection_fixture};
 
 fn rand_dense_vector(rng: &mut ThreadRng, size: usize) -> DenseVector {
     rng.sample_iter(Uniform::new(0.4, 0.6)).take(size).collect()
@@ -43,7 +43,7 @@ mod group_by {
             score_threshold: None,
         });
 
-        let request = GroupRequest::with_limit_from_request(source, "docId".to_string(), 3);
+        let request = GroupRequest::with_limit_from_request(source, path("docId"), 3);
 
         let collection_dir = tempfile::Builder::new()
             .prefix("collection")
@@ -140,7 +140,7 @@ mod group_by {
                 using: None,
                 lookup_from: None,
             }),
-            "docId".to_string(),
+            path("docId"),
             2,
         );
 
@@ -200,7 +200,7 @@ mod group_by {
                 with_vector: None,
                 score_threshold: None,
             }),
-            "docId".to_string(),
+            path("docId"),
             3,
         );
 
@@ -232,7 +232,7 @@ mod group_by {
                 with_vector: Some(WithVector::Bool(true)),
                 score_threshold: None,
             }),
-            "docId".to_string(),
+            path("docId"),
             3,
         );
 
@@ -270,7 +270,7 @@ mod group_by {
                 with_vector: Some(WithVector::Bool(true)),
                 score_threshold: None,
             }),
-            "other_stuff".to_string(),
+            path("other_stuff"),
             3,
         );
 
@@ -306,7 +306,7 @@ mod group_by {
                 with_vector: None,
                 score_threshold: None,
             }),
-            "docId".to_string(),
+            path("docId"),
             0,
         );
 
@@ -338,7 +338,7 @@ mod group_by {
                 with_vector: None,
                 score_threshold: None,
             }),
-            "docId".to_string(),
+            path("docId"),
             3,
         );
 
@@ -370,7 +370,7 @@ mod group_by {
                 with_vector: None,
                 score_threshold: None,
             }),
-            "docId".to_string(),
+            path("docId"),
             3,
         );
 
@@ -406,7 +406,7 @@ mod group_by {
                 with_vector: None,
                 score_threshold: None,
             }),
-            "docId".to_string(),
+            path("docId"),
             400,
         );
 
@@ -461,7 +461,7 @@ mod group_by_builder {
             score_threshold: None,
         });
 
-        let request = GroupRequest::with_limit_from_request(source_request, "docId".to_string(), 3);
+        let request = GroupRequest::with_limit_from_request(source_request, path("docId"), 3);
 
         let collection_dir = tempfile::Builder::new().prefix("chunks").tempdir().unwrap();
         let collection = simple_collection_fixture(collection_dir.path(), 1).await;

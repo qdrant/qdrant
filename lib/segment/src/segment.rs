@@ -34,6 +34,7 @@ use crate::index::field_index::numeric_index::StreamRange;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndex, VectorIndexEnum};
+use crate::json_path::JsonPath;
 use crate::spaces::tools::{peek_top_largest_iterable, peek_top_smallest_iterable};
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
@@ -1102,7 +1103,7 @@ impl SegmentEntry for Segment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         payload: &Payload,
-        key: &Option<String>,
+        key: &Option<JsonPath>,
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         self.handle_version_and_failure(op_num, internal_id, |segment| match internal_id {
@@ -1501,7 +1502,7 @@ impl SegmentEntry for Segment {
             }
             None => match segment.infer_from_payload_data(key)? {
                 None => Err(TypeInferenceError {
-                    field_name: key.to_string(),
+                    field_name: key.clone(),
                 }),
                 Some(schema_type) => {
                     segment

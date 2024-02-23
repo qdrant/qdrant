@@ -229,13 +229,13 @@ impl Collection {
                 .payload_index_schema
                 .read()
                 .schema
-                .get(order_by.key.as_str())
+                .get(&order_by.key)
                 .is_some_and(|field| field.has_range_index());
 
             if !has_range_index_for_order_by_field {
                 return Err(CollectionError::bad_request(format!(
                     "No range index for `order_by` key: {}. Please create one to use `order_by`. Integer, float, and datetime payloads can have range indexes, see https://qdrant.tech/documentation/concepts/indexing/#payload-index.",
-                    order_by.key.as_str()
+                    &order_by.key
                 )));
             }
 

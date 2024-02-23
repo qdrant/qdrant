@@ -19,7 +19,7 @@ const NUM_POINTS: usize = 100000;
 
 fn random_bool_filter<R: Rng + ?Sized>(rng: &mut R) -> Filter {
     Filter::new_must(Condition::Field(FieldCondition::new_match(
-        BOOL_KEY,
+        BOOL_KEY.parse().unwrap(),
         Match::new_value(ValueVariants::Bool(rng.gen_bool(0.5))),
     )))
 }
@@ -91,7 +91,10 @@ pub fn keyword_index_boolean_query_points(c: &mut Criterion) {
         StructPayloadIndex::open(payload_storage, id_tracker, dir.path(), true).unwrap();
 
     index
-        .set_indexed(BOOL_KEY, PayloadSchemaType::Keyword.into())
+        .set_indexed(
+            &BOOL_KEY.parse().unwrap(),
+            PayloadSchemaType::Keyword.into(),
+        )
         .unwrap();
 
     let mut group = c.benchmark_group("boolean-query-points");
