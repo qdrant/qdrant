@@ -512,7 +512,7 @@ impl LocalShard {
         // (`SerdeWal::read_all` may even start reading WAL from some already truncated
         // index *occasionally*), but the storage can handle it.
 
-        for (op_num, update) in wal.read_all() {
+        for (op_num, update) in wal.read_all(false) {
             if let Some(clock_tag) = update.clock_tag {
                 highest_clocks.advance_clock(clock_tag);
             }

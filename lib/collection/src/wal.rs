@@ -72,7 +72,7 @@ pub struct SerdeWal<R> {
 
 const FIRST_INDEX_FILE: &str = "first-index";
 
-impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
+impl<R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
     pub fn new(dir: &str, wal_options: WalOptions) -> Result<SerdeWal<R>> {
         let wal = Wal::with_options(dir, &wal_options)
             .map_err(|err| WalError::InitWalError(format!("{err:?}")))?;
@@ -110,8 +110,35 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
             .map_err(|err| WalError::WriteWalError(format!("{err:?}")))
     }
 
-    pub fn read_all(&'s self) -> impl Iterator<Item = (u64, R)> + 's {
-        self.read(self.first_index())
+    pub fn read_all(
+        &self,
+        with_acknowledged: bool,
+    ) -> impl DoubleEndedIterator<Item = (u64, R)> + '_ {
+        if with_acknowledged {
+            self.read(self.first_closed_index())
+        } else {
+            self.read(self.first_index())
+        }
+    }
+
+    pub fn read(&self, from: u64) -> impl DoubleEndedIterator<Item = (u64, R)> + '_ {
+        // We have to explicitly do `from..self.first_index() + self.len(false)`, instead of more
+        // concise `from..=self.last_index()`, because if the WAL is empty, `Wal::last_index`
+        // returns `Wal::first_index`, so we end up with `1..=1` instead of an empty range. 😕
+        //
+        // TODO: Refactor `SerdeWal::last_index`/`Wal::last_index` to return `Option<u64>`? 🤔
+
+        let to = self.first_index() + self.len(false);
+
+        (from..to).map(move |idx| {
+            let record_bin = self.wal.entry(idx).expect("Can't read entry from WAL");
+
+            let record: R = serde_cbor::from_slice(&record_bin)
+                .or_else(|_err| rmp_serde::from_slice(&record_bin))
+                .expect("Can't deserialize entry, probably corrupted WAL or version mismatch");
+
+            (idx, record)
+        })
     }
 
     pub fn is_empty(&self) -> bool {
@@ -146,44 +173,6 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
     // `truncated_prefix_entries_num` returns the length of the "logically deleted" part of the WAL.
     fn truncated_prefix_entries_num(&self) -> u64 {
         self.first_index().saturating_sub(self.wal.first_index())
-    }
-
-    pub fn read(&'s self, start_from: u64) -> impl Iterator<Item = (u64, R)> + 's {
-        let first_index = self.first_index();
-        let len = self.len(false);
-
-        (start_from..(first_index + len)).map(move |idx| {
-            let record_bin = self.wal.entry(idx).expect("Can't read entry from WAL");
-            let record: R = serde_cbor::from_slice(&record_bin)
-                .or_else(|_err| rmp_serde::from_slice(&record_bin))
-                .expect("Can't deserialize entry, probably corrupted WAL on version mismatch");
-            (idx, record)
-        })
-    }
-
-    /// Read all records from newest to oldest
-    ///
-    /// Normally this only iterates over our logical WAL, meaning all acknowledged records are
-    /// excluded. If `with_acknowledged` is set to `true`, it will also iterate over all acknowledged
-    /// records we still have in closed segments on disk.
-    pub fn read_from_last(
-        &'s self,
-        with_acknowledged: bool,
-    ) -> impl Iterator<Item = (u64, R)> + 's {
-        let first_index = if with_acknowledged {
-            self.first_closed_index()
-        } else {
-            self.first_index()
-        };
-        let len = self.len(with_acknowledged);
-
-        (first_index..(first_index + len)).rev().map(move |idx| {
-            let record_bin = self.wal.entry(idx).expect("Can't read entry from WAL");
-            let record: R = serde_cbor::from_slice(&record_bin)
-                .or_else(|_err| rmp_serde::from_slice(&record_bin))
-                .expect("Can't deserialize entry, probably corrupted WAL on version mismatch");
-            (idx, record)
-        })
     }
 
     /// Inform WAL, that records older than `until_index` are no longer required.
@@ -251,6 +240,8 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
     ///
     /// If the index is lower than `first_index`, it means we have already acknowledged it but we
     /// are still holding it in a closed segment until it gets truncated.
+    //
+    // TODO: Rename to `first_acknowledged_index`? Or to something else more meaningful than "closed"? 🤔
     pub fn first_closed_index(&self) -> u64 {
         self.wal.first_index()
     }
@@ -262,6 +253,8 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
     }
 
     /// Last index that is still available in logical WAL.
+    //
+    // TODO: Refactor `SerdeWal::last_index`/`Wal::last_index` to return `Option<u64>`? 🤔
     pub fn last_index(&self) -> u64 {
         self.wal.last_index()
     }
