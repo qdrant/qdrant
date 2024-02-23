@@ -87,14 +87,14 @@ impl RecoverableWal {
         // Lock highest and cutoff maps separately to avoid deadlocks
         {
             let mut highest_clocks = self.highest_clocks.lock().await;
-            for clock_tag in cutoff.clock_tag_iter() {
+            for clock_tag in cutoff.iter_as_clock_tags() {
                 highest_clocks.advance_clock(clock_tag);
             }
         }
 
         {
             let mut cutoff_clocks = self.cutoff_clocks.lock().await;
-            for clock_tag in cutoff.clock_tag_iter() {
+            for clock_tag in cutoff.iter_as_clock_tags() {
                 cutoff_clocks.advance_clock(clock_tag);
             }
         }
@@ -172,26 +172,26 @@ fn resolve_wal_delta(
 
     // If our current node has any lower clock than the recovery point specifies,
     // we're missing essential records and cannot resolve a WAL delta
-    if recovery_point.has_any_higher(&local_recovery_point) {
+    if recovery_point.has_any_newer_clocks_than(&local_recovery_point) {
         return Err(WalDeltaError::HigherThanCurrent);
     }
 
     // From this point, increase all clocks by one
     // We must do that so we can specify clock tick 0 as needing everything from that clock
-    recovery_point.increase_by(1);
-    local_recovery_point.increase_by(1);
-    local_cutoff_point.increase_by(1);
+    recovery_point.increase_all_clocks_by(1);
+    local_recovery_point.increase_all_clocks_by(1);
+    local_cutoff_point.increase_all_clocks_by(1);
 
     // Extend clock map with missing clocks this node know about
     // Ensure the recovering node gets records for a clock it might not have seen yet
-    recovery_point.extend_with_missing_clocks(&local_recovery_point);
+    recovery_point.initialize_clocks_missing_from(&local_recovery_point);
 
     // Remove clocks that are equal to this node, we don't have to transfer records for them
     // TODO: do we want to remove higher clocks too, as the recovery node already has all data?
-    recovery_point.remove_equal_clocks(&local_recovery_point);
+    recovery_point.remove_clocks_equal_to(&local_recovery_point);
 
     // Recovery point may not be below our cutoff point
-    if recovery_point.has_any_lower(&local_cutoff_point) {
+    if recovery_point.has_any_older_clocks_than(&local_cutoff_point) {
         return Err(WalDeltaError::Cutoff);
     }
 
@@ -210,7 +210,7 @@ fn resolve_wal_delta(
         .take_while(|(_, update)| update.clock_tag.is_some())
         // Keep scrolling until we have no clocks left
         .find(|(_, update)| {
-            recovery_point.remove_equal_or_lower(update.clock_tag.unwrap());
+            recovery_point.remove_clock_if_newer_than_or_equal_to_tag(update.clock_tag.unwrap());
             recovery_point.is_empty()
         })
         .map(|(op_num, _)| op_num);
