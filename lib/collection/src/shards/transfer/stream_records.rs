@@ -111,6 +111,7 @@ pub(super) async fn transfer_stream_records(
             .update_shard_cutoff_point(collection_name, shard_id, &cutoff)
             .await;
         if let Err(err) = result {
+            // TODO: only ignore 'API unimplemented' errors here!
             log::warn!("Failed to update cutoff point on remote shard, ignoring: {err}");
         }
     }
