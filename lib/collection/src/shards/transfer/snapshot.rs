@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use common::defaults;
 use tempfile::TempPath;
-use tokio::time::sleep;
 
 use super::{ShardTransfer, ShardTransferConsensus};
 use crate::operations::snapshot_ops::{get_checksum_path, SnapshotPriority};
@@ -11,7 +10,7 @@ use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::channel_service::ChannelService;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::replica_set::ReplicaState;
-use crate::shards::shard::{PeerId, ShardId};
+use crate::shards::shard::ShardId;
 use crate::shards::shard_holder::LockedShardHolder;
 
 /// Orchestrate shard snapshot transfer
@@ -271,49 +270,11 @@ pub(super) async fn transfer_snapshot(
         })?;
 
     // Synchronize all nodes
-    await_consensus_sync(consensus, &channel_service, transfer_config.from).await;
+    super::await_consensus_sync(consensus, &channel_service, transfer_config.from).await;
 
     log::debug!(
         "Ending shard {shard_id} transfer to peer {remote_peer_id} using snapshot transfer"
     );
 
     Ok(())
-}
-
-/// Await for consensus to synchronize across all peers
-///
-/// This will take the current consensus state of this node. It then explicitly waits on all other
-/// nodes to reach the same (or later) consensus.
-///
-/// If awaiting on other nodes fails for any reason, this simply continues after the consensus
-/// timeout.
-///
-/// # Cancel safety
-///
-/// This function is cancel safe.
-async fn await_consensus_sync(
-    consensus: &dyn ShardTransferConsensus,
-    channel_service: &ChannelService,
-    this_peer_id: PeerId,
-) {
-    let sync_consensus = async {
-        let await_result = consensus
-            .await_consensus_sync(this_peer_id, channel_service)
-            .await;
-        if let Err(err) = &await_result {
-            log::warn!("All peers failed to synchronize consensus: {err}");
-        }
-        await_result
-    };
-    let timeout = sleep(defaults::CONSENSUS_META_OP_WAIT);
-
-    tokio::select! {
-        biased;
-        Ok(_) = sync_consensus => {
-            log::trace!("All peers reached consensus");
-        }
-        _ = timeout => {
-            log::warn!("All peers failed to synchronize consensus, continuing after timeout");
-        }
-    }
 }

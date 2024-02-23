@@ -288,12 +288,12 @@ impl fmt::Display for RecoveryPoint {
     }
 }
 
-impl From<RecoveryPoint> for api::grpc::qdrant::RecoveryPoint {
-    fn from(rp: RecoveryPoint) -> Self {
+impl From<&RecoveryPoint> for api::grpc::qdrant::RecoveryPoint {
+    fn from(rp: &RecoveryPoint) -> Self {
         let clocks = rp
             .clocks
-            .into_iter()
-            .map(|(key, clock_tick)| RecoveryPointClockTag {
+            .iter()
+            .map(|(key, &clock_tick)| RecoveryPointClockTag {
                 peer_id: key.peer_id,
                 clock_id: key.clock_id,
                 clock_tick,
@@ -301,6 +301,12 @@ impl From<RecoveryPoint> for api::grpc::qdrant::RecoveryPoint {
             .collect();
 
         Self { clocks }
+    }
+}
+
+impl From<RecoveryPoint> for api::grpc::qdrant::RecoveryPoint {
+    fn from(rp: RecoveryPoint) -> Self {
+        (&rp).into()
     }
 }
 

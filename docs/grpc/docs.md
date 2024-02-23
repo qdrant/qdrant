@@ -1504,8 +1504,9 @@ Note: 1kB = 1 vector of size 256. |
 
 | Name | Number | Description |
 | ---- | ------ | ----------- |
-| StreamRecords | 0 |  |
-| Snapshot | 1 |  |
+| StreamRecords | 0 | Stream shard records in batches |
+| Snapshot | 1 | Snapshot the shard and recover it on the target peer |
+| WalDelta | 2 | Resolve WAL delta between peers and transfer the difference |
 
 
 
