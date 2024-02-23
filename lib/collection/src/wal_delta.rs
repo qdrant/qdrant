@@ -125,17 +125,22 @@ impl RecoverableWal {
         &self,
         recovery_point: RecoveryPoint,
     ) -> Result<Option<u64>, WalDeltaError> {
+        let newest_observed_clocks = self.recovery_point().await;
+
+        let oldest_resolvable_clocks = self
+            .oldest_resolvable_clocks
+            .lock()
+            .await
+            .to_recovery_point();
+
         resolve_wal_delta(
             self.wal
                 .lock()
                 .read_all(true)
                 .map(|(op_num, op)| (op_num, op.clock_tag)),
             recovery_point,
-            self.recovery_point().await,
-            self.oldest_resolvable_clocks
-                .lock()
-                .await
-                .to_recovery_point(),
+            newest_observed_clocks,
+            oldest_resolvable_clocks,
         )
     }
 
