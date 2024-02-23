@@ -173,7 +173,7 @@ impl CompressedPostingList {
     }
 
     fn is_in_postings_range(&self, val: PointOffsetType) -> bool {
-        self.chunks.len() > 0 && val >= self.chunks[0].initial && val <= self.last_doc_id
+        !self.chunks.is_empty() && val >= self.chunks[0].initial && val <= self.last_doc_id
     }
 
     fn decompress_chunk(
