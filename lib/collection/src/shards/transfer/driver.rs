@@ -13,7 +13,7 @@ use super::transfer_tasks_pool::TransferTaskProgress;
 use super::wal_delta::transfer_wal_delta;
 use super::{ShardTransfer, ShardTransferConsensus, ShardTransferMethod};
 use crate::common::stoppable_task_async::{spawn_async_cancellable, CancellableAsyncTaskHandle};
-use crate::operations::types::CollectionResult;
+use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::channel_service::ChannelService;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::replica_set::ReplicaState;
@@ -99,25 +99,37 @@ pub async fn transfer_shard(
             if let Err(err) = result {
                 // TODO: fall back to default transfer method as specified in configuration
                 log::warn!(
-                    "Failed to do shard diff transfer, falling back to stream records: {err}"
+                    "Failed to do shard diff transfer, falling back to {:?}: {err}",
+                    ShardTransferMethod::StreamRecords,
                 );
 
                 // Temporary hack for remote shard to get from PartialSnapshot back into Partial state
-                log::trace!("Shard {shard_id} diff recovered on {} for diff transfer, switching into next stage through consensus", remote_shard.peer_id);
-                let result = consensus
-                    .snapshot_recovered_switch_to_partial_confirm_remote(
-                        &transfer_config,
-                        collection_name,
-                        &remote_shard,
-                    )
-                    .await
-                    .map_err(|err| {
-                        crate::operations::types::CollectionError::service_error(format!(
-                            "Can't switch shard {shard_id} to Partial state after diff transfer: {err}"
-                        ))
-                    });
-                if let Err(err) = result {
-                    log::warn!("Shard {shard_id} coult not be switched from PartialSnapshot to Partial state, ignoring: {err}");
+                {
+                    let shard_holder_read = shard_holder.read().await;
+                    let transferring_shard = shard_holder_read.get_shard(&shard_id);
+                    let Some(replica_set) = transferring_shard else {
+                        return Err(CollectionError::service_error(format!(
+                            "Shard {shard_id} cannot be queue proxied because it does not exist"
+                        )));
+                    };
+                    let shard_state = replica_set.peer_state(&transfer_config.to);
+
+                    // Only switch if not in partial already
+                    if shard_state != Some(ReplicaState::Partial) {
+                        log::trace!("Shard {shard_id} diff recovered on {} for diff transfer, switching into next stage through consensus", remote_shard.peer_id);
+                        consensus
+                            .snapshot_recovered_switch_to_partial_confirm_remote(
+                                &transfer_config,
+                                collection_name,
+                                &remote_shard,
+                            )
+                            .await
+                            .map_err(|err| {
+                                crate::operations::types::CollectionError::service_error(format!(
+                                        "Can't switch shard {shard_id} to Partial state after diff transfer: {err}"
+                                ))
+                            })?;
+                    }
                 }
 
                 // Redo the transfer but set a different method
