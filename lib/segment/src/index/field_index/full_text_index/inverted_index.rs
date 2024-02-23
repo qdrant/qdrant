@@ -180,7 +180,7 @@ impl InvertedIndex {
             };
         }
         // Smallest posting is the largest possible cardinality
-        let smallest_posting = postings.iter().cloned().min().unwrap();
+        let smallest_posting = postings.iter().min().copied().unwrap();
 
         return if postings.len() == 1 {
             CardinalityEstimation {
@@ -544,12 +544,11 @@ impl ImmutableInvertedIndex {
 
 impl From<MutableInvertedIndex> for ImmutableInvertedIndex {
     fn from(mut index: MutableInvertedIndex) -> Self {
-        let mut postings: Vec<Option<CompressedPostingList>> = index
+        let postings: Vec<Option<CompressedPostingList>> = index
             .postings
             .into_iter()
             .map(|x| x.map(CompressedPostingList::new))
             .collect();
-        postings.shrink_to_fit();
         index.vocab.shrink_to_fit();
 
         ImmutableInvertedIndex {

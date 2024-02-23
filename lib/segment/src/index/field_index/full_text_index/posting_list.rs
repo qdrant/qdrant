@@ -49,8 +49,8 @@ impl PostingList {
 pub struct CompressedPostingList {
     len: usize,
     last_doc_id: PointOffsetType,
-    data: Box<[u8]>,
-    chunks: Box<[CompressedPostingChunk]>,
+    data: Vec<u8>,
+    chunks: Vec<CompressedPostingChunk>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -111,8 +111,8 @@ impl CompressedPostingList {
         Self {
             len,
             last_doc_id,
-            data: data.into_boxed_slice(),
-            chunks: chunks.into_boxed_slice(),
+            data,
+            chunks,
         }
     }
 
@@ -161,19 +161,14 @@ impl CompressedPostingList {
     }
 
     fn find_chunk(&self, doc_id: &PointOffsetType, start_chunk: Option<usize>) -> Option<usize> {
-        let start_chunk = if let Some(idx) = start_chunk { idx } else { 0 };
+        let start_chunk = start_chunk.unwrap_or(0);
         match self.chunks[start_chunk..].binary_search_by(|chunk| chunk.initial.cmp(doc_id)) {
             // doc_id is the initial value of the chunk with index idx
             Ok(idx) => Some(start_chunk + idx),
             // chunk idx has larger initial value than doc_id
             // so we need the previous chunk
-            Err(idx) => {
-                if idx > 0 {
-                    Some(start_chunk + idx - 1)
-                } else {
-                    None
-                }
-            }
+            Err(idx) if idx > 0 => Some(start_chunk + idx - 1),
+            Err(_) => None,
         }
     }
 
@@ -187,6 +182,7 @@ impl CompressedPostingList {
         chunk_index: usize,
         decompressed: &mut [PointOffsetType],
     ) {
+        assert!(decompressed.len() == BitPackerImpl::BLOCK_LEN);
         let chunk = &self.chunks[chunk_index];
         let chunk_size = Self::get_chunk_size(&self.chunks, &self.data, chunk_index);
         let chunk_bits = (chunk_size * 8) / BitPackerImpl::BLOCK_LEN;
