@@ -26,6 +26,7 @@ pub(super) async fn transfer_stream_records(
     progress: Arc<Mutex<TransferTaskProgress>>,
     shard_id: ShardId,
     remote_shard: RemoteShard,
+    collection_name: &str,
 ) -> CollectionResult<()> {
     let remote_peer_id = remote_shard.peer_id;
 
@@ -41,7 +42,7 @@ pub(super) async fn transfer_stream_records(
             )));
         };
 
-        replica_set.proxify_local(remote_shard).await?;
+        replica_set.proxify_local(remote_shard.clone()).await?;
 
         let Some(count_result) = replica_set
             .count_local(Arc::new(CountRequestInternal {
@@ -87,9 +88,41 @@ pub(super) async fn transfer_stream_records(
             progress.eta.set_progress(transferred);
         }
 
+        // If this is the last batch, finalize
         if offset.is_none() {
-            // That was the last batch, all look good
             break;
+        }
+    }
+
+    // Update cutoff point on remote shard, disallow recovery before our current last seen
+    {
+        let shard_holder = shard_holder.read().await;
+        let Some(replica_set) = shard_holder.get_shard(&shard_id) else {
+            // Forward proxy gone?!
+            // That would be a programming error.
+            return Err(CollectionError::service_error(format!(
+                "Shard {shard_id} is not found"
+            )));
+        };
+
+        let cutoff = replica_set.shard_recovery_point().await?;
+        let result = remote_shard
+            .update_shard_cutoff_point(collection_name, shard_id, &cutoff)
+            .await;
+
+        // Warn and ignore if remote shard is running an older version, error otherwise
+        // TODO: this is fragile, improve this with stricter matches/checks
+        match result {
+            // This string match is fragile but there does not seem to be a better way
+            Err(err)
+                if err.to_string().starts_with(
+                    "Service internal error: Tonic status error: status: Unimplemented",
+                ) =>
+            {
+                log::warn!("Cannot update cutoff point on remote shard because it is running an older version, ignoring: {err}");
+            }
+            Err(err) => return Err(err),
+            Ok(()) => {}
         }
     }
 

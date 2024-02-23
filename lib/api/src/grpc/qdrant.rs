@@ -1345,8 +1345,12 @@ impl ReplicaState {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum ShardTransferMethod {
+    /// Stream shard records in batches
     StreamRecords = 0,
+    /// Snapshot the shard and recover it on the target peer
     Snapshot = 1,
+    /// Resolve WAL delta between peers and transfer the difference
+    WalDelta = 2,
 }
 impl ShardTransferMethod {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -1357,6 +1361,7 @@ impl ShardTransferMethod {
         match self {
             ShardTransferMethod::StreamRecords => "StreamRecords",
             ShardTransferMethod::Snapshot => "Snapshot",
+            ShardTransferMethod::WalDelta => "WalDelta",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -1364,6 +1369,7 @@ impl ShardTransferMethod {
         match value {
             "StreamRecords" => Some(Self::StreamRecords),
             "Snapshot" => Some(Self::Snapshot),
+            "WalDelta" => Some(Self::WalDelta),
             _ => None,
         }
     }
