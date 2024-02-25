@@ -44,33 +44,13 @@ pub async fn do_delete_full_snapshot(
     wait: bool,
 ) -> Result<bool, StorageError> {
     let dispatcher = dispatcher.clone();
-    let snapshot_name = snapshot_name.to_string();
-    let task =
-        tokio::spawn(async move { _do_delete_full_snapshot(&dispatcher, &snapshot_name).await });
+    let snapshot_manager = dispatcher.clone().toc().storage_config.snapshot_manager();
+    let snapshot_dir = get_full_snapshot_path(dispatcher.toc(), snapshot_name).await?;
+    log::info!("Deleting full storage snapshot {:?}", snapshot_dir);
+    let task = tokio::spawn(async move { snapshot_manager.delete_snapshot(&snapshot_dir).await });
 
     if wait {
         task.await??;
-    }
-
-    Ok(true)
-}
-
-async fn _do_delete_full_snapshot(
-    dispatcher: &Dispatcher,
-    snapshot_name: &str,
-) -> Result<bool, StorageError> {
-    let snapshot_dir = get_full_snapshot_path(dispatcher.toc(), snapshot_name).await?;
-    let checksum_path = get_checksum_path(&snapshot_dir);
-    log::info!("Deleting full storage snapshot {:?}", snapshot_dir);
-    let (delete_snapshot, delete_checksum) = tokio::join!(
-        tokio::fs::remove_file(snapshot_dir),
-        tokio::fs::remove_file(checksum_path),
-    );
-    delete_snapshot?;
-
-    // We might not have a checksum file for the snapshot, ignore deletion errors in that case
-    if let Err(err) = delete_checksum {
-        log::warn!("Failed to delete checksum file for snapshot, ignoring: {err}");
     }
 
     Ok(true)
@@ -82,39 +62,17 @@ pub async fn do_delete_collection_snapshot(
     snapshot_name: &str,
     wait: bool,
 ) -> Result<bool, StorageError> {
-    let dispatcher = dispatcher.clone();
     let collection_name = collection_name.to_string();
     let snapshot_name = snapshot_name.to_string();
+    let collection = dispatcher.get_collection(&collection_name).await?;
+    let file_name = collection.get_snapshot_path(&snapshot_name).await?;
+    let snapshot_manager = dispatcher.clone().toc().storage_config.snapshot_manager();
 
-    let task = tokio::spawn(async move {
-        _do_delete_collection_snapshot(&dispatcher, &collection_name, &snapshot_name).await
-    });
+    log::info!("Deleting collection snapshot {:?}", file_name);
+    let task = tokio::spawn(async move { snapshot_manager.delete_snapshot(&file_name).await });
 
     if wait {
         task.await??;
-    }
-
-    Ok(true)
-}
-
-async fn _do_delete_collection_snapshot(
-    dispatcher: &Dispatcher,
-    collection_name: &str,
-    snapshot_name: &str,
-) -> Result<bool, StorageError> {
-    let collection = dispatcher.get_collection(collection_name).await?;
-    let file_name = collection.get_snapshot_path(snapshot_name).await?;
-    let checksum_path = get_checksum_path(&file_name);
-    log::info!("Deleting collection snapshot {:?}", file_name);
-    let (delete_snapshot, delete_checksum) = tokio::join!(
-        tokio::fs::remove_file(file_name),
-        tokio::fs::remove_file(checksum_path)
-    );
-    delete_snapshot?;
-
-    // We might not have a checksum file for the snapshot, ignore deletion errors in that case
-    if let Err(err) = delete_checksum {
-        log::warn!("Failed to delete checksum file for snapshot, ignoring: {err}");
     }
 
     Ok(true)

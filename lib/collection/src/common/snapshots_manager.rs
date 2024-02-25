@@ -3,6 +3,7 @@ use std::path::Path;
 use async_trait::async_trait;
 use serde::Deserialize;
 
+use crate::operations::snapshot_ops::get_checksum_path;
 use crate::operations::types::CollectionResult;
 
 #[derive(Clone, Deserialize, Debug)]
@@ -30,8 +31,20 @@ pub trait SnapshotStorage: Send + Sync {
 
 #[async_trait]
 impl SnapshotStorage for LocalFileSystemConfig {
-    async fn delete_snapshot(&self, _snapshot_path: &Path) -> CollectionResult<bool> {
-        unimplemented!()
+    async fn delete_snapshot(&self, snapshot_path: &Path) -> CollectionResult<bool> {
+        let checksum_path = get_checksum_path(snapshot_path);
+        let (delete_snapshot, delete_checksum) = tokio::join!(
+            tokio::fs::remove_file(snapshot_path),
+            tokio::fs::remove_file(checksum_path),
+        );
+        delete_snapshot?;
+
+        // We might not have a checksum file for the snapshot, ignore deletion errors in that case
+        if let Err(err) = delete_checksum {
+            log::warn!("Failed to delete checksum file for snapshot, ignoring: {err}");
+        }
+
+        Ok(true)
     }
 }
 

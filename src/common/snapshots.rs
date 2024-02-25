@@ -5,7 +5,7 @@ use std::sync::Arc;
 use collection::collection::Collection;
 use collection::common::sha_256::hash_file;
 use collection::operations::snapshot_ops::{
-    get_checksum_path, ShardSnapshotLocation, SnapshotDescription, SnapshotPriority,
+    ShardSnapshotLocation, SnapshotDescription, SnapshotPriority,
 };
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::ShardId;
@@ -58,19 +58,10 @@ pub async fn delete_shard_snapshot(
     let snapshot_path = collection
         .get_shard_snapshot_path(shard_id, &snapshot_name)
         .await?;
-    let checksum_path = get_checksum_path(&snapshot_path);
-
+    let snapshot_manager = collection.shared_storage_config().snapshot_manager();
     check_shard_snapshot_file_exists(&snapshot_path)?;
-    let (delete_snapshot, delete_checksum) = tokio::join!(
-        tokio::fs::remove_file(snapshot_path),
-        tokio::fs::remove_file(checksum_path)
-    );
-    delete_snapshot?;
 
-    // We might not have a checksum file for the snapshot, ignore deletion errors in that case
-    if let Err(err) = delete_checksum {
-        log::warn!("Failed to delete checksum file for snapshot, ignoring: {err}");
-    }
+    let _task = tokio::spawn(async move { snapshot_manager.delete_snapshot(&snapshot_path).await });
 
     Ok(())
 }
