@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use collection::common::sha_256::hash_file;
 use collection::operations::snapshot_ops::{
-    get_checksum_path, get_snapshot_description, list_snapshots_in_directory, SnapshotDescription,
+    get_checksum_path, get_snapshot_description, SnapshotDescription,
 };
 use serde::{Deserialize, Serialize};
 use tar::Builder as TarBuilder;
@@ -81,8 +81,9 @@ pub async fn do_delete_collection_snapshot(
 pub async fn do_list_full_snapshots(
     toc: &TableOfContent,
 ) -> Result<Vec<SnapshotDescription>, StorageError> {
+    let snapshots_manager = toc.storage_config.snapshot_manager();
     let snapshots_path = Path::new(toc.snapshots_path());
-    Ok(list_snapshots_in_directory(snapshots_path).await?)
+    Ok(snapshots_manager.list_snapshots(snapshots_path).await?)
 }
 
 pub async fn do_create_full_snapshot(

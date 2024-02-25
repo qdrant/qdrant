@@ -92,7 +92,7 @@ pub struct ShardReplicaSet {
     channel_service: ChannelService,
     collection_id: CollectionId,
     collection_config: Arc<RwLock<CollectionConfig>>,
-    shared_storage_config: Arc<SharedStorageConfig>,
+    pub(crate) shared_storage_config: Arc<SharedStorageConfig>,
     update_runtime: Handle,
     search_runtime: Handle,
     optimizer_cpu_budget: CpuBudget,

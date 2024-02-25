@@ -23,7 +23,8 @@ use crate::shards::shard_versioning;
 
 impl Collection {
     pub async fn list_snapshots(&self) -> CollectionResult<Vec<SnapshotDescription>> {
-        snapshot_ops::list_snapshots_in_directory(&self.snapshots_path).await
+        let snapshot_manager = self.shared_storage_config.snapshot_manager();
+        snapshot_manager.list_snapshots(&self.snapshots_path).await
     }
 
     /// Creates a snapshot of the collection.

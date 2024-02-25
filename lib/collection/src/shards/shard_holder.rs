@@ -20,7 +20,7 @@ use crate::hash_ring::HashRing;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::snapshot_ops::{
-    get_checksum_path, get_snapshot_description, list_snapshots_in_directory, SnapshotDescription,
+    get_checksum_path, get_snapshot_description, SnapshotDescription,
 };
 use crate::operations::types::{CollectionError, CollectionResult, ShardTransferInfo};
 use crate::operations::{OperationToShard, SplitByShard};
@@ -682,7 +682,11 @@ impl ShardHolder {
             return Ok(Vec::new());
         }
 
-        list_snapshots_in_directory(&snapshots_path).await
+        let shard = self
+            .get_shard(&shard_id)
+            .ok_or_else(|| shard_not_found_error(shard_id))?;
+        let snapshot_manager = shard.shared_storage_config.snapshot_manager();
+        snapshot_manager.list_snapshots(&snapshots_path).await
     }
 
     /// # Cancel safety
