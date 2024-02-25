@@ -275,3 +275,82 @@ def test_shard_wal_delta_transfer_fallback(capfd, tmp_path: pathlib.Path):
         assert_http_ok(r)
         data.append(r.json()["result"])
     assert data[0] == data[1] == data[2]
+
+
+# If the difference between the two nodes is too big, the WAL delta transfer
+# cannot be used. In this case, we should fall back to a different method - the stream transfer.
+def test_shard_fallback_on_big_diff(tmp_path: pathlib.Path):
+    assert_project_root()
+
+    # Prevent automatic recovery on restarted node, so we can manually recover with a specific transfer method
+    env={
+        "QDRANT__STORAGE__PERFORMANCE__INCOMING_SHARD_TRANSFERS_LIMIT": "0",
+        "QDRANT__STORAGE__PERFORMANCE__OUTGOING_SHARD_TRANSFERS_LIMIT": "0",
+        "QDRANT__STORAGE__WAL__WAL_CAPACITY_MB": "1",
+    }
+
+    # seed port to reuse the same port for the restarted nodes
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, 3, 20000, extra_env=env)
+
+    create_collection(peer_api_uris[0], shard_number=1, replication_factor=3)
+    wait_collection_exists_and_active_on_all_peers(
+        collection_name=COLLECTION_NAME,
+        peer_api_uris=peer_api_uris
+    )
+
+    transfer_collection_cluster_info = get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME)
+    receiver_collection_cluster_info = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
+
+    from_peer_id = transfer_collection_cluster_info['peer_id']
+    to_peer_id = receiver_collection_cluster_info['peer_id']
+
+    shard_id = 0
+
+    upsert_random_points(peer_api_uris[0], 100)
+
+    sleep(1)
+
+    # Kill last peer
+    processes.pop().kill()
+
+    sleep(1)
+
+    for i in range(10):
+        upsert_random_points(peer_api_uris[0], 1000, offset=100000 + i * 1000)
+
+    sleep(1)
+
+    # Restart the peer
+    peer_api_uris[-1] = start_peer(peer_dirs[-1], "peer_2_restarted.log", bootstrap_uri, extra_env=env)
+    wait_for_peer_online(peer_api_uris[-1], "/")
+
+
+    # Move shard `shard_id` to peer `target_peer_id`
+    r = requests.post(
+        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
+            "replicate_shard": {
+                "shard_id": shard_id,
+                "from_peer_id": from_peer_id,
+                "to_peer_id": to_peer_id,
+                "method": "wal_delta",
+            }
+        })
+    assert_http_ok(r)
+
+    # Wait for end of shard transfer
+    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
+
+    # Match all points on all nodes exactly
+    data = []
+    for uri in peer_api_uris:
+        r = requests.post(
+            f"{uri}/collections/{COLLECTION_NAME}/points/scroll", json={
+                "limit": 999999999,
+                "with_vectors": False,
+                "with_payload": False,
+            }
+        )
+        assert_http_ok(r)
+        data.append(r.json()["result"])
+    assert data[0] == data[1] == data[2]
+
