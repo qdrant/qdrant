@@ -3,6 +3,7 @@ use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
+use collection::common::snapshots_manager::{LocalFileSystemConfig, S3Config, SnapshotStorage};
 use collection::config::WalConfig;
 use collection::operations::shared_storage_config::{
     SharedStorageConfig, DEFAULT_IO_SHARD_TRANSFER_LIMIT,
@@ -53,7 +54,10 @@ pub struct StorageConfig {
     pub storage_path: String,
     #[serde(default = "default_snapshots_path")]
     #[validate(length(min = 1))]
+    //Will replace this later with what is now snapshot_lfs
     pub snapshots_path: String,
+    pub snapshot_lfs: Option<LocalFileSystemConfig>,
+    pub snapshot_s3: Option<S3Config>,
     #[validate(length(min = 1))]
     #[serde(default)]
     pub temp_path: Option<String>,
@@ -105,7 +109,19 @@ impl StorageConfig {
             self.shard_transfer_method,
             self.performance.incoming_shard_transfers_limit,
             self.performance.outgoing_shard_transfers_limit,
+            self.snapshot_lfs.clone(),
+            self.snapshot_s3.clone(),
         )
+    }
+
+    pub fn snapshot_manager(&self) -> Box<dyn SnapshotStorage> {
+        if let Some(s3) = self.snapshot_s3.clone() {
+            return Box::new(s3);
+        }
+        if let Some(lfs) = self.snapshot_lfs.clone() {
+            return Box::new(lfs);
+        }
+        Box::new(LocalFileSystemConfig::new("./snapshots".to_string()))
     }
 }
 
