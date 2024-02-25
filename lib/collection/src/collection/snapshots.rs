@@ -3,15 +3,12 @@ use std::path::{Path, PathBuf};
 
 use io::file_operations::read_json;
 use segment::common::version::StorageVersion as _;
-use tempfile::TempPath;
 use tokio::fs;
-use tokio::io::AsyncWriteExt;
 
 use super::Collection;
 use crate::collection::CollectionVersion;
-use crate::common::sha_256::hash_file;
 use crate::config::{CollectionConfig, ShardingMethod};
-use crate::operations::snapshot_ops::{self, SnapshotDescription};
+use crate::operations::snapshot_ops::SnapshotDescription;
 use crate::operations::types::{CollectionError, CollectionResult, NodeType};
 use crate::shards::local_shard::LocalShard;
 use crate::shards::remote_shard::RemoteShard;
@@ -126,33 +123,14 @@ impl Collection {
         });
         snapshot_temp_arc_file = archiving.await??;
 
-        // Move snapshot to permanent location.
-        // We can't move right away, because snapshot folder can be on another mounting point.
-        // We can't copy to the target location directly, because copy is not atomic.
-        // So we copy to the final location with a temporary name and then rename atomically.
-        let snapshot_path_tmp_move = snapshot_path.with_extension("tmp");
-
-        // Ensure that the temporary file is deleted on error
-        let _temp_path = TempPath::from_path(&snapshot_path_tmp_move);
-        fs::copy(&snapshot_temp_arc_file.path(), &snapshot_path_tmp_move).await?;
-
-        // compute and store the file's checksum before the final snapshot file is saved
-        // to avoid making snapshot available without checksum
-        let checksum_path = snapshot_ops::get_checksum_path(&snapshot_path);
-        let checksum = hash_file(&snapshot_path_tmp_move).await?;
-        let checksum_file = tempfile::TempPath::from_path(&checksum_path);
-        let mut file = tokio::fs::File::create(checksum_path.as_path()).await?;
-        file.write_all(checksum.as_bytes()).await?;
-
-        let snapshot_file = tempfile::TempPath::from_path(&snapshot_path);
-        fs::rename(&snapshot_path_tmp_move, &snapshot_path).await?;
-
-        // Snapshot files are ready now, so keep them
-        snapshot_file.keep()?;
-        checksum_file.keep()?;
-
-        log::info!("Collection snapshot {snapshot_name} completed into {snapshot_path:?}");
-        snapshot_ops::get_snapshot_description(&snapshot_path).await
+        let snapshot_manager = self.shared_storage_config.snapshot_manager();
+        snapshot_manager
+            .store_file(
+                snapshot_temp_arc_file.path(),
+                snapshot_path.as_path(),
+                false,
+            )
+            .await
     }
 
     /// Restore collection from snapshot
