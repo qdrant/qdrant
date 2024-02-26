@@ -431,17 +431,17 @@ def wait_for(condition: Callable[..., bool], *args, wait_for_interval=RETRY_INTE
             time.sleep(wait_for_interval)
 
 
-def peer_is_online(peer_api_uri: str) -> bool:
+def peer_is_online(peer_api_uri: str, path: str = "/readyz") -> bool:
     try:
-        r = requests.get(f"{peer_api_uri}/readyz")
+        r = requests.get(f"{peer_api_uri}{path}")
         return r.status_code == 200
     except:
         return False
 
 
-def wait_for_peer_online(peer_api_uri: str):
+def wait_for_peer_online(peer_api_uri: str, path="/readyz"):
     try:
-        wait_for(peer_is_online, peer_api_uri)
+        wait_for(peer_is_online, peer_api_uri, path=path)
     except Exception as e:
         print_clusters_info([peer_api_uri])
         raise e

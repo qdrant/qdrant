@@ -69,7 +69,7 @@ def test_shard_snapshot_transfer(tmp_path: pathlib.Path):
                 "shard_id": shard_id,
                 "from_peer_id": from_peer_id,
                 "to_peer_id": to_peer_id,
-                "method": "snapshot"
+                "method": "snapshot",
             }
         })
     assert_http_ok(r)
@@ -137,7 +137,7 @@ def test_shard_snapshot_transfer_throttled_updates(tmp_path: pathlib.Path):
                 "shard_id": shard_id,
                 "from_peer_id": from_peer_id,
                 "to_peer_id": to_peer_id,
-                "method": "snapshot"
+                "method": "snapshot",
             }
         })
     assert_http_ok(r)
@@ -211,7 +211,7 @@ def test_shard_snapshot_transfer_fast_burst(tmp_path: pathlib.Path):
                 "shard_id": shard_id,
                 "from_peer_id": from_peer_id,
                 "to_peer_id": to_peer_id,
-                "method": "snapshot"
+                "method": "snapshot",
             }
         })
     assert_http_ok(r)
