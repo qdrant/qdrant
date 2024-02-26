@@ -6,10 +6,12 @@ use validator::ValidationError;
 
 use crate::common::utils::MultiValue;
 
+mod parse;
 mod string;
 mod v2;
 
 pub use string::JsonPathString;
+pub use v2::JsonPathV2;
 
 pub type JsonPath = string::JsonPathString;
 
