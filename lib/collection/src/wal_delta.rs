@@ -262,6 +262,7 @@ mod tests {
     use std::ops::Range;
     use std::sync::Arc;
 
+    use itertools::Itertools as _;
     use parking_lot::Mutex as ParkingMutex;
     use rand::rngs::StdRng;
     use rand::seq::SliceRandom;
@@ -278,6 +279,119 @@ mod tests {
     use crate::shards::local_shard::clock_map::{ClockMap, RecoveryPoint};
     use crate::shards::replica_set::clock_set::ClockSet;
     use crate::wal::SerdeWal;
+
+    #[tokio::test]
+    async fn zero_increment_forward_proxy_inconcistency() {
+        // Create WALs for peer A, B and C
+        let (a_wal, _a_wal_dir) = fixture_empty_wal();
+        let (b_wal, _b_wal_dir) = fixture_empty_wal();
+        let (c_wal, _c_wal_dir) = fixture_empty_wal();
+
+        // Create clock set for peer A
+        let mut a_clock_set = ClockSet::new();
+
+        // Create 3 operations on peer A and write them on all nodes
+        for op_id in 1..=3 {
+            // Create operation on peer A
+            let mut a_clock_0 = a_clock_set.get_clock();
+            let clock_tag = ClockTag::new(1, a_clock_0.id(), a_clock_0.tick_once());
+            let operation = OperationWithClockTag::new(mock_operation(op_id), Some(clock_tag));
+
+            // Write operation to peers A, B and C
+            for wal in [&a_wal, &b_wal, &c_wal] {
+                let mut operation = operation.clone();
+                let (_, _) = wal.lock_and_write(&mut operation).await.unwrap();
+                a_clock_0.advance_to(operation.clock_tag.unwrap().clock_tick);
+            }
+        }
+
+        // Now, let's assume that node B is started a stream records transfer to node C,
+        // and so there's a forward proxy on the node B that forwards all operations to the node C.
+        //
+        // (Because we are not using real shards in this test, we will "simulate" the forward proxy
+        // by sending each operation to the node C twice.)
+        //
+        // And, let's assume that we restarted the node A, and so clock set on node A is reset to
+        // all `0`s.
+        let mut a_clock_set = ClockSet::new();
+        let mut a_clock_0 = a_clock_set.get_clock();
+
+        // Let's create another operation on peer A and write it on all nodes:
+
+        // Create operation on peer A
+        let clock_tag = ClockTag::new(1, a_clock_0.id(), a_clock_0.tick_once());
+        let operation = OperationWithClockTag::new(mock_operation(4), Some(clock_tag));
+
+        // Write operation on peers A and B
+        for wal in [&a_wal, &b_wal] {
+            let mut operation = operation.clone();
+            let (_, _) = wal.lock_and_write(&mut operation).await.unwrap();
+            a_clock_0.advance_to(operation.clock_tag.unwrap().clock_tick);
+        }
+
+        // Then write operation on peer C from the forward proxy *first*
+        {
+            let mut operation = operation.clone();
+            let (_, _) = c_wal.lock_and_write(&mut operation).await.unwrap();
+            a_clock_0.advance_to(operation.clock_tag.unwrap().clock_tick);
+        }
+
+        // And now let's assume that operation, that was sent from node A to C directly was written
+        // to WAL, but the response, that should have advanced the clock set on node A failed.
+        //
+        // Currently, we simply ignore all errors from the nodes in `Partial` state, so it won't
+        // mark node C as `Dead`.
+        {
+            let mut operation = operation.clone();
+            let (_, _) = c_wal.lock_and_write(&mut operation).await.unwrap();
+            // we do not advance `a_clock_0` here
+        }
+
+        // Now, if we assume that:
+        // - we increment local clock map, when we receive an operation with `clock_tick = 0`
+        // - and we reject older operations
+        //   - (and we have to do so, otherwise we can't guarantee that our WAL has monotoncally increasing versions)
+        //
+        // Then the next operation will be *rejected* on node C, and C will be permanently missing
+        // `mock_operation(5)`.
+        //
+        // I think, this *may* be (fully? partially?) prevented by the logic to set "cutoff" clocks
+        // after stream records transfer, but I'm not 100% sure. :/
+
+        // Create operation on peer A
+        let clock_tag = ClockTag::new(1, a_clock_0.id(), a_clock_0.tick_once());
+        let operation = OperationWithClockTag::new(mock_operation(5), Some(clock_tag));
+
+        // Write operation on peers A and B
+        for wal in [&a_wal, &b_wal] {
+            let mut operation = operation.clone();
+            let (_, _) = wal.lock_and_write(&mut operation).await.unwrap();
+            a_clock_0.advance_to(operation.clock_tag.unwrap().clock_tick);
+        }
+
+        // Then try to write operation on peer C
+        {
+            let mut operation = operation.clone();
+            // This should be rejected, but we currently accept all operations, so I can't assert this *yet* 🤷‍♀️
+            let (_, _) = c_wal.lock_and_write(&mut operation).await.unwrap();
+            a_clock_0.advance_to(operation.clock_tag.unwrap().clock_tick);
+        }
+
+        // Note, that because currently we
+        // - do not increment local clock map, when we receive an operation with `clock_tick = 0`
+        // - and also don't reject older operations
+        //
+        // The WAL on all nodes should look okay-ish, except if someone request wall diff from A0/2,
+        // we will only return the last A0/2 operation (when we reset node A).
+
+        let expected_ticks = [0, 1, 2, 2, 2, 3];
+        let operations_and_expected_ticks = c_wal.wal.lock().read_all(true).zip_eq(expected_ticks);
+
+        for ((_, operation), expected_tick) in operations_and_expected_ticks {
+            let tick = operation.clock_tag.unwrap().clock_tick;
+            assert_eq!(tick, expected_tick);
+        }
+    }
 
     fn fixture_empty_wal() -> (RecoverableWal, TempDir) {
         let dir = Builder::new().prefix("wal_test").tempdir().unwrap();
