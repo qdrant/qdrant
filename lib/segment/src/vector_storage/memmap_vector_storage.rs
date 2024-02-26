@@ -121,7 +121,7 @@ impl VectorStorage for MemmapVectorStorage {
     fn update_from(
         &mut self,
         other: &VectorStorageEnum,
-        other_ids: &mut dyn Iterator<Item = PointOffsetType>,
+        other_ids: &mut impl Iterator<Item = PointOffsetType>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         let dim = self.vector_dim();

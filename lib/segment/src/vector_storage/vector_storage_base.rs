@@ -57,7 +57,7 @@ pub trait VectorStorage {
     fn update_from(
         &mut self,
         other: &VectorStorageEnum,
-        other_ids: &mut dyn Iterator<Item = PointOffsetType>,
+        other_ids: &mut impl Iterator<Item = PointOffsetType>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>>;
 
@@ -178,7 +178,7 @@ impl VectorStorage for VectorStorageEnum {
     fn update_from(
         &mut self,
         other: &VectorStorageEnum,
-        other_ids: &mut dyn Iterator<Item = PointOffsetType>,
+        other_ids: &mut impl Iterator<Item = PointOffsetType>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         match self {
