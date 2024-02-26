@@ -300,8 +300,7 @@ mod tests {
             operations
                 .into_iter()
                 .enumerate()
-                .map(|(idx, tag)| (idx as u64, Some(tag)))
-                .rev(),
+                .map(|(idx, tag)| (idx as u64, Some(tag))),
             recovery_point,
             newest_available_clocks,
             Default::default(),
