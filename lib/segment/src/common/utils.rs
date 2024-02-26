@@ -1205,6 +1205,14 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_get_path_head<P: JsonPathInterface>() {
+        assert_eq!(path::<P>("a.b.c").head(), "a");
+        assert_eq!(path::<P>("a[0].b").head(), "a");
+        assert_eq!(path::<P>("a").head(), "a");
+        assert_eq!(path::<P>("").head(), "");
+    }
+
     #[instantiate_tests(<JsonPathString>)]
     mod string {}
 
