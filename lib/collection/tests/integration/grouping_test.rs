@@ -100,7 +100,7 @@ mod group_by {
 
         assert!(result.is_ok());
 
-        let result = result.unwrap();
+        let result = result.unwrap().pop().unwrap();
 
         let group_req = resources.request;
 
@@ -152,7 +152,7 @@ mod group_by {
 
         assert!(result.is_ok());
 
-        let result = result.unwrap();
+        let result = result.unwrap().pop().unwrap();
 
         assert_eq!(result.len(), request.limit);
 
@@ -212,7 +212,7 @@ mod group_by {
 
         assert!(result.is_ok());
 
-        let result = result.unwrap();
+        let result = result.unwrap().pop().unwrap();
 
         assert_eq!(result.len(), 2);
     }
@@ -244,7 +244,7 @@ mod group_by {
 
         assert!(result.is_ok());
 
-        let result = result.unwrap();
+        let result = result.unwrap().pop().unwrap();
 
         assert_eq!(result.len(), 4);
 
@@ -282,7 +282,7 @@ mod group_by {
 
         assert!(result.is_ok());
 
-        let result = result.unwrap();
+        let result = result.unwrap().pop().unwrap();
 
         assert_eq!(result.len(), 4);
 
@@ -318,7 +318,7 @@ mod group_by {
 
         assert!(result.is_ok());
 
-        let result = result.unwrap();
+        let result = result.unwrap().pop().unwrap();
 
         assert_eq!(result.len(), 0);
     }
@@ -350,7 +350,7 @@ mod group_by {
 
         assert!(result.is_ok());
 
-        let result = result.unwrap();
+        let result = result.unwrap().pop().unwrap();
 
         assert_eq!(result.len(), 0);
     }
@@ -382,7 +382,7 @@ mod group_by {
 
         assert!(result.is_ok());
 
-        let result = result.unwrap();
+        let result = result.unwrap().pop().unwrap();
 
         assert_eq!(result.len(), group_by_request.limit);
 
@@ -418,7 +418,7 @@ mod group_by {
 
         assert!(result.is_ok());
 
-        let result = result.unwrap();
+        let result = result.unwrap().pop().unwrap();
 
         assert_eq!(result.len(), group_by_request.limit);
 
@@ -550,7 +550,7 @@ mod group_by_builder {
 
         assert!(result.is_ok());
 
-        let result = result.unwrap();
+        let result = result.unwrap().pop().unwrap();
 
         // minimal assertion
         assert_eq!(result.len(), request.limit);
@@ -583,7 +583,7 @@ mod group_by_builder {
 
         assert!(result.is_ok());
 
-        let result = result.unwrap();
+        let result = result.unwrap().pop().unwrap();
 
         assert_eq!(result.len(), request.limit);
 

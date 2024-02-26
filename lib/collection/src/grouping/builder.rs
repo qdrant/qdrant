@@ -18,7 +18,7 @@ where
     F: Fn(String) -> Fut + Clone,
     Fut: Future<Output = Option<RwLockReadGuard<'a, Collection>>>,
 {
-    group_by: GroupRequest,
+    group_by: Vec<GroupRequest>,
     collection: &'a Collection,
     /// `Fn` to get a collection having its name. Obligatory for recommend and lookup
     collection_by_name: F,
@@ -34,6 +34,21 @@ where
 {
     /// Creates a basic GroupBy builder
     pub fn new(group_by: GroupRequest, collection: &'a Collection, collection_by_name: F) -> Self {
+        Self {
+            group_by: vec![group_by],
+            collection,
+            collection_by_name,
+            read_consistency: None,
+            shard_selection: ShardSelectorInternal::All,
+            timeout: None,
+        }
+    }
+
+    pub fn batch(
+        group_by: Vec<GroupRequest>,
+        collection: &'a Collection,
+        collection_by_name: F,
+    ) -> Self {
         Self {
             group_by,
             collection,
@@ -60,7 +75,7 @@ where
     }
 
     /// Runs the group by operation, optionally with a timeout.
-    pub async fn execute(self) -> CollectionResult<Vec<PointGroup>> {
+    pub async fn execute(self) -> CollectionResult<Vec<Vec<PointGroup>>> {
         if let Some(timeout) = self.timeout {
             tokio::time::timeout(timeout, self.run())
                 .await
@@ -73,26 +88,49 @@ where
         }
     }
 
-    /// Does the actual grouping
-    async fn run(self) -> CollectionResult<Vec<PointGroup>> {
-        let with_lookup = self.group_by.with_lookup.clone();
-
-        let core_group_by = self
-            .group_by
-            .into_core_group_request(
+    async fn run(self) -> CollectionResult<Vec<Vec<PointGroup>>> {
+        let requests = self.group_by.into_iter().map(|request| {
+            Self::run_one_request(
+                request,
                 self.collection,
-                self.collection_by_name.clone(),
+                &self.collection_by_name,
                 self.read_consistency,
-                self.shard_selection.clone(),
+                &self.shard_selection,
+                self.timeout,
+            )
+        });
+
+        let results = futures::future::try_join_all(requests).await?;
+
+        Ok(results)
+    }
+
+    /// Does the actual grouping
+    async fn run_one_request(
+        request: GroupRequest,
+        collection: &'a Collection,
+        collection_by_name: &F,
+        read_consistency: Option<ReadConsistency>,
+        shard_selection: &ShardSelectorInternal,
+        timeout: Option<Duration>,
+    ) -> CollectionResult<Vec<PointGroup>> {
+        let with_lookup = request.with_lookup.clone();
+
+        let core_group_by = request
+            .into_core_group_request(
+                collection,
+                collection_by_name.clone(),
+                read_consistency,
+                shard_selection.clone(),
             )
             .await?;
 
         let mut groups = group_by(
             core_group_by,
-            self.collection,
-            self.read_consistency,
-            self.shard_selection.clone(),
-            self.timeout,
+            collection,
+            read_consistency,
+            shard_selection.clone(),
+            timeout,
         )
         .await?;
 
@@ -107,9 +145,9 @@ where
                 lookup_ids(
                     lookup,
                     pseudo_ids,
-                    self.collection_by_name,
-                    self.read_consistency,
-                    &self.shard_selection,
+                    collection_by_name.clone(),
+                    read_consistency,
+                    shard_selection,
                 )
                 .await?
             };

@@ -176,7 +176,38 @@ impl TableOfContent {
         group_by
             .execute()
             .await
-            .map(|groups| GroupsResult { groups })
+            .map(|mut groups| GroupsResult {
+                groups: groups.pop().unwrap_or_default(),
+            })
+            .map_err(|err| err.into())
+    }
+
+    pub async fn group_batch(
+        &self,
+        collection_name: &str,
+        request: Vec<GroupRequest>,
+        read_consistency: Option<ReadConsistency>,
+        shard_selection: ShardSelectorInternal,
+        timeout: Option<Duration>,
+    ) -> Result<Vec<GroupsResult>, StorageError> {
+        let collection = self.get_collection(collection_name).await?;
+
+        let collection_by_name = |name| self.get_collection_opt(name);
+
+        let group_by = GroupBy::batch(request, &collection, collection_by_name)
+            .set_read_consistency(read_consistency)
+            .set_shard_selection(shard_selection)
+            .set_timeout(timeout);
+
+        group_by
+            .execute()
+            .await
+            .map(|groups| {
+                groups
+                    .into_iter()
+                    .map(|groups| GroupsResult { groups })
+                    .collect()
+            })
             .map_err(|err| err.into())
     }
 

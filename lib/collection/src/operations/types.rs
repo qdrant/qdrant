@@ -463,6 +463,13 @@ pub struct SearchGroupsRequestInternal {
     pub group_request: BaseGroupRequest,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct SearchGroupsRequestBatch {
+    #[validate]
+    pub searches: Vec<SearchGroupsRequest>,
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct PointRequest {
     #[serde(flatten)]

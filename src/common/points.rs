@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use collection::common::batching::batch_requests;
+use collection::grouping::group_by::GroupRequest;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::payload_ops::{
     DeletePayload, DeletePayloadOp, PayloadOps, SetPayload, SetPayloadOp,
@@ -763,6 +764,47 @@ pub async fn do_search_point_groups(
         timeout,
     )
     .await
+}
+
+pub async fn do_search_batch_point_groups(
+    toc: &TableOfContent,
+    collection_name: &str,
+    requests: Vec<(SearchGroupsRequestInternal, ShardSelectorInternal)>,
+    read_consistency: Option<ReadConsistency>,
+    timeout: Option<Duration>,
+) -> Result<Vec<GroupsResult>, StorageError> {
+    let requests = batch_requests::<
+        (SearchGroupsRequestInternal, ShardSelectorInternal),
+        ShardSelectorInternal,
+        Vec<GroupRequest>,
+        Vec<_>,
+    >(
+        requests,
+        |(_, shard_selector)| shard_selector,
+        |(request, _), reqs| {
+            reqs.push(request.into());
+            Ok(())
+        },
+        |shard_selector, batch, res| {
+            if batch.is_empty() {
+                return Ok(());
+            }
+
+            let req = toc.group_batch(
+                collection_name,
+                batch,
+                read_consistency,
+                shard_selector,
+                timeout,
+            );
+            res.push(req);
+            Ok(())
+        },
+    )?;
+
+    let results = futures::future::try_join_all(requests).await?;
+    let flatten_results: Vec<_> = results.into_iter().flatten().collect();
+    Ok(flatten_results)
 }
 
 pub async fn do_recommend_point_groups(
