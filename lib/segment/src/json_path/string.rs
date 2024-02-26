@@ -63,6 +63,10 @@ impl JsonPathInterface for JsonPathString {
         Ok(())
     }
 
+    fn head(&self) -> &str {
+        self.0.split(['.', '[']).next().unwrap_or(&self.0)
+    }
+
     fn strip_wildcard_suffix(&self) -> JsonPathString {
         match self.0.strip_suffix("[]") {
             Some(s) => JsonPathString(s.to_string()),

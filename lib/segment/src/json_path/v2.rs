@@ -44,6 +44,10 @@ impl JsonPathInterface for JsonPathV2 {
         Ok(())
     }
 
+    fn head(&self) -> &str {
+        unimplemented!()
+    }
+
     fn strip_wildcard_suffix(&self) -> Self {
         unimplemented!()
     }
