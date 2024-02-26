@@ -294,7 +294,7 @@ mod tests {
         let recovery_point = clock_map.to_recovery_point();
 
         clock_map.advance_clock(ClockTag::new(1, 0, 2));
-        let newest_available_clocks = clock_map.to_recovery_point();
+        let newest_observed_clocks = clock_map.to_recovery_point();
 
         let delta_from = resolve_wal_delta(
             operations
@@ -302,7 +302,7 @@ mod tests {
                 .enumerate()
                 .map(|(idx, tag)| (idx as u64, Some(tag))),
             recovery_point,
-            newest_available_clocks,
+            newest_observed_clocks,
             Default::default(),
         );
 
