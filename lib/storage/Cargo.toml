@@ -37,7 +37,7 @@ validator = { version = "0.16", features = ["derive"] }
 atomicwrites = { version = "0.4.3" }
 raft = { version = "0.7.0", features = ["prost-codec"], default-features = false }
 prost = { workspace = true } # version of prost used by raft
-protobuf = "2.28.0" # version of protobuf used by raft
+protobuf = "3.4.0" # version of protobuf used by raft
 serde_cbor = { workspace = true }
 
 common = { path = "../common/common" }

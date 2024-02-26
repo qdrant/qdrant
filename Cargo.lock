@@ -4255,6 +4255,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "106dd99e98437432fed6519dedecfade6a06a73bb7b2a1e019fdd2bee5778d94"
 
 [[package]]
+name = "protobuf"
+version = "3.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "58678a64de2fced2bdec6bca052a6716a0efe692d6e3f53d1bda6a1def64cfc0"
+dependencies = [
+ "once_cell",
+ "protobuf-support",
+ "thiserror",
+]
+
+[[package]]
 name = "protobuf-build"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4265,6 +4276,15 @@ dependencies = [
  "prost-build 0.11.9",
  "quote",
  "syn 1.0.107",
+]
+
+[[package]]
+name = "protobuf-support"
+version = "3.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e1ed294a835b0f30810e13616b1cd34943c6d1e84a8f3b0dcfe466d256c3e7e7"
+dependencies = [
+ "thiserror",
 ]
 
 [[package]]
@@ -4405,7 +4425,7 @@ checksum = "f12688b23a649902762d4c11d854d73c49c9b93138f2de16403ef9f571ad5bae"
 dependencies = [
  "fxhash",
  "getset",
- "protobuf",
+ "protobuf 2.28.0",
  "raft-proto",
  "rand 0.8.5",
  "slog",
@@ -4420,7 +4440,7 @@ checksum = "fb6884896294f553e8d5cfbdb55080b9f5f2f43394afff59c9f077e0f4b46d6b"
 dependencies = [
  "lazy_static",
  "prost 0.11.9",
- "protobuf",
+ "protobuf 2.28.0",
  "protobuf-build",
 ]
 
@@ -5462,7 +5482,7 @@ dependencies = [
  "parking_lot",
  "proptest",
  "prost 0.11.9",
- "protobuf",
+ "protobuf 3.4.0",
  "raft",
  "rand 0.8.5",
  "reqwest",
