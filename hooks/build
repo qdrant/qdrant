@@ -1,0 +1,4 @@
+#!/bin/bash
+
+docker build -t $IMAGE_NAME --build-arg GIT_COMMIT_ID=$SOURCE_COMMIT .
+
