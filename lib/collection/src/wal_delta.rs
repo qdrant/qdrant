@@ -279,6 +279,37 @@ mod tests {
     use crate::shards::replica_set::clock_set::ClockSet;
     use crate::wal::SerdeWal;
 
+    #[tokio::test]
+    async fn resolve_multiple_operations_with_the_same_tick() {
+        let operations = [
+            ClockTag::new(1, 0, 0),
+            ClockTag::new(1, 0, 1),
+            ClockTag::new(1, 0, 2),
+            ClockTag::new(1, 0, 2),
+        ];
+
+        let mut clock_map = ClockMap::default();
+
+        clock_map.advance_clock(ClockTag::new(1, 0, 1));
+        let recovery_point = clock_map.to_recovery_point();
+
+        clock_map.advance_clock(ClockTag::new(1, 0, 2));
+        let newest_available_clocks = clock_map.to_recovery_point();
+
+        let delta_from = resolve_wal_delta(
+            operations
+                .into_iter()
+                .enumerate()
+                .map(|(idx, tag)| (idx as u64, Some(tag)))
+                .rev(),
+            recovery_point,
+            newest_available_clocks,
+            Default::default(),
+        );
+
+        assert_eq!(delta_from, Ok(Some(2)));
+    }
+
     fn fixture_empty_wal() -> (RecoverableWal, TempDir) {
         let dir = Builder::new().prefix("wal_test").tempdir().unwrap();
         let options = WalOptions {
