@@ -3143,7 +3143,7 @@
           "snapshots",
           "collections"
         ],
-        "summary": "Download collection snapshot",
+        "summary": "Download collection snapshot of a shard",
         "description": "Download specified snapshot of a shard from a collection as a file",
         "operationId": "get_shard_snapshot",
         "parameters": [
