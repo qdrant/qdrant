@@ -74,7 +74,7 @@ impl<TMetric: Metric> VectorStorage for TestRawScorerProducer<TMetric> {
     fn update_from(
         &mut self,
         _other: &VectorStorageEnum,
-        _other_ids: &mut dyn Iterator<Item = PointOffsetType>,
+        _other_ids: &mut impl Iterator<Item = PointOffsetType>,
         _stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         todo!()
