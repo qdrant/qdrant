@@ -316,7 +316,7 @@ impl Consensus {
             tls_config,
         )
         .await
-        .map_err(|err| anyhow!("Failed to create timeout channel: {}", err))?;
+        .map_err(|err| anyhow!("Failed to create timeout channel: {err}"))?;
         let mut client = RaftClient::new(channel);
         let all_peers = client
             .add_peer_to_known(tonic::Request::new(
@@ -327,7 +327,7 @@ impl Consensus {
                 },
             ))
             .await
-            .map_err(|err| anyhow!("Failed to add peer to known: {}", err))?
+            .map_err(|err| anyhow!("Failed to add peer to known: {err}"))?
             .into_inner();
         Ok(all_peers)
     }
