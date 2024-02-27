@@ -703,8 +703,8 @@ async fn check_all_peers_v1_8(
     let peer_urls = get_peer_rest_urls()?;
     let required_version = Version::parse("1.8.0").unwrap();
 
-    // Do not bother checking more than 9 (8 others + self) nodes
-    if peer_urls.len() > 8 {
+    // Do not bother checking more than 15 (14 others + self) nodes
+    if peer_urls.len() > 15 {
         return Ok(false);
     }
 
