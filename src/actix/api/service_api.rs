@@ -38,7 +38,7 @@ async fn telemetry(
         .map_or(DetailsLevel::Level0, Into::into);
     let detail = TelemetryDetail {
         level: details_level,
-        histograms: details_level >= DetailsLevel::Level3,
+        histograms: false,
     };
     let telemetry_collector = telemetry_collector.lock().await;
     let telemetry_data = telemetry_collector.prepare_data(detail).await;
