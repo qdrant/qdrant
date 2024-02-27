@@ -11,6 +11,7 @@ use collection::operations::types::NodeType;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::shard::PeerId;
 use collection::shards::transfer::ShardTransferMethod;
+use common::defaults;
 use memory::madvise;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
@@ -276,7 +277,7 @@ pub struct PeerMetadata {
 impl PeerMetadata {
     pub fn current() -> Self {
         Self {
-            version: Some(env!("CARGO_PKG_VERSION").to_string()),
+            version: Some(defaults::QDRANT_VERSION.into()),
         }
     }
 
@@ -284,6 +285,6 @@ impl PeerMetadata {
     pub fn is_outdated(&self) -> bool {
         self.version
             .as_ref()
-            .map_or(false, |v| v != env!("CARGO_PKG_VERSION"))
+            .map_or(false, |v| v != defaults::QDRANT_VERSION)
     }
 }
