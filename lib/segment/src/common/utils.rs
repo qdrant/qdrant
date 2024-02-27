@@ -162,11 +162,9 @@ pub fn set_value_to_json_map<'a>(
                 }
                 None => {
                     // no array notation
-                    if let Some(v) = dest.get_mut(element) {
-                        if let Value::Object(map) = v {
-                            #[allow(deprecated)]
-                            set_value_to_json_map(rest_path, map, src);
-                        }
+                    if let Some(Value::Object(map)) = dest.get_mut(element) {
+                        #[allow(deprecated)]
+                        set_value_to_json_map(rest_path, map, src);
                     } else {
                         // insert new one
                         if !rest_path.is_empty() {
@@ -191,10 +189,8 @@ pub fn set_value_to_json_map<'a>(
             None => {
                 if path.is_empty() {
                     merge_map(dest, src);
-                } else if let Some(v) = dest.get_mut(path) {
-                    if let Value::Object(map) = v {
-                        merge_map(map, src);
-                    }
+                } else if let Some(Value::Object(map)) = dest.get_mut(path) {
+                    merge_map(map, src);
                 } else {
                     // insert new one
                     dest.insert(path.to_owned(), Value::Object(src.clone()));
@@ -228,41 +224,40 @@ fn set_by_array_path<'a>(
         for (i, value) in array.iter_mut().enumerate() {
             if let Some(array_index) = array_index {
                 if i == array_index as usize {
-                    if let Some(rest_path) = rest_path {
-                        if let Value::Object(map) = value {
-                            #[allow(deprecated)]
-                            set_value_to_json_map(rest_path, map, src);
+                    let map = match value {
+                        Value::Object(map) => map,
+                        _ => {
+                            *value = Value::Object(Default::default());
+                            value.as_object_mut().unwrap()
                         }
-                    } else if let Value::Object(map) = value {
+                    };
+                    if let Some(rest_path) = rest_path {
+                        #[allow(deprecated)]
+                        set_value_to_json_map(rest_path, map, src);
+                    } else {
                         merge_map(map, src);
                     }
                 }
-            } else if let Some(rest_path) = rest_path {
-                if let Value::Object(map) = value {
+            } else {
+                let map = match value {
+                    Value::Object(map) => map,
+                    _ => {
+                        *value = Value::Object(Default::default());
+                        value.as_object_mut().unwrap()
+                    }
+                };
+                if let Some(rest_path) = rest_path {
                     #[allow(deprecated)]
                     set_value_to_json_map(rest_path, map, src);
+                } else {
+                    merge_map(map, src);
                 }
-            } else if let Value::Object(map) = value {
-                merge_map(map, src);
             }
         }
     } else if dest.is_empty() {
         // insert new one
-        if let Some(expected_array_len) = array_index.map(|i| i + 1) {
-            let mut array = vec![Value::Null; (expected_array_len - 1) as usize];
-            if let Some(rest_path) = rest_path {
-                array.push(Value::Object(Default::default()));
-                dest.insert(array_path.to_owned(), Value::Array(array));
-                set_by_array_path(array_path, array_index, Some(rest_path), dest, src);
-            } else {
-                array.push(Value::Object(src.clone()));
-                dest.insert(array_path.to_owned(), Value::Array(array));
-                set_by_array_path(array_path, array_index, None, dest, src);
-            }
-        } else {
-            let array = vec![];
-            dest.insert(array_path.to_owned(), Value::Array(array));
-        }
+        let array = vec![];
+        dest.insert(array_path.to_owned(), Value::Array(array));
     }
 }
 
@@ -477,6 +472,10 @@ pub fn transpose_map_into_named_vector<TVector: Into<Vector>>(
 mod tests {
     use super::*;
     use crate::json_path::{path, JsonPathInterface, JsonPathString};
+
+    fn json(str: &str) -> serde_json::Map<String, Value> {
+        serde_json::from_str(str).unwrap()
+    }
 
     #[test]
     fn test_get_nested_value_from_json_map<P: JsonPathInterface>() {
@@ -1114,34 +1113,15 @@ mod tests {
 
     #[test]
     fn test_set_value_to_json_with_empty_dest_nested_array_index_key<P: JsonPathInterface>() {
-        let mut map = serde_json::from_str::<serde_json::Map<String, Value>>(
-            r#"
-            {
-            }
-            "#,
-        )
-        .unwrap();
-
-        let src = serde_json::from_str::<serde_json::Map<String, Value>>(
-            r#"
-            {"c": 1}
-            "#,
-        )
-        .unwrap();
-
+        let mut map = json("{}");
+        let src = json(r#" {"c": 1} "#);
         JsonPathInterface::value_set(Some(&path::<P>("key1.key2[3]")), &mut map, &src);
+        assert_eq!(map, json(r#" {"key1": {"key2": []}} "#));
 
-        assert_eq!(
-            map,
-            serde_json::from_str::<serde_json::Map<String, Value>>(
-                r#"
-                {
-                    "key1": {"key2": [null, null, null, { "c": 1 }] }
-                }
-                "#,
-            )
-            .unwrap()
-        );
+        let mut map = json("{}");
+        let src = json(r#" {"c": 1} "#);
+        JsonPathInterface::value_set(Some(&path::<P>("key1.key2[0]")), &mut map, &src);
+        assert_eq!(map, json(r#" {"key1": {"key2": []}} "#));
     }
 
     #[test]
@@ -1198,7 +1178,7 @@ mod tests {
             map,
             serde_json::from_str::<serde_json::Map<String, Value>>(
                 r#"
-                {"a": 10}
+                {"a": {"b": {"c": {"x": 1}}}}
                 "#,
             )
             .unwrap()
