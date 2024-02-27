@@ -166,15 +166,18 @@ impl ChannelService {
             })?;
 
         // Construct REST URL from URI
-        let mut url = Url::parse(&local_peer_uri.to_string()).expect("Malformed URL");
-        url.set_port(Some(self.current_rest_port))
-            .map_err(|()| {
-                CollectionError::service_error(format!(
-                    "Cannot determine REST address, cannot specify port on address {url} for peer ID {this_peer_id}",
-                ))
-            })?;
-        Ok(url)
+        peer_uri_to_rest_url(&local_peer_uri, self.current_rest_port)
     }
+}
+
+pub fn peer_uri_to_rest_url(uri: &Uri, current_rest_port: u16) -> CollectionResult<Url> {
+    let mut url = Url::parse(&uri.to_string()).expect("Malformed URL");
+    url.set_port(Some(current_rest_port)).map_err(|()| {
+        CollectionError::service_error(format!(
+            "Cannot determine REST address, cannot specify port on address {url} for peer",
+        ))
+    })?;
+    Ok(url)
 }
 
 #[cfg(test)]

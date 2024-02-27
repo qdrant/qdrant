@@ -76,7 +76,7 @@ tonic-reflection = { workspace = true }
 tower = "0.4.13"
 tower-layer = "0.3.2"
 tar = "0.4.40"
-reqwest = { version = "0.11", default-features = false, features = ["stream", "rustls-tls", "blocking"] }
+reqwest = { workspace = true }
 rustls = "0.21.10"
 rustls-pemfile = "2.1.0"
 prometheus = { version = "0.13.3", default-features = false }
@@ -115,11 +115,14 @@ rstack-self = { version = "0.3.0", optional = true }
 tikv-jemallocator = "0.5"
 
 [workspace.dependencies]
+fnv = "1.0"
 futures = "0.3.30"
 futures-util = "0.3.30"
+indexmap = { version = "2", features = ["serde"] }
 parking_lot = { version = "0.12.1", features = ["deadlock_detection"] }
 prost = "0.11.9"
 prost-wkt-types = "0.4.2"
+reqwest = { version = "0.11", default-features = false, features = ["stream", "rustls-tls", "blocking"] }
 schemars = { version = "0.8.16", features = ["uuid1", "preserve_order", "chrono", "url", "indexmap2"] }
 serde = { version = "~1.0", features = ["derive"] }
 serde_cbor = { version = "0.11.2" }
@@ -130,8 +133,6 @@ tonic = { version = "0.9.2", features = ["gzip", "tls"] }
 tonic-reflection = "0.9.2"
 tracing = { version = "0.1", features = ["async-await"] }
 uuid = { version = "1.7", features = ["v4", "serde"] }
-fnv = "1.0"
-indexmap = { version = "2", features = ["serde"] }
 
 [[bin]]
 name = "schema_generator"

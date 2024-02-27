@@ -14,12 +14,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::cpu::CpuBudget;
+use common::defaults;
 use common::types::TelemetryDetail;
 use segment::common::version::StorageVersion;
 use segment::types::ShardKey;
 use semver::Version;
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
+use url::Url;
 
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_state::{ShardInfo, State};
@@ -37,7 +39,7 @@ use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::{shard_not_found_error, LockedShardHolder, ShardHolder};
 use crate::shards::transfer::helpers::check_transfer_conflicts_strict;
 use crate::shards::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool};
-use crate::shards::transfer::ShardTransfer;
+use crate::shards::transfer::{ShardTransfer, ShardTransferMethod};
 use crate::shards::{replica_set, CollectionId};
 use crate::telemetry::CollectionTelemetry;
 
@@ -468,6 +470,7 @@ impl Collection {
         on_finish_init: ChangePeerState,
         on_convert_to_listener: ChangePeerState,
         on_convert_from_listener: ChangePeerState,
+        get_peer_rest_urls: Box<dyn Fn() -> CollectionResult<HashMap<PeerId, Url>> + Send + Sync>,
     ) -> CollectionResult<()> {
         // Check for disabled replicas
         let shard_holder = self.shards_holder.read().await;
@@ -520,6 +523,8 @@ impl Collection {
         // of this function
         let mut proposed = HashMap::<PeerId, usize>::new();
 
+        let mut auto_transfer_method = None;
+
         // Check for proper replica states
         for replica_set in shard_holder.all_shards() {
             let this_peer_id = &replica_set.this_peer_id();
@@ -563,6 +568,30 @@ impl Collection {
                 continue;
             }
 
+            // If all nodes are 1.8+, use WAL delta transfer, otherwise use the configured method
+            // TODO(1.9): always use WAL delta transfer here?
+            if auto_transfer_method.is_none() {
+                auto_transfer_method.replace(match check_all_peers_v1_8(&get_peer_rest_urls).await {
+                    Ok(true) => {
+                        // TODO: remove after debug?
+                        log::warn!(">>> Using WAL delta transfer, all peers are 1.8+");
+                        ShardTransferMethod::WalDelta
+                    },
+                    Ok(false) => {
+                        log::info!("Not using WAL delta transfer, not all peers are 1.8+ or too many peers:");
+                        self.shared_storage_config
+                            .default_shard_transfer_method
+                            .unwrap_or_default()
+                    },
+                    Err(err) => {
+                        log::info!("Not using WAL delta transfer, failed to check if all peers are 1.8+: {err}");
+                        self.shared_storage_config
+                            .default_shard_transfer_method
+                            .unwrap_or_default()
+                    }
+                });
+            }
+
             // Try to find a replica to transfer from
             for replica_id in replica_set.active_remote_shards().await {
                 let transfer = ShardTransfer {
@@ -571,11 +600,7 @@ impl Collection {
                     shard_id,
                     sync: true,
                     // For automatic shard transfers, always select some default method from this point on
-                    method: Some(
-                        self.shared_storage_config
-                            .default_shard_transfer_method
-                            .unwrap_or_default(),
-                    ),
+                    method: auto_transfer_method,
                 };
 
                 if check_transfer_conflicts_strict(&transfer, transfers.iter()).is_some() {
@@ -660,4 +685,81 @@ impl StorageVersion for CollectionVersion {
     fn current() -> String {
         env!("CARGO_PKG_VERSION").to_string()
     }
+}
+
+/// Check whether all peers are running Qdrant 1.8 or higher
+///
+/// The peer URLs are obtained from the `get_peer_rest_urls` function.
+// TODO(1.9): remove this function
+async fn check_all_peers_v1_8(
+    get_peer_rest_urls: &(dyn Fn() -> CollectionResult<HashMap<PeerId, Url>> + Send + Sync),
+) -> CollectionResult<bool> {
+    log::trace!("Checking if all peers are running 1.8+");
+
+    let peer_urls = get_peer_rest_urls()?;
+    let required_version = Version::parse("1.8.0").unwrap();
+
+    // Do not bother checking more than 9 (8 others + self) nodes
+    if peer_urls.len() > 8 {
+        return Ok(false);
+    }
+
+    let client = reqwest::ClientBuilder::new()
+        .timeout(defaults::CONSENSUS_META_OP_WAIT)
+        .build()
+        .map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to request version info from peers, could not build HTTP client: {err}"
+            ))
+        })?;
+
+    for (peer_id, peer_url) in peer_urls {
+        let response = client.get(peer_url).send().await.map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to request version info from peer {peer_id}: {err}"
+            ))
+        })?;
+
+        let body: serde_json::Value = serde_json::from_slice(&response.bytes().await.map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to request version info from peer {peer_id}, could not read body: {err}"
+            ))
+        })?).map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to request version info from peer {peer_id}, could not parse response body as JSON: {err}"
+            ))
+        })?;
+
+        let version = body
+            .as_object()
+            .ok_or_else(|| {
+                CollectionError::service_error(format!(
+                    "Failed to request version infro from peer {peer_id}, malformed response"
+                ))
+            })?
+            .get("version")
+            .ok_or_else(|| {
+                CollectionError::service_error(format!(
+                    "Failed to request version info from peer {peer_id}, no version in response"
+                ))
+            })?
+            .as_str()
+            .ok_or_else(|| {
+                CollectionError::service_error(format!(
+                    "Failed to request version info from peer {peer_id}, version is not a string"
+                ))
+            })?;
+
+        let version = Version::parse(version).map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to request version info from peer {peer_id}, version is not a valid semver: {err}"
+            ))
+        })?;
+
+        if version < required_version.clone() {
+            return Ok(false);
+        }
+    }
+
+    Ok(true)
 }

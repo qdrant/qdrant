@@ -6,7 +6,7 @@ use collection::collection_state;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::PeerId;
-use collection::shards::CollectionId;
+use collection::shards::{channel_service, CollectionId};
 
 use super::TableOfContent;
 use crate::content_manager::collection_meta_ops::*;
@@ -94,6 +94,26 @@ impl CollectionContainer for TableOfContent {
                     Some(ReplicaState::Listener),
                 );
 
+                let get_peer_uris = {
+                    let this_peer_id = self.this_peer_id;
+                    let channel_service = self.channel_service.clone();
+                    move || {
+                        let current_rest_port = channel_service.current_rest_port;
+                        let mut peer_uris = channel_service.id_to_address.read().clone();
+                        peer_uris.remove(&this_peer_id);
+
+                        let mut rest_urls = HashMap::with_capacity(peer_uris.capacity());
+                        for (peer_id, uri) in peer_uris {
+                            rest_urls.insert(
+                                peer_id,
+                                channel_service::peer_uri_to_rest_url(&uri, current_rest_port)?,
+                            );
+                        }
+
+                        Ok(rest_urls)
+                    }
+                };
+
                 collection
                     .sync_local_state(
                         transfer_failure_callback.clone(),
@@ -101,6 +121,7 @@ impl CollectionContainer for TableOfContent {
                         finish_shard_initialize,
                         convert_to_listener_callback,
                         convert_from_listener_to_active_callback,
+                        Box::new(get_peer_uris),
                     )
                     .await?;
             }
