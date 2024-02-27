@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use bytes::Bytes;
 use common::cpu::CpuBudget;
 use common::defaults;
 use common::types::TelemetryDetail;
@@ -21,6 +22,7 @@ use segment::types::ShardKey;
 use semver::Version;
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
+use tokio::task::JoinSet;
 use url::Url;
 
 use crate::collection::payload_index_schema::PayloadIndexSchema;
@@ -690,6 +692,8 @@ impl StorageVersion for CollectionVersion {
 /// Check whether all peers are running Qdrant 1.8 or higher
 ///
 /// The peer URLs are obtained from the `get_peer_rest_urls` function.
+///
+/// It limits to checking at most 14 other nodes, otherwise we assume the condition is not met.
 // TODO(1.9): remove this function
 async fn check_all_peers_v1_8(
     get_peer_rest_urls: &(dyn Fn() -> CollectionResult<HashMap<PeerId, Url>> + Send + Sync),
@@ -712,19 +716,33 @@ async fn check_all_peers_v1_8(
                 "Failed to request version info from peers, could not build HTTP client: {err}"
             ))
         })?;
+    let mut responses: JoinSet<CollectionResult<(u64, Bytes)>> = JoinSet::new();
 
+    // Send version requests to all other peers
     for (peer_id, peer_url) in peer_urls {
-        let response = client.get(peer_url).send().await.map_err(|err| {
-            CollectionError::service_error(format!(
-                "Failed to request version info from peer {peer_id}: {err}"
-            ))
-        })?;
+        let client = client.clone();
+        responses.spawn(async move {
+            let response = client.get(peer_url).send().await.map_err(|err| {
+                CollectionError::service_error(format!(
+                        "Failed to request version info from peer {peer_id}: {err}"
+                ))
+            })?;
 
-        let body: serde_json::Value = serde_json::from_slice(&response.bytes().await.map_err(|err| {
-            CollectionError::service_error(format!(
-                "Failed to request version info from peer {peer_id}, could not read body: {err}"
-            ))
-        })?).map_err(|err| {
+            let body = response.bytes().await.map_err(|err| {
+                CollectionError::service_error(format!(
+                        "Failed to request version info from peer {peer_id}, could not read body: {err}"
+                ))
+            })?;
+
+            Ok((peer_id, body))
+        });
+    }
+
+    // Parse response and test version condition on all responses
+    while let Some(response) = responses.join_next().await {
+        let (peer_id, body) = response.unwrap()?;
+
+        let body: serde_json::Value = serde_json::from_slice(&body).map_err(|err| {
             CollectionError::service_error(format!(
                 "Failed to request version info from peer {peer_id}, could not parse response body as JSON: {err}"
             ))
@@ -752,7 +770,7 @@ async fn check_all_peers_v1_8(
 
         let version = Version::parse(version).map_err(|err| {
             CollectionError::service_error(format!(
-                "Failed to request version info from peer {peer_id}, version is not a valid semver: {err}"
+                    "Failed to request version info from peer {peer_id}, version is not a valid semver: {err}"
             ))
         })?;
 
