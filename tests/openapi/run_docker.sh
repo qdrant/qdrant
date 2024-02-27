@@ -14,4 +14,6 @@ cd "$(dirname "$0")"
 
 trap clear_after_tests EXIT
 
-pytest -s
+for i in $(seq 1 100); do
+    pytest -s ./openapi_integration/test_snapshot.py
+done

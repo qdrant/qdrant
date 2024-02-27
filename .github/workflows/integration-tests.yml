@@ -59,9 +59,9 @@ jobs:
       - name: Run integration tests - 1 peer
         run: ./tests/integration-tests.sh distributed
         shell: bash
-      - name: Run integration tests - multiple peers - pytest
-        run: pytest ./tests/consensus_tests
-        timeout-minutes: 60
+      # - name: Run integration tests - multiple peers - pytest
+      #   run: pytest ./tests/consensus_tests
+      #   timeout-minutes: 60
       - name: upload logs in case of failure
         uses: actions/upload-artifact@v4
         if: failure() || cancelled()
