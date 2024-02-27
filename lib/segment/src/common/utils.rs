@@ -470,8 +470,11 @@ pub fn transpose_map_into_named_vector<TVector: Into<Vector>>(
 #[cfg(test)]
 #[generic_tests::define]
 mod tests {
+    use std::any::TypeId;
+    use std::str::FromStr;
+
     use super::*;
-    use crate::json_path::{path, JsonPathInterface, JsonPathString};
+    use crate::json_path::{path, JsonPathInterface, JsonPathString, JsonPathV2};
 
     fn json(str: &str) -> serde_json::Map<String, Value> {
         serde_json::from_str(str).unwrap()
@@ -550,7 +553,7 @@ mod tests {
     }
 
     #[test]
-    fn test_get_nested_array_value_from_json_map<P: JsonPathInterface>() {
+    fn test_get_nested_array_value_from_json_map<P: JsonPathInterface + 'static>() {
         let map = serde_json::from_str::<serde_json::Map<String, Value>>(
             r#"
             {
@@ -675,10 +678,14 @@ mod tests {
         ));
 
         // select bad index from array
-        // NOTE: we will restrict invalid json path in the future
-        assert!(check_is_empty(
-            path::<P>("a.b[z]").value_get(&map).iter().copied()
-        ));
+        let path = <P as FromStr>::from_str("a.b[z]");
+        if TypeId::of::<P>() != TypeId::of::<JsonPathV2>() {
+            assert!(check_is_empty(
+                path.unwrap().value_get(&map).iter().copied()
+            ));
+        } else {
+            assert!(path.is_err());
+        }
     }
 
     #[test]
@@ -1186,15 +1193,19 @@ mod tests {
     }
 
     #[test]
-    fn test_get_path_head<P: JsonPathInterface>() {
+    fn test_get_path_head<P: JsonPathInterface + 'static>() {
         assert_eq!(path::<P>("a.b.c").head(), "a");
         assert_eq!(path::<P>("a[0].b").head(), "a");
         assert_eq!(path::<P>("a").head(), "a");
-        assert_eq!(path::<P>("").head(), "");
+        if TypeId::of::<P>() != TypeId::of::<JsonPathV2>() {
+            // JsonPathV2 does not support empty path
+            assert_eq!(path::<P>("").head(), "");
+        }
     }
 
     #[instantiate_tests(<JsonPathString>)]
     mod string {}
 
-    // TODO: #[instantiate_tests(<JsonPathV2>)] mod v2 {}
+    #[instantiate_tests(<JsonPathV2>)]
+    mod v2 {}
 }
