@@ -45,8 +45,7 @@ pub struct OperationDurationStatistics {
     /// [upper_boundary, cumulative_count], sorted by the upper boundary. Note that the last bucket
     /// (aka `{le="+Inf"}` in Prometheus terms) is not stored in this list, and `count` should be
     /// used instead.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    #[serde(default)]
+    #[serde(skip)] // openapi-generator-cli crashes on this field
     pub duration_micros_histogram: Vec<(f32, usize)>,
 }
 
