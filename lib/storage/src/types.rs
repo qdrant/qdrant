@@ -20,6 +20,7 @@ use tonic::transport::Uri;
 use validator::Validate;
 
 pub type PeerAddressById = HashMap<PeerId, Uri>;
+pub type PeerMetadataById = HashMap<PeerId, PeerMetadata>;
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct PerformanceConfig {
@@ -262,5 +263,27 @@ impl Anonymize for ClusterStatus {
                 ClusterStatus::Enabled(cluster_info.anonymize())
             }
         }
+    }
+}
+
+/// Metadata describing extra properties for each peer
+#[derive(Debug, Hash, Serialize, Deserialize, Clone, Eq, PartialEq)]
+pub struct PeerMetadata {
+    /// Peer Qdrant version string
+    version: Option<String>,
+}
+
+impl PeerMetadata {
+    pub fn current() -> Self {
+        Self {
+            version: Some(env!("CARGO_PKG_VERSION").to_string()),
+        }
+    }
+
+    /// Whether t his metadata is outdated based on the current version.
+    pub fn is_outdated(&self) -> bool {
+        self.version
+            .as_ref()
+            .map_or(false, |v| v != env!("CARGO_PKG_VERSION"))
     }
 }
