@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::path::Path;
 
+use async_recursion::async_recursion;
 use collection::collection_state;
 use collection::config::ShardingMethod;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
@@ -239,6 +240,7 @@ impl TableOfContent {
         Ok(true)
     }
 
+    #[async_recursion]
     async fn handle_transfer(
         &self,
         collection_id: CollectionId,
@@ -337,6 +339,25 @@ impl TableOfContent {
                         on_finish,
                         on_failure,
                     )
+                    .await?;
+            }
+            ShardTransferOperations::Restart(transfer) => {
+                // Validate transfer exists
+                transfer::helpers::validate_transfer_exists(
+                    &transfer.key(),
+                    &collection.state().await.transfers,
+                )?;
+
+                // Abort and start transfer
+                self.handle_transfer(
+                    collection_id.clone(),
+                    ShardTransferOperations::Abort {
+                        transfer: transfer.key(),
+                        reason: "restart transfer".into(),
+                    },
+                )
+                .await?;
+                self.handle_transfer(collection_id, ShardTransferOperations::Start(transfer))
                     .await?;
             }
             ShardTransferOperations::Finish(transfer) => {

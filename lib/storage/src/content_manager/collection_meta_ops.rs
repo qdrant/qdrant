@@ -294,6 +294,10 @@ pub struct DeleteCollectionOperation(pub String);
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
 pub enum ShardTransferOperations {
     Start(ShardTransfer),
+    /// Restart an existing transfer with a new configuration
+    ///
+    /// If the given transfer is ongoing, it is aborted and restarted with the new configuration.
+    Restart(ShardTransfer),
     Finish(ShardTransfer),
     /// Used in `ShardTransferMethod::Snapshot`
     ///
