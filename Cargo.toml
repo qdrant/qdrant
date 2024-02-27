@@ -154,7 +154,6 @@ members = [
     "lib/sparse",
     "lib/storage",
 ]
-exclude = ["benches/search-points"]
 
 [profile.release]
 lto = "fat"
