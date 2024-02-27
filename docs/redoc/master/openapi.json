@@ -9453,26 +9453,6 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
-          },
-          "duration_micros_histogram": {
-            "description": "The cumulative histogram of the operation durations. Consists of a list of pairs of [upper_boundary, cumulative_count], sorted by the upper boundary. Note that the last bucket (aka `{le=\"+Inf\"}` in Prometheus terms) is not stored in this list, and `count` should be used instead.",
-            "type": "array",
-            "items": {
-              "type": "array",
-              "items": [
-                {
-                  "type": "number",
-                  "format": "float"
-                },
-                {
-                  "type": "integer",
-                  "format": "uint",
-                  "minimum": 0
-                }
-              ],
-              "maxItems": 2,
-              "minItems": 2
-            }
           }
         }
       },
