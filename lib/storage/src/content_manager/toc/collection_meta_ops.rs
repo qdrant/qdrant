@@ -342,11 +342,18 @@ impl TableOfContent {
                     .await?;
             }
             ShardTransferOperations::Restart(transfer) => {
-                // Validate transfer exists
-                transfer::helpers::validate_transfer_exists(
-                    &transfer.key(),
-                    &collection.state().await.transfers,
-                )?;
+                let transfers = collection.state().await.transfers;
+
+                // Transfer must exist
+                transfer::helpers::validate_transfer_exists(&transfer.key(), &transfers)?;
+
+                // Transfer must have changed configuration
+                if transfers.contains(&transfer) {
+                    return Err(StorageError::bad_request(format!(
+                        "Cannot restart transfer for shard {} from {} to {}, its configuration did not change",
+                        transfer.shard_id, transfer.from, transfer.to,
+                    )));
+                }
 
                 // Abort and start transfer
                 self.handle_transfer(

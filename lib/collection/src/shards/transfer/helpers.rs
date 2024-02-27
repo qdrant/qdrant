@@ -13,7 +13,7 @@ pub fn validate_transfer_exists(
     if !current_transfers.iter().any(|t| &t.key() == transfer_key) {
         return Err(CollectionError::bad_request(format!(
             "There is no transfer for shard {} from {} to {}",
-            transfer_key.shard_id, transfer_key.from, transfer_key.to
+            transfer_key.shard_id, transfer_key.from, transfer_key.to,
         )));
     }
 
