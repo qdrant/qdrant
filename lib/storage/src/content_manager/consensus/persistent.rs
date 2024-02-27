@@ -39,7 +39,7 @@ pub struct Persistent {
     /// Last known cluster topology
     #[serde(with = "serialize_peer_addresses")]
     pub peer_address_by_id: Arc<RwLock<PeerAddressById>>,
-    #[serde(with = "serialize_peer_metadata")]
+    #[serde(default, with = "serialize_peer_metadata")]
     pub peer_metadata_by_id: Arc<RwLock<PeerMetadataById>>,
     pub this_peer_id: PeerId,
     #[serde(skip)]
