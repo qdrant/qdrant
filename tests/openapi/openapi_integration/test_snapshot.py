@@ -361,3 +361,6 @@ def test_snapshot_invalid_file_uri():
     )
     assert response.status_code == 400
     assert response.json()["status"]["error"] == "Bad request: Snapshot file \"/whatever.snapshot\" does not exist"
+
+    # Give file system some time to clean up temporary snapshot files
+    sleep(1)
