@@ -320,13 +320,13 @@ mod serialize_peer_metadata {
     use crate::types::{PeerMetadata, PeerMetadataById};
 
     pub fn serialize<S>(
-        versions: &Arc<RwLock<PeerMetadataById>>,
+        metadata: &Arc<RwLock<PeerMetadataById>>,
         serializer: S,
     ) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        versions.read().serialize(serializer)
+        metadata.read().serialize(serializer)
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Arc<RwLock<PeerMetadataById>>, D::Error>
