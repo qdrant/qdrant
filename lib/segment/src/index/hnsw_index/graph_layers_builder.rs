@@ -484,7 +484,7 @@ mod tests {
     use rand::SeedableRng;
 
     use super::*;
-    use crate::data_types::vectors::VectorElementType;
+    use crate::data_types::vectors::DenseVector;
     use crate::fixtures::index_fixtures::{
         random_vector, FakeFilterContext, TestRawScorerProducer,
     };
@@ -836,7 +836,7 @@ mod tests {
         let ef_construct = 32;
 
         // See illustration in docs
-        let points: Vec<Vec<VectorElementType>> = vec![
+        let points: Vec<DenseVector> = vec![
             vec![21.79, 7.18],  // Target
             vec![20.58, 5.46],  // 1  B - yes
             vec![21.19, 4.51],  // 2  C

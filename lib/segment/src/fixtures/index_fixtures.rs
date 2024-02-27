@@ -20,7 +20,7 @@ use crate::vector_storage::{
     DEFAULT_STOPPED,
 };
 
-pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> Vec<VectorElementType> {
+pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> DenseVector {
     (0..size).map(|_| rnd_gen.gen_range(-1.0..1.0)).collect()
 }
 

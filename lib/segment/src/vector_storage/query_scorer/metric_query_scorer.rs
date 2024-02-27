@@ -9,7 +9,7 @@ use crate::vector_storage::DenseVectorStorage;
 
 pub struct MetricQueryScorer<'a, TMetric: Metric, TVectorStorage: DenseVectorStorage> {
     vector_storage: &'a TVectorStorage,
-    query: Vec<VectorElementType>,
+    query: DenseVector,
     metric: PhantomData<TMetric>,
 }
 

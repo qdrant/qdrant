@@ -18,8 +18,8 @@ use segment::common::operation_error::OperationError;
 use segment::data_types::groups::GroupId;
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{
-    DenseVector, Named, NamedQuery, NamedVectorStruct, QueryVector, Vector, VectorElementType,
-    VectorRef, VectorStruct, DEFAULT_VECTOR_NAME,
+    DenseVector, Named, NamedQuery, NamedVectorStruct, QueryVector, Vector, VectorRef,
+    VectorStruct, DEFAULT_VECTOR_NAME,
 };
 use segment::json_path::{JsonPath, JsonPathInterface};
 use segment::types::{
@@ -427,8 +427,8 @@ impl QueryEnum {
     }
 }
 
-impl From<Vec<VectorElementType>> for QueryEnum {
-    fn from(vector: Vec<VectorElementType>) -> Self {
+impl From<DenseVector> for QueryEnum {
+    fn from(vector: DenseVector) -> Self {
         QueryEnum::Nearest(NamedVectorStruct::Default(vector))
     }
 }

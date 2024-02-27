@@ -627,7 +627,7 @@ mod tests {
 
     #[test]
     fn test_casts() {
-        let data: Vec<VectorElementType> = vec![0.42, 0.069, 333.1, 100500.];
+        let data: DenseVector = vec![0.42, 0.069, 333.1, 100500.];
 
         let raw_data = transmute_to_u8_slice(&data);
 
