@@ -196,7 +196,7 @@ impl<'a> TryInto<&'a SparseVector> for &'a Vector {
     }
 }
 
-pub fn default_vector(vec: Vec<VectorElementType>) -> NamedVectors<'static> {
+pub fn default_vector(vec: DenseVector) -> NamedVectors<'static> {
     NamedVectors::from([(DEFAULT_VECTOR_NAME.to_owned(), vec)])
 }
 

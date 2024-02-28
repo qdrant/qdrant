@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::vectors::{only_default_vector, VectorElementType};
+use segment::data_types::vectors::{only_default_vector, DenseVector};
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
@@ -160,7 +160,7 @@ pub fn build_segment_3(path: &Path) -> Segment {
     )
     .unwrap();
 
-    let collect_points_data = |vectors: &[Vec<VectorElementType>]| {
+    let collect_points_data = |vectors: &[DenseVector]| {
         NamedVectors::from([
             ("vector1".to_owned(), vectors[0].clone()),
             ("vector2".to_owned(), vectors[1].clone()),

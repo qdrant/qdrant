@@ -8,7 +8,7 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use rand::distributions::Standard;
 use rand::Rng;
 use segment::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
-use segment::data_types::vectors::{Vector, VectorElementType};
+use segment::data_types::vectors::{DenseVector, Vector};
 use segment::fixtures::payload_context_fixture::FixtureIdTracker;
 use segment::id_tracker::IdTrackerSS;
 use segment::types::Distance;
@@ -19,7 +19,7 @@ use tempfile::Builder;
 const NUM_VECTORS: usize = 100000;
 const DIM: usize = 1024; // Larger dimensionality - greater the SIMD advantage
 
-fn random_vector(size: usize) -> Vec<VectorElementType> {
+fn random_vector(size: usize) -> DenseVector {
     let rng = rand::thread_rng();
 
     rng.sample_iter(Standard).take(size).collect()
