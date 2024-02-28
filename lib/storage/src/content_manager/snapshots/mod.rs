@@ -146,9 +146,13 @@ async fn _do_create_full_snapshot(
     }
 
     let full_snapshot_path = snapshot_dir.join(&snapshot_name);
+
     let temp_full_snapshot_path = dispatcher
         .optional_temp_or_storage_temp_path()?
         .join(&snapshot_name);
+
+    // Make sure temporary file is removed in case of error
+    let _temp_full_snapshot_path_file = TempPath::from_path(&temp_full_snapshot_path);
 
     let config_path_clone = config_path.clone();
 

@@ -176,6 +176,12 @@ impl SnapshotStorageLocalFS {
         storage_path: &Path,
         local_path: &Path,
     ) -> CollectionResult<()> {
+        if let Some(target_dir) = local_path.parent() {
+            if !target_dir.exists() {
+                std::fs::create_dir_all(target_dir)?;
+            }
+        }
+
         if storage_path != local_path {
             move_file(&storage_path, &local_path).await?;
         }
