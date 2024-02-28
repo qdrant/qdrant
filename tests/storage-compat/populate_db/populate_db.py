@@ -8,6 +8,7 @@ import requests
 QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost:6333")
 
 POINTS_COUNT = 1000
+DENSE_DIM = 256
 
 
 def drop_collection(name: str):
@@ -15,25 +16,34 @@ def drop_collection(name: str):
     requests.delete(f"http://{QDRANT_HOST}/collections/{name}")
 
 
-def create_collection(name: str, quantization_config: dict = None):
+def create_collection(name: str, memmap_threshold_kb: int, on_disk: bool, quantization_config: dict = None):
     # create collection with a lower `indexing_threshold_kb` to generate the HNSW index
     response = requests.put(
         f"http://{QDRANT_HOST}/collections/{name}",
         headers={"Content-Type": "application/json"},
         json={
-            "vectors": {"image": {"size": 256, "distance": "Dot"}},
+            "vectors": {
+                "image": {
+                    "size": DENSE_DIM,
+                    "distance": "Dot",
+                    "on_disk": on_disk
+                }
+            },
             "sparse_vectors": {
                 "text": {
                     "index": {
-                        "on_disk": True,
+                        "on_disk": on_disk,
                     }
                 }
             },
             "optimizers_config": {
                 "default_segment_number": 2,
                 "indexing_threshold_kb": 10,
+                "memmap_threshold_kb": memmap_threshold_kb,
+
             },
             "quantization_config": quantization_config,
+            "on_disk_payload": on_disk,
         },
     )
     assert response.ok
@@ -87,7 +97,7 @@ def create_payload_indexes(name: str):
     assert response.ok
 
 
-def rand_dense_vec(dims: int = 256):
+def rand_dense_vec(dims: int = DENSE_DIM):
     return [(random.random() * 20) - 10 for _ in range(dims)]
 
 
@@ -222,9 +232,17 @@ def basic_retrieve(name: str):
     assert response.ok
 
 
-def populate_collection(name: str, quantization_config: dict = None):
+# Populate collection with different configurations
+#
+# There are two ways to configure the usage of memmap storage:
+# - `memmap_threshold_kb` - the threshold for the indexer to use memmap storage
+# - `on_disk` - to store vectors immediately on disk
+def populate_collection(name: str, on_disk: bool, quantization_config: dict = None, memmap_threshold: bool = False):
     drop_collection(name)
-    create_collection(name, quantization_config)
+    memmap_threshold_kb = 0
+    if memmap_threshold:
+        memmap_threshold_kb = 10  # low value to force transition to memmap storage
+    create_collection(name, memmap_threshold_kb, on_disk, quantization_config)
     create_payload_indexes(name)
     upload_points(name)
     basic_retrieve(name)
@@ -232,10 +250,12 @@ def populate_collection(name: str, quantization_config: dict = None):
 
 if __name__ == "__main__":
     # Create collection
-    populate_collection("test_collection")
-    populate_collection("test_collection_scalar_int8", {"scalar": {"type": "int8"}})
-    populate_collection("test_collection_product_x64", {"product": {"compression": "x64"}})
-    populate_collection("test_collection_product_x32", {"product": {"compression": "x32"}})
-    populate_collection("test_collection_product_x16", {"product": {"compression": "x16"}})
-    populate_collection("test_collection_product_x8", {"product": {"compression": "x8"}})
-    populate_collection("test_collection_binary", {"binary": {"always_ram": True}})
+    populate_collection("test_collection_vector_memory", on_disk=False)
+    populate_collection("test_collection_vector_on_disk", on_disk=True)
+    populate_collection("test_collection_vector_on_disk_threshold", on_disk=False, memmap_threshold=True)
+    populate_collection("test_collection_scalar_int8", False, {"scalar": {"type": "int8"}})
+    populate_collection("test_collection_product_x64", False, {"product": {"compression": "x64"}})
+    populate_collection("test_collection_product_x32", False, {"product": {"compression": "x32"}})
+    populate_collection("test_collection_product_x16", False, {"product": {"compression": "x16"}})
+    populate_collection("test_collection_product_x8", False, {"product": {"compression": "x8"}})
+    populate_collection("test_collection_binary", False, {"binary": {"always_ram": True}})
