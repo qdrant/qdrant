@@ -17,22 +17,22 @@ use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::{DenseVector, VectorElementType, VectorRef};
 use crate::types::Distance;
 use crate::vector_storage::common::get_async_scorer;
-use crate::vector_storage::mmap_vectors::MmapVectors;
+use crate::vector_storage::mmap_dense_vectors::MmapDenseVectors;
 use crate::vector_storage::VectorStorage;
 
 const VECTORS_PATH: &str = "matrix.dat";
 const DELETED_PATH: &str = "deleted.dat";
 
-/// Stores all vectors in mem-mapped file
+/// Stores all dense vectors in mem-mapped file
 ///
 /// It is not possible to insert new vectors into mem-mapped storage,
 /// but possible to mark some vectors as removed
 ///
 /// Mem-mapped storage can only be constructed from another storage
-pub struct MemmapVectorStorage {
+pub struct MemmapDenseVectorStorage {
     vectors_path: PathBuf,
     deleted_path: PathBuf,
-    mmap_store: Option<MmapVectors>,
+    mmap_store: Option<MmapDenseVectors>,
     distance: Distance,
 }
 
@@ -54,19 +54,19 @@ pub fn open_memmap_vector_storage_with_async_io(
 
     let vectors_path = path.join(VECTORS_PATH);
     let deleted_path = path.join(DELETED_PATH);
-    let mmap_store = MmapVectors::open(&vectors_path, &deleted_path, dim, with_async_io)?;
+    let mmap_store = MmapDenseVectors::open(&vectors_path, &deleted_path, dim, with_async_io)?;
 
-    Ok(Arc::new(AtomicRefCell::new(VectorStorageEnum::Memmap(
-        Box::new(MemmapVectorStorage {
+    Ok(Arc::new(AtomicRefCell::new(
+        VectorStorageEnum::DenseMemmap(Box::new(MemmapDenseVectorStorage {
             vectors_path,
             deleted_path,
             mmap_store: Some(mmap_store),
             distance,
-        }),
-    ))))
+        })),
+    )))
 }
 
-impl MemmapVectorStorage {
+impl MemmapDenseVectorStorage {
     pub fn prefault_mmap_pages(&self) -> Option<mmap_ops::PrefaultMmapPages> {
         Some(
             self.mmap_store
@@ -75,7 +75,7 @@ impl MemmapVectorStorage {
         )
     }
 
-    pub fn get_mmap_vectors(&self) -> &MmapVectors {
+    pub fn get_mmap_vectors(&self) -> &MmapDenseVectors {
         self.mmap_store.as_ref().unwrap()
     }
 
@@ -87,13 +87,13 @@ impl MemmapVectorStorage {
     }
 }
 
-impl DenseVectorStorage for MemmapVectorStorage {
+impl DenseVectorStorage for MemmapDenseVectorStorage {
     fn get_dense(&self, key: PointOffsetType) -> &[VectorElementType] {
         self.mmap_store.as_ref().unwrap().get_vector(key)
     }
 }
 
-impl VectorStorage for MemmapVectorStorage {
+impl VectorStorage for MemmapDenseVectorStorage {
     fn vector_dim(&self) -> usize {
         self.mmap_store.as_ref().unwrap().dim
     }
@@ -153,7 +153,7 @@ impl VectorStorage for MemmapVectorStorage {
         drop(vectors_file);
 
         // Load store with updated files
-        self.mmap_store.replace(MmapVectors::open(
+        self.mmap_store.replace(MmapDenseVectors::open(
             &self.vectors_path,
             &self.deleted_path,
             dim,

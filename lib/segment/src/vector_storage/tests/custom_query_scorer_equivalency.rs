@@ -21,7 +21,7 @@ use crate::types::{
     ScalarQuantizationConfig,
 };
 #[cfg(target_os = "linux")]
-use crate::vector_storage::memmap_vector_storage::open_memmap_vector_storage_with_async_io;
+use crate::vector_storage::memmap_dense_vector_storage::open_memmap_vector_storage_with_async_io;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::query::context_query::{ContextPair, ContextQuery};
 use crate::vector_storage::query::discovery_query::DiscoveryQuery;

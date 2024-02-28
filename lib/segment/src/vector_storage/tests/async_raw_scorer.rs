@@ -11,7 +11,7 @@ use crate::data_types::vectors::QueryVector;
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::id_tracker::IdTracker;
 use crate::types::Distance;
-use crate::vector_storage::memmap_vector_storage::open_memmap_vector_storage_with_async_io;
+use crate::vector_storage::memmap_dense_vector_storage::open_memmap_vector_storage_with_async_io;
 use crate::vector_storage::simple_dense_vector_storage::open_simple_vector_storage;
 use crate::vector_storage::vector_storage_base::VectorStorage;
 use crate::vector_storage::{async_raw_scorer, new_raw_scorer, VectorStorageEnum};
@@ -110,7 +110,7 @@ fn test_random_score(
     let raw_scorer = new_raw_scorer(query.clone(), storage, deleted_points).unwrap();
 
     let is_stopped = AtomicBool::new(false);
-    let async_raw_scorer = if let VectorStorageEnum::Memmap(storage) = storage {
+    let async_raw_scorer = if let VectorStorageEnum::DenseMemmap(storage) = storage {
         async_raw_scorer::new(query, storage, deleted_points, &is_stopped)?
     } else {
         unreachable!();

@@ -110,7 +110,7 @@ pub fn new_stoppable_raw_scorer<'a>(
     match vector_storage {
         VectorStorageEnum::DenseSimple(vs) => raw_scorer_impl(query, vs, point_deleted, is_stopped),
 
-        VectorStorageEnum::Memmap(vs) => {
+        VectorStorageEnum::DenseMemmap(vs) => {
             if vs.has_async_reader() {
                 #[cfg(target_os = "linux")]
                 {
@@ -129,7 +129,7 @@ pub fn new_stoppable_raw_scorer<'a>(
             raw_scorer_impl(query, vs.as_ref(), point_deleted, is_stopped)
         }
 
-        VectorStorageEnum::AppendableMemmap(vs) => {
+        VectorStorageEnum::DenseAppendableMemmap(vs) => {
             raw_scorer_impl(query, vs.as_ref(), point_deleted, is_stopped)
         }
         VectorStorageEnum::SparseSimple(vs) => {

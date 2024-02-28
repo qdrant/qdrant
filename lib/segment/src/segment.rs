@@ -108,7 +108,7 @@ impl VectorData {
         };
 
         let storage_task = match &*self.vector_storage.borrow() {
-            VectorStorageEnum::Memmap(storage) => storage.prefault_mmap_pages(),
+            VectorStorageEnum::DenseMemmap(storage) => storage.prefault_mmap_pages(),
             _ => None,
         };
 
@@ -213,8 +213,8 @@ impl Segment {
                     let dim = vector_storage.vector_dim();
                     let vector: Vector = match *vector_storage {
                         VectorStorageEnum::DenseSimple(_)
-                        | VectorStorageEnum::Memmap(_)
-                        | VectorStorageEnum::AppendableMemmap(_) => vec![1.0; dim].into(),
+                        | VectorStorageEnum::DenseMemmap(_)
+                        | VectorStorageEnum::DenseAppendableMemmap(_) => vec![1.0; dim].into(),
                         VectorStorageEnum::SparseSimple(_) => SparseVector::default().into(),
                     };
                     vector_storage.insert_vector(new_index, vector.to_vec_ref())?;
