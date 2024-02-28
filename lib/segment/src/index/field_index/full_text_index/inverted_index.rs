@@ -3,8 +3,10 @@ use std::collections::{BTreeSet, HashMap};
 use common::types::PointOffsetType;
 use serde::{Deserialize, Serialize};
 
-use super::posting_list::PostingList;
-use super::postings_iterator::intersect_postings_iterator;
+use super::posting_list::{CompressedPostingList, PostingList};
+use super::postings_iterator::{
+    intersect_compressed_postings_iterator, intersect_postings_iterator,
+};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
 use crate::types::{FieldCondition, Match, PayloadKeyType};
@@ -132,20 +134,33 @@ impl InvertedIndex {
         query: &ParsedQuery,
         condition: &FieldCondition,
     ) -> CardinalityEstimation {
-        let (points_count, index_postings) = match self {
-            InvertedIndex::Mutable(index) => (index.points_count, &index.postings),
-            InvertedIndex::Immutable(index) => (index.points_count, &index.postings),
+        let points_count = match self {
+            InvertedIndex::Mutable(index) => index.points_count,
+            InvertedIndex::Immutable(index) => index.points_count,
         };
-        let postings_opt: Option<Vec<_>> = query
+        let posting_lengths: Option<Vec<usize>> = query
             .tokens
             .iter()
             .map(|&vocab_idx| match vocab_idx {
                 None => None,
                 // unwrap safety: same as in filter()
-                Some(idx) => index_postings.get(idx as usize).unwrap().as_ref(),
+                Some(idx) => match &self {
+                    Self::Mutable(index) => index
+                        .postings
+                        .get(idx as usize)
+                        .unwrap()
+                        .as_ref()
+                        .map(|p| p.len()),
+                    Self::Immutable(index) => index
+                        .postings
+                        .get(idx as usize)
+                        .unwrap()
+                        .as_ref()
+                        .map(|p| p.len()),
+                },
             })
             .collect();
-        if postings_opt.is_none() || points_count == 0 {
+        if posting_lengths.is_none() || points_count == 0 {
             // There are unseen tokens -> no matches
             return CardinalityEstimation {
                 primary_clauses: vec![PrimaryCondition::Condition(condition.clone())],
@@ -154,7 +169,7 @@ impl InvertedIndex {
                 max: 0,
             };
         }
-        let postings = postings_opt.unwrap();
+        let postings = posting_lengths.unwrap();
         if postings.is_empty() {
             // Empty request -> no matches
             return CardinalityEstimation {
@@ -165,7 +180,7 @@ impl InvertedIndex {
             };
         }
         // Smallest posting is the largest possible cardinality
-        let smallest_posting = postings.iter().map(|posting| posting.len()).min().unwrap();
+        let smallest_posting = postings.iter().min().copied().unwrap();
 
         return if postings.len() == 1 {
             CardinalityEstimation {
@@ -177,7 +192,7 @@ impl InvertedIndex {
         } else {
             let expected_frac: f64 = postings
                 .iter()
-                .map(|posting| posting.len() as f64 / points_count as f64)
+                .map(|posting| *posting as f64 / points_count as f64)
                 .product();
             let exp = (expected_frac * points_count as f64) as usize;
             CardinalityEstimation {
@@ -194,32 +209,31 @@ impl InvertedIndex {
         threshold: usize,
         key: PayloadKeyType,
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
+        let map_filter_condition = move |(token, postings_len): (&str, usize)| {
+            if postings_len >= threshold {
+                Some(PayloadBlockCondition {
+                    condition: FieldCondition::new_match(key.clone(), Match::new_text(token)),
+                    cardinality: postings_len,
+                })
+            } else {
+                None
+            }
+        };
+
         // It might be very hard to predict possible combinations of conditions,
         // so we only build it for individual tokens
-        let (vocab, postings) = match self {
-            InvertedIndex::Mutable(index) => (&index.vocab, &index.postings),
-            InvertedIndex::Immutable(index) => (&index.vocab, &index.postings),
-        };
-        Box::new(
-            vocab
-                .iter()
-                .filter(|(_token, &posting_idx)| postings[posting_idx as usize].is_some())
-                .filter(move |(_token, &posting_idx)| {
-                    // unwrap crash safety: all tokens that passes the first filter should have postings
-                    postings[posting_idx as usize].as_ref().unwrap().len() >= threshold
-                })
-                .map(|(token, &posting_idx)| {
-                    (
-                        token,
-                        // same as the above case
-                        postings[posting_idx as usize].as_ref().unwrap(),
-                    )
-                })
-                .map(move |(token, posting)| PayloadBlockCondition {
-                    condition: FieldCondition::new_match(key.clone(), Match::new_text(token)),
-                    cardinality: posting.len(),
-                }),
-        )
+        match &self {
+            InvertedIndex::Mutable(index) => Box::new(
+                index
+                    .vocab_with_positngs_len_iter()
+                    .filter_map(map_filter_condition),
+            ),
+            InvertedIndex::Immutable(index) => Box::new(
+                index
+                    .vocab_with_positngs_len_iter()
+                    .filter_map(map_filter_condition),
+            ),
+        }
     }
 
     pub fn build_index(
@@ -401,7 +415,7 @@ impl MutableInvertedIndex {
             // Empty request -> no matches
             return Box::new(vec![].into_iter());
         }
-        intersect_postings_iterator(postings, |_| true)
+        intersect_postings_iterator(postings)
     }
 
     fn values_count(&self, point_id: PointOffsetType) -> usize {
@@ -424,11 +438,21 @@ impl MutableInvertedIndex {
     fn get_doc(&self, idx: PointOffsetType) -> Option<&Document> {
         self.point_to_docs.get(idx as usize)?.as_ref()
     }
+
+    fn vocab_with_positngs_len_iter(&self) -> impl Iterator<Item = (&str, usize)> + '_ {
+        self.vocab.iter().filter_map(|(token, &posting_idx)| {
+            if let Some(Some(postings)) = self.postings.get(posting_idx as usize) {
+                Some((token.as_str(), postings.len()))
+            } else {
+                None
+            }
+        })
+    }
 }
 
 #[derive(Default)]
 pub struct ImmutableInvertedIndex {
-    postings: Vec<Option<PostingList>>,
+    postings: Vec<Option<CompressedPostingList>>,
     vocab: HashMap<String, TokenId>,
     point_documents_tokens: Vec<Option<usize>>,
     points_count: usize,
@@ -465,10 +489,10 @@ impl ImmutableInvertedIndex {
             return Box::new(vec![].into_iter());
         }
 
-        // deleted documents are still in the postings
+        // in case of immutable index, deleted documents are still in the postings
         let filter =
             move |idx| matches!(self.point_documents_tokens.get(idx as usize), Some(Some(_)));
-        intersect_postings_iterator(postings, filter)
+        intersect_compressed_postings_iterator(postings, filter)
     }
 
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
@@ -506,22 +530,29 @@ impl ImmutableInvertedIndex {
                 }
             })
     }
+
+    fn vocab_with_positngs_len_iter(&self) -> impl Iterator<Item = (&str, usize)> + '_ {
+        self.vocab.iter().filter_map(|(token, &posting_idx)| {
+            if let Some(Some(postings)) = self.postings.get(posting_idx as usize) {
+                Some((token.as_str(), postings.len()))
+            } else {
+                None
+            }
+        })
+    }
 }
 
 impl From<MutableInvertedIndex> for ImmutableInvertedIndex {
     fn from(mut index: MutableInvertedIndex) -> Self {
-        index
+        let postings: Vec<Option<CompressedPostingList>> = index
             .postings
-            .iter_mut()
-            .filter_map(|posting| posting.as_mut())
-            .for_each(|posting| {
-                posting.shrink_to_fit();
-            });
-        index.postings.shrink_to_fit();
+            .into_iter()
+            .map(|x| x.map(CompressedPostingList::new))
+            .collect();
         index.vocab.shrink_to_fit();
 
         ImmutableInvertedIndex {
-            postings: index.postings,
+            postings,
             vocab: index.vocab,
             point_documents_tokens: index
                 .point_to_docs
