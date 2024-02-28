@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
-use collection::common::snapshots_manager::SnapshotStorageManager;
 
+use collection::common::snapshots_manager::SnapshotStorageManager;
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};

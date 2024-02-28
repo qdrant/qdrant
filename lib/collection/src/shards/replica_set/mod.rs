@@ -18,13 +18,13 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock};
-use crate::common::snapshots_manager::SnapshotStorageManager;
 
 use super::local_shard::clock_map::RecoveryPoint;
 use super::local_shard::LocalShard;
 use super::remote_shard::RemoteShard;
 use super::transfer::ShardTransfer;
 use super::CollectionId;
+use crate::common::snapshots_manager::SnapshotStorageManager;
 use crate::config::CollectionConfig;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult};

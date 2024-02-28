@@ -130,10 +130,7 @@ impl Collection {
 
         let snapshot_manager = self.get_snapshots_storage_manager();
         snapshot_manager
-            .store_file(
-                snapshot_temp_arc_file.path(),
-                snapshot_path.as_path(),
-            )
+            .store_file(snapshot_temp_arc_file.path(), snapshot_path.as_path())
             .await
     }
 
