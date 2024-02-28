@@ -324,9 +324,6 @@ def test_snapshot_operations_non_wait():
             sleep(0.1)
             continue
 
-    # Give file system some time to clean up temporary snapshot files
-    sleep(1)
-
 
 def test_snapshot_invalid_file_uri():
     # Invalid file:// host
