@@ -77,6 +77,21 @@ impl SnapshotStorageManager {
             }
         }
     }
+
+    pub async fn get_stored_file(
+        &self,
+        storage_path: &Path,
+        local_path: &Path,
+    ) -> CollectionResult<()> {
+        match self {
+            SnapshotStorageManager::LocalFS(storage_impl) => {
+                storage_impl.get_stored_file(storage_path, local_path).await
+            }
+            SnapshotStorageManager::S3(storage_impl) => {
+                storage_impl.get_stored_file(storage_path, local_path).await
+            }
+        }
+    }
 }
 
 impl SnapshotStorageLocalFS {
@@ -155,6 +170,17 @@ impl SnapshotStorageLocalFS {
         checksum_file.keep()?;
         get_snapshot_description(target_path).await
     }
+
+    async fn get_stored_file(
+        &self,
+        storage_path: &Path,
+        local_path: &Path,
+    ) -> CollectionResult<()> {
+        if storage_path != local_path {
+            move_file(&storage_path, &local_path).await?;
+        }
+        Ok(())
+    }
 }
 
 impl SnapshotStorageS3 {
@@ -174,6 +200,14 @@ impl SnapshotStorageS3 {
         _source_path: &Path,
         _target_path: &Path,
     ) -> CollectionResult<SnapshotDescription> {
+        unimplemented!()
+    }
+
+    async fn get_stored_file(
+        &self,
+        _storage_path: &Path,
+        _local_path: &Path,
+    ) -> CollectionResult<()> {
         unimplemented!()
     }
 }

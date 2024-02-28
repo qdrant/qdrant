@@ -4,9 +4,10 @@ pub mod recover;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use collection::operations::snapshot_ops::{get_checksum_path, SnapshotDescription};
+use collection::operations::snapshot_ops::SnapshotDescription;
 use serde::{Deserialize, Serialize};
 use tar::Builder as TarBuilder;
+use tempfile::TempPath;
 use tokio::io::AsyncWriteExt;
 
 use crate::content_manager::toc::FULL_SNAPSHOT_FILE_NAME;
@@ -145,29 +146,44 @@ async fn _do_create_full_snapshot(
     }
 
     let full_snapshot_path = snapshot_dir.join(&snapshot_name);
+    let temp_full_snapshot_path = dispatcher
+        .optional_temp_or_storage_temp_path()?
+        .join(&snapshot_name);
 
     let config_path_clone = config_path.clone();
-    let full_snapshot_path_clone = full_snapshot_path.clone();
-    let created_snapshots_clone: Vec<_> = created_snapshots
-        .iter()
-        .map(|(x, y)| (x.to_string(), y.to_owned()))
-        .collect();
+
+    // (tempfile_with_snapshot, snapshot_name)
+    let mut temp_collection_snapshots = vec![];
+
+    let temp_storage_path = dispatcher.optional_temp_or_storage_temp_path()?;
+    let snapshot_manager = dispatcher.toc().get_snapshots_storage_manager();
+
+    for (collection_name, snapshot_details) in &created_snapshots {
+        let snapshot_path = snapshot_dir
+            .join(collection_name)
+            .join(&snapshot_details.name);
+
+        let local_temp_collection_snapshot = temp_storage_path
+            .join(collection_name)
+            .join(&snapshot_details.name);
+
+        snapshot_manager
+            .get_stored_file(&snapshot_path, &local_temp_collection_snapshot)
+            .await?;
+
+        temp_collection_snapshots.push((
+            TempPath::from_path(local_temp_collection_snapshot),
+            snapshot_details.name.clone(),
+        ));
+    }
+
+    let full_snapshot_path_clone = temp_full_snapshot_path.clone();
     let archiving = tokio::task::spawn_blocking(move || {
         // have to use std here, cause TarBuilder is not async
         let file = std::fs::File::create(&full_snapshot_path_clone)?;
         let mut builder = TarBuilder::new(file);
-        for (collection_name, snapshot_details) in created_snapshots_clone {
-            let snapshot_path = snapshot_dir
-                .join(collection_name)
-                .join(&snapshot_details.name);
-            builder.append_path_with_name(&snapshot_path, &snapshot_details.name)?;
-            std::fs::remove_file(&snapshot_path)?;
-
-            // Remove associated checksum if there is one
-            let snapshot_checksum = get_checksum_path(&snapshot_path);
-            if let Err(err) = std::fs::remove_file(snapshot_checksum) {
-                log::warn!("Failed to delete checksum file for snapshot, ignoring: {err}");
-            }
+        for (temp_file, snapshot_name) in temp_collection_snapshots {
+            builder.append_path_with_name(&temp_file, &snapshot_name)?;
         }
         builder.append_path_with_name(&config_path_clone, "config.json")?;
 
@@ -176,9 +192,8 @@ async fn _do_create_full_snapshot(
     });
     archiving.await??;
 
-    let snapshot_manager = dispatcher.toc().get_snapshots_storage_manager();
     let snapshot_description = snapshot_manager
-        .store_file(&full_snapshot_path, &full_snapshot_path)
+        .store_file(&temp_full_snapshot_path, &full_snapshot_path)
         .await?;
     tokio::fs::remove_file(&config_path).await?;
     Ok(snapshot_description)
