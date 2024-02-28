@@ -49,7 +49,7 @@ rm -rf ./storage
   & PID=$!
 
 declare retry=0
-until curl --output /dev/null --silent --get --fail http://$QDRANT_HOST/collections/test_collection; do
+until curl --output /dev/null --silent --get --fail http://$QDRANT_HOST/collections/test_collection_vector_on_disk; do
   if ((retry++ < 30)); then
       printf 'waiting for server to start...'
       sleep 1
