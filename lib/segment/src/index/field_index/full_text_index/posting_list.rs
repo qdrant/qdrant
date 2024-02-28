@@ -51,7 +51,7 @@ pub struct CompressedPostingList {
     data: Vec<u8>,
     chunks: Vec<CompressedPostingChunk>,
     // last postings that are not compressed because they are not aligned with the block size
-    noncompressed_postings: Vec<PointOffsetType>,
+    reminder_postings: Vec<PointOffsetType>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -109,7 +109,7 @@ impl CompressedPostingList {
             last_doc_id: *posting_list.list.last().unwrap(),
             data,
             chunks,
-            noncompressed_postings,
+            reminder_postings: noncompressed_postings,
         }
     }
 
@@ -129,12 +129,12 @@ impl CompressedPostingList {
             self.decompress_chunk(&BitPackerImpl::new(), chunk_index, &mut decompressed);
             decompressed.binary_search(val).is_ok()
         } else {
-            self.noncompressed_postings.binary_search(val).is_ok()
+            self.reminder_postings.binary_search(val).is_ok()
         }
     }
 
     pub fn len(&self) -> usize {
-        self.chunks.len() * BitPackerImpl::BLOCK_LEN + self.noncompressed_postings.len()
+        self.chunks.len() * BitPackerImpl::BLOCK_LEN + self.reminder_postings.len()
     }
 
     pub fn iter(&self) -> impl Iterator<Item = PointOffsetType> + '_ {
@@ -145,7 +145,7 @@ impl CompressedPostingList {
                 self.decompress_chunk(&bitpacker, chunk_index, &mut decompressed);
                 decompressed.into_iter()
             })
-            .chain(self.noncompressed_postings.iter().copied())
+            .chain(self.reminder_postings.iter().copied())
     }
 
     fn get_chunk_size(chunks: &[CompressedPostingChunk], data: &[u8], chunk_index: usize) -> usize {
@@ -158,9 +158,7 @@ impl CompressedPostingList {
     }
 
     fn find_chunk(&self, doc_id: &PointOffsetType, start_chunk: Option<usize>) -> Option<usize> {
-        if !self.noncompressed_postings.is_empty()
-            && doc_id >= self.noncompressed_postings.first().unwrap()
-        {
+        if !self.reminder_postings.is_empty() && doc_id >= self.reminder_postings.first().unwrap() {
             // doc_id is in the noncompressed postings range
             return None;
         }
@@ -183,8 +181,8 @@ impl CompressedPostingList {
     fn is_in_postings_range(&self, val: PointOffsetType) -> bool {
         let in_chunks_range =
             !self.chunks.is_empty() && val >= self.chunks[0].initial && val <= self.last_doc_id;
-        let in_noncompressed_range = !self.noncompressed_postings.is_empty()
-            && val >= self.noncompressed_postings[0]
+        let in_noncompressed_range = !self.reminder_postings.is_empty()
+            && val >= self.reminder_postings[0]
             && val <= self.last_doc_id;
         in_chunks_range || in_noncompressed_range
     }
@@ -208,8 +206,8 @@ impl CompressedPostingList {
     }
 }
 
-// Help structure to check if set of sorted values are in the compressed posting list
-// This help structure reuse the decompressed chunk to avoid unnecessary decompression
+// Help structure to find intersection of compressed postings and set of sorted values.
+// This help structure reuse the decompressed chunk to avoid unnecessary decompression.
 pub struct CompressedPostingVisitor<'a> {
     bitpacker: BitPackerImpl,
     postings: &'a CompressedPostingList,
@@ -243,7 +241,10 @@ impl<'a> CompressedPostingVisitor<'a> {
         }
     }
 
-    pub fn contains(&mut self, val: &PointOffsetType) -> bool {
+    // Check if the next value is in the compressed posting list.
+    // This function reuses the decompressed chunk to avoid unnecessary decompression.
+    // It is useful when the visitor is used to check the values in the increasing order.
+    pub fn contains_next(&mut self, val: &PointOffsetType) -> bool {
         #[cfg(test)]
         {
             // check if the checked values are in the increasing order
@@ -282,11 +283,7 @@ impl<'a> CompressedPostingVisitor<'a> {
             None => {
                 // value is in the noncompressed postings range
                 self.decompressed_chunk_idx = None;
-                return self
-                    .postings
-                    .noncompressed_postings
-                    .binary_search(val)
-                    .is_ok();
+                return self.postings.reminder_postings.binary_search(val).is_ok();
             }
         };
         // if the value is the initial value of the chunk, we don't need to decompress the chunk
@@ -356,7 +353,7 @@ mod tests {
                 let mut visitor = CompressedPostingVisitor::new(&compressed_posting_list);
                 for i in 0..build_step * 1000 {
                     if i % search_step == 0 {
-                        assert_eq!(visitor.contains(&i), set.contains(&i));
+                        assert_eq!(visitor.contains_next(&i), set.contains(&i));
                     }
                 }
             }

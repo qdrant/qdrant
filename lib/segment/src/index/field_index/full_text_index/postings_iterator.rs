@@ -43,7 +43,7 @@ pub fn intersect_compressed_postings_iterator<'a>(
         .filter(move |doc_id| {
             posting_visitors
                 .iter_mut()
-                .all(|posting_visitor| posting_visitor.contains(doc_id))
+                .all(|posting_visitor| posting_visitor.contains_next(doc_id))
         });
 
     Box::new(and_iter)

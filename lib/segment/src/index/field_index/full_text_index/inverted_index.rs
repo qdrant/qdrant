@@ -138,7 +138,7 @@ impl InvertedIndex {
             InvertedIndex::Mutable(index) => index.points_count,
             InvertedIndex::Immutable(index) => index.points_count,
         };
-        let postings_opt: Option<Vec<_>> = query
+        let posting_lengths: Option<Vec<usize>> = query
             .tokens
             .iter()
             .map(|&vocab_idx| match vocab_idx {
@@ -160,7 +160,7 @@ impl InvertedIndex {
                 },
             })
             .collect();
-        if postings_opt.is_none() || points_count == 0 {
+        if posting_lengths.is_none() || points_count == 0 {
             // There are unseen tokens -> no matches
             return CardinalityEstimation {
                 primary_clauses: vec![PrimaryCondition::Condition(condition.clone())],
@@ -169,7 +169,7 @@ impl InvertedIndex {
                 max: 0,
             };
         }
-        let postings = postings_opt.unwrap();
+        let postings = posting_lengths.unwrap();
         if postings.is_empty() {
             // Empty request -> no matches
             return CardinalityEstimation {
