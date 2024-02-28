@@ -244,7 +244,7 @@ impl<'a> CompressedPostingVisitor<'a> {
     // Check if the next value is in the compressed posting list.
     // This function reuses the decompressed chunk to avoid unnecessary decompression.
     // It is useful when the visitor is used to check the values in the increasing order.
-    pub fn contains_next(&mut self, val: &PointOffsetType) -> bool {
+    pub fn contains_next_and_advance(&mut self, val: &PointOffsetType) -> bool {
         #[cfg(test)]
         {
             // check if the checked values are in the increasing order
@@ -266,7 +266,7 @@ impl<'a> CompressedPostingVisitor<'a> {
             match val.cmp(last_decompressed) {
                 std::cmp::Ordering::Less => {
                     // value is less than the last decompressed value
-                    return self.find_in_decompressed_chunk(val);
+                    return self.find_in_decompressed_and_advance(val);
                 }
                 std::cmp::Ordering::Equal => {
                     // value is equal to the last decompressed value
@@ -298,10 +298,10 @@ impl<'a> CompressedPostingVisitor<'a> {
         self.decompressed_chunk_start_index = 0;
 
         // check if the value is in the decompressed chunk
-        self.find_in_decompressed_chunk(val)
+        self.find_in_decompressed_and_advance(val)
     }
 
-    fn find_in_decompressed_chunk(&mut self, val: &PointOffsetType) -> bool {
+    fn find_in_decompressed_and_advance(&mut self, val: &PointOffsetType) -> bool {
         match self.decompressed_chunk[self.decompressed_chunk_start_index..].binary_search(val) {
             Ok(idx) => {
                 self.decompressed_chunk_start_index = idx;
@@ -353,7 +353,7 @@ mod tests {
                 let mut visitor = CompressedPostingVisitor::new(&compressed_posting_list);
                 for i in 0..build_step * 1000 {
                     if i % search_step == 0 {
-                        assert_eq!(visitor.contains_next(&i), set.contains(&i));
+                        assert_eq!(visitor.contains_next_and_advance(&i), set.contains(&i));
                     }
                 }
             }
