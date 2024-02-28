@@ -47,10 +47,11 @@ impl PostingList {
 
 #[derive(Clone, Debug, Default)]
 pub struct CompressedPostingList {
-    len: usize,
     last_doc_id: PointOffsetType,
     data: Vec<u8>,
     chunks: Vec<CompressedPostingChunk>,
+    // last postings that are not compressed because they are not aligned with the block size
+    noncompressed_postings: Vec<PointOffsetType>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -60,37 +61,33 @@ pub struct CompressedPostingChunk {
 }
 
 impl CompressedPostingList {
-    pub fn new(mut posting_list: PostingList) -> Self {
+    pub fn new(posting_list: PostingList) -> Self {
         if posting_list.list.is_empty() {
             return Self::default();
         }
-        let len = posting_list.len();
-        let last_doc_id = *posting_list.list.last().unwrap();
 
-        let bitpacker = BitPackerImpl::new();
-        posting_list.list.sort_unstable();
-
-        let last = *posting_list.list.last().unwrap();
-        while posting_list.list.len() % BitPackerImpl::BLOCK_LEN != 0 {
-            posting_list.list.push(last);
-        }
-
-        // calculate chunks count
-        let chunks_count = posting_list.len().div_ceil(BitPackerImpl::BLOCK_LEN);
         // fill chunks data
-        let mut chunks = Vec::with_capacity(chunks_count);
+        let bitpacker = BitPackerImpl::new();
+        let mut chunks = Vec::with_capacity(posting_list.len() / BitPackerImpl::BLOCK_LEN);
         let mut data_size = 0;
-        for chunk_data in posting_list.list.chunks_exact(BitPackerImpl::BLOCK_LEN) {
-            let initial = chunk_data[0];
-            let chunk_bits: u8 = bitpacker.num_bits_sorted(initial, chunk_data);
-            let chunk_size = BitPackerImpl::compressed_block_size(chunk_bits);
-            chunks.push(CompressedPostingChunk {
-                initial,
-                offset: data_size as u32,
-            });
-            data_size += chunk_size;
+        let mut noncompressed_postings = Vec::new();
+        for chunk_data in posting_list.list.chunks(BitPackerImpl::BLOCK_LEN) {
+            if chunk_data.len() == BitPackerImpl::BLOCK_LEN {
+                let initial = chunk_data[0];
+                let chunk_bits: u8 = bitpacker.num_bits_sorted(initial, chunk_data);
+                let chunk_size = BitPackerImpl::compressed_block_size(chunk_bits);
+                chunks.push(CompressedPostingChunk {
+                    initial,
+                    offset: data_size as u32,
+                });
+                data_size += chunk_size;
+            } else {
+                // last chunk that is not aligned with the block size
+                noncompressed_postings.extend_from_slice(chunk_data);
+            }
         }
 
+        // compress data
         let mut data = vec![0u8; data_size];
         for (chunk_index, chunk_data) in posting_list
             .list
@@ -109,10 +106,10 @@ impl CompressedPostingList {
         }
 
         Self {
-            len,
-            last_doc_id,
+            last_doc_id: *posting_list.list.last().unwrap(),
             data,
             chunks,
+            noncompressed_postings,
         }
     }
 
@@ -132,12 +129,12 @@ impl CompressedPostingList {
             self.decompress_chunk(&BitPackerImpl::new(), chunk_index, &mut decompressed);
             decompressed.binary_search(val).is_ok()
         } else {
-            false
+            self.noncompressed_postings.binary_search(val).is_ok()
         }
     }
 
     pub fn len(&self) -> usize {
-        self.len
+        self.chunks.len() * BitPackerImpl::BLOCK_LEN + self.noncompressed_postings.len()
     }
 
     pub fn iter(&self) -> impl Iterator<Item = PointOffsetType> + '_ {
@@ -148,7 +145,7 @@ impl CompressedPostingList {
                 self.decompress_chunk(&bitpacker, chunk_index, &mut decompressed);
                 decompressed.into_iter()
             })
-            .take(self.len)
+            .chain(self.noncompressed_postings.iter().copied())
     }
 
     fn get_chunk_size(chunks: &[CompressedPostingChunk], data: &[u8], chunk_index: usize) -> usize {
@@ -161,6 +158,17 @@ impl CompressedPostingList {
     }
 
     fn find_chunk(&self, doc_id: &PointOffsetType, start_chunk: Option<usize>) -> Option<usize> {
+        if !self.noncompressed_postings.is_empty()
+            && doc_id >= self.noncompressed_postings.first().unwrap()
+        {
+            // doc_id is in the noncompressed postings range
+            return None;
+        }
+
+        if self.chunks.is_empty() {
+            return None;
+        }
+
         let start_chunk = start_chunk.unwrap_or(0);
         match self.chunks[start_chunk..].binary_search_by(|chunk| chunk.initial.cmp(doc_id)) {
             // doc_id is the initial value of the chunk with index idx
@@ -173,7 +181,12 @@ impl CompressedPostingList {
     }
 
     fn is_in_postings_range(&self, val: PointOffsetType) -> bool {
-        !self.chunks.is_empty() && val >= self.chunks[0].initial && val <= self.last_doc_id
+        let in_chunks_range =
+            !self.chunks.is_empty() && val >= self.chunks[0].initial && val <= self.last_doc_id;
+        let in_noncompressed_range = !self.noncompressed_postings.is_empty()
+            && val >= self.noncompressed_postings[0]
+            && val <= self.last_doc_id;
+        in_chunks_range || in_noncompressed_range
     }
 
     fn decompress_chunk(
@@ -266,7 +279,15 @@ impl<'a> CompressedPostingVisitor<'a> {
         // first, check if there is a chunk that contains the value
         let chunk_index = match self.postings.find_chunk(val, self.decompressed_chunk_idx) {
             Some(idx) => idx,
-            None => return false,
+            None => {
+                // value is in the noncompressed postings range
+                self.decompressed_chunk_idx = None;
+                return self
+                    .postings
+                    .noncompressed_postings
+                    .binary_search(val)
+                    .is_ok();
+            }
         };
         // if the value is the initial value of the chunk, we don't need to decompress the chunk
         if self.postings.chunks[chunk_index].initial == *val {
