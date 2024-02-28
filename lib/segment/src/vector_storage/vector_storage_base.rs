@@ -11,7 +11,7 @@ use super::simple_dense_vector_storage::SimpleDenseVectorStorage;
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
-use crate::data_types::vectors::{VectorElementType, VectorRef};
+use crate::data_types::vectors::{MultiDenseVector, VectorElementType, VectorRef};
 use crate::types::Distance;
 use crate::vector_storage::appendable_mmap_dense_vector_storage::AppendableMmapDenseVectorStorage;
 use crate::vector_storage::simple_multi_dense_vector_storage::SimpleMultiDenseVectorStorage;
@@ -103,6 +103,10 @@ pub trait DenseVectorStorage: VectorStorage {
 
 pub trait SparseVectorStorage: VectorStorage {
     fn get_sparse(&self, key: PointOffsetType) -> OperationResult<SparseVector>;
+}
+
+pub trait MultiVectorStorage: VectorStorage {
+    fn get_multi(&self, key: PointOffsetType) -> &MultiDenseVector;
 }
 
 pub enum VectorStorageEnum {
