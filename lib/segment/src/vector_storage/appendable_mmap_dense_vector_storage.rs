@@ -21,7 +21,7 @@ use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 const VECTORS_DIR_PATH: &str = "vectors";
 const DELETED_DIR_PATH: &str = "deleted";
 
-pub struct AppendableMmapVectorStorage {
+pub struct AppendableMmapDenseVectorStorage {
     vectors: ChunkedMmapVectors,
     deleted: DynamicMmapFlags,
     distance: Distance,
@@ -54,7 +54,7 @@ pub fn open_appendable_memmap_vector_storage(
         check_process_stopped(stopped)?;
     }
 
-    let storage = AppendableMmapVectorStorage {
+    let storage = AppendableMmapDenseVectorStorage {
         vectors,
         deleted,
         distance,
@@ -62,11 +62,11 @@ pub fn open_appendable_memmap_vector_storage(
     };
 
     Ok(Arc::new(AtomicRefCell::new(
-        VectorStorageEnum::AppendableMemmap(Box::new(storage)),
+        VectorStorageEnum::DenseAppendableMemmap(Box::new(storage)),
     )))
 }
 
-impl AppendableMmapVectorStorage {
+impl AppendableMmapDenseVectorStorage {
     /// Set deleted flag for given key. Returns previous deleted state.
     #[inline]
     fn set_deleted(&mut self, key: PointOffsetType, deleted: bool) -> OperationResult<bool> {
@@ -87,13 +87,13 @@ impl AppendableMmapVectorStorage {
     }
 }
 
-impl DenseVectorStorage for AppendableMmapVectorStorage {
+impl DenseVectorStorage for AppendableMmapDenseVectorStorage {
     fn get_dense(&self, key: PointOffsetType) -> &[VectorElementType] {
         self.vectors.get(key)
     }
 }
 
-impl VectorStorage for AppendableMmapVectorStorage {
+impl VectorStorage for AppendableMmapDenseVectorStorage {
     fn vector_dim(&self) -> usize {
         self.vectors.dim()
     }

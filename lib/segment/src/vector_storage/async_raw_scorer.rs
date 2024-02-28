@@ -14,15 +14,15 @@ use crate::data_types::vectors::{DenseVector, QueryVector, Vector, VectorElement
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::Distance;
-use crate::vector_storage::memmap_vector_storage::MemmapVectorStorage;
-use crate::vector_storage::mmap_vectors::MmapVectors;
+use crate::vector_storage::memmap_dense_vector_storage::MemmapDenseVectorStorage;
+use crate::vector_storage::mmap_dense_vectors::MmapDenseVectors;
 use crate::vector_storage::query_scorer::metric_query_scorer::MetricQueryScorer;
 use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::{RawScorer, VectorStorage as _, DEFAULT_STOPPED};
 
 pub fn new<'a>(
     query: QueryVector,
-    storage: &'a MemmapVectorStorage,
+    storage: &'a MemmapDenseVectorStorage,
     point_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
@@ -34,7 +34,7 @@ pub fn new<'a>(
 pub struct AsyncRawScorerImpl<'a, TQueryScorer: QueryScorer<[VectorElementType]>> {
     points_count: PointOffsetType,
     query_scorer: TQueryScorer,
-    storage: &'a MmapVectors,
+    storage: &'a MmapDenseVectors,
     point_deleted: &'a BitSlice,
     vec_deleted: &'a BitSlice,
     /// This flag indicates that the search process is stopped externally,
@@ -49,7 +49,7 @@ where
     fn new(
         points_count: PointOffsetType,
         query_scorer: TQueryScorer,
-        storage: &'a MmapVectors,
+        storage: &'a MmapDenseVectors,
         point_deleted: &'a BitSlice,
         vec_deleted: &'a BitSlice,
         is_stopped: &'a AtomicBool,
@@ -209,7 +209,7 @@ where
 struct AsyncRawScorerBuilder<'a> {
     points_count: PointOffsetType,
     query: QueryVector,
-    storage: &'a MemmapVectorStorage,
+    storage: &'a MemmapDenseVectorStorage,
     point_deleted: &'a BitSlice,
     vec_deleted: &'a BitSlice,
     distance: Distance,
@@ -219,7 +219,7 @@ struct AsyncRawScorerBuilder<'a> {
 impl<'a> AsyncRawScorerBuilder<'a> {
     pub fn new(
         query: QueryVector,
-        storage: &'a MemmapVectorStorage,
+        storage: &'a MemmapDenseVectorStorage,
         point_deleted: &'a BitSlice,
     ) -> OperationResult<Self> {
         let points_count = storage.total_vector_count() as _;
