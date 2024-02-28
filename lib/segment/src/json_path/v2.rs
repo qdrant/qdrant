@@ -163,6 +163,97 @@ impl JsonPathInterface for JsonPathV2 {
     }
 }
 
+impl JsonPathV2 {
+    /// Check if a path is a compatible prefix of another path or vice versa.
+    pub fn compatible(&self, other: &Self) -> bool {
+        if self.first_key != other.first_key {
+            return false;
+        }
+        self.rest
+            .iter()
+            .zip(&other.rest)
+            .all(|(a, b)| match (a, b) {
+                (JsonPathItem::Key(a), JsonPathItem::Key(b)) => a == b,
+                (JsonPathItem::Index(a), JsonPathItem::Index(b)) => a == b,
+                (JsonPathItem::WildcardIndex, JsonPathItem::WildcardIndex) => true,
+                (JsonPathItem::Index(_), JsonPathItem::WildcardIndex) => true,
+                (JsonPathItem::WildcardIndex, JsonPathItem::Index(_)) => true,
+                _ => false,
+            })
+    }
+
+    /// Return true if the indexed value would not be affected by a `value_remove` operation.
+    pub fn safe_to_remove(indexed_path: &JsonPathV2, path_to_remove: &JsonPathV2) -> bool {
+        // If we have, e.g., indexed field "a.b", then it is not safe to delete any of of "a",
+        // "a.b", or "a.b.c".
+        !path_to_remove.compatible(indexed_path)
+    }
+
+    /// Return true if the indexed value would not be affected by a `value_set` operation.
+    pub fn safe_to_set(
+        indexed_path: &JsonPathV2,
+        payload: &serde_json::Map<String, Value>,
+        path_to_set: Option<&JsonPathV2>,
+    ) -> bool {
+        // Suppose we have a `path_to_set=a.b.c` and a `payload={"x": 1, "y": 2, "z": {"q": 0}}`.
+        // It's safe to set the payload if the indexed fields doesn't intersect[^1] with the
+        // following paths:
+        // - `a.b.c.x`
+        // - `a.b.c.y`
+        // - `a.b.c.z` // Note that only top-level keys of the payload are considered.
+        //
+        // [^1]: In simple cases, we consider two paths to intersect if one of them is a prefix of
+        // the other.  For example, `a.b` and `a.b.c` intersect, but `a.b` and `a.c` don't. More
+        // nuanced cases include wildcard indexes, e.g., `a[0].b` and `a[].b` intersect.
+        // Additionally we consider path with incompatible types (e.g. `a[0]` and `a.b`) to
+        // intersect because `valuse_set` could override the subtree by replacing an array with an
+        // object (or vice versa), deleting indexed fields.
+
+        let Some(path_to_set) = path_to_set else {
+            return !payload.contains_key(&indexed_path.first_key);
+        };
+        if indexed_path.first_key != path_to_set.first_key {
+            return true;
+        }
+        let mut it_a = indexed_path.rest.iter();
+        let mut it_b = path_to_set.rest.iter();
+        loop {
+            let (a, b) = match (it_a.next(), it_b.next()) {
+                (Some(a), Some(b)) => (a, b),
+                (None, _) => return false, // indexed_path is a compatible prefix of path_to_set
+
+                (Some(JsonPathItem::Key(a)), None) => return !payload.contains_key(a),
+                (Some(JsonPathItem::Index(_)), None) => return false,
+                (Some(JsonPathItem::WildcardIndex), None) => return false,
+            };
+
+            match (a, b) {
+                // Paths items match each other => continue.
+                (JsonPathItem::Key(a), JsonPathItem::Key(b)) if a == b => (),
+                (JsonPathItem::Index(a), JsonPathItem::Index(b)) if a == b => (),
+                (JsonPathItem::WildcardIndex, JsonPathItem::WildcardIndex) => (),
+                (JsonPathItem::Index(_), JsonPathItem::WildcardIndex) => (),
+                (JsonPathItem::WildcardIndex, JsonPathItem::Index(_)) => (),
+
+                // Paths diverge, but their types are compatible, e.g. `a.b` and `a.c`, or `a[0]`
+                // and `a[1]`.  This means that payload and indexed fields point to different
+                // subtrees, so it's safe to set the payload.
+                (JsonPathItem::Key(_), JsonPathItem::Key(_)) => return true,
+                (JsonPathItem::Index(_), JsonPathItem::Index(_)) => return true,
+
+                // Types are not compatible. This means that `value_set` could override the
+                // subtree, deleting indexed fields.
+                (JsonPathItem::Key(_), JsonPathItem::Index(_) | JsonPathItem::WildcardIndex) => {
+                    return false
+                }
+                (JsonPathItem::Index(_) | JsonPathItem::WildcardIndex, JsonPathItem::Key(_)) => {
+                    return false
+                }
+            }
+        }
+    }
+}
+
 fn value_get<'a>(
     path: &[JsonPathItem],
     value: Option<&'a Value>,
@@ -273,10 +364,8 @@ fn value_remove(
                     result.push(v);
                 }
             }
-            (JsonPathItem::Index(idx), Value::Array(array)) => {
-                if idx < &array.len() {
-                    result.push(array.remove(*idx));
-                }
+            (JsonPathItem::Index(_), Value::Array(_)) => {
+                // Deleting array indices is not idempotent, so we don't support it.
             }
             (JsonPathItem::WildcardIndex, Value::Array(array)) => {
                 result.push(Value::Array(std::mem::take(array)));
@@ -387,5 +476,150 @@ impl JsonSchema for JsonPathV2 {
 impl Anonymize for JsonPathV2 {
     fn anonymize(&self) -> Self {
         self.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::json_path::path;
+
+    #[test]
+    fn test_safe_to_set() {
+        assert!(JsonPathV2::safe_to_set(
+            &path("a"),
+            &serde_json::from_str(r#"{"b": 1, "c": 1}"#).unwrap(),
+            None,
+        ));
+        assert!(!JsonPathV2::safe_to_set(
+            &path("a"),
+            &serde_json::from_str(r#"{"a": 1, "b": 1}"#).unwrap(),
+            None,
+        ));
+        assert!(!JsonPathV2::safe_to_set(
+            &path("a.x"),
+            &serde_json::from_str(r#"{"a": {"y": 1}}"#).unwrap(),
+            None,
+        ));
+        assert!(JsonPathV2::safe_to_set(
+            &path("a.x"),
+            &serde_json::from_str(r#"{"b": {"x": 1}}"#).unwrap(),
+            None,
+        ));
+    }
+
+    #[test]
+    fn test_safe_to_remove() {
+        assert!(!JsonPathV2::safe_to_remove(&path("a"), &path("a")));
+        assert!(JsonPathV2::safe_to_remove(&path("a"), &path("b")));
+        assert!(!JsonPathV2::safe_to_remove(&path("a.b"), &path("a")));
+        assert!(!JsonPathV2::safe_to_remove(&path("a.b"), &path("a.b")));
+        assert!(!JsonPathV2::safe_to_remove(&path("a.b"), &path("a.b.c")));
+    }
+
+    /// This test checks that `safe_to_set_payload` and `safe_to_delete_payload_keys` don't produce
+    /// false positives.
+    /// The penalty for a false negative is just degraded performance, but the penalty for a false
+    /// positive is inconsistency in the indexed fields.
+    #[test]
+    fn test_no_false_positives() {
+        let paths: Vec<JsonPathV2> = ["a", "a.a", "a[]", "a[0]", "a[0].a", "a[0].a[]"]
+            .iter()
+            .map(|s| s.parse().unwrap())
+            .collect();
+        let payloads: Vec<serde_json::Map<String, serde_json::Value>> = [
+            r#" {"b": 1} "#,
+            r#" {"a": 1, "b": 2} "#,
+            r#" {"a": [], "b": 1} "#,
+            r#" {"a": [1], "b": 2} "#,
+            r#" {"a": {}, "b": 1} "#,
+            r#" {"a": {"a": 1, "b": 2}, "b": 3} "#,
+            r#" {"a": [{"a": 1, "b": 2}, {"a": 3, "b": 4}], "b": 5} "#,
+            r#" {"a": [{"a": [1], "b": 2}, {"a": [3], "b": 4}], "b": 5} "#,
+        ]
+        .iter()
+        .map(|s| serde_json::from_str(s).unwrap())
+        .collect();
+
+        for init_payload in &payloads {
+            for indexed_path in &paths {
+                for value_key in &["a", "b"] {
+                    check_set(init_payload, indexed_path, None, value_key);
+                    for path_to_set in &paths {
+                        check_set(init_payload, indexed_path, Some(path_to_set), value_key);
+                    }
+                }
+                for path_to_remove in &paths {
+                    check_remove(init_payload, indexed_path, path_to_remove);
+                }
+            }
+        }
+    }
+
+    fn check_set(
+        init_payload: &serde_json::Map<String, serde_json::Value>,
+        indexed_path: &JsonPathV2,
+        path_to_set: Option<&JsonPathV2>,
+        value_key: &str,
+    ) {
+        let mut new_payload = init_payload.clone();
+        let init_values = indexed_path.value_get(init_payload);
+
+        JsonPathV2::value_set(
+            path_to_set,
+            &mut new_payload,
+            serde_json::json!({value_key: 100}).as_object().unwrap(),
+        );
+        let new_values = indexed_path.value_get(&new_payload);
+
+        // Ground truth
+        let indexed_value_changed = init_values != new_values;
+
+        // Our prediction
+        let is_safe_to_set = JsonPathV2::safe_to_set(
+            indexed_path,
+            serde_json::json!({value_key: 100}).as_object().unwrap(),
+            path_to_set,
+        );
+
+        if is_safe_to_set {
+            assert!(
+                !indexed_value_changed,
+                "init_payload: {:?}\nnew_payload: {:?}\nindex_path: {:?}\npath_to_set: {:?}\nvalue_key: {:?}",
+                init_payload,
+                new_payload,
+                indexed_path.to_string(),
+                path_to_set.map(|p| p.to_string()),
+                value_key,
+            );
+        }
+    }
+
+    fn check_remove(
+        init_payload: &serde_json::Map<String, serde_json::Value>,
+        indexed_path: &JsonPathV2,
+        path_to_remove: &JsonPathV2,
+    ) {
+        let mut new_payload = init_payload.clone();
+        let init_values = indexed_path.value_get(init_payload);
+        path_to_remove.value_remove(&mut new_payload);
+        let new_values = indexed_path.value_get(&new_payload);
+
+        // Ground truth
+        let indexed_value_changed = init_values != new_values;
+
+        // Our prediction
+        let is_safe_to_remove = JsonPathV2::safe_to_remove(indexed_path, path_to_remove);
+
+        if is_safe_to_remove {
+            assert!(
+                !indexed_value_changed,
+                "init_payload: {:?}\nnew_payload: {:?}\nindex_path: {:?}\npath_to_remove: {:?}",
+                init_payload,
+                new_payload,
+                indexed_path.to_string(),
+                path_to_remove.to_string(),
+            );
+        }
     }
 }

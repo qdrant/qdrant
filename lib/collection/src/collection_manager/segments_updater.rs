@@ -2,11 +2,12 @@
 
 use std::collections::{HashMap, HashSet};
 
+use itertools::iproduct;
 use parking_lot::{RwLock, RwLockWriteGuard};
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::entry::entry_point::SegmentEntry;
-use segment::json_path::{JsonPath, JsonPathInterface};
+use segment::json_path::{JsonPath, JsonPathV2};
 use segment::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
     SeqNumberType,
@@ -148,42 +149,16 @@ pub(crate) fn set_payload(
         op_num,
         points,
         |id, write_segment| write_segment.set_payload(op_num, id, payload, key),
-        |segment| safe_to_set_payload(&segment.get_indexed_fields(), payload, key),
+        |segment| {
+            segment
+                .get_indexed_fields()
+                .keys()
+                .all(|indexed_path| JsonPathV2::safe_to_set(indexed_path, &payload.0, key.as_ref()))
+        },
     )?;
 
     check_unprocessed_points(points, &updated_points)?;
     Ok(updated_points.len())
-}
-
-fn safe_to_set_payload<P: JsonPathInterface>(
-    indexed_fields: &HashMap<P, PayloadFieldSchema>,
-    payload: &Payload,
-    key: &Option<P>,
-) -> bool {
-    if key.is_some() {
-        // Not supported yet
-        return false;
-    }
-    // Set is safe when the provided payload doesn't intersect with any of the indexed fields.
-    // Note that if we have, e.g., an index on "a.c" and the payload being set is `{"a": {"b": 1}}`,
-    // it is not safe because the whole value of "a" is being replaced.
-    indexed_fields
-        .keys()
-        .all(|path| !payload.0.contains_key(path.head()))
-}
-
-fn safe_to_delete_payload_keys<P: JsonPathInterface>(
-    indexed_fields: &HashMap<P, PayloadFieldSchema>,
-    keys_to_delete: &[P],
-) -> bool {
-    // Deletion is safe when the keys being deleted don't intersect with any of the indexed fields.
-    // Note that if we have, e.g., indexed field "a.b", then it is not safe to delete any of of "a",
-    // "a.b", or "a.b.c".
-    indexed_fields.keys().all(|indexed_path| {
-        keys_to_delete
-            .iter()
-            .all(|path_to_delete| !indexed_path.check_include_pattern(path_to_delete))
-    })
 }
 
 fn points_by_filter(
@@ -226,7 +201,13 @@ pub(crate) fn delete_payload(
             }
             Ok(res)
         },
-        |segment| safe_to_delete_payload_keys(&segment.get_indexed_fields(), keys),
+        |segment| {
+            iproduct!(segment.get_indexed_fields().keys(), keys).all(
+                |(indexed_path, path_to_delete)| {
+                    JsonPathV2::safe_to_remove(indexed_path, path_to_delete)
+                },
+            )
+        },
     )?;
 
     check_unprocessed_points(points, &updated_points)?;
@@ -607,77 +588,4 @@ pub(crate) fn delete_points_by_filter(
         Ok(true)
     })?;
     Ok(deleted)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn make_indexed_fields(keys: &[&str]) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
-        keys.iter()
-            .map(|&s| {
-                (
-                    s.parse().unwrap(),
-                    PayloadFieldSchema::FieldType(segment::types::PayloadSchemaType::Integer),
-                )
-            })
-            .collect()
-    }
-
-    #[test]
-    fn test_safe_to_set_payload() {
-        assert!(safe_to_set_payload(
-            &make_indexed_fields(&[]),
-            &serde_json::json!({"a": 1}).into(),
-            &None,
-        ));
-        assert!(safe_to_set_payload(
-            &make_indexed_fields(&["a", "b"]),
-            &serde_json::json!({"c": 1, "d": 1}).into(),
-            &None,
-        ));
-        assert!(!safe_to_set_payload(
-            &make_indexed_fields(&["a", "b"]),
-            &serde_json::json!({"b": 1, "c": 1}).into(),
-            &None,
-        ));
-        assert!(!safe_to_set_payload(
-            &make_indexed_fields(&["a.x"]),
-            &serde_json::json!({"a": {"y": 1}}).into(),
-            &None,
-        ));
-        assert!(safe_to_set_payload(
-            &make_indexed_fields(&["a.x"]),
-            &serde_json::json!({"b": {"x": 1}}).into(),
-            &None,
-        ));
-    }
-
-    #[test]
-    fn test_safe_to_delete_payload_keys() {
-        assert!(safe_to_delete_payload_keys(
-            &make_indexed_fields(&[]),
-            &["a".parse().unwrap()],
-        ));
-        assert!(safe_to_delete_payload_keys(
-            &make_indexed_fields(&["a", "b"]),
-            &["c".parse().unwrap(), "d".parse().unwrap()],
-        ));
-        assert!(!safe_to_delete_payload_keys(
-            &make_indexed_fields(&["a", "b"]),
-            &["a".parse().unwrap(), "c".parse().unwrap()],
-        ));
-        assert!(!safe_to_delete_payload_keys(
-            &make_indexed_fields(&["a.b"]),
-            &["a".parse().unwrap()]
-        ));
-        assert!(!safe_to_delete_payload_keys(
-            &make_indexed_fields(&["a.b"]),
-            &["a.b".parse().unwrap()]
-        ));
-        assert!(!safe_to_delete_payload_keys(
-            &make_indexed_fields(&["a.b"]),
-            &["a.b.c".parse().unwrap()]
-        ));
-    }
 }
