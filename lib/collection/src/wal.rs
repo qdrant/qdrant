@@ -125,8 +125,6 @@ impl<R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
         // We have to explicitly do `from..self.first_index() + self.len(false)`, instead of more
         // concise `from..=self.last_index()`, because if the WAL is empty, `Wal::last_index`
         // returns `Wal::first_index`, so we end up with `1..=1` instead of an empty range. 😕
-        //
-        // TODO: Refactor `SerdeWal::last_index`/`Wal::last_index` to return `Option<u64>`? 🤔
 
         let to = self.first_index() + self.len(false);
 
@@ -240,8 +238,6 @@ impl<R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
     ///
     /// If the index is lower than `first_index`, it means we have already acknowledged it but we
     /// are still holding it in a closed segment until it gets truncated.
-    //
-    // TODO: Rename to `first_acknowledged_index`? Or to something else more meaningful than "closed"? 🤔
     pub fn first_closed_index(&self) -> u64 {
         self.wal.first_index()
     }
@@ -253,8 +249,6 @@ impl<R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
     }
 
     /// Last index that is still available in logical WAL.
-    //
-    // TODO: Refactor `SerdeWal::last_index`/`Wal::last_index` to return `Option<u64>`? 🤔
     pub fn last_index(&self) -> u64 {
         self.wal.last_index()
     }

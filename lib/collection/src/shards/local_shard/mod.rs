@@ -959,8 +959,6 @@ impl LocalShardClocks {
 
     /// Persist clock maps to disk
     pub async fn store(&self, shard_path: &Path) -> CollectionResult<()> {
-        // TODO: Is order important here!? If it is, it should be documented with a comment!
-
         self.oldest_resolvable_clocks
             .lock()
             .await
