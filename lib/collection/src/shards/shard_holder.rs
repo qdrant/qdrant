@@ -7,21 +7,16 @@ use itertools::Itertools;
 // TODO rename ReplicaShard to ReplicaSetShard
 use segment::types::ShardKey;
 use tar::Builder as TarBuilder;
-use tokio::io::AsyncWriteExt;
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 
 use super::replica_set::AbortShardTransfer;
 use super::transfer::transfer_tasks_pool::TransferTasksPool;
-use crate::common::file_utils::move_file;
-use crate::common::sha_256::hash_file;
 use crate::config::{CollectionConfig, ShardingMethod};
 use crate::hash_ring::HashRing;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::shared_storage_config::SharedStorageConfig;
-use crate::operations::snapshot_ops::{
-    get_checksum_path, get_snapshot_description, list_snapshots_in_directory, SnapshotDescription,
-};
+use crate::operations::snapshot_ops::SnapshotDescription;
 use crate::operations::types::{CollectionError, CollectionResult, ShardTransferInfo};
 use crate::operations::{OperationToShard, SplitByShard};
 use crate::save_on_disk::SaveOnDisk;
@@ -682,7 +677,11 @@ impl ShardHolder {
             return Ok(Vec::new());
         }
 
-        list_snapshots_in_directory(&snapshots_path).await
+        let shard = self
+            .get_shard(&shard_id)
+            .ok_or_else(|| shard_not_found_error(shard_id))?;
+        let snapshot_manager = shard.get_snapshots_storage_manager();
+        snapshot_manager.list_snapshots(&snapshots_path).await
     }
 
     /// # Cancel safety
@@ -775,33 +774,14 @@ impl ShardHolder {
         let snapshot_path =
             self.shard_snapshot_path_unchecked(snapshots_path, shard_id, snapshot_file_name)?;
 
-        if let Some(snapshot_dir) = snapshot_path.parent() {
-            if !snapshot_dir.exists() {
-                std::fs::create_dir_all(snapshot_dir)?;
-            }
+        let snapshot_manager = shard.get_snapshots_storage_manager();
+        let snapshot_description = snapshot_manager
+            .store_file(temp_file.path(), &snapshot_path)
+            .await;
+        if snapshot_description.is_ok() {
+            let _ = temp_file.keep();
         }
-
-        // Compute and store the file's checksum
-        let checksum_path = get_checksum_path(&snapshot_path);
-        let checksum = hash_file(temp_file.path()).await?;
-        let checksum_file = tempfile::TempPath::from_path(&checksum_path);
-        let mut file = tokio::fs::File::create(checksum_path.as_path()).await?;
-        file.write_all(checksum.as_bytes()).await?;
-
-        // `tempfile::NamedTempFile::persist` does not work if destination file is on another
-        // file-system, so we have to move the file explicitly
-        let snapshot_file = tempfile::TempPath::from_path(&snapshot_path);
-        move_file(temp_file.path(), &snapshot_path).await?;
-
-        // Snapshot files are ready now, so keep them
-        snapshot_file.keep()?;
-        checksum_file.keep()?;
-
-        // We successfully moved `temp_file`, but `tempfile` will still try to delete the file on drop,
-        // so we `keep` it and ignore the error
-        let _ = temp_file.keep();
-
-        get_snapshot_description(&snapshot_path).await
+        snapshot_description
     }
 
     /// # Cancel safety

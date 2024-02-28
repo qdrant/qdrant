@@ -652,6 +652,10 @@ impl Collection {
     pub fn request_shard_transfer(&self, shard_transfer: ShardTransfer) {
         self.request_shard_transfer_cb.deref()(shard_transfer)
     }
+
+    pub fn shared_storage_config(&self) -> Arc<SharedStorageConfig> {
+        self.shared_storage_config.clone()
+    }
 }
 
 struct CollectionVersion;

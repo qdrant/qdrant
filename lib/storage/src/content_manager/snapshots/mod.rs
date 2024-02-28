@@ -4,12 +4,10 @@ pub mod recover;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use collection::common::sha_256::hash_file;
-use collection::operations::snapshot_ops::{
-    get_checksum_path, get_snapshot_description, list_snapshots_in_directory, SnapshotDescription,
-};
+use collection::operations::snapshot_ops::SnapshotDescription;
 use serde::{Deserialize, Serialize};
 use tar::Builder as TarBuilder;
+use tempfile::TempPath;
 use tokio::io::AsyncWriteExt;
 
 use crate::content_manager::toc::FULL_SNAPSHOT_FILE_NAME;
@@ -44,33 +42,13 @@ pub async fn do_delete_full_snapshot(
     wait: bool,
 ) -> Result<bool, StorageError> {
     let dispatcher = dispatcher.clone();
-    let snapshot_name = snapshot_name.to_string();
-    let task =
-        tokio::spawn(async move { _do_delete_full_snapshot(&dispatcher, &snapshot_name).await });
+    let snapshot_manager = dispatcher.clone().toc().get_snapshots_storage_manager();
+    let snapshot_dir = get_full_snapshot_path(dispatcher.toc(), snapshot_name).await?;
+    log::info!("Deleting full storage snapshot {:?}", snapshot_dir);
+    let task = tokio::spawn(async move { snapshot_manager.delete_snapshot(&snapshot_dir).await });
 
     if wait {
         task.await??;
-    }
-
-    Ok(true)
-}
-
-async fn _do_delete_full_snapshot(
-    dispatcher: &Dispatcher,
-    snapshot_name: &str,
-) -> Result<bool, StorageError> {
-    let snapshot_dir = get_full_snapshot_path(dispatcher.toc(), snapshot_name).await?;
-    let checksum_path = get_checksum_path(&snapshot_dir);
-    log::info!("Deleting full storage snapshot {:?}", snapshot_dir);
-    let (delete_snapshot, delete_checksum) = tokio::join!(
-        tokio::fs::remove_file(snapshot_dir),
-        tokio::fs::remove_file(checksum_path),
-    );
-    delete_snapshot?;
-
-    // We might not have a checksum file for the snapshot, ignore deletion errors in that case
-    if let Err(err) = delete_checksum {
-        log::warn!("Failed to delete checksum file for snapshot, ignoring: {err}");
     }
 
     Ok(true)
@@ -82,13 +60,14 @@ pub async fn do_delete_collection_snapshot(
     snapshot_name: &str,
     wait: bool,
 ) -> Result<bool, StorageError> {
-    let dispatcher = dispatcher.clone();
     let collection_name = collection_name.to_string();
     let snapshot_name = snapshot_name.to_string();
+    let collection = dispatcher.get_collection(&collection_name).await?;
+    let file_name = collection.get_snapshot_path(&snapshot_name).await?;
+    let snapshot_manager = dispatcher.clone().toc().get_snapshots_storage_manager();
 
-    let task = tokio::spawn(async move {
-        _do_delete_collection_snapshot(&dispatcher, &collection_name, &snapshot_name).await
-    });
+    log::info!("Deleting collection snapshot {:?}", file_name);
+    let task = tokio::spawn(async move { snapshot_manager.delete_snapshot(&file_name).await });
 
     if wait {
         task.await??;
@@ -97,34 +76,12 @@ pub async fn do_delete_collection_snapshot(
     Ok(true)
 }
 
-async fn _do_delete_collection_snapshot(
-    dispatcher: &Dispatcher,
-    collection_name: &str,
-    snapshot_name: &str,
-) -> Result<bool, StorageError> {
-    let collection = dispatcher.get_collection(collection_name).await?;
-    let file_name = collection.get_snapshot_path(snapshot_name).await?;
-    let checksum_path = get_checksum_path(&file_name);
-    log::info!("Deleting collection snapshot {:?}", file_name);
-    let (delete_snapshot, delete_checksum) = tokio::join!(
-        tokio::fs::remove_file(file_name),
-        tokio::fs::remove_file(checksum_path)
-    );
-    delete_snapshot?;
-
-    // We might not have a checksum file for the snapshot, ignore deletion errors in that case
-    if let Err(err) = delete_checksum {
-        log::warn!("Failed to delete checksum file for snapshot, ignoring: {err}");
-    }
-
-    Ok(true)
-}
-
 pub async fn do_list_full_snapshots(
     toc: &TableOfContent,
 ) -> Result<Vec<SnapshotDescription>, StorageError> {
+    let snapshots_manager = toc.get_snapshots_storage_manager();
     let snapshots_path = Path::new(toc.snapshots_path());
-    Ok(list_snapshots_in_directory(snapshots_path).await?)
+    Ok(snapshots_manager.list_snapshots(snapshots_path).await?)
 }
 
 pub async fn do_create_full_snapshot(
@@ -189,30 +146,48 @@ async fn _do_create_full_snapshot(
     }
 
     let full_snapshot_path = snapshot_dir.join(&snapshot_name);
-    let snapshot_file = tempfile::TempPath::from_path(&full_snapshot_path);
+
+    let temp_full_snapshot_path = dispatcher
+        .optional_temp_or_storage_temp_path()?
+        .join(&snapshot_name);
+
+    // Make sure temporary file is removed in case of error
+    let _temp_full_snapshot_path_file = TempPath::from_path(&temp_full_snapshot_path);
 
     let config_path_clone = config_path.clone();
-    let full_snapshot_path_clone = full_snapshot_path.clone();
-    let created_snapshots_clone: Vec<_> = created_snapshots
-        .iter()
-        .map(|(x, y)| (x.to_string(), y.to_owned()))
-        .collect();
+
+    // (tempfile_with_snapshot, snapshot_name)
+    let mut temp_collection_snapshots = vec![];
+
+    let temp_storage_path = dispatcher.optional_temp_or_storage_temp_path()?;
+    let snapshot_manager = dispatcher.toc().get_snapshots_storage_manager();
+
+    for (collection_name, snapshot_details) in &created_snapshots {
+        let snapshot_path = snapshot_dir
+            .join(collection_name)
+            .join(&snapshot_details.name);
+
+        let local_temp_collection_snapshot = temp_storage_path
+            .join(collection_name)
+            .join(&snapshot_details.name);
+
+        snapshot_manager
+            .get_stored_file(&snapshot_path, &local_temp_collection_snapshot)
+            .await?;
+
+        temp_collection_snapshots.push((
+            TempPath::from_path(local_temp_collection_snapshot),
+            snapshot_details.name.clone(),
+        ));
+    }
+
+    let full_snapshot_path_clone = temp_full_snapshot_path.clone();
     let archiving = tokio::task::spawn_blocking(move || {
         // have to use std here, cause TarBuilder is not async
         let file = std::fs::File::create(&full_snapshot_path_clone)?;
         let mut builder = TarBuilder::new(file);
-        for (collection_name, snapshot_details) in created_snapshots_clone {
-            let snapshot_path = snapshot_dir
-                .join(collection_name)
-                .join(&snapshot_details.name);
-            builder.append_path_with_name(&snapshot_path, &snapshot_details.name)?;
-            std::fs::remove_file(&snapshot_path)?;
-
-            // Remove associated checksum if there is one
-            let snapshot_checksum = get_checksum_path(&snapshot_path);
-            if let Err(err) = std::fs::remove_file(snapshot_checksum) {
-                log::warn!("Failed to delete checksum file for snapshot, ignoring: {err}");
-            }
+        for (temp_file, snapshot_name) in temp_collection_snapshots {
+            builder.append_path_with_name(&temp_file, &snapshot_name)?;
         }
         builder.append_path_with_name(&config_path_clone, "config.json")?;
 
@@ -221,18 +196,9 @@ async fn _do_create_full_snapshot(
     });
     archiving.await??;
 
-    // Compute and store the file's checksum
-    let checksum_path = get_checksum_path(&full_snapshot_path);
-    let checksum = hash_file(full_snapshot_path.as_path()).await?;
-    let checksum_file = tempfile::TempPath::from_path(&checksum_path);
-    let mut file = tokio::fs::File::create(checksum_path.as_path()).await?;
-    file.write_all(checksum.as_bytes()).await?;
-
+    let snapshot_description = snapshot_manager
+        .store_file(&temp_full_snapshot_path, &full_snapshot_path)
+        .await?;
     tokio::fs::remove_file(&config_path).await?;
-
-    // Snapshot files are ready now, so keep them
-    snapshot_file.keep()?;
-    checksum_file.keep()?;
-
-    Ok(get_snapshot_description(&full_snapshot_path).await?)
+    Ok(snapshot_description)
 }
