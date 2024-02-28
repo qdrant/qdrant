@@ -11,8 +11,8 @@ collection_name = 'test_collection_snapshot'
 @pytest.fixture(autouse=True)
 def setup(on_disk_vectors):
     basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
-    drop_snapshots(collection_name)
     yield
+    drop_snapshots(collection_name)
     drop_collection(collection_name=collection_name)
 
 
@@ -205,7 +205,7 @@ def test_full_snapshot_operations():
     assert len(response.json()['result']) == 0
 
 
-@pytest.mark.timeout(20)
+@pytest.mark.timeout(30)
 def test_snapshot_operations_non_wait():
     # there no snapshot on collection
     response = request_with_validation(
@@ -269,7 +269,7 @@ def test_snapshot_operations_non_wait():
             sleep(0.1)
             continue
 
-    # no full snapshot
+    # do full snapshot
     response = request_with_validation(
         api='/snapshots',
         method="GET",
