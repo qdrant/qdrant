@@ -4,6 +4,10 @@ In order to detect quickly breakage of storage compatibility, we make sure any P
 
 To not burden the git repository with tracking the large binary files, it is using [Git Large File Storage](https://git-lfs.github.com/).
 
+As features are added, the storage format may change and then must be refreshed on `dev`.
+
+The compatibility is ensured by checking that the current code understands the storage format from the `master` branch.
+
 ## Regenerate storage data
 
 Follow those steps to recreate the reference storage data and snapshot.
