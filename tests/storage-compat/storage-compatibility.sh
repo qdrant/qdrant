@@ -11,8 +11,8 @@ QDRANT_HOST='localhost:6333'
 # Build
 cargo build
 
-# Sync git large file
-git lfs pull
+# Pull archives from master branch to test compatibility
+git lfs pull origin master
 
 # Uncompress snapshot storage
 tar -xvjf ./tests/storage-compat/storage.tar.bz2
