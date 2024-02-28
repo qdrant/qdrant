@@ -110,10 +110,10 @@ impl QuantizedVectors {
             VectorStorageEnum::DenseSimple(v) => {
                 Self::create_impl(v, quantization_config, path, max_threads, stopped)
             }
-            VectorStorageEnum::Memmap(v) => {
+            VectorStorageEnum::DenseMemmap(v) => {
                 Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
             }
-            VectorStorageEnum::AppendableMemmap(v) => {
+            VectorStorageEnum::DenseAppendableMemmap(v) => {
                 Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
             }
             VectorStorageEnum::SparseSimple(_) => Err(OperationError::WrongSparse),

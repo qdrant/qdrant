@@ -24,8 +24,8 @@ const HEADER_SIZE: usize = 4;
 const VECTORS_HEADER: &[u8; HEADER_SIZE] = b"data";
 const DELETED_HEADER: &[u8; HEADER_SIZE] = b"drop";
 
-/// Mem-mapped file
-pub struct MmapVectors {
+/// Mem-mapped file for dense vectors
+pub struct MmapDenseVectors {
     pub dim: usize,
     pub num_vectors: usize,
     /// Memory mapped file for vector data
@@ -41,7 +41,7 @@ pub struct MmapVectors {
     pub deleted_count: usize,
 }
 
-impl MmapVectors {
+impl MmapDenseVectors {
     pub fn open(
         vectors_path: &Path,
         deleted_path: &Path,
@@ -80,7 +80,7 @@ impl MmapVectors {
             None
         };
 
-        Ok(MmapVectors {
+        Ok(MmapDenseVectors {
             dim,
             num_vectors,
             mmap: mmap.into(),
