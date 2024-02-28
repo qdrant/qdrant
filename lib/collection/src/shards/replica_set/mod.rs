@@ -24,6 +24,7 @@ use super::local_shard::LocalShard;
 use super::remote_shard::RemoteShard;
 use super::transfer::ShardTransfer;
 use super::CollectionId;
+use crate::common::snapshots_manager::SnapshotStorageManager;
 use crate::config::CollectionConfig;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -92,7 +93,7 @@ pub struct ShardReplicaSet {
     channel_service: ChannelService,
     collection_id: CollectionId,
     collection_config: Arc<RwLock<CollectionConfig>>,
-    shared_storage_config: Arc<SharedStorageConfig>,
+    pub(crate) shared_storage_config: Arc<SharedStorageConfig>,
     update_runtime: Handle,
     search_runtime: Handle,
     optimizer_cpu_budget: CpuBudget,
@@ -843,6 +844,10 @@ impl ShardReplicaSet {
         };
 
         local_shard.update_cutoff(cutoff).await
+    }
+
+    pub(crate) fn get_snapshots_storage_manager(&self) -> SnapshotStorageManager {
+        SnapshotStorageManager::new(self.shared_storage_config.s3_config.clone())
     }
 }
 
