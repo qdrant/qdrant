@@ -17,6 +17,13 @@ pub trait Issue {
     fn code(&self) -> CodeType;
     fn description(&self) -> String;
     fn solution(&self) -> Solution;
+
+    fn submit(self) -> bool
+    where
+        Self: std::marker::Sized,
+    {
+        crate::dashboard::submit(self)
+    }
 }
 
 /// An issue that can be identified by its code
