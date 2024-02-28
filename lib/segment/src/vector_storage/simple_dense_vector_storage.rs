@@ -18,7 +18,7 @@ use crate::common::operation_error::{check_process_stopped, OperationError, Oper
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
-use crate::data_types::vectors::{VectorElementType, VectorRef};
+use crate::data_types::vectors::{DenseVector, VectorElementType, VectorRef};
 use crate::types::Distance;
 use crate::vector_storage::bitvec::bitvec_set_deleted;
 
@@ -38,7 +38,7 @@ pub struct SimpleDenseVectorStorage {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 struct StoredRecord {
     pub deleted: bool,
-    pub vector: Vec<VectorElementType>,
+    pub vector: DenseVector,
 }
 
 pub fn open_simple_vector_storage(

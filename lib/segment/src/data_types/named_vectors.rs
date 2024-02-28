@@ -122,7 +122,7 @@ impl<'a> NamedVectors<'a> {
         Self { map }
     }
 
-    pub fn from<const N: usize>(arr: [(String, Vec<VectorElementType>); N]) -> Self {
+    pub fn from<const N: usize>(arr: [(String, DenseVector); N]) -> Self {
         NamedVectors {
             map: arr
                 .into_iter()
@@ -140,7 +140,7 @@ impl<'a> NamedVectors<'a> {
         }
     }
 
-    pub fn from_map_ref(map: &'a HashMap<String, Vec<VectorElementType>>) -> Self {
+    pub fn from_map_ref(map: &'a HashMap<String, DenseVector>) -> Self {
         Self {
             map: map
                 .iter()

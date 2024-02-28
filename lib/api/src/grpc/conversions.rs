@@ -4,7 +4,7 @@ use std::time::Instant;
 use chrono::{NaiveDateTime, TimeZone as _, Timelike};
 use segment::data_types::integer_index::IntegerIndexType;
 use segment::data_types::text_index::TextIndexType;
-use segment::data_types::vectors::VectorElementType;
+use segment::data_types::vectors::DenseVector;
 use segment::json_path::JsonPath;
 use segment::types::{default_quantization_ignore_value, DateTimePayloadType, FloatPayloadType};
 use tonic::Status;
@@ -1421,7 +1421,7 @@ pub fn from_grpc_dist(dist: i32) -> Result<segment::types::Distance, Status> {
 
 pub fn into_named_vector_struct(
     vector_name: Option<String>,
-    vector: Vec<VectorElementType>,
+    vector: DenseVector,
     indices: Option<SparseIndices>,
 ) -> Result<segment::data_types::vectors::NamedVectorStruct, Status> {
     use segment::data_types::vectors::{NamedSparseVector, NamedVector, NamedVectorStruct};
