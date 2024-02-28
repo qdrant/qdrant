@@ -680,7 +680,7 @@ impl ShardHolder {
         let shard = self
             .get_shard(&shard_id)
             .ok_or_else(|| shard_not_found_error(shard_id))?;
-        let snapshot_manager = shard.shared_storage_config.snapshot_manager();
+        let snapshot_manager = shard.get_snapshots_storage_manager();
         snapshot_manager.list_snapshots(&snapshots_path).await
     }
 
@@ -774,15 +774,9 @@ impl ShardHolder {
         let snapshot_path =
             self.shard_snapshot_path_unchecked(snapshots_path, shard_id, snapshot_file_name)?;
 
-        if let Some(snapshot_dir) = snapshot_path.parent() {
-            if !snapshot_dir.exists() {
-                std::fs::create_dir_all(snapshot_dir)?;
-            }
-        }
-
-        let snapshot_manager = shard.shared_storage_config.snapshot_manager();
+        let snapshot_manager = shard.get_snapshots_storage_manager();
         let snapshot_description = snapshot_manager
-            .store_file(temp_file.path(), &snapshot_path, true)
+            .store_file(temp_file.path(), &snapshot_path)
             .await;
         if snapshot_description.is_ok() {
             let _ = temp_file.keep();

@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use collection::common::snapshots_manager::SnapshotStorageManager;
 
 use collection::operations::snapshot_ops::SnapshotDescription;
 use collection::shards::replica_set::ReplicaState;
@@ -11,6 +12,10 @@ use crate::content_manager::consensus_ops::ConsensusOperations;
 use crate::content_manager::errors::StorageError;
 
 impl TableOfContent {
+    pub fn get_snapshots_storage_manager(&self) -> SnapshotStorageManager {
+        SnapshotStorageManager::new(self.storage_config.s3_config.clone())
+    }
+
     pub fn snapshots_path(&self) -> &str {
         &self.storage_config.snapshots_path
     }

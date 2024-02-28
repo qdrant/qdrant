@@ -58,7 +58,7 @@ pub async fn delete_shard_snapshot(
     let snapshot_path = collection
         .get_shard_snapshot_path(shard_id, &snapshot_name)
         .await?;
-    let snapshot_manager = collection.shared_storage_config().snapshot_manager();
+    let snapshot_manager = collection.get_snapshots_storage_manager();
     check_shard_snapshot_file_exists(&snapshot_path)?;
 
     let _task = tokio::spawn(async move { snapshot_manager.delete_snapshot(&snapshot_path).await });

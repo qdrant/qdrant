@@ -7,6 +7,7 @@ use tokio::fs;
 
 use super::Collection;
 use crate::collection::CollectionVersion;
+use crate::common::snapshots_manager::SnapshotStorageManager;
 use crate::config::{CollectionConfig, ShardingMethod};
 use crate::operations::snapshot_ops::SnapshotDescription;
 use crate::operations::types::{CollectionError, CollectionResult, NodeType};
@@ -19,8 +20,12 @@ use crate::shards::shard_holder::{ShardKeyMapping, SHARD_KEY_MAPPING_FILE};
 use crate::shards::shard_versioning;
 
 impl Collection {
+    pub fn get_snapshots_storage_manager(&self) -> SnapshotStorageManager {
+        SnapshotStorageManager::new(self.shared_storage_config.s3_config.clone())
+    }
+
     pub async fn list_snapshots(&self) -> CollectionResult<Vec<SnapshotDescription>> {
-        let snapshot_manager = self.shared_storage_config.snapshot_manager();
+        let snapshot_manager = self.get_snapshots_storage_manager();
         snapshot_manager.list_snapshots(&self.snapshots_path).await
     }
 
@@ -123,12 +128,11 @@ impl Collection {
         });
         snapshot_temp_arc_file = archiving.await??;
 
-        let snapshot_manager = self.shared_storage_config.snapshot_manager();
+        let snapshot_manager = self.get_snapshots_storage_manager();
         snapshot_manager
             .store_file(
                 snapshot_temp_arc_file.path(),
                 snapshot_path.as_path(),
-                false,
             )
             .await
     }

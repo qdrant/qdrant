@@ -18,6 +18,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock};
+use crate::common::snapshots_manager::SnapshotStorageManager;
 
 use super::local_shard::clock_map::RecoveryPoint;
 use super::local_shard::LocalShard;
@@ -843,6 +844,10 @@ impl ShardReplicaSet {
         };
 
         local_shard.update_cutoff(cutoff).await
+    }
+
+    pub(crate) fn get_snapshots_storage_manager(&self) -> SnapshotStorageManager {
+        SnapshotStorageManager::new(self.shared_storage_config.s3_config.clone())
     }
 }
 

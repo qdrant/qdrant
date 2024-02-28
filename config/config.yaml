@@ -6,8 +6,6 @@ storage:
 
   # Where to store snapshots
   snapshots_path: ./snapshots
-  # Will replace snapshots_path in the future
-  snapshot_path: ./snapshots
 
   # Where to store temporary files
   # If null, temporary snapshot are stored in: storage/snapshots_temp/

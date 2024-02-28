@@ -1,6 +1,5 @@
 use std::path::Path;
 
-use async_trait::async_trait;
 use serde::Deserialize;
 use tempfile::TempPath;
 use tokio::io::AsyncWriteExt;
@@ -13,43 +12,81 @@ use crate::operations::snapshot_ops::{
 use crate::operations::types::CollectionResult;
 
 #[derive(Clone, Deserialize, Debug)]
-pub struct LocalFileSystemConfig {
-    pub snapshots_path: String,
-}
-
-#[derive(Clone, Deserialize, Debug)]
 pub struct S3Config {
     pub bucket: String,
-    pub region: String,
-    pub snapshots_path: String,
+    pub region: Option<String>,
+    pub access_key: Option<String>,
+    pub secret_key: Option<String>,
 }
 
-impl LocalFileSystemConfig {
-    pub fn new(snapshots_path: String) -> Self {
-        Self { snapshots_path }
+#[allow(dead_code)]
+pub struct SnapshotStorageS3 {
+    s3_config: S3Config,
+}
+
+pub struct SnapshotStorageLocalFS;
+
+pub enum SnapshotStorageManager {
+    LocalFS(SnapshotStorageLocalFS),
+    S3(SnapshotStorageS3),
+}
+
+impl SnapshotStorageManager {
+    pub fn new(s3_config: Option<S3Config>) -> Self {
+        if let Some(s3_config) = s3_config {
+            SnapshotStorageManager::S3(SnapshotStorageS3 { s3_config })
+        } else {
+            SnapshotStorageManager::LocalFS(SnapshotStorageLocalFS)
+        }
     }
-}
 
-#[async_trait]
-pub trait SnapshotStorage: Send + Sync {
-    async fn delete_snapshot(&self, snapshot_name: &Path) -> CollectionResult<bool>;
-    async fn list_snapshots(&self, directory: &Path) -> CollectionResult<Vec<SnapshotDescription>>;
-    async fn store_file(
+    pub async fn delete_snapshot(&self, snapshot_name: &Path) -> CollectionResult<bool> {
+        match self {
+            SnapshotStorageManager::LocalFS(storage_impl) => {
+                storage_impl.delete_snapshot(snapshot_name).await
+            }
+            SnapshotStorageManager::S3(storage_impl) => {
+                storage_impl.delete_snapshot(snapshot_name).await
+            }
+        }
+    }
+    pub async fn list_snapshots(
+        &self,
+        directory: &Path,
+    ) -> CollectionResult<Vec<SnapshotDescription>> {
+        match self {
+            SnapshotStorageManager::LocalFS(storage_impl) => {
+                storage_impl.list_snapshots(directory).await
+            }
+            SnapshotStorageManager::S3(storage_impl) => {
+                storage_impl.list_snapshots(directory).await
+            }
+        }
+    }
+    pub async fn store_file(
         &self,
         source_path: &Path,
         target_path: &Path,
-        shard: bool,
-    ) -> CollectionResult<SnapshotDescription>;
+    ) -> CollectionResult<SnapshotDescription> {
+        match self {
+            SnapshotStorageManager::LocalFS(storage_impl) => {
+                storage_impl.store_file(source_path, target_path).await
+            }
+            SnapshotStorageManager::S3(storage_impl) => {
+                storage_impl.store_file(source_path, target_path).await
+            }
+        }
+    }
 }
 
-#[async_trait]
-impl SnapshotStorage for LocalFileSystemConfig {
+impl SnapshotStorageLocalFS {
     async fn delete_snapshot(&self, snapshot_path: &Path) -> CollectionResult<bool> {
         let checksum_path = get_checksum_path(snapshot_path);
         let (delete_snapshot, delete_checksum) = tokio::join!(
             tokio::fs::remove_file(snapshot_path),
             tokio::fs::remove_file(checksum_path),
         );
+
         delete_snapshot?;
 
         // We might not have a checksum file for the snapshot, ignore deletion errors in that case
@@ -79,15 +116,29 @@ impl SnapshotStorage for LocalFileSystemConfig {
         &self,
         source_path: &Path,
         target_path: &Path,
-        shard: bool,
     ) -> CollectionResult<SnapshotDescription> {
+        // Steps:
+        //
+        // 1. Make sure that the target directory exists.
+        // 2. Compute the checksum of the source file.
+        // 3. Generate temporary file name, which should be used on the same file system as the target directory.
+        // 4. Move or copy the source file to the temporary file. (move might not be possible if the source and target are on different file systems)
+        // 5. Move the temporary file to the target file. (move is atomic, copy is not)
+
+        if let Some(target_dir) = target_path.parent() {
+            if !target_dir.exists() {
+                std::fs::create_dir_all(target_dir)?;
+            }
+        }
+
         // Move snapshot to permanent location.
         // We can't move right away, because snapshot folder can be on another mounting point.
         // We can't copy to the target location directly, because copy is not atomic.
         // So we copy to the final location with a temporary name and then rename atomically.
-        let snapshot_path_tmp_move = target_path.with_extension("tmp");
+        let target_path_tmp_move = target_path.with_extension("tmp");
         // Ensure that the temporary file is deleted on error
-        let _temp_path = TempPath::from_path(&snapshot_path_tmp_move);
+        let _temp_path = TempPath::from_path(&target_path_tmp_move);
+
         // compute and store the file's checksum before the final snapshot file is saved
         // to avoid making snapshot available without checksum
         let checksum_path = get_checksum_path(target_path);
@@ -97,15 +148,8 @@ impl SnapshotStorage for LocalFileSystemConfig {
         file.write_all(checksum.as_bytes()).await?;
 
         if target_path != source_path {
-            if !shard {
-                tokio::fs::copy(&source_path, &target_path).await?;
-            }
-            let snapshot_file = tempfile::TempPath::from_path(target_path);
-            // `tempfile::NamedTempFile::persist` does not work if destination file is on another
-            // file-system, so we have to move the file explicitly
-            move_file(&source_path, &target_path).await?;
-
-            snapshot_file.keep()?;
+            move_file(&source_path, &target_path_tmp_move).await?;
+            tokio::fs::rename(&target_path_tmp_move, &target_path).await?;
         }
 
         checksum_file.keep()?;
@@ -113,8 +157,7 @@ impl SnapshotStorage for LocalFileSystemConfig {
     }
 }
 
-#[async_trait]
-impl SnapshotStorage for S3Config {
+impl SnapshotStorageS3 {
     async fn delete_snapshot(&self, _snapshot_path: &Path) -> CollectionResult<bool> {
         unimplemented!()
     }
@@ -130,7 +173,6 @@ impl SnapshotStorage for S3Config {
         &self,
         _source_path: &Path,
         _target_path: &Path,
-        _shard: bool,
     ) -> CollectionResult<SnapshotDescription> {
         unimplemented!()
     }
