@@ -488,6 +488,9 @@ impl PayloadIndex for StructPayloadIndex {
 
         let updated_payload = self.payload(point_id)?;
         for (field, field_index) in &mut self.field_indexes {
+            if !field.is_affected_by_value_set(&payload.0, key.as_ref()) {
+                continue;
+            }
             let field_value = updated_payload.get_value(field);
             if !field_value.is_empty() {
                 for index in field_index {
