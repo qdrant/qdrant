@@ -373,9 +373,9 @@ impl TableOfContent {
                 )
                 .await?;
 
+                // Preserve sync flag from the old or new transfer
                 let mut new_transfer = transfer.clone();
-                // Preserve sync flag from the old transfer
-                new_transfer.sync = old_transfer.sync;
+                new_transfer.sync = old_transfer.sync || new_transfer.sync;
 
                 self.handle_transfer(collection_id, ShardTransferOperations::Start(new_transfer))
                     .await?;
