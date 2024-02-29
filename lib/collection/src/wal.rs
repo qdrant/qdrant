@@ -66,6 +66,7 @@ pub struct SerdeWal<R> {
     record: PhantomData<R>,
     wal: Wal,
     options: WalOptions,
+    /// First index of our logical WAL.
     first_index: Option<u64>,
 }
 
@@ -114,13 +115,17 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.len(false) == 0
     }
 
-    pub fn len(&self) -> u64 {
-        self.wal
-            .num_entries()
-            .saturating_sub(self.truncated_prefix_entries_num())
+    pub fn len(&self, with_acknowledged: bool) -> u64 {
+        if with_acknowledged {
+            self.wal.num_entries()
+        } else {
+            self.wal
+                .num_entries()
+                .saturating_sub(self.truncated_prefix_entries_num())
+        }
     }
 
     // WAL operates in *segments*, so when `Wal::prefix_truncate` is called (during `SerdeWal::ack`),
@@ -145,7 +150,7 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
 
     pub fn read(&'s self, start_from: u64) -> impl Iterator<Item = (u64, R)> + 's {
         let first_index = self.first_index();
-        let len = self.len();
+        let len = self.len(false);
 
         (start_from..(first_index + len)).map(move |idx| {
             let record_bin = self.wal.entry(idx).expect("Can't read entry from WAL");
@@ -170,9 +175,9 @@ impl<'s, R: DeserializeOwned + Serialize + Debug> SerdeWal<R> {
         } else {
             self.first_index()
         };
-        let last_index = self.last_index();
+        let len = self.len(with_acknowledged);
 
-        (first_index..=last_index).rev().map(move |idx| {
+        (first_index..(first_index + len)).rev().map(move |idx| {
             let record_bin = self.wal.entry(idx).expect("Can't read entry from WAL");
             let record: R = serde_cbor::from_slice(&record_bin)
                 .or_else(|_err| rmp_serde::from_slice(&record_bin))

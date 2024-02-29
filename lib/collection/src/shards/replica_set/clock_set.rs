@@ -15,11 +15,11 @@ impl ClockSet {
     pub fn get_clock(&mut self) -> ClockGuard {
         for (id, clock) in self.clocks.iter().enumerate() {
             if clock.try_lock() {
-                return ClockGuard::new(id, clock.clone());
+                return ClockGuard::new(id as u32, clock.clone());
             }
         }
 
-        let id = self.clocks.len();
+        let id = self.clocks.len() as u32;
         let clock = Arc::new(Clock::new_locked());
 
         self.clocks.push(clock.clone());
@@ -30,16 +30,16 @@ impl ClockSet {
 
 #[derive(Debug)]
 pub struct ClockGuard {
-    id: usize,
+    id: u32,
     clock: Arc<Clock>,
 }
 
 impl ClockGuard {
-    fn new(id: usize, clock: Arc<Clock>) -> Self {
+    fn new(id: u32, clock: Arc<Clock>) -> Self {
         Self { id, clock }
     }
 
-    pub fn id(&self) -> usize {
+    pub fn id(&self) -> u32 {
         self.id
     }
 
@@ -52,6 +52,11 @@ impl ClockGuard {
     /// Advance clock to `new_tick`, if `new_tick` is newer than current tick.
     pub fn advance_to(&mut self, new_tick: u64) {
         self.clock.advance_to(new_tick)
+    }
+
+    #[cfg(test)]
+    pub fn current_tick(&self) -> Option<u64> {
+        self.clock.current_tick()
     }
 }
 
@@ -104,6 +109,12 @@ impl Clock {
         // `Clock` tracks *next* tick, so if we want to advance *current* tick to `new_tick`,
         // we have to advance `next_tick` to `new_tick + 1`
         self.next_tick.fetch_max(new_tick + 1, Ordering::Relaxed);
+    }
+
+    #[cfg(test)]
+    fn current_tick(&self) -> Option<u64> {
+        let next_tick = self.next_tick.load(Ordering::Relaxed);
+        next_tick.checked_sub(1)
     }
 
     /// Try to acquire exclusive lock over this clock.

@@ -161,7 +161,10 @@ impl Shard {
         }
     }
 
-    pub async fn resolve_wal_delta(&self, recovery_point: RecoveryPoint) -> CollectionResult<u64> {
+    pub async fn resolve_wal_delta(
+        &self,
+        recovery_point: RecoveryPoint,
+    ) -> CollectionResult<Option<u64>> {
         let resolve_result = match self {
             Self::Local(local_shard) => local_shard.wal.resolve_wal_delta(recovery_point).await,
             Self::ForwardProxy(proxy_shard) => {

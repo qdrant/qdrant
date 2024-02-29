@@ -43,7 +43,6 @@
 
 mod dashboard;
 mod issue;
-pub mod problems;
 mod solution;
 
 pub use dashboard::{all_issues, clear, solve, solve_by_filter, submit};
