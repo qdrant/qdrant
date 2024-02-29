@@ -1394,12 +1394,16 @@ impl FromStr for DateTimePayloadType {
         }
 
         // Attempt to parse the input string in the specified formats:
+        // - YYYY-MM-DD'T'HH:MM:SS-HHMM (timezone without colon)
+        // - YYYY-MM-DD HH:MM:SS-HHMM (timezone without colon)
         // - YYYY-MM-DD'T'HH:MM:SS (without timezone or Z)
-        // - YYYY-MM-DD HH:MM:SS
+        // - YYYY-MM-DD HH:MM:SS (without timezone or Z)
         // - YYYY-MM-DD HH:MM
         // - YYYY-MM-DD
         // See: <https://github.com/qdrant/qdrant/issues/3529>
-        let datetime = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f")
+        let datetime = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f%#z")
+            .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f%#z"))
+            .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f"))
             .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f"))
             .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M"))
             .or_else(|_| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").map(Into::into))?;
@@ -2238,9 +2242,13 @@ mod tests {
 
     #[rstest]
     #[case::rfc_3339("2020-03-01T00:00:00Z")]
+    #[case::rfc_3339_custom_tz("2020-03-01T00:00:00-09:00")]
+    #[case::rfc_3339_custom_tz_no_colon("2020-03-01 00:00:00-0900")]
+    #[case::rfc_3339_custom_tz_no_colon_and_t("2020-03-01T00:00:00-0900")]
+    #[case::rfc_3339_custom_tz_no_minutes("2020-03-01 00:00:00-09")]
     #[case::rfc_3339_and_decimals("2020-03-01T00:00:00.123456Z")]
     #[case::without_z("2020-03-01T00:00:00")]
-    #[case::without_z_and_decimals("2020-03-01T00:00:00.123456")]
+    #[case::without_z_and_decimals("2020-03-01T00:00:00.12")]
     #[case::space_sep_without_z("2020-03-01 00:00:00")]
     #[case::space_sep_without_z_and_decimals("2020-03-01 00:00:00.123456")]
     fn test_datetime_deserialization(#[case] datetime: &str) {
