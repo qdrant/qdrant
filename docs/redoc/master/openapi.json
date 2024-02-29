@@ -10032,6 +10032,7 @@
         "type": "object",
         "required": [
           "from_peer_id",
+          "method",
           "shard_id",
           "to_peer_id"
         ],
@@ -10052,14 +10053,7 @@
             "minimum": 0
           },
           "method": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ShardTransferMethod"
-              },
-              {
-                "nullable": true
-              }
-            ]
+            "$ref": "#/components/schemas/ShardTransferMethod"
           }
         }
       },

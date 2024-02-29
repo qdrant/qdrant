@@ -14,7 +14,7 @@ use collection::operations::types::{
 };
 use collection::shards::replica_set;
 use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};
-use collection::shards::transfer::{ShardTransfer, ShardTransferKey};
+use collection::shards::transfer::{ShardTransfer, ShardTransferKey, ShardTransferRestart};
 use itertools::Itertools;
 use rand::prelude::SliceRandom;
 use storage::content_manager::collection_meta_ops::ShardTransferOperations::{Abort, Start};
@@ -465,11 +465,10 @@ pub async fn do_update_collection_cluster(
                 .submit_collection_meta_op(
                     CollectionMetaOperations::TransferShard(
                         collection_name,
-                        ShardTransferOperations::Restart(ShardTransfer {
+                        ShardTransferOperations::Restart(ShardTransferRestart {
                             shard_id,
                             to: to_peer_id,
                             from: from_peer_id,
-                            sync: false, // This value will be ignored
                             method,
                         }),
                     ),
