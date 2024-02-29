@@ -12,6 +12,12 @@ use crate::operations::{ClockTag, CollectionUpdateOperations, OperationWithClock
 use crate::shards::shard::PeerId;
 use crate::shards::shard_trait::ShardOperation as _;
 
+/// Maximum number of attempts for applying an update with a new clock.
+///
+/// If an update is rejected because of an old clock, we will try again with a new clock. This
+/// describes the maximum number of times we try the update.
+const UPDATE_MAX_CLOCK_RETRIES: usize = 3;
+
 const DEFAULT_SHARD_DEACTIVATION_TIMEOUT: Duration = Duration::from_secs(30);
 
 impl ShardReplicaSet {
@@ -146,7 +152,7 @@ impl ShardReplicaSet {
         // - but keep initial `clock` for the whole duration of `update`
         let mut clock = self.clock_set.lock().await.get_clock();
 
-        loop {
+        for attempt in 1..=UPDATE_MAX_CLOCK_RETRIES {
             let res = self
                 .update_impl(operation.clone(), wait, &mut clock)
                 .await?;
@@ -155,8 +161,12 @@ impl ShardReplicaSet {
                 return Ok(res);
             }
 
-            log::warn!("Operation {operation:?} was rejected by some node(s), retrying...");
+            log::warn!("Operation {operation:?} was rejected by some node(s), attempt {attempt}/{UPDATE_MAX_CLOCK_RETRIES}, retrying...");
         }
+
+        Err(CollectionError::service_error(format!(
+            "Failed to apply operation {operation:?} after {UPDATE_MAX_CLOCK_RETRIES} attempts, could not find correct clock tick internally",
+        )))
     }
 
     /// # Cancel safety
