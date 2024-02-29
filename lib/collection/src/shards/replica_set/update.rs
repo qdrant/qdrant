@@ -5,7 +5,7 @@ use futures::stream::FuturesUnordered;
 use futures::{FutureExt as _, StreamExt as _};
 use itertools::Itertools as _;
 
-use super::{ReplicaSetState, ReplicaState, ShardReplicaSet};
+use super::{clock_set, ReplicaSetState, ReplicaState, ShardReplicaSet};
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{CollectionError, CollectionResult, UpdateResult};
 use crate::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
@@ -138,8 +138,20 @@ impl ShardReplicaSet {
     ) -> CollectionResult<UpdateResult> {
         // `ShardRepilcaSet::update_impl` is not cancel safe, so this method is not cancel safe.
 
+        // TODO: Optimize `remotes`/`local`/`clock` locking for the "happy path"?
+        //
+        // E.g., refactor `update`/`update_impl`, so that it would be possible to:
+        // - lock `remotes`, `local`, `clock` (in specified order!) on the *first* iteration of the loop
+        // - then release and lock `remotes` and `local` *only* for all next iterations
+        // - but keep initial `clock` for the whole duration of `update`
+        let mut clock = self.clock_set.lock().await.get_clock();
+
         loop {
-            if let Some(res) = self.update_impl(operation.clone(), wait).await? {
+            let res = self
+                .update_impl(operation.clone(), wait, &mut clock)
+                .await?;
+
+            if let Some(res) = res {
                 return Ok(res);
             }
 
@@ -154,6 +166,7 @@ impl ShardReplicaSet {
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
+        clock: &mut clock_set::ClockGuard,
     ) -> CollectionResult<Option<UpdateResult>> {
         // `LocalShard::update` is not guaranteed to be cancel safe and it's impossible to cancel
         // multiple parallel updates in a way that is *guaranteed* not to introduce inconsistencies
@@ -161,7 +174,6 @@ impl ShardReplicaSet {
 
         let remotes = self.remotes.read().await;
         let local = self.local.read().await;
-        let mut clock = self.clock_set.lock().await.get_clock();
 
         let this_peer_id = self.this_peer_id();
 
