@@ -5393,6 +5393,8 @@ pub enum UpdateStatus {
     Acknowledged = 1,
     /// Update is applied and ready for search
     Completed = 2,
+    /// Internal: update is rejected due to an outdated clock
+    ClockRejected = 3,
 }
 impl UpdateStatus {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -5404,6 +5406,7 @@ impl UpdateStatus {
             UpdateStatus::UnknownUpdateStatus => "UnknownUpdateStatus",
             UpdateStatus::Acknowledged => "Acknowledged",
             UpdateStatus::Completed => "Completed",
+            UpdateStatus::ClockRejected => "ClockRejected",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -5412,6 +5415,7 @@ impl UpdateStatus {
             "UnknownUpdateStatus" => Some(Self::UnknownUpdateStatus),
             "Acknowledged" => Some(Self::Acknowledged),
             "Completed" => Some(Self::Completed),
+            "ClockRejected" => Some(Self::ClockRejected),
             _ => None,
         }
     }

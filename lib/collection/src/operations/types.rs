@@ -254,9 +254,14 @@ pub struct RemoteShardInfo {
 /// `Completed` - Request is completed, changes are actual.
 #[derive(Debug, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+#[allow(clippy::manual_non_exhaustive)]
 pub enum UpdateStatus {
     Acknowledged,
     Completed,
+    /// Internal: update is rejected due to an outdated clock
+    #[doc(hidden)]
+    #[schemars(skip)]
+    ClockRejected,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]

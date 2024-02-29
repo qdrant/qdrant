@@ -3621,6 +3621,7 @@ How to use positive and negative vectors to find the results, default is `Averag
 | UnknownUpdateStatus | 0 |  |
 | Acknowledged | 1 | Update is received, but not processed yet |
 | Completed | 2 | Update is applied and ready for search |
+| ClockRejected | 3 | Internal: update is rejected due to an outdated clock |
 
 
 
