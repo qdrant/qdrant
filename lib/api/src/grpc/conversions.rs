@@ -487,6 +487,9 @@ impl From<segment::data_types::vectors::Vector> for Vector {
                     data: vector.indices,
                 }),
             },
+            segment::data_types::vectors::Vector::MultiDense(_vector) => {
+                unimplemented!("MultiDenseVector is not supported")
+            }
         }
     }
 }
