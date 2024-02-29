@@ -4,7 +4,7 @@ use itertools::Itertools;
 
 use super::{Query, TransformInto};
 use crate::common::operation_error::OperationResult;
-use crate::data_types::vectors::{QueryVector, Vector};
+use crate::data_types::vectors::{internal, QueryVector, Vector};
 
 #[derive(Debug, Clone)]
 pub struct RecoQuery<T> {
@@ -70,9 +70,15 @@ fn merge_similarities(
     }
 }
 
-impl From<RecoQuery<Vector>> for QueryVector {
-    fn from(query: RecoQuery<Vector>) -> Self {
+impl From<RecoQuery<internal::Vector>> for QueryVector {
+    fn from(query: RecoQuery<internal::Vector>) -> Self {
         QueryVector::Recommend(query)
+    }
+}
+
+impl From<RecoQuery<Vector>> for RecoQuery<internal::Vector> {
+    fn from(query: RecoQuery<Vector>) -> Self {
+        query.transform(|v| Ok(v.into())).unwrap()
     }
 }
 

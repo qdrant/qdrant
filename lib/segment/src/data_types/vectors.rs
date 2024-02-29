@@ -12,6 +12,111 @@ use crate::vector_storage::query::context_query::ContextQuery;
 use crate::vector_storage::query::discovery_query::DiscoveryQuery;
 use crate::vector_storage::query::reco_query::RecoQuery;
 
+pub mod internal {
+    use sparse::common::sparse_vector::SparseVector;
+
+    use super::{DenseVector, VectorElementType, VectorRef};
+    use crate::common::operation_error::OperationError;
+
+    #[derive(Clone, Debug, PartialEq)]
+    pub enum Vector {
+        Dense(DenseVector),
+        Sparse(SparseVector),
+    }
+
+    impl From<super::Vector> for Vector {
+        fn from(value: super::Vector) -> Self {
+            match value {
+                super::Vector::Dense(v) => Vector::Dense(v),
+                super::Vector::Sparse(v) => Vector::Sparse(v),
+            }
+        }
+    }
+
+    impl From<Vector> for super::Vector {
+        fn from(value: Vector) -> Self {
+            match value {
+                Vector::Dense(v) => super::Vector::Dense(v),
+                Vector::Sparse(v) => super::Vector::Sparse(v),
+            }
+        }
+    }
+
+    impl Vector {
+        pub fn to_vec_ref(&self) -> VectorRef {
+            match self {
+                Vector::Dense(v) => VectorRef::Dense(v.as_slice()),
+                Vector::Sparse(v) => VectorRef::Sparse(v),
+            }
+        }
+    }
+
+    impl TryFrom<Vector> for DenseVector {
+        type Error = OperationError;
+
+        fn try_from(value: Vector) -> Result<Self, Self::Error> {
+            match value {
+                Vector::Dense(v) => Ok(v),
+                Vector::Sparse(_) => Err(OperationError::WrongSparse),
+            }
+        }
+    }
+
+    impl TryFrom<Vector> for SparseVector {
+        type Error = OperationError;
+
+        fn try_from(value: Vector) -> Result<Self, Self::Error> {
+            match value {
+                Vector::Dense(_) => Err(OperationError::WrongSparse),
+                Vector::Sparse(v) => Ok(v),
+            }
+        }
+    }
+
+    impl From<DenseVector> for Vector {
+        fn from(val: DenseVector) -> Self {
+            Vector::Dense(val)
+        }
+    }
+
+    impl From<SparseVector> for Vector {
+        fn from(val: SparseVector) -> Self {
+            Vector::Sparse(val)
+        }
+    }
+
+    impl<'a> From<&'a Vector> for VectorRef<'a> {
+        fn from(val: &'a Vector) -> Self {
+            match val {
+                Vector::Dense(v) => VectorRef::Dense(v.as_slice()),
+                Vector::Sparse(v) => VectorRef::Sparse(v),
+            }
+        }
+    }
+
+    impl<'a> TryInto<&'a [VectorElementType]> for &'a Vector {
+        type Error = OperationError;
+
+        fn try_into(self) -> Result<&'a [VectorElementType], Self::Error> {
+            match self {
+                Vector::Dense(v) => Ok(v),
+                Vector::Sparse(_) => Err(OperationError::WrongSparse),
+            }
+        }
+    }
+
+    impl<'a> TryInto<&'a SparseVector> for &'a Vector {
+        type Error = OperationError;
+
+        fn try_into(self) -> Result<&'a SparseVector, Self::Error> {
+            match self {
+                Vector::Dense(_) => Err(OperationError::WrongSparse),
+                Vector::Sparse(v) => Ok(v),
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
 #[serde(untagged, rename_all = "snake_case")]
 pub enum Vector {
@@ -44,10 +149,10 @@ impl Validate for Vector {
 }
 
 impl<'a> VectorRef<'a> {
-    pub fn to_vec(self) -> Vector {
+    pub fn to_vec(self) -> internal::Vector {
         match self {
-            VectorRef::Dense(v) => Vector::Dense(v.to_vec()),
-            VectorRef::Sparse(v) => Vector::Sparse(v.clone()),
+            VectorRef::Dense(v) => internal::Vector::Dense(v.to_vec()),
+            VectorRef::Sparse(v) => internal::Vector::Sparse(v.clone()),
         }
     }
 }
@@ -155,10 +260,10 @@ pub type DenseVector = Vec<VectorElementType>;
 
 impl<'a> VectorRef<'a> {
     // Cannot use `ToOwned` trait because of `Borrow` implementation for `Vector`
-    pub fn to_owned(self) -> Vector {
+    pub fn to_owned(self) -> internal::Vector {
         match self {
-            VectorRef::Dense(v) => Vector::Dense(v.to_vec()),
-            VectorRef::Sparse(v) => Vector::Sparse(v.clone()),
+            VectorRef::Dense(v) => internal::Vector::Dense(v.to_vec()),
+            VectorRef::Sparse(v) => internal::Vector::Sparse(v.clone()),
         }
     }
 
@@ -386,6 +491,7 @@ impl NamedVectorStruct {
         }
     }
 
+    /*
     pub fn get_vector(&self) -> VectorRef {
         match self {
             NamedVectorStruct::Default(v) => v.as_slice().into(),
@@ -393,6 +499,7 @@ impl NamedVectorStruct {
             NamedVectorStruct::Sparse(v) => (&v.vector).into(),
         }
     }
+     */
 
     pub fn to_vector(self) -> Vector {
         match self {
@@ -472,21 +579,21 @@ impl<T: Validate> Validate for NamedQuery<T> {
 
 #[derive(Debug, Clone)]
 pub enum QueryVector {
-    Nearest(Vector),
-    Recommend(RecoQuery<Vector>),
-    Discovery(DiscoveryQuery<Vector>),
-    Context(ContextQuery<Vector>),
+    Nearest(internal::Vector),
+    Recommend(RecoQuery<internal::Vector>),
+    Discovery(DiscoveryQuery<internal::Vector>),
+    Context(ContextQuery<internal::Vector>),
 }
 
 impl From<DenseVector> for QueryVector {
     fn from(vec: DenseVector) -> Self {
-        Self::Nearest(Vector::Dense(vec))
+        Self::Nearest(internal::Vector::Dense(vec))
     }
 }
 
 impl<'a> From<&'a [VectorElementType]> for QueryVector {
     fn from(vec: &'a [VectorElementType]) -> Self {
-        Self::Nearest(Vector::Dense(vec.to_vec()))
+        Self::Nearest(internal::Vector::Dense(vec.to_vec()))
     }
 }
 
@@ -503,15 +610,15 @@ impl<'a> From<VectorRef<'a>> for QueryVector {
     }
 }
 
-impl From<Vector> for QueryVector {
-    fn from(vec: Vector) -> Self {
+impl From<internal::Vector> for QueryVector {
+    fn from(vec: internal::Vector) -> Self {
         Self::Nearest(vec)
     }
 }
 
 impl From<SparseVector> for QueryVector {
     fn from(vec: SparseVector) -> Self {
-        Self::Nearest(Vector::Sparse(vec))
+        Self::Nearest(internal::Vector::Sparse(vec))
     }
 }
 

@@ -10,7 +10,7 @@ use super::query::reco_query::RecoQuery;
 use super::query::TransformInto;
 use super::query_scorer::custom_query_scorer::CustomQueryScorer;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::data_types::vectors::{DenseVector, QueryVector, Vector, VectorElementType};
+use crate::data_types::vectors::{internal, DenseVector, QueryVector, VectorElementType};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::Distance;
@@ -268,7 +268,7 @@ impl<'a> AsyncRawScorerBuilder<'a> {
         match query {
             QueryVector::Nearest(vector) => {
                 match vector {
-                    Vector::Dense(dense_vector) => {
+                    internal::Vector::Dense(dense_vector) => {
                         let query_scorer =
                             MetricQueryScorer::<TMetric, _>::new(dense_vector, storage);
                         Ok(Box::new(AsyncRawScorerImpl::new(
@@ -280,7 +280,7 @@ impl<'a> AsyncRawScorerBuilder<'a> {
                             is_stopped.unwrap_or(&DEFAULT_STOPPED),
                         )))
                     }
-                    Vector::Sparse(_sparse_vector) => Err(OperationError::service_error(
+                    internal::Vector::Sparse(_sparse_vector) => Err(OperationError::service_error(
                         "sparse vectors are not supported for async scorer",
                     )), // TODO(sparse) add support?
                 }

@@ -986,7 +986,7 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for CoreSearchRequest {
 impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
     fn from(value: CollectionSearchRequest<'a>) -> Self {
         let (collection_id, request) = value.0;
-        let (vector, sparse_indices) = match request.vector.get_vector().to_owned() {
+        let (vector, sparse_indices) = match request.vector.clone().to_vector() {
             Vector::Dense(vector) => (vector, None),
             Vector::Sparse(vector) => (
                 vector.values,

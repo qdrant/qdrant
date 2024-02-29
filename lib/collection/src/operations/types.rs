@@ -18,8 +18,8 @@ use segment::common::operation_error::OperationError;
 use segment::data_types::groups::GroupId;
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{
-    DenseVector, Named, NamedQuery, NamedVectorStruct, QueryVector, Vector, VectorRef,
-    VectorStruct, DEFAULT_VECTOR_NAME,
+    DenseVector, Named, NamedQuery, NamedVectorStruct, QueryVector, Vector, VectorStruct,
+    DEFAULT_VECTOR_NAME,
 };
 use segment::json_path::{JsonPath, JsonPathInterface};
 use segment::types::{
@@ -1258,12 +1258,12 @@ impl Record {
         }
     }
 
-    pub fn get_vector_by_name(&self, name: &str) -> Option<VectorRef> {
+    pub fn get_vector_by_name(&self, name: &str) -> Option<Vector> {
         match &self.vector {
             Some(VectorStruct::Single(vector)) => {
-                (name == DEFAULT_VECTOR_NAME).then_some(vector.into())
+                (name == DEFAULT_VECTOR_NAME).then_some(vector.clone().into())
             }
-            Some(VectorStruct::Multi(vectors)) => vectors.get(name).map(|v| v.into()),
+            Some(VectorStruct::Multi(vectors)) => vectors.get(name).cloned(),
             None => None,
         }
     }
@@ -1775,10 +1775,13 @@ impl From<SearchRequestInternal> for CoreSearchRequest {
 impl From<QueryEnum> for QueryVector {
     fn from(query: QueryEnum) -> Self {
         match query {
-            QueryEnum::Nearest(named) => QueryVector::Nearest(named.into()),
-            QueryEnum::RecommendBestScore(named) => QueryVector::Recommend(named.query),
-            QueryEnum::Discover(named) => QueryVector::Discovery(named.query),
-            QueryEnum::Context(named) => QueryVector::Context(named.query),
+            QueryEnum::Nearest(named) => {
+                let v: Vector = named.into();
+                QueryVector::Nearest(v.into())
+            }
+            QueryEnum::RecommendBestScore(named) => QueryVector::Recommend(named.query.into()),
+            QueryEnum::Discover(named) => QueryVector::Discovery(named.query.into()),
+            QueryEnum::Context(named) => QueryVector::Context(named.query.into()),
         }
     }
 }

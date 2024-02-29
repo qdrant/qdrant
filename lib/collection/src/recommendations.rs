@@ -3,8 +3,7 @@ use std::time::Duration;
 
 use itertools::Itertools;
 use segment::data_types::vectors::{
-    DenseVector, NamedQuery, NamedVectorStruct, Vector, VectorElementType, VectorRef,
-    DEFAULT_VECTOR_NAME,
+    DenseVector, NamedQuery, NamedVectorStruct, Vector, VectorElementType, DEFAULT_VECTOR_NAME,
 };
 use segment::types::{
     Condition, ExtendedPointId, Filter, HasIdCondition, PointIdType, ScoredPoint,
@@ -16,8 +15,7 @@ use tokio::sync::RwLockReadGuard;
 use crate::collection::Collection;
 use crate::common::batching::batch_requests;
 use crate::common::fetch_vectors::{
-    convert_to_vectors, convert_to_vectors_owned, resolve_referenced_vectors_batch,
-    ReferencedVectors,
+    convert_to_vectors, resolve_referenced_vectors_batch, ReferencedVectors,
 };
 use crate::common::retrieve_request_trait::RetrieveRequest;
 use crate::operations::consistency_params::ReadConsistency;
@@ -27,14 +25,14 @@ use crate::operations::types::{
     RecommendRequestInternal, RecommendStrategy, UsingVector,
 };
 
-fn avg_vectors<'a>(vectors: impl Iterator<Item = VectorRef<'a>>) -> CollectionResult<Vector> {
+fn avg_vectors(vectors: impl Iterator<Item = Vector>) -> CollectionResult<Vector> {
     let mut avg_dense = DenseVector::default();
     let mut avg_sparse = SparseVector::default();
     let mut dense_count = 0;
     let mut sparse_count = 0;
     for vector in vectors {
         match vector {
-            VectorRef::Dense(vector) => {
+            Vector::Dense(vector) => {
                 dense_count += 1;
                 for i in 0..vector.len() {
                     if i >= avg_dense.len() {
@@ -44,7 +42,7 @@ fn avg_vectors<'a>(vectors: impl Iterator<Item = VectorRef<'a>>) -> CollectionRe
                     }
                 }
             }
-            VectorRef::Sparse(vector) => {
+            Vector::Sparse(vector) => {
                 sparse_count += 1;
                 avg_sparse = vector.combine_aggregate(&avg_sparse, |v1, v2| v1 + v2);
             }
@@ -359,19 +357,21 @@ fn recommend_by_best_score(
 
     let lookup_collection_name = lookup_from.as_ref().map(|x| &x.collection);
 
-    let positive = convert_to_vectors_owned(
-        positive,
+    let positive = convert_to_vectors(
+        positive.iter(),
         all_vectors_records_map,
         &lookup_vector_name,
         lookup_collection_name,
-    );
+    )
+    .collect_vec();
 
-    let negative = convert_to_vectors_owned(
-        negative,
+    let negative = convert_to_vectors(
+        negative.iter(),
         all_vectors_records_map,
         &lookup_vector_name,
         lookup_collection_name,
-    );
+    )
+    .collect_vec();
 
     let query = QueryEnum::RecommendBestScore(NamedQuery {
         query: RecoQuery::new(positive, negative),
@@ -414,7 +414,7 @@ mod tests {
             vec![1.0, 2.0, 3.0].into(),
         ];
         assert_eq!(
-            avg_vectors(vectors.iter().map(|v| v.to_vec_ref())).unwrap(),
+            avg_vectors(vectors.clone().into_iter()).unwrap(),
             vec![1.0, 2.0, 3.0].into(),
         );
 
@@ -427,7 +427,7 @@ mod tests {
                 .into(),
         ];
         assert_eq!(
-            avg_vectors(vectors.iter().map(|v| v.to_vec_ref())).unwrap(),
+            avg_vectors(vectors.clone().into_iter()).unwrap(),
             SparseVector::new(vec![0, 1, 2], vec![0.0, 0.55, 1.1])
                 .unwrap()
                 .into(),
@@ -439,6 +439,6 @@ mod tests {
                 .unwrap()
                 .into(),
         ];
-        assert!(avg_vectors(vectors.iter().map(|v| v.to_vec_ref())).is_err());
+        assert!(avg_vectors(vectors.clone().into_iter()).is_err());
     }
 }

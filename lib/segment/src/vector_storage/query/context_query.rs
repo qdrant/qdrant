@@ -6,7 +6,7 @@ use itertools::Itertools;
 
 use super::{Query, TransformInto};
 use crate::common::operation_error::OperationResult;
-use crate::data_types::vectors::{QueryVector, Vector};
+use crate::data_types::vectors::{internal, QueryVector, Vector};
 
 #[derive(Debug, Clone)]
 pub struct ContextPair<T> {
@@ -113,9 +113,15 @@ impl<T> From<Vec<ContextPair<T>>> for ContextQuery<T> {
     }
 }
 
-impl From<ContextQuery<Vector>> for QueryVector {
-    fn from(query: ContextQuery<Vector>) -> Self {
+impl From<ContextQuery<internal::Vector>> for QueryVector {
+    fn from(query: ContextQuery<internal::Vector>) -> Self {
         QueryVector::Context(query)
+    }
+}
+
+impl From<ContextQuery<Vector>> for ContextQuery<internal::Vector> {
+    fn from(query: ContextQuery<Vector>) -> Self {
+        query.transform(|v| Ok(v.into())).unwrap()
     }
 }
 

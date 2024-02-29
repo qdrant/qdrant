@@ -7,7 +7,7 @@ use itertools::Itertools;
 use super::context_query::ContextPair;
 use super::{Query, TransformInto};
 use crate::common::operation_error::OperationResult;
-use crate::data_types::vectors::{QueryVector, Vector};
+use crate::data_types::vectors::{internal, QueryVector, Vector};
 
 type RankType = i32;
 
@@ -74,9 +74,15 @@ impl<T> Query<T> for DiscoveryQuery<T> {
     }
 }
 
-impl From<DiscoveryQuery<Vector>> for QueryVector {
-    fn from(query: DiscoveryQuery<Vector>) -> Self {
+impl From<DiscoveryQuery<internal::Vector>> for QueryVector {
+    fn from(query: DiscoveryQuery<internal::Vector>) -> Self {
         QueryVector::Discovery(query)
+    }
+}
+
+impl From<DiscoveryQuery<Vector>> for DiscoveryQuery<internal::Vector> {
+    fn from(query: DiscoveryQuery<Vector>) -> Self {
+        query.transform(|v| Ok(v.into())).unwrap()
     }
 }
 

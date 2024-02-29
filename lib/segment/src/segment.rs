@@ -443,7 +443,7 @@ impl Segment {
                     .get_vector(point_offset)
                     .as_vec_ref()
                     .to_vec();
-                vectors.insert(vector_name.clone(), vector);
+                vectors.insert(vector_name.clone(), vector.into());
             }
         }
         Ok(vectors)
