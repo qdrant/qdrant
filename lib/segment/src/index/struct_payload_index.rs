@@ -488,9 +488,7 @@ impl PayloadIndex for StructPayloadIndex {
 
         let updated_payload = self.payload(point_id)?;
         for (field, field_index) in &mut self.field_indexes {
-            // `safe_to_set = true` means that `field` was not affected by the update
-            // We can skip index update in this case
-            if JsonPath::safe_to_set(field, &payload.0, key.as_ref()) {
+            if !field.is_affected_by_value_set(&payload.0, key.as_ref()) {
                 continue;
             }
             let field_value = updated_payload.get_value(field);

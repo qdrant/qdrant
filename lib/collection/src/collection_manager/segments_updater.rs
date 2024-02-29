@@ -7,7 +7,7 @@ use parking_lot::{RwLock, RwLockWriteGuard};
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::entry::entry_point::SegmentEntry;
-use segment::json_path::{JsonPath, JsonPathV2};
+use segment::json_path::JsonPath;
 use segment::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
     SeqNumberType,
@@ -150,10 +150,9 @@ pub(crate) fn set_payload(
         points,
         |id, write_segment| write_segment.set_payload(op_num, id, payload, key),
         |segment| {
-            segment
-                .get_indexed_fields()
-                .keys()
-                .all(|indexed_path| JsonPathV2::safe_to_set(indexed_path, &payload.0, key.as_ref()))
+            segment.get_indexed_fields().keys().all(|indexed_path| {
+                !indexed_path.is_affected_by_value_set(&payload.0, key.as_ref())
+            })
         },
     )?;
 
@@ -204,7 +203,7 @@ pub(crate) fn delete_payload(
         |segment| {
             iproduct!(segment.get_indexed_fields().keys(), keys).all(
                 |(indexed_path, path_to_delete)| {
-                    JsonPathV2::safe_to_remove(indexed_path, path_to_delete)
+                    !indexed_path.is_affected_by_value_remove(path_to_delete)
                 },
             )
         },
