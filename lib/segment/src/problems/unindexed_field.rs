@@ -36,7 +36,7 @@ impl UnindexedField {
         condition: FieldCondition,
         collection_name: String,
     ) -> Result<Self, OperationError> {
-        let field_schemas = infer_type_from_field_condition(&condition);
+        let field_schemas = infer_schema_from_field_condition(&condition);
 
         if field_schemas.is_empty() {
             return Err(OperationError::TypeInferenceError {
@@ -119,7 +119,7 @@ impl Issue for UnindexedField {
     }
 }
 
-fn infer_type_from_match_value(value: &MatchValue) -> PayloadFieldSchema {
+fn infer_schema_from_match_value(value: &MatchValue) -> PayloadFieldSchema {
     match &value.value {
         crate::types::ValueVariants::Keyword(_string) => {
             PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)
@@ -133,7 +133,7 @@ fn infer_type_from_match_value(value: &MatchValue) -> PayloadFieldSchema {
     }
 }
 
-fn infer_type_from_any_variants(value: &AnyVariants) -> PayloadFieldSchema {
+fn infer_schema_from_any_variants(value: &AnyVariants) -> PayloadFieldSchema {
     match value {
         AnyVariants::Keywords(_strings) => {
             PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)
@@ -144,13 +144,13 @@ fn infer_type_from_any_variants(value: &AnyVariants) -> PayloadFieldSchema {
     }
 }
 
-fn infer_type_from_field_condition(field_condition: &FieldCondition) -> Vec<PayloadFieldSchema> {
+fn infer_schema_from_field_condition(field_condition: &FieldCondition) -> Vec<PayloadFieldSchema> {
     match field_condition {
         FieldCondition {
             r#match: Some(r#match),
             ..
         } => vec![match r#match {
-            Match::Value(match_value) => infer_type_from_match_value(match_value),
+            Match::Value(match_value) => infer_schema_from_match_value(match_value),
             Match::Text(_match_text) => {
                 PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(TextIndexParams {
                     r#type: TextIndexType::Text,
@@ -160,8 +160,8 @@ fn infer_type_from_field_condition(field_condition: &FieldCondition) -> Vec<Payl
                     lowercase: None,
                 }))
             }
-            Match::Any(match_any) => infer_type_from_any_variants(&match_any.any),
-            Match::Except(match_except) => infer_type_from_any_variants(&match_except.except),
+            Match::Any(match_any) => infer_schema_from_any_variants(&match_any.any),
+            Match::Except(match_except) => infer_schema_from_any_variants(&match_except.except),
         }],
         FieldCondition {
             range: Some(_range),
@@ -269,7 +269,7 @@ impl Extractor {
             Condition::Field(field_condition) => {
                 let full_key = JsonPathPayload::extend_or_new(nested_prefix, &field_condition.key);
 
-                let inferred = infer_type_from_field_condition(field_condition);
+                let inferred = infer_schema_from_field_condition(field_condition);
 
                 let mut needs_index = false;
                 match self.payload_schema.get(&full_key.path) {
