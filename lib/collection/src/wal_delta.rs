@@ -5,7 +5,7 @@ use parking_lot::{Mutex as ParkingMutex, MutexGuard as ParkingMutexGuard};
 use thiserror::Error;
 use tokio::sync::Mutex;
 
-use crate::operations::OperationWithClockTag;
+use crate::operations::{ClockTag, OperationWithClockTag};
 use crate::shards::local_shard::clock_map::{ClockMap, RecoveryPoint};
 use crate::wal::SerdeWal;
 
@@ -14,32 +14,37 @@ pub type LockedWal = Arc<ParkingMutex<SerdeWal<OperationWithClockTag>>>;
 /// A WAL that is recoverable, with operations having clock tags and a corresponding clock map.
 pub struct RecoverableWal {
     pub(super) wal: LockedWal,
+
     /// Map of all highest seen clocks for each peer and clock ID.
-    pub(super) highest_clocks: Arc<Mutex<ClockMap>>,
+    pub(super) newest_clocks: Arc<Mutex<ClockMap>>,
+
     /// Map of all clocks and ticks that are cut off.
     ///
     /// Clock ticks equal to those in this map are still recoverable, while clock ticks below those
     /// in this map are not.
     ///
     /// This means two things:
-    /// - this WAL has at least all these clock versions (same as `highest_clocks`)
+    /// - this WAL has at least all these clock versions
+    ///   - (so if we advance these clocks, we have to advance `newest_clocks` as well)
     /// - this WAL cannot resolve any delta below any of these clocks
-    pub(super) cutoff_clocks: Arc<Mutex<ClockMap>>,
+    pub(super) oldest_clocks: Arc<Mutex<ClockMap>>,
 }
 
 impl RecoverableWal {
-    pub fn from(
+    pub fn new(
         wal: LockedWal,
         highest_clocks: Arc<Mutex<ClockMap>>,
         cutoff_clocks: Arc<Mutex<ClockMap>>,
     ) -> Self {
         Self {
             wal,
-            highest_clocks,
-            cutoff_clocks,
+            newest_clocks: highest_clocks,
+            oldest_clocks: cutoff_clocks,
         }
     }
 
+    // TODO: More meaningful method name and documentation
+    //
     /// Write a record to the WAL, guarantee durability.
     ///
     /// On success, this returns the WAL record number of the written operation along with a WAL
@@ -57,8 +62,10 @@ impl RecoverableWal {
             // current clock tracked by the clock map
 
             // TODO: do not manually advance here!
+            //
+            // TODO: What does the above `TODO` mean? "Make sure to call `advance_clock_and_correct_tag`, but not `advance_clock`?"
             let _operation_accepted = self
-                .highest_clocks
+                .newest_clocks
                 .lock()
                 .await
                 .advance_clock_and_correct_tag(clock_tag);
@@ -85,40 +92,48 @@ impl RecoverableWal {
     /// It updates the highest seen clocks alongside with it.
     pub async fn update_cutoff(&self, cutoff: &RecoveryPoint) {
         // Lock highest and cutoff maps separately to avoid deadlocks
+
         {
-            let mut highest_clocks = self.highest_clocks.lock().await;
-            for clock_tag in cutoff.clock_tag_iter() {
-                highest_clocks.advance_clock(clock_tag);
+            let mut newest_clocks = self.newest_clocks.lock().await;
+            for clock_tag in cutoff.iter_as_clock_tags() {
+                newest_clocks.advance_clock(clock_tag);
             }
         }
 
         {
-            let mut cutoff_clocks = self.cutoff_clocks.lock().await;
-            for clock_tag in cutoff.clock_tag_iter() {
-                cutoff_clocks.advance_clock(clock_tag);
+            let mut oldest_clocks = self.oldest_clocks.lock().await;
+            for clock_tag in cutoff.iter_as_clock_tags() {
+                oldest_clocks.advance_clock(clock_tag);
             }
         }
     }
 
     /// Get a recovery point for this WAL.
     pub async fn recovery_point(&self) -> RecoveryPoint {
-        self.highest_clocks.lock().await.to_recovery_point()
+        self.newest_clocks.lock().await.to_recovery_point()
     }
 
     #[cfg(test)]
     pub async fn cutoff_point(&self) -> RecoveryPoint {
-        self.cutoff_clocks.lock().await.to_recovery_point()
+        self.oldest_clocks.lock().await.to_recovery_point()
     }
 
     pub async fn resolve_wal_delta(
         &self,
         recovery_point: RecoveryPoint,
     ) -> Result<Option<u64>, WalDeltaError> {
+        let newest_clocks = self.recovery_point().await;
+
+        let oldest_clocks = self.oldest_clocks.lock().await.to_recovery_point();
+
         resolve_wal_delta(
+            self.wal
+                .lock()
+                .read_all(true)
+                .map(|(op_num, op)| (op_num, op.clock_tag)),
             recovery_point,
-            self.wal.clone(),
-            self.recovery_point().await,
-            self.cutoff_clocks.lock().await.to_recovery_point(),
+            newest_clocks,
+            oldest_clocks,
         )
     }
 
@@ -140,10 +155,10 @@ impl RecoverableWal {
 
 /// Resolve the WAL delta for the given `recovery_point`
 ///
-/// A `local_wal`, `local_recovery_point` and `local_cutoff_point` are required to resolve the
+/// A `local_wal`, `newest_clocks` and `oldest_clocks` are required to resolve the
 /// delta. These should be from the node being the source of recovery, likely the current one. The
-/// `local_wal` is used to resolve the diff. The `local_recovery_point` is used to extend the given
-/// recovery point with clocks the failed node does not know about. The `local_cutoff_point` is
+/// `local_wal` is used to resolve the diff. The `newest_clocks` is used to extend the given
+/// recovery point with clocks the failed node does not know about. The `oldest_clocks` is
 /// used as lower bound for WAL delta resolution.
 ///
 /// The delta can be sent over to the node which the recovery point is from, to restore its
@@ -154,10 +169,10 @@ impl RecoverableWal {
 /// If `None` - the remote WAL is already equal, and we don't have to send any records.
 /// If `Err` - no delta can be resolved.
 fn resolve_wal_delta(
+    operations: impl DoubleEndedIterator<Item = (u64, Option<ClockTag>)>,
     mut recovery_point: RecoveryPoint,
-    local_wal: LockedWal,
-    mut local_recovery_point: RecoveryPoint,
-    mut local_cutoff_point: RecoveryPoint,
+    mut newest_clocks: RecoveryPoint,
+    mut oldest_clocks: RecoveryPoint,
 ) -> Result<Option<u64>, WalDeltaError> {
     // If recovery point is empty, we cannot do a diff transfer
     if recovery_point.is_empty() {
@@ -166,32 +181,32 @@ fn resolve_wal_delta(
 
     // If the recovery point has clocks our current node does not know about
     // we're missing essential records and cannot resolve a WAL delta
-    if recovery_point.has_clocks_not_in(&local_recovery_point) {
+    if recovery_point.has_clocks_not_in(&newest_clocks) {
         return Err(WalDeltaError::UnknownClocks);
     }
 
     // If our current node has any lower clock than the recovery point specifies,
     // we're missing essential records and cannot resolve a WAL delta
-    if recovery_point.has_any_higher(&local_recovery_point) {
+    if recovery_point.has_any_newer_clocks_than(&newest_clocks) {
         return Err(WalDeltaError::HigherThanCurrent);
     }
 
     // From this point, increase all clocks by one
     // We must do that so we can specify clock tick 0 as needing everything from that clock
-    recovery_point.increase_by(1);
-    local_recovery_point.increase_by(1);
-    local_cutoff_point.increase_by(1);
+    recovery_point.increase_all_clocks_by(1);
+    newest_clocks.increase_all_clocks_by(1);
+    oldest_clocks.increase_all_clocks_by(1);
 
     // Extend clock map with missing clocks this node know about
     // Ensure the recovering node gets records for a clock it might not have seen yet
-    recovery_point.extend_with_missing_clocks(&local_recovery_point);
+    recovery_point.initialize_clocks_missing_from(&newest_clocks);
 
     // Remove clocks that are equal to this node, we don't have to transfer records for them
     // TODO: do we want to remove higher clocks too, as the recovery node already has all data?
-    recovery_point.remove_equal_clocks(&local_recovery_point);
+    recovery_point.remove_clocks_equal_to(&newest_clocks);
 
     // Recovery point may not be below our cutoff point
-    if recovery_point.has_any_lower(&local_cutoff_point) {
+    if recovery_point.has_any_older_clocks_than(&oldest_clocks) {
         return Err(WalDeltaError::Cutoff);
     }
 
@@ -203,14 +218,15 @@ fn resolve_wal_delta(
     // Scroll back over the WAL and find a record that covered all clocks
     // Drain satisfied clocks from the recovery point until we have nothing left
     log::trace!("Resolving WAL delta for: {recovery_point}");
-    let delta_from = local_wal
-        .lock()
-        .read_from_last(true)
+
+    let delta_from = operations
+        .rev()
         // We cannot resolve a delta if we have untagged records
-        .take_while(|(_, update)| update.clock_tag.is_some())
+        .take_while(|(_, clock_tag)| clock_tag.is_some())
         // Keep scrolling until we have no clocks left
-        .find(|(_, update)| {
-            recovery_point.remove_equal_or_lower(update.clock_tag.unwrap());
+        .filter_map(|(op_num, clock_tag)| Some((op_num, clock_tag?)))
+        .find(|&(_, clock_tag)| {
+            recovery_point.remove_clock_if_newer_than_or_equal_to_tag(clock_tag);
             recovery_point.is_empty()
         })
         .map(|(op_num, _)| op_num);
@@ -264,7 +280,7 @@ mod tests {
         };
         let wal = SerdeWal::new(dir.path().to_str().unwrap(), options).unwrap();
         (
-            RecoverableWal::from(
+            RecoverableWal::new(
                 Arc::new(ParkingMutex::new(wal)),
                 Arc::new(Mutex::new(ClockMap::default())),
                 Arc::new(Mutex::new(ClockMap::default())),
@@ -303,7 +319,7 @@ mod tests {
         let bare_operation = mock_operation(1);
         let operation = OperationWithClockTag::new(bare_operation, Some(clock_tag));
 
-        // Write operations to peer A, B and C, and advance clocks
+        // Write operation to peer A, B and C, and advance clocks
         let mut a_operation = operation.clone();
         let mut b_operation = operation.clone();
         let mut c_operation = operation.clone();
@@ -322,7 +338,7 @@ mod tests {
         let bare_operation = mock_operation(2);
         let operation = OperationWithClockTag::new(bare_operation, Some(clock_tag));
 
-        // Write operations to peer A and B, not C, and advance clocks
+        // Write operation to peer A and B, not C, and advance clocks
         let mut a_operation = operation.clone();
         let mut b_operation = operation.clone();
         let (_, _) = a_wal.lock_and_write(&mut a_operation).await.unwrap();
@@ -388,7 +404,7 @@ mod tests {
         // Create clock set for peer A
         let mut a_clock_set = ClockSet::new();
 
-        // Create N operation on peer A
+        // Create N operations on peer A
         for i in 0..N {
             let mut a_clock_0 = a_clock_set.get_clock();
             let clock_tick = a_clock_0.tick_once();
@@ -466,7 +482,7 @@ mod tests {
         assert_wal_ordering_property(&c_wal).await;
     }
 
-    /// Test WAL delta resolution with a many intermixed operations on node C. Intermixed as in,
+    /// Test WAL delta resolution with many intermixed operations on node C. Intermixed as in,
     /// from multiple nodes.
     ///
     /// See: <https://www.notion.so/qdrant/Testing-suite-4e28a978ec05476080ff26ed07757def?pvs=4>
@@ -484,7 +500,7 @@ mod tests {
         let mut a_clock_set = ClockSet::new();
         let mut b_clock_set = ClockSet::new();
 
-        // Create N operation on peer A
+        // Create N operations on peer A
         for i in 0..N {
             let mut a_clock_0 = a_clock_set.get_clock();
             let clock_tick = a_clock_0.tick_once();
@@ -504,7 +520,7 @@ mod tests {
             a_clock_0.advance_to(c_operation.clock_tag.unwrap().clock_tick);
         }
 
-        // Create M operations on peer A, which are missed on node C
+        // Create M operations on peers A and B, which are missed on node C
         for i in N..N + M {
             let is_node_a = i % 3 == 0;
             let peer_id = if is_node_a { 1 } else { 2 };
@@ -590,7 +606,7 @@ mod tests {
         let bare_operation = mock_operation(1);
         let operation = OperationWithClockTag::new(bare_operation, Some(clock_tag));
 
-        // Write operations to peer A, B and C, and advance clocks
+        // Write operation to peer A, B and C, and advance clocks
         let mut a_operation = operation.clone();
         let mut b_operation = operation.clone();
         let mut c_operation = operation.clone();
@@ -602,7 +618,7 @@ mod tests {
         a_clock_0.advance_to(c_operation.clock_tag.unwrap().clock_tick);
         drop(a_clock_0);
 
-        // Create an operation on node A and B
+        // Create operations on nodes A and B
         let mut a_clock_0 = a_clock_set.get_clock();
         let mut b_clock_0 = b_clock_set.get_clock();
         let a_clock_tick = a_clock_0.tick_once();
@@ -614,7 +630,7 @@ mod tests {
         let operation_1 = OperationWithClockTag::new(bare_operation_1, Some(a_clock_tag));
         let operation_2 = OperationWithClockTag::new(bare_operation_2, Some(b_clock_tag));
 
-        // Write operations to node A and B in different order, but not on node C
+        // Write operations to nodes A and B in different order, but not to node C
         let mut a_operation_1 = operation_1.clone();
         let mut a_operation_2 = operation_2.clone();
         let mut b_operation_1 = operation_1.clone();
@@ -1086,6 +1102,7 @@ mod tests {
     #[case::eight_nodes(8, 1..8)]
     #[case::nine_nodes(9, 1..9)]
     #[case::ten_nodes(10, 1..10)]
+    #[tokio::test]
     async fn test_resolve_wal_delta_randomized(
         #[case] node_count: usize,
         #[case] dead_nodes_range: Range<usize>,
@@ -1316,12 +1333,15 @@ mod tests {
 
         // Empty recovery points, should not resolve any diff
         let recovery_point = RecoveryPoint::default();
-        let local_recovery_point = RecoveryPoint::default();
+        let newest_clocks = RecoveryPoint::default();
 
         let resolve_result = resolve_wal_delta(
+            wal.wal
+                .lock()
+                .read_all(true)
+                .map(|(op_num, op)| (op_num, op.clock_tag)),
             recovery_point,
-            wal.wal,
-            local_recovery_point,
+            newest_clocks,
             RecoveryPoint::default(),
         );
         assert_eq!(resolve_result.unwrap_err(), WalDeltaError::Empty);
@@ -1333,19 +1353,22 @@ mod tests {
         let (wal, _wal_dir) = fixture_empty_wal();
 
         let mut recovery_point = RecoveryPoint::default();
-        let mut local_recovery_point = RecoveryPoint::default();
+        let mut newest_clocks = RecoveryPoint::default();
 
         // Recovery point has a clock our source does not know about
         recovery_point.insert(1, 0, 15);
         recovery_point.insert(1, 1, 8);
         recovery_point.insert(2, 1, 5);
-        local_recovery_point.insert(1, 0, 20);
-        local_recovery_point.insert(1, 1, 8);
+        newest_clocks.insert(1, 0, 20);
+        newest_clocks.insert(1, 1, 8);
 
         let resolve_result = resolve_wal_delta(
+            wal.wal
+                .lock()
+                .read_all(true)
+                .map(|(op_num, op)| (op_num, op.clock_tag)),
             recovery_point,
-            wal.wal,
-            local_recovery_point,
+            newest_clocks,
             RecoveryPoint::default(),
         );
         assert_eq!(resolve_result.unwrap_err(), WalDeltaError::UnknownClocks);
@@ -1357,18 +1380,21 @@ mod tests {
         let (wal, _wal_dir) = fixture_empty_wal();
 
         let mut recovery_point = RecoveryPoint::default();
-        let mut local_recovery_point = RecoveryPoint::default();
+        let mut newest_clocks = RecoveryPoint::default();
 
         // Recovery point asks tick 10, but source only has tick 8
         recovery_point.insert(1, 0, 15);
         recovery_point.insert(1, 1, 10);
-        local_recovery_point.insert(1, 0, 20);
-        local_recovery_point.insert(1, 1, 8);
+        newest_clocks.insert(1, 0, 20);
+        newest_clocks.insert(1, 1, 8);
 
         let resolve_result = resolve_wal_delta(
+            wal.wal
+                .lock()
+                .read_all(true)
+                .map(|(op_num, op)| (op_num, op.clock_tag)),
             recovery_point,
-            wal.wal,
-            local_recovery_point,
+            newest_clocks,
             RecoveryPoint::default(),
         );
         assert_eq!(
@@ -1383,21 +1409,24 @@ mod tests {
         let (wal, _wal_dir) = fixture_empty_wal();
 
         let mut recovery_point = RecoveryPoint::default();
-        let mut local_recovery_point = RecoveryPoint::default();
-        let mut local_cutoff_point = RecoveryPoint::default();
+        let mut newest_clocks = RecoveryPoint::default();
+        let mut oldest_clocks = RecoveryPoint::default();
 
         // Recovery point asks clock tick that has been truncated already
         recovery_point.insert(1, 0, 15);
         recovery_point.insert(1, 1, 10);
-        local_recovery_point.insert(1, 0, 20);
-        local_recovery_point.insert(1, 1, 12);
-        local_cutoff_point.insert(1, 0, 16);
+        newest_clocks.insert(1, 0, 20);
+        newest_clocks.insert(1, 1, 12);
+        oldest_clocks.insert(1, 0, 16);
 
         let resolve_result = resolve_wal_delta(
+            wal.wal
+                .lock()
+                .read_all(true)
+                .map(|(op_num, op)| (op_num, op.clock_tag)),
             recovery_point,
-            wal.wal,
-            local_recovery_point,
-            local_cutoff_point,
+            newest_clocks,
+            oldest_clocks,
         );
         assert_eq!(resolve_result.unwrap_err(), WalDeltaError::Cutoff);
     }
@@ -1408,18 +1437,21 @@ mod tests {
         let (wal, _wal_dir) = fixture_empty_wal();
 
         let mut recovery_point = RecoveryPoint::default();
-        let mut local_recovery_point = RecoveryPoint::default();
+        let mut newest_clocks = RecoveryPoint::default();
 
         // Recovery point asks tick 10, but source only has tick 8
         recovery_point.insert(1, 0, 15);
         recovery_point.insert(1, 1, 10);
-        local_recovery_point.insert(1, 0, 20);
-        local_recovery_point.insert(1, 1, 12);
+        newest_clocks.insert(1, 0, 20);
+        newest_clocks.insert(1, 1, 12);
 
         let resolve_result = resolve_wal_delta(
+            wal.wal
+                .lock()
+                .read_all(true)
+                .map(|(op_num, op)| (op_num, op.clock_tag)),
             recovery_point,
-            wal.wal,
-            local_recovery_point,
+            newest_clocks,
             RecoveryPoint::default(),
         );
         assert_eq!(resolve_result.unwrap_err(), WalDeltaError::NotFound);
@@ -1429,7 +1461,7 @@ mod tests {
     async fn assert_wal_ordering_property(wal: &RecoverableWal) {
         // Grab list of clock tags from WAL records, skip non-existent or below cutoff tags
         let clock_tags = {
-            let cutoff = wal.cutoff_clocks.lock().await;
+            let cutoff = wal.oldest_clocks.lock().await;
             wal.wal
                 .lock()
                 .read(0)

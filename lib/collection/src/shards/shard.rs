@@ -154,6 +154,7 @@ impl Shard {
         match self {
             Self::Local(local_shard) => Ok(local_shard.recovery_point().await),
             Self::ForwardProxy(proxy_shard) => Ok(proxy_shard.wrapped_shard.recovery_point().await),
+
             Self::Proxy(_) | Self::QueueProxy(_) | Self::Dummy(_) => {
                 Err(CollectionError::service_error(format!(
                     "Recovery point not supported on {}",
@@ -166,10 +167,8 @@ impl Shard {
     pub async fn update_cutoff(&self, cutoff: &RecoveryPoint) -> CollectionResult<()> {
         match self {
             Self::Local(local_shard) => local_shard.update_cutoff(cutoff).await,
-            Self::ForwardProxy(proxy_shard) => {
-                proxy_shard.wrapped_shard.update_cutoff(cutoff).await
-            }
-            Self::Proxy(_) | Self::QueueProxy(_) | Self::Dummy(_) => {
+
+            Self::Proxy(_) | Self::ForwardProxy(_) | Self::QueueProxy(_) | Self::Dummy(_) => {
                 return Err(CollectionError::service_error(format!(
                     "Setting cutoff point not supported on {}",
                     self.variant_name(),
@@ -185,8 +184,8 @@ impl Shard {
     ) -> CollectionResult<Option<u64>> {
         let wal = match self {
             Self::Local(local_shard) => &local_shard.wal,
-            Self::ForwardProxy(proxy_shard) => &proxy_shard.wrapped_shard.wal,
-            Self::Proxy(_) | Self::QueueProxy(_) | Self::Dummy(_) => {
+
+            Self::Proxy(_) | Self::ForwardProxy(_) | Self::QueueProxy(_) | Self::Dummy(_) => {
                 return Err(CollectionError::service_error(format!(
                     "Cannot resolve WAL delta on {}",
                     self.variant_name(),
@@ -201,10 +200,12 @@ impl Shard {
                 log::debug!("Resolved WAL delta from {version}, which counts {size} records");
                 Ok(Some(version))
             }
+
             Ok(None) => {
                 log::debug!("Resolved WAL delta that is empty");
                 Ok(None)
             }
+
             Err(err) => Err(CollectionError::service_error(format!(
                 "Failed to resolve WAL delta on local shard: {err}"
             ))),

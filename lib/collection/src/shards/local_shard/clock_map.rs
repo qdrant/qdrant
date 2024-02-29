@@ -75,7 +75,7 @@ impl ClockMap {
     /// Advance clock referenced by `clock_tag` to `clock_tick`, if it's newer than current tick.
     ///
     /// If the clock is not yet tracked by the `ClockMap`, it is initialized to
-    /// the `clock_tag.clock_tick` and added to the `ClockMap`.
+    /// the `clock_tick` and added to the `ClockMap`.
     pub fn advance_clock(&mut self, clock_tag: ClockTag) {
         let _ = self.advance_clock_impl(clock_tag);
     }
@@ -176,25 +176,22 @@ pub struct RecoveryPoint {
 }
 
 impl RecoveryPoint {
-    #[cfg(test)]
-    pub(crate) fn insert(&mut self, peer_id: PeerId, clock_id: u32, clock_tick: u64) {
-        self.clocks.insert(Key::new(peer_id, clock_id), clock_tick);
-    }
-
     pub fn is_empty(&self) -> bool {
         self.clocks.is_empty()
     }
 
     /// Iterate over all recovery point entries as clock tags.
-    pub fn clock_tag_iter(&self) -> impl Iterator<Item = ClockTag> + '_ {
+    pub fn iter_as_clock_tags(&self) -> impl Iterator<Item = ClockTag> + '_ {
         self.clocks
             .iter()
-            .map(|(key, tick)| ClockTag::new(key.peer_id, key.clock_id, *tick))
+            .map(|(key, &tick)| ClockTag::new(key.peer_id, key.clock_id, tick))
     }
 
     /// Increase all existing clocks in this recovery point by the given amount
-    pub fn increase_by(&mut self, amount: u64) {
-        self.clocks.values_mut().for_each(|tick| *tick += amount);
+    pub fn increase_all_clocks_by(&mut self, ticks: u64) {
+        for current_tick in self.clocks.values_mut() {
+            *current_tick += ticks;
+        }
     }
 
     /// Check whether this recovery point has any clocks that are not in `other`
@@ -204,49 +201,50 @@ impl RecoveryPoint {
             .any(|key| !other.clocks.contains_key(key))
     }
 
-    /// Check whether this recovery point has any higher clock value than `other`
+    /// Check if this recovery point has any clock that is newer than the one in the `other`.
     ///
-    /// A clock in this recovery point that is not in `other` is always considered to be higher.
-    pub fn has_any_higher(&self, other: &Self) -> bool {
-        self.clocks.iter().any(|(key, tick)| {
+    /// A clock that is present in this recovery point, but not in the `other`,
+    /// is always considered to be *newer*.
+    pub fn has_any_newer_clocks_than(&mut self, other: &Self) -> bool {
+        self.clocks.iter().any(|(key, &tick)| {
             other
                 .clocks
                 .get(key)
-                .map_or(true, |other_tick| *tick > *other_tick)
+                .map_or(true, |&other_tick| tick > other_tick)
         })
     }
 
-    /// Check whether this recovery point has any lower clock value than `other`
+    /// Check if this recovery point has any clock that is older than the one in the `other`.
     ///
-    /// A clock in this recovery point that is not in `other` is not considered lower.
-    pub fn has_any_lower(&self, other: &Self) -> bool {
-        self.clocks.iter().any(|(key, tick)| {
+    /// A clock that is present in this recovery point, but not in the `other`,
+    /// is always considered to be *newer*.
+    pub fn has_any_older_clocks_than(&self, other: &Self) -> bool {
+        self.clocks.iter().any(|(key, &tick)| {
             other
                 .clocks
                 .get(key)
-                .map_or(false, |other_tick| *tick < *other_tick)
+                .map_or(false, |&other_tick| tick < other_tick)
         })
     }
 
-    /// Extend this recovery point with new clocks from `clock_map`
+    /// Extend this recovery point with clocks that are only present in the `other`.
     ///
-    /// Clocks that we have not seen yet are added with a tick of `0`, because we must recover all
-    /// records for it.
+    /// Clocks that are not present in this recovery point are initialized to the tick `0`,
+    /// because we must recover all operations for them.
     ///
-    /// Clocks that we already have in this recovery point are not updated, regardless of their
-    /// tick value.
-    pub fn extend_with_missing_clocks(&mut self, other: &Self) {
+    /// Clocks that are already present in this recovery point are not updated.
+    pub fn initialize_clocks_missing_from(&mut self, other: &Self) {
         // Clocks known on our node, that are not in the recovery point, are unknown on the
         // recovering node. Add them here with tick 0, so that we include all records for it
-        for key in other.clocks.keys() {
-            self.clocks.entry(*key).or_insert(0);
+        for &key in other.clocks.keys() {
+            self.clocks.entry(key).or_insert(0);
         }
     }
 
-    /// Remove clocks from this recovery point, if they are equal in `other`
-    pub fn remove_equal_clocks(&mut self, other: &Self) {
-        for (key, tick) in &other.clocks {
-            if let Some(other_tick) = self.clocks.get(key) {
+    /// Remove clocks from this recovery point, that are equal to the clocks in the `other`.
+    pub fn remove_clocks_equal_to(&mut self, other: &Self) {
+        for (key, other_tick) in &other.clocks {
+            if let Some(tick) = self.clocks.get(key) {
                 if tick == other_tick {
                     self.clocks.remove(key);
                 }
@@ -254,15 +252,21 @@ impl RecoveryPoint {
         }
     }
 
-    /// Remove a clock from this recovery point, if the given `clock_tag` describes an equal or
-    /// lower clock value.
-    pub fn remove_equal_or_lower(&mut self, clock_tag: ClockTag) {
-        let key = Key::from_tag(clock_tag);
-        if let Some(tick) = self.clocks.get(&key) {
-            if clock_tag.clock_tick <= *tick {
+    /// Remove a clock referenced by the clock tag from this recovery point, if the clock is
+    /// *newer or equal* than the tick in the tag.
+    pub fn remove_clock_if_newer_than_or_equal_to_tag(&mut self, tag: ClockTag) {
+        let key = Key::from_tag(tag);
+
+        if let Some(&tick) = self.clocks.get(&key) {
+            if tick >= tag.clock_tick {
                 self.clocks.remove(&key);
             }
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn insert(&mut self, peer_id: PeerId, clock_id: u32, clock_tick: u64) {
+        self.clocks.insert(Key::new(peer_id, clock_id), clock_tick);
     }
 }
 
