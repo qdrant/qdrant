@@ -922,6 +922,20 @@ pub struct MoveShard {
     #[prost(enumeration = "ShardTransferMethod", optional, tag = "4")]
     pub method: ::core::option::Option<i32>,
 }
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RestartTransfer {
+    /// Local shard id
+    #[prost(uint32, tag = "1")]
+    pub shard_id: u32,
+    #[prost(uint64, tag = "2")]
+    pub from_peer_id: u64,
+    #[prost(uint64, tag = "3")]
+    pub to_peer_id: u64,
+    #[prost(enumeration = "ShardTransferMethod", tag = "4")]
+    pub method: i32,
+}
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -997,7 +1011,7 @@ pub mod update_collection_cluster_setup_request {
         #[prost(message, tag = "8")]
         DeleteShardKey(super::DeleteShardKey),
         #[prost(message, tag = "9")]
-        RestartTransfer(super::MoveShard),
+        RestartTransfer(super::RestartTransfer),
     }
 }
 #[derive(serde::Serialize)]

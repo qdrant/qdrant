@@ -52,6 +52,24 @@ impl ShardTransfer {
     }
 }
 
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ShardTransferRestart {
+    pub shard_id: ShardId,
+    pub from: PeerId,
+    pub to: PeerId,
+    pub method: ShardTransferMethod,
+}
+
+impl ShardTransferRestart {
+    pub fn key(&self) -> ShardTransferKey {
+        ShardTransferKey {
+            shard_id: self.shard_id,
+            from: self.from,
+            to: self.to,
+        }
+    }
+}
+
 /// Unique identifier of a transfer, agnostic of transfer method
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ShardTransferKey {

@@ -74,7 +74,7 @@ pub struct RestartTransfer {
     pub shard_id: ShardId,
     pub from_peer_id: PeerId,
     pub to_peer_id: PeerId,
-    pub method: Option<ShardTransferMethod>,
+    pub method: ShardTransferMethod,
 }
 
 impl Validate for ClusterOperations {

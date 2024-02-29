@@ -6,6 +6,7 @@ use collection::collection_state;
 use collection::config::ShardingMethod;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::ReplicaState;
+use collection::shards::transfer::ShardTransfer;
 use collection::shards::{transfer, CollectionId};
 use uuid::Uuid;
 
@@ -341,11 +342,11 @@ impl TableOfContent {
                     )
                     .await?;
             }
-            ShardTransferOperations::Restart(transfer) => {
+            ShardTransferOperations::Restart(transfer_restart) => {
                 let transfers: HashSet<transfer::ShardTransfer> =
                     collection.state().await.transfers;
 
-                let transfer_key = transfer.key();
+                let transfer_key = transfer_restart.key();
 
                 let Some(old_transfer) = transfer::helpers::get_transfer(&transfer_key, &transfers)
                 else {
@@ -355,11 +356,10 @@ impl TableOfContent {
                     )));
                 };
 
-                // Transfer must have changed configuration
-                if transfers.contains(&transfer) {
+                if old_transfer.method == Some(transfer_restart.method) {
                     return Err(StorageError::bad_request(format!(
                         "Cannot restart transfer for shard {} from {} to {}, its configuration did not change",
-                        transfer.shard_id, transfer.from, transfer.to,
+                        transfer_restart.shard_id, transfer_restart.from, transfer_restart.to,
                     )));
                 }
 
@@ -367,15 +367,19 @@ impl TableOfContent {
                 self.handle_transfer(
                     collection_id.clone(),
                     ShardTransferOperations::Abort {
-                        transfer: transfer.key(),
+                        transfer: transfer_restart.key(),
                         reason: "restart transfer".into(),
                     },
                 )
                 .await?;
 
-                let mut new_transfer = transfer.clone();
-                // Preserve sync flag from the old transfer
-                new_transfer.sync = old_transfer.sync;
+                let new_transfer = ShardTransfer {
+                    shard_id: transfer_restart.shard_id,
+                    from: transfer_restart.from,
+                    to: transfer_restart.to,
+                    sync: old_transfer.sync, // Preserve sync flag from the old transfer
+                    method: Some(transfer_restart.method),
+                };
 
                 self.handle_transfer(collection_id, ShardTransferOperations::Start(new_transfer))
                     .await?;
