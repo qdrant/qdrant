@@ -49,6 +49,12 @@ impl ClockGuard {
         self.clock.tick_once()
     }
 
+    /// Peek what `tick_once` will give us, without actually ticking.
+    #[must_use = "new clock value must be used"]
+    pub fn peek_tick_once(&self) -> u64 {
+        self.clock.peek_tick_once()
+    }
+
     /// Advance clock to `new_tick`, if `new_tick` is newer than current tick.
     pub fn advance_to(&mut self, new_tick: u64) {
         self.clock.advance_to(new_tick)
@@ -104,6 +110,15 @@ impl Clock {
         current_tick
     }
 
+    /// Peek what `tick_once` will give us, without actually ticking.
+    ///
+    /// # Thread safety
+    ///
+    /// Clock *has to* be locked (using [`Clock::lock`]) before calling `tick_once`!
+    fn peek_tick_once(&self) -> u64 {
+        self.next_tick.load(Ordering::Relaxed)
+    }
+
     /// Advance clock to `new_tick`, if `new_tick` is newer than current tick.
     fn advance_to(&self, new_tick: u64) {
         // `Clock` tracks *next* tick, so if we want to advance *current* tick to `new_tick`,
@@ -113,8 +128,7 @@ impl Clock {
 
     #[cfg(test)]
     fn current_tick(&self) -> Option<u64> {
-        let next_tick = self.next_tick.load(Ordering::Relaxed);
-        next_tick.checked_sub(1)
+        self.peek_tick_once().checked_sub(1)
     }
 
     /// Try to acquire exclusive lock over this clock.

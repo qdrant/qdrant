@@ -153,6 +153,7 @@ impl ShardReplicaSet {
         let mut clock = self.clock_set.lock().await.get_clock();
 
         for attempt in 1..=UPDATE_MAX_CLOCK_RETRIES {
+            let is_tick_zero = clock.peek_tick_once() == 0;
             let res = self
                 .update_impl(operation.clone(), wait, &mut clock)
                 .await?;
@@ -161,7 +162,10 @@ impl ShardReplicaSet {
                 return Ok(res);
             }
 
-            log::warn!("Operation {operation:?} was rejected by some node(s), attempt {attempt}/{UPDATE_MAX_CLOCK_RETRIES}, retrying...");
+            // Do not log if our operation had clock tick 0
+            if !is_tick_zero {
+                log::warn!("Operation {operation:?} was rejected by some node(s), retrying... (attempt {attempt}/{UPDATE_MAX_CLOCK_RETRIES})");
+            }
         }
 
         Err(CollectionError::service_error(format!(
