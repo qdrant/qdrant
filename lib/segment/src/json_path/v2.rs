@@ -189,9 +189,10 @@ impl JsonPathV2 {
         !path_to_remove.compatible(indexed_path)
     }
 
-    /// Return true if the indexed value would not be affected by a `value_set` operation.
+    /// Check if the `path` will be affected by `set_payload` operation with the given `path_to_set` and `payload`.
+    /// If it is NOT affected, we consider it safe to set the payload.
     pub fn safe_to_set(
-        indexed_path: &JsonPathV2,
+        path: &JsonPathV2,
         payload: &serde_json::Map<String, Value>,
         path_to_set: Option<&JsonPathV2>,
     ) -> bool {
@@ -205,17 +206,17 @@ impl JsonPathV2 {
         // [^1]: In simple cases, we consider two paths to intersect if one of them is a prefix of
         // the other.  For example, `a.b` and `a.b.c` intersect, but `a.b` and `a.c` don't. More
         // nuanced cases include wildcard indexes, e.g., `a[0].b` and `a[].b` intersect.
-        // Additionally we consider path with incompatible types (e.g. `a[0]` and `a.b`) to
+        // Additionally, we consider path with incompatible types (e.g. `a[0]` and `a.b`) to
         // intersect because `valuse_set` could override the subtree by replacing an array with an
         // object (or vice versa), deleting indexed fields.
 
         let Some(path_to_set) = path_to_set else {
-            return !payload.contains_key(&indexed_path.first_key);
+            return !payload.contains_key(&path.first_key);
         };
-        if indexed_path.first_key != path_to_set.first_key {
+        if path.first_key != path_to_set.first_key {
             return true;
         }
-        let mut it_a = indexed_path.rest.iter();
+        let mut it_a = path.rest.iter();
         let mut it_b = path_to_set.rest.iter();
         loop {
             let (a, b) = match (it_a.next(), it_b.next()) {
