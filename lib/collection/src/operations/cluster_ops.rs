@@ -98,7 +98,7 @@ pub struct DropReplicaOperation {
 #[serde(rename_all = "snake_case")]
 pub struct AbortTransferOperation {
     #[validate]
-    pub abort_transfer: MoveShard,
+    pub abort_transfer: AbortShardTransfer,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
@@ -122,4 +122,12 @@ impl Validate for MoveShard {
 pub struct Replica {
     pub shard_id: ShardId,
     pub peer_id: PeerId,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct AbortShardTransfer {
+    pub shard_id: ShardId,
+    pub to_peer_id: PeerId,
+    pub from_peer_id: PeerId,
 }
