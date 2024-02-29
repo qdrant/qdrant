@@ -13,7 +13,7 @@ mod v2;
 pub use string::JsonPathString;
 pub use v2::JsonPathV2;
 
-pub type JsonPath = string::JsonPathString;
+pub type JsonPath = JsonPathV2;
 
 pub trait JsonPathInterface: Sized + Clone + FromStr<Err = ()> + Display {
     // Value operations
