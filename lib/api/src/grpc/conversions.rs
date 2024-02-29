@@ -1346,6 +1346,9 @@ impl From<segment::data_types::order_by::StartFrom> for StartFrom {
     fn from(value: segment::data_types::order_by::StartFrom) -> Self {
         Self {
             value: Some(match value {
+                segment::data_types::order_by::StartFrom::Integer(int) => {
+                    start_from::Value::Integer(int)
+                }
                 segment::data_types::order_by::StartFrom::Float(float) => {
                     start_from::Value::Float(float)
                 }

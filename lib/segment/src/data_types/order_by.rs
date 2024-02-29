@@ -41,6 +41,8 @@ impl Direction {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(untagged)]
 pub enum StartFrom {
+    Integer(IntPayloadType),
+
     Float(FloatPayloadType),
 
     Datetime(DateTimePayloadType),
@@ -65,6 +67,11 @@ impl OrderBy {
         self.start_from
             .as_ref()
             .map(|start_from| match start_from {
+                // TODO: When we introduce integer ranges, we'll stop doing lossy conversion to f64 here
+                // Accepting an integer as start_from simplifies the client generation.
+                StartFrom::Integer(i) => {
+                    RangeInterface::Float(self.direction().as_range_from(*i as f64))
+                }
                 StartFrom::Float(f) => RangeInterface::Float(self.direction().as_range_from(*f)),
                 StartFrom::Datetime(dt) => {
                     RangeInterface::DateTime(self.direction().as_range_from(*dt))
@@ -81,6 +88,7 @@ impl OrderBy {
         self.start_from
             .as_ref()
             .map(|start_from| match start_from {
+                StartFrom::Integer(i) => OrderingValue::Int(*i),
                 StartFrom::Float(f) => OrderingValue::Float(*f),
                 StartFrom::Datetime(dt) => OrderingValue::Int(dt.timestamp()),
             })
