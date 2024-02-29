@@ -164,7 +164,7 @@ impl Persistent {
             .write()
             .insert(peer_id, metadata.clone())
         {
-            log::warn!(
+            log::info!(
                 "Replaced metadata of peer {peer_id} from {prev_metadata:?} to {metadata:?}"
             );
         } else {

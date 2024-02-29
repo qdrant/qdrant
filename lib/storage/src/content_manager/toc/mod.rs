@@ -114,7 +114,10 @@ impl TableOfContent {
                 .path();
 
             if !CollectionConfig::check(&collection_path) {
-                log::warn!("Collection config is not found in the collection directory: {collection_path:?}, skipping");
+                log::warn!(
+                    "Collection config is not found in the collection directory: {}, skipping",
+                    collection_path.display(),
+                );
                 continue;
             }
 
