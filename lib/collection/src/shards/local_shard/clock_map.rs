@@ -10,9 +10,6 @@ use crate::operations::types::CollectionError;
 use crate::operations::ClockTag;
 use crate::shards::shard::PeerId;
 
-/// The first valid clock tick.
-const FIRST_CLOCK_TICK: u64 = 1;
-
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 #[serde(from = "ClockMapHelper", into = "ClockMapHelper")]
 pub struct ClockMap {
@@ -96,16 +93,16 @@ impl ClockMap {
         match self.clocks.entry(key) {
             hash_map::Entry::Occupied(mut entry) => entry.get_mut().advance_to(new_tick),
             hash_map::Entry::Vacant(entry) => {
-                // Initialize new clock and accept the operation if `new_tick >= FIRST_CLOCK_TICK`.
-                // Reject the operation if `new_tick < FIRST_CLOCK_TICK`.
+                // Initialize new clock and accept the operation if `new_tick > 0`.
+                // Reject the operation if `new_tick = 0`.
 
-                let is_valid_clock_tick = new_tick >= FIRST_CLOCK_TICK;
+                let is_non_zero_tick = new_tick > 0;
 
-                if is_valid_clock_tick {
+                if is_non_zero_tick {
                     entry.insert(Clock::new(new_tick));
                 }
 
-                (is_valid_clock_tick, new_tick)
+                (is_non_zero_tick, new_tick)
             }
         }
     }
@@ -239,16 +236,15 @@ impl RecoveryPoint {
 
     /// Extend this recovery point with clocks that are only present in the `other`.
     ///
-    /// Clocks that are not present in this recovery point are initialized to the tick
-    /// `FIRST_CLOCK_TICK`, because we must recover all operations for them.
+    /// Clocks that are not present in this recovery point are initialized to the tick 1,
+    /// because we must recover all operations for them.
     ///
     /// Clocks that are already present in this recovery point are not updated.
     pub fn initialize_clocks_missing_from(&mut self, other: &Self) {
         // Clocks known on our node, that are not in the recovery point, are unknown on the
-        // recovering node. Add them here with tick FIRST_CLOCK_TICK, so that we include all
-        // records for it
+        // recovering node. Add them here with tick 1, so that we include all records for it.
         for &key in other.clocks.keys() {
-            self.clocks.entry(key).or_insert(FIRST_CLOCK_TICK);
+            self.clocks.entry(key).or_insert(1);
         }
     }
 
