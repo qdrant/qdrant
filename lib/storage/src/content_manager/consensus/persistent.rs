@@ -39,7 +39,7 @@ pub struct Persistent {
     /// Last known cluster topology
     #[serde(with = "serialize_peer_addresses")]
     pub peer_address_by_id: Arc<RwLock<PeerAddressById>>,
-    #[serde(default, with = "serialize_peer_metadata")]
+    #[serde(default)]
     pub peer_metadata_by_id: Arc<RwLock<PeerMetadataById>>,
     pub this_peer_id: PeerId,
     #[serde(skip)]
@@ -307,34 +307,6 @@ mod serialize_peer_addresses {
     {
         let addresses: HashMap<u64, Uri> = serialize_peer_addresses::deserialize(deserializer)?;
         Ok(Arc::new(RwLock::new(addresses)))
-    }
-}
-
-mod serialize_peer_metadata {
-    use std::collections::HashMap;
-    use std::sync::Arc;
-
-    use parking_lot::RwLock;
-    use serde::{self, Deserialize, Deserializer, Serialize, Serializer};
-
-    use crate::types::{PeerMetadata, PeerMetadataById};
-
-    pub fn serialize<S>(
-        metadata: &Arc<RwLock<PeerMetadataById>>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        metadata.read().serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Arc<RwLock<PeerMetadataById>>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let metadata: HashMap<u64, PeerMetadata> = PeerMetadataById::deserialize(deserializer)?;
-        Ok(Arc::new(RwLock::new(metadata)))
     }
 }
 
