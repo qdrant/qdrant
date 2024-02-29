@@ -7,7 +7,7 @@ use itertools::Itertools as _;
 
 use super::{clock_set, ReplicaSetState, ReplicaState, ShardReplicaSet};
 use crate::operations::point_ops::WriteOrdering;
-use crate::operations::types::{CollectionError, CollectionResult, UpdateResult};
+use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, UpdateStatus};
 use crate::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
 use crate::shards::shard::PeerId;
 use crate::shards::shard_trait::ShardOperation as _;
@@ -355,7 +355,7 @@ impl ShardReplicaSet {
 
         let is_any_operation_rejected = successes
             .iter()
-            .any(|(_, res)| res.operation_id.is_none() && res.clock_tag.is_some());
+            .any(|(_, res)| matches!(res.status, UpdateStatus::ClockRejected));
 
         if is_any_operation_rejected {
             return Ok(None);
