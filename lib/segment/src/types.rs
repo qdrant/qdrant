@@ -1388,22 +1388,23 @@ impl FromStr for DateTimePayloadType {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // Attempt to parse the input string in RFC 3339 format
         if let Ok(datetime) = chrono::DateTime::parse_from_rfc3339(s)
+            // Attempt to parse the input string in the specified formats:
+            // - YYYY-MM-DD'T'HH:MM:SS-HHMM (timezone without colon)
+            // - YYYY-MM-DD HH:MM:SS-HHMM (timezone without colon)
+            .or_else(|_| chrono::DateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f%#z"))
+            .or_else(|_| chrono::DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f%#z"))
             .map(|dt| chrono::DateTime::<chrono::Utc>::from(dt).into())
         {
             return Ok(datetime);
         }
 
         // Attempt to parse the input string in the specified formats:
-        // - YYYY-MM-DD'T'HH:MM:SS-HHMM (timezone without colon)
-        // - YYYY-MM-DD HH:MM:SS-HHMM (timezone without colon)
         // - YYYY-MM-DD'T'HH:MM:SS (without timezone or Z)
         // - YYYY-MM-DD HH:MM:SS (without timezone or Z)
         // - YYYY-MM-DD HH:MM
         // - YYYY-MM-DD
         // See: <https://github.com/qdrant/qdrant/issues/3529>
-        let datetime = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f%#z")
-            .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f%#z"))
-            .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f"))
+        let datetime = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f")
             .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f"))
             .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M"))
             .or_else(|_| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").map(Into::into))?;
@@ -2267,6 +2268,39 @@ mod tests {
 
         // Having or not the Z at the end of the string both mean UTC time
         assert_eq!(datetime.timestamp(), datetime_no_z.timestamp());
+    }
+
+    #[test]
+    fn test_timezone_ordering() {
+        let datetimes = [
+            "2000-06-08 00:18:53+0900",
+            "2000-06-07 07:25:34-1100",
+            "2000-07-10T00:18:53+0100",
+            "2000-07-11 00:25:34-01:00",
+            "2000-07-11 00:25:35-01",
+        ];
+
+        let sorted_datetimes: Vec<_> = datetimes
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (i, DateTimePayloadType::from_str(s).unwrap()))
+            .sorted_by_key(|(_, dt)| dt.timestamp())
+            .collect();
+
+        sorted_datetimes.windows(2).for_each(|pair| {
+            let (i1, dt1) = pair[0];
+            let (i2, dt2) = pair[1];
+            assert!(
+                i1 < i2,
+                "i1: {}, dt1: {}, ts1: {}\ni2: {}, dt2: {}, ts2: {}",
+                i1,
+                dt1.0,
+                dt1.timestamp(),
+                i2,
+                dt2.0,
+                dt2.timestamp()
+            );
+        });
     }
 
     #[test]
