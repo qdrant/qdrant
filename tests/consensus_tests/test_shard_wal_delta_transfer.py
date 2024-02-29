@@ -304,6 +304,11 @@ def test_shard_wal_delta_transfer_manual_recovery_chain(tmp_path: pathlib.Path, 
     # Wait for end of shard transfer
     wait_for_collection_shard_transfers_count(peer_api_uris[3], COLLECTION_NAME, 0)
 
+    upload_process_1.kill()
+    upload_process_2.kill()
+    upload_process_3.kill()
+    upload_process_4.kill()
+
     # Confirm WAL delta transfer based on stdout logs, assert its size
     stdout, _stderr = capfd.readouterr()
     delta_version, delta_size = re.search(r"Resolved WAL delta from (\d+), which counts (\d+) records", stdout).groups()
@@ -315,11 +320,7 @@ def test_shard_wal_delta_transfer_manual_recovery_chain(tmp_path: pathlib.Path, 
         cluster_info = get_collection_cluster_info(uri, COLLECTION_NAME)
         assert len(cluster_info['local_shards']) == 1
 
-    upload_process_1.kill()
-    upload_process_2.kill()
-    upload_process_3.kill()
-    upload_process_4.kill()
-    sleep(1)
+    sleep(2)
 
     # Match all points on all nodes exactly
     data = []
