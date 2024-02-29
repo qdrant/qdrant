@@ -1766,7 +1766,7 @@ impl TryFrom<ClusterOperationsPb> for ClusterOperations {
                         shard_id: op.shard_id,
                         from_peer_id: op.from_peer_id,
                         to_peer_id: op.to_peer_id,
-                        method: op.method.map(TryInto::try_into).transpose()?,
+                        method: op.method.try_into()?,
                     },
                 })
             }

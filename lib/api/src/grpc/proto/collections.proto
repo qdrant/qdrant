@@ -496,6 +496,13 @@ message MoveShard {
   optional ShardTransferMethod method = 4;
 }
 
+message RestartTransfer {
+  uint32 shard_id = 1; // Local shard id
+  uint64 from_peer_id = 2;
+  uint64 to_peer_id = 3;
+  ShardTransferMethod method = 4;
+}
+
 enum ShardTransferMethod {
   StreamRecords = 0; // Stream shard records in batches
   Snapshot = 1; // Snapshot the shard and recover it on the target peer
@@ -527,7 +534,7 @@ message UpdateCollectionClusterSetupRequest {
     Replica drop_replica = 5;
     CreateShardKey create_shard_key = 7;
     DeleteShardKey delete_shard_key = 8;
-    MoveShard restart_transfer = 9;
+    RestartTransfer restart_transfer = 9;
   }
   optional uint64 timeout = 6; // Wait timeout for operation commit in seconds, if not specified - default value will be supplied
 }

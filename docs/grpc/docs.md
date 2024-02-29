@@ -52,6 +52,7 @@
     - [RemoteShardInfo](#qdrant-RemoteShardInfo)
     - [RenameAlias](#qdrant-RenameAlias)
     - [Replica](#qdrant-Replica)
+    - [RestartTransfer](#qdrant-RestartTransfer)
     - [ScalarQuantization](#qdrant-ScalarQuantization)
     - [ShardKey](#qdrant-ShardKey)
     - [ShardTransferInfo](#qdrant-ShardTransferInfo)
@@ -1068,6 +1069,24 @@ Note: 1kB = 1 vector of size 256. |
 
 
 
+<a name="qdrant-RestartTransfer"></a>
+
+### RestartTransfer
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| shard_id | [uint32](#uint32) |  | Local shard id |
+| from_peer_id | [uint64](#uint64) |  |  |
+| to_peer_id | [uint64](#uint64) |  |  |
+| method | [ShardTransferMethod](#qdrant-ShardTransferMethod) |  |  |
+
+
+
+
+
+
 <a name="qdrant-ScalarQuantization"></a>
 
 ### ScalarQuantization
@@ -1236,7 +1255,7 @@ Note: 1kB = 1 vector of size 256. |
 | drop_replica | [Replica](#qdrant-Replica) |  |  |
 | create_shard_key | [CreateShardKey](#qdrant-CreateShardKey) |  |  |
 | delete_shard_key | [DeleteShardKey](#qdrant-DeleteShardKey) |  |  |
-| restart_transfer | [MoveShard](#qdrant-MoveShard) |  |  |
+| restart_transfer | [RestartTransfer](#qdrant-RestartTransfer) |  |  |
 | timeout | [uint64](#uint64) | optional | Wait timeout for operation commit in seconds, if not specified - default value will be supplied |
 
 

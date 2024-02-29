@@ -10,7 +10,7 @@ use collection::operations::types::{
 };
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};
-use collection::shards::transfer::{ShardTransfer, ShardTransferKey};
+use collection::shards::transfer::{ShardTransfer, ShardTransferKey, ShardTransferRestart};
 use collection::shards::{replica_set, CollectionId};
 use schemars::JsonSchema;
 use segment::types::{PayloadFieldSchema, PayloadKeyType, QuantizationConfig, ShardKey};
@@ -297,7 +297,7 @@ pub enum ShardTransferOperations {
     /// Restart an existing transfer with a new configuration
     ///
     /// If the given transfer is ongoing, it is aborted and restarted with the new configuration.
-    Restart(ShardTransfer),
+    Restart(ShardTransferRestart),
     Finish(ShardTransfer),
     /// Used in `ShardTransferMethod::Snapshot`
     ///
