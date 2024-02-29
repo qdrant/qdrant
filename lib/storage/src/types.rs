@@ -16,6 +16,7 @@ use memory::madvise;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::types::{HnswConfig, QuantizationConfig};
+use semver::Version;
 use serde::{Deserialize, Serialize};
 use tonic::transport::Uri;
 use validator::Validate;
@@ -270,21 +271,19 @@ impl Anonymize for ClusterStatus {
 /// Metadata describing extra properties for each peer
 #[derive(Debug, Hash, Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub struct PeerMetadata {
-    /// Peer Qdrant version string
-    version: Option<String>,
+    /// Peer Qdrant version
+    version: Version,
 }
 
 impl PeerMetadata {
     pub fn current() -> Self {
         Self {
-            version: Some(defaults::QDRANT_VERSION.into()),
+            version: defaults::QDRANT_VERSION,
         }
     }
 
     /// Whether t his metadata is outdated based on the current version.
     pub fn is_outdated(&self) -> bool {
-        self.version
-            .as_ref()
-            .map_or(false, |v| v != defaults::QDRANT_VERSION)
+        self.version != defaults::QDRANT_VERSION
     }
 }
