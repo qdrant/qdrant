@@ -7,15 +7,19 @@ use crate::operations::ClockTag;
 fn clock_set_clock_map_workflow() {
     let mut helper = Helper::new();
 
-    helper.tick_clock().assert(1);
+    // `ClockSet` and `ClockMap` "stick" to tick `0`, until `ClockSet` is advanced at least once
+    helper.tick_clock().assert(0);
+    helper.advance_clock_map(false).assert(0, 0, false);
+    helper.advance_clock_map(false).assert(0, 0, false);
+    helper.advance_clock(false).assert(0, 0, false);
 
     // `ClockSet` and `ClockMap` tick sequentially and in sync after that
-    for tick in 2..=11 {
+    for tick in 1..=10 {
         helper.advance_clock(false).assert(tick, tick, true);
     }
 
     // `ClockMap` advances to newer ticks
-    for tick in 12..=50 {
+    for tick in 11..=50 {
         if tick % 10 != 0 {
             // Tick `ClockSet` few times, without advancing `ClockMap`...
             helper.tick_clock().assert(tick);
@@ -25,7 +29,7 @@ fn clock_set_clock_map_workflow() {
         }
     }
 
-    // `ClockMap` accepts tick `0` and advances `ClockSet`
+    // `ClockMap` rejects tick `0` and advances `ClockSet`
     helper.clock_set = Default::default();
     helper.advance_clock(false).assert(0, 50, false);
     helper.tick_clock().assert(51);
@@ -86,10 +90,6 @@ impl Helper {
 
     pub fn tick_clock(&mut self) -> TickClockStatus {
         let mut clock = self.clock_set.get_clock();
-
-        // Start all clocks from at least 1
-        clock.advance_to(0);
-
         let clock_tag = ClockTag::new(PEER_ID, clock.id() as _, clock.tick_once());
         TickClockStatus { clock_tag }
     }
@@ -147,8 +147,8 @@ struct AdvanceStatus {
 
 impl AdvanceStatus {
     pub fn assert(&self, expected_tick: u64, expected_cm_tick: u64, expected_status: bool) {
-        assert_eq!(self.clock_tag.clock_tick, expected_tick);
-        assert_eq!(self.clock_map_tag.clock_tick, expected_cm_tick);
-        assert_eq!(self.accepted, expected_status);
+        assert_eq!(expected_tick, self.clock_tag.clock_tick);
+        assert_eq!(expected_cm_tick, self.clock_map_tag.clock_tick);
+        assert_eq!(expected_status, self.accepted);
     }
 }
