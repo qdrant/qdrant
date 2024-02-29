@@ -254,9 +254,10 @@ impl ShardOperation for LocalShard {
                 Ok(id_and_lock) => id_and_lock,
 
                 Err(crate::wal::WalError::Rejected) => {
+                    // Propagate clock rejection to operation sender
                     return Ok(UpdateResult {
                         operation_id: None,
-                        status: UpdateStatus::Acknowledged,
+                        status: UpdateStatus::ClockRejected,
                         clock_tag: operation.clock_tag,
                     });
                 }
