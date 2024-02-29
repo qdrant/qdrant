@@ -5,7 +5,7 @@ use api::grpc::qdrant::CollectionExists;
 use collection::config::ShardingMethod;
 use collection::operations::cluster_ops::{
     AbortTransferOperation, ClusterOperations, DropReplicaOperation, MoveShardOperation,
-    ReplicateShardOperation,
+    ReplicateShardOperation, RestartTransfer, RestartTransferOperation,
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::snapshot_ops::SnapshotDescription;
@@ -19,7 +19,8 @@ use itertools::Itertools;
 use rand::prelude::SliceRandom;
 use storage::content_manager::collection_meta_ops::ShardTransferOperations::{Abort, Start};
 use storage::content_manager::collection_meta_ops::{
-    CollectionMetaOperations, CreateShardKey, DropShardKey, UpdateCollectionOperation,
+    CollectionMetaOperations, CreateShardKey, DropShardKey, ShardTransferOperations,
+    UpdateCollectionOperation,
 };
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
@@ -433,6 +434,45 @@ pub async fn do_update_collection_cluster(
                         collection_name,
                         shard_key: drop_sharding_key.shard_key,
                     }),
+                    wait_timeout,
+                )
+                .await
+        }
+        ClusterOperations::RestartTransfer(RestartTransferOperation { restart_transfer }) => {
+            let RestartTransfer {
+                shard_id,
+                from_peer_id,
+                to_peer_id,
+                method,
+            } = restart_transfer;
+
+            let transfer_key = ShardTransferKey {
+                shard_id,
+                to: to_peer_id,
+                from: from_peer_id,
+            };
+
+            if !collection.check_transfer_exists(&transfer_key).await {
+                return Err(StorageError::NotFound {
+                    description: format!(
+                        "Shard transfer {} -> {} for collection {}:{} does not exist",
+                        transfer_key.from, transfer_key.to, collection_name, transfer_key.shard_id
+                    ),
+                });
+            }
+
+            dispatcher
+                .submit_collection_meta_op(
+                    CollectionMetaOperations::TransferShard(
+                        collection_name,
+                        ShardTransferOperations::Restart(ShardTransfer {
+                            shard_id,
+                            to: to_peer_id,
+                            from: from_peer_id,
+                            sync: false, // This value will be ignored
+                            method,
+                        }),
+                    ),
                     wait_timeout,
                 )
                 .await

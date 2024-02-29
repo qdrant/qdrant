@@ -40,7 +40,7 @@ use crate::lookup::WithLookup;
 use crate::operations::cluster_ops::{
     AbortTransferOperation, ClusterOperations, CreateShardingKey, CreateShardingKeyOperation,
     DropReplicaOperation, DropShardingKey, DropShardingKeyOperation, MoveShard, MoveShardOperation,
-    Replica, ReplicateShardOperation,
+    Replica, ReplicateShardOperation, RestartTransfer, RestartTransferOperation,
 };
 use crate::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
@@ -1758,6 +1758,16 @@ impl TryFrom<ClusterOperationsPb> for ClusterOperations {
             Operation::DeleteShardKey(op) => {
                 ClusterOperations::DropShardingKey(DropShardingKeyOperation {
                     drop_sharding_key: op.try_into()?,
+                })
+            }
+            Operation::RestartTransfer(op) => {
+                ClusterOperations::RestartTransfer(RestartTransferOperation {
+                    restart_transfer: RestartTransfer {
+                        shard_id: op.shard_id,
+                        from_peer_id: op.from_peer_id,
+                        to_peer_id: op.to_peer_id,
+                        method: op.method.map(TryInto::try_into).transpose()?,
+                    },
                 })
             }
         })

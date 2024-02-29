@@ -24,6 +24,8 @@ pub enum ClusterOperations {
     CreateShardingKey(CreateShardingKeyOperation),
     /// Drop a custom shard partition for a given key
     DropShardingKey(DropShardingKeyOperation),
+    /// Restart transfer
+    RestartTransfer(RestartTransferOperation),
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
@@ -36,6 +38,12 @@ pub struct CreateShardingKeyOperation {
 #[serde(rename_all = "snake_case")]
 pub struct DropShardingKeyOperation {
     pub drop_sharding_key: DropShardingKey,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct RestartTransferOperation {
+    pub restart_transfer: RestartTransfer,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
@@ -60,6 +68,15 @@ pub struct DropShardingKey {
     pub shard_key: ShardKey,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct RestartTransfer {
+    pub shard_id: ShardId,
+    pub from_peer_id: PeerId,
+    pub to_peer_id: PeerId,
+    pub method: Option<ShardTransferMethod>,
+}
+
 impl Validate for ClusterOperations {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
         match self {
@@ -69,6 +86,7 @@ impl Validate for ClusterOperations {
             ClusterOperations::DropReplica(op) => op.validate(),
             ClusterOperations::CreateShardingKey(op) => op.validate(),
             ClusterOperations::DropShardingKey(op) => op.validate(),
+            ClusterOperations::RestartTransfer(op) => op.validate(),
         }
     }
 }

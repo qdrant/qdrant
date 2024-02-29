@@ -342,10 +342,18 @@ impl TableOfContent {
                     .await?;
             }
             ShardTransferOperations::Restart(transfer) => {
-                let transfers = collection.state().await.transfers;
+                let transfers: HashSet<transfer::ShardTransfer> =
+                    collection.state().await.transfers;
 
-                // Transfer must exist
-                transfer::helpers::validate_transfer_exists(&transfer.key(), &transfers)?;
+                let transfer_key = transfer.key();
+
+                let Some(old_transfer) = transfer::helpers::get_transfer(&transfer_key, &transfers)
+                else {
+                    return Err(StorageError::bad_request(format!(
+                        "There is no transfer for shard {} from {} to {}",
+                        transfer_key.shard_id, transfer_key.from, transfer_key.to,
+                    )));
+                };
 
                 // Transfer must have changed configuration
                 if transfers.contains(&transfer) {
@@ -364,7 +372,12 @@ impl TableOfContent {
                     },
                 )
                 .await?;
-                self.handle_transfer(collection_id, ShardTransferOperations::Start(transfer))
+
+                let mut new_transfer = transfer.clone();
+                // Preserve sync flag from the old transfer
+                new_transfer.sync = old_transfer.sync;
+
+                self.handle_transfer(collection_id, ShardTransferOperations::Start(new_transfer))
                     .await?;
             }
             ShardTransferOperations::Finish(transfer) => {

@@ -20,6 +20,16 @@ pub fn validate_transfer_exists(
     Ok(())
 }
 
+pub fn get_transfer(
+    transfer_key: &ShardTransferKey,
+    current_transfers: &HashSet<ShardTransfer>,
+) -> Option<ShardTransfer> {
+    current_transfers
+        .iter()
+        .find(|t| &t.key() == transfer_key)
+        .cloned()
+}
+
 /// Confirms that the transfer does not conflict with any other active transfers
 ///
 /// returns `None` if there is no conflicts, otherwise returns conflicting transfer
