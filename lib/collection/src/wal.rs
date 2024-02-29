@@ -20,8 +20,8 @@ pub enum WalError {
     WriteWalError(String),
     #[error("Can't truncate WAL: {0}")]
     TruncateWalError(String),
-    #[error("Operation rejected by WAL")]
-    Rejected,
+    #[error("Operation rejected by WAL for old clock")]
+    ClockRejected,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

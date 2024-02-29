@@ -253,7 +253,7 @@ impl ShardOperation for LocalShard {
             let (operation_id, _wal_lock) = match self.wal.lock_and_write(&mut operation).await {
                 Ok(id_and_lock) => id_and_lock,
 
-                Err(crate::wal::WalError::Rejected) => {
+                Err(crate::wal::WalError::ClockRejected) => {
                     // Propagate clock rejection to operation sender
                     return Ok(UpdateResult {
                         operation_id: None,

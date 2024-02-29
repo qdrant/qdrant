@@ -66,7 +66,7 @@ impl RecoverableWal {
                 .advance_clock_and_correct_tag(clock_tag);
 
             if !operation_accepted {
-                return Err(crate::wal::WalError::Rejected);
+                return Err(crate::wal::WalError::ClockRejected);
             }
         }
 
@@ -974,7 +974,7 @@ mod tests {
                     .lock_and_write(&mut operation_b_forward)
                     .await
                     .unwrap_err(),
-                WalError::Rejected
+                WalError::ClockRejected
             ));
 
             c_clock_0.advance_to(operation_a.clock_tag.unwrap().clock_tick);
