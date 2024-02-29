@@ -278,7 +278,7 @@ def test_shard_wal_delta_transfer_manual_recovery_chain(tmp_path: pathlib.Path, 
     # Wait for end of shard transfer
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
 
-    # Start inserting into the third peer again
+    # Start inserting into the fourth peer again
     upload_process_4 = run_update_points_in_background(peer_api_uris[3], COLLECTION_NAME, init_offset=600000, throttle=True)
 
     # Confirm WAL delta transfer based on stdout logs, assert its size
@@ -286,6 +286,8 @@ def test_shard_wal_delta_transfer_manual_recovery_chain(tmp_path: pathlib.Path, 
     delta_version, delta_size = re.search(r"Resolved WAL delta from (\d+), which counts (\d+) records", stdout).groups()
     assert int(delta_version) >= 80
     assert int(delta_size) >= 80
+
+    sleep(1)
 
     # Recover shard with WAL delta transfer
     r = requests.post(
