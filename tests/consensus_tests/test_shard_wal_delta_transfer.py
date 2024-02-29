@@ -206,6 +206,134 @@ def test_shard_wal_delta_transfer_manual_recovery(tmp_path: pathlib.Path, capfd)
     assert data[0] == data[1] == data[2]
 
 
+# Test node recovery on a chain of nodes with a WAL delta transfer.
+#
+# We have a cluster with 5 nodes, all are getting insertions.
+# We kill the 4th and 5th node at different times.
+# We restart them both. The 4th node is recovered first, then the 4th node
+# recovers the 5th node, forming a chain.
+# We manually trigger rereplication to sync it up again.
+#
+# Tests that data on all 5 nodes remains consistent.
+def test_shard_wal_delta_transfer_manual_recovery_chain(tmp_path: pathlib.Path, capfd):
+    assert_project_root()
+
+    # Prevent automatic recovery on restarted node, so we can manually recover with a specific transfer method
+    env={
+        "QDRANT__STORAGE__PERFORMANCE__INCOMING_SHARD_TRANSFERS_LIMIT": "0",
+        "QDRANT__STORAGE__PERFORMANCE__OUTGOING_SHARD_TRANSFERS_LIMIT": "0",
+    }
+
+    # seed port to reuse the same port for the restarted nodes
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, 5, 20000, extra_env=env)
+
+    create_collection(peer_api_uris[0], shard_number=1, replication_factor=5)
+    wait_collection_exists_and_active_on_all_peers(
+        collection_name=COLLECTION_NAME,
+        peer_api_uris=peer_api_uris
+    )
+
+    peer_cluster_info = [get_collection_cluster_info(uri, COLLECTION_NAME) for uri in peer_api_uris]
+    peer_ids = [cluster_info['peer_id'] for cluster_info in peer_cluster_info]
+
+    # Start pushing points to the cluster
+    upload_process_1 = run_update_points_in_background(peer_api_uris[0], COLLECTION_NAME, init_offset=100000, throttle=True)
+    upload_process_2 = run_update_points_in_background(peer_api_uris[1], COLLECTION_NAME, init_offset=200000, throttle=True)
+    upload_process_3 = run_update_points_in_background(peer_api_uris[2], COLLECTION_NAME, init_offset=300000, throttle=True)
+    upload_process_4 = run_update_points_in_background(peer_api_uris[3], COLLECTION_NAME, init_offset=400000, throttle=True)
+    upload_process_5 = run_update_points_in_background(peer_api_uris[4], COLLECTION_NAME, init_offset=500000, throttle=True)
+
+    sleep(3)
+
+    # Kill 5th peer
+    upload_process_5.kill()
+    processes.pop().kill()
+
+    sleep(3)
+
+    # Kill 4th peer
+    upload_process_4.kill()
+    processes.pop().kill()
+
+    sleep(3)
+
+    # Restart 3rd and 4th peer
+    peer_api_uris[3] = start_peer(peer_dirs[3], "peer_3_restarted.log", bootstrap_uri, extra_env=env)
+    peer_api_uris[4] = start_peer(peer_dirs[4], "peer_4_restarted.log", bootstrap_uri, extra_env=env)
+    wait_for_peer_online(peer_api_uris[3], "/")
+    wait_for_peer_online(peer_api_uris[4], "/")
+
+    # Recover shard with WAL delta transfer
+    r = requests.post(
+        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
+            "replicate_shard": {
+                "shard_id": 0,
+                "from_peer_id": peer_ids[0],
+                "to_peer_id": peer_ids[3],
+                "method": "wal_delta",
+            }
+        })
+    assert_http_ok(r)
+
+    # Wait for end of shard transfer
+    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
+
+    # Start inserting into the third peer again
+    upload_process_4 = run_update_points_in_background(peer_api_uris[3], COLLECTION_NAME, init_offset=600000, throttle=True)
+
+    # Confirm WAL delta transfer based on stdout logs, assert its size
+    stdout, _stderr = capfd.readouterr()
+    delta_version, delta_size = re.search(r"Resolved WAL delta from (\d+), which counts (\d+) records", stdout).groups()
+    assert int(delta_version) >= 80
+    assert int(delta_size) >= 80
+
+    # Recover shard with WAL delta transfer
+    r = requests.post(
+        f"{peer_api_uris[3]}/collections/{COLLECTION_NAME}/cluster", json={
+            "replicate_shard": {
+                "shard_id": 0,
+                "from_peer_id": peer_ids[3],
+                "to_peer_id": peer_ids[4],
+                "method": "wal_delta",
+            }
+        })
+    assert_http_ok(r)
+
+    # Wait for end of shard transfer
+    wait_for_collection_shard_transfers_count(peer_api_uris[3], COLLECTION_NAME, 0)
+
+    # Confirm WAL delta transfer based on stdout logs, assert its size
+    stdout, _stderr = capfd.readouterr()
+    delta_version, delta_size = re.search(r"Resolved WAL delta from (\d+), which counts (\d+) records", stdout).groups()
+    assert int(delta_version) >= 80
+    assert int(delta_size) >= 80
+
+    # All nodes must have one shard
+    for uri in peer_api_uris:
+        cluster_info = get_collection_cluster_info(uri, COLLECTION_NAME)
+        assert len(cluster_info['local_shards']) == 1
+
+    upload_process_1.kill()
+    upload_process_2.kill()
+    upload_process_3.kill()
+    upload_process_4.kill()
+    sleep(1)
+
+    # Match all points on all nodes exactly
+    data = []
+    for uri in peer_api_uris:
+        r = requests.post(
+            f"{uri}/collections/{COLLECTION_NAME}/points/scroll", json={
+                "limit": 999999999,
+                "with_vectors": True,
+                "with_payload": True,
+            }
+        )
+        assert_http_ok(r)
+        data.append(r.json()["result"])
+    assert data[0] == data[1] == data[2] == data[3] == data[4]
+
+
 # Test the shard transfer fallback for WAL delta transfer.
 #
 # We replicate a shard with WAL delta transfer to a node that does not have any
