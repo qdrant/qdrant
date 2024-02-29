@@ -282,8 +282,8 @@ impl PeerMetadata {
         }
     }
 
-    /// Whether t his metadata is outdated based on the current version.
-    pub fn is_outdated(&self) -> bool {
+    /// Whether this metadata has a different version than our current Qdrant instance.
+    pub fn is_different_version(&self) -> bool {
         self.version != defaults::QDRANT_VERSION
     }
 }

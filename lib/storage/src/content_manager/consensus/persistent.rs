@@ -189,7 +189,7 @@ impl Persistent {
         self.peer_metadata_by_id
             .read()
             .get(&self.this_peer_id())
-            .map_or(true, |metadata| metadata.is_outdated())
+            .map_or(true, |metadata| metadata.is_different_version())
     }
 
     pub fn this_peer_id(&self) -> PeerId {
