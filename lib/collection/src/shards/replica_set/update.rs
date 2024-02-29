@@ -293,12 +293,12 @@ impl ShardReplicaSet {
                 let echo_tag = result.clock_tag?;
 
                 if echo_tag.peer_id != clock_tag.peer_id {
-                    // TODO: `log::warn`!?
+                    debug_assert!(false, "Echoed clock tag peer_id does not match the original");
                     return None;
                 }
 
                 if echo_tag.clock_id != clock_tag.clock_id {
-                    // TODO: `log::warn`!?
+                    debug_assert!(false, "Echoed clock tag clock_id does not match the original");
                     return None;
                 }
 
