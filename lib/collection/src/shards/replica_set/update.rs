@@ -136,6 +136,25 @@ impl ShardReplicaSet {
         operation: CollectionUpdateOperations,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
+        // `ShardRepilcaSet::update_impl` is not cancel safe, so this method is not cancel safe.
+
+        loop {
+            if let Some(res) = self.update_impl(operation.clone(), wait).await? {
+                return Ok(res);
+            }
+
+            log::warn!("Operation {operation:?} was rejected by some node(s), retrying...");
+        }
+    }
+
+    /// # Cancel safety
+    ///
+    /// This method is *not* cancel safe.
+    async fn update_impl(
+        &self,
+        operation: CollectionUpdateOperations,
+        wait: bool,
+    ) -> CollectionResult<Option<UpdateResult>> {
         // `LocalShard::update` is not guaranteed to be cancel safe and it's impossible to cancel
         // multiple parallel updates in a way that is *guaranteed* not to introduce inconsistencies
         // between nodes, so this method is not cancel safe.
@@ -322,13 +341,21 @@ impl ShardReplicaSet {
             )));
         }
 
+        let is_any_operation_rejected = successes
+            .iter()
+            .any(|(_, res)| res.operation_id.is_none() && res.clock_tag.is_some());
+
+        if is_any_operation_rejected {
+            return Ok(None);
+        }
+
         // there are enough successes, return the first one
         let (_, res) = successes
             .into_iter()
             .next()
             .expect("successes is not empty");
 
-        Ok(res)
+        Ok(Some(res))
     }
 
     fn peer_is_active_or_pending(&self, peer_id: &PeerId) -> bool {
