@@ -10,7 +10,7 @@ use crate::common::utils::JsonPathPayload;
 use crate::data_types::text_index::{TextIndexParams, TextIndexType, TokenizerType};
 use crate::types::{
     AnyVariants, Condition, FieldCondition, Filter, Match, MatchValue, PayloadFieldSchema,
-    PayloadIndexInfo, PayloadKeyType, PayloadSchemaParams, PayloadSchemaType,
+    PayloadKeyType, PayloadSchemaParams, PayloadSchemaType,
 };
 
 pub struct UnindexedField {
@@ -53,7 +53,7 @@ impl UnindexedField {
 
     pub fn submit_possible_suspects(
         filter: &Filter,
-        payload_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
+        payload_schema: &HashMap<PayloadKeyType, PayloadFieldSchema>,
         collection_name: String,
     ) {
         let unindexed_issues =
@@ -194,24 +194,18 @@ fn infer_schema_from_field_condition(field_condition: &FieldCondition) -> Vec<Pa
     }
 }
 
-struct Extractor {
-    payload_schema: HashMap<PayloadKeyType, PayloadFieldSchema>,
+struct Extractor<'a> {
+    payload_schema: &'a HashMap<PayloadKeyType, PayloadFieldSchema>,
     unindexed_schema: HashMap<PayloadKeyType, Vec<PayloadFieldSchema>>,
     collection_name: String,
 }
 
-impl Extractor {
+impl<'a> Extractor<'a> {
     fn new(
         filter: &Filter,
-        payload_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
+        payload_schema: &'a HashMap<PayloadKeyType, PayloadFieldSchema>,
         collection_name: String,
     ) -> Self {
-        // Turn PayloadIndexInfo into PayloadFieldSchema
-        let payload_schema = payload_schema
-            .into_iter()
-            .filter_map(|(key, value)| value.try_into().map(|schema| (key, schema)).ok())
-            .collect();
-
         let mut extractor = Self {
             payload_schema,
             unindexed_schema: HashMap::new(),

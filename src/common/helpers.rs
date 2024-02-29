@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 use std::{fs, io};
 
+use itertools::Itertools;
 use schemars::JsonSchema;
 use segment::types::Filter;
 use serde::{Deserialize, Serialize};
@@ -126,22 +127,41 @@ pub fn tonic_error_to_io_error(err: tonic::transport::Error) -> io::Error {
 }
 
 /// Check if the request is slow and submit possible filtering issues based on unindexed fields
+///
+/// If the request was fast, then it is a cheap check to shortcut the rest, otherwise it will be more expensive.
+/// This should not be a problem, since the main search was already slow.
 pub async fn post_process_slow_request(
     duration: Duration,
     threshold_ratio: f64,
     toc: &TableOfContent,
     collection_name: &str,
-    filter: &Filter,
+    filters: Vec<Option<Filter>>,
 ) {
     let slow_threshold = Duration::from_millis(
         (segment::problems::UnindexedField::SLOW_SEARCH_THRESHOLD.as_millis() as f64
             * threshold_ratio) as u64,
     );
     if duration > slow_threshold {
-        if let Ok(collection_info) = do_get_collection(toc, collection_name, None).await {
+        let filters = filters.into_iter().flatten().collect_vec();
+        if filters.is_empty() {
+            return;
+        }
+
+        let Ok(collection_info) = do_get_collection(toc, collection_name, None).await else {
+            return;
+        };
+
+        // Turn PayloadIndexInfos into PayloadFieldSchemas
+        let payload_schema = collection_info
+            .payload_schema
+            .into_iter()
+            .filter_map(|(key, value)| value.try_into().map(|schema| (key, schema)).ok())
+            .collect();
+
+        for filter in filters {
             segment::problems::UnindexedField::submit_possible_suspects(
-                filter,
-                collection_info.payload_schema,
+                &filter,
+                &payload_schema,
                 collection_name.to_string(),
             )
         }

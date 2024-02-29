@@ -55,16 +55,14 @@ async fn search_points(
             .collect_vec()
     });
 
-    if let Some(filter) = filter {
-        crate::common::helpers::post_process_slow_request(
-            timing.elapsed(),
-            1.0,
-            toc.get_ref(),
-            &collection.name,
-            &filter,
-        )
-        .await;
-    }
+    crate::common::helpers::post_process_slow_request(
+        timing.elapsed(),
+        1.0,
+        toc.get_ref(),
+        &collection.name,
+        vec![filter],
+    )
+    .await;
 
     process_response(response, timing)
 }
@@ -80,6 +78,13 @@ async fn batch_search_points(
     let timing = Instant::now();
 
     let request = request.into_inner();
+
+    let filters = request
+        .searches
+        .iter()
+        .map(|req| req.search_request.filter.clone())
+        .collect::<Vec<_>>();
+
     let requests = request
         .searches
         .into_iter()
@@ -118,6 +123,15 @@ async fn batch_search_points(
             })
             .collect_vec()
     });
+
+    crate::common::helpers::post_process_slow_request(
+        timing.elapsed(),
+        1.0,
+        toc.get_ref(),
+        &collection.name,
+        filters,
+    )
+    .await;
 
     process_response(response, timing)
 }
