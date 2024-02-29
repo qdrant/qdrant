@@ -1266,28 +1266,28 @@ mod tests {
         let (_, _) = wal
             .lock_and_write(&mut OperationWithClockTag::new(
                 mock_operation(1),
-                Some(ClockTag::new(1, 0, 0)),
-            ))
-            .await
-            .unwrap();
-        let (_, _) = wal
-            .lock_and_write(&mut OperationWithClockTag::new(
-                mock_operation(2),
                 Some(ClockTag::new(1, 0, 1)),
             ))
             .await
             .unwrap();
         let (_, _) = wal
             .lock_and_write(&mut OperationWithClockTag::new(
-                mock_operation(3),
+                mock_operation(2),
                 Some(ClockTag::new(1, 0, 2)),
+            ))
+            .await
+            .unwrap();
+        let (_, _) = wal
+            .lock_and_write(&mut OperationWithClockTag::new(
+                mock_operation(3),
+                Some(ClockTag::new(1, 0, 3)),
             ))
             .await
             .unwrap();
 
         // Can resolve a delta for the last clock
         let mut recovery_point = RecoveryPoint::default();
-        recovery_point.insert(1, 0, 1);
+        recovery_point.insert(1, 0, 2);
         let resolve_result = wal.resolve_wal_delta(recovery_point).await.unwrap();
         assert_eq!(resolve_result, Some(2));
 
@@ -1299,20 +1299,20 @@ mod tests {
         let (_, _) = wal
             .lock_and_write(&mut OperationWithClockTag::new(
                 mock_operation(5),
-                Some(ClockTag::new(1, 0, 3)),
+                Some(ClockTag::new(1, 0, 4)),
             ))
             .await
             .unwrap();
 
         // Can still resolve a delta for the last clock
         let mut recovery_point = RecoveryPoint::default();
-        recovery_point.insert(1, 0, 3);
+        recovery_point.insert(1, 0, 4);
         let resolve_result = wal.resolve_wal_delta(recovery_point).await.unwrap();
         assert_eq!(resolve_result, None);
 
         // Cannot resolve a delta for our previous clock, it now has an untagged record after it
         let mut recovery_point = RecoveryPoint::default();
-        recovery_point.insert(1, 0, 1);
+        recovery_point.insert(1, 0, 2);
         let resolve_result = wal.resolve_wal_delta(recovery_point).await;
         assert_eq!(resolve_result.unwrap_err(), WalDeltaError::NotFound);
     }
