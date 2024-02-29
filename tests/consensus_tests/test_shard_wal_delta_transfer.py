@@ -40,7 +40,7 @@ def test_empty_shard_wal_delta_transfer(capfd, tmp_path: pathlib.Path):
     assert_project_root()
 
     # seed port to reuse the same port for the restarted nodes
-    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, 2, 20000)
+    peer_api_uris, _peer_dirs, _bootstrap_uri = start_cluster(tmp_path, 2, 20000)
 
     create_collection(peer_api_uris[0], shard_number=1, replication_factor=2)
     wait_collection_exists_and_active_on_all_peers(
@@ -72,7 +72,7 @@ def test_empty_shard_wal_delta_transfer(capfd, tmp_path: pathlib.Path):
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
 
     # Confirm empty WAL delta based on debug message in stdout
-    stdout, stderr = capfd.readouterr()
+    stdout, _stderr = capfd.readouterr()
     assert "Resolved WAL delta that is empty" in stdout
 
     # Doing it the other way around should result in exactly the same
@@ -91,7 +91,7 @@ def test_empty_shard_wal_delta_transfer(capfd, tmp_path: pathlib.Path):
     wait_for_collection_shard_transfers_count(peer_api_uris[1], COLLECTION_NAME, 0)
 
     # Confirm empty WAL delta based on debug message in stdout
-    stdout, stderr = capfd.readouterr()
+    stdout, _stderr = capfd.readouterr()
     assert "Resolved WAL delta that is empty" in stdout
 
     cluster_info_0 = get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME)
@@ -144,9 +144,7 @@ def test_shard_wal_delta_transfer_manual_recovery(tmp_path: pathlib.Path, capfd)
     from_peer_id = transfer_collection_cluster_info['peer_id']
     to_peer_id = receiver_collection_cluster_info['peer_id']
 
-    shard_id = transfer_collection_cluster_info['local_shards'][0]['shard_id']
-
-    # # Start pushing points to the cluster
+    # Start pushing points to the cluster
     upload_process_1 = run_update_points_in_background(peer_api_uris[0], COLLECTION_NAME, init_offset=100000, throttle=True)
     upload_process_2 = run_update_points_in_background(peer_api_uris[1], COLLECTION_NAME, init_offset=200000, throttle=True)
     upload_process_3 = run_update_points_in_background(peer_api_uris[2], COLLECTION_NAME, init_offset=300000, throttle=True)
@@ -167,7 +165,7 @@ def test_shard_wal_delta_transfer_manual_recovery(tmp_path: pathlib.Path, capfd)
     r = requests.post(
         f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
             "replicate_shard": {
-                "shard_id": shard_id,
+                "shard_id": 0,
                 "from_peer_id": from_peer_id,
                 "to_peer_id": to_peer_id,
                 "method": "wal_delta",
@@ -179,14 +177,15 @@ def test_shard_wal_delta_transfer_manual_recovery(tmp_path: pathlib.Path, capfd)
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
 
     # Confirm WAL delta transfer based on stdout logs, assert its size
-    stdout, stderr = capfd.readouterr()
+    stdout, _stderr = capfd.readouterr()
     delta_version, delta_size = re.search(r"Resolved WAL delta from (\d+), which counts (\d+) records", stdout).groups()
     assert int(delta_version) >= 80
     assert int(delta_size) >= 80
 
-    receiver_collection_cluster_info = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
-    number_local_shards = len(receiver_collection_cluster_info['local_shards'])
-    assert number_local_shards == 1
+    # All nodes must have one shard
+    for uri in peer_api_uris:
+        cluster_info = get_collection_cluster_info(uri, COLLECTION_NAME)
+        assert len(cluster_info['local_shards']) == 1
 
     upload_process_1.kill()
     upload_process_2.kill()
@@ -218,7 +217,7 @@ def test_shard_wal_delta_transfer_fallback(capfd, tmp_path: pathlib.Path):
     assert_project_root()
 
     # seed port to reuse the same port for the restarted nodes
-    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, 3, 20000)
+    peer_api_uris, _peer_dirs, _bootstrap_uri = start_cluster(tmp_path, 3, 20000)
 
     create_collection(peer_api_uris[0], shard_number=3, replication_factor=1)
     wait_collection_exists_and_active_on_all_peers(
@@ -255,7 +254,7 @@ def test_shard_wal_delta_transfer_fallback(capfd, tmp_path: pathlib.Path):
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
 
     # Confirm that we fall back to a different method after WAL delta fails
-    stdout, stderr = capfd.readouterr()
+    stdout, _stderr = capfd.readouterr()
     assert "Failed to do shard diff transfer, falling back to default method" in stdout
 
     receiver_collection_cluster_info = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
