@@ -9844,6 +9844,9 @@
           },
           {
             "$ref": "#/components/schemas/DropShardingKeyOperation"
+          },
+          {
+            "$ref": "#/components/schemas/RestartTransferOperation"
           }
         ]
       },
@@ -10011,6 +10014,52 @@
         "properties": {
           "shard_key": {
             "$ref": "#/components/schemas/ShardKey"
+          }
+        }
+      },
+      "RestartTransferOperation": {
+        "type": "object",
+        "required": [
+          "restart_transfer"
+        ],
+        "properties": {
+          "restart_transfer": {
+            "$ref": "#/components/schemas/RestartTransfer"
+          }
+        }
+      },
+      "RestartTransfer": {
+        "type": "object",
+        "required": [
+          "from_peer_id",
+          "shard_id",
+          "to_peer_id"
+        ],
+        "properties": {
+          "shard_id": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "from_peer_id": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "to_peer_id": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "method": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardTransferMethod"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },

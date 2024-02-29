@@ -527,6 +527,7 @@ message UpdateCollectionClusterSetupRequest {
     Replica drop_replica = 5;
     CreateShardKey create_shard_key = 7;
     DeleteShardKey delete_shard_key = 8;
+    MoveShard restart_transfer = 9;
   }
   optional uint64 timeout = 6; // Wait timeout for operation commit in seconds, if not specified - default value will be supplied
 }
