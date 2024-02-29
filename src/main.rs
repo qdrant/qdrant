@@ -19,13 +19,11 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use ::common::cpu::{get_cpu_budget, CpuBudget};
-use ::common::defaults;
 use ::tonic::transport::Uri;
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use clap::Parser;
 use collection::shards::channel_service::ChannelService;
 use consensus::Consensus;
-use semver::Version;
 use slog::Drain;
 use startup::setup_panic_hook;
 use storage::content_manager::consensus::operation_sender::OperationSender;
@@ -115,12 +113,6 @@ struct Args {
 }
 
 fn main() -> anyhow::Result<()> {
-    debug_assert_eq!(
-        defaults::QDRANT_VERSION,
-        Version::parse(env!("CARGO_PKG_VERSION")).unwrap(),
-        "crate version does not match with defaults.rs",
-    );
-
     let args = Args::parse();
 
     // Run backtrace collector, expected to used by `rstack` crate
