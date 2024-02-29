@@ -491,16 +491,6 @@ impl NamedVectorStruct {
         }
     }
 
-    /*
-    pub fn get_vector(&self) -> VectorRef {
-        match self {
-            NamedVectorStruct::Default(v) => v.as_slice().into(),
-            NamedVectorStruct::Dense(v) => v.vector.as_slice().into(),
-            NamedVectorStruct::Sparse(v) => (&v.vector).into(),
-        }
-    }
-     */
-
     pub fn to_vector(self) -> Vector {
         match self {
             NamedVectorStruct::Default(v) => v.into(),
