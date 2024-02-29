@@ -52,6 +52,8 @@ pub enum OperationError {
     ValidationError { description: String },
     #[error("Wrong usage of sparse vectors")]
     WrongSparse,
+    #[error("Wrong usage of multi vectors")]
+    WrongMulti,
     #[error("Wrong key of payload")]
     WrongPayloadKey { description: String },
 }

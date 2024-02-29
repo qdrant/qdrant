@@ -48,6 +48,11 @@ fn avg_vectors<'a>(vectors: impl Iterator<Item = VectorRef<'a>>) -> CollectionRe
                 sparse_count += 1;
                 avg_sparse = vector.combine_aggregate(&avg_sparse, |v1, v2| v1 + v2);
             }
+            VectorRef::MultiDense(_) => {
+                return Err(CollectionError::bad_input(
+                    "MultiDenseVector is not supported".to_owned(),
+                ))
+            }
         }
     }
 

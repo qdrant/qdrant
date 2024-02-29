@@ -16,12 +16,14 @@ use crate::vector_storage::query::reco_query::RecoQuery;
 pub enum Vector {
     Dense(DenseVector),
     Sparse(SparseVector),
+    MultiDense(MultiDenseVector),
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum VectorRef<'a> {
     Dense(&'a [VectorElementType]),
     Sparse(&'a SparseVector),
+    MultiDense(&'a MultiDenseVector),
 }
 
 impl Vector {
@@ -29,6 +31,7 @@ impl Vector {
         match self {
             Vector::Dense(v) => VectorRef::Dense(v.as_slice()),
             Vector::Sparse(v) => VectorRef::Sparse(v),
+            Vector::MultiDense(v) => VectorRef::MultiDense(v),
         }
     }
 }
@@ -38,6 +41,7 @@ impl<'a> VectorRef<'a> {
         match self {
             VectorRef::Dense(v) => Vector::Dense(v.to_vec()),
             VectorRef::Sparse(v) => Vector::Sparse(v.clone()),
+            VectorRef::MultiDense(v) => Vector::MultiDense(v.to_vec()),
         }
     }
 }
@@ -49,6 +53,7 @@ impl<'a> TryFrom<VectorRef<'a>> for &'a [VectorElementType] {
         match value {
             VectorRef::Dense(v) => Ok(v),
             VectorRef::Sparse(_) => Err(OperationError::WrongSparse),
+            VectorRef::MultiDense(_) => Err(OperationError::WrongMulti),
         }
     }
 }
@@ -60,6 +65,19 @@ impl<'a> TryFrom<VectorRef<'a>> for &'a SparseVector {
         match value {
             VectorRef::Dense(_) => Err(OperationError::WrongSparse),
             VectorRef::Sparse(v) => Ok(v),
+            VectorRef::MultiDense(_) => Err(OperationError::WrongMulti),
+        }
+    }
+}
+
+impl<'a> TryFrom<VectorRef<'a>> for &'a MultiDenseVector {
+    type Error = OperationError;
+
+    fn try_from(value: VectorRef<'a>) -> Result<Self, Self::Error> {
+        match value {
+            VectorRef::Dense(_) => Err(OperationError::WrongMulti),
+            VectorRef::Sparse(_v) => Err(OperationError::WrongSparse),
+            VectorRef::MultiDense(v) => Ok(v),
         }
     }
 }
@@ -81,6 +99,7 @@ impl TryFrom<Vector> for DenseVector {
         match value {
             Vector::Dense(v) => Ok(v),
             Vector::Sparse(_) => Err(OperationError::WrongSparse),
+            Vector::MultiDense(_) => Err(OperationError::WrongMulti),
         }
     }
 }
@@ -92,6 +111,7 @@ impl TryFrom<Vector> for SparseVector {
         match value {
             Vector::Dense(_) => Err(OperationError::WrongSparse),
             Vector::Sparse(v) => Ok(v),
+            Vector::MultiDense(_) => Err(OperationError::WrongMulti),
         }
     }
 }
@@ -131,6 +151,7 @@ impl<'a> From<&'a Vector> for VectorRef<'a> {
         match val {
             Vector::Dense(v) => VectorRef::Dense(v.as_slice()),
             Vector::Sparse(v) => VectorRef::Sparse(v),
+            Vector::MultiDense(v) => VectorRef::MultiDense(v),
         }
     }
 }
@@ -143,12 +164,16 @@ pub const DEFAULT_VECTOR_NAME: &str = "";
 /// Type for dense vector
 pub type DenseVector = Vec<VectorElementType>;
 
+/// Type for multi dense vector
+pub type MultiDenseVector = Vec<DenseVector>;
+
 impl<'a> VectorRef<'a> {
     // Cannot use `ToOwned` trait because of `Borrow` implementation for `Vector`
     pub fn to_owned(self) -> Vector {
         match self {
             VectorRef::Dense(v) => Vector::Dense(v.to_vec()),
             VectorRef::Sparse(v) => Vector::Sparse(v.clone()),
+            VectorRef::MultiDense(v) => Vector::MultiDense(v.to_vec()),
         }
     }
 
@@ -156,6 +181,7 @@ impl<'a> VectorRef<'a> {
         match self {
             VectorRef::Dense(v) => v.len(),
             VectorRef::Sparse(v) => v.indices.len(),
+            VectorRef::MultiDense(v) => v.iter().map(Vec::len).sum(),
         }
     }
 
@@ -171,6 +197,7 @@ impl<'a> TryInto<&'a [VectorElementType]> for &'a Vector {
         match self {
             Vector::Dense(v) => Ok(v),
             Vector::Sparse(_) => Err(OperationError::WrongSparse),
+            Vector::MultiDense(_) => Err(OperationError::WrongMulti),
         }
     }
 }
@@ -182,6 +209,7 @@ impl<'a> TryInto<&'a SparseVector> for &'a Vector {
         match self {
             Vector::Dense(_) => Err(OperationError::WrongSparse),
             Vector::Sparse(v) => Ok(v),
+            Vector::MultiDense(_) => Err(OperationError::WrongMulti),
         }
     }
 }
@@ -210,6 +238,7 @@ impl VectorStruct {
             VectorStruct::Multi(vectors) => vectors.values().all(|v| match v {
                 Vector::Dense(vector) => vector.is_empty(),
                 Vector::Sparse(vector) => vector.indices.is_empty(),
+                Vector::MultiDense(v) => v.iter().all(|v| v.is_empty()),
             }),
         }
     }
@@ -364,6 +393,9 @@ impl NamedVectorStruct {
         match vector {
             Vector::Dense(vector) => NamedVectorStruct::Dense(NamedVector { name, vector }),
             Vector::Sparse(vector) => NamedVectorStruct::Sparse(NamedSparseVector { name, vector }),
+            Vector::MultiDense(_) => {
+                unimplemented!("MultiDenseVector cannot be converted to NamedVectorStruct")
+            }
         }
     }
 

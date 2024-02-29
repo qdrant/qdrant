@@ -1000,6 +1000,9 @@ impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
                     data: vector.indices,
                 }),
             ),
+            Vector::MultiDense(_vector) => {
+                unimplemented!("MultiDenseVector is not supported")
+            }
         };
         Self {
             collection_name: collection_id,
@@ -1420,6 +1423,9 @@ impl TryFrom<api::grpc::qdrant::Vector> for RecommendExample {
         Ok(match vector {
             Vector::Dense(vector) => Self::Dense(vector),
             Vector::Sparse(vector) => Self::Sparse(vector),
+            Vector::MultiDense(_vector) => {
+                unimplemented!("MultiDenseVector is not supported")
+            }
         })
     }
 }
