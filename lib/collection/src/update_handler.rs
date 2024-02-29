@@ -1,5 +1,6 @@
 use std::cmp::min;
 use std::collections::HashSet;
+use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
@@ -108,6 +109,7 @@ pub struct UpdateHandler {
     max_optimization_threads: Option<usize>,
     /// Highest and cutoff clocks for the shard WAL.
     clocks: LocalShardClocks,
+    shard_path: PathBuf,
 }
 
 impl UpdateHandler {
@@ -123,6 +125,7 @@ impl UpdateHandler {
         flush_interval_sec: u64,
         max_optimization_threads: Option<usize>,
         clocks: LocalShardClocks,
+        shard_path: PathBuf,
     ) -> UpdateHandler {
         UpdateHandler {
             shared_storage_config,
@@ -141,6 +144,7 @@ impl UpdateHandler {
             optimization_handles: Arc::new(TokioMutex::new(vec![])),
             max_optimization_threads,
             clocks,
+            shard_path,
         }
     }
 
@@ -171,6 +175,7 @@ impl UpdateHandler {
             self.flush_interval_sec,
             flush_rx,
             self.clocks.clone(),
+            self.shard_path.clone(),
         )));
         self.flush_stop = Some(flush_tx);
     }
@@ -597,6 +602,7 @@ impl UpdateHandler {
         flush_interval_sec: u64,
         mut stop_receiver: oneshot::Receiver<()>,
         clocks: LocalShardClocks,
+        shard_path: PathBuf,
     ) {
         loop {
             // Stop flush worker on signal or if sender was dropped
@@ -646,7 +652,7 @@ impl UpdateHandler {
 
             let ack = confirmed_version.min(keep_from.saturating_sub(1));
 
-            if let Err(err) = clocks.store().await {
+            if let Err(err) = clocks.store(&shard_path).await {
                 log::warn!("Failed to store clock maps to disk: {err}");
                 segments.write().report_optimizer_error(err);
             }

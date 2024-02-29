@@ -63,7 +63,7 @@ fn print_collection_wal(wal_path: &Path) {
         Ok(wal) => {
             // print all entries
             let mut count = 0;
-            for (idx, op) in wal.read_all() {
+            for (idx, op) in wal.read_all(false) {
                 println!("==========================");
                 println!("Entry: {idx}");
                 println!("Operation: {:?}", op.operation);
