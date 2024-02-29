@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::path::Path;
 
+use async_recursion::async_recursion;
 use collection::collection_state;
 use collection::config::ShardingMethod;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
@@ -239,6 +240,7 @@ impl TableOfContent {
         Ok(true)
     }
 
+    #[async_recursion]
     async fn handle_transfer(
         &self,
         collection_id: CollectionId,
@@ -337,6 +339,45 @@ impl TableOfContent {
                         on_finish,
                         on_failure,
                     )
+                    .await?;
+            }
+            ShardTransferOperations::Restart(transfer) => {
+                let transfers: HashSet<transfer::ShardTransfer> =
+                    collection.state().await.transfers;
+
+                let transfer_key = transfer.key();
+
+                let Some(old_transfer) = transfer::helpers::get_transfer(&transfer_key, &transfers)
+                else {
+                    return Err(StorageError::bad_request(format!(
+                        "There is no transfer for shard {} from {} to {}",
+                        transfer_key.shard_id, transfer_key.from, transfer_key.to,
+                    )));
+                };
+
+                // Transfer must have changed configuration
+                if transfers.contains(&transfer) {
+                    return Err(StorageError::bad_request(format!(
+                        "Cannot restart transfer for shard {} from {} to {}, its configuration did not change",
+                        transfer.shard_id, transfer.from, transfer.to,
+                    )));
+                }
+
+                // Abort and start transfer
+                self.handle_transfer(
+                    collection_id.clone(),
+                    ShardTransferOperations::Abort {
+                        transfer: transfer.key(),
+                        reason: "restart transfer".into(),
+                    },
+                )
+                .await?;
+
+                let mut new_transfer = transfer.clone();
+                // Preserve sync flag from the old transfer
+                new_transfer.sync = old_transfer.sync;
+
+                self.handle_transfer(collection_id, ShardTransferOperations::Start(new_transfer))
                     .await?;
             }
             ShardTransferOperations::Finish(transfer) => {

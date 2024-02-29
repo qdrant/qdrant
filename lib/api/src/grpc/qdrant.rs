@@ -971,7 +971,7 @@ pub struct UpdateCollectionClusterSetupRequest {
     pub timeout: ::core::option::Option<u64>,
     #[prost(
         oneof = "update_collection_cluster_setup_request::Operation",
-        tags = "2, 3, 4, 5, 7, 8"
+        tags = "2, 3, 4, 5, 7, 8, 9"
     )]
     #[validate]
     pub operation: ::core::option::Option<
@@ -996,6 +996,8 @@ pub mod update_collection_cluster_setup_request {
         CreateShardKey(super::CreateShardKey),
         #[prost(message, tag = "8")]
         DeleteShardKey(super::DeleteShardKey),
+        #[prost(message, tag = "9")]
+        RestartTransfer(super::MoveShard),
     }
 }
 #[derive(serde::Serialize)]

@@ -119,6 +119,7 @@ impl Validate for crate::grpc::qdrant::update_collection_cluster_setup_request::
             Operation::DropReplica(op) => op.validate(),
             Operation::CreateShardKey(op) => op.validate(),
             Operation::DeleteShardKey(op) => op.validate(),
+            Operation::RestartTransfer(op) => op.validate(),
         }
     }
 }
