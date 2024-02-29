@@ -1,14 +1,18 @@
 use std::cmp::max;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 use std::{fs, io};
 
 use schemars::JsonSchema;
+use segment::types::Filter;
 use serde::{Deserialize, Serialize};
+use storage::content_manager::toc::TableOfContent;
 use tokio::runtime;
 use tokio::runtime::Runtime;
 use tonic::transport::{Certificate, ClientTlsConfig, Identity, ServerTlsConfig};
 use validator::Validate;
 
+use super::collections::do_get_collection;
 use crate::settings::{Settings, TlsConfig};
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
@@ -119,6 +123,29 @@ fn load_ca_certificate(tls_config: &TlsConfig) -> io::Result<Certificate> {
 
 pub fn tonic_error_to_io_error(err: tonic::transport::Error) -> io::Error {
     io::Error::new(io::ErrorKind::Other, err)
+}
+
+/// Check if the request is slow and submit possible filtering issues based on unindexed fields
+pub async fn post_process_slow_request(
+    duration: Duration,
+    threshold_ratio: f64,
+    toc: &TableOfContent,
+    collection_name: &str,
+    filter: &Filter,
+) {
+    let slow_threshold = Duration::from_millis(
+        (segment::problems::UnindexedField::SLOW_SEARCH_THRESHOLD.as_millis() as f64
+            * threshold_ratio) as u64,
+    );
+    if duration > slow_threshold {
+        if let Ok(collection_info) = do_get_collection(toc, collection_name, None).await {
+            segment::problems::UnindexedField::submit_possible_suspects(
+                filter,
+                collection_info.payload_schema,
+                collection_name.to_string(),
+            )
+        }
+    }
 }
 
 #[cfg(test)]
