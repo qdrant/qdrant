@@ -7,19 +7,15 @@ use crate::operations::ClockTag;
 fn clock_set_clock_map_workflow() {
     let mut helper = Helper::new();
 
-    // `ClockSet` and `ClockMap` "stick" to tick `0`, until `ClockSet` is advanced at least once
-    helper.tick_clock().assert(0);
-    helper.advance_clock_map(false).assert(0, 0, true);
-    helper.advance_clock_map(false).assert(0, 0, true);
-    helper.advance_clock(false).assert(0, 0, true);
+    helper.tick_clock().assert(1);
 
     // `ClockSet` and `ClockMap` tick sequentially and in sync after that
-    for tick in 1..=10 {
+    for tick in 2..=11 {
         helper.advance_clock(false).assert(tick, tick, true);
     }
 
     // `ClockMap` advances to newer ticks
-    for tick in 11..=50 {
+    for tick in 12..=50 {
         if tick % 10 != 0 {
             // Tick `ClockSet` few times, without advancing `ClockMap`...
             helper.tick_clock().assert(tick);
@@ -31,7 +27,7 @@ fn clock_set_clock_map_workflow() {
 
     // `ClockMap` accepts tick `0` and advances `ClockSet`
     helper.clock_set = Default::default();
-    helper.advance_clock(false).assert(0, 50, true);
+    helper.advance_clock(false).assert(0, 50, false);
     helper.tick_clock().assert(51);
 
     // `ClockMap` rejects older (or current) ticks...
@@ -51,7 +47,7 @@ fn clock_set_clock_map_workflow() {
 
     // `ClockMap` advances to newer ticks with `force = true`
     helper.clock_set = Default::default();
-    helper.advance_clock(false).assert(0, 50, true);
+    helper.advance_clock(false).assert(0, 50, false);
 
     for tick in 51..=100 {
         helper.advance_clock(true).assert(tick, tick, true);
@@ -90,6 +86,10 @@ impl Helper {
 
     pub fn tick_clock(&mut self) -> TickClockStatus {
         let mut clock = self.clock_set.get_clock();
+
+        // Start all clocks from at least 1
+        clock.advance_to(0);
+
         let clock_tag = ClockTag::new(PEER_ID, clock.id() as _, clock.tick_once());
         TickClockStatus { clock_tag }
     }
