@@ -717,21 +717,22 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     }
 
     pub fn sync_local_state(&self) -> Result<(), StorageError> {
-        // Update our own metadata if outdated
-        if self.persistent.read().is_our_metadata_outdated() {
-            log::debug!("Proposing consensus peer metadata update for this peer");
-            let result = self
-                .propose_sender
-                .send(ConsensusOperations::UpdatePeerMetadata {
-                    peer_id: self.this_peer_id(),
-                    metadata: PeerMetadata::current(),
-                });
-            if let Err(err) = result {
-                log::error!(
-                    "Failed to propose consensus peer metadata update for this peer: {err}"
-                );
-            }
-        }
+        // TODO(1.9): enable in Qdrant 1.9
+        // // Update our own metadata if outdated
+        // if self.persistent.read().is_our_metadata_outdated() {
+        //     log::debug!("Proposing consensus peer metadata update for this peer");
+        //     let result = self
+        //         .propose_sender
+        //         .send(ConsensusOperations::UpdatePeerMetadata {
+        //             peer_id: self.this_peer_id(),
+        //             metadata: PeerMetadata::current(),
+        //         });
+        //     if let Err(err) = result {
+        //         log::error!(
+        //             "Failed to propose consensus peer metadata update for this peer: {err}"
+        //         );
+        //     }
+        // }
 
         self.toc.sync_local_state()
     }
