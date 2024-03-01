@@ -9,9 +9,9 @@ fn clock_set_clock_map_workflow() {
 
     // `ClockSet` and `ClockMap` "stick" to tick `0`, until `ClockSet` is advanced at least once
     helper.tick_clock().assert(0);
-    helper.advance_clock_map(false).assert(0, 0, true);
-    helper.advance_clock_map(false).assert(0, 0, true);
-    helper.advance_clock(false).assert(0, 0, true);
+    helper.advance_clock_map(false).assert(0, 0, false);
+    helper.advance_clock_map(false).assert(0, 0, false);
+    helper.advance_clock(false).assert(0, 0, false);
 
     // `ClockSet` and `ClockMap` tick sequentially and in sync after that
     for tick in 1..=10 {
@@ -29,9 +29,9 @@ fn clock_set_clock_map_workflow() {
         }
     }
 
-    // `ClockMap` accepts tick `0` and advances `ClockSet`
+    // `ClockMap` rejects tick `0` and advances `ClockSet`
     helper.clock_set = Default::default();
-    helper.advance_clock(false).assert(0, 50, true);
+    helper.advance_clock(false).assert(0, 50, false);
     helper.tick_clock().assert(51);
 
     // `ClockMap` rejects older (or current) ticks...
@@ -51,7 +51,7 @@ fn clock_set_clock_map_workflow() {
 
     // `ClockMap` advances to newer ticks with `force = true`
     helper.clock_set = Default::default();
-    helper.advance_clock(false).assert(0, 50, true);
+    helper.advance_clock(false).assert(0, 50, false);
 
     for tick in 51..=100 {
         helper.advance_clock(true).assert(tick, tick, true);
@@ -147,8 +147,8 @@ struct AdvanceStatus {
 
 impl AdvanceStatus {
     pub fn assert(&self, expected_tick: u64, expected_cm_tick: u64, expected_status: bool) {
-        assert_eq!(self.clock_tag.clock_tick, expected_tick);
-        assert_eq!(self.clock_map_tag.clock_tick, expected_cm_tick);
-        assert_eq!(self.accepted, expected_status);
+        assert_eq!(expected_tick, self.clock_tag.clock_tick);
+        assert_eq!(expected_cm_tick, self.clock_map_tag.clock_tick);
+        assert_eq!(expected_status, self.accepted);
     }
 }

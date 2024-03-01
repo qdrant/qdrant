@@ -247,13 +247,23 @@ impl ShardOperation for LocalShard {
             let update_sender = self.update_sender.load();
             let channel_permit = update_sender.reserve().await?;
 
-            // TODO:
-            //
-            // - Apply operation, only if it's accepted and written into the WAL...
-            // - ...or *propagate rejection to the sender node*, if it's rejected!
-
             // It is *critical* to hold `_wal_lock` while sending operation to the update handler!
-            let (operation_id, _wal_lock) = self.wal.lock_and_write(&mut operation).await?;
+            //
+            // TODO: Refactor `lock_and_write`, so this is less terrible? :/
+            let (operation_id, _wal_lock) = match self.wal.lock_and_write(&mut operation).await {
+                Ok(id_and_lock) => id_and_lock,
+
+                Err(crate::wal::WalError::ClockRejected) => {
+                    // Propagate clock rejection to operation sender
+                    return Ok(UpdateResult {
+                        operation_id: None,
+                        status: UpdateStatus::ClockRejected,
+                        clock_tag: operation.clock_tag,
+                    });
+                }
+
+                Err(err) => return Err(err.into()),
+            };
 
             channel_permit.send(UpdateSignal::Operation(OperationData {
                 op_num: operation_id,

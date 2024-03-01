@@ -55,17 +55,16 @@ impl ClockMap {
         // correct its clock.
         //
         // There are two special cases:
-        // - we *always* accept operations with `clock_tick = 0`, and also *always* update their `clock_tick`
-        // - and we *always* accept operations with `force = true`, but *never* update their `clock_tick`
+        // - we always *accept* operations with `force = true`
+        //   - (*currently*, this is *stronger* than `clock_tick = 0` condition!)
+        // - we always *reject* operations with `clock_tick = 0`
+        //   - (this is handled by `advance_clock_impl`, so we don't need to check for `clock_tick = 0` explicitly)
+        //
+        // TODO: Should we *reject* operations with `force = true`, *if* `clock_tick = 0`!?
 
-        if clock_tag.force {
-            return true;
-        }
+        let operation_accepted = clock_updated || clock_tag.force;
 
-        let operation_accepted = clock_updated || clock_tag.clock_tick == 0;
-        let update_tag = !operation_accepted || clock_tag.clock_tick == 0;
-
-        if update_tag {
+        if !operation_accepted {
             clock_tag.clock_tick = current_tick;
         }
 
@@ -94,8 +93,16 @@ impl ClockMap {
         match self.clocks.entry(key) {
             hash_map::Entry::Occupied(mut entry) => entry.get_mut().advance_to(new_tick),
             hash_map::Entry::Vacant(entry) => {
-                entry.insert(Clock::new(new_tick));
-                (true, new_tick)
+                // Initialize new clock and accept the operation if `new_tick > 0`.
+                // Reject the operation if `new_tick = 0`.
+
+                let is_non_zero_tick = new_tick > 0;
+
+                if is_non_zero_tick {
+                    entry.insert(Clock::new(new_tick));
+                }
+
+                (is_non_zero_tick, new_tick)
             }
         }
     }
@@ -229,15 +236,15 @@ impl RecoveryPoint {
 
     /// Extend this recovery point with clocks that are only present in the `other`.
     ///
-    /// Clocks that are not present in this recovery point are initialized to the tick `0`,
+    /// Clocks that are not present in this recovery point are initialized to the tick 1,
     /// because we must recover all operations for them.
     ///
     /// Clocks that are already present in this recovery point are not updated.
     pub fn initialize_clocks_missing_from(&mut self, other: &Self) {
         // Clocks known on our node, that are not in the recovery point, are unknown on the
-        // recovering node. Add them here with tick 0, so that we include all records for it
+        // recovering node. Add them here with tick 1, so that we include all records for it.
         for &key in other.clocks.keys() {
-            self.clocks.entry(key).or_insert(0);
+            self.clocks.entry(key).or_insert(1);
         }
     }
 
@@ -398,7 +405,6 @@ impl From<Error> for CollectionError {
 #[cfg(test)]
 mod test {
     use proptest::prelude::*;
-    use rstest::rstest;
 
     use super::*;
 
@@ -426,44 +432,23 @@ mod test {
         assert_eq!(input, output);
     }
 
-    #[rstest]
-    #[case::with_empty_clock_map(Helper::empty())]
-    #[case::with_clock_map_at_tick_0(Helper::at_tick_0())]
-    fn clock_map_accept_tick_0(#[case] mut helper: Helper) {
-        // Accept tick `0`
-        helper.advance(tag(0)).assert(true, 0);
-    }
+    #[test]
+    fn clock_map_advance_to_next_tick() {
+        let mut helper = Helper::empty();
 
-    #[rstest]
-    #[case::with_empty_clock_map(Helper::empty())]
-    #[case::with_clock_map_at_tick_0(Helper::at_tick_0())]
-    fn clock_map_advance_to_next_tick(#[case] mut helper: Helper) {
         // Advance to the next tick
         for tick in 1..10 {
             helper.advance(tag(tick)).assert(true, tick);
         }
     }
 
-    #[rstest]
-    #[case::with_empty_clock_map(Helper::empty())]
-    #[case::with_clock_map_at_tick_0(Helper::at_tick_0())]
-    fn clock_map_advance_to_newer_tick(#[case] mut helper: Helper) {
+    #[test]
+    fn clock_map_advance_to_newer_tick() {
+        let mut helper = Helper::empty();
+
         // Advance to a newer tick
         for tick in [10, 20, 30, 40, 50] {
             helper.advance(tag(tick)).assert(true, tick);
-        }
-    }
-
-    #[test]
-    fn clock_map_accept_tick_0_with_non_empty_clock_map() {
-        let mut helper = Helper::default();
-
-        for tick in [10, 20, 30, 40, 50] {
-            // Advance to a non-zero tick (already tested in `clock_map_advance_to_newer_tick`)
-            helper.advance(tag(tick));
-
-            // Accept tick `0`
-            helper.advance(tag(0)).assert(true, tick);
         }
     }
 
@@ -475,9 +460,7 @@ mod test {
         helper.advance(tag(10));
 
         // Reject older tick
-        //
-        // Start from tick `1`, cause tick `0` is a special case that is always accepted
-        for older_tick in 1..10 {
+        for older_tick in 0..10 {
             helper.advance(tag(older_tick)).assert(false, 10);
         }
 
@@ -487,10 +470,28 @@ mod test {
         }
     }
 
-    #[rstest]
-    #[case::with_empty_clock_map(Helper::empty())]
-    #[case::with_clock_map_at_tick_0(Helper::at_tick_0())]
-    fn clock_map_advance_to_newer_tick_with_force_true(#[case] mut helper: Helper) {
+    #[test]
+    fn clock_map_reject_tick_0() {
+        let mut helper = Helper::empty();
+
+        // Reject tick 0, if clock map is empty
+        for _ in 0..5 {
+            helper.advance(tag(0)).assert(false, 0);
+        }
+
+        // Advance to a newer tick (already tested in `clock_map_advance_to_newer_tick`)
+        helper.advance(tag(10));
+
+        // Reject tick 0, if clock map is non-empty
+        for _ in 0..5 {
+            helper.advance(tag(0)).assert(false, 10);
+        }
+    }
+
+    #[test]
+    fn clock_map_advance_to_newer_tick_with_force_true() {
+        let mut helper = Helper::empty();
+
         // Advance to a newer tick with `force = true`
         for tick in [10, 20, 30, 40, 50] {
             helper.advance(tag(tick).force(true)).assert(true, tick);
@@ -506,8 +507,6 @@ mod test {
         helper.advance(tag(10));
 
         // Accept older tick with `force = true`
-        //
-        // Start from `0`, cause `force = true` is "stronger" than tick `0` special case
         for older_tick in 0..10 {
             helper
                 .advance(tag(older_tick).force(true))
@@ -529,16 +528,15 @@ mod test {
 
             for clock_tag in execution {
                 let current_tick = helper.clock_map.current_tick(clock_tag.peer_id, clock_tag.clock_id);
+                assert_ne!(current_tick, Some(0));
 
-                let expected_status = current_tick.is_none()
-                    || current_tick < Some(clock_tag.clock_tick)
-                    || clock_tag.clock_tick == 0
-                    || clock_tag.force;
+                let expected_status =
+                    clock_tag.clock_tick > current_tick.unwrap_or(0) || clock_tag.force;
 
-                let expected_tick = if clock_tag.force {
+                let expected_tick = if expected_status {
                     clock_tag.clock_tick
                 } else {
-                    clock_tag.clock_tick.max(current_tick.unwrap_or(0))
+                    current_tick.unwrap_or(0)
                 };
 
                 helper.advance(clock_tag).assert(expected_status, expected_tick);
@@ -567,7 +565,7 @@ mod test {
                     let current_tick = helper.clock_map.current_tick(key.peer_id, key.clock_id);
 
                     if clock_tag.peer_id == key.peer_id && clock_tag.clock_id == key.clock_id {
-                        assert!(current_tick.is_some());
+                        assert!(current_tick.is_some() || clock_tag.clock_tick == 0);
                     } else {
                         assert_eq!(current_tick, Some(clock.current_tick));
                     }
@@ -595,12 +593,6 @@ mod test {
     impl Helper {
         pub fn empty() -> Self {
             Self::default()
-        }
-
-        pub fn at_tick_0() -> Self {
-            let mut helper = Helper::default();
-            helper.advance(tag(0));
-            helper
         }
 
         pub fn advance(&mut self, mut clock_tag: ClockTag) -> Status {
