@@ -18,6 +18,7 @@ use std::collections::HashMap;
 use segment::json_path::JsonPath;
 use segment::types::{ExtendedPointId, PayloadFieldSchema};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 use validator::Validate;
 
 use crate::hash_ring::HashRing;
@@ -71,6 +72,8 @@ pub struct ClockTag {
     pub peer_id: PeerId,
     pub clock_id: u32,
     pub clock_tick: u64,
+    /// A unique token for each clock tag.
+    pub token: Uuid,
     pub force: bool,
 }
 
@@ -81,6 +84,7 @@ impl ClockTag {
             clock_id,
             clock_tick,
             force: false,
+            token: Uuid::new_v4(),
         }
     }
 
@@ -102,6 +106,7 @@ impl From<ClockTag> for api::grpc::qdrant::ClockTag {
             peer_id: tag.peer_id,
             clock_id: tag.clock_id,
             clock_tick: tag.clock_tick,
+            token: tag.token.to_string(),
             force: tag.force,
         }
     }
