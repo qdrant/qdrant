@@ -1211,10 +1211,10 @@ impl TryFrom<DatetimeRange> for segment::types::RangeInterface {
 
     fn try_from(value: DatetimeRange) -> Result<Self, Self::Error> {
         Ok(Self::DateTime(segment::types::Range {
-            lt: value.lt.map(date_time_from_proto).transpose()?,
-            gt: value.gt.map(date_time_from_proto).transpose()?,
-            gte: value.gte.map(date_time_from_proto).transpose()?,
-            lte: value.lte.map(date_time_from_proto).transpose()?,
+            lt: value.lt.map(try_date_time_from_proto).transpose()?,
+            gt: value.gt.map(try_date_time_from_proto).transpose()?,
+            gte: value.gte.map(try_date_time_from_proto).transpose()?,
+            lte: value.lte.map(try_date_time_from_proto).transpose()?,
         }))
     }
 }
@@ -1384,7 +1384,7 @@ pub fn date_time_to_proto(date_time: DateTimePayloadType) -> prost_wkt_types::Ti
     naive_date_time_to_proto(date_time.0.naive_utc())
 }
 
-pub fn date_time_from_proto(
+pub fn try_date_time_from_proto(
     date_time: prost_wkt_types::Timestamp,
 ) -> Result<DateTimePayloadType, Status> {
     chrono::NaiveDateTime::from_timestamp_opt(
