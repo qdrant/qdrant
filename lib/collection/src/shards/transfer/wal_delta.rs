@@ -119,16 +119,14 @@ pub(super) async fn transfer_wal_delta(
             "Local shard must be a queue proxy",
         );
 
-        // Transfer queued updates to remote, transform into forward proxy
-        // This way we send a complete WAL diff
-        log::trace!("Transfer WAL diff by transferring all queue proxy updates and transform into forward proxy");
-        replica_set.queue_proxy_into_forward_proxy().await?;
+        log::trace!("Transfer WAL diff by transferring all current queue proxy updates");
+        replica_set.queue_proxy_flush().await?;
     } else {
         log::trace!("Shard is already up-to-date as WAL diff if zero records");
     }
 
     // Set shard state to Partial
-    log::trace!("Shard {shard_id} diff recovered on {remote_peer_id} for diff transfer, switching into next stage through consensus");
+    log::trace!("Shard {shard_id} diff transferred to {remote_peer_id} for diff transfer, switching into next stage through consensus");
     consensus
         // Note: once we migrate from partial snapshot to recovery, we give this method a proper name
         .snapshot_recovered_switch_to_partial_confirm_remote(
@@ -142,6 +140,11 @@ pub(super) async fn transfer_wal_delta(
                 "Can't switch shard {shard_id} to Partial state after diff transfer: {err}"
             ))
         })?;
+
+    // Transform queue proxy into forward proxy, transfer any remaining updates that just came in
+    // After this returns, the complete WAL diff is transferred
+    log::trace!("Transform queue proxy into forward proxy, transferring any remaining records");
+    replica_set.queue_proxy_into_forward_proxy().await?;
 
     // Wait for Partial state in our replica set
     let partial_state = ReplicaState::Partial;
