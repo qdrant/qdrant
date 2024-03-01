@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use api::grpc::conversions::{
     convert_shard_key_from_grpc, convert_shard_key_from_grpc_opt, convert_shard_key_to_grpc,
-    date_time_from_proto, from_grpc_dist, json_path_from_proto, payload_to_proto,
-    proto_to_payloads,
+    from_grpc_dist, json_path_from_proto, payload_to_proto, proto_to_payloads,
+    try_date_time_from_proto,
 };
 use api::grpc::qdrant::quantization_config_diff::Quantization;
 use api::grpc::qdrant::update_collection_cluster_setup_request::{
@@ -1829,7 +1829,7 @@ impl TryFrom<api::grpc::qdrant::OrderBy> for OrderByInterface {
                         Ok(StartFrom::Float(float))
                     }
                     api::grpc::qdrant::start_from::Value::Timestamp(timestamp) => {
-                        Ok(StartFrom::Datetime(date_time_from_proto(timestamp)?))
+                        Ok(StartFrom::Datetime(try_date_time_from_proto(timestamp)?))
                     }
                     api::grpc::qdrant::start_from::Value::Datetime(datetime_str) => Ok(
                         StartFrom::Datetime(DateTimeWrapper::from_str(&datetime_str).map_err(
