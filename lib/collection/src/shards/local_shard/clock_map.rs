@@ -5,6 +5,7 @@ use std::{cmp, fmt};
 use api::grpc::qdrant::RecoveryPointClockTag;
 use io::file_operations;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::operations::types::CollectionError;
 use crate::operations::ClockTag;
@@ -89,9 +90,10 @@ impl ClockMap {
     fn advance_clock_impl(&mut self, clock_tag: ClockTag) -> (bool, u64) {
         let key = Key::from_tag(clock_tag);
         let new_tick = clock_tag.clock_tick;
+        let new_token = clock_tag.token;
 
         match self.clocks.entry(key) {
-            hash_map::Entry::Occupied(mut entry) => entry.get_mut().advance_to(new_tick),
+            hash_map::Entry::Occupied(mut entry) => entry.get_mut().advance_to(new_tick, new_token),
             hash_map::Entry::Vacant(entry) => {
                 // Initialize new clock and accept the operation if `new_tick > 0`.
                 // Reject the operation if `new_tick = 0`.
@@ -99,7 +101,7 @@ impl ClockMap {
                 let is_non_zero_tick = new_tick > 0;
 
                 if is_non_zero_tick {
-                    entry.insert(Clock::new(new_tick));
+                    entry.insert(Clock::new(new_tick, new_token));
                 }
 
                 (is_non_zero_tick, new_tick)
@@ -149,18 +151,27 @@ impl Key {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 struct Clock {
     current_tick: u64,
+    token: Uuid,
 }
 
 impl Clock {
-    fn new(current_tick: u64) -> Self {
-        Self { current_tick }
+    fn new(current_tick: u64, token: Uuid) -> Self {
+        Self {
+            current_tick,
+            token,
+        }
     }
 
     /// Advance clock to `new_tick`, if `new_tick` is newer than current tick.
     ///
     /// Returns whether the clock was updated and the current tick.
     #[must_use = "clock update status and current tick must be used"]
-    fn advance_to(&mut self, new_tick: u64) -> (bool, u64) {
+    fn advance_to(&mut self, new_tick: u64, token: Uuid) -> (bool, u64) {
+        // Accept if we receive exactly the same tick and token
+        if self.current_tick == new_tick && self.token == token {
+            return (true, self.current_tick);
+        }
+
         let clock_updated = self.current_tick < new_tick;
         self.current_tick = cmp::max(self.current_tick, new_tick);
         (clock_updated, self.current_tick)
