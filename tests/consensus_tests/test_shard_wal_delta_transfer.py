@@ -68,8 +68,8 @@ def test_empty_shard_wal_delta_transfer(capfd, tmp_path: pathlib.Path):
         })
     assert_http_ok(r)
 
-    # Wait for end of shard transfer
-    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
+    # Wait for transfer to start and end
+    wait_for_collection_shard_transfers_start_complete(peer_api_uris[0], COLLECTION_NAME, 1)
 
     # Confirm empty WAL delta based on debug message in stdout
     stdout, _stderr = capfd.readouterr()
@@ -87,8 +87,8 @@ def test_empty_shard_wal_delta_transfer(capfd, tmp_path: pathlib.Path):
         })
     assert_http_ok(r)
 
-    # Wait for end of shard transfer
-    wait_for_collection_shard_transfers_count(peer_api_uris[1], COLLECTION_NAME, 0)
+    # Wait for transfer to start and end
+    wait_for_collection_shard_transfers_start_complete(peer_api_uris[1], COLLECTION_NAME, 1)
 
     # Confirm empty WAL delta based on debug message in stdout
     stdout, _stderr = capfd.readouterr()
@@ -173,8 +173,8 @@ def test_shard_wal_delta_transfer_manual_recovery(tmp_path: pathlib.Path, capfd)
         })
     assert_http_ok(r)
 
-    # Wait for end of shard transfer
-    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
+    # Wait for transfer to start and end
+    wait_for_collection_shard_transfers_start_complete(peer_api_uris[0], COLLECTION_NAME, 1)
 
     # Confirm WAL delta transfer based on stdout logs, assert its size
     stdout, _stderr = capfd.readouterr()
@@ -275,8 +275,8 @@ def test_shard_wal_delta_transfer_manual_recovery_chain(tmp_path: pathlib.Path, 
         })
     assert_http_ok(r)
 
-    # Wait for end of shard transfer
-    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
+    # Wait for transfer to start and end
+    wait_for_collection_shard_transfers_start_complete(peer_api_uris[0], COLLECTION_NAME, 1)
 
     # Start inserting into the fourth peer again
     upload_process_4 = run_update_points_in_background(peer_api_uris[3], COLLECTION_NAME, init_offset=600000, throttle=True)
@@ -301,8 +301,8 @@ def test_shard_wal_delta_transfer_manual_recovery_chain(tmp_path: pathlib.Path, 
         })
     assert_http_ok(r)
 
-    # Wait for end of shard transfer
-    wait_for_collection_shard_transfers_count(peer_api_uris[3], COLLECTION_NAME, 0)
+    # Wait for transfer to start and end
+    wait_for_collection_shard_transfers_start_complete(peer_api_uris[3], COLLECTION_NAME, 1)
 
     upload_process_1.kill()
     upload_process_2.kill()
@@ -381,8 +381,8 @@ def test_shard_wal_delta_transfer_fallback(capfd, tmp_path: pathlib.Path):
         })
     assert_http_ok(r)
 
-    # Wait for end of shard transfer
-    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
+    # Wait for transfer to start and end
+    wait_for_collection_shard_transfers_start_complete(peer_api_uris[0], COLLECTION_NAME, 1)
 
     # Confirm that we fall back to a different method after WAL delta fails
     stdout, _stderr = capfd.readouterr()
@@ -467,8 +467,8 @@ def test_shard_fallback_on_big_diff(tmp_path: pathlib.Path):
         })
     assert_http_ok(r)
 
-    # Wait for end of shard transfer
-    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
+    # Wait for transfer to start and end
+    wait_for_collection_shard_transfers_start_complete(peer_api_uris[0], COLLECTION_NAME, 1)
 
     # Match all points on all nodes exactly
     data = []

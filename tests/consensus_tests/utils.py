@@ -412,6 +412,19 @@ def wait_for_collection_shard_transfers_count(peer_api_uri: str, collection_name
         raise e
 
 
+def wait_for_collection_shard_transfers_start_complete(peer_api_uri: str, collection_name: str,
+                                              expected_shard_transfer_count: int = 1):
+    # Wait for the given number of shard transfers to start, and then complete
+    # This helps prevent falling through checks for all transfers to be done,
+    # even before the transfer has started
+    try:
+        wait_for(check_collection_shard_transfers_count, peer_api_uri, collection_name, expected_shard_transfer_count)
+        wait_for(check_collection_shard_transfers_count, peer_api_uri, collection_name, 0)
+    except Exception as e:
+        print_collection_cluster_info(peer_api_uri, collection_name)
+        raise e
+
+
 def wait_for_collection_local_shards_count(peer_api_uri: str, collection_name: str, expected_local_shard_count: int):
     try:
         wait_for(check_collection_local_shards_count, peer_api_uri, collection_name, expected_local_shard_count)
