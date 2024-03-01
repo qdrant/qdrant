@@ -202,6 +202,7 @@ impl RecoveryPoint {
     pub fn iter_as_clock_tags(&self) -> impl Iterator<Item = ClockTag> + '_ {
         self.clocks
             .iter()
+            // TODO: keep clock token here? currently we generate a new unique one.
             .map(|(key, &tick)| ClockTag::new(key.peer_id, key.clock_id, tick))
     }
 
