@@ -451,6 +451,32 @@ mod test {
     }
 
     #[test]
+    fn clock_map_accept_last_operation_multiple_times() {
+        let mut helper = Helper::empty();
+
+        helper.advance(tag(1)).assert(true, 1);
+
+        // Accept same operation multiple times if it is the last
+        // We might send it multiple times due to a forward proxy
+        let duplicate = tag(2);
+        helper.advance(duplicate).assert(true, 2);
+        helper.advance(duplicate).assert(true, 2);
+        helper.advance(duplicate).assert(true, 2);
+
+        // Reject same clock tag with different unique token
+        helper.advance(tag(2)).assert(false, 2);
+
+        // Still accept the same operation
+        helper.advance(duplicate).assert(true, 2);
+
+        // Accept newer operation
+        helper.advance(tag(3)).assert(true, 3);
+
+        // Reject duplicated operation now, because a newer one was accepted
+        helper.advance(duplicate).assert(false, 3);
+    }
+
+    #[test]
     fn clock_map_advance_to_next_tick() {
         let mut helper = Helper::empty();
 
@@ -616,11 +642,13 @@ mod test {
         pub fn advance(&mut self, mut clock_tag: ClockTag) -> Status {
             let peer_id = clock_tag.peer_id;
             let clock_id = clock_tag.clock_id;
+            let token = clock_tag.token;
 
             let accepted = self.clock_map.advance_clock_and_correct_tag(&mut clock_tag);
 
             assert_eq!(clock_tag.peer_id, peer_id);
             assert_eq!(clock_tag.clock_id, clock_id);
+            assert_eq!(clock_tag.token, token);
 
             Status {
                 accepted,
