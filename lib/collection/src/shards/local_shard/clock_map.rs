@@ -1,6 +1,6 @@
 use std::collections::{hash_map, HashMap};
+use std::fmt;
 use std::path::Path;
-use std::{cmp, fmt};
 
 use api::grpc::qdrant::RecoveryPointClockTag;
 use io::file_operations;
@@ -166,15 +166,21 @@ impl Clock {
     ///
     /// Returns whether the clock was updated and the current tick.
     #[must_use = "clock update status and current tick must be used"]
-    fn advance_to(&mut self, new_tick: u64, token: Uuid) -> (bool, u64) {
-        // Accept if we receive exactly the same tick and token
-        if self.current_tick == new_tick && self.token == token {
-            return (true, self.current_tick);
+    fn advance_to(&mut self, new_tick: u64, new_token: Uuid) -> (bool, u64) {
+        // Reject lower ticks
+        if new_tick < self.current_tick {
+            return (false, self.current_tick);
         }
 
-        let clock_updated = self.current_tick < new_tick;
-        self.current_tick = cmp::max(self.current_tick, new_tick);
-        (clock_updated, self.current_tick)
+        // Accept equal tick if it has the same unique token
+        if self.current_tick == new_tick {
+            return (self.token == new_token, self.current_tick);
+        }
+
+        // Accept higher ticks
+        self.current_tick = new_tick;
+        self.token = new_token;
+        (true, self.current_tick)
     }
 
     #[cfg(test)]
