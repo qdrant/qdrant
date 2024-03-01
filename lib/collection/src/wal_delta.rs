@@ -56,27 +56,18 @@ impl RecoverableWal {
     ) -> crate::wal::Result<(u64, ParkingMutexGuard<'a, SerdeWal<OperationWithClockTag>>)> {
         // Update last seen clock map and correct clock tag if necessary
         if let Some(clock_tag) = &mut operation.clock_tag {
-            // TODO:
-            //
-            // Temporarily accept *all* operations, even if their `clock_tag` is older than
-            // current clock tracked by the clock map
-
-            // TODO: do not manually advance here!
+            // TODO: Do not manually advance here!
             //
             // TODO: What does the above `TODO` mean? "Make sure to call `advance_clock_and_correct_tag`, but not `advance_clock`?"
-            let _operation_accepted = self
+            let operation_accepted = self
                 .newest_clocks
                 .lock()
                 .await
                 .advance_clock_and_correct_tag(clock_tag);
 
-            // if !operation_accepted {
-            //     return Ok(UpdateResult {
-            //         operation_id: None,
-            //         status: UpdateStatus::Acknowledged,
-            //         clock_tag: Some(*clock_tag),
-            //     });
-            // }
+            if !operation_accepted {
+                return Err(crate::wal::WalError::ClockRejected);
+            }
         }
 
         // Write operation to WAL
@@ -270,7 +261,7 @@ mod tests {
     use crate::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
     use crate::shards::local_shard::clock_map::{ClockMap, RecoveryPoint};
     use crate::shards::replica_set::clock_set::ClockSet;
-    use crate::wal::SerdeWal;
+    use crate::wal::{SerdeWal, WalError};
 
     fn fixture_empty_wal() -> (RecoverableWal, TempDir) {
         let dir = Builder::new().prefix("wal_test").tempdir().unwrap();
@@ -309,8 +300,9 @@ mod tests {
         let (b_wal, _b_wal_dir) = fixture_empty_wal();
         let (c_wal, _c_wal_dir) = fixture_empty_wal();
 
-        // Create clock set for peer A
+        // Create clock set for peer A, start first clock from 1
         let mut a_clock_set = ClockSet::new();
+        a_clock_set.get_clock().advance_to(0);
 
         // Create operation on peer A
         let mut a_clock_0 = a_clock_set.get_clock();
@@ -401,8 +393,9 @@ mod tests {
         let (b_wal, _b_wal_dir) = fixture_empty_wal();
         let (c_wal, _c_wal_dir) = fixture_empty_wal();
 
-        // Create clock set for peer A
+        // Create clock set for peer A, start first clock from 1
         let mut a_clock_set = ClockSet::new();
+        a_clock_set.get_clock().advance_to(0);
 
         // Create N operations on peer A
         for i in 0..N {
@@ -503,6 +496,7 @@ mod tests {
         // Create N operations on peer A
         for i in 0..N {
             let mut a_clock_0 = a_clock_set.get_clock();
+            a_clock_0.advance_to(0);
             let clock_tick = a_clock_0.tick_once();
             let clock_tag = ClockTag::new(1, a_clock_0.id(), clock_tick);
             let bare_operation = mock_operation(i as u64);
@@ -530,6 +524,7 @@ mod tests {
             } else {
                 b_clock_set.get_clock()
             };
+            clock.advance_to(0);
             let clock_tick = clock.tick_once();
             let clock_tag = ClockTag::new(peer_id, clock.id(), clock_tick);
             let bare_operation = mock_operation(i as u64);
@@ -595,9 +590,11 @@ mod tests {
         let (b_wal, _b_wal_dir) = fixture_empty_wal();
         let (c_wal, _c_wal_dir) = fixture_empty_wal();
 
-        // Create clock sets for peer A and B
+        // Create clock sets for peer A and B, start first clocks from 1
         let mut a_clock_set = ClockSet::new();
         let mut b_clock_set = ClockSet::new();
+        a_clock_set.get_clock().advance_to(0);
+        b_clock_set.get_clock().advance_to(0);
 
         // Create operation on peer A
         let mut a_clock_0 = a_clock_set.get_clock();
@@ -798,6 +795,7 @@ mod tests {
         {
             // Node C is sending updates to A and B
             let mut c_clock_0 = c_clock_set.get_clock();
+            c_clock_0.advance_to(0);
             let clock_tick = c_clock_0.tick_once();
             let clock_tag = ClockTag::new(node_c_peer_id, c_clock_0.id(), clock_tick);
 
@@ -822,6 +820,7 @@ mod tests {
         {
             // Node C is sending updates to A and B
             let mut c_clock_0 = c_clock_set.get_clock();
+            c_clock_0.advance_to(0);
             let clock_tick = c_clock_0.tick_once();
             let clock_tag = ClockTag::new(node_c_peer_id, c_clock_0.id(), clock_tick);
 
@@ -845,6 +844,8 @@ mod tests {
             // Node C is sending updates to A and B
             let mut c_clock_0 = c_clock_set.get_clock();
             let mut c_clock_1 = c_clock_set.get_clock();
+            c_clock_0.advance_to(0);
+            c_clock_1.advance_to(0);
 
             {
                 // First parallel operation
@@ -880,6 +881,7 @@ mod tests {
         // Node D sends an update to both A and B, both successfully written
         {
             let mut d_clock_0 = d_clock_set.get_clock();
+            d_clock_0.advance_to(0);
             let clock_tick = d_clock_0.tick_once();
             let clock_tag = ClockTag::new(node_d_peer_id, d_clock_0.id(), clock_tick);
 
@@ -900,6 +902,7 @@ mod tests {
         // Node D sends an update to both A and B, both successfully written
         {
             let mut d_clock_0 = d_clock_set.get_clock();
+            d_clock_0.advance_to(0);
             let clock_tick = d_clock_0.tick_once();
             let clock_tag = ClockTag::new(node_d_peer_id, d_clock_0.id(), clock_tick);
 
@@ -952,6 +955,7 @@ mod tests {
         // It is written to both A and B, plus forwarded to B with forward proxy
         {
             let mut c_clock_0 = c_clock_set.get_clock();
+            c_clock_0.advance_to(0);
             let clock_tick = c_clock_0.tick_once();
             let clock_tag = ClockTag::new(node_c_peer_id, c_clock_0.id(), clock_tick);
 
@@ -963,10 +967,15 @@ mod tests {
 
             let (_, _) = a_wal.lock_and_write(&mut operation_a).await.unwrap();
             let (_, _) = b_wal.lock_and_write(&mut operation_b).await.unwrap();
-            let (_, _) = b_wal
-                .lock_and_write(&mut operation_b_forward)
-                .await
-                .unwrap();
+
+            // Expect forward proxy rejection, it already has this operation
+            assert!(matches!(
+                b_wal
+                    .lock_and_write(&mut operation_b_forward)
+                    .await
+                    .unwrap_err(),
+                WalError::ClockRejected
+            ));
 
             c_clock_0.advance_to(operation_a.clock_tag.unwrap().clock_tick);
             c_clock_0.advance_to(operation_b.clock_tag.unwrap().clock_tick);
@@ -1046,6 +1055,7 @@ mod tests {
         {
             // Node D is sending updates to B
             let mut d_clock = d_clock_set.get_clock();
+            d_clock.advance_to(0);
 
             // First parallel operation
             let clock_tick = d_clock.tick_once();
@@ -1133,6 +1143,7 @@ mod tests {
                 let entrypoint = rng.gen_range(0..node_count);
 
                 let mut clock = clock_sets[entrypoint].get_clock();
+                clock.advance_to(0);
                 let clock_tick = clock.tick_once();
                 let clock_tag = ClockTag::new(entrypoint as u64, clock.id(), clock_tick);
 
@@ -1176,6 +1187,7 @@ mod tests {
                 let entrypoint = *alive_nodes.choose(&mut rng).unwrap();
 
                 let mut clock = clock_sets[entrypoint].get_clock();
+                clock.advance_to(0);
                 let clock_tick = clock.tick_once();
                 let clock_tag = ClockTag::new(entrypoint as u64, clock.id(), clock_tick);
 
@@ -1275,28 +1287,28 @@ mod tests {
         let (_, _) = wal
             .lock_and_write(&mut OperationWithClockTag::new(
                 mock_operation(1),
-                Some(ClockTag::new(1, 0, 0)),
-            ))
-            .await
-            .unwrap();
-        let (_, _) = wal
-            .lock_and_write(&mut OperationWithClockTag::new(
-                mock_operation(2),
                 Some(ClockTag::new(1, 0, 1)),
             ))
             .await
             .unwrap();
         let (_, _) = wal
             .lock_and_write(&mut OperationWithClockTag::new(
-                mock_operation(3),
+                mock_operation(2),
                 Some(ClockTag::new(1, 0, 2)),
+            ))
+            .await
+            .unwrap();
+        let (_, _) = wal
+            .lock_and_write(&mut OperationWithClockTag::new(
+                mock_operation(3),
+                Some(ClockTag::new(1, 0, 3)),
             ))
             .await
             .unwrap();
 
         // Can resolve a delta for the last clock
         let mut recovery_point = RecoveryPoint::default();
-        recovery_point.insert(1, 0, 1);
+        recovery_point.insert(1, 0, 2);
         let resolve_result = wal.resolve_wal_delta(recovery_point).await.unwrap();
         assert_eq!(resolve_result, Some(2));
 
@@ -1308,20 +1320,20 @@ mod tests {
         let (_, _) = wal
             .lock_and_write(&mut OperationWithClockTag::new(
                 mock_operation(5),
-                Some(ClockTag::new(1, 0, 3)),
+                Some(ClockTag::new(1, 0, 4)),
             ))
             .await
             .unwrap();
 
         // Can still resolve a delta for the last clock
         let mut recovery_point = RecoveryPoint::default();
-        recovery_point.insert(1, 0, 3);
+        recovery_point.insert(1, 0, 4);
         let resolve_result = wal.resolve_wal_delta(recovery_point).await.unwrap();
         assert_eq!(resolve_result, None);
 
         // Cannot resolve a delta for our previous clock, it now has an untagged record after it
         let mut recovery_point = RecoveryPoint::default();
-        recovery_point.insert(1, 0, 1);
+        recovery_point.insert(1, 0, 2);
         let resolve_result = wal.resolve_wal_delta(recovery_point).await;
         assert_eq!(resolve_result.unwrap_err(), WalDeltaError::NotFound);
     }

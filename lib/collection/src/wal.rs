@@ -20,6 +20,8 @@ pub enum WalError {
     WriteWalError(String),
     #[error("Can't truncate WAL: {0}")]
     TruncateWalError(String),
+    #[error("Operation rejected by WAL for old clock")]
+    ClockRejected,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -62,6 +64,7 @@ impl WalState {
 /// Each stored record is enumerated with sequential number.
 /// Sequential number can be used to read stored records starting from some IDs,
 /// for removing old, no longer required, records.
+#[derive(Debug)]
 pub struct SerdeWal<R> {
     record: PhantomData<R>,
     wal: Wal,
