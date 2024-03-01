@@ -363,6 +363,37 @@ impl ShardReplicaSet {
         proxy.transfer_indexes().await
     }
 
+    /// Send all queue proxy updates to remote
+    ///
+    /// This method allows to transfer queued updates at any point, fbefore the shard is
+    /// unproxified for example. This allows for proper error handling at the time this method is
+    /// called. Because the shard is transformed into a forward proxy after this operation it will
+    /// not error again when the shard is eventually unproxified again.
+    ///
+    /// Does nothing if the local shard is not a queue proxy.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if transferring all updates to the remote failed.
+    ///
+    /// # Cancel safety
+    ///
+    /// This function is cancel safe.
+    ///
+    /// If cancelled - transforming the queue proxy into a forward proxy may not actually complete.
+    /// None, some or all queued operations may be transmitted to the remote.
+    pub async fn queue_proxy_flush(&self) -> CollectionResult<()> {
+        let local = self.local.read().await;
+
+        let Some(Shard::QueueProxy(proxy)) = local.deref() else {
+            return Ok(());
+        };
+
+        proxy.transfer_all_missed_updates().await?;
+
+        Ok(())
+    }
+
     /// Send all queue proxy updates to remote and transform into forward proxy
     ///
     /// When a queue or forward proxy shard needs to be unproxified into a local shard again we
@@ -393,15 +424,7 @@ impl ShardReplicaSet {
     /// None, some or all queued operations may be transmitted to the remote.
     pub async fn queue_proxy_into_forward_proxy(&self) -> CollectionResult<()> {
         // First pass: transfer all missed updates with shared read lock
-        {
-            let local = self.local.read().await;
-
-            let Some(Shard::QueueProxy(proxy)) = local.deref() else {
-                return Ok(());
-            };
-
-            proxy.transfer_all_missed_updates().await?;
-        }
+        self.queue_proxy_flush().await?;
 
         // Second pass: transfer new updates
         let mut local = self.local.write().await;
