@@ -162,9 +162,13 @@ impl Clock {
         }
     }
 
-    /// Advance clock to `new_tick`, if `new_tick` is newer than current tick.
+    /// Advance clock to `new_tick` if , if `new_tick` is newer than current tick.
     ///
     /// Returns whether the clock was updated and the current tick.
+    ///
+    /// The clock is updated when:
+    /// - the given `new_tick` is newer than the current tick
+    /// - the given `new_tick` and `new_token` are equal to the current tick and token
     #[must_use = "clock update status and current tick must be used"]
     fn advance_to(&mut self, new_tick: u64, new_token: Uuid) -> (bool, u64) {
         // Reject lower ticks
