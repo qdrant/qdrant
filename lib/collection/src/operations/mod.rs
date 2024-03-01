@@ -18,11 +18,12 @@ use std::collections::HashMap;
 use segment::json_path::JsonPath;
 use segment::types::{ExtendedPointId, PayloadFieldSchema};
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use validator::Validate;
 
 use crate::hash_ring::HashRing;
 use crate::shards::shard::{PeerId, ShardId};
+
+pub type ClockToken = u64;
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Validate)]
 #[serde(rename_all = "snake_case")]
@@ -73,16 +74,22 @@ pub struct ClockTag {
     pub clock_id: u32,
     pub clock_tick: u64,
     /// A unique token for each clock tag.
-    pub token: Uuid,
+    pub token: ClockToken,
     pub force: bool,
 }
 
 impl ClockTag {
     pub fn new(peer_id: PeerId, clock_id: u32, clock_tick: u64) -> Self {
-        Self::new_with_token(peer_id, clock_id, clock_tick, Uuid::new_v4())
+        let random_token = rand::random();
+        Self::new_with_token(peer_id, clock_id, clock_tick, random_token)
     }
 
-    pub fn new_with_token(peer_id: PeerId, clock_id: u32, clock_tick: u64, token: Uuid) -> Self {
+    pub fn new_with_token(
+        peer_id: PeerId,
+        clock_id: u32,
+        clock_tick: u64,
+        token: ClockToken,
+    ) -> Self {
         Self {
             peer_id,
             clock_id,
@@ -106,7 +113,7 @@ impl TryFrom<api::grpc::qdrant::ClockTag> for ClockTag {
             peer_id: tag.peer_id,
             clock_id: tag.clock_id,
             clock_tick: tag.clock_tick,
-            token: Uuid::from_slice_le(&tag.token)?,
+            token: tag.token,
             force: tag.force,
         };
 
@@ -120,7 +127,7 @@ impl From<ClockTag> for api::grpc::qdrant::ClockTag {
             peer_id: tag.peer_id,
             clock_id: tag.clock_id,
             clock_tick: tag.clock_tick,
-            token: tag.token.to_bytes_le().into(),
+            token: tag.token,
             force: tag.force,
         }
     }

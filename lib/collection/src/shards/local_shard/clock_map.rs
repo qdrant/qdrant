@@ -6,10 +6,9 @@ use api::grpc::qdrant::RecoveryPointClockTag;
 use io::file_operations;
 use serde::{Deserialize, Serialize};
 use tonic::Status;
-use uuid::Uuid;
 
 use crate::operations::types::CollectionError;
-use crate::operations::ClockTag;
+use crate::operations::{ClockTag, ClockToken};
 use crate::shards::shard::PeerId;
 
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
@@ -152,11 +151,11 @@ impl Key {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 struct Clock {
     current_tick: u64,
-    token: Uuid,
+    token: ClockToken,
 }
 
 impl Clock {
-    fn new(current_tick: u64, token: Uuid) -> Self {
+    fn new(current_tick: u64, token: ClockToken) -> Self {
         Self {
             current_tick,
             token,
@@ -171,7 +170,7 @@ impl Clock {
     /// - the given `new_tick` is newer than the current tick
     /// - the given `new_tick` and `new_token` are equal to the current tick and token
     #[must_use = "clock update status and current tick must be used"]
-    fn advance_to(&mut self, new_tick: u64, new_token: Uuid) -> (bool, u64) {
+    fn advance_to(&mut self, new_tick: u64, new_token: ClockToken) -> (bool, u64) {
         if self.current_tick < new_tick {
             self.current_tick = new_tick;
             self.token = new_token;
@@ -195,7 +194,7 @@ impl Clock {
 /// recovering node has not seen yet.
 #[derive(Clone, Debug, Default)]
 pub struct RecoveryPoint {
-    clocks: HashMap<Key, (u64, Uuid)>,
+    clocks: HashMap<Key, (u64, ClockToken)>,
 }
 
 impl RecoveryPoint {
@@ -259,10 +258,9 @@ impl RecoveryPoint {
     pub fn initialize_clocks_missing_from(&mut self, other: &Self) {
         // Clocks known on our node, that are not in the recovery point, are unknown on the
         // recovering node. Add them here with tick 1, so that we include all records for it.
+        let random_token = rand::random::<ClockToken>();
         for &key in other.clocks.keys() {
-            self.clocks
-                .entry(key)
-                .or_insert_with(|| (1, Uuid::new_v4()));
+            self.clocks.entry(key).or_insert_with(|| (1, random_token));
         }
     }
 
@@ -291,8 +289,9 @@ impl RecoveryPoint {
 
     #[cfg(test)]
     pub(crate) fn insert(&mut self, peer_id: PeerId, clock_id: u32, clock_tick: u64) {
+        let random_token = rand::random::<ClockToken>();
         self.clocks
-            .insert(Key::new(peer_id, clock_id), (clock_tick, Uuid::new_v4()));
+            .insert(Key::new(peer_id, clock_id), (clock_tick, random_token));
     }
 }
 
@@ -327,7 +326,7 @@ impl From<&RecoveryPoint> for api::grpc::qdrant::RecoveryPoint {
                 peer_id: key.peer_id,
                 clock_id: key.clock_id,
                 clock_tick,
-                token: token.to_bytes_le().into(),
+                token,
             })
             .collect();
 
@@ -349,16 +348,12 @@ impl TryFrom<api::grpc::qdrant::RecoveryPoint> for RecoveryPoint {
             .clocks
             .into_iter()
             .map(|tag| {
-                tag.token
-                    .try_into()
-                    .map_err(|err| {
-                        Status::invalid_argument(format!("Malformed clock tag token: {err}"))
-                    })
-                    .map(|token: Uuid| {
-                        (Key::new(tag.peer_id, tag.clock_id), (tag.clock_tick, token))
-                    })
+                (
+                    Key::new(tag.peer_id, tag.clock_id),
+                    (tag.clock_tick, tag.token),
+                )
             })
-            .collect::<Result<_, _>>()?;
+            .collect();
 
         Ok(Self { clocks })
     }
