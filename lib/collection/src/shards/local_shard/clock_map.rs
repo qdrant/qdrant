@@ -120,7 +120,7 @@ impl ClockMap {
             clocks: self
                 .clocks
                 .iter()
-                .map(|(key, clock)| (*key, (clock.current_tick, clock.token)))
+                .map(|(&key, clock)| (key, (clock.current_tick, clock.token)))
                 .collect(),
         }
     }
@@ -163,7 +163,7 @@ impl Clock {
         }
     }
 
-    /// Advance clock to `new_tick` if , if `new_tick` is newer than current tick.
+    /// Advance clock to `new_tick`, if `new_tick` is newer than current tick.
     ///
     /// Returns whether the clock was updated and the current tick.
     ///
@@ -172,20 +172,14 @@ impl Clock {
     /// - the given `new_tick` and `new_token` are equal to the current tick and token
     #[must_use = "clock update status and current tick must be used"]
     fn advance_to(&mut self, new_tick: u64, new_token: Uuid) -> (bool, u64) {
-        // Reject lower ticks
-        if new_tick < self.current_tick {
-            return (false, self.current_tick);
+        if self.current_tick < new_tick {
+            self.current_tick = new_tick;
+            self.token = new_token;
         }
 
-        // Accept equal tick if it has the same unique token
-        if self.current_tick == new_tick {
-            return (self.token == new_token, self.current_tick);
-        }
+        let operation_accepted = self.current_tick == new_tick && self.token == new_token;
 
-        // Accept higher ticks
-        self.current_tick = new_tick;
-        self.token = new_token;
-        (true, self.current_tick)
+        (operation_accepted, self.current_tick)
     }
 
     #[cfg(test)]
@@ -211,17 +205,14 @@ impl RecoveryPoint {
 
     /// Iterate over all recovery point entries as clock tags.
     pub fn iter_as_clock_tags(&self) -> impl Iterator<Item = ClockTag> + '_ {
-        self.clocks
-            .iter()
-            // TODO: keep clock token here? currently we generate a new unique one.
-            .map(|(key, &(tick, token))| {
-                ClockTag::new_with_token(key.peer_id, key.clock_id, tick, token)
-            })
+        self.clocks.iter().map(|(key, &(tick, token))| {
+            ClockTag::new_with_token(key.peer_id, key.clock_id, tick, token)
+        })
     }
 
     /// Increase all existing clocks in this recovery point by the given amount
     pub fn increase_all_clocks_by(&mut self, ticks: u64) {
-        for (current_tick, _token) in self.clocks.values_mut() {
+        for (current_tick, _) in self.clocks.values_mut() {
             *current_tick += ticks;
         }
     }
@@ -277,8 +268,8 @@ impl RecoveryPoint {
 
     /// Remove clocks from this recovery point, that are equal to the clocks in the `other`.
     pub fn remove_clocks_equal_to(&mut self, other: &Self) {
-        for (key, (other_tick, _token)) in &other.clocks {
-            if let Some((tick, _token)) = self.clocks.get(key) {
+        for (key, (other_tick, _)) in &other.clocks {
+            if let Some((tick, _)) = self.clocks.get(key) {
                 if tick == other_tick {
                     self.clocks.remove(key);
                 }
@@ -291,7 +282,7 @@ impl RecoveryPoint {
     pub fn remove_clock_if_newer_than_or_equal_to_tag(&mut self, tag: ClockTag) {
         let key = Key::from_tag(tag);
 
-        if let Some(&(tick, _token)) = self.clocks.get(&key) {
+        if let Some(&(tick, _)) = self.clocks.get(&key) {
             if tick >= tag.clock_tick {
                 self.clocks.remove(&key);
             }
