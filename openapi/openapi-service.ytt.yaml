@@ -137,11 +137,3 @@ paths:
         "4XX":
           description: error
 
-  /issues:
-    get:
-      summary: Beta feature. Get a list of unresolved issues.
-      description: Beta feature. Gets the list of unresolved issues in this specific Qdrant instance.
-      operationId: get_issues
-      tags:
-        - beta
-      responses: #@ response(reference("IssuesReport"))
