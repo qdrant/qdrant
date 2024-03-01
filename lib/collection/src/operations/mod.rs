@@ -83,8 +83,8 @@ impl ClockTag {
             peer_id,
             clock_id,
             clock_tick,
-            force: false,
             token: Uuid::new_v4(),
+            force: false,
         }
     }
 
@@ -96,7 +96,13 @@ impl ClockTag {
 
 impl From<api::grpc::qdrant::ClockTag> for ClockTag {
     fn from(tag: api::grpc::qdrant::ClockTag) -> Self {
-        Self::new(tag.peer_id, tag.clock_id, tag.clock_tick).force(tag.force)
+        Self {
+            peer_id: tag.peer_id,
+            clock_id: tag.clock_id,
+            clock_tick: tag.clock_tick,
+            token: Uuid::from_slice_le(&tag.token).expect("UUID is 16 bytes"),
+            force: tag.force,
+        }
     }
 }
 
@@ -106,7 +112,7 @@ impl From<ClockTag> for api::grpc::qdrant::ClockTag {
             peer_id: tag.peer_id,
             clock_id: tag.clock_id,
             clock_tick: tag.clock_tick,
-            token: tag.token.to_string(),
+            token: tag.token.to_bytes_le().into(),
             force: tag.force,
         }
     }

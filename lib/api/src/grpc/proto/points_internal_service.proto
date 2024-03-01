@@ -113,7 +113,7 @@ message ClockTag {
   uint64 peer_id = 1;
   uint32 clock_id = 2;
   uint64 clock_tick = 3;
-  string token = 4;
+  bytes token = 4;
   bool force = 5;
 }
 
