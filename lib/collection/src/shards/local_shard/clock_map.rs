@@ -238,11 +238,11 @@ impl RecoveryPoint {
     /// A clock that is present in this recovery point, but not in the `other`,
     /// is always considered to be *newer*.
     pub fn has_any_newer_clocks_than(&mut self, other: &Self) -> bool {
-        self.clocks.iter().any(|(key, &tick)| {
+        self.clocks.iter().any(|(key, &(tick, _token))| {
             other
                 .clocks
                 .get(key)
-                .map_or(true, |&other_tick| tick > other_tick)
+                .map_or(true, |&(other_tick, _token)| tick > other_tick)
         })
     }
 
@@ -251,11 +251,11 @@ impl RecoveryPoint {
     /// A clock that is present in this recovery point, but not in the `other`,
     /// is always considered to be *newer*.
     pub fn has_any_older_clocks_than(&self, other: &Self) -> bool {
-        self.clocks.iter().any(|(key, &tick)| {
+        self.clocks.iter().any(|(key, &(tick, _token))| {
             other
                 .clocks
                 .get(key)
-                .map_or(false, |&other_tick| tick < other_tick)
+                .map_or(false, |&(other_tick, _token)| tick < other_tick)
         })
     }
 
