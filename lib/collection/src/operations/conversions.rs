@@ -878,7 +878,11 @@ impl TryFrom<api::grpc::qdrant::UpdateResultInternal> for UpdateResult {
         let res = Self {
             operation_id: res.operation_id,
             status: res.status.try_into()?,
-            clock_tag: res.clock_tag.map(Into::into),
+            clock_tag: res
+                .clock_tag
+                .map(TryInto::try_into)
+                .transpose()
+                .map_err(|err| Status::invalid_argument(format!("Malformed clock tag: {err}")))?,
         };
 
         Ok(res)

@@ -52,7 +52,10 @@ impl PointsInternal for PointsInternalService {
         upsert(
             self.toc.clone(),
             upsert_points,
-            clock_tag.map(Into::into),
+            clock_tag
+                .map(TryInto::try_into)
+                .transpose()
+                .map_err(|err| Status::invalid_argument(format!("Malformed clock tag: {err}")))?,
             shard_id,
         )
         .await
@@ -75,7 +78,10 @@ impl PointsInternal for PointsInternalService {
         delete(
             self.toc.clone(),
             delete_points,
-            clock_tag.map(Into::into),
+            clock_tag
+                .map(TryInto::try_into)
+                .transpose()
+                .map_err(|err| Status::invalid_argument(format!("Malformed clock tag: {err}")))?,
             shard_id,
         )
         .await
@@ -98,7 +104,10 @@ impl PointsInternal for PointsInternalService {
         update_vectors(
             self.toc.clone(),
             update_point_vectors,
-            clock_tag.map(Into::into),
+            clock_tag
+                .map(TryInto::try_into)
+                .transpose()
+                .map_err(|err| Status::invalid_argument(format!("Malformed clock tag: {err}")))?,
             shard_id,
         )
         .await
@@ -121,7 +130,10 @@ impl PointsInternal for PointsInternalService {
         delete_vectors(
             self.toc.clone(),
             delete_point_vectors,
-            clock_tag.map(Into::into),
+            clock_tag
+                .map(TryInto::try_into)
+                .transpose()
+                .map_err(|err| Status::invalid_argument(format!("Malformed clock tag: {err}")))?,
             shard_id,
         )
         .await
@@ -144,7 +156,10 @@ impl PointsInternal for PointsInternalService {
         set_payload(
             self.toc.clone(),
             set_payload_points,
-            clock_tag.map(Into::into),
+            clock_tag
+                .map(TryInto::try_into)
+                .transpose()
+                .map_err(|err| Status::invalid_argument(format!("Malformed clock tag: {err}")))?,
             shard_id,
         )
         .await
@@ -167,7 +182,10 @@ impl PointsInternal for PointsInternalService {
         overwrite_payload(
             self.toc.clone(),
             set_payload_points,
-            clock_tag.map(Into::into),
+            clock_tag
+                .map(TryInto::try_into)
+                .transpose()
+                .map_err(|err| Status::invalid_argument(format!("Malformed clock tag: {err}")))?,
             shard_id,
         )
         .await
@@ -190,7 +208,10 @@ impl PointsInternal for PointsInternalService {
         delete_payload(
             self.toc.clone(),
             delete_payload_points,
-            clock_tag.map(Into::into),
+            clock_tag
+                .map(TryInto::try_into)
+                .transpose()
+                .map_err(|err| Status::invalid_argument(format!("Malformed clock tag: {err}")))?,
             shard_id,
         )
         .await
@@ -213,7 +234,10 @@ impl PointsInternal for PointsInternalService {
         clear_payload(
             self.toc.clone(),
             clear_payload_points,
-            clock_tag.map(Into::into),
+            clock_tag
+                .map(TryInto::try_into)
+                .transpose()
+                .map_err(|err| Status::invalid_argument(format!("Malformed clock tag: {err}")))?,
             shard_id,
         )
         .await
@@ -236,7 +260,10 @@ impl PointsInternal for PointsInternalService {
         create_field_index_internal(
             self.toc.clone(),
             create_field_index_collection,
-            clock_tag.map(Into::into),
+            clock_tag
+                .map(TryInto::try_into)
+                .transpose()
+                .map_err(|err| Status::invalid_argument(format!("Malformed clock tag: {err}")))?,
             shard_id,
         )
         .await
@@ -259,7 +286,10 @@ impl PointsInternal for PointsInternalService {
         delete_field_index_internal(
             self.toc.clone(),
             delete_field_index_collection,
-            clock_tag.map(Into::into),
+            clock_tag
+                .map(TryInto::try_into)
+                .transpose()
+                .map_err(|err| Status::invalid_argument(format!("Malformed clock tag: {err}")))?,
             shard_id,
         )
         .await
@@ -402,7 +432,10 @@ impl PointsInternal for PointsInternalService {
         sync(
             self.toc.clone(),
             sync_points,
-            clock_tag.map(Into::into),
+            clock_tag
+                .map(TryInto::try_into)
+                .transpose()
+                .map_err(|err| Status::invalid_argument(format!("Malformed clock tag: {err}")))?,
             shard_id,
         )
         .await
