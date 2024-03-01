@@ -2757,6 +2757,8 @@ pub struct RecoveryPointClockTag {
     pub clock_id: u32,
     #[prost(uint64, tag = "3")]
     pub clock_tick: u64,
+    #[prost(bytes = "vec", tag = "4")]
+    pub token: ::prost::alloc::vec::Vec<u8>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

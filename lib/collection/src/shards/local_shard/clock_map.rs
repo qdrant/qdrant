@@ -5,6 +5,7 @@ use std::path::Path;
 use api::grpc::qdrant::RecoveryPointClockTag;
 use io::file_operations;
 use serde::{Deserialize, Serialize};
+use tonic::Status;
 use uuid::Uuid;
 
 use crate::operations::types::CollectionError;
@@ -119,7 +120,7 @@ impl ClockMap {
             clocks: self
                 .clocks
                 .iter()
-                .map(|(key, clock)| (*key, clock.current_tick))
+                .map(|(key, clock)| (*key, (clock.current_tick, clock.token)))
                 .collect(),
         }
     }
@@ -200,7 +201,7 @@ impl Clock {
 /// recovering node has not seen yet.
 #[derive(Clone, Debug, Default)]
 pub struct RecoveryPoint {
-    clocks: HashMap<Key, u64>,
+    clocks: HashMap<Key, (u64, Uuid)>,
 }
 
 impl RecoveryPoint {
@@ -213,12 +214,14 @@ impl RecoveryPoint {
         self.clocks
             .iter()
             // TODO: keep clock token here? currently we generate a new unique one.
-            .map(|(key, &tick)| ClockTag::new(key.peer_id, key.clock_id, tick))
+            .map(|(key, &(tick, token))| {
+                ClockTag::new_with_token(key.peer_id, key.clock_id, tick, token)
+            })
     }
 
     /// Increase all existing clocks in this recovery point by the given amount
     pub fn increase_all_clocks_by(&mut self, ticks: u64) {
-        for current_tick in self.clocks.values_mut() {
+        for (current_tick, _token) in self.clocks.values_mut() {
             *current_tick += ticks;
         }
     }
@@ -266,14 +269,14 @@ impl RecoveryPoint {
         // Clocks known on our node, that are not in the recovery point, are unknown on the
         // recovering node. Add them here with tick 1, so that we include all records for it.
         for &key in other.clocks.keys() {
-            self.clocks.entry(key).or_insert(1);
+            self.clocks.entry(key).or_insert((1, Uuid::new_v4()));
         }
     }
 
     /// Remove clocks from this recovery point, that are equal to the clocks in the `other`.
     pub fn remove_clocks_equal_to(&mut self, other: &Self) {
-        for (key, other_tick) in &other.clocks {
-            if let Some(tick) = self.clocks.get(key) {
+        for (key, (other_tick, _token)) in &other.clocks {
+            if let Some((tick, _token)) = self.clocks.get(key) {
                 if tick == other_tick {
                     self.clocks.remove(key);
                 }
@@ -286,7 +289,7 @@ impl RecoveryPoint {
     pub fn remove_clock_if_newer_than_or_equal_to_tag(&mut self, tag: ClockTag) {
         let key = Key::from_tag(tag);
 
-        if let Some(&tick) = self.clocks.get(&key) {
+        if let Some(&(tick, _token)) = self.clocks.get(&key) {
             if tick >= tag.clock_tick {
                 self.clocks.remove(&key);
             }
@@ -305,11 +308,11 @@ impl fmt::Display for RecoveryPoint {
 
         let mut separator = "";
 
-        for (key, current_tick) in &self.clocks {
+        for (key, (current_tick, token)) in &self.clocks {
             write!(
                 f,
-                "{separator}{}({}): {current_tick}",
-                key.peer_id, key.clock_id
+                "{separator}{}({}): {current_tick}({token})",
+                key.peer_id, key.clock_id,
             )?;
 
             separator = ", ";
@@ -326,10 +329,11 @@ impl From<&RecoveryPoint> for api::grpc::qdrant::RecoveryPoint {
         let clocks = rp
             .clocks
             .iter()
-            .map(|(key, &clock_tick)| RecoveryPointClockTag {
+            .map(|(key, &(clock_tick, token))| RecoveryPointClockTag {
                 peer_id: key.peer_id,
                 clock_id: key.clock_id,
                 clock_tick,
+                token: token.to_bytes_le().into(),
             })
             .collect();
 
@@ -343,15 +347,26 @@ impl From<RecoveryPoint> for api::grpc::qdrant::RecoveryPoint {
     }
 }
 
-impl From<api::grpc::qdrant::RecoveryPoint> for RecoveryPoint {
-    fn from(rp: api::grpc::qdrant::RecoveryPoint) -> Self {
+impl TryFrom<api::grpc::qdrant::RecoveryPoint> for RecoveryPoint {
+    type Error = Status;
+
+    fn try_from(rp: api::grpc::qdrant::RecoveryPoint) -> Result<Self, Self::Error> {
         let clocks = rp
             .clocks
             .into_iter()
-            .map(|tag| (Key::new(tag.peer_id, tag.clock_id), tag.clock_tick))
-            .collect();
+            .map(|tag| {
+                tag.token
+                    .try_into()
+                    .map_err(|err| {
+                        Status::invalid_argument(format!("Malformed clock tag token: {err}"))
+                    })
+                    .map(|token: Uuid| {
+                        (Key::new(tag.peer_id, tag.clock_id), (tag.clock_tick, token))
+                    })
+            })
+            .collect::<Result<_, _>>()?;
 
-        Self { clocks }
+        Ok(Self { clocks })
     }
 }
 

@@ -588,7 +588,7 @@ impl RemoteShard {
             ));
         };
 
-        Ok(recovery_point.into())
+        Ok(recovery_point.try_into()?)
     }
 
     /// Update the shard cutoff point on the remote shard

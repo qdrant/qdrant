@@ -79,11 +79,15 @@ pub struct ClockTag {
 
 impl ClockTag {
     pub fn new(peer_id: PeerId, clock_id: u32, clock_tick: u64) -> Self {
+        Self::new_with_token(peer_id, clock_id, clock_tick, Uuid::new_v4())
+    }
+
+    pub fn new_with_token(peer_id: PeerId, clock_id: u32, clock_tick: u64, token: Uuid) -> Self {
         Self {
             peer_id,
             clock_id,
             clock_tick,
-            token: Uuid::new_v4(),
+            token,
             force: false,
         }
     }
@@ -97,7 +101,7 @@ impl ClockTag {
 impl TryFrom<api::grpc::qdrant::ClockTag> for ClockTag {
     type Error = uuid::Error;
 
-    fn try_from(tag: api::grpc::qdrant::ClockTag) -> Result<Self, uuid::Error> {
+    fn try_from(tag: api::grpc::qdrant::ClockTag) -> Result<Self, Self::Error> {
         let res = Self {
             peer_id: tag.peer_id,
             clock_id: tag.clock_id,
