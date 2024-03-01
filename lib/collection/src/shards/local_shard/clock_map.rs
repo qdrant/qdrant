@@ -194,7 +194,7 @@ impl Clock {
     }
 }
 
-/// A recovery point, being a list of distributed clocks and their tick value
+/// A recovery point, being a list of distributed clocks with their tick value and unique token
 ///
 /// The recovery point describes from what point we want to get operations from another node in
 /// case of recovery. In other words, the recovery point has the first clock tick values the
@@ -269,7 +269,9 @@ impl RecoveryPoint {
         // Clocks known on our node, that are not in the recovery point, are unknown on the
         // recovering node. Add them here with tick 1, so that we include all records for it.
         for &key in other.clocks.keys() {
-            self.clocks.entry(key).or_insert((1, Uuid::new_v4()));
+            self.clocks
+                .entry(key)
+                .or_insert_with(|| (1, Uuid::new_v4()));
         }
     }
 
