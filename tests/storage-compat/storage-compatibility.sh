@@ -7,12 +7,15 @@ echo $PWD
 cd "$(dirname "$0")/../../"
 
 QDRANT_HOST='localhost:6333'
+LEGACY_QDRANT_VERSION='v1.7.4'
 
 # Build
 cargo build
 
-# Pull archives from master branch to test compatibility
-git lfs pull origin master
+wget "https://storage.googleapis.com/qdrant-backward-compatibility/compatibility-${LEGACY_QDRANT_VERSION}.tar" -O ./tests/storage-compat/compatibility.tar
+
+# Uncompress compatibility
+tar -xvf ./tests/storage-compat/compatibility.tar -C ./tests/storage-compat/
 
 # Uncompress snapshot storage
 tar -xvjf ./tests/storage-compat/storage.tar.bz2
@@ -41,7 +44,7 @@ echo "END"
 
 
 # Test recovering from an old snapshot
-gzip -d --keep ./tests/storage-compat/full-snapshot.snapshot.gz
+gzip -f -d --keep ./tests/storage-compat/full-snapshot.snapshot.gz
 
 rm -rf ./storage
 ./target/debug/qdrant \
@@ -49,7 +52,7 @@ rm -rf ./storage
   & PID=$!
 
 declare retry=0
-until curl --output /dev/null --silent --get --fail http://$QDRANT_HOST/collections/test_collection_vector_on_disk; do
+until curl --output /dev/null --silent --get --fail http://$QDRANT_HOST/readyz; do
   if ((retry++ < 30)); then
       printf 'waiting for server to start...'
       sleep 1
