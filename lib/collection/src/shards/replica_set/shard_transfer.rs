@@ -1,5 +1,7 @@
 use std::ops::Deref as _;
+use std::sync::Arc;
 
+use parking_lot::Mutex;
 use segment::types::PointIdType;
 
 use super::ShardReplicaSet;
@@ -9,6 +11,7 @@ use crate::shards::local_shard::clock_map::RecoveryPoint;
 use crate::shards::queue_proxy_shard::QueueProxyShard;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard::Shard;
+use crate::shards::transfer::transfer_tasks_pool::TransferTaskProgress;
 
 impl ShardReplicaSet {
     /// Convert `Local` shard into `ForwardProxy`.
@@ -94,6 +97,7 @@ impl ShardReplicaSet {
         &self,
         remote_shard: RemoteShard,
         from_version: Option<u64>,
+        progress: Option<Arc<Mutex<TransferTaskProgress>>>,
     ) -> CollectionResult<()> {
         let mut local = self.local.write().await;
 
@@ -168,12 +172,14 @@ impl ShardReplicaSet {
                 local_shard,
                 remote_shard,
                 wal_keep_from,
+                progress,
             )),
             Some(from_version) => QueueProxyShard::new_from_version(
                 local_shard,
                 remote_shard,
                 wal_keep_from,
                 from_version,
+                progress,
             ),
         };
 

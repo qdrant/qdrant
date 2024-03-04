@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use common::types::TelemetryDetail;
+use parking_lot::Mutex as ParkingMutex;
 use segment::data_types::order_by::OrderBy;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
@@ -14,6 +15,7 @@ use tokio::sync::Mutex;
 
 use super::remote_shard::RemoteShard;
 use super::transfer::driver::MAX_RETRY_COUNT;
+use super::transfer::transfer_tasks_pool::TransferTaskProgress;
 use super::update_tracker::UpdateTracker;
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{
@@ -60,9 +62,15 @@ impl QueueProxyShard {
         wrapped_shard: LocalShard,
         remote_shard: RemoteShard,
         wal_keep_from: Arc<AtomicU64>,
+        progress: Option<Arc<ParkingMutex<TransferTaskProgress>>>,
     ) -> Self {
         Self {
-            inner: Some(Inner::new(wrapped_shard, remote_shard, wal_keep_from)),
+            inner: Some(Inner::new(
+                wrapped_shard,
+                remote_shard,
+                wal_keep_from,
+                progress,
+            )),
         }
     }
 
@@ -82,6 +90,7 @@ impl QueueProxyShard {
         remote_shard: RemoteShard,
         wal_keep_from: Arc<AtomicU64>,
         version: u64,
+        progress: Option<Arc<ParkingMutex<TransferTaskProgress>>>,
     ) -> Result<Self, (LocalShard, CollectionError)> {
         // Lock WAL until we've successfully created the queue proxy shard
         let wal = wrapped_shard.wal.wal.clone();
@@ -99,6 +108,7 @@ impl QueueProxyShard {
                 remote_shard,
                 wal_keep_from,
                 version,
+                progress,
             )),
         })
     }
@@ -297,6 +307,8 @@ struct Inner {
     pub(super) wrapped_shard: LocalShard,
     /// Wrapped remote shard, to transfer operations to.
     pub(super) remote_shard: RemoteShard,
+    /// WAL record at which we started the transfer.
+    started_at: u64,
     /// ID of the WAL operation we should transfer next. We consider everything before it to be
     /// transferred.
     transfer_from: AtomicU64,
@@ -308,6 +320,8 @@ struct Inner {
     /// See `set_wal_keep_from()` and `UpdateHandler::wal_keep_from` for more details.
     /// Defaults to `u64::MAX` to allow acknowledging all confirmed versions.
     wal_keep_from: Arc<AtomicU64>,
+    /// Optiona progression tracker.
+    progress: Option<Arc<ParkingMutex<TransferTaskProgress>>>,
 }
 
 impl Inner {
@@ -315,15 +329,18 @@ impl Inner {
         wrapped_shard: LocalShard,
         remote_shard: RemoteShard,
         wal_keep_from: Arc<AtomicU64>,
+        progress: Option<Arc<ParkingMutex<TransferTaskProgress>>>,
     ) -> Self {
         let start_from = wrapped_shard.wal.wal.lock().last_index() + 1;
 
         let shard = Self {
             wrapped_shard,
             remote_shard,
+            started_at: start_from,
             transfer_from: start_from.into(),
             update_lock: Default::default(),
             wal_keep_from,
+            progress,
         };
 
         // Keep all new WAL entries so we don't truncate them off when we still need to transfer
@@ -337,13 +354,16 @@ impl Inner {
         remote_shard: RemoteShard,
         wal_keep_from: Arc<AtomicU64>,
         version: u64,
+        progress: Option<Arc<ParkingMutex<TransferTaskProgress>>>,
     ) -> Self {
         let shard = Self {
             wrapped_shard,
             remote_shard,
             transfer_from: version.into(),
+            started_at: version,
             update_lock: Default::default(),
             wal_keep_from,
+            progress,
         };
 
         // Keep all WAL entries from `version` so we don't truncate them off when we still need to transfer

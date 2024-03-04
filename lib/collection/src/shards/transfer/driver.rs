@@ -87,6 +87,7 @@ pub async fn transfer_shard(
             let result = transfer_wal_delta(
                 transfer_config.clone(),
                 shard_holder.clone(),
+                progress.clone(),
                 shard_id,
                 remote_shard.clone(),
                 channel_service.clone(),
