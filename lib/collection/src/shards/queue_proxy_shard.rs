@@ -412,6 +412,12 @@ impl Inner {
             (items_left, items_total, batch)
         };
 
+        // Set initial progress on the first batch
+        let is_first = transfer_from == self.started_at;
+        if is_first {
+            self.update_progress(0, total as usize);
+        }
+
         log::trace!(
             "Queue proxy transferring batch of {} updates to peer {}",
             batch.len(),
