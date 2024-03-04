@@ -260,6 +260,7 @@ async fn get_snapshot(
     let (collection_name, snapshot_name) = path.into_inner();
     do_get_snapshot(&toc, &collection_name, &snapshot_name).await
 }
+
 #[get("/snapshots")]
 async fn list_full_snapshots(toc: web::Data<TableOfContent>) -> impl Responder {
     let timing = Instant::now();
