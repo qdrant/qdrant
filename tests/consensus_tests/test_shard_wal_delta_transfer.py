@@ -498,7 +498,7 @@ def test_shard_wal_delta_transfer_abort_and_retry(tmp_path: pathlib.Path, capfd)
         )
         assert_http_ok(r)
         data.append(r.json()["result"])
-    assert data[0] == data[1] == data[2]
+    check_data_consistency(data)
 
 
 # Test the shard transfer fallback for WAL delta transfer.
