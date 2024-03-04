@@ -320,7 +320,7 @@ struct Inner {
     /// See `set_wal_keep_from()` and `UpdateHandler::wal_keep_from` for more details.
     /// Defaults to `u64::MAX` to allow acknowledging all confirmed versions.
     wal_keep_from: Arc<AtomicU64>,
-    /// Optiona progression tracker.
+    /// Optional progression tracker.
     progress: Option<Arc<ParkingMutex<TransferTaskProgress>>>,
 }
 
