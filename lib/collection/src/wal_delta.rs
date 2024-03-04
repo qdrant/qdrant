@@ -261,7 +261,7 @@ mod tests {
     use crate::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
     use crate::shards::local_shard::clock_map::{ClockMap, RecoveryPoint};
     use crate::shards::replica_set::clock_set::ClockSet;
-    use crate::wal::{SerdeWal, WalError};
+    use crate::wal::SerdeWal;
 
     fn fixture_empty_wal() -> (RecoverableWal, TempDir) {
         let dir = Builder::new().prefix("wal_test").tempdir().unwrap();
@@ -967,15 +967,10 @@ mod tests {
 
             let (_, _) = a_wal.lock_and_write(&mut operation_a).await.unwrap();
             let (_, _) = b_wal.lock_and_write(&mut operation_b).await.unwrap();
-
-            // Expect forward proxy rejection, it already has this operation
-            assert!(matches!(
-                b_wal
-                    .lock_and_write(&mut operation_b_forward)
-                    .await
-                    .unwrap_err(),
-                WalError::ClockRejected
-            ));
+            let (_, _) = b_wal
+                .lock_and_write(&mut operation_b_forward)
+                .await
+                .unwrap();
 
             c_clock_0.advance_to(operation_a.clock_tag.unwrap().clock_tick);
             c_clock_0.advance_to(operation_b.clock_tag.unwrap().clock_tick);

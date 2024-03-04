@@ -183,7 +183,7 @@ impl CollectionsInternal for CollectionsInternalService {
 
         // Set the shard cutoff point
         collection_read
-            .update_shard_cutoff_point(shard_id, &cutoff.into())
+            .update_shard_cutoff_point(shard_id, &cutoff.try_into()?)
             .await
             .map_err(|err| {
                 Status::internal(format!(

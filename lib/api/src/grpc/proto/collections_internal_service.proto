@@ -63,6 +63,7 @@ message RecoveryPointClockTag {
   uint64 peer_id = 1;
   uint32 clock_id = 2;
   uint64 clock_tick = 3;
+  uint64 token = 4;
 }
 
 message UpdateShardCutoffPointRequest {

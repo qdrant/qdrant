@@ -2757,6 +2757,8 @@ pub struct RecoveryPointClockTag {
     pub clock_id: u32,
     #[prost(uint64, tag = "3")]
     pub clock_tick: u64,
+    #[prost(uint64, tag = "4")]
+    pub token: u64,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -7596,7 +7598,9 @@ pub struct ClockTag {
     pub clock_id: u32,
     #[prost(uint64, tag = "3")]
     pub clock_tick: u64,
-    #[prost(bool, tag = "4")]
+    #[prost(uint64, tag = "4")]
+    pub token: u64,
+    #[prost(bool, tag = "5")]
     pub force: bool,
 }
 #[derive(serde::Serialize)]

@@ -1,13 +1,14 @@
 use std::collections::{hash_map, HashMap};
+use std::fmt;
 use std::path::Path;
-use std::{cmp, fmt};
 
 use api::grpc::qdrant::RecoveryPointClockTag;
 use io::file_operations;
 use serde::{Deserialize, Serialize};
+use tonic::Status;
 
 use crate::operations::types::CollectionError;
-use crate::operations::ClockTag;
+use crate::operations::{ClockTag, ClockToken};
 use crate::shards::shard::PeerId;
 
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
@@ -89,9 +90,10 @@ impl ClockMap {
     fn advance_clock_impl(&mut self, clock_tag: ClockTag) -> (bool, u64) {
         let key = Key::from_tag(clock_tag);
         let new_tick = clock_tag.clock_tick;
+        let new_token = clock_tag.token;
 
         match self.clocks.entry(key) {
-            hash_map::Entry::Occupied(mut entry) => entry.get_mut().advance_to(new_tick),
+            hash_map::Entry::Occupied(mut entry) => entry.get_mut().advance_to(new_tick, new_token),
             hash_map::Entry::Vacant(entry) => {
                 // Initialize new clock and accept the operation if `new_tick > 0`.
                 // Reject the operation if `new_tick = 0`.
@@ -99,7 +101,7 @@ impl ClockMap {
                 let is_non_zero_tick = new_tick > 0;
 
                 if is_non_zero_tick {
-                    entry.insert(Clock::new(new_tick));
+                    entry.insert(Clock::new(new_tick, new_token));
                 }
 
                 (is_non_zero_tick, new_tick)
@@ -117,7 +119,7 @@ impl ClockMap {
             clocks: self
                 .clocks
                 .iter()
-                .map(|(key, clock)| (*key, clock.current_tick))
+                .map(|(&key, clock)| (key, (clock.current_tick, clock.token)))
                 .collect(),
         }
     }
@@ -149,21 +151,34 @@ impl Key {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 struct Clock {
     current_tick: u64,
+    token: ClockToken,
 }
 
 impl Clock {
-    fn new(current_tick: u64) -> Self {
-        Self { current_tick }
+    fn new(current_tick: u64, token: ClockToken) -> Self {
+        Self {
+            current_tick,
+            token,
+        }
     }
 
     /// Advance clock to `new_tick`, if `new_tick` is newer than current tick.
     ///
     /// Returns whether the clock was updated and the current tick.
+    ///
+    /// The clock is updated when:
+    /// - the given `new_tick` is newer than the current tick
+    /// - the given `new_tick` and `new_token` are equal to the current tick and token
     #[must_use = "clock update status and current tick must be used"]
-    fn advance_to(&mut self, new_tick: u64) -> (bool, u64) {
-        let clock_updated = self.current_tick < new_tick;
-        self.current_tick = cmp::max(self.current_tick, new_tick);
-        (clock_updated, self.current_tick)
+    fn advance_to(&mut self, new_tick: u64, new_token: ClockToken) -> (bool, u64) {
+        if self.current_tick < new_tick {
+            self.current_tick = new_tick;
+            self.token = new_token;
+        }
+
+        let operation_accepted = self.current_tick == new_tick && self.token == new_token;
+
+        (operation_accepted, self.current_tick)
     }
 
     #[cfg(test)]
@@ -172,14 +187,14 @@ impl Clock {
     }
 }
 
-/// A recovery point, being a list of distributed clocks and their tick value
+/// A recovery point, being a list of distributed clocks with their tick value and unique token
 ///
 /// The recovery point describes from what point we want to get operations from another node in
 /// case of recovery. In other words, the recovery point has the first clock tick values the
 /// recovering node has not seen yet.
 #[derive(Clone, Debug, Default)]
 pub struct RecoveryPoint {
-    clocks: HashMap<Key, u64>,
+    clocks: HashMap<Key, (u64, ClockToken)>,
 }
 
 impl RecoveryPoint {
@@ -189,14 +204,14 @@ impl RecoveryPoint {
 
     /// Iterate over all recovery point entries as clock tags.
     pub fn iter_as_clock_tags(&self) -> impl Iterator<Item = ClockTag> + '_ {
-        self.clocks
-            .iter()
-            .map(|(key, &tick)| ClockTag::new(key.peer_id, key.clock_id, tick))
+        self.clocks.iter().map(|(key, &(tick, token))| {
+            ClockTag::new_with_token(key.peer_id, key.clock_id, tick, token)
+        })
     }
 
     /// Increase all existing clocks in this recovery point by the given amount
     pub fn increase_all_clocks_by(&mut self, ticks: u64) {
-        for current_tick in self.clocks.values_mut() {
+        for (current_tick, _) in self.clocks.values_mut() {
             *current_tick += ticks;
         }
     }
@@ -213,11 +228,11 @@ impl RecoveryPoint {
     /// A clock that is present in this recovery point, but not in the `other`,
     /// is always considered to be *newer*.
     pub fn has_any_newer_clocks_than(&mut self, other: &Self) -> bool {
-        self.clocks.iter().any(|(key, &tick)| {
+        self.clocks.iter().any(|(key, &(tick, _token))| {
             other
                 .clocks
                 .get(key)
-                .map_or(true, |&other_tick| tick > other_tick)
+                .map_or(true, |&(other_tick, _token)| tick > other_tick)
         })
     }
 
@@ -226,11 +241,11 @@ impl RecoveryPoint {
     /// A clock that is present in this recovery point, but not in the `other`,
     /// is always considered to be *newer*.
     pub fn has_any_older_clocks_than(&self, other: &Self) -> bool {
-        self.clocks.iter().any(|(key, &tick)| {
+        self.clocks.iter().any(|(key, &(tick, _token))| {
             other
                 .clocks
                 .get(key)
-                .map_or(false, |&other_tick| tick < other_tick)
+                .map_or(false, |&(other_tick, _token)| tick < other_tick)
         })
     }
 
@@ -243,15 +258,16 @@ impl RecoveryPoint {
     pub fn initialize_clocks_missing_from(&mut self, other: &Self) {
         // Clocks known on our node, that are not in the recovery point, are unknown on the
         // recovering node. Add them here with tick 1, so that we include all records for it.
+        let random_token = rand::random::<ClockToken>();
         for &key in other.clocks.keys() {
-            self.clocks.entry(key).or_insert(1);
+            self.clocks.entry(key).or_insert_with(|| (1, random_token));
         }
     }
 
     /// Remove clocks from this recovery point, that are equal to the clocks in the `other`.
     pub fn remove_clocks_equal_to(&mut self, other: &Self) {
-        for (key, other_tick) in &other.clocks {
-            if let Some(tick) = self.clocks.get(key) {
+        for (key, (other_tick, _)) in &other.clocks {
+            if let Some((tick, _)) = self.clocks.get(key) {
                 if tick == other_tick {
                     self.clocks.remove(key);
                 }
@@ -264,7 +280,7 @@ impl RecoveryPoint {
     pub fn remove_clock_if_newer_than_or_equal_to_tag(&mut self, tag: ClockTag) {
         let key = Key::from_tag(tag);
 
-        if let Some(&tick) = self.clocks.get(&key) {
+        if let Some(&(tick, _)) = self.clocks.get(&key) {
             if tick >= tag.clock_tick {
                 self.clocks.remove(&key);
             }
@@ -273,7 +289,9 @@ impl RecoveryPoint {
 
     #[cfg(test)]
     pub(crate) fn insert(&mut self, peer_id: PeerId, clock_id: u32, clock_tick: u64) {
-        self.clocks.insert(Key::new(peer_id, clock_id), clock_tick);
+        let random_token = rand::random::<ClockToken>();
+        self.clocks
+            .insert(Key::new(peer_id, clock_id), (clock_tick, random_token));
     }
 }
 
@@ -283,11 +301,11 @@ impl fmt::Display for RecoveryPoint {
 
         let mut separator = "";
 
-        for (key, current_tick) in &self.clocks {
+        for (key, (current_tick, token)) in &self.clocks {
             write!(
                 f,
-                "{separator}{}({}): {current_tick}",
-                key.peer_id, key.clock_id
+                "{separator}{}({}): {current_tick}({token})",
+                key.peer_id, key.clock_id,
             )?;
 
             separator = ", ";
@@ -304,10 +322,11 @@ impl From<&RecoveryPoint> for api::grpc::qdrant::RecoveryPoint {
         let clocks = rp
             .clocks
             .iter()
-            .map(|(key, &clock_tick)| RecoveryPointClockTag {
+            .map(|(key, &(clock_tick, token))| RecoveryPointClockTag {
                 peer_id: key.peer_id,
                 clock_id: key.clock_id,
                 clock_tick,
+                token,
             })
             .collect();
 
@@ -321,15 +340,22 @@ impl From<RecoveryPoint> for api::grpc::qdrant::RecoveryPoint {
     }
 }
 
-impl From<api::grpc::qdrant::RecoveryPoint> for RecoveryPoint {
-    fn from(rp: api::grpc::qdrant::RecoveryPoint) -> Self {
+impl TryFrom<api::grpc::qdrant::RecoveryPoint> for RecoveryPoint {
+    type Error = Status;
+
+    fn try_from(rp: api::grpc::qdrant::RecoveryPoint) -> Result<Self, Self::Error> {
         let clocks = rp
             .clocks
             .into_iter()
-            .map(|tag| (Key::new(tag.peer_id, tag.clock_id), tag.clock_tick))
+            .map(|tag| {
+                (
+                    Key::new(tag.peer_id, tag.clock_id),
+                    (tag.clock_tick, tag.token),
+                )
+            })
             .collect();
 
-        Self { clocks }
+        Ok(Self { clocks })
     }
 }
 
@@ -430,6 +456,32 @@ mod test {
         let output = serde_json::from_value(json).unwrap();
 
         assert_eq!(input, output);
+    }
+
+    #[test]
+    fn clock_map_accept_last_operation_multiple_times() {
+        let mut helper = Helper::empty();
+
+        helper.advance(tag(1)).assert(true, 1);
+
+        // Accept same operation multiple times if it is the last
+        // We might send it multiple times due to a forward proxy
+        let duplicate = tag(2);
+        helper.advance(duplicate).assert(true, 2);
+        helper.advance(duplicate).assert(true, 2);
+        helper.advance(duplicate).assert(true, 2);
+
+        // Reject same clock tag with different unique token
+        helper.advance(tag(2)).assert(false, 2);
+
+        // Still accept the same operation
+        helper.advance(duplicate).assert(true, 2);
+
+        // Accept newer operation
+        helper.advance(tag(3)).assert(true, 3);
+
+        // Reject duplicated operation now, because a newer one was accepted
+        helper.advance(duplicate).assert(false, 3);
     }
 
     #[test]
@@ -598,11 +650,13 @@ mod test {
         pub fn advance(&mut self, mut clock_tag: ClockTag) -> Status {
             let peer_id = clock_tag.peer_id;
             let clock_id = clock_tag.clock_id;
+            let token = clock_tag.token;
 
             let accepted = self.clock_map.advance_clock_and_correct_tag(&mut clock_tag);
 
             assert_eq!(clock_tag.peer_id, peer_id);
             assert_eq!(clock_tag.clock_id, clock_id);
+            assert_eq!(clock_tag.token, token);
 
             Status {
                 accepted,
