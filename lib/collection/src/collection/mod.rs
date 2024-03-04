@@ -324,6 +324,28 @@ impl Collection {
         state: ReplicaState,
         from_state: Option<ReplicaState>,
     ) -> CollectionResult<()> {
+        self.set_shard_replica_state_impl(shard_id, peer_id, state, |current_state| {
+            let Some(from_state) = from_state else {
+                return Ok(());
+            };
+
+            if current_state == Some(from_state) {
+                Ok(())
+            } else {
+                Err(CollectionError::bad_input(format!(
+                    "Replica {peer_id} of shard {shard_id} has state {current_state:?}, but expected {from_state:?}"
+                )))
+            }
+        }).await
+    }
+
+    pub async fn set_shard_replica_state_impl(
+        &self,
+        shard_id: ShardId,
+        peer_id: PeerId,
+        state: ReplicaState,
+        assert_current_state: impl Fn(Option<ReplicaState>) -> CollectionResult<()>,
+    ) -> CollectionResult<()> {
         let shard_holder = self.shards_holder.read().await;
         let replica_set = shard_holder
             .get_shard(&shard_id)
@@ -336,16 +358,8 @@ impl Collection {
         );
 
         // Validation:
-        // 0. Check that `from_state` matches current state
-
-        if from_state.is_some() {
-            let current_state = replica_set.peer_state(&peer_id);
-            if current_state != from_state {
-                return Err(CollectionError::bad_input(format!(
-                    "Replica {peer_id} of shard {shard_id} has state {current_state:?}, but expected {from_state:?}"
-                )));
-            }
-        }
+        // 0. Check that shard is in expected state
+        assert_current_state(replica_set.peer_state(&peer_id))?;
 
         // 1. Do not deactivate the last active replica
 
