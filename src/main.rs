@@ -250,7 +250,7 @@ fn main() -> anyhow::Result<()> {
     // Here we load all stored collections.
     runtime_handle.block_on(async {
         for collection in toc.all_collections().await {
-            log::debug!("Loaded collection: {}", collection);
+            log::debug!("Loaded collection: {collection}");
         }
     });
 

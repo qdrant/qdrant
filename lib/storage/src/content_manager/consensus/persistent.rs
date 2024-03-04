@@ -14,7 +14,7 @@ use raft::RaftState;
 use serde::{Deserialize, Serialize};
 
 use crate::content_manager::consensus::entry_queue::{EntryApplyProgressQueue, EntryId};
-use crate::types::PeerAddressById;
+use crate::types::{PeerAddressById, PeerMetadata, PeerMetadataById};
 use crate::StorageError;
 
 // Deprecated, use `STATE_FILE_NAME` instead
@@ -39,6 +39,8 @@ pub struct Persistent {
     /// Last known cluster topology
     #[serde(with = "serialize_peer_addresses")]
     pub peer_address_by_id: Arc<RwLock<PeerAddressById>>,
+    #[serde(default)]
+    pub peer_metadata_by_id: Arc<RwLock<PeerMetadataById>>,
     pub this_peer_id: PeerId,
     #[serde(skip)]
     pub path: PathBuf,
@@ -60,8 +62,10 @@ impl Persistent {
         &mut self,
         meta: &SnapshotMetadata,
         address_by_id: PeerAddressById,
+        metadata_by_id: PeerMetadataById,
     ) -> Result<(), StorageError> {
         *self.peer_address_by_id.write() = address_by_id;
+        *self.peer_metadata_by_id.write() = metadata_by_id;
         self.state.conf_state = meta.get_conf_state().clone();
         self.state.hard_state.term = cmp::max(self.state.hard_state.term, meta.term);
         self.state.hard_state.commit = meta.index;
@@ -150,12 +154,42 @@ impl Persistent {
         self.save()
     }
 
+    pub fn update_peer_metadata(
+        &mut self,
+        peer_id: PeerId,
+        metadata: PeerMetadata,
+    ) -> Result<(), StorageError> {
+        if let Some(prev_metadata) = self
+            .peer_metadata_by_id
+            .write()
+            .insert(peer_id, metadata.clone())
+        {
+            log::info!(
+                "Replaced metadata of peer {peer_id} from {prev_metadata:?} to {metadata:?}"
+            );
+        } else {
+            log::debug!("Added metadata for peer with id {peer_id}: {metadata:?}")
+        }
+        self.save()
+    }
+
     pub fn last_applied_entry(&self) -> Option<u64> {
         self.apply_progress_queue.get_last_applied()
     }
 
     pub fn peer_address_by_id(&self) -> PeerAddressById {
         self.peer_address_by_id.read().clone()
+    }
+
+    pub fn peer_metadata_by_id(&self) -> PeerMetadataById {
+        self.peer_metadata_by_id.read().clone()
+    }
+
+    pub fn is_our_metadata_outdated(&self) -> bool {
+        self.peer_metadata_by_id
+            .read()
+            .get(&self.this_peer_id())
+            .map_or(true, |metadata| metadata.is_different_version())
     }
 
     pub fn this_peer_id(&self) -> PeerId {
@@ -188,6 +222,7 @@ impl Persistent {
             },
             apply_progress_queue: Default::default(),
             peer_address_by_id: Default::default(),
+            peer_metadata_by_id: Default::default(),
             this_peer_id,
             path,
             latest_snapshot_meta: Default::default(),

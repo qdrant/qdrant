@@ -16,6 +16,7 @@ serde = { workspace = true }
 tokio = { workspace = true }
 validator = { version = "0.16", features = ["derive"] }
 lazy_static = "1.4.0"
+semver = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 thiserror = "1.0"

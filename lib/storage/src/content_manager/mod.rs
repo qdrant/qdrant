@@ -29,6 +29,7 @@ pub mod consensus_ops {
         CollectionMetaOperations, SetShardReplicaState, ShardTransferOperations, UpdateCollection,
         UpdateCollectionOperation,
     };
+    use crate::types::PeerMetadata;
 
     /// Operation that should pass consensus
     #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
@@ -39,6 +40,10 @@ pub mod consensus_ops {
             uri: String,
         },
         RemovePeer(PeerId),
+        UpdatePeerMetadata {
+            peer_id: PeerId,
+            metadata: PeerMetadata,
+        },
         RequestSnapshot,
         ReportSnapshot {
             peer_id: PeerId,
