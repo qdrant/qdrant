@@ -4,7 +4,6 @@ use std::path::Path;
 use async_recursion::async_recursion;
 use collection::collection_state;
 use collection::config::ShardingMethod;
-use collection::operations::types::CollectionError;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::transfer::ShardTransfer;
@@ -401,38 +400,21 @@ impl TableOfContent {
                     &collection.state().await.transfers,
                 )?;
 
+                // Set shard state from `PartialSnapshot` to `Partial`
+                // TODO(1.9): get into Partial state from PartialSnapshot or Recovery
+                let operation = SetShardReplicaState {
+                    collection_name: collection_id,
+                    shard_id: transfer.shard_id,
+                    peer_id: transfer.to,
+                    state: ReplicaState::Partial,
+                    from_state: Some(ReplicaState::PartialSnapshot),
+                };
                 log::debug!(
-                    "Set shard replica state from {:?} or {:?} to {:?} after snapshot recovery",
+                    "Set shard replica state from {:?} to {:?} after snapshot recovery",
                     ReplicaState::PartialSnapshot,
-                    ReplicaState::Recovery,
                     ReplicaState::Partial,
                 );
-
-                // Set shard state from `PartialSnapshot` or `Recovery` to `Partial`
-                self.get_collection(&collection_id)
-                    .await?
-                    .set_shard_replica_state_impl(
-                        transfer.shard_id,
-                        transfer.to,
-                        ReplicaState::Partial,
-                        |current_state| {
-                            match current_state {
-                                Some(ReplicaState::PartialSnapshot) => Ok(()),
-                                Some(ReplicaState::Recovery) => Ok(()),
-                                _ => {
-                                    Err(CollectionError::bad_input(format!(
-                                        "Replica {} of {collection_id}:{} has unexpected {current_state:?} \
-                                         (expected {:?} or {:?})",
-                                        transfer.to,
-                                        transfer.shard_id,
-                                        ReplicaState::PartialSnapshot,
-                                        ReplicaState::Recovery,
-                                    )))
-                                }
-                            }
-                        }
-                    )
-                    .await?;
+                self.set_shard_replica_state(operation).await?;
             }
             ShardTransferOperations::Abort { transfer, reason } => {
                 // Validate transfer exists to prevent double handling
