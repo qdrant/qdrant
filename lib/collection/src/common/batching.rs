@@ -54,31 +54,77 @@ pub fn batch_requests<Req, Key: PartialEq + Clone, Acc1: Default, Acc2: Default>
     mut accumulate_local: impl FnMut(Req, &mut Acc1) -> CollectionResult<()>,
     mut accumulate_global: impl FnMut(Key, Acc1, &mut Acc2) -> CollectionResult<()>,
 ) -> CollectionResult<Acc2> {
-    let mut requests_iterator = requests.into_iter();
-
-    let mut request = requests_iterator.next().unwrap();
-    let mut prev_key = get_key(&request).clone();
-
     let mut local_accumulator = Acc1::default();
     let mut global_accumulator = Acc2::default();
-
-    loop {
+    let mut prev_key = None;
+    for request in requests {
         let request_key = get_key(&request);
-        if &prev_key != request_key {
-            accumulate_global(prev_key, local_accumulator, &mut global_accumulator)?;
-            prev_key = request_key.clone();
-            local_accumulator = Acc1::default();
-        }
-
-        accumulate_local(request, &mut local_accumulator)?;
-
-        if let Some(next_request) = requests_iterator.next() {
-            request = next_request;
+        if let Some(ref pk) = prev_key {
+            if request_key != pk {
+                accumulate_global(pk.clone(), local_accumulator, &mut global_accumulator)?;
+                prev_key = Some(request_key.clone());
+                local_accumulator = Acc1::default();
+            }
         } else {
-            break;
+            prev_key = Some(request_key.clone());
         }
+        accumulate_local(request, &mut local_accumulator)?;
     }
-    accumulate_global(prev_key, local_accumulator, &mut global_accumulator)?;
-
+    if let Some(prev_key) = prev_key {
+        accumulate_global(prev_key, local_accumulator, &mut global_accumulator)?;
+    }
     Ok(global_accumulator)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn run_batch_requests(requests: &[(char, usize)]) -> Vec<(char, Vec<(char, usize)>)> {
+        batch_requests::<(char, usize), char, Vec<(char, usize)>, Vec<(char, Vec<(char, usize)>)>>(
+            requests.iter().copied(),
+            |req| &req.0,
+            |req, acc1| {
+                acc1.push(req);
+                Ok(())
+            },
+            |key, acc1, acc2| {
+                acc2.push((key, acc1));
+                Ok(())
+            },
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn test_batch_requests() {
+        assert_eq!(
+            run_batch_requests(&[('a', 1), ('b', 2), ('c', 3)]),
+            vec![
+                ('a', vec![('a', 1)]),
+                ('b', vec![('b', 2)]),
+                ('c', vec![('c', 3)]),
+            ]
+        );
+
+        assert_eq!(
+            run_batch_requests(&[('a', 1), ('a', 2), ('b', 3), ('b', 4), ('c', 5), ('c', 6)]),
+            vec![
+                ('a', vec![('a', 1), ('a', 2)]),
+                ('b', vec![('b', 3), ('b', 4)]),
+                ('c', vec![('c', 5), ('c', 6)]),
+            ]
+        );
+
+        assert_eq!(
+            run_batch_requests(&[('a', 1), ('b', 2), ('a', 3)]),
+            vec![
+                ('a', vec![('a', 1)]),
+                ('b', vec![('b', 2)]),
+                ('a', vec![('a', 3)]),
+            ]
+        );
+
+        assert!(run_batch_requests(&[]).is_empty());
+    }
 }
