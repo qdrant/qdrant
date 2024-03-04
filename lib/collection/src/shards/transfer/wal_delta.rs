@@ -70,6 +70,7 @@ use crate::shards::shard_holder::LockedShardHolder;
 ///
 /// If cancelled - the remote shard may only be partially recovered/transferred and the local shard
 /// may be left in an unexpected state. This must be resolved manually in case of cancellation.
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn transfer_wal_delta(
     transfer_config: ShardTransfer,
     shard_holder: Arc<LockedShardHolder>,
