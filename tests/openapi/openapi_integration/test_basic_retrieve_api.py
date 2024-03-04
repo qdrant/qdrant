@@ -114,6 +114,42 @@ def test_exclude_payload():
         assert 'city' not in result['payload']
 
 
+def test_batch_search():
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/search/batch",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "searches": [
+                {
+                    "vector": [0.2, 0.1, 0.9, 0.7],
+                    "limit": 3,
+                },
+                {
+                    "filter": {
+                        "should": [{"key": "city", "match": {"value": "London"}}]
+                    },
+                    "vector": [0.2, 0.1, 0.9, 0.7],
+                    "limit": 3,
+                },
+            ],
+        },
+    )
+    assert response.ok
+    assert len(response.json()["result"]) == 2
+    assert len(response.json()["result"][0]) == 3
+    assert len(response.json()["result"][1]) == 2
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/search/batch",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={"searches": []},
+    )
+    assert response.ok
+    assert len(response.json()["result"]) == 0
+
+
 def test_is_empty_condition():
     response = request_with_validation(
         api='/collections/{collection_name}/points/search',
