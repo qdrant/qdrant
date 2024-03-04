@@ -392,28 +392,59 @@ impl TableOfContent {
                 )?;
                 collection.finish_shard_transfer(transfer).await?;
             }
-            ShardTransferOperations::SnapshotRecovered(transfer) => {
+            ShardTransferOperations::SnapshotRecovered(transfer)
+            | ShardTransferOperations::RecoveryToPartial(transfer) => {
                 // Validate transfer exists to prevent double handling
                 transfer::helpers::validate_transfer_exists(
                     &transfer,
                     &collection.state().await.transfers,
                 )?;
 
-                // Set shard state from `PartialSnapshot` to `Partial`
-                // TODO(1.9): get into Partial state from PartialSnapshot or Recovery
-                let operation = SetShardReplicaState {
-                    collection_name: collection_id,
-                    shard_id: transfer.shard_id,
-                    peer_id: transfer.to,
-                    state: ReplicaState::Partial,
-                    from_state: Some(ReplicaState::PartialSnapshot),
+                let collection = self.get_collection(&collection_id).await?;
+
+                let current_state = collection
+                    .state()
+                    .await
+                    .shards
+                    .get(&transfer.shard_id)
+                    .and_then(|info| info.replicas.get(&transfer.to))
+                    .copied();
+
+                let Some(current_state) = current_state else {
+                    return Err(StorageError::bad_input(format!(
+                        "Replica {} of {collection_id}:{} does not exist",
+                        transfer.to, transfer.shard_id,
+                    )));
                 };
+
+                match current_state {
+                    ReplicaState::PartialSnapshot | ReplicaState::Recovery => (),
+                    _ => {
+                        return Err(StorageError::bad_input(format!(
+                            "Replica {} of {collection_id}:{} has unexpected {current_state:?} \
+                             (expected {:?} or {:?})",
+                            transfer.to,
+                            transfer.shard_id,
+                            ReplicaState::PartialSnapshot,
+                            ReplicaState::Recovery,
+                        )))
+                    }
+                }
+
                 log::debug!(
                     "Set shard replica state from {:?} to {:?} after snapshot recovery",
-                    ReplicaState::PartialSnapshot,
+                    current_state,
                     ReplicaState::Partial,
                 );
-                self.set_shard_replica_state(operation).await?;
+
+                collection
+                    .set_shard_replica_state(
+                        transfer.shard_id,
+                        transfer.to,
+                        ReplicaState::Partial,
+                        Some(current_state),
+                    )
+                    .await?;
             }
             ShardTransferOperations::Abort { transfer, reason } => {
                 // Validate transfer exists to prevent double handling
