@@ -33,7 +33,7 @@ use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::consensus::persistent::Persistent;
 use crate::types::{
     ClusterInfo, ClusterStatus, ConsensusThreadStatus, MessageSendErrors, PeerAddressById,
-    PeerInfo, PeerMetadata, PeerMetadataById, RaftInfo,
+    PeerInfo, PeerMetadataById, RaftInfo,
 };
 
 pub mod prelude {
