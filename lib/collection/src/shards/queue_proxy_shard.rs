@@ -404,11 +404,12 @@ impl Inner {
         let transfer_from = self.transfer_from.load(Ordering::Relaxed);
 
         // Lock wall, count pending items to transfer, grab batch
-        let (pending_count, batch) = {
+        let (pending_count, total, batch) = {
             let wal = self.wrapped_shard.wal.wal.lock();
             let items_left = (wal.last_index() + 1).saturating_sub(transfer_from);
+            let items_total = (transfer_from - self.started_at) + items_left;
             let batch = wal.read(transfer_from).take(BATCH_SIZE).collect::<Vec<_>>();
-            (items_left, batch)
+            (items_left, items_total, batch)
         };
 
         log::trace!(
@@ -446,6 +447,10 @@ impl Inner {
             }
         }
 
+        // Update current progression
+        let transferred = (total - pending_count) as usize + batch.len();
+        self.update_progress(transferred, total as usize);
+
         Ok(last_batch)
     }
 
@@ -459,6 +464,16 @@ impl Inner {
     fn set_wal_keep_from(&self, version: Option<u64>) {
         let version = version.unwrap_or(u64::MAX);
         self.wal_keep_from.store(version, Ordering::Relaxed);
+    }
+
+    fn update_progress(&self, transferred: usize, total: usize) {
+        let Some(ref progress) = self.progress else {
+            return;
+        };
+        let mut progress = progress.lock();
+
+        progress.points_transferred = transferred;
+        progress.points_total = total;
     }
 }
 
