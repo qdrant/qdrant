@@ -105,19 +105,15 @@ impl ClockTag {
     }
 }
 
-impl TryFrom<api::grpc::qdrant::ClockTag> for ClockTag {
-    type Error = uuid::Error;
-
-    fn try_from(tag: api::grpc::qdrant::ClockTag) -> Result<Self, Self::Error> {
-        let res = Self {
+impl From<api::grpc::qdrant::ClockTag> for ClockTag {
+    fn from(tag: api::grpc::qdrant::ClockTag) -> Self {
+        Self {
             peer_id: tag.peer_id,
             clock_id: tag.clock_id,
             clock_tick: tag.clock_tick,
             token: tag.token,
             force: tag.force,
-        };
-
-        Ok(res)
+        }
     }
 }
 

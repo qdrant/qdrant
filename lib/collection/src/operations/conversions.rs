@@ -31,7 +31,6 @@ use super::types::{
     RecommendStrategy, SearchGroupsRequestInternal, SparseIndexParams, SparseVectorParams,
     VectorParamsDiff, VectorsConfigDiff,
 };
-use super::ClockTag;
 use crate::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
     CollectionParams, ShardingMethod, WalConfig,
@@ -879,7 +878,7 @@ impl TryFrom<api::grpc::qdrant::UpdateResultInternal> for UpdateResult {
         let res = Self {
             operation_id: res.operation_id,
             status: res.status.try_into()?,
-            clock_tag: opt_clock_tag_grpc_to_rest(res.clock_tag)?,
+            clock_tag: res.clock_tag.map(Into::into),
         };
 
         Ok(res)
@@ -1847,13 +1846,4 @@ impl TryFrom<api::grpc::qdrant::OrderBy> for OrderByInterface {
             start_from,
         }))
     }
-}
-
-pub fn opt_clock_tag_grpc_to_rest(
-    clock_tag: Option<api::grpc::qdrant::ClockTag>,
-) -> Result<Option<ClockTag>, Status> {
-    clock_tag
-        .map(TryInto::try_into)
-        .transpose()
-        .map_err(|err| Status::invalid_argument(format!("Malformed clock tag: {err}")))
 }

@@ -11,7 +11,6 @@ use api::grpc::qdrant::{
     SearchPointsInternal, SearchResponse, SetPayloadPointsInternal, SyncPointsInternal,
     UpdateVectorsInternal, UpsertPointsInternal,
 };
-use collection::operations::conversions::opt_clock_tag_grpc_to_rest;
 use storage::content_manager::toc::TableOfContent;
 use tonic::{Request, Response, Status};
 
@@ -53,7 +52,7 @@ impl PointsInternal for PointsInternalService {
         upsert(
             self.toc.clone(),
             upsert_points,
-            opt_clock_tag_grpc_to_rest(clock_tag)?,
+            clock_tag.map(Into::into),
             shard_id,
         )
         .await
@@ -76,7 +75,7 @@ impl PointsInternal for PointsInternalService {
         delete(
             self.toc.clone(),
             delete_points,
-            opt_clock_tag_grpc_to_rest(clock_tag)?,
+            clock_tag.map(Into::into),
             shard_id,
         )
         .await
@@ -99,7 +98,7 @@ impl PointsInternal for PointsInternalService {
         update_vectors(
             self.toc.clone(),
             update_point_vectors,
-            opt_clock_tag_grpc_to_rest(clock_tag)?,
+            clock_tag.map(Into::into),
             shard_id,
         )
         .await
@@ -122,7 +121,7 @@ impl PointsInternal for PointsInternalService {
         delete_vectors(
             self.toc.clone(),
             delete_point_vectors,
-            opt_clock_tag_grpc_to_rest(clock_tag)?,
+            clock_tag.map(Into::into),
             shard_id,
         )
         .await
@@ -145,7 +144,7 @@ impl PointsInternal for PointsInternalService {
         set_payload(
             self.toc.clone(),
             set_payload_points,
-            opt_clock_tag_grpc_to_rest(clock_tag)?,
+            clock_tag.map(Into::into),
             shard_id,
         )
         .await
@@ -168,7 +167,7 @@ impl PointsInternal for PointsInternalService {
         overwrite_payload(
             self.toc.clone(),
             set_payload_points,
-            opt_clock_tag_grpc_to_rest(clock_tag)?,
+            clock_tag.map(Into::into),
             shard_id,
         )
         .await
@@ -191,7 +190,7 @@ impl PointsInternal for PointsInternalService {
         delete_payload(
             self.toc.clone(),
             delete_payload_points,
-            opt_clock_tag_grpc_to_rest(clock_tag)?,
+            clock_tag.map(Into::into),
             shard_id,
         )
         .await
@@ -214,7 +213,7 @@ impl PointsInternal for PointsInternalService {
         clear_payload(
             self.toc.clone(),
             clear_payload_points,
-            opt_clock_tag_grpc_to_rest(clock_tag)?,
+            clock_tag.map(Into::into),
             shard_id,
         )
         .await
@@ -237,7 +236,7 @@ impl PointsInternal for PointsInternalService {
         create_field_index_internal(
             self.toc.clone(),
             create_field_index_collection,
-            opt_clock_tag_grpc_to_rest(clock_tag)?,
+            clock_tag.map(Into::into),
             shard_id,
         )
         .await
@@ -260,7 +259,7 @@ impl PointsInternal for PointsInternalService {
         delete_field_index_internal(
             self.toc.clone(),
             delete_field_index_collection,
-            opt_clock_tag_grpc_to_rest(clock_tag)?,
+            clock_tag.map(Into::into),
             shard_id,
         )
         .await
@@ -403,7 +402,7 @@ impl PointsInternal for PointsInternalService {
         sync(
             self.toc.clone(),
             sync_points,
-            opt_clock_tag_grpc_to_rest(clock_tag)?,
+            clock_tag.map(Into::into),
             shard_id,
         )
         .await
