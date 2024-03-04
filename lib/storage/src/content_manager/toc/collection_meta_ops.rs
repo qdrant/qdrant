@@ -392,7 +392,8 @@ impl TableOfContent {
                 )?;
                 collection.finish_shard_transfer(transfer).await?;
             }
-            ShardTransferOperations::SnapshotRecovered(transfer) => {
+            ShardTransferOperations::SnapshotRecovered(transfer)
+            | ShardTransferOperations::RecoveryToPartial(transfer) => {
                 // Validate transfer exists to prevent double handling
                 transfer::helpers::validate_transfer_exists(
                     &transfer,

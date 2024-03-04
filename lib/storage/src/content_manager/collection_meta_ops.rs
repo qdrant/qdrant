@@ -304,6 +304,11 @@ pub enum ShardTransferOperations {
     /// Called when the snapshot has successfully been recovered on the remote, brings the transfer
     /// to the next stage.
     SnapshotRecovered(ShardTransferKey),
+    /// Used in `ShardTransferMethod::Snapshot` and `ShardTransferMethod::WalDelta`
+    ///
+    /// Called when the first stage of the transfer has been successfully finished, brings the
+    /// transfer to the next stage.
+    RecoveryToPartial(ShardTransferKey),
     Abort {
         transfer: ShardTransferKey,
         reason: String,
