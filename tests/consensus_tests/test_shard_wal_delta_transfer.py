@@ -29,6 +29,31 @@ def run_update_points_in_background(peer_url, collection_name, init_offset=0, th
     p.start()
     return p
 
+def check_data_consistency(data):
+
+    assert(len(data) > 1)
+
+    for i in range(len(data) - 1):
+        j = i + 1
+
+        data_i = data[i]
+        data_j = data[j]
+
+        if data_i != data_j:
+            ids_i = set(x.id for x in data_i)
+            ids_j = set(x.id for x in data_j)
+
+            diff = ids_i - ids_j
+
+            if len(diff) < 100:
+                print(f"Diff between {i} and {j}: {diff}")
+            else:
+                print(f"Diff len between {i} and {j}: {len(diff)}")
+
+            assert False, "Data on all nodes should be consistent"
+
+
+
 
 # Test a WAL delta transfer between two that have no difference.
 #
@@ -111,7 +136,7 @@ def test_empty_shard_wal_delta_transfer(capfd, tmp_path: pathlib.Path):
         )
         assert_http_ok(r)
         data.append(r.json()["result"])
-    assert data[0] == data[1]
+    check_data_consistency(data)
 
 
 # Test node recovery with a WAL delta transfer.
@@ -203,7 +228,7 @@ def test_shard_wal_delta_transfer_manual_recovery(tmp_path: pathlib.Path, capfd)
         )
         assert_http_ok(r)
         data.append(r.json()["result"])
-    assert data[0] == data[1] == data[2]
+    check_data_consistency(data)
 
 
 # Test node recovery on a chain of nodes with a WAL delta transfer.
@@ -334,7 +359,7 @@ def test_shard_wal_delta_transfer_manual_recovery_chain(tmp_path: pathlib.Path, 
         )
         assert_http_ok(r)
         data.append(r.json()["result"])
-    assert data[0] == data[1] == data[2] == data[3] == data[4]
+    check_data_consistency(data)
 
 
 # Test the shard transfer fallback for WAL delta transfer.
@@ -404,7 +429,7 @@ def test_shard_wal_delta_transfer_fallback(capfd, tmp_path: pathlib.Path):
         )
         assert_http_ok(r)
         data.append(r.json()["result"])
-    assert data[0] == data[1] == data[2]
+    check_data_consistency(data)
 
 
 # If the difference between the two nodes is too big, the WAL delta transfer
@@ -482,5 +507,5 @@ def test_shard_fallback_on_big_diff(tmp_path: pathlib.Path):
         )
         assert_http_ok(r)
         data.append(r.json()["result"])
-    assert data[0] == data[1] == data[2]
 
+    check_data_consistency(data)
