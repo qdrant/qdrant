@@ -23,6 +23,8 @@ use validator::Validate;
 use crate::hash_ring::HashRing;
 use crate::shards::shard::{PeerId, ShardId};
 
+pub type ClockToken = u64;
+
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct CreateIndex {
@@ -71,15 +73,28 @@ pub struct ClockTag {
     pub peer_id: PeerId,
     pub clock_id: u32,
     pub clock_tick: u64,
+    /// A unique token for each clock tag.
+    pub token: ClockToken,
     pub force: bool,
 }
 
 impl ClockTag {
     pub fn new(peer_id: PeerId, clock_id: u32, clock_tick: u64) -> Self {
+        let random_token = rand::random();
+        Self::new_with_token(peer_id, clock_id, clock_tick, random_token)
+    }
+
+    pub fn new_with_token(
+        peer_id: PeerId,
+        clock_id: u32,
+        clock_tick: u64,
+        token: ClockToken,
+    ) -> Self {
         Self {
             peer_id,
             clock_id,
             clock_tick,
+            token,
             force: false,
         }
     }
@@ -92,7 +107,13 @@ impl ClockTag {
 
 impl From<api::grpc::qdrant::ClockTag> for ClockTag {
     fn from(tag: api::grpc::qdrant::ClockTag) -> Self {
-        Self::new(tag.peer_id, tag.clock_id, tag.clock_tick).force(tag.force)
+        Self {
+            peer_id: tag.peer_id,
+            clock_id: tag.clock_id,
+            clock_tick: tag.clock_tick,
+            token: tag.token,
+            force: tag.force,
+        }
     }
 }
 
@@ -102,6 +123,7 @@ impl From<ClockTag> for api::grpc::qdrant::ClockTag {
             peer_id: tag.peer_id,
             clock_id: tag.clock_id,
             clock_tick: tag.clock_tick,
+            token: tag.token,
             force: tag.force,
         }
     }
