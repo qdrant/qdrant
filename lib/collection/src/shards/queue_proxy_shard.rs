@@ -332,21 +332,13 @@ impl Inner {
         progress: Option<Arc<ParkingMutex<TransferTaskProgress>>>,
     ) -> Self {
         let start_from = wrapped_shard.wal.wal.lock().last_index() + 1;
-
-        let shard = Self {
+        Self::new_from_version(
             wrapped_shard,
             remote_shard,
-            started_at: start_from,
-            transfer_from: start_from.into(),
-            update_lock: Default::default(),
             wal_keep_from,
+            start_from,
             progress,
-        };
-
-        // Keep all new WAL entries so we don't truncate them off when we still need to transfer
-        shard.set_wal_keep_from(Some(start_from));
-
-        shard
+        )
     }
 
     pub fn new_from_version(
