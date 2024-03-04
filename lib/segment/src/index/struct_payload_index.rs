@@ -11,7 +11,6 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 use schemars::_serde_json::Value;
 
-use crate::common::arc_atomic_ref_cell_iterator::ArcAtomicRefCellIterator;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
 use crate::common::utils::IndexesMap;
@@ -396,10 +395,8 @@ impl PayloadIndex for StructPayloadIndex {
         let query_cardinality = self.estimate_cardinality(query);
 
         if query_cardinality.primary_clauses.is_empty() {
-            let full_scan_iterator =
-                ArcAtomicRefCellIterator::new(self.id_tracker.clone(), |points_iterator| {
-                    points_iterator.iter_ids()
-                });
+            let id_tracker = self.id_tracker.borrow();
+            let full_scan_iterator = id_tracker.iter_ids();
 
             let struct_filtered_context = self.struct_filtered_context(query);
             // Worst case: query expected to return few matches, but index can't be used
