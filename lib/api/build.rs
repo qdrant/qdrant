@@ -2,9 +2,17 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::{env, str};
 
+use common::defaults;
 use tonic_build::Builder;
 
 fn main() -> std::io::Result<()> {
+    // Ensure Qdrant version is configured correctly
+    assert_eq!(
+        defaults::QDRANT_VERSION.to_string(),
+        env!("CARGO_PKG_VERSION"),
+        "crate version does not match with defaults.rs",
+    );
+
     let build_out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
 
     // Build gRPC bits from proto file

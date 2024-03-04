@@ -36,6 +36,7 @@ tracing = { workspace = true, optional = true }
 [build-dependencies]
 tonic-build = { version = "0.10.2", features = ["prost"] }
 prost-build = { version = "0.11.8", features = ["cleanup-markdown"] }
+common = { path = "../common/common" }
 
 [dev-dependencies]
 tokio = { workspace = true }

@@ -115,8 +115,8 @@ impl TableOfContent {
 
             if !CollectionConfig::check(&collection_path) {
                 log::warn!(
-                    "Collection config is not found in the collection directory: {:?}, skipping",
-                    collection_path
+                    "Collection config is not found in the collection directory: {}, skipping",
+                    collection_path.display(),
                 );
                 continue;
             }
@@ -132,7 +132,7 @@ impl TableOfContent {
             create_dir_all(&collection_snapshots_path).unwrap_or_else(|e| {
                 panic!("Can't create a directory for snapshot of {collection_name}: {e}")
             });
-            log::info!("Loading collection: {}", collection_name);
+            log::info!("Loading collection: {collection_name}");
             let collection = general_runtime.block_on(Collection::load(
                 collection_name.clone(),
                 this_peer_id,
@@ -175,8 +175,7 @@ impl TableOfContent {
                     // Select number of working threads as a guess.
                     let limit = max(get_num_cpus(), 2);
                     log::debug!(
-                        "Auto adjusting update rate limit to {} parallel update requests",
-                        limit
+                        "Auto adjusting update rate limit to {limit} parallel update requests"
                     );
                     Some(Semaphore::new(limit))
                 } else {

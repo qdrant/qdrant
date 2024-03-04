@@ -12,15 +12,18 @@ use collection::operations::types::NodeType;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::shard::PeerId;
 use collection::shards::transfer::ShardTransferMethod;
+use common::defaults;
 use memory::madvise;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::types::{HnswConfig, QuantizationConfig};
+use semver::Version;
 use serde::{Deserialize, Serialize};
 use tonic::transport::Uri;
 use validator::Validate;
 
 pub type PeerAddressById = HashMap<PeerId, Uri>;
+pub type PeerMetadataById = HashMap<PeerId, PeerMetadata>;
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct PerformanceConfig {
@@ -267,5 +270,25 @@ impl Anonymize for ClusterStatus {
                 ClusterStatus::Enabled(cluster_info.anonymize())
             }
         }
+    }
+}
+
+/// Metadata describing extra properties for each peer
+#[derive(Debug, Hash, Serialize, Deserialize, Clone, Eq, PartialEq)]
+pub struct PeerMetadata {
+    /// Peer Qdrant version
+    version: Version,
+}
+
+impl PeerMetadata {
+    pub fn current() -> Self {
+        Self {
+            version: defaults::QDRANT_VERSION,
+        }
+    }
+
+    /// Whether this metadata has a different version than our current Qdrant instance.
+    pub fn is_different_version(&self) -> bool {
+        self.version != defaults::QDRANT_VERSION
     }
 }

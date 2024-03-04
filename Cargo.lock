@@ -1133,6 +1133,7 @@ dependencies = [
  "lazy_static",
  "num_cpus",
  "ordered-float 4.2.0",
+ "semver",
  "serde",
  "thiserror",
  "thread-priority",
@@ -2998,6 +2999,7 @@ checksum = "3c168f8615b12bc01f9c17e2eb0cc07dcae1940121185446edc3744920e8ef45"
 dependencies = [
  "autocfg",
  "scopeguard",
+ "serde",
 ]
 
 [[package]]
@@ -4775,6 +4777,9 @@ name = "semver"
 version = "1.0.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92d43fe69e652f3df9bdc2b85b2854a0825b86e4fb76bc44d945137d053639ca"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "serde"
@@ -5116,6 +5121,7 @@ dependencies = [
  "reqwest",
  "schemars",
  "segment",
+ "semver",
  "serde",
  "serde_cbor",
  "serde_json",
