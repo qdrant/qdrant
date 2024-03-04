@@ -412,12 +412,6 @@ impl Inner {
             (items_left, items_total, batch)
         };
 
-        // Set initial progress on the first batch
-        let is_first = transfer_from == self.started_at;
-        if is_first {
-            self.update_progress(0, total as usize);
-        }
-
         log::trace!(
             "Queue proxy transferring batch of {} updates to peer {}",
             batch.len(),
@@ -432,6 +426,12 @@ impl Inner {
             drop(update_lock.take());
         }
 
+        // Set initial progress on the first batch
+        let is_first = transfer_from == self.started_at;
+        if is_first {
+            self.update_progress(0, total as usize);
+        }
+
         // Transfer batch with retries and store last transferred ID
         let last_idx = batch.last().map(|(idx, _)| *idx);
         for remaining_attempts in (0..BATCH_RETRIES).rev() {
@@ -439,6 +439,9 @@ impl Inner {
                 Ok(()) => {
                     if let Some(idx) = last_idx {
                         self.transfer_from.store(idx + 1, Ordering::Relaxed);
+
+                        let transferred = (idx + 1 - self.started_at) as usize;
+                        self.update_progress(transferred, total as usize);
                     }
                     break;
                 }
@@ -452,10 +455,6 @@ impl Inner {
                 Err(err) => return Err(err),
             }
         }
-
-        // Update current progression
-        let transferred = (total - pending_count) as usize + batch.len();
-        self.update_progress(transferred, total as usize);
 
         Ok(last_batch)
     }
