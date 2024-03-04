@@ -91,7 +91,7 @@ def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None, ext
     this_peer_consensus_uri = get_uri(p2p_port)
     processes.append(
         Popen([get_qdrant_exec(), "--bootstrap", bootstrap_uri, "--uri", this_peer_consensus_uri], env=env,
-              cwd=peer_dir, stderr=log_file))
+              cwd=peer_dir, stdout=log_file))
     return get_uri(http_port)
 
 
