@@ -70,7 +70,8 @@ pub async fn transfer_shard(
         ShardTransferMethod::Snapshot => {
             transfer_snapshot(
                 transfer_config,
-                shard_holder.clone(),
+                shard_holder,
+                progress,
                 shard_id,
                 remote_shard,
                 channel_service,
