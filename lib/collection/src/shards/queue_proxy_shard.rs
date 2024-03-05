@@ -28,7 +28,7 @@ use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::LocalShardTelemetry;
 
 /// Number of operations in batch when syncing
-const BATCH_SIZE: usize = 100;
+const BATCH_SIZE: usize = 10;
 
 /// Number of times to retry transferring updates batch
 const BATCH_RETRIES: usize = MAX_RETRY_COUNT;
