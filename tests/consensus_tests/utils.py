@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import shutil
 from subprocess import Popen
 import time
@@ -324,6 +325,27 @@ def check_collection_shard_transfers_count(peer_api_uri: str, collection_name: s
     return local_shard_count == expected_shard_transfers_count
 
 
+def check_collection_shard_transfer_progress(peer_api_uri: str, collection_name: str,
+                                            expected_transfer_progress: int,
+                                            expected_transfer_total: int) -> bool:
+    collection_cluster_info = get_collection_cluster_info(peer_api_uri, collection_name)
+
+    # Check progress on each transfer
+    for transfer in collection_cluster_info["shard_transfers"]:
+        if "comment" not in transfer:
+            continue
+        comment = transfer["comment"]
+
+        # Compare progress or total
+        current, total = re.search(r"Transferring records \((\d+)/(\d+)\), started", comment).groups()
+        if current is not None and expected_transfer_progress is not None and int(current) >= expected_transfer_progress:
+            return True
+        if total is not None and expected_transfer_total is not None and int(total) >= expected_transfer_total:
+            return True
+
+    return False
+
+
 def check_all_replicas_active(peer_api_uri: str, collection_name: str) -> bool:
     collection_cluster_info = get_collection_cluster_info(peer_api_uri, collection_name)
     for shard in collection_cluster_info["local_shards"]:
@@ -407,6 +429,16 @@ def wait_for_collection_shard_transfers_count(peer_api_uri: str, collection_name
                                               expected_shard_transfer_count: int):
     try:
         wait_for(check_collection_shard_transfers_count, peer_api_uri, collection_name, expected_shard_transfer_count)
+    except Exception as e:
+        print_collection_cluster_info(peer_api_uri, collection_name)
+        raise e
+
+
+def wait_for_collection_shard_transfer_progress(peer_api_uri: str, collection_name: str,
+                                                 expected_transfer_progress: int = None,
+                                                 expected_transfer_total: int = None):
+    try:
+        wait_for(check_collection_shard_transfer_progress, peer_api_uri, collection_name, expected_transfer_progress, expected_transfer_total)
     except Exception as e:
         print_collection_cluster_info(peer_api_uri, collection_name)
         raise e
