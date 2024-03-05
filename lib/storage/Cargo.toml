@@ -12,7 +12,7 @@ edition = "2021"
 tracing = ["dep:tracing", "api/tracing", "collection/tracing", "segment/tracing"]
 
 [dev-dependencies]
-tempfile = "3.10.0"
+tempfile = "3.10.1"
 proptest = "1.4.0"
 env_logger = "0.11"
 
@@ -53,7 +53,7 @@ anyhow = "1.0.80"
 uuid = { workspace = true }
 url = "2.5.0"
 reqwest = { version = "0.11", default-features = false, features = ["stream", "rustls-tls"] }
-tempfile = "3.10.0"
+tempfile = "3.10.1"
 async-recursion = "1.0"
 
 tracing = { workspace = true, optional = true }
