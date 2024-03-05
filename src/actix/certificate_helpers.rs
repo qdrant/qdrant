@@ -1,13 +1,15 @@
+use std::fmt::Debug;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use itertools::Itertools;
 use parking_lot::RwLock;
-use rustls::server::{AllowAnyAuthenticatedClient, ClientHello, ResolvesServerCert};
+use rustls::client::VerifierBuilderError;
+use rustls::pki_types::CertificateDer;
+use rustls::server::{ClientHello, ResolvesServerCert, WebPkiClientVerifier};
 use rustls::sign::CertifiedKey;
-use rustls::{Certificate, RootCertStore, ServerConfig};
+use rustls::{crypto, RootCertStore, ServerConfig};
 use rustls_pemfile::Item;
 
 use crate::settings::{Settings, TlsConfig};
@@ -15,6 +17,7 @@ use crate::settings::{Settings, TlsConfig};
 type Result<T> = std::result::Result<T, Error>;
 
 /// A TTL based rotating server certificate resolver
+#[derive(Debug)]
 struct RotatingCertificateResolver {
     /// TLS configuration used for loading/refreshing certified key
     tls_config: TlsConfig,
@@ -71,6 +74,7 @@ impl ResolvesServerCert for RotatingCertificateResolver {
     }
 }
 
+#[derive(Debug)]
 struct CertifiedKeyWithAge {
     /// Last time the certificate was updated/replaced
     last_update: Instant,
@@ -104,12 +108,12 @@ impl CertifiedKeyWithAge {
 /// Load TLS configuration and construct certified key.
 fn load_certified_key(tls_config: &TlsConfig) -> Result<Arc<CertifiedKey>> {
     // Load certificates
-    let certs: Vec<Certificate> = with_buf_read(&tls_config.cert, |rd| {
+    let certs: Vec<CertificateDer> = with_buf_read(&tls_config.cert, |rd| {
         rustls_pemfile::read_all(rd).collect::<io::Result<Vec<_>>>()
     })?
     .into_iter()
     .filter_map(|item| match item {
-        Item::X509Certificate(data) => Some(Certificate(data.to_vec())),
+        Item::X509Certificate(data) => Some(data),
         _ => None,
     })
     .collect();
@@ -120,14 +124,13 @@ fn load_certified_key(tls_config: &TlsConfig) -> Result<Arc<CertifiedKey>> {
     // Load private key
     let private_key_item =
         with_buf_read(&tls_config.key, rustls_pemfile::read_one)?.ok_or(Error::NoPrivateKey)?;
-    let pkey = match private_key_item {
-        Item::Pkcs1Key(pkey) => pkey.secret_pkcs1_der().to_vec(),
-        Item::Pkcs8Key(pkey) => pkey.secret_pkcs8_der().to_vec(),
-        Item::Sec1Key(pkey) => pkey.secret_sec1_der().to_vec(),
+    let private_key = match private_key_item {
+        Item::Pkcs1Key(pkey) => rustls_pki_types::PrivateKeyDer::from(pkey),
+        Item::Pkcs8Key(pkey) => rustls_pki_types::PrivateKeyDer::from(pkey),
+        Item::Sec1Key(pkey) => rustls_pki_types::PrivateKeyDer::from(pkey),
         _ => return Err(Error::InvalidPrivateKey),
     };
-    let private_key = rustls::PrivateKey(pkey);
-    let signing_key = rustls::sign::any_supported_type(&private_key).map_err(Error::Sign)?;
+    let signing_key = crypto::ring::sign::any_supported_type(&private_key).map_err(Error::Sign)?;
 
     // Construct certified key
     let certified_key = CertifiedKey::new(certs, signing_key);
@@ -138,7 +141,7 @@ fn load_certified_key(tls_config: &TlsConfig) -> Result<Arc<CertifiedKey>> {
 ///
 /// Uses TLS settings as configured in configuration by user.
 pub fn actix_tls_server_config(settings: &Settings) -> Result<ServerConfig> {
-    let config = ServerConfig::builder().with_safe_defaults();
+    let config = ServerConfig::builder();
     let tls_config = settings
         .tls
         .clone()
@@ -148,13 +151,14 @@ pub fn actix_tls_server_config(settings: &Settings) -> Result<ServerConfig> {
     // Verify client CA or not
     let config = if settings.service.verify_https_client_certificate {
         let mut root_cert_store = RootCertStore::empty();
-        let ca_certs: Vec<Vec<u8>> = with_buf_read(&tls_config.ca_cert, |rd| {
-            rustls_pemfile::certs(rd)
-                .map_ok(|cert| cert.to_vec())
-                .collect()
+        let ca_certs: Vec<CertificateDer> = with_buf_read(&tls_config.ca_cert, |rd| {
+            rustls_pemfile::certs(rd).collect()
         })?;
-        root_cert_store.add_parsable_certificates(&ca_certs[..]);
-        config.with_client_cert_verifier(AllowAnyAuthenticatedClient::new(root_cert_store).boxed())
+        root_cert_store.add_parsable_certificates(ca_certs.into_iter());
+        let client_cert_verifier = WebPkiClientVerifier::builder(root_cert_store.into())
+            .build()
+            .map_err(Error::ClientCertVerifierError)?;
+        config.with_client_cert_verifier(client_cert_verifier)
     } else {
         config.with_no_client_auth()
     };
@@ -193,5 +197,7 @@ pub enum Error {
     #[error("invalid private key")]
     InvalidPrivateKey,
     #[error("TLS signing error")]
-    Sign(#[source] rustls::sign::SignError),
+    Sign(#[source] rustls::Error),
+    #[error("client certificate verification error")]
+    ClientCertVerifierError(#[source] VerifierBuilderError),
 }
