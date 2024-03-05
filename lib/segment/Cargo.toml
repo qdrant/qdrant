@@ -17,7 +17,7 @@ multiling-korean = ["charabia/korean"]
 criterion = "0.5"
 rmp-serde = "~1.1"
 rand_distr = "0.4.3"
-walkdir = "2.4.0"
+walkdir = "2.5.0"
 rstest = "0.18.2"
 proptest = "1.4.0"
 
