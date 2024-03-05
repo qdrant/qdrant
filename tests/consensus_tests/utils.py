@@ -91,7 +91,7 @@ def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None, ext
     this_peer_consensus_uri = get_uri(p2p_port)
     processes.append(
         Popen([get_qdrant_exec(), "--bootstrap", bootstrap_uri, "--uri", this_peer_consensus_uri], env=env,
-              cwd=peer_dir, stderr=log_file))
+              cwd=peer_dir, stdout=log_file))
     return get_uri(http_port)
 
 
@@ -113,7 +113,7 @@ def start_first_peer(peer_dir: Path, log_file: str, port=None, extra_env=None) -
     print(f"\nStarting first peer with uri {bootstrap_uri},"
           f" http: http://localhost:{http_port}/cluster, p2p: {p2p_port}")
     processes.append(
-        Popen([get_qdrant_exec(), "--uri", bootstrap_uri], env=env, cwd=peer_dir, stderr=log_file))
+        Popen([get_qdrant_exec(), "--uri", bootstrap_uri], env=env, cwd=peer_dir, stdout=log_file))
     return get_uri(http_port), bootstrap_uri
 
 
