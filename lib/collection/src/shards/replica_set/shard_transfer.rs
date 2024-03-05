@@ -97,7 +97,7 @@ impl ShardReplicaSet {
         &self,
         remote_shard: RemoteShard,
         from_version: Option<u64>,
-        progress: Option<Arc<Mutex<TransferTaskProgress>>>,
+        progress: Arc<Mutex<TransferTaskProgress>>,
     ) -> CollectionResult<()> {
         let mut local = self.local.write().await;
 

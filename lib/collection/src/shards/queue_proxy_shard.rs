@@ -62,7 +62,7 @@ impl QueueProxyShard {
         wrapped_shard: LocalShard,
         remote_shard: RemoteShard,
         wal_keep_from: Arc<AtomicU64>,
-        progress: Option<Arc<ParkingMutex<TransferTaskProgress>>>,
+        progress: Arc<ParkingMutex<TransferTaskProgress>>,
     ) -> Self {
         Self {
             inner: Some(Inner::new(
@@ -90,7 +90,7 @@ impl QueueProxyShard {
         remote_shard: RemoteShard,
         wal_keep_from: Arc<AtomicU64>,
         version: u64,
-        progress: Option<Arc<ParkingMutex<TransferTaskProgress>>>,
+        progress: Arc<ParkingMutex<TransferTaskProgress>>,
     ) -> Result<Self, (LocalShard, CollectionError)> {
         // Lock WAL until we've successfully created the queue proxy shard
         let wal = wrapped_shard.wal.wal.clone();
@@ -320,8 +320,8 @@ struct Inner {
     /// See `set_wal_keep_from()` and `UpdateHandler::wal_keep_from` for more details.
     /// Defaults to `u64::MAX` to allow acknowledging all confirmed versions.
     wal_keep_from: Arc<AtomicU64>,
-    /// Optional progression tracker.
-    progress: Option<Arc<ParkingMutex<TransferTaskProgress>>>,
+    /// Progression tracker.
+    progress: Arc<ParkingMutex<TransferTaskProgress>>,
 }
 
 impl Inner {
@@ -329,7 +329,7 @@ impl Inner {
         wrapped_shard: LocalShard,
         remote_shard: RemoteShard,
         wal_keep_from: Arc<AtomicU64>,
-        progress: Option<Arc<ParkingMutex<TransferTaskProgress>>>,
+        progress: Arc<ParkingMutex<TransferTaskProgress>>,
     ) -> Self {
         let start_from = wrapped_shard.wal.wal.lock().last_index() + 1;
         Self::new_from_version(
@@ -346,7 +346,7 @@ impl Inner {
         remote_shard: RemoteShard,
         wal_keep_from: Arc<AtomicU64>,
         version: u64,
-        progress: Option<Arc<ParkingMutex<TransferTaskProgress>>>,
+        progress: Arc<ParkingMutex<TransferTaskProgress>>,
     ) -> Self {
         let shard = Self {
             wrapped_shard,
@@ -472,11 +472,7 @@ impl Inner {
     }
 
     fn update_progress(&self, transferred: usize, total: usize) {
-        let Some(ref progress) = self.progress else {
-            return;
-        };
-        let mut progress = progress.lock();
-
+        let mut progress = self.progress.lock();
         progress.points_transferred = transferred;
         progress.points_total = total;
     }
