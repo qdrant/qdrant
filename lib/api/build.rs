@@ -288,11 +288,7 @@ fn append_to_file(path: &str, line: &str) {
     use std::fs::OpenOptions;
     use std::io::prelude::*;
     writeln!(
-        OpenOptions::new()
-            .write(true)
-            .append(true)
-            .open(path)
-            .unwrap(),
+        OpenOptions::new().append(true).open(path).unwrap(),
         "{line}",
     )
     .unwrap()
