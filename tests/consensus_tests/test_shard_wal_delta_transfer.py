@@ -354,7 +354,7 @@ def test_shard_wal_delta_transfer_manual_recovery_chain(tmp_path: pathlib.Path):
 #
 # Test that data on the both sides is consistent even if replication was
 # aborted.
-def test_shard_wal_delta_transfer_abort_and_retry(tmp_path: pathlib.Path, capfd):
+def test_shard_wal_delta_transfer_abort_and_retry(tmp_path: pathlib.Path):
     assert_project_root()
 
     # Prevent automatic recovery on restarted node, so we can manually recover with a specific transfer method
@@ -395,33 +395,6 @@ def test_shard_wal_delta_transfer_abort_and_retry(tmp_path: pathlib.Path, capfd)
     peer_api_uris[-1] = start_peer(peer_dirs[-1], "peer_2_restarted.log", bootstrap_uri, extra_env=env)
     wait_for_peer_online(peer_api_uris[-1], "/")
 
-    # Recover shard with WAL delta transfer to measure time baseline
-    baseline_start = time.time()
-    r = requests.post(
-        f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
-            "replicate_shard": {
-                "shard_id": 0,
-                "from_peer_id": from_peer_id,
-                "to_peer_id": to_peer_id,
-                "method": "wal_delta",
-            }
-        })
-    assert_http_ok(r)
-
-    # Wait for end of shard transfer
-    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
-
-    baseline = time.time() - baseline_start
-
-    # Kill last peer again
-    processes.pop().kill()
-
-    sleep(5)
-
-    # Restart the peer
-    peer_api_uris[-1] = start_peer(peer_dirs[-1], "peer_2_restarted.log", bootstrap_uri, extra_env=env)
-    wait_for_peer_online(peer_api_uris[-1], "/")
-
     # Recover shard with WAL delta transfer
     r = requests.post(
         f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
@@ -434,8 +407,10 @@ def test_shard_wal_delta_transfer_abort_and_retry(tmp_path: pathlib.Path, capfd)
         })
     assert_http_ok(r)
 
-    # But this time abort the transfer in the middle
-    sleep(baseline / 2)
+    # Wait for at least one record to be transferred
+    wait_for_collection_shard_transfer_progress(peer_api_uris[0], COLLECTION_NAME, None, 1)
+
+    # Then abort the transfer right away while it is still in progress
     r = requests.post(
         f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}/cluster", json={
             "abort_transfer": {
@@ -447,10 +422,6 @@ def test_shard_wal_delta_transfer_abort_and_retry(tmp_path: pathlib.Path, capfd)
     assert_http_ok(r)
 
     sleep(1)
-
-    # Confirm WAL delta transfer is aborted based on stdout logs
-    stdout, _stderr = capfd.readouterr()
-    assert "Aborting shard transfer: user request" in stdout
 
     # Confirm the shard is still dead
     receiver_collection_cluster_info = get_collection_cluster_info(peer_api_uris[2], COLLECTION_NAME)
@@ -468,14 +439,9 @@ def test_shard_wal_delta_transfer_abort_and_retry(tmp_path: pathlib.Path, capfd)
         })
     assert_http_ok(r)
 
-    # Wait for end of shard transfer
+    # Assert WAL delta transfer progress, and wait for it to finish
+    wait_for_collection_shard_transfer_progress(peer_api_uris[0], COLLECTION_NAME, None, 80)
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
-
-    # Confirm WAL delta transfer based on stdout logs, assert its size
-    stdout, _stderr = capfd.readouterr()
-    delta_version, delta_size = re.search(r"Resolved WAL delta from (\d+), which counts (\d+) records", stdout).groups()
-    assert int(delta_version) > 0
-    assert int(delta_size) > 0
 
     # All nodes must have one shard
     for uri in peer_api_uris:
