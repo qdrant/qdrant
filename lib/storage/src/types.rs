@@ -108,9 +108,9 @@ impl StorageConfig {
                 .map(|x| Duration::from_secs(x as u64)),
             self.update_concurrency,
             is_distributed,
+            self.shard_transfer_method,
             self.performance.incoming_shard_transfers_limit,
             self.performance.outgoing_shard_transfers_limit,
-            self.shard_transfer_method,
             self.snapshots_path.clone(),
             self.s3_config.clone(),
         )

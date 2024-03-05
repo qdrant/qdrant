@@ -28,18 +28,6 @@ impl Default for VersionInfo {
     }
 }
 
-impl VersionInfo {
-    pub fn minor_version(&self) -> String {
-        let minor = self
-            .version
-            .split('.')
-            .take(2)
-            .collect::<Vec<&str>>()
-            .join(".");
-        format!("{}.x", minor)
-    }
-}
-
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ApiStatus {

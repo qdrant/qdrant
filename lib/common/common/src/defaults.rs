@@ -6,7 +6,7 @@ use semver::Version;
 use crate::cpu;
 
 /// Current Qdrant version
-pub const QDRANT_VERSION: Version = Version::new(0, 11, 1);
+pub const QDRANT_VERSION: Version = Version::new(1, 7, 4);
 
 /// Default timeout for consensus meta operations.
 pub const CONSENSUS_META_OP_WAIT: Duration = Duration::from_secs(10);

@@ -25,9 +25,9 @@ pub struct SharedStorageConfig {
     pub search_timeout: Duration,
     pub update_concurrency: Option<NonZeroUsize>,
     pub is_distributed: bool,
+    pub default_shard_transfer_method: Option<ShardTransferMethod>,
     pub incoming_shard_transfers_limit: Option<usize>,
     pub outgoing_shard_transfers_limit: Option<usize>,
-    pub default_shard_transfer_method: Option<ShardTransferMethod>,
     pub snapshots_path: String,
     pub s3_config: Option<S3Config>,
 }
@@ -42,9 +42,9 @@ impl Default for SharedStorageConfig {
             search_timeout: DEFAULT_SEARCH_TIMEOUT,
             update_concurrency: None,
             is_distributed: false,
+            default_shard_transfer_method: None,
             incoming_shard_transfers_limit: DEFAULT_IO_SHARD_TRANSFER_LIMIT,
             outgoing_shard_transfers_limit: DEFAULT_IO_SHARD_TRANSFER_LIMIT,
-            default_shard_transfer_method: None,
             snapshots_path: DEFAULT_SNAPSHOTS_PATH.to_string(),
             s3_config: None,
         }
@@ -61,9 +61,9 @@ impl SharedStorageConfig {
         search_timeout: Option<Duration>,
         update_concurrency: Option<NonZeroUsize>,
         is_distributed: bool,
+        default_shard_transfer_method: Option<ShardTransferMethod>,
         incoming_shard_transfers_limit: Option<usize>,
         outgoing_shard_transfers_limit: Option<usize>,
-        default_shard_transfer_method: Option<ShardTransferMethod>,
         snapshots_path: String,
         s3_config: Option<S3Config>,
     ) -> Self {
@@ -79,9 +79,9 @@ impl SharedStorageConfig {
             search_timeout: search_timeout.unwrap_or(DEFAULT_SEARCH_TIMEOUT),
             update_concurrency,
             is_distributed,
+            default_shard_transfer_method,
             incoming_shard_transfers_limit,
             outgoing_shard_transfers_limit,
-            default_shard_transfer_method,
             snapshots_path,
             s3_config,
         }
