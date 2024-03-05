@@ -1,6 +1,6 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct Claims {
     /// Expiration time
     pub exp: Option<u64>,
