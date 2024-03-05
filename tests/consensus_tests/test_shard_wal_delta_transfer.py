@@ -95,7 +95,7 @@ def test_empty_shard_wal_delta_transfer(tmp_path: pathlib.Path):
     # Wait for end of shard transfer
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
 
-    # Assume we got an emtpy WAL delta here, logging 'Resolved WAL delta that is
+    # Assume we got an empty WAL delta here, logging 'Resolved WAL delta that is
     # empty'. But we cannot assert that at this point.
 
     # Doing it the other way around should result in exactly the same
@@ -113,7 +113,7 @@ def test_empty_shard_wal_delta_transfer(tmp_path: pathlib.Path):
     # Wait for end of shard transfer
     wait_for_collection_shard_transfers_count(peer_api_uris[1], COLLECTION_NAME, 0)
 
-    # Assume we got an emtpy WAL delta here, logging 'Resolved WAL delta that is
+    # Assume we got an empty WAL delta here, logging 'Resolved WAL delta that is
     # empty'. But we cannot assert that at this point.
 
     cluster_info_0 = get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME)
