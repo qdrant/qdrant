@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=qdrant
 GenericName=Vector Database
-Comment=Advanced and High-Performant Vector Search Technology
+Comment=Advanced and High-Performance Vector Search Technology
 TryExec=qdrant
 Exec=qdrant %F
 Terminal=true
