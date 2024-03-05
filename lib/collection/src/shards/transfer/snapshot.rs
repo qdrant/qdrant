@@ -2,8 +2,10 @@ use std::path::Path;
 use std::sync::Arc;
 
 use common::defaults;
+use parking_lot::Mutex;
 use tempfile::TempPath;
 
+use super::transfer_tasks_pool::TransferTaskProgress;
 use super::{ShardTransfer, ShardTransferConsensus};
 use crate::operations::snapshot_ops::{get_checksum_path, SnapshotPriority};
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -153,6 +155,7 @@ use crate::shards::shard_holder::LockedShardHolder;
 pub(super) async fn transfer_snapshot(
     transfer_config: ShardTransfer,
     shard_holder: Arc<LockedShardHolder>,
+    progress: Arc<Mutex<TransferTaskProgress>>,
     shard_id: ShardId,
     remote_shard: RemoteShard,
     channel_service: ChannelService,
@@ -179,7 +182,7 @@ pub(super) async fn transfer_snapshot(
 
     // Queue proxy local shard
     replica_set
-        .queue_proxify_local(remote_shard.clone(), None)
+        .queue_proxify_local(remote_shard.clone(), None, progress)
         .await?;
 
     debug_assert!(

@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use common::defaults;
+use parking_lot::Mutex;
 
+use super::transfer_tasks_pool::TransferTaskProgress;
 use super::{ShardTransfer, ShardTransferConsensus};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::channel_service::ChannelService;
@@ -68,9 +70,11 @@ use crate::shards::shard_holder::LockedShardHolder;
 ///
 /// If cancelled - the remote shard may only be partially recovered/transferred and the local shard
 /// may be left in an unexpected state. This must be resolved manually in case of cancellation.
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn transfer_wal_delta(
     transfer_config: ShardTransfer,
     shard_holder: Arc<LockedShardHolder>,
+    progress: Arc<Mutex<TransferTaskProgress>>,
     shard_id: ShardId,
     remote_shard: RemoteShard,
     channel_service: ChannelService,
@@ -111,7 +115,7 @@ pub(super) async fn transfer_wal_delta(
     if let Some(wal_delta_version) = wal_delta_version {
         // Queue proxy local shard
         replica_set
-            .queue_proxify_local(remote_shard.clone(), Some(wal_delta_version))
+            .queue_proxify_local(remote_shard.clone(), Some(wal_delta_version), progress)
             .await?;
 
         debug_assert!(
