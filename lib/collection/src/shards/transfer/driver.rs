@@ -70,7 +70,8 @@ pub async fn transfer_shard(
         ShardTransferMethod::Snapshot => {
             transfer_snapshot(
                 transfer_config,
-                shard_holder.clone(),
+                shard_holder,
+                progress,
                 shard_id,
                 remote_shard,
                 channel_service,
@@ -87,6 +88,7 @@ pub async fn transfer_shard(
             let result = transfer_wal_delta(
                 transfer_config.clone(),
                 shard_holder.clone(),
+                progress.clone(),
                 shard_id,
                 remote_shard.clone(),
                 channel_service.clone(),

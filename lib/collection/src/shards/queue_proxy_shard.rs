@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use common::types::TelemetryDetail;
+use parking_lot::Mutex as ParkingMutex;
 use segment::data_types::order_by::OrderBy;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
@@ -14,6 +15,7 @@ use tokio::sync::Mutex;
 
 use super::remote_shard::RemoteShard;
 use super::transfer::driver::MAX_RETRY_COUNT;
+use super::transfer::transfer_tasks_pool::TransferTaskProgress;
 use super::update_tracker::UpdateTracker;
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{
@@ -60,9 +62,15 @@ impl QueueProxyShard {
         wrapped_shard: LocalShard,
         remote_shard: RemoteShard,
         wal_keep_from: Arc<AtomicU64>,
+        progress: Arc<ParkingMutex<TransferTaskProgress>>,
     ) -> Self {
         Self {
-            inner: Some(Inner::new(wrapped_shard, remote_shard, wal_keep_from)),
+            inner: Some(Inner::new(
+                wrapped_shard,
+                remote_shard,
+                wal_keep_from,
+                progress,
+            )),
         }
     }
 
@@ -82,6 +90,7 @@ impl QueueProxyShard {
         remote_shard: RemoteShard,
         wal_keep_from: Arc<AtomicU64>,
         version: u64,
+        progress: Arc<ParkingMutex<TransferTaskProgress>>,
     ) -> Result<Self, (LocalShard, CollectionError)> {
         // Lock WAL until we've successfully created the queue proxy shard
         let wal = wrapped_shard.wal.wal.clone();
@@ -99,6 +108,7 @@ impl QueueProxyShard {
                 remote_shard,
                 wal_keep_from,
                 version,
+                progress,
             )),
         })
     }
@@ -297,6 +307,8 @@ struct Inner {
     pub(super) wrapped_shard: LocalShard,
     /// Wrapped remote shard, to transfer operations to.
     pub(super) remote_shard: RemoteShard,
+    /// WAL record at which we started the transfer.
+    started_at: u64,
     /// ID of the WAL operation we should transfer next. We consider everything before it to be
     /// transferred.
     transfer_from: AtomicU64,
@@ -308,6 +320,8 @@ struct Inner {
     /// See `set_wal_keep_from()` and `UpdateHandler::wal_keep_from` for more details.
     /// Defaults to `u64::MAX` to allow acknowledging all confirmed versions.
     wal_keep_from: Arc<AtomicU64>,
+    /// Progression tracker.
+    progress: Arc<ParkingMutex<TransferTaskProgress>>,
 }
 
 impl Inner {
@@ -315,21 +329,16 @@ impl Inner {
         wrapped_shard: LocalShard,
         remote_shard: RemoteShard,
         wal_keep_from: Arc<AtomicU64>,
+        progress: Arc<ParkingMutex<TransferTaskProgress>>,
     ) -> Self {
         let start_from = wrapped_shard.wal.wal.lock().last_index() + 1;
-
-        let shard = Self {
+        Self::new_from_version(
             wrapped_shard,
             remote_shard,
-            transfer_from: start_from.into(),
-            update_lock: Default::default(),
             wal_keep_from,
-        };
-
-        // Keep all new WAL entries so we don't truncate them off when we still need to transfer
-        shard.set_wal_keep_from(Some(start_from));
-
-        shard
+            start_from,
+            progress,
+        )
     }
 
     pub fn new_from_version(
@@ -337,13 +346,16 @@ impl Inner {
         remote_shard: RemoteShard,
         wal_keep_from: Arc<AtomicU64>,
         version: u64,
+        progress: Arc<ParkingMutex<TransferTaskProgress>>,
     ) -> Self {
         let shard = Self {
             wrapped_shard,
             remote_shard,
             transfer_from: version.into(),
+            started_at: version,
             update_lock: Default::default(),
             wal_keep_from,
+            progress,
         };
 
         // Keep all WAL entries from `version` so we don't truncate them off when we still need to transfer
@@ -392,11 +404,12 @@ impl Inner {
         let transfer_from = self.transfer_from.load(Ordering::Relaxed);
 
         // Lock wall, count pending items to transfer, grab batch
-        let (pending_count, batch) = {
+        let (pending_count, total, batch) = {
             let wal = self.wrapped_shard.wal.wal.lock();
             let items_left = (wal.last_index() + 1).saturating_sub(transfer_from);
+            let items_total = (transfer_from - self.started_at) + items_left;
             let batch = wal.read(transfer_from).take(BATCH_SIZE).collect::<Vec<_>>();
-            (items_left, batch)
+            (items_left, items_total, batch)
         };
 
         log::trace!(
@@ -413,6 +426,12 @@ impl Inner {
             drop(update_lock.take());
         }
 
+        // Set initial progress on the first batch
+        let is_first = transfer_from == self.started_at;
+        if is_first {
+            self.update_progress(0, total as usize);
+        }
+
         // Transfer batch with retries and store last transferred ID
         let last_idx = batch.last().map(|(idx, _)| *idx);
         for remaining_attempts in (0..BATCH_RETRIES).rev() {
@@ -420,6 +439,9 @@ impl Inner {
                 Ok(()) => {
                     if let Some(idx) = last_idx {
                         self.transfer_from.store(idx + 1, Ordering::Relaxed);
+
+                        let transferred = (idx + 1 - self.started_at) as usize;
+                        self.update_progress(transferred, total as usize);
                     }
                     break;
                 }
@@ -447,6 +469,12 @@ impl Inner {
     fn set_wal_keep_from(&self, version: Option<u64>) {
         let version = version.unwrap_or(u64::MAX);
         self.wal_keep_from.store(version, Ordering::Relaxed);
+    }
+
+    fn update_progress(&self, transferred: usize, total: usize) {
+        let mut progress = self.progress.lock();
+        progress.points_transferred = transferred;
+        progress.points_total = total;
     }
 }
 
