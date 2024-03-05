@@ -3,7 +3,7 @@ use std::future::{self, Future};
 use std::sync::atomic::{self, AtomicBool};
 use std::sync::Arc;
 use std::time::Duration;
-use std::{cmp, panic, thread};
+use std::{panic, thread};
 
 use api::grpc::qdrant::qdrant_internal_client::QdrantInternalClient;
 use api::grpc::qdrant::{GetConsensusCommitRequest, GetConsensusCommitResponse};
@@ -118,8 +118,8 @@ impl Task {
         // Do not wait for `/readyz` signal during first check
         self.check_ready_signal.notify_one();
 
-        // Get *cluster* commit index
-        let Some(mut cluster_commit_index) = self.cluster_commit_index().await else {
+        // Get *cluster* commit index, or if this is the only node in the cluster
+        let Some(cluster_commit_index) = self.cluster_commit_index().await else {
             self.set_ready();
             return;
         };
@@ -128,14 +128,20 @@ impl Task {
         while self.commit_index() < cluster_commit_index {
             // If not:
             //
-            // - Refresh cluster commit index
-            let Some(current_cluster_commit_index) = self.cluster_commit_index().await else {
+            // - Check if this is the only node in the cluster
+            let Some(_) = self.cluster_commit_index().await else {
                 self.set_ready();
                 return;
             };
 
-            // - Check if cluster commit index *decresed* since last check
-            cluster_commit_index = cmp::min(current_cluster_commit_index, cluster_commit_index);
+            // TODO: Do we want to update `cluster_commit_index` here?
+            //
+            // I.e.:
+            // - If we *don't* update `cluster_commit_index`, then we will only wait till the node
+            //   catch up with the cluster commit index *at the moment the node has been started*
+            // - If we *do* update `cluster_commit_index`, then we will keep track of cluster
+            //   commit index updates and wait till the node *completely* catch up with the leader,
+            //   which might be hard (if not impossible) in some situations
         }
 
         // Collect "unhealthy" shards list
@@ -186,6 +192,21 @@ impl Task {
             .inspect_err(|err| log::error!("GetConsensusCommit request failed: {err}"))
             .filter_map(|res| future::ready(res.ok()));
 
+        // Raft commits consensus operation, after majority of nodes persisted it.
+        //
+        // This means, if we check the majority of nodes (e.g., `total nodes / 2 + 1`), at least one
+        // of these nodes will *always* have an up-to-date commit index. And so, the highest commit
+        // index among majority of nodes *is* the cluster commit index.
+        //
+        // Our current node *is* one of the cluster nodes, so it's enough to query `total nodes / 2`
+        // *additional* nodes, to get cluster commit index.
+        //
+        // The check goes like this:
+        // - Either at least one of the "additional" nodes return a *higher* commit index, which
+        //   means our node is *not* up-to-date, and we have to wait to reach this commit index
+        // - Or *all* of them return *lower* commit index, which means current node is *already*
+        //   up-to-date, and `/readyz` check will pass to the next step
+        //
         // Example:
         //
         // Total nodes: 2
@@ -199,28 +220,32 @@ impl Task {
         //
         // Total nodes: 5
         // Required: 5 / 2 = 2
-        let required_commit_indices_count = peer_address_by_id.len() / 2;
+        let sufficient_commit_indices_count = peer_address_by_id.len() / 2;
 
+        // *Wait* for `total nodex / 2` successful responses...
         let mut commit_indices: Vec<_> = (&mut requests)
-            .take(required_commit_indices_count)
+            .take(sufficient_commit_indices_count)
             .collect()
             .await;
 
+        // ...and also collect any additional responses, that we might have *already* received
         while let Ok(Some(resp)) = time::timeout(Duration::ZERO, requests.next()).await {
             commit_indices.push(resp);
         }
 
-        if commit_indices.len() >= required_commit_indices_count {
-            let cluster_commit_index = commit_indices
-                .into_iter()
-                .map(|resp| resp.into_inner().commit)
-                .max()
-                .unwrap_or(0);
+        // Find the maximum commit index among all responses.
+        //
+        // Note, that we progress even if most (or even *all*) requests failed (e.g., because all
+        // other nodes are unavailable or they don't support `GetConsensusCommit` gRPC API).
+        //
+        // So this check is not 100% reliable and can give a false-positive result!
+        let cluster_commit_index = commit_indices
+            .into_iter()
+            .map(|resp| resp.into_inner().commit)
+            .max()
+            .unwrap_or(0);
 
-            Some(cluster_commit_index as _)
-        } else {
-            Some(0)
-        }
+        Some(cluster_commit_index as _)
     }
 
     fn commit_index(&self) -> u64 {
