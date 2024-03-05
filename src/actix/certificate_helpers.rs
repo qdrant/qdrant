@@ -154,10 +154,10 @@ pub fn actix_tls_server_config(settings: &Settings) -> Result<ServerConfig> {
         let ca_certs: Vec<CertificateDer> = with_buf_read(&tls_config.ca_cert, |rd| {
             rustls_pemfile::certs(rd).collect()
         })?;
-        root_cert_store.add_parsable_certificates(ca_certs.into_iter());
+        root_cert_store.add_parsable_certificates(ca_certs);
         let client_cert_verifier = WebPkiClientVerifier::builder(root_cert_store.into())
             .build()
-            .map_err(Error::ClientCertVerifierError)?;
+            .map_err(Error::ClientCertVerifier)?;
         config.with_client_cert_verifier(client_cert_verifier)
     } else {
         config.with_no_client_auth()
@@ -198,6 +198,6 @@ pub enum Error {
     InvalidPrivateKey,
     #[error("TLS signing error")]
     Sign(#[source] rustls::Error),
-    #[error("client certificate verification error")]
-    ClientCertVerifierError(#[source] VerifierBuilderError),
+    #[error("client certificate verification")]
+    ClientCertVerifier(#[source] VerifierBuilderError),
 }
