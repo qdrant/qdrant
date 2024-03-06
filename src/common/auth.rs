@@ -36,6 +36,11 @@ impl AuthKeys {
         }
     }
 
+    #[allow(dead_code)] // Not actually dead
+    pub fn rw_key(&self) -> Option<&str> {
+        self.read_write.as_deref()
+    }
+
     /// Check if a key is allowed to read
     #[inline]
     pub fn can_read(&self, key: &str) -> bool {
