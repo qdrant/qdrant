@@ -163,49 +163,44 @@ impl Collection {
         if replica_changes.is_empty() {
             return Ok(());
         }
-        let read_shard_holder = self.shards_holder.read().await;
+
+        let shard_holder = self.shards_holder.read().await;
 
         for change in replica_changes {
-            match change {
-                Change::Remove(shard_id, peer_id) => {
-                    let replica_set_opt = read_shard_holder.get_shard(&shard_id);
-                    let replica_set = if let Some(replica_set) = replica_set_opt {
-                        replica_set
-                    } else {
-                        return Err(CollectionError::BadRequest {
-                            description: format!("Shard {} of {} not found", shard_id, self.name()),
-                        });
-                    };
+            let (shard_id, peer_id) = match change {
+                Change::Remove(shard_id, peer_id) => (shard_id, peer_id),
+            };
 
-                    let peers = replica_set.peers();
+            let Some(replica_set) = shard_holder.get_shard(&shard_id) else {
+                return Err(CollectionError::BadRequest {
+                    description: format!("Shard {} of {} not found", shard_id, self.name()),
+                });
+            };
 
-                    if !peers.contains_key(&peer_id) {
-                        return Err(CollectionError::BadRequest {
-                            description: format!(
-                                "Peer {peer_id} has no replica of shard {shard_id}"
-                            ),
-                        });
-                    }
+            let peers = replica_set.peers();
 
-                    if peers.len() == 1 {
-                        return Err(CollectionError::BadRequest {
-                            description: format!("Shard {shard_id} must have at least one replica"),
-                        });
-                    }
+            if !peers.contains_key(&peer_id) {
+                return Err(CollectionError::BadRequest {
+                    description: format!("Peer {peer_id} has no replica of shard {shard_id}"),
+                });
+            }
 
-                    replica_set.remove_peer(peer_id).await?;
+            if peers.len() == 1 {
+                return Err(CollectionError::BadRequest {
+                    description: format!("Shard {shard_id} must have at least one replica"),
+                });
+            }
 
-                    // Collect shard transfers related to removed shard...
-                    let transfers = read_shard_holder.get_transfers(|transfer| {
-                        transfer.from == peer_id || transfer.to == peer_id
-                    });
+            replica_set.remove_peer(peer_id).await?;
 
-                    // ...and cancel transfer tasks and remove transfers from internal state
-                    for transfer in transfers {
-                        self.finish_shard_transfer(transfer, Some(&read_shard_holder))
-                            .await?;
-                    }
-                }
+            // Collect shard transfers related to removed shard...
+            let transfers = shard_holder
+                .get_transfers(|transfer| transfer.from == peer_id || transfer.to == peer_id);
+
+            // ...and cancel transfer tasks and remove transfers from internal state
+            for transfer in transfers {
+                self.finish_shard_transfer(transfer, Some(&shard_holder))
+                    .await?;
             }
         }
         Ok(())
