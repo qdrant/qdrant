@@ -151,6 +151,7 @@ members = [
     "lib/api",
     "lib/collection",
     "lib/common/*",
+    "lib/rbac",
     "lib/segment",
     "lib/sparse",
     "lib/storage",
