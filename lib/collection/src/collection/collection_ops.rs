@@ -194,6 +194,17 @@ impl Collection {
                     }
 
                     replica_set.remove_peer(peer_id).await?;
+
+                    // Collect shard transfers related to removed shard...
+                    let transfers = read_shard_holder.get_transfers(|transfer| {
+                        transfer.from == peer_id || transfer.to == peer_id
+                    });
+
+                    // ...and cancel transfer tasks and remove transfers from internal state
+                    for transfer in transfers {
+                        self.finish_shard_transfer(transfer, Some(&read_shard_holder))
+                            .await?;
+                    }
                 }
             }
         }
