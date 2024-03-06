@@ -57,8 +57,7 @@ mod tests {
             .as_secs();
         let claims = Claims {
             exp: Some(exp),
-            r: Some(true),
-            rw: Some(false),
+            w: Some(true),
         };
         let token = create_token(&claims);
 
@@ -79,8 +78,7 @@ mod tests {
 
         let mut claims = Claims {
             exp: Some(exp),
-            r: Some(true),
-            rw: Some(false),
+            w: Some(false),
         };
 
         let token = create_token(&claims);
