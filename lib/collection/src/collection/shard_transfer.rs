@@ -245,17 +245,7 @@ impl Collection {
     pub async fn abort_shard_transfer(
         &self,
         transfer_key: ShardTransferKey,
-    ) -> CollectionResult<()> {
-        let shard_holder_guard = self.shards_holder.read().await;
-        // Internal implementation, used to prevents double-read deadlock
-        self._abort_shard_transfer(transfer_key, &shard_holder_guard)
-            .await
-    }
-
-    pub(super) async fn _abort_shard_transfer(
-        &self,
-        transfer_key: ShardTransferKey,
-        shard_holder_guard: &ShardHolder,
+        shard_holder: Option<&ShardHolder>,
     ) -> CollectionResult<()> {
         // TODO: Ensure cancel safety!
 
@@ -266,33 +256,35 @@ impl Collection {
             .stop_task(&transfer_key)
             .await;
 
-        let replica_set =
-            if let Some(replica_set) = shard_holder_guard.get_shard(&transfer_key.shard_id) {
-                replica_set
-            } else {
-                return Err(CollectionError::bad_request(format!(
-                    "Shard {} doesn't exist",
-                    transfer_key.shard_id
-                )));
-            };
+        let mut shard_holder_guard = None;
 
-        let transfer = shard_holder_guard.get_transfer(&transfer_key);
+        let shard_holder = match shard_holder {
+            Some(shard_holder) => shard_holder,
+            None => shard_holder_guard.insert(self.shards_holder.read().await),
+        };
 
-        if transfer.map(|x| x.sync).unwrap_or(false) {
+        let Some(replica_set) = shard_holder.get_shard(&transfer_key.shard_id) else {
+            return Err(CollectionError::bad_request(format!(
+                "Shard {} doesn't exist",
+                transfer_key.shard_id
+            )));
+        };
+
+        let transfer = shard_holder.get_transfer(&transfer_key);
+
+        // TODO: Do we want to remove peer, if `transfer = None`!?
+        if transfer.map_or(false, |transfer| transfer.sync) {
             replica_set.set_replica_state(&transfer_key.to, ReplicaState::Dead)?;
         } else {
             replica_set.remove_peer(transfer_key.to).await?;
         }
 
         if self.this_peer_id == transfer_key.from {
-            transfer::driver::revert_proxy_shard_to_local(
-                shard_holder_guard,
-                transfer_key.shard_id,
-            )
-            .await?;
+            transfer::driver::revert_proxy_shard_to_local(shard_holder, transfer_key.shard_id)
+                .await?;
         }
 
-        let _finish_was_registered = shard_holder_guard.register_finish_transfer(&transfer_key)?;
+        let _finish_was_registered = shard_holder.register_finish_transfer(&transfer_key)?;
 
         Ok(())
     }

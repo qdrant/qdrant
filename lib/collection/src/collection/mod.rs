@@ -376,7 +376,7 @@ impl Collection {
             // Terminate transfer if source or target replicas are now dead
             let related_transfers = shard_holder.get_related_transfers(&shard_id, &peer_id);
             for transfer in related_transfers {
-                self._abort_shard_transfer(transfer.key(), &shard_holder)
+                self.abort_shard_transfer(transfer.key(), Some(&shard_holder))
                     .await?;
             }
         }

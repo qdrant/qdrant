@@ -452,7 +452,7 @@ impl TableOfContent {
                     &collection.state().await.transfers,
                 )?;
                 log::warn!("Aborting shard transfer: {reason}");
-                collection.abort_shard_transfer(transfer).await?;
+                collection.abort_shard_transfer(transfer, None).await?;
             }
         };
         Ok(())
