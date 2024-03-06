@@ -1,5 +1,5 @@
 mod api;
-mod api_key;
+mod auth;
 mod logging;
 mod tonic_telemetry;
 
@@ -193,9 +193,9 @@ pub fn init(
             .layer(tonic_telemetry::TonicTelemetryLayer::new(
                 telemetry_collector,
             ))
-            .option_layer({
-                AuthKeys::try_create(&settings.service).map(api_key::ApiKeyMiddleware::new_layer)
-            })
+            .option_layer(
+                AuthKeys::try_create(&settings.service).map(auth::AuthMiddleware::new_layer),
+            )
             .into_inner();
 
         server
