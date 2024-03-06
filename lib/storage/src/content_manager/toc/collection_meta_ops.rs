@@ -390,7 +390,7 @@ impl TableOfContent {
                     &transfer.key(),
                     &collection.state().await.transfers,
                 )?;
-                collection.finish_shard_transfer(transfer).await?;
+                collection.finish_shard_transfer(transfer, None).await?;
             }
             ShardTransferOperations::RecoveryToPartial(transfer)
             | ShardTransferOperations::SnapshotRecovered(transfer) => {
