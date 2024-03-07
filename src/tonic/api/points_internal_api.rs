@@ -323,9 +323,12 @@ impl PointsInternal for PointsInternalService {
 
     async fn recommend(
         &self,
-        request: Request<RecommendPointsInternal>,
+        mut request: Request<RecommendPointsInternal>,
     ) -> Result<Response<RecommendResponse>, Status> {
         validate_and_log(request.get_ref());
+
+        let claims = extract_claims(&mut request);
+
         let RecommendPointsInternal {
             recommend_points,
             ..  // shard_id - is not used in internal API,
@@ -337,7 +340,7 @@ impl PointsInternal for PointsInternalService {
 
         recommend_points.read_consistency = None; // *Have* to be `None`!
 
-        recommend(self.toc.as_ref(), recommend_points).await
+        recommend(self.toc.as_ref(), recommend_points, claims).await
     }
 
     async fn scroll(

@@ -271,17 +271,19 @@ impl Points for PointsService {
 
     async fn recommend(
         &self,
-        request: Request<RecommendPoints>,
+        mut request: Request<RecommendPoints>,
     ) -> Result<Response<RecommendResponse>, Status> {
         validate(request.get_ref())?;
-        recommend(self.dispatcher.as_ref(), request.into_inner()).await
+        let claims = extract_claims(&mut request);
+        recommend(self.dispatcher.as_ref(), request.into_inner(), claims).await
     }
 
     async fn recommend_batch(
         &self,
-        request: Request<RecommendBatchPoints>,
+        mut request: Request<RecommendBatchPoints>,
     ) -> Result<Response<RecommendBatchResponse>, Status> {
         validate(request.get_ref())?;
+        let claims = extract_claims(&mut request);
         let RecommendBatchPoints {
             collection_name,
             recommend_points,
@@ -293,6 +295,7 @@ impl Points for PointsService {
             collection_name,
             recommend_points,
             read_consistency,
+            claims,
             timeout.map(Duration::from_secs),
         )
         .await

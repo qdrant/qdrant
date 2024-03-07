@@ -1108,6 +1108,7 @@ pub async fn search_groups(
 pub async fn recommend(
     toc: &TableOfContent,
     recommend_points: RecommendPoints,
+    claims: Option<Claims>,
 ) -> Result<Response<RecommendResponse>, Status> {
     // TODO(luis): check if we can make this into a From impl
     let RecommendPoints {
@@ -1183,6 +1184,7 @@ pub async fn recommend(
             request,
             read_consistency,
             shard_selector,
+            claims,
             timeout,
         )
         .await
@@ -1204,6 +1206,7 @@ pub async fn recommend_batch(
     collection_name: String,
     recommend_points: Vec<RecommendPoints>,
     read_consistency: Option<ReadConsistencyGrpc>,
+    claims: Option<Claims>,
     timeout: Option<Duration>,
 ) -> Result<Response<RecommendBatchResponse>, Status> {
     let mut requests = Vec::with_capacity(recommend_points.len());
@@ -1220,7 +1223,13 @@ pub async fn recommend_batch(
 
     let timing = Instant::now();
     let scored_points = toc
-        .recommend_batch(&collection_name, requests, read_consistency, timeout)
+        .recommend_batch(
+            &collection_name,
+            requests,
+            read_consistency,
+            claims,
+            timeout,
+        )
         .await
         .map_err(error_to_status)?;
 

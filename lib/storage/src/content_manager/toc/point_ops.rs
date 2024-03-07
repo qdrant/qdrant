@@ -34,8 +34,10 @@ impl TableOfContent {
         request: RecommendRequestInternal,
         read_consistency: Option<ReadConsistency>,
         shard_selector: ShardSelectorInternal,
+        _claims: Option<Claims>,
         timeout: Option<Duration>,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
+        // TODO(RBAC): handle claims
         let collection = self.get_collection(collection_name).await?;
         recommendations::recommend_by(
             request,
@@ -64,8 +66,10 @@ impl TableOfContent {
         collection_name: &str,
         requests: Vec<(RecommendRequestInternal, ShardSelectorInternal)>,
         read_consistency: Option<ReadConsistency>,
+        _claims: Option<Claims>,
         timeout: Option<Duration>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
+        // TODO(RBAC): handle claims
         let collection = self.get_collection(collection_name).await?;
         recommendations::recommend_batch_by(
             requests,
