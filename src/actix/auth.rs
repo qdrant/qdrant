@@ -4,7 +4,7 @@ use actix_web::body::{BoxBody, EitherBody};
 use actix_web::dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform};
 use actix_web::http::header::Header;
 use actix_web::http::Method;
-use actix_web::{Error, HttpResponse};
+use actix_web::{Error, HttpMessage as _, HttpResponse};
 use actix_web_httpauth::headers::authorization::{Authorization, Bearer};
 use futures_util::future::LocalBoxFuture;
 
@@ -25,12 +25,12 @@ const READ_ONLY_POST_PATTERNS: [&str; 11] = [
     "/collections/{name}/points/search/groups",
 ];
 
-pub struct ApiKey {
+pub struct Auth {
     auth_keys: Option<AuthKeys>,
     whitelist: Vec<WhitelistItem>,
 }
 
-impl ApiKey {
+impl Auth {
     pub fn new(auth_keys: Option<AuthKeys>, whitelist: Vec<WhitelistItem>) -> Self {
         Self {
             auth_keys,
@@ -39,7 +39,7 @@ impl ApiKey {
     }
 }
 
-impl<S, B> Transform<S, ServiceRequest> for ApiKey
+impl<S, B> Transform<S, ServiceRequest> for Auth
 where
     S: Service<ServiceRequest, Response = ServiceResponse<EitherBody<B, BoxBody>>, Error = Error>,
     S::Future: 'static,
@@ -48,11 +48,11 @@ where
     type Response = ServiceResponse<EitherBody<B, BoxBody>>;
     type Error = Error;
     type InitError = ();
-    type Transform = ApiKeyMiddleware<S>;
+    type Transform = AuthMiddleware<S>;
     type Future = Ready<Result<Self::Transform, Self::InitError>>;
 
     fn new_transform(&self, service: S) -> Self::Future {
-        ready(Ok(ApiKeyMiddleware {
+        ready(Ok(AuthMiddleware {
             auth_keys: self.auth_keys.clone(),
             whitelist: self.whitelist.clone(),
             service,
@@ -94,20 +94,20 @@ impl PathMode {
     }
 }
 
-pub struct ApiKeyMiddleware<S> {
+pub struct AuthMiddleware<S> {
     auth_keys: Option<AuthKeys>,
     /// List of items whitelisted from authentication.
     whitelist: Vec<WhitelistItem>,
     service: S,
 }
 
-impl<S> ApiKeyMiddleware<S> {
+impl<S> AuthMiddleware<S> {
     pub fn is_path_whitelisted(&self, path: &str) -> bool {
         self.whitelist.iter().any(|item| item.matches(path))
     }
 }
 
-impl<S, B> Service<ServiceRequest> for ApiKeyMiddleware<S>
+impl<S, B> Service<ServiceRequest> for AuthMiddleware<S>
 where
     S: Service<ServiceRequest, Response = ServiceResponse<EitherBody<B, BoxBody>>, Error = Error>,
     S::Future: 'static,
@@ -126,33 +126,46 @@ where
             return Box::pin(self.service.call(req));
         }
 
-        // Grab API key from request
-        let key =
-            // Request header
-            req.headers().get("api-key").and_then(|key| key.to_str().ok()).map(|key| key.to_string())
-                // Fall back to authentication header with bearer token
-                .or_else(|| {
-                    Authorization::<Bearer>::parse(&req).ok().map(|auth| auth.as_ref().token().into())
-                });
+        let invalid_api_key = |req: ServiceRequest| -> Self::Future {
+            Box::pin(async {
+                Ok(req
+                    .into_response(HttpResponse::Forbidden().body("Invalid api-key"))
+                    .map_into_right_body())
+            })
+        };
 
-        if let Some(key) = key {
-            let is_allowed = if let Some(ref auth_keys) = self.auth_keys {
-                auth_keys.can_write(&key) || (is_read_only(&req) && auth_keys.can_read(&key))
-            } else {
-                // This code path should not be reached
-                log::warn!("Auth for REST API is set up incorrectly. Denying access by default.");
-                false
-            };
-            if is_allowed {
+        let Some(ref auth_keys) = self.auth_keys else {
+            // This code path should not be reached
+            log::warn!("Auth for REST API is set up incorrectly. Denying access by default.");
+            return invalid_api_key(req);
+        };
+
+        let api_key = req
+            .headers()
+            .get("api-key")
+            .and_then(|key| key.to_str().ok());
+
+        let bearer_key = Authorization::<Bearer>::parse(&req);
+        let bearer_key = bearer_key.as_ref().ok().map(|auth| auth.as_ref().token());
+
+        if let Some(key) = api_key.or(bearer_key) {
+            if auth_keys.can_write(key) || (is_read_only(&req) && auth_keys.can_read(key)) {
                 return Box::pin(self.service.call(req));
             }
+        };
+
+        if let Some(claims) = auth_keys
+            .jwt_parser()
+            .and_then(|p| p.decode(bearer_key?).ok())
+        {
+            if !claims.w.unwrap_or(false) && !is_read_only(&req) {
+                return invalid_api_key(req);
+            }
+            req.extensions_mut().insert(claims);
+            return Box::pin(self.service.call(req));
         }
 
-        Box::pin(async {
-            Ok(req
-                .into_response(HttpResponse::Forbidden().body("Invalid api-key"))
-                .map_into_right_body())
-        })
+        invalid_api_key(req)
     }
 }
 
