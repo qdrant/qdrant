@@ -438,7 +438,7 @@ def wait_for_collection_shard_transfer_progress(peer_api_uri: str, collection_na
                                                  expected_transfer_progress: int = None,
                                                  expected_transfer_total: int = None):
     try:
-        wait_for(check_collection_shard_transfer_progress, peer_api_uri, collection_name, expected_transfer_progress, expected_transfer_total)
+        wait_for(check_collection_shard_transfer_progress, peer_api_uri, collection_name, expected_transfer_progress, expected_transfer_total, wait_for_interval=0.1)
     except Exception as e:
         print_collection_cluster_info(peer_api_uri, collection_name)
         raise e
