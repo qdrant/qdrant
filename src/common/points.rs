@@ -842,6 +842,7 @@ pub async fn do_discover_points(
     request: DiscoverRequestInternal,
     read_consistency: Option<ReadConsistency>,
     shard_selector: ShardSelectorInternal,
+    claims: Option<Claims>,
     timeout: Option<Duration>,
 ) -> Result<Vec<ScoredPoint>, StorageError> {
     toc.discover(
@@ -849,6 +850,7 @@ pub async fn do_discover_points(
         request,
         read_consistency,
         shard_selector,
+        claims,
         timeout,
     )
     .await
@@ -859,6 +861,7 @@ pub async fn do_discover_batch_points(
     collection_name: &str,
     request: DiscoverRequestBatch,
     read_consistency: Option<ReadConsistency>,
+    claims: Option<Claims>,
     timeout: Option<Duration>,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     let requests = request
@@ -874,7 +877,7 @@ pub async fn do_discover_batch_points(
         })
         .collect();
 
-    toc.discover_batch(collection_name, requests, read_consistency, timeout)
+    toc.discover_batch(collection_name, requests, read_consistency, claims, timeout)
         .await
 }
 

@@ -318,28 +318,36 @@ impl Points for PointsService {
 
     async fn discover(
         &self,
-        request: Request<DiscoverPoints>,
+        mut request: Request<DiscoverPoints>,
     ) -> Result<Response<DiscoverResponse>, Status> {
         validate(request.get_ref())?;
-        discover(self.dispatcher.as_ref(), request.into_inner()).await
+
+        let claims = extract_claims(&mut request);
+
+        discover(self.dispatcher.as_ref(), request.into_inner(), claims).await
     }
 
     async fn discover_batch(
         &self,
-        request: Request<DiscoverBatchPoints>,
+        mut request: Request<DiscoverBatchPoints>,
     ) -> Result<Response<DiscoverBatchResponse>, Status> {
         validate(request.get_ref())?;
+
+        let claims = extract_claims(&mut request);
+
         let DiscoverBatchPoints {
             collection_name,
             discover_points,
             read_consistency,
             timeout,
         } = request.into_inner();
+
         discover_batch(
             self.dispatcher.as_ref(),
             collection_name,
             discover_points,
             read_consistency,
+            claims,
             timeout.map(Duration::from_secs),
         )
         .await
