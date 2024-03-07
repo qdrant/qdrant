@@ -97,7 +97,7 @@ def test_index_with_numeric_key():
         query_params={'wait': 'true'},
         body={
             "field_name": "123",
-            "field_schema": "int"
+            "field_schema": "keyword"
         }
     )
     assert response.ok
