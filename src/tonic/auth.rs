@@ -123,7 +123,7 @@ impl Predicate<Request> for AuthMiddleware {
 }
 
 fn check_write_access(claims: &Claims, request: &Request) -> Result<(), tower::BoxError> {
-    let write_access = claims.w.unwrap_or(false);
+    let write_access = claims.write_access();
 
     if !write_access && !is_read_only(request) {
         return Err(Box::new(Status::permission_denied(
