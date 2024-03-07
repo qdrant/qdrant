@@ -89,6 +89,19 @@ def set_payload(payload, points):
     )
     assert response.ok
 
+def test_index_with_numeric_key():
+    response = request_with_validation(
+        api='/collections/{collection_name}/index',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "field_name": "123",
+            "field_schema": "int"
+        }
+    )
+    assert response.ok
+
 
 def test_boolean_index():
     bool_key = "boolean_payload"
