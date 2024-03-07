@@ -1,3 +1,4 @@
+from grpc import RpcError
 from qdrant_client import QdrantClient, grpc as qgrpc
 import pytest
 from qdrant_client.conversions.conversion import payload_to_grpc
@@ -149,5 +150,5 @@ def assert_ro_token_failure(stub, request):
     try:
         stub(request, metadata=(("api-key", "my-ro-secret"),), timeout=1.0)
         pytest.fail("Request should have failed")
-    except:
+    except RpcError:
         return
