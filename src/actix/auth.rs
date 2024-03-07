@@ -26,12 +26,12 @@ const READ_ONLY_POST_PATTERNS: [&str; 11] = [
 ];
 
 pub struct Auth {
-    auth_keys: Option<AuthKeys>,
+    auth_keys: AuthKeys,
     whitelist: Vec<WhitelistItem>,
 }
 
 impl Auth {
-    pub fn new(auth_keys: Option<AuthKeys>, whitelist: Vec<WhitelistItem>) -> Self {
+    pub fn new(auth_keys: AuthKeys, whitelist: Vec<WhitelistItem>) -> Self {
         Self {
             auth_keys,
             whitelist,
@@ -95,7 +95,7 @@ impl PathMode {
 }
 
 pub struct AuthMiddleware<S> {
-    auth_keys: Option<AuthKeys>,
+    auth_keys: AuthKeys,
     /// List of items whitelisted from authentication.
     whitelist: Vec<WhitelistItem>,
     service: S,
@@ -134,11 +134,7 @@ where
             })
         };
 
-        let Some(ref auth_keys) = self.auth_keys else {
-            // This code path should not be reached
-            log::warn!("Auth for REST API is set up incorrectly. Denying access by default.");
-            return invalid_api_key(req);
-        };
+        let auth_keys = &self.auth_keys;
 
         let api_key = req
             .headers()

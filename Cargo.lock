@@ -280,6 +280,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "actix-web-extras"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef1dfa234e9b71ed142e54b26b4cc9e13ef4ac563cf1a2be810b0c3d057781ea"
+dependencies = [
+ "actix-web",
+ "futures-core",
+ "futures-util",
+ "pin-project-lite",
+]
+
+[[package]]
 name = "actix-web-httpauth"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3992,6 +4004,7 @@ dependencies = [
  "actix-files",
  "actix-multipart",
  "actix-web",
+ "actix-web-extras",
  "actix-web-httpauth",
  "actix-web-validator",
  "anyhow",
