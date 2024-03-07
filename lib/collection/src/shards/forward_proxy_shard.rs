@@ -16,7 +16,7 @@ use super::update_tracker::UpdateTracker;
 use crate::operations::point_ops::{PointOperations, PointStruct, PointSyncOperation};
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
-    CountRequestInternal, CountResult, PointRequestInternal, Record, UpdateResult,
+    CountRequestInternal, CountResult, PointRequestInternal, Record, UpdateResult, UpdateStatus,
 };
 use crate::operations::{
     CollectionUpdateOperations, CreateIndex, FieldIndexOperations, OperationWithClockTag,
@@ -183,16 +183,30 @@ impl ShardOperation for ForwardProxyShard {
 
         let _update_lock = self.update_lock.lock().await;
 
-        let local_shard = &self.wrapped_shard;
-
         // Shard update is within a write lock scope, because we need a way to block the shard updates
         // during the transfer restart and finalization.
-        let result = local_shard.update(operation.clone(), wait).await?;
+        let mut result = self.wrapped_shard.update(operation.clone(), wait).await?;
 
-        self.remote_shard
+        let remote_result = self
+            .remote_shard
             .update(operation, false)
             .await
             .map_err(|err| CollectionError::forward_proxy_error(self.remote_shard.peer_id, err))?;
+
+        // Merge `result` and `remote_result`:
+        //
+        // - Pick `clock_tag` with *newer* `clock_tick`
+        let tick = result.clock_tag.map(|tag| tag.clock_tick);
+        let remote_tick = remote_result.clock_tag.map(|tag| tag.clock_tick);
+
+        if remote_tick > tick || tick.is_none() {
+            result.clock_tag = remote_result.clock_tag;
+        }
+
+        // - If any node *rejected* the operation, propagate `UpdateStatus::ClockRejected`
+        if remote_result.status == UpdateStatus::ClockRejected {
+            result.status = UpdateStatus::ClockRejected;
+        }
 
         Ok(result)
     }
