@@ -880,9 +880,16 @@ pub async fn do_count_points(
     request: CountRequestInternal,
     read_consistency: Option<ReadConsistency>,
     shard_selection: ShardSelectorInternal,
+    claims: Option<Claims>,
 ) -> Result<CountResult, StorageError> {
-    toc.count(collection_name, request, read_consistency, shard_selection)
-        .await
+    toc.count(
+        collection_name,
+        request,
+        read_consistency,
+        shard_selection,
+        claims,
+    )
+    .await
 }
 
 pub async fn do_get_points(

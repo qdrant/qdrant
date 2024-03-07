@@ -7,6 +7,7 @@ use storage::content_manager::toc::TableOfContent;
 
 use super::CollectionPath;
 use crate::actix::api::read_params::ReadParams;
+use crate::actix::auth::ActixClaims;
 use crate::actix::helpers::process_response;
 use crate::common::points::do_count_points;
 
@@ -16,6 +17,7 @@ async fn count_points(
     collection: Path<CollectionPath>,
     request: Json<CountRequest>,
     params: Query<ReadParams>,
+    ActixClaims(claims): ActixClaims,
 ) -> impl Responder {
     let timing = Instant::now();
 
@@ -35,6 +37,7 @@ async fn count_points(
         count_request,
         params.consistency,
         shard_selector,
+        claims,
         // ToDo: use timeout from params
     )
     .await;

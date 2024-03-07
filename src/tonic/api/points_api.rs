@@ -340,9 +340,12 @@ impl Points for PointsService {
 
     async fn count(
         &self,
-        request: Request<CountPoints>,
+        mut request: Request<CountPoints>,
     ) -> Result<Response<CountResponse>, Status> {
         validate(request.get_ref())?;
-        count(self.dispatcher.as_ref(), request.into_inner(), None).await
+
+        let claims = extract_claims(&mut request);
+
+        count(self.dispatcher.as_ref(), request.into_inner(), None, claims).await
     }
 }

@@ -381,9 +381,12 @@ impl PointsInternal for PointsInternalService {
 
     async fn count(
         &self,
-        request: Request<CountPointsInternal>,
+        mut request: Request<CountPointsInternal>,
     ) -> Result<Response<CountResponse>, Status> {
         validate_and_log(request.get_ref());
+
+        let claims = extract_claims(&mut request);
+
         let CountPointsInternal {
             count_points,
             shard_id,
@@ -391,7 +394,7 @@ impl PointsInternal for PointsInternalService {
 
         let count_points =
             count_points.ok_or_else(|| Status::invalid_argument("CountPoints is missing"))?;
-        count(self.toc.as_ref(), count_points, shard_id).await
+        count(self.toc.as_ref(), count_points, shard_id, claims).await
     }
 
     async fn sync(

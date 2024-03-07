@@ -131,7 +131,9 @@ impl TableOfContent {
         request: CountRequestInternal,
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
+        _claims: Option<Claims>,
     ) -> Result<CountResult, StorageError> {
+        // TODO(RBAC): handle claims
         let collection = self.get_collection(collection_name).await?;
         collection
             .count(request, read_consistency, &shard_selection)
