@@ -70,6 +70,17 @@ impl ShardTransferRestart {
     }
 }
 
+impl From<ShardTransfer> for ShardTransferRestart {
+    fn from(transfer: ShardTransfer) -> Self {
+        Self {
+            shard_id: transfer.shard_id,
+            from: transfer.from,
+            to: transfer.to,
+            method: transfer.method.unwrap_or_default(),
+        }
+    }
+}
+
 /// Unique identifier of a transfer, agnostic of transfer method
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ShardTransferKey {
@@ -190,6 +201,18 @@ pub trait ShardTransferConsensus: Send + Sync {
             ))
         })
     }
+
+    /// Propose to restart a shard transfer with a different given configuration
+    ///
+    /// # Warning
+    ///
+    /// This only submits a proposal to consensus. Calling this does not guarantee that consensus
+    /// will actually apply the operation across the cluster.
+    fn restart_shard_transfer(
+        &self,
+        transfer_config: ShardTransfer,
+        collection_name: CollectionId,
+    ) -> CollectionResult<()>;
 
     /// Wait for all other peers to reach the current consensus
     ///
