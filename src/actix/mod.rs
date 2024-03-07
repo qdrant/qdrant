@@ -190,7 +190,7 @@ pub fn init(
 
             let config = certificate_helpers::actix_tls_server_config(&settings)
                 .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
-            server.bind_rustls_021(bind_addr, config)?
+            server.bind_rustls_0_22(bind_addr, config)?
         } else {
             log::info!("TLS disabled for REST API");
 
