@@ -923,7 +923,14 @@ pub async fn do_scroll_points(
     request: ScrollRequestInternal,
     read_consistency: Option<ReadConsistency>,
     shard_selection: ShardSelectorInternal,
+    claims: Option<Claims>,
 ) -> Result<ScrollResult, StorageError> {
-    toc.scroll(collection_name, request, read_consistency, shard_selection)
-        .await
+    toc.scroll(
+        collection_name,
+        request,
+        read_consistency,
+        shard_selection,
+        claims,
+    )
+    .await
 }

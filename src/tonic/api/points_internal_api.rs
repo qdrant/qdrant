@@ -345,9 +345,12 @@ impl PointsInternal for PointsInternalService {
 
     async fn scroll(
         &self,
-        request: Request<ScrollPointsInternal>,
+        mut request: Request<ScrollPointsInternal>,
     ) -> Result<Response<ScrollResponse>, Status> {
         validate_and_log(request.get_ref());
+
+        let claims = extract_claims(&mut request);
+
         let ScrollPointsInternal {
             scroll_points,
             shard_id,
@@ -358,7 +361,7 @@ impl PointsInternal for PointsInternalService {
 
         scroll_points.read_consistency = None; // *Have* to be `None`!
 
-        scroll(self.toc.as_ref(), scroll_points, shard_id).await
+        scroll(self.toc.as_ref(), scroll_points, shard_id, claims).await
     }
 
     async fn get(

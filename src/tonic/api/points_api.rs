@@ -267,10 +267,13 @@ impl Points for PointsService {
 
     async fn scroll(
         &self,
-        request: Request<ScrollPoints>,
+        mut request: Request<ScrollPoints>,
     ) -> Result<Response<ScrollResponse>, Status> {
         validate(request.get_ref())?;
-        scroll(self.dispatcher.as_ref(), request.into_inner(), None).await
+
+        let claims = extract_claims(&mut request);
+
+        scroll(self.dispatcher.as_ref(), request.into_inner(), None, claims).await
     }
 
     async fn recommend(

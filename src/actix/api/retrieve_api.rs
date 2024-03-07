@@ -132,6 +132,7 @@ async fn scroll_points(
     collection: Path<CollectionPath>,
     request: Json<ScrollRequest>,
     params: Query<ReadParams>,
+    ActixClaims(claims): ActixClaims,
 ) -> impl Responder {
     let timing = Instant::now();
 
@@ -152,6 +153,7 @@ async fn scroll_points(
             params.consistency,
             // TODO: handle params.timeout
             shard_selection,
+            claims,
         )
         .await;
 

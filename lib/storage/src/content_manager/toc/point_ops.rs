@@ -256,7 +256,9 @@ impl TableOfContent {
         request: ScrollRequestInternal,
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
+        _claims: Option<Claims>,
     ) -> Result<ScrollResult, StorageError> {
+        // TODO(RBAC): handle claims
         let collection = self.get_collection(collection_name).await?;
         collection
             .scroll_by(request, read_consistency, &shard_selection)
