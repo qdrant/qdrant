@@ -26,6 +26,7 @@ use crate::tonic::api::points_common::{
     delete, delete_field_index, delete_payload, get, overwrite_payload, recommend, recommend_batch,
     scroll, search, set_payload, upsert,
 };
+use crate::tonic::auth::extract_claims;
 
 pub struct PointsService {
     dispatcher: Arc<Dispatcher>,
@@ -200,17 +201,27 @@ impl Points for PointsService {
 
     async fn search(
         &self,
-        request: Request<SearchPoints>,
+        mut request: Request<SearchPoints>,
     ) -> Result<Response<SearchResponse>, Status> {
         validate(request.get_ref())?;
-        search(self.dispatcher.as_ref(), request.into_inner(), None).await
+        let claims = extract_claims(&mut request);
+        search(
+            self.dispatcher.as_ref(),
+            request.into_inner(),
+            None,
+            claims.as_ref(),
+        )
+        .await
     }
 
     async fn search_batch(
         &self,
-        request: Request<SearchBatchPoints>,
+        mut request: Request<SearchBatchPoints>,
     ) -> Result<Response<SearchBatchResponse>, Status> {
         validate(request.get_ref())?;
+
+        let claims = extract_claims(&mut request);
+
         let SearchBatchPoints {
             collection_name,
             search_points,
@@ -236,6 +247,7 @@ impl Points for PointsService {
             collection_name,
             requests,
             read_consistency,
+            claims.as_ref(),
             timeout,
         )
         .await

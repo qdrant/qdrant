@@ -21,6 +21,7 @@ use crate::tonic::api::points_common::{
     delete_payload, delete_vectors, get, overwrite_payload, recommend, scroll, set_payload, sync,
     update_vectors, upsert,
 };
+use crate::tonic::auth::extract_claims;
 
 /// This API is intended for P2P communication within a distributed deployment.
 pub struct PointsInternalService {
@@ -287,9 +288,12 @@ impl PointsInternal for PointsInternalService {
 
     async fn core_search_batch(
         &self,
-        request: Request<CoreSearchBatchPointsInternal>,
+        mut request: Request<CoreSearchBatchPointsInternal>,
     ) -> Result<Response<SearchBatchResponse>, Status> {
         validate_and_log(request.get_ref());
+
+        let claims = extract_claims(&mut request);
+
         let CoreSearchBatchPointsInternal {
             collection_name,
             search_points,
@@ -311,6 +315,7 @@ impl PointsInternal for PointsInternalService {
             search_points,
             None, // *Has* to be `None`!
             shard_id,
+            claims.as_ref(),
             timeout,
         )
         .await

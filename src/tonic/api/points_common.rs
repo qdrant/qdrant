@@ -33,6 +33,7 @@ use collection::operations::vector_ops::{DeleteVectors, PointVectors, UpdateVect
 use collection::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
 use collection::shards::shard::ShardId;
 use itertools::Itertools;
+use rbac::jwt::Claims;
 use segment::data_types::vectors::VectorStruct;
 use segment::types::{
     ExtendedPointId, Filter, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
@@ -909,6 +910,7 @@ pub async fn search(
     toc: &TableOfContent,
     search_points: SearchPoints,
     shard_selection: Option<ShardId>,
+    claims: Option<&Claims>,
 ) -> Result<Response<SearchResponse>, Status> {
     let SearchPoints {
         collection_name,
@@ -956,6 +958,7 @@ pub async fn search(
         search_request,
         read_consistency,
         shard_selector,
+        claims,
         timeout.map(Duration::from_secs),
     )
     .await
@@ -977,16 +980,23 @@ pub async fn core_search_batch(
     collection_name: String,
     requests: Vec<(CoreSearchRequest, ShardSelectorInternal)>,
     read_consistency: Option<ReadConsistencyGrpc>,
+    claims: Option<&Claims>,
     timeout: Option<Duration>,
 ) -> Result<Response<SearchBatchResponse>, Status> {
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
 
     let timing = Instant::now();
 
-    let scored_points =
-        do_search_batch_points(toc, &collection_name, requests, read_consistency, timeout)
-            .await
-            .map_err(error_to_status)?;
+    let scored_points = do_search_batch_points(
+        toc,
+        &collection_name,
+        requests,
+        read_consistency,
+        claims,
+        timeout,
+    )
+    .await
+    .map_err(error_to_status)?;
 
     let response = SearchBatchResponse {
         result: scored_points
@@ -1007,6 +1017,7 @@ pub async fn core_search_list(
     search_points: Vec<CoreSearchPoints>,
     read_consistency: Option<ReadConsistencyGrpc>,
     shard_selection: Option<ShardId>,
+    claims: Option<&Claims>,
     timeout: Option<Duration>,
 ) -> Result<Response<SearchBatchResponse>, Status> {
     let searches: Result<Vec<_>, Status> =
@@ -1036,6 +1047,7 @@ pub async fn core_search_list(
             request,
             read_consistency,
             shard_selection,
+            claims,
             timeout,
         )
         .await

@@ -10,6 +10,7 @@ use storage::content_manager::toc::TableOfContent;
 
 use super::read_params::ReadParams;
 use super::CollectionPath;
+use crate::actix::auth::ActixClaims;
 use crate::actix::helpers::process_response;
 use crate::common::points::{
     do_core_search_points, do_search_batch_points, do_search_point_groups,
@@ -21,6 +22,7 @@ async fn search_points(
     collection: Path<CollectionPath>,
     request: Json<SearchRequest>,
     params: Query<ReadParams>,
+    ActixClaims(claims): ActixClaims,
 ) -> impl Responder {
     let timing = Instant::now();
 
@@ -40,6 +42,7 @@ async fn search_points(
         search_request.into(),
         params.consistency,
         shard_selection,
+        claims.as_ref(),
         params.timeout(),
     )
     .await
@@ -59,6 +62,7 @@ async fn batch_search_points(
     collection: Path<CollectionPath>,
     request: Json<SearchRequestBatch>,
     params: Query<ReadParams>,
+    ActixClaims(claims): ActixClaims,
 ) -> impl Responder {
     let timing = Instant::now();
 
@@ -86,6 +90,7 @@ async fn batch_search_points(
         &collection.name,
         requests,
         params.consistency,
+        claims.as_ref(),
         params.timeout(),
     )
     .await

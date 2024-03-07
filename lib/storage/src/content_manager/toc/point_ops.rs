@@ -11,6 +11,7 @@ use collection::operations::{CollectionUpdateOperations, OperationWithClockTag};
 use collection::{discovery, recommendations};
 use futures::stream::FuturesUnordered;
 use futures::TryStreamExt as _;
+use rbac::jwt::Claims;
 use segment::types::{ScoredPoint, ShardKey};
 
 use super::TableOfContent;
@@ -97,8 +98,10 @@ impl TableOfContent {
         request: CoreSearchRequestBatch,
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
+        _claims: Option<&Claims>,
         timeout: Option<Duration>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
+        // TODO(RBAC): handle claims
         let collection = self.get_collection(collection_name).await?;
         collection
             .core_search_batch(request, read_consistency, shard_selection, timeout)

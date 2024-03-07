@@ -25,6 +25,7 @@ use collection::operations::{
     ClockTag, CollectionUpdateOperations, CreateIndex, FieldIndexOperations, OperationWithClockTag,
 };
 use collection::shards::shard::ShardId;
+use rbac::jwt::Claims;
 use schemars::JsonSchema;
 use segment::json_path::JsonPath;
 use segment::types::{PayloadFieldSchema, PayloadKeyType, ScoredPoint};
@@ -707,6 +708,7 @@ pub async fn do_core_search_points(
     request: CoreSearchRequest,
     read_consistency: Option<ReadConsistency>,
     shard_selection: ShardSelectorInternal,
+    claims: Option<&Claims>,
     timeout: Option<Duration>,
 ) -> Result<Vec<ScoredPoint>, StorageError> {
     let batch_res = do_core_search_batch_points(
@@ -717,6 +719,7 @@ pub async fn do_core_search_points(
         },
         read_consistency,
         shard_selection,
+        claims,
         timeout,
     )
     .await?;
@@ -731,6 +734,7 @@ pub async fn do_search_batch_points(
     collection_name: &str,
     requests: Vec<(CoreSearchRequest, ShardSelectorInternal)>,
     read_consistency: Option<ReadConsistency>,
+    claims: Option<&Claims>,
     timeout: Option<Duration>,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     let requests = batch_requests::<
@@ -759,6 +763,7 @@ pub async fn do_search_batch_points(
                 core_batch,
                 read_consistency,
                 shard_selector,
+                claims,
                 timeout,
             );
             res.push(req);
@@ -777,6 +782,7 @@ pub async fn do_core_search_batch_points(
     request: CoreSearchRequestBatch,
     read_consistency: Option<ReadConsistency>,
     shard_selection: ShardSelectorInternal,
+    claims: Option<&Claims>,
     timeout: Option<Duration>,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     toc.core_search_batch(
@@ -784,6 +790,7 @@ pub async fn do_core_search_batch_points(
         request,
         read_consistency,
         shard_selection,
+        claims,
         timeout,
     )
     .await
