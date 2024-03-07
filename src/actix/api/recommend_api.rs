@@ -124,6 +124,7 @@ async fn recommend_point_groups(
     collection: Path<CollectionPath>,
     request: Json<RecommendGroupsRequest>,
     params: Query<ReadParams>,
+    ActixClaims(claims): ActixClaims,
 ) -> impl Responder {
     let timing = Instant::now();
 
@@ -143,6 +144,7 @@ async fn recommend_point_groups(
         recommend_group_request,
         params.consistency,
         shard_selection,
+        claims,
         params.timeout(),
     )
     .await;

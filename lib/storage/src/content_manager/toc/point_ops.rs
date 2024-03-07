@@ -174,8 +174,10 @@ impl TableOfContent {
         request: GroupRequest,
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
+        _claims: Option<Claims>,
         timeout: Option<Duration>,
     ) -> Result<GroupsResult, StorageError> {
+        // TODO(RBAC): handle claims
         let collection = self.get_collection(collection_name).await?;
 
         let collection_by_name = |name| self.get_collection_opt(name);

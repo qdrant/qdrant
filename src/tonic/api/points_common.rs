@@ -1070,6 +1070,7 @@ pub async fn search_groups(
     toc: &TableOfContent,
     search_point_groups: SearchPointGroups,
     shard_selection: Option<ShardId>,
+    claims: Option<Claims>,
 ) -> Result<Response<SearchGroupsResponse>, Status> {
     let search_groups_request = search_point_groups.clone().try_into()?;
 
@@ -1092,6 +1093,7 @@ pub async fn search_groups(
         search_groups_request,
         read_consistency,
         shard_selector,
+        claims,
         timeout.map(Duration::from_secs),
     )
     .await
@@ -1249,6 +1251,7 @@ pub async fn recommend_batch(
 pub async fn recommend_groups(
     toc: &TableOfContent,
     recommend_point_groups: RecommendPointGroups,
+    claims: Option<Claims>,
 ) -> Result<Response<RecommendGroupsResponse>, Status> {
     let recommend_groups_request = recommend_point_groups.clone().try_into()?;
 
@@ -1271,6 +1274,7 @@ pub async fn recommend_groups(
         recommend_groups_request,
         read_consistency,
         shard_selector,
+        claims,
         timeout.map(Duration::from_secs),
     )
     .await

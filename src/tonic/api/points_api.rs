@@ -258,10 +258,11 @@ impl Points for PointsService {
 
     async fn search_groups(
         &self,
-        request: Request<SearchPointGroups>,
+        mut request: Request<SearchPointGroups>,
     ) -> Result<Response<SearchGroupsResponse>, Status> {
         validate(request.get_ref())?;
-        search_groups(self.dispatcher.as_ref(), request.into_inner(), None).await
+        let claims = extract_claims(&mut request);
+        search_groups(self.dispatcher.as_ref(), request.into_inner(), None, claims).await
     }
 
     async fn scroll(
@@ -306,10 +307,13 @@ impl Points for PointsService {
 
     async fn recommend_groups(
         &self,
-        request: Request<RecommendPointGroups>,
+        mut request: Request<RecommendPointGroups>,
     ) -> Result<Response<RecommendGroupsResponse>, Status> {
         validate(request.get_ref())?;
-        recommend_groups(self.dispatcher.as_ref(), request.into_inner()).await
+
+        let claims = extract_claims(&mut request);
+
+        recommend_groups(self.dispatcher.as_ref(), request.into_inner(), claims).await
     }
 
     async fn discover(
