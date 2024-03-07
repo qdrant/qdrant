@@ -1,6 +1,6 @@
 [package]
 name = "api"
-version = "1.8.0"
+version = "1.8.1"
 authors = [
     "Andrey Vasnetsov <andrey@vasnetsov.com>",
     "Qdrant Team <info@qdrant.tech>",
