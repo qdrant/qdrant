@@ -1,14 +1,18 @@
+use rbac::JwtParser;
+
 use super::strings::ct_eq;
 use crate::settings::ServiceConfig;
 
 /// The API keys used for auth
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct AuthKeys {
     /// A key allowing Read or Write operations
     read_write: Option<String>,
 
     /// A key allowing Read operations
     read_only: Option<String>,
+
+    jwt_parser: Option<JwtParser>,
 }
 
 impl AuthKeys {
@@ -24,6 +28,10 @@ impl AuthKeys {
             (read_write, read_only) => Some(Self {
                 read_write,
                 read_only,
+                jwt_parser: service_config
+                    .api_key
+                    .as_ref()
+                    .map(|secret| JwtParser::new(secret)),
             }),
         }
     }
@@ -44,5 +52,10 @@ impl AuthKeys {
             .as_ref()
             .map(|rw_key| ct_eq(rw_key, key))
             .unwrap_or_default()
+    }
+
+    #[inline]
+    pub fn jwt_parser(&self) -> Option<&JwtParser> {
+        self.jwt_parser.as_ref()
     }
 }

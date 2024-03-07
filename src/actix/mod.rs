@@ -1,7 +1,7 @@
 #[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
 pub mod actix_telemetry;
 pub mod api;
-mod api_key;
+mod auth;
 mod certificate_helpers;
 #[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
 pub mod helpers;
@@ -30,7 +30,7 @@ use crate::actix::api::service_api::config_service_api;
 use crate::actix::api::shards_api::config_shards_api;
 use crate::actix::api::snapshot_api::config_snapshots_api;
 use crate::actix::api::update_api::config_update_api;
-use crate::actix::api_key::{ApiKey, WhitelistItem};
+use crate::actix::auth::{Auth, WhitelistItem};
 use crate::common::auth::AuthKeys;
 use crate::common::health;
 use crate::common::http_client::HttpClient;
@@ -121,7 +121,7 @@ pub fn init(
                 // note: the last call to `wrap()` or `wrap_fn()` is executed first
                 .wrap(Condition::new(
                     auth_keys.is_some(),
-                    ApiKey::new(auth_keys.clone(), api_key_whitelist.clone()),
+                    Auth::new(auth_keys.clone(), api_key_whitelist.clone()),
                 ))
                 .wrap(Condition::new(settings.service.enable_cors, cors))
                 .wrap(
