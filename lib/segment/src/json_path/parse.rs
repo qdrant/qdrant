@@ -4,7 +4,7 @@ use nom::branch::alt;
 use nom::bytes::complete::tag;
 use nom::character::complete::{char, digit1, none_of, satisfy};
 use nom::combinator::{map_res, recognize};
-use nom::multi::many0;
+use nom::multi::{many0, many1};
 use nom::sequence::{delimited, preceded};
 use nom::{IResult, Parser};
 
@@ -39,9 +39,8 @@ fn json_path(input: &str) -> IResult<&str, JsonPathV2> {
 }
 
 fn raw_str(input: &str) -> IResult<&str, &str> {
-    recognize(preceded(
-        satisfy(|c: char| c.is_alphabetic() || c == '_' || c == '-'),
-        many0(satisfy(|c: char| c.is_alphanumeric() || c == '_' || c == '-').map(|_: char| ())),
+    recognize(many1(
+        satisfy(|c: char| c.is_alphanumeric() || c == '_' || c == '-').map(|_: char| ()),
     ))
     .parse(input)
 }
