@@ -16,6 +16,7 @@ use actix_multipart::form::tempfile::TempFileConfig;
 use actix_multipart::form::MultipartFormConfig;
 use actix_web::middleware::{Compress, Condition, Logger};
 use actix_web::{error, get, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
+use actix_web_extras::middleware::Condition as ConditionEx;
 use collection::operations::validation;
 use storage::dispatcher::Dispatcher;
 
@@ -119,10 +120,9 @@ pub fn init(
                 .wrap(Compress::default()) // Reads the `Accept-Encoding` header to negotiate which compression codec to use.
                 // api_key middleware
                 // note: the last call to `wrap()` or `wrap_fn()` is executed first
-                .wrap(Condition::new(
-                    auth_keys.is_some(),
-                    Auth::new(auth_keys.clone(), api_key_whitelist.clone()),
-                ))
+                .wrap(ConditionEx::from_option(auth_keys.as_ref().map(
+                    |auth_keys| Auth::new(auth_keys.clone(), api_key_whitelist.clone()),
+                )))
                 .wrap(Condition::new(settings.service.enable_cors, cors))
                 .wrap(
                     // Set up logger, but avoid logging hot status endpoints
