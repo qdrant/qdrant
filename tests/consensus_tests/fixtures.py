@@ -34,6 +34,7 @@ def upsert_random_points(
         collection_name="test_collection",
         fail_on_error=True,
         offset=0,
+        batch_size=None,
         wait='true',
         ordering ='weak',
         with_sparse_vector=True,
@@ -49,18 +50,24 @@ def upsert_random_points(
 
         return vector
 
-    r_batch = requests.put(
-        f"{peer_url}/collections/{collection_name}/points?wait={wait}&ordering={ordering}", json={
-            "points": [
-                {
-                    "id": i + offset,
-                    "vector": get_vector(),
-                    "payload": {"city": random.choice(CITIES)}
-                } for i in range(num)
-            ]
-        })
-    if fail_on_error:
-        assert_http_ok(r_batch)
+    while num > 0:
+        size = num if batch_size is None else min(num, batch_size)
+
+        r_batch = requests.put(
+            f"{peer_url}/collections/{collection_name}/points?wait={wait}&ordering={ordering}", json={
+                "points": [
+                    {
+                        "id": i + offset,
+                        "vector": get_vector(),
+                        "payload": {"city": random.choice(CITIES)}
+                    } for i in range(size)
+                ]
+            })
+        if fail_on_error:
+            assert_http_ok(r_batch)
+
+        num -= size
+        offset += size
 
 
 def create_collection(peer_url, collection="test_collection", shard_number=1, replication_factor=1, write_consistency_factor=1, timeout=10):
