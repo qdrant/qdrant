@@ -158,7 +158,9 @@ impl TableOfContent {
         request: PointRequestInternal,
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
+        _claims: Option<Claims>,
     ) -> Result<Vec<Record>, StorageError> {
+        // TODO(RBAC): handle claims
         let collection = self.get_collection(collection_name).await?;
         collection
             .retrieve(request, read_consistency, &shard_selection)

@@ -363,9 +363,12 @@ impl PointsInternal for PointsInternalService {
 
     async fn get(
         &self,
-        request: Request<GetPointsInternal>,
+        mut request: Request<GetPointsInternal>,
     ) -> Result<Response<GetResponse>, Status> {
         validate_and_log(request.get_ref());
+
+        let claims = extract_claims(&mut request);
+
         let GetPointsInternal {
             get_points,
             shard_id,
@@ -376,7 +379,7 @@ impl PointsInternal for PointsInternalService {
 
         get_points.read_consistency = None; // *Have* to be `None`!
 
-        get(self.toc.as_ref(), get_points, shard_id).await
+        get(self.toc.as_ref(), get_points, shard_id, claims).await
     }
 
     async fn count(

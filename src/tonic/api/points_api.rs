@@ -70,9 +70,12 @@ impl Points for PointsService {
         .map(|resp| resp.map(Into::into))
     }
 
-    async fn get(&self, request: Request<GetPoints>) -> Result<Response<GetResponse>, Status> {
+    async fn get(&self, mut request: Request<GetPoints>) -> Result<Response<GetResponse>, Status> {
         validate(request.get_ref())?;
-        get(self.dispatcher.as_ref(), request.into_inner(), None).await
+
+        let claims = extract_claims(&mut request);
+
+        get(self.dispatcher.as_ref(), request.into_inner(), None, claims).await
     }
 
     async fn update_vectors(

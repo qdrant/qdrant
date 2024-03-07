@@ -1456,6 +1456,7 @@ pub async fn get(
     toc: &TableOfContent,
     get_points: GetPoints,
     shard_selection: Option<ShardId>,
+    claims: Option<Claims>,
 ) -> Result<Response<GetResponse>, Status> {
     let GetPoints {
         collection_name,
@@ -1489,6 +1490,7 @@ pub async fn get(
         point_request,
         read_consistency,
         shard_selector,
+        claims,
     )
     .await
     .map_err(error_to_status)?;

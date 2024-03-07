@@ -898,9 +898,16 @@ pub async fn do_get_points(
     request: PointRequestInternal,
     read_consistency: Option<ReadConsistency>,
     shard_selection: ShardSelectorInternal,
+    claims: Option<Claims>,
 ) -> Result<Vec<Record>, StorageError> {
-    toc.retrieve(collection_name, request, read_consistency, shard_selection)
-        .await
+    toc.retrieve(
+        collection_name,
+        request,
+        read_consistency,
+        shard_selection,
+        claims,
+    )
+    .await
 }
 
 pub async fn do_scroll_points(
