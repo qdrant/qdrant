@@ -38,9 +38,12 @@ impl PointsInternalService {
 impl PointsInternal for PointsInternalService {
     async fn upsert(
         &self,
-        request: Request<UpsertPointsInternal>,
+        mut request: Request<UpsertPointsInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
+
+        let claims = extract_claims(&mut request);
+
         let UpsertPointsInternal {
             upsert_points,
             shard_id,
@@ -55,15 +58,19 @@ impl PointsInternal for PointsInternalService {
             upsert_points,
             clock_tag.map(Into::into),
             shard_id,
+            claims,
         )
         .await
     }
 
     async fn delete(
         &self,
-        request: Request<DeletePointsInternal>,
+        mut request: Request<DeletePointsInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
+
+        let claims = extract_claims(&mut request);
+
         let DeletePointsInternal {
             delete_points,
             shard_id,
@@ -78,15 +85,19 @@ impl PointsInternal for PointsInternalService {
             delete_points,
             clock_tag.map(Into::into),
             shard_id,
+            claims,
         )
         .await
     }
 
     async fn update_vectors(
         &self,
-        request: Request<UpdateVectorsInternal>,
+        mut request: Request<UpdateVectorsInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
+
+        let claims = extract_claims(&mut request);
+
         let request = request.into_inner();
 
         let shard_id = request.shard_id;
@@ -101,15 +112,19 @@ impl PointsInternal for PointsInternalService {
             update_point_vectors,
             clock_tag.map(Into::into),
             shard_id,
+            claims,
         )
         .await
     }
 
     async fn delete_vectors(
         &self,
-        request: Request<DeleteVectorsInternal>,
+        mut request: Request<DeleteVectorsInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
+
+        let claims = extract_claims(&mut request);
+
         let request = request.into_inner();
 
         let shard_id = request.shard_id;
@@ -124,15 +139,19 @@ impl PointsInternal for PointsInternalService {
             delete_point_vectors,
             clock_tag.map(Into::into),
             shard_id,
+            claims,
         )
         .await
     }
 
     async fn set_payload(
         &self,
-        request: Request<SetPayloadPointsInternal>,
+        mut request: Request<SetPayloadPointsInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
+
+        let claims = extract_claims(&mut request);
+
         let SetPayloadPointsInternal {
             set_payload_points,
             shard_id,
@@ -147,15 +166,19 @@ impl PointsInternal for PointsInternalService {
             set_payload_points,
             clock_tag.map(Into::into),
             shard_id,
+            claims,
         )
         .await
     }
 
     async fn overwrite_payload(
         &self,
-        request: Request<SetPayloadPointsInternal>,
+        mut request: Request<SetPayloadPointsInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
+
+        let claims = extract_claims(&mut request);
+
         let SetPayloadPointsInternal {
             set_payload_points,
             shard_id,
@@ -170,15 +193,19 @@ impl PointsInternal for PointsInternalService {
             set_payload_points,
             clock_tag.map(Into::into),
             shard_id,
+            claims,
         )
         .await
     }
 
     async fn delete_payload(
         &self,
-        request: Request<DeletePayloadPointsInternal>,
+        mut request: Request<DeletePayloadPointsInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
+
+        let claims = extract_claims(&mut request);
+
         let DeletePayloadPointsInternal {
             delete_payload_points,
             shard_id,
@@ -193,15 +220,19 @@ impl PointsInternal for PointsInternalService {
             delete_payload_points,
             clock_tag.map(Into::into),
             shard_id,
+            claims,
         )
         .await
     }
 
     async fn clear_payload(
         &self,
-        request: Request<ClearPayloadPointsInternal>,
+        mut request: Request<ClearPayloadPointsInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
+
+        let claims = extract_claims(&mut request);
+
         let ClearPayloadPointsInternal {
             clear_payload_points,
             shard_id,
@@ -216,15 +247,19 @@ impl PointsInternal for PointsInternalService {
             clear_payload_points,
             clock_tag.map(Into::into),
             shard_id,
+            claims,
         )
         .await
     }
 
     async fn create_field_index(
         &self,
-        request: Request<CreateFieldIndexCollectionInternal>,
+        mut request: Request<CreateFieldIndexCollectionInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
+
+        let claims = extract_claims(&mut request);
+
         let CreateFieldIndexCollectionInternal {
             create_field_index_collection,
             shard_id,
@@ -239,15 +274,19 @@ impl PointsInternal for PointsInternalService {
             create_field_index_collection,
             clock_tag.map(Into::into),
             shard_id,
+            claims,
         )
         .await
     }
 
     async fn delete_field_index(
         &self,
-        request: Request<DeleteFieldIndexCollectionInternal>,
+        mut request: Request<DeleteFieldIndexCollectionInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
+
+        let claims = extract_claims(&mut request);
+
         let DeleteFieldIndexCollectionInternal {
             delete_field_index_collection,
             shard_id,
@@ -262,6 +301,7 @@ impl PointsInternal for PointsInternalService {
             delete_field_index_collection,
             clock_tag.map(Into::into),
             shard_id,
+            claims,
         )
         .await
     }
@@ -405,9 +445,12 @@ impl PointsInternal for PointsInternalService {
 
     async fn sync(
         &self,
-        request: Request<SyncPointsInternal>,
+        mut request: Request<SyncPointsInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
+
+        let claims = extract_claims(&mut request);
+
         let SyncPointsInternal {
             sync_points,
             shard_id,
@@ -421,6 +464,7 @@ impl PointsInternal for PointsInternalService {
             sync_points,
             clock_tag.map(Into::into),
             shard_id,
+            claims,
         )
         .await
     }

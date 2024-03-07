@@ -307,7 +307,10 @@ impl TableOfContent {
         wait: bool,
         ordering: WriteOrdering,
         shard_selector: ShardSelectorInternal,
+        _claims: Option<Claims>,
     ) -> Result<UpdateResult, StorageError> {
+        // TODO(RBAC): handle claims
+
         // `TableOfContent::_update_shard_keys` and `Collection::update_from_*` are cancel safe,
         // so this method is cancel safe.
 

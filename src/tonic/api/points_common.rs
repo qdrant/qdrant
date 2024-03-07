@@ -98,6 +98,7 @@ pub async fn upsert(
     upsert_points: UpsertPoints,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
+    claims: Option<Claims>,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let UpsertPoints {
         collection_name,
@@ -123,6 +124,7 @@ pub async fn upsert(
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
+        claims,
     )
     .await
     .map_err(error_to_status)?;
@@ -136,6 +138,7 @@ pub async fn sync(
     sync_points: SyncPoints,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
+    claims: Option<Claims>,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let SyncPoints {
         collection_name,
@@ -175,6 +178,7 @@ pub async fn sync(
             wait.unwrap_or(false),
             write_ordering_from_proto(ordering)?,
             shard_selector,
+            claims,
         )
         .await
         .map_err(error_to_status)?;
@@ -188,6 +192,7 @@ pub async fn delete(
     delete_points: DeletePoints,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
+    claims: Option<Claims>,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let DeletePoints {
         collection_name,
@@ -211,6 +216,7 @@ pub async fn delete(
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
+        claims,
     )
     .await
     .map_err(error_to_status)?;
@@ -224,6 +230,7 @@ pub async fn update_vectors(
     update_point_vectors: UpdatePointVectors,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
+    claims: Option<Claims>,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let UpdatePointVectors {
         collection_name,
@@ -264,6 +271,7 @@ pub async fn update_vectors(
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
+        claims,
     )
     .await
     .map_err(error_to_status)?;
@@ -277,6 +285,7 @@ pub async fn delete_vectors(
     delete_point_vectors: DeletePointVectors,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
+    claims: Option<Claims>,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let DeletePointVectors {
         collection_name,
@@ -309,6 +318,7 @@ pub async fn delete_vectors(
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
+        claims,
     )
     .await
     .map_err(error_to_status)?;
@@ -322,6 +332,7 @@ pub async fn set_payload(
     set_payload_points: SetPayloadPoints,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
+    claims: Option<Claims>,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let SetPayloadPoints {
         collection_name,
@@ -352,6 +363,7 @@ pub async fn set_payload(
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
+        claims,
     )
     .await
     .map_err(error_to_status)?;
@@ -365,6 +377,7 @@ pub async fn overwrite_payload(
     set_payload_points: SetPayloadPoints,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
+    claims: Option<Claims>,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let SetPayloadPoints {
         collection_name,
@@ -395,6 +408,7 @@ pub async fn overwrite_payload(
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
+        claims,
     )
     .await
     .map_err(error_to_status)?;
@@ -408,6 +422,7 @@ pub async fn delete_payload(
     delete_payload_points: DeletePayloadPoints,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
+    claims: Option<Claims>,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let DeletePayloadPoints {
         collection_name,
@@ -436,6 +451,7 @@ pub async fn delete_payload(
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
+        claims,
     )
     .await
     .map_err(error_to_status)?;
@@ -449,6 +465,7 @@ pub async fn clear_payload(
     clear_payload_points: ClearPayloadPoints,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
+    claims: Option<Claims>,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let ClearPayloadPoints {
         collection_name,
@@ -472,6 +489,7 @@ pub async fn clear_payload(
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
+        claims,
     )
     .await
     .map_err(error_to_status)?;
@@ -485,6 +503,7 @@ pub async fn update_batch(
     update_batch_points: UpdateBatchPoints,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
+    claims: Option<Claims>,
 ) -> Result<Response<UpdateBatchResponse>, Status> {
     let UpdateBatchPoints {
         collection_name,
@@ -517,6 +536,7 @@ pub async fn update_batch(
                     },
                     clock_tag,
                     shard_selection,
+                    claims.clone(),
                 )
                 .await
             }
@@ -532,6 +552,7 @@ pub async fn update_batch(
                     },
                     clock_tag,
                     shard_selection,
+                    claims.clone(),
                 )
                 .await
             }
@@ -556,6 +577,7 @@ pub async fn update_batch(
                     },
                     clock_tag,
                     shard_selection,
+                    claims.clone(),
                 )
                 .await
             }
@@ -581,6 +603,7 @@ pub async fn update_batch(
                     },
                     clock_tag,
                     shard_selection,
+                    claims.clone(),
                 )
                 .await
             }
@@ -603,6 +626,7 @@ pub async fn update_batch(
                     },
                     clock_tag,
                     shard_selection,
+                    claims.clone(),
                 )
                 .await
             }
@@ -621,6 +645,7 @@ pub async fn update_batch(
                     },
                     clock_tag,
                     shard_selection,
+                    claims.clone(),
                 )
                 .await
             }
@@ -641,6 +666,7 @@ pub async fn update_batch(
                     },
                     clock_tag,
                     shard_selection,
+                    claims.clone(),
                 )
                 .await
             }
@@ -663,6 +689,7 @@ pub async fn update_batch(
                     },
                     clock_tag,
                     shard_selection,
+                    claims.clone(),
                 )
                 .await
             }
@@ -678,6 +705,7 @@ pub async fn update_batch(
                     },
                     clock_tag,
                     shard_selection,
+                    claims.clone(),
                 )
                 .await
             }
@@ -696,6 +724,7 @@ pub async fn update_batch(
                     },
                     clock_tag,
                     shard_selection,
+                    claims.clone(),
                 )
                 .await
             }
@@ -771,6 +800,7 @@ pub async fn create_field_index(
     create_field_index_collection: CreateFieldIndexCollection,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
+    claims: Option<Claims>,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let CreateFieldIndexCollection {
         collection_name,
@@ -798,6 +828,7 @@ pub async fn create_field_index(
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
+        claims,
     )
     .await
     .map_err(error_to_status)?;
@@ -811,6 +842,7 @@ pub async fn create_field_index_internal(
     create_field_index_collection: CreateFieldIndexCollection,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
+    claims: Option<Claims>,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let CreateFieldIndexCollection {
         collection_name,
@@ -834,6 +866,7 @@ pub async fn create_field_index_internal(
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
+        claims,
     )
     .await
     .map_err(error_to_status)?;
@@ -847,6 +880,7 @@ pub async fn delete_field_index(
     delete_field_index_collection: DeleteFieldIndexCollection,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
+    claims: Option<Claims>,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let DeleteFieldIndexCollection {
         collection_name,
@@ -866,6 +900,7 @@ pub async fn delete_field_index(
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
+        claims,
     )
     .await
     .map_err(error_to_status)?;
@@ -879,6 +914,7 @@ pub async fn delete_field_index_internal(
     delete_field_index_collection: DeleteFieldIndexCollection,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
+    claims: Option<Claims>,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let DeleteFieldIndexCollection {
         collection_name,
@@ -898,6 +934,7 @@ pub async fn delete_field_index_internal(
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
+        claims,
     )
     .await
     .map_err(error_to_status)?;

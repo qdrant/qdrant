@@ -158,6 +158,7 @@ fn get_shard_selector_for_update(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_upsert_points(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -166,6 +167,7 @@ pub async fn do_upsert_points(
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
+    claims: Option<Claims>,
 ) -> Result<UpdateResult, StorageError> {
     let (shard_key, operation) = operation.decompose();
     let collection_operation =
@@ -179,10 +181,12 @@ pub async fn do_upsert_points(
         wait,
         ordering,
         shard_selector,
+        claims,
     )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_delete_points(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -191,6 +195,7 @@ pub async fn do_delete_points(
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
+    claims: Option<Claims>,
 ) -> Result<UpdateResult, StorageError> {
     let (point_operation, shard_key) = match points {
         PointsSelector::PointIdsSelector(PointIdsList { points, shard_key }) => {
@@ -209,10 +214,12 @@ pub async fn do_delete_points(
         wait,
         ordering,
         shard_selector,
+        claims,
     )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_update_vectors(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -221,6 +228,7 @@ pub async fn do_update_vectors(
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
+    claims: Option<Claims>,
 ) -> Result<UpdateResult, StorageError> {
     let UpdateVectors { points, shard_key } = operation;
 
@@ -236,10 +244,12 @@ pub async fn do_update_vectors(
         wait,
         ordering,
         shard_selector,
+        claims,
     )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_delete_vectors(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -248,6 +258,7 @@ pub async fn do_delete_vectors(
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
+    claims: Option<Claims>,
 ) -> Result<UpdateResult, StorageError> {
     // TODO: Is this cancel safe!?
 
@@ -276,6 +287,7 @@ pub async fn do_delete_vectors(
                 wait,
                 ordering,
                 shard_selector.clone(),
+                claims.clone(),
             )
             .await?,
         );
@@ -291,6 +303,7 @@ pub async fn do_delete_vectors(
                 wait,
                 ordering,
                 shard_selector,
+                claims,
             )
             .await?,
         );
@@ -299,6 +312,7 @@ pub async fn do_delete_vectors(
     result.ok_or_else(|| StorageError::bad_request("No filter or points provided"))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_set_payload(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -307,6 +321,7 @@ pub async fn do_set_payload(
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
+    claims: Option<Claims>,
 ) -> Result<UpdateResult, StorageError> {
     let SetPayload {
         points,
@@ -332,10 +347,12 @@ pub async fn do_set_payload(
         wait,
         ordering,
         shard_selector,
+        claims,
     )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_overwrite_payload(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -344,6 +361,7 @@ pub async fn do_overwrite_payload(
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
+    claims: Option<Claims>,
 ) -> Result<UpdateResult, StorageError> {
     let SetPayload {
         points,
@@ -370,10 +388,12 @@ pub async fn do_overwrite_payload(
         wait,
         ordering,
         shard_selector,
+        claims,
     )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_delete_payload(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -382,6 +402,7 @@ pub async fn do_delete_payload(
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
+    claims: Option<Claims>,
 ) -> Result<UpdateResult, StorageError> {
     let DeletePayload {
         keys,
@@ -405,10 +426,12 @@ pub async fn do_delete_payload(
         wait,
         ordering,
         shard_selector,
+        claims,
     )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_clear_payload(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -417,6 +440,7 @@ pub async fn do_clear_payload(
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
+    claims: Option<Claims>,
 ) -> Result<UpdateResult, StorageError> {
     let (point_operation, shard_key) = match points {
         PointsSelector::PointIdsSelector(PointIdsList { points, shard_key }) => {
@@ -437,10 +461,12 @@ pub async fn do_clear_payload(
         wait,
         ordering,
         shard_selector,
+        claims,
     )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_batch_update_points(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -449,6 +475,7 @@ pub async fn do_batch_update_points(
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
+    claims: Option<Claims>,
 ) -> Result<Vec<UpdateResult>, StorageError> {
     let mut results = Vec::with_capacity(operations.len());
     for operation in operations {
@@ -462,6 +489,7 @@ pub async fn do_batch_update_points(
                     shard_selection,
                     wait,
                     ordering,
+                    claims.clone(),
                 )
                 .await
             }
@@ -474,6 +502,7 @@ pub async fn do_batch_update_points(
                     shard_selection,
                     wait,
                     ordering,
+                    claims.clone(),
                 )
                 .await
             }
@@ -486,6 +515,7 @@ pub async fn do_batch_update_points(
                     shard_selection,
                     wait,
                     ordering,
+                    claims.clone(),
                 )
                 .await
             }
@@ -498,6 +528,7 @@ pub async fn do_batch_update_points(
                     shard_selection,
                     wait,
                     ordering,
+                    claims.clone(),
                 )
                 .await
             }
@@ -510,6 +541,7 @@ pub async fn do_batch_update_points(
                     shard_selection,
                     wait,
                     ordering,
+                    claims.clone(),
                 )
                 .await
             }
@@ -522,6 +554,7 @@ pub async fn do_batch_update_points(
                     shard_selection,
                     wait,
                     ordering,
+                    claims.clone(),
                 )
                 .await
             }
@@ -534,6 +567,7 @@ pub async fn do_batch_update_points(
                     shard_selection,
                     wait,
                     ordering,
+                    claims.clone(),
                 )
                 .await
             }
@@ -546,6 +580,7 @@ pub async fn do_batch_update_points(
                     shard_selection,
                     wait,
                     ordering,
+                    claims.clone(),
                 )
                 .await
             }
@@ -565,6 +600,7 @@ pub async fn do_create_index_internal(
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
+    claims: Option<Claims>,
 ) -> Result<UpdateResult, StorageError> {
     let collection_operation = CollectionUpdateOperations::FieldIndexOperation(
         FieldIndexOperations::CreateIndex(CreateIndex {
@@ -585,10 +621,12 @@ pub async fn do_create_index_internal(
         wait,
         ordering,
         shard_selector,
+        claims,
     )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_create_index(
     dispatcher: Arc<Dispatcher>,
     collection_name: String,
@@ -597,6 +635,7 @@ pub async fn do_create_index(
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
+    claims: Option<Claims>,
 ) -> Result<UpdateResult, StorageError> {
     // TODO: Is this cancel safe!?
 
@@ -633,10 +672,12 @@ pub async fn do_create_index(
         shard_selection,
         wait,
         ordering,
+        claims,
     )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_delete_index_internal(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -645,6 +686,7 @@ pub async fn do_delete_index_internal(
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
+    claims: Option<Claims>,
 ) -> Result<UpdateResult, StorageError> {
     let collection_operation = CollectionUpdateOperations::FieldIndexOperation(
         FieldIndexOperations::DeleteIndex(index_name),
@@ -662,10 +704,12 @@ pub async fn do_delete_index_internal(
         wait,
         ordering,
         shard_selector,
+        claims,
     )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_delete_index(
     dispatcher: Arc<Dispatcher>,
     collection_name: String,
@@ -674,6 +718,7 @@ pub async fn do_delete_index(
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
+    claims: Option<Claims>,
 ) -> Result<UpdateResult, StorageError> {
     // TODO: Is this cancel safe!?
 
@@ -698,6 +743,7 @@ pub async fn do_delete_index(
         shard_selection,
         wait,
         ordering,
+        claims,
     )
     .await
 }

@@ -42,14 +42,18 @@ impl PointsService {
 impl Points for PointsService {
     async fn upsert(
         &self,
-        request: Request<UpsertPoints>,
+        mut request: Request<UpsertPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
+
+        let claims = extract_claims(&mut request);
+
         upsert(
             self.dispatcher.toc().clone(),
             request.into_inner(),
             None,
             None,
+            claims,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -57,14 +61,18 @@ impl Points for PointsService {
 
     async fn delete(
         &self,
-        request: Request<DeletePoints>,
+        mut request: Request<DeletePoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
+
+        let claims = extract_claims(&mut request);
+
         delete(
             self.dispatcher.toc().clone(),
             request.into_inner(),
             None,
             None,
+            claims,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -80,14 +88,18 @@ impl Points for PointsService {
 
     async fn update_vectors(
         &self,
-        request: Request<UpdatePointVectors>,
+        mut request: Request<UpdatePointVectors>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
+
+        let claims = extract_claims(&mut request);
+
         update_vectors(
             self.dispatcher.toc().clone(),
             request.into_inner(),
             None,
             None,
+            claims,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -95,14 +107,18 @@ impl Points for PointsService {
 
     async fn delete_vectors(
         &self,
-        request: Request<DeletePointVectors>,
+        mut request: Request<DeletePointVectors>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
+
+        let claims = extract_claims(&mut request);
+
         delete_vectors(
             self.dispatcher.toc().clone(),
             request.into_inner(),
             None,
             None,
+            claims,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -110,14 +126,18 @@ impl Points for PointsService {
 
     async fn set_payload(
         &self,
-        request: Request<SetPayloadPoints>,
+        mut request: Request<SetPayloadPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
+
+        let claims = extract_claims(&mut request);
+
         set_payload(
             self.dispatcher.toc().clone(),
             request.into_inner(),
             None,
             None,
+            claims,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -125,14 +145,18 @@ impl Points for PointsService {
 
     async fn overwrite_payload(
         &self,
-        request: Request<SetPayloadPoints>,
+        mut request: Request<SetPayloadPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
+
+        let claims = extract_claims(&mut request);
+
         overwrite_payload(
             self.dispatcher.toc().clone(),
             request.into_inner(),
             None,
             None,
+            claims,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -140,14 +164,18 @@ impl Points for PointsService {
 
     async fn delete_payload(
         &self,
-        request: Request<DeletePayloadPoints>,
+        mut request: Request<DeletePayloadPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
+
+        let claims = extract_claims(&mut request);
+
         delete_payload(
             self.dispatcher.toc().clone(),
             request.into_inner(),
             None,
             None,
+            claims,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -155,14 +183,18 @@ impl Points for PointsService {
 
     async fn clear_payload(
         &self,
-        request: Request<ClearPayloadPoints>,
+        mut request: Request<ClearPayloadPoints>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
+
+        let claims = extract_claims(&mut request);
+
         clear_payload(
             self.dispatcher.toc().clone(),
             request.into_inner(),
             None,
             None,
+            claims,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -170,36 +202,58 @@ impl Points for PointsService {
 
     async fn update_batch(
         &self,
-        request: Request<UpdateBatchPoints>,
+        mut request: Request<UpdateBatchPoints>,
     ) -> Result<Response<UpdateBatchResponse>, Status> {
         validate(request.get_ref())?;
+
+        let claims = extract_claims(&mut request);
+
         update_batch(
             self.dispatcher.toc().clone(),
             request.into_inner(),
             None,
             None,
+            claims,
         )
         .await
     }
 
     async fn create_field_index(
         &self,
-        request: Request<CreateFieldIndexCollection>,
+        mut request: Request<CreateFieldIndexCollection>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
-        create_field_index(self.dispatcher.clone(), request.into_inner(), None, None)
-            .await
-            .map(|resp| resp.map(Into::into))
+
+        let claims = extract_claims(&mut request);
+
+        create_field_index(
+            self.dispatcher.clone(),
+            request.into_inner(),
+            None,
+            None,
+            claims,
+        )
+        .await
+        .map(|resp| resp.map(Into::into))
     }
 
     async fn delete_field_index(
         &self,
-        request: Request<DeleteFieldIndexCollection>,
+        mut request: Request<DeleteFieldIndexCollection>,
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
-        delete_field_index(self.dispatcher.clone(), request.into_inner(), None, None)
-            .await
-            .map(|resp| resp.map(Into::into))
+
+        let claims = extract_claims(&mut request);
+
+        delete_field_index(
+            self.dispatcher.clone(),
+            request.into_inner(),
+            None,
+            None,
+            claims,
+        )
+        .await
+        .map(|resp| resp.map(Into::into))
     }
 
     async fn search(

@@ -12,6 +12,7 @@ use storage::dispatcher::Dispatcher;
 use validator::Validate;
 
 use super::CollectionPath;
+use crate::actix::auth::ActixClaims;
 use crate::actix::helpers::process_response;
 use crate::common::points::{
     do_batch_update_points, do_clear_payload, do_create_index, do_delete_index, do_delete_payload,
@@ -38,6 +39,7 @@ async fn upsert_points(
     collection: Path<CollectionPath>,
     operation: Json<PointInsertOperations>,
     params: Query<UpdateParam>,
+    ActixClaims(claims): ActixClaims,
 ) -> impl Responder {
     let timing = Instant::now();
     let operation = operation.into_inner();
@@ -52,6 +54,7 @@ async fn upsert_points(
         None,
         wait,
         ordering,
+        claims,
     )
     .await;
     process_response(response, timing)
@@ -63,6 +66,7 @@ async fn delete_points(
     collection: Path<CollectionPath>,
     operation: Json<PointsSelector>,
     params: Query<UpdateParam>,
+    ActixClaims(claims): ActixClaims,
 ) -> impl Responder {
     let timing = Instant::now();
     let operation = operation.into_inner();
@@ -77,6 +81,7 @@ async fn delete_points(
         None,
         wait,
         ordering,
+        claims,
     )
     .await;
     process_response(response, timing)
@@ -88,6 +93,7 @@ async fn update_vectors(
     collection: Path<CollectionPath>,
     operation: Json<UpdateVectors>,
     params: Query<UpdateParam>,
+    ActixClaims(claims): ActixClaims,
 ) -> impl Responder {
     let timing = Instant::now();
     let operation = operation.into_inner();
@@ -102,6 +108,7 @@ async fn update_vectors(
         None,
         wait,
         ordering,
+        claims,
     )
     .await;
     process_response(response, timing)
@@ -113,6 +120,7 @@ async fn delete_vectors(
     collection: Path<CollectionPath>,
     operation: Json<DeleteVectors>,
     params: Query<UpdateParam>,
+    ActixClaims(claims): ActixClaims,
 ) -> impl Responder {
     let timing = Instant::now();
     let operation = operation.into_inner();
@@ -127,6 +135,7 @@ async fn delete_vectors(
         None,
         wait,
         ordering,
+        claims,
     )
     .await;
     process_response(response, timing)
@@ -138,6 +147,7 @@ async fn set_payload(
     collection: Path<CollectionPath>,
     operation: Json<SetPayload>,
     params: Query<UpdateParam>,
+    ActixClaims(claims): ActixClaims,
 ) -> impl Responder {
     let timing = Instant::now();
     let operation = operation.into_inner();
@@ -152,6 +162,7 @@ async fn set_payload(
         None,
         wait,
         ordering,
+        claims,
     )
     .await;
     process_response(response, timing)
@@ -163,6 +174,7 @@ async fn overwrite_payload(
     collection: Path<CollectionPath>,
     operation: Json<SetPayload>,
     params: Query<UpdateParam>,
+    ActixClaims(claims): ActixClaims,
 ) -> impl Responder {
     let timing = Instant::now();
     let operation = operation.into_inner();
@@ -177,6 +189,7 @@ async fn overwrite_payload(
         None,
         wait,
         ordering,
+        claims,
     )
     .await;
     process_response(response, timing)
@@ -188,6 +201,7 @@ async fn delete_payload(
     collection: Path<CollectionPath>,
     operation: Json<DeletePayload>,
     params: Query<UpdateParam>,
+    ActixClaims(claims): ActixClaims,
 ) -> impl Responder {
     let timing = Instant::now();
     let operation = operation.into_inner();
@@ -202,6 +216,7 @@ async fn delete_payload(
         None,
         wait,
         ordering,
+        claims,
     )
     .await;
     process_response(response, timing)
@@ -213,6 +228,7 @@ async fn clear_payload(
     collection: Path<CollectionPath>,
     operation: Json<PointsSelector>,
     params: Query<UpdateParam>,
+    ActixClaims(claims): ActixClaims,
 ) -> impl Responder {
     let timing = Instant::now();
     let operation = operation.into_inner();
@@ -227,6 +243,7 @@ async fn clear_payload(
         None,
         wait,
         ordering,
+        claims,
     )
     .await;
     process_response(response, timing)
@@ -238,6 +255,7 @@ async fn update_batch(
     collection: Path<CollectionPath>,
     operations: Json<UpdateOperations>,
     params: Query<UpdateParam>,
+    ActixClaims(claims): ActixClaims,
 ) -> impl Responder {
     let timing = Instant::now();
     let operations = operations.into_inner();
@@ -252,6 +270,7 @@ async fn update_batch(
         None,
         wait,
         ordering,
+        claims,
     )
     .await;
     process_response(response, timing)
@@ -262,6 +281,7 @@ async fn create_field_index(
     collection: Path<CollectionPath>,
     operation: Json<CreateFieldIndex>,
     params: Query<UpdateParam>,
+    ActixClaims(claims): ActixClaims,
 ) -> impl Responder {
     let timing = Instant::now();
     let operation = operation.into_inner();
@@ -276,6 +296,7 @@ async fn create_field_index(
         None,
         wait,
         ordering,
+        claims,
     )
     .await;
     process_response(response, timing)
@@ -287,6 +308,7 @@ async fn delete_field_index(
     collection: Path<CollectionPath>,
     field: Path<FieldPath>,
     params: Query<UpdateParam>,
+    ActixClaims(claims): ActixClaims,
 ) -> impl Responder {
     let timing = Instant::now();
     let wait = params.wait.unwrap_or(false);
@@ -300,6 +322,7 @@ async fn delete_field_index(
         None,
         wait,
         ordering,
+        claims,
     )
     .await;
     process_response(response, timing)
