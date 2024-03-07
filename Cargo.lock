@@ -1072,7 +1072,6 @@ dependencies = [
  "api",
  "approx",
  "arc-swap",
- "async-recursion",
  "async-trait",
  "atomicwrites",
  "bytes",

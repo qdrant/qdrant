@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_recursion::async_recursion;
 use parking_lot::Mutex;
 use tokio::time::sleep;
 
@@ -24,11 +23,15 @@ use crate::shards::CollectionId;
 const RETRY_DELAY: Duration = Duration::from_secs(1);
 pub(crate) const MAX_RETRY_COUNT: usize = 3;
 
+/// Drive the shard transfer on the source node based on the given transfer configuration
+///
+/// Returns `true` if we should finalize the shard transfer. Returns `false` if we should silently
+/// drop it, because it is being restarted.
+///
 /// # Cancel safety
 ///
 /// This function is cancel safe.
 #[allow(clippy::too_many_arguments)]
-#[async_recursion]
 pub async fn transfer_shard(
     transfer_config: ShardTransfer,
     progress: Arc<Mutex<TransferTaskProgress>>,
@@ -39,7 +42,7 @@ pub async fn transfer_shard(
     channel_service: ChannelService,
     snapshots_path: &Path,
     temp_dir: &Path,
-) -> CollectionResult<()> {
+) -> CollectionResult<bool> {
     let shard_id = transfer_config.shard_id;
 
     // Initiate shard on a remote peer
@@ -103,16 +106,13 @@ pub async fn transfer_shard(
                     "Failed to do shard diff transfer, falling back to default method {:?}: {err}",
                     ShardTransferMethod::default(),
                 );
-                return transfer_shard_fallback_default(
-                    transfer_config,
-                    consensus,
-                    collection_name,
-                );
+                transfer_shard_fallback_default(transfer_config, consensus, collection_name)?;
+                return Ok(false);
             }
         }
     }
 
-    Ok(())
+    Ok(true)
 }
 
 /// While in a shard transfer, fall back to the default shard transfer method
@@ -282,9 +282,9 @@ where
 
             result = cancel::future::cancel_on_token(cancel.clone(), future).await;
 
-            let is_ok = matches!(result, Ok(Ok(())));
+            let is_ok = matches!(result, Ok(Ok(true)));
             let is_err = matches!(result, Ok(Err(_)));
-            let is_cancelled = result.is_err();
+            let is_cancelled = result.is_err() || matches!(result, Ok(Ok(false)));
 
             if let Ok(Err(err)) = &result {
                 log::error!(
@@ -307,12 +307,13 @@ where
         }
 
         match &result {
-            Ok(Ok(())) => on_finish.await,
+            Ok(Ok(true)) => on_finish.await,
+            Ok(Ok(false)) => (), // do nothing, we should not finish the task
             Ok(Err(_)) => on_error.await,
             Err(_) => (), // do nothing, if task was cancelled
         }
 
-        let is_ok = matches!(result, Ok(Ok(())));
-        is_ok
+        let is_ok_and_finish = matches!(result, Ok(Ok(true)));
+        is_ok_and_finish
     })
 }
