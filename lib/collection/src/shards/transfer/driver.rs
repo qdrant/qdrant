@@ -103,10 +103,7 @@ pub async fn transfer_shard(
 
             // Handle failure, fall back to default transfer method or propagate error
             if let Err(err) = result {
-                log::warn!(
-                    "Failed to do shard diff transfer, falling back to default method {:?}: {err}",
-                    ShardTransferMethod::default(),
-                );
+                log::warn!("Failed to do shard diff transfer, falling back to default method {default_shard_transfer_method:?}: {err}");
                 let did_fall_back = transfer_shard_fallback_default(
                     transfer_config,
                     consensus,
