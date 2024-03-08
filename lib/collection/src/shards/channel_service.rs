@@ -12,13 +12,15 @@ use tonic::transport::{Channel, Uri};
 use tonic::{Request, Status};
 use url::Url;
 
-use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::types::{CollectionError, CollectionResult, PeerMetadata};
 use crate::shards::shard::PeerId;
 
 #[derive(Clone)]
 pub struct ChannelService {
     // Shared with consensus_state
     pub id_to_address: Arc<parking_lot::RwLock<HashMap<PeerId, Uri>>>,
+    // Shared with consensus_state
+    pub id_to_metadata: Arc<parking_lot::RwLock<HashMap<PeerId, PeerMetadata>>>,
     pub channel_pool: Arc<TransportChannelPool>,
     /// Port at which the public REST API is exposed for the current peer.
     pub current_rest_port: u16,
@@ -29,6 +31,7 @@ impl ChannelService {
     pub fn new(current_rest_port: u16) -> Self {
         Self {
             id_to_address: Default::default(),
+            id_to_metadata: Default::default(),
             channel_pool: Default::default(),
             current_rest_port,
         }
@@ -182,6 +185,7 @@ impl Default for ChannelService {
     fn default() -> Self {
         Self {
             id_to_address: Default::default(),
+            id_to_metadata: Default::default(),
             channel_pool: Default::default(),
             current_rest_port: 6333,
         }
