@@ -41,6 +41,7 @@ pub async fn transfer_shard(
     collection_name: &str,
     channel_service: ChannelService,
     snapshots_path: &Path,
+    default_shard_transfer_method: ShardTransferMethod,
     temp_dir: &Path,
 ) -> CollectionResult<bool> {
     let shard_id = transfer_config.shard_id;
@@ -100,14 +101,23 @@ pub async fn transfer_shard(
             )
             .await;
 
-            // Handle failure, fall back to default transfer method
+            // Handle failure, fall back to default transfer method or propagate error
             if let Err(err) = result {
                 log::warn!(
                     "Failed to do shard diff transfer, falling back to default method {:?}: {err}",
                     ShardTransferMethod::default(),
                 );
-                transfer_shard_fallback_default(transfer_config, consensus, collection_name)?;
-                return Ok(false);
+                let did_fall_back = transfer_shard_fallback_default(
+                    transfer_config,
+                    consensus,
+                    collection_name,
+                    default_shard_transfer_method,
+                )?;
+                if did_fall_back {
+                    return Ok(false);
+                } else {
+                    return Err(err);
+                }
             }
         }
     }
@@ -116,22 +126,28 @@ pub async fn transfer_shard(
 }
 
 /// While in a shard transfer, fall back to the default shard transfer method
+///
+/// Returns true if we arranged falling back. Returns false if we could not fall back.
 pub fn transfer_shard_fallback_default(
     mut transfer_config: ShardTransfer,
     consensus: &dyn ShardTransferConsensus,
     collection_name: &str,
-) -> CollectionResult<()> {
-    // Fall back to stream records specifically
-    // TODO: fall back to default as specified in configuration
-    transfer_config
+    fallback_method: ShardTransferMethod,
+) -> CollectionResult<bool> {
+    // Do not attempt to fall back to the same method
+    if transfer_config
         .method
-        .replace(ShardTransferMethod::StreamRecords);
+        .map_or(false, |method| method == fallback_method)
+    {
+        log::warn!("Failed shard transfer not falling back, because it would use the same transfer method: {fallback_method:?}");
+        return Ok(false);
+    }
 
     // Propose to restart transfer with a different method
-    // TODO: confirm restart!
+    transfer_config.method.replace(fallback_method);
     consensus.restart_shard_transfer(transfer_config, collection_name.into())?;
 
-    Ok(())
+    Ok(true)
 }
 
 /// Return local shard back from the forward proxy
@@ -243,6 +259,7 @@ pub fn spawn_transfer_task<T, F>(
     channel_service: ChannelService,
     snapshots_path: PathBuf,
     collection_name: String,
+    default_shard_transfer_method: ShardTransferMethod,
     temp_dir: PathBuf,
     on_finish: T,
     on_error: F,
@@ -275,6 +292,7 @@ where
                     &collection_name,
                     channel_service.clone(),
                     &snapshots_path,
+                    default_shard_transfer_method,
                     &temp_dir,
                 )
                 .await

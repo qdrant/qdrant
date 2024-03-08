@@ -139,6 +139,10 @@ impl Collection {
         let shard_holder = self.shards_holder.clone();
         let collection_id = self.id.clone();
         let channel_service = self.channel_service.clone();
+        let default_shard_transfer_method = self
+            .shared_storage_config
+            .default_shard_transfer_method
+            .unwrap_or_default();
 
         let progress = Arc::new(Mutex::new(TransferTaskProgress::new()));
 
@@ -151,6 +155,7 @@ impl Collection {
             channel_service,
             self.snapshots_path.clone(),
             self.name(),
+            default_shard_transfer_method,
             temp_dir,
             on_finish,
             on_error,
