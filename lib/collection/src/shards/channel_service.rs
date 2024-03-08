@@ -160,8 +160,15 @@ impl ChannelService {
     /// If the version is not known for any peer, this returns `false`.
     /// Peer versions are known since 1.9 and up.
     pub fn all_peers_at_version(&self, version: Version) -> bool {
-        self.id_to_metadata
-            .read()
+        let id_to_address = self.id_to_address.read();
+        let id_to_metadata = self.id_to_metadata.read();
+
+        // Ensure there aren't more peer addresses than metadata
+        if id_to_address.len() > id_to_metadata.len() {
+            return false;
+        }
+
+        id_to_metadata
             .values()
             .all(|metadata| metadata.version >= version)
     }
