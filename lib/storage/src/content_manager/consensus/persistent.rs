@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use atomicwrites::{AllowOverwrite, AtomicFile};
+use collection::operations::types::PeerMetadata;
 use collection::shards::shard::PeerId;
 use http::Uri;
 use parking_lot::RwLock;
@@ -14,7 +15,7 @@ use raft::RaftState;
 use serde::{Deserialize, Serialize};
 
 use crate::content_manager::consensus::entry_queue::{EntryApplyProgressQueue, EntryId};
-use crate::types::{PeerAddressById, PeerMetadata, PeerMetadataById};
+use crate::types::{PeerAddressById, PeerMetadataById};
 use crate::StorageError;
 
 // Deprecated, use `STATE_FILE_NAME` instead

@@ -7,6 +7,7 @@ use std::num::NonZeroU64;
 use std::time::SystemTimeError;
 
 use api::grpc::transport_channel_pool::RequestError;
+use common::defaults;
 use common::types::ScoreType;
 use common::validation::validate_range_generic;
 use io::file_operations::FileStorageError;
@@ -29,6 +30,7 @@ use segment::types::{
 use segment::vector_storage::query::context_query::ContextQuery;
 use segment::vector_storage::query::discovery_query::DiscoveryQuery;
 use segment::vector_storage::query::reco_query::RecoQuery;
+use semver::Version;
 use serde;
 use serde::{Deserialize, Serialize};
 use serde_json::Error as JsonError;
@@ -1790,4 +1792,24 @@ impl From<QueryEnum> for QueryVector {
 #[derive(Serialize, JsonSchema, Debug)]
 pub struct IssuesReport {
     pub issues: Vec<IssueRecord>,
+}
+
+/// Metadata describing extra properties for each peer
+#[derive(Debug, Hash, Serialize, Deserialize, Clone, Eq, PartialEq)]
+pub struct PeerMetadata {
+    /// Peer Qdrant version
+    version: Version,
+}
+
+impl PeerMetadata {
+    pub fn current() -> Self {
+        Self {
+            version: defaults::QDRANT_VERSION,
+        }
+    }
+
+    /// Whether this metadata has a different version than our current Qdrant instance.
+    pub fn is_different_version(&self) -> bool {
+        self.version != defaults::QDRANT_VERSION
+    }
 }
