@@ -1798,7 +1798,7 @@ pub struct IssuesReport {
 #[derive(Debug, Hash, Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub struct PeerMetadata {
     /// Peer Qdrant version
-    version: Version,
+    pub(crate) version: Version,
 }
 
 impl PeerMetadata {

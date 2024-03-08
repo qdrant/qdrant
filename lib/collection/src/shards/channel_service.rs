@@ -7,6 +7,7 @@ use api::grpc::qdrant::WaitOnConsensusCommitRequest;
 use api::grpc::transport_channel_pool::{AddTimeout, TransportChannelPool};
 use futures::future::try_join_all;
 use futures::Future;
+use semver::Version;
 use tonic::codegen::InterceptedService;
 use tonic::transport::{Channel, Uri};
 use tonic::{Request, Status};
@@ -152,6 +153,17 @@ impl ChannelService {
             })
             .await
             .map_err(Into::into)
+    }
+
+    /// Check whether all peers are running at least the given version
+    ///
+    /// If the version is not known for any peer, this returns `false`.
+    /// Peer versions are known since 1.9 and up.
+    pub fn all_peers_at_version(&self, version: Version) -> bool {
+        self.id_to_metadata
+            .read()
+            .values()
+            .all(|metadata| metadata.version >= version)
     }
 
     /// Get the REST address for the current peer.
