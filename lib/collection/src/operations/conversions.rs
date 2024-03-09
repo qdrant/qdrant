@@ -38,9 +38,10 @@ use crate::config::{
 use crate::lookup::types::WithLookupInterface;
 use crate::lookup::WithLookup;
 use crate::operations::cluster_ops::{
-    AbortTransferOperation, ClusterOperations, CreateShardingKey, CreateShardingKeyOperation,
-    DropReplicaOperation, DropShardingKey, DropShardingKeyOperation, MoveShard, MoveShardOperation,
-    Replica, ReplicateShardOperation, RestartTransfer, RestartTransferOperation,
+    AbortShardTransfer, AbortTransferOperation, ClusterOperations, CreateShardingKey,
+    CreateShardingKeyOperation, DropReplicaOperation, DropShardingKey, DropShardingKeyOperation,
+    MoveShard, MoveShardOperation, Replica, ReplicateShardOperation, RestartTransfer,
+    RestartTransferOperation,
 };
 use crate::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
@@ -1650,6 +1651,18 @@ impl TryFrom<api::grpc::qdrant::MoveShard> for MoveShard {
             from_peer_id: value.from_peer_id,
             to_peer_id: value.to_peer_id,
             method,
+        })
+    }
+}
+
+impl TryFrom<api::grpc::qdrant::AbortShardTransfer> for AbortShardTransfer {
+    type Error = Status;
+
+    fn try_from(value: api::grpc::qdrant::AbortShardTransfer) -> Result<Self, Self::Error> {
+        Ok(Self {
+            shard_id: value.shard_id,
+            from_peer_id: value.from_peer_id,
+            to_peer_id: value.to_peer_id,
         })
     }
 }

@@ -925,6 +925,18 @@ pub struct MoveShard {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AbortShardTransfer {
+    /// Local shard id
+    #[prost(uint32, tag = "1")]
+    pub shard_id: u32,
+    #[prost(uint64, tag = "2")]
+    pub from_peer_id: u64,
+    #[prost(uint64, tag = "3")]
+    pub to_peer_id: u64,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RestartTransfer {
     /// Local shard id
     #[prost(uint32, tag = "1")]
@@ -1003,7 +1015,7 @@ pub mod update_collection_cluster_setup_request {
         #[prost(message, tag = "3")]
         ReplicateShard(super::MoveShard),
         #[prost(message, tag = "4")]
-        AbortTransfer(super::MoveShard),
+        AbortTransfer(super::AbortShardTransfer),
         #[prost(message, tag = "5")]
         DropReplica(super::Replica),
         #[prost(message, tag = "7")]

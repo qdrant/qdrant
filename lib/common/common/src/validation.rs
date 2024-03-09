@@ -90,8 +90,8 @@ where
     Ok(())
 }
 
-/// Validate that move shard request has two different peers.
-pub fn validate_move_shard_different_peers(
+/// Validate that shard request has two different peers.
+pub fn validate_shard_different_peers(
     from_peer_id: u64,
     to_peer_id: u64,
 ) -> Result<(), ValidationErrors> {
@@ -107,7 +107,7 @@ pub fn validate_move_shard_different_peers(
         error.add_param(Cow::from("other_value"), &from_peer_id.to_string());
         error.add_param(
             Cow::from("message"),
-            &format!("cannot move shard to itself, \"to_peer_id\" must be different than {} in \"from_peer_id\"", from_peer_id),
+            &format!("cannot execute shard operation, \"to_peer_id\" must be different than {} in \"from_peer_id\"", from_peer_id),
         );
         error
     });

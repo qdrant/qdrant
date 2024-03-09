@@ -9842,7 +9842,32 @@
         ],
         "properties": {
           "abort_transfer": {
-            "$ref": "#/components/schemas/MoveShard"
+            "$ref": "#/components/schemas/AbortShardTransfer"
+          }
+        }
+      },
+      "AbortShardTransfer": {
+        "type": "object",
+        "required": [
+          "from_peer_id",
+          "shard_id",
+          "to_peer_id"
+        ],
+        "properties": {
+          "shard_id": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "to_peer_id": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "from_peer_id": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
           }
         }
       },
