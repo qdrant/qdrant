@@ -1,12 +1,12 @@
+use std::convert::Infallible;
 use std::future::{ready, Ready};
 
 use actix_web::body::{BoxBody, EitherBody};
 use actix_web::dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform};
-use actix_web::http::header::Header;
 use actix_web::http::Method;
-use actix_web::{Error, HttpMessage as _, HttpResponse};
-use actix_web_httpauth::headers::authorization::{Authorization, Bearer};
+use actix_web::{Error, FromRequest, HttpMessage as _, HttpResponse};
 use futures_util::future::LocalBoxFuture;
+use rbac::jwt::Claims;
 
 use crate::common::auth::AuthKeys;
 
@@ -126,42 +126,40 @@ where
             return Box::pin(self.service.call(req));
         }
 
-        let invalid_api_key = |req: ServiceRequest| -> Self::Future {
-            Box::pin(async {
+        match self.auth_keys.validate_request(
+            |key| req.headers().get(key).and_then(|val| val.to_str().ok()),
+            is_read_only(&req),
+        ) {
+            Ok(claims) => {
+                if let Some(claims) = claims {
+                    let _previous = req.extensions_mut().insert::<Claims>(claims);
+                    debug_assert!(
+                        _previous.is_none(),
+                        "Previous claims should not exist in the request"
+                    );
+                }
+                Box::pin(self.service.call(req))
+            }
+            Err(e) => Box::pin(async move {
                 Ok(req
-                    .into_response(HttpResponse::Forbidden().body("Invalid api-key"))
+                    .into_response(HttpResponse::Forbidden().body(e))
                     .map_into_right_body())
-            })
-        };
-
-        let auth_keys = &self.auth_keys;
-
-        let api_key = req
-            .headers()
-            .get("api-key")
-            .and_then(|key| key.to_str().ok());
-
-        let bearer_key = Authorization::<Bearer>::parse(&req);
-        let bearer_key = bearer_key.as_ref().ok().map(|auth| auth.as_ref().token());
-
-        if let Some(key) = api_key.or(bearer_key) {
-            if auth_keys.can_write(key) || (is_read_only(&req) && auth_keys.can_read(key)) {
-                return Box::pin(self.service.call(req));
-            }
-        };
-
-        if let Some(claims) = auth_keys
-            .jwt_parser()
-            .and_then(|p| p.decode(bearer_key?).ok())
-        {
-            if !claims.w.unwrap_or(false) && !is_read_only(&req) {
-                return invalid_api_key(req);
-            }
-            req.extensions_mut().insert(claims);
-            return Box::pin(self.service.call(req));
+            }),
         }
+    }
+}
 
-        invalid_api_key(req)
+pub struct ActixClaims(pub Option<Claims>);
+
+impl FromRequest for ActixClaims {
+    type Error = Infallible;
+    type Future = Ready<Result<Self, Self::Error>>;
+
+    fn from_request(
+        req: &actix_web::HttpRequest,
+        _payload: &mut actix_web::dev::Payload,
+    ) -> Self::Future {
+        ready(Ok(ActixClaims(req.extensions_mut().remove::<Claims>())))
     }
 }
 

@@ -1,6 +1,4 @@
-use actix_web_httpauth::headers::authorization::{Bearer, Scheme};
 use rbac::jwt::Claims;
-use rbac::JwtParser;
 use tonic::Status;
 use tower::filter::{FilterLayer, Predicate};
 
@@ -26,110 +24,48 @@ const READ_ONLY_RPC_PATHS: [&str; 14] = [
     "/qdrant.Points/DiscoverBatch",
 ];
 
-fn is_read_only<R>(req: &tonic::codegen::http::Request<R>) -> bool {
-    let uri_path = req.uri().path();
-    READ_ONLY_RPC_PATHS
-        .iter()
-        .any(|ro_uri_path| ct_eq(uri_path, ro_uri_path))
-}
-
-fn is_allowed(auth_keys: &AuthKeys, key: &str, request: &Request) -> bool {
-    auth_keys.can_write(key) || (is_read_only(request) && auth_keys.can_read(key))
-}
-
 #[derive(Clone)]
 pub struct AuthMiddleware {
     auth_keys: AuthKeys,
-    jwt_decoder: Option<JwtParser>,
 }
 
 impl AuthMiddleware {
     pub fn new_layer(auth_keys: AuthKeys) -> FilterLayer<Self> {
-        let jwt_decoder = auth_keys.rw_key().map(JwtParser::new);
-
-        FilterLayer::new(Self {
-            auth_keys,
-            jwt_decoder,
-        })
+        FilterLayer::new(Self { auth_keys })
     }
 }
 
 impl Predicate<Request> for AuthMiddleware {
     type Request = Request;
 
-    fn check(&mut self, mut request: Self::Request) -> Result<Self::Request, tower::BoxError> {
-        // Grab API key from "api-key" header
-        let api_key = request
-            .headers()
-            .get("api-key")
-            .and_then(|key| key.to_str().ok())
-            .map(|key| key.to_string());
-
-        if let Some(key) = api_key {
-            if is_allowed(&self.auth_keys, &key, &request) {
-                return Ok(request);
+    fn check(&mut self, mut req: Self::Request) -> Result<Self::Request, tower::BoxError> {
+        match self.auth_keys.validate_request(
+            |key| req.headers().get(key).and_then(|val| val.to_str().ok()),
+            is_read_only(&req),
+        ) {
+            Ok(claims) => {
+                if let Some(claims) = claims {
+                    let _previous = req.extensions_mut().insert::<Claims>(claims);
+                    debug_assert!(
+                        _previous.is_none(),
+                        "Previous claims should not exist in the request"
+                    );
+                }
+                Ok(req)
             }
-
-            return Err(Box::new(Status::permission_denied("Invalid api-key")));
+            Err(e) => Err(Box::new(Status::permission_denied(e))),
         }
-
-        // Grab "authorization" bearer token
-        let bearer =
-            // Request header
-            request.headers().get("authorization")
-                .and_then(|auth| {
-                    Bearer::parse(auth).ok()
-                });
-
-        if let Some(bearer) = bearer {
-            // Check if the bearer token is a valid API key
-            if is_allowed(&self.auth_keys, bearer.token(), &request) {
-                return Ok(request);
-            }
-
-            // Otherwise, if read-write key is set...
-            if self.auth_keys.rw_key().is_none() {
-                return Err(Box::new(Status::permission_denied(
-                    "Invalid bearer api-key",
-                )));
-            }
-
-            // ...check if the bearer token is a valid JWT
-            if let Some(jwt_decoder) = &self.jwt_decoder {
-                let claims = jwt_decoder.decode(bearer.token()).map_err(|e| {
-                    Box::new(Status::permission_denied(format!(
-                        "Invalid bearer token: {}",
-                        e
-                    )))
-                })?;
-
-                check_write_access(&claims, &request)?;
-
-                let _previous = request.extensions_mut().insert(claims);
-
-                debug_assert!(
-                    _previous.is_none(),
-                    "Previous claims should not exist in the request"
-                );
-
-                return Ok(request);
-            }
-        }
-
-        Err(Box::new(Status::permission_denied(
-            "Must provide an api-key or an authorization bearer token",
-        )))
     }
 }
 
-fn check_write_access(claims: &Claims, request: &Request) -> Result<(), tower::BoxError> {
-    let write_access = claims.write_access();
+#[allow(dead_code)] // TODO(RBAC): will be used later
+pub fn extract_claims<R>(req: &mut tonic::Request<R>) -> Option<Claims> {
+    req.extensions_mut().remove::<Claims>()
+}
 
-    if !write_access && !is_read_only(request) {
-        return Err(Box::new(Status::permission_denied(
-            "Read-only access is not allowed",
-        )));
-    }
-
-    Ok(())
+fn is_read_only<R>(req: &tonic::codegen::http::Request<R>) -> bool {
+    let uri_path = req.uri().path();
+    READ_ONLY_RPC_PATHS
+        .iter()
+        .any(|ro_uri_path| ct_eq(uri_path, ro_uri_path))
 }
