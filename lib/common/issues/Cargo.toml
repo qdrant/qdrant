@@ -14,7 +14,7 @@ chrono = { version = "0.4.34", features = ["serde"] }
 dashmap = "5.5.3"
 http = "1.0.0"
 http-serde = "2.0.0"
-log = "0.4.20"
+log = "0.4.21"
 schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
