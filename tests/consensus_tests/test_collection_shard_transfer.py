@@ -121,7 +121,7 @@ def test_collection_shard_transfer(tmp_path: pathlib.Path):
         })
     assert not r.ok
     assert r.status_code == 422
-    assert r.json()["status"]["error"].__contains__("Validation error in JSON body: [move_shard.to_peer_id: cannot execute shard operation")
+    assert r.json()["status"]["error"].__contains__("Validation error in JSON body: [move_shard.to_peer_id: cannot transfer shard to itself")
 
     # Move shard `shard_id` to peer `target_peer_id`
     r = requests.post(

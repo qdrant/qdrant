@@ -107,7 +107,7 @@ pub fn validate_shard_different_peers(
         error.add_param(Cow::from("other_value"), &from_peer_id.to_string());
         error.add_param(
             Cow::from("message"),
-            &format!("cannot execute shard operation, \"to_peer_id\" must be different than {} in \"from_peer_id\"", from_peer_id),
+            &format!("cannot transfer shard to itself, \"to_peer_id\" must be different than {} in \"from_peer_id\"", from_peer_id),
         );
         error
     });
