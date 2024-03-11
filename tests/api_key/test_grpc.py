@@ -1,4 +1,6 @@
-from grpc import RpcError
+from typing import Literal
+import contextlib
+from grpc import RpcError, StatusCode
 from qdrant_client import QdrantClient, grpc as qgrpc
 import pytest
 from qdrant_client.conversions.conversion import payload_to_grpc
@@ -125,14 +127,35 @@ def test_create_collection_alias():
     )
 
 
+def assert_access(mode: Literal["rw", "ro"], stub, request):
+    with cond_raise(True):
+        stub(request, metadata=(), timeout=1.0)
+
+    with cond_raise(False):
+        stub(request, metadata=(("api-key", "my-secret"),), timeout=1.0)
+    with cond_raise(False):
+        stub(request, metadata=(("authorization", "Bearer my-secret"),), timeout=1.0)
+
+    with cond_raise(mode == "rw"):
+        stub(request, metadata=(("api-key", "my-ro-secret"),), timeout=1.0)
+    with cond_raise(mode == "rw"):
+        stub(request, metadata=(("authorization", "Bearer my-ro-secret"),), timeout=1.0)
+
+@contextlib.contextmanager
+def cond_raise(should_deny: bool):
+    denied = False
+    try:
+        yield
+    except RpcError as e:
+        denied = e.code() == StatusCode.PERMISSION_DENIED
+    assert denied == should_deny
+
 def assert_read_only(stub, request):
-    assert_rw_token_success(stub, request)
-    assert_ro_token_success(stub, request)
+    assert_access("ro", stub, request)
 
 
 def assert_read_write(stub, request):
-    assert_rw_token_success(stub, request)
-    assert_ro_token_failure(stub, request)
+    assert_access("rw", stub, request)
 
 
 def assert_rw_token_success(stub, request):
@@ -147,8 +170,5 @@ def assert_ro_token_success(stub, request):
 
 def assert_ro_token_failure(stub, request):
     """Perform the request with a read-only token and assert failure"""
-    try:
+    with pytest.raises(RpcError):
         stub(request, metadata=(("api-key", "my-ro-secret"),), timeout=1.0)
-        pytest.fail("Request should have failed")
-    except RpcError:
-        return
