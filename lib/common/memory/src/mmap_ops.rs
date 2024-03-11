@@ -97,10 +97,10 @@ where
 pub fn transmute_from_u8<T>(v: &[u8]) -> &T {
     debug_assert_eq!(v.len(), size_of::<T>());
 
-    assert_eq!(
+    debug_assert_eq!(
         v.as_ptr().align_offset(align_of::<T>()),
         0,
-        "transmuting byte slice 0x{:p} into {}: \
+        "transmuting byte slice {:p} into {}: \
          required alignment is {} bytes, \
          byte slice misaligned by {} bytes",
         v.as_ptr(),
@@ -119,10 +119,10 @@ pub fn transmute_to_u8<T>(v: &T) -> &[u8] {
 pub fn transmute_from_u8_to_slice<T>(data: &[u8]) -> &[T] {
     debug_assert_eq!(data.len() % size_of::<T>(), 0);
 
-    assert_eq!(
+    debug_assert_eq!(
         data.as_ptr().align_offset(align_of::<T>()),
         0,
-        "transmuting byte slice 0x{:p} into slice of {}: \
+        "transmuting byte slice {:p} into slice of {}: \
          required alignment is {} bytes, \
          byte slice misaligned by {} bytes",
         data.as_ptr(),
@@ -139,10 +139,10 @@ pub fn transmute_from_u8_to_slice<T>(data: &[u8]) -> &[T] {
 pub fn transmute_from_u8_to_mut_slice<T>(data: &mut [u8]) -> &mut [T] {
     debug_assert_eq!(data.len() % size_of::<T>(), 0);
 
-    assert_eq!(
+    debug_assert_eq!(
         data.as_ptr().align_offset(align_of::<T>()),
         0,
-        "transmuting byte slice 0x{:p} into mutable slice of {}: \
+        "transmuting byte slice {:p} into mutable slice of {}: \
          required alignment is {} bytes, \
          byte slice misaligned by {} bytes",
         data.as_ptr(),
