@@ -255,9 +255,10 @@ impl GraphLinksConverter {
             let links_range = header.get_links_range();
             let offsets_range = header.get_offsets_range();
             let union_range = links_range.start..offsets_range.end;
-            let split_index = offsets_range.start - links_range.start;
-            let (links_mmap, offsets_mmap) =
-                bytes_data[union_range].as_mut().split_at_mut(split_index);
+            let (links_mmap, offsets_with_padding_mmap) = bytes_data[union_range]
+                .as_mut()
+                .split_at_mut(links_range.len());
+            let offsets_mmap = &mut offsets_with_padding_mmap[header.offsets_padding as _..];
             let links_mmap: &mut [PointOffsetType] =
                 mmap_ops::transmute_from_u8_to_mut_slice(links_mmap);
             let offsets_mmap: &mut [u64] = mmap_ops::transmute_from_u8_to_mut_slice(offsets_mmap);
