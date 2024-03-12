@@ -7,7 +7,7 @@ echo $PWD
 cd "$(dirname "$0")/../../"
 
 QDRANT_HOST='localhost:6333'
-LEGACY_QDRANT_VERSION='v1.7.4'
+LEGACY_QDRANT_VERSION='v1.8.1'
 
 # Build
 cargo build
