@@ -1,17 +1,22 @@
 from typing import Literal
-import contextlib
+import functools
 from grpc import RpcError, StatusCode
 from qdrant_client import QdrantClient, grpc as qgrpc
 import pytest
 from qdrant_client.conversions.conversion import payload_to_grpc
 import os
+import jwt
 
 
 QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost")
 CLIENT = QdrantClient(prefer_grpc=True, timeout=3.0, host=QDRANT_HOST)
 
+JWT_EMPTY = jwt.encode({}, "my-secret", algorithm="HS256")
+JWT_R = jwt.encode({"w": False}, "my-secret", algorithm="HS256")
+JWT_RW = jwt.encode({"w": True}, "my-secret", algorithm="HS256")
 
-def test_create_collection():
+
+def test_create_collection(assert_read_write):
     assert_read_write(
         CLIENT.grpc_collections.Create,
         qgrpc.CreateCollection(
@@ -21,21 +26,21 @@ def test_create_collection():
     )
 
 
-def test_delete_collection():
+def test_delete_collection(assert_read_write):
     assert_read_write(
         CLIENT.grpc_collections.Delete,
         qgrpc.DeleteCollection(collection_name="to_be_deleted"),
     )
 
 
-def test_list_collections():
+def test_list_collections(assert_read_only):
     assert_read_only(
         CLIENT.grpc_collections.List,
         qgrpc.ListCollectionsRequest(),
     )
 
 
-def test_insert_points():
+def test_insert_points(assert_read_write):
     assert_read_write(
         CLIENT.grpc_points.Upsert,
         qgrpc.UpsertPoints(
@@ -67,14 +72,14 @@ def test_insert_points():
     )
 
 
-def test_get_collection():
+def test_get_collection(assert_read_only):
     assert_read_only(
         CLIENT.grpc_collections.Get,
         qgrpc.GetCollectionInfoRequest(collection_name="test_collection"),
     )
 
 
-def test_search_points():
+def test_search_points(assert_read_only):
     assert_read_only(
         CLIENT.grpc_points.Search,
         qgrpc.SearchPoints(
@@ -83,7 +88,7 @@ def test_search_points():
     )
 
 
-def test_scroll_points():
+def test_scroll_points(assert_read_only):
     assert_read_only(
         CLIENT.grpc_points.Scroll,
         qgrpc.ScrollPoints(
@@ -92,7 +97,7 @@ def test_scroll_points():
     )
 
 
-def test_get_points():
+def test_get_points(assert_read_only):
     assert_read_only(
         CLIENT.grpc_points.Get,
         qgrpc.GetPoints(
@@ -101,7 +106,7 @@ def test_get_points():
     )
 
 
-def test_recommend_points():
+def test_recommend_points(assert_read_only):
     assert_read_only(
         CLIENT.grpc_points.Recommend,
         qgrpc.RecommendPoints(
@@ -112,7 +117,7 @@ def test_recommend_points():
     )
 
 
-def test_create_collection_alias():
+def test_create_collection_alias(assert_read_write):
     assert_read_write(
         CLIENT.grpc_collections.UpdateAliases,
         qgrpc.ChangeAliases(
@@ -127,48 +132,37 @@ def test_create_collection_alias():
     )
 
 
-def assert_access(mode: Literal["rw", "ro"], stub, request):
-    with cond_raise(True):
-        stub(request, metadata=(), timeout=1.0)
+def mkparams(mode: Literal["rw", "ro"]):
+    return [
+        ((), False),
 
-    with cond_raise(False):
-        stub(request, metadata=(("api-key", "my-secret"),), timeout=1.0)
-    with cond_raise(False):
-        stub(request, metadata=(("authorization", "Bearer my-secret"),), timeout=1.0)
+        ((("api-key", "my-secret"),), True),
+        ((("authorization", "Bearer my-secret"),), True),
+        ((("authorization", f"Bearer {JWT_RW}"),), True),
 
-    with cond_raise(mode == "rw"):
-        stub(request, metadata=(("api-key", "my-ro-secret"),), timeout=1.0)
-    with cond_raise(mode == "rw"):
-        stub(request, metadata=(("authorization", "Bearer my-ro-secret"),), timeout=1.0)
+        ((("api-key", "my-ro-secret"),), mode == "ro"),
+        ((("authorization", "Bearer my-ro-secret"),), mode == "ro"),
+        ((("authorization", f"Bearer {JWT_R}"),), mode == "ro"),
+        ((("authorization", f"Bearer {JWT_EMPTY}"),), mode == "ro"),
+    ]
 
-@contextlib.contextmanager
-def cond_raise(should_deny: bool):
-    denied = False
+
+@pytest.fixture(scope="module", params=mkparams("ro"))
+def assert_read_only(request):
+    yield functools.partial(assert_access, request.param)
+
+
+@pytest.fixture(scope="module", params=mkparams("rw"))
+def assert_read_write(request):
+    yield functools.partial(assert_access, request.param)
+
+
+def assert_access(param, stub, request):
+    metadata, should_allow = param
+    allowed = False
     try:
-        yield
+        stub(request, metadata=metadata, timeout=1.0)
+        allowed = True
     except RpcError as e:
-        denied = e.code() == StatusCode.PERMISSION_DENIED
-    assert denied == should_deny
-
-def assert_read_only(stub, request):
-    assert_access("ro", stub, request)
-
-
-def assert_read_write(stub, request):
-    assert_access("rw", stub, request)
-
-
-def assert_rw_token_success(stub, request):
-    """Perform the request with a read-write token and assert success"""
-    stub(request, metadata=(("api-key", "my-secret"),), timeout=1.0)
-
-
-def assert_ro_token_success(stub, request):
-    """Perform the request with a read-only token and assert success"""
-    stub(request, metadata=(("api-key", "my-ro-secret"),), timeout=1.0)
-
-
-def assert_ro_token_failure(stub, request):
-    """Perform the request with a read-only token and assert failure"""
-    with pytest.raises(RpcError):
-        stub(request, metadata=(("api-key", "my-ro-secret"),), timeout=1.0)
+        allowed = e.code() != StatusCode.PERMISSION_DENIED
+    assert allowed == should_allow
