@@ -1,6 +1,6 @@
 use std::cmp::max;
 use std::fs::OpenOptions;
-use std::mem::size_of;
+use std::mem::{self, size_of};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -52,6 +52,7 @@ struct GraphLinksFileHeader {
     pub levels_count: u64,
     pub total_links_len: u64,
     pub total_offsets_len: u64,
+    pub offsets_padding: u64,
 }
 
 fn get_reindex_slice<'a>(
@@ -69,10 +70,18 @@ fn get_links_slice<'a>(data: &'a [u8], header: &'a GraphLinksFileHeader) -> &'a 
     mmap_ops::transmute_from_u8_to_slice(links_byte_slice)
 }
 
-fn get_offsets_slice<'a>(data: &'a [u8], header: &'a GraphLinksFileHeader) -> &'a [u64] {
+fn get_offsets_iter<'a>(
+    data: &'a [u8],
+    header: &'a GraphLinksFileHeader,
+) -> impl Iterator<Item = u64> + 'a {
     let offsets_range = header.get_offsets_range();
-    let offsets_byte_slice = &data[offsets_range];
-    mmap_ops::transmute_from_u8_to_slice(offsets_byte_slice)
+    data[offsets_range]
+        .chunks_exact(mem::size_of::<u64>())
+        .map(|chunk| {
+            // unwrap is safe because we know that chunk is always 8 bytes
+            let bytes: [u8; 8] = chunk.try_into().unwrap();
+            u64::from_ne_bytes(bytes)
+        })
 }
 
 fn get_level_offsets<'a>(data: &'a [u8], header: &GraphLinksFileHeader) -> &'a [u64] {
@@ -82,8 +91,28 @@ fn get_level_offsets<'a>(data: &'a [u8], header: &GraphLinksFileHeader) -> &'a [
 }
 
 impl GraphLinksFileHeader {
+    pub fn new(
+        point_count: usize,
+        levels_count: usize,
+        total_links_len: usize,
+        total_offsets_len: usize,
+    ) -> GraphLinksFileHeader {
+        let offsets_padding = if (point_count + total_links_len) % 2 == 0 {
+            0
+        } else {
+            4
+        };
+        GraphLinksFileHeader {
+            point_count: point_count as u64,
+            levels_count: levels_count as u64,
+            total_links_len: total_links_len as u64,
+            total_offsets_len: total_offsets_len as u64,
+            offsets_padding,
+        }
+    }
+
     pub fn raw_size() -> usize {
-        size_of::<u64>() * 4
+        size_of::<u64>() * 5
     }
 
     pub fn serialize_bytes_to(&self, raw_data: &mut [u8]) {
@@ -93,6 +122,7 @@ impl GraphLinksFileHeader {
         arr[1] = self.levels_count;
         arr[2] = self.total_links_len;
         arr[3] = self.total_offsets_len;
+        arr[4] = self.offsets_padding;
     }
 
     pub fn deserialize_bytes_from(raw_data: &[u8]) -> GraphLinksFileHeader {
@@ -103,6 +133,7 @@ impl GraphLinksFileHeader {
             levels_count: arr[1],
             total_links_len: arr[2],
             total_offsets_len: arr[3],
+            offsets_padding: arr[4],
         }
     }
 
@@ -128,7 +159,7 @@ impl GraphLinksFileHeader {
     }
 
     pub fn get_offsets_range(&self) -> Range<usize> {
-        let start = self.get_links_range().end;
+        let start = self.get_links_range().end + self.offsets_padding as usize;
         start..start + self.total_offsets_len as usize * size_of::<u64>()
     }
 }
@@ -192,12 +223,12 @@ impl GraphLinksConverter {
     }
 
     fn get_header(&self) -> GraphLinksFileHeader {
-        GraphLinksFileHeader {
-            point_count: self.reindex.len() as u64,
-            levels_count: self.get_levels_count() as u64,
-            total_links_len: self.total_links_len as u64,
-            total_offsets_len: self.total_offsets_len as u64,
-        }
+        GraphLinksFileHeader::new(
+            self.reindex.len(),
+            self.get_levels_count(),
+            self.total_links_len,
+            self.total_offsets_len,
+        )
     }
 
     /// Size of compacted graph in bytes.
@@ -224,9 +255,9 @@ impl GraphLinksConverter {
             let links_range = header.get_links_range();
             let offsets_range = header.get_offsets_range();
             let union_range = links_range.start..offsets_range.end;
-            let (links_mmap, offsets_mmap) = bytes_data[union_range]
-                .as_mut()
-                .split_at_mut(links_range.len());
+            let split_index = offsets_range.start - links_range.start;
+            let (links_mmap, offsets_mmap) =
+                bytes_data[union_range].as_mut().split_at_mut(split_index);
             let links_mmap: &mut [PointOffsetType] =
                 mmap_ops::transmute_from_u8_to_mut_slice(links_mmap);
             let offsets_mmap: &mut [u64] = mmap_ops::transmute_from_u8_to_mut_slice(offsets_mmap);
@@ -404,9 +435,8 @@ impl GraphLinksRam {
         links.try_set_capacity_exact(link_slice.len())?;
         links.extend_from_slice(link_slice);
 
-        let offsets_slice = get_offsets_slice(data, &header);
-        offsets.try_set_capacity_exact(offsets_slice.len())?;
-        offsets.extend_from_slice(offsets_slice);
+        offsets.try_set_capacity_exact(header.get_offsets_range().len() / size_of::<u64>())?;
+        offsets.extend(get_offsets_iter(data, &header));
 
         let level_offsets_slice = get_level_offsets(data, &header);
         level_offsets.try_set_capacity_exact(level_offsets_slice.len())?;
@@ -499,16 +529,17 @@ impl GraphLinksMmap {
         if let Some(mmap) = &self.mmap {
             get_links_slice(mmap, &self.header)
         } else {
-            panic!("{}", "Mmap links are not loaded");
+            panic!("{}", MMAP_PANIC_MESSAGE);
         }
     }
 
-    fn get_offsets_slice(&self) -> &[u64] {
-        if let Some(mmap) = &self.mmap {
-            get_offsets_slice(mmap, &self.header)
-        } else {
-            panic!("{}", MMAP_PANIC_MESSAGE);
-        }
+    fn get_links_offset(offsets_data: &[u8], idx: usize) -> usize {
+        let begin = mem::size_of::<u64>() * idx;
+        let end = begin + mem::size_of::<u64>();
+        let bytes = &offsets_data[begin..end];
+        // unwrap is safe because we know that bytes slice is always 8 bytes
+        let bytes: [u8; 8] = bytes.try_into().unwrap();
+        u64::from_ne_bytes(bytes) as usize
     }
 
     pub fn prefault_mmap_pages(&self, path: &Path) -> Option<mmap_ops::PrefaultMmapPages> {
@@ -560,8 +591,14 @@ impl GraphLinks for GraphLinksMmap {
     }
 
     fn get_links_range(&self, idx: usize) -> Range<usize> {
-        let offsets_slice = self.get_offsets_slice();
-        offsets_slice[idx] as usize..offsets_slice[idx + 1] as usize
+        let offsets_range = self.header.get_offsets_range();
+        let mmap: &[u8] = if let Some(mmap) = &self.mmap {
+            &mmap[offsets_range]
+        } else {
+            panic!("{}", MMAP_PANIC_MESSAGE);
+        };
+
+        Self::get_links_offset(mmap, idx)..Self::get_links_offset(mmap, idx + 1)
     }
 
     fn get_level_offset(&self, level: usize) -> usize {
