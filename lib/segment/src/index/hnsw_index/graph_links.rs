@@ -1,6 +1,6 @@
 use std::cmp::max;
 use std::fs::OpenOptions;
-use std::mem::size_of;
+use std::mem::{self, size_of};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -70,10 +70,17 @@ fn get_links_slice<'a>(data: &'a [u8], header: &'a GraphLinksFileHeader) -> &'a 
     mmap_ops::transmute_from_u8_to_slice(links_byte_slice)
 }
 
-fn get_offsets_slice<'a>(data: &'a [u8], header: &'a GraphLinksFileHeader) -> &'a [u64] {
+fn get_offsets_iter<'a>(
+    data: &'a [u8],
+    header: &'a GraphLinksFileHeader,
+) -> impl Iterator<Item = u64> + 'a {
     let offsets_range = header.get_offsets_range();
-    let offsets_byte_slice = &data[offsets_range];
-    mmap_ops::transmute_from_u8_to_slice(offsets_byte_slice)
+    data[offsets_range]
+        .chunks_exact(mem::size_of::<u64>())
+        .map(|chunk| {
+            // unwrap is safe because we know that chunk is always 8 bytes
+            u64::from_ne_bytes(chunk.try_into().unwrap())
+        })
 }
 
 fn get_level_offsets<'a>(data: &'a [u8], header: &GraphLinksFileHeader) -> &'a [u64] {
@@ -427,9 +434,8 @@ impl GraphLinksRam {
         links.try_set_capacity_exact(link_slice.len())?;
         links.extend_from_slice(link_slice);
 
-        let offsets_slice = get_offsets_slice(data, &header);
-        offsets.try_set_capacity_exact(offsets_slice.len())?;
-        offsets.extend_from_slice(offsets_slice);
+        offsets.try_set_capacity_exact(header.get_offsets_range().len() / size_of::<u64>())?;
+        offsets.extend(get_offsets_iter(data, &header));
 
         let level_offsets_slice = get_level_offsets(data, &header);
         level_offsets.try_set_capacity_exact(level_offsets_slice.len())?;
@@ -526,14 +532,6 @@ impl GraphLinksMmap {
         }
     }
 
-    fn get_offsets_slice(&self) -> &[u64] {
-        if let Some(mmap) = &self.mmap {
-            get_offsets_slice(mmap, &self.header)
-        } else {
-            panic!("{}", MMAP_PANIC_MESSAGE);
-        }
-    }
-
     pub fn prefault_mmap_pages(&self, path: &Path) -> Option<mmap_ops::PrefaultMmapPages> {
         mmap_ops::PrefaultMmapPages::new(self.mmap.clone()?, Some(path)).into()
     }
@@ -583,8 +581,28 @@ impl GraphLinks for GraphLinksMmap {
     }
 
     fn get_links_range(&self, idx: usize) -> Range<usize> {
-        let offsets_slice = self.get_offsets_slice();
-        offsets_slice[idx] as usize..offsets_slice[idx + 1] as usize
+        let offsets_range = self.header.get_offsets_range();
+        let mmap: &[u8] = if let Some(mmap) = &self.mmap {
+            &mmap[offsets_range]
+        } else {
+            panic!("{}", MMAP_PANIC_MESSAGE);
+        };
+
+        let mut slice_index = mem::size_of::<u64>() * idx;
+        let begin_value = u64::from_ne_bytes(
+            mmap[slice_index..slice_index + mem::size_of::<u64>()]
+                .try_into()
+                .unwrap(),
+        );
+
+        slice_index += mem::size_of::<u64>();
+        let end_value = u64::from_ne_bytes(
+            mmap[slice_index..slice_index + mem::size_of::<u64>()]
+                .try_into()
+                .unwrap(),
+        );
+
+        begin_value as usize..end_value as usize
     }
 
     fn get_level_offset(&self, level: usize) -> usize {
