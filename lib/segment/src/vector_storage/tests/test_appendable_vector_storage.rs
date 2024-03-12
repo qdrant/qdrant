@@ -16,7 +16,7 @@ use crate::vector_storage::simple_dense_vector_storage::open_simple_vector_stora
 use crate::vector_storage::{new_raw_scorer, VectorStorage, VectorStorageEnum};
 
 fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
-    let points = vec![
+    let points = [
         vec![1.0, 0.0, 1.0, 1.0],
         vec![1.0, 0.0, 1.0, 0.0],
         vec![1.0, 1.0, 1.0, 1.0],
@@ -118,7 +118,7 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
 }
 
 fn do_test_update_from_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
-    let points = vec![
+    let points = [
         vec![1.0, 0.0, 1.0, 1.0],
         vec![1.0, 0.0, 1.0, 0.0],
         vec![1.0, 1.0, 1.0, 1.0],
@@ -198,7 +198,7 @@ fn do_test_update_from_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnu
 }
 
 fn do_test_score_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
-    let points = vec![
+    let points = [
         vec![1.0, 0.0, 1.0, 1.0],
         vec![1.0, 0.0, 1.0, 0.0],
         vec![1.0, 1.0, 1.0, 1.0],
@@ -275,7 +275,7 @@ fn do_test_score_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
 }
 
 fn test_score_quantized_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
-    let points = vec![
+    let points = [
         vec![1.0, 0.0, 1.0, 1.0],
         vec![1.0, 0.0, 1.0, 0.0],
         vec![1.0, 1.0, 1.0, 1.0],
