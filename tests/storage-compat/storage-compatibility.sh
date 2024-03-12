@@ -38,6 +38,17 @@ done
 
 echo "server ready to serve traffic"
 
+# make sure all collections are loaded properly
+collections=$(curl http://$QDRANT_HOST/collections | jq -r .result.collections[].name)
+for collection in $collections; do
+    info=$(curl -s -o /dev/null -w "%{http_code}" "http://$QDRANT_HOST/collections/$collection")
+    if [ "$info" -ne 200 ]; then
+        echo "Storage compatibility failed for $collection"
+        kill -9 $PID
+        exit 1
+    fi
+done
+
 echo "server is going down"
 kill -9 $PID
 echo "END"
@@ -63,6 +74,17 @@ until curl --output /dev/null --silent --get --fail http://$QDRANT_HOST/readyz; 
 done
 
 echo "server ready to serve traffic"
+
+# make sure all collections are loaded properly
+collections=$(curl http://$QDRANT_HOST/collections | jq -r .result.collections[].name)
+for collection in $collections; do
+    info=$(curl -s -o /dev/null -w "%{http_code}" "http://$QDRANT_HOST/collections/$collection")
+    if [ "$info" -ne 200 ]; then
+        echo "Snapshot compatibility failed for $collection"
+        kill -9 $PID
+        exit 1
+    fi
+done
 
 echo "server is going down"
 kill -9 $PID
