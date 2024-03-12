@@ -233,7 +233,7 @@ mod tests {
     fn test_basic_persistence() {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
-        let points = vec![
+        let points = [
             vec![1.0, 0.0, 1.0, 1.0],
             vec![1.0, 0.0, 1.0, 0.0],
             vec![1.0, 1.0, 1.0, 1.0],
@@ -344,7 +344,7 @@ mod tests {
     fn test_delete_points() {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
-        let points = vec![
+        let points = [
             vec![1.0, 0.0, 1.0, 1.0],
             vec![1.0, 0.0, 1.0, 0.0],
             vec![1.0, 1.0, 1.0, 1.0],
@@ -475,7 +475,7 @@ mod tests {
     fn test_update_from_delete_points() {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
-        let points = vec![
+        let points = [
             vec![1.0, 0.0, 1.0, 1.0],
             vec![1.0, 0.0, 1.0, 0.0],
             vec![1.0, 1.0, 1.0, 1.0],
@@ -562,7 +562,7 @@ mod tests {
     fn test_mmap_raw_scorer() {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
-        let points = vec![
+        let points = [
             vec![1.0, 0.0, 1.0, 1.0],
             vec![1.0, 0.0, 1.0, 0.0],
             vec![1.0, 1.0, 1.0, 1.0],
@@ -648,7 +648,7 @@ mod tests {
     fn test_mmap_quantization() {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
-        let points = vec![
+        let points = [
             vec![1.0, 0.0, 1.0, 1.0],
             vec![1.0, 0.0, 1.0, 0.0],
             vec![1.0, 1.0, 1.0, 1.0],
