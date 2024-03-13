@@ -20,9 +20,18 @@ use tokio::{runtime, sync, time};
 const READY_CHECK_TIMEOUT: Duration = Duration::from_millis(500);
 const GET_CONSENSUS_COMMITS_RETRIES: usize = 2;
 
+
+/// Structure used to process health checks like `/readyz` endpoints.
 pub struct HealthChecker {
+    // The state of the health checker.
+    // Once set to `true`, it should not change back to `false`.
+    // Initially set to `false`.
     is_ready: Arc<AtomicBool>,
+    // The signal that notifies that state has changed.
+    // Comes from the health checker task.
     is_ready_signal: Arc<sync::Notify>,
+    // Signal to the health checker task, that the API was called.
+    // Used to drive the health checker task and avoid constant polling.
     check_ready_signal: Arc<sync::Notify>,
     cancel: cancel::DropGuard,
 }
@@ -90,8 +99,14 @@ impl HealthChecker {
 pub struct Task {
     toc: Arc<TableOfContent>,
     consensus_state: ConsensusStateRef,
+    // Shared state with the health checker
+    // Once set to `true`, it should not change back to `false`.
     is_ready: Arc<AtomicBool>,
+    // Used to notify the health checker service that the state has changed.
     is_ready_signal: Arc<sync::Notify>,
+    // Driver signal for the health checker task
+    // Once received, the task should proceed with an attempt to check the state.
+    // Usually comes from the API call, but can be triggered by the task itself.
     check_ready_signal: Arc<sync::Notify>,
     cancel: cancel::CancellationToken,
     wait_for_bootstrap: bool,
@@ -124,14 +139,17 @@ impl Task {
         if self.wait_for_bootstrap {
             // Check if this is the only node in the cluster
             while self.consensus_state.peer_count() <= 1 {
-                // If not:
+                // If cluster is empty, make another attempt to check
+                // after we receive another call to `/readyz`
                 //
-                // Wait for `/readyz` signal (and retry)
+                // Wait for `/readyz` signal
                 self.check_ready_signal.notified().await;
             }
         }
 
-        // Do not wait for `/readyz` signal during first check (or if node joined the cluster during this `/readyz`)
+        // Artificial simulate signal from `/readyz` endpoint
+        // as if it was already called by the user.
+        // This allows to check the happy path without waiting for the first call.
         self.check_ready_signal.notify_one();
 
         // Get *cluster* commit index, or check if this is the only node in the cluster
