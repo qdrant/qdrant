@@ -32,6 +32,7 @@ impl HealthChecker {
         toc: Arc<TableOfContent>,
         consensus_state: ConsensusStateRef,
         runtime: runtime::Handle,
+        wait_for_bootstrap: bool,
     ) -> Self {
         let task = Task {
             toc,
@@ -40,6 +41,7 @@ impl HealthChecker {
             is_ready_signal: Default::default(),
             check_ready_signal: Default::default(),
             cancel: Default::default(),
+            wait_for_bootstrap,
         };
 
         let health_checker = Self {
@@ -92,6 +94,7 @@ pub struct Task {
     is_ready_signal: Arc<sync::Notify>,
     check_ready_signal: Arc<sync::Notify>,
     cancel: cancel::CancellationToken,
+    wait_for_bootstrap: bool,
 }
 
 impl Task {
@@ -115,10 +118,23 @@ impl Task {
     }
 
     async fn exec_impl(&mut self) {
-        // Do not wait for `/readyz` signal during first check
+        // Wait until node joins cluster for the first time
+        //
+        // If this is a new deployment and `--bootstrap` CLI parameter was specified...
+        if self.wait_for_bootstrap {
+            // Check if this is the only node in the cluster
+            while self.consensus_state.peer_count() <= 1 {
+                // If not:
+                //
+                // Wait for `/readyz` signal (and retry)
+                self.check_ready_signal.notified().await;
+            }
+        }
+
+        // Do not wait for `/readyz` signal during first check (or if node joined the cluster during this `/readyz`)
         self.check_ready_signal.notify_one();
 
-        // Get *cluster* commit index, or if this is the only node in the cluster
+        // Get *cluster* commit index, or check if this is the only node in the cluster
         let Some(cluster_commit_index) = self.cluster_commit_index().await else {
             self.set_ready();
             return;

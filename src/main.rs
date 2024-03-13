@@ -297,6 +297,8 @@ fn main() -> anyhow::Result<()> {
             toc_arc.clone(),
             consensus_state.clone(),
             runtime_handle.clone(),
+            // NOTE: `wait_for_bootstrap` should be calculated *before* starting `Consensus` thread
+            consensus_state.is_new_deployment() && args.bootstrap.is_some(),
         ));
 
         let handle = Consensus::run(
