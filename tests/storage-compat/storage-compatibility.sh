@@ -62,6 +62,10 @@ function test_version() {
   # Uncompress snapshot storage
   tar -xvjf ./tests/storage-compat/storage.tar.bz2
 
+  # Delete storage archives
+  rm ./tests/storage-compat/compatibility.tar
+  rm ./tests/storage-compat/storage.tar.bz2
+
   # Test it boots up fine with the old storage
   ./target/debug/qdrant & PID=$!
 
@@ -83,7 +87,13 @@ function test_version() {
   # Test recovering from an old snapshot
   gzip -f -d --keep ./tests/storage-compat/full-snapshot.snapshot.gz
 
+  # Delete archive
+  rm ./tests/storage-compat/full-snapshot.snapshot.gz
+
+  # Delete previous storage
   rm -rf ./storage
+
+  # Start server with the old snapshot
   ./target/debug/qdrant \
     --storage-snapshot ./tests/storage-compat/full-snapshot.snapshot \
     & PID=$!
