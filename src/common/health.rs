@@ -20,7 +20,6 @@ use tokio::{runtime, sync, time};
 const READY_CHECK_TIMEOUT: Duration = Duration::from_millis(500);
 const GET_CONSENSUS_COMMITS_RETRIES: usize = 2;
 
-
 /// Structure used to process health checks like `/readyz` endpoints.
 pub struct HealthChecker {
     // The state of the health checker.
