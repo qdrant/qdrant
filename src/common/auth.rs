@@ -50,36 +50,28 @@ impl AuthKeys {
         get_header: impl Fn(&'a str) -> Option<&'a str>,
         is_read_only: bool,
     ) -> Result<Option<Claims>, &'static str> {
-        if let Some(api_key) = get_header("api-key") {
-            if self.can_write(api_key) || (is_read_only && self.can_read(api_key)) {
-                return Ok(None);
-            } else {
-                return Err("Invalid API key");
-            }
+        let Some(key) = get_header("api-key")
+            .or_else(|| get_header("authorization").and_then(|v| v.strip_prefix("Bearer ")))
+        else {
+            return Err("Must provide an API key or an Authorization bearer token");
+        };
+
+        if self.can_write(key) || (is_read_only && self.can_read(key)) {
+            return Ok(None);
         }
 
-        if let Some(bearer_token) =
-            get_header("authorization").and_then(|v| v.strip_prefix("Bearer "))
-        {
-            if self.can_write(bearer_token) || (is_read_only && self.can_read(bearer_token)) {
-                return Ok(None);
-            }
-
-            if let Some(claims) = self
-                .jwt_parser
-                .as_ref()
-                .and_then(|p| p.decode(bearer_token).ok())
-            {
-                if !claims.w.unwrap_or(false) && !is_read_only {
-                    return Err("Write access denied");
-                }
-                return Ok(Some(claims));
-            }
-
-            return Err("Invalid bearer token");
+        if !is_read_only && self.can_read(key) {
+            return Err("Write access denied");
         }
 
-        Err("Must provide an API key or an Authorization bearer token")
+        if let Some(claims) = self.jwt_parser.as_ref().and_then(|p| p.decode(key).ok()) {
+            if !claims.w.unwrap_or(false) && !is_read_only {
+                return Err("Write access denied");
+            }
+            return Ok(Some(claims));
+        }
+
+        Err("Invalid API key or JWT token")
     }
 
     /// Check if a key is allowed to read
