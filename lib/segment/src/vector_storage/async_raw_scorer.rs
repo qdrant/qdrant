@@ -285,7 +285,7 @@ impl<'a> AsyncRawScorerBuilder<'a> {
                     )), // TODO(sparse) add support?
                     Vector::MultiDense(_multi_dense_vector) => Err(OperationError::service_error(
                         "multi-dense vectors are not supported for async scorer",
-                    )), // TODO(multi-dense) add support?
+                    )), // TODO(multi) add support?
                 }
             }
             QueryVector::Recommend(reco_query) => {

@@ -50,7 +50,10 @@ impl<'a> From<Vector> for CowVector<'a> {
         match v {
             Vector::Dense(v) => CowVector::Dense(Cow::Owned(v)),
             Vector::Sparse(v) => CowVector::Sparse(Cow::Owned(v)),
-            Vector::MultiDense(_) => unimplemented!("MultiDenseVector is not supported"),
+            Vector::MultiDense(_) => {
+                // TODO(multi)
+                unimplemented!("MultiDenseVector is not supported")
+            }
         }
     }
 }
@@ -106,7 +109,10 @@ impl<'a> From<VectorRef<'a>> for CowVector<'a> {
         match v {
             VectorRef::Dense(v) => CowVector::Dense(Cow::Borrowed(v)),
             VectorRef::Sparse(v) => CowVector::Sparse(Cow::Borrowed(v)),
-            VectorRef::MultiDense(_) => unimplemented!("MultiDenseVector is not supported"),
+            VectorRef::MultiDense(_) => {
+                // TODO(multi)
+                unimplemented!("MultiDenseVector is not supported")
+            }
         }
     }
 }
@@ -119,7 +125,10 @@ impl<'a> NamedVectors<'a> {
             match value {
                 VectorRef::Dense(v) => CowVector::Dense(Cow::Borrowed(v)),
                 VectorRef::Sparse(v) => CowVector::Sparse(Cow::Borrowed(v)),
-                VectorRef::MultiDense(_) => unimplemented!("MultiDenseVector is not supported"),
+                VectorRef::MultiDense(_) => {
+                    // TODO(multi)
+                    unimplemented!("MultiDenseVector is not supported")
+                }
             },
         );
         Self { map }
@@ -158,7 +167,10 @@ impl<'a> NamedVectors<'a> {
             match vector {
                 Vector::Dense(v) => CowVector::Dense(Cow::Owned(v)),
                 Vector::Sparse(v) => CowVector::Sparse(Cow::Owned(v)),
-                Vector::MultiDense(_) => unimplemented!("MultiDenseVector is not supported"),
+                Vector::MultiDense(_) => {
+                    // TODO(multi)
+                    unimplemented!("MultiDenseVector is not supported")
+                }
             },
         );
     }
@@ -169,7 +181,10 @@ impl<'a> NamedVectors<'a> {
             match vector {
                 VectorRef::Dense(v) => CowVector::Dense(Cow::Borrowed(v)),
                 VectorRef::Sparse(v) => CowVector::Sparse(Cow::Borrowed(v)),
-                VectorRef::MultiDense(_) => unimplemented!("MultiDenseVector is not supported"),
+                VectorRef::MultiDense(_) => {
+                    // TODO(multi)
+                    unimplemented!("MultiDenseVector is not supported")
+                }
             },
         );
     }

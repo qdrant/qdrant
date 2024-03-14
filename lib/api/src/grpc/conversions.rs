@@ -488,6 +488,7 @@ impl From<segment::data_types::vectors::Vector> for Vector {
                 }),
             },
             segment::data_types::vectors::Vector::MultiDense(_vector) => {
+                // TODO(multi)
                 unimplemented!("MultiDenseVector is not supported")
             }
         }
