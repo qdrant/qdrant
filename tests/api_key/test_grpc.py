@@ -137,10 +137,12 @@ def mkparams(mode: Literal["rw", "ro"]):
         ((), False),
 
         ((("api-key", "my-secret"),), True),
+        ((("api-key", JWT_RW),), True),
         ((("authorization", "Bearer my-secret"),), True),
         ((("authorization", f"Bearer {JWT_RW}"),), True),
 
         ((("api-key", "my-ro-secret"),), mode == "ro"),
+        ((("api-key", JWT_R),), mode == "ro"),
         ((("authorization", "Bearer my-ro-secret"),), mode == "ro"),
         ((("authorization", f"Bearer {JWT_R}"),), mode == "ro"),
         ((("authorization", f"Bearer {JWT_EMPTY}"),), mode == "ro"),
