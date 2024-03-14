@@ -1,7 +1,7 @@
 #[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
 pub mod actix_telemetry;
 pub mod api;
-mod api_key;
+mod auth;
 mod certificate_helpers;
 #[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
 pub mod helpers;
@@ -16,6 +16,7 @@ use actix_multipart::form::tempfile::TempFileConfig;
 use actix_multipart::form::MultipartFormConfig;
 use actix_web::middleware::{Compress, Condition, Logger};
 use actix_web::{error, get, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
+use actix_web_extras::middleware::Condition as ConditionEx;
 use collection::operations::validation;
 use storage::dispatcher::Dispatcher;
 
@@ -30,7 +31,7 @@ use crate::actix::api::service_api::config_service_api;
 use crate::actix::api::shards_api::config_shards_api;
 use crate::actix::api::snapshot_api::config_snapshots_api;
 use crate::actix::api::update_api::config_update_api;
-use crate::actix::api_key::{ApiKey, WhitelistItem};
+use crate::actix::auth::{Auth, WhitelistItem};
 use crate::common::auth::AuthKeys;
 use crate::common::health;
 use crate::common::http_client::HttpClient;
@@ -119,10 +120,9 @@ pub fn init(
                 .wrap(Compress::default()) // Reads the `Accept-Encoding` header to negotiate which compression codec to use.
                 // api_key middleware
                 // note: the last call to `wrap()` or `wrap_fn()` is executed first
-                .wrap(Condition::new(
-                    auth_keys.is_some(),
-                    ApiKey::new(auth_keys.clone(), api_key_whitelist.clone()),
-                ))
+                .wrap(ConditionEx::from_option(auth_keys.as_ref().map(
+                    |auth_keys| Auth::new(auth_keys.clone(), api_key_whitelist.clone()),
+                )))
                 .wrap(Condition::new(settings.service.enable_cors, cors))
                 .wrap(
                     // Set up logger, but avoid logging hot status endpoints
