@@ -195,6 +195,7 @@ pub fn only_default_vector(vec: &[VectorElementType]) -> NamedVectors {
 }
 
 /// Full vector data per point separator with single and multiple vector modes
+/// TODO(colbert) try to remove this enum and use NamedVectors instead
 #[derive(Clone, Debug, PartialEq)]
 pub enum VectorStruct {
     Single(DenseVector),
