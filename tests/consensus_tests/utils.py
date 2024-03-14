@@ -32,6 +32,7 @@ class PeerProcess:
         del busy_ports[self.grpc_port]
         del busy_ports[self.p2p_port]
 
+
 def _occupy_port(port):
     if port in busy_ports:
         raise Exception(f'Port "{port}" was already allocated!')
@@ -58,7 +59,6 @@ def get_port() -> int:
             allocated_port = s.getsockname()[1]
             if allocated_port in busy_ports:
                 continue
-            busy_ports[allocated_port] = True
             return allocated_port
         
 def get_env(p2p_port: int, grpc_port: int, http_port: int) -> Dict[str, str]:
@@ -104,9 +104,13 @@ def init_pytest_log_folder() -> str:
 def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None, extra_env=None) -> str:
     if extra_env is None:
         extra_env = {}
-    p2p_port = get_port() if port is None else _occupy_port(port + 0)
-    grpc_port = get_port() if port is None else _occupy_port(port + 1)
-    http_port = get_port() if port is None else _occupy_port(port + 2)
+    p2p_port = get_port() if port is None else port + 0
+    _occupy_port(p2p_port)
+    grpc_port = get_port() if port is None else port + 1
+    _occupy_port(grpc_port)
+    http_port = get_port() if port is None else port + 2
+    _occupy_port(http_port)
+
     env = {
         **get_env(p2p_port, grpc_port, http_port),
         **extra_env
@@ -128,9 +132,13 @@ def start_first_peer(peer_dir: Path, log_file: str, port=None, extra_env=None) -
     if extra_env is None:
         extra_env = {}
 
-    p2p_port = get_port() if port is None else _occupy_port(port + 0)
-    grpc_port = get_port() if port is None else _occupy_port(port + 1)
-    http_port = get_port() if port is None else _occupy_port(port + 2)
+    p2p_port = get_port() if port is None else port + 0
+    _occupy_port(p2p_port)
+    grpc_port = get_port() if port is None else port + 1
+    _occupy_port(grpc_port)
+    http_port = get_port() if port is None else port + 2
+    _occupy_port(http_port)
+
     env = {
         **get_env(p2p_port, grpc_port, http_port),
         **extra_env

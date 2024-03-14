@@ -23,12 +23,11 @@ def test_peer_snapshot_bootstrap(tmp_path: pathlib.Path):
     #
     # If the port changes and the peer have to report URI change,
     # *4 out of 5 times it will fail to do so*, and the test will fail.
+    first_peer_port = get_port()
 
     # Start bootstrap
     (bootstrap_api_uri, bootstrap_uri) = start_first_peer(
-        peer_dirs[0], "peer_0_0.log")
-    
-    first_peer_port = processes[0].http_port
+        peer_dirs[0], "peer_0_0.log", port=first_peer_port)
 
     peer_api_uris.append(bootstrap_api_uri)
 
@@ -49,7 +48,7 @@ def test_peer_snapshot_bootstrap(tmp_path: pathlib.Path):
         assert len(r.json()["result"]["collections"]) == 0
 
     # Create collection on first peer
-    r = requests.put(f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}", json = {
+    r = requests.put(f"{peer_api_uris[0]}/collections/{COLLECTION_NAME}", json={
         "vectors": {
             "size": 4,
             "distance": "Dot"
@@ -59,8 +58,8 @@ def test_peer_snapshot_bootstrap(tmp_path: pathlib.Path):
 
     # Check that it exists on all peers
     wait_collection_exists_and_active_on_all_peers(
-        collection_name = COLLECTION_NAME,
-        peer_api_uris = peer_api_uris,
+        collection_name=COLLECTION_NAME,
+        peer_api_uris=peer_api_uris,
     )
 
     # Recover all follower peers
@@ -78,12 +77,12 @@ def test_peer_snapshot_bootstrap(tmp_path: pathlib.Path):
 
     # Restart killed peer
     (bootstrap_api_uri, bootstrap_uri) = start_first_peer(
-        peer_dirs[0], "peer_0_0_restarted.log", port = first_peer_port)
+        peer_dirs[0], "peer_0_0_restarted.log", port=first_peer_port)
 
     peer_api_uris[0] = bootstrap_api_uri
 
     # Wait for restarted peer
-    leader = wait_peer_added(bootstrap_api_uri, expected_size = N_PEERS - 1)
+    leader = wait_peer_added(bootstrap_api_uri, expected_size=N_PEERS - 1)
 
     # Recover restarted peer
     r = requests.post(f"{bootstrap_api_uri}/cluster/recover")
@@ -94,14 +93,15 @@ def test_peer_snapshot_bootstrap(tmp_path: pathlib.Path):
         peer_dirs[-1], f"peer_0_{len(peer_dirs) - 1}.log", bootstrap_uri))
 
     # Wait for new peer
-    wait_peer_added(bootstrap_api_uri, expected_size = N_PEERS)
+    wait_peer_added(bootstrap_api_uri, expected_size=N_PEERS)
     wait_for_peer_online(peer_api_uris[-1])
 
     # Check that collection exists on new peer
     wait_collection_exists_and_active_on_all_peers(
-        collection_name = COLLECTION_NAME,
-        peer_api_uris = peer_api_uris,
+        collection_name=COLLECTION_NAME,
+        peer_api_uris=peer_api_uris,
     )
+
 
 def leader_is_reelected(count):
     current_leader = None
