@@ -200,7 +200,7 @@ impl Collection {
                 // So we just filter out them.
                 records_map.remove(&scored_point.id).map(|record| {
                     scored_point.payload = record.payload;
-                    scored_point.vector = record.vector;
+                    scored_point.vector = record.vector.map(|v| v.into());
                     scored_point
                 })
             })

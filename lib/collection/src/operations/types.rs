@@ -7,6 +7,7 @@ use std::num::NonZeroU64;
 use std::time::SystemTimeError;
 
 use api::grpc::transport_channel_pool::RequestError;
+use api::rest::schema::{ScoredPoint, VectorStruct};
 use common::types::ScoreType;
 use common::validation::validate_range_generic;
 use io::file_operations::FileStorageError;
@@ -19,12 +20,12 @@ use segment::data_types::groups::GroupId;
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{
     DenseVector, Named, NamedQuery, NamedVectorStruct, QueryVector, Vector, VectorRef,
-    VectorStruct, DEFAULT_VECTOR_NAME,
+    DEFAULT_VECTOR_NAME,
 };
 use segment::json_path::{JsonPath, JsonPathInterface};
 use segment::types::{
     Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, QuantizationConfig,
-    ScoredPoint, SearchParams, SeqNumberType, ShardKey, WithPayloadInterface, WithVector,
+    SearchParams, SeqNumberType, ShardKey, WithPayloadInterface, WithVector,
 };
 use segment::vector_storage::query::context_query::ContextQuery;
 use segment::vector_storage::query::discovery_query::DiscoveryQuery;
@@ -1266,7 +1267,11 @@ impl Record {
             Some(VectorStruct::Single(vector)) => {
                 (name == DEFAULT_VECTOR_NAME).then_some(vector.into())
             }
-            Some(VectorStruct::Multi(vectors)) => vectors.get(name).map(|v| v.into()),
+            // TODO(colbert): remove this match and use `into`
+            Some(VectorStruct::Multi(vectors)) => vectors.get(name).map(|v| match v {
+                api::rest::schema::Vector::Dense(v) => VectorRef::Dense(v),
+                api::rest::schema::Vector::Sparse(v) => VectorRef::Sparse(v),
+            }),
             None => None,
         }
     }

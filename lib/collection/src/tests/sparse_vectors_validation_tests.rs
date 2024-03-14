@@ -30,7 +30,7 @@ fn wrong_point_struct() -> PointStruct {
         HashMap::from([("sparse".to_owned(), wrong_sparse_vector().into())]);
     PointStruct {
         id: 0.into(),
-        vector: VectorStruct::Multi(vector_data),
+        vector: VectorStruct::Multi(vector_data).into(),
         payload: None,
     }
 }
@@ -59,7 +59,7 @@ fn validate_error_sparse_vector_points_batch() {
     check_validation_error(PointsBatch {
         batch: Batch {
             ids: vec![1.into()],
-            vectors: segment::data_types::vectors::BatchVectorStruct::Multi(vector_data),
+            vectors: segment::data_types::vectors::BatchVectorStruct::Multi(vector_data).into(),
             payloads: None,
         },
         shard_key: None,
@@ -162,6 +162,6 @@ fn validate_error_sparse_vector_point_vectors() {
         HashMap::from([("sparse".to_owned(), wrong_sparse_vector().into())]);
     check_validation_error(PointVectors {
         id: 1.into(),
-        vector: VectorStruct::Multi(vector_data),
+        vector: VectorStruct::Multi(vector_data).into(),
     });
 }

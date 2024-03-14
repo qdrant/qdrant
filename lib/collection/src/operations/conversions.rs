@@ -16,8 +16,10 @@ use api::grpc::qdrant::{CreateShardKey, SearchPoints};
 use common::types::ScoreType;
 use itertools::Itertools;
 use segment::data_types::order_by::{OrderBy, StartFrom};
-use segment::data_types::vectors::{Named, NamedQuery, Vector, VectorStruct, DEFAULT_VECTOR_NAME};
-use segment::types::{DateTimeWrapper, Distance, QuantizationConfig};
+use segment::data_types::vectors::{
+    BatchVectorStruct, Named, NamedQuery, Vector, VectorStruct, DEFAULT_VECTOR_NAME,
+};
+use segment::types::{DateTimeWrapper, Distance, QuantizationConfig, ScoredPoint};
 use segment::vector_storage::query::context_query::{ContextPair, ContextQuery};
 use segment::vector_storage::query::discovery_query::DiscoveryQuery;
 use segment::vector_storage::query::reco_query::RecoQuery;
@@ -132,7 +134,7 @@ pub fn try_record_from_grpc(
         None
     };
 
-    let vector = point
+    let vector: Option<VectorStruct> = point
         .vectors
         .map(|vectors| vectors.try_into())
         .transpose()?;
@@ -140,7 +142,7 @@ pub fn try_record_from_grpc(
     Ok(Record {
         id,
         payload,
-        vector,
+        vector: vector.map(Into::into),
         shard_key: convert_shard_key_from_grpc_opt(point.shard_key),
     })
 }
@@ -437,12 +439,12 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
 
 impl From<Record> for api::grpc::qdrant::RetrievedPoint {
     fn from(record: Record) -> Self {
-        let vectors = record.vector.map(|vector_struct| vector_struct.into());
+        let vectors: Option<VectorStruct> = record.vector.map(|vector_struct| vector_struct.into());
 
         Self {
             id: Some(record.id.into()),
             payload: record.payload.map(payload_to_proto).unwrap_or_default(),
-            vectors,
+            vectors: vectors.map(|v| v.into()),
             shard_key: record.shard_key.map(convert_shard_key_to_grpc),
         }
     }
@@ -773,7 +775,7 @@ impl TryFrom<api::grpc::qdrant::PointStruct> for PointStruct {
             id: id
                 .ok_or_else(|| Status::invalid_argument("Empty ID is not allowed"))?
                 .try_into()?,
-            vector: vector_struct,
+            vector: vector_struct.into(),
             payload: converted_payload,
         })
     }
@@ -783,7 +785,8 @@ impl TryFrom<PointStruct> for api::grpc::qdrant::PointStruct {
     type Error = Status;
 
     fn try_from(value: PointStruct) -> Result<Self, Self::Error> {
-        let vectors: api::grpc::qdrant::Vectors = value.vector.into();
+        let vectors: VectorStruct = value.vector.into();
+        let vectors: api::grpc::qdrant::Vectors = vectors.into();
 
         let id = value.id;
         let payload = value.payload;
@@ -806,7 +809,8 @@ impl TryFrom<Batch> for Vec<api::grpc::qdrant::PointStruct> {
 
     fn try_from(batch: Batch) -> Result<Self, Self::Error> {
         let mut points = Vec::new();
-        let all_vectors = batch.vectors.into_all_vectors(batch.ids.len());
+        let batch_vectors: BatchVectorStruct = batch.vectors.into();
+        let all_vectors = batch_vectors.into_all_vectors(batch.ids.len());
         for (i, p_id) in batch.ids.into_iter().enumerate() {
             let id = Some(p_id.into());
             let vector = all_vectors.get(i).cloned();
@@ -1320,7 +1324,12 @@ impl TryFrom<api::grpc::qdrant::SearchPointGroups> for SearchGroupsRequestIntern
 impl From<PointGroup> for api::grpc::qdrant::PointGroup {
     fn from(group: PointGroup) -> Self {
         Self {
-            hits: group.hits.into_iter().map_into().collect(),
+            hits: group
+                .hits
+                .into_iter()
+                .map_into::<ScoredPoint>()
+                .map_into()
+                .collect(),
             id: Some(group.id.into()),
             lookup: group.lookup.map(|record| record.into()),
         }

@@ -6,6 +6,7 @@ use itertools::iproduct;
 use parking_lot::{RwLock, RwLockWriteGuard};
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
+use segment::data_types::vectors::{BatchVectorStruct, VectorStruct};
 use segment::entry::entry_point::SegmentEntry;
 use segment::json_path::JsonPath;
 use segment::types::{
@@ -69,7 +70,8 @@ pub(crate) fn update_vectors(
         op_num,
         &ids,
         |id, write_segment| {
-            let vectors = points_map[&id].vector.clone().into_all_vectors();
+            let vectors: VectorStruct = points_map[&id].vector.clone().into();
+            let vectors = vectors.into_all_vectors();
             write_segment.update_vectors(op_num, id, vectors)
         },
         |_| false,
@@ -448,13 +450,14 @@ pub(crate) fn process_point_operation(
         PointOperations::UpsertPoints(operation) => {
             let points: Vec<_> = match operation {
                 PointInsertOperationsInternal::PointsBatch(batch) => {
-                    let all_vectors = batch.vectors.into_all_vectors(batch.ids.len());
+                    let batch_vectors: BatchVectorStruct = batch.vectors.into();
+                    let all_vectors = batch_vectors.into_all_vectors(batch.ids.len());
                     let vectors_iter = batch.ids.into_iter().zip(all_vectors);
                     match batch.payloads {
                         None => vectors_iter
                             .map(|(id, vectors)| PointStruct {
                                 id,
-                                vector: vectors.into(),
+                                vector: Into::<VectorStruct>::into(vectors).into(),
                                 payload: None,
                             })
                             .collect(),
@@ -462,7 +465,7 @@ pub(crate) fn process_point_operation(
                             .zip(payloads)
                             .map(|((id, vectors), payload)| PointStruct {
                                 id,
-                                vector: vectors.into(),
+                                vector: Into::<VectorStruct>::into(vectors).into(),
                                 payload,
                             })
                             .collect(),

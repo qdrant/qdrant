@@ -287,7 +287,7 @@ mod tests {
     use itertools::Itertools;
     use parking_lot::lock_api::RwLock;
     use rand::thread_rng;
-    use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
+    use segment::data_types::vectors::{BatchVectorStruct, DEFAULT_VECTOR_NAME};
     use segment::entry::entry_point::SegmentEntry;
     use segment::fixtures::index_fixtures::random_vector;
     use segment::index::hnsw_index::num_rayon_threads;
@@ -615,11 +615,11 @@ mod tests {
         let point_payload: Payload = json!({"number":10000i64}).into();
         let insert_point_ops: PointOperations = Batch {
             ids: vec![501.into(), 502.into(), 503.into()],
-            vectors: vec![
+            vectors: Into::<BatchVectorStruct>::into(vec![
                 random_vector(&mut rng, dim),
                 random_vector(&mut rng, dim),
                 random_vector(&mut rng, dim),
-            ]
+            ])
             .into(),
             payloads: Some(vec![
                 Some(point_payload.clone()),
@@ -694,11 +694,11 @@ mod tests {
 
         let insert_point_ops: PointOperations = Batch {
             ids: vec![601.into(), 602.into(), 603.into()],
-            vectors: vec![
+            vectors: Into::<BatchVectorStruct>::into(vec![
                 random_vector(&mut rng, dim),
                 random_vector(&mut rng, dim),
                 random_vector(&mut rng, dim),
-            ]
+            ])
             .into(),
             payloads: None,
         }

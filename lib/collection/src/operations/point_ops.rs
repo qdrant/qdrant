@@ -1,11 +1,12 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
+use api::rest::schema::{BatchVectorStruct, VectorStruct};
 use itertools::izip;
 use schemars::JsonSchema;
 use segment::common::utils::transpose_map_into_named_vector;
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::vectors::{BatchVectorStruct, Vector, VectorStruct, DEFAULT_VECTOR_NAME};
+use segment::data_types::vectors::{Vector, DEFAULT_VECTOR_NAME};
 use segment::types::{Filter, Payload, PointIdType};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
@@ -387,7 +388,7 @@ impl SplitByShard for Batch {
                             let vector: Vector = vector.to_owned();
                             match &mut batch.vectors {
                                 BatchVectorStruct::Multi(batch_vectors) => {
-                                    batch_vectors.entry(name).or_default().push(vector)
+                                    batch_vectors.entry(name).or_default().push(vector.into())
                                 }
                                 _ => unreachable!(), // TODO(sparse) propagate error
                             }
@@ -432,7 +433,7 @@ impl SplitByShard for Batch {
                             let vector: Vector = vector.to_owned();
                             match &mut batch.vectors {
                                 BatchVectorStruct::Multi(batch_vectors) => {
-                                    batch_vectors.entry(name).or_default().push(vector)
+                                    batch_vectors.entry(name).or_default().push(vector.into())
                                 }
                                 _ => unreachable!(), // TODO(sparse) propagate error
                             }
@@ -494,7 +495,7 @@ impl PointStruct {
             }
             VectorStruct::Multi(vectors) => {
                 for (name, vector) in vectors {
-                    named_vectors.insert(name.clone(), vector.clone());
+                    named_vectors.insert(name.clone(), vector.clone().into());
                 }
             }
         }
@@ -504,13 +505,15 @@ impl PointStruct {
 
 #[cfg(test)]
 mod tests {
+    use segment::data_types::vectors::BatchVectorStruct;
+
     use super::*;
 
     #[test]
     fn validate_batch() {
         let batch: PointInsertOperationsInternal = Batch {
             ids: vec![PointIdType::NumId(0)],
-            vectors: vec![].into(),
+            vectors: Into::<BatchVectorStruct>::into(vec![]).into(),
             payloads: None,
         }
         .into();
@@ -518,7 +521,7 @@ mod tests {
 
         let batch: PointInsertOperationsInternal = Batch {
             ids: vec![PointIdType::NumId(0)],
-            vectors: vec![vec![0.1]].into(),
+            vectors: Into::<BatchVectorStruct>::into(vec![vec![0.1]]).into(),
             payloads: None,
         }
         .into();
@@ -526,7 +529,7 @@ mod tests {
 
         let batch: PointInsertOperationsInternal = Batch {
             ids: vec![PointIdType::NumId(0)],
-            vectors: vec![vec![0.1]].into(),
+            vectors: Into::<BatchVectorStruct>::into(vec![vec![0.1]]).into(),
             payloads: Some(vec![]),
         }
         .into();

@@ -8,6 +8,7 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     RecommendGroupsRequest, RecommendRequest, RecommendRequestBatch,
 };
+use itertools::Itertools;
 use segment::types::ScoredPoint;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
@@ -43,7 +44,13 @@ async fn recommend_points(
             shard_selection,
             params.timeout(),
         )
-        .await;
+        .await
+        .map(|scored_points| {
+            scored_points
+                .into_iter()
+                .map(Into::<api::rest::schema::ScoredPoint>::into)
+                .collect_vec()
+        });
 
     process_response(response, timing)
 }
@@ -88,7 +95,18 @@ async fn recommend_batch_points(
         params.consistency,
         params.timeout(),
     )
-    .await;
+    .await
+    .map(|batch_scored_points| {
+        batch_scored_points
+            .into_iter()
+            .map(|scored_points| {
+                scored_points
+                    .into_iter()
+                    .map(Into::<api::rest::schema::ScoredPoint>::into)
+                    .collect_vec()
+            })
+            .collect_vec()
+    });
 
     process_response(response, timing)
 }

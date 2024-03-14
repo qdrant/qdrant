@@ -33,6 +33,7 @@ use collection::operations::vector_ops::{DeleteVectors, PointVectors, UpdateVect
 use collection::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
 use collection::shards::shard::ShardId;
 use itertools::Itertools;
+use segment::data_types::vectors::VectorStruct;
 use segment::types::{
     ExtendedPointId, Filter, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
 };
@@ -238,11 +239,14 @@ pub async fn update_vectors(
             Some(id) => id.try_into()?,
             None => return Err(Status::invalid_argument("id is expected")),
         };
-        let vector = match point.vectors {
+        let vector: VectorStruct = match point.vectors {
             Some(vectors) => vectors.try_into()?,
             None => return Err(Status::invalid_argument("vectors is expected")),
         };
-        op_points.push(PointVectors { id, vector });
+        op_points.push(PointVectors {
+            id,
+            vector: vector.into(),
+        });
     }
 
     let operation = UpdateVectors {

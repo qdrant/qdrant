@@ -13,7 +13,7 @@ use collection::recommendations::recommend_by;
 use collection::shards::replica_set::{ReplicaSetState, ReplicaState};
 use itertools::Itertools;
 use segment::data_types::order_by::{Direction, OrderBy};
-use segment::data_types::vectors::VectorStruct;
+use segment::data_types::vectors::{BatchVectorStruct, VectorStruct};
 use segment::types::{
     Condition, ExtendedPointId, FieldCondition, Filter, HasIdCondition, Payload,
     PayloadFieldSchema, PayloadSchemaType, PointIdType, WithPayloadInterface,
@@ -40,13 +40,13 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
                 .into_iter()
                 .map(|x| x.into())
                 .collect_vec(),
-            vectors: vec![
+            vectors: Into::<BatchVectorStruct>::into(vec![
                 vec![1.0, 0.0, 1.0, 1.0],
                 vec![1.0, 0.0, 1.0, 0.0],
                 vec![1.0, 1.0, 1.0, 1.0],
                 vec![1.0, 1.0, 0.0, 1.0],
                 vec![1.0, 0.0, 0.0, 0.0],
-            ]
+            ])
             .into(),
             payloads: None,
         }
@@ -108,7 +108,11 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
     let insert_points = CollectionUpdateOperations::PointOperation(
         Batch {
             ids: vec![0.into(), 1.into()],
-            vectors: vec![vec![1.0, 0.0, 1.0, 1.0], vec![1.0, 0.0, 1.0, 0.0]].into(),
+            vectors: Into::<BatchVectorStruct>::into(vec![
+                vec![1.0, 0.0, 1.0, 1.0],
+                vec![1.0, 0.0, 1.0, 0.0],
+            ])
+            .into(),
             payloads: serde_json::from_str(
                 r#"[{ "k": { "type": "keyword", "value": "v1" } }, { "k": "v2" , "v": "v3"}]"#,
             )
@@ -197,13 +201,13 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
                     .into_iter()
                     .map(|x| x.into())
                     .collect_vec(),
-                vectors: vec![
+                vectors: Into::<BatchVectorStruct>::into(vec![
                     vec![1.0, 0.0, 1.0, 1.0],
                     vec![1.0, 0.0, 1.0, 0.0],
                     vec![1.0, 1.0, 1.0, 1.0],
                     vec![1.0, 1.0, 0.0, 1.0],
                     vec![1.0, 0.0, 0.0, 0.0],
-                ]
+                ])
                 .into(),
                 payloads: None,
             }
@@ -265,7 +269,11 @@ fn test_deserialization() {
     let insert_points = CollectionUpdateOperations::PointOperation(
         Batch {
             ids: vec![0.into(), 1.into()],
-            vectors: vec![vec![1.0, 0.0, 1.0, 1.0], vec![1.0, 0.0, 1.0, 0.0]].into(),
+            vectors: Into::<BatchVectorStruct>::into(vec![
+                vec![1.0, 0.0, 1.0, 1.0],
+                vec![1.0, 0.0, 1.0, 0.0],
+            ])
+            .into(),
             payloads: None,
         }
         .into(),
@@ -285,12 +293,12 @@ fn test_deserialization2() {
         vec![
             PointStruct {
                 id: 0.into(),
-                vector: vec![1.0, 0.0, 1.0, 1.0].into(),
+                vector: Into::<VectorStruct>::into(vec![1.0, 0.0, 1.0, 1.0]).into(),
                 payload: None,
             },
             PointStruct {
                 id: 1.into(),
-                vector: vec![1.0, 0.0, 1.0, 0.0].into(),
+                vector: Into::<VectorStruct>::into(vec![1.0, 0.0, 1.0, 0.0]).into(),
                 payload: None,
             },
         ]
@@ -323,7 +331,7 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
                 .into_iter()
                 .map(|x| x.into())
                 .collect_vec(),
-            vectors: vec![
+            vectors: Into::<BatchVectorStruct>::into(vec![
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![1.0, 0.0, 0.0, 0.0],
                 vec![1.0, 0.0, 0.0, 0.0],
@@ -333,7 +341,7 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
                 vec![0.0, 0.0, 1.0, 0.0],
                 vec![0.0, 0.0, 0.0, 1.0],
                 vec![0.0, 0.0, 0.0, 1.0],
-            ]
+            ])
             .into(),
             payloads: None,
         }
@@ -381,7 +389,7 @@ async fn test_read_api_with_shards(shard_number: u32) {
                 .into_iter()
                 .map(|x| x.into())
                 .collect_vec(),
-            vectors: vec![
+            vectors: Into::<BatchVectorStruct>::into(vec![
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![1.0, 0.0, 0.0, 0.0],
                 vec![1.0, 0.0, 0.0, 0.0],
@@ -391,7 +399,7 @@ async fn test_read_api_with_shards(shard_number: u32) {
                 vec![0.0, 0.0, 1.0, 0.0],
                 vec![0.0, 0.0, 0.0, 1.0],
                 vec![0.0, 0.0, 0.0, 1.0],
-            ]
+            ])
             .into(),
             payloads: None,
         }
@@ -471,7 +479,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
                 .into_iter()
                 .map(|x| x.into())
                 .collect_vec(),
-            vectors: vec![
+            vectors: Into::<BatchVectorStruct>::into(vec![
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![1.0, 0.0, 0.0, 0.0],
                 vec![1.0, 0.0, 0.0, 0.0],
@@ -486,7 +494,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
                 vec![0.0, 1.0, 1.0, 1.0],
                 vec![0.0, 1.0, 1.0, 1.0],
                 vec![1.0, 1.0, 1.0, 1.0],
-            ]
+            ])
             .into(),
             payloads: Some(payloads),
         }
@@ -723,13 +731,13 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
                 .into_iter()
                 .map(|x| x.into())
                 .collect_vec(),
-            vectors: vec![
+            vectors: Into::<BatchVectorStruct>::into(vec![
                 vec![1.0, 0.0, 1.0, 1.0],
                 vec![1.0, 0.0, 1.0, 0.0],
                 vec![1.0, 1.0, 1.0, 1.0],
                 vec![1.0, 1.0, 0.0, 1.0],
                 vec![1.0, 0.0, 0.0, 0.0],
-            ]
+            ])
             .into(),
             payloads: None,
         }

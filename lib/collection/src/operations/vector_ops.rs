@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
+use api::rest::schema::VectorStruct;
 use schemars::JsonSchema;
-use segment::data_types::vectors::VectorStruct;
 use segment::types::{Filter, PointIdType};
 use serde::{Deserialize, Serialize};
 use validator::{Validate, ValidationError, ValidationErrors};
