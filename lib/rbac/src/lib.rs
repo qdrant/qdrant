@@ -39,6 +39,7 @@ impl JwtParser {
 
 #[cfg(test)]
 mod tests {
+    use segment::types::ValueVariants;
 
     use super::*;
 
@@ -59,6 +60,19 @@ mod tests {
         let claims = Claims {
             exp: Some(exp),
             w: Some(true),
+            collections: Some(vec!["collection".to_string()]),
+            payload: Some(
+                vec![
+                    (
+                        "field1".parse().unwrap(),
+                        ValueVariants::Keyword("value".to_string()),
+                    ),
+                    ("field2".parse().unwrap(), ValueVariants::Integer(42)),
+                    ("field2".parse().unwrap(), ValueVariants::Bool(true)),
+                ]
+                .into_iter()
+                .collect(),
+            ),
         };
         let token = create_token(&claims);
 
@@ -80,6 +94,8 @@ mod tests {
         let mut claims = Claims {
             exp: Some(exp),
             w: Some(false),
+            collections: None,
+            payload: None,
         };
 
         let token = create_token(&claims);

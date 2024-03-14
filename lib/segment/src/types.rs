@@ -2126,26 +2126,30 @@ impl Filter {
     }
 
     pub fn merge(&self, other: &Filter) -> Filter {
+        self.clone().merge_owned(other.clone())
+    }
+
+    pub fn merge_owned(self, other: Filter) -> Filter {
         let merge_component = |this, other| -> Option<Vec<Condition>> {
             match (this, other) {
                 (None, None) => None,
                 (Some(this), None) => Some(this),
                 (None, Some(other)) => Some(other),
-                (Some(mut this), Some(other)) => {
-                    this.extend(other);
+                (Some(mut this), Some(mut other)) => {
+                    this.append(&mut other);
                     Some(this)
                 }
             }
         };
         Filter {
-            should: merge_component(self.should.clone(), other.should.clone()),
+            should: merge_component(self.should, other.should),
             min_should: {
-                match (self.min_should.clone(), other.min_should.clone()) {
+                match (self.min_should, other.min_should) {
                     (None, None) => None,
                     (Some(this), None) => Some(this),
                     (None, Some(other)) => Some(other),
-                    (Some(mut this), Some(other)) => {
-                        this.conditions.extend(other.conditions);
+                    (Some(mut this), Some(mut other)) => {
+                        this.conditions.append(&mut other.conditions);
 
                         // The union of conditions should be able to have at least the bigger of the two min_counts
                         this.min_count = this.min_count.max(other.min_count);
@@ -2154,8 +2158,8 @@ impl Filter {
                     }
                 }
             },
-            must: merge_component(self.must.clone(), other.must.clone()),
-            must_not: merge_component(self.must_not.clone(), other.must_not.clone()),
+            must: merge_component(self.must, other.must),
+            must_not: merge_component(self.must_not, other.must_not),
         }
     }
 }

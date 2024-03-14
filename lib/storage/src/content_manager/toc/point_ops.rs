@@ -15,6 +15,7 @@ use rbac::jwt::Claims;
 use segment::types::{ScoredPoint, ShardKey};
 
 use super::TableOfContent;
+use crate::content_manager::claims::{check_collection_name, check_points_op};
 use crate::content_manager::errors::StorageError;
 
 impl TableOfContent {
@@ -31,13 +32,17 @@ impl TableOfContent {
     pub async fn recommend(
         &self,
         collection_name: &str,
-        request: RecommendRequestInternal,
+        mut request: RecommendRequestInternal,
         read_consistency: Option<ReadConsistency>,
         shard_selector: ShardSelectorInternal,
-        _claims: Option<Claims>,
+        claims: Option<Claims>,
         timeout: Option<Duration>,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
-        // TODO(RBAC): handle claims
+        if let Some(claims) = claims.as_ref() {
+            check_collection_name(claims, collection_name)?;
+            check_points_op(claims, &mut request)?;
+        }
+
         let collection = self.get_collection(collection_name).await?;
         recommendations::recommend_by(
             request,
@@ -64,12 +69,18 @@ impl TableOfContent {
     pub async fn recommend_batch(
         &self,
         collection_name: &str,
-        requests: Vec<(RecommendRequestInternal, ShardSelectorInternal)>,
+        mut requests: Vec<(RecommendRequestInternal, ShardSelectorInternal)>,
         read_consistency: Option<ReadConsistency>,
-        _claims: Option<Claims>,
+        claims: Option<Claims>,
         timeout: Option<Duration>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
-        // TODO(RBAC): handle claims
+        if let Some(claims) = claims.as_ref() {
+            check_collection_name(claims, collection_name)?;
+            for (request, _shard_selector) in &mut requests {
+                check_points_op(claims, request)?;
+            }
+        }
+
         let collection = self.get_collection(collection_name).await?;
         recommendations::recommend_batch_by(
             requests,
@@ -99,13 +110,19 @@ impl TableOfContent {
     pub async fn core_search_batch(
         &self,
         collection_name: &str,
-        request: CoreSearchRequestBatch,
+        mut request: CoreSearchRequestBatch,
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
-        _claims: Option<Claims>,
+        claims: Option<Claims>,
         timeout: Option<Duration>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
-        // TODO(RBAC): handle claims
+        if let Some(claims) = claims.as_ref() {
+            check_collection_name(claims, collection_name)?;
+            for req in &mut request.searches {
+                check_points_op(claims, req)?;
+            }
+        }
+
         let collection = self.get_collection(collection_name).await?;
         collection
             .core_search_batch(request, read_consistency, shard_selection, timeout)
@@ -128,12 +145,16 @@ impl TableOfContent {
     pub async fn count(
         &self,
         collection_name: &str,
-        request: CountRequestInternal,
+        mut request: CountRequestInternal,
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
-        _claims: Option<Claims>,
+        claims: Option<Claims>,
     ) -> Result<CountResult, StorageError> {
-        // TODO(RBAC): handle claims
+        if let Some(claims) = claims.as_ref() {
+            check_collection_name(claims, collection_name)?;
+            check_points_op(claims, &mut request)?;
+        }
+
         let collection = self.get_collection(collection_name).await?;
         collection
             .count(request, read_consistency, &shard_selection)
@@ -155,12 +176,16 @@ impl TableOfContent {
     pub async fn retrieve(
         &self,
         collection_name: &str,
-        request: PointRequestInternal,
+        mut request: PointRequestInternal,
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
-        _claims: Option<Claims>,
+        claims: Option<Claims>,
     ) -> Result<Vec<Record>, StorageError> {
-        // TODO(RBAC): handle claims
+        if let Some(claims) = claims.as_ref() {
+            check_collection_name(claims, collection_name)?;
+            check_points_op(claims, &mut request)?;
+        }
+
         let collection = self.get_collection(collection_name).await?;
         collection
             .retrieve(request, read_consistency, &shard_selection)
@@ -171,13 +196,17 @@ impl TableOfContent {
     pub async fn group(
         &self,
         collection_name: &str,
-        request: GroupRequest,
+        mut request: GroupRequest,
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
-        _claims: Option<Claims>,
+        claims: Option<Claims>,
         timeout: Option<Duration>,
     ) -> Result<GroupsResult, StorageError> {
-        // TODO(RBAC): handle claims
+        if let Some(claims) = claims.as_ref() {
+            check_collection_name(claims, collection_name)?;
+            check_points_op(claims, &mut request)?;
+        }
+
         let collection = self.get_collection(collection_name).await?;
 
         let collection_by_name = |name| self.get_collection_opt(name);
@@ -197,13 +226,17 @@ impl TableOfContent {
     pub async fn discover(
         &self,
         collection_name: &str,
-        request: DiscoverRequestInternal,
+        mut request: DiscoverRequestInternal,
         read_consistency: Option<ReadConsistency>,
         shard_selector: ShardSelectorInternal,
-        _claims: Option<Claims>,
+        claims: Option<Claims>,
         timeout: Option<Duration>,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
-        // TODO(RBAC): handle claims
+        if let Some(claims) = claims.as_ref() {
+            check_collection_name(claims, collection_name)?;
+            check_points_op(claims, &mut request)?;
+        }
+
         let collection = self.get_collection(collection_name).await?;
         discovery::discover(
             request,
@@ -253,12 +286,16 @@ impl TableOfContent {
     pub async fn scroll(
         &self,
         collection_name: &str,
-        request: ScrollRequestInternal,
+        mut request: ScrollRequestInternal,
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
-        _claims: Option<Claims>,
+        claims: Option<Claims>,
     ) -> Result<ScrollResult, StorageError> {
-        // TODO(RBAC): handle claims
+        if let Some(claims) = claims.as_ref() {
+            check_collection_name(claims, collection_name)?;
+            check_points_op(claims, &mut request)?;
+        }
+
         let collection = self.get_collection(collection_name).await?;
         collection
             .scroll_by(request, read_consistency, &shard_selection)
@@ -303,13 +340,16 @@ impl TableOfContent {
     pub async fn update(
         &self,
         collection_name: &str,
-        operation: OperationWithClockTag,
+        mut operation: OperationWithClockTag,
         wait: bool,
         ordering: WriteOrdering,
         shard_selector: ShardSelectorInternal,
-        _claims: Option<Claims>,
+        claims: Option<Claims>,
     ) -> Result<UpdateResult, StorageError> {
-        // TODO(RBAC): handle claims
+        if let Some(claims) = claims.as_ref() {
+            check_collection_name(claims, collection_name)?;
+            check_points_op(claims, &mut operation.operation)?;
+        }
 
         // `TableOfContent::_update_shard_keys` and `Collection::update_from_*` are cancel safe,
         // so this method is cancel safe.
