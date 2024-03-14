@@ -1,12 +1,12 @@
+use std::convert::Infallible;
 use std::future::{ready, Ready};
 
 use actix_web::body::{BoxBody, EitherBody};
 use actix_web::dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform};
-use actix_web::http::header::Header;
 use actix_web::http::Method;
-use actix_web::{Error, HttpResponse};
-use actix_web_httpauth::headers::authorization::{Authorization, Bearer};
+use actix_web::{Error, FromRequest, HttpMessage as _, HttpResponse};
 use futures_util::future::LocalBoxFuture;
+use rbac::jwt::Claims;
 
 use crate::common::auth::AuthKeys;
 
@@ -25,13 +25,13 @@ const READ_ONLY_POST_PATTERNS: [&str; 11] = [
     "/collections/{name}/points/search/groups",
 ];
 
-pub struct ApiKey {
-    auth_keys: Option<AuthKeys>,
+pub struct Auth {
+    auth_keys: AuthKeys,
     whitelist: Vec<WhitelistItem>,
 }
 
-impl ApiKey {
-    pub fn new(auth_keys: Option<AuthKeys>, whitelist: Vec<WhitelistItem>) -> Self {
+impl Auth {
+    pub fn new(auth_keys: AuthKeys, whitelist: Vec<WhitelistItem>) -> Self {
         Self {
             auth_keys,
             whitelist,
@@ -39,7 +39,7 @@ impl ApiKey {
     }
 }
 
-impl<S, B> Transform<S, ServiceRequest> for ApiKey
+impl<S, B> Transform<S, ServiceRequest> for Auth
 where
     S: Service<ServiceRequest, Response = ServiceResponse<EitherBody<B, BoxBody>>, Error = Error>,
     S::Future: 'static,
@@ -48,11 +48,11 @@ where
     type Response = ServiceResponse<EitherBody<B, BoxBody>>;
     type Error = Error;
     type InitError = ();
-    type Transform = ApiKeyMiddleware<S>;
+    type Transform = AuthMiddleware<S>;
     type Future = Ready<Result<Self::Transform, Self::InitError>>;
 
     fn new_transform(&self, service: S) -> Self::Future {
-        ready(Ok(ApiKeyMiddleware {
+        ready(Ok(AuthMiddleware {
             auth_keys: self.auth_keys.clone(),
             whitelist: self.whitelist.clone(),
             service,
@@ -94,20 +94,20 @@ impl PathMode {
     }
 }
 
-pub struct ApiKeyMiddleware<S> {
-    auth_keys: Option<AuthKeys>,
+pub struct AuthMiddleware<S> {
+    auth_keys: AuthKeys,
     /// List of items whitelisted from authentication.
     whitelist: Vec<WhitelistItem>,
     service: S,
 }
 
-impl<S> ApiKeyMiddleware<S> {
+impl<S> AuthMiddleware<S> {
     pub fn is_path_whitelisted(&self, path: &str) -> bool {
         self.whitelist.iter().any(|item| item.matches(path))
     }
 }
 
-impl<S, B> Service<ServiceRequest> for ApiKeyMiddleware<S>
+impl<S, B> Service<ServiceRequest> for AuthMiddleware<S>
 where
     S: Service<ServiceRequest, Response = ServiceResponse<EitherBody<B, BoxBody>>, Error = Error>,
     S::Future: 'static,
@@ -126,33 +126,40 @@ where
             return Box::pin(self.service.call(req));
         }
 
-        // Grab API key from request
-        let key =
-            // Request header
-            req.headers().get("api-key").and_then(|key| key.to_str().ok()).map(|key| key.to_string())
-                // Fall back to authentication header with bearer token
-                .or_else(|| {
-                    Authorization::<Bearer>::parse(&req).ok().map(|auth| auth.as_ref().token().into())
-                });
-
-        if let Some(key) = key {
-            let is_allowed = if let Some(ref auth_keys) = self.auth_keys {
-                auth_keys.can_write(&key) || (is_read_only(&req) && auth_keys.can_read(&key))
-            } else {
-                // This code path should not be reached
-                log::warn!("Auth for REST API is set up incorrectly. Denying access by default.");
-                false
-            };
-            if is_allowed {
-                return Box::pin(self.service.call(req));
+        match self.auth_keys.validate_request(
+            |key| req.headers().get(key).and_then(|val| val.to_str().ok()),
+            is_read_only(&req),
+        ) {
+            Ok(claims) => {
+                if let Some(claims) = claims {
+                    let _previous = req.extensions_mut().insert::<Claims>(claims);
+                    debug_assert!(
+                        _previous.is_none(),
+                        "Previous claims should not exist in the request"
+                    );
+                }
+                Box::pin(self.service.call(req))
             }
+            Err(e) => Box::pin(async move {
+                Ok(req
+                    .into_response(HttpResponse::Forbidden().body(e))
+                    .map_into_right_body())
+            }),
         }
+    }
+}
 
-        Box::pin(async {
-            Ok(req
-                .into_response(HttpResponse::Forbidden().body("Invalid api-key"))
-                .map_into_right_body())
-        })
+pub struct ActixClaims(pub Option<Claims>);
+
+impl FromRequest for ActixClaims {
+    type Error = Infallible;
+    type Future = Ready<Result<Self, Self::Error>>;
+
+    fn from_request(
+        req: &actix_web::HttpRequest,
+        _payload: &mut actix_web::dev::Payload,
+    ) -> Self::Future {
+        ready(Ok(ActixClaims(req.extensions_mut().remove::<Claims>())))
     }
 }
 

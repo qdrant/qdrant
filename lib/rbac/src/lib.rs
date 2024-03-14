@@ -4,6 +4,7 @@ use jwt::Claims;
 
 pub mod jwt;
 
+#[derive(Clone)]
 pub struct JwtParser {
     key: DecodingKey,
     validation: Validation,
