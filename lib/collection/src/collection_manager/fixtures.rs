@@ -248,6 +248,7 @@ pub(crate) fn get_indexing_optimizer(
     dim: usize,
 ) -> IndexingOptimizer {
     IndexingOptimizer::new(
+        2,
         OptimizerThresholds {
             max_segment_size: 100_000,
             memmap_threshold: 100,

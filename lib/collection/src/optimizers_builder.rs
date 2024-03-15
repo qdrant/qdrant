@@ -166,6 +166,7 @@ pub fn build_optimizers(
             quantization_config.clone(),
         )),
         Arc::new(IndexingOptimizer::new(
+            optimizers_config.get_number_segments(),
             threshold_config.clone(),
             segments_path.clone(),
             temp_segments_path.clone(),
