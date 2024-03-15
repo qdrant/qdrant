@@ -22,7 +22,7 @@ const BYTES_IN_KB: usize = 1024;
 /// Merging 3 segments instead of 2 guarantees that after the optimization the number of segments
 /// will be less than before.
 pub struct MergeOptimizer {
-    max_segments: usize,
+    default_segments_number: usize,
     thresholds_config: OptimizerThresholds,
     segments_path: PathBuf,
     collection_temp_dir: PathBuf,
@@ -35,7 +35,7 @@ pub struct MergeOptimizer {
 impl MergeOptimizer {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        max_segments: usize,
+        default_segments_number: usize,
         thresholds_config: OptimizerThresholds,
         segments_path: PathBuf,
         collection_temp_dir: PathBuf,
@@ -44,7 +44,7 @@ impl MergeOptimizer {
         quantization_config: Option<QuantizationConfig>,
     ) -> Self {
         MergeOptimizer {
-            max_segments,
+            default_segments_number,
             thresholds_config,
             segments_path,
             collection_temp_dir,
@@ -99,10 +99,10 @@ impl SegmentOptimizer for MergeOptimizer {
             })
             .collect_vec();
 
-        if raw_segments.len() <= self.max_segments {
+        if raw_segments.len() <= self.default_segments_number {
             return vec![];
         }
-        let max_candidates = raw_segments.len() - self.max_segments + 2;
+        let max_candidates = raw_segments.len() - self.default_segments_number + 2;
 
         // Find at least top-3 smallest segments to join.
         // We need 3 segments because in this case we can guarantee that total segments number will be less
@@ -185,7 +185,7 @@ mod tests {
 
         let locked_holder = Arc::new(RwLock::new(holder));
 
-        merge_optimizer.max_segments = 1;
+        merge_optimizer.default_segments_number = 1;
 
         merge_optimizer.thresholds_config.max_segment_size = 100;
 

@@ -21,6 +21,7 @@ const BYTES_IN_KB: usize = 1024;
 /// The process of index creation is slow and CPU-bounded, so it is convenient to perform
 /// index building in a same way as segment re-creation.
 pub struct IndexingOptimizer {
+    default_segments_number: usize,
     thresholds_config: OptimizerThresholds,
     segments_path: PathBuf,
     collection_temp_dir: PathBuf,
@@ -32,6 +33,7 @@ pub struct IndexingOptimizer {
 
 impl IndexingOptimizer {
     pub fn new(
+        default_segments_number: usize,
         thresholds_config: OptimizerThresholds,
         segments_path: PathBuf,
         collection_temp_dir: PathBuf,
@@ -40,6 +42,7 @@ impl IndexingOptimizer {
         quantization_config: Option<QuantizationConfig>,
     ) -> Self {
         IndexingOptimizer {
+            default_segments_number,
             thresholds_config,
             segments_path,
             collection_temp_dir,
@@ -86,7 +89,7 @@ impl IndexingOptimizer {
 
                 Some((idx, vector_size))
             })
-            .min_by_key(|(_, vector_size)| *vector_size)
+            .min_by_key(|(_, vector_size_bytes)| *vector_size_bytes)
             .map(|(idx, size)| (*idx, size))
     }
 
@@ -104,7 +107,7 @@ impl IndexingOptimizer {
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
                 let point_count = read_segment.available_point_count();
-                let max_vector_size = point_count
+                let max_vector_size_bytes = point_count
                     * read_segment
                         .vector_dims()
                         .values()
@@ -119,11 +122,11 @@ impl IndexingOptimizer {
                     return None; // Never optimize already optimized segment
                 }
 
-                let indexing_threshold_kb = self
+                let indexing_threshold_bytes = self
                     .thresholds_config
                     .indexing_threshold
                     .saturating_mul(BYTES_IN_KB);
-                let mmap_threshold_kb = self
+                let mmap_threshold_bytes = self
                     .thresholds_config
                     .memmap_threshold
                     .saturating_mul(BYTES_IN_KB);
@@ -133,10 +136,11 @@ impl IndexingOptimizer {
                     if let Some(vector_data) = segment_config.vector_data.get(vector_name) {
                         let is_indexed = vector_data.index.is_indexed();
                         let is_on_disk = vector_data.storage_type.is_on_disk();
-                        let storage_size = point_count * vector_data.size * VECTOR_ELEMENT_SIZE;
+                        let storage_size_bytes =
+                            point_count * vector_data.size * VECTOR_ELEMENT_SIZE;
 
-                        let is_big_for_index = storage_size >= indexing_threshold_kb;
-                        let is_big_for_mmap = storage_size >= mmap_threshold_kb;
+                        let is_big_for_index = storage_size_bytes >= indexing_threshold_bytes;
+                        let is_big_for_mmap = storage_size_bytes >= mmap_threshold_bytes;
 
                         let optimize_for_index = is_big_for_index && !is_indexed;
                         let optimize_for_mmap = if let Some(on_disk_config) = vector_config.on_disk
@@ -168,8 +172,8 @@ impl IndexingOptimizer {
 
                                 let storage_size = point_count * vector_dim * VECTOR_ELEMENT_SIZE;
 
-                                let is_big_for_index = storage_size >= indexing_threshold_kb;
-                                let is_big_for_mmap = storage_size >= mmap_threshold_kb;
+                                let is_big_for_index = storage_size >= indexing_threshold_bytes;
+                                let is_big_for_mmap = storage_size >= mmap_threshold_bytes;
 
                                 let is_big = is_big_for_index || is_big_for_mmap;
 
@@ -182,27 +186,36 @@ impl IndexingOptimizer {
                     }
                 }
 
-                require_optimization.then_some((*idx, max_vector_size))
+                require_optimization.then_some((*idx, max_vector_size_bytes))
             })
             .collect();
 
         // Select the largest unindexed segment, return if none
         let selected_segment = candidates
             .iter()
-            .max_by_key(|(_, vector_size)| *vector_size);
+            .max_by_key(|(_, vector_size_bytes)| *vector_size_bytes);
         if selected_segment.is_none() {
             return vec![];
         }
         let (selected_segment_id, selected_segment_size) = *selected_segment.unwrap();
 
+        let number_of_segments = segments_read_guard.len();
+
+        // If the number of segments if equal or bigger than the default_segments_number
+        // We want to make sure that we at least do not increase number of segments after optimization, thus we take more than one segment to optimize
+
+        if number_of_segments < self.default_segments_number {
+            return vec![selected_segment_id];
+        }
+
         // It is better for scheduling if indexing optimizer optimizes 2 segments.
         // Because result of the optimization is usually 2 segment - it should preserve
         // overall count of segments.
 
-        // Find smallest unindexed to check if we can index together
+        // Find the smallest unindexed to check if we can index together
         let smallest_unindexed = candidates
             .iter()
-            .min_by_key(|(_, vector_size)| *vector_size);
+            .min_by_key(|(_, vector_size_bytes)| *vector_size_bytes);
         if let Some((idx, size)) = smallest_unindexed {
             if *idx != selected_segment_id
                 && selected_segment_size + size
@@ -352,6 +365,7 @@ mod tests {
             .collect();
 
         let mut index_optimizer = IndexingOptimizer::new(
+            2,
             OptimizerThresholds {
                 max_segment_size: 300,
                 memmap_threshold: 1000,
@@ -452,6 +466,7 @@ mod tests {
         let large_segment_id = holder.add(large_segment);
 
         let mut index_optimizer = IndexingOptimizer::new(
+            2,
             OptimizerThresholds {
                 max_segment_size: 300,
                 memmap_threshold: 1000,
@@ -712,6 +727,101 @@ mod tests {
         .unwrap();
     }
 
+    /// Test that indexing optimizer maintain expected number of during the optimization duty
+    #[test]
+    fn test_indexing_optimizer_with_number_of_segments() {
+        init();
+
+        let mut holder = SegmentHolder::default();
+
+        let stopped = AtomicBool::new(false);
+        let dim = 256;
+
+        let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
+        let segments_temp_dir = Builder::new()
+            .prefix("segments_temp_dir")
+            .tempdir()
+            .unwrap();
+        let mut opnum = 101..1000000;
+
+        let segments = vec![
+            random_segment(segments_dir.path(), opnum.next().unwrap(), 100, dim),
+            random_segment(segments_dir.path(), opnum.next().unwrap(), 100, dim),
+            random_segment(segments_dir.path(), opnum.next().unwrap(), 100, dim),
+            random_segment(segments_dir.path(), opnum.next().unwrap(), 100, dim),
+        ];
+
+        let number_of_segments = segments.len();
+        let segment_config = segments[0].segment_config.clone();
+
+        let _segment_ids: Vec<SegmentId> = segments
+            .into_iter()
+            .map(|segment| holder.add(segment))
+            .collect();
+
+        let locked_holder: Arc<RwLock<_, _>> = Arc::new(RwLock::new(holder));
+
+        let index_optimizer = IndexingOptimizer::new(
+            number_of_segments, // Keep the same number of segments
+            OptimizerThresholds {
+                max_segment_size: 1000,
+                memmap_threshold: 1000,
+                indexing_threshold: 10, // Always optimize
+            },
+            segments_dir.path().to_owned(),
+            segments_temp_dir.path().to_owned(),
+            CollectionParams {
+                vectors: VectorsConfig::Single(VectorParams {
+                    size: NonZeroU64::new(
+                        segment_config.vector_data[DEFAULT_VECTOR_NAME].size as u64,
+                    )
+                    .unwrap(),
+                    distance: segment_config.vector_data[DEFAULT_VECTOR_NAME].distance,
+                    hnsw_config: None,
+                    quantization_config: None,
+                    on_disk: None,
+                }),
+                ..CollectionParams::empty()
+            },
+            Default::default(),
+            Default::default(),
+        );
+
+        let permit_cpu_count = num_rayon_threads(0);
+
+        // Index until all segments are indexed
+        let mut numer_of_optimizations = 0;
+        loop {
+            let suggested_to_optimize =
+                index_optimizer.check_condition(locked_holder.clone(), &Default::default());
+            if suggested_to_optimize.is_empty() {
+                break;
+            }
+            log::debug!("suggested_to_optimize = {:#?}", suggested_to_optimize);
+
+            let permit = CpuPermit::dummy(permit_cpu_count as u32);
+            index_optimizer
+                .optimize(
+                    locked_holder.clone(),
+                    suggested_to_optimize,
+                    permit,
+                    &stopped,
+                )
+                .unwrap();
+            numer_of_optimizations += 1;
+            assert!(numer_of_optimizations <= number_of_segments);
+            let number_of_segments = locked_holder.read().len();
+            log::debug!(
+                "numer_of_optimizations = {}, number_of_segments = {}",
+                numer_of_optimizations,
+                number_of_segments
+            );
+        }
+
+        // Ensure that the total number of segments did not change
+        assert_eq!(locked_holder.read().len(), number_of_segments);
+    }
+
     /// This tests things are as we expect when we define both `on_disk: false` and `memmap_threshold`
     ///
     /// Before this PR (<https://github.com/qdrant/qdrant/pull/3167>) such configuration would create an infinite optimization loop.
@@ -771,6 +881,7 @@ mod tests {
         {
             // Optimizers used in test
             let index_optimizer = IndexingOptimizer::new(
+                2,
                 thresholds_config.clone(),
                 dir.path().to_owned(),
                 temp_dir.path().to_owned(),
@@ -832,6 +943,7 @@ mod tests {
 
         // Optimizers used in test
         let index_optimizer = IndexingOptimizer::new(
+            2,
             thresholds_config.clone(),
             dir.path().to_owned(),
             temp_dir.path().to_owned(),
