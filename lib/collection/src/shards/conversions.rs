@@ -144,7 +144,7 @@ pub fn internal_update_vectors(
                 .into_iter()
                 .map(|point| PointVectors {
                     id: Some(point.id.into()),
-                    vectors: Some(Into::<VectorStruct>::into(point.vector).into()),
+                    vectors: Some(VectorStruct::from(point.vector).into()),
                 })
                 .collect(),
             ordering: ordering.map(write_ordering_to_proto),

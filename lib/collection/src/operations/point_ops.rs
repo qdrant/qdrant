@@ -513,7 +513,7 @@ mod tests {
     fn validate_batch() {
         let batch: PointInsertOperationsInternal = Batch {
             ids: vec![PointIdType::NumId(0)],
-            vectors: Into::<BatchVectorStruct>::into(vec![]).into(),
+            vectors: BatchVectorStruct::from(vec![]).into(),
             payloads: None,
         }
         .into();
@@ -521,7 +521,7 @@ mod tests {
 
         let batch: PointInsertOperationsInternal = Batch {
             ids: vec![PointIdType::NumId(0)],
-            vectors: Into::<BatchVectorStruct>::into(vec![vec![0.1]]).into(),
+            vectors: BatchVectorStruct::from(vec![vec![0.1]]).into(),
             payloads: None,
         }
         .into();
@@ -529,7 +529,7 @@ mod tests {
 
         let batch: PointInsertOperationsInternal = Batch {
             ids: vec![PointIdType::NumId(0)],
-            vectors: Into::<BatchVectorStruct>::into(vec![vec![0.1]]).into(),
+            vectors: BatchVectorStruct::from(vec![vec![0.1]]).into(),
             payloads: Some(vec![]),
         }
         .into();

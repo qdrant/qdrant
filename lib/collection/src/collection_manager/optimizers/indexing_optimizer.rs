@@ -615,7 +615,7 @@ mod tests {
         let point_payload: Payload = json!({"number":10000i64}).into();
         let insert_point_ops: PointOperations = Batch {
             ids: vec![501.into(), 502.into(), 503.into()],
-            vectors: Into::<BatchVectorStruct>::into(vec![
+            vectors: BatchVectorStruct::from(vec![
                 random_vector(&mut rng, dim),
                 random_vector(&mut rng, dim),
                 random_vector(&mut rng, dim),
@@ -694,7 +694,7 @@ mod tests {
 
         let insert_point_ops: PointOperations = Batch {
             ids: vec![601.into(), 602.into(), 603.into()],
-            vectors: Into::<BatchVectorStruct>::into(vec![
+            vectors: BatchVectorStruct::from(vec![
                 random_vector(&mut rng, dim),
                 random_vector(&mut rng, dim),
                 random_vector(&mut rng, dim),

@@ -101,7 +101,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
 
         points.push(PointStruct {
             id: i.into(),
-            vector: Into::<VectorStruct>::into(vectors).into(),
+            vector: VectorStruct::from(vectors).into(),
             payload: Some(serde_json::from_str(r#"{"number": "John Doe"}"#).unwrap()),
         });
     }

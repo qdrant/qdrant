@@ -285,7 +285,7 @@ mod tests {
         CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
             PointInsertOperationsInternal::PointsList(vec![PointStruct {
                 id: id.into(),
-                vector: Into::<VectorStruct>::into(vec![1.0, 2.0, 3.0]).into(),
+                vector: VectorStruct::from(vec![1.0, 2.0, 3.0]).into(),
                 payload: None,
             }]),
         ))
@@ -1147,7 +1147,7 @@ mod tests {
                     CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
                         PointInsertOperationsInternal::PointsList(vec![PointStruct {
                             id: point_id_source.next().unwrap().into(),
-                            vector: Into::<VectorStruct>::into(
+                            vector: VectorStruct::from(
                                 std::iter::repeat_with(|| rng.gen::<f32>())
                                     .take(3)
                                     .collect::<Vec<_>>(),
@@ -1193,7 +1193,7 @@ mod tests {
                     CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
                         PointInsertOperationsInternal::PointsList(vec![PointStruct {
                             id: point_id_source.next().unwrap().into(),
-                            vector: Into::<VectorStruct>::into(
+                            vector: VectorStruct::from(
                                 std::iter::repeat_with(|| rng.gen::<f32>())
                                     .take(3)
                                     .collect::<Vec<_>>(),

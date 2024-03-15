@@ -36,7 +36,7 @@ fn create_rnd_batch() -> CollectionUpdateOperations {
         let vectors = only_default_vector(&vector);
         let point = PointStruct {
             id: (i as u64).into(),
-            vector: Into::<VectorStruct>::into(vectors).into(),
+            vector: VectorStruct::from(vectors).into(),
             payload: Some(Payload(payload_map)),
         };
         points.push(point);

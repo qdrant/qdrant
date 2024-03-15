@@ -34,7 +34,7 @@ async fn test_collection_reloading_with_shards(shard_number: u32) {
         let insert_points = CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsBatch(Batch {
                 ids: vec![0, 1].into_iter().map(|x| x.into()).collect_vec(),
-                vectors: Into::<BatchVectorStruct>::into(vec![
+                vectors: BatchVectorStruct::from(vec![
                     vec![1.0, 0.0, 1.0, 1.0],
                     vec![1.0, 0.0, 1.0, 0.0],
                 ])
@@ -78,7 +78,7 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
         let insert_points = CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsBatch(Batch {
                 ids: vec![0, 1].into_iter().map(|x| x.into()).collect_vec(),
-                vectors: Into::<BatchVectorStruct>::into(vec![
+                vectors: BatchVectorStruct::from(vec![
                     vec![1.0, 0.0, 1.0, 1.0],
                     vec![1.0, 0.0, 1.0, 0.0],
                 ])
@@ -153,7 +153,7 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
         let insert_points = CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsBatch(Batch {
                 ids: vec![0.into(), 1.into()],
-                vectors: Into::<BatchVectorStruct>::into(vec![
+                vectors: BatchVectorStruct::from(vec![
                     vec![1.0, 0.0, 1.0, 1.0],
                     vec![1.0, 0.0, 1.0, 0.0],
                 ])

@@ -40,7 +40,7 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
                 .into_iter()
                 .map(|x| x.into())
                 .collect_vec(),
-            vectors: Into::<BatchVectorStruct>::into(vec![
+            vectors: BatchVectorStruct::from(vec![
                 vec![1.0, 0.0, 1.0, 1.0],
                 vec![1.0, 0.0, 1.0, 0.0],
                 vec![1.0, 1.0, 1.0, 1.0],
@@ -108,7 +108,7 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
     let insert_points = CollectionUpdateOperations::PointOperation(
         Batch {
             ids: vec![0.into(), 1.into()],
-            vectors: Into::<BatchVectorStruct>::into(vec![
+            vectors: BatchVectorStruct::from(vec![
                 vec![1.0, 0.0, 1.0, 1.0],
                 vec![1.0, 0.0, 1.0, 0.0],
             ])
@@ -201,7 +201,7 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
                     .into_iter()
                     .map(|x| x.into())
                     .collect_vec(),
-                vectors: Into::<BatchVectorStruct>::into(vec![
+                vectors: BatchVectorStruct::from(vec![
                     vec![1.0, 0.0, 1.0, 1.0],
                     vec![1.0, 0.0, 1.0, 0.0],
                     vec![1.0, 1.0, 1.0, 1.0],
@@ -269,7 +269,7 @@ fn test_deserialization() {
     let insert_points = CollectionUpdateOperations::PointOperation(
         Batch {
             ids: vec![0.into(), 1.into()],
-            vectors: Into::<BatchVectorStruct>::into(vec![
+            vectors: BatchVectorStruct::from(vec![
                 vec![1.0, 0.0, 1.0, 1.0],
                 vec![1.0, 0.0, 1.0, 0.0],
             ])
@@ -293,12 +293,12 @@ fn test_deserialization2() {
         vec![
             PointStruct {
                 id: 0.into(),
-                vector: Into::<VectorStruct>::into(vec![1.0, 0.0, 1.0, 1.0]).into(),
+                vector: VectorStruct::from(vec![1.0, 0.0, 1.0, 1.0]).into(),
                 payload: None,
             },
             PointStruct {
                 id: 1.into(),
-                vector: Into::<VectorStruct>::into(vec![1.0, 0.0, 1.0, 0.0]).into(),
+                vector: VectorStruct::from(vec![1.0, 0.0, 1.0, 0.0]).into(),
                 payload: None,
             },
         ]
@@ -331,7 +331,7 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
                 .into_iter()
                 .map(|x| x.into())
                 .collect_vec(),
-            vectors: Into::<BatchVectorStruct>::into(vec![
+            vectors: BatchVectorStruct::from(vec![
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![1.0, 0.0, 0.0, 0.0],
                 vec![1.0, 0.0, 0.0, 0.0],
@@ -389,7 +389,7 @@ async fn test_read_api_with_shards(shard_number: u32) {
                 .into_iter()
                 .map(|x| x.into())
                 .collect_vec(),
-            vectors: Into::<BatchVectorStruct>::into(vec![
+            vectors: BatchVectorStruct::from(vec![
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![1.0, 0.0, 0.0, 0.0],
                 vec![1.0, 0.0, 0.0, 0.0],
@@ -479,7 +479,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
                 .into_iter()
                 .map(|x| x.into())
                 .collect_vec(),
-            vectors: Into::<BatchVectorStruct>::into(vec![
+            vectors: BatchVectorStruct::from(vec![
                 vec![0.0, 0.0, 1.0, 1.0],
                 vec![1.0, 0.0, 0.0, 0.0],
                 vec![1.0, 0.0, 0.0, 0.0],
@@ -731,7 +731,7 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
                 .into_iter()
                 .map(|x| x.into())
                 .collect_vec(),
-            vectors: Into::<BatchVectorStruct>::into(vec![
+            vectors: BatchVectorStruct::from(vec![
                 vec![1.0, 0.0, 1.0, 1.0],
                 vec![1.0, 0.0, 1.0, 0.0],
                 vec![1.0, 1.0, 1.0, 1.0],

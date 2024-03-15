@@ -457,7 +457,7 @@ pub(crate) fn process_point_operation(
                         None => vectors_iter
                             .map(|(id, vectors)| PointStruct {
                                 id,
-                                vector: Into::<VectorStruct>::into(vectors).into(),
+                                vector: VectorStruct::from(vectors).into(),
                                 payload: None,
                             })
                             .collect(),
@@ -465,7 +465,7 @@ pub(crate) fn process_point_operation(
                             .zip(payloads)
                             .map(|((id, vectors), payload)| PointStruct {
                                 id,
-                                vector: Into::<VectorStruct>::into(vectors).into(),
+                                vector: VectorStruct::from(vectors).into(),
                                 payload,
                             })
                             .collect(),

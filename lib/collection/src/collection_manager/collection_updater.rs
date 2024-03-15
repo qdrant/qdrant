@@ -97,27 +97,27 @@ mod tests {
         let points = vec![
             PointStruct {
                 id: 11.into(),
-                vector: Into::<VectorStruct>::into(vec11).into(),
+                vector: VectorStruct::from(vec11).into(),
                 payload: None,
             },
             PointStruct {
                 id: 12.into(),
-                vector: Into::<VectorStruct>::into(vec12).into(),
+                vector: VectorStruct::from(vec12).into(),
                 payload: None,
             },
             PointStruct {
                 id: 13.into(),
-                vector: Into::<VectorStruct>::into(vec13).into(),
+                vector: VectorStruct::from(vec13).into(),
                 payload: Some(json!({ "color": "red" }).into()),
             },
             PointStruct {
                 id: 14.into(),
-                vector: Into::<VectorStruct>::into(vec![0., 0., 0., 0.]).into(),
+                vector: VectorStruct::from(vec![0., 0., 0., 0.]).into(),
                 payload: None,
             },
             PointStruct {
                 id: 500.into(),
-                vector: Into::<VectorStruct>::into(vec![2., 0., 2., 0.]).into(),
+                vector: VectorStruct::from(vec![2., 0., 2., 0.]).into(),
                 payload: None,
             },
         ];
@@ -139,12 +139,12 @@ mod tests {
         let points = vec![
             PointStruct {
                 id: 1.into(),
-                vector: Into::<VectorStruct>::into(vec![2., 2., 2., 2.]).into(),
+                vector: VectorStruct::from(vec![2., 2., 2., 2.]).into(),
                 payload: None,
             },
             PointStruct {
                 id: 500.into(),
-                vector: Into::<VectorStruct>::into(vec![2., 0., 2., 0.]).into(),
+                vector: VectorStruct::from(vec![2., 0., 2., 0.]).into(),
                 payload: None,
             },
         ];

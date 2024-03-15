@@ -100,7 +100,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
     for i in 0..100 {
         points.push(PointStruct {
             id: i.into(),
-            vector: Into::<VectorStruct>::into(vec![i as f32, 0.0, 0.0, 0.0]).into(),
+            vector: VectorStruct::from(vec![i as f32, 0.0, 0.0, 0.0]).into(),
             payload: Some(serde_json::from_str(r#"{"number": "John Doe"}"#).unwrap()),
         });
     }

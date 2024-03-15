@@ -56,7 +56,7 @@ mod group_by {
         let insert_points = CollectionUpdateOperations::PointOperation(
             Batch {
                 ids: (0..docs * chunks).map(|x| x.into()).collect_vec(),
-                vectors: Into::<BatchVectorStruct>::into(
+                vectors: BatchVectorStruct::from(
                     (0..docs * chunks)
                         .map(|_| rand_dense_vector(&mut rng, 4))
                         .collect_vec(),
@@ -475,7 +475,7 @@ mod group_by_builder {
             let insert_points = CollectionUpdateOperations::PointOperation(
                 Batch {
                     ids: (0..docs * chunks_per_doc).map(|x| x.into()).collect_vec(),
-                    vectors: Into::<BatchVectorStruct>::into(
+                    vectors: BatchVectorStruct::from(
                         (0..docs * chunks_per_doc)
                             .map(|_| rand_dense_vector(&mut rng, 4))
                             .collect_vec(),
@@ -508,7 +508,7 @@ mod group_by_builder {
             let insert_points = CollectionUpdateOperations::PointOperation(
                 Batch {
                     ids: (0..docs).map(|x| x.into()).collect_vec(),
-                    vectors: Into::<BatchVectorStruct>::into(
+                    vectors: BatchVectorStruct::from(
                         (0..docs)
                             .map(|_| rand_dense_vector(&mut rng, 4))
                             .collect_vec(),

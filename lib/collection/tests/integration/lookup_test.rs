@@ -58,7 +58,7 @@ async fn setup() -> Resources {
     let upsert_points = collection::operations::CollectionUpdateOperations::PointOperation(
         Batch {
             ids,
-            vectors: Into::<BatchVectorStruct>::into(vectors).into(),
+            vectors: BatchVectorStruct::from(vectors).into(),
             payloads: Some(payloads),
         }
         .into(),
