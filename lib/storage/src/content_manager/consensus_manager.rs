@@ -98,7 +98,7 @@ pub struct ConsensusManager<C: CollectionContainer> {
     /// Consensus thread errors, changed by the consensus thread
     message_send_failures: RwLock<HashMap<String, MessageSendErrors>>,
     /// Last time we attempted to update the peer metadata
-    last_peer_metadata_update: Mutex<Option<Instant>>,
+    next_peer_metadata_update_attempt: Mutex<Instant>,
 }
 
 impl<C: CollectionContainer> ConsensusManager<C> {
@@ -121,7 +121,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 last_update: Utc::now(),
             }),
             message_send_failures: Default::default(),
-            last_peer_metadata_update: Default::default(),
+            next_peer_metadata_update_attempt: Mutex::new(Instant::now()),
         }
     }
 
@@ -732,9 +732,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     /// It rate limits updating to `CONSENSUS_PEER_METADATA_UPDATE_INTERVAL`.
     fn try_update_peer_metadata(&self) -> Result<(), StorageError> {
         // Throttle updates to prevent spamming consensus
-        if self.last_peer_metadata_update.lock().map_or(false, |last| {
-            last.elapsed() < CONSENSUS_PEER_METADATA_UPDATE_INTERVAL
-        }) {
+        if Instant::now() < *self.next_peer_metadata_update_attempt.lock() {
             return Ok(());
         }
 
@@ -752,9 +750,9 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         if let Err(err) = result {
             log::error!("Failed to propose consensus peer metadata update for this peer: {err}");
         }
-        self.last_peer_metadata_update
+        self.next_peer_metadata_update_attempt
             .lock()
-            .replace(Instant::now());
+            .replace(Instant::now() + CONSENSUS_PEER_METADATA_UPDATE_INTERVAL);
 
         Ok(())
     }
