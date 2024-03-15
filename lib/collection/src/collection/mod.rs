@@ -565,7 +565,7 @@ impl Collection {
 
             // Select shard transfer method, prefer user configured method or choose one now
             // If all peers are 1.8+, we try WAL delta transfer, otherwise we use the default method
-            let auto_shard_transfer_method = self
+            let shard_transfer_method = self
                 .shared_storage_config
                 .default_shard_transfer_method
                 .unwrap_or_else(|| {
@@ -587,7 +587,7 @@ impl Collection {
                     shard_id,
                     sync: true,
                     // For automatic shard transfers, always select some default method from this point on
-                    method: Some(auto_shard_transfer_method),
+                    method: Some(shard_transfer_method),
                 };
 
                 if check_transfer_conflicts_strict(&transfer, transfers.iter()).is_some() {
