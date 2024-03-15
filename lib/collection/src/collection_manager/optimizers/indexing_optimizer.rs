@@ -202,7 +202,7 @@ impl IndexingOptimizer {
         let number_of_segments = segments_read_guard.len();
 
         // If the number of segments if equal or bigger than the default_segments_number
-        // We want to make sure that we at least do not increase number of segments after optimization
+        // We want to make sure that we at least do not increase number of segments after optimization, thus we take more than one segment to optimize
 
         if number_of_segments < self.default_segments_number {
             return vec![selected_segment_id];
