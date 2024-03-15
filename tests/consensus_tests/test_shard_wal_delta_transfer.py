@@ -18,7 +18,7 @@ def update_points_in_loop(peer_url, collection_name, offset=0, throttle=False, d
         offset += limit
 
         if throttle:
-            sleep(random.uniform(0.01, 0.1))
+            sleep(random.uniform(0.4, 0.6))
         if duration is not None and (time.time() - start) > duration:
             break
 
@@ -50,8 +50,6 @@ def check_data_consistency(data):
                 print(f"Diff len between {i} and {j}: {len(diff)}")
 
             assert False, "Data on all nodes should be consistent"
-
-
 
 
 # Test a WAL delta transfer between two that have no difference.
@@ -171,13 +169,15 @@ def test_shard_wal_delta_transfer_manual_recovery(tmp_path: pathlib.Path):
     upload_process_2 = run_update_points_in_background(peer_api_uris[1], COLLECTION_NAME, init_offset=200000, throttle=True)
     upload_process_3 = run_update_points_in_background(peer_api_uris[2], COLLECTION_NAME, init_offset=300000, throttle=True)
 
-    sleep(3)
+    sleep(1)
 
     # Kill last peer
     upload_process_3.kill()
     processes.pop().kill()
 
-    sleep(5)
+    upsert_random_points(peer_api_uris[0], 100, batch_size=5)
+
+    sleep(3)
 
     # Restart the peer
     peer_api_uris[-1] = start_peer(peer_dirs[-1], "peer_2_restarted.log", bootstrap_uri, extra_env=env)
@@ -196,7 +196,7 @@ def test_shard_wal_delta_transfer_manual_recovery(tmp_path: pathlib.Path):
     assert_http_ok(r)
 
     # Assert WAL delta transfer progress, and wait for it to finish
-    wait_for_collection_shard_transfer_progress(peer_api_uris[0], COLLECTION_NAME, None, 80)
+    wait_for_collection_shard_transfer_progress(peer_api_uris[0], COLLECTION_NAME, None, 10)
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
 
     # All nodes must have one shard
@@ -260,17 +260,19 @@ def test_shard_wal_delta_transfer_manual_recovery_chain(tmp_path: pathlib.Path):
     upload_process_4 = run_update_points_in_background(peer_api_uris[3], COLLECTION_NAME, init_offset=400000, throttle=True)
     upload_process_5 = run_update_points_in_background(peer_api_uris[4], COLLECTION_NAME, init_offset=500000, throttle=True)
 
-    sleep(3)
+    sleep(1)
 
     # Kill 5th peer
     upload_process_5.kill()
     processes.pop().kill()
 
-    sleep(3)
+    sleep(1)
 
     # Kill 4th peer
     upload_process_4.kill()
     processes.pop().kill()
+
+    upsert_random_points(peer_api_uris[0], 100, batch_size=5)
 
     sleep(3)
 
@@ -293,7 +295,7 @@ def test_shard_wal_delta_transfer_manual_recovery_chain(tmp_path: pathlib.Path):
     assert_http_ok(r)
 
     # Assert WAL delta transfer progress, and wait for it to finish
-    wait_for_collection_shard_transfer_progress(peer_api_uris[0], COLLECTION_NAME, None, 80)
+    wait_for_collection_shard_transfer_progress(peer_api_uris[0], COLLECTION_NAME, None, 10)
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
 
     # Start inserting into the fourth peer again
@@ -314,7 +316,7 @@ def test_shard_wal_delta_transfer_manual_recovery_chain(tmp_path: pathlib.Path):
     assert_http_ok(r)
 
     # Assert WAL delta transfer progress, and wait for it to finish
-    wait_for_collection_shard_transfer_progress(peer_api_uris[3], COLLECTION_NAME, None, 80)
+    wait_for_collection_shard_transfer_progress(peer_api_uris[3], COLLECTION_NAME, None, 10)
     wait_for_collection_shard_transfers_count(peer_api_uris[3], COLLECTION_NAME, 0)
 
     upload_process_1.kill()
@@ -322,12 +324,12 @@ def test_shard_wal_delta_transfer_manual_recovery_chain(tmp_path: pathlib.Path):
     upload_process_3.kill()
     upload_process_4.kill()
 
+    sleep(1)
+
     # All nodes must have one shard
     for uri in peer_api_uris:
         cluster_info = get_collection_cluster_info(uri, COLLECTION_NAME)
         assert len(cluster_info['local_shards']) == 1
-
-    sleep(2)
 
     # Match all points on all nodes exactly
     data = []
