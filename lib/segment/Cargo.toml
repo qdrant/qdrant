@@ -59,7 +59,7 @@ semver = "1.0.22"
 tinyvec = { version = "1.6.0", features = ["alloc"] }
 quantization = { git = "https://github.com/qdrant/quantization.git" }
 validator = { version = "0.16", features = ["derive"] }
-chrono = { version = "0.4.34", features = ["serde"] }
+chrono = { version = "0.4.35", features = ["serde"] }
 smol_str = { version = "0.2.1", features = ["serde"] }
 fnv = { workspace = true }
 indexmap = { workspace = true }
