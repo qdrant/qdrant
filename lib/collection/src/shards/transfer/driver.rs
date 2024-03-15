@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use tokio::time::sleep;
@@ -10,7 +10,10 @@ use super::snapshot::transfer_snapshot;
 use super::stream_records::transfer_stream_records;
 use super::transfer_tasks_pool::TransferTaskProgress;
 use super::wal_delta::transfer_wal_delta;
-use super::{ShardTransfer, ShardTransferConsensus, ShardTransferMethod};
+use super::{
+    ShardTransfer, ShardTransferConsensus, ShardTransferMethod, CONSENSUS_CONFIRM_RETRIES,
+    CONSENSUS_CONFIRM_TIMEOUT,
+};
 use crate::common::stoppable_task_async::{spawn_async_cancellable, CancellableAsyncTaskHandle};
 use crate::operations::types::CollectionResult;
 use crate::shards::channel_service::ChannelService;
@@ -90,7 +93,7 @@ pub async fn transfer_shard(
         ShardTransferMethod::WalDelta => {
             let result = transfer_wal_delta(
                 transfer_config.clone(),
-                shard_holder,
+                shard_holder.clone(),
                 progress,
                 shard_id,
                 remote_shard,
@@ -106,10 +109,12 @@ pub async fn transfer_shard(
                 log::warn!("Failed to do shard diff transfer, falling back to default method {fallback_shard_transfer_method:?}: {err}");
                 let did_fall_back = transfer_shard_fallback_default(
                     transfer_config,
+                    shard_holder,
                     consensus,
                     collection_name,
                     fallback_shard_transfer_method,
-                )?;
+                )
+                .await?;
                 if did_fall_back {
                     return Ok(false);
                 } else {
@@ -125,26 +130,63 @@ pub async fn transfer_shard(
 /// While in a shard transfer, fall back to the default shard transfer method
 ///
 /// Returns true if we arranged falling back. Returns false if we could not fall back.
-pub fn transfer_shard_fallback_default(
+pub async fn transfer_shard_fallback_default(
     mut transfer_config: ShardTransfer,
+    shard_holder: Arc<LockedShardHolder>,
     consensus: &dyn ShardTransferConsensus,
     collection_name: &str,
     fallback_method: ShardTransferMethod,
 ) -> CollectionResult<bool> {
     // Do not attempt to fall back to the same method
-    if transfer_config
-        .method
-        .map_or(false, |method| method == fallback_method)
-    {
-        log::warn!("Failed shard transfer not falling back, because it would use the same transfer method: {fallback_method:?}");
+    let old_method = transfer_config.method;
+    if old_method.map_or(false, |method| method == fallback_method) {
+        log::warn!("Failed shard transfer fallback, because it would use the same transfer method: {fallback_method:?}");
         return Ok(false);
     }
 
-    // Propose to restart transfer with a different method
     transfer_config.method.replace(fallback_method);
-    consensus.restart_shard_transfer(transfer_config, collection_name.into())?;
 
-    Ok(true)
+    // Attempt to propose and confirm the fallback a few times
+    for attempt in 1..=CONSENSUS_CONFIRM_RETRIES {
+        if attempt > 1 {
+            log::warn!("Retrying shard transfer fallback to {fallback_method:?} (attempt {attempt}/{CONSENSUS_CONFIRM_RETRIES})");
+        }
+
+        // Propose to restart transfer with a different method
+        consensus.restart_shard_transfer(transfer_config.clone(), collection_name.into())?;
+
+        // Wait some time to confirm
+        let until = Instant::now() + CONSENSUS_CONFIRM_TIMEOUT;
+        while Instant::now() < until {
+            let transfer = shard_holder
+                .read()
+                .await
+                .get_transfer(&transfer_config.key());
+            match transfer {
+                // Transfer has been restarted with the new method
+                Some(transfer) if transfer.method == Some(fallback_method) => {
+                    return Ok(true);
+                }
+                // Transfer is still using the old method, we expect it to change shortly
+                Some(transfer) if transfer.method == old_method => (),
+                // Transfer has a different unexpected method, something external affected it
+                Some(_transfer) => {
+                    log::error!(
+                        "Failed to do shard transfer fallback, transfer has unexpected method"
+                    );
+                    return Ok(false);
+                }
+                // Currently no ongoing transfer, we expect it to be back shortly
+                None => (),
+            }
+
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
+
+    // We failed to arrange falling back
+    log::error!("Failed to do shard transfer fallback, cannot arrange and confirm fallback after {CONSENSUS_CONFIRM_RETRIES} attempts");
+    Ok(false)
 }
 
 /// Return local shard back from the forward proxy
