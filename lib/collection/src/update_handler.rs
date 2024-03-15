@@ -652,7 +652,7 @@ impl UpdateHandler {
 
             let ack = confirmed_version.min(keep_from.saturating_sub(1));
 
-            if let Err(err) = clocks.store_changed(&shard_path).await {
+            if let Err(err) = clocks.store_if_changed(&shard_path).await {
                 log::warn!("Failed to store clock maps to disk: {err}");
                 segments.write().report_optimizer_error(err);
             }

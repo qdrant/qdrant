@@ -43,7 +43,7 @@ impl ClockMap {
         Ok(())
     }
 
-    pub fn store_changed(&mut self, path: &Path) -> Result<()> {
+    pub fn store_if_changed(&mut self, path: &Path) -> Result<()> {
         if self.changed {
             self.store(path)?;
         }
