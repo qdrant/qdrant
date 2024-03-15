@@ -15,6 +15,9 @@ use crate::shards::shard::PeerId;
 #[serde(from = "ClockMapHelper", into = "ClockMapHelper")]
 pub struct ClockMap {
     clocks: HashMap<Key, Clock>,
+    /// Whether this clock map has changed since the last time it was persisted.
+    #[serde(skip, default)]
+    changed: bool,
 }
 
 impl ClockMap {
@@ -35,8 +38,16 @@ impl ClockMap {
         Ok(clock_map)
     }
 
-    pub fn store(&self, path: &Path) -> Result<()> {
+    pub fn store(&mut self, path: &Path) -> Result<()> {
         file_operations::atomic_save_json(path, self)?;
+        self.changed = false;
+        Ok(())
+    }
+
+    pub fn store_changed(&mut self, path: &Path) -> Result<()> {
+        if self.changed {
+            self.store(path)?;
+        }
         Ok(())
     }
 
@@ -88,6 +99,9 @@ impl ClockMap {
     /// Returns whether the clock was updated (or initialized) and the current tick.
     #[must_use = "clock update status and current tick must be used"]
     fn advance_clock_impl(&mut self, clock_tag: ClockTag) -> (bool, u64) {
+        // To keep things simple, assume we always change state here
+        self.changed = true;
+
         let key = Key::from_tag(clock_tag);
         let new_tick = clock_tag.clock_tick;
         let new_token = clock_tag.token;
@@ -376,6 +390,9 @@ impl From<ClockMapHelper> for ClockMap {
     fn from(helper: ClockMapHelper) -> Self {
         Self {
             clocks: helper.clocks.into_iter().map(Into::into).collect(),
+            // We get a new clock map with non-default state, assume changed so we store it next
+            // time
+            changed: true,
         }
     }
 }
