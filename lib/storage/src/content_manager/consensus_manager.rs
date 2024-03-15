@@ -750,9 +750,8 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         if let Err(err) = result {
             log::error!("Failed to propose consensus peer metadata update for this peer: {err}");
         }
-        self.next_peer_metadata_update_attempt
-            .lock()
-            .replace(Instant::now() + CONSENSUS_PEER_METADATA_UPDATE_INTERVAL);
+        *self.next_peer_metadata_update_attempt.lock() =
+            Instant::now() + CONSENSUS_PEER_METADATA_UPDATE_INTERVAL;
 
         Ok(())
     }
