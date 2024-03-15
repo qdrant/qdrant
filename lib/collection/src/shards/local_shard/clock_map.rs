@@ -467,7 +467,11 @@ mod test {
         input.advance_clock(ClockTag::new(2, 2, 12345));
 
         let json = serde_json::to_value(&input).unwrap();
-        let output = serde_json::from_value(json).unwrap();
+        let mut output: ClockMap = serde_json::from_value(json).unwrap();
+
+        // Propagate changed flag to allow comparison
+        // Normally we would not need to do this, but we bypass the regular load/store functions
+        output.changed = input.changed;
 
         assert_eq!(input, output);
     }
