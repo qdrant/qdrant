@@ -390,9 +390,7 @@ impl From<ClockMapHelper> for ClockMap {
     fn from(helper: ClockMapHelper) -> Self {
         Self {
             clocks: helper.clocks.into_iter().map(Into::into).collect(),
-            // We get a new clock map with non-default state, assume changed so we store it next
-            // time
-            changed: true,
+            changed: false,
         }
     }
 }
