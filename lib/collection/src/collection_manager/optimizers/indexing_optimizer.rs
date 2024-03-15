@@ -727,6 +727,101 @@ mod tests {
         .unwrap();
     }
 
+    /// Test that indexing optimizer maintain expected number of during the optimization duty
+    #[test]
+    fn test_indexing_optimizer_with_number_of_segments() {
+        init();
+
+        let mut holder = SegmentHolder::default();
+
+        let stopped = AtomicBool::new(false);
+        let dim = 256;
+
+        let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
+        let segments_temp_dir = Builder::new()
+            .prefix("segments_temp_dir")
+            .tempdir()
+            .unwrap();
+        let mut opnum = 101..1000000;
+
+        let segments = vec![
+            random_segment(segments_dir.path(), opnum.next().unwrap(), 100, dim),
+            random_segment(segments_dir.path(), opnum.next().unwrap(), 100, dim),
+            random_segment(segments_dir.path(), opnum.next().unwrap(), 100, dim),
+            random_segment(segments_dir.path(), opnum.next().unwrap(), 100, dim),
+        ];
+
+        let number_of_segments = segments.len();
+        let segment_config = segments[0].segment_config.clone();
+
+        let _segment_ids: Vec<SegmentId> = segments
+            .into_iter()
+            .map(|segment| holder.add(segment))
+            .collect();
+
+        let locked_holder: Arc<RwLock<_, _>> = Arc::new(RwLock::new(holder));
+
+        let index_optimizer = IndexingOptimizer::new(
+            number_of_segments, // Keep the same number of segments
+            OptimizerThresholds {
+                max_segment_size: 1000,
+                memmap_threshold: 1000,
+                indexing_threshold: 10, // Always optimize
+            },
+            segments_dir.path().to_owned(),
+            segments_temp_dir.path().to_owned(),
+            CollectionParams {
+                vectors: VectorsConfig::Single(VectorParams {
+                    size: NonZeroU64::new(
+                        segment_config.vector_data[DEFAULT_VECTOR_NAME].size as u64,
+                    )
+                    .unwrap(),
+                    distance: segment_config.vector_data[DEFAULT_VECTOR_NAME].distance,
+                    hnsw_config: None,
+                    quantization_config: None,
+                    on_disk: None,
+                }),
+                ..CollectionParams::empty()
+            },
+            Default::default(),
+            Default::default(),
+        );
+
+        let permit_cpu_count = num_rayon_threads(0);
+
+        // Index until all segments are indexed
+        let mut numer_of_optimizations = 0;
+        loop {
+            let suggested_to_optimize =
+                index_optimizer.check_condition(locked_holder.clone(), &Default::default());
+            if suggested_to_optimize.is_empty() {
+                break;
+            }
+            log::debug!("suggested_to_optimize = {:#?}", suggested_to_optimize);
+
+            let permit = CpuPermit::dummy(permit_cpu_count as u32);
+            index_optimizer
+                .optimize(
+                    locked_holder.clone(),
+                    suggested_to_optimize,
+                    permit,
+                    &stopped,
+                )
+                .unwrap();
+            numer_of_optimizations += 1;
+            assert!(numer_of_optimizations <= number_of_segments);
+            let number_of_segments = locked_holder.read().len();
+            log::debug!(
+                "numer_of_optimizations = {}, number_of_segments = {}",
+                numer_of_optimizations,
+                number_of_segments
+            );
+        }
+
+        // Ensure that the total number of segments did not change
+        assert_eq!(locked_holder.read().len(), number_of_segments);
+    }
+
     /// This tests things are as we expect when we define both `on_disk: false` and `memmap_threshold`
     ///
     /// Before this PR (<https://github.com/qdrant/qdrant/pull/3167>) such configuration would create an infinite optimization loop.
