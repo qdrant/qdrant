@@ -389,7 +389,11 @@ def test_shard_wal_delta_transfer_abort_and_retry(tmp_path: pathlib.Path):
     upload_process_3.kill()
     processes.pop().kill()
 
-    sleep(5)
+    sleep(1)
+
+    upsert_random_points(peer_api_uris[0], 250, batch_size=5)
+
+    sleep(3)
 
     # Restart the peer
     peer_api_uris[-1] = start_peer(peer_dirs[-1], "peer_2_restarted.log", bootstrap_uri, extra_env=env)
@@ -440,7 +444,7 @@ def test_shard_wal_delta_transfer_abort_and_retry(tmp_path: pathlib.Path):
     assert_http_ok(r)
 
     # Assert WAL delta transfer progress, and wait for it to finish
-    wait_for_collection_shard_transfer_progress(peer_api_uris[0], COLLECTION_NAME, None, 80)
+    wait_for_collection_shard_transfer_progress(peer_api_uris[0], COLLECTION_NAME, None, 10)
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
 
     # All nodes must have one shard
