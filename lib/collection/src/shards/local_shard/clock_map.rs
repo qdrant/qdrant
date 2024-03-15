@@ -57,7 +57,7 @@ impl ClockMap {
     /// and applied to the storage, or rejected.
     #[must_use = "operation accept status must be used"]
     pub fn advance_clock_and_correct_tag(&mut self, clock_tag: &mut ClockTag) -> bool {
-        let (clock_updated, current_tick) = self.advance_clock_impl(*clock_tag);
+        let (clock_accepted, current_tick) = self.advance_clock_impl(*clock_tag);
 
         // We *accept* an operation, if its `clock_tick` is *newer* than `current_tick`.
         //
@@ -73,7 +73,7 @@ impl ClockMap {
         //
         // TODO: Should we *reject* operations with `force = true`, *if* `clock_tick = 0`!?
 
-        let operation_accepted = clock_updated || clock_tag.force;
+        let operation_accepted = clock_accepted || clock_tag.force;
 
         if !operation_accepted {
             clock_tag.clock_tick = current_tick;
@@ -95,17 +95,14 @@ impl ClockMap {
     /// If the clock is not yet tracked by the `ClockMap`, it is initialized to
     /// the `clock_tick` and added to the `ClockMap`.
     ///
-    /// Returns whether the clock was updated (or initialized) and the current tick.
+    /// Returns whether the clock was accepted (or initialized) and the current tick.
     #[must_use = "clock update status and current tick must be used"]
     fn advance_clock_impl(&mut self, clock_tag: ClockTag) -> (bool, u64) {
-        // To keep things simple, assume we always change state here
-        self.changed = true;
-
         let key = Key::from_tag(clock_tag);
         let new_tick = clock_tag.clock_tick;
         let new_token = clock_tag.token;
 
-        match self.clocks.entry(key) {
+        let (is_accepted, new_tick) = match self.clocks.entry(key) {
             hash_map::Entry::Occupied(mut entry) => entry.get_mut().advance_to(new_tick, new_token),
             hash_map::Entry::Vacant(entry) => {
                 // Initialize new clock and accept the operation if `new_tick > 0`.
@@ -119,7 +116,14 @@ impl ClockMap {
 
                 (is_non_zero_tick, new_tick)
             }
+        };
+
+        // Assume the state changed when the clock tag was accepted
+        if is_accepted {
+            self.changed = true;
         }
+
+        (is_accepted, new_tick)
     }
 
     /// Create a recovery point based on the current clock map state, so that we can recover any
@@ -177,7 +181,7 @@ impl Clock {
 
     /// Advance clock to `new_tick`, if `new_tick` is newer than current tick.
     ///
-    /// Returns whether the clock was updated and the current tick.
+    /// Returns whether the clock was accepted and the current tick.
     ///
     /// The clock is updated when:
     /// - the given `new_tick` is newer than the current tick
