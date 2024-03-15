@@ -86,6 +86,7 @@ pub struct UpdateHandler {
     /// Assigns CPU permits to tasks to limit overall resource utilization.
     optimizer_cpu_budget: CpuBudget,
     /// How frequent can we flush data
+    /// This parameter depends on the optimizer config and should be updated accordingly.
     pub flush_interval_sec: u64,
     segments: LockedSegmentHolder,
     /// Process, that listens updates signals and perform updates
@@ -106,7 +107,8 @@ pub struct UpdateHandler {
     pub(super) wal_keep_from: Arc<AtomicU64>,
     optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
     /// Maximum number of concurrent optimization jobs in this update handler.
-    max_optimization_threads: Option<usize>,
+    /// This parameter depends on the optimizer config and should be updated accordingly.
+    pub max_optimization_threads: Option<usize>,
     /// Highest and cutoff clocks for the shard WAL.
     clocks: LocalShardClocks,
     shard_path: PathBuf,
