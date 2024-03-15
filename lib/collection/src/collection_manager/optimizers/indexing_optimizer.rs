@@ -136,7 +136,8 @@ impl IndexingOptimizer {
                     if let Some(vector_data) = segment_config.vector_data.get(vector_name) {
                         let is_indexed = vector_data.index.is_indexed();
                         let is_on_disk = vector_data.storage_type.is_on_disk();
-                        let storage_size_bytes = point_count * vector_data.size * VECTOR_ELEMENT_SIZE;
+                        let storage_size_bytes =
+                            point_count * vector_data.size * VECTOR_ELEMENT_SIZE;
 
                         let is_big_for_index = storage_size_bytes >= indexing_threshold_bytes;
                         let is_big_for_mmap = storage_size_bytes >= mmap_threshold_bytes;
