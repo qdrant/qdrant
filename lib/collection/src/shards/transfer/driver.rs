@@ -41,7 +41,6 @@ pub async fn transfer_shard(
     collection_name: &str,
     channel_service: ChannelService,
     snapshots_path: &Path,
-    default_shard_transfer_method: ShardTransferMethod,
     temp_dir: &Path,
 ) -> CollectionResult<bool> {
     let shard_id = transfer_config.shard_id;
@@ -103,12 +102,13 @@ pub async fn transfer_shard(
 
             // Handle failure, fall back to default transfer method or propagate error
             if let Err(err) = result {
-                log::warn!("Failed to do shard diff transfer, falling back to default method {default_shard_transfer_method:?}: {err}");
+                let fallback_shard_transfer_method = ShardTransferMethod::default();
+                log::warn!("Failed to do shard diff transfer, falling back to default method {fallback_shard_transfer_method:?}: {err}");
                 let did_fall_back = transfer_shard_fallback_default(
                     transfer_config,
                     consensus,
                     collection_name,
-                    default_shard_transfer_method,
+                    fallback_shard_transfer_method,
                 )?;
                 if did_fall_back {
                     return Ok(false);
@@ -256,7 +256,6 @@ pub fn spawn_transfer_task<T, F>(
     channel_service: ChannelService,
     snapshots_path: PathBuf,
     collection_name: String,
-    default_shard_transfer_method: ShardTransferMethod,
     temp_dir: PathBuf,
     on_finish: T,
     on_error: F,
@@ -289,7 +288,6 @@ where
                     &collection_name,
                     channel_service.clone(),
                     &snapshots_path,
-                    default_shard_transfer_method,
                     &temp_dir,
                 )
                 .await
