@@ -16,7 +16,6 @@ use crate::shards::shard::PeerId;
 pub struct ClockMap {
     clocks: HashMap<Key, Clock>,
     /// Whether this clock map has changed since the last time it was persisted.
-    #[serde(skip, default)]
     changed: bool,
 }
 
