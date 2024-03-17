@@ -165,6 +165,9 @@ pub struct PointsList {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, JsonSchema)]
+#[serde(expecting = r#"can't deserialize data to a batch or a list.
+Hint: the IDs need to be Integer or UUID in string format, not arbitrary string. 
+The payload need to be a valid JSON object(not a JSON value, like a single string or number)"#)]
 #[serde(untagged)]
 pub enum PointInsertOperations {
     /// Inset points from a batch.
