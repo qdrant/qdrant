@@ -10,7 +10,7 @@ use std::ops::Bound::{Excluded, Included, Unbounded};
 use std::str::FromStr;
 use std::sync::Arc;
 
-use chrono::{NaiveDateTime, TimeZone};
+use chrono::DateTime;
 use common::types::PointOffsetType;
 use mutable_numeric_index::MutableNumericIndex;
 use parking_lot::RwLock;
@@ -101,16 +101,12 @@ impl Encodable for DateTimePayloadType {
 
     fn decode_key(key: &[u8]) -> (PointOffsetType, Self) {
         let (id, timestamp) = decode_i64_key_ascending(key);
-        let datetime = chrono::Utc.from_utc_datetime(
-            &NaiveDateTime::from_timestamp_opt(
-                timestamp / 1000,
-                (timestamp % 1000) as u32 * 1_000_000,
-            )
-            .unwrap_or_else(|| {
-                log::warn!("Failed to decode timestamp {timestamp}, fallback to UNIX_EPOCH");
-                NaiveDateTime::UNIX_EPOCH
-            }),
-        );
+        let datetime =
+            DateTime::from_timestamp(timestamp / 1000, (timestamp % 1000) as u32 * 1_000_000)
+                .unwrap_or_else(|| {
+                    log::warn!("Failed to decode timestamp {timestamp}, fallback to UNIX_EPOCH");
+                    DateTime::UNIX_EPOCH
+                });
         (id, datetime.into())
     }
 

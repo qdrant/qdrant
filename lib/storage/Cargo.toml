@@ -30,7 +30,7 @@ tonic = { workspace = true }
 http = "0.2"
 parking_lot = { workspace = true }
 tar = "0.4.40"
-chrono = { version = "~0.4", features = ["serde"] }
+chrono = { workspace = true }
 validator = { version = "0.16", features = ["derive"] }
 semver = { workspace = true }
 
