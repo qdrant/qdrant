@@ -90,7 +90,7 @@ impl<'a> From<&'a [VectorElementType]> for CowVector<'a> {
 
 impl<'a> From<&'a [DenseVector]> for CowVector<'a> {
     fn from(v: &'a [DenseVector]) -> Self {
-        CowVector::MultiDense(Cow::Owned(v.into()))
+        CowVector::MultiDense(Cow::Borrowed(v))
     }
 }
 
