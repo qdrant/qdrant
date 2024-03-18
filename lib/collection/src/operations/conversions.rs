@@ -439,7 +439,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
 
 impl From<Record> for api::grpc::qdrant::RetrievedPoint {
     fn from(record: Record) -> Self {
-        let vectors: Option<VectorStruct> = record.vector.map(|vector_struct| vector_struct.into());
+        let vectors = record.vector.map(VectorStruct::from);
 
         Self {
             id: Some(record.id.into()),
