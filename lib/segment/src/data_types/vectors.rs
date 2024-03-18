@@ -231,18 +231,6 @@ pub enum VectorStruct {
 }
 
 impl VectorStruct {
-    /// Check if this vector struct is empty.
-    pub fn is_empty(&self) -> bool {
-        match self {
-            VectorStruct::Single(vector) => vector.is_empty(),
-            VectorStruct::Multi(vectors) => vectors.values().all(|v| match v {
-                Vector::Dense(vector) => vector.is_empty(),
-                Vector::Sparse(vector) => vector.indices.is_empty(),
-                Vector::MultiDense(v) => v.iter().all(|v| v.is_empty()),
-            }),
-        }
-    }
-
     /// Merge `other` into this
     ///
     /// Other overwrites vectors we already have in this.
