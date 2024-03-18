@@ -1001,7 +1001,7 @@ impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
                 }),
             ),
             Vector::MultiDense(_vector) => {
-                // TODO(multi)
+                // TODO(colbert)
                 unimplemented!("MultiDenseVector is not supported")
             }
         };
@@ -1425,7 +1425,7 @@ impl TryFrom<api::grpc::qdrant::Vector> for RecommendExample {
             Vector::Dense(vector) => Self::Dense(vector),
             Vector::Sparse(vector) => Self::Sparse(vector),
             Vector::MultiDense(_vector) => {
-                // TODO(multi)
+                // TODO(colbert)
                 unimplemented!("MultiDenseVector is not supported")
             }
         })

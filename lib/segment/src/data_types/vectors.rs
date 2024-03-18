@@ -394,7 +394,7 @@ impl NamedVectorStruct {
             Vector::Dense(vector) => NamedVectorStruct::Dense(NamedVector { name, vector }),
             Vector::Sparse(vector) => NamedVectorStruct::Sparse(NamedSparseVector { name, vector }),
             Vector::MultiDense(_) => {
-                // TODO(multi)
+                // TODO(colbert)
                 unimplemented!("MultiDenseVector cannot be converted to NamedVectorStruct")
             }
         }

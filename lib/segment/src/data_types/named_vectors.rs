@@ -51,7 +51,7 @@ impl<'a> From<Vector> for CowVector<'a> {
             Vector::Dense(v) => CowVector::Dense(Cow::Owned(v)),
             Vector::Sparse(v) => CowVector::Sparse(Cow::Owned(v)),
             Vector::MultiDense(_) => {
-                // TODO(multi)
+                // TODO(colbert)
                 unimplemented!("MultiDenseVector is not supported")
             }
         }
@@ -110,7 +110,7 @@ impl<'a> From<VectorRef<'a>> for CowVector<'a> {
             VectorRef::Dense(v) => CowVector::Dense(Cow::Borrowed(v)),
             VectorRef::Sparse(v) => CowVector::Sparse(Cow::Borrowed(v)),
             VectorRef::MultiDense(_) => {
-                // TODO(multi)
+                // TODO(colbert)
                 unimplemented!("MultiDenseVector is not supported")
             }
         }
@@ -126,7 +126,7 @@ impl<'a> NamedVectors<'a> {
                 VectorRef::Dense(v) => CowVector::Dense(Cow::Borrowed(v)),
                 VectorRef::Sparse(v) => CowVector::Sparse(Cow::Borrowed(v)),
                 VectorRef::MultiDense(_) => {
-                    // TODO(multi)
+                    // TODO(colbert)
                     unimplemented!("MultiDenseVector is not supported")
                 }
             },
@@ -168,7 +168,7 @@ impl<'a> NamedVectors<'a> {
                 Vector::Dense(v) => CowVector::Dense(Cow::Owned(v)),
                 Vector::Sparse(v) => CowVector::Sparse(Cow::Owned(v)),
                 Vector::MultiDense(_) => {
-                    // TODO(multi)
+                    // TODO(colbert)
                     unimplemented!("MultiDenseVector is not supported")
                 }
             },
@@ -182,7 +182,7 @@ impl<'a> NamedVectors<'a> {
                 VectorRef::Dense(v) => CowVector::Dense(Cow::Borrowed(v)),
                 VectorRef::Sparse(v) => CowVector::Sparse(Cow::Borrowed(v)),
                 VectorRef::MultiDense(_) => {
-                    // TODO(multi)
+                    // TODO(colbert)
                     unimplemented!("MultiDenseVector is not supported")
                 }
             },
