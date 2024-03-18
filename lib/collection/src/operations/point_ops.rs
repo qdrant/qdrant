@@ -165,7 +165,36 @@ pub struct PointsList {
     pub shard_key: Option<ShardKeySelector>,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone, JsonSchema)]
+impl<'de> serde::Deserialize<'de> for PointInsertOperations {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        match value {
+            serde_json::Value::Object(map) => {
+                if map.contains_key("batch") {
+                    PointsBatch::deserialize(serde_json::Value::Object(map))
+                        .map(PointInsertOperations::PointsBatch)
+                        .map_err(serde::de::Error::custom)
+                } else if map.contains_key("points") {
+                    PointsList::deserialize(serde_json::Value::Object(map))
+                        .map(PointInsertOperations::PointsList)
+                        .map_err(serde::de::Error::custom)
+                } else {
+                    Err(serde::de::Error::custom(
+                        "Invalid PointInsertOperations format",
+                    ))
+                }
+            }
+            _ => Err(serde::de::Error::custom(
+                "Invalid PointInsertOperations format",
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Clone, JsonSchema)]
 #[serde(untagged)]
 pub enum PointInsertOperations {
     /// Inset points from a batch.
