@@ -419,11 +419,9 @@ impl ShardReplicaSet {
 
         for (peer_id, err) in failures {
             log::warn!(
-                "Failed to update shard {}:{} on peer {}, error: {}",
+                "Failed to update shard {}:{} on peer {peer_id}, error: {err}",
                 self.collection_id,
                 self.shard_id,
-                peer_id,
-                err
             );
 
             let Some(&peer_state) = state.get_peer_state(peer_id) else {
@@ -443,8 +441,7 @@ impl ShardReplicaSet {
             }
 
             log::debug!(
-                "Deactivating peer {} because of failed update of shard {}:{}",
-                peer_id,
+                "Deactivating peer {peer_id} because of failed update of shard {}:{}",
                 self.collection_id,
                 self.shard_id
             );
