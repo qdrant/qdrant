@@ -10,7 +10,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
-chrono = { version = "0.4.35", features = ["serde"] }
+chrono = { workspace = true }
 dashmap = "5.5.3"
 http = "1.0.0"
 http-serde = "2.0.0"

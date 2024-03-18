@@ -21,7 +21,7 @@ schemars = { workspace = true }
 uuid = { workspace = true }
 tokio = { workspace = true }
 rand = "0.8.5"
-chrono = { version = "~0.4", features = ["serde"] }
+chrono = { workspace = true }
 thiserror = "1.0"
 parking_lot = { workspace = true }
 validator = { version = "0.16", features = ["derive"] }
