@@ -45,7 +45,6 @@ impl ShardReplicaSet {
                     Ok(Some(local_shard.get().update(operation, false).await?))
                 }
                 // In recovery state, only allow operations with force flag
-                // TODO(1.9): deprecate accepting partialsnapshot operations if force is true
                 Some(ReplicaState::PartialSnapshot | ReplicaState::Recovery)
                     if operation.clock_tag.map_or(false, |tag| tag.force) =>
                 {
