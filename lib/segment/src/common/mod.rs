@@ -185,6 +185,7 @@ fn check_vector_against_config(
             Ok(())
         }
         VectorRef::Sparse(_) => Err(OperationError::WrongSparse),
+        VectorRef::MultiDense(_) => Err(OperationError::WrongMulti),
     }
 }
 
@@ -195,6 +196,7 @@ fn check_sparse_vector_against_config(
     match vector {
         VectorRef::Dense(_) => Err(OperationError::WrongSparse),
         VectorRef::Sparse(_vector) => Ok(()), // TODO(sparse) check vector by config
+        VectorRef::MultiDense(_) => Err(OperationError::WrongMulti),
     }
 }
 

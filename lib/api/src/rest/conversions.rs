@@ -5,6 +5,10 @@ impl From<segment::data_types::vectors::Vector> for Vector {
         match value {
             segment::data_types::vectors::Vector::Dense(vector) => Vector::Dense(vector),
             segment::data_types::vectors::Vector::Sparse(vector) => Vector::Sparse(vector),
+            segment::data_types::vectors::Vector::MultiDense(_vector) => {
+                // TODO(colbert)
+                unimplemented!()
+            }
         }
     }
 }
