@@ -9,6 +9,7 @@ use api::grpc::qdrant::{
     SyncPointsInternal, UpdatePointVectors, UpdateVectorsInternal, UpsertPoints,
     UpsertPointsInternal, VectorsSelector,
 };
+use segment::data_types::vectors::VectorStruct;
 use segment::json_path::JsonPath;
 use segment::types::{Filter, PayloadFieldSchema, PayloadSchemaParams, PointIdType, ScoredPoint};
 use tonic::Status;
@@ -143,7 +144,7 @@ pub fn internal_update_vectors(
                 .into_iter()
                 .map(|point| PointVectors {
                     id: Some(point.id.into()),
-                    vectors: Some(point.vector.into()),
+                    vectors: Some(VectorStruct::from(point.vector).into()),
                 })
                 .collect(),
             ordering: ordering.map(write_ordering_to_proto),

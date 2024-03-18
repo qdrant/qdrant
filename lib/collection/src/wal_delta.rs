@@ -251,6 +251,7 @@ mod tests {
     use rand::seq::SliceRandom;
     use rand::{Rng, SeedableRng};
     use rstest::rstest;
+    use segment::data_types::vectors::VectorStruct;
     use tempfile::{Builder, TempDir};
     use wal::WalOptions;
 
@@ -284,7 +285,7 @@ mod tests {
         CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
             PointInsertOperationsInternal::PointsList(vec![PointStruct {
                 id: id.into(),
-                vector: vec![1.0, 2.0, 3.0].into(),
+                vector: VectorStruct::from(vec![1.0, 2.0, 3.0]).into(),
                 payload: None,
             }]),
         ))
@@ -1146,10 +1147,12 @@ mod tests {
                     CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
                         PointInsertOperationsInternal::PointsList(vec![PointStruct {
                             id: point_id_source.next().unwrap().into(),
-                            vector: std::iter::repeat_with(|| rng.gen::<f32>())
-                                .take(3)
-                                .collect::<Vec<_>>()
-                                .into(),
+                            vector: VectorStruct::from(
+                                std::iter::repeat_with(|| rng.gen::<f32>())
+                                    .take(3)
+                                    .collect::<Vec<_>>(),
+                            )
+                            .into(),
                             payload: None,
                         }]),
                     ));
@@ -1190,10 +1193,12 @@ mod tests {
                     CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
                         PointInsertOperationsInternal::PointsList(vec![PointStruct {
                             id: point_id_source.next().unwrap().into(),
-                            vector: std::iter::repeat_with(|| rng.gen::<f32>())
-                                .take(3)
-                                .collect::<Vec<_>>()
-                                .into(),
+                            vector: VectorStruct::from(
+                                std::iter::repeat_with(|| rng.gen::<f32>())
+                                    .take(3)
+                                    .collect::<Vec<_>>(),
+                            )
+                            .into(),
                             payload: None,
                         }]),
                     ));

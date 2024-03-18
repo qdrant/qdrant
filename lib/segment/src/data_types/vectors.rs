@@ -12,8 +12,7 @@ use crate::vector_storage::query::context_query::ContextQuery;
 use crate::vector_storage::query::discovery_query::DiscoveryQuery;
 use crate::vector_storage::query::reco_query::RecoQuery;
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
-#[serde(untagged, rename_all = "snake_case")]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Vector {
     Dense(DenseVector),
     Sparse(SparseVector),
@@ -30,15 +29,6 @@ impl Vector {
         match self {
             Vector::Dense(v) => VectorRef::Dense(v.as_slice()),
             Vector::Sparse(v) => VectorRef::Sparse(v),
-        }
-    }
-}
-
-impl Validate for Vector {
-    fn validate(&self) -> Result<(), validator::ValidationErrors> {
-        match self {
-            Vector::Dense(_) => Ok(()),
-            Vector::Sparse(v) => v.validate(),
         }
     }
 }
@@ -205,8 +195,8 @@ pub fn only_default_vector(vec: &[VectorElementType]) -> NamedVectors {
 }
 
 /// Full vector data per point separator with single and multiple vector modes
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
-#[serde(untagged, rename_all = "snake_case")]
+/// TODO(colbert) try to remove this enum and use NamedVectors instead
+#[derive(Clone, Debug, PartialEq)]
 pub enum VectorStruct {
     Single(DenseVector),
     Multi(HashMap<String, Vector>),
@@ -249,15 +239,6 @@ impl VectorStruct {
             }
             // Multi into multi
             (VectorStruct::Multi(this), VectorStruct::Multi(other)) => this.extend(other),
-        }
-    }
-}
-
-impl Validate for VectorStruct {
-    fn validate(&self) -> Result<(), validator::ValidationErrors> {
-        match self {
-            VectorStruct::Single(_) => Ok(()),
-            VectorStruct::Multi(v) => common::validation::validate_iter(v.values()),
         }
     }
 }
@@ -413,8 +394,7 @@ impl Validate for NamedVectorStruct {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
-#[serde(untagged, rename_all = "snake_case")]
+#[derive(Clone, Debug, PartialEq)]
 pub enum BatchVectorStruct {
     Single(Vec<DenseVector>),
     Multi(HashMap<String, Vec<Vector>>),
@@ -436,17 +416,6 @@ impl BatchVectorStruct {
                 } else {
                     transpose_map_into_named_vector(named_vectors)
                 }
-            }
-        }
-    }
-}
-
-impl Validate for BatchVectorStruct {
-    fn validate(&self) -> Result<(), validator::ValidationErrors> {
-        match self {
-            BatchVectorStruct::Single(_) => Ok(()),
-            BatchVectorStruct::Multi(v) => {
-                common::validation::validate_iter(v.values().flat_map(|batch| batch.iter()))
             }
         }
     }

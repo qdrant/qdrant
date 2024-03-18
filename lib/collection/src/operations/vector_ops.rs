@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 use schemars::JsonSchema;
-use segment::data_types::vectors::VectorStruct;
 use segment::types::{Filter, PointIdType};
 use serde::{Deserialize, Serialize};
 use validator::{Validate, ValidationError, ValidationErrors};
@@ -29,7 +28,7 @@ pub struct PointVectors {
     pub id: PointIdType,
     /// Vectors
     #[serde(alias = "vectors")]
-    pub vector: VectorStruct,
+    pub vector: api::rest::VectorStruct,
 }
 
 impl Validate for PointVectors {

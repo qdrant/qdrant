@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures::{future, TryFutureExt};
+use segment::data_types::vectors::VectorStruct;
 use segment::spaces::tools;
 use segment::types::{ExtendedPointId, Order, ScoredPoint, WithPayloadInterface, WithVector};
 
@@ -200,7 +201,7 @@ impl Collection {
                 // So we just filter out them.
                 records_map.remove(&scored_point.id).map(|record| {
                     scored_point.payload = record.payload;
-                    scored_point.vector = record.vector;
+                    scored_point.vector = record.vector.map(VectorStruct::from);
                     scored_point
                 })
             })

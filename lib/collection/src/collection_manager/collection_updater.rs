@@ -72,7 +72,7 @@ impl CollectionUpdater {
 
 #[cfg(test)]
 mod tests {
-    use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
+    use segment::data_types::vectors::{only_default_vector, VectorStruct, DEFAULT_VECTOR_NAME};
     use segment::types::{Payload, WithPayload};
     use serde_json::json;
     use tempfile::Builder;
@@ -97,27 +97,27 @@ mod tests {
         let points = vec![
             PointStruct {
                 id: 11.into(),
-                vector: vec11.into(),
+                vector: VectorStruct::from(vec11).into(),
                 payload: None,
             },
             PointStruct {
                 id: 12.into(),
-                vector: vec12.into(),
+                vector: VectorStruct::from(vec12).into(),
                 payload: None,
             },
             PointStruct {
                 id: 13.into(),
-                vector: vec13.into(),
+                vector: VectorStruct::from(vec13).into(),
                 payload: Some(json!({ "color": "red" }).into()),
             },
             PointStruct {
                 id: 14.into(),
-                vector: vec![0., 0., 0., 0.].into(),
+                vector: VectorStruct::from(vec![0., 0., 0., 0.]).into(),
                 payload: None,
             },
             PointStruct {
                 id: 500.into(),
-                vector: vec![2., 0., 2., 0.].into(),
+                vector: VectorStruct::from(vec![2., 0., 2., 0.]).into(),
                 payload: None,
             },
         ];
@@ -139,12 +139,12 @@ mod tests {
         let points = vec![
             PointStruct {
                 id: 1.into(),
-                vector: vec![2., 2., 2., 2.].into(),
+                vector: VectorStruct::from(vec![2., 2., 2., 2.]).into(),
                 payload: None,
             },
             PointStruct {
                 id: 500.into(),
-                vector: vec![2., 0., 2., 0.].into(),
+                vector: VectorStruct::from(vec![2., 0., 2., 0.]).into(),
                 payload: None,
             },
         ];
@@ -163,7 +163,7 @@ mod tests {
         assert_eq!(records.len(), 3);
 
         for record in records {
-            let v = record.vector.unwrap();
+            let v: VectorStruct = record.vector.unwrap().into();
 
             let v1 = vec![2., 2., 2., 2.];
             if record.id == 1.into() {
