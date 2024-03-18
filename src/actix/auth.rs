@@ -149,9 +149,17 @@ where
     }
 }
 
-pub struct ActixClaims(pub Option<Claims>);
+pub struct Extension<T> {
+    inner: Option<T>,
+}
 
-impl FromRequest for ActixClaims {
+impl<T> Extension<T> {
+    pub fn into_inner(self) -> Option<T> {
+        self.inner
+    }
+}
+
+impl<T: 'static> FromRequest for Extension<T> {
     type Error = Infallible;
     type Future = Ready<Result<Self, Self::Error>>;
 
@@ -159,7 +167,8 @@ impl FromRequest for ActixClaims {
         req: &actix_web::HttpRequest,
         _payload: &mut actix_web::dev::Payload,
     ) -> Self::Future {
-        ready(Ok(ActixClaims(req.extensions_mut().remove::<Claims>())))
+        let ext = req.extensions_mut().remove::<T>();
+        ready(Ok(Extension { inner: ext }))
     }
 }
 

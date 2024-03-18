@@ -5225,6 +5225,7 @@ dependencies = [
  "protobuf",
  "raft",
  "rand 0.8.5",
+ "rbac",
  "reqwest",
  "schemars",
  "segment",

@@ -25,6 +25,7 @@ use collection::operations::{
     ClockTag, CollectionUpdateOperations, CreateIndex, FieldIndexOperations, OperationWithClockTag,
 };
 use collection::shards::shard::ShardId;
+use rbac::jwt::Claims;
 use schemars::JsonSchema;
 use segment::json_path::JsonPath;
 use segment::types::{PayloadFieldSchema, PayloadKeyType, ScoredPoint};
@@ -157,6 +158,7 @@ fn get_shard_selector_for_update(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_upsert_points(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -165,6 +167,7 @@ pub async fn do_upsert_points(
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
+    claims: Option<Claims>,
 ) -> Result<UpdateResult, StorageError> {
     let (shard_key, operation) = operation.decompose();
     let collection_operation =
@@ -178,10 +181,12 @@ pub async fn do_upsert_points(
         wait,
         ordering,
         shard_selector,
+        claims,
     )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_delete_points(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -190,6 +195,7 @@ pub async fn do_delete_points(
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
+    claims: Option<Claims>,
 ) -> Result<UpdateResult, StorageError> {
     let (point_operation, shard_key) = match points {
         PointsSelector::PointIdsSelector(PointIdsList { points, shard_key }) => {
@@ -208,10 +214,12 @@ pub async fn do_delete_points(
         wait,
         ordering,
         shard_selector,
+        claims,
     )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_update_vectors(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -220,6 +228,7 @@ pub async fn do_update_vectors(
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
+    claims: Option<Claims>,
 ) -> Result<UpdateResult, StorageError> {
     let UpdateVectors { points, shard_key } = operation;
 
@@ -235,10 +244,12 @@ pub async fn do_update_vectors(
         wait,
         ordering,
         shard_selector,
+        claims,
     )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_delete_vectors(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -247,6 +258,7 @@ pub async fn do_delete_vectors(
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
+    claims: Option<Claims>,
 ) -> Result<UpdateResult, StorageError> {
     // TODO: Is this cancel safe!?
 
@@ -275,6 +287,7 @@ pub async fn do_delete_vectors(
                 wait,
                 ordering,
                 shard_selector.clone(),
+                claims.clone(),
             )
             .await?,
         );
@@ -290,6 +303,7 @@ pub async fn do_delete_vectors(
                 wait,
                 ordering,
                 shard_selector,
+                claims,
             )
             .await?,
         );
@@ -298,6 +312,7 @@ pub async fn do_delete_vectors(
     result.ok_or_else(|| StorageError::bad_request("No filter or points provided"))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_set_payload(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -306,6 +321,7 @@ pub async fn do_set_payload(
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
+    claims: Option<Claims>,
 ) -> Result<UpdateResult, StorageError> {
     let SetPayload {
         points,
@@ -331,10 +347,12 @@ pub async fn do_set_payload(
         wait,
         ordering,
         shard_selector,
+        claims,
     )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_overwrite_payload(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -343,6 +361,7 @@ pub async fn do_overwrite_payload(
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
+    claims: Option<Claims>,
 ) -> Result<UpdateResult, StorageError> {
     let SetPayload {
         points,
@@ -369,10 +388,12 @@ pub async fn do_overwrite_payload(
         wait,
         ordering,
         shard_selector,
+        claims,
     )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_delete_payload(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -381,6 +402,7 @@ pub async fn do_delete_payload(
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
+    claims: Option<Claims>,
 ) -> Result<UpdateResult, StorageError> {
     let DeletePayload {
         keys,
@@ -404,10 +426,12 @@ pub async fn do_delete_payload(
         wait,
         ordering,
         shard_selector,
+        claims,
     )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_clear_payload(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -416,6 +440,7 @@ pub async fn do_clear_payload(
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
+    claims: Option<Claims>,
 ) -> Result<UpdateResult, StorageError> {
     let (point_operation, shard_key) = match points {
         PointsSelector::PointIdsSelector(PointIdsList { points, shard_key }) => {
@@ -436,10 +461,12 @@ pub async fn do_clear_payload(
         wait,
         ordering,
         shard_selector,
+        claims,
     )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_batch_update_points(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -448,6 +475,7 @@ pub async fn do_batch_update_points(
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
+    claims: Option<Claims>,
 ) -> Result<Vec<UpdateResult>, StorageError> {
     let mut results = Vec::with_capacity(operations.len());
     for operation in operations {
@@ -461,6 +489,7 @@ pub async fn do_batch_update_points(
                     shard_selection,
                     wait,
                     ordering,
+                    claims.clone(),
                 )
                 .await
             }
@@ -473,6 +502,7 @@ pub async fn do_batch_update_points(
                     shard_selection,
                     wait,
                     ordering,
+                    claims.clone(),
                 )
                 .await
             }
@@ -485,6 +515,7 @@ pub async fn do_batch_update_points(
                     shard_selection,
                     wait,
                     ordering,
+                    claims.clone(),
                 )
                 .await
             }
@@ -497,6 +528,7 @@ pub async fn do_batch_update_points(
                     shard_selection,
                     wait,
                     ordering,
+                    claims.clone(),
                 )
                 .await
             }
@@ -509,6 +541,7 @@ pub async fn do_batch_update_points(
                     shard_selection,
                     wait,
                     ordering,
+                    claims.clone(),
                 )
                 .await
             }
@@ -521,6 +554,7 @@ pub async fn do_batch_update_points(
                     shard_selection,
                     wait,
                     ordering,
+                    claims.clone(),
                 )
                 .await
             }
@@ -533,6 +567,7 @@ pub async fn do_batch_update_points(
                     shard_selection,
                     wait,
                     ordering,
+                    claims.clone(),
                 )
                 .await
             }
@@ -545,6 +580,7 @@ pub async fn do_batch_update_points(
                     shard_selection,
                     wait,
                     ordering,
+                    claims.clone(),
                 )
                 .await
             }
@@ -564,6 +600,7 @@ pub async fn do_create_index_internal(
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
+    claims: Option<Claims>,
 ) -> Result<UpdateResult, StorageError> {
     let collection_operation = CollectionUpdateOperations::FieldIndexOperation(
         FieldIndexOperations::CreateIndex(CreateIndex {
@@ -584,10 +621,12 @@ pub async fn do_create_index_internal(
         wait,
         ordering,
         shard_selector,
+        claims,
     )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_create_index(
     dispatcher: Arc<Dispatcher>,
     collection_name: String,
@@ -596,6 +635,7 @@ pub async fn do_create_index(
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
+    claims: Option<Claims>,
 ) -> Result<UpdateResult, StorageError> {
     // TODO: Is this cancel safe!?
 
@@ -632,10 +672,12 @@ pub async fn do_create_index(
         shard_selection,
         wait,
         ordering,
+        claims,
     )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_delete_index_internal(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -644,6 +686,7 @@ pub async fn do_delete_index_internal(
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
+    claims: Option<Claims>,
 ) -> Result<UpdateResult, StorageError> {
     let collection_operation = CollectionUpdateOperations::FieldIndexOperation(
         FieldIndexOperations::DeleteIndex(index_name),
@@ -661,10 +704,12 @@ pub async fn do_delete_index_internal(
         wait,
         ordering,
         shard_selector,
+        claims,
     )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_delete_index(
     dispatcher: Arc<Dispatcher>,
     collection_name: String,
@@ -673,6 +718,7 @@ pub async fn do_delete_index(
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
+    claims: Option<Claims>,
 ) -> Result<UpdateResult, StorageError> {
     // TODO: Is this cancel safe!?
 
@@ -697,6 +743,7 @@ pub async fn do_delete_index(
         shard_selection,
         wait,
         ordering,
+        claims,
     )
     .await
 }
@@ -707,6 +754,7 @@ pub async fn do_core_search_points(
     request: CoreSearchRequest,
     read_consistency: Option<ReadConsistency>,
     shard_selection: ShardSelectorInternal,
+    claims: Option<Claims>,
     timeout: Option<Duration>,
 ) -> Result<Vec<ScoredPoint>, StorageError> {
     let batch_res = do_core_search_batch_points(
@@ -717,6 +765,7 @@ pub async fn do_core_search_points(
         },
         read_consistency,
         shard_selection,
+        claims,
         timeout,
     )
     .await?;
@@ -731,6 +780,7 @@ pub async fn do_search_batch_points(
     collection_name: &str,
     requests: Vec<(CoreSearchRequest, ShardSelectorInternal)>,
     read_consistency: Option<ReadConsistency>,
+    claims: Option<Claims>,
     timeout: Option<Duration>,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     let requests = batch_requests::<
@@ -759,6 +809,7 @@ pub async fn do_search_batch_points(
                 core_batch,
                 read_consistency,
                 shard_selector,
+                claims.clone(),
                 timeout,
             );
             res.push(req);
@@ -777,6 +828,7 @@ pub async fn do_core_search_batch_points(
     request: CoreSearchRequestBatch,
     read_consistency: Option<ReadConsistency>,
     shard_selection: ShardSelectorInternal,
+    claims: Option<Claims>,
     timeout: Option<Duration>,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     toc.core_search_batch(
@@ -784,6 +836,7 @@ pub async fn do_core_search_batch_points(
         request,
         read_consistency,
         shard_selection,
+        claims,
         timeout,
     )
     .await
@@ -795,6 +848,7 @@ pub async fn do_search_point_groups(
     request: SearchGroupsRequestInternal,
     read_consistency: Option<ReadConsistency>,
     shard_selection: ShardSelectorInternal,
+    claims: Option<Claims>,
     timeout: Option<Duration>,
 ) -> Result<GroupsResult, StorageError> {
     toc.group(
@@ -802,6 +856,7 @@ pub async fn do_search_point_groups(
         request.into(),
         read_consistency,
         shard_selection,
+        claims,
         timeout,
     )
     .await
@@ -813,6 +868,7 @@ pub async fn do_recommend_point_groups(
     request: RecommendGroupsRequestInternal,
     read_consistency: Option<ReadConsistency>,
     shard_selection: ShardSelectorInternal,
+    claims: Option<Claims>,
     timeout: Option<Duration>,
 ) -> Result<GroupsResult, StorageError> {
     toc.group(
@@ -820,6 +876,7 @@ pub async fn do_recommend_point_groups(
         request.into(),
         read_consistency,
         shard_selection,
+        claims,
         timeout,
     )
     .await
@@ -831,6 +888,7 @@ pub async fn do_discover_points(
     request: DiscoverRequestInternal,
     read_consistency: Option<ReadConsistency>,
     shard_selector: ShardSelectorInternal,
+    claims: Option<Claims>,
     timeout: Option<Duration>,
 ) -> Result<Vec<ScoredPoint>, StorageError> {
     toc.discover(
@@ -838,6 +896,7 @@ pub async fn do_discover_points(
         request,
         read_consistency,
         shard_selector,
+        claims,
         timeout,
     )
     .await
@@ -848,6 +907,7 @@ pub async fn do_discover_batch_points(
     collection_name: &str,
     request: DiscoverRequestBatch,
     read_consistency: Option<ReadConsistency>,
+    claims: Option<Claims>,
     timeout: Option<Duration>,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     let requests = request
@@ -863,7 +923,7 @@ pub async fn do_discover_batch_points(
         })
         .collect();
 
-    toc.discover_batch(collection_name, requests, read_consistency, timeout)
+    toc.discover_batch(collection_name, requests, read_consistency, claims, timeout)
         .await
 }
 
@@ -873,9 +933,16 @@ pub async fn do_count_points(
     request: CountRequestInternal,
     read_consistency: Option<ReadConsistency>,
     shard_selection: ShardSelectorInternal,
+    claims: Option<Claims>,
 ) -> Result<CountResult, StorageError> {
-    toc.count(collection_name, request, read_consistency, shard_selection)
-        .await
+    toc.count(
+        collection_name,
+        request,
+        read_consistency,
+        shard_selection,
+        claims,
+    )
+    .await
 }
 
 pub async fn do_get_points(
@@ -884,9 +951,16 @@ pub async fn do_get_points(
     request: PointRequestInternal,
     read_consistency: Option<ReadConsistency>,
     shard_selection: ShardSelectorInternal,
+    claims: Option<Claims>,
 ) -> Result<Vec<Record>, StorageError> {
-    toc.retrieve(collection_name, request, read_consistency, shard_selection)
-        .await
+    toc.retrieve(
+        collection_name,
+        request,
+        read_consistency,
+        shard_selection,
+        claims,
+    )
+    .await
 }
 
 pub async fn do_scroll_points(
@@ -895,7 +969,14 @@ pub async fn do_scroll_points(
     request: ScrollRequestInternal,
     read_consistency: Option<ReadConsistency>,
     shard_selection: ShardSelectorInternal,
+    claims: Option<Claims>,
 ) -> Result<ScrollResult, StorageError> {
-    toc.scroll(collection_name, request, read_consistency, shard_selection)
-        .await
+    toc.scroll(
+        collection_name,
+        request,
+        read_consistency,
+        shard_selection,
+        claims,
+    )
+    .await
 }

@@ -94,11 +94,11 @@ common = { path = "lib/common/common" }
 cancel = { path = "lib/common/cancel" }
 memory = { path = "lib/common/memory" }
 issues = { path = "lib/common/issues" }
+rbac = { path = "lib/rbac" }
 segment = { path = "lib/segment" }
 collection = { path = "lib/collection" }
 storage = { path = "lib/storage" }
 api = { path = "lib/api" }
-rbac = { path = "lib/rbac" }
 actix-multipart = "0.6.1"
 constant_time_eq = "0.3.0"
 

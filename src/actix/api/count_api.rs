@@ -3,10 +3,12 @@ use actix_web::{post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::CountRequest;
+use rbac::jwt::Claims;
 use storage::content_manager::toc::TableOfContent;
 
 use super::CollectionPath;
 use crate::actix::api::read_params::ReadParams;
+use crate::actix::auth::Extension;
 use crate::actix::helpers::process_response;
 use crate::common::points::do_count_points;
 
@@ -16,6 +18,7 @@ async fn count_points(
     collection: Path<CollectionPath>,
     request: Json<CountRequest>,
     params: Query<ReadParams>,
+    claims: Extension<Claims>,
 ) -> impl Responder {
     let timing = Instant::now();
 
@@ -35,6 +38,7 @@ async fn count_points(
         count_request,
         params.consistency,
         shard_selector,
+        claims.into_inner(),
         // ToDo: use timeout from params
     )
     .await;

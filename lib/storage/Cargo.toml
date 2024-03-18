@@ -45,6 +45,7 @@ common = { path = "../common/common" }
 cancel = { path = "../common/cancel" }
 io = { path = "../common/io" }
 memory = { path = "../common/memory" }
+rbac = { path = "../rbac" }
 segment = { path = "../segment" }
 collection = { path = "../collection" }
 api = { path = "../api" }
