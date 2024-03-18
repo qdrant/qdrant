@@ -11,6 +11,7 @@ use collection::operations::{CollectionUpdateOperations, OperationWithClockTag};
 use collection::{discovery, recommendations};
 use futures::stream::FuturesUnordered;
 use futures::TryStreamExt as _;
+use rbac::jwt::Claims;
 use segment::types::{ScoredPoint, ShardKey};
 
 use super::TableOfContent;
@@ -33,8 +34,10 @@ impl TableOfContent {
         request: RecommendRequestInternal,
         read_consistency: Option<ReadConsistency>,
         shard_selector: ShardSelectorInternal,
+        _claims: Option<Claims>,
         timeout: Option<Duration>,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
+        // TODO(RBAC): handle claims
         let collection = self.get_collection(collection_name).await?;
         recommendations::recommend_by(
             request,
@@ -63,8 +66,10 @@ impl TableOfContent {
         collection_name: &str,
         requests: Vec<(RecommendRequestInternal, ShardSelectorInternal)>,
         read_consistency: Option<ReadConsistency>,
+        _claims: Option<Claims>,
         timeout: Option<Duration>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
+        // TODO(RBAC): handle claims
         let collection = self.get_collection(collection_name).await?;
         recommendations::recommend_batch_by(
             requests,
@@ -97,8 +102,10 @@ impl TableOfContent {
         request: CoreSearchRequestBatch,
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
+        _claims: Option<Claims>,
         timeout: Option<Duration>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
+        // TODO(RBAC): handle claims
         let collection = self.get_collection(collection_name).await?;
         collection
             .core_search_batch(request, read_consistency, shard_selection, timeout)
@@ -124,7 +131,9 @@ impl TableOfContent {
         request: CountRequestInternal,
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
+        _claims: Option<Claims>,
     ) -> Result<CountResult, StorageError> {
+        // TODO(RBAC): handle claims
         let collection = self.get_collection(collection_name).await?;
         collection
             .count(request, read_consistency, &shard_selection)
@@ -149,7 +158,9 @@ impl TableOfContent {
         request: PointRequestInternal,
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
+        _claims: Option<Claims>,
     ) -> Result<Vec<Record>, StorageError> {
+        // TODO(RBAC): handle claims
         let collection = self.get_collection(collection_name).await?;
         collection
             .retrieve(request, read_consistency, &shard_selection)
@@ -163,8 +174,10 @@ impl TableOfContent {
         request: GroupRequest,
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
+        _claims: Option<Claims>,
         timeout: Option<Duration>,
     ) -> Result<GroupsResult, StorageError> {
+        // TODO(RBAC): handle claims
         let collection = self.get_collection(collection_name).await?;
 
         let collection_by_name = |name| self.get_collection_opt(name);
@@ -187,8 +200,10 @@ impl TableOfContent {
         request: DiscoverRequestInternal,
         read_consistency: Option<ReadConsistency>,
         shard_selector: ShardSelectorInternal,
+        _claims: Option<Claims>,
         timeout: Option<Duration>,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
+        // TODO(RBAC): handle claims
         let collection = self.get_collection(collection_name).await?;
         discovery::discover(
             request,
@@ -207,8 +222,10 @@ impl TableOfContent {
         collection_name: &str,
         requests: Vec<(DiscoverRequestInternal, ShardSelectorInternal)>,
         read_consistency: Option<ReadConsistency>,
+        _claims: Option<Claims>,
         timeout: Option<Duration>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
+        // TODO(RBAC): handle claims
         let collection = self.get_collection(collection_name).await?;
 
         discovery::discover_batch(
@@ -239,7 +256,9 @@ impl TableOfContent {
         request: ScrollRequestInternal,
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
+        _claims: Option<Claims>,
     ) -> Result<ScrollResult, StorageError> {
+        // TODO(RBAC): handle claims
         let collection = self.get_collection(collection_name).await?;
         collection
             .scroll_by(request, read_consistency, &shard_selection)
@@ -288,7 +307,10 @@ impl TableOfContent {
         wait: bool,
         ordering: WriteOrdering,
         shard_selector: ShardSelectorInternal,
+        _claims: Option<Claims>,
     ) -> Result<UpdateResult, StorageError> {
+        // TODO(RBAC): handle claims
+
         // `TableOfContent::_update_shard_keys` and `Collection::update_from_*` are cancel safe,
         // so this method is cancel safe.
 
