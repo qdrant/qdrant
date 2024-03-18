@@ -109,7 +109,7 @@ pub trait ShardTransferConsensus: Send + Sync {
     /// After snapshot recovery, propose to switch shard to `Partial`
     ///
     /// This is called after shard snapshot recovery has been completed on the remote. It submits a
-    /// proposal to consensus to switch the the shard state from `PartialSnapshot` to `Partial`.
+    /// proposal to consensus to switch the shard state from `PartialSnapshot` to `Partial`.
     ///
     /// # Warning
     ///
