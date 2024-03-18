@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use sparse::common::sparse_vector::SparseVector;
 
 use super::tiny_map;
-use super::vectors::{DenseVector, Vector, VectorElementType, VectorRef};
+use super::vectors::{DenseVector, MultiDenseVector, Vector, VectorElementType, VectorRef};
 use crate::common::operation_error::OperationError;
 use crate::types::Distance;
 
@@ -14,6 +14,7 @@ type CowKey<'a> = Cow<'a, str>;
 pub enum CowVector<'a> {
     Dense(Cow<'a, [VectorElementType]>),
     Sparse(Cow<'a, SparseVector>),
+    MultiDense(Cow<'a, [DenseVector]>),
 }
 
 impl<'a> Default for CowVector<'a> {
@@ -34,6 +35,7 @@ impl<'a> CowVector<'a> {
         match self {
             CowVector::Dense(v) => Vector::Dense(v.into_owned()),
             CowVector::Sparse(v) => Vector::Sparse(v.into_owned()),
+            CowVector::MultiDense(v) => Vector::MultiDense(v.into_owned()),
         }
     }
 
@@ -41,6 +43,7 @@ impl<'a> CowVector<'a> {
         match self {
             CowVector::Dense(v) => VectorRef::Dense(v.as_ref()),
             CowVector::Sparse(v) => VectorRef::Sparse(v.as_ref()),
+            CowVector::MultiDense(v) => VectorRef::MultiDense(v.as_ref()),
         }
     }
 }
@@ -50,10 +53,7 @@ impl<'a> From<Vector> for CowVector<'a> {
         match v {
             Vector::Dense(v) => CowVector::Dense(Cow::Owned(v)),
             Vector::Sparse(v) => CowVector::Sparse(Cow::Owned(v)),
-            Vector::MultiDense(_) => {
-                // TODO(colbert)
-                unimplemented!("MultiDenseVector is not supported")
-            }
+            Vector::MultiDense(v) => CowVector::MultiDense(Cow::Owned(v)),
         }
     }
 }
@@ -70,6 +70,12 @@ impl<'a> From<DenseVector> for CowVector<'a> {
     }
 }
 
+impl<'a> From<MultiDenseVector> for CowVector<'a> {
+    fn from(v: MultiDenseVector) -> Self {
+        CowVector::MultiDense(Cow::Owned(v))
+    }
+}
+
 impl<'a> From<&'a SparseVector> for CowVector<'a> {
     fn from(v: &'a SparseVector) -> Self {
         CowVector::Sparse(Cow::Borrowed(v))
@@ -82,6 +88,12 @@ impl<'a> From<&'a [VectorElementType]> for CowVector<'a> {
     }
 }
 
+impl<'a> From<&'a [DenseVector]> for CowVector<'a> {
+    fn from(v: &'a [DenseVector]) -> Self {
+        CowVector::MultiDense(Cow::Owned(v.into()))
+    }
+}
+
 impl<'a> TryFrom<CowVector<'a>> for SparseVector {
     type Error = OperationError;
 
@@ -89,6 +101,7 @@ impl<'a> TryFrom<CowVector<'a>> for SparseVector {
         match value {
             CowVector::Dense(_) => Err(OperationError::WrongSparse),
             CowVector::Sparse(v) => Ok(v.into_owned()),
+            CowVector::MultiDense(_) => Err(OperationError::WrongSparse),
         }
     }
 }
@@ -100,6 +113,7 @@ impl<'a> TryFrom<CowVector<'a>> for DenseVector {
         match value {
             CowVector::Dense(v) => Ok(v.into_owned()),
             CowVector::Sparse(_) => Err(OperationError::WrongSparse),
+            CowVector::MultiDense(_) => Err(OperationError::WrongMulti),
         }
     }
 }
@@ -109,10 +123,7 @@ impl<'a> From<VectorRef<'a>> for CowVector<'a> {
         match v {
             VectorRef::Dense(v) => CowVector::Dense(Cow::Borrowed(v)),
             VectorRef::Sparse(v) => CowVector::Sparse(Cow::Borrowed(v)),
-            VectorRef::MultiDense(_) => {
-                // TODO(colbert)
-                unimplemented!("MultiDenseVector is not supported")
-            }
+            VectorRef::MultiDense(v) => CowVector::MultiDense(Cow::Borrowed(v)),
         }
     }
 }
@@ -125,10 +136,7 @@ impl<'a> NamedVectors<'a> {
             match value {
                 VectorRef::Dense(v) => CowVector::Dense(Cow::Borrowed(v)),
                 VectorRef::Sparse(v) => CowVector::Sparse(Cow::Borrowed(v)),
-                VectorRef::MultiDense(_) => {
-                    // TODO(colbert)
-                    unimplemented!("MultiDenseVector is not supported")
-                }
+                VectorRef::MultiDense(v) => CowVector::MultiDense(Cow::Borrowed(v)),
             },
         );
         Self { map }
@@ -167,10 +175,7 @@ impl<'a> NamedVectors<'a> {
             match vector {
                 Vector::Dense(v) => CowVector::Dense(Cow::Owned(v)),
                 Vector::Sparse(v) => CowVector::Sparse(Cow::Owned(v)),
-                Vector::MultiDense(_) => {
-                    // TODO(colbert)
-                    unimplemented!("MultiDenseVector is not supported")
-                }
+                Vector::MultiDense(v) => CowVector::MultiDense(Cow::Owned(v)),
             },
         );
     }
@@ -181,10 +186,7 @@ impl<'a> NamedVectors<'a> {
             match vector {
                 VectorRef::Dense(v) => CowVector::Dense(Cow::Borrowed(v)),
                 VectorRef::Sparse(v) => CowVector::Sparse(Cow::Borrowed(v)),
-                VectorRef::MultiDense(_) => {
-                    // TODO(colbert)
-                    unimplemented!("MultiDenseVector is not supported")
-                }
+                VectorRef::MultiDense(v) => CowVector::MultiDense(Cow::Borrowed(v)),
             },
         );
     }
@@ -234,6 +236,12 @@ impl<'a> NamedVectors<'a> {
                 CowVector::Sparse(v) => {
                     // sort by indices to enable faster dot product and overlap checks
                     v.to_mut().sort_by_indices();
+                }
+                CowVector::MultiDense(v) => {
+                    for dense_vector in v.to_mut() {
+                        let preprocessed_vector = distance.preprocess_vector(dense_vector.to_vec());
+                        *dense_vector = preprocessed_vector;
+                    }
                 }
             }
         }
