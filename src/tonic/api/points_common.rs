@@ -947,7 +947,7 @@ pub async fn search(
     toc: &TableOfContent,
     search_points: SearchPoints,
     shard_selection: Option<ShardId>,
-    claims: Option<&Claims>,
+    claims: Option<Claims>,
 ) -> Result<Response<SearchResponse>, Status> {
     let SearchPoints {
         collection_name,
@@ -1017,7 +1017,7 @@ pub async fn core_search_batch(
     collection_name: String,
     requests: Vec<(CoreSearchRequest, ShardSelectorInternal)>,
     read_consistency: Option<ReadConsistencyGrpc>,
-    claims: Option<&Claims>,
+    claims: Option<Claims>,
     timeout: Option<Duration>,
 ) -> Result<Response<SearchBatchResponse>, Status> {
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
@@ -1054,7 +1054,7 @@ pub async fn core_search_list(
     search_points: Vec<CoreSearchPoints>,
     read_consistency: Option<ReadConsistencyGrpc>,
     shard_selection: Option<ShardId>,
-    claims: Option<&Claims>,
+    claims: Option<Claims>,
     timeout: Option<Duration>,
 ) -> Result<Response<SearchBatchResponse>, Status> {
     let searches: Result<Vec<_>, Status> =

@@ -43,7 +43,7 @@ async fn search_points(
         search_request.into(),
         params.consistency,
         shard_selection,
-        claims.into_inner().as_ref(),
+        claims.into_inner(),
         params.timeout(),
     )
     .await
@@ -91,7 +91,7 @@ async fn batch_search_points(
         &collection.name,
         requests,
         params.consistency,
-        claims.into_inner().as_ref(),
+        claims.into_inner(),
         params.timeout(),
     )
     .await

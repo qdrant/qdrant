@@ -355,7 +355,7 @@ impl PointsInternal for PointsInternalService {
             search_points,
             None, // *Has* to be `None`!
             shard_id,
-            claims.as_ref(),
+            claims,
             timeout,
         )
         .await

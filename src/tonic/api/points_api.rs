@@ -262,13 +262,7 @@ impl Points for PointsService {
     ) -> Result<Response<SearchResponse>, Status> {
         validate(request.get_ref())?;
         let claims = extract_claims(&mut request);
-        search(
-            self.dispatcher.as_ref(),
-            request.into_inner(),
-            None,
-            claims.as_ref(),
-        )
-        .await
+        search(self.dispatcher.as_ref(), request.into_inner(), None, claims).await
     }
 
     async fn search_batch(
@@ -304,7 +298,7 @@ impl Points for PointsService {
             collection_name,
             requests,
             read_consistency,
-            claims.as_ref(),
+            claims,
             timeout,
         )
         .await

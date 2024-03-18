@@ -58,7 +58,6 @@ impl Predicate<Request> for AuthMiddleware {
     }
 }
 
-#[allow(dead_code)] // TODO(RBAC): will be used later
 pub fn extract_claims<R>(req: &mut tonic::Request<R>) -> Option<Claims> {
     req.extensions_mut().remove::<Claims>()
 }

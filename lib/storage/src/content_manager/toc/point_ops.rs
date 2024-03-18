@@ -102,7 +102,7 @@ impl TableOfContent {
         request: CoreSearchRequestBatch,
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
-        _claims: Option<&Claims>,
+        _claims: Option<Claims>,
         timeout: Option<Duration>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
         // TODO(RBAC): handle claims

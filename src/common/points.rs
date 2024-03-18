@@ -754,7 +754,7 @@ pub async fn do_core_search_points(
     request: CoreSearchRequest,
     read_consistency: Option<ReadConsistency>,
     shard_selection: ShardSelectorInternal,
-    claims: Option<&Claims>,
+    claims: Option<Claims>,
     timeout: Option<Duration>,
 ) -> Result<Vec<ScoredPoint>, StorageError> {
     let batch_res = do_core_search_batch_points(
@@ -780,7 +780,7 @@ pub async fn do_search_batch_points(
     collection_name: &str,
     requests: Vec<(CoreSearchRequest, ShardSelectorInternal)>,
     read_consistency: Option<ReadConsistency>,
-    claims: Option<&Claims>,
+    claims: Option<Claims>,
     timeout: Option<Duration>,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     let requests = batch_requests::<
@@ -809,7 +809,7 @@ pub async fn do_search_batch_points(
                 core_batch,
                 read_consistency,
                 shard_selector,
-                claims,
+                claims.clone(),
                 timeout,
             );
             res.push(req);
@@ -828,7 +828,7 @@ pub async fn do_core_search_batch_points(
     request: CoreSearchRequestBatch,
     read_consistency: Option<ReadConsistency>,
     shard_selection: ShardSelectorInternal,
-    claims: Option<&Claims>,
+    claims: Option<Claims>,
     timeout: Option<Duration>,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     toc.core_search_batch(
