@@ -78,7 +78,7 @@ impl<'a> From<&'a SparseVector> for CowVector<'a> {
 
 impl<'a> From<&'a [VectorElementType]> for CowVector<'a> {
     fn from(v: &'a [VectorElementType]) -> Self {
-        CowVector::Dense(Cow::Owned(v.into()))
+        CowVector::Dense(Cow::Borrowed(v))
     }
 }
 
