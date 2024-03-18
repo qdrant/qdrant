@@ -139,7 +139,7 @@ impl<'de> serde::Deserialize<'de> for ExtendedPointId {
 
         Err(serde::de::Error::custom(format!(
             "value {} is not a valid point ID, \
-             valid values are either an unsigned integer or a UUID",
+                 valid values are either an unsigned integer or a UUID",
             crate::utils::fmt::SerdeValue(&value),
         )))
     }
