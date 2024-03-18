@@ -23,17 +23,33 @@ pub struct SnapshotConfig {
     pub collections_aliases: HashMap<String, String>,
 }
 
+/// Get full file path for a full snapshot by name
+///
+/// This enforces the file to be inside the snapshots directory
 pub async fn get_full_snapshot_path(
     toc: &TableOfContent,
     snapshot_name: &str,
 ) -> Result<PathBuf, StorageError> {
-    let snapshot_path = Path::new(toc.snapshots_path()).join(snapshot_name);
-    if !snapshot_path.exists() {
-        return Err(StorageError::NotFound {
-            description: format!("Full storage snapshot {snapshot_name} not found"),
-        });
+    let snapshots_path = toc.snapshots_path();
+
+    let absolute_snapshot_dir = Path::new(snapshots_path)
+        .canonicalize()
+        .map_err(|_| StorageError::not_found(format!("Snapshot directory: {snapshots_path}")))?;
+
+    let absolute_snapshot_path = absolute_snapshot_dir
+        .join(snapshot_name)
+        .canonicalize()
+        .map_err(|_| StorageError::not_found(format!("Snapshot {snapshot_name}")))?;
+
+    if !absolute_snapshot_path.starts_with(absolute_snapshot_dir) {
+        return Err(StorageError::not_found(format!("Snapshot {snapshot_name}")));
     }
-    Ok(snapshot_path)
+
+    if !absolute_snapshot_path.exists() {
+        return Err(StorageError::not_found(format!("Snapshot {snapshot_name}")));
+    }
+
+    Ok(absolute_snapshot_path)
 }
 
 pub async fn do_delete_full_snapshot(

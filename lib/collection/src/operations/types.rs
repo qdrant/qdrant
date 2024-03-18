@@ -959,6 +959,10 @@ impl CollectionError {
         CollectionError::BadInput { description }
     }
 
+    pub fn not_found(what: impl Into<String>) -> CollectionError {
+        CollectionError::NotFound { what: what.into() }
+    }
+
     pub fn bad_request(description: String) -> CollectionError {
         CollectionError::BadRequest { description }
     }
