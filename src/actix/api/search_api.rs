@@ -5,6 +5,7 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     CoreSearchRequest, SearchGroupsRequest, SearchRequest, SearchRequestBatch,
 };
+use itertools::Itertools;
 use storage::content_manager::toc::TableOfContent;
 
 use super::read_params::ReadParams;
@@ -41,7 +42,13 @@ async fn search_points(
         shard_selection,
         params.timeout(),
     )
-    .await;
+    .await
+    .map(|scored_points| {
+        scored_points
+            .into_iter()
+            .map(api::rest::ScoredPoint::from)
+            .collect_vec()
+    });
 
     process_response(response, timing)
 }
@@ -81,7 +88,18 @@ async fn batch_search_points(
         params.consistency,
         params.timeout(),
     )
-    .await;
+    .await
+    .map(|batch_scored_points| {
+        batch_scored_points
+            .into_iter()
+            .map(|scored_points| {
+                scored_points
+                    .into_iter()
+                    .map(api::rest::ScoredPoint::from)
+                    .collect_vec()
+            })
+            .collect_vec()
+    });
 
     process_response(response, timing)
 }

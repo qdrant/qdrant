@@ -217,7 +217,7 @@ pub enum Order {
 }
 
 /// Search result
-#[derive(Serialize, JsonSchema, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct ScoredPoint {
     /// Point id
     pub id: PointIdType,
@@ -230,7 +230,6 @@ pub struct ScoredPoint {
     /// Vector of the point
     pub vector: Option<VectorStruct>,
     /// Shard Key
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<ShardKey>,
 }
 

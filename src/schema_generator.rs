@@ -1,4 +1,5 @@
 use api::grpc::models::{CollectionsResponse, VersionInfo};
+use api::rest::ScoredPoint;
 use collection::operations::cluster_ops::ClusterOperations;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
@@ -16,7 +17,6 @@ use collection::operations::types::{
 use collection::operations::vector_ops::{DeleteVectors, UpdateVectors};
 use schemars::gen::SchemaSettings;
 use schemars::JsonSchema;
-use segment::types::ScoredPoint;
 use serde::Serialize;
 use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CreateCollection, UpdateCollection,

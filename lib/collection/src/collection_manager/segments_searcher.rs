@@ -11,7 +11,7 @@ use parking_lot::RwLock;
 use segment::common::operation_error::OperationError;
 use segment::common::BYTES_IN_KB;
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::vectors::QueryVector;
+use segment::data_types::vectors::{QueryVector, VectorStruct};
 use segment::entry::entry_point::SegmentEntry;
 use segment::types::{
     Filter, Indexes, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SeqNumberType,
@@ -318,18 +318,21 @@ impl SegmentsSearcher {
                         } else {
                             None
                         },
-                        vector: match with_vector {
-                            WithVector::Bool(true) => Some(segment.all_vectors(id)?.into()),
-                            WithVector::Bool(false) => None,
-                            WithVector::Selector(vector_names) => {
-                                let mut selected_vectors = NamedVectors::default();
-                                for vector_name in vector_names {
-                                    if let Some(vector) = segment.vector(vector_name, id)? {
-                                        selected_vectors.insert(vector_name.into(), vector);
+                        vector: {
+                            let vector: Option<VectorStruct> = match with_vector {
+                                WithVector::Bool(true) => Some(segment.all_vectors(id)?.into()),
+                                WithVector::Bool(false) => None,
+                                WithVector::Selector(vector_names) => {
+                                    let mut selected_vectors = NamedVectors::default();
+                                    for vector_name in vector_names {
+                                        if let Some(vector) = segment.vector(vector_name, id)? {
+                                            selected_vectors.insert(vector_name.into(), vector);
+                                        }
                                     }
+                                    Some(selected_vectors.into())
                                 }
-                                Some(selected_vectors.into())
-                            }
+                            };
+                            vector.map(Into::into)
                         },
                         shard_key: None,
                     },

@@ -9,7 +9,7 @@ use itertools::Itertools;
 use rand::rngs::SmallRng;
 use rand::{self, Rng, SeedableRng};
 use rstest::*;
-use segment::data_types::vectors::VectorStruct;
+use segment::data_types::vectors::{BatchVectorStruct, VectorStruct};
 use segment::types::{Payload, PointIdType};
 use serde_json::json;
 use tempfile::Builder;
@@ -58,7 +58,7 @@ async fn setup() -> Resources {
     let upsert_points = collection::operations::CollectionUpdateOperations::PointOperation(
         Batch {
             ids,
-            vectors: vectors.into(),
+            vectors: BatchVectorStruct::from(vectors).into(),
             payloads: Some(payloads),
         }
         .into(),
@@ -145,6 +145,7 @@ async fn happy_lookup_ids() {
             record.payload,
             Some(Payload::from(json!({ "foo": format!("bar {}", id_value) })))
         );
+        let vector: api::rest::VectorStruct = vector.into();
         assert_eq!(record.vector, Some(vector));
     }
 }
