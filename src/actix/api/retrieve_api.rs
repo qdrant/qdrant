@@ -13,7 +13,7 @@ use validator::Validate;
 
 use super::read_params::ReadParams;
 use super::CollectionPath;
-use crate::actix::auth::ActixClaims;
+use crate::actix::auth::Extension;
 use crate::actix::helpers::process_response;
 use crate::common::points::do_get_points;
 
@@ -56,7 +56,7 @@ async fn get_point(
     collection: Path<CollectionPath>,
     point: Path<PointPath>,
     params: Query<ReadParams>,
-    ActixClaims(claims): ActixClaims,
+    claims: Extension<Claims>,
 ) -> impl Responder {
     let timing = Instant::now();
 
@@ -78,7 +78,7 @@ async fn get_point(
         &collection.name,
         point_id,
         params.consistency,
-        claims,
+        claims.into_inner(),
     )
     .await;
 
@@ -100,7 +100,7 @@ async fn get_points(
     collection: Path<CollectionPath>,
     request: Json<PointRequest>,
     params: Query<ReadParams>,
-    ActixClaims(claims): ActixClaims,
+    claims: Extension<Claims>,
 ) -> impl Responder {
     let timing = Instant::now();
 
@@ -120,7 +120,7 @@ async fn get_points(
         point_request,
         params.consistency,
         shard_selection,
-        claims,
+        claims.into_inner(),
     )
     .await;
     process_response(response, timing)
@@ -132,7 +132,7 @@ async fn scroll_points(
     collection: Path<CollectionPath>,
     request: Json<ScrollRequest>,
     params: Query<ReadParams>,
-    ActixClaims(claims): ActixClaims,
+    claims: Extension<Claims>,
 ) -> impl Responder {
     let timing = Instant::now();
 
@@ -153,7 +153,7 @@ async fn scroll_points(
             params.consistency,
             // TODO: handle params.timeout
             shard_selection,
-            claims,
+            claims.into_inner(),
         )
         .await;
 

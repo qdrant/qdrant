@@ -3,12 +3,13 @@ use actix_web_validator::{Json, Path, Query};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{DiscoverRequest, DiscoverRequestBatch};
 use itertools::Itertools;
+use rbac::jwt::Claims;
 use storage::content_manager::toc::TableOfContent;
 use tokio::time::Instant;
 
 use crate::actix::api::read_params::ReadParams;
 use crate::actix::api::CollectionPath;
-use crate::actix::auth::ActixClaims;
+use crate::actix::auth::Extension;
 use crate::actix::helpers::process_response;
 use crate::common::points::do_discover_batch_points;
 
@@ -18,7 +19,7 @@ async fn discover_points(
     collection: Path<CollectionPath>,
     request: Json<DiscoverRequest>,
     params: Query<ReadParams>,
-    ActixClaims(claims): ActixClaims,
+    claims: Extension<Claims>,
 ) -> impl Responder {
     let timing = Instant::now();
 
@@ -38,7 +39,7 @@ async fn discover_points(
             discover_request,
             params.consistency,
             shard_selection,
-            claims,
+            claims.into_inner(),
             params.timeout(),
         )
         .await
@@ -58,7 +59,7 @@ async fn discover_batch_points(
     collection: Path<CollectionPath>,
     request: Json<DiscoverRequestBatch>,
     params: Query<ReadParams>,
-    ActixClaims(claims): ActixClaims,
+    claims: Extension<Claims>,
 ) -> impl Responder {
     let timing = Instant::now();
 
@@ -67,7 +68,7 @@ async fn discover_batch_points(
         &collection.name,
         request.into_inner(),
         params.consistency,
-        claims,
+        claims.into_inner(),
         params.timeout(),
     )
     .await
