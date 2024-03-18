@@ -50,7 +50,7 @@ segment = { path = "../segment" }
 collection = { path = "../collection" }
 api = { path = "../api" }
 futures = { workspace = true }
-anyhow = "1.0.80"
+anyhow = "1.0.81"
 uuid = { workspace = true }
 url = "2.5.0"
 reqwest = { version = "0.11", default-features = false, features = ["stream", "rustls-tls"] }
