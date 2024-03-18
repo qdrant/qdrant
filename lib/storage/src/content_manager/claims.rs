@@ -28,7 +28,6 @@ pub fn check_collection_name(
     })
 }
 
-#[allow(private_bounds)]
 pub fn check_points_op(
     collections: &Option<Vec<String>>,
     payload: &Option<PayloadClaim>,
@@ -43,7 +42,7 @@ pub fn check_points_op(
     Ok(())
 }
 
-trait PointsOpClaimsChecker {
+pub trait PointsOpClaimsChecker {
     /// An iterator over the collection names used in the operation, for checking `collections`
     /// claim.
     fn collections_used(&self) -> impl Iterator<Item = &str>;
