@@ -158,37 +158,14 @@ impl Metric for DotProductMetric {
     }
 }
 
+/// Equivalent to DotProductMetric with normalization of the vectors in preprocessing.
 impl Metric for CosineMetric {
     fn distance() -> Distance {
         Distance::Cosine
     }
 
     fn similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
-        #[cfg(target_arch = "x86_64")]
-        {
-            if is_x86_feature_detected!("avx")
-                && is_x86_feature_detected!("fma")
-                && v1.len() >= MIN_DIM_SIZE_AVX
-            {
-                return unsafe { dot_similarity_avx(v1, v2) };
-            }
-        }
-
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        {
-            if is_x86_feature_detected!("sse") && v1.len() >= MIN_DIM_SIZE_SIMD {
-                return unsafe { dot_similarity_sse(v1, v2) };
-            }
-        }
-
-        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-        {
-            if std::arch::is_aarch64_feature_detected!("neon") && v1.len() >= MIN_DIM_SIZE_SIMD {
-                return unsafe { dot_similarity_neon(v1, v2) };
-            }
-        }
-
-        dot_similarity(v1, v2)
+        DotProductMetric::similarity(v1, v2)
     }
 
     fn preprocess(vector: DenseVector) -> DenseVector {
