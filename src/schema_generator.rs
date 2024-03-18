@@ -1,5 +1,5 @@
 use api::grpc::models::{CollectionsResponse, VersionInfo};
-use api::rest::schema::ScoredPoint;
+use api::rest::ScoredPoint;
 use collection::operations::cluster_ops::ClusterOperations;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::payload_ops::{DeletePayload, SetPayload};

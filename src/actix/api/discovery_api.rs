@@ -42,7 +42,7 @@ async fn discover_points(
         .map(|scored_points| {
             scored_points
                 .into_iter()
-                .map(api::rest::schema::ScoredPoint::from)
+                .map(api::rest::ScoredPoint::from)
                 .collect_vec()
         });
 
@@ -72,7 +72,7 @@ async fn discover_batch_points(
             .map(|scored_points| {
                 scored_points
                     .into_iter()
-                    .map(api::rest::schema::ScoredPoint::from)
+                    .map(api::rest::ScoredPoint::from)
                     .collect_vec()
             })
             .collect_vec()

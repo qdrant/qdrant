@@ -142,7 +142,7 @@ pub fn try_record_from_grpc(
     Ok(Record {
         id,
         payload,
-        vector: vector.map(Into::into),
+        vector: vector.map(api::rest::VectorStruct::from),
         shard_key: convert_shard_key_from_grpc_opt(point.shard_key),
     })
 }
@@ -444,7 +444,7 @@ impl From<Record> for api::grpc::qdrant::RetrievedPoint {
         Self {
             id: Some(record.id.into()),
             payload: record.payload.map(payload_to_proto).unwrap_or_default(),
-            vectors: vectors.map(|v| v.into()),
+            vectors: vectors.map(api::grpc::qdrant::Vectors::from),
             shard_key: record.shard_key.map(convert_shard_key_to_grpc),
         }
     }
@@ -775,7 +775,7 @@ impl TryFrom<api::grpc::qdrant::PointStruct> for PointStruct {
             id: id
                 .ok_or_else(|| Status::invalid_argument("Empty ID is not allowed"))?
                 .try_into()?,
-            vector: vector_struct.into(),
+            vector: api::rest::VectorStruct::from(vector_struct),
             payload: converted_payload,
         })
     }
@@ -785,8 +785,8 @@ impl TryFrom<PointStruct> for api::grpc::qdrant::PointStruct {
     type Error = Status;
 
     fn try_from(value: PointStruct) -> Result<Self, Self::Error> {
-        let vectors: VectorStruct = value.vector.into();
-        let vectors: api::grpc::qdrant::Vectors = vectors.into();
+        let vectors = VectorStruct::from(value.vector);
+        let vectors = api::grpc::qdrant::Vectors::from(vectors);
 
         let id = value.id;
         let payload = value.payload;
@@ -809,7 +809,7 @@ impl TryFrom<Batch> for Vec<api::grpc::qdrant::PointStruct> {
 
     fn try_from(batch: Batch) -> Result<Self, Self::Error> {
         let mut points = Vec::new();
-        let batch_vectors: BatchVectorStruct = batch.vectors.into();
+        let batch_vectors = BatchVectorStruct::from(batch.vectors);
         let all_vectors = batch_vectors.into_all_vectors(batch.ids.len());
         for (i, p_id) in batch.ids.into_iter().enumerate() {
             let id = Some(p_id.into());

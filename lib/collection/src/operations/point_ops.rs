@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-use api::rest::schema::{BatchVectorStruct, VectorStruct};
+use api::rest::{BatchVectorStruct, VectorStruct};
 use itertools::izip;
 use schemars::JsonSchema;
 use segment::common::utils::transpose_map_into_named_vector;
@@ -387,9 +387,10 @@ impl SplitByShard for Batch {
                             let name = name.into_owned();
                             let vector: Vector = vector.to_owned();
                             match &mut batch.vectors {
-                                BatchVectorStruct::Multi(batch_vectors) => {
-                                    batch_vectors.entry(name).or_default().push(vector.into())
-                                }
+                                BatchVectorStruct::Multi(batch_vectors) => batch_vectors
+                                    .entry(name)
+                                    .or_default()
+                                    .push(api::rest::Vector::from(vector)),
                                 _ => unreachable!(), // TODO(sparse) propagate error
                             }
                         }
@@ -432,9 +433,10 @@ impl SplitByShard for Batch {
                             let name = name.into_owned();
                             let vector: Vector = vector.to_owned();
                             match &mut batch.vectors {
-                                BatchVectorStruct::Multi(batch_vectors) => {
-                                    batch_vectors.entry(name).or_default().push(vector.into())
-                                }
+                                BatchVectorStruct::Multi(batch_vectors) => batch_vectors
+                                    .entry(name)
+                                    .or_default()
+                                    .push(api::rest::Vector::from(vector)),
                                 _ => unreachable!(), // TODO(sparse) propagate error
                             }
                         }
@@ -490,12 +492,13 @@ impl PointStruct {
     pub fn get_vectors(&self) -> NamedVectors {
         let mut named_vectors = NamedVectors::default();
         match &self.vector {
-            VectorStruct::Single(vector) => {
-                named_vectors.insert(DEFAULT_VECTOR_NAME.to_string(), vector.clone().into())
-            }
+            VectorStruct::Single(vector) => named_vectors.insert(
+                DEFAULT_VECTOR_NAME.to_string(),
+                Vector::from(vector.clone()),
+            ),
             VectorStruct::Multi(vectors) => {
                 for (name, vector) in vectors {
-                    named_vectors.insert(name.clone(), vector.clone().into());
+                    named_vectors.insert(name.clone(), Vector::from(vector.clone()));
                 }
             }
         }

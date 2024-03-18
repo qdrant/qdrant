@@ -145,7 +145,7 @@ async fn happy_lookup_ids() {
             record.payload,
             Some(Payload::from(json!({ "foo": format!("bar {}", id_value) })))
         );
-        let vector: api::rest::schema::VectorStruct = vector.into();
+        let vector: api::rest::VectorStruct = vector.into();
         assert_eq!(record.vector, Some(vector));
     }
 }

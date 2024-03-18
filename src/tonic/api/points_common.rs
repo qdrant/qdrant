@@ -245,7 +245,7 @@ pub async fn update_vectors(
         };
         op_points.push(PointVectors {
             id,
-            vector: vector.into(),
+            vector: api::rest::VectorStruct::from(vector),
         });
     }
 

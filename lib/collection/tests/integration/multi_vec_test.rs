@@ -227,8 +227,8 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
 
     assert_eq!(retrieve.len(), 1);
     match retrieve[0].vector.as_ref().unwrap() {
-        api::rest::schema::VectorStruct::Single(_) => panic!("expected multi vector"),
-        api::rest::schema::VectorStruct::Multi(vectors) => {
+        api::rest::VectorStruct::Single(_) => panic!("expected multi vector"),
+        api::rest::VectorStruct::Multi(vectors) => {
             assert!(vectors.contains_key(VEC_NAME1));
             assert!(!vectors.contains_key(VEC_NAME2));
         }
