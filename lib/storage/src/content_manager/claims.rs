@@ -11,14 +11,16 @@ use collection::operations::types::{
 use collection::operations::vector_ops::VectorOperations;
 use collection::operations::{CollectionUpdateOperations, FieldIndexOperations};
 use itertools::{Either, Itertools as _};
-use rbac::jwt::{Claims, PayloadClaim};
+use rbac::jwt::PayloadClaim;
 use segment::types::{Condition, ExtendedPointId, FieldCondition, Filter, Match, Payload};
 
 use super::errors::StorageError;
 
-pub fn check_collection_name(claims: &Claims, collection_name: &str) -> Result<(), StorageError> {
-    let ok = claims
-        .collections
+pub fn check_collection_name(
+    collections: &Option<Vec<String>>,
+    collection_name: &str,
+) -> Result<(), StorageError> {
+    let ok = collections
         .as_ref()
         .map_or(true, |c| c.iter().any(|c| c == collection_name));
     ok.then_some(()).ok_or_else(|| {
@@ -28,13 +30,14 @@ pub fn check_collection_name(claims: &Claims, collection_name: &str) -> Result<(
 
 #[allow(private_bounds)]
 pub fn check_points_op(
-    claims: &Claims,
+    collections: &Option<Vec<String>>,
+    payload: &Option<PayloadClaim>,
     op: &mut impl PointsOpClaimsChecker,
 ) -> Result<(), StorageError> {
     for collection in op.collections_used() {
-        check_collection_name(claims, collection)?;
+        check_collection_name(collections, collection)?;
     }
-    if let Some(payload) = &claims.payload {
+    if let Some(payload) = payload {
         op.apply_payload_claim(payload)?;
     }
     Ok(())

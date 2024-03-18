@@ -38,9 +38,15 @@ impl TableOfContent {
         claims: Option<Claims>,
         timeout: Option<Duration>,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
-        if let Some(claims) = claims.as_ref() {
-            check_collection_name(claims, collection_name)?;
-            check_points_op(claims, &mut request)?;
+        if let Some(Claims {
+            exp: _,
+            w: _,
+            collections,
+            payload,
+        }) = claims.as_ref()
+        {
+            check_collection_name(collections, collection_name)?;
+            check_points_op(collections, payload, &mut request)?;
         }
 
         let collection = self.get_collection(collection_name).await?;
@@ -74,10 +80,16 @@ impl TableOfContent {
         claims: Option<Claims>,
         timeout: Option<Duration>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
-        if let Some(claims) = claims.as_ref() {
-            check_collection_name(claims, collection_name)?;
+        if let Some(Claims {
+            exp: _,
+            w: _,
+            collections,
+            payload,
+        }) = claims.as_ref()
+        {
+            check_collection_name(collections, collection_name)?;
             for (request, _shard_selector) in &mut requests {
-                check_points_op(claims, request)?;
+                check_points_op(collections, payload, request)?;
             }
         }
 
@@ -116,10 +128,16 @@ impl TableOfContent {
         claims: Option<Claims>,
         timeout: Option<Duration>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
-        if let Some(claims) = claims.as_ref() {
-            check_collection_name(claims, collection_name)?;
+        if let Some(Claims {
+            exp: _,
+            w: _,
+            collections,
+            payload,
+        }) = claims.as_ref()
+        {
+            check_collection_name(collections, collection_name)?;
             for req in &mut request.searches {
-                check_points_op(claims, req)?;
+                check_points_op(collections, payload, req)?;
             }
         }
 
@@ -150,9 +168,15 @@ impl TableOfContent {
         shard_selection: ShardSelectorInternal,
         claims: Option<Claims>,
     ) -> Result<CountResult, StorageError> {
-        if let Some(claims) = claims.as_ref() {
-            check_collection_name(claims, collection_name)?;
-            check_points_op(claims, &mut request)?;
+        if let Some(Claims {
+            exp: _,
+            w: _,
+            collections,
+            payload,
+        }) = claims.as_ref()
+        {
+            check_collection_name(collections, collection_name)?;
+            check_points_op(collections, payload, &mut request)?;
         }
 
         let collection = self.get_collection(collection_name).await?;
@@ -181,9 +205,15 @@ impl TableOfContent {
         shard_selection: ShardSelectorInternal,
         claims: Option<Claims>,
     ) -> Result<Vec<Record>, StorageError> {
-        if let Some(claims) = claims.as_ref() {
-            check_collection_name(claims, collection_name)?;
-            check_points_op(claims, &mut request)?;
+        if let Some(Claims {
+            exp: _,
+            w: _,
+            collections,
+            payload,
+        }) = claims.as_ref()
+        {
+            check_collection_name(collections, collection_name)?;
+            check_points_op(collections, payload, &mut request)?;
         }
 
         let collection = self.get_collection(collection_name).await?;
@@ -202,9 +232,15 @@ impl TableOfContent {
         claims: Option<Claims>,
         timeout: Option<Duration>,
     ) -> Result<GroupsResult, StorageError> {
-        if let Some(claims) = claims.as_ref() {
-            check_collection_name(claims, collection_name)?;
-            check_points_op(claims, &mut request)?;
+        if let Some(Claims {
+            exp: _,
+            w: _,
+            collections,
+            payload,
+        }) = claims.as_ref()
+        {
+            check_collection_name(collections, collection_name)?;
+            check_points_op(collections, payload, &mut request)?;
         }
 
         let collection = self.get_collection(collection_name).await?;
@@ -232,9 +268,15 @@ impl TableOfContent {
         claims: Option<Claims>,
         timeout: Option<Duration>,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
-        if let Some(claims) = claims.as_ref() {
-            check_collection_name(claims, collection_name)?;
-            check_points_op(claims, &mut request)?;
+        if let Some(Claims {
+            exp: _,
+            w: _,
+            collections,
+            payload,
+        }) = claims.as_ref()
+        {
+            check_collection_name(collections, collection_name)?;
+            check_points_op(collections, payload, &mut request)?;
         }
 
         let collection = self.get_collection(collection_name).await?;
@@ -291,9 +333,15 @@ impl TableOfContent {
         shard_selection: ShardSelectorInternal,
         claims: Option<Claims>,
     ) -> Result<ScrollResult, StorageError> {
-        if let Some(claims) = claims.as_ref() {
-            check_collection_name(claims, collection_name)?;
-            check_points_op(claims, &mut request)?;
+        if let Some(Claims {
+            exp: _,
+            w: _,
+            collections,
+            payload,
+        }) = claims.as_ref()
+        {
+            check_collection_name(collections, collection_name)?;
+            check_points_op(collections, payload, &mut request)?;
         }
 
         let collection = self.get_collection(collection_name).await?;
@@ -346,9 +394,15 @@ impl TableOfContent {
         shard_selector: ShardSelectorInternal,
         claims: Option<Claims>,
     ) -> Result<UpdateResult, StorageError> {
-        if let Some(claims) = claims.as_ref() {
-            check_collection_name(claims, collection_name)?;
-            check_points_op(claims, &mut operation.operation)?;
+        if let Some(Claims {
+            exp: _,
+            w: _,
+            collections,
+            payload,
+        }) = claims.as_ref()
+        {
+            check_collection_name(collections, collection_name)?;
+            check_points_op(collections, payload, &mut operation.operation)?;
         }
 
         // `TableOfContent::_update_shard_keys` and `Collection::update_from_*` are cancel safe,
