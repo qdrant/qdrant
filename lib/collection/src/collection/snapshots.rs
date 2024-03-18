@@ -232,35 +232,35 @@ impl Collection {
             .await
     }
 
+    /// Get full file path for a collection snapshot by name
+    ///
+    /// This enforces the file to be inside the snapshots directory
     pub async fn get_snapshot_path(&self, snapshot_name: &str) -> CollectionResult<PathBuf> {
-        let snapshot_path = self.snapshots_path.join(snapshot_name);
+        let absolute_snapshot_dir = self.snapshots_path.canonicalize().map_err(|_| {
+            CollectionError::not_found(format!(
+                "Snapshot directory: {}",
+                self.snapshots_path.display()
+            ))
+        })?;
 
-        let absolute_snapshot_path =
-            snapshot_path
-                .canonicalize()
-                .map_err(|_| CollectionError::NotFound {
-                    what: format!("Snapshot {snapshot_name}"),
-                })?;
-
-        let absolute_snapshot_dir =
-            self.snapshots_path
-                .canonicalize()
-                .map_err(|_| CollectionError::NotFound {
-                    what: format!("Snapshot directory: {}", self.snapshots_path.display()),
-                })?;
+        let absolute_snapshot_path = absolute_snapshot_dir
+            .join(snapshot_name)
+            .canonicalize()
+            .map_err(|_| CollectionError::not_found(format!("Snapshot {snapshot_name}")))?;
 
         if !absolute_snapshot_path.starts_with(absolute_snapshot_dir) {
-            return Err(CollectionError::NotFound {
-                what: format!("Snapshot {snapshot_name}"),
-            });
+            return Err(CollectionError::not_found(format!(
+                "Snapshot {snapshot_name}"
+            )));
         }
 
-        if !snapshot_path.exists() {
-            return Err(CollectionError::NotFound {
-                what: format!("Snapshot {snapshot_name}"),
-            });
+        if !absolute_snapshot_path.exists() {
+            return Err(CollectionError::not_found(format!(
+                "Snapshot {snapshot_name}"
+            )));
         }
-        Ok(snapshot_path)
+
+        Ok(absolute_snapshot_path)
     }
 
     pub async fn list_shard_snapshots(

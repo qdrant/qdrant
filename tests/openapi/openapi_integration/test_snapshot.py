@@ -1,9 +1,13 @@
 from time import sleep
 import hashlib
+import os
 import pytest
+import requests
 
 from .helpers.collection_setup import basic_collection_setup, drop_collection
 from .helpers.helpers import request_with_validation
+
+QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost:6333")
 
 collection_name = 'test_collection_snapshot'
 
@@ -361,3 +365,31 @@ def test_snapshot_invalid_file_uri():
     )
     assert response.status_code == 400
     assert response.json()["status"]["error"] == "Bad request: Snapshot file \"/whatever.snapshot\" does not exist"
+
+
+def test_security():
+    # ensure we cannot do simple arbitrary path traversal
+    name = "/etc/passwd"
+    response = requests.get(
+        f"http://{QDRANT_HOST}/collections/{name}",
+        headers={"Content-Type": "application/json"},
+    )
+    assert not response.ok
+    assert response.status_code == 404
+
+    name = "../../../../../../../etc/passwd"
+    response = requests.get(
+        f"http://{QDRANT_HOST}/collections/{name}",
+        headers={"Content-Type": "application/json"},
+    )
+    assert not response.ok
+    assert response.status_code == 404
+
+    # ensure we cannot do arbitrary path traversal with encoded slashes
+    response = request_with_validation(
+        api='/snapshots/{snapshot_name}',
+        path_params={'snapshot_name': '..%2F..%2F..%2F..%2F..%2F..%2F..%2F..%2F..%2Fetc%2Fpasswd'},
+        method="GET",
+    )
+    assert not response.ok
+    assert response.status_code == 404

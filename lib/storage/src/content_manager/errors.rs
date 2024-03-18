@@ -56,6 +56,12 @@ impl StorageError {
         }
     }
 
+    pub fn not_found(description: impl Into<String>) -> StorageError {
+        StorageError::NotFound {
+            description: description.into(),
+        }
+    }
+
     pub fn checksum_mismatch(expected: impl Into<String>, actual: impl Into<String>) -> Self {
         StorageError::ChecksumMismatch {
             expected: expected.into(),
