@@ -67,6 +67,6 @@ impl Anonymize for DateTime<Utc> {
     fn anonymize(&self) -> Self {
         let coeff: f32 = rand::random();
 
-        *self + chrono::Duration::seconds(((coeff * 20.0) - 10.0) as i64)
+        *self + chrono::Duration::try_seconds(((coeff * 20.0) - 10.0) as i64).unwrap_or_default()
     }
 }

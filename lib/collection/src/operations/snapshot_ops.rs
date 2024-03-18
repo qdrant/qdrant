@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use api::grpc::conversions::naive_date_time_to_proto;
-use chrono::NaiveDateTime;
+use chrono::{DateTime, NaiveDateTime};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -105,7 +105,9 @@ pub async fn get_snapshot_description(path: &Path) -> CollectionResult<SnapshotD
             .duration_since(SystemTime::UNIX_EPOCH)
             .ok()
             .map(|duration| {
-                NaiveDateTime::from_timestamp_opt(duration.as_secs() as i64, 0).unwrap()
+                DateTime::from_timestamp(duration.as_secs() as i64, 0)
+                    .map(|dt| dt.naive_utc())
+                    .unwrap()
             })
     });
 

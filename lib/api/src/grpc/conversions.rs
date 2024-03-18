@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
-use chrono::{NaiveDateTime, TimeZone as _, Timelike};
+use chrono::{NaiveDateTime, Timelike};
 use segment::data_types::integer_index::IntegerIndexType;
 use segment::data_types::text_index::TextIndexType;
 use segment::data_types::vectors::DenseVector;
@@ -1375,7 +1375,7 @@ impl From<HnswConfigDiff> for segment::types::HnswConfig {
 
 pub fn naive_date_time_to_proto(date_time: NaiveDateTime) -> prost_wkt_types::Timestamp {
     prost_wkt_types::Timestamp {
-        seconds: date_time.timestamp(), // number of non-leap seconds since the midnight on January 1, 1970.
+        seconds: date_time.and_utc().timestamp(), // number of non-leap seconds since the midnight on January 1, 1970.
         nanos: date_time.nanosecond() as i32,
     }
 }
@@ -1387,12 +1387,9 @@ pub fn date_time_to_proto(date_time: DateTimePayloadType) -> prost_wkt_types::Ti
 pub fn try_date_time_from_proto(
     date_time: prost_wkt_types::Timestamp,
 ) -> Result<DateTimePayloadType, Status> {
-    chrono::NaiveDateTime::from_timestamp_opt(
-        date_time.seconds,
-        date_time.nanos.try_into().unwrap_or(0),
-    )
-    .map(|naive_date_time| chrono::Utc.from_utc_datetime(&naive_date_time).into())
-    .ok_or_else(|| Status::invalid_argument(format!("Unable to parse timestamp: {date_time}")))
+    chrono::DateTime::from_timestamp(date_time.seconds, date_time.nanos.try_into().unwrap_or(0))
+        .map(|date_time| date_time.into())
+        .ok_or_else(|| Status::invalid_argument(format!("Unable to parse timestamp: {date_time}")))
 }
 
 impl TryFrom<Distance> for segment::types::Distance {
