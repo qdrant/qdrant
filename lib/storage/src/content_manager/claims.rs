@@ -67,7 +67,7 @@ impl PointsOpClaimsChecker for PointRequestInternal {
     }
 
     fn apply_payload_claim(&mut self, _claim: &PayloadClaim) -> Result<(), StorageError> {
-        failed_payload_claim()
+        incompatible_with_payload_claim()
     }
 }
 
@@ -145,7 +145,7 @@ impl PointsOpClaimsChecker for CollectionUpdateOperations {
     fn apply_payload_claim(&mut self, claim: &PayloadClaim) -> Result<(), StorageError> {
         match self {
             CollectionUpdateOperations::PointOperation(op) => match op {
-                PointOperations::UpsertPoints(_) => failed_payload_claim(),
+                PointOperations::UpsertPoints(_) => incompatible_with_payload_claim(),
                 PointOperations::DeletePoints { ids } => {
                     *op = PointOperations::DeletePointsByFilter(
                         make_filter_from_ids(take(ids))
@@ -154,15 +154,15 @@ impl PointsOpClaimsChecker for CollectionUpdateOperations {
                     Ok(())
                 }
                 PointOperations::DeletePointsByFilter(filter) => apply_filter(filter, claim),
-                PointOperations::SyncPoints(_) => failed_payload_claim(),
+                PointOperations::SyncPoints(_) => incompatible_with_payload_claim(),
             },
 
             CollectionUpdateOperations::VectorOperation(op) => match op {
-                VectorOperations::UpdateVectors(_) => failed_payload_claim(),
+                VectorOperations::UpdateVectors(_) => incompatible_with_payload_claim(),
                 VectorOperations::DeleteVectors(PointIdsList { points, shard_key }, vectors) => {
                     if shard_key.is_some() {
                         // It is unclear where to put the shard_key
-                        return failed_payload_claim();
+                        return incompatible_with_payload_claim();
                     }
                     *op = VectorOperations::DeleteVectorsByFilter(
                         make_filter_from_ids(take(points))
@@ -181,7 +181,7 @@ impl PointsOpClaimsChecker for CollectionUpdateOperations {
                     filter,
                     key: _, // TODO: validate
                 }) => {
-                    failed_payload_claim()?; // Reject as not implemented
+                    incompatible_with_payload_claim()?; // Reject as not implemented
 
                     let filter = filter.get_or_insert_with(Default::default);
                     if let Some(points) = take(points) {
@@ -194,7 +194,7 @@ impl PointsOpClaimsChecker for CollectionUpdateOperations {
                     points,
                     filter,
                 }) => {
-                    failed_payload_claim()?; // Reject as not implemented
+                    incompatible_with_payload_claim()?; // Reject as not implemented
 
                     let filter = filter.get_or_insert_with(Default::default);
                     if let Some(points) = take(points) {
@@ -231,7 +231,7 @@ impl PointsOpClaimsChecker for CollectionUpdateOperations {
                     filter,
                     key: _, // TODO: validate
                 }) => {
-                    failed_payload_claim()?; // Reject as not implemented
+                    incompatible_with_payload_claim()?; // Reject as not implemented
 
                     let filter = filter.get_or_insert_with(Default::default);
                     if let Some(points) = take(points) {
@@ -242,8 +242,8 @@ impl PointsOpClaimsChecker for CollectionUpdateOperations {
             },
 
             CollectionUpdateOperations::FieldIndexOperation(op) => match op {
-                FieldIndexOperations::CreateIndex(_) => failed_payload_claim(),
-                FieldIndexOperations::DeleteIndex(_) => failed_payload_claim(),
+                FieldIndexOperations::CreateIndex(_) => incompatible_with_payload_claim(),
+                FieldIndexOperations::DeleteIndex(_) => incompatible_with_payload_claim(),
             },
         }
     }
@@ -251,7 +251,7 @@ impl PointsOpClaimsChecker for CollectionUpdateOperations {
 
 /// Helper function to indicate that the operation is not allowed when `payload` claim is present.
 /// Usually used when point IDs are involved.
-fn failed_payload_claim<T>() -> Result<T, StorageError> {
+fn incompatible_with_payload_claim<T>() -> Result<T, StorageError> {
     Err(StorageError::unauthorized(
         "This operation is not allowed when payload JWT claim is present",
     ))
@@ -261,7 +261,7 @@ fn validate_payload_claim_for_recommended_example(
     example: &RecommendExample,
 ) -> Result<(), StorageError> {
     match example {
-        RecommendExample::PointId(_) => failed_payload_claim(),
+        RecommendExample::PointId(_) => incompatible_with_payload_claim(),
         RecommendExample::Dense(_) | RecommendExample::Sparse(_) => Ok(()),
     }
 }
@@ -304,5 +304,5 @@ fn make_filter_from_payload_claim(claim: &PayloadClaim) -> Filter {
 
 fn make_payload_from_payload_claim(_claim: &PayloadClaim) -> Result<Payload, StorageError> {
     // TODO: We need to construct a payload, then validate it against the claim
-    failed_payload_claim() // Reject as not implemented
+    incompatible_with_payload_claim() // Reject as not implemented
 }
