@@ -325,7 +325,7 @@ dependencies = [
  "serde_qs",
  "serde_urlencoded",
  "thiserror",
- "validator",
+ "validator 0.16.1",
 ]
 
 [[package]]
@@ -502,7 +502,7 @@ dependencies = [
  "tonic-build",
  "tracing",
  "uuid",
- "validator",
+ "validator 0.17.0",
 ]
 
 [[package]]
@@ -1117,7 +1117,7 @@ dependencies = [
  "tracing",
  "url",
  "uuid",
- "validator",
+ "validator 0.17.0",
  "wal 0.1.2 (git+https://github.com/qdrant/wal.git?rev=fad0e7c48be58d8e7db4cc739acd9b1cf6735de0)",
 ]
 
@@ -1149,7 +1149,7 @@ dependencies = [
  "thiserror",
  "thread-priority",
  "tokio",
- "validator",
+ "validator 0.17.0",
 ]
 
 [[package]]
@@ -2445,12 +2445,6 @@ dependencies = [
  "unicode-bidi",
  "unicode-normalization",
 ]
-
-[[package]]
-name = "if_chain"
-version = "1.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb56e1aa765b4b4f3aadfab769793b7087bb03a4ea4920644a6d238e2df5b9ed"
 
 [[package]]
 name = "impl-more"
@@ -4067,7 +4061,7 @@ dependencies = [
  "tracing-subscriber",
  "tracing-tracy",
  "uuid",
- "validator",
+ "validator 0.17.0",
  "wal 0.1.2 (git+https://github.com/qdrant/wal.git?rev=fad0e7c48be58d8e7db4cc739acd9b1cf6735de0)",
 ]
 
@@ -4869,7 +4863,7 @@ dependencies = [
  "tinyvec",
  "tracing",
  "uuid",
- "validator",
+ "validator 0.17.0",
  "walkdir",
 ]
 
@@ -5179,7 +5173,7 @@ dependencies = [
  "schemars",
  "serde",
  "tempfile",
- "validator",
+ "validator 0.17.0",
 ]
 
 [[package]]
@@ -5247,7 +5241,7 @@ dependencies = [
  "tracing",
  "url",
  "uuid",
- "validator",
+ "validator 0.17.0",
  "wal 0.1.2 (git+https://github.com/qdrant/wal.git?rev=acaf1b2ebd5de3a871f4d2c48e13fc8788ffa43b)",
 ]
 
@@ -6055,33 +6049,36 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "url",
+]
+
+[[package]]
+name = "validator"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "da339118f018cc70ebf01fafc103360528aad53717e4bf311db929cb01cb9345"
+dependencies = [
+ "idna 0.5.0",
+ "once_cell",
+ "regex",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "url",
  "validator_derive",
 ]
 
 [[package]]
 name = "validator_derive"
-version = "0.16.0"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc44ca3088bb3ba384d9aecf40c6a23a676ce23e09bdaca2073d99c207f864af"
+checksum = "76e88ea23b8f5e59230bff8a2f03c0ee0054a61d5b8343a38946bcd406fe624c"
 dependencies = [
- "if_chain",
- "lazy_static",
+ "darling",
  "proc-macro-error",
  "proc-macro2",
  "quote",
  "regex",
- "syn 1.0.107",
- "validator_types",
-]
-
-[[package]]
-name = "validator_types"
-version = "0.16.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "111abfe30072511849c5910134e8baf8dc05de4c0e5903d681cbd5c9c4d611e3"
-dependencies = [
- "proc-macro2",
- "syn 1.0.107",
+ "syn 2.0.48",
 ]
 
 [[package]]

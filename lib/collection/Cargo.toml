@@ -46,7 +46,7 @@ arc-swap = "1.7.0"
 tonic = { workspace = true }
 uuid = { workspace = true }
 url = { version = "2", features = ["serde"] }
-validator = { version = "0.16", features = ["derive"] }
+validator = { version = "0.17", features = ["derive"] }
 actix-web-validator = "5.0.1"
 
 common = { path = "../common/common" }
