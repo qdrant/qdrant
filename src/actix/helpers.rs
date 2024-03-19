@@ -26,6 +26,7 @@ pub fn storage_into_actix_error(err: StorageError) -> Error {
         StorageError::Timeout { .. } => error::ErrorRequestTimeout(format!("{err}")),
         StorageError::AlreadyExists { .. } => error::ErrorConflict(format!("{err}")),
         StorageError::ChecksumMismatch { .. } => error::ErrorBadRequest(format!("{err}")),
+        StorageError::Unauthorized { .. } => error::ErrorUnauthorized(format!("{err}")),
     }
 }
 
@@ -68,6 +69,7 @@ where
                 StorageError::Timeout { .. } => HttpResponse::RequestTimeout(),
                 StorageError::AlreadyExists { .. } => HttpResponse::Conflict(),
                 StorageError::ChecksumMismatch { .. } => HttpResponse::BadRequest(),
+                StorageError::Unauthorized { .. } => HttpResponse::Unauthorized(),
             };
 
             resp.json(ApiResponse::<()> {
@@ -199,6 +201,9 @@ impl From<StorageError> for HttpError {
             }
             StorageError::ChecksumMismatch { .. } => {
                 (http::StatusCode::BAD_REQUEST, err.to_string())
+            }
+            StorageError::Unauthorized { description } => {
+                (http::StatusCode::UNAUTHORIZED, description)
             }
         };
 
