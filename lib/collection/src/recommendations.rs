@@ -407,7 +407,7 @@ fn recommend_by_best_score(
 
 #[cfg(test)]
 mod tests {
-    use segment::data_types::vectors::Vector;
+    use segment::data_types::vectors::{Vector, VectorRef};
     use sparse::common::sparse_vector::SparseVector;
 
     use super::avg_vectors;
@@ -420,7 +420,7 @@ mod tests {
             vec![1.0, 2.0, 3.0].into(),
         ];
         assert_eq!(
-            avg_vectors(vectors.iter().map(|v| v.to_vec_ref())).unwrap(),
+            avg_vectors(vectors.iter().map(VectorRef::from)).unwrap(),
             vec![1.0, 2.0, 3.0].into(),
         );
 
@@ -433,7 +433,7 @@ mod tests {
                 .into(),
         ];
         assert_eq!(
-            avg_vectors(vectors.iter().map(|v| v.to_vec_ref())).unwrap(),
+            avg_vectors(vectors.iter().map(VectorRef::from)).unwrap(),
             SparseVector::new(vec![0, 1, 2], vec![0.0, 0.55, 1.1])
                 .unwrap()
                 .into(),
@@ -445,6 +445,6 @@ mod tests {
                 .unwrap()
                 .into(),
         ];
-        assert!(avg_vectors(vectors.iter().map(|v| v.to_vec_ref())).is_err());
+        assert!(avg_vectors(vectors.iter().map(VectorRef::from)).is_err());
     }
 }
