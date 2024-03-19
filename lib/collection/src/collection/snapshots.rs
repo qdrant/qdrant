@@ -232,7 +232,7 @@ impl Collection {
             .await
     }
 
-    /// Get full file path for a collection snapshot by name
+    /// Get absolute file path for a collection snapshot by name
     ///
     /// This enforces the file to be inside the snapshots directory
     pub async fn get_snapshot_path(&self, snapshot_name: &str) -> CollectionResult<PathBuf> {
@@ -254,7 +254,7 @@ impl Collection {
             )));
         }
 
-        if !absolute_snapshot_path.exists() {
+        if !absolute_snapshot_path.is_file() {
             return Err(CollectionError::not_found(format!(
                 "Snapshot {snapshot_name}"
             )));
