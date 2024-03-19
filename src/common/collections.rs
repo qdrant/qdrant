@@ -19,7 +19,9 @@ use collection::shards::transfer::{ShardTransfer, ShardTransferKey, ShardTransfe
 use itertools::Itertools;
 use rand::prelude::SliceRandom;
 use rbac::jwt::Claims;
-use storage::content_manager::claims::{check_collection_name, incompatible_with_collection_claim};
+use storage::content_manager::claims::{
+    check_collection_name, check_full_access_to_collection, incompatible_with_collection_claim,
+};
 use storage::content_manager::collection_meta_ops::ShardTransferOperations::{Abort, Start};
 use storage::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateShardKey, DropShardKey, ShardTransferOperations,
@@ -213,8 +215,10 @@ pub async fn do_list_aliases(
 
 pub async fn do_list_snapshots(
     toc: &TableOfContent,
+    claims: Option<Claims>,
     collection_name: &str,
 ) -> Result<Vec<SnapshotDescription>, StorageError> {
+    check_full_access_to_collection(claims.as_ref(), collection_name)?;
     Ok(toc
         .get_collection(collection_name)
         .await?
@@ -224,9 +228,11 @@ pub async fn do_list_snapshots(
 
 pub async fn do_create_snapshot(
     dispatcher: &Dispatcher,
+    claims: Option<Claims>,
     collection_name: &str,
     wait: bool,
 ) -> Result<SnapshotDescription, StorageError> {
+    check_full_access_to_collection(claims.as_ref(), collection_name)?;
     let collection = collection_name.to_string();
     let dispatcher = dispatcher.clone();
     let snapshot = tokio::spawn(async move { dispatcher.create_snapshot(&collection).await });
