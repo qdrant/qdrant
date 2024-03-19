@@ -293,6 +293,7 @@ impl Collection {
                 .flatten()
                 .sorted_unstable_by_key(|point| point.id)
                 .take(limit)
+                .map(api::rest::Record::from)
                 .collect_vec(),
             Some(order_by) => {
                 retrieved_iter
@@ -309,7 +310,7 @@ impl Collection {
                         Direction::Asc => value_a <= value_b,
                         Direction::Desc => value_a >= value_b,
                     })
-                    .map(|(_, record)| record)
+                    .map(|(_, record)| api::rest::Record::from(record))
                     .take(limit)
                     .collect_vec()
             }

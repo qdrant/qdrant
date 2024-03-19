@@ -4,6 +4,7 @@ use actix_web_validator::{Json, Path, Query};
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{PointRequest, PointRequestInternal, Record, ScrollRequest};
+use itertools::Itertools;
 use rbac::jwt::Claims;
 use segment::types::{PointIdType, WithPayloadInterface};
 use serde::Deserialize;
@@ -87,7 +88,7 @@ async fn get_point(
             None => Err(StorageError::NotFound {
                 description: format!("Point with id {point_id} does not exists!"),
             }),
-            Some(record) => Ok(record),
+            Some(record) => Ok(api::rest::Record::from(record)),
         },
         Err(e) => Err(e),
     };
@@ -123,6 +124,7 @@ async fn get_points(
         claims.into_inner(),
     )
     .await;
+    let response = response.map(|v| v.into_iter().map(api::rest::Record::from).collect_vec());
     process_response(response, timing)
 }
 

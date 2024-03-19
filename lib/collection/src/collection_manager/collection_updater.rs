@@ -163,7 +163,7 @@ mod tests {
         assert_eq!(records.len(), 3);
 
         for record in records {
-            let v: VectorStruct = record.vector.unwrap().into();
+            let v = record.vector.unwrap();
 
             let v1 = vec![2., 2., 2., 2.];
             if record.id == 1.into() {
