@@ -1,5 +1,12 @@
+use std::sync::Arc;
+
+use collection::operations::{
+    shard_selector_internal::ShardSelectorInternal, types::ScrollRequestInternal,
+};
 use rbac::jwt::Claims;
 use rbac::JwtParser;
+use segment::types::{WithPayloadInterface, WithVector};
+use storage::content_manager::toc::TableOfContent;
 
 use super::strings::ct_eq;
 use crate::settings::ServiceConfig;
@@ -15,13 +22,15 @@ pub struct AuthKeys {
 
     /// A JWT parser, based on the read_write key
     jwt_parser: Option<JwtParser>,
+
+    toc: Arc<TableOfContent>,
 }
 
 impl AuthKeys {
     /// Defines the auth scheme given the service config
     ///
     /// Returns None if no scheme is specified.
-    pub fn try_create(service_config: &ServiceConfig) -> Option<Self> {
+    pub fn try_create(service_config: &ServiceConfig, toc: Arc<TableOfContent>) -> Option<Self> {
         match (
             service_config.api_key.clone(),
             service_config.read_only_api_key.clone(),
@@ -34,6 +43,7 @@ impl AuthKeys {
                     .api_key
                     .as_ref()
                     .map(|secret| JwtParser::new(secret)),
+                toc,
             }),
         }
     }
@@ -45,15 +55,15 @@ impl AuthKeys {
     /// - `Ok(None)` if the request is allowed through the API key.
     /// - `Ok(Some(claims))` if the request is allowed through the JWT token.
     /// - `Err(description)` if the request is not allowed.
-    pub fn validate_request<'a>(
+    pub async fn validate_request<'a>(
         &self,
         get_header: impl Fn(&'a str) -> Option<&'a str>,
         is_read_only: bool,
-    ) -> Result<Option<Claims>, &'static str> {
+    ) -> Result<Option<Claims>, String> {
         let Some(key) = get_header("api-key")
             .or_else(|| get_header("authorization").and_then(|v| v.strip_prefix("Bearer ")))
         else {
-            return Err("Must provide an API key or an Authorization bearer token");
+            return Err("Must provide an API key or an Authorization bearer token".to_string());
         };
 
         if self.can_write(key) || (is_read_only && self.can_read(key)) {
@@ -61,17 +71,52 @@ impl AuthKeys {
         }
 
         if !is_read_only && self.can_read(key) {
-            return Err("Write access denied");
+            return Err("Write access denied".to_string());
         }
 
         if let Some(claims) = self.jwt_parser.as_ref().and_then(|p| p.decode(key).ok()) {
-            if !claims.w.unwrap_or(false) && !is_read_only {
-                return Err("Write access denied");
+            let Claims {
+                expiration: _,  // already validated on decoding
+                write_access,
+                value_exists,
+                payload: _,     //
+                collections: _, // will be validated in TableOfContent
+            } = &claims;
+
+            if !write_access.unwrap_or(false) && !is_read_only {
+                return Err("Write access denied".to_string());
             }
+
+            if let Some(value_exists) = value_exists {
+                let scroll_req = ScrollRequestInternal {
+                    offset: None,
+                    limit: Some(1),
+                    filter: Some(value_exists.as_filter()),
+                    with_payload: Some(WithPayloadInterface::Bool(false)),
+                    with_vector: WithVector::Bool(false),
+                    order_by: None,
+                };
+                let res = self
+                    .toc
+                    .scroll(
+                        &value_exists.collection,
+                        scroll_req,
+                        None,
+                        ShardSelectorInternal::All,
+                        None,
+                    )
+                    .await
+                    .map_err(|e| format!("Could not confirm validity of JWT: {e}"))?;
+
+                if res.points.is_empty() {
+                    return Err("Invalid JWT, stateful validation failed".to_string());
+                }
+            }
+
             return Ok(Some(claims));
         }
 
-        Err("Invalid API key or JWT token")
+        Err("Invalid API key or JWT".to_string())
     }
 
     /// Check if a key is allowed to read

@@ -194,7 +194,7 @@ pub fn init(
                 telemetry_collector,
             ))
             .option_layer({
-                AuthKeys::try_create(&settings.service).map(auth::AuthMiddleware::new_layer)
+                AuthKeys::try_create(&settings.service, dispatcher.toc().clone()).map(auth::AuthMiddleware::new_layer)
             })
             .into_inner();
 

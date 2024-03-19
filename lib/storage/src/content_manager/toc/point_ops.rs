@@ -39,8 +39,9 @@ impl TableOfContent {
         timeout: Option<Duration>,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         if let Some(Claims {
-            exp: _,
-            w: _,
+            expiration: _,
+            write_access: _,
+            value_exists: _,
             collections,
             payload,
         }) = claims.as_ref()
@@ -81,8 +82,9 @@ impl TableOfContent {
         timeout: Option<Duration>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
         if let Some(Claims {
-            exp: _,
-            w: _,
+            expiration: _,
+            write_access: _,
+            value_exists: _,
             collections,
             payload,
         }) = claims.as_ref()
@@ -129,8 +131,9 @@ impl TableOfContent {
         timeout: Option<Duration>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
         if let Some(Claims {
-            exp: _,
-            w: _,
+            expiration: _,
+            write_access: _,
+            value_exists: _,
             collections,
             payload,
         }) = claims.as_ref()
@@ -169,8 +172,9 @@ impl TableOfContent {
         claims: Option<Claims>,
     ) -> Result<CountResult, StorageError> {
         if let Some(Claims {
-            exp: _,
-            w: _,
+            expiration: _,
+            write_access: _,
+            value_exists: _,
             collections,
             payload,
         }) = claims.as_ref()
@@ -206,8 +210,9 @@ impl TableOfContent {
         claims: Option<Claims>,
     ) -> Result<Vec<Record>, StorageError> {
         if let Some(Claims {
-            exp: _,
-            w: _,
+            expiration: _,
+            write_access: _,
+            value_exists: _,
             collections,
             payload,
         }) = claims.as_ref()
@@ -233,8 +238,9 @@ impl TableOfContent {
         timeout: Option<Duration>,
     ) -> Result<GroupsResult, StorageError> {
         if let Some(Claims {
-            exp: _,
-            w: _,
+            expiration: _,
+            write_access: _,
+            value_exists: _,
             collections,
             payload,
         }) = claims.as_ref()
@@ -269,8 +275,9 @@ impl TableOfContent {
         timeout: Option<Duration>,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         if let Some(Claims {
-            exp: _,
-            w: _,
+            expiration: _,
+            write_access: _,
+            value_exists: _,
             collections,
             payload,
         }) = claims.as_ref()
@@ -301,8 +308,9 @@ impl TableOfContent {
         timeout: Option<Duration>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
         if let Some(Claims {
-            exp: _,
-            w: _,
+            expiration: _,
+            write_access: _,
+            value_exists: _,
             collections,
             payload,
         }) = claims.as_ref()
@@ -345,8 +353,9 @@ impl TableOfContent {
         claims: Option<Claims>,
     ) -> Result<ScrollResult, StorageError> {
         if let Some(Claims {
-            exp: _,
-            w: _,
+            expiration: _,
+            write_access: _,
+            value_exists: _,
             collections,
             payload,
         }) = claims.as_ref()
@@ -406,8 +415,9 @@ impl TableOfContent {
         claims: Option<Claims>,
     ) -> Result<UpdateResult, StorageError> {
         if let Some(Claims {
-            exp: _,
-            w: _,
+            expiration: _,
+            write_access: _,
+            value_exists: _,
             collections,
             payload,
         }) = claims.as_ref()
@@ -425,7 +435,7 @@ impl TableOfContent {
 
         let collection = self.get_collection(collection_name).await?;
 
-        // Ordered operation flow:
+        // Ordered operation flowrite_access:
         //
         // ┌───────────────────┐
         // │ User              │
