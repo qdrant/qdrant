@@ -7,18 +7,21 @@ use api::grpc::qdrant::WaitOnConsensusCommitRequest;
 use api::grpc::transport_channel_pool::{AddTimeout, TransportChannelPool};
 use futures::future::try_join_all;
 use futures::Future;
+use semver::Version;
 use tonic::codegen::InterceptedService;
 use tonic::transport::{Channel, Uri};
 use tonic::{Request, Status};
 use url::Url;
 
-use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::types::{CollectionError, CollectionResult, PeerMetadata};
 use crate::shards::shard::PeerId;
 
 #[derive(Clone)]
 pub struct ChannelService {
     // Shared with consensus_state
     pub id_to_address: Arc<parking_lot::RwLock<HashMap<PeerId, Uri>>>,
+    // Shared with consensus_state
+    pub id_to_metadata: Arc<parking_lot::RwLock<HashMap<PeerId, PeerMetadata>>>,
     pub channel_pool: Arc<TransportChannelPool>,
     /// Port at which the public REST API is exposed for the current peer.
     pub current_rest_port: u16,
@@ -29,6 +32,7 @@ impl ChannelService {
     pub fn new(current_rest_port: u16) -> Self {
         Self {
             id_to_address: Default::default(),
+            id_to_metadata: Default::default(),
             channel_pool: Default::default(),
             current_rest_port,
         }
@@ -151,6 +155,24 @@ impl ChannelService {
             .map_err(Into::into)
     }
 
+    /// Check whether all peers are running at least the given version
+    ///
+    /// If the version is not known for any peer, this returns `false`.
+    /// Peer versions are known since 1.9 and up.
+    pub fn all_peers_at_version(&self, version: Version) -> bool {
+        let id_to_address = self.id_to_address.read();
+        let id_to_metadata = self.id_to_metadata.read();
+
+        // Ensure there aren't more peer addresses than metadata
+        if id_to_address.len() > id_to_metadata.len() {
+            return false;
+        }
+
+        id_to_metadata
+            .values()
+            .all(|metadata| metadata.version >= version)
+    }
+
     /// Get the REST address for the current peer.
     pub fn current_rest_address(&self, this_peer_id: PeerId) -> CollectionResult<Url> {
         // Get local peer URI
@@ -182,6 +204,7 @@ impl Default for ChannelService {
     fn default() -> Self {
         Self {
             id_to_address: Default::default(),
+            id_to_metadata: Default::default(),
             channel_pool: Default::default(),
             current_rest_port: 6333,
         }

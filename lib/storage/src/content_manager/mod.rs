@@ -18,6 +18,7 @@ pub mod snapshots;
 pub mod toc;
 
 pub mod consensus_ops {
+    use collection::operations::types::PeerMetadata;
     use collection::shards::replica_set::ReplicaState;
     use collection::shards::replica_set::ReplicaState::Initializing;
     use collection::shards::shard::PeerId;
@@ -30,7 +31,6 @@ pub mod consensus_ops {
         CollectionMetaOperations, SetShardReplicaState, ShardTransferOperations, UpdateCollection,
         UpdateCollectionOperation,
     };
-    use crate::types::PeerMetadata;
 
     /// Operation that should pass consensus
     #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]

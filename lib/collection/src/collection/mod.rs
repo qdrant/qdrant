@@ -37,7 +37,7 @@ use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::{shard_not_found_error, LockedShardHolder, ShardHolder};
 use crate::shards::transfer::helpers::check_transfer_conflicts_strict;
 use crate::shards::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool};
-use crate::shards::transfer::ShardTransfer;
+use crate::shards::transfer::{ShardTransfer, ShardTransferMethod};
 use crate::shards::{replica_set, CollectionId};
 use crate::telemetry::CollectionTelemetry;
 
@@ -563,6 +563,22 @@ impl Collection {
                 continue;
             }
 
+            // Select shard transfer method, prefer user configured method or choose one now
+            // If all peers are 1.8+, we try WAL delta transfer, otherwise we use the default method
+            let shard_transfer_method = self
+                .shared_storage_config
+                .default_shard_transfer_method
+                .unwrap_or_else(|| {
+                    let all_support_wal_delta = self
+                        .channel_service
+                        .all_peers_at_version(Version::new(1, 8, 0));
+                    if all_support_wal_delta {
+                        ShardTransferMethod::WalDelta
+                    } else {
+                        ShardTransferMethod::default()
+                    }
+                });
+
             // Try to find a replica to transfer from
             for replica_id in replica_set.active_remote_shards().await {
                 let transfer = ShardTransfer {
@@ -571,11 +587,7 @@ impl Collection {
                     shard_id,
                     sync: true,
                     // For automatic shard transfers, always select some default method from this point on
-                    method: Some(
-                        self.shared_storage_config
-                            .default_shard_transfer_method
-                            .unwrap_or_default(),
-                    ),
+                    method: Some(shard_transfer_method),
                 };
 
                 if check_transfer_conflicts_strict(&transfer, transfers.iter()).is_some() {
