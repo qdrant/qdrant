@@ -70,7 +70,6 @@ bytes = "1.5.0"
 fnv = { workspace = true }
 indexmap = { workspace = true }
 ringbuffer = "0.15.0"
-async-recursion = "1.1"
 
 tracing = { workspace = true, optional = true }
 

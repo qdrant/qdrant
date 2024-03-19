@@ -549,15 +549,12 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             .map_err(|_: Elapsed| {
                 StorageError::service_error(format!(
                     "Waiting for consensus operation commit failed. Timeout set at: {} seconds",
-                    wait_timeout.as_secs_f64()
+                    wait_timeout.as_secs_f64(),
                 ))
             })?;
         // 2 possible errors to forward: channel sender dropped OR operation failed
         timeout_res.map_err(|err| {
-            StorageError::service_error(format!(
-                "Error occurred while waiting for consensus operation. Channel sender dropped ({})",
-                err
-            ))
+            StorageError::service_error(format!("Error occurred while waiting for consensus operation. Channel sender dropped ({err})"))
         })?
     }
 

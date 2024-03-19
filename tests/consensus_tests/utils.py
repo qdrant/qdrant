@@ -362,6 +362,21 @@ def check_collection_shard_transfers_count(peer_api_uri: str, collection_name: s
     return local_shard_count == expected_shard_transfers_count
 
 
+def check_collection_shard_transfer_method(peer_api_uri: str, collection_name: str,
+                                            expected_method: str) -> bool:
+    collection_cluster_info = get_collection_cluster_info(peer_api_uri, collection_name)
+
+    # Check method on each transfer
+    for transfer in collection_cluster_info["shard_transfers"]:
+        if "method" not in transfer:
+            continue
+        method = transfer["method"]
+        if method == expected_method:
+            return True
+
+    return False
+
+
 def check_collection_shard_transfer_progress(peer_api_uri: str, collection_name: str,
                                             expected_transfer_progress: int,
                                             expected_transfer_total: int) -> bool:
@@ -466,6 +481,15 @@ def wait_for_collection_shard_transfers_count(peer_api_uri: str, collection_name
                                               expected_shard_transfer_count: int):
     try:
         wait_for(check_collection_shard_transfers_count, peer_api_uri, collection_name, expected_shard_transfer_count)
+    except Exception as e:
+        print_collection_cluster_info(peer_api_uri, collection_name)
+        raise e
+
+
+def wait_for_collection_shard_transfer_method(peer_api_uri: str, collection_name: str,
+                                              expected_method: str):
+    try:
+        wait_for(check_collection_shard_transfer_method, peer_api_uri, collection_name, expected_method)
     except Exception as e:
         print_collection_cluster_info(peer_api_uri, collection_name)
         raise e
