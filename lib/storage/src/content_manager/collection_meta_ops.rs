@@ -299,6 +299,8 @@ pub enum ShardTransferOperations {
     /// If the given transfer is ongoing, it is aborted and restarted with the new configuration.
     Restart(ShardTransferRestart),
     Finish(ShardTransfer),
+    /// Deprecated since Qdrant 1.9.0, used in Qdrant 1.7.0 and 1.8.0
+    ///
     /// Used in `ShardTransferMethod::Snapshot`
     ///
     /// Called when the snapshot has successfully been recovered on the remote, brings the transfer
