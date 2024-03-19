@@ -5,7 +5,11 @@ use std::time::{Duration, Instant};
 
 use collection::config::ShardingMethod;
 use common::defaults::CONSENSUS_META_OP_WAIT;
+use rbac::jwt::Claims;
 
+use crate::content_manager::claims::{
+    check_collection_name, incompatible_with_collection_claim, incompatible_with_payload_claim,
+};
 use crate::content_manager::collection_meta_ops::AliasOperations;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::{
@@ -46,9 +50,44 @@ impl Dispatcher {
     /// This function needs to be called from a runtime with timers enabled.
     pub async fn submit_collection_meta_op(
         &self,
-        operation: CollectionMetaOperations,
+        mut operation: CollectionMetaOperations,
+        claims: Option<Claims>,
         wait_timeout: Option<Duration>,
     ) -> Result<bool, StorageError> {
+        if let Some(Claims {
+            exp: _,
+            w: _,
+            collections,
+            payload,
+        }) = claims.as_ref()
+        {
+            match &mut operation {
+                CollectionMetaOperations::CreateCollection(_)
+                | CollectionMetaOperations::UpdateCollection(_)
+                | CollectionMetaOperations::DeleteCollection(_)
+                | CollectionMetaOperations::ChangeAliases(_)
+                | CollectionMetaOperations::TransferShard(_, _)
+                | CollectionMetaOperations::SetShardReplicaState(_)
+                | CollectionMetaOperations::CreateShardKey(_)
+                | CollectionMetaOperations::DropShardKey(_) => {
+                    return incompatible_with_collection_claim();
+                }
+                CollectionMetaOperations::CreatePayloadIndex(op) => {
+                    check_collection_name(collections.as_ref(), &op.collection_name)?;
+                    if payload.is_some() {
+                        return incompatible_with_payload_claim();
+                    }
+                }
+                CollectionMetaOperations::DropPayloadIndex(op) => {
+                    check_collection_name(collections.as_ref(), &op.collection_name)?;
+                    if payload.is_some() {
+                        return incompatible_with_payload_claim();
+                    }
+                }
+                CollectionMetaOperations::Nop { token: _ } => (),
+            }
+        }
+
         // if distributed deployment is enabled
         if let Some(state) = self.consensus_state.as_ref() {
             let start = Instant::now();

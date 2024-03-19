@@ -255,7 +255,6 @@ impl PointsInternal for PointsInternalService {
             create_field_index_collection,
             clock_tag.map(Into::into),
             shard_id,
-            None,
         )
         .await
     }
@@ -280,7 +279,6 @@ impl PointsInternal for PointsInternalService {
             delete_field_index_collection,
             clock_tag.map(Into::into),
             shard_id,
-            None,
         )
         .await
     }

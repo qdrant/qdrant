@@ -107,7 +107,7 @@ pub async fn handle_existing_collections(
 
         for operation in consensus_operations {
             let _res = dispatcher_arc
-                .submit_collection_meta_op(operation, None)
+                .submit_collection_meta_op(operation, None, None)
                 .await;
         }
 
@@ -122,6 +122,7 @@ pub async fn handle_existing_collections(
                             state: ReplicaState::Active,
                             from_state: None,
                         }),
+                        None,
                         None,
                     )
                     .await;

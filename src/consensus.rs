@@ -1262,6 +1262,7 @@ mod tests {
                         },
                     )),
                     None,
+                    None,
                 ),
             )
             .unwrap();

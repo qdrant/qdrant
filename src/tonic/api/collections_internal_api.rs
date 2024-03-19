@@ -42,6 +42,7 @@ impl CollectionsInternal for CollectionsInternalService {
         get(
             self.toc.as_ref(),
             get_collection_info_request,
+            None,
             Some(shard_id),
         )
         .await
