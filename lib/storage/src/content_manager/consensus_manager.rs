@@ -10,6 +10,7 @@ use anyhow::{anyhow, Context};
 use chrono::Utc;
 use collection::collection_state;
 use collection::common::is_ready::IsReady;
+use collection::operations::types::PeerMetadata;
 use collection::shards::shard::PeerId;
 use collection::shards::CollectionId;
 use common::defaults;
@@ -33,7 +34,7 @@ use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::consensus::persistent::Persistent;
 use crate::types::{
     ClusterInfo, ClusterStatus, ConsensusThreadStatus, MessageSendErrors, PeerAddressById,
-    PeerInfo, PeerMetadata, PeerMetadataById, RaftInfo,
+    PeerInfo, PeerMetadataById, RaftInfo,
 };
 
 pub mod prelude {
