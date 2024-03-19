@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
-use common::defaults;
+use common::defaults::{self, CONSENSUS_CONFIRM_RETRIES};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio::time::{sleep, sleep_until, timeout_at};
@@ -19,9 +19,6 @@ pub mod snapshot;
 pub mod stream_records;
 pub mod transfer_tasks_pool;
 pub mod wal_delta;
-
-/// Number of retries for confirming a consensus operation.
-const CONSENSUS_CONFIRM_RETRIES: usize = 3;
 
 /// Time between consensus confirmation retries.
 const CONSENSUS_CONFIRM_RETRY_DELAY: Duration = Duration::from_secs(1);
@@ -66,6 +63,17 @@ impl ShardTransferRestart {
             shard_id: self.shard_id,
             from: self.from,
             to: self.to,
+        }
+    }
+}
+
+impl From<ShardTransfer> for ShardTransferRestart {
+    fn from(transfer: ShardTransfer) -> Self {
+        Self {
+            shard_id: transfer.shard_id,
+            from: transfer.from,
+            to: transfer.to,
+            method: transfer.method.unwrap_or_default(),
         }
     }
 }
@@ -187,6 +195,61 @@ pub trait ShardTransferConsensus: Send + Sync {
                 "Failed to confirm snapshot recovered operation on consensus \
                  after {CONSENSUS_CONFIRM_RETRIES} retries: \
                  {err}"
+            ))
+        })
+    }
+
+    /// Propose to restart a shard transfer with a different given configuration
+    ///
+    /// # Warning
+    ///
+    /// This only submits a proposal to consensus. Calling this does not guarantee that consensus
+    /// will actually apply the operation across the cluster.
+    async fn restart_shard_transfer(
+        &self,
+        transfer_config: ShardTransfer,
+        collection_name: CollectionId,
+    ) -> CollectionResult<()>;
+
+    /// Propose to restart a shard transfer with a different given configuration
+    ///
+    /// This internally confirms and retries a few times if needed to ensure consensus picks up the
+    /// operation.
+    async fn restart_shard_transfer_confirm_and_retry(
+        &self,
+        transfer_config: &ShardTransfer,
+        collection_name: &str,
+    ) -> CollectionResult<()> {
+        let mut result = Err(CollectionError::service_error(
+            "`restart_shard_transfer_confirm_and_retry` exit without attempting any work, \
+             this is a programming error",
+        ));
+
+        for attempt in 0..CONSENSUS_CONFIRM_RETRIES {
+            if attempt > 0 {
+                sleep(CONSENSUS_CONFIRM_RETRY_DELAY).await;
+            }
+
+            log::trace!("Propose and confirm shard transfer restart operation");
+            result = self
+                .restart_shard_transfer(transfer_config.clone(), collection_name.into())
+                .await;
+
+            match &result {
+                Ok(()) => break,
+                Err(err) => {
+                    log::error!(
+                        "Failed to confirm snapshot recovered operation on consensus: {err}"
+                    );
+                    continue;
+                }
+            }
+        }
+
+        result.map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to restart shard transfer through consensus \
+                 after {CONSENSUS_CONFIRM_RETRIES} retries: {err}"
             ))
         })
     }

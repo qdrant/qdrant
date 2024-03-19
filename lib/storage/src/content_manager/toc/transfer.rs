@@ -1,5 +1,6 @@
 use std::sync::Weak;
 
+use async_trait::async_trait;
 use collection::operations::types::{CollectionError, CollectionResult};
 use collection::shards::transfer::{ShardTransfer, ShardTransferConsensus};
 use collection::shards::CollectionId;
@@ -31,6 +32,7 @@ impl ShardTransferDispatcher {
     }
 }
 
+#[async_trait]
 impl ShardTransferConsensus for ShardTransferDispatcher {
     fn consensus_commit_term(&self) -> (u64, u64) {
         let state = self.consensus_state.hard_state();
@@ -64,5 +66,25 @@ impl ShardTransferConsensus for ShardTransferDispatcher {
         })?;
 
         Ok(())
+    }
+
+    async fn restart_shard_transfer(
+        &self,
+        transfer_config: ShardTransfer,
+        collection_name: CollectionId,
+    ) -> CollectionResult<()> {
+        let operation =
+            ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::TransferShard(
+                collection_name,
+                ShardTransferOperations::Restart(transfer_config.into()),
+            )));
+        self
+            .consensus_state
+            .propose_consensus_op_with_await(operation.clone(), None)
+            .await
+            .map(|_| ())
+            .map_err(|err| {
+                CollectionError::service_error(format!("Failed to propose and confirm shard transfer restart operation through consensus: {err}"))
+            })
     }
 }

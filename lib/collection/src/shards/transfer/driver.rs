@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_recursion::async_recursion;
 use parking_lot::Mutex;
 use tokio::time::sleep;
 
@@ -13,7 +12,7 @@ use super::transfer_tasks_pool::TransferTaskProgress;
 use super::wal_delta::transfer_wal_delta;
 use super::{ShardTransfer, ShardTransferConsensus, ShardTransferMethod};
 use crate::common::stoppable_task_async::{spawn_async_cancellable, CancellableAsyncTaskHandle};
-use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::types::CollectionResult;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::replica_set::ReplicaState;
@@ -24,11 +23,15 @@ use crate::shards::CollectionId;
 const RETRY_DELAY: Duration = Duration::from_secs(1);
 pub(crate) const MAX_RETRY_COUNT: usize = 3;
 
+/// Drive the shard transfer on the source node based on the given transfer configuration
+///
+/// Returns `true` if we should finalize the shard transfer. Returns `false` if we should silently
+/// drop it, because it is being restarted.
+///
 /// # Cancel safety
 ///
 /// This function is cancel safe.
 #[allow(clippy::too_many_arguments)]
-#[async_recursion]
 pub async fn transfer_shard(
     transfer_config: ShardTransfer,
     progress: Arc<Mutex<TransferTaskProgress>>,
@@ -39,7 +42,7 @@ pub async fn transfer_shard(
     channel_service: ChannelService,
     snapshots_path: &Path,
     temp_dir: &Path,
-) -> CollectionResult<()> {
+) -> CollectionResult<bool> {
     let shard_id = transfer_config.shard_id;
 
     // Initiate shard on a remote peer
@@ -87,107 +90,62 @@ pub async fn transfer_shard(
         ShardTransferMethod::WalDelta => {
             let result = transfer_wal_delta(
                 transfer_config.clone(),
-                shard_holder.clone(),
-                progress.clone(),
+                shard_holder,
+                progress,
                 shard_id,
-                remote_shard.clone(),
-                channel_service.clone(),
+                remote_shard,
+                channel_service,
                 consensus,
                 collection_name,
             )
             .await;
 
-            // Handle failure, fall back to default transfer method
+            // Handle failure, fall back to default transfer method or propagate error
             if let Err(err) = result {
-                log::warn!(
-                    "Failed to do shard diff transfer, falling back to default method {:?}: {err}",
-                    ShardTransferMethod::default(),
-                );
-                return transfer_shard_fallback_default(
+                let fallback_shard_transfer_method = ShardTransferMethod::default();
+                log::warn!("Failed to do shard diff transfer, falling back to default method {fallback_shard_transfer_method:?}: {err}");
+                let did_fall_back = transfer_shard_fallback_default(
                     transfer_config,
-                    progress,
-                    shard_holder,
-                    remote_shard,
                     consensus,
-                    collection_id,
                     collection_name,
-                    channel_service,
-                    snapshots_path,
-                    temp_dir,
+                    fallback_shard_transfer_method,
                 )
-                .await;
+                .await?;
+                if did_fall_back {
+                    return Ok(false);
+                } else {
+                    return Err(err);
+                }
             }
         }
     }
 
-    Ok(())
+    Ok(true)
 }
 
-/// While in a shard transfer, fall back to the default shard transfer method.
-// TODO: restart shard transfer with the default method through consensus
-#[allow(clippy::too_many_arguments)]
+/// While in a shard transfer, fall back to the default shard transfer method
+///
+/// Returns true if we arranged falling back. Returns false if we could not fall back.
 pub async fn transfer_shard_fallback_default(
     mut transfer_config: ShardTransfer,
-    progress: Arc<Mutex<TransferTaskProgress>>,
-    shard_holder: Arc<LockedShardHolder>,
-    remote_shard: RemoteShard,
     consensus: &dyn ShardTransferConsensus,
-    collection_id: CollectionId,
     collection_name: &str,
-    channel_service: ChannelService,
-    snapshots_path: &Path,
-    temp_dir: &Path,
-) -> CollectionResult<()> {
-    let shard_id = transfer_config.shard_id;
-
-    // Fall back to stream records specifically
-    // TODO: fall back to default as specified in configuration
-    transfer_config
-        .method
-        .replace(ShardTransferMethod::StreamRecords);
-
-    // Temporary hack for remote shard to get from PartialSnapshot back into Partial state
-    // To support stream records transfer, the remote shard must be in Partial state
-    {
-        let shard_holder_read = shard_holder.read().await;
-        let transferring_shard = shard_holder_read.get_shard(&shard_id);
-        let Some(replica_set) = transferring_shard else {
-            return Err(CollectionError::service_error(format!(
-                "Shard {shard_id} cannot be queue proxied because it does not exist"
-            )));
-        };
-        let shard_state = replica_set.peer_state(&transfer_config.to);
-
-        // Only switch if not in partial already
-        if shard_state != Some(ReplicaState::Partial) {
-            log::trace!("Shard {shard_id} diff recovered on {} for diff transfer, switching into next stage through consensus", remote_shard.peer_id);
-            consensus
-                .snapshot_recovered_switch_to_partial_confirm_remote(
-                    &transfer_config,
-                    collection_name,
-                    &remote_shard,
-                )
-                .await
-                .map_err(|err| {
-                    crate::operations::types::CollectionError::service_error(format!(
-                        "Can't switch shard {shard_id} to Partial state after diff transfer: {err}"
-                    ))
-                })?;
-        }
+    fallback_method: ShardTransferMethod,
+) -> CollectionResult<bool> {
+    // Do not attempt to fall back to the same method
+    let old_method = transfer_config.method;
+    if old_method.map_or(false, |method| method == fallback_method) {
+        log::warn!("Failed shard transfer fallback, because it would use the same transfer method: {fallback_method:?}");
+        return Ok(false);
     }
 
-    transfer_shard(
-        transfer_config,
-        progress,
-        shard_holder,
-        consensus,
-        collection_id,
-        collection_name,
-        channel_service,
-        snapshots_path,
-        temp_dir,
-    )
-    .await
+    // Propose to restart transfer with a different method
+    transfer_config.method.replace(fallback_method);
+    consensus
+        .restart_shard_transfer_confirm_and_retry(&transfer_config, collection_name)
+        .await?;
+
+    Ok(false)
 }
 
 /// Return local shard back from the forward proxy
@@ -338,9 +296,9 @@ where
 
             result = cancel::future::cancel_on_token(cancel.clone(), future).await;
 
-            let is_ok = matches!(result, Ok(Ok(())));
+            let is_ok = matches!(result, Ok(Ok(true)));
             let is_err = matches!(result, Ok(Err(_)));
-            let is_cancelled = result.is_err();
+            let is_cancelled = result.is_err() || matches!(result, Ok(Ok(false)));
 
             if let Ok(Err(err)) = &result {
                 log::error!(
@@ -363,12 +321,13 @@ where
         }
 
         match &result {
-            Ok(Ok(())) => on_finish.await,
+            Ok(Ok(true)) => on_finish.await,
+            Ok(Ok(false)) => (), // do nothing, we should not finish the task
             Ok(Err(_)) => on_error.await,
             Err(_) => (), // do nothing, if task was cancelled
         }
 
-        let is_ok = matches!(result, Ok(Ok(())));
-        is_ok
+        let is_ok_and_finish = matches!(result, Ok(Ok(true)));
+        is_ok_and_finish
     })
 }
