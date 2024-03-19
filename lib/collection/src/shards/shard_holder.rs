@@ -918,8 +918,8 @@ impl ShardHolder {
         let snapshot_file_name = snapshot_file_name.as_ref();
 
         if snapshot_file_name.file_name() != Some(snapshot_file_name.as_os_str()) {
-            return Err(CollectionError::bad_input(format!(
-                "Invalid snapshot file name {}",
+            return Err(CollectionError::not_found(format!(
+                "Snapshot {}",
                 snapshot_file_name.display(),
             )));
         }
