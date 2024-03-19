@@ -209,17 +209,17 @@ pub async fn do_update_collection_cluster(
 
     match operation {
         ClusterOperations::MoveShard(MoveShardOperation { move_shard }) => {
-            // validate shard to move
+            // Validate shard to move
             if !collection.contains_shard(move_shard.shard_id).await {
                 return Err(StorageError::BadRequest {
                     description: format!(
-                        "Shard {} of {} does not exist",
-                        move_shard.shard_id, collection_name
+                        "Shard {} of {collection_name} does not exist",
+                        move_shard.shard_id,
                     ),
                 });
             };
 
-            // validate target and source peer exists
+            // Validate target and source peer exists
             validate_peer_exists(move_shard.to_peer_id)?;
             validate_peer_exists(move_shard.from_peer_id)?;
 
@@ -241,20 +241,18 @@ pub async fn do_update_collection_cluster(
                 .await
         }
         ClusterOperations::ReplicateShard(ReplicateShardOperation { replicate_shard }) => {
-            // validate shard to move
+            // Validate shard to replicate
             if !collection.contains_shard(replicate_shard.shard_id).await {
                 return Err(StorageError::BadRequest {
                     description: format!(
-                        "Shard {} of {} does not exist",
-                        replicate_shard.shard_id, collection_name
+                        "Shard {} of {collection_name} does not exist",
+                        replicate_shard.shard_id,
                     ),
                 });
             };
 
-            // validate target peer exists
+            // Validate target and source peer exists
             validate_peer_exists(replicate_shard.to_peer_id)?;
-
-            // validate source peer exists
             validate_peer_exists(replicate_shard.from_peer_id)?;
 
             // submit operation to consensus
@@ -363,8 +361,8 @@ pub async fn do_update_collection_cluster(
             if shard_keys_mapping.contains_key(&create_sharding_key.shard_key) {
                 return Err(StorageError::BadRequest {
                     description: format!(
-                        "Sharding key {} already exists for collection {}",
-                        create_sharding_key.shard_key, collection_name
+                        "Sharding key {} already exists for collection {collection_name}",
+                        create_sharding_key.shard_key,
                     ),
                 });
             }
@@ -374,7 +372,7 @@ pub async fn do_update_collection_cluster(
                     return Err(StorageError::BadRequest {
                         description: format!(
                             "Sharding key {} placement cannot be empty. If you want to use random placement, do not specify placement",
-                            create_sharding_key.shard_key
+                            create_sharding_key.shard_key,
                         ),
                     });
                 }
@@ -422,8 +420,8 @@ pub async fn do_update_collection_cluster(
             if !shard_keys_mapping.contains_key(&drop_sharding_key.shard_key) {
                 return Err(StorageError::BadRequest {
                     description: format!(
-                        "Sharding key {} does not exists for collection {}",
-                        drop_sharding_key.shard_key, collection_name
+                        "Sharding key {} does not exists for collection {collection_name}",
+                        drop_sharding_key.shard_key,
                     ),
                 });
             }
