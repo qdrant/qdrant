@@ -1271,7 +1271,7 @@ impl Record {
             Some(VectorStruct::Single(vector)) => {
                 (name == DEFAULT_VECTOR_NAME).then_some(vector.into())
             }
-            Some(VectorStruct::Multi(vectors)) => vectors.get(name).map(Vector::to_vec_ref),
+            Some(VectorStruct::Multi(vectors)) => vectors.get(name).map(VectorRef::from),
             None => None,
         }
     }
