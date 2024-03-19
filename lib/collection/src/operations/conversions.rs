@@ -142,7 +142,7 @@ pub fn try_record_from_grpc(
     Ok(Record {
         id,
         payload,
-        vector: vector.map(api::rest::VectorStruct::from),
+        vector,
         shard_key: convert_shard_key_from_grpc_opt(point.shard_key),
     })
 }
@@ -1335,7 +1335,9 @@ impl From<PointGroup> for api::grpc::qdrant::PointGroup {
                 .map_into()
                 .collect(),
             id: Some(group.id.into()),
-            lookup: group.lookup.map(|record| record.into()),
+            lookup: group
+                .lookup
+                .map(|record| api::grpc::qdrant::RetrievedPoint::from(Record::from(record))),
         }
     }
 }

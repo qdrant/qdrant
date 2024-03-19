@@ -27,7 +27,7 @@ use collection::operations::shard_key_selector::ShardKeySelector;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     default_exact_count, CoreSearchRequest, CoreSearchRequestBatch, OrderByInterface,
-    PointRequestInternal, QueryEnum, RecommendExample, ScrollRequestInternal,
+    PointRequestInternal, QueryEnum, RecommendExample, Record, ScrollRequestInternal,
 };
 use collection::operations::vector_ops::{DeleteVectors, PointVectors, UpdateVectors};
 use collection::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
@@ -1453,7 +1453,8 @@ pub async fn scroll(
         result: scrolled_points
             .points
             .into_iter()
-            .map(|point| point.into())
+            .map(Record::from)
+            .map(api::grpc::qdrant::RetrievedPoint::from)
             .collect(),
         time: timing.elapsed().as_secs_f64(),
     };
