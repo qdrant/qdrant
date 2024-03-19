@@ -442,7 +442,7 @@ impl Segment {
                 let vector = vector_storage
                     .get_vector(point_offset)
                     .as_vec_ref()
-                    .to_vec();
+                    .to_owned();
                 vectors.insert(vector_name.clone(), vector);
             }
         }

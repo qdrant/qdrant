@@ -26,16 +26,6 @@ pub enum VectorRef<'a> {
     MultiDense(&'a [DenseVector]),
 }
 
-impl<'a> VectorRef<'a> {
-    pub fn to_vec(self) -> Vector {
-        match self {
-            VectorRef::Dense(v) => Vector::Dense(v.to_vec()),
-            VectorRef::Sparse(v) => Vector::Sparse(v.clone()),
-            VectorRef::MultiDense(v) => Vector::MultiDense(v.to_vec()),
-        }
-    }
-}
-
 impl<'a> TryFrom<VectorRef<'a>> for &'a [VectorElementType] {
     type Error = OperationError;
 
@@ -467,7 +457,7 @@ impl<const N: usize> From<[VectorElementType; N]> for QueryVector {
 
 impl<'a> From<VectorRef<'a>> for QueryVector {
     fn from(vec: VectorRef<'a>) -> Self {
-        Self::Nearest(vec.to_vec())
+        Self::Nearest(vec.to_owned())
     }
 }
 
