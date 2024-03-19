@@ -76,8 +76,8 @@ impl AuthKeys {
 
         if let Some(claims) = self.jwt_parser.as_ref().and_then(|p| p.decode(key).ok()) {
             let Claims {
-                expiration: _, // already validated on decoding
-                write_access,
+                exp: _, // already validated on decoding
+                w: write_access,
                 value_exists,
                 payload: _,     //
                 collections: _, // will be validated in TableOfContent

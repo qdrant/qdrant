@@ -7,11 +7,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct Claims {
     /// Expiration time (seconds since UNIX epoch)
-    #[serde(rename = "exp")]
-    pub expiration: Option<u64>,
+    pub exp: Option<u64>,
 
     /// Write access, default is false. Read access is always enabled with a valid token.
-    pub write_access: Option<bool>,
+    pub w: Option<bool>,
 
     /// Collection names that are allowed to be accessed
     pub collections: Option<Vec<String>>,

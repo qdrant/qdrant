@@ -58,8 +58,8 @@ mod tests {
             .expect("Time went backwards")
             .as_secs();
         let claims = Claims {
-            expiration: Some(exp),
-            write_access: Some(true),
+            exp: Some(exp),
+            w: Some(true),
             collections: Some(vec!["collection".to_string()]),
             payload: Some(
                 vec![
@@ -93,8 +93,8 @@ mod tests {
             - 31; // 31 seconds in the past, bigger than the 30 seconds leeway
 
         let mut claims = Claims {
-            expiration: Some(exp),
-            write_access: Some(false),
+            exp: Some(exp),
+            w: Some(false),
             collections: None,
             payload: None,
             value_exists: None,
@@ -107,7 +107,7 @@ mod tests {
         assert!(parser.decode(&token).is_err());
 
         // Remove the exp claim and it should work
-        claims.expiration = None;
+        claims.exp = None;
         let token = create_token(&claims);
 
         let decoded_claims = parser.decode(&token).unwrap();
