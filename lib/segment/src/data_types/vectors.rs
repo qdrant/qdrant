@@ -176,18 +176,6 @@ impl<'a> VectorRef<'a> {
             VectorRef::MultiDense(v) => Vector::MultiDense(v.to_vec()),
         }
     }
-
-    pub fn len(&self) -> usize {
-        match self {
-            VectorRef::Dense(v) => v.len(),
-            VectorRef::Sparse(v) => v.indices.len(),
-            VectorRef::MultiDense(v) => v.iter().map(Vec::len).sum(),
-        }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
 }
 
 impl<'a> TryInto<&'a [VectorElementType]> for &'a Vector {
