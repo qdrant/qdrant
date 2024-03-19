@@ -20,7 +20,7 @@ use segment::data_types::groups::GroupId;
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{
     DenseVector, Named, NamedQuery, NamedVectorStruct, QueryVector, Vector, VectorRef,
-    DEFAULT_VECTOR_NAME,
+    VectorStruct, DEFAULT_VECTOR_NAME,
 };
 use segment::json_path::{JsonPath, JsonPathInterface};
 use segment::types::{
@@ -87,17 +87,15 @@ pub enum OptimizersStatus {
 }
 
 /// Point data
-#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Record {
     /// Id of the point
     pub id: PointIdType,
     /// Payload - values assigned to the point
     pub payload: Option<Payload>,
     /// Vector of the point
-    pub vector: Option<api::rest::VectorStruct>,
+    pub vector: Option<VectorStruct>,
     /// Shard Key
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<ShardKey>,
 }
 
@@ -355,7 +353,7 @@ impl Default for ScrollRequestInternal {
 #[serde(rename_all = "snake_case")]
 pub struct ScrollResult {
     /// List of retrieved points
-    pub points: Vec<Record>,
+    pub points: Vec<api::rest::Record>,
     /// Offset which should be used to retrieve a next page result
     pub next_page_offset: Option<PointIdType>,
 }
@@ -859,7 +857,7 @@ pub struct PointGroup {
     pub id: GroupId,
     /// Record that has been looked up using the group id
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub lookup: Option<Record>,
+    pub lookup: Option<api::rest::Record>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -1264,24 +1262,18 @@ impl Record {
         match &self.vector {
             None => vec![],
             Some(vectors) => match vectors {
-                api::rest::VectorStruct::Single(_) => vec![DEFAULT_VECTOR_NAME],
-                api::rest::VectorStruct::Multi(vectors) => {
-                    vectors.keys().map(|x| x.as_str()).collect()
-                }
+                VectorStruct::Single(_) => vec![DEFAULT_VECTOR_NAME],
+                VectorStruct::Multi(vectors) => vectors.keys().map(|x| x.as_str()).collect(),
             },
         }
     }
 
     pub fn get_vector_by_name(&self, name: &str) -> Option<VectorRef> {
         match &self.vector {
-            Some(api::rest::VectorStruct::Single(vector)) => {
+            Some(VectorStruct::Single(vector)) => {
                 (name == DEFAULT_VECTOR_NAME).then_some(vector.into())
             }
-            // TODO(colbert): remove this match and use `into`
-            Some(api::rest::VectorStruct::Multi(vectors)) => vectors.get(name).map(|v| match v {
-                api::rest::Vector::Dense(v) => VectorRef::Dense(v),
-                api::rest::Vector::Sparse(v) => VectorRef::Sparse(v),
-            }),
+            Some(VectorStruct::Multi(vectors)) => vectors.get(name).map(VectorRef::from),
             None => None,
         }
     }

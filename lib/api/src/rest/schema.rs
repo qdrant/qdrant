@@ -85,3 +85,18 @@ pub struct ScoredPoint {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<segment::types::ShardKey>,
 }
+
+/// Point data
+#[derive(Clone, Debug, PartialEq, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct Record {
+    /// Id of the point
+    pub id: segment::types::PointIdType,
+    /// Payload - values assigned to the point
+    pub payload: Option<segment::types::Payload>,
+    /// Vector of the point
+    pub vector: Option<VectorStruct>,
+    /// Shard Key
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shard_key: Option<segment::types::ShardKey>,
+}

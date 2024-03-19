@@ -66,7 +66,7 @@ impl TryFrom<Record> for PointStruct {
         Ok(Self {
             id,
             payload,
-            vector: vector.unwrap(),
+            vector: api::rest::VectorStruct::from(vector.unwrap()),
         })
     }
 }
