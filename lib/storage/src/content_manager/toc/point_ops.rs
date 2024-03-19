@@ -295,12 +295,23 @@ impl TableOfContent {
     pub async fn discover_batch(
         &self,
         collection_name: &str,
-        requests: Vec<(DiscoverRequestInternal, ShardSelectorInternal)>,
+        mut requests: Vec<(DiscoverRequestInternal, ShardSelectorInternal)>,
         read_consistency: Option<ReadConsistency>,
-        _claims: Option<Claims>,
+        claims: Option<Claims>,
         timeout: Option<Duration>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
-        // TODO(RBAC): handle claims
+        if let Some(Claims {
+            exp: _,
+            w: _,
+            collections,
+            payload,
+        }) = claims.as_ref()
+        {
+            check_collection_name(collections, collection_name)?;
+            for (request, _shard_selector) in &mut requests {
+                check_points_op(collections, payload, request)?;
+            }
+        }
         let collection = self.get_collection(collection_name).await?;
 
         discovery::discover_batch(
