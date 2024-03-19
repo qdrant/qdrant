@@ -17,7 +17,7 @@ use segment::types::{Condition, ExtendedPointId, FieldCondition, Filter, Match, 
 use super::errors::StorageError;
 
 pub fn check_collection_name(
-    collections: &Option<Vec<String>>,
+    collections: Option<&Vec<String>>,
     collection_name: &str,
 ) -> Result<(), StorageError> {
     let ok = collections
@@ -29,8 +29,8 @@ pub fn check_collection_name(
 }
 
 pub fn check_points_op(
-    collections: &Option<Vec<String>>,
-    payload: &Option<PayloadClaim>,
+    collections: Option<&Vec<String>>,
+    payload: Option<&PayloadClaim>,
     op: &mut impl PointsOpClaimsChecker,
 ) -> Result<(), StorageError> {
     for collection in op.collections_used() {

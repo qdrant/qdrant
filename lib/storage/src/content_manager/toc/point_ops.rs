@@ -45,8 +45,8 @@ impl TableOfContent {
             payload,
         }) = claims.as_ref()
         {
-            check_collection_name(collections, collection_name)?;
-            check_points_op(collections, payload, &mut request)?;
+            check_collection_name(collections.as_ref(), collection_name)?;
+            check_points_op(collections.as_ref(), payload.as_ref(), &mut request)?;
         }
 
         let collection = self.get_collection(collection_name).await?;
@@ -87,9 +87,9 @@ impl TableOfContent {
             payload,
         }) = claims.as_ref()
         {
-            check_collection_name(collections, collection_name)?;
+            check_collection_name(collections.as_ref(), collection_name)?;
             for (request, _shard_selector) in &mut requests {
-                check_points_op(collections, payload, request)?;
+                check_points_op(collections.as_ref(), payload.as_ref(), request)?;
             }
         }
 
@@ -135,9 +135,9 @@ impl TableOfContent {
             payload,
         }) = claims.as_ref()
         {
-            check_collection_name(collections, collection_name)?;
+            check_collection_name(collections.as_ref(), collection_name)?;
             for req in &mut request.searches {
-                check_points_op(collections, payload, req)?;
+                check_points_op(collections.as_ref(), payload.as_ref(), req)?;
             }
         }
 
@@ -175,8 +175,8 @@ impl TableOfContent {
             payload,
         }) = claims.as_ref()
         {
-            check_collection_name(collections, collection_name)?;
-            check_points_op(collections, payload, &mut request)?;
+            check_collection_name(collections.as_ref(), collection_name)?;
+            check_points_op(collections.as_ref(), payload.as_ref(), &mut request)?;
         }
 
         let collection = self.get_collection(collection_name).await?;
@@ -212,8 +212,8 @@ impl TableOfContent {
             payload,
         }) = claims.as_ref()
         {
-            check_collection_name(collections, collection_name)?;
-            check_points_op(collections, payload, &mut request)?;
+            check_collection_name(collections.as_ref(), collection_name)?;
+            check_points_op(collections.as_ref(), payload.as_ref(), &mut request)?;
         }
 
         let collection = self.get_collection(collection_name).await?;
@@ -239,8 +239,8 @@ impl TableOfContent {
             payload,
         }) = claims.as_ref()
         {
-            check_collection_name(collections, collection_name)?;
-            check_points_op(collections, payload, &mut request)?;
+            check_collection_name(collections.as_ref(), collection_name)?;
+            check_points_op(collections.as_ref(), payload.as_ref(), &mut request)?;
         }
 
         let collection = self.get_collection(collection_name).await?;
@@ -275,8 +275,8 @@ impl TableOfContent {
             payload,
         }) = claims.as_ref()
         {
-            check_collection_name(collections, collection_name)?;
-            check_points_op(collections, payload, &mut request)?;
+            check_collection_name(collections.as_ref(), collection_name)?;
+            check_points_op(collections.as_ref(), payload.as_ref(), &mut request)?;
         }
 
         let collection = self.get_collection(collection_name).await?;
@@ -307,9 +307,9 @@ impl TableOfContent {
             payload,
         }) = claims.as_ref()
         {
-            check_collection_name(collections, collection_name)?;
+            check_collection_name(collections.as_ref(), collection_name)?;
             for (request, _shard_selector) in &mut requests {
-                check_points_op(collections, payload, request)?;
+                check_points_op(collections.as_ref(), payload.as_ref(), request)?;
             }
         }
         let collection = self.get_collection(collection_name).await?;
@@ -351,8 +351,8 @@ impl TableOfContent {
             payload,
         }) = claims.as_ref()
         {
-            check_collection_name(collections, collection_name)?;
-            check_points_op(collections, payload, &mut request)?;
+            check_collection_name(collections.as_ref(), collection_name)?;
+            check_points_op(collections.as_ref(), payload.as_ref(), &mut request)?;
         }
 
         let collection = self.get_collection(collection_name).await?;
@@ -412,8 +412,12 @@ impl TableOfContent {
             payload,
         }) = claims.as_ref()
         {
-            check_collection_name(collections, collection_name)?;
-            check_points_op(collections, payload, &mut operation.operation)?;
+            check_collection_name(collections.as_ref(), collection_name)?;
+            check_points_op(
+                collections.as_ref(),
+                payload.as_ref(),
+                &mut operation.operation,
+            )?;
         }
 
         // `TableOfContent::_update_shard_keys` and `Collection::update_from_*` are cancel safe,
