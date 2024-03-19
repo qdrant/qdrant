@@ -371,7 +371,7 @@ def test_security():
     # ensure we cannot do simple arbitrary path traversal
     name = "/etc/passwd"
     response = requests.get(
-        f"http://{QDRANT_HOST}/collections/{name}",
+        f"http://{QDRANT_HOST}/snapshots/{name}",
         headers={"Content-Type": "application/json"},
     )
     assert not response.ok
@@ -379,7 +379,7 @@ def test_security():
 
     name = "../../../../../../../etc/passwd"
     response = requests.get(
-        f"http://{QDRANT_HOST}/collections/{name}",
+        f"http://{QDRANT_HOST}/snapshots/{name}",
         headers={"Content-Type": "application/json"},
     )
     assert not response.ok
