@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use api::grpc::models::{CollectionDescription, CollectionsResponse};
 use api::grpc::qdrant::CollectionExists;
+use collection::collection::Collection;
 use collection::config::ShardingMethod;
 use collection::operations::cluster_ops::{
     AbortTransferOperation, ClusterOperations, DropReplicaOperation, MoveShardOperation,
@@ -14,9 +15,12 @@ use collection::operations::types::{
 };
 use collection::shards::replica_set;
 use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};
-use collection::shards::transfer::{ShardTransfer, ShardTransferKey, ShardTransferRestart};
+use collection::shards::transfer::{
+    ShardTransfer, ShardTransferKey, ShardTransferMethod, ShardTransferRestart,
+};
 use itertools::Itertools;
 use rand::prelude::SliceRandom;
+use semver::Version;
 use storage::content_manager::collection_meta_ops::ShardTransferOperations::{Abort, Start};
 use storage::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateShardKey, DropShardKey, ShardTransferOperations,
@@ -208,7 +212,7 @@ pub async fn do_update_collection_cluster(
     let collection = dispatcher.get_collection(&collection_name).await?;
 
     match operation {
-        ClusterOperations::MoveShard(MoveShardOperation { move_shard }) => {
+        ClusterOperations::MoveShard(MoveShardOperation { mut move_shard }) => {
             // Validate shard to move
             if !collection.contains_shard(move_shard.shard_id).await {
                 return Err(StorageError::BadRequest {
@@ -222,6 +226,17 @@ pub async fn do_update_collection_cluster(
             // Validate target and source peer exists
             validate_peer_exists(move_shard.to_peer_id)?;
             validate_peer_exists(move_shard.from_peer_id)?;
+
+            // If no transfer method is specified, possibly suggest one now based on the cluster state
+            if move_shard.method.is_none() {
+                move_shard.method = suggest_shard_transfer_method(
+                    &collection,
+                    dispatcher,
+                    move_shard.shard_id,
+                    move_shard.to_peer_id,
+                )
+                .await;
+            }
 
             // submit operation to consensus
             dispatcher
@@ -240,7 +255,9 @@ pub async fn do_update_collection_cluster(
                 )
                 .await
         }
-        ClusterOperations::ReplicateShard(ReplicateShardOperation { replicate_shard }) => {
+        ClusterOperations::ReplicateShard(ReplicateShardOperation {
+            mut replicate_shard,
+        }) => {
             // Validate shard to replicate
             if !collection.contains_shard(replicate_shard.shard_id).await {
                 return Err(StorageError::BadRequest {
@@ -254,6 +271,17 @@ pub async fn do_update_collection_cluster(
             // Validate target and source peer exists
             validate_peer_exists(replicate_shard.to_peer_id)?;
             validate_peer_exists(replicate_shard.from_peer_id)?;
+
+            // If no transfer method is specified, possibly suggest one now based on the cluster state
+            if replicate_shard.method.is_none() {
+                replicate_shard.method = suggest_shard_transfer_method(
+                    &collection,
+                    dispatcher,
+                    replicate_shard.shard_id,
+                    replicate_shard.to_peer_id,
+                )
+                .await;
+            }
 
             // submit operation to consensus
             dispatcher
@@ -475,6 +503,33 @@ pub async fn do_update_collection_cluster(
                 .await
         }
     }
+}
+
+/// Suggest a method to use for a shard transfer based on the current cluster state
+///
+/// Currently this only suggests WAL delta transfer if suitable. We may use a more extensive
+/// heuristic here later.
+///
+/// If `None` is returned, none is suggested.
+async fn suggest_shard_transfer_method(
+    collection: &Collection,
+    dispatcher: &Dispatcher,
+    shard_id: u32,
+    to_peer_id: PeerId,
+) -> Option<ShardTransferMethod> {
+    // The remote peer must have our shard for WAL delta tranfser to make sense
+    let remote_has_shard = collection.contains_shard_at(to_peer_id, shard_id).await;
+    if !remote_has_shard {
+        return None;
+    }
+
+    // For WAL delta transfers, all peers must be 1.8 or higher
+    let all_support_wal_delta = dispatcher.toc().all_peers_at_version(Version::new(1, 8, 0));
+    if !all_support_wal_delta {
+        return None;
+    }
+
+    Some(ShardTransferMethod::WalDelta)
 }
 
 #[cfg(test)]

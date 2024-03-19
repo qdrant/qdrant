@@ -299,6 +299,15 @@ impl Collection {
         self.shards_holder.read().await.contains_shard(&shard_id)
     }
 
+    /// Check if we have a specific shard ID in any state on the given peer.
+    pub async fn contains_shard_at(&self, peer_id: PeerId, shard_id: ShardId) -> bool {
+        let shard_holder = self.shards_holder.read().await;
+        let Some(shard) = shard_holder.get_shard(&shard_id) else {
+            return false;
+        };
+        shard.peer_state(&peer_id).is_some()
+    }
+
     pub async fn wait_local_shard_replica_state(
         &self,
         shard_id: ShardId,

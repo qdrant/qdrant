@@ -82,6 +82,7 @@ rustls-pki-types = "1.3.1"
 rustls-pemfile = "2.1.1"
 prometheus = { version = "0.13.3", default-features = false }
 validator = { version = "0.16", features = ["derive"] }
+semver = { workspace = true }
 
 # Consensus related crates
 raft = { version = "0.7.0", features = ["prost-codec"], default-features = false }

@@ -1,5 +1,6 @@
 mod collection_container;
 use common::types::TelemetryDetail;
+use semver::Version;
 mod collection_meta_ops;
 mod create_collection;
 mod locks;
@@ -680,5 +681,13 @@ impl TableOfContent {
 
     pub fn get_channel_service(&self) -> &ChannelService {
         &self.channel_service
+    }
+
+    /// Check whether all peers are running at least the given version
+    ///
+    /// If the version is not known for any peer, this returns `false`.
+    /// Peer versions are known since 1.9 and up.
+    pub fn all_peers_at_version(&self, version: Version) -> bool {
+        self.channel_service.all_peers_at_version(version)
     }
 }
