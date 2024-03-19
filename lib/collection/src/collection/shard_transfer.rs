@@ -81,9 +81,8 @@ impl Collection {
 
             let initial_state = match shard_transfer.method.unwrap_or_default() {
                 ShardTransferMethod::StreamRecords => ReplicaState::Partial,
-                // TODO(1.9): switch into recovery state instead
                 ShardTransferMethod::Snapshot | ShardTransferMethod::WalDelta => {
-                    ReplicaState::PartialSnapshot
+                    ReplicaState::Recovery
                 }
             };
 
