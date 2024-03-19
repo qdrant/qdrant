@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+use cap_std::fs::Dir;
 use io::file_operations::read_json;
 use segment::common::version::StorageVersion as _;
 use tokio::fs;
@@ -236,31 +237,24 @@ impl Collection {
     ///
     /// This enforces the file to be inside the snapshots directory
     pub async fn get_snapshot_path(&self, snapshot_name: &str) -> CollectionResult<PathBuf> {
-        let absolute_snapshot_dir = self.snapshots_path.canonicalize().map_err(|_| {
-            CollectionError::not_found(format!(
-                "Snapshot directory: {}",
-                self.snapshots_path.display()
-            ))
-        })?;
+        let snapshots_root = self.snapshots_path.as_path();
+        let snapshots_dir = Dir::open_ambient_dir(snapshots_root, cap_std::ambient_authority())
+            .map_err(|err| {
+                CollectionError::not_found(format!(
+                    "Snapshot directory: {}. Error: {err}",
+                    snapshots_root.display(),
+                ))
+            })?;
 
-        let absolute_snapshot_path = absolute_snapshot_dir
-            .join(snapshot_name)
-            .canonicalize()
-            .map_err(|_| CollectionError::not_found(format!("Snapshot {snapshot_name}")))?;
-
-        if !absolute_snapshot_path.starts_with(absolute_snapshot_dir) {
+        // Ensure snapshot file exists and is relative to snapshots root
+        let snapshot_path = snapshots_root.join(snapshot_name);
+        if !snapshots_dir.is_file(snapshot_name) {
             return Err(CollectionError::not_found(format!(
-                "Snapshot {snapshot_name}"
+                "Snapshot {snapshot_name} is not an existing file"
             )));
         }
 
-        if !absolute_snapshot_path.exists() {
-            return Err(CollectionError::not_found(format!(
-                "Snapshot {snapshot_name}"
-            )));
-        }
-
-        Ok(absolute_snapshot_path)
+        Ok(snapshot_path)
     }
 
     pub async fn list_shard_snapshots(

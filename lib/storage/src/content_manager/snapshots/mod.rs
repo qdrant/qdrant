@@ -4,6 +4,7 @@ pub mod recover;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use cap_std::fs::Dir;
 use collection::operations::snapshot_ops::SnapshotDescription;
 use serde::{Deserialize, Serialize};
 use tar::Builder as TarBuilder;
@@ -30,26 +31,24 @@ pub async fn get_full_snapshot_path(
     toc: &TableOfContent,
     snapshot_name: &str,
 ) -> Result<PathBuf, StorageError> {
-    let snapshots_path = toc.snapshots_path();
+    let snapshots_root = Path::new(toc.snapshots_path());
+    let snapshots_dir = Dir::open_ambient_dir(snapshots_root, cap_std::ambient_authority())
+        .map_err(|err| {
+            StorageError::not_found(format!(
+                "Snapshot directory: {}. Error: {err}",
+                snapshots_root.display(),
+            ))
+        })?;
 
-    let absolute_snapshot_dir = Path::new(snapshots_path)
-        .canonicalize()
-        .map_err(|_| StorageError::not_found(format!("Snapshot directory: {snapshots_path}")))?;
-
-    let absolute_snapshot_path = absolute_snapshot_dir
-        .join(snapshot_name)
-        .canonicalize()
-        .map_err(|_| StorageError::not_found(format!("Snapshot {snapshot_name}")))?;
-
-    if !absolute_snapshot_path.starts_with(absolute_snapshot_dir) {
-        return Err(StorageError::not_found(format!("Snapshot {snapshot_name}")));
+    // Ensure snapshot file exists and is relative to snapshots root
+    let snapshot_path = snapshots_root.join(snapshot_name);
+    if !snapshots_dir.is_file(snapshot_name) {
+        return Err(StorageError::not_found(format!(
+            "Snapshot {snapshot_name} is not an existing file"
+        )));
     }
 
-    if !absolute_snapshot_path.exists() {
-        return Err(StorageError::not_found(format!("Snapshot {snapshot_name}")));
-    }
-
-    Ok(absolute_snapshot_path)
+    Ok(snapshot_path)
 }
 
 pub async fn do_delete_full_snapshot(

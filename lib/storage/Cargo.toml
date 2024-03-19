@@ -33,6 +33,7 @@ tar = "0.4.40"
 chrono = { workspace = true }
 validator = { version = "0.16", features = ["derive"] }
 semver = { workspace = true }
+cap-std = "3.0"
 
 # Consensus related
 atomicwrites = { version = "0.4.3" }
