@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
-use collection::operations::{
-    shard_selector_internal::ShardSelectorInternal, types::ScrollRequestInternal,
-};
+use collection::operations::shard_selector_internal::ShardSelectorInternal;
+use collection::operations::types::ScrollRequestInternal;
 use rbac::jwt::Claims;
 use rbac::JwtParser;
 use segment::types::{WithPayloadInterface, WithVector};
@@ -23,6 +22,7 @@ pub struct AuthKeys {
     /// A JWT parser, based on the read_write key
     jwt_parser: Option<JwtParser>,
 
+    /// Table of content, needed to do stateful validation of JWT
     toc: Arc<TableOfContent>,
 }
 

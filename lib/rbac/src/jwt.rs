@@ -36,6 +36,9 @@ pub struct ValueExists {
 
 impl ValueExists {
     pub fn as_filter(&self) -> Filter {
-        Filter::new_must(Condition::Field(FieldCondition::new_match(self.key.clone(), Match::new_value(self.value.clone()))))
+        Filter::new_must(Condition::Field(FieldCondition::new_match(
+            self.key.clone(),
+            Match::new_value(self.value.clone()),
+        )))
     }
 }

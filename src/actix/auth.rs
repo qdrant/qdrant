@@ -42,7 +42,8 @@ impl Auth {
 
 impl<S, B> Transform<S, ServiceRequest> for Auth
 where
-    S: Service<ServiceRequest, Response = ServiceResponse<EitherBody<B, BoxBody>>, Error = Error> + 'static,
+    S: Service<ServiceRequest, Response = ServiceResponse<EitherBody<B, BoxBody>>, Error = Error>
+        + 'static,
     S::Future: 'static,
     B: 'static,
 {
@@ -110,7 +111,8 @@ impl<S> AuthMiddleware<S> {
 
 impl<S, B> Service<ServiceRequest> for AuthMiddleware<S>
 where
-    S: Service<ServiceRequest, Response = ServiceResponse<EitherBody<B, BoxBody>>, Error = Error> + 'static,
+    S: Service<ServiceRequest, Response = ServiceResponse<EitherBody<B, BoxBody>>, Error = Error>
+        + 'static,
     S::Future: 'static,
     B: 'static,
 {
