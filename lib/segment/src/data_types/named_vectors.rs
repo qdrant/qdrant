@@ -131,14 +131,7 @@ impl<'a> From<VectorRef<'a>> for CowVector<'a> {
 impl<'a> NamedVectors<'a> {
     pub fn from_ref(key: &'a str, value: VectorRef<'a>) -> Self {
         let mut map = TinyMap::new();
-        map.insert(
-            Cow::Borrowed(key),
-            match value {
-                VectorRef::Dense(v) => CowVector::Dense(Cow::Borrowed(v)),
-                VectorRef::Sparse(v) => CowVector::Sparse(Cow::Borrowed(v)),
-                VectorRef::MultiDense(v) => CowVector::MultiDense(Cow::Borrowed(v)),
-            },
-        );
+        map.insert(Cow::Borrowed(key), CowVector::from(value));
         Self { map }
     }
 
@@ -170,25 +163,13 @@ impl<'a> NamedVectors<'a> {
     }
 
     pub fn insert(&mut self, name: String, vector: Vector) {
-        self.map.insert(
-            CowKey::Owned(name),
-            match vector {
-                Vector::Dense(v) => CowVector::Dense(Cow::Owned(v)),
-                Vector::Sparse(v) => CowVector::Sparse(Cow::Owned(v)),
-                Vector::MultiDense(v) => CowVector::MultiDense(Cow::Owned(v)),
-            },
-        );
+        self.map
+            .insert(CowKey::Owned(name), CowVector::from(vector));
     }
 
     pub fn insert_ref(&mut self, name: &'a str, vector: VectorRef<'a>) {
-        self.map.insert(
-            CowKey::Borrowed(name),
-            match vector {
-                VectorRef::Dense(v) => CowVector::Dense(Cow::Borrowed(v)),
-                VectorRef::Sparse(v) => CowVector::Sparse(Cow::Borrowed(v)),
-                VectorRef::MultiDense(v) => CowVector::MultiDense(Cow::Borrowed(v)),
-            },
-        );
+        self.map
+            .insert(CowKey::Borrowed(name), CowVector::from(vector));
     }
 
     pub fn contains_key(&self, key: &str) -> bool {
