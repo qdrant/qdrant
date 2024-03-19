@@ -23,7 +23,7 @@ pub struct SnapshotConfig {
     pub collections_aliases: HashMap<String, String>,
 }
 
-/// Get full file path for a full snapshot by name
+/// Get absolute file path for a full snapshot by name
 ///
 /// This enforces the file to be inside the snapshots directory
 pub async fn get_full_snapshot_path(
@@ -45,7 +45,7 @@ pub async fn get_full_snapshot_path(
         return Err(StorageError::not_found(format!("Snapshot {snapshot_name}")));
     }
 
-    if !absolute_snapshot_path.exists() {
+    if !absolute_snapshot_path.is_file() {
         return Err(StorageError::not_found(format!("Snapshot {snapshot_name}")));
     }
 
