@@ -37,7 +37,7 @@ use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::{shard_not_found_error, LockedShardHolder, ShardHolder};
 use crate::shards::transfer::helpers::check_transfer_conflicts_strict;
 use crate::shards::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool};
-use crate::shards::transfer::{ShardTransfer, ShardTransferMethod};
+use crate::shards::transfer::{ShardTransfer, ShardTransferMethod, WAL_DELTA_MIN_VERSION};
 use crate::shards::{replica_set, CollectionId};
 use crate::telemetry::CollectionTelemetry;
 
@@ -580,7 +580,7 @@ impl Collection {
                 .unwrap_or_else(|| {
                     let all_support_wal_delta = self
                         .channel_service
-                        .all_peers_at_version(Version::new(1, 8, 0));
+                        .all_peers_at_version(WAL_DELTA_MIN_VERSION);
                     if all_support_wal_delta {
                         ShardTransferMethod::WalDelta
                     } else {

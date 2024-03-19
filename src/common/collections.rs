@@ -17,10 +17,10 @@ use collection::shards::replica_set;
 use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};
 use collection::shards::transfer::{
     ShardTransfer, ShardTransferKey, ShardTransferMethod, ShardTransferRestart,
+    WAL_DELTA_MIN_VERSION,
 };
 use itertools::Itertools;
 use rand::prelude::SliceRandom;
-use semver::Version;
 use storage::content_manager::collection_meta_ops::ShardTransferOperations::{Abort, Start};
 use storage::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateShardKey, DropShardKey, ShardTransferOperations,
@@ -524,7 +524,7 @@ async fn suggest_shard_transfer_method(
     }
 
     // For WAL delta transfers, all peers must be 1.8 or higher
-    let all_support_wal_delta = dispatcher.toc().all_peers_at_version(Version::new(1, 8, 0));
+    let all_support_wal_delta = dispatcher.toc().all_peers_at_version(WAL_DELTA_MIN_VERSION);
     if !all_support_wal_delta {
         return None;
     }

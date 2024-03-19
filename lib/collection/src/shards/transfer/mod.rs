@@ -3,6 +3,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use common::defaults::{self, CONSENSUS_CONFIRM_RETRIES};
 use schemars::JsonSchema;
+use semver::Version;
 use serde::{Deserialize, Serialize};
 use tokio::time::{sleep, sleep_until, timeout_at};
 
@@ -25,6 +26,9 @@ const CONSENSUS_CONFIRM_RETRY_DELAY: Duration = Duration::from_secs(1);
 
 /// Time after which confirming a consensus operation times out.
 const CONSENSUS_CONFIRM_TIMEOUT: Duration = defaults::CONSENSUS_META_OP_WAIT;
+
+/// Minimum version for all Qdrant nodes to allow using WAL delta transfer.
+pub const WAL_DELTA_MIN_VERSION: Version = Version::new(1, 8, 0);
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ShardTransfer {
