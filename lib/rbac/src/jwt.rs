@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
 use segment::json_path::JsonPath;
-use segment::types::ValueVariants;
-use segment::types::{Condition, FieldCondition, Filter, Match};
+use segment::types::{Condition, FieldCondition, Filter, Match, ValueVariants};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
