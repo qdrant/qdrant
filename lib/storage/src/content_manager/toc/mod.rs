@@ -57,7 +57,7 @@ pub const FULL_SNAPSHOT_FILE_NAME: &str = "full-snapshot";
 /// the launch of the service.
 pub struct TableOfContent {
     collections: Arc<RwLock<Collections>>,
-    pub(super) storage_config: Arc<StorageConfig>,
+    pub storage_config: Arc<StorageConfig>,
     search_runtime: Runtime,
     update_runtime: Runtime,
     general_runtime: Runtime,

@@ -507,16 +507,22 @@ pub async fn do_update_collection_cluster(
 
 /// Suggest a method to use for a shard transfer based on the current cluster state
 ///
-/// Currently this only suggests WAL delta transfer if suitable. We may use a more extensive
-/// heuristic here later.
+/// In order:
+/// - If a specific method is specified in the configuration, it is always chosen
+/// - If all peers are at least 1.8 and the target peer has the shard, WAL delta transfer is suggested
 ///
-/// If `None` is returned, none is suggested.
+/// Otherwise no specific method is suggested and `None` is returned.
 async fn suggest_shard_transfer_method(
     collection: &Collection,
     dispatcher: &Dispatcher,
     shard_id: u32,
     to_peer_id: PeerId,
 ) -> Option<ShardTransferMethod> {
+    // Always prefer specific method set in the storage config
+    if let Some(method) = dispatcher.toc().storage_config.shard_transfer_method {
+        return Some(method);
+    }
+
     // The remote peer must have our shard for WAL delta tranfser to make sense
     let remote_has_shard = collection.contains_shard_at(to_peer_id, shard_id).await;
     if !remote_has_shard {
