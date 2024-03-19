@@ -367,19 +367,19 @@ def test_snapshot_invalid_file_uri():
     assert response.json()["status"]["error"] == "Bad request: Snapshot file \"/whatever.snapshot\" does not exist"
 
 
-def test_security():
+def test_full_snapshot_security():
     # ensure we cannot do simple arbitrary path traversal
-    name = "/etc/passwd"
+    snapshot_name = "/etc/passwd"
     response = requests.get(
-        f"http://{QDRANT_HOST}/snapshots/{name}",
+        f"http://{QDRANT_HOST}/snapshots/{snapshot_name}",
         headers={"Content-Type": "application/json"},
     )
     assert not response.ok
     assert response.status_code == 404
 
-    name = "../../../../../../../etc/passwd"
+    snapshot_name = "../../../../../../../etc/passwd"
     response = requests.get(
-        f"http://{QDRANT_HOST}/snapshots/{name}",
+        f"http://{QDRANT_HOST}/snapshots/{snapshot_name}",
         headers={"Content-Type": "application/json"},
     )
     assert not response.ok
@@ -389,6 +389,37 @@ def test_security():
     response = request_with_validation(
         api='/snapshots/{snapshot_name}',
         path_params={'snapshot_name': '..%2F..%2F..%2F..%2F..%2F..%2F..%2F..%2F..%2Fetc%2Fpasswd'},
+        method="GET",
+    )
+    assert not response.ok
+    assert response.status_code == 404
+
+
+def test_collection_snapshot_security():
+    # ensure we cannot do simple arbitrary path traversal
+    snapshot_name = "/etc/passwd"
+    response = requests.get(
+        f"http://{QDRANT_HOST}/collections/{collection_name}/snapshots/{snapshot_name}",
+        headers={"Content-Type": "application/json"},
+    )
+    assert not response.ok
+    assert response.status_code == 404
+
+    snapshot_name = "../../../../../../../etc/passwd"
+    response = requests.get(
+        f"http://{QDRANT_HOST}/collections/{collection_name}/snapshots/{snapshot_name}",
+        headers={"Content-Type": "application/json"},
+    )
+    assert not response.ok
+    assert response.status_code == 404
+
+    # ensure we cannot do arbitrary path traversal with encoded slashes
+    response = request_with_validation(
+        api='/collections/{collection_name}/snapshots/{snapshot_name}',
+        path_params={
+            'collection_name': collection_name,
+            'snapshot_name': '..%2F..%2F..%2F..%2F..%2F..%2F..%2F..%2F..%2Fetc%2Fpasswd',
+        },
         method="GET",
     )
     assert not response.ok
