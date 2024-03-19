@@ -3,7 +3,8 @@ use actix_web::{post, web, Responder};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
-    CoreSearchRequest, SearchGroupsRequest, SearchRequest, SearchRequestBatch,
+    CoreSearchRequest, SearchGroupsRequest, SearchGroupsRequestBatch, SearchRequest,
+    SearchRequestBatch,
 };
 use itertools::Itertools;
 use rbac::jwt::Claims;
@@ -14,7 +15,8 @@ use super::CollectionPath;
 use crate::actix::auth::Extension;
 use crate::actix::helpers::process_response;
 use crate::common::points::{
-    do_core_search_points, do_search_batch_points, do_search_point_groups,
+    do_core_search_points, do_search_batch_point_groups, do_search_batch_points,
+    do_search_point_groups,
 };
 
 #[post("/collections/{name}/points/search")]
@@ -137,6 +139,44 @@ async fn search_point_groups(
         params.consistency,
         shard_selection,
         claims.into_inner(),
+        params.timeout(),
+    )
+    .await;
+
+    process_response(response, timing)
+}
+
+#[post("/collections/{name}/points/search/groups/batch")]
+async fn batch_search_point_groups(
+    toc: web::Data<TableOfContent>,
+    collection: Path<CollectionPath>,
+    Json(requests): Json<SearchGroupsRequestBatch>,
+    params: Query<ReadParams>,
+) -> impl Responder {
+    let timing = Instant::now();
+
+    let requests = requests
+        .searches
+        .into_iter()
+        .map(|req| {
+            let SearchGroupsRequest {
+                search_group_request,
+                shard_key,
+            } = req;
+            let shard_selection = match shard_key {
+                None => ShardSelectorInternal::All,
+                Some(shard_keys) => shard_keys.into(),
+            };
+
+            (search_group_request, shard_selection)
+        })
+        .collect();
+
+    let response = do_search_batch_point_groups(
+        toc.get_ref(),
+        &collection.name,
+        requests,
+        params.consistency,
         params.timeout(),
     )
     .await;
