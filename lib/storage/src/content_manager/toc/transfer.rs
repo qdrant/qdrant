@@ -57,7 +57,7 @@ impl ShardTransferConsensus for ShardTransferDispatcher {
         let operation =
             ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::TransferShard(
                 collection_name,
-                ShardTransferOperations::SnapshotRecovered(transfer_config.key()),
+                ShardTransferOperations::RecoveryToPartial(transfer_config.key()),
             )));
         proposal_sender.send(operation).map_err(|err| {
             CollectionError::service_error(format!("Failed to submit consensus proposal: {err}"))
