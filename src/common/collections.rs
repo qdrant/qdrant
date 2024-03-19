@@ -111,9 +111,9 @@ pub async fn do_list_collection_aliases(
     collection_name: &str,
 ) -> Result<CollectionsAliasesResponse, StorageError> {
     let mut aliases: Vec<AliasDescription> = Default::default();
-    for alias in toc.collection_aliases(collection_name).await? {
+    for alias in toc.collection_aliases(collection_name).await?.into_iter() {
         aliases.push(AliasDescription {
-            alias_name: alias.to_string(),
+            alias_name: alias,
             collection_name: collection_name.to_string(),
         });
     }
