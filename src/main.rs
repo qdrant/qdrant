@@ -230,6 +230,7 @@ fn main() -> anyhow::Result<()> {
             tls_config,
         ));
         channel_service.id_to_address = persistent_consensus_state.peer_address_by_id.clone();
+        channel_service.id_to_metadata = persistent_consensus_state.peer_metadata_by_id.clone();
     }
 
     // Table of content manages the list of collections.

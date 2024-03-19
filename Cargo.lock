@@ -5236,7 +5236,6 @@ dependencies = [
  "reqwest",
  "schemars",
  "segment",
- "semver",
  "serde",
  "serde_cbor",
  "serde_json",
