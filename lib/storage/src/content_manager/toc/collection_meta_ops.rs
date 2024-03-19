@@ -432,8 +432,7 @@ impl TableOfContent {
                 }
 
                 log::debug!(
-                    "Set shard replica state from {:?} to {:?} after snapshot recovery",
-                    current_state,
+                    "Set shard replica state from {current_state:?} to {:?} after snapshot recovery",
                     ReplicaState::Partial,
                 );
 

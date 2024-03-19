@@ -909,9 +909,11 @@ pub enum ReplicaState {
     // A shard which receives data, but is not used for search
     // Useful for backup shards
     Listener,
+    // Deprecated since Qdrant 1.9.0, used in Qdrant 1.7.0 and 1.8.0
+    //
     // Snapshot shard transfer is in progress, updates aren't sent to the shard
     // Normally rejects updates. Since 1.8 it allows updates if force is true.
-    // TODO(1.9): deprecate this state
+    // TODO(1.10): remove PartialSnapshot state entirely?
     PartialSnapshot,
     // Shard is undergoing recovery by an external node
     // Normally rejects updates, accepts updates if force is true
