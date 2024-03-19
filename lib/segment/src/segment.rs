@@ -27,7 +27,7 @@ use crate::common::{
 };
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{Direction, OrderBy, OrderingValue};
-use crate::data_types::vectors::{QueryVector, Vector};
+use crate::data_types::vectors::{QueryVector, Vector, VectorRef};
 use crate::entry::entry_point::SegmentEntry;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::numeric_index::StreamRange;
@@ -217,9 +217,9 @@ impl Segment {
                         | VectorStorageEnum::DenseAppendableMemmap(_) => vec![1.0; dim].into(),
                         VectorStorageEnum::SparseSimple(_) => SparseVector::default().into(),
                     };
-                    vector_storage.insert_vector(new_index, vector.to_vec_ref())?;
+                    vector_storage.insert_vector(new_index, VectorRef::from(&vector))?;
                     vector_storage.delete_vector(new_index)?;
-                    vector_index.update_vector(new_index, vector.to_vec_ref())?;
+                    vector_index.update_vector(new_index, VectorRef::from(&vector))?;
                 }
                 Some(vec) => {
                     vector_storage.insert_vector(new_index, vec)?;
