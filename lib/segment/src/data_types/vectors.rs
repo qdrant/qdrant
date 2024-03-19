@@ -26,16 +26,6 @@ pub enum VectorRef<'a> {
     MultiDense(&'a [DenseVector]),
 }
 
-impl Vector {
-    pub fn to_vec_ref(&self) -> VectorRef {
-        match self {
-            Vector::Dense(v) => VectorRef::Dense(v.as_slice()),
-            Vector::Sparse(v) => VectorRef::Sparse(v),
-            Vector::MultiDense(v) => VectorRef::MultiDense(v),
-        }
-    }
-}
-
 impl<'a> VectorRef<'a> {
     pub fn to_vec(self) -> Vector {
         match self {
