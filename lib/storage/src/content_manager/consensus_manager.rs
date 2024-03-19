@@ -33,7 +33,7 @@ use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::consensus::persistent::Persistent;
 use crate::types::{
     ClusterInfo, ClusterStatus, ConsensusThreadStatus, MessageSendErrors, PeerAddressById,
-    PeerInfo, PeerMetadataById, RaftInfo,
+    PeerInfo, PeerMetadata, PeerMetadataById, RaftInfo,
 };
 
 pub mod prelude {
@@ -41,6 +41,9 @@ pub mod prelude {
 
     pub type ConsensusState = super::ConsensusManager<TableOfContent>;
 }
+
+/// Allow us updating our peer metadata once every 60 seconds
+const CONSENSUS_PEER_METADATA_UPDATE_INTERVAL: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SnapshotData {
@@ -94,6 +97,8 @@ pub struct ConsensusManager<C: CollectionContainer> {
     consensus_thread_status: RwLock<ConsensusThreadStatus>,
     /// Consensus thread errors, changed by the consensus thread
     message_send_failures: RwLock<HashMap<String, MessageSendErrors>>,
+    /// Last time we attempted to update the peer metadata
+    next_peer_metadata_update_attempt: Mutex<Instant>,
 }
 
 impl<C: CollectionContainer> ConsensusManager<C> {
@@ -116,6 +121,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 last_update: Utc::now(),
             }),
             message_send_failures: Default::default(),
+            next_peer_metadata_update_attempt: Mutex::new(Instant::now()),
         }
     }
 
@@ -717,24 +723,37 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     }
 
     pub fn sync_local_state(&self) -> Result<(), StorageError> {
-        // TODO(1.9): enable in Qdrant 1.9
-        // // Update our own metadata if outdated
-        // if self.persistent.read().is_our_metadata_outdated() {
-        //     log::debug!("Proposing consensus peer metadata update for this peer");
-        //     let result = self
-        //         .propose_sender
-        //         .send(ConsensusOperations::UpdatePeerMetadata {
-        //             peer_id: self.this_peer_id(),
-        //             metadata: PeerMetadata::current(),
-        //         });
-        //     if let Err(err) = result {
-        //         log::error!(
-        //             "Failed to propose consensus peer metadata update for this peer: {err}"
-        //         );
-        //     }
-        // }
-
+        self.try_update_peer_metadata()?;
         self.toc.sync_local_state()
+    }
+
+    /// Try to update our peer metadata if it's outdated
+    ///
+    /// It rate limits updating to `CONSENSUS_PEER_METADATA_UPDATE_INTERVAL`.
+    fn try_update_peer_metadata(&self) -> Result<(), StorageError> {
+        // Throttle updates to prevent spamming consensus
+        if Instant::now() < *self.next_peer_metadata_update_attempt.lock() {
+            return Ok(());
+        }
+
+        if !self.persistent.read().is_our_metadata_outdated() {
+            return Ok(());
+        }
+
+        log::debug!("Proposing consensus peer metadata update for this peer");
+        let result = self
+            .propose_sender
+            .send(ConsensusOperations::UpdatePeerMetadata {
+                peer_id: self.this_peer_id(),
+                metadata: PeerMetadata::current(),
+            });
+        if let Err(err) = result {
+            log::error!("Failed to propose consensus peer metadata update for this peer: {err}");
+        }
+        *self.next_peer_metadata_update_attempt.lock() =
+            Instant::now() + CONSENSUS_PEER_METADATA_UPDATE_INTERVAL;
+
+        Ok(())
     }
 }
 
