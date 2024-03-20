@@ -1571,13 +1571,13 @@ mod tests {
     /// Validate that `check_clock_tag_ordering_property` works as expected.
     ///
     /// Yes, this is a test for a test for a test. (⌐■_■)
-    #[test]
-    fn validate_clock_tag_ordering_property() {
+    #[rstest]
+    fn validate_clock_tag_ordering_property(#[values(false, true)] allow_gaps: bool) {
         // Empty is fine
-        check_clock_tag_ordering_property(&[], false).unwrap();
+        check_clock_tag_ordering_property(&[], allow_gaps).unwrap();
 
         // Any one clock tag is fine
-        check_clock_tag_ordering_property(&[ClockTag::new(1, 2, 3)], false).unwrap();
+        check_clock_tag_ordering_property(&[ClockTag::new(1, 2, 3)], allow_gaps).unwrap();
 
         // Clock tags in order are allowed
         check_clock_tag_ordering_property(
@@ -1587,12 +1587,12 @@ mod tests {
                 ClockTag::new(1, 0, 2),
                 ClockTag::new(1, 0, 3),
             ],
-            false,
+            allow_gaps,
         )
         .unwrap();
 
-        // Clock tags in order with gaps are not allowed
-        check_clock_tag_ordering_property(
+        // Clock tags in order with gaps are only allowed if specified
+        let result = check_clock_tag_ordering_property(
             &[
                 ClockTag::new(1, 0, 0),
                 ClockTag::new(1, 0, 1),
@@ -1601,23 +1601,9 @@ mod tests {
                 ClockTag::new(1, 0, 10),
                 ClockTag::new(1, 0, 11),
             ],
-            false,
-        )
-        .unwrap_err();
-
-        // Clock tags in order with gaps are allowed if we allow gaps
-        check_clock_tag_ordering_property(
-            &[
-                ClockTag::new(1, 0, 0),
-                ClockTag::new(1, 0, 1),
-                ClockTag::new(1, 0, 2),
-                // Misses 1:0:3-9
-                ClockTag::new(1, 0, 10),
-                ClockTag::new(1, 0, 11),
-            ],
-            true,
-        )
-        .unwrap();
+            allow_gaps,
+        );
+        assert_eq!(result.is_ok(), allow_gaps);
 
         // Not starting at zero (truncated) is allowed
         check_clock_tag_ordering_property(
@@ -1627,7 +1613,7 @@ mod tests {
                 ClockTag::new(1, 0, 3),
                 ClockTag::new(1, 0, 4),
             ],
-            false,
+            allow_gaps,
         )
         .unwrap();
 
@@ -1638,7 +1624,7 @@ mod tests {
                 ClockTag::new(1, 0, 2),
                 ClockTag::new(1, 0, 2),
             ],
-            false,
+            allow_gaps,
         )
         .unwrap();
 
@@ -1656,7 +1642,7 @@ mod tests {
                 ClockTag::new(1, 0, 1),
                 ClockTag::new(1, 0, 2),
             ],
-            false,
+            allow_gaps,
         )
         .unwrap();
 
@@ -1673,7 +1659,7 @@ mod tests {
                 ClockTag::new(1, 0, 2),
                 ClockTag::new(1, 0, 3),
             ],
-            false,
+            allow_gaps,
         )
         .unwrap();
 
@@ -1693,7 +1679,7 @@ mod tests {
                 ClockTag::new(1, 0, 5),
                 ClockTag::new(1, 0, 6),
             ],
-            false,
+            allow_gaps,
         )
         .unwrap();
 
@@ -1718,7 +1704,7 @@ mod tests {
                 // Adds 1:0:3 on top of it
                 ClockTag::new(1, 0, 3),
             ],
-            false,
+            allow_gaps,
         )
         .unwrap();
 
@@ -1732,12 +1718,12 @@ mod tests {
                 ClockTag::new(1, 0, 1),
                 // Misses 1:0:2
             ],
-            false,
+            allow_gaps,
         )
         .unwrap_err();
 
-        // Repeating clock tag sequence must not miss clock tags in the middle
-        check_clock_tag_ordering_property(
+        // Repeating clock tag sequence must only miss clock tags in the middle if specified
+        let result = check_clock_tag_ordering_property(
             &[
                 ClockTag::new(1, 0, 0),
                 ClockTag::new(1, 0, 1),
@@ -1746,9 +1732,9 @@ mod tests {
                 // Misses 1:0:1
                 ClockTag::new(1, 0, 2),
             ],
-            false,
-        )
-        .unwrap_err();
+            allow_gaps,
+        );
+        assert_eq!(result.is_ok(), allow_gaps);
 
         // Skipping a clock ID is allowed
         check_clock_tag_ordering_property(
@@ -1761,7 +1747,7 @@ mod tests {
                 ClockTag::new(1, 2, 11),
                 ClockTag::new(1, 2, 12),
             ],
-            false,
+            allow_gaps,
         )
         .unwrap();
 
@@ -1787,12 +1773,12 @@ mod tests {
                 ClockTag::new(1, 0, 2),
                 ClockTag::new(1, 1, 5),
             ],
-            false,
+            allow_gaps,
         )
         .unwrap();
 
-        // Intermixed clock tag sequence where one tick for peer 2 is missing is not allowed
-        check_clock_tag_ordering_property(
+        // Intermixed clock tag sequence where one tick for peer 2 is missing is only allowed if specified
+        let result = check_clock_tag_ordering_property(
             &[
                 ClockTag::new(1, 0, 0),
                 ClockTag::new(2, 0, 0),
@@ -1803,12 +1789,12 @@ mod tests {
                 ClockTag::new(1, 0, 3),
                 ClockTag::new(2, 0, 3),
             ],
-            false,
-        )
-        .unwrap_err();
+            allow_gaps,
+        );
+        assert_eq!(result.is_ok(), allow_gaps);
 
-        // Intermixed clock tag sequence where one tick for clock ID 1 is missing is not allowed
-        check_clock_tag_ordering_property(
+        // Intermixed clock tag sequence where one tick for clock ID 1 is missing is only allowed if specified
+        let result = check_clock_tag_ordering_property(
             &[
                 ClockTag::new(1, 0, 0),
                 ClockTag::new(1, 1, 0),
@@ -1819,9 +1805,9 @@ mod tests {
                 ClockTag::new(1, 0, 3),
                 ClockTag::new(1, 1, 3),
             ],
-            false,
-        )
-        .unwrap_err();
+            allow_gaps,
+        );
+        assert_eq!(result.is_ok(), allow_gaps);
 
         // Intermixed clock tag sequence where one tick is missing is not allowed
         check_clock_tag_ordering_property(
@@ -1844,7 +1830,7 @@ mod tests {
                 ClockTag::new(3, 0, 3),
                 ClockTag::new(3, 0, 4),
             ],
-            false,
+            allow_gaps,
         )
         .unwrap_err();
     }
