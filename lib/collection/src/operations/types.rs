@@ -1809,12 +1809,12 @@ pub struct PeerMetadata {
 impl PeerMetadata {
     pub fn current() -> Self {
         Self {
-            version: defaults::QDRANT_VERSION,
+            version: defaults::QDRANT_VERSION.clone(),
         }
     }
 
     /// Whether this metadata has a different version than our current Qdrant instance.
     pub fn is_different_version(&self) -> bool {
-        self.version != defaults::QDRANT_VERSION
+        self.version != *defaults::QDRANT_VERSION
     }
 }
