@@ -46,9 +46,6 @@ pub fn open_simple_multi_dense_vector_storage(
     let mut vectors = vec![];
     let (mut deleted, mut deleted_count) = (BitVec::new(), 0);
     let db_wrapper = DatabaseColumnWrapper::new(database, database_column_name);
-
-    let mut total_vector_count = 0;
-    let mut total_sparse_size = 0;
     db_wrapper.lock_db().iter()?;
     for (key, value) in db_wrapper.lock_db().iter()? {
         let point_id: PointOffsetType = bincode::deserialize(&key)
@@ -85,7 +82,6 @@ pub fn open_simple_multi_dense_vector_storage(
 impl SimpleMultiDenseVectorStorage {
     /// Set deleted flag for given key. Returns previous deleted state.
     #[inline]
-    #[allow(unused)]
     fn set_deleted(&mut self, key: PointOffsetType, deleted: bool) -> bool {
         if key as usize >= self.vectors.len() {
             return false;
@@ -101,7 +97,6 @@ impl SimpleMultiDenseVectorStorage {
         was_deleted
     }
 
-    #[allow(unused)]
     fn update_stored(
         &mut self,
         key: PointOffsetType,
@@ -143,11 +138,8 @@ impl VectorStorage for SimpleMultiDenseVectorStorage {
     }
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {
-        self.vectors
-            .get(key as usize)
-            .expect("vector not found")
-            .as_slice()
-            .into()
+        let multi_dense_vector = self.vectors.get(key as usize).expect("vector not found");
+        CowVector::from(multi_dense_vector.as_slice())
     }
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
