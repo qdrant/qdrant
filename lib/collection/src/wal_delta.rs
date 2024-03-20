@@ -395,8 +395,9 @@ mod tests {
     /// unexpectedly.
     ///
     /// See: <https://www.notion.so/qdrant/Testing-suite-4e28a978ec05476080ff26ed07757def?pvs=4>
+    #[rstest]
     #[tokio::test]
-    async fn test_resolve_wal_delta_with_gaps() {
+    async fn test_resolve_wal_delta_with_gaps(#[values(true, false)] with_gap: bool) {
         const N: usize = 5;
         const GAP_SIZE: usize = 10;
 
@@ -430,10 +431,12 @@ mod tests {
         }
 
         // Introduce a gap in the clocks on A
-        for _ in 0..GAP_SIZE {
-            let mut a_clock_0 = a_clock_set.get_clock();
-            let clock_tick = a_clock_0.tick_once();
-            a_clock_0.advance_to(clock_tick);
+        if with_gap {
+            for _ in 0..GAP_SIZE {
+                let mut a_clock_0 = a_clock_set.get_clock();
+                let clock_tick = a_clock_0.tick_once();
+                a_clock_0.advance_to(clock_tick);
+            }
         }
 
         // Create N operations on peer A, which are missed on node C
