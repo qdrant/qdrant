@@ -34,16 +34,15 @@ pub async fn do_collection_exists(
     claims: Option<Claims>,
     name: &str,
 ) -> Result<CollectionExists, StorageError> {
-    let claims_collections = match claims.as_ref() {
-        Some(Claims {
+    if let Some(claims) = claims.as_ref() {
+        let Claims {
             exp: _,
             w: _,
             collections,
             payload: _,
-        }) => collections.as_ref(),
-        None => None,
-    };
-    check_collection_name(claims_collections, name)?;
+        } = claims;
+        check_collection_name(collections.as_ref(), name)?;
+    }
 
     // if this returns Ok, it means the collection exists.
     // if not, we check that the error is NotFound
@@ -62,16 +61,15 @@ pub async fn do_get_collection(
     name: &str,
     shard_selection: Option<ShardId>,
 ) -> Result<CollectionInfo, StorageError> {
-    let claims_collections = match claims.as_ref() {
-        Some(Claims {
+    if let Some(claims) = claims.as_ref() {
+        let Claims {
             exp: _,
             w: _,
             collections,
             payload: _,
-        }) => collections.as_ref(),
-        None => None,
-    };
-    check_collection_name(claims_collections, name)?;
+        } = claims;
+        check_collection_name(collections.as_ref(), name)?;
+    }
 
     let collection = toc.get_collection(name).await?;
 
@@ -87,14 +85,16 @@ pub async fn do_list_collections(
     toc: &TableOfContent,
     claims: Option<Claims>,
 ) -> CollectionsResponse {
-    let claims_collections = match claims.as_ref() {
-        Some(Claims {
+    let claims_collections = if let Some(claims) = claims.as_ref() {
+        let Claims {
             exp: _,
             w: _,
             collections,
             payload: _,
-        }) => collections.as_ref(),
-        None => None,
+        } = claims;
+        collections.as_ref()
+    } else {
+        None
     };
 
     let collections = toc
@@ -154,16 +154,18 @@ pub async fn do_list_collection_aliases(
     claims: Option<Claims>,
     collection_name: &str,
 ) -> Result<CollectionsAliasesResponse, StorageError> {
-    let claims_collections = match claims.as_ref() {
-        Some(Claims {
+    let claims_collections = if let Some(claims) = claims.as_ref() {
+        let Claims {
             exp: _,
             w: _,
             collections,
             payload: _,
-        }) => collections.as_ref(),
-        None => None,
+        } = claims;
+        check_collection_name(collections.as_ref(), collection_name)?;
+        collections.as_ref()
+    } else {
+        None
     };
-    check_collection_name(claims_collections, collection_name)?;
 
     let aliases: Vec<AliasDescription> = toc
         .collection_aliases(collection_name)
@@ -186,14 +188,16 @@ pub async fn do_list_aliases(
     toc: &TableOfContent,
     claims: Option<Claims>,
 ) -> Result<CollectionsAliasesResponse, StorageError> {
-    let claims_collections = match claims.as_ref() {
-        Some(Claims {
+    let claims_collections = if let Some(claims) = claims.as_ref() {
+        let Claims {
             exp: _,
             w: _,
             collections,
             payload: _,
-        }) => collections.as_ref(),
-        None => None,
+        } = claims;
+        collections.as_ref()
+    } else {
+        None
     };
 
     let mut aliases = toc.list_aliases().await?;
@@ -243,16 +247,15 @@ pub async fn do_get_collection_cluster(
     claims: Option<Claims>,
     name: &str,
 ) -> Result<CollectionClusterInfo, StorageError> {
-    let claims_collections = match claims.as_ref() {
-        Some(Claims {
+    if let Some(claims) = claims.as_ref() {
+        let Claims {
             exp: _,
             w: _,
             collections,
             payload: _,
-        }) => collections.as_ref(),
-        None => None,
-    };
-    check_collection_name(claims_collections, name)?;
+        } = claims;
+        check_collection_name(collections.as_ref(), name)?;
+    }
 
     let collection = toc.get_collection(name).await?;
     Ok(collection.cluster_info(toc.this_peer_id).await?)
@@ -265,19 +268,24 @@ pub async fn do_update_collection_cluster(
     claims: Option<Claims>,
     wait_timeout: Option<Duration>,
 ) -> Result<bool, StorageError> {
-    if let Some(Claims {
-        exp: _,
-        w: _,
-        collections: Some(_),
-        payload: _,
-    }) = claims.as_ref()
-    {
+    if let Some(claims) = claims.as_ref() {
+        let Claims {
+            exp: _,
+            w: _,
+            collections,
+            payload: _,
+        } = claims;
+        check_collection_name(collections.as_ref(), &collection_name)?;
         match &operation {
             ClusterOperations::MoveShard(_)
             | ClusterOperations::ReplicateShard(_)
             | ClusterOperations::AbortTransfer(_)
             | ClusterOperations::DropReplica(_)
-            | ClusterOperations::RestartTransfer(_) => return incompatible_with_collection_claim(),
+            | ClusterOperations::RestartTransfer(_) => {
+                if collections.is_some() {
+                    return incompatible_with_collection_claim();
+                }
+            }
             ClusterOperations::CreateShardingKey(CreateShardingKeyOperation {
                 create_sharding_key,
             }) => {
