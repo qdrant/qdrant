@@ -305,10 +305,7 @@ impl RecoveryPoint {
             if tick >= tag.clock_tick {
                 self.clocks.remove(&key);
             }
-
-            if tick == tag.clock_tick {
-                any_equal = true;
-            }
+            any_equal |= tick == tag.clock_tick;
         }
 
         any_equal
