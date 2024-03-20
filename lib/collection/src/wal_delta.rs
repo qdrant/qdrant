@@ -215,9 +215,8 @@ fn resolve_wal_delta(
         // We cannot resolve a delta if we have untagged records
         .take_while(|(_, clock_tag)| clock_tag.is_some())
         // Keep scrolling until we have no clocks left
-        .filter_map(|(op_num, clock_tag)| Some((op_num, clock_tag?)))
         .find(|&(_, clock_tag)| {
-            recovery_point.remove_clock_if_newer_than_or_equal_to_tag(clock_tag);
+            recovery_point.remove_clock_if_newer_than_or_equal_to_tag(clock_tag.unwrap());
             recovery_point.is_empty()
         })
         .map(|(op_num, _)| op_num);
