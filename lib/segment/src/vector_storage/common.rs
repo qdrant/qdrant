@@ -12,6 +12,7 @@ pub fn get_async_scorer() -> bool {
     ASYNC_SCORER.load(Ordering::Relaxed)
 }
 
+/// Storage type for RocksDB based storage
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct StoredRecord<T> {
     pub deleted: bool,
