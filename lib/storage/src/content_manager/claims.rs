@@ -242,7 +242,7 @@ impl PointsOpClaimsChecker for CollectionUpdateOperations {
             },
 
             // These are already checked in CollectionMetaOperations, but we'll check them anyway
-            // for sure.
+            // to be sure.
             CollectionUpdateOperations::FieldIndexOperation(op) => match op {
                 FieldIndexOperations::CreateIndex(_) => incompatible_with_payload_claim(),
                 FieldIndexOperations::DeleteIndex(_) => incompatible_with_payload_claim(),
