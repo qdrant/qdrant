@@ -70,7 +70,9 @@ impl Dispatcher {
                 | CollectionMetaOperations::SetShardReplicaState(_)
                 | CollectionMetaOperations::CreateShardKey(_)
                 | CollectionMetaOperations::DropShardKey(_) => {
-                    return incompatible_with_collection_claim();
+                    if collections.is_some() {
+                        return incompatible_with_collection_claim();
+                    }
                 }
                 CollectionMetaOperations::CreatePayloadIndex(op) => {
                     check_collection_name(collections.as_ref(), &op.collection_name)?;
