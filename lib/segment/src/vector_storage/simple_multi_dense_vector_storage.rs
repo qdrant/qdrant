@@ -58,7 +58,11 @@ pub fn open_simple_multi_dense_vector_storage(
             bitvec_set_deleted(&mut deleted, point_id, true);
             deleted_count += 1;
         }
-        vectors.insert(point_id as usize, stored_record.vector);
+        let point_id_usize = point_id as usize;
+        if point_id_usize >= vectors.len() {
+            vectors.resize(point_id_usize + 1, vec![]);
+        }
+        vectors[point_id_usize] = stored_record.vector;
 
         check_process_stopped(stopped)?;
     }
