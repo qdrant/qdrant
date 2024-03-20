@@ -5,8 +5,13 @@ use semver::Version;
 
 use crate::cpu;
 
-/// Current Qdrant version
-pub const QDRANT_VERSION: Version = Version::new(0, 11, 1);
+/// Current Qdrant version string
+pub const QDRANT_VERSION_STRING: &str = "0.11.1";
+
+lazy_static! {
+    /// Current Qdrant semver version
+    pub static ref QDRANT_VERSION: Version = Version::parse(QDRANT_VERSION_STRING).expect("malformed version string");
+}
 
 /// Number of retries for confirming a consensus operation.
 pub const CONSENSUS_CONFIRM_RETRIES: usize = 3;
