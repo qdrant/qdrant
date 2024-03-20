@@ -206,22 +206,34 @@ fn resolve_wal_delta(
         return Ok(None);
     }
 
-    // Scroll back over the WAL and find a record that covered all clocks
+    // Scroll back over the WAL and find a record that covered all clocks, allowing delta resolution
     // Drain satisfied clocks from the recovery point until we have nothing left
     log::trace!("Resolving WAL delta for: {recovery_point}");
 
-    let delta_from = operations
-        .rev()
+    let mut last_op_num = None;
+    for (op_num, clock_tag) in operations.rev() {
         // We cannot resolve a delta if we have untagged records
-        .take_while(|(_, clock_tag)| clock_tag.is_some())
-        // Keep scrolling until we have no clocks left
-        .find(|&(_, clock_tag)| {
-            recovery_point.remove_clock_if_newer_than_or_equal_to_tag(clock_tag.unwrap());
-            recovery_point.is_empty()
-        })
-        .map(|(op_num, _)| op_num);
+        let Some(clock_tag) = clock_tag else {
+            return Err(WalDeltaError::NotFound);
+        };
 
-    delta_from.map(Some).ok_or(WalDeltaError::NotFound)
+        // If the current record is older than the last remaining recovery point clock, delta from
+        // the previous record
+        recovery_point.remove_clock_if_newer_than_tag(clock_tag);
+        if recovery_point.is_empty() {
+            return Ok(last_op_num);
+        }
+
+        last_op_num.replace(op_num);
+
+        // If the current record matches the last remaining recovery point clock, delta from there
+        recovery_point.remove_clock_if_equal_to_tag(clock_tag);
+        if recovery_point.is_empty() {
+            break;
+        }
+    }
+
+    last_op_num.map(Some).ok_or(WalDeltaError::NotFound)
 }
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
