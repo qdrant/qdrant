@@ -108,6 +108,12 @@ impl<'a> From<&'a DenseVector> for VectorRef<'a> {
     }
 }
 
+impl<'a> From<&'a MultiDenseVector> for VectorRef<'a> {
+    fn from(val: &'a MultiDenseVector) -> Self {
+        VectorRef::MultiDense(val)
+    }
+}
+
 impl<'a> From<&'a SparseVector> for VectorRef<'a> {
     fn from(val: &'a SparseVector) -> Self {
         VectorRef::Sparse(val)
@@ -123,6 +129,12 @@ impl From<DenseVector> for Vector {
 impl From<SparseVector> for Vector {
     fn from(val: SparseVector) -> Self {
         Vector::Sparse(val)
+    }
+}
+
+impl From<MultiDenseVector> for Vector {
+    fn from(val: MultiDenseVector) -> Self {
+        Vector::MultiDense(val)
     }
 }
 
