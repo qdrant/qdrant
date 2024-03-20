@@ -145,7 +145,11 @@ impl VectorStorage for SimpleMultiDenseVectorStorage {
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
         let vector: &[DenseVector] = vector.try_into()?;
         let multi_vector = vector.to_vec();
-        self.vectors.insert(key as usize, multi_vector.clone());
+        let key_usize = key as usize;
+        if key_usize >= self.vectors.len() {
+            self.vectors.resize(key_usize + 1, vec![]);
+        }
+        self.vectors[key_usize] = multi_vector.clone();
         self.set_deleted(key, false);
         self.update_stored(key, false, Some(multi_vector))?;
         Ok(())
