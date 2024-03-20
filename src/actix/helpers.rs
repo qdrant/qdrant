@@ -140,6 +140,9 @@ where
         }
 
         Err(error) => {
+            if error.status_code == http::StatusCode::INTERNAL_SERVER_ERROR {
+                log::warn!("error processing request: {}", error.description);
+            }
             let response = ApiResponse {
                 result: None,
                 status: ApiStatus::Error(error.to_string()),
