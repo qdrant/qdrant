@@ -211,11 +211,17 @@ impl Segment {
             match vector_opt {
                 None => {
                     let dim = vector_storage.vector_dim();
-                    let vector: Vector = match *vector_storage {
+                    // placeholder vector for marking deletion
+                    let vector = match *vector_storage {
                         VectorStorageEnum::DenseSimple(_)
                         | VectorStorageEnum::DenseMemmap(_)
-                        | VectorStorageEnum::DenseAppendableMemmap(_) => vec![1.0; dim].into(),
-                        VectorStorageEnum::SparseSimple(_) => SparseVector::default().into(),
+                        | VectorStorageEnum::DenseAppendableMemmap(_) => {
+                            Vector::from(vec![1.0; dim])
+                        }
+                        VectorStorageEnum::SparseSimple(_) => Vector::from(SparseVector::default()),
+                        VectorStorageEnum::MultiDenseSimple(_) => {
+                            Vector::from(vec![vec![1.0; dim]])
+                        }
                     };
                     vector_storage.insert_vector(new_index, VectorRef::from(&vector))?;
                     vector_storage.delete_vector(new_index)?;

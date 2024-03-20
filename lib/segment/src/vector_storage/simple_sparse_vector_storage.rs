@@ -7,7 +7,6 @@ use bitvec::prelude::{BitSlice, BitVec};
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
-use serde::{Deserialize, Serialize};
 use sparse::common::sparse_vector::SparseVector;
 
 use super::SparseVectorStorage;
@@ -18,14 +17,17 @@ use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::VectorRef;
 use crate::types::Distance;
 use crate::vector_storage::bitvec::bitvec_set_deleted;
+use crate::vector_storage::common::StoredRecord;
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 pub const SPARSE_VECTOR_DISTANCE: Distance = Distance::Dot;
 
+type StoredSparseVector = StoredRecord<SparseVector>;
+
 /// In-memory vector storage with on-update persistence using `store`
 pub struct SimpleSparseVectorStorage {
     db_wrapper: DatabaseColumnWrapper,
-    update_buffer: StoredRecord,
+    update_buffer: StoredSparseVector,
     /// BitVec for deleted flags. Grows dynamically upto last set flag.
     deleted: BitVec,
     /// Current number of deleted vectors.
@@ -33,12 +35,6 @@ pub struct SimpleSparseVectorStorage {
     total_vector_count: usize,
     /// Total number of non-zero elements in all vectors. Used to estimate average vector size.
     total_sparse_size: usize,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone)]
-struct StoredRecord {
-    pub deleted: bool,
-    pub vector: SparseVector,
 }
 
 pub fn open_simple_sparse_vector_storage(
@@ -55,7 +51,7 @@ pub fn open_simple_sparse_vector_storage(
     for (key, value) in db_wrapper.lock_db().iter()? {
         let point_id: PointOffsetType = bincode::deserialize(&key)
             .map_err(|_| OperationError::service_error("cannot deserialize point id from db"))?;
-        let stored_record: StoredRecord = bincode::deserialize(&value)
+        let stored_record: StoredSparseVector = bincode::deserialize(&value)
             .map_err(|_| OperationError::service_error("cannot deserialize record from db"))?;
 
         // Propagate deleted flag
@@ -72,7 +68,7 @@ pub fn open_simple_sparse_vector_storage(
     Ok(Arc::new(AtomicRefCell::new(
         VectorStorageEnum::SparseSimple(SimpleSparseVectorStorage {
             db_wrapper,
-            update_buffer: StoredRecord {
+            update_buffer: StoredSparseVector {
                 deleted: false,
                 vector: SparseVector::default(),
             },
@@ -150,7 +146,7 @@ impl SparseVectorStorage for SimpleSparseVectorStorage {
         let bin_key = bincode::serialize(&key)
             .map_err(|_| OperationError::service_error("Cannot serialize sparse vector key"))?;
         let data = self.db_wrapper.get(bin_key)?;
-        let record: StoredRecord = bincode::deserialize(&data).map_err(|_| {
+        let record: StoredSparseVector = bincode::deserialize(&data).map_err(|_| {
             OperationError::service_error("Cannot deserialize sparse vector from db")
         })?;
         Ok(record.vector)

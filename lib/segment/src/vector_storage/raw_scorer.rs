@@ -135,6 +135,10 @@ pub fn new_stoppable_raw_scorer<'a>(
         VectorStorageEnum::SparseSimple(vs) => {
             raw_sparse_scorer_impl(query, vs, point_deleted, is_stopped)
         }
+        VectorStorageEnum::MultiDenseSimple(_vs) => {
+            // TODO(colbert)
+            unimplemented!("multidense vector")
+        }
     }
 }
 
