@@ -116,6 +116,7 @@ fn test_alias_operation() {
                     },
                 )),
                 None,
+                None,
             ),
         )
         .unwrap();
@@ -129,6 +130,7 @@ fn test_alias_operation() {
                     }
                     .into()],
             }),
+            None,
             None,
         ))
         .unwrap();
@@ -153,6 +155,7 @@ fn test_alias_operation() {
                         .into(),
                     ],
             }),
+            None,
             None,
         ))
         .unwrap();

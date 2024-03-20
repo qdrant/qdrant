@@ -144,7 +144,7 @@ async fn _do_recover_from_snapshot(
                     snapshot_config.clone().into(),
                 ));
             dispatcher
-                .submit_collection_meta_op(operation, None)
+                .submit_collection_meta_op(operation, None, None)
                 .await?;
             toc.get_collection(collection_name).await?
         }
