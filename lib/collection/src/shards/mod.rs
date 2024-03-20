@@ -7,7 +7,6 @@ pub mod local_shard;
 pub mod proxy_shard;
 pub mod queue_proxy_shard;
 pub mod remote_shard;
-#[allow(dead_code)]
 pub mod replica_set;
 pub mod resolve;
 pub mod shard;

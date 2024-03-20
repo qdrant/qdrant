@@ -277,7 +277,6 @@ impl Settings {
 }
 
 /// Returns the number of maximum actix workers.
-#[allow(dead_code)]
 pub fn max_web_workers(settings: &Settings) -> usize {
     match settings.service.max_workers {
         Some(0) => {
