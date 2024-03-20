@@ -389,6 +389,111 @@ mod tests {
         assert_wal_ordering_property(&c_wal, false).await;
     }
 
+    /// Test WAL delta resolution when there is gaps in the WAL on all machines.
+    ///
+    /// We normally do not expect this situation. But it's good to support it if it happens
+    /// unexpectedly.
+    ///
+    /// See: <https://www.notion.so/qdrant/Testing-suite-4e28a978ec05476080ff26ed07757def?pvs=4>
+    #[tokio::test]
+    async fn test_resolve_wal_delta_with_gaps() {
+        const N: usize = 5;
+        const GAP_SIZE: usize = 10;
+
+        // Create WALs for peer A, B and C
+        let (a_wal, _a_wal_dir) = fixture_empty_wal();
+        let (b_wal, _b_wal_dir) = fixture_empty_wal();
+        let (c_wal, _c_wal_dir) = fixture_empty_wal();
+
+        // Create clock set for peer A, start first clock from 1
+        let mut a_clock_set = ClockSet::new();
+        a_clock_set.get_clock().advance_to(0);
+
+        // Create N operations on peer A
+        for n in 0..N {
+            let mut a_clock_0 = a_clock_set.get_clock();
+            let clock_tick = a_clock_0.tick_once();
+            let clock_tag = ClockTag::new(1, a_clock_0.id(), clock_tick);
+            let bare_operation = mock_operation((1 + n) as u64);
+            let operation = OperationWithClockTag::new(bare_operation, Some(clock_tag));
+
+            // Write operation to peer A, B and C and advance clocks
+            let mut a_operation = operation.clone();
+            let mut b_operation = operation.clone();
+            let mut c_operation = operation.clone();
+            let (_, _) = a_wal.lock_and_write(&mut a_operation).await.unwrap();
+            let (_, _) = b_wal.lock_and_write(&mut b_operation).await.unwrap();
+            let (_, _) = c_wal.lock_and_write(&mut c_operation).await.unwrap();
+            a_clock_0.advance_to(a_operation.clock_tag.unwrap().clock_tick);
+            a_clock_0.advance_to(b_operation.clock_tag.unwrap().clock_tick);
+            a_clock_0.advance_to(c_operation.clock_tag.unwrap().clock_tick);
+        }
+
+        // Introduce a gap in the clocks on A
+        for _ in 0..GAP_SIZE {
+            let mut a_clock_0 = a_clock_set.get_clock();
+            let clock_tick = a_clock_0.tick_once();
+            a_clock_0.advance_to(clock_tick);
+        }
+
+        // Create N operations on peer A, which are missed on node C
+        for n in 0..N {
+            let mut a_clock_0 = a_clock_set.get_clock();
+            let clock_tick = a_clock_0.tick_once();
+            let clock_tag = ClockTag::new(1, a_clock_0.id(), clock_tick);
+            let bare_operation = mock_operation((1 + N + n) as u64);
+            let operation = OperationWithClockTag::new(bare_operation, Some(clock_tag));
+
+            // Write operation to peer A and B and advance clocks
+            let mut a_operation = operation.clone();
+            let mut b_operation = operation.clone();
+            let (_, _) = a_wal.lock_and_write(&mut a_operation).await.unwrap();
+            let (_, _) = b_wal.lock_and_write(&mut b_operation).await.unwrap();
+            a_clock_0.advance_to(a_operation.clock_tag.unwrap().clock_tick);
+            a_clock_0.advance_to(b_operation.clock_tag.unwrap().clock_tick);
+        }
+
+        let c_recovery_point = c_wal.recovery_point().await;
+
+        // Resolve delta on node A for node C, assert correctness
+        let delta_from = a_wal
+            .resolve_wal_delta(c_recovery_point.clone())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(delta_from, N as u64);
+
+        // Resolve delta on node B for node C, assert correctness
+        let delta_from = b_wal
+            .resolve_wal_delta(c_recovery_point.clone())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(delta_from, N as u64);
+
+        // Diff should have N operation, as C missed just N of them
+        assert_eq!(b_wal.wal.lock().read(delta_from).count(), N);
+
+        // Recover WAL on node C by writing delta from node B to it
+        c_wal.append_from(&b_wal, delta_from).await.unwrap();
+
+        // WALs should match up perfectly now
+        a_wal
+            .wal
+            .lock()
+            .read(0)
+            .zip(b_wal.wal.lock().read(0))
+            .zip(c_wal.wal.lock().read(0))
+            .for_each(|((a, b), c)| {
+                assert_eq!(a, b);
+                assert_eq!(b, c);
+            });
+
+        assert_wal_ordering_property(&a_wal, true).await;
+        assert_wal_ordering_property(&b_wal, true).await;
+        assert_wal_ordering_property(&c_wal, true).await;
+    }
+
     /// Test WAL delta resolution with a many missed operations on node C.
     ///
     /// See: <https://www.notion.so/qdrant/Testing-suite-4e28a978ec05476080ff26ed07757def?pvs=4>
