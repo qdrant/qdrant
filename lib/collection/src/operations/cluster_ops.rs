@@ -62,6 +62,21 @@ pub struct CreateShardingKey {
     pub placement: Option<Vec<PeerId>>,
 }
 
+impl CreateShardingKey {
+    /// Check if the operation has default parameters.
+    pub fn has_default_params(&self) -> bool {
+        matches!(
+            self,
+            CreateShardingKey {
+                shard_key: _,
+                shards_number: None,
+                replication_factor: None,
+                placement: None,
+            }
+        )
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct DropShardingKey {

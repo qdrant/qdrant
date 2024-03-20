@@ -842,7 +842,6 @@ pub async fn create_field_index_internal(
     create_field_index_collection: CreateFieldIndexCollection,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
-    claims: Option<Claims>,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let CreateFieldIndexCollection {
         collection_name,
@@ -866,7 +865,6 @@ pub async fn create_field_index_internal(
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
-        claims,
     )
     .await
     .map_err(error_to_status)?;
@@ -914,7 +912,6 @@ pub async fn delete_field_index_internal(
     delete_field_index_collection: DeleteFieldIndexCollection,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
-    claims: Option<Claims>,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let DeleteFieldIndexCollection {
         collection_name,
@@ -934,7 +931,6 @@ pub async fn delete_field_index_internal(
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
-        claims,
     )
     .await
     .map_err(error_to_status)?;

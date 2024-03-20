@@ -241,6 +241,8 @@ impl PointsOpClaimsChecker for CollectionUpdateOperations {
                 }
             },
 
+            // These are already checked in CollectionMetaOperations, but we'll check them anyway
+            // to be sure.
             CollectionUpdateOperations::FieldIndexOperation(op) => match op {
                 FieldIndexOperations::CreateIndex(_) => incompatible_with_payload_claim(),
                 FieldIndexOperations::DeleteIndex(_) => incompatible_with_payload_claim(),
@@ -251,9 +253,15 @@ impl PointsOpClaimsChecker for CollectionUpdateOperations {
 
 /// Helper function to indicate that the operation is not allowed when `payload` claim is present.
 /// Usually used when point IDs are involved.
-fn incompatible_with_payload_claim<T>() -> Result<T, StorageError> {
+pub fn incompatible_with_payload_claim<T>() -> Result<T, StorageError> {
     Err(StorageError::unauthorized(
         "This operation is not allowed when payload JWT claim is present",
+    ))
+}
+
+pub fn incompatible_with_collection_claim<T>() -> Result<T, StorageError> {
+    Err(StorageError::unauthorized(
+        "This operation is not allowed when collection JWT claim is present",
     ))
 }
 

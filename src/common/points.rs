@@ -600,7 +600,6 @@ pub async fn do_create_index_internal(
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
-    claims: Option<Claims>,
 ) -> Result<UpdateResult, StorageError> {
     let collection_operation = CollectionUpdateOperations::FieldIndexOperation(
         FieldIndexOperations::CreateIndex(CreateIndex {
@@ -621,7 +620,7 @@ pub async fn do_create_index_internal(
         wait,
         ordering,
         shard_selector,
-        claims,
+        None,
     )
     .await
 }
@@ -656,7 +655,7 @@ pub async fn do_create_index(
 
     // TODO: Is `submit_collection_meta_op` cancel-safe!? Should be, I think?.. 🤔
     dispatcher
-        .submit_collection_meta_op(consensus_op, wait_timeout)
+        .submit_collection_meta_op(consensus_op, claims, wait_timeout)
         .await?;
 
     // This function is required as long as we want to maintain interface compatibility
@@ -672,7 +671,6 @@ pub async fn do_create_index(
         shard_selection,
         wait,
         ordering,
-        claims,
     )
     .await
 }
@@ -686,7 +684,6 @@ pub async fn do_delete_index_internal(
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
-    claims: Option<Claims>,
 ) -> Result<UpdateResult, StorageError> {
     let collection_operation = CollectionUpdateOperations::FieldIndexOperation(
         FieldIndexOperations::DeleteIndex(index_name),
@@ -704,7 +701,7 @@ pub async fn do_delete_index_internal(
         wait,
         ordering,
         shard_selector,
-        claims,
+        None,
     )
     .await
 }
@@ -732,7 +729,7 @@ pub async fn do_delete_index(
 
     // TODO: Is `submit_collection_meta_op` cancel-safe!? Should be, I think?.. 🤔
     dispatcher
-        .submit_collection_meta_op(consensus_op, wait_timeout)
+        .submit_collection_meta_op(consensus_op, claims, wait_timeout)
         .await?;
 
     do_delete_index_internal(
@@ -743,7 +740,6 @@ pub async fn do_delete_index(
         shard_selection,
         wait,
         ordering,
-        claims,
     )
     .await
 }

@@ -4,8 +4,9 @@ use api::grpc::models::{CollectionDescription, CollectionsResponse};
 use api::grpc::qdrant::CollectionExists;
 use collection::config::ShardingMethod;
 use collection::operations::cluster_ops::{
-    AbortTransferOperation, ClusterOperations, DropReplicaOperation, MoveShardOperation,
-    ReplicateShardOperation, RestartTransfer, RestartTransferOperation,
+    AbortTransferOperation, ClusterOperations, CreateShardingKeyOperation, DropReplicaOperation,
+    DropShardingKey, DropShardingKeyOperation, MoveShardOperation, ReplicateShardOperation,
+    RestartTransfer, RestartTransferOperation,
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::snapshot_ops::SnapshotDescription;
@@ -17,6 +18,8 @@ use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};
 use collection::shards::transfer::{ShardTransfer, ShardTransferKey, ShardTransferRestart};
 use itertools::Itertools;
 use rand::prelude::SliceRandom;
+use rbac::jwt::Claims;
+use storage::content_manager::claims::{check_collection_name, incompatible_with_collection_claim};
 use storage::content_manager::collection_meta_ops::ShardTransferOperations::{Abort, Start};
 use storage::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateShardKey, DropShardKey, ShardTransferOperations,
@@ -28,8 +31,19 @@ use storage::dispatcher::Dispatcher;
 
 pub async fn do_collection_exists(
     toc: &TableOfContent,
+    claims: Option<Claims>,
     name: &str,
 ) -> Result<CollectionExists, StorageError> {
+    if let Some(claims) = claims.as_ref() {
+        let Claims {
+            exp: _,
+            w: _,
+            collections,
+            payload: _,
+        } = claims;
+        check_collection_name(collections.as_ref(), name)?;
+    }
+
     // if this returns Ok, it means the collection exists.
     // if not, we check that the error is NotFound
     let Err(error) = toc.get_collection(name).await else {
@@ -43,9 +57,20 @@ pub async fn do_collection_exists(
 
 pub async fn do_get_collection(
     toc: &TableOfContent,
+    claims: Option<Claims>,
     name: &str,
     shard_selection: Option<ShardId>,
 ) -> Result<CollectionInfo, StorageError> {
+    if let Some(claims) = claims.as_ref() {
+        let Claims {
+            exp: _,
+            w: _,
+            collections,
+            payload: _,
+        } = claims;
+        check_collection_name(collections.as_ref(), name)?;
+    }
+
     let collection = toc.get_collection(name).await?;
 
     let shard_selection = match shard_selection {
@@ -56,11 +81,29 @@ pub async fn do_get_collection(
     Ok(collection.info(&shard_selection).await?)
 }
 
-pub async fn do_list_collections(toc: &TableOfContent) -> CollectionsResponse {
+pub async fn do_list_collections(
+    toc: &TableOfContent,
+    claims: Option<Claims>,
+) -> CollectionsResponse {
+    let claims_collections = if let Some(claims) = claims.as_ref() {
+        let Claims {
+            exp: _,
+            w: _,
+            collections,
+            payload: _,
+        } = claims;
+        collections.as_ref()
+    } else {
+        None
+    };
+
     let collections = toc
         .all_collections()
         .await
         .into_iter()
+        .filter(|c| {
+            claims_collections.map_or(true, |claims_collections| claims_collections.contains(c))
+        })
         .map(|name| CollectionDescription { name })
         .collect_vec();
 
@@ -108,22 +151,63 @@ fn generate_even_placement(
 
 pub async fn do_list_collection_aliases(
     toc: &TableOfContent,
+    claims: Option<Claims>,
     collection_name: &str,
 ) -> Result<CollectionsAliasesResponse, StorageError> {
-    let mut aliases: Vec<AliasDescription> = Default::default();
-    for alias in toc.collection_aliases(collection_name).await?.into_iter() {
-        aliases.push(AliasDescription {
+    let claims_collections = if let Some(claims) = claims.as_ref() {
+        let Claims {
+            exp: _,
+            w: _,
+            collections,
+            payload: _,
+        } = claims;
+        check_collection_name(collections.as_ref(), collection_name)?;
+        collections.as_ref()
+    } else {
+        None
+    };
+
+    let aliases: Vec<AliasDescription> = toc
+        .collection_aliases(collection_name)
+        .await?
+        .into_iter()
+        .filter(|alias| {
+            claims_collections.map_or(true, |claims_collections| {
+                claims_collections.contains(alias)
+            })
+        })
+        .map(|alias| AliasDescription {
             alias_name: alias,
             collection_name: collection_name.to_string(),
-        });
-    }
+        })
+        .collect();
     Ok(CollectionsAliasesResponse { aliases })
 }
 
 pub async fn do_list_aliases(
     toc: &TableOfContent,
+    claims: Option<Claims>,
 ) -> Result<CollectionsAliasesResponse, StorageError> {
-    let aliases = toc.list_aliases().await?;
+    let claims_collections = if let Some(claims) = claims.as_ref() {
+        let Claims {
+            exp: _,
+            w: _,
+            collections,
+            payload: _,
+        } = claims;
+        collections.as_ref()
+    } else {
+        None
+    };
+
+    let mut aliases = toc.list_aliases().await?;
+    aliases.retain(|alias| {
+        claims_collections.map_or(true, |claims_collections| {
+            claims_collections.contains(&alias.collection_name)
+                && claims_collections.contains(&alias.alias_name)
+        })
+    });
+
     Ok(CollectionsAliasesResponse { aliases })
 }
 
@@ -160,8 +244,19 @@ pub async fn do_create_snapshot(
 
 pub async fn do_get_collection_cluster(
     toc: &TableOfContent,
+    claims: Option<Claims>,
     name: &str,
 ) -> Result<CollectionClusterInfo, StorageError> {
+    if let Some(claims) = claims.as_ref() {
+        let Claims {
+            exp: _,
+            w: _,
+            collections,
+            payload: _,
+        } = claims;
+        check_collection_name(collections.as_ref(), name)?;
+    }
+
     let collection = toc.get_collection(name).await?;
     Ok(collection.cluster_info(toc.this_peer_id).await?)
 }
@@ -170,8 +265,40 @@ pub async fn do_update_collection_cluster(
     dispatcher: &Dispatcher,
     collection_name: String,
     operation: ClusterOperations,
+    claims: Option<Claims>,
     wait_timeout: Option<Duration>,
 ) -> Result<bool, StorageError> {
+    if let Some(claims) = claims.as_ref() {
+        let Claims {
+            exp: _,
+            w: _,
+            collections,
+            payload: _,
+        } = claims;
+        check_collection_name(collections.as_ref(), &collection_name)?;
+        match &operation {
+            ClusterOperations::MoveShard(_)
+            | ClusterOperations::ReplicateShard(_)
+            | ClusterOperations::AbortTransfer(_)
+            | ClusterOperations::DropReplica(_)
+            | ClusterOperations::RestartTransfer(_) => {
+                if collections.is_some() {
+                    return incompatible_with_collection_claim();
+                }
+            }
+            ClusterOperations::CreateShardingKey(CreateShardingKeyOperation {
+                create_sharding_key,
+            }) => {
+                if !create_sharding_key.has_default_params() {
+                    return incompatible_with_collection_claim();
+                }
+            }
+            ClusterOperations::DropShardingKey(DropShardingKeyOperation {
+                drop_sharding_key: DropShardingKey { shard_key: _ },
+            }) => (),
+        }
+    }
+
     if dispatcher.consensus_state().is_none() {
         return Err(StorageError::BadRequest {
             description: "Distributed mode disabled".to_string(),
@@ -236,6 +363,7 @@ pub async fn do_update_collection_cluster(
                             method: move_shard.method,
                         }),
                     ),
+                    None,
                     wait_timeout,
                 )
                 .await
@@ -270,6 +398,7 @@ pub async fn do_update_collection_cluster(
                             method: replicate_shard.method,
                         }),
                     ),
+                    None,
                     wait_timeout,
                 )
                 .await
@@ -299,6 +428,7 @@ pub async fn do_update_collection_cluster(
                             reason: "user request".to_string(),
                         },
                     ),
+                    None,
                     wait_timeout,
                 )
                 .await
@@ -325,6 +455,7 @@ pub async fn do_update_collection_cluster(
             dispatcher
                 .submit_collection_meta_op(
                     CollectionMetaOperations::UpdateCollection(update_operation),
+                    None,
                     wait_timeout,
                 )
                 .await
@@ -397,6 +528,7 @@ pub async fn do_update_collection_cluster(
                         shard_key: create_sharding_key.shard_key,
                         placement: exact_placement,
                     }),
+                    None,
                     wait_timeout,
                 )
                 .await
@@ -434,6 +566,7 @@ pub async fn do_update_collection_cluster(
                         collection_name,
                         shard_key: drop_sharding_key.shard_key,
                     }),
+                    None,
                     wait_timeout,
                 )
                 .await
@@ -472,6 +605,7 @@ pub async fn do_update_collection_cluster(
                             method,
                         }),
                     ),
+                    None,
                     wait_timeout,
                 )
                 .await
