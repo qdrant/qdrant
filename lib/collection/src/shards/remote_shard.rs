@@ -628,7 +628,6 @@ pub struct CollectionSearchRequest<'a>(pub(crate) (CollectionId, &'a SearchReque
 pub struct CollectionCoreSearchRequest<'a>(pub(crate) (CollectionId, &'a CoreSearchRequest));
 
 #[async_trait]
-#[allow(unused_variables)]
 impl ShardOperation for RemoteShard {
     /// # Cancel safety
     ///
@@ -653,7 +652,7 @@ impl ShardOperation for RemoteShard {
         with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
-        search_runtime_handle: &Handle,
+        _search_runtime_handle: &Handle,
         order_by: Option<&OrderBy>,
     ) -> CollectionResult<Vec<Record>> {
         let scroll_points = ScrollPoints {
@@ -709,7 +708,7 @@ impl ShardOperation for RemoteShard {
     async fn core_search(
         &self,
         batch_request: Arc<CoreSearchRequestBatch>,
-        search_runtime_handle: &Handle,
+        _search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let mut timer = ScopeDurationMeasurer::new(&self.telemetry_search_durations);

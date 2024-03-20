@@ -41,7 +41,6 @@ struct StoredRecord {
     pub vector: SparseVector,
 }
 
-#[allow(unused)]
 pub fn open_simple_sparse_vector_storage(
     database: Arc<RwLock<DB>>,
     database_column_name: &str,
