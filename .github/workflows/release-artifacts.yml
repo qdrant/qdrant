@@ -19,6 +19,9 @@ jobs:
 
           - target: aarch64-unknown-linux-musl
             os: ubuntu-latest
+
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
     runs-on: ${{ matrix.os }}
     steps:
       - name: Install dependencies
