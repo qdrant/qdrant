@@ -31,7 +31,7 @@ http = "0.2"
 parking_lot = { workspace = true }
 tar = "0.4.40"
 chrono = { workspace = true }
-validator = { version = "0.16", features = ["derive"] }
+validator.workspace = true
 
 # Consensus related
 atomicwrites = { version = "0.4.3" }

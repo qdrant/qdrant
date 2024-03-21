@@ -6,6 +6,7 @@ use rbac::jwt::{Claims, ValueExists};
 use rbac::JwtParser;
 use segment::types::{WithPayloadInterface, WithVector};
 use storage::content_manager::toc::TableOfContent;
+use validator::Validate;
 
 use super::strings::ct_eq;
 use crate::settings::ServiceConfig;
@@ -60,30 +61,33 @@ impl AuthKeys {
         get_header: impl Fn(&'a str) -> Option<&'a str>,
         is_read_only: bool,
     ) -> Result<Option<Claims>, String> {
-        let Some(key) = get_header("api-key")
+        let Some(token_or_key) = get_header("api-key")
             .or_else(|| get_header("authorization").and_then(|v| v.strip_prefix("Bearer ")))
         else {
             return Err("Must provide an API key or an Authorization bearer token".to_string());
         };
 
-        if self.can_write(key) || (is_read_only && self.can_read(key)) {
+        if self.can_write(token_or_key) || (is_read_only && self.can_read(token_or_key)) {
             return Ok(None);
         }
 
-        if !is_read_only && self.can_read(key) {
+        if !is_read_only && self.can_read(token_or_key) {
             return Err("Write access denied".to_string());
         }
 
-        if let Some(claims) = self.jwt_parser.as_ref().and_then(|p| p.decode(key).ok()) {
+        if let Some(claims) = self
+            .jwt_parser
+            .as_ref()
+            .and_then(|p| p.decode(token_or_key).ok())
+        {
+            claims.validate().map_err(|e| e.to_string())?;
             let Claims {
                 exp: _, // already validated on decoding
-                w: write_access,
                 value_exists,
-                payload: _,     //
-                collections: _, // will be validated in TableOfContent
+                access,
             } = &claims;
 
-            if !write_access.unwrap_or(false) && !is_read_only {
+            if !access.has_some_write_privileges() && !is_read_only {
                 return Err("Write access denied".to_string());
             }
 

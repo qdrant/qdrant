@@ -4242,6 +4242,7 @@ dependencies = [
  "jsonwebtoken",
  "segment",
  "serde",
+ "validator",
 ]
 
 [[package]]

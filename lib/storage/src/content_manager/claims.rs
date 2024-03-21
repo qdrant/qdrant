@@ -11,21 +11,19 @@ use collection::operations::types::{
 use collection::operations::vector_ops::VectorOperations;
 use collection::operations::{CollectionUpdateOperations, FieldIndexOperations};
 use itertools::{Either, Itertools as _};
-use rbac::jwt::{Claims, PayloadClaim};
+use rbac::jwt::{AccessClaim, Claims, PayloadClaim};
 use segment::types::{Condition, ExtendedPointId, FieldCondition, Filter, Match, Payload};
 
 use super::errors::StorageError;
 
 pub fn check_collection_name(
-    collections: Option<&Vec<String>>,
+    access_claim: &AccessClaim,
     collection_name: &str,
 ) -> Result<(), StorageError> {
-    let ok = collections
-        .as_ref()
-        .map_or(true, |c| c.iter().any(|c| c == collection_name));
-    ok.then_some(()).ok_or_else(|| {
-        StorageError::unauthorized(format!("Collection '{collection_name}' is not allowed"))
-    })
+    if !access_claim.allows_collection(collection_name) {
+        return Err(collection_not_allowed(collection_name));
+    }
+    Ok(())
 }
 
 /// Check if a claim object is allowed to manage collections.
@@ -33,16 +31,11 @@ pub fn check_manage_rights(claims: Option<&Claims>) -> Result<(), StorageError> 
     if let Some(claims) = claims {
         let Claims {
             exp: _,
-            w: _,
+            access,
             value_exists: _,
-            collections,
-            payload,
         } = claims;
-        if collections.is_some() {
-            return incompatible_with_collection_claim();
-        }
-        if payload.is_some() {
-            return incompatible_with_payload_claim();
+        if access.is_scoped() {
+            return Err(incompatible_with_collection_scope());
         }
     }
     Ok(())
@@ -56,30 +49,24 @@ pub fn check_full_access_to_collection(
     if let Some(claims) = claims {
         let Claims {
             exp: _,
-            w: _,
             value_exists: _,
-            collections,
-            payload,
+            access,
         } = claims;
-        if let Some(collections) = collections {
-            check_collection_name(Some(collections), collection_name)?;
-        }
-        if payload.is_some() {
-            return incompatible_with_payload_claim();
+        if !access.allows_collection(collection_name) {
+            return Err(collection_not_allowed(collection_name));
         }
     }
     Ok(())
 }
 
 pub fn check_points_op(
-    collections: Option<&Vec<String>>,
-    payload: Option<&PayloadClaim>,
+    access_claim: &AccessClaim,
     op: &mut impl PointsOpClaimsChecker,
 ) -> Result<(), StorageError> {
     for collection in op.collections_used() {
-        check_collection_name(collections, collection)?;
+        check_collection_name(access_claim, collection)?;
     }
-    if let Some(payload) = payload {
+    if let Some(payload) = access_claim.payload_claim() {
         op.apply_payload_claim(payload)?;
     }
     Ok(())
@@ -110,7 +97,7 @@ impl PointsOpClaimsChecker for PointRequestInternal {
     }
 
     fn apply_payload_claim(&mut self, _claim: &PayloadClaim) -> Result<(), StorageError> {
-        incompatible_with_payload_claim()
+        Err(incompatible_with_payload_claim())
     }
 }
 
@@ -188,7 +175,7 @@ impl PointsOpClaimsChecker for CollectionUpdateOperations {
     fn apply_payload_claim(&mut self, claim: &PayloadClaim) -> Result<(), StorageError> {
         match self {
             CollectionUpdateOperations::PointOperation(op) => match op {
-                PointOperations::UpsertPoints(_) => incompatible_with_payload_claim(),
+                PointOperations::UpsertPoints(_) => Err(incompatible_with_payload_claim()),
                 PointOperations::DeletePoints { ids } => {
                     *op = PointOperations::DeletePointsByFilter(
                         make_filter_from_ids(take(ids))
@@ -197,15 +184,15 @@ impl PointsOpClaimsChecker for CollectionUpdateOperations {
                     Ok(())
                 }
                 PointOperations::DeletePointsByFilter(filter) => apply_filter(filter, claim),
-                PointOperations::SyncPoints(_) => incompatible_with_payload_claim(),
+                PointOperations::SyncPoints(_) => Err(incompatible_with_payload_claim()),
             },
 
             CollectionUpdateOperations::VectorOperation(op) => match op {
-                VectorOperations::UpdateVectors(_) => incompatible_with_payload_claim(),
+                VectorOperations::UpdateVectors(_) => Err(incompatible_with_payload_claim()),
                 VectorOperations::DeleteVectors(PointIdsList { points, shard_key }, vectors) => {
                     if shard_key.is_some() {
                         // It is unclear where to put the shard_key
-                        return incompatible_with_payload_claim();
+                        return Err(incompatible_with_payload_claim());
                     }
                     *op = VectorOperations::DeleteVectorsByFilter(
                         make_filter_from_ids(take(points))
@@ -217,14 +204,17 @@ impl PointsOpClaimsChecker for CollectionUpdateOperations {
                 VectorOperations::DeleteVectorsByFilter(filter, _) => apply_filter(filter, claim),
             },
 
+            #[allow(unreachable_code, unused_variables)] // TODO(RBAC): remove this
             CollectionUpdateOperations::PayloadOperation(op) => match op {
                 PayloadOps::SetPayload(SetPayloadOp {
-                    payload: _, // TODO: validate
+                    payload: _, // TODO(RBAC): validate
                     points,
                     filter,
-                    key: _, // TODO: validate
+                    key: _, // TODO(RBAC): validate
                 }) => {
-                    incompatible_with_payload_claim()?; // Reject as not implemented
+                    // Reject as not implemented
+                    // TODO:(RBAC) implement this section
+                    return Err(incompatible_with_payload_claim());
 
                     let filter = filter.get_or_insert_with(Default::default);
                     if let Some(points) = take(points) {
@@ -233,11 +223,13 @@ impl PointsOpClaimsChecker for CollectionUpdateOperations {
                     Ok(())
                 }
                 PayloadOps::DeletePayload(DeletePayloadOp {
-                    keys: _, // TODO: validate
+                    keys: _, // TODO(RBAC): validate
                     points,
                     filter,
                 }) => {
-                    incompatible_with_payload_claim()?; // Reject as not implemented
+                    // Reject as not implemented
+                    // TODO:(RBAC) implement this section
+                    return Err(incompatible_with_payload_claim());
 
                     let filter = filter.get_or_insert_with(Default::default);
                     if let Some(points) = take(points) {
@@ -269,12 +261,14 @@ impl PointsOpClaimsChecker for CollectionUpdateOperations {
                     Ok(())
                 }
                 PayloadOps::OverwritePayload(SetPayloadOp {
-                    payload: _, // TODO: validate
+                    payload: _, // TODO(RBAC): validate
                     points,
                     filter,
-                    key: _, // TODO: validate
+                    key: _, // TODO(RBAC): validate
                 }) => {
-                    incompatible_with_payload_claim()?; // Reject as not implemented
+                    // Reject as not implemented
+                    // TODO:(RBAC) implement this section
+                    return Err(incompatible_with_payload_claim());
 
                     let filter = filter.get_or_insert_with(Default::default);
                     if let Some(points) = take(points) {
@@ -287,8 +281,8 @@ impl PointsOpClaimsChecker for CollectionUpdateOperations {
             // These are already checked in CollectionMetaOperations, but we'll check them anyway
             // to be sure.
             CollectionUpdateOperations::FieldIndexOperation(op) => match op {
-                FieldIndexOperations::CreateIndex(_) => incompatible_with_payload_claim(),
-                FieldIndexOperations::DeleteIndex(_) => incompatible_with_payload_claim(),
+                FieldIndexOperations::CreateIndex(_) => Err(incompatible_with_payload_claim()),
+                FieldIndexOperations::DeleteIndex(_) => Err(incompatible_with_payload_claim()),
             },
         }
     }
@@ -296,23 +290,23 @@ impl PointsOpClaimsChecker for CollectionUpdateOperations {
 
 /// Helper function to indicate that the operation is not allowed when `payload` claim is present.
 /// Usually used when point IDs are involved.
-pub fn incompatible_with_payload_claim<T>() -> Result<T, StorageError> {
-    Err(StorageError::unauthorized(
-        "This operation is not allowed when payload JWT claim is present",
-    ))
+pub fn incompatible_with_payload_claim() -> StorageError {
+    StorageError::unauthorized("This operation is not allowed when payload JWT claim is present")
 }
 
-pub fn incompatible_with_collection_claim<T>() -> Result<T, StorageError> {
-    Err(StorageError::unauthorized(
-        "This operation is not allowed when collection JWT claim is present",
-    ))
+pub fn incompatible_with_collection_scope() -> StorageError {
+    StorageError::unauthorized("This operation is not allowed when JWT access claim is scoped")
+}
+
+pub fn collection_not_allowed(collection_name: &str) -> StorageError {
+    StorageError::unauthorized(format!("Collection '{collection_name}' is not allowed"))
 }
 
 fn validate_payload_claim_for_recommended_example(
     example: &RecommendExample,
 ) -> Result<(), StorageError> {
     match example {
-        RecommendExample::PointId(_) => incompatible_with_payload_claim(),
+        RecommendExample::PointId(_) => Err(incompatible_with_payload_claim()),
         RecommendExample::Dense(_) | RecommendExample::Sparse(_) => Ok(()),
     }
 }
@@ -354,6 +348,6 @@ fn make_filter_from_payload_claim(claim: &PayloadClaim) -> Filter {
 }
 
 fn make_payload_from_payload_claim(_claim: &PayloadClaim) -> Result<Payload, StorageError> {
-    // TODO: We need to construct a payload, then validate it against the claim
-    incompatible_with_payload_claim() // Reject as not implemented
+    // TODO(RBAC): We need to construct a payload, then validate it against the claim
+    Err(incompatible_with_payload_claim()) // Reject as not implemented
 }

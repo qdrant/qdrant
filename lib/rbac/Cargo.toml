@@ -14,3 +14,4 @@ publish = false
 jsonwebtoken = "9.2.0"
 segment = { path = "../segment" }
 serde.workspace = true
+validator.workspace = true
