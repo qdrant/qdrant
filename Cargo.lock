@@ -4239,6 +4239,7 @@ dependencies = [
 name = "rbac"
 version = "0.0.0"
 dependencies = [
+ "common",
  "jsonwebtoken",
  "segment",
  "serde",

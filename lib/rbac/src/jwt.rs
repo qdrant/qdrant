@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use common::validation::Undroppable;
 use segment::json_path::JsonPath;
 use segment::types::{Condition, FieldCondition, Filter, Match, ValueVariants};
 use serde::{Deserialize, Serialize};
@@ -22,6 +23,9 @@ pub struct Claims {
     /// Validate this token by looking for a value inside a collection.
     pub value_exists: Option<ValueExists>,
 }
+
+/// Special wrapper for making sure that claims are intentionally handled and dropped.
+pub type SafeClaims = Undroppable<Option<Claims>>;
 
 pub type PayloadClaim = HashMap<JsonPath, ValueVariants>;
 

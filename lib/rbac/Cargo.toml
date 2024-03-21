@@ -12,5 +12,6 @@ publish = false
 
 [dependencies]
 jsonwebtoken = "9.2.0"
-segment = { path = "../segment" }
+segment.workspace = true
+common.workspace = true 
 serde.workspace = true

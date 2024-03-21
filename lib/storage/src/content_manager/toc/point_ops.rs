@@ -11,7 +11,7 @@ use collection::operations::{CollectionUpdateOperations, OperationWithClockTag};
 use collection::{discovery, recommendations};
 use futures::stream::FuturesUnordered;
 use futures::TryStreamExt as _;
-use rbac::jwt::Claims;
+use rbac::jwt::{Claims, SafeClaims};
 use segment::types::{ScoredPoint, ShardKey};
 
 use super::TableOfContent;
@@ -169,7 +169,7 @@ impl TableOfContent {
         mut request: CountRequestInternal,
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
-        claims: Option<Claims>,
+        claims: SafeClaims,
     ) -> Result<CountResult, StorageError> {
         if let Some(Claims {
             exp: _,
@@ -182,6 +182,7 @@ impl TableOfContent {
             check_collection_name(collections.as_ref(), collection_name)?;
             check_points_op(collections.as_ref(), payload.as_ref(), &mut request)?;
         }
+        claims.manually_drop();
 
         let collection = self.get_collection(collection_name).await?;
         collection
