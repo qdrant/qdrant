@@ -55,6 +55,7 @@ pub fn init(
 ) -> io::Result<()> {
     actix_web::rt::System::new().block_on(async {
         let toc_data = web::Data::from(dispatcher.toc().clone());
+        let auth_keys = AuthKeys::try_create(&settings.service, dispatcher.toc().clone());
         let dispatcher_data = web::Data::from(dispatcher);
         let actix_telemetry_collector = telemetry_collector
             .lock()
@@ -64,7 +65,6 @@ pub fn init(
         let telemetry_collector_data = web::Data::from(telemetry_collector);
         let http_client = web::Data::new(HttpClient::from_settings(&settings)?);
         let health_checker = web::Data::new(health_checker);
-        let auth_keys = AuthKeys::try_create(&settings.service);
         let static_folder = settings
             .service
             .static_content_dir
