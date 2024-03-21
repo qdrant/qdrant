@@ -9,15 +9,17 @@ use super::query::discovery_query::DiscoveryQuery;
 use super::query::reco_query::RecoQuery;
 use super::query::TransformInto;
 use super::query_scorer::custom_query_scorer::CustomQueryScorer;
+use super::query_scorer::multi_custom_query_scorer::MultiCustomQueryScorer;
 use super::query_scorer::sparse_custom_query_scorer::SparseCustomQueryScorer;
-use super::{DenseVectorStorage, SparseVectorStorage, VectorStorageEnum};
+use super::{DenseVectorStorage, MultiVectorStorage, SparseVectorStorage, VectorStorageEnum};
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::data_types::vectors::{DenseVector, QueryVector};
+use crate::data_types::vectors::{DenseVector, MultiDenseVector, QueryVector};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::spaces::tools::peek_top_largest_iterable;
 use crate::types::Distance;
 use crate::vector_storage::query_scorer::metric_query_scorer::MetricQueryScorer;
+use crate::vector_storage::query_scorer::multi_metric_query_scorer::MultiMetricQueryScorer;
 use crate::vector_storage::query_scorer::QueryScorer;
 
 /// RawScorer composition:
@@ -135,9 +137,8 @@ pub fn new_stoppable_raw_scorer<'a>(
         VectorStorageEnum::SparseSimple(vs) => {
             raw_sparse_scorer_impl(query, vs, point_deleted, is_stopped)
         }
-        VectorStorageEnum::MultiDenseSimple(_vs) => {
-            // TODO(colbert)
-            unimplemented!("multidense vector")
+        VectorStorageEnum::MultiSimple(vs) => {
+            raw_multi_scorer_impl(query, vs, point_deleted, is_stopped)
         }
     }
 }
@@ -288,6 +289,85 @@ where
         is_stopped,
         vector: std::marker::PhantomData,
     }))
+}
+
+pub fn raw_multi_scorer_impl<'a, TVectorStorage: MultiVectorStorage>(
+    query: QueryVector,
+    vector_storage: &'a TVectorStorage,
+    point_deleted: &'a BitSlice,
+    is_stopped: &'a AtomicBool,
+) -> OperationResult<Box<dyn RawScorer + 'a>> {
+    match vector_storage.distance() {
+        Distance::Cosine => new_multi_scorer_with_metric::<CosineMetric, _>(
+            query,
+            vector_storage,
+            point_deleted,
+            is_stopped,
+        ),
+        Distance::Euclid => new_multi_scorer_with_metric::<EuclidMetric, _>(
+            query,
+            vector_storage,
+            point_deleted,
+            is_stopped,
+        ),
+        Distance::Dot => new_multi_scorer_with_metric::<DotProductMetric, _>(
+            query,
+            vector_storage,
+            point_deleted,
+            is_stopped,
+        ),
+        Distance::Manhattan => new_multi_scorer_with_metric::<ManhattanMetric, _>(
+            query,
+            vector_storage,
+            point_deleted,
+            is_stopped,
+        ),
+    }
+}
+
+fn new_multi_scorer_with_metric<'a, TMetric: Metric + 'a, TVectorStorage: MultiVectorStorage>(
+    query: QueryVector,
+    vector_storage: &'a TVectorStorage,
+    point_deleted: &'a BitSlice,
+    is_stopped: &'a AtomicBool,
+) -> OperationResult<Box<dyn RawScorer + 'a>> {
+    let vec_deleted = vector_storage.deleted_vector_bitslice();
+    match query {
+        QueryVector::Nearest(vector) => raw_scorer_from_query_scorer(
+            MultiMetricQueryScorer::<TMetric, _>::new(vector.try_into()?, vector_storage),
+            point_deleted,
+            vec_deleted,
+            is_stopped,
+        ),
+        QueryVector::Recommend(reco_query) => {
+            let reco_query: RecoQuery<MultiDenseVector> = reco_query.transform_into()?;
+            raw_scorer_from_query_scorer(
+                MultiCustomQueryScorer::<TMetric, _, _>::new(reco_query, vector_storage),
+                point_deleted,
+                vec_deleted,
+                is_stopped,
+            )
+        }
+        QueryVector::Discovery(discovery_query) => {
+            let discovery_query: DiscoveryQuery<MultiDenseVector> =
+                discovery_query.transform_into()?;
+            raw_scorer_from_query_scorer(
+                MultiCustomQueryScorer::<TMetric, _, _>::new(discovery_query, vector_storage),
+                point_deleted,
+                vec_deleted,
+                is_stopped,
+            )
+        }
+        QueryVector::Context(context_query) => {
+            let context_query: ContextQuery<MultiDenseVector> = context_query.transform_into()?;
+            raw_scorer_from_query_scorer(
+                MultiCustomQueryScorer::<TMetric, _, _>::new(context_query, vector_storage),
+                point_deleted,
+                vec_deleted,
+                is_stopped,
+            )
+        }
+    }
 }
 
 impl<'a, TVector, TQueryScorer> RawScorer for RawScorerImpl<'a, TVector, TQueryScorer>
