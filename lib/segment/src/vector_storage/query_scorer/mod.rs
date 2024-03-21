@@ -17,12 +17,17 @@ pub trait QueryScorer<TVector: ?Sized> {
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType;
 }
 
-pub fn score_multi<TMetric: Metric>(a: &MultiDenseVector, b: &MultiDenseVector) -> ScoreType {
+/// Colbert MaxSim metric, metric for multi-dense vectors
+/// https://arxiv.org/pdf/2112.01488.pdf, figure 1
+pub fn score_multi<TMetric: Metric>(
+    multidense_a: &MultiDenseVector,
+    multidense_b: &MultiDenseVector,
+) -> ScoreType {
     let mut sum = 0.0;
-    for a in a.iter() {
-        sum += b
+    for dense_a in multidense_a.iter() {
+        sum += multidense_b
             .iter()
-            .map(|b| TMetric::similarity(a, b))
+            .map(|dense_b| TMetric::similarity(dense_a, dense_b))
             .fold(0.0, |a, b| if a > b { a } else { b });
     }
     sum
