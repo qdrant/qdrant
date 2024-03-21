@@ -91,7 +91,7 @@ impl AuthKeys {
                 let scroll_req = ScrollRequestInternal {
                     offset: None,
                     limit: Some(1),
-                    filter: Some(value_exists.as_filter()),
+                    filter: Some(value_exists.to_filter()),
                     with_payload: Some(WithPayloadInterface::Bool(false)),
                     with_vector: WithVector::Bool(false),
                     order_by: None,
