@@ -213,7 +213,7 @@ fn resolve_wal_delta(
     for (op_num, clock_tag) in operations.rev() {
         // We cannot resolve a delta if we have untagged records
         let Some(clock_tag) = clock_tag else {
-            return Err(WalDeltaError::NotFound);
+            return Err(WalDeltaError::UntaggedRecords);
         };
 
         // Keep scrolling until we have no clocks left
@@ -244,6 +244,8 @@ pub enum WalDeltaError {
     HigherThanCurrent,
     #[error("some recovery point clocks are below the cutoff point in our WAL")]
     Cutoff,
+    #[error("WAL delta cannot include records without clock tags")]
+    UntaggedRecords,
     #[error("cannot find slice of WAL records that satisfies the recovery point")]
     NotFound,
 }
@@ -1451,7 +1453,7 @@ mod tests {
         let mut recovery_point = RecoveryPoint::default();
         recovery_point.insert(1, 0, 2);
         let resolve_result = wal.resolve_wal_delta(recovery_point).await;
-        assert_eq!(resolve_result.unwrap_err(), WalDeltaError::NotFound);
+        assert_eq!(resolve_result.unwrap_err(), WalDeltaError::UntaggedRecords);
     }
 
     /// Empty recovery point should not resolve any diff.
