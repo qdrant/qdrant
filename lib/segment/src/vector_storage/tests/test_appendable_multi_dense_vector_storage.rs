@@ -7,9 +7,11 @@ use tempfile::Builder;
 
 use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use crate::data_types::vectors::{DenseVector, MultiDenseVector};
+use crate::fixtures::payload_context_fixture::FixtureIdTracker;
+use crate::id_tracker::IdTrackerSS;
 use crate::types::Distance;
 use crate::vector_storage::simple_multi_dense_vector_storage::open_simple_multi_dense_vector_storage;
-use crate::vector_storage::{VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{new_raw_scorer, VectorStorage, VectorStorageEnum};
 
 fn multi_points_fixtures() -> Vec<MultiDenseVector> {
     let mut vec = Vec::new();
@@ -32,6 +34,10 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
 
     let delete_mask = [false, false, true, true, false];
 
+    let id_tracker: Arc<AtomicRefCell<IdTrackerSS>> =
+        Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
+
+    let borrowed_id_tracker = id_tracker.borrow_mut();
     let mut borrowed_storage = storage.borrow_mut();
 
     // Insert all points
@@ -62,7 +68,69 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         2,
         "2 vectors must be deleted"
     );
-    // TODO(multi-dense-vector): assert points are deleted by searching through raw scorer
+    let vector = vec![vec![0.0, 1.0, 1.1, 1.0]];
+    let query = vector.as_slice().into();
+    let closest = new_raw_scorer(
+        query,
+        &borrowed_storage,
+        borrowed_id_tracker.deleted_point_bitslice(),
+    )
+    .unwrap()
+    .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
+    assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
+    assert_eq!(closest[0].idx, 4);
+    assert_eq!(closest[1].idx, 1);
+    assert_eq!(closest[2].idx, 0);
+
+    // Delete 1, redelete 2
+    borrowed_storage
+        .delete_vector(1 as PointOffsetType)
+        .unwrap();
+    borrowed_storage
+        .delete_vector(2 as PointOffsetType)
+        .unwrap();
+    assert_eq!(
+        borrowed_storage.deleted_vector_count(),
+        3,
+        "3 vectors must be deleted"
+    );
+
+    let vector = vec![vec![1.0, 0.0, 0.0, 0.0]];
+    let query = vector.as_slice().into();
+    let closest = new_raw_scorer(
+        query,
+        &borrowed_storage,
+        borrowed_id_tracker.deleted_point_bitslice(),
+    )
+    .unwrap()
+    .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
+    assert_eq!(closest.len(), 2, "must have 2 vectors, 3 are deleted");
+    assert_eq!(closest[0].idx, 4);
+    assert_eq!(closest[1].idx, 0);
+
+    // Delete all
+    borrowed_storage
+        .delete_vector(0 as PointOffsetType)
+        .unwrap();
+    borrowed_storage
+        .delete_vector(4 as PointOffsetType)
+        .unwrap();
+    assert_eq!(
+        borrowed_storage.deleted_vector_count(),
+        5,
+        "all vectors must be deleted"
+    );
+
+    let vector = vec![vec![1.0, 0.0, 0.0, 0.0]];
+    let query = vector.as_slice().into();
+    let closest = new_raw_scorer(
+        query,
+        &borrowed_storage,
+        borrowed_id_tracker.deleted_point_bitslice(),
+    )
+    .unwrap()
+    .peek_top_all(5);
+    assert!(closest.is_empty(), "must have no results, all deleted");
 }
 
 fn do_test_update_from_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
@@ -70,6 +138,9 @@ fn do_test_update_from_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnu
 
     let delete_mask = [false, false, true, true, false];
 
+    let id_tracker: Arc<AtomicRefCell<IdTrackerSS>> =
+        Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
+    let borrowed_id_tracker = id_tracker.borrow_mut();
     let mut borrowed_storage = storage.borrow_mut();
 
     {
@@ -111,7 +182,36 @@ fn do_test_update_from_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnu
         "2 vectors must be deleted from other storage"
     );
 
-    // TODO(multi-dense-vector): assert points are deleted by searching through raw scorer
+    let vector = vec![vec![0.0, 1.0, 1.1, 1.0]];
+    let query = vector.as_slice().into();
+
+    let closest = new_raw_scorer(
+        query,
+        &borrowed_storage,
+        borrowed_id_tracker.deleted_point_bitslice(),
+    )
+    .unwrap()
+    .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
+    assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
+    assert_eq!(closest[0].idx, 4);
+    assert_eq!(closest[1].idx, 1);
+    assert_eq!(closest[2].idx, 0);
+
+    // Delete all
+    borrowed_storage
+        .delete_vector(0 as PointOffsetType)
+        .unwrap();
+    borrowed_storage
+        .delete_vector(1 as PointOffsetType)
+        .unwrap();
+    borrowed_storage
+        .delete_vector(4 as PointOffsetType)
+        .unwrap();
+    assert_eq!(
+        borrowed_storage.deleted_vector_count(),
+        5,
+        "all vectors must be deleted"
+    );
 }
 
 #[test]
