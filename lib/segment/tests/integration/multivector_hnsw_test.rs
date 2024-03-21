@@ -2,10 +2,10 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use atomic_refcell::AtomicRefCell;
 use common::cpu::CpuPermit;
 use rand::prelude::StdRng;
 use rand::SeedableRng;
+use segment::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use segment::data_types::vectors::{
     only_default_vector, QueryVector, Vector, VectorRef, DEFAULT_VECTOR_NAME,
 };
@@ -20,7 +20,8 @@ use segment::types::{
     Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload, PayloadSchemaType,
     SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageType,
 };
-use segment::vector_storage::{SimpleMultiVectorStorage, VectorStorage, VectorStorageEnum};
+use segment::vector_storage::simple_multi_dense_vector_storage::open_simple_multi_dense_vector_storage;
+use segment::vector_storage::VectorStorage;
 use serde_json::json;
 use tempfile::Builder;
 
@@ -60,9 +61,16 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
         .create_field_index(0, &path(int_key), Some(&PayloadSchemaType::Integer.into()))
         .unwrap();
 
-    let multi_storage = Arc::new(AtomicRefCell::new(VectorStorageEnum::MultiSimple(
-        SimpleMultiVectorStorage::new(dim, distance),
-    )));
+    let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+    let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
+    let multi_storage = open_simple_multi_dense_vector_storage(
+        db,
+        DB_VECTOR_CF,
+        dim,
+        distance,
+        &AtomicBool::new(false),
+    )
+    .unwrap();
 
     for n in 0..num_vectors {
         let idx = n.into();
