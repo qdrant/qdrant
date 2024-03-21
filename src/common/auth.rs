@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::ScrollRequestInternal;
-use rbac::jwt::Claims;
+use rbac::jwt::{Claims, ValueExists};
 use rbac::JwtParser;
 use segment::types::{WithPayloadInterface, WithVector};
 use storage::content_manager::toc::TableOfContent;
@@ -88,35 +88,42 @@ impl AuthKeys {
             }
 
             if let Some(value_exists) = value_exists {
-                let scroll_req = ScrollRequestInternal {
-                    offset: None,
-                    limit: Some(1),
-                    filter: Some(value_exists.to_filter()),
-                    with_payload: Some(WithPayloadInterface::Bool(false)),
-                    with_vector: WithVector::Bool(false),
-                    order_by: None,
-                };
-                let res = self
-                    .toc
-                    .scroll(
-                        &value_exists.collection,
-                        scroll_req,
-                        None,
-                        ShardSelectorInternal::All,
-                        None,
-                    )
-                    .await
-                    .map_err(|e| format!("Could not confirm validity of JWT: {e}"))?;
-
-                if res.points.is_empty() {
-                    return Err("Invalid JWT, stateful validation failed".to_string());
-                }
+                self.validate_value_exists(value_exists).await?;
             }
 
             return Ok(Some(claims));
         }
 
         Err("Invalid API key or JWT".to_string())
+    }
+
+    async fn validate_value_exists(&self, value_exists: &ValueExists) -> Result<(), String> {
+        let scroll_req = ScrollRequestInternal {
+            offset: None,
+            limit: Some(1),
+            filter: Some(value_exists.to_filter()),
+            with_payload: Some(WithPayloadInterface::Bool(false)),
+            with_vector: WithVector::Bool(false),
+            order_by: None,
+        };
+
+        let res = self
+            .toc
+            .scroll(
+                &value_exists.collection,
+                scroll_req,
+                None,
+                ShardSelectorInternal::All,
+                None,
+            )
+            .await
+            .map_err(|e| format!("Could not confirm validity of JWT: {e}"))?;
+
+        if res.points.is_empty() {
+            return Err("Invalid JWT, stateful validation failed".to_string());
+        };
+
+        Ok(())
     }
 
     /// Check if a key is allowed to read
