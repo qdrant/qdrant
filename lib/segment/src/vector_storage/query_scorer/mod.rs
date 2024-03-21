@@ -28,7 +28,7 @@ pub fn score_multi<TMetric: Metric>(
         sum += multidense_b
             .iter()
             .map(|dense_b| TMetric::similarity(dense_a, dense_b))
-            .fold(0.0, |a, b| if a > b { a } else { b });
+            .fold(ScoreType::NEG_INFINITY, |a, b| if a > b { a } else { b });
     }
     sum
 }

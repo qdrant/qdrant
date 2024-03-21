@@ -285,7 +285,7 @@ mod tests {
         assert_eq!(borrowed_storage.total_vector_count(), 3);
 
         let vector = borrowed_storage.get_vector(1).to_owned();
-        let vector: Vec<_> = vector.try_into().unwrap();
+        let vector: DenseVector = vector.try_into().unwrap();
 
         assert_eq!(points[1], vector);
 
