@@ -15,7 +15,7 @@ use validator::Validate;
 use super::read_params::ReadParams;
 use super::CollectionPath;
 use crate::actix::auth::Extension;
-use crate::actix::helpers::process_response;
+use crate::actix::helpers::{self, process_response};
 use crate::common::points::do_get_points;
 
 #[derive(Deserialize, Validate)]
@@ -59,40 +59,29 @@ async fn get_point(
     params: Query<ReadParams>,
     claims: Extension<Claims>,
 ) -> impl Responder {
-    let timing = Instant::now();
+    helpers::time(async move {
+        let point_id: PointIdType = point.id.parse().map_err(|_| StorageError::BadInput {
+            description: format!("Can not recognize \"{}\" as point id", point.id),
+        })?;
 
-    let point_id: PointIdType = {
-        let parse_res = point.id.parse();
-        match parse_res {
-            Ok(x) => x,
-            Err(_) => {
-                let error = Err(StorageError::BadInput {
-                    description: format!("Can not recognize \"{}\" as point id", point.id),
-                });
-                return process_response::<()>(error, timing);
-            }
-        }
-    };
-
-    let response = do_get_point(
-        toc.get_ref(),
-        &collection.name,
-        point_id,
-        params.consistency,
-        claims.into_inner(),
-    )
-    .await;
-
-    let response = match response {
-        Ok(record) => match record {
-            None => Err(StorageError::NotFound {
+        let Some(record) = do_get_point(
+            toc.get_ref(),
+            &collection.name,
+            point_id,
+            params.consistency,
+            claims.into_inner(),
+        )
+        .await?
+        else {
+            return Err(StorageError::NotFound {
                 description: format!("Point with id {point_id} does not exists!"),
-            }),
-            Some(record) => Ok(api::rest::Record::from(record)),
-        },
-        Err(e) => Err(e),
-    };
-    process_response(response, timing)
+            }
+            .into());
+        };
+
+        Ok(api::rest::Record::from(record))
+    })
+    .await
 }
 
 #[post("/collections/{name}/points")]

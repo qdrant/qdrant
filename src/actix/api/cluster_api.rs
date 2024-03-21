@@ -8,7 +8,7 @@ use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use validator::Validate;
 
-use crate::actix::helpers::process_response;
+use crate::actix::helpers::{self, process_response};
 
 #[derive(Debug, Deserialize, Validate)]
 struct QueryParams {
@@ -38,34 +38,34 @@ async fn remove_peer(
     peer_id: web::Path<u64>,
     Query(params): Query<QueryParams>,
 ) -> impl Responder {
-    let timing = Instant::now();
-    let dispatcher = dispatcher.into_inner();
-    let peer_id = peer_id.into_inner();
+    helpers::time(async move {
+        let dispatcher = dispatcher.into_inner();
+        let peer_id = peer_id.into_inner();
 
-    let has_shards = dispatcher.peer_has_shards(peer_id).await;
-    if !params.force && has_shards {
-        return process_response::<()>(
-            Err(StorageError::BadRequest {
+        let has_shards = dispatcher.peer_has_shards(peer_id).await;
+        if !params.force && has_shards {
+            return Err(StorageError::BadRequest {
                 description: format!("Cannot remove peer {peer_id} as there are shards on it"),
-            }),
-            timing,
-        );
-    }
-
-    let response = match dispatcher.consensus_state() {
-        Some(consensus_state) => {
-            consensus_state
-                .propose_consensus_op_with_await(
-                    ConsensusOperations::RemovePeer(peer_id),
-                    params.timeout.map(std::time::Duration::from_secs),
-                )
-                .await
+            }
+            .into());
         }
-        None => Err(StorageError::BadRequest {
-            description: "Distributed mode disabled.".to_string(),
-        }),
-    };
-    process_response(response, timing)
+
+        let res = match dispatcher.consensus_state() {
+            Some(consensus_state) => {
+                consensus_state
+                    .propose_consensus_op_with_await(
+                        ConsensusOperations::RemovePeer(peer_id),
+                        params.timeout.map(std::time::Duration::from_secs),
+                    )
+                    .await
+            }
+            None => Err(StorageError::BadRequest {
+                description: "Distributed mode disabled.".to_string(),
+            }),
+        };
+        Ok(res?)
+    })
+    .await
 }
 
 // Configure services

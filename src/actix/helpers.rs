@@ -8,6 +8,7 @@ use api::grpc::models::{ApiResponse, ApiStatus};
 use collection::operations::types::CollectionError;
 use serde::Serialize;
 use storage::content_manager::errors::StorageError;
+use tokio::task::JoinHandle;
 
 use crate::common::http_client;
 
@@ -49,38 +50,30 @@ where
             time: timing.elapsed().as_secs_f64(),
         }),
         Err(err) => {
-            let error_description = format!("{err}");
-
-            let mut resp = match err {
-                StorageError::BadInput { .. } => HttpResponse::BadRequest(),
-                StorageError::NotFound { .. } => HttpResponse::NotFound(),
-                StorageError::ServiceError {
-                    description,
-                    backtrace,
-                } => {
-                    log::warn!("error processing request: {}", description);
-                    if let Some(backtrace) = backtrace {
-                        log::trace!("backtrace: {}", backtrace);
-                    }
-                    HttpResponse::InternalServerError()
+            if let StorageError::ServiceError {
+                description,
+                backtrace,
+            } = &err
+            {
+                log::warn!("error processing request: {}", description);
+                if let Some(backtrace) = backtrace {
+                    log::trace!("backtrace: {}", backtrace);
                 }
-                StorageError::BadRequest { .. } => HttpResponse::BadRequest(),
-                StorageError::Locked { .. } => HttpResponse::Forbidden(),
-                StorageError::Timeout { .. } => HttpResponse::RequestTimeout(),
-                StorageError::AlreadyExists { .. } => HttpResponse::Conflict(),
-                StorageError::ChecksumMismatch { .. } => HttpResponse::BadRequest(),
-                StorageError::Unauthorized { .. } => HttpResponse::Unauthorized(),
-            };
+            }
 
-            resp.json(ApiResponse::<()> {
+            let error: HttpError = err.into();
+
+            HttpResponse::build(error.status_code).json(ApiResponse::<()> {
                 result: None,
-                status: ApiStatus::Error(error_description),
+                status: ApiStatus::Error(error.description),
                 time: timing.elapsed().as_secs_f64(),
             })
         }
     }
 }
 
+/// Response wrapper for a ``Future`` returning ``Result``.
+///
 /// # Cancel safety
 ///
 /// Future must be cancel safe.
@@ -92,6 +85,9 @@ where
     time_impl(async { future.await.map(Some) }).await
 }
 
+/// Response wrapper for a ``Future`` returning ``Result``.
+/// If ``wait`` is false, returns ``202 Accepted`` immediately.
+///
 pub async fn time_or_accept<T, Fut>(future: Fut, wait: bool) -> impl actix_web::Responder
 where
     Fut: Future<Output = HttpResult<T>> + Send + 'static,
@@ -102,6 +98,49 @@ where
 
         if wait {
             handle.await?.map(Some)
+        } else {
+            Ok(None)
+        }
+    };
+
+    time_impl(future).await
+}
+
+/// Response wrapper for a ``Future`` returning ``Result<JoinHandle, _>``.
+/// If ``wait`` is true, the ``JoinHandle`` will be awaited.
+/// Otherwise ``202 Accepted`` will be returned immediately.
+///
+/// Example:
+/// ```
+/// time_or_accept_with_handle(wait, async move {
+///     // This will be run in the foreground unconditionally.
+///     some_async_fn().await?;
+///
+///     // If `wait` is true, the result of this function will be awaited.
+///     // Otherwise, 202 Accepted will be returned immediately.
+///     Ok(tokio::spawn(some_long_running_fn(prepare)))
+/// })
+/// ```
+///
+/// # Cancel safety
+///
+/// Future must be cancel safe.
+pub async fn time_or_accept_with_handle<T, Fut, E>(
+    wait: bool,
+    future: Fut,
+) -> impl actix_web::Responder
+where
+    Fut: Future<Output = HttpResult<JoinHandle<Result<T, E>>>>,
+    HttpError: std::convert::From<E>,
+    T: serde::Serialize + Send + 'static,
+{
+    let future = async move {
+        let res = future.await?;
+        if wait {
+            res.await
+                .map_err(Into::<HttpError>::into)
+                .and_then(|x| x.map_err(Into::<HttpError>::into))
+                .map(Some)
         } else {
             Ok(None)
         }
@@ -186,33 +225,21 @@ impl actix_web::ResponseError for HttpError {
 
 impl From<StorageError> for HttpError {
     fn from(err: StorageError) -> Self {
-        let (status_code, description) = match err {
-            StorageError::BadInput { description } => (http::StatusCode::BAD_REQUEST, description),
-            StorageError::NotFound { description } => (http::StatusCode::NOT_FOUND, description),
-            StorageError::ServiceError { description, .. } => {
-                (http::StatusCode::INTERNAL_SERVER_ERROR, description)
-            }
-            StorageError::BadRequest { description } => {
-                (http::StatusCode::BAD_REQUEST, description)
-            }
-            StorageError::Locked { description } => (http::StatusCode::FORBIDDEN, description),
-            StorageError::Timeout { description } => {
-                (http::StatusCode::REQUEST_TIMEOUT, description)
-            }
-            StorageError::AlreadyExists { description } => {
-                (http::StatusCode::CONFLICT, description)
-            }
-            StorageError::ChecksumMismatch { .. } => {
-                (http::StatusCode::BAD_REQUEST, err.to_string())
-            }
-            StorageError::Unauthorized { description } => {
-                (http::StatusCode::UNAUTHORIZED, description)
-            }
+        let status_code = match &err {
+            StorageError::BadInput { .. } => http::StatusCode::BAD_REQUEST,
+            StorageError::NotFound { .. } => http::StatusCode::NOT_FOUND,
+            StorageError::ServiceError { .. } => http::StatusCode::INTERNAL_SERVER_ERROR,
+            StorageError::BadRequest { .. } => http::StatusCode::BAD_REQUEST,
+            StorageError::Locked { .. } => http::StatusCode::FORBIDDEN,
+            StorageError::Timeout { .. } => http::StatusCode::REQUEST_TIMEOUT,
+            StorageError::AlreadyExists { .. } => http::StatusCode::CONFLICT,
+            StorageError::ChecksumMismatch { .. } => http::StatusCode::BAD_REQUEST,
+            StorageError::Unauthorized { .. } => http::StatusCode::UNAUTHORIZED,
         };
 
         Self {
             status_code,
-            description,
+            description: format!("{err}"),
         }
     }
 }

@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use tar::Builder as TarBuilder;
 use tempfile::TempPath;
 use tokio::io::AsyncWriteExt;
+use tokio::task::JoinHandle;
 
 use super::claims::check_manage_rights;
 use crate::content_manager::claims::check_full_access_to_collection;
@@ -59,20 +60,15 @@ pub async fn do_delete_full_snapshot(
     dispatcher: &Dispatcher,
     claims: Option<Claims>,
     snapshot_name: &str,
-    wait: bool,
-) -> Result<bool, StorageError> {
+) -> Result<JoinHandle<Result<bool, StorageError>>, StorageError> {
     check_manage_rights(claims.as_ref())?;
     let dispatcher = dispatcher.clone();
     let snapshot_manager = dispatcher.clone().toc().get_snapshots_storage_manager();
     let snapshot_dir = get_full_snapshot_path(dispatcher.toc(), snapshot_name).await?;
     log::info!("Deleting full storage snapshot {:?}", snapshot_dir);
-    let task = tokio::spawn(async move { snapshot_manager.delete_snapshot(&snapshot_dir).await });
-
-    if wait {
-        task.await??;
-    }
-
-    Ok(true)
+    Ok(tokio::spawn(async move {
+        Ok(snapshot_manager.delete_snapshot(&snapshot_dir).await?)
+    }))
 }
 
 pub async fn do_delete_collection_snapshot(
@@ -80,8 +76,7 @@ pub async fn do_delete_collection_snapshot(
     claims: Option<Claims>,
     collection_name: &str,
     snapshot_name: &str,
-    wait: bool,
-) -> Result<bool, StorageError> {
+) -> Result<JoinHandle<Result<bool, StorageError>>, StorageError> {
     check_full_access_to_collection(claims.as_ref(), collection_name)?;
     let collection_name = collection_name.to_string();
     let snapshot_name = snapshot_name.to_string();
@@ -90,13 +85,9 @@ pub async fn do_delete_collection_snapshot(
     let snapshot_manager = dispatcher.clone().toc().get_snapshots_storage_manager();
 
     log::info!("Deleting collection snapshot {:?}", file_name);
-    let task = tokio::spawn(async move { snapshot_manager.delete_snapshot(&file_name).await });
-
-    if wait {
-        task.await??;
-    }
-
-    Ok(true)
+    Ok(tokio::spawn(async move {
+        Ok(snapshot_manager.delete_snapshot(&file_name).await?)
+    }))
 }
 
 pub async fn do_list_full_snapshots(
@@ -109,19 +100,15 @@ pub async fn do_list_full_snapshots(
     Ok(snapshots_manager.list_snapshots(snapshots_path).await?)
 }
 
-pub async fn do_create_full_snapshot(
+pub fn do_create_full_snapshot(
     dispatcher: &Dispatcher,
     claims: Option<Claims>,
-    wait: bool,
-) -> Result<Option<SnapshotDescription>, StorageError> {
+) -> Result<JoinHandle<Result<SnapshotDescription, StorageError>>, StorageError> {
     check_manage_rights(claims.as_ref())?;
     let dispatcher = dispatcher.clone();
-    let task = tokio::spawn(async move { _do_create_full_snapshot(&dispatcher).await });
-    if wait {
-        Ok(Some(task.await??))
-    } else {
-        Ok(None)
-    }
+    Ok(tokio::spawn(async move {
+        _do_create_full_snapshot(&dispatcher).await
+    }))
 }
 
 async fn _do_create_full_snapshot(
