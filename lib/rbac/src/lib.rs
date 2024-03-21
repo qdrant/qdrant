@@ -73,6 +73,7 @@ mod tests {
                 .into_iter()
                 .collect(),
             ),
+            value_exists: None,
         };
         let token = create_token(&claims);
 
@@ -96,6 +97,7 @@ mod tests {
             w: Some(false),
             collections: None,
             payload: None,
+            value_exists: None,
         };
 
         let token = create_token(&claims);

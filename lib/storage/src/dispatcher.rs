@@ -57,6 +57,7 @@ impl Dispatcher {
         if let Some(Claims {
             exp: _,
             w: _,
+            value_exists: _,
             collections,
             payload,
         }) = claims.as_ref()

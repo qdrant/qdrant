@@ -1,5 +1,6 @@
 use std::convert::Infallible;
 use std::future::{ready, Ready};
+use std::sync::Arc;
 
 use actix_web::body::{BoxBody, EitherBody};
 use actix_web::dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform};
@@ -41,7 +42,8 @@ impl Auth {
 
 impl<S, B> Transform<S, ServiceRequest> for Auth
 where
-    S: Service<ServiceRequest, Response = ServiceResponse<EitherBody<B, BoxBody>>, Error = Error>,
+    S: Service<ServiceRequest, Response = ServiceResponse<EitherBody<B, BoxBody>>, Error = Error>
+        + 'static,
     S::Future: 'static,
     B: 'static,
 {
@@ -53,9 +55,9 @@ where
 
     fn new_transform(&self, service: S) -> Self::Future {
         ready(Ok(AuthMiddleware {
-            auth_keys: self.auth_keys.clone(),
+            auth_keys: Arc::new(self.auth_keys.clone()),
             whitelist: self.whitelist.clone(),
-            service,
+            service: Arc::new(service),
         }))
     }
 }
@@ -95,10 +97,10 @@ impl PathMode {
 }
 
 pub struct AuthMiddleware<S> {
-    auth_keys: AuthKeys,
+    auth_keys: Arc<AuthKeys>,
     /// List of items whitelisted from authentication.
     whitelist: Vec<WhitelistItem>,
-    service: S,
+    service: Arc<S>,
 }
 
 impl<S> AuthMiddleware<S> {
@@ -109,7 +111,8 @@ impl<S> AuthMiddleware<S> {
 
 impl<S, B> Service<ServiceRequest> for AuthMiddleware<S>
 where
-    S: Service<ServiceRequest, Response = ServiceResponse<EitherBody<B, BoxBody>>, Error = Error>,
+    S: Service<ServiceRequest, Response = ServiceResponse<EitherBody<B, BoxBody>>, Error = Error>
+        + 'static,
     S::Future: 'static,
     B: 'static,
 {
@@ -126,26 +129,31 @@ where
             return Box::pin(self.service.call(req));
         }
 
-        match self.auth_keys.validate_request(
-            |key| req.headers().get(key).and_then(|val| val.to_str().ok()),
-            is_read_only(&req),
-        ) {
-            Ok(claims) => {
-                if let Some(claims) = claims {
-                    let _previous = req.extensions_mut().insert::<Claims>(claims);
-                    debug_assert!(
-                        _previous.is_none(),
-                        "Previous claims should not exist in the request"
-                    );
+        let auth_keys = self.auth_keys.clone();
+        let service = self.service.clone();
+        Box::pin(async move {
+            match auth_keys
+                .validate_request(
+                    |key| req.headers().get(key).and_then(|val| val.to_str().ok()),
+                    is_read_only(&req),
+                )
+                .await
+            {
+                Ok(claims) => {
+                    if let Some(claims) = claims {
+                        let _previous = req.extensions_mut().insert::<Claims>(claims);
+                        debug_assert!(
+                            _previous.is_none(),
+                            "Previous claims should not exist in the request"
+                        );
+                    }
+                    service.call(req).await
                 }
-                Box::pin(self.service.call(req))
-            }
-            Err(e) => Box::pin(async move {
-                Ok(req
+                Err(e) => Ok(req
                     .into_response(HttpResponse::Forbidden().body(e))
-                    .map_into_right_body())
-            }),
-        }
+                    .map_into_right_body()),
+            }
+        })
     }
 }
 
