@@ -1,6 +1,7 @@
 use std::marker::PhantomData;
 
 use common::types::{PointOffsetType, ScoreType};
+use itertools::Itertools;
 
 use super::score_multi;
 use crate::data_types::vectors::MultiDenseVector;
