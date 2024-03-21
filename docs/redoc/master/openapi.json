@@ -8684,6 +8684,13 @@
             "enum": [
               "snapshot"
             ]
+          },
+          {
+            "description": "Attempt to transfer shard difference by WAL delta.",
+            "type": "string",
+            "enum": [
+              "wal_delta"
+            ]
           }
         ]
       },
