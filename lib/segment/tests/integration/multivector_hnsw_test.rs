@@ -75,7 +75,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
     for n in 0..num_vectors {
         let idx = n.into();
         let vector = random_vector(&mut rnd, dim);
-        let vector_multi = vec![vector.clone()];
+        let vector_multi = vec![distance.preprocess_vector(vector.clone())];
 
         let int_payload = random_int_payload(&mut rnd, num_payload_values..=num_payload_values);
         let payload: Payload = json!({int_key:int_payload,}).into();
