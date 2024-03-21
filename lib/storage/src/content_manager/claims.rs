@@ -11,7 +11,7 @@ use collection::operations::types::{
 use collection::operations::vector_ops::VectorOperations;
 use collection::operations::{CollectionUpdateOperations, FieldIndexOperations};
 use itertools::{Either, Itertools as _};
-use rbac::jwt::PayloadClaim;
+use rbac::jwt::{Claims, PayloadClaim};
 use segment::types::{Condition, ExtendedPointId, FieldCondition, Filter, Match, Payload};
 
 use super::errors::StorageError;
@@ -26,6 +26,47 @@ pub fn check_collection_name(
     ok.then_some(()).ok_or_else(|| {
         StorageError::unauthorized(format!("Collection '{collection_name}' is not allowed"))
     })
+}
+
+/// Check if a claim object is allowed to manage collections.
+pub fn check_manage_rights(claims: Option<&Claims>) -> Result<(), StorageError> {
+    if let Some(claims) = claims {
+        let Claims {
+            exp: _,
+            w: _,
+            collections,
+            payload,
+        } = claims;
+        if collections.is_some() {
+            return incompatible_with_collection_claim();
+        }
+        if payload.is_some() {
+            return incompatible_with_payload_claim();
+        }
+    }
+    Ok(())
+}
+
+/// Check if a claim object has full access to a collection.
+pub fn check_full_access_to_collection(
+    claims: Option<&Claims>,
+    collection_name: &str,
+) -> Result<(), StorageError> {
+    if let Some(claims) = claims {
+        let Claims {
+            exp: _,
+            w: _,
+            collections,
+            payload,
+        } = claims;
+        if let Some(collections) = collections {
+            check_collection_name(Some(collections), collection_name)?;
+        }
+        if payload.is_some() {
+            return incompatible_with_payload_claim();
+        }
+    }
+    Ok(())
 }
 
 pub fn check_points_op(
