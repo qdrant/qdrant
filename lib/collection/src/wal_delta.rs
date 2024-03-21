@@ -206,23 +206,31 @@ fn resolve_wal_delta(
         return Ok(None);
     }
 
-    // Scroll back over the WAL and find a record that covered all clocks
+    // Scroll back over the WAL and find a record that covered all clocks, allowing delta resolution
     // Drain satisfied clocks from the recovery point until we have nothing left
     log::trace!("Resolving WAL delta for: {recovery_point}");
-
-    let delta_from = operations
-        .rev()
+    let mut last_op_num = None;
+    for (op_num, clock_tag) in operations.rev() {
         // We cannot resolve a delta if we have untagged records
-        .take_while(|(_, clock_tag)| clock_tag.is_some())
-        // Keep scrolling until we have no clocks left
-        .filter_map(|(op_num, clock_tag)| Some((op_num, clock_tag?)))
-        .find(|&(_, clock_tag)| {
-            recovery_point.remove_clock_if_newer_than_or_equal_to_tag(clock_tag);
-            recovery_point.is_empty()
-        })
-        .map(|(op_num, _)| op_num);
+        let Some(clock_tag) = clock_tag else {
+            return Err(WalDeltaError::UntaggedRecords);
+        };
 
-    delta_from.map(Some).ok_or(WalDeltaError::NotFound)
+        // Keep scrolling until we have no clocks left
+        let removed_equal = recovery_point.remove_clock_if_newer_or_equal_to_tag(clock_tag);
+        if recovery_point.is_empty() {
+            // If we only removed newer clocks, delta-ing from the previous record is good enough
+            return Ok(if !removed_equal {
+                last_op_num
+            } else {
+                Some(op_num)
+            });
+        }
+
+        last_op_num.replace(op_num);
+    }
+
+    Err(WalDeltaError::NotFound)
 }
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
@@ -236,6 +244,8 @@ pub enum WalDeltaError {
     HigherThanCurrent,
     #[error("some recovery point clocks are below the cutoff point in our WAL")]
     Cutoff,
+    #[error("WAL delta cannot include records without clock tags")]
+    UntaggedRecords,
     #[error("cannot find slice of WAL records that satisfies the recovery point")]
     NotFound,
 }
@@ -376,9 +386,117 @@ mod tests {
                 assert_eq!(b, c);
             });
 
-        assert_wal_ordering_property(&a_wal).await;
-        assert_wal_ordering_property(&b_wal).await;
-        assert_wal_ordering_property(&c_wal).await;
+        assert_wal_ordering_property(&a_wal, false).await;
+        assert_wal_ordering_property(&b_wal, false).await;
+        assert_wal_ordering_property(&c_wal, false).await;
+    }
+
+    /// Test WAL delta resolution when there is gaps in the WAL on all machines.
+    ///
+    /// We normally do not expect this situation. But it's good to support it if it happens
+    /// unexpectedly.
+    ///
+    /// See: <https://www.notion.so/qdrant/Testing-suite-4e28a978ec05476080ff26ed07757def?pvs=4>
+    #[rstest]
+    #[tokio::test]
+    async fn test_resolve_wal_delta_with_gaps(#[values(true, false)] with_gap: bool) {
+        const N: usize = 5;
+        const GAP_SIZE: usize = 10;
+
+        // Create WALs for peer A, B and C
+        let (a_wal, _a_wal_dir) = fixture_empty_wal();
+        let (b_wal, _b_wal_dir) = fixture_empty_wal();
+        let (c_wal, _c_wal_dir) = fixture_empty_wal();
+
+        // Create clock set for peer A, start first clock from 1
+        let mut a_clock_set = ClockSet::new();
+        a_clock_set.get_clock().advance_to(0);
+
+        // Create N operations on peer A
+        for n in 0..N {
+            let mut a_clock_0 = a_clock_set.get_clock();
+            let clock_tick = a_clock_0.tick_once();
+            let clock_tag = ClockTag::new(1, a_clock_0.id(), clock_tick);
+            let bare_operation = mock_operation((1 + n) as u64);
+            let operation = OperationWithClockTag::new(bare_operation, Some(clock_tag));
+
+            // Write operation to peer A, B and C and advance clocks
+            let mut a_operation = operation.clone();
+            let mut b_operation = operation.clone();
+            let mut c_operation = operation.clone();
+            let (_, _) = a_wal.lock_and_write(&mut a_operation).await.unwrap();
+            let (_, _) = b_wal.lock_and_write(&mut b_operation).await.unwrap();
+            let (_, _) = c_wal.lock_and_write(&mut c_operation).await.unwrap();
+            a_clock_0.advance_to(a_operation.clock_tag.unwrap().clock_tick);
+            a_clock_0.advance_to(b_operation.clock_tag.unwrap().clock_tick);
+            a_clock_0.advance_to(c_operation.clock_tag.unwrap().clock_tick);
+        }
+
+        // Introduce a gap in the clocks on A
+        if with_gap {
+            for _ in 0..GAP_SIZE {
+                let mut a_clock_0 = a_clock_set.get_clock();
+                let clock_tick = a_clock_0.tick_once();
+                a_clock_0.advance_to(clock_tick);
+            }
+        }
+
+        // Create N operations on peer A, which are missed on node C
+        for n in 0..N {
+            let mut a_clock_0 = a_clock_set.get_clock();
+            let clock_tick = a_clock_0.tick_once();
+            let clock_tag = ClockTag::new(1, a_clock_0.id(), clock_tick);
+            let bare_operation = mock_operation((1 + N + n) as u64);
+            let operation = OperationWithClockTag::new(bare_operation, Some(clock_tag));
+
+            // Write operation to peer A and B and advance clocks
+            let mut a_operation = operation.clone();
+            let mut b_operation = operation.clone();
+            let (_, _) = a_wal.lock_and_write(&mut a_operation).await.unwrap();
+            let (_, _) = b_wal.lock_and_write(&mut b_operation).await.unwrap();
+            a_clock_0.advance_to(a_operation.clock_tag.unwrap().clock_tick);
+            a_clock_0.advance_to(b_operation.clock_tag.unwrap().clock_tick);
+        }
+
+        let c_recovery_point = c_wal.recovery_point().await;
+
+        // Resolve delta on node A for node C, assert correctness
+        let delta_from = a_wal
+            .resolve_wal_delta(c_recovery_point.clone())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(delta_from, N as u64);
+
+        // Resolve delta on node B for node C, assert correctness
+        let delta_from = b_wal
+            .resolve_wal_delta(c_recovery_point.clone())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(delta_from, N as u64);
+
+        // Diff should have N operation, as C missed just N of them
+        assert_eq!(b_wal.wal.lock().read(delta_from).count(), N);
+
+        // Recover WAL on node C by writing delta from node B to it
+        c_wal.append_from(&b_wal, delta_from).await.unwrap();
+
+        // WALs should match up perfectly now
+        a_wal
+            .wal
+            .lock()
+            .read(0)
+            .zip(b_wal.wal.lock().read(0))
+            .zip(c_wal.wal.lock().read(0))
+            .for_each(|((a, b), c)| {
+                assert_eq!(a, b);
+                assert_eq!(b, c);
+            });
+
+        assert_wal_ordering_property(&a_wal, true).await;
+        assert_wal_ordering_property(&b_wal, true).await;
+        assert_wal_ordering_property(&c_wal, true).await;
     }
 
     /// Test WAL delta resolution with a many missed operations on node C.
@@ -471,9 +589,9 @@ mod tests {
                 assert_eq!(b, c);
             });
 
-        assert_wal_ordering_property(&a_wal).await;
-        assert_wal_ordering_property(&b_wal).await;
-        assert_wal_ordering_property(&c_wal).await;
+        assert_wal_ordering_property(&a_wal, false).await;
+        assert_wal_ordering_property(&b_wal, false).await;
+        assert_wal_ordering_property(&c_wal, false).await;
     }
 
     /// Test WAL delta resolution with many intermixed operations on node C. Intermixed as in,
@@ -576,9 +694,9 @@ mod tests {
                 assert_eq!(b, c);
             });
 
-        assert_wal_ordering_property(&a_wal).await;
-        assert_wal_ordering_property(&b_wal).await;
-        assert_wal_ordering_property(&c_wal).await;
+        assert_wal_ordering_property(&a_wal, false).await;
+        assert_wal_ordering_property(&b_wal, false).await;
+        assert_wal_ordering_property(&c_wal, false).await;
     }
 
     /// Test WAL delta resolution with operations in a different order on node A and B.
@@ -723,9 +841,9 @@ mod tests {
             assert!(c_wal_point_ids.contains(&i.into()));
         });
 
-        assert_wal_ordering_property(&a_wal).await;
-        assert_wal_ordering_property(&b_wal).await;
-        assert_wal_ordering_property(&c_wal).await;
+        assert_wal_ordering_property(&a_wal, false).await;
+        assert_wal_ordering_property(&b_wal, false).await;
+        assert_wal_ordering_property(&c_wal, false).await;
     }
 
     #[tokio::test]
@@ -1076,9 +1194,9 @@ mod tests {
         // Diff expected
         assert_eq!(b_wal.wal.lock().read(delta_from).count(), 1);
 
-        assert_wal_ordering_property(&a_wal).await;
-        assert_wal_ordering_property(&b_wal).await;
-        assert_wal_ordering_property(&e_wal).await;
+        assert_wal_ordering_property(&a_wal, false).await;
+        assert_wal_ordering_property(&b_wal, false).await;
+        assert_wal_ordering_property(&e_wal, false).await;
     }
 
     /// A randomized and more extensive test for resolving a WAL delta.
@@ -1274,7 +1392,7 @@ mod tests {
         }
 
         for (wal, _) in wals {
-            assert_wal_ordering_property(&wal).await;
+            assert_wal_ordering_property(&wal, false).await;
         }
     }
 
@@ -1335,7 +1453,7 @@ mod tests {
         let mut recovery_point = RecoveryPoint::default();
         recovery_point.insert(1, 0, 2);
         let resolve_result = wal.resolve_wal_delta(recovery_point).await;
-        assert_eq!(resolve_result.unwrap_err(), WalDeltaError::NotFound);
+        assert_eq!(resolve_result.unwrap_err(), WalDeltaError::UntaggedRecords);
     }
 
     /// Empty recovery point should not resolve any diff.
@@ -1470,7 +1588,7 @@ mod tests {
     }
 
     /// Assert that we `check_clock_tag_ordering_property` on the WAL.
-    async fn assert_wal_ordering_property(wal: &RecoverableWal) {
+    async fn assert_wal_ordering_property(wal: &RecoverableWal, allow_gaps: bool) {
         // Grab list of clock tags from WAL records, skip non-existent or below cutoff tags
         let clock_tags = {
             let cutoff = wal.oldest_clocks.lock().await;
@@ -1488,7 +1606,8 @@ mod tests {
                 .collect::<Vec<_>>()
         };
 
-        check_clock_tag_ordering_property(&clock_tags).expect("WAL ordering property violated");
+        check_clock_tag_ordering_property(&clock_tags, allow_gaps)
+            .expect("WAL ordering property violated");
     }
 
     /// Test that we satisfy the clock ordering property, allowing WAL recovery resolution.
@@ -1502,11 +1621,16 @@ mod tests {
     /// check is that the sequence always ends in order at the end, going up to the highest clock
     /// clock tick.
     ///
+    /// `allow_gaps` specifies whether gaps in the clock tick sequences are allowed.
+    ///
     /// This logic is validated with examples in `validate_clock_tag_ordering_property`.
     ///
     /// This property may not be valid if a diff transfer has not been resolved correctly or
     /// completely, or if the WAL got malformed in another way.
-    fn check_clock_tag_ordering_property(clock_tags: &[ClockTag]) -> Result<(), String> {
+    fn check_clock_tag_ordering_property(
+        clock_tags: &[ClockTag],
+        allow_gaps: bool,
+    ) -> Result<(), String> {
         // Get the highest clock value for each clock+peer
         let mut highest_clocks = HashMap::new();
         for clock_tag in clock_tags {
@@ -1532,11 +1656,18 @@ mod tests {
                     continue;
                 }
 
-                // If this tick is the first we must see, remove it from the list
-                if must_see_ticks
-                    .front()
-                    .map_or(false, |&tick| tick == newer.clock_tick)
-                {
+                // Keep removing ticks we must see from the beginning of the list
+                // If we don't allow gaps, we only remove this exact tick from the beginning
+                // If we do allow gaps, we remove this tick and all lower ones from the beginning
+                while {
+                    must_see_ticks.front().map_or(false, |&tick| {
+                        if allow_gaps {
+                            tick <= newer.clock_tick
+                        } else {
+                            tick == newer.clock_tick
+                        }
+                    })
+                } {
                     must_see_ticks.pop_front().unwrap();
                 }
             }
@@ -1558,222 +1689,267 @@ mod tests {
     /// Validate that `check_clock_tag_ordering_property` works as expected.
     ///
     /// Yes, this is a test for a test for a test. (⌐■_■)
-    #[test]
-    fn validate_clock_tag_ordering_property() {
+    #[rstest]
+    fn validate_clock_tag_ordering_property(#[values(false, true)] allow_gaps: bool) {
         // Empty is fine
-        check_clock_tag_ordering_property(&[]).unwrap();
+        check_clock_tag_ordering_property(&[], allow_gaps).unwrap();
 
         // Any one clock tag is fine
-        check_clock_tag_ordering_property(&[ClockTag::new(1, 2, 3)]).unwrap();
+        check_clock_tag_ordering_property(&[ClockTag::new(1, 2, 3)], allow_gaps).unwrap();
 
         // Clock tags in order are allowed
-        check_clock_tag_ordering_property(&[
-            ClockTag::new(1, 0, 0),
-            ClockTag::new(1, 0, 1),
-            ClockTag::new(1, 0, 2),
-            ClockTag::new(1, 0, 3),
-        ])
+        check_clock_tag_ordering_property(
+            &[
+                ClockTag::new(1, 0, 0),
+                ClockTag::new(1, 0, 1),
+                ClockTag::new(1, 0, 2),
+                ClockTag::new(1, 0, 3),
+            ],
+            allow_gaps,
+        )
         .unwrap();
 
-        // Clock tags in order with gaps are not allowed
-        check_clock_tag_ordering_property(&[
-            ClockTag::new(1, 0, 0),
-            ClockTag::new(1, 0, 1),
-            ClockTag::new(1, 0, 2),
-            // Misses 1:0:3-9
-            ClockTag::new(1, 0, 10),
-            ClockTag::new(1, 0, 11),
-        ])
-        .unwrap_err();
+        // Clock tags in order with gaps are only allowed if specified
+        let result = check_clock_tag_ordering_property(
+            &[
+                ClockTag::new(1, 0, 0),
+                ClockTag::new(1, 0, 1),
+                ClockTag::new(1, 0, 2),
+                // Misses 1:0:3-9
+                ClockTag::new(1, 0, 10),
+                ClockTag::new(1, 0, 11),
+            ],
+            allow_gaps,
+        );
+        assert_eq!(result.is_ok(), allow_gaps);
 
         // Not starting at zero (truncated) is allowed
-        check_clock_tag_ordering_property(&[
-            // Truncated
-            ClockTag::new(1, 0, 2),
-            ClockTag::new(1, 0, 3),
-            ClockTag::new(1, 0, 4),
-        ])
+        check_clock_tag_ordering_property(
+            &[
+                // Truncated
+                ClockTag::new(1, 0, 2),
+                ClockTag::new(1, 0, 3),
+                ClockTag::new(1, 0, 4),
+            ],
+            allow_gaps,
+        )
         .unwrap();
 
         // Repeated clock tags are allowed
-        check_clock_tag_ordering_property(&[
-            ClockTag::new(1, 0, 2),
-            ClockTag::new(1, 0, 2),
-            ClockTag::new(1, 0, 2),
-        ])
+        check_clock_tag_ordering_property(
+            &[
+                ClockTag::new(1, 0, 2),
+                ClockTag::new(1, 0, 2),
+                ClockTag::new(1, 0, 2),
+            ],
+            allow_gaps,
+        )
         .unwrap();
 
         // Repeating clock tag sequence is allowed
-        check_clock_tag_ordering_property(&[
-            ClockTag::new(1, 0, 0),
-            ClockTag::new(1, 0, 1),
-            ClockTag::new(1, 0, 2),
-            // Repeats 1:0:0-2 two more times
-            ClockTag::new(1, 0, 0),
-            ClockTag::new(1, 0, 1),
-            ClockTag::new(1, 0, 2),
-            ClockTag::new(1, 0, 0),
-            ClockTag::new(1, 0, 1),
-            ClockTag::new(1, 0, 2),
-        ])
+        check_clock_tag_ordering_property(
+            &[
+                ClockTag::new(1, 0, 0),
+                ClockTag::new(1, 0, 1),
+                ClockTag::new(1, 0, 2),
+                // Repeats 1:0:0-2 two more times
+                ClockTag::new(1, 0, 0),
+                ClockTag::new(1, 0, 1),
+                ClockTag::new(1, 0, 2),
+                ClockTag::new(1, 0, 0),
+                ClockTag::new(1, 0, 1),
+                ClockTag::new(1, 0, 2),
+            ],
+            allow_gaps,
+        )
         .unwrap();
 
         // Repeating part of clock tag sequence is allowed
-        check_clock_tag_ordering_property(&[
-            ClockTag::new(1, 0, 0),
-            ClockTag::new(1, 0, 1),
-            ClockTag::new(1, 0, 2),
-            ClockTag::new(1, 0, 3),
-            // Repeats 1:0:2-3 two more times
-            ClockTag::new(1, 0, 2),
-            ClockTag::new(1, 0, 3),
-            ClockTag::new(1, 0, 2),
-            ClockTag::new(1, 0, 3),
-        ])
+        check_clock_tag_ordering_property(
+            &[
+                ClockTag::new(1, 0, 0),
+                ClockTag::new(1, 0, 1),
+                ClockTag::new(1, 0, 2),
+                ClockTag::new(1, 0, 3),
+                // Repeats 1:0:2-3 two more times
+                ClockTag::new(1, 0, 2),
+                ClockTag::new(1, 0, 3),
+                ClockTag::new(1, 0, 2),
+                ClockTag::new(1, 0, 3),
+            ],
+            allow_gaps,
+        )
         .unwrap();
 
         // Repeating clock tag sequence with new ones at the end is allowed
-        check_clock_tag_ordering_property(&[
-            ClockTag::new(1, 0, 0),
-            ClockTag::new(1, 0, 1),
-            ClockTag::new(1, 0, 2),
-            // Repeats 1:0:0-2 one more time
-            ClockTag::new(1, 0, 0),
-            ClockTag::new(1, 0, 1),
-            ClockTag::new(1, 0, 2),
-            // Adds 1:0:3-6 on top of it
-            ClockTag::new(1, 0, 3),
-            ClockTag::new(1, 0, 4),
-            ClockTag::new(1, 0, 5),
-            ClockTag::new(1, 0, 6),
-        ])
+        check_clock_tag_ordering_property(
+            &[
+                ClockTag::new(1, 0, 0),
+                ClockTag::new(1, 0, 1),
+                ClockTag::new(1, 0, 2),
+                // Repeats 1:0:0-2 one more time
+                ClockTag::new(1, 0, 0),
+                ClockTag::new(1, 0, 1),
+                ClockTag::new(1, 0, 2),
+                // Adds 1:0:3-6 on top of it
+                ClockTag::new(1, 0, 3),
+                ClockTag::new(1, 0, 4),
+                ClockTag::new(1, 0, 5),
+                ClockTag::new(1, 0, 6),
+            ],
+            allow_gaps,
+        )
         .unwrap();
 
         // Repeating clock tags in random order is allowed, as long as the end is in order
-        check_clock_tag_ordering_property(&[
-            ClockTag::new(1, 0, 0),
-            ClockTag::new(1, 0, 1),
-            ClockTag::new(1, 0, 2),
-            // Repeats 1:0:0-2 a few more times in random order
-            ClockTag::new(1, 0, 1),
-            ClockTag::new(1, 0, 2),
-            ClockTag::new(1, 0, 2),
-            ClockTag::new(1, 0, 2),
-            ClockTag::new(1, 0, 2),
-            ClockTag::new(1, 0, 0),
-            ClockTag::new(1, 0, 2),
-            ClockTag::new(1, 0, 0),
-            ClockTag::new(1, 0, 2),
-            ClockTag::new(1, 0, 1),
-            ClockTag::new(1, 0, 2),
-            // Adds 1:0:3 on top of it
-            ClockTag::new(1, 0, 3),
-        ])
+        check_clock_tag_ordering_property(
+            &[
+                ClockTag::new(1, 0, 0),
+                ClockTag::new(1, 0, 1),
+                ClockTag::new(1, 0, 2),
+                // Repeats 1:0:0-2 a few more times in random order
+                ClockTag::new(1, 0, 1),
+                ClockTag::new(1, 0, 2),
+                ClockTag::new(1, 0, 2),
+                ClockTag::new(1, 0, 2),
+                ClockTag::new(1, 0, 2),
+                ClockTag::new(1, 0, 0),
+                ClockTag::new(1, 0, 2),
+                ClockTag::new(1, 0, 0),
+                ClockTag::new(1, 0, 2),
+                ClockTag::new(1, 0, 1),
+                ClockTag::new(1, 0, 2),
+                // Adds 1:0:3 on top of it
+                ClockTag::new(1, 0, 3),
+            ],
+            allow_gaps,
+        )
         .unwrap();
 
         // Repeating clock tag sequence must not miss clock tags at the end
-        check_clock_tag_ordering_property(&[
-            ClockTag::new(1, 0, 0),
-            ClockTag::new(1, 0, 1),
-            ClockTag::new(1, 0, 2),
-            ClockTag::new(1, 0, 0),
-            ClockTag::new(1, 0, 1),
-            // Misses 1:0:2
-        ])
+        check_clock_tag_ordering_property(
+            &[
+                ClockTag::new(1, 0, 0),
+                ClockTag::new(1, 0, 1),
+                ClockTag::new(1, 0, 2),
+                ClockTag::new(1, 0, 0),
+                ClockTag::new(1, 0, 1),
+                // Misses 1:0:2
+            ],
+            allow_gaps,
+        )
         .unwrap_err();
 
-        // Repeating clock tag sequence must not miss clock tags in the middle
-        check_clock_tag_ordering_property(&[
-            ClockTag::new(1, 0, 0),
-            ClockTag::new(1, 0, 1),
-            ClockTag::new(1, 0, 2),
-            ClockTag::new(1, 0, 0),
-            // Misses 1:0:1
-            ClockTag::new(1, 0, 2),
-        ])
-        .unwrap_err();
+        // Repeating clock tag sequence must only miss clock tags in the middle if specified
+        let result = check_clock_tag_ordering_property(
+            &[
+                ClockTag::new(1, 0, 0),
+                ClockTag::new(1, 0, 1),
+                ClockTag::new(1, 0, 2),
+                ClockTag::new(1, 0, 0),
+                // Misses 1:0:1
+                ClockTag::new(1, 0, 2),
+            ],
+            allow_gaps,
+        );
+        assert_eq!(result.is_ok(), allow_gaps);
 
         // Skipping a clock ID is allowed
-        check_clock_tag_ordering_property(&[
-            ClockTag::new(1, 0, 0),
-            ClockTag::new(1, 0, 1),
-            ClockTag::new(1, 0, 2),
-            // Skipped clock ID 1
-            ClockTag::new(1, 2, 10),
-            ClockTag::new(1, 2, 11),
-            ClockTag::new(1, 2, 12),
-        ])
+        check_clock_tag_ordering_property(
+            &[
+                ClockTag::new(1, 0, 0),
+                ClockTag::new(1, 0, 1),
+                ClockTag::new(1, 0, 2),
+                // Skipped clock ID 1
+                ClockTag::new(1, 2, 10),
+                ClockTag::new(1, 2, 11),
+                ClockTag::new(1, 2, 12),
+            ],
+            allow_gaps,
+        )
         .unwrap();
 
         // Intermixed repeating clock tag sequence is allowed
-        check_clock_tag_ordering_property(&[
-            ClockTag::new(1, 0, 0),
-            ClockTag::new(1, 0, 1),
-            ClockTag::new(1, 0, 2),
-            ClockTag::new(1, 1, 0),
-            ClockTag::new(2, 0, 0),
-            ClockTag::new(2, 0, 1),
-            ClockTag::new(2, 0, 2),
-            ClockTag::new(1, 1, 1),
-            ClockTag::new(2, 0, 0),
-            ClockTag::new(1, 0, 0),
-            ClockTag::new(1, 1, 2),
-            ClockTag::new(1, 1, 3),
-            ClockTag::new(2, 0, 1),
-            ClockTag::new(1, 0, 1),
-            ClockTag::new(2, 0, 2),
-            ClockTag::new(1, 1, 4),
-            ClockTag::new(1, 0, 2),
-            ClockTag::new(1, 1, 5),
-        ])
+        check_clock_tag_ordering_property(
+            &[
+                ClockTag::new(1, 0, 0),
+                ClockTag::new(1, 0, 1),
+                ClockTag::new(1, 0, 2),
+                ClockTag::new(1, 1, 0),
+                ClockTag::new(2, 0, 0),
+                ClockTag::new(2, 0, 1),
+                ClockTag::new(2, 0, 2),
+                ClockTag::new(1, 1, 1),
+                ClockTag::new(2, 0, 0),
+                ClockTag::new(1, 0, 0),
+                ClockTag::new(1, 1, 2),
+                ClockTag::new(1, 1, 3),
+                ClockTag::new(2, 0, 1),
+                ClockTag::new(1, 0, 1),
+                ClockTag::new(2, 0, 2),
+                ClockTag::new(1, 1, 4),
+                ClockTag::new(1, 0, 2),
+                ClockTag::new(1, 1, 5),
+            ],
+            allow_gaps,
+        )
         .unwrap();
 
-        // Intermixed clock tag sequence where one tick for peer 2 is missing is not allowed
-        check_clock_tag_ordering_property(&[
-            ClockTag::new(1, 0, 0),
-            ClockTag::new(2, 0, 0),
-            ClockTag::new(1, 0, 1),
-            ClockTag::new(2, 0, 1),
-            ClockTag::new(1, 0, 2),
-            // Misses 2:0:2
-            ClockTag::new(1, 0, 3),
-            ClockTag::new(2, 0, 3),
-        ])
-        .unwrap_err();
+        // Intermixed clock tag sequence where one tick for peer 2 is missing is only allowed if specified
+        let result = check_clock_tag_ordering_property(
+            &[
+                ClockTag::new(1, 0, 0),
+                ClockTag::new(2, 0, 0),
+                ClockTag::new(1, 0, 1),
+                ClockTag::new(2, 0, 1),
+                ClockTag::new(1, 0, 2),
+                // Misses 2:0:2
+                ClockTag::new(1, 0, 3),
+                ClockTag::new(2, 0, 3),
+            ],
+            allow_gaps,
+        );
+        assert_eq!(result.is_ok(), allow_gaps);
 
-        // Intermixed clock tag sequence where one tick for clock ID 1 is missing is not allowed
-        check_clock_tag_ordering_property(&[
-            ClockTag::new(1, 0, 0),
-            ClockTag::new(1, 1, 0),
-            ClockTag::new(1, 0, 1),
-            ClockTag::new(1, 1, 1),
-            ClockTag::new(1, 0, 2),
-            // Misses 1:1:2
-            ClockTag::new(1, 0, 3),
-            ClockTag::new(1, 1, 3),
-        ])
-        .unwrap_err();
+        // Intermixed clock tag sequence where one tick for clock ID 1 is missing is only allowed if specified
+        let result = check_clock_tag_ordering_property(
+            &[
+                ClockTag::new(1, 0, 0),
+                ClockTag::new(1, 1, 0),
+                ClockTag::new(1, 0, 1),
+                ClockTag::new(1, 1, 1),
+                ClockTag::new(1, 0, 2),
+                // Misses 1:1:2
+                ClockTag::new(1, 0, 3),
+                ClockTag::new(1, 1, 3),
+            ],
+            allow_gaps,
+        );
+        assert_eq!(result.is_ok(), allow_gaps);
 
         // Intermixed clock tag sequence where one tick is missing is not allowed
-        check_clock_tag_ordering_property(&[
-            ClockTag::new(1, 0, 0),
-            ClockTag::new(2, 0, 0),
-            ClockTag::new(3, 0, 0),
-            ClockTag::new(3, 0, 1),
-            ClockTag::new(1, 0, 1),
-            ClockTag::new(2, 0, 1),
-            ClockTag::new(3, 0, 2),
-            ClockTag::new(2, 0, 2),
-            ClockTag::new(1, 0, 2),
-            // Peer 2 only partially recovering here, missing 2:0:2
-            ClockTag::new(2, 0, 0),
-            ClockTag::new(2, 0, 1),
-            // Peer 1 and 3 continue
-            ClockTag::new(1, 0, 3),
-            ClockTag::new(1, 0, 4),
-            ClockTag::new(3, 0, 3),
-            ClockTag::new(3, 0, 4),
-        ])
+        check_clock_tag_ordering_property(
+            &[
+                ClockTag::new(1, 0, 0),
+                ClockTag::new(2, 0, 0),
+                ClockTag::new(3, 0, 0),
+                ClockTag::new(3, 0, 1),
+                ClockTag::new(1, 0, 1),
+                ClockTag::new(2, 0, 1),
+                ClockTag::new(3, 0, 2),
+                ClockTag::new(2, 0, 2),
+                ClockTag::new(1, 0, 2),
+                // Peer 2 only partially recovering here, missing 2:0:2
+                ClockTag::new(2, 0, 0),
+                ClockTag::new(2, 0, 1),
+                // Peer 1 and 3 continue
+                ClockTag::new(1, 0, 3),
+                ClockTag::new(1, 0, 4),
+                ClockTag::new(3, 0, 3),
+                ClockTag::new(3, 0, 4),
+            ],
+            allow_gaps,
+        )
         .unwrap_err();
     }
 }
