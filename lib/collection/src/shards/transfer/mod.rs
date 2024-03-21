@@ -102,7 +102,6 @@ pub enum ShardTransferMethod {
     /// Snapshot the shard, transfer and restore it on the receiver.
     Snapshot,
     /// Attempt to transfer shard difference by WAL delta.
-    #[schemars(skip)]
     WalDelta,
 }
 
