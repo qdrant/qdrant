@@ -102,7 +102,7 @@ impl TryFrom<Vector> for MultiDenseVector {
     fn try_from(value: Vector) -> Result<Self, Self::Error> {
         match value {
             Vector::Dense(_) => Err(OperationError::WrongMulti),
-            Vector::Sparse(_) => Err(OperationError::WrongMulti),
+            Vector::Sparse(_) => Err(OperationError::WrongSparse),
             Vector::MultiDense(v) => Ok(v),
         }
     }
