@@ -2,6 +2,7 @@ import json
 import os
 import re
 import shutil
+import jwt
 from subprocess import Popen
 import time
 from typing import Tuple, Callable, Dict, List
@@ -592,3 +593,8 @@ def wait_collection_exists_and_active_on_all_peers(collection_name: str, peer_ap
     for peer_uri in peer_api_uris:
         # Collection is active on all peers
         wait_for_all_replicas_active(collection_name=collection_name, peer_api_uri=peer_uri)
+
+
+def encode_jwt(claims: dict, secret: str) -> str:
+    return jwt.encode(claims, secret, algorithm="HS256")
+

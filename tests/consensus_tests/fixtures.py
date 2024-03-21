@@ -38,6 +38,7 @@ def upsert_random_points(
         wait='true',
         ordering ='weak',
         with_sparse_vector=True,
+        headers={},
 ):
 
     def get_vector():
@@ -54,7 +55,8 @@ def upsert_random_points(
         size = num if batch_size is None else min(num, batch_size)
 
         r_batch = requests.put(
-            f"{peer_url}/collections/{collection_name}/points?wait={wait}&ordering={ordering}", json={
+            f"{peer_url}/collections/{collection_name}/points?wait={wait}&ordering={ordering}", 
+            json={
                 "points": [
                     {
                         "id": i + offset,
@@ -62,7 +64,9 @@ def upsert_random_points(
                         "payload": {"city": random.choice(CITIES)}
                     } for i in range(size)
                 ]
-            })
+            },
+            headers=headers
+        )
         if fail_on_error:
             assert_http_ok(r_batch)
 
@@ -70,10 +74,11 @@ def upsert_random_points(
         offset += size
 
 
-def create_collection(peer_url, collection="test_collection", shard_number=1, replication_factor=1, write_consistency_factor=1, timeout=10):
+def create_collection(peer_url, collection="test_collection", shard_number=1, replication_factor=1, write_consistency_factor=1, timeout=10, headers={}):
     # Create collection in peer_url
     r_batch = requests.put(
-        f"{peer_url}/collections/{collection}?timeout={timeout}", json={
+        f"{peer_url}/collections/{collection}?timeout={timeout}",
+        json={
             "vectors": {
                 "size": DENSE_VECTOR_SIZE,
                 "distance": "Dot"
@@ -84,14 +89,18 @@ def create_collection(peer_url, collection="test_collection", shard_number=1, re
             "shard_number": shard_number,
             "replication_factor": replication_factor,
             "write_consistency_factor": write_consistency_factor,
-        })
+        }, 
+        headers=headers
+    )
     assert_http_ok(r_batch)
 
 
-def drop_collection(peer_url, collection="test_collection", timeout=10):
+def drop_collection(peer_url, collection="test_collection", timeout=10, headers={}):
     # Delete collection in peer_url
     r_delete = requests.delete(
-        f"{peer_url}/collections/{collection}?timeout={timeout}")
+        f"{peer_url}/collections/{collection}?timeout={timeout}",
+        headers=headers
+    )
     assert_http_ok(r_delete)
 
 
