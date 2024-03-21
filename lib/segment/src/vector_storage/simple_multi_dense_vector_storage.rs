@@ -8,6 +8,7 @@ use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
+use super::MultiVectorStorage;
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
@@ -21,7 +22,6 @@ use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 type StoredMultiDenseVector = StoredRecord<MultiDenseVector>;
 
 /// In-memory vector storage with on-update persistence using `store`
-#[allow(unused)]
 pub struct SimpleMultiDenseVectorStorage {
     dim: usize,
     distance: Distance,
@@ -121,6 +121,12 @@ impl SimpleMultiDenseVectorStorage {
         )?;
 
         Ok(())
+    }
+}
+
+impl MultiVectorStorage for SimpleMultiDenseVectorStorage {
+    fn get_multi(&self, key: PointOffsetType) -> &MultiDenseVector {
+        self.vectors.get(key as usize).expect("vector not found")
     }
 }
 

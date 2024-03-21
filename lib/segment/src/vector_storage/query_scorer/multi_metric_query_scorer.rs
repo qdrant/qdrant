@@ -8,16 +8,15 @@ use crate::spaces::metric::Metric;
 use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::MultiVectorStorage;
 
-pub struct MetricQueryScorer<'a, TMetric: Metric, TVectorStorage: MultiVectorStorage> {
+pub struct MultiMetricQueryScorer<'a, TMetric: Metric, TVectorStorage: MultiVectorStorage> {
     vector_storage: &'a TVectorStorage,
     query: MultiDenseVector,
     metric: PhantomData<TMetric>,
 }
 
 impl<'a, TMetric: Metric, TVectorStorage: MultiVectorStorage>
-    MetricQueryScorer<'a, TMetric, TVectorStorage>
+    MultiMetricQueryScorer<'a, TMetric, TVectorStorage>
 {
-    #[allow(dead_code)]
     pub fn new(query: MultiDenseVector, vector_storage: &'a TVectorStorage) -> Self {
         Self {
             query: query.into_iter().map(|v| TMetric::preprocess(v)).collect(),
@@ -28,7 +27,7 @@ impl<'a, TMetric: Metric, TVectorStorage: MultiVectorStorage>
 }
 
 impl<'a, TMetric: Metric, TVectorStorage: MultiVectorStorage> QueryScorer<MultiDenseVector>
-    for MetricQueryScorer<'a, TMetric, TVectorStorage>
+    for MultiMetricQueryScorer<'a, TMetric, TVectorStorage>
 {
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {

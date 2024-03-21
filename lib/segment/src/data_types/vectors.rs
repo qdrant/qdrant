@@ -96,6 +96,18 @@ impl TryFrom<Vector> for SparseVector {
     }
 }
 
+impl TryFrom<Vector> for MultiDenseVector {
+    type Error = OperationError;
+
+    fn try_from(value: Vector) -> Result<Self, Self::Error> {
+        match value {
+            Vector::Dense(_) => Err(OperationError::WrongMulti),
+            Vector::Sparse(_) => Err(OperationError::WrongSparse),
+            Vector::MultiDense(v) => Ok(v),
+        }
+    }
+}
+
 impl<'a> From<&'a [VectorElementType]> for VectorRef<'a> {
     fn from(val: &'a [VectorElementType]) -> Self {
         VectorRef::Dense(val)
@@ -190,6 +202,18 @@ impl<'a> TryInto<&'a SparseVector> for &'a Vector {
             Vector::Dense(_) => Err(OperationError::WrongSparse),
             Vector::Sparse(v) => Ok(v),
             Vector::MultiDense(_) => Err(OperationError::WrongMulti),
+        }
+    }
+}
+
+impl<'a> TryInto<&'a [DenseVector]> for &'a Vector {
+    type Error = OperationError;
+
+    fn try_into(self) -> Result<&'a [DenseVector], Self::Error> {
+        match self {
+            Vector::Dense(_) => Err(OperationError::WrongMulti),
+            Vector::Sparse(_) => Err(OperationError::WrongSparse),
+            Vector::MultiDense(v) => Ok(v),
         }
     }
 }

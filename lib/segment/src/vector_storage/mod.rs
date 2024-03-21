@@ -22,7 +22,7 @@ mod bitvec;
 pub mod common;
 pub mod query;
 mod query_scorer;
-mod simple_multi_dense_vector_storage;
+pub mod simple_multi_dense_vector_storage;
 pub mod simple_sparse_vector_storage;
 
 pub use raw_scorer::*;
