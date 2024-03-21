@@ -34,6 +34,7 @@ pub fn check_manage_rights(claims: Option<&Claims>) -> Result<(), StorageError> 
         let Claims {
             exp: _,
             w: _,
+            value_exists: _,
             collections,
             payload,
         } = claims;
@@ -56,6 +57,7 @@ pub fn check_full_access_to_collection(
         let Claims {
             exp: _,
             w: _,
+            value_exists: _,
             collections,
             payload,
         } = claims;

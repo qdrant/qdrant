@@ -40,6 +40,7 @@ pub async fn do_collection_exists(
         let Claims {
             exp: _,
             w: _,
+            value_exists: _,
             collections,
             payload: _,
         } = claims;
@@ -67,6 +68,7 @@ pub async fn do_get_collection(
         let Claims {
             exp: _,
             w: _,
+            value_exists: _,
             collections,
             payload: _,
         } = claims;
@@ -91,6 +93,7 @@ pub async fn do_list_collections(
         let Claims {
             exp: _,
             w: _,
+            value_exists: _,
             collections,
             payload: _,
         } = claims;
@@ -160,6 +163,7 @@ pub async fn do_list_collection_aliases(
         let Claims {
             exp: _,
             w: _,
+            value_exists: _,
             collections,
             payload: _,
         } = claims;
@@ -194,6 +198,7 @@ pub async fn do_list_aliases(
         let Claims {
             exp: _,
             w: _,
+            value_exists: _,
             collections,
             payload: _,
         } = claims;
@@ -257,6 +262,7 @@ pub async fn do_get_collection_cluster(
         let Claims {
             exp: _,
             w: _,
+            value_exists: _,
             collections,
             payload: _,
         } = claims;
@@ -278,6 +284,7 @@ pub async fn do_update_collection_cluster(
         let Claims {
             exp: _,
             w: _,
+            value_exists: _,
             collections,
             payload: _,
         } = claims;
