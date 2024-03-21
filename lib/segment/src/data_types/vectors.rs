@@ -484,6 +484,12 @@ impl<'a> From<&'a [VectorElementType]> for QueryVector {
     }
 }
 
+impl<'a> From<&'a [DenseVector]> for QueryVector {
+    fn from(vec: &'a [DenseVector]) -> Self {
+        Self::Nearest(Vector::MultiDense(vec.to_vec()))
+    }
+}
+
 impl<const N: usize> From<[VectorElementType; N]> for QueryVector {
     fn from(vec: [VectorElementType; N]) -> Self {
         let vec: VectorRef = vec.as_slice().into();
