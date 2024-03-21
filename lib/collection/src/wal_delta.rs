@@ -230,7 +230,7 @@ fn resolve_wal_delta(
         last_op_num.replace(op_num);
     }
 
-    last_op_num.map(Some).ok_or(WalDeltaError::NotFound)
+    Err(WalDeltaError::NotFound)
 }
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
