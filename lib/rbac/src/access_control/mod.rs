@@ -1,7 +1,6 @@
 mod access_token;
-pub mod error;
 mod collection_access_token;
-
+pub mod error;
 
 pub enum AccessLevel {
     ReadOnly,

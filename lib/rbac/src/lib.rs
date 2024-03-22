@@ -3,6 +3,8 @@ use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use jwt::Claims;
 
 pub mod jwt;
+
+#[allow(dead_code)]
 mod access_control;
 
 #[derive(Clone)]

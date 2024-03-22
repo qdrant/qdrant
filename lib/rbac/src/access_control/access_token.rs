@@ -1,7 +1,7 @@
 use crate::access_control::collection_access_token::{CollectionAccess, CollectionsAccessToken};
 use crate::access_control::error::AccessDeniedError;
 use crate::access_control::AccessLevel;
-use crate::jwt::{Claims, PayloadClaim};
+use crate::jwt::Claims;
 
 pub enum AccessToken {
     Global(AccessLevel),
@@ -26,7 +26,7 @@ impl TryFrom<Claims> for AccessToken {
                         } else {
                             AccessLevel::ReadOnly
                         },
-                        payload: Some(payload),
+                        payload: Some(payload.clone()),
                     })
                     .collect();
                 Ok(AccessToken::Collections(CollectionsAccessToken::new(
@@ -82,11 +82,9 @@ impl AccessToken {
                     .collect();
                 Ok(CollectionsAccessToken::new(collection_access))
             }
-            AccessToken::Global(AccessLevel::ReadOnly | AccessLevel::ReadWrite) => {
-                return Err(AccessDeniedError::new(
-                    "Not allowed to have manage access for collections",
-                ));
-            }
+            AccessToken::Global(AccessLevel::ReadOnly | AccessLevel::ReadWrite) => Err(
+                AccessDeniedError::new("Not allowed to have manage access for collections"),
+            ),
             AccessToken::Collections(collections_token) => {
                 collections_token.validate_manage_collections(collection_names)
             }
@@ -135,11 +133,9 @@ impl AccessToken {
                     .collect();
                 Ok(CollectionsAccessToken::new(collection_access))
             }
-            AccessToken::Global(AccessLevel::ReadOnly) => {
-                return Err(AccessDeniedError::new(
-                    "Not allowed to have write access for collections",
-                ));
-            }
+            AccessToken::Global(AccessLevel::ReadOnly) => Err(AccessDeniedError::new(
+                "Not allowed to have write access for collections",
+            )),
             AccessToken::Collections(collections_token) => {
                 collections_token.validate_write_collections(collection_names)
             }
