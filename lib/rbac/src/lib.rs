@@ -3,6 +3,7 @@ use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use jwt::Claims;
 
 pub mod jwt;
+mod access_control;
 
 #[derive(Clone)]
 pub struct JwtParser {
