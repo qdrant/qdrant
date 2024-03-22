@@ -25,7 +25,7 @@ use collection::operations::{
     ClockTag, CollectionUpdateOperations, CreateIndex, FieldIndexOperations, OperationWithClockTag,
 };
 use collection::shards::shard::ShardId;
-use rbac::jwt::Claims;
+use rbac::jwt::{Claims, SafeClaims};
 use schemars::JsonSchema;
 use segment::json_path::JsonPath;
 use segment::types::{PayloadFieldSchema, PayloadKeyType, ScoredPoint};
@@ -929,7 +929,7 @@ pub async fn do_count_points(
     request: CountRequestInternal,
     read_consistency: Option<ReadConsistency>,
     shard_selection: ShardSelectorInternal,
-    claims: Option<Claims>,
+    claims: SafeClaims,
 ) -> Result<CountResult, StorageError> {
     toc.count(
         collection_name,

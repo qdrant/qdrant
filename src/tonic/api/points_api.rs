@@ -13,6 +13,7 @@ use api::grpc::qdrant::{
     UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
 };
 use collection::operations::types::CoreSearchRequest;
+use common::validation::Undroppable;
 use storage::dispatcher::Dispatcher;
 use tonic::{Request, Response, Status};
 
@@ -412,6 +413,12 @@ impl Points for PointsService {
 
         let claims = extract_claims(&mut request);
 
-        count(self.dispatcher.as_ref(), request.into_inner(), None, claims).await
+        count(
+            self.dispatcher.as_ref(),
+            request.into_inner(),
+            None,
+            Undroppable::new(claims),
+        )
+        .await
     }
 }

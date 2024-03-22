@@ -1,7 +1,43 @@
 use std::borrow::Cow;
+use std::ops::Deref;
 
 use serde::Serialize;
 use validator::{Validate, ValidationError, ValidationErrors};
+
+pub struct Undroppable<T>(T);
+
+impl<T> Undroppable<T> {
+    pub fn new(value: T) -> Self {
+        Self(value)
+    }
+}
+
+impl<T> Undroppable<T> {
+    /// Explicitly declare that the type has been handled and it is safe to drop it.
+    pub fn manually_drop(self) {
+        let _ = std::mem::ManuallyDrop::new(self);
+    }
+}
+
+#[cfg(debug_assertions)]
+impl<T> Drop for Undroppable<T> {
+    fn drop(&mut self) {
+        extern "C" {
+            // This will show (somewhat) useful error message instead of complete gibberish
+            #[link_name = "\n\nERROR: `Undroppable` type is implicitly dropped\n\n"]
+            fn trigger() -> !;
+        }
+        unsafe { trigger() }
+    }
+}
+
+impl<T> Deref for Undroppable<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 #[allow(clippy::manual_try_fold)] // `try_fold` can't be used because it shortcuts on Err
 pub fn validate_iter<T: Validate>(iter: impl Iterator<Item = T>) -> Result<(), ValidationErrors> {

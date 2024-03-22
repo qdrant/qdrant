@@ -11,6 +11,7 @@ use api::grpc::qdrant::{
     SearchPointsInternal, SearchResponse, SetPayloadPointsInternal, SyncPointsInternal,
     UpdateVectorsInternal, UpsertPointsInternal,
 };
+use common::validation::Undroppable;
 use storage::content_manager::toc::TableOfContent;
 use tonic::{Request, Response, Status};
 
@@ -407,7 +408,13 @@ impl PointsInternal for PointsInternalService {
 
         let count_points =
             count_points.ok_or_else(|| Status::invalid_argument("CountPoints is missing"))?;
-        count(self.toc.as_ref(), count_points, shard_id, None).await
+        count(
+            self.toc.as_ref(),
+            count_points,
+            shard_id,
+            Undroppable::new(None),
+        )
+        .await
     }
 
     async fn sync(

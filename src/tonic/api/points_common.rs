@@ -33,7 +33,7 @@ use collection::operations::vector_ops::{DeleteVectors, PointVectors, UpdateVect
 use collection::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
 use collection::shards::shard::ShardId;
 use itertools::Itertools;
-use rbac::jwt::Claims;
+use rbac::jwt::{Claims, SafeClaims};
 use segment::data_types::vectors::VectorStruct;
 use segment::types::{
     ExtendedPointId, Filter, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
@@ -1462,7 +1462,7 @@ pub async fn count(
     toc: &TableOfContent,
     count_points: CountPoints,
     shard_selection: Option<ShardId>,
-    claims: Option<Claims>,
+    claims: SafeClaims,
 ) -> Result<Response<CountResponse>, Status> {
     let CountPoints {
         collection_name,

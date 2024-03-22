@@ -89,15 +89,16 @@ slog-stdlog = "4.1.1"
 prost = { workspace = true }
 raft-proto = { version = "0.7.0", features = ["prost-codec"], default-features = false }
 
-common = { path = "lib/common/common" }
-cancel = { path = "lib/common/cancel" }
-memory = { path = "lib/common/memory" }
-issues = { path = "lib/common/issues" }
-rbac = { path = "lib/rbac" }
-segment = { path = "lib/segment" }
-collection = { path = "lib/collection" }
-storage = { path = "lib/storage" }
-api = { path = "lib/api" }
+common.workspace = true
+cancel.workspace = true
+memory.workspace = true
+issues.workspace = true
+rbac.workspace = true
+segment.workspace = true
+collection.workspace = true
+storage.workspace = true
+api.workspace = true
+
 actix-multipart = "0.6.1"
 constant_time_eq = "0.3.0"
 
@@ -117,6 +118,16 @@ rstack-self = { version = "0.3.0", optional = true }
 tikv-jemallocator = "0.5"
 
 [workspace.dependencies]
+common = { path = "lib/common/common" }
+cancel = { path = "lib/common/cancel" }
+memory = { path = "lib/common/memory" }
+issues = { path = "lib/common/issues" }
+rbac = { path = "lib/rbac" }
+segment = { path = "lib/segment" }
+collection = { path = "lib/collection" }
+storage = { path = "lib/storage" }
+api = { path = "lib/api" }
+
 chrono = { version = "0.4.35", features = ["serde"] }
 fnv = "1.0"
 futures = "0.3.30"
