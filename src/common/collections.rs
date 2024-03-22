@@ -20,7 +20,7 @@ use itertools::Itertools;
 use rand::prelude::SliceRandom;
 use rbac::jwt::Claims;
 use storage::content_manager::claims::{
-    check_collection_name, check_full_access_to_collection, incompatible_with_collection_claim,
+    check_collection_name, check_full_access_to_collection, incompatible_with_collection_scope,
 };
 use storage::content_manager::collection_meta_ops::ShardTransferOperations::{Abort, Start};
 use storage::content_manager::collection_meta_ops::{
@@ -39,12 +39,10 @@ pub async fn do_collection_exists(
     if let Some(claims) = claims.as_ref() {
         let Claims {
             exp: _,
-            w: _,
             value_exists: _,
-            collections,
-            payload: _,
+            access,
         } = claims;
-        check_collection_name(collections.as_ref(), name)?;
+        check_collection_name(access, name)?;
     }
 
     // if this returns Ok, it means the collection exists.
@@ -67,12 +65,10 @@ pub async fn do_get_collection(
     if let Some(claims) = claims.as_ref() {
         let Claims {
             exp: _,
-            w: _,
             value_exists: _,
-            collections,
-            payload: _,
+            access,
         } = claims;
-        check_collection_name(collections.as_ref(), name)?;
+        check_collection_name(access, name)?;
     }
 
     let collection = toc.get_collection(name).await?;
@@ -89,15 +85,13 @@ pub async fn do_list_collections(
     toc: &TableOfContent,
     claims: Option<Claims>,
 ) -> CollectionsResponse {
-    let claims_collections = if let Some(claims) = claims.as_ref() {
+    let access_claim = if let Some(claims) = claims.as_ref() {
         let Claims {
             exp: _,
-            w: _,
             value_exists: _,
-            collections,
-            payload: _,
+            access,
         } = claims;
-        collections.as_ref()
+        Some(access)
     } else {
         None
     };
@@ -106,9 +100,7 @@ pub async fn do_list_collections(
         .all_collections()
         .await
         .into_iter()
-        .filter(|c| {
-            claims_collections.map_or(true, |claims_collections| claims_collections.contains(c))
-        })
+        .filter(|c| access_claim.map_or(true, |claim| claim.allows_collection(c)))
         .map(|name| CollectionDescription { name })
         .collect_vec();
 
@@ -159,16 +151,14 @@ pub async fn do_list_collection_aliases(
     claims: Option<Claims>,
     collection_name: &str,
 ) -> Result<CollectionsAliasesResponse, StorageError> {
-    let claims_collections = if let Some(claims) = claims.as_ref() {
+    let access_claim = if let Some(claims) = claims.as_ref() {
         let Claims {
             exp: _,
-            w: _,
             value_exists: _,
-            collections,
-            payload: _,
+            access,
         } = claims;
-        check_collection_name(collections.as_ref(), collection_name)?;
-        collections.as_ref()
+        check_collection_name(access, collection_name)?;
+        Some(access)
     } else {
         None
     };
@@ -177,11 +167,7 @@ pub async fn do_list_collection_aliases(
         .collection_aliases(collection_name)
         .await?
         .into_iter()
-        .filter(|alias| {
-            claims_collections.map_or(true, |claims_collections| {
-                claims_collections.contains(alias)
-            })
-        })
+        .filter(|alias| access_claim.map_or(true, |claim| claim.allows_collection(alias)))
         .map(|alias| AliasDescription {
             alias_name: alias,
             collection_name: collection_name.to_string(),
@@ -194,24 +180,22 @@ pub async fn do_list_aliases(
     toc: &TableOfContent,
     claims: Option<Claims>,
 ) -> Result<CollectionsAliasesResponse, StorageError> {
-    let claims_collections = if let Some(claims) = claims.as_ref() {
+    let access_claim = if let Some(claims) = claims.as_ref() {
         let Claims {
             exp: _,
-            w: _,
             value_exists: _,
-            collections,
-            payload: _,
+            access,
         } = claims;
-        collections.as_ref()
+        Some(access)
     } else {
         None
     };
 
     let mut aliases = toc.list_aliases().await?;
     aliases.retain(|alias| {
-        claims_collections.map_or(true, |claims_collections| {
-            claims_collections.contains(&alias.collection_name)
-                && claims_collections.contains(&alias.alias_name)
+        access_claim.map_or(true, |claim| {
+            claim.allows_collection(&alias.collection_name)
+                && claim.allows_collection(&alias.alias_name)
         })
     });
 
@@ -261,12 +245,10 @@ pub async fn do_get_collection_cluster(
     if let Some(claims) = claims.as_ref() {
         let Claims {
             exp: _,
-            w: _,
             value_exists: _,
-            collections,
-            payload: _,
+            access,
         } = claims;
-        check_collection_name(collections.as_ref(), name)?;
+        check_collection_name(access, name)?;
     }
 
     let collection = toc.get_collection(name).await?;
@@ -283,27 +265,25 @@ pub async fn do_update_collection_cluster(
     if let Some(claims) = claims.as_ref() {
         let Claims {
             exp: _,
-            w: _,
             value_exists: _,
-            collections,
-            payload: _,
+            access,
         } = claims;
-        check_collection_name(collections.as_ref(), &collection_name)?;
+        check_collection_name(access, &collection_name)?;
         match &operation {
             ClusterOperations::MoveShard(_)
             | ClusterOperations::ReplicateShard(_)
             | ClusterOperations::AbortTransfer(_)
             | ClusterOperations::DropReplica(_)
             | ClusterOperations::RestartTransfer(_) => {
-                if collections.is_some() {
-                    return incompatible_with_collection_claim();
+                if access.is_scoped() {
+                    return Err(incompatible_with_collection_scope());
                 }
             }
             ClusterOperations::CreateShardingKey(CreateShardingKeyOperation {
                 create_sharding_key,
             }) => {
                 if !create_sharding_key.has_default_params() {
-                    return incompatible_with_collection_claim();
+                    return Err(incompatible_with_collection_scope());
                 }
             }
             ClusterOperations::DropShardingKey(DropShardingKeyOperation {

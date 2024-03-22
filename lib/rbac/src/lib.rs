@@ -39,9 +39,8 @@ impl JwtParser {
 
 #[cfg(test)]
 mod tests {
-    use segment::types::ValueVariants;
-
     use super::*;
+    use crate::jwt::{AccessClaim, Privilege};
 
     pub fn create_token(claims: &Claims) -> String {
         use jsonwebtoken::{encode, EncodingKey, Header};
@@ -59,20 +58,7 @@ mod tests {
             .as_secs();
         let claims = Claims {
             exp: Some(exp),
-            w: Some(true),
-            collections: Some(vec!["collection".to_string()]),
-            payload: Some(
-                vec![
-                    (
-                        "field1".parse().unwrap(),
-                        ValueVariants::Keyword("value".to_string()),
-                    ),
-                    ("field2".parse().unwrap(), ValueVariants::Integer(42)),
-                    ("field2".parse().unwrap(), ValueVariants::Bool(true)),
-                ]
-                .into_iter()
-                .collect(),
-            ),
+            access: AccessClaim::Global(Privilege::Write),
             value_exists: None,
         };
         let token = create_token(&claims);
@@ -94,9 +80,7 @@ mod tests {
 
         let mut claims = Claims {
             exp: Some(exp),
-            w: Some(false),
-            collections: None,
-            payload: None,
+            access: AccessClaim::Global(Privilege::Write),
             value_exists: None,
         };
 

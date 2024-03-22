@@ -40,14 +40,12 @@ impl TableOfContent {
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         if let Some(Claims {
             exp: _,
-            w: _,
             value_exists: _,
-            collections,
-            payload,
+            access,
         }) = claims.as_ref()
         {
-            check_collection_name(collections.as_ref(), collection_name)?;
-            check_points_op(collections.as_ref(), payload.as_ref(), &mut request)?;
+            check_collection_name(access, collection_name)?;
+            check_points_op(access, &mut request)?;
         }
 
         let collection = self.get_collection(collection_name).await?;
@@ -83,15 +81,13 @@ impl TableOfContent {
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
         if let Some(Claims {
             exp: _,
-            w: _,
             value_exists: _,
-            collections,
-            payload,
+            access,
         }) = claims.as_ref()
         {
-            check_collection_name(collections.as_ref(), collection_name)?;
+            check_collection_name(access, collection_name)?;
             for (request, _shard_selector) in &mut requests {
-                check_points_op(collections.as_ref(), payload.as_ref(), request)?;
+                check_points_op(access, request)?;
             }
         }
 
@@ -132,15 +128,13 @@ impl TableOfContent {
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
         if let Some(Claims {
             exp: _,
-            w: _,
             value_exists: _,
-            collections,
-            payload,
+            access,
         }) = claims.as_ref()
         {
-            check_collection_name(collections.as_ref(), collection_name)?;
+            check_collection_name(access, collection_name)?;
             for req in &mut request.searches {
-                check_points_op(collections.as_ref(), payload.as_ref(), req)?;
+                check_points_op(access, req)?;
             }
         }
 
@@ -173,14 +167,12 @@ impl TableOfContent {
     ) -> Result<CountResult, StorageError> {
         if let Some(Claims {
             exp: _,
-            w: _,
             value_exists: _,
-            collections,
-            payload,
+            access,
         }) = claims.as_ref()
         {
-            check_collection_name(collections.as_ref(), collection_name)?;
-            check_points_op(collections.as_ref(), payload.as_ref(), &mut request)?;
+            check_collection_name(access, collection_name)?;
+            check_points_op(access, &mut request)?;
         }
 
         let collection = self.get_collection(collection_name).await?;
@@ -211,14 +203,12 @@ impl TableOfContent {
     ) -> Result<Vec<Record>, StorageError> {
         if let Some(Claims {
             exp: _,
-            w: _,
             value_exists: _,
-            collections,
-            payload,
+            access,
         }) = claims.as_ref()
         {
-            check_collection_name(collections.as_ref(), collection_name)?;
-            check_points_op(collections.as_ref(), payload.as_ref(), &mut request)?;
+            check_collection_name(access, collection_name)?;
+            check_points_op(access, &mut request)?;
         }
 
         let collection = self.get_collection(collection_name).await?;
@@ -239,14 +229,12 @@ impl TableOfContent {
     ) -> Result<GroupsResult, StorageError> {
         if let Some(Claims {
             exp: _,
-            w: _,
             value_exists: _,
-            collections,
-            payload,
+            access,
         }) = claims.as_ref()
         {
-            check_collection_name(collections.as_ref(), collection_name)?;
-            check_points_op(collections.as_ref(), payload.as_ref(), &mut request)?;
+            check_collection_name(access, collection_name)?;
+            check_points_op(access, &mut request)?;
         }
 
         let collection = self.get_collection(collection_name).await?;
@@ -276,14 +264,12 @@ impl TableOfContent {
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         if let Some(Claims {
             exp: _,
-            w: _,
             value_exists: _,
-            collections,
-            payload,
+            access,
         }) = claims.as_ref()
         {
-            check_collection_name(collections.as_ref(), collection_name)?;
-            check_points_op(collections.as_ref(), payload.as_ref(), &mut request)?;
+            check_collection_name(access, collection_name)?;
+            check_points_op(access, &mut request)?;
         }
 
         let collection = self.get_collection(collection_name).await?;
@@ -309,15 +295,13 @@ impl TableOfContent {
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
         if let Some(Claims {
             exp: _,
-            w: _,
             value_exists: _,
-            collections,
-            payload,
+            access,
         }) = claims.as_ref()
         {
-            check_collection_name(collections.as_ref(), collection_name)?;
+            check_collection_name(access, collection_name)?;
             for (request, _shard_selector) in &mut requests {
-                check_points_op(collections.as_ref(), payload.as_ref(), request)?;
+                check_points_op(access, request)?;
             }
         }
         let collection = self.get_collection(collection_name).await?;
@@ -354,14 +338,12 @@ impl TableOfContent {
     ) -> Result<ScrollResult, StorageError> {
         if let Some(Claims {
             exp: _,
-            w: _,
             value_exists: _,
-            collections,
-            payload,
+            access,
         }) = claims.as_ref()
         {
-            check_collection_name(collections.as_ref(), collection_name)?;
-            check_points_op(collections.as_ref(), payload.as_ref(), &mut request)?;
+            check_collection_name(access, collection_name)?;
+            check_points_op(access, &mut request)?;
         }
 
         let collection = self.get_collection(collection_name).await?;
@@ -416,18 +398,12 @@ impl TableOfContent {
     ) -> Result<UpdateResult, StorageError> {
         if let Some(Claims {
             exp: _,
-            w: _,
             value_exists: _,
-            collections,
-            payload,
+            access,
         }) = claims.as_ref()
         {
-            check_collection_name(collections.as_ref(), collection_name)?;
-            check_points_op(
-                collections.as_ref(),
-                payload.as_ref(),
-                &mut operation.operation,
-            )?;
+            check_collection_name(access, collection_name)?;
+            check_points_op(access, &mut operation.operation)?;
         }
 
         // `TableOfContent::_update_shard_keys` and `Collection::update_from_*` are cancel safe,
