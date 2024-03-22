@@ -45,6 +45,7 @@ use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::query::discovery_query::DiscoveryQuery;
 use crate::vector_storage::{
     new_raw_scorer, new_stoppable_raw_scorer, RawScorer, VectorStorage, VectorStorageEnum,
+    VectorStorageReader,
 };
 
 const HNSW_USE_HEURISTIC: bool = true;

@@ -24,7 +24,7 @@ use segment::types::{
     Condition, FieldCondition, Filter, Payload, SegmentConfig, SeqNumberType,
     SparseVectorDataConfig, DEFAULT_SPARSE_FULL_SCAN_THRESHOLD,
 };
-use segment::vector_storage::VectorStorage;
+use segment::vector_storage::{VectorStorage, VectorStorageReader, VectorStorageUpdater};
 use serde_json::json;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::sparse_vector_fixture::{random_full_sparse_vector, random_sparse_vector};

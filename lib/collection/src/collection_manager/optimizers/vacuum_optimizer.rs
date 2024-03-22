@@ -220,6 +220,7 @@ mod tests {
     use segment::entry::entry_point::SegmentEntry;
     use segment::index::hnsw_index::num_rayon_threads;
     use segment::types::{Distance, PayloadContainer, PayloadSchemaType};
+    use segment::vector_storage::VectorStorageUpdater;
     use serde_json::{json, Value};
     use tempfile::Builder;
 

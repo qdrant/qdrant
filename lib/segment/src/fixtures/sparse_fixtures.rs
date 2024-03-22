@@ -21,7 +21,7 @@ use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::VectorIndex;
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use crate::vector_storage::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
-use crate::vector_storage::VectorStorage;
+use crate::vector_storage::{VectorStorage, VectorStorageUpdater};
 
 /// Helper to open a test sparse vector index
 pub fn fixture_open_sparse_index<I: InvertedIndex>(

@@ -16,7 +16,7 @@ use crate::segment::Segment;
 use crate::segment_constructor::{build_segment, load_segment};
 use crate::types::{Indexes, PayloadFieldSchema, PayloadKeyType, SegmentConfig};
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-use crate::vector_storage::VectorStorage;
+use crate::vector_storage::VectorStorageUpdater;
 
 /// Structure for constructing segment out of several other segments
 pub struct SegmentBuilder {

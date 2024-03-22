@@ -8,7 +8,7 @@ use atomic_refcell::AtomicRefCell;
 use bitvec::prelude::BitSlice;
 use common::types::PointOffsetType;
 
-use super::DenseVectorStorage;
+use super::{DenseVectorStorage, VectorStorageReader, VectorStorageUpdater};
 use crate::common::operation_error::{check_process_stopped, OperationResult};
 use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
@@ -110,10 +110,38 @@ impl VectorStorage for AppendableMmapDenseVectorStorage {
         self.vectors.len()
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector {
-        self.get_dense(key).into()
+    fn flusher(&self) -> Flusher {
+        Box::new({
+            let vectors_flusher = self.vectors.flusher();
+            let deleted_flusher = self.deleted.flusher();
+            move || {
+                vectors_flusher()?;
+                deleted_flusher()?;
+                Ok(())
+            }
+        })
     }
 
+    fn files(&self) -> Vec<PathBuf> {
+        let mut files = self.vectors.files();
+        files.extend(self.deleted.files());
+        files
+    }
+
+    fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
+        self.deleted.get(key)
+    }
+
+    fn deleted_vector_count(&self) -> usize {
+        self.deleted_count
+    }
+
+    fn deleted_vector_bitslice(&self) -> &BitSlice {
+        self.deleted.get_bitslice()
+    }
+}
+
+impl VectorStorageUpdater for AppendableMmapDenseVectorStorage {
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
         self.vectors.insert(key, vector.try_into()?)?;
         self.set_deleted(key, false)?;
@@ -140,37 +168,13 @@ impl VectorStorage for AppendableMmapDenseVectorStorage {
         Ok(start_index..end_index)
     }
 
-    fn flusher(&self) -> Flusher {
-        Box::new({
-            let vectors_flusher = self.vectors.flusher();
-            let deleted_flusher = self.deleted.flusher();
-            move || {
-                vectors_flusher()?;
-                deleted_flusher()?;
-                Ok(())
-            }
-        })
-    }
-
-    fn files(&self) -> Vec<PathBuf> {
-        let mut files = self.vectors.files();
-        files.extend(self.deleted.files());
-        files
-    }
-
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
         self.set_deleted(key, true)
     }
+}
 
-    fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
-        self.deleted.get(key)
-    }
-
-    fn deleted_vector_count(&self) -> usize {
-        self.deleted_count
-    }
-
-    fn deleted_vector_bitslice(&self) -> &BitSlice {
-        self.deleted.get_bitslice()
+impl VectorStorageReader for AppendableMmapDenseVectorStorage {
+    fn get_vector(&self, key: PointOffsetType) -> CowVector {
+        self.get_dense(key).into()
     }
 }

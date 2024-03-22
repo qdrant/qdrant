@@ -17,7 +17,7 @@ use crate::types::Distance;
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::{
     raw_scorer_impl, DenseVectorStorage, RawScorer, VectorStorage, VectorStorageEnum,
-    DEFAULT_STOPPED,
+    VectorStorageReader, VectorStorageUpdater, DEFAULT_STOPPED,
 };
 
 pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> DenseVector {
@@ -62,10 +62,28 @@ impl<TMetric: Metric> VectorStorage for TestRawScorerProducer<TMetric> {
         self.vectors.len()
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector {
-        self.get_dense(key).into()
+    fn flusher(&self) -> Flusher {
+        Box::new(|| Ok(()))
     }
 
+    fn files(&self) -> Vec<PathBuf> {
+        vec![]
+    }
+
+    fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
+        self.deleted_vectors[key as usize]
+    }
+
+    fn deleted_vector_count(&self) -> usize {
+        self.deleted_vectors.count_ones()
+    }
+
+    fn deleted_vector_bitslice(&self) -> &BitSlice {
+        &self.deleted_vectors
+    }
+}
+
+impl<TMetric: Metric> VectorStorageUpdater for TestRawScorerProducer<TMetric> {
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
         self.vectors.insert(key, vector.try_into()?)?;
         Ok(())
@@ -80,28 +98,14 @@ impl<TMetric: Metric> VectorStorage for TestRawScorerProducer<TMetric> {
         todo!()
     }
 
-    fn flusher(&self) -> Flusher {
-        Box::new(|| Ok(()))
-    }
-
-    fn files(&self) -> Vec<PathBuf> {
-        vec![]
-    }
-
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
         Ok(!self.deleted_vectors.replace(key as usize, true))
     }
+}
 
-    fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
-        self.deleted_vectors[key as usize]
-    }
-
-    fn deleted_vector_count(&self) -> usize {
-        self.deleted_vectors.count_ones()
-    }
-
-    fn deleted_vector_bitslice(&self) -> &BitSlice {
-        &self.deleted_vectors
+impl<TMetric: Metric> VectorStorageReader for TestRawScorerProducer<TMetric> {
+    fn get_vector(&self, key: PointOffsetType) -> CowVector {
+        self.get_dense(key).into()
     }
 }
 

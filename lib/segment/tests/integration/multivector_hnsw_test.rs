@@ -21,7 +21,7 @@ use segment::types::{
     SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageType,
 };
 use segment::vector_storage::simple_multi_dense_vector_storage::open_simple_multi_dense_vector_storage;
-use segment::vector_storage::VectorStorage;
+use segment::vector_storage::VectorStorageUpdater;
 use serde_json::json;
 use tempfile::Builder;
 

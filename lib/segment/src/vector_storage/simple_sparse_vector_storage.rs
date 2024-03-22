@@ -9,7 +9,7 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 use sparse::common::sparse_vector::SparseVector;
 
-use super::SparseVectorStorage;
+use super::{SparseVectorStorage, VectorStorageReader, VectorStorageUpdater};
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
@@ -171,15 +171,28 @@ impl VectorStorage for SimpleSparseVectorStorage {
         self.total_vector_count
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector {
-        self.get_vector_opt(key).expect("Vector must exist")
+    fn flusher(&self) -> Flusher {
+        self.db_wrapper.flusher()
     }
 
-    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
-        // ignore any error
-        self.get_sparse(key).ok().map(CowVector::from)
+    fn files(&self) -> Vec<std::path::PathBuf> {
+        vec![]
     }
 
+    fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
+        self.deleted.get(key as usize).map(|b| *b).unwrap_or(false)
+    }
+
+    fn deleted_vector_count(&self) -> usize {
+        self.deleted_count
+    }
+
+    fn deleted_vector_bitslice(&self) -> &BitSlice {
+        self.deleted.as_bitslice()
+    }
+}
+
+impl VectorStorageUpdater for SimpleSparseVectorStorage {
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
         let vector: &SparseVector = vector.try_into()?;
         debug_assert!(vector.is_sorted());
@@ -210,14 +223,6 @@ impl VectorStorage for SimpleSparseVectorStorage {
         Ok(start_index..self.total_vector_count as PointOffsetType)
     }
 
-    fn flusher(&self) -> Flusher {
-        self.db_wrapper.flusher()
-    }
-
-    fn files(&self) -> Vec<std::path::PathBuf> {
-        vec![]
-    }
-
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
         let is_deleted = !self.set_deleted(key, true);
         if is_deleted {
@@ -225,16 +230,15 @@ impl VectorStorage for SimpleSparseVectorStorage {
         }
         Ok(is_deleted)
     }
+}
 
-    fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
-        self.deleted.get(key as usize).map(|b| *b).unwrap_or(false)
+impl VectorStorageReader for SimpleSparseVectorStorage {
+    fn get_vector(&self, key: PointOffsetType) -> CowVector {
+        self.get_vector_opt(key).expect("Vector must exist")
     }
 
-    fn deleted_vector_count(&self) -> usize {
-        self.deleted_count
-    }
-
-    fn deleted_vector_bitslice(&self) -> &BitSlice {
-        self.deleted.as_bitslice()
+    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
+        // ignore any error
+        self.get_sparse(key).ok().map(CowVector::from)
     }
 }

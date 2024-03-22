@@ -11,7 +11,9 @@ use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::id_tracker::IdTrackerSS;
 use crate::types::Distance;
 use crate::vector_storage::simple_multi_dense_vector_storage::open_simple_multi_dense_vector_storage;
-use crate::vector_storage::{new_raw_scorer, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{
+    new_raw_scorer, VectorStorage, VectorStorageEnum, VectorStorageReader, VectorStorageUpdater,
+};
 
 fn multi_points_fixtures() -> Vec<MultiDenseVector> {
     let mut vec = Vec::new();

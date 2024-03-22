@@ -44,32 +44,9 @@ pub trait VectorStorage {
             .saturating_sub(self.deleted_vector_count())
     }
 
-    /// Get the vector by the given key
-    fn get_vector(&self, key: PointOffsetType) -> CowVector;
-
-    /// Get the vector by the given key if it exists
-    /// Blanket implementation - override if necessary
-    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
-        Some(self.get_vector(key))
-    }
-
-    fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()>;
-
-    fn update_from(
-        &mut self,
-        other: &VectorStorageEnum,
-        other_ids: &mut impl Iterator<Item = PointOffsetType>,
-        stopped: &AtomicBool,
-    ) -> OperationResult<Range<PointOffsetType>>;
-
     fn flusher(&self) -> Flusher;
 
     fn files(&self) -> Vec<PathBuf>;
-
-    /// Flag the vector by the given key as deleted
-    ///
-    /// Returns true if the vector was not deleted before and is now deleted
-    fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool>;
 
     /// Check whether the vector at the given key is flagged as deleted
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool;
@@ -95,6 +72,33 @@ pub trait VectorStorage {
     /// The size of this slice is not guaranteed. It may be smaller/larger than the number of
     /// vectors in this segment.
     fn deleted_vector_bitslice(&self) -> &BitSlice;
+}
+
+pub trait VectorStorageUpdater {
+    fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()>;
+
+    fn update_from(
+        &mut self,
+        other: &VectorStorageEnum,
+        other_ids: &mut impl Iterator<Item = PointOffsetType>,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Range<PointOffsetType>>;
+
+    /// Flag the vector by the given key as deleted
+    ///
+    /// Returns true if the vector was not deleted before and is now deleted
+    fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool>;
+}
+
+pub trait VectorStorageReader {
+    /// Get the vector by the given key
+    fn get_vector(&self, key: PointOffsetType) -> CowVector;
+
+    /// Get the vector by the given key if it exists
+    /// Blanket implementation - override if necessary
+    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
+        Some(self.get_vector(key))
+    }
 }
 
 pub trait DenseVectorStorage: VectorStorage {
@@ -158,51 +162,6 @@ impl VectorStorage for VectorStorageEnum {
         }
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector {
-        match self {
-            VectorStorageEnum::DenseSimple(v) => v.get_vector(key),
-            VectorStorageEnum::DenseMemmap(v) => v.get_vector(key),
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.get_vector(key),
-            VectorStorageEnum::SparseSimple(v) => v.get_vector(key),
-            VectorStorageEnum::MultiDenseSimple(v) => v.get_vector(key),
-        }
-    }
-
-    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
-        match self {
-            VectorStorageEnum::DenseSimple(v) => v.get_vector_opt(key),
-            VectorStorageEnum::DenseMemmap(v) => v.get_vector_opt(key),
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.get_vector_opt(key),
-            VectorStorageEnum::SparseSimple(v) => v.get_vector_opt(key),
-            VectorStorageEnum::MultiDenseSimple(v) => v.get_vector_opt(key),
-        }
-    }
-
-    fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
-        match self {
-            VectorStorageEnum::DenseSimple(v) => v.insert_vector(key, vector),
-            VectorStorageEnum::DenseMemmap(v) => v.insert_vector(key, vector),
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.insert_vector(key, vector),
-            VectorStorageEnum::SparseSimple(v) => v.insert_vector(key, vector),
-            VectorStorageEnum::MultiDenseSimple(v) => v.insert_vector(key, vector),
-        }
-    }
-
-    fn update_from(
-        &mut self,
-        other: &VectorStorageEnum,
-        other_ids: &mut impl Iterator<Item = PointOffsetType>,
-        stopped: &AtomicBool,
-    ) -> OperationResult<Range<PointOffsetType>> {
-        match self {
-            VectorStorageEnum::DenseSimple(v) => v.update_from(other, other_ids, stopped),
-            VectorStorageEnum::DenseMemmap(v) => v.update_from(other, other_ids, stopped),
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.update_from(other, other_ids, stopped),
-            VectorStorageEnum::SparseSimple(v) => v.update_from(other, other_ids, stopped),
-            VectorStorageEnum::MultiDenseSimple(v) => v.update_from(other, other_ids, stopped),
-        }
-    }
-
     fn flusher(&self) -> Flusher {
         match self {
             VectorStorageEnum::DenseSimple(v) => v.flusher(),
@@ -220,16 +179,6 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableMemmap(v) => v.files(),
             VectorStorageEnum::SparseSimple(v) => v.files(),
             VectorStorageEnum::MultiDenseSimple(v) => v.files(),
-        }
-    }
-
-    fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
-        match self {
-            VectorStorageEnum::DenseSimple(v) => v.delete_vector(key),
-            VectorStorageEnum::DenseMemmap(v) => v.delete_vector(key),
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.delete_vector(key),
-            VectorStorageEnum::SparseSimple(v) => v.delete_vector(key),
-            VectorStorageEnum::MultiDenseSimple(v) => v.delete_vector(key),
         }
     }
 
@@ -260,6 +209,65 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableMemmap(v) => v.deleted_vector_bitslice(),
             VectorStorageEnum::SparseSimple(v) => v.deleted_vector_bitslice(),
             VectorStorageEnum::MultiDenseSimple(v) => v.deleted_vector_bitslice(),
+        }
+    }
+}
+
+impl VectorStorageUpdater for VectorStorageEnum {
+    fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
+        match self {
+            VectorStorageEnum::DenseSimple(v) => v.insert_vector(key, vector),
+            VectorStorageEnum::DenseMemmap(v) => v.insert_vector(key, vector),
+            VectorStorageEnum::DenseAppendableMemmap(v) => v.insert_vector(key, vector),
+            VectorStorageEnum::SparseSimple(v) => v.insert_vector(key, vector),
+            VectorStorageEnum::MultiDenseSimple(v) => v.insert_vector(key, vector),
+        }
+    }
+
+    fn update_from(
+        &mut self,
+        other: &VectorStorageEnum,
+        other_ids: &mut impl Iterator<Item = PointOffsetType>,
+        stopped: &AtomicBool,
+    ) -> OperationResult<Range<PointOffsetType>> {
+        match self {
+            VectorStorageEnum::DenseSimple(v) => v.update_from(other, other_ids, stopped),
+            VectorStorageEnum::DenseMemmap(v) => v.update_from(other, other_ids, stopped),
+            VectorStorageEnum::DenseAppendableMemmap(v) => v.update_from(other, other_ids, stopped),
+            VectorStorageEnum::SparseSimple(v) => v.update_from(other, other_ids, stopped),
+            VectorStorageEnum::MultiDenseSimple(v) => v.update_from(other, other_ids, stopped),
+        }
+    }
+
+    fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
+        match self {
+            VectorStorageEnum::DenseSimple(v) => v.delete_vector(key),
+            VectorStorageEnum::DenseMemmap(v) => v.delete_vector(key),
+            VectorStorageEnum::DenseAppendableMemmap(v) => v.delete_vector(key),
+            VectorStorageEnum::SparseSimple(v) => v.delete_vector(key),
+            VectorStorageEnum::MultiDenseSimple(v) => v.delete_vector(key),
+        }
+    }
+}
+
+impl VectorStorageReader for VectorStorageEnum {
+    fn get_vector(&self, key: PointOffsetType) -> CowVector {
+        match self {
+            VectorStorageEnum::DenseSimple(v) => v.get_vector(key),
+            VectorStorageEnum::DenseMemmap(v) => v.get_vector(key),
+            VectorStorageEnum::DenseAppendableMemmap(v) => v.get_vector(key),
+            VectorStorageEnum::SparseSimple(v) => v.get_vector(key),
+            VectorStorageEnum::MultiDenseSimple(v) => v.get_vector(key),
+        }
+    }
+
+    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
+        match self {
+            VectorStorageEnum::DenseSimple(v) => v.get_vector_opt(key),
+            VectorStorageEnum::DenseMemmap(v) => v.get_vector_opt(key),
+            VectorStorageEnum::DenseAppendableMemmap(v) => v.get_vector_opt(key),
+            VectorStorageEnum::SparseSimple(v) => v.get_vector_opt(key),
+            VectorStorageEnum::MultiDenseSimple(v) => v.get_vector_opt(key),
         }
     }
 }

@@ -12,7 +12,7 @@ use rocksdb::DB;
 
 use super::chunked_vectors::ChunkedVectors;
 use super::vector_storage_base::VectorStorage;
-use super::{DenseVectorStorage, VectorStorageEnum};
+use super::{DenseVectorStorage, VectorStorageEnum, VectorStorageReader, VectorStorageUpdater};
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
@@ -151,10 +151,28 @@ impl VectorStorage for SimpleDenseVectorStorage {
         self.vectors.len()
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector {
-        self.get_dense(key).into()
+    fn flusher(&self) -> Flusher {
+        self.db_wrapper.flusher()
     }
 
+    fn files(&self) -> Vec<std::path::PathBuf> {
+        vec![]
+    }
+
+    fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
+        self.deleted.get(key as usize).map(|b| *b).unwrap_or(false)
+    }
+
+    fn deleted_vector_count(&self) -> usize {
+        self.deleted_count
+    }
+
+    fn deleted_vector_bitslice(&self) -> &BitSlice {
+        self.deleted.as_bitslice()
+    }
+}
+
+impl VectorStorageUpdater for SimpleDenseVectorStorage {
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
         let vector = vector.try_into()?;
         self.vectors.insert(key, vector)?;
@@ -184,14 +202,6 @@ impl VectorStorage for SimpleDenseVectorStorage {
         Ok(start_index..end_index)
     }
 
-    fn flusher(&self) -> Flusher {
-        self.db_wrapper.flusher()
-    }
-
-    fn files(&self) -> Vec<std::path::PathBuf> {
-        vec![]
-    }
-
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
         let is_deleted = !self.set_deleted(key, true);
         if is_deleted {
@@ -199,16 +209,10 @@ impl VectorStorage for SimpleDenseVectorStorage {
         }
         Ok(is_deleted)
     }
+}
 
-    fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
-        self.deleted.get(key as usize).map(|b| *b).unwrap_or(false)
-    }
-
-    fn deleted_vector_count(&self) -> usize {
-        self.deleted_count
-    }
-
-    fn deleted_vector_bitslice(&self) -> &BitSlice {
-        self.deleted.as_bitslice()
+impl VectorStorageReader for SimpleDenseVectorStorage {
+    fn get_vector(&self, key: PointOffsetType) -> CowVector {
+        self.get_dense(key).into()
     }
 }

@@ -16,7 +16,9 @@ use crate::data_types::vectors::{DenseVector, MultiDenseVector, VectorRef};
 use crate::types::Distance;
 use crate::vector_storage::bitvec::bitvec_set_deleted;
 use crate::vector_storage::common::StoredRecord;
-use crate::vector_storage::{MultiVectorStorage, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{
+    MultiVectorStorage, VectorStorage, VectorStorageEnum, VectorStorageReader, VectorStorageUpdater,
+};
 
 type StoredMultiDenseVector = StoredRecord<MultiDenseVector>;
 
@@ -146,11 +148,28 @@ impl VectorStorage for SimpleMultiDenseVectorStorage {
         self.vectors.len()
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector {
-        let multi_dense_vector = self.vectors.get(key as usize).expect("vector not found");
-        CowVector::from(multi_dense_vector.as_slice())
+    fn flusher(&self) -> Flusher {
+        self.db_wrapper.flusher()
     }
 
+    fn files(&self) -> Vec<std::path::PathBuf> {
+        vec![]
+    }
+
+    fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
+        self.deleted.get(key as usize).map(|b| *b).unwrap_or(false)
+    }
+
+    fn deleted_vector_count(&self) -> usize {
+        self.deleted_count
+    }
+
+    fn deleted_vector_bitslice(&self) -> &BitSlice {
+        self.deleted.as_bitslice()
+    }
+}
+
+impl VectorStorageUpdater for SimpleMultiDenseVectorStorage {
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
         let vector: &[DenseVector] = vector.try_into()?;
         let multi_vector = vector.to_vec();
@@ -187,14 +206,6 @@ impl VectorStorage for SimpleMultiDenseVectorStorage {
         Ok(start_index..end_index)
     }
 
-    fn flusher(&self) -> Flusher {
-        self.db_wrapper.flusher()
-    }
-
-    fn files(&self) -> Vec<std::path::PathBuf> {
-        vec![]
-    }
-
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
         let is_deleted = !self.set_deleted(key, true);
         if is_deleted {
@@ -202,16 +213,11 @@ impl VectorStorage for SimpleMultiDenseVectorStorage {
         }
         Ok(is_deleted)
     }
+}
 
-    fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
-        self.deleted.get(key as usize).map(|b| *b).unwrap_or(false)
-    }
-
-    fn deleted_vector_count(&self) -> usize {
-        self.deleted_count
-    }
-
-    fn deleted_vector_bitslice(&self) -> &BitSlice {
-        self.deleted.as_bitslice()
+impl VectorStorageReader for SimpleMultiDenseVectorStorage {
+    fn get_vector(&self, key: PointOffsetType) -> CowVector {
+        let multi_dense_vector = self.vectors.get(key as usize).expect("vector not found");
+        CowVector::from(multi_dense_vector.as_slice())
     }
 }

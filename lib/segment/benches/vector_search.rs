@@ -13,7 +13,7 @@ use segment::fixtures::payload_context_fixture::FixtureIdTracker;
 use segment::id_tracker::IdTrackerSS;
 use segment::types::Distance;
 use segment::vector_storage::simple_dense_vector_storage::open_simple_vector_storage;
-use segment::vector_storage::{new_raw_scorer, VectorStorage, VectorStorageEnum};
+use segment::vector_storage::{new_raw_scorer, VectorStorageEnum, VectorStorageUpdater};
 use tempfile::Builder;
 
 const NUM_VECTORS: usize = 100000;

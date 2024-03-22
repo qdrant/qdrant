@@ -12,7 +12,9 @@ use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::id_tracker::IdTrackerSS;
 use crate::vector_storage::query::reco_query::RecoQuery;
 use crate::vector_storage::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
-use crate::vector_storage::{new_raw_scorer, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{
+    new_raw_scorer, VectorStorage, VectorStorageEnum, VectorStorageReader, VectorStorageUpdater,
+};
 
 fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
     let points: Vec<SparseVector> = vec![

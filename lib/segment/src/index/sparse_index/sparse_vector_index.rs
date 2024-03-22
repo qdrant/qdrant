@@ -31,6 +31,7 @@ use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams, DEFAULT_SPARSE_FULL_SCAN_THRESHOLD};
 use crate::vector_storage::{
     check_deleted_condition, new_stoppable_raw_scorer, VectorStorage, VectorStorageEnum,
+    VectorStorageReader,
 };
 
 pub struct SparseVectorIndex<TInvertedIndex: InvertedIndex> {

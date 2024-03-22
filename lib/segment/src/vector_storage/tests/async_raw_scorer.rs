@@ -14,7 +14,9 @@ use crate::types::Distance;
 use crate::vector_storage::memmap_dense_vector_storage::open_memmap_vector_storage_with_async_io;
 use crate::vector_storage::simple_dense_vector_storage::open_simple_vector_storage;
 use crate::vector_storage::vector_storage_base::VectorStorage;
-use crate::vector_storage::{async_raw_scorer, new_raw_scorer, VectorStorageEnum};
+use crate::vector_storage::{
+    async_raw_scorer, new_raw_scorer, VectorStorageEnum, VectorStorageUpdater,
+};
 
 #[test]
 fn async_raw_scorer_cosine() -> Result<()> {
@@ -76,8 +78,8 @@ fn test_async_raw_scorer(
 
         let mut mutable_storage = mutable_storage.borrow_mut();
 
-        insert_random_vectors(&mut rng, &mut *mutable_storage, points)?;
-        delete_random_vectors(&mut rng, &mut *mutable_storage, &mut id_tracker, delete)?;
+        insert_random_vectors(&mut rng, &mut mutable_storage, points)?;
+        delete_random_vectors(&mut rng, &mut mutable_storage, &mut id_tracker, delete)?;
 
         storage.update_from(&mutable_storage, &mut (0..points as _), &Default::default())?;
     }
@@ -91,7 +93,7 @@ fn test_async_raw_scorer(
 
 fn insert_random_vectors(
     rng: &mut impl rand::Rng,
-    storage: &mut impl VectorStorage,
+    storage: &mut VectorStorageEnum,
     vectors: usize,
 ) -> Result<()> {
     insert_distributed_vectors(storage, vectors, &mut sampler(rng))

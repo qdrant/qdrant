@@ -45,7 +45,9 @@ use crate::types::{
 use crate::utils;
 use crate::utils::fs::find_symlink;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-use crate::vector_storage::{VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{
+    VectorStorage, VectorStorageEnum, VectorStorageReader, VectorStorageUpdater,
+};
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
 

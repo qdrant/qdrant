@@ -10,7 +10,7 @@ use bitvec::prelude::BitSlice;
 use common::types::PointOffsetType;
 use memory::mmap_ops;
 
-use super::{DenseVectorStorage, VectorStorageEnum};
+use super::{DenseVectorStorage, VectorStorageEnum, VectorStorageReader, VectorStorageUpdater};
 use crate::common::operation_error::{check_process_stopped, OperationResult};
 use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
@@ -110,10 +110,31 @@ impl VectorStorage for MemmapDenseVectorStorage {
         self.mmap_store.as_ref().unwrap().num_vectors
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector {
-        self.get_dense(key).into()
+    fn flusher(&self) -> Flusher {
+        match &self.mmap_store {
+            Some(mmap_store) => mmap_store.flusher(),
+            None => Box::new(|| Ok(())),
+        }
     }
 
+    fn files(&self) -> Vec<PathBuf> {
+        vec![self.vectors_path.clone(), self.deleted_path.clone()]
+    }
+
+    fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
+        self.mmap_store.as_ref().unwrap().is_deleted_vector(key)
+    }
+
+    fn deleted_vector_count(&self) -> usize {
+        self.mmap_store.as_ref().unwrap().deleted_count
+    }
+
+    fn deleted_vector_bitslice(&self) -> &BitSlice {
+        self.mmap_store.as_ref().unwrap().deleted_vector_bitslice()
+    }
+}
+
+impl VectorStorageUpdater for MemmapDenseVectorStorage {
     fn insert_vector(&mut self, _key: PointOffsetType, _vector: VectorRef) -> OperationResult<()> {
         panic!("Can't directly update vector in mmap storage")
     }
@@ -173,31 +194,14 @@ impl VectorStorage for MemmapDenseVectorStorage {
         Ok(start_index..end_index)
     }
 
-    fn flusher(&self) -> Flusher {
-        match &self.mmap_store {
-            Some(mmap_store) => mmap_store.flusher(),
-            None => Box::new(|| Ok(())),
-        }
-    }
-
-    fn files(&self) -> Vec<PathBuf> {
-        vec![self.vectors_path.clone(), self.deleted_path.clone()]
-    }
-
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
         Ok(self.mmap_store.as_mut().unwrap().delete(key))
     }
+}
 
-    fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
-        self.mmap_store.as_ref().unwrap().is_deleted_vector(key)
-    }
-
-    fn deleted_vector_count(&self) -> usize {
-        self.mmap_store.as_ref().unwrap().deleted_count
-    }
-
-    fn deleted_vector_bitslice(&self) -> &BitSlice {
-        self.mmap_store.as_ref().unwrap().deleted_vector_bitslice()
+impl VectorStorageReader for MemmapDenseVectorStorage {
+    fn get_vector(&self, key: PointOffsetType) -> CowVector {
+        self.get_dense(key).into()
     }
 }
 
