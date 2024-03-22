@@ -41,8 +41,8 @@ We use GitHub issues to track public bugs. Report a bug by [opening a new issue]
 
 If you are modifying Rust code, make sure it has no warnings from Cargo and follow [Rust code style](https://doc.rust-lang.org/1.0.0/style/).
 The project uses [rustfmt](https://github.com/rust-lang/rustfmt) formatter. Please ensure to run it using the
-```cargo +nightly fmt --all``` command. The project also use [clippy](https://github.com/rust-lang/rust-clippy) lint collection,
-so please ensure running ``cargo clippy --workspace --all-features`` before submitting the PR.
+```make fmt``` command. The project also use [clippy](https://github.com/rust-lang/rust-clippy) lint collection,
+so please ensure running ``make clippy`` before submitting the PR.
 
 ## License
 By contributing, you agree that your contributions will be licensed under its Apache License 2.0.
