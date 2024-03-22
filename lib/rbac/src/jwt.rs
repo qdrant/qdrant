@@ -26,17 +26,43 @@ pub struct Claims {
 pub type PayloadClaim = HashMap<JsonPath, ValueVariants>;
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
+pub struct KeyValuePair {
+    key: JsonPath,
+    value: ValueVariants,
+}
+
+impl KeyValuePair {
+    pub fn to_condition(&self) -> Condition {
+        Condition::Field(FieldCondition::new_match(
+            self.key.clone(),
+            Match::new_value(self.value.clone()),
+        ))
+    }
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct ValueExists {
-    pub collection: String,
-    pub key: JsonPath,
-    pub value: ValueVariants,
+    collection: String,
+    matches: Vec<KeyValuePair>,
 }
 
 impl ValueExists {
+    pub fn get_collection(&self) -> &str {
+        &self.collection
+    }
+
     pub fn to_filter(&self) -> Filter {
-        Filter::new_must(Condition::Field(FieldCondition::new_match(
-            self.key.clone(),
-            Match::new_value(self.value.clone()),
-        )))
+        let conditions = self
+            .matches
+            .iter()
+            .map(|pair| pair.to_condition())
+            .collect();
+
+        Filter {
+            should: None,
+            min_should: None,
+            must: Some(conditions),
+            must_not: None,
+        }
     }
 }

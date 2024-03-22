@@ -63,7 +63,7 @@ def uri(tmp_path_factory: pytest.TempPathFactory):
 
 
 def create_validation_collection(
-    uri: str, collection: str, shard_number: int, replication_factor: int, timeout=10
+        uri: str, collection: str, shard_number: int, replication_factor: int, timeout=10
 ):
     res = requests.put(
         f"{uri}/collections/{collection}?timeout={timeout}",
@@ -90,13 +90,19 @@ def scroll_with_token(uri: str, collection: str, token: str) -> requests.Respons
 
 
 def test_value_exists_claim(uri: str):
-
     secondary_collection = "secondary_test_collection"
 
     key = "tokenId"
     value = "token_42"
 
-    claims = {"value_exists": {"collection": secondary_collection, "key": key, "value": value}}
+    claims = {
+        "value_exists": {
+            "collection": secondary_collection,
+            "matches": [
+                {"key": key, "value": value}
+            ]
+        }
+    }
     token = encode_jwt(claims, SECRET)
 
     # Check that token does not work with unexisting collection

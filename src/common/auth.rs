@@ -110,7 +110,7 @@ impl AuthKeys {
         let res = self
             .toc
             .scroll(
-                &value_exists.collection,
+                value_exists.get_collection(),
                 scroll_req,
                 None,
                 ShardSelectorInternal::All,
