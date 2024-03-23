@@ -55,13 +55,13 @@ pub struct SimpleDenseVectorStorage<T: PrimitiveVectorElement> {
     deleted_count: usize,
 }
 
-pub fn open_simple_vector_storage(
+fn open_simple_dense_vector_storage_impl<T: PrimitiveVectorElement>(
     database: Arc<RwLock<DB>>,
     database_column_name: &str,
     dim: usize,
     distance: Distance,
     stopped: &AtomicBool,
-) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
+) -> OperationResult<SimpleDenseVectorStorage<T>> {
     let mut vectors = ChunkedVectors::new(dim);
     let (mut deleted, mut deleted_count) = (BitVec::new(), 0);
 
@@ -70,7 +70,7 @@ pub fn open_simple_vector_storage(
     for (key, value) in db_wrapper.lock_db().iter()? {
         let point_id: PointOffsetType = bincode::deserialize(&key)
             .map_err(|_| OperationError::service_error("cannot deserialize point id from db"))?;
-        let stored_record: StoredDenseVector<VectorElementType> = bincode::deserialize(&value)
+        let stored_record: StoredDenseVector<T> = bincode::deserialize(&value)
             .map_err(|_| OperationError::service_error("cannot deserialize record from db"))?;
 
         // Propagate deleted flag
@@ -86,22 +86,40 @@ pub fn open_simple_vector_storage(
     debug!("Segment vectors: {}", vectors.len());
     debug!(
         "Estimated segment size {} MB",
-        vectors.len() * dim * size_of::<VectorElementType>() / 1024 / 1024
+        vectors.len() * dim * size_of::<T>() / 1024 / 1024
     );
 
+    Ok(SimpleDenseVectorStorage {
+        dim,
+        distance,
+        vectors,
+        db_wrapper,
+        update_buffer: StoredRecord {
+            deleted: false,
+            vector: vec![T::default(); dim],
+        },
+        deleted,
+        deleted_count,
+    })
+}
+
+pub fn open_simple_vector_storage(
+    database: Arc<RwLock<DB>>,
+    database_column_name: &str,
+    dim: usize,
+    distance: Distance,
+    stopped: &AtomicBool,
+) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
+    let storage = open_simple_dense_vector_storage_impl::<VectorElementType>(
+        database,
+        database_column_name,
+        dim,
+        distance,
+        stopped,
+    )?;
+
     Ok(Arc::new(AtomicRefCell::new(
-        VectorStorageEnum::DenseSimple(SimpleDenseVectorStorage {
-            dim,
-            distance,
-            vectors,
-            db_wrapper,
-            update_buffer: StoredRecord {
-                deleted: false,
-                vector: vec![0.; dim],
-            },
-            deleted,
-            deleted_count,
-        }),
+        VectorStorageEnum::DenseSimple(storage),
     )))
 }
 
