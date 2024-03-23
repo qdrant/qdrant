@@ -21,7 +21,7 @@ const VECTORS_DIR_PATH: &str = "vectors";
 const DELETED_DIR_PATH: &str = "deleted";
 
 pub struct AppendableMmapDenseVectorStorage {
-    vectors: ChunkedMmapVectors,
+    vectors: ChunkedMmapVectors<VectorElementType>,
     deleted: DynamicMmapFlags,
     distance: Distance,
     deleted_count: usize,
@@ -38,7 +38,8 @@ pub fn open_appendable_memmap_vector_storage(
     let vectors_path = path.join(VECTORS_DIR_PATH);
     let deleted_path = path.join(DELETED_DIR_PATH);
 
-    let vectors: ChunkedMmapVectors = ChunkedMmapVectors::open(&vectors_path, dim)?;
+    let vectors: ChunkedMmapVectors<VectorElementType> =
+        ChunkedMmapVectors::open(&vectors_path, dim)?;
 
     let num_vectors = vectors.len();
 

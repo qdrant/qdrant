@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 use crate::common::mmap_type::MmapType;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
-use crate::data_types::vectors::VectorElementType;
 use crate::vector_storage::chunked_utils::{chunk_name, create_chunk, read_mmaps, MmapChunk};
+use crate::vector_storage::primitive::PrimitiveVectorElement;
 
 #[cfg(debug_assertions)]
 const DEFAULT_CHUNK_SIZE: usize = 512 * 1024; // 512Kb
@@ -34,14 +34,14 @@ struct ChunkedMmapConfig {
     dim: usize,
 }
 
-pub struct ChunkedMmapVectors {
+pub struct ChunkedMmapVectors<T: PrimitiveVectorElement + 'static> {
     config: ChunkedMmapConfig,
     status: MmapType<Status>,
-    chunks: Vec<MmapChunk>,
+    chunks: Vec<MmapChunk<T>>,
     directory: PathBuf,
 }
 
-impl ChunkedMmapVectors {
+impl<T: PrimitiveVectorElement + 'static> ChunkedMmapVectors<T> {
     fn config_file(directory: &Path) -> PathBuf {
         directory.join(CONFIG_FILE_NAME)
     }
@@ -69,7 +69,7 @@ impl ChunkedMmapVectors {
         let config_file = Self::config_file(directory);
         if !config_file.exists() {
             let chunk_size_bytes = DEFAULT_CHUNK_SIZE;
-            let vector_size_bytes = dim * std::mem::size_of::<VectorElementType>();
+            let vector_size_bytes = dim * std::mem::size_of::<T>();
             let chunk_size_vectors = chunk_size_bytes / vector_size_bytes;
             let corrected_chunk_size_bytes = chunk_size_vectors * vector_size_bytes;
 
@@ -150,11 +150,7 @@ impl ChunkedMmapVectors {
         Ok(())
     }
 
-    pub fn insert(
-        &mut self,
-        key: PointOffsetType,
-        vector: &[VectorElementType],
-    ) -> OperationResult<()> {
+    pub fn insert(&mut self, key: PointOffsetType, vector: &[T]) -> OperationResult<()> {
         let key = key as usize;
         let chunk_idx = self.get_chunk_index(key);
         let chunk_offset = self.get_chunk_offset(key);
@@ -176,13 +172,13 @@ impl ChunkedMmapVectors {
         Ok(())
     }
 
-    pub fn push(&mut self, vector: &[VectorElementType]) -> OperationResult<PointOffsetType> {
+    pub fn push(&mut self, vector: &[T]) -> OperationResult<PointOffsetType> {
         let new_id = self.status.len as PointOffsetType;
         self.insert(new_id, vector)?;
         Ok(new_id)
     }
 
-    pub fn get<TKey>(&self, key: TKey) -> &[VectorElementType]
+    pub fn get<TKey>(&self, key: TKey) -> &[T]
     where
         TKey: num_traits::cast::AsPrimitive<usize>,
     {
@@ -225,6 +221,7 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
+    use crate::data_types::vectors::VectorElementType;
     use crate::fixtures::index_fixtures::random_vector;
 
     #[test]
@@ -239,7 +236,7 @@ mod tests {
             .collect();
 
         {
-            let mut chunked_mmap: ChunkedMmapVectors =
+            let mut chunked_mmap: ChunkedMmapVectors<VectorElementType> =
                 ChunkedMmapVectors::open(dir.path(), dim).unwrap();
 
             for vec in &vectors {
@@ -265,7 +262,7 @@ mod tests {
         }
 
         {
-            let chunked_mmap: ChunkedMmapVectors =
+            let chunked_mmap: ChunkedMmapVectors<VectorElementType> =
                 ChunkedMmapVectors::open(dir.path(), dim).unwrap();
 
             assert!(

@@ -5,13 +5,13 @@ use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 
 use crate::common::mmap_type::MmapSlice;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::data_types::vectors::VectorElementType;
+use crate::vector_storage::primitive::PrimitiveVectorElement;
 
 const MMAP_CHUNKS_PATTERN_START: &str = "chunk_";
 const MMAP_CHUNKS_PATTERN_END: &str = ".mmap";
 
 /// Memory mapped chunk data.
-pub type MmapChunk = MmapSlice<VectorElementType>;
+pub type MmapChunk<T> = MmapSlice<T>;
 
 /// Checks if the file name matches the pattern for mmap chunks
 /// Return ID from the file name if it matches, None otherwise
@@ -22,7 +22,9 @@ fn check_mmap_file_name_pattern(file_name: &str) -> Option<usize> {
         .and_then(|file_name| file_name.parse::<usize>().ok())
 }
 
-pub fn read_mmaps(directory: &Path) -> OperationResult<Vec<MmapChunk>> {
+pub fn read_mmaps<T: PrimitiveVectorElement>(
+    directory: &Path,
+) -> OperationResult<Vec<MmapChunk<T>>> {
     let mut mmap_files: HashMap<usize, _> = HashMap::new();
     for entry in directory.read_dir()? {
         let entry = entry?;
@@ -61,11 +63,11 @@ pub fn chunk_name(directory: &Path, chunk_id: usize) -> PathBuf {
     ))
 }
 
-pub fn create_chunk(
+pub fn create_chunk<T: PrimitiveVectorElement>(
     directory: &Path,
     chunk_id: usize,
     chunk_length_bytes: usize,
-) -> OperationResult<MmapChunk> {
+) -> OperationResult<MmapChunk<T>> {
     let chunk_file_path = chunk_name(directory, chunk_id);
     create_and_ensure_length(&chunk_file_path, chunk_length_bytes)?;
     let mmap = open_write_mmap(&chunk_file_path)?;
