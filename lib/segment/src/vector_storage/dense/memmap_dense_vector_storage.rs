@@ -16,7 +16,7 @@ use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::{DenseVector, VectorElementType, VectorRef};
 use crate::types::Distance;
 use crate::vector_storage::common::get_async_scorer;
-use crate::vector_storage::mmap_dense_vectors::MmapDenseVectors;
+use crate::vector_storage::dense::mmap_dense_vectors::MmapDenseVectors;
 use crate::vector_storage::{DenseVectorStorage, VectorStorage, VectorStorageEnum};
 
 const VECTORS_PATH: &str = "matrix.dat";
