@@ -34,6 +34,6 @@ jobs:
     - name: Install dependencies
       run: sudo apt-get install clang libunwind-dev
     - name: Check code formatting
-      run: make fmt
+      run: make fmt-check
     - name: Check cargo clippy warnings
       run: make clippy
