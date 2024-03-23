@@ -14,7 +14,7 @@ use crate::data_types::vectors::{DenseVector, QueryVector, Vector, VectorElement
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::Distance;
-use crate::vector_storage::memmap_dense_vector_storage::MemmapDenseVectorStorage;
+use crate::vector_storage::dense::memmap_dense_vector_storage::MemmapDenseVectorStorage;
 use crate::vector_storage::mmap_dense_vectors::MmapDenseVectors;
 use crate::vector_storage::query_scorer::metric_query_scorer::MetricQueryScorer;
 use crate::vector_storage::query_scorer::QueryScorer;

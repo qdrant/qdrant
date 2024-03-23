@@ -6,7 +6,7 @@ use bitvec::prelude::BitSlice;
 use common::types::PointOffsetType;
 use sparse::common::sparse_vector::SparseVector;
 
-use super::memmap_dense_vector_storage::MemmapDenseVectorStorage;
+use super::dense::memmap_dense_vector_storage::MemmapDenseVectorStorage;
 use super::simple_dense_vector_storage::SimpleDenseVectorStorage;
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
