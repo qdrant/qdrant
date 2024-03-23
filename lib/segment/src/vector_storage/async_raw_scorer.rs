@@ -34,7 +34,7 @@ pub fn new<'a>(
 pub struct AsyncRawScorerImpl<'a, TQueryScorer: QueryScorer<[VectorElementType]>> {
     points_count: PointOffsetType,
     query_scorer: TQueryScorer,
-    storage: &'a MmapDenseVectors,
+    storage: &'a MmapDenseVectors<VectorElementType>,
     point_deleted: &'a BitSlice,
     vec_deleted: &'a BitSlice,
     /// This flag indicates that the search process is stopped externally,
@@ -49,7 +49,7 @@ where
     fn new(
         points_count: PointOffsetType,
         query_scorer: TQueryScorer,
-        storage: &'a MmapDenseVectors,
+        storage: &'a MmapDenseVectors<VectorElementType>,
         point_deleted: &'a BitSlice,
         vec_deleted: &'a BitSlice,
         is_stopped: &'a AtomicBool,

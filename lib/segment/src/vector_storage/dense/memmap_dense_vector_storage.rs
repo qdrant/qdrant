@@ -31,7 +31,7 @@ const DELETED_PATH: &str = "deleted.dat";
 pub struct MemmapDenseVectorStorage {
     vectors_path: PathBuf,
     deleted_path: PathBuf,
-    mmap_store: Option<MmapDenseVectors>,
+    mmap_store: Option<MmapDenseVectors<VectorElementType>>,
     distance: Distance,
 }
 
@@ -74,7 +74,7 @@ impl MemmapDenseVectorStorage {
         )
     }
 
-    pub fn get_mmap_vectors(&self) -> &MmapDenseVectors {
+    pub fn get_mmap_vectors(&self) -> &MmapDenseVectors<VectorElementType> {
         self.mmap_store.as_ref().unwrap()
     }
 

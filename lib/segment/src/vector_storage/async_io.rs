@@ -6,7 +6,7 @@ use io_uring::{opcode, types, IoUring};
 use memory::mmap_ops::transmute_from_u8_to_slice;
 
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::data_types::vectors::VectorElementType;
+use crate::vector_storage::primitive::PrimitiveVectorElement;
 
 const DISK_PARALLELISM: usize = 16; // TODO: benchmark it better, or make it configurable
 
@@ -47,15 +47,16 @@ impl BufferStore {
     }
 }
 
-pub struct UringReader {
+pub struct UringReader<T: PrimitiveVectorElement> {
     file: File,
     buffers: BufferStore,
     io_uring: Option<IoUring>,
     raw_size: usize,
     header_size: usize,
+    _phantom: std::marker::PhantomData<T>,
 }
 
-impl UringReader {
+impl<T: PrimitiveVectorElement> UringReader<T> {
     pub fn new(file: File, raw_size: usize, header_size: usize) -> OperationResult<Self> {
         let buffers = BufferStore::new(DISK_PARALLELISM, raw_size);
         let io_uring = IoUring::new(DISK_PARALLELISM as _)?;
@@ -66,6 +67,7 @@ impl UringReader {
             io_uring: Some(io_uring),
             raw_size,
             header_size,
+            _phantom: std::marker::PhantomData,
         })
     }
 
@@ -73,7 +75,7 @@ impl UringReader {
     pub fn read_stream(
         &mut self,
         points: impl IntoIterator<Item = PointOffsetType>,
-        mut callback: impl FnMut(usize, PointOffsetType, &[VectorElementType]),
+        mut callback: impl FnMut(usize, PointOffsetType, &[T]),
     ) -> OperationResult<()> {
         // Take `UringReader::io_uring`, so that if we return an error or panic during `read_stream`,
         // `IoUring` would be transparently dropped.
@@ -149,11 +151,11 @@ impl UringReader {
     }
 }
 
-fn submit_and_read(
+fn submit_and_read<T: PrimitiveVectorElement>(
     io_uring: &mut IoUring,
     buffers: &mut BufferStore,
     unused_buffer_ids: &mut Vec<usize>,
-    mut callback: impl FnMut(usize, PointOffsetType, &[VectorElementType]),
+    mut callback: impl FnMut(usize, PointOffsetType, &[T]),
     raw_size: usize,
 ) -> OperationResult<()> {
     let buffers_count = buffers.buffers.len();

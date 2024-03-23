@@ -19,7 +19,7 @@ use crate::types::Distance;
 use crate::vector_storage::bitvec::bitvec_set_deleted;
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::common::StoredRecord;
-use crate::vector_storage::dense::primitive::PrimitiveVectorElement;
+use crate::vector_storage::primitive::PrimitiveVectorElement;
 use crate::vector_storage::{DenseVectorStorage, VectorStorage, VectorStorageEnum};
 
 type StoredDenseVector<T> = StoredRecord<Vec<T>>;

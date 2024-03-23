@@ -16,6 +16,7 @@ mod async_io_mock;
 mod bitvec;
 pub mod common;
 pub mod dense;
+mod primitive;
 pub mod query;
 mod query_scorer;
 pub mod simple_multi_dense_vector_storage;
