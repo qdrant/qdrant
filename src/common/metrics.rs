@@ -227,27 +227,27 @@ impl MetricsProvider for WebApiTelemetry {
         builder.build("rest", metrics);
 
         let mut builder = OperationDurationMetricsBuilder::default();
-        for (collection_endpoint, responses) in &self.collection_responses {
-            let collection_name = &collection_endpoint.0;
-            let endpoint = &collection_endpoint.1;
-            let Some((method, endpoint)) = endpoint.split_once(' ') else {
-                continue;
-            };
-            // Endpoint must be whitelisted
-            if REST_ENDPOINT_WHITELIST.binary_search(&endpoint).is_err() {
-                continue;
-            }
-            for (status, stats) in responses {
-                builder.add(
-                    stats,
-                    &[
-                        ("collection", collection_name),
-                        ("method", method),
-                        ("endpoint", endpoint),
-                        ("status", &status.to_string()),
-                    ],
-                    *status == REST_TIMINGS_FOR_STATUS,
-                );
+        for (collection_name, methods) in &self.collection_responses {
+            for (endpoint, responses) in methods {
+                let Some((method, endpoint)) = endpoint.split_once(' ') else {
+                    continue;
+                };
+                // Endpoint must be whitelisted
+                if REST_ENDPOINT_WHITELIST.binary_search(&endpoint).is_err() {
+                    continue;
+                }
+                for (status, stats) in responses {
+                    builder.add(
+                        stats,
+                        &[
+                            ("collection", collection_name),
+                            ("method", method),
+                            ("endpoint", endpoint),
+                            ("status", &status.to_string()),
+                        ],
+                        *status == REST_TIMINGS_FOR_STATUS,
+                    );
+                }
             }
         }
         builder.build("rest", metrics);

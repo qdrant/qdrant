@@ -21,7 +21,7 @@ pub struct ActixTelemetryTransform {
 
 // The uri will be `/collections/collection_name...`
 fn get_collection_from_uri(uri: &str) -> Option<String> {
-    let mut uri_segments = dbg!(uri).split('/');
+    let mut uri_segments = uri.split('/');
     let seg0 = uri_segments.next();
     if let Some(seg0) = seg0 {
         if !seg0.is_empty() {
