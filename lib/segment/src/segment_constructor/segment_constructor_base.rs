@@ -32,7 +32,7 @@ use crate::types::{
     Distance, Indexes, PayloadStorageType, SegmentConfig, SegmentState, SegmentType, SeqNumberType,
     VectorStorageType,
 };
-use crate::vector_storage::appendable_mmap_dense_vector_storage::open_appendable_memmap_vector_storage;
+use crate::vector_storage::dense::appendable_mmap_dense_vector_storage::open_appendable_memmap_vector_storage;
 use crate::vector_storage::dense::memmap_dense_vector_storage::open_memmap_vector_storage;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::simple_dense_vector_storage::open_simple_vector_storage;
