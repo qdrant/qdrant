@@ -1,7 +1,7 @@
 fmt-check:
 	cargo +nightly fmt --all -- --check
 
-fmt-check:
+fmt:
 	cargo +nightly fmt --all
 
 clippy:
