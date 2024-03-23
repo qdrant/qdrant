@@ -22,7 +22,7 @@ use crate::vector_storage::{RawScorer, VectorStorage as _, DEFAULT_STOPPED};
 
 pub fn new<'a>(
     query: QueryVector,
-    storage: &'a MemmapDenseVectorStorage,
+    storage: &'a MemmapDenseVectorStorage<VectorElementType>,
     point_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
@@ -209,7 +209,7 @@ where
 struct AsyncRawScorerBuilder<'a> {
     points_count: PointOffsetType,
     query: QueryVector,
-    storage: &'a MemmapDenseVectorStorage,
+    storage: &'a MemmapDenseVectorStorage<VectorElementType>,
     point_deleted: &'a BitSlice,
     vec_deleted: &'a BitSlice,
     distance: Distance,
@@ -219,7 +219,7 @@ struct AsyncRawScorerBuilder<'a> {
 impl<'a> AsyncRawScorerBuilder<'a> {
     pub fn new(
         query: QueryVector,
-        storage: &'a MemmapDenseVectorStorage,
+        storage: &'a MemmapDenseVectorStorage<VectorElementType>,
         point_deleted: &'a BitSlice,
     ) -> OperationResult<Self> {
         let points_count = storage.total_vector_count() as _;
