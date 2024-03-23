@@ -15,13 +15,14 @@ use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::Distance;
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
 use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
+use crate::vector_storage::primitive::PrimitiveVectorElement;
 use crate::vector_storage::{DenseVectorStorage, VectorStorage, VectorStorageEnum};
 
 const VECTORS_DIR_PATH: &str = "vectors";
 const DELETED_DIR_PATH: &str = "deleted";
 
-pub struct AppendableMmapDenseVectorStorage {
-    vectors: ChunkedMmapVectors<VectorElementType>,
+pub struct AppendableMmapDenseVectorStorage<T: PrimitiveVectorElement + 'static> {
+    vectors: ChunkedMmapVectors<T>,
     deleted: DynamicMmapFlags,
     distance: Distance,
     deleted_count: usize,
@@ -66,7 +67,7 @@ pub fn open_appendable_memmap_vector_storage(
     )))
 }
 
-impl AppendableMmapDenseVectorStorage {
+impl<T: PrimitiveVectorElement + 'static> AppendableMmapDenseVectorStorage<T> {
     /// Set deleted flag for given key. Returns previous deleted state.
     #[inline]
     fn set_deleted(&mut self, key: PointOffsetType, deleted: bool) -> OperationResult<bool> {
@@ -87,13 +88,13 @@ impl AppendableMmapDenseVectorStorage {
     }
 }
 
-impl DenseVectorStorage for AppendableMmapDenseVectorStorage {
+impl DenseVectorStorage for AppendableMmapDenseVectorStorage<VectorElementType> {
     fn get_dense(&self, key: PointOffsetType) -> &[VectorElementType] {
         self.vectors.get(key)
     }
 }
 
-impl VectorStorage for AppendableMmapDenseVectorStorage {
+impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapDenseVectorStorage<T> {
     fn vector_dim(&self) -> usize {
         self.vectors.dim()
     }
@@ -111,11 +112,12 @@ impl VectorStorage for AppendableMmapDenseVectorStorage {
     }
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {
-        self.get_dense(key).into()
+        T::vector_to_cow(self.vectors.get(key))
     }
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
-        self.vectors.insert(key, vector.try_into()?)?;
+        let vector = T::from_vector_ref(vector)?;
+        self.vectors.insert(key, vector)?;
         self.set_deleted(key, false)?;
         Ok(())
     }
@@ -132,7 +134,7 @@ impl VectorStorage for AppendableMmapDenseVectorStorage {
             // Do not perform preprocessing - vectors should be already processed
             let other_deleted = other.is_deleted_vector(point_id);
             let other_vector = other.get_vector(point_id);
-            let other_vector = other_vector.as_vec_ref().try_into()?;
+            let other_vector = T::from_vector_ref(other_vector.as_vec_ref())?;
             let new_id = self.vectors.push(other_vector)?;
             self.set_deleted(new_id, other_deleted)?;
         }

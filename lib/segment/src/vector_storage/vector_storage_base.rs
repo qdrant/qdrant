@@ -112,7 +112,7 @@ pub trait MultiVectorStorage: VectorStorage {
 pub enum VectorStorageEnum {
     DenseSimple(SimpleDenseVectorStorage<VectorElementType>),
     DenseMemmap(Box<MemmapDenseVectorStorage<VectorElementType>>),
-    DenseAppendableMemmap(Box<AppendableMmapDenseVectorStorage>),
+    DenseAppendableMemmap(Box<AppendableMmapDenseVectorStorage<VectorElementType>>),
     SparseSimple(SimpleSparseVectorStorage),
     MultiDenseSimple(SimpleMultiDenseVectorStorage),
 }
