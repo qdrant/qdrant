@@ -76,8 +76,8 @@ fn test_async_raw_scorer(
 
         let mut mutable_storage = mutable_storage.borrow_mut();
 
-        insert_random_vectors(&mut rng, &mut *mutable_storage, points)?;
-        delete_random_vectors(&mut rng, &mut *mutable_storage, &mut id_tracker, delete)?;
+        insert_random_vectors(&mut rng, &mut mutable_storage, points)?;
+        delete_random_vectors(&mut rng, &mut mutable_storage, &mut id_tracker, delete)?;
 
         storage.update_from(&mutable_storage, &mut (0..points as _), &Default::default())?;
     }
@@ -91,7 +91,7 @@ fn test_async_raw_scorer(
 
 fn insert_random_vectors(
     rng: &mut impl rand::Rng,
-    storage: &mut impl VectorStorage,
+    storage: &mut VectorStorageEnum,
     vectors: usize,
 ) -> Result<()> {
     insert_distributed_vectors(storage, vectors, &mut sampler(rng))
