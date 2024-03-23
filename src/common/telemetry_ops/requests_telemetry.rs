@@ -15,7 +15,8 @@ pub type HttpStatusCode = u16;
 #[derive(Serialize, Clone, Default, Debug, JsonSchema)]
 pub struct WebApiTelemetry {
     pub responses: HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
-    pub collection_responses: HashMap<(String, String), HashMap<HttpStatusCode, OperationDurationStatistics>>,
+    pub collection_responses:
+        HashMap<(String, String), HashMap<HttpStatusCode, OperationDurationStatistics>>,
 }
 
 #[derive(Serialize, Clone, Default, Debug, JsonSchema)]
@@ -31,7 +32,10 @@ pub struct ActixTelemetryCollector {
 pub struct ActixWorkerTelemetryCollector {
     methods: HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
     // (Collection, Method) -> {Status code -> Aggregator}
-    collections: HashMap<(String, String), HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>
+    collections: HashMap<
+        (String, String),
+        HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>,
+    >,
 }
 
 pub struct TonicTelemetryCollector {
@@ -140,7 +144,10 @@ impl ActixWorkerTelemetryCollector {
             }
             collection_responses.insert((collection.clone(), method.clone()), status_codes_map);
         }
-        WebApiTelemetry { responses, collection_responses }
+        WebApiTelemetry {
+            responses,
+            collection_responses,
+        }
     }
 }
 
@@ -163,7 +170,10 @@ impl WebApiTelemetry {
             }
         }
         for ((collection, method), status_codes) in &other.collection_responses {
-            let status_codes_map = self.collection_responses.entry((collection.clone(), method.clone())).or_default();
+            let status_codes_map = self
+                .collection_responses
+                .entry((collection.clone(), method.clone()))
+                .or_default();
             for (status_code, statistics) in status_codes {
                 let entry = status_codes_map.entry(*status_code).or_default();
                 *entry = entry.clone() + statistics.clone();
@@ -224,7 +234,10 @@ impl Anonymize for WebApiTelemetry {
             })
             .collect();
 
-        WebApiTelemetry { responses, collection_responses }
+        WebApiTelemetry {
+            responses,
+            collection_responses,
+        }
     }
 }
 
