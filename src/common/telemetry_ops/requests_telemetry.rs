@@ -32,10 +32,12 @@ pub struct ActixTelemetryCollector {
 pub struct ActixWorkerTelemetryCollector {
     methods: HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
     collections: HashMap<
-        String /*collection name*/,
-        HashMap<String /*method*/,
-        HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>,
-    >>,
+        String, /*collection name*/
+        HashMap<
+            String, /*method*/
+            HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>,
+        >,
+    >,
 }
 
 pub struct TonicTelemetryCollector {
@@ -236,13 +238,16 @@ impl Anonymize for WebApiTelemetry {
             .collection_responses
             .iter()
             .map(|(collection, methods)| {
-                let methods = methods.iter().map(|(method, value)| {
-                    let value: HashMap<_, _> = value
-                        .iter()
-                        .map(|(key, value)| (*key, value.anonymize()))
-                        .collect();
-                    (method.to_owned(), value)
-                }).collect();
+                let methods = methods
+                    .iter()
+                    .map(|(method, value)| {
+                        let value: HashMap<_, _> = value
+                            .iter()
+                            .map(|(key, value)| (*key, value.anonymize()))
+                            .collect();
+                        (method.to_owned(), value)
+                    })
+                    .collect();
                 (collection.to_owned(), methods)
             })
             .collect();
