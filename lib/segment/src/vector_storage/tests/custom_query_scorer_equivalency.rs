@@ -22,11 +22,11 @@ use crate::types::{
 };
 #[cfg(target_os = "linux")]
 use crate::vector_storage::dense::memmap_dense_vector_storage::open_memmap_vector_storage_with_async_io;
+use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_vector_storage;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::query::context_query::{ContextPair, ContextQuery};
 use crate::vector_storage::query::discovery_query::DiscoveryQuery;
 use crate::vector_storage::query::reco_query::RecoQuery;
-use crate::vector_storage::simple_dense_vector_storage::open_simple_vector_storage;
 use crate::vector_storage::tests::utils::score;
 use crate::vector_storage::{new_raw_scorer, VectorStorage, VectorStorageEnum};
 

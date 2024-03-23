@@ -5,7 +5,6 @@ mod chunked_utils;
 pub mod chunked_vectors;
 pub mod quantized;
 pub mod raw_scorer;
-pub mod simple_dense_vector_storage;
 mod vector_storage_base;
 
 #[cfg(test)]

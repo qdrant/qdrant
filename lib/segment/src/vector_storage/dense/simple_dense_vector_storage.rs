@@ -11,9 +11,6 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 
-use super::chunked_vectors::ChunkedVectors;
-use super::vector_storage_base::VectorStorage;
-use super::{DenseVectorStorage, VectorStorageEnum};
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
@@ -21,7 +18,9 @@ use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::Distance;
 use crate::vector_storage::bitvec::bitvec_set_deleted;
+use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::common::StoredRecord;
+use crate::vector_storage::{DenseVectorStorage, VectorStorage, VectorStorageEnum};
 
 type StoredDenseVector<T> = StoredRecord<Vec<T>>;
 

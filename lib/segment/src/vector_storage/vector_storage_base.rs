@@ -7,7 +7,7 @@ use common::types::PointOffsetType;
 use sparse::common::sparse_vector::SparseVector;
 
 use super::dense::memmap_dense_vector_storage::MemmapDenseVectorStorage;
-use super::simple_dense_vector_storage::SimpleDenseVectorStorage;
+use super::dense::simple_dense_vector_storage::SimpleDenseVectorStorage;
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
