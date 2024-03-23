@@ -32,6 +32,7 @@ pub struct ActixTelemetryCollector {
 pub struct ActixWorkerTelemetryCollector {
     methods: HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
     // (Collection, Method) -> {Status code -> Aggregator}
+    #[allow(clippy::type_complexity)]
     collections: HashMap<
         (String, String),
         HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>,

@@ -24,7 +24,7 @@ fn get_collection_from_uri(uri: &str) -> Option<String> {
     let mut uri_segments = dbg!(uri).split('/');
     let seg0 = uri_segments.next();
     if let Some(seg0) = seg0 {
-        if seg0 != "" {
+        if !seg0.is_empty() {
             return None;
         }
     } else {
@@ -39,11 +39,7 @@ fn get_collection_from_uri(uri: &str) -> Option<String> {
         return None;
     }
     let seg2 = uri_segments.next();
-    if let Some(seg2) = seg2 {
-        Some(seg2.to_owned())
-    } else {
-        None
-    }
+    seg2.map(|seg2| seg2.to_owned())
 }
 
 /// Actix telemetry service. It hooks every request and looks into response status code.
