@@ -9,7 +9,6 @@ use common::types::PointOffsetType;
 use log::debug;
 use parking_lot::RwLock;
 use rocksdb::DB;
-use serde::{Deserialize, Serialize};
 
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
@@ -20,26 +19,10 @@ use crate::types::Distance;
 use crate::vector_storage::bitvec::bitvec_set_deleted;
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::common::StoredRecord;
+use crate::vector_storage::dense::primitive::PrimitiveVectorElement;
 use crate::vector_storage::{DenseVectorStorage, VectorStorage, VectorStorageEnum};
 
 type StoredDenseVector<T> = StoredRecord<Vec<T>>;
-
-pub trait PrimitiveVectorElement:
-    Copy + Clone + Default + Serialize + for<'a> Deserialize<'a>
-{
-    fn from_vector_ref(vector: VectorRef) -> OperationResult<&[Self]>;
-
-    fn vector_to_cow(vector: &[Self]) -> CowVector;
-}
-impl PrimitiveVectorElement for VectorElementType {
-    fn from_vector_ref(vector: VectorRef) -> OperationResult<&[Self]> {
-        vector.try_into()
-    }
-
-    fn vector_to_cow(vector: &[Self]) -> CowVector {
-        vector.into()
-    }
-}
 
 /// In-memory vector storage with on-update persistence using `store`
 pub struct SimpleDenseVectorStorage<T: PrimitiveVectorElement> {
