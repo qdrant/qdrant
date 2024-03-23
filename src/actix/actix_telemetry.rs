@@ -64,7 +64,6 @@ where
 
     fn call(&self, request: ServiceRequest) -> Self::Future {
         let collection_name = get_collection_from_uri(request.uri().path());
-        dbg!(collection_name);
         let match_pattern = request
             .match_pattern()
             .unwrap_or_else(|| "unknown".to_owned());
@@ -77,7 +76,7 @@ where
             let status = response.response().status().as_u16();
             telemetry_data
                 .lock()
-                .add_response(request_key, status, instant);
+                .add_response(collection_name, request_key, status, instant);
             Ok(response)
         })
     }

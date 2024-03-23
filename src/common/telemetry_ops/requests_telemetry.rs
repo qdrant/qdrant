@@ -15,6 +15,7 @@ pub type HttpStatusCode = u16;
 #[derive(Serialize, Clone, Default, Debug, JsonSchema)]
 pub struct WebApiTelemetry {
     pub responses: HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
+    pub collection_responses: HashMap<(String, String), HashMap<HttpStatusCode, OperationDurationStatistics>>,
 }
 
 #[derive(Serialize, Clone, Default, Debug, JsonSchema)]
@@ -29,6 +30,8 @@ pub struct ActixTelemetryCollector {
 #[derive(Default)]
 pub struct ActixWorkerTelemetryCollector {
     methods: HashMap<String, HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>,
+    // (Collection, Method) -> {Status code -> Aggregator}
+    collections: HashMap<(String, String), HashMap<HttpStatusCode, Arc<Mutex<OperationDurationsAggregator>>>>
 }
 
 pub struct TonicTelemetryCollector {
@@ -97,10 +100,20 @@ impl TonicWorkerTelemetryCollector {
 impl ActixWorkerTelemetryCollector {
     pub fn add_response(
         &mut self,
+        collection_name: Option<String>,
         method: String,
         status_code: HttpStatusCode,
         instant: std::time::Instant,
     ) {
+        if let Some(collection_name) = collection_name {
+            let aggregator = self
+                .collections
+                .entry((collection_name, method.clone()))
+                .or_default()
+                .entry(status_code)
+                .or_insert_with(OperationDurationsAggregator::new);
+            ScopeDurationMeasurer::new_with_instant(aggregator, instant);
+        }
         let aggregator = self
             .methods
             .entry(method)
@@ -119,7 +132,15 @@ impl ActixWorkerTelemetryCollector {
             }
             responses.insert(method.clone(), status_codes_map);
         }
-        WebApiTelemetry { responses }
+        let mut collection_responses = HashMap::new();
+        for ((collection, method), status_codes) in &self.collections {
+            let mut status_codes_map = HashMap::new();
+            for (status_code, aggregator) in status_codes {
+                status_codes_map.insert(*status_code, aggregator.lock().get_statistics(detail));
+            }
+            collection_responses.insert((collection.clone(), method.clone()), status_codes_map);
+        }
+        WebApiTelemetry { responses, collection_responses }
     }
 }
 
@@ -136,6 +157,13 @@ impl WebApiTelemetry {
     pub fn merge(&mut self, other: &WebApiTelemetry) {
         for (method, status_codes) in &other.responses {
             let status_codes_map = self.responses.entry(method.clone()).or_default();
+            for (status_code, statistics) in status_codes {
+                let entry = status_codes_map.entry(*status_code).or_default();
+                *entry = entry.clone() + statistics.clone();
+            }
+        }
+        for ((collection, method), status_codes) in &other.collection_responses {
+            let status_codes_map = self.collection_responses.entry((collection.clone(), method.clone())).or_default();
             for (status_code, statistics) in status_codes {
                 let entry = status_codes_map.entry(*status_code).or_default();
                 *entry = entry.clone() + statistics.clone();
@@ -184,7 +212,19 @@ impl Anonymize for WebApiTelemetry {
             })
             .collect();
 
-        WebApiTelemetry { responses }
+        let collection_responses = self
+            .collection_responses
+            .iter()
+            .map(|((collection, method), value)| {
+                let value: HashMap<_, _> = value
+                    .iter()
+                    .map(|(key, value)| (*key, value.anonymize()))
+                    .collect();
+                ((collection.to_owned(), method.clone()), value)
+            })
+            .collect();
+
+        WebApiTelemetry { responses, collection_responses }
     }
 }
 
