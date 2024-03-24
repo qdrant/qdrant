@@ -88,7 +88,7 @@ impl<T: PrimitiveVectorElement + 'static> AppendableMmapDenseVectorStorage<T> {
     }
 }
 
-impl DenseVectorStorage for AppendableMmapDenseVectorStorage<VectorElementType> {
+impl DenseVectorStorage<VectorElementType> for AppendableMmapDenseVectorStorage<VectorElementType> {
     fn get_dense(&self, key: PointOffsetType) -> &[VectorElementType] {
         self.vectors.get(key)
     }

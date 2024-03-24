@@ -13,7 +13,7 @@ use super::query_scorer::multi_custom_query_scorer::MultiCustomQueryScorer;
 use super::query_scorer::sparse_custom_query_scorer::SparseCustomQueryScorer;
 use super::{DenseVectorStorage, MultiVectorStorage, SparseVectorStorage, VectorStorageEnum};
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::data_types::vectors::{DenseVector, MultiDenseVector, QueryVector};
+use crate::data_types::vectors::{DenseVector, MultiDenseVector, QueryVector, VectorElementType};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::spaces::tools::peek_top_largest_iterable;
@@ -194,7 +194,7 @@ pub fn new_raw_scorer<'a>(
     new_stoppable_raw_scorer(vector, vector_storage, point_deleted, &DEFAULT_STOPPED)
 }
 
-pub fn raw_scorer_impl<'a, TVectorStorage: DenseVectorStorage>(
+pub fn raw_scorer_impl<'a, TVectorStorage: DenseVectorStorage<VectorElementType>>(
     query: QueryVector,
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,
@@ -228,7 +228,11 @@ pub fn raw_scorer_impl<'a, TVectorStorage: DenseVectorStorage>(
     }
 }
 
-fn new_scorer_with_metric<'a, TMetric: Metric + 'a, TVectorStorage: DenseVectorStorage>(
+fn new_scorer_with_metric<
+    'a,
+    TMetric: Metric + 'a,
+    TVectorStorage: DenseVectorStorage<VectorElementType>,
+>(
     query: QueryVector,
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,

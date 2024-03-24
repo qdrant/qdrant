@@ -11,6 +11,7 @@ use super::dense::simple_dense_vector_storage::SimpleDenseVectorStorage;
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
+use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{MultiDenseVector, VectorElementType, VectorRef};
 use crate::types::Distance;
 use crate::vector_storage::dense::appendable_mmap_dense_vector_storage::AppendableMmapDenseVectorStorage;
@@ -97,8 +98,8 @@ pub trait VectorStorage {
     fn deleted_vector_bitslice(&self) -> &BitSlice;
 }
 
-pub trait DenseVectorStorage: VectorStorage {
-    fn get_dense(&self, key: PointOffsetType) -> &[VectorElementType];
+pub trait DenseVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
+    fn get_dense(&self, key: PointOffsetType) -> &[T];
 }
 
 pub trait SparseVectorStorage: VectorStorage {

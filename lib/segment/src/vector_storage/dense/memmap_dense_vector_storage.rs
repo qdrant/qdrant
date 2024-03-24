@@ -87,7 +87,7 @@ impl<T: PrimitiveVectorElement> MemmapDenseVectorStorage<T> {
     }
 }
 
-impl DenseVectorStorage for MemmapDenseVectorStorage<VectorElementType> {
+impl DenseVectorStorage<VectorElementType> for MemmapDenseVectorStorage<VectorElementType> {
     fn get_dense(&self, key: PointOffsetType) -> &[VectorElementType] {
         self.mmap_store.as_ref().unwrap().get_vector(key)
     }

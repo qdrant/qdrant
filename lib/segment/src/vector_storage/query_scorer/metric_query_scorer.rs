@@ -7,13 +7,17 @@ use crate::spaces::metric::Metric;
 use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::DenseVectorStorage;
 
-pub struct MetricQueryScorer<'a, TMetric: Metric, TVectorStorage: DenseVectorStorage> {
+pub struct MetricQueryScorer<
+    'a,
+    TMetric: Metric,
+    TVectorStorage: DenseVectorStorage<VectorElementType>,
+> {
     vector_storage: &'a TVectorStorage,
     query: DenseVector,
     metric: PhantomData<TMetric>,
 }
 
-impl<'a, TMetric: Metric, TVectorStorage: DenseVectorStorage>
+impl<'a, TMetric: Metric, TVectorStorage: DenseVectorStorage<VectorElementType>>
     MetricQueryScorer<'a, TMetric, TVectorStorage>
 {
     pub fn new(query: DenseVector, vector_storage: &'a TVectorStorage) -> Self {
@@ -25,8 +29,8 @@ impl<'a, TMetric: Metric, TVectorStorage: DenseVectorStorage>
     }
 }
 
-impl<'a, TMetric: Metric, TVectorStorage: DenseVectorStorage> QueryScorer<[VectorElementType]>
-    for MetricQueryScorer<'a, TMetric, TVectorStorage>
+impl<'a, TMetric: Metric, TVectorStorage: DenseVectorStorage<VectorElementType>>
+    QueryScorer<[VectorElementType]> for MetricQueryScorer<'a, TMetric, TVectorStorage>
 {
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {

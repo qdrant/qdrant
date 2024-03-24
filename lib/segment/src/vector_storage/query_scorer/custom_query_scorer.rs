@@ -11,7 +11,7 @@ use crate::vector_storage::DenseVectorStorage;
 pub struct CustomQueryScorer<
     'a,
     TMetric: Metric,
-    TVectorStorage: DenseVectorStorage,
+    TVectorStorage: DenseVectorStorage<VectorElementType>,
     TQuery: Query<DenseVector>,
 > {
     vector_storage: &'a TVectorStorage,
@@ -22,7 +22,7 @@ pub struct CustomQueryScorer<
 impl<
         'a,
         TMetric: Metric,
-        TVectorStorage: DenseVectorStorage,
+        TVectorStorage: DenseVectorStorage<VectorElementType>,
         TQuery: Query<DenseVector> + TransformInto<TQuery>,
     > CustomQueryScorer<'a, TMetric, TVectorStorage, TQuery>
 {
@@ -39,8 +39,12 @@ impl<
     }
 }
 
-impl<'a, TMetric: Metric, TVectorStorage: DenseVectorStorage, TQuery: Query<DenseVector>>
-    QueryScorer<[VectorElementType]> for CustomQueryScorer<'a, TMetric, TVectorStorage, TQuery>
+impl<
+        'a,
+        TMetric: Metric,
+        TVectorStorage: DenseVectorStorage<VectorElementType>,
+        TQuery: Query<DenseVector>,
+    > QueryScorer<[VectorElementType]> for CustomQueryScorer<'a, TMetric, TVectorStorage, TQuery>
 {
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {

@@ -39,7 +39,7 @@ pub struct TestRawScorerProducer<TMetric: Metric> {
     pub metric: PhantomData<TMetric>,
 }
 
-impl<TMetric: Metric> DenseVectorStorage for TestRawScorerProducer<TMetric> {
+impl<TMetric: Metric> DenseVectorStorage<VectorElementType> for TestRawScorerProducer<TMetric> {
     fn get_dense(&self, key: PointOffsetType) -> &[VectorElementType] {
         self.vectors.get(key)
     }

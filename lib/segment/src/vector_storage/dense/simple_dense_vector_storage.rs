@@ -146,7 +146,7 @@ impl<T: PrimitiveVectorElement> SimpleDenseVectorStorage<T> {
     }
 }
 
-impl DenseVectorStorage for SimpleDenseVectorStorage<VectorElementType> {
+impl DenseVectorStorage<VectorElementType> for SimpleDenseVectorStorage<VectorElementType> {
     fn get_dense(&self, key: PointOffsetType) -> &[VectorElementType] {
         self.vectors.get(key)
     }
