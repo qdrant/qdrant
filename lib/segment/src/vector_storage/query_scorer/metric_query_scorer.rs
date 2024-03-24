@@ -40,10 +40,10 @@ impl<
 
 impl<
         'a,
-        TMetric: Metric<VectorElementType>,
-        TVectorStorage: DenseVectorStorage<VectorElementType>,
-    > QueryScorer<[VectorElementType]>
-    for MetricQueryScorer<'a, VectorElementType, TMetric, TVectorStorage>
+        TElement: PrimitiveVectorElement,
+        TMetric: Metric<TElement>,
+        TVectorStorage: DenseVectorStorage<TElement>,
+    > QueryScorer<[TElement]> for MetricQueryScorer<'a, TElement, TMetric, TVectorStorage>
 {
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
@@ -51,7 +51,7 @@ impl<
     }
 
     #[inline]
-    fn score(&self, v2: &[VectorElementType]) -> ScoreType {
+    fn score(&self, v2: &[TElement]) -> ScoreType {
         TMetric::similarity(&self.query, v2)
     }
 

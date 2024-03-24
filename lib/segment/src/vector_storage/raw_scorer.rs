@@ -252,7 +252,10 @@ fn new_scorer_with_metric<
         QueryVector::Recommend(reco_query) => {
             let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
             raw_scorer_from_query_scorer(
-                CustomQueryScorer::<TMetric, _, _>::new(reco_query, vector_storage),
+                CustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
+                    reco_query,
+                    vector_storage,
+                ),
                 point_deleted,
                 vec_deleted,
                 is_stopped,
@@ -261,7 +264,10 @@ fn new_scorer_with_metric<
         QueryVector::Discovery(discovery_query) => {
             let discovery_query: DiscoveryQuery<DenseVector> = discovery_query.transform_into()?;
             raw_scorer_from_query_scorer(
-                CustomQueryScorer::<TMetric, _, _>::new(discovery_query, vector_storage),
+                CustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
+                    discovery_query,
+                    vector_storage,
+                ),
                 point_deleted,
                 vec_deleted,
                 is_stopped,
@@ -270,7 +276,10 @@ fn new_scorer_with_metric<
         QueryVector::Context(context_query) => {
             let context_query: ContextQuery<DenseVector> = context_query.transform_into()?;
             raw_scorer_from_query_scorer(
-                CustomQueryScorer::<TMetric, _, _>::new(context_query, vector_storage),
+                CustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
+                    context_query,
+                    vector_storage,
+                ),
                 point_deleted,
                 vec_deleted,
                 is_stopped,
