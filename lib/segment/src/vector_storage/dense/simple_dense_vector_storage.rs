@@ -175,9 +175,9 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleDenseVectorStorage<T> {
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
         let vector = T::from_vector_ref(vector)?;
-        self.vectors.insert(key, vector)?;
+        self.vectors.insert(key, vector.as_ref())?;
         self.set_deleted(key, false);
-        self.update_stored(key, false, Some(vector))?;
+        self.update_stored(key, false, Some(vector.as_ref()))?;
         Ok(())
     }
 
@@ -194,9 +194,9 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleDenseVectorStorage<T> {
             let other_vector = other.get_vector(point_id);
             let other_vector = T::from_vector_ref(other_vector.as_vec_ref())?;
             let other_deleted = other.is_deleted_vector(point_id);
-            let new_id = self.vectors.push(other_vector)?;
+            let new_id = self.vectors.push(other_vector.as_ref())?;
             self.set_deleted(new_id, other_deleted);
-            self.update_stored(new_id, other_deleted, Some(other_vector))?;
+            self.update_stored(new_id, other_deleted, Some(other_vector.as_ref()))?;
         }
         let end_index = self.vectors.len() as PointOffsetType;
         Ok(start_index..end_index)

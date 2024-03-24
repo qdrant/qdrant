@@ -117,7 +117,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapDenseVectorStora
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
         let vector = T::from_vector_ref(vector)?;
-        self.vectors.insert(key, vector)?;
+        self.vectors.insert(key, vector.as_ref())?;
         self.set_deleted(key, false)?;
         Ok(())
     }
@@ -135,7 +135,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapDenseVectorStora
             let other_deleted = other.is_deleted_vector(point_id);
             let other_vector = other.get_vector(point_id);
             let other_vector = T::from_vector_ref(other_vector.as_vec_ref())?;
-            let new_id = self.vectors.push(other_vector)?;
+            let new_id = self.vectors.push(other_vector.as_ref())?;
             self.set_deleted(new_id, other_deleted)?;
         }
         let end_index = self.vectors.len() as PointOffsetType;

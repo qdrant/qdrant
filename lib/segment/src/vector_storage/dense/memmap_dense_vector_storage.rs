@@ -141,7 +141,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
             check_process_stopped(stopped)?;
             let other_vector = other.get_vector(id);
             let vector = T::from_vector_ref(other_vector.as_vec_ref())?;
-            let raw_bites = mmap_ops::transmute_to_u8_slice(vector);
+            let raw_bites = mmap_ops::transmute_to_u8_slice(vector.as_ref());
             vectors_file.write_all(raw_bites)?;
             end_index += 1;
 

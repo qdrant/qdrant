@@ -163,6 +163,8 @@ impl<'a> From<&'a Vector> for VectorRef<'a> {
 /// Type of vector element.
 pub type VectorElementType = f32;
 
+pub type VectorElementTypeByte = u8;
+
 pub const DEFAULT_VECTOR_NAME: &str = "";
 
 pub type TypedDenseVector<T> = Vec<T>;
