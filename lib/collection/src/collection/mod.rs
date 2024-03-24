@@ -54,7 +54,6 @@ pub struct Collection {
     channel_service: ChannelService,
     transfer_tasks: Mutex<TransferTasksPool>,
     request_shard_transfer_cb: RequestShardTransfer,
-    #[allow(dead_code)] //Might be useful in case of repartition implementation
     notify_peer_failure_cb: ChangePeerState,
     abort_shard_transfer_cb: replica_set::AbortShardTransfer,
     init_time: Duration,
