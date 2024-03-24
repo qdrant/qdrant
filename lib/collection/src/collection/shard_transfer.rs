@@ -270,21 +270,23 @@ impl Collection {
             )));
         };
 
-        let transfer = shard_holder.get_transfer(&transfer_key);
+        let Some(transfer) = shard_holder.get_transfer(&transfer_key) else {
+            return Ok(());
+        };
 
-        // TODO: Do we want to remove peer, if `transfer = None`!?
-        if transfer.map_or(false, |transfer| transfer.sync) {
-            replica_set.set_replica_state(&transfer_key.to, ReplicaState::Dead)?;
-        } else {
-            replica_set.remove_peer(transfer_key.to).await?;
+        if replica_set.peer_state(&transfer.to).is_some() {
+            if transfer.sync {
+                replica_set.set_replica_state(&transfer.to, ReplicaState::Dead)?;
+            } else {
+                replica_set.remove_peer(transfer.to).await?;
+            }
         }
 
-        if self.this_peer_id == transfer_key.from {
-            transfer::driver::revert_proxy_shard_to_local(shard_holder, transfer_key.shard_id)
-                .await?;
+        if transfer.from == self.this_peer_id {
+            transfer::driver::revert_proxy_shard_to_local(shard_holder, transfer.shard_id).await?;
         }
 
-        let _finish_was_registered = shard_holder.register_finish_transfer(&transfer_key)?;
+        shard_holder.register_finish_transfer(&transfer_key)?;
 
         Ok(())
     }
