@@ -23,10 +23,16 @@ impl Metric<VectorElementTypeByte> for EuclidMetric {
 }
 
 fn euclid_similarity_bytes(
-    _v1: &[VectorElementTypeByte],
-    _v2: &[VectorElementTypeByte],
+    v1: &[VectorElementTypeByte],
+    v2: &[VectorElementTypeByte],
 ) -> ScoreType {
-    unimplemented!("euclid_similarity_bytes")
+    -v1.iter()
+        .zip(v2)
+        .map(|(a, b)| {
+            let diff = *a as i32 - *b as i32;
+            diff * diff
+        })
+        .sum::<i32>() as ScoreType
 }
 
 #[cfg(test)]

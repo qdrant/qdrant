@@ -243,7 +243,7 @@ mod tests {
 
     #[test]
     fn test_cosine_preprocessing() {
-        let res = CosineMetric::preprocess(vec![0.0, 0.0, 0.0, 0.0]);
+        let res: DenseVector = CosineMetric::preprocess(vec![0.0, 0.0, 0.0, 0.0]);
         assert_eq!(res, vec![0.0, 0.0, 0.0, 0.0]);
     }
 }
