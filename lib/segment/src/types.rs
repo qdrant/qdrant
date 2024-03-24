@@ -28,7 +28,7 @@ use crate::data_types::text_index::TextIndexParams;
 use crate::data_types::vectors::{DenseVector, VectorElementType, VectorStruct};
 use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use crate::json_path::{JsonPath, JsonPathInterface};
-use crate::spaces::metric::Metric;
+use crate::spaces::metric::GenericMetric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::vector_storage::simple_sparse_vector_storage::SPARSE_VECTOR_DISTANCE;
 

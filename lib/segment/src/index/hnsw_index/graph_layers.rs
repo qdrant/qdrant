@@ -308,7 +308,7 @@ mod tests {
     };
     use crate::index::hnsw_index::graph_links::GraphLinksRam;
     use crate::index::hnsw_index::tests::create_graph_layer_fixture;
-    use crate::spaces::metric::Metric;
+    use crate::spaces::metric::GenericMetric;
     use crate::spaces::simple::{CosineMetric, DotProductMetric};
 
     fn search_in_graph<TGraphLinks: GraphLinks>(

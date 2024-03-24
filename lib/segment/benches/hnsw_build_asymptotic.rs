@@ -10,7 +10,7 @@ use segment::index::hnsw_index::graph_layers::GraphLayers;
 use segment::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::point_scorer::FilteredScorer;
-use segment::spaces::metric::Metric;
+use segment::spaces::metric::{GenericMetric, Metric};
 use segment::spaces::simple::{CosineMetric, DotProductMetric};
 
 const NUM_VECTORS: usize = 5_000;

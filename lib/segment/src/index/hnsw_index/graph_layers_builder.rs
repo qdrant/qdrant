@@ -490,7 +490,7 @@ mod tests {
     };
     use crate::index::hnsw_index::graph_links::GraphLinksRam;
     use crate::index::hnsw_index::tests::create_graph_layer_fixture;
-    use crate::spaces::metric::Metric;
+    use crate::spaces::metric::{GenericMetric, Metric};
     use crate::spaces::simple::{CosineMetric, EuclidMetric};
 
     const M: usize = 8;
