@@ -14,11 +14,11 @@ use crate::common::error_logging::LogError;
 use crate::common::mmap_type::MmapBitSlice;
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
+use crate::data_types::primitive::PrimitiveVectorElement;
 #[cfg(target_os = "linux")]
 use crate::vector_storage::async_io::UringReader;
 #[cfg(not(target_os = "linux"))]
 use crate::vector_storage::async_io_mock::UringReader;
-use crate::vector_storage::primitive::PrimitiveVectorElement;
 
 const HEADER_SIZE: usize = 4;
 const VECTORS_HEADER: &[u8; HEADER_SIZE] = b"data";

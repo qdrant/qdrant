@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 use crate::common::mmap_type::MmapType;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
+use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::vector_storage::chunked_utils::{chunk_name, create_chunk, read_mmaps, MmapChunk};
-use crate::vector_storage::primitive::PrimitiveVectorElement;
 
 #[cfg(debug_assertions)]
 const DEFAULT_CHUNK_SIZE: usize = 512 * 1024; // 512Kb

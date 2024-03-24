@@ -1,7 +1,7 @@
 use std::fs::File;
 
 use crate::common::operation_error::OperationResult;
-use crate::vector_storage::primitive::PrimitiveVectorElement;
+use crate::data_types::primitive::PrimitiveVectorElement;
 
 // This is a mock implementation of the async_io module for those platforms that don't support io_uring.
 #[allow(dead_code)]

@@ -5,7 +5,7 @@ use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 
 use crate::common::mmap_type::MmapSlice;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::vector_storage::primitive::PrimitiveVectorElement;
+use crate::data_types::primitive::PrimitiveVectorElement;
 
 const MMAP_CHUNKS_PATTERN_START: &str = "chunk_";
 const MMAP_CHUNKS_PATTERN_END: &str = ".mmap";
