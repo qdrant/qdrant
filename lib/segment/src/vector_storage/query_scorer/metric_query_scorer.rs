@@ -2,25 +2,34 @@ use std::marker::PhantomData;
 
 use common::types::{PointOffsetType, ScoreType};
 
-use crate::data_types::vectors::{DenseVector, VectorElementType};
+use crate::data_types::primitive::PrimitiveVectorElement;
+use crate::data_types::vectors::{TypedDenseVector, VectorElementType};
 use crate::spaces::metric::Metric;
 use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::DenseVectorStorage;
 
 pub struct MetricQueryScorer<
     'a,
-    TMetric: Metric,
-    TVectorStorage: DenseVectorStorage<VectorElementType>,
+    TElement: PrimitiveVectorElement,
+    TMetric: Metric<TElement>,
+    TVectorStorage: DenseVectorStorage<TElement>,
 > {
     vector_storage: &'a TVectorStorage,
-    query: DenseVector,
+    query: TypedDenseVector<TElement>,
     metric: PhantomData<TMetric>,
 }
 
-impl<'a, TMetric: Metric, TVectorStorage: DenseVectorStorage<VectorElementType>>
-    MetricQueryScorer<'a, TMetric, TVectorStorage>
+impl<
+        'a,
+        TElement: PrimitiveVectorElement,
+        TMetric: Metric<TElement>,
+        TVectorStorage: DenseVectorStorage<TElement>,
+    > MetricQueryScorer<'a, TElement, TMetric, TVectorStorage>
 {
-    pub fn new(query: DenseVector, vector_storage: &'a TVectorStorage) -> Self {
+    pub fn new(
+        query: TypedDenseVector<VectorElementType>,
+        vector_storage: &'a TVectorStorage,
+    ) -> Self {
         Self {
             query: TMetric::preprocess(query),
             vector_storage,
@@ -29,8 +38,12 @@ impl<'a, TMetric: Metric, TVectorStorage: DenseVectorStorage<VectorElementType>>
     }
 }
 
-impl<'a, TMetric: Metric, TVectorStorage: DenseVectorStorage<VectorElementType>>
-    QueryScorer<[VectorElementType]> for MetricQueryScorer<'a, TMetric, TVectorStorage>
+impl<
+        'a,
+        TMetric: Metric<VectorElementType>,
+        TVectorStorage: DenseVectorStorage<VectorElementType>,
+    > QueryScorer<[VectorElementType]>
+    for MetricQueryScorer<'a, VectorElementType, TMetric, TVectorStorage>
 {
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {

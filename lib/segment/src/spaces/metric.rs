@@ -5,7 +5,7 @@ use crate::data_types::vectors::{TypedDenseVector, VectorElementType};
 use crate::types::Distance;
 
 /// Defines how to compare vectors
-pub trait GenericMetric<T: PrimitiveVectorElement> {
+pub trait Metric<T: PrimitiveVectorElement> {
     fn distance() -> Distance;
 
     /// Greater the value - closer the vectors
@@ -18,5 +18,3 @@ pub trait GenericMetric<T: PrimitiveVectorElement> {
     /// correct metric score for displaying
     fn postprocess(score: ScoreType) -> ScoreType;
 }
-
-pub trait Metric: GenericMetric<VectorElementType> {}

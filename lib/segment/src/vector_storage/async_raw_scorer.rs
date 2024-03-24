@@ -254,7 +254,9 @@ impl<'a> AsyncRawScorerBuilder<'a> {
         self
     }
 
-    fn _build_with_metric<TMetric: Metric + 'a>(self) -> OperationResult<Box<dyn RawScorer + 'a>> {
+    fn _build_with_metric<TMetric: Metric<VectorElementType> + 'a>(
+        self,
+    ) -> OperationResult<Box<dyn RawScorer + 'a>> {
         let Self {
             points_count,
             query,
@@ -269,8 +271,10 @@ impl<'a> AsyncRawScorerBuilder<'a> {
             QueryVector::Nearest(vector) => {
                 match vector {
                     Vector::Dense(dense_vector) => {
-                        let query_scorer =
-                            MetricQueryScorer::<TMetric, _>::new(dense_vector, storage);
+                        let query_scorer = MetricQueryScorer::<VectorElementType, TMetric, _>::new(
+                            dense_vector,
+                            storage,
+                        );
                         Ok(Box::new(AsyncRawScorerImpl::new(
                             points_count,
                             query_scorer,

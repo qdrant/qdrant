@@ -230,7 +230,7 @@ pub fn raw_scorer_impl<'a, TVectorStorage: DenseVectorStorage<VectorElementType>
 
 fn new_scorer_with_metric<
     'a,
-    TMetric: Metric + 'a,
+    TMetric: Metric<VectorElementType> + 'a,
     TVectorStorage: DenseVectorStorage<VectorElementType>,
 >(
     query: QueryVector,
@@ -241,7 +241,10 @@ fn new_scorer_with_metric<
     let vec_deleted = vector_storage.deleted_vector_bitslice();
     match query {
         QueryVector::Nearest(vector) => raw_scorer_from_query_scorer(
-            MetricQueryScorer::<TMetric, _>::new(vector.try_into()?, vector_storage),
+            MetricQueryScorer::<VectorElementType, TMetric, _>::new(
+                vector.try_into()?,
+                vector_storage,
+            ),
             point_deleted,
             vec_deleted,
             is_stopped,
@@ -329,7 +332,11 @@ pub fn raw_multi_scorer_impl<'a, TVectorStorage: MultiVectorStorage>(
     }
 }
 
-fn new_multi_scorer_with_metric<'a, TMetric: Metric + 'a, TVectorStorage: MultiVectorStorage>(
+fn new_multi_scorer_with_metric<
+    'a,
+    TMetric: Metric<VectorElementType> + 'a,
+    TVectorStorage: MultiVectorStorage,
+>(
     query: QueryVector,
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,

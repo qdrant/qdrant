@@ -1,6 +1,6 @@
 use common::types::ScoreType;
 
-use super::metric::{GenericMetric, Metric};
+use super::metric::Metric;
 #[cfg(target_arch = "x86_64")]
 use super::simple_avx::*;
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
@@ -32,7 +32,7 @@ pub struct EuclidMetric;
 #[derive(Clone)]
 pub struct ManhattanMetric;
 
-impl GenericMetric<VectorElementType> for EuclidMetric {
+impl Metric<VectorElementType> for EuclidMetric {
     fn distance() -> Distance {
         Distance::Euclid
     }
@@ -74,7 +74,7 @@ impl GenericMetric<VectorElementType> for EuclidMetric {
     }
 }
 
-impl GenericMetric<VectorElementType> for ManhattanMetric {
+impl Metric<VectorElementType> for ManhattanMetric {
     fn distance() -> Distance {
         Distance::Manhattan
     }
@@ -116,7 +116,7 @@ impl GenericMetric<VectorElementType> for ManhattanMetric {
     }
 }
 
-impl GenericMetric<VectorElementType> for DotProductMetric {
+impl Metric<VectorElementType> for DotProductMetric {
     fn distance() -> Distance {
         Distance::Dot
     }
@@ -159,7 +159,7 @@ impl GenericMetric<VectorElementType> for DotProductMetric {
 }
 
 /// Equivalent to DotProductMetric with normalization of the vectors in preprocessing.
-impl GenericMetric<VectorElementType> for CosineMetric {
+impl Metric<VectorElementType> for CosineMetric {
     fn distance() -> Distance {
         Distance::Cosine
     }
@@ -201,14 +201,6 @@ impl GenericMetric<VectorElementType> for CosineMetric {
         score
     }
 }
-
-impl Metric for CosineMetric {}
-
-impl Metric for DotProductMetric {}
-
-impl Metric for EuclidMetric {}
-
-impl Metric for ManhattanMetric {}
 
 pub fn euclid_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
     -v1.iter()

@@ -7,13 +7,14 @@ use common::types::PointOffsetType;
 use rand::Rng;
 
 use super::graph_links::GraphLinksRam;
+use crate::data_types::vectors::VectorElementType;
 use crate::fixtures::index_fixtures::{FakeFilterContext, TestRawScorerProducer};
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::spaces::metric::Metric;
 
-pub(crate) fn create_graph_layer_builder_fixture<TMetric: Metric, R>(
+pub(crate) fn create_graph_layer_builder_fixture<TMetric: Metric<VectorElementType>, R>(
     num_vectors: usize,
     m: usize,
     dim: usize,
@@ -49,7 +50,7 @@ where
     (vector_holder, graph_layers_builder)
 }
 
-pub(crate) fn create_graph_layer_fixture<TMetric: Metric, R>(
+pub(crate) fn create_graph_layer_fixture<TMetric: Metric<VectorElementType>, R>(
     num_vectors: usize,
     m: usize,
     dim: usize,

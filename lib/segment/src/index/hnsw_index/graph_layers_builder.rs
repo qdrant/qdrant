@@ -484,19 +484,19 @@ mod tests {
     use rand::SeedableRng;
 
     use super::*;
-    use crate::data_types::vectors::DenseVector;
+    use crate::data_types::vectors::{DenseVector, VectorElementType};
     use crate::fixtures::index_fixtures::{
         random_vector, FakeFilterContext, TestRawScorerProducer,
     };
     use crate::index::hnsw_index::graph_links::GraphLinksRam;
     use crate::index::hnsw_index::tests::create_graph_layer_fixture;
-    use crate::spaces::metric::{GenericMetric, Metric};
+    use crate::spaces::metric::Metric;
     use crate::spaces::simple::{CosineMetric, EuclidMetric};
 
     const M: usize = 8;
 
     #[cfg(not(windows))]
-    fn parallel_graph_build<TMetric: Metric + Sync + Send, R>(
+    fn parallel_graph_build<TMetric: Metric<VectorElementType> + Sync + Send, R>(
         num_vectors: usize,
         dim: usize,
         use_heuristic: bool,
@@ -546,7 +546,7 @@ mod tests {
         (vector_holder, graph_layers)
     }
 
-    fn create_graph_layer<TMetric: Metric, R>(
+    fn create_graph_layer<TMetric: Metric<VectorElementType>, R>(
         num_vectors: usize,
         dim: usize,
         use_heuristic: bool,
