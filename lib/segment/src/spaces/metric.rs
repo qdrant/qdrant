@@ -14,7 +14,9 @@ pub trait Metric<T: PrimitiveVectorElement> {
     /// Necessary vector transformations performed before adding it to the collection (like normalization)
     /// If no transformation is needed - returns the same vector
     fn preprocess(vector: TypedDenseVector<VectorElementType>) -> TypedDenseVector<T>;
+}
 
+pub trait MetricPostProcessing {
     /// correct metric score for displaying
     fn postprocess(score: ScoreType) -> ScoreType;
 }
