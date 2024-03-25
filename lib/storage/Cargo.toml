@@ -55,6 +55,6 @@ url = "2.5.0"
 reqwest = { version = "0.11", default-features = false, features = ["stream", "rustls-tls"] }
 tempfile = "3.10.1"
 async-recursion = "1.1"
-async-trait = "0.1.77"
+async-trait = "0.1.79"
 
 tracing = { workspace = true, optional = true }
