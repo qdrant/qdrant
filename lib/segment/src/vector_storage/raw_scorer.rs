@@ -13,7 +13,7 @@ use super::query_scorer::multi_custom_query_scorer::MultiCustomQueryScorer;
 use super::query_scorer::sparse_custom_query_scorer::SparseCustomQueryScorer;
 use super::{DenseVectorStorage, MultiVectorStorage, SparseVectorStorage, VectorStorageEnum};
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::data_types::vectors::{DenseVector, MultiDenseVector, QueryVector};
+use crate::data_types::vectors::{DenseVector, MultiDenseVector, QueryVector, VectorElementType};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::spaces::tools::peek_top_largest_iterable;
@@ -194,7 +194,7 @@ pub fn new_raw_scorer<'a>(
     new_stoppable_raw_scorer(vector, vector_storage, point_deleted, &DEFAULT_STOPPED)
 }
 
-pub fn raw_scorer_impl<'a, TVectorStorage: DenseVectorStorage>(
+pub fn raw_scorer_impl<'a, TVectorStorage: DenseVectorStorage<VectorElementType>>(
     query: QueryVector,
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,
@@ -228,7 +228,11 @@ pub fn raw_scorer_impl<'a, TVectorStorage: DenseVectorStorage>(
     }
 }
 
-fn new_scorer_with_metric<'a, TMetric: Metric + 'a, TVectorStorage: DenseVectorStorage>(
+fn new_scorer_with_metric<
+    'a,
+    TMetric: Metric<VectorElementType> + 'a,
+    TVectorStorage: DenseVectorStorage<VectorElementType>,
+>(
     query: QueryVector,
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,
@@ -237,7 +241,10 @@ fn new_scorer_with_metric<'a, TMetric: Metric + 'a, TVectorStorage: DenseVectorS
     let vec_deleted = vector_storage.deleted_vector_bitslice();
     match query {
         QueryVector::Nearest(vector) => raw_scorer_from_query_scorer(
-            MetricQueryScorer::<TMetric, _>::new(vector.try_into()?, vector_storage),
+            MetricQueryScorer::<VectorElementType, TMetric, _>::new(
+                vector.try_into()?,
+                vector_storage,
+            ),
             point_deleted,
             vec_deleted,
             is_stopped,
@@ -245,7 +252,10 @@ fn new_scorer_with_metric<'a, TMetric: Metric + 'a, TVectorStorage: DenseVectorS
         QueryVector::Recommend(reco_query) => {
             let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
             raw_scorer_from_query_scorer(
-                CustomQueryScorer::<TMetric, _, _>::new(reco_query, vector_storage),
+                CustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
+                    reco_query,
+                    vector_storage,
+                ),
                 point_deleted,
                 vec_deleted,
                 is_stopped,
@@ -254,7 +264,10 @@ fn new_scorer_with_metric<'a, TMetric: Metric + 'a, TVectorStorage: DenseVectorS
         QueryVector::Discovery(discovery_query) => {
             let discovery_query: DiscoveryQuery<DenseVector> = discovery_query.transform_into()?;
             raw_scorer_from_query_scorer(
-                CustomQueryScorer::<TMetric, _, _>::new(discovery_query, vector_storage),
+                CustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
+                    discovery_query,
+                    vector_storage,
+                ),
                 point_deleted,
                 vec_deleted,
                 is_stopped,
@@ -263,7 +276,10 @@ fn new_scorer_with_metric<'a, TMetric: Metric + 'a, TVectorStorage: DenseVectorS
         QueryVector::Context(context_query) => {
             let context_query: ContextQuery<DenseVector> = context_query.transform_into()?;
             raw_scorer_from_query_scorer(
-                CustomQueryScorer::<TMetric, _, _>::new(context_query, vector_storage),
+                CustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
+                    context_query,
+                    vector_storage,
+                ),
                 point_deleted,
                 vec_deleted,
                 is_stopped,
@@ -325,7 +341,11 @@ pub fn raw_multi_scorer_impl<'a, TVectorStorage: MultiVectorStorage>(
     }
 }
 
-fn new_multi_scorer_with_metric<'a, TMetric: Metric + 'a, TVectorStorage: MultiVectorStorage>(
+fn new_multi_scorer_with_metric<
+    'a,
+    TMetric: Metric<VectorElementType> + 'a,
+    TVectorStorage: MultiVectorStorage,
+>(
     query: QueryVector,
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,

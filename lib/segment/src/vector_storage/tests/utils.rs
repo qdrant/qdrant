@@ -5,7 +5,7 @@ use rand::seq::IteratorRandom;
 
 use crate::data_types::vectors::VectorElementType;
 use crate::id_tracker::IdTracker;
-use crate::vector_storage::{RawScorer, VectorStorage};
+use crate::vector_storage::{RawScorer, VectorStorage, VectorStorageEnum};
 
 pub type Result<T, E = Error> = result::Result<T, E>;
 pub type Error = Box<dyn error::Error>;
@@ -15,7 +15,7 @@ pub fn sampler(rng: impl rand::Rng) -> impl Iterator<Item = f32> {
 }
 
 pub fn insert_distributed_vectors(
-    storage: &mut impl VectorStorage,
+    storage: &mut VectorStorageEnum,
     vectors: usize,
     sampler: &mut impl Iterator<Item = VectorElementType>,
 ) -> Result<()> {
@@ -37,7 +37,7 @@ pub fn insert_distributed_vectors(
 
 pub fn delete_random_vectors(
     rng: &mut impl rand::Rng,
-    storage: &mut impl VectorStorage,
+    storage: &mut VectorStorageEnum,
     id_tracker: &mut impl IdTracker,
     vectors: usize,
 ) -> Result<()> {

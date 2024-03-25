@@ -484,7 +484,7 @@ mod tests {
     use rand::SeedableRng;
 
     use super::*;
-    use crate::data_types::vectors::DenseVector;
+    use crate::data_types::vectors::{DenseVector, VectorElementType};
     use crate::fixtures::index_fixtures::{
         random_vector, FakeFilterContext, TestRawScorerProducer,
     };
@@ -496,7 +496,7 @@ mod tests {
     const M: usize = 8;
 
     #[cfg(not(windows))]
-    fn parallel_graph_build<TMetric: Metric + Sync + Send, R>(
+    fn parallel_graph_build<TMetric: Metric<VectorElementType> + Sync + Send, R>(
         num_vectors: usize,
         dim: usize,
         use_heuristic: bool,
@@ -546,7 +546,7 @@ mod tests {
         (vector_holder, graph_layers)
     }
 
-    fn create_graph_layer<TMetric: Metric, R>(
+    fn create_graph_layer<TMetric: Metric<VectorElementType>, R>(
         num_vectors: usize,
         dim: usize,
         use_heuristic: bool,

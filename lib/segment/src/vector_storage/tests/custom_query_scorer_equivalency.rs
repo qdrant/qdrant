@@ -21,12 +21,12 @@ use crate::types::{
     ScalarQuantizationConfig,
 };
 #[cfg(target_os = "linux")]
-use crate::vector_storage::memmap_dense_vector_storage::open_memmap_vector_storage_with_async_io;
+use crate::vector_storage::dense::memmap_dense_vector_storage::open_memmap_vector_storage_with_async_io;
+use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_vector_storage;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::query::context_query::{ContextPair, ContextQuery};
 use crate::vector_storage::query::discovery_query::DiscoveryQuery;
 use crate::vector_storage::query::reco_query::RecoQuery;
-use crate::vector_storage::simple_dense_vector_storage::open_simple_vector_storage;
 use crate::vector_storage::tests::utils::score;
 use crate::vector_storage::{new_raw_scorer, VectorStorage, VectorStorageEnum};
 
@@ -210,12 +210,12 @@ fn scoring_equivalency(
     let mut rng = StdRng::seed_from_u64(SEED);
     let mut sampler = quant_sampler.unwrap_or(Box::new(sampler(rng.clone())));
 
-    super::utils::insert_distributed_vectors(&mut *raw_storage, NUM_POINTS, &mut sampler)?;
+    super::utils::insert_distributed_vectors(&mut raw_storage, NUM_POINTS, &mut sampler)?;
 
     let mut id_tracker = FixtureIdTracker::new(NUM_POINTS);
     super::utils::delete_random_vectors(
         &mut rng,
-        &mut *raw_storage,
+        &mut raw_storage,
         &mut id_tracker,
         NUM_POINTS / 10,
     )?;

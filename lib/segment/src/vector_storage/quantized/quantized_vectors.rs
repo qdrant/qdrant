@@ -121,7 +121,7 @@ impl QuantizedVectors {
         }
     }
 
-    fn create_impl<TVectorStorage: DenseVectorStorage + Send + Sync>(
+    fn create_impl<TVectorStorage: DenseVectorStorage<VectorElementType> + Send + Sync>(
         vector_storage: &TVectorStorage,
         quantization_config: &QuantizationConfig,
         path: &Path,

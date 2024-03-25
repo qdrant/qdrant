@@ -1,19 +1,22 @@
 use common::types::ScoreType;
 
-use crate::data_types::vectors::{DenseVector, VectorElementType};
+use crate::data_types::primitive::PrimitiveVectorElement;
+use crate::data_types::vectors::{TypedDenseVector, VectorElementType};
 use crate::types::Distance;
 
 /// Defines how to compare vectors
-pub trait Metric {
+pub trait Metric<T: PrimitiveVectorElement> {
     fn distance() -> Distance;
 
     /// Greater the value - closer the vectors
-    fn similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType;
+    fn similarity(v1: &[T], v2: &[T]) -> ScoreType;
 
     /// Necessary vector transformations performed before adding it to the collection (like normalization)
     /// If no transformation is needed - returns the same vector
-    fn preprocess(vector: DenseVector) -> DenseVector;
+    fn preprocess(vector: TypedDenseVector<VectorElementType>) -> TypedDenseVector<T>;
+}
 
+pub trait MetricPostProcessing {
     /// correct metric score for displaying
     fn postprocess(score: ScoreType) -> ScoreType;
 }

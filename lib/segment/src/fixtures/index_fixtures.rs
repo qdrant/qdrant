@@ -32,20 +32,22 @@ impl FilterContext for FakeFilterContext {
     }
 }
 
-pub struct TestRawScorerProducer<TMetric: Metric> {
+pub struct TestRawScorerProducer<TMetric: Metric<VectorElementType>> {
     pub vectors: ChunkedVectors<VectorElementType>,
     pub deleted_points: BitVec,
     pub deleted_vectors: BitVec,
     pub metric: PhantomData<TMetric>,
 }
 
-impl<TMetric: Metric> DenseVectorStorage for TestRawScorerProducer<TMetric> {
+impl<TMetric: Metric<VectorElementType>> DenseVectorStorage<VectorElementType>
+    for TestRawScorerProducer<TMetric>
+{
     fn get_dense(&self, key: PointOffsetType) -> &[VectorElementType] {
         self.vectors.get(key)
     }
 }
 
-impl<TMetric: Metric> VectorStorage for TestRawScorerProducer<TMetric> {
+impl<TMetric: Metric<VectorElementType>> VectorStorage for TestRawScorerProducer<TMetric> {
     fn vector_dim(&self) -> usize {
         self.vectors.get(0).len()
     }
@@ -107,7 +109,7 @@ impl<TMetric: Metric> VectorStorage for TestRawScorerProducer<TMetric> {
 
 impl<TMetric> TestRawScorerProducer<TMetric>
 where
-    TMetric: Metric,
+    TMetric: Metric<VectorElementType>,
 {
     pub fn new<R>(dim: usize, num_vectors: usize, rng: &mut R) -> Self
     where

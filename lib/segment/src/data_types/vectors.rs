@@ -163,10 +163,14 @@ impl<'a> From<&'a Vector> for VectorRef<'a> {
 /// Type of vector element.
 pub type VectorElementType = f32;
 
+pub type VectorElementTypeByte = u8;
+
 pub const DEFAULT_VECTOR_NAME: &str = "";
 
+pub type TypedDenseVector<T> = Vec<T>;
+
 /// Type for dense vector
-pub type DenseVector = Vec<VectorElementType>;
+pub type DenseVector = TypedDenseVector<VectorElementType>;
 
 /// Type for multi dense vector
 pub type MultiDenseVector = Vec<DenseVector>;

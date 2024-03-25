@@ -1,6 +1,6 @@
 use common::types::ScoreType;
 
-use super::metric::Metric;
+use super::metric::{Metric, MetricPostProcessing};
 #[cfg(target_arch = "x86_64")]
 use super::simple_avx::*;
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
@@ -32,7 +32,7 @@ pub struct EuclidMetric;
 #[derive(Clone)]
 pub struct ManhattanMetric;
 
-impl Metric for EuclidMetric {
+impl Metric<VectorElementType> for EuclidMetric {
     fn distance() -> Distance {
         Distance::Euclid
     }
@@ -68,13 +68,15 @@ impl Metric for EuclidMetric {
     fn preprocess(vector: DenseVector) -> DenseVector {
         vector
     }
+}
 
+impl MetricPostProcessing for EuclidMetric {
     fn postprocess(score: ScoreType) -> ScoreType {
         score.abs().sqrt()
     }
 }
 
-impl Metric for ManhattanMetric {
+impl Metric<VectorElementType> for ManhattanMetric {
     fn distance() -> Distance {
         Distance::Manhattan
     }
@@ -110,13 +112,15 @@ impl Metric for ManhattanMetric {
     fn preprocess(vector: DenseVector) -> DenseVector {
         vector
     }
+}
 
+impl MetricPostProcessing for ManhattanMetric {
     fn postprocess(score: ScoreType) -> ScoreType {
         score.abs()
     }
 }
 
-impl Metric for DotProductMetric {
+impl Metric<VectorElementType> for DotProductMetric {
     fn distance() -> Distance {
         Distance::Dot
     }
@@ -152,14 +156,16 @@ impl Metric for DotProductMetric {
     fn preprocess(vector: DenseVector) -> DenseVector {
         vector
     }
+}
 
+impl MetricPostProcessing for DotProductMetric {
     fn postprocess(score: ScoreType) -> ScoreType {
         score
     }
 }
 
 /// Equivalent to DotProductMetric with normalization of the vectors in preprocessing.
-impl Metric for CosineMetric {
+impl Metric<VectorElementType> for CosineMetric {
     fn distance() -> Distance {
         Distance::Cosine
     }
@@ -196,7 +202,9 @@ impl Metric for CosineMetric {
 
         cosine_preprocess(vector)
     }
+}
 
+impl MetricPostProcessing for CosineMetric {
     fn postprocess(score: ScoreType) -> ScoreType {
         score
     }
@@ -235,7 +243,7 @@ mod tests {
 
     #[test]
     fn test_cosine_preprocessing() {
-        let res = CosineMetric::preprocess(vec![0.0, 0.0, 0.0, 0.0]);
+        let res: DenseVector = CosineMetric::preprocess(vec![0.0, 0.0, 0.0, 0.0]);
         assert_eq!(res, vec![0.0, 0.0, 0.0, 0.0]);
     }
 }

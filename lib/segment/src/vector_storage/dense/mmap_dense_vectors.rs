@@ -14,7 +14,7 @@ use crate::common::error_logging::LogError;
 use crate::common::mmap_type::MmapBitSlice;
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
-use crate::data_types::vectors::VectorElementType;
+use crate::data_types::primitive::PrimitiveVectorElement;
 #[cfg(target_os = "linux")]
 use crate::vector_storage::async_io::UringReader;
 #[cfg(not(target_os = "linux"))]
@@ -25,7 +25,7 @@ const VECTORS_HEADER: &[u8; HEADER_SIZE] = b"data";
 const DELETED_HEADER: &[u8; HEADER_SIZE] = b"drop";
 
 /// Mem-mapped file for dense vectors
-pub struct MmapDenseVectors {
+pub struct MmapDenseVectors<T: PrimitiveVectorElement> {
     pub dim: usize,
     pub num_vectors: usize,
     /// Memory mapped file for vector data
@@ -34,14 +34,14 @@ pub struct MmapDenseVectors {
     mmap: Arc<Mmap>,
     /// Context for io_uring-base async IO
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-    uring_reader: Mutex<Option<UringReader>>,
+    uring_reader: Mutex<Option<UringReader<T>>>,
     /// Memory mapped deletion flags
     deleted: MmapBitSlice,
     /// Current number of deleted vectors.
     pub deleted_count: usize,
 }
 
-impl MmapDenseVectors {
+impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
     pub fn open(
         vectors_path: &Path,
         deleted_path: &Path,
@@ -52,7 +52,7 @@ impl MmapDenseVectors {
         ensure_mmap_file_size(vectors_path, VECTORS_HEADER, None)
             .describe("Create mmap data file")?;
         let mmap = mmap_ops::open_read_mmap(vectors_path).describe("Open mmap for reading")?;
-        let num_vectors = (mmap.len() - HEADER_SIZE) / dim / size_of::<VectorElementType>();
+        let num_vectors = (mmap.len() - HEADER_SIZE) / dim / size_of::<T>();
 
         // Allocate/open deleted mmap
         let deleted_mmap_size = deleted_mmap_size(num_vectors);
@@ -74,7 +74,7 @@ impl MmapDenseVectors {
         let uring_reader = if with_async_io {
             // Keep file handle open for async IO
             let vectors_file = File::open(vectors_path)?;
-            let raw_size = dim * size_of::<VectorElementType>();
+            let raw_size = dim * size_of::<T>();
             Some(UringReader::new(vectors_file, raw_size, HEADER_SIZE)?)
         } else {
             None
@@ -99,7 +99,7 @@ impl MmapDenseVectors {
     }
 
     pub fn data_offset(&self, key: PointOffsetType) -> Option<usize> {
-        let vector_data_length = self.dim * size_of::<VectorElementType>();
+        let vector_data_length = self.dim * size_of::<T>();
         let offset = (key as usize) * vector_data_length + HEADER_SIZE;
         if key >= (self.num_vectors as PointOffsetType) {
             return None;
@@ -108,17 +108,17 @@ impl MmapDenseVectors {
     }
 
     pub fn raw_size(&self) -> usize {
-        self.dim * size_of::<VectorElementType>()
+        self.dim * size_of::<T>()
     }
 
-    pub fn raw_vector_offset(&self, offset: usize) -> &[VectorElementType] {
+    pub fn raw_vector_offset(&self, offset: usize) -> &[T] {
         let byte_slice = &self.mmap[offset..(offset + self.raw_size())];
-        let arr: &[VectorElementType] = unsafe { transmute(byte_slice) };
+        let arr: &[T] = unsafe { transmute(byte_slice) };
         &arr[0..self.dim]
     }
 
     /// Returns reference to vector data by key
-    pub fn get_vector(&self, key: PointOffsetType) -> &[VectorElementType] {
+    pub fn get_vector(&self, key: PointOffsetType) -> &[T] {
         let offset = self.data_offset(key).unwrap();
         self.raw_vector_offset(offset)
     }
@@ -155,7 +155,7 @@ impl MmapDenseVectors {
     fn process_points_uring(
         &self,
         points: impl Iterator<Item = PointOffsetType>,
-        callback: impl FnMut(usize, PointOffsetType, &[VectorElementType]),
+        callback: impl FnMut(usize, PointOffsetType, &[T]),
     ) -> OperationResult<()> {
         self.uring_reader
             .lock()
@@ -168,7 +168,7 @@ impl MmapDenseVectors {
     fn process_points_simple(
         &self,
         points: impl Iterator<Item = PointOffsetType>,
-        mut callback: impl FnMut(usize, PointOffsetType, &[VectorElementType]),
+        mut callback: impl FnMut(usize, PointOffsetType, &[T]),
     ) -> OperationResult<()> {
         for (idx, point) in points.enumerate() {
             let vector = self.get_vector(point);
@@ -183,7 +183,7 @@ impl MmapDenseVectors {
     pub fn read_vectors_async(
         &self,
         points: impl Iterator<Item = PointOffsetType>,
-        callback: impl FnMut(usize, PointOffsetType, &[VectorElementType]),
+        callback: impl FnMut(usize, PointOffsetType, &[T]),
     ) -> OperationResult<()> {
         #[cfg(target_os = "linux")]
         {
