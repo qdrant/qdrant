@@ -7,6 +7,7 @@ use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::shard_config::ShardType;
 use collection::shards::shard_versioning::latest_shard_paths;
 use rbac::jwt::Claims;
+use tokio::task::JoinHandle;
 
 use crate::content_manager::claims::check_manage_rights;
 use crate::content_manager::collection_meta_ops::{
@@ -48,26 +49,20 @@ pub async fn activate_shard(
     Ok(())
 }
 
-pub async fn do_recover_from_snapshot(
+pub fn do_recover_from_snapshot(
     dispatcher: &Dispatcher,
     collection_name: &str,
     source: SnapshotRecover,
-    wait: bool,
     claims: Option<Claims>,
     client: reqwest::Client,
-) -> Result<bool, StorageError> {
+) -> Result<JoinHandle<Result<bool, StorageError>>, StorageError> {
     check_manage_rights(claims.as_ref())?;
 
     let dispatch = dispatcher.clone();
     let collection_name = collection_name.to_string();
-    let recovery = tokio::spawn(async move {
+    Ok(tokio::spawn(async move {
         _do_recover_from_snapshot(dispatch, &collection_name, source, &client).await
-    });
-    if wait {
-        Ok(recovery.await??)
-    } else {
-        Ok(true)
-    }
+    }))
 }
 
 async fn _do_recover_from_snapshot(

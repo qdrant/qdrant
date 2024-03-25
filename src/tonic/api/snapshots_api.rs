@@ -46,9 +46,10 @@ impl Snapshots for SnapshotsService {
         let collection_name = request.into_inner().collection_name;
         let timing = Instant::now();
         let dispatcher = self.dispatcher.clone();
-        let response = do_create_snapshot(&dispatcher, claims, &collection_name, true)
-            .await
-            .map_err(error_to_status)?;
+        let response =
+            async move { do_create_snapshot(&dispatcher, claims, &collection_name)?.await? }
+                .await
+                .map_err(error_to_status)?;
         Ok(Response::new(CreateSnapshotResponse {
             snapshot_description: Some(response.into()),
             time: timing.elapsed().as_secs_f64(),
@@ -84,13 +85,16 @@ impl Snapshots for SnapshotsService {
             snapshot_name,
         } = request.into_inner();
         let timing = Instant::now();
-        let _response = do_delete_collection_snapshot(
-            &self.dispatcher,
-            claims,
-            &collection_name,
-            &snapshot_name,
-            true,
-        )
+        let _response = async move {
+            do_delete_collection_snapshot(
+                &self.dispatcher,
+                claims,
+                &collection_name,
+                &snapshot_name,
+            )
+            .await?
+            .await?
+        }
         .await
         .map_err(error_to_status)?;
         Ok(Response::new(DeleteSnapshotResponse {
@@ -105,11 +109,12 @@ impl Snapshots for SnapshotsService {
         validate(request.get_ref())?;
         let timing = Instant::now();
         let claims = extract_claims(&mut request);
-        let response = do_create_full_snapshot(&self.dispatcher, claims, true)
+        let response = async move { do_create_full_snapshot(&self.dispatcher, claims)?.await? }
             .await
             .map_err(error_to_status)?;
+
         Ok(Response::new(CreateSnapshotResponse {
-            snapshot_description: response.map(|x| x.into()),
+            snapshot_description: Some(response.into()),
             time: timing.elapsed().as_secs_f64(),
         }))
     }
@@ -138,9 +143,15 @@ impl Snapshots for SnapshotsService {
         let claims = extract_claims(&mut request);
         let snapshot_name = request.into_inner().snapshot_name;
         let timing = Instant::now();
-        let _response = do_delete_full_snapshot(&self.dispatcher, claims, &snapshot_name, true)
-            .await
-            .map_err(error_to_status)?;
+        let _response = async move {
+            Ok(
+                do_delete_full_snapshot(&self.dispatcher, claims, &snapshot_name)
+                    .await?
+                    .await?,
+            )
+        }
+        .await
+        .map_err(error_to_status)?;
         Ok(Response::new(DeleteSnapshotResponse {
             time: timing.elapsed().as_secs_f64(),
         }))
