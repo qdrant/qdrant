@@ -27,27 +27,29 @@ where
             status: ApiStatus::Ok,
             time: timing.elapsed().as_secs_f64(),
         }),
-        Err(err) => {
-            if let StorageError::ServiceError {
-                description,
-                backtrace,
-            } = &err
-            {
-                log::warn!("error processing request: {}", description);
-                if let Some(backtrace) = backtrace {
-                    log::trace!("backtrace: {}", backtrace);
-                }
-            }
+        Err(err) => process_response_error(err, timing),
+    }
+}
 
-            let error: HttpError = err.into();
-
-            HttpResponse::build(error.status_code()).json(ApiResponse::<()> {
-                result: None,
-                status: ApiStatus::Error(error.to_string()),
-                time: timing.elapsed().as_secs_f64(),
-            })
+pub fn process_response_error(err: StorageError, timing: Instant) -> HttpResponse {
+    if let StorageError::ServiceError {
+        description,
+        backtrace,
+    } = &err
+    {
+        log::warn!("error processing request: {}", description);
+        if let Some(backtrace) = backtrace {
+            log::trace!("backtrace: {}", backtrace);
         }
     }
+
+    let error: HttpError = err.into();
+
+    HttpResponse::build(error.status_code()).json(ApiResponse::<()> {
+        result: None,
+        status: ApiStatus::Error(error.to_string()),
+        time: timing.elapsed().as_secs_f64(),
+    })
 }
 
 /// Response wrapper for a ``Future`` returning ``Result``.
@@ -55,7 +57,7 @@ where
 /// # Cancel safety
 ///
 /// Future must be cancel safe.
-pub async fn time<T, Fut>(future: Fut) -> impl actix_web::Responder
+pub async fn time<T, Fut>(future: Fut) -> HttpResponse
 where
     Fut: Future<Output = Result<T, StorageError>>,
     T: serde::Serialize,
@@ -65,7 +67,7 @@ where
 
 /// Response wrapper for a ``Future`` returning ``Result``.
 /// If ``wait`` is false, returns ``202 Accepted`` immediately.
-pub async fn time_or_accept<T, Fut>(future: Fut, wait: bool) -> impl actix_web::Responder
+pub async fn time_or_accept<T, Fut>(future: Fut, wait: bool) -> HttpResponse
 where
     Fut: Future<Output = Result<T, StorageError>> + Send + 'static,
     T: serde::Serialize + Send + 'static,
@@ -102,10 +104,7 @@ where
 /// # Cancel safety
 ///
 /// Future must be cancel safe.
-pub async fn time_or_accept_with_handle<T, Fut>(
-    wait: bool,
-    future: Fut,
-) -> impl actix_web::Responder
+pub async fn time_or_accept_with_handle<T, Fut>(wait: bool, future: Fut) -> HttpResponse
 where
     Fut: Future<Output = Result<JoinHandle<Result<T, StorageError>>, StorageError>>,
     T: serde::Serialize + Send + 'static,
@@ -128,7 +127,7 @@ where
 /// # Cancel safety
 ///
 /// Future must be cancel safe.
-async fn time_impl<T, Fut>(future: Fut) -> impl actix_web::Responder
+async fn time_impl<T, Fut>(future: Fut) -> HttpResponse
 where
     Fut: Future<Output = Result<Option<T>, StorageError>>,
     T: serde::Serialize,

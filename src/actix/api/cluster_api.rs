@@ -1,14 +1,18 @@
-use actix_web::rt::time::Instant;
-use actix_web::{delete, get, post, web, Responder};
+use std::future::Future;
+
+use actix_web::{delete, get, post, web, HttpResponse};
 use actix_web_validator::Query;
+use rbac::jwt::Claims;
 use serde::Deserialize;
+use storage::content_manager::claims::check_manage_rights;
 use storage::content_manager::consensus_ops::ConsensusOperations;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use validator::Validate;
 
-use crate::actix::helpers::{self, process_response};
+use crate::actix::auth::Extension;
+use crate::actix::helpers;
 
 #[derive(Debug, Deserialize, Validate)]
 struct QueryParams {
@@ -20,25 +24,38 @@ struct QueryParams {
 }
 
 #[get("/cluster")]
-async fn cluster_status(dispatcher: web::Data<Dispatcher>) -> impl Responder {
-    let timing = Instant::now();
-    let response = dispatcher.cluster_status();
-    process_response(Ok(response), timing)
+fn cluster_status(
+    dispatcher: web::Data<Dispatcher>,
+    claims: Extension<Claims>,
+) -> impl Future<Output = HttpResponse> {
+    helpers::time(async move {
+        check_manage_rights(claims.into_inner().as_ref())?;
+        Ok(dispatcher.cluster_status())
+    })
 }
 
 #[post("/cluster/recover")]
-async fn recover_current_peer(toc: web::Data<TableOfContent>) -> impl Responder {
-    let timing = Instant::now();
-    process_response(toc.request_snapshot().map(|_| true), timing)
+fn recover_current_peer(
+    toc: web::Data<TableOfContent>,
+    claims: Extension<Claims>,
+) -> impl Future<Output = HttpResponse> {
+    helpers::time(async move {
+        check_manage_rights(claims.into_inner().as_ref())?;
+        toc.request_snapshot()?;
+        Ok(true)
+    })
 }
 
 #[delete("/cluster/peer/{peer_id}")]
-async fn remove_peer(
+fn remove_peer(
     dispatcher: web::Data<Dispatcher>,
     peer_id: web::Path<u64>,
     Query(params): Query<QueryParams>,
-) -> impl Responder {
+    claims: Extension<Claims>,
+) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
+        check_manage_rights(claims.into_inner().as_ref())?;
+
         let dispatcher = dispatcher.into_inner();
         let peer_id = peer_id.into_inner();
 
@@ -63,7 +80,6 @@ async fn remove_peer(
             }),
         }
     })
-    .await
 }
 
 // Configure services
