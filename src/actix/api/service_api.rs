@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use storage::content_manager::toc::TableOfContent;
 use tokio::sync::Mutex;
 
-use crate::actix::helpers::process_response;
+use crate::actix::helpers::{self, process_response};
 use crate::common::health;
 use crate::common::helpers::LocksOption;
 use crate::common::metrics::MetricsData;
@@ -31,23 +31,25 @@ async fn telemetry(
     telemetry_collector: web::Data<Mutex<TelemetryCollector>>,
     params: Query<TelemetryParam>,
 ) -> impl Responder {
-    let timing = Instant::now();
-    let anonymize = params.anonymize.unwrap_or(false);
-    let details_level = params
-        .details_level
-        .map_or(DetailsLevel::Level0, Into::into);
-    let detail = TelemetryDetail {
-        level: details_level,
-        histograms: false,
-    };
-    let telemetry_collector = telemetry_collector.lock().await;
-    let telemetry_data = telemetry_collector.prepare_data(detail).await;
-    let telemetry_data = if anonymize {
-        telemetry_data.anonymize()
-    } else {
-        telemetry_data
-    };
-    process_response(Ok(telemetry_data), timing)
+    helpers::time(async move {
+        let anonymize = params.anonymize.unwrap_or(false);
+        let details_level = params
+            .details_level
+            .map_or(DetailsLevel::Level0, Into::into);
+        let detail = TelemetryDetail {
+            level: details_level,
+            histograms: false,
+        };
+        let telemetry_collector = telemetry_collector.lock().await;
+        let telemetry_data = telemetry_collector.prepare_data(detail).await;
+        let telemetry_data = if anonymize {
+            telemetry_data.anonymize()
+        } else {
+            telemetry_data
+        };
+        Ok(telemetry_data)
+    })
+    .await
 }
 
 #[derive(Deserialize, Serialize, JsonSchema)]

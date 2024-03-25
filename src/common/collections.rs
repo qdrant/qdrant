@@ -30,6 +30,7 @@ use storage::content_manager::collection_meta_ops::{
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
+use tokio::task::JoinHandle;
 
 pub async fn do_collection_exists(
     toc: &TableOfContent,
@@ -231,26 +232,17 @@ pub async fn do_list_snapshots(
         .await?)
 }
 
-pub async fn do_create_snapshot(
+pub fn do_create_snapshot(
     dispatcher: &Dispatcher,
     claims: Option<Claims>,
     collection_name: &str,
-    wait: bool,
-) -> Result<SnapshotDescription, StorageError> {
+) -> Result<JoinHandle<Result<SnapshotDescription, StorageError>>, StorageError> {
     check_full_access_to_collection(claims.as_ref(), collection_name)?;
     let collection = collection_name.to_string();
     let dispatcher = dispatcher.clone();
-    let snapshot = tokio::spawn(async move { dispatcher.create_snapshot(&collection).await });
-    if wait {
-        Ok(snapshot.await??)
-    } else {
-        Ok(SnapshotDescription {
-            name: "".to_string(),
-            creation_time: None,
-            size: 0,
-            checksum: None,
-        })
-    }
+    Ok(tokio::spawn(async move {
+        dispatcher.create_snapshot(&collection).await
+    }))
 }
 
 pub async fn do_get_collection_cluster(
