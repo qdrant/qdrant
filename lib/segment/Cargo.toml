@@ -68,7 +68,7 @@ smallvec = "1.13.1"
 is_sorted = "0.1.1"
 
 sysinfo = "0.30"
-charabia = { version = "0.8.7", default-features = false, features = ["greek", "hebrew", "thai"] }
+charabia = { version = "0.8.8", default-features = false, features = ["greek", "hebrew", "thai"] }
 
 common = { path = "../common/common" }
 io = { path = "../common/io" }
