@@ -31,9 +31,7 @@ use validator::Validate;
 
 use super::CollectionPath;
 use crate::actix::auth::Extension;
-use crate::actix::helpers::{
-    self, collection_into_actix_error, process_response, storage_into_actix_error,
-};
+use crate::actix::helpers::{self, process_response, HttpError};
 use crate::common;
 use crate::common::collections::*;
 use crate::common::http_client::HttpClient;
@@ -71,13 +69,9 @@ pub async fn do_get_full_snapshot(
     toc: &TableOfContent,
     claims: Option<Claims>,
     snapshot_name: &str,
-) -> Result<NamedFile> {
-    check_manage_rights(claims.as_ref()).map_err(storage_into_actix_error)?;
-
-    let file_name = get_full_snapshot_path(toc, snapshot_name)
-        .await
-        .map_err(storage_into_actix_error)?;
-
+) -> Result<NamedFile, HttpError> {
+    check_manage_rights(claims.as_ref())?;
+    let file_name = get_full_snapshot_path(toc, snapshot_name).await?;
     Ok(NamedFile::open(file_name)?)
 }
 
@@ -129,20 +123,10 @@ pub async fn do_get_snapshot(
     claims: Option<Claims>,
     collection_name: &str,
     snapshot_name: &str,
-) -> Result<NamedFile> {
-    check_full_access_to_collection(claims.as_ref(), collection_name)
-        .map_err(storage_into_actix_error)?;
-
-    let collection = toc
-        .get_collection(collection_name)
-        .await
-        .map_err(storage_into_actix_error)?;
-
-    let file_name = collection
-        .get_snapshot_path(snapshot_name)
-        .await
-        .map_err(collection_into_actix_error)?;
-
+) -> Result<NamedFile, HttpError> {
+    check_full_access_to_collection(claims.as_ref(), collection_name)?;
+    let collection = toc.get_collection(collection_name).await?;
+    let file_name = collection.get_snapshot_path(snapshot_name).await?;
     Ok(NamedFile::open(file_name)?)
 }
 
@@ -168,11 +152,7 @@ async fn create_snapshot(
 ) -> impl Responder {
     let collection_name = path.into_inner();
     helpers::time_or_accept_with_handle(params.wait.unwrap_or(true), async move {
-        Ok(do_create_snapshot(
-            dispatcher.get_ref(),
-            claims.into_inner(),
-            &collection_name,
-        )?)
+        do_create_snapshot(dispatcher.get_ref(), claims.into_inner(), &collection_name)
     })
     .await
 }
@@ -194,7 +174,7 @@ async fn upload_snapshot(
         if let Some(checksum) = &params.checksum {
             let snapshot_checksum = hash_file(snapshot.file.path()).await?;
             if !hashes_equal(snapshot_checksum.as_str(), checksum.as_str()) {
-                return Err(StorageError::checksum_mismatch(snapshot_checksum, checksum).into());
+                return Err(StorageError::checksum_mismatch(snapshot_checksum, checksum));
             }
         }
 
@@ -209,13 +189,13 @@ async fn upload_snapshot(
             checksum: None,
         };
 
-        Ok(do_recover_from_snapshot(
+        do_recover_from_snapshot(
             dispatcher.get_ref(),
             &collection.name,
             snapshot_recover,
             None,
             http_client,
-        )?)
+        )
     })
     .await
 }
@@ -232,13 +212,13 @@ async fn recover_from_snapshot(
     helpers::time_or_accept_with_handle(params.wait.unwrap_or(true), async move {
         let snapshot_recover = request.into_inner();
         let http_client = http_client.client()?;
-        Ok(do_recover_from_snapshot(
+        do_recover_from_snapshot(
             dispatcher.get_ref(),
             &collection.name,
             snapshot_recover,
             claims.into_inner(),
             http_client,
-        )?)
+        )
     })
     .await
 }
@@ -270,10 +250,7 @@ async fn create_full_snapshot(
     claims: Extension<Claims>,
 ) -> impl Responder {
     helpers::time_or_accept_with_handle(params.wait.unwrap_or(true), async move {
-        Ok(do_create_full_snapshot(
-            dispatcher.get_ref(),
-            claims.into_inner(),
-        )?)
+        do_create_full_snapshot(dispatcher.get_ref(), claims.into_inner())
     })
     .await
 }
@@ -297,10 +274,7 @@ async fn delete_full_snapshot(
 ) -> impl Responder {
     helpers::time_or_accept_with_handle(params.wait.unwrap_or(true), async move {
         let snapshot_name = path.into_inner();
-        Ok(
-            do_delete_full_snapshot(dispatcher.get_ref(), claims.into_inner(), &snapshot_name)
-                .await?,
-        )
+        do_delete_full_snapshot(dispatcher.get_ref(), claims.into_inner(), &snapshot_name).await
     })
     .await
 }
@@ -314,13 +288,13 @@ async fn delete_collection_snapshot(
 ) -> impl Responder {
     helpers::time_or_accept_with_handle(params.wait.unwrap_or(true), async move {
         let (collection_name, snapshot_name) = path.into_inner();
-        Ok(do_delete_collection_snapshot(
+        do_delete_collection_snapshot(
             dispatcher.get_ref(),
             claims.into_inner(),
             &collection_name,
             &snapshot_name,
         )
-        .await?)
+        .await
     })
     .await
 }
@@ -356,8 +330,7 @@ async fn create_shard_snapshot(
         claims.into_inner(),
         collection,
         shard,
-    )
-    .map_err(Into::into);
+    );
 
     helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
 }
@@ -414,14 +387,12 @@ async fn upload_shard_snapshot(
 
     let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
         // TODO: Run this check before the multipart blob is uploaded
-        check_manage_rights(claims.into_inner().as_ref())
-            .map_err(Into::<helpers::HttpError>::into)?;
+        check_manage_rights(claims.into_inner().as_ref())?;
 
         if let Some(checksum) = checksum {
             let snapshot_checksum = hash_file(form.snapshot.file.path()).await?;
             if !hashes_equal(snapshot_checksum.as_str(), checksum.as_str()) {
-                let err = StorageError::checksum_mismatch(snapshot_checksum, checksum);
-                return Result::<_, helpers::HttpError>::Err(err.into());
+                return Err(StorageError::checksum_mismatch(snapshot_checksum, checksum));
             }
         }
 
@@ -429,7 +400,7 @@ async fn upload_shard_snapshot(
             let collection = toc.get_collection(&collection).await?;
             collection.assert_shard_exists(shard).await?;
 
-            Result::<_, helpers::HttpError>::Ok(collection)
+            Result::<_, StorageError>::Ok(collection)
         };
 
         let collection = cancel::future::cancel_on_token(cancel.clone(), future).await??;
@@ -445,10 +416,9 @@ async fn upload_shard_snapshot(
         )
         .await?;
 
-        Result::<_, helpers::HttpError>::Ok(())
+        Ok(())
     })
-    .map_err(Into::into)
-    .map(|res| res.and_then(|res| res));
+    .map(|x| x.map_err(Into::into).and_then(|x| x));
 
     helpers::time_or_accept(future, wait.unwrap_or(true)).await
 }
@@ -458,7 +428,7 @@ async fn download_shard_snapshot(
     toc: web::Data<TableOfContent>,
     path: web::Path<(String, ShardId, String)>,
     claims: Extension<Claims>,
-) -> Result<impl Responder, helpers::HttpError> {
+) -> Result<impl Responder, HttpError> {
     let (collection, shard, snapshot) = path.into_inner();
     check_full_access_to_collection(claims.into_inner().as_ref(), &collection)?;
     let collection = toc.get_collection(&collection).await?;

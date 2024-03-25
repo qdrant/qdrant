@@ -75,8 +75,7 @@ async fn get_point(
         else {
             return Err(StorageError::NotFound {
                 description: format!("Point with id {point_id} does not exists!"),
-            }
-            .into());
+            });
         };
 
         Ok(api::rest::Record::from(record))

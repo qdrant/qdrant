@@ -46,11 +46,10 @@ async fn remove_peer(
         if !params.force && has_shards {
             return Err(StorageError::BadRequest {
                 description: format!("Cannot remove peer {peer_id} as there are shards on it"),
-            }
-            .into());
+            });
         }
 
-        let res = match dispatcher.consensus_state() {
+        match dispatcher.consensus_state() {
             Some(consensus_state) => {
                 consensus_state
                     .propose_consensus_op_with_await(
@@ -62,8 +61,7 @@ async fn remove_peer(
             None => Err(StorageError::BadRequest {
                 description: "Distributed mode disabled.".to_string(),
             }),
-        };
-        Ok(res?)
+        }
     })
     .await
 }
