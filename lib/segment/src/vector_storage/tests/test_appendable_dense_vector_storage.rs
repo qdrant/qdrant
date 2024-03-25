@@ -10,9 +10,9 @@ use crate::data_types::vectors::QueryVector;
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::id_tracker::{IdTracker, IdTrackerSS};
 use crate::types::{Distance, PointIdType, QuantizationConfig, ScalarQuantizationConfig};
-use crate::vector_storage::appendable_mmap_dense_vector_storage::open_appendable_memmap_vector_storage;
+use crate::vector_storage::dense::appendable_mmap_dense_vector_storage::open_appendable_memmap_vector_storage;
+use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_vector_storage;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-use crate::vector_storage::simple_dense_vector_storage::open_simple_vector_storage;
 use crate::vector_storage::{new_raw_scorer, VectorStorage, VectorStorageEnum};
 
 fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {

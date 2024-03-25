@@ -3,18 +3,22 @@ use std::marker::PhantomData;
 use common::types::{PointOffsetType, ScoreType};
 
 use super::score_multi;
-use crate::data_types::vectors::MultiDenseVector;
+use crate::data_types::vectors::{MultiDenseVector, VectorElementType};
 use crate::spaces::metric::Metric;
 use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::MultiVectorStorage;
 
-pub struct MultiMetricQueryScorer<'a, TMetric: Metric, TVectorStorage: MultiVectorStorage> {
+pub struct MultiMetricQueryScorer<
+    'a,
+    TMetric: Metric<VectorElementType>,
+    TVectorStorage: MultiVectorStorage,
+> {
     vector_storage: &'a TVectorStorage,
     query: MultiDenseVector,
     metric: PhantomData<TMetric>,
 }
 
-impl<'a, TMetric: Metric, TVectorStorage: MultiVectorStorage>
+impl<'a, TMetric: Metric<VectorElementType>, TVectorStorage: MultiVectorStorage>
     MultiMetricQueryScorer<'a, TMetric, TVectorStorage>
 {
     pub fn new(query: MultiDenseVector, vector_storage: &'a TVectorStorage) -> Self {
@@ -26,8 +30,8 @@ impl<'a, TMetric: Metric, TVectorStorage: MultiVectorStorage>
     }
 }
 
-impl<'a, TMetric: Metric, TVectorStorage: MultiVectorStorage> QueryScorer<MultiDenseVector>
-    for MultiMetricQueryScorer<'a, TMetric, TVectorStorage>
+impl<'a, TMetric: Metric<VectorElementType>, TVectorStorage: MultiVectorStorage>
+    QueryScorer<MultiDenseVector> for MultiMetricQueryScorer<'a, TMetric, TVectorStorage>
 {
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {

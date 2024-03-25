@@ -10,15 +10,15 @@ use bitvec::prelude::BitSlice;
 use common::types::PointOffsetType;
 use memory::mmap_ops;
 
-use super::{DenseVectorStorage, VectorStorageEnum};
 use crate::common::operation_error::{check_process_stopped, OperationResult};
 use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
-use crate::data_types::vectors::{DenseVector, VectorElementType, VectorRef};
+use crate::data_types::primitive::PrimitiveVectorElement;
+use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::Distance;
 use crate::vector_storage::common::get_async_scorer;
-use crate::vector_storage::mmap_dense_vectors::MmapDenseVectors;
-use crate::vector_storage::VectorStorage;
+use crate::vector_storage::dense::mmap_dense_vectors::MmapDenseVectors;
+use crate::vector_storage::{DenseVectorStorage, VectorStorage, VectorStorageEnum};
 
 const VECTORS_PATH: &str = "matrix.dat";
 const DELETED_PATH: &str = "deleted.dat";
@@ -29,10 +29,10 @@ const DELETED_PATH: &str = "deleted.dat";
 /// but possible to mark some vectors as removed
 ///
 /// Mem-mapped storage can only be constructed from another storage
-pub struct MemmapDenseVectorStorage {
+pub struct MemmapDenseVectorStorage<T: PrimitiveVectorElement> {
     vectors_path: PathBuf,
     deleted_path: PathBuf,
-    mmap_store: Option<MmapDenseVectors>,
+    mmap_store: Option<MmapDenseVectors<T>>,
     distance: Distance,
 }
 
@@ -66,7 +66,7 @@ pub fn open_memmap_vector_storage_with_async_io(
     )))
 }
 
-impl MemmapDenseVectorStorage {
+impl<T: PrimitiveVectorElement> MemmapDenseVectorStorage<T> {
     pub fn prefault_mmap_pages(&self) -> Option<mmap_ops::PrefaultMmapPages> {
         Some(
             self.mmap_store
@@ -75,7 +75,7 @@ impl MemmapDenseVectorStorage {
         )
     }
 
-    pub fn get_mmap_vectors(&self) -> &MmapDenseVectors {
+    pub fn get_mmap_vectors(&self) -> &MmapDenseVectors<T> {
         self.mmap_store.as_ref().unwrap()
     }
 
@@ -87,13 +87,13 @@ impl MemmapDenseVectorStorage {
     }
 }
 
-impl DenseVectorStorage for MemmapDenseVectorStorage {
+impl DenseVectorStorage<VectorElementType> for MemmapDenseVectorStorage<VectorElementType> {
     fn get_dense(&self, key: PointOffsetType) -> &[VectorElementType] {
         self.mmap_store.as_ref().unwrap().get_vector(key)
     }
 }
 
-impl VectorStorage for MemmapDenseVectorStorage {
+impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
     fn vector_dim(&self) -> usize {
         self.mmap_store.as_ref().unwrap().dim
     }
@@ -111,7 +111,7 @@ impl VectorStorage for MemmapDenseVectorStorage {
     }
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {
-        self.get_dense(key).into()
+        T::vector_to_cow(self.mmap_store.as_ref().unwrap().get_vector(key))
     }
 
     fn insert_vector(&mut self, _key: PointOffsetType, _vector: VectorRef) -> OperationResult<()> {
@@ -139,8 +139,9 @@ impl VectorStorage for MemmapDenseVectorStorage {
         let mut deleted_ids = vec![];
         for id in other_ids {
             check_process_stopped(stopped)?;
-            let vector: DenseVector = other.get_vector(id).try_into()?;
-            let raw_bites = mmap_ops::transmute_to_u8_slice(&vector);
+            let other_vector = other.get_vector(id);
+            let vector = T::from_vector_ref(other_vector.as_vec_ref())?;
+            let raw_bites = mmap_ops::transmute_to_u8_slice(vector.as_ref());
             vectors_file.write_all(raw_bites)?;
             end_index += 1;
 
@@ -221,13 +222,13 @@ mod tests {
 
     use super::*;
     use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
-    use crate::data_types::vectors::QueryVector;
+    use crate::data_types::vectors::{DenseVector, QueryVector};
     use crate::fixtures::payload_context_fixture::FixtureIdTracker;
     use crate::id_tracker::IdTracker;
     use crate::types::{PointIdType, QuantizationConfig, ScalarQuantizationConfig};
+    use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_vector_storage;
     use crate::vector_storage::new_raw_scorer;
     use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-    use crate::vector_storage::simple_dense_vector_storage::open_simple_vector_storage;
 
     #[test]
     fn test_basic_persistence() {

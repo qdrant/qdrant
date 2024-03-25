@@ -6,14 +6,15 @@ use bitvec::prelude::BitSlice;
 use common::types::PointOffsetType;
 use sparse::common::sparse_vector::SparseVector;
 
-use super::memmap_dense_vector_storage::MemmapDenseVectorStorage;
-use super::simple_dense_vector_storage::SimpleDenseVectorStorage;
+use super::dense::memmap_dense_vector_storage::MemmapDenseVectorStorage;
+use super::dense::simple_dense_vector_storage::SimpleDenseVectorStorage;
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
+use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{MultiDenseVector, VectorElementType, VectorRef};
 use crate::types::Distance;
-use crate::vector_storage::appendable_mmap_dense_vector_storage::AppendableMmapDenseVectorStorage;
+use crate::vector_storage::dense::appendable_mmap_dense_vector_storage::AppendableMmapDenseVectorStorage;
 use crate::vector_storage::simple_multi_dense_vector_storage::SimpleMultiDenseVectorStorage;
 use crate::vector_storage::simple_sparse_vector_storage::SimpleSparseVectorStorage;
 
@@ -97,8 +98,8 @@ pub trait VectorStorage {
     fn deleted_vector_bitslice(&self) -> &BitSlice;
 }
 
-pub trait DenseVectorStorage: VectorStorage {
-    fn get_dense(&self, key: PointOffsetType) -> &[VectorElementType];
+pub trait DenseVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
+    fn get_dense(&self, key: PointOffsetType) -> &[T];
 }
 
 pub trait SparseVectorStorage: VectorStorage {
@@ -110,9 +111,9 @@ pub trait MultiVectorStorage: VectorStorage {
 }
 
 pub enum VectorStorageEnum {
-    DenseSimple(SimpleDenseVectorStorage),
-    DenseMemmap(Box<MemmapDenseVectorStorage>),
-    DenseAppendableMemmap(Box<AppendableMmapDenseVectorStorage>),
+    DenseSimple(SimpleDenseVectorStorage<VectorElementType>),
+    DenseMemmap(Box<MemmapDenseVectorStorage<VectorElementType>>),
+    DenseAppendableMemmap(Box<AppendableMmapDenseVectorStorage<VectorElementType>>),
     SparseSimple(SimpleSparseVectorStorage),
     MultiDenseSimple(SimpleMultiDenseVectorStorage),
 }

@@ -5,6 +5,7 @@ use common::types::PointOffsetType;
 use criterion::{criterion_group, criterion_main, Criterion};
 use itertools::Itertools;
 use rand::{thread_rng, Rng};
+use segment::data_types::vectors::VectorElementType;
 use segment::fixtures::index_fixtures::{random_vector, FakeFilterContext, TestRawScorerProducer};
 use segment::index::hnsw_index::graph_layers::GraphLayers;
 use segment::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
@@ -21,7 +22,7 @@ const EF_CONSTRUCT: usize = 64;
 const EF: usize = 64;
 const USE_HEURISTIC: bool = true;
 
-fn build_index<TMetric: Metric>(
+fn build_index<TMetric: Metric<VectorElementType>>(
     num_vectors: usize,
 ) -> (TestRawScorerProducer<TMetric>, GraphLayers<GraphLinksRam>) {
     let mut rng = thread_rng();

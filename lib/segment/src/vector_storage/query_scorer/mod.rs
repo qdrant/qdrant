@@ -1,6 +1,6 @@
 use common::types::{PointOffsetType, ScoreType};
 
-use crate::data_types::vectors::MultiDenseVector;
+use crate::data_types::vectors::{MultiDenseVector, VectorElementType};
 use crate::spaces::metric::Metric;
 
 pub mod custom_query_scorer;
@@ -19,7 +19,7 @@ pub trait QueryScorer<TVector: ?Sized> {
 
 /// Colbert MaxSim metric, metric for multi-dense vectors
 /// https://arxiv.org/pdf/2112.01488.pdf, figure 1
-pub fn score_multi<TMetric: Metric>(
+pub fn score_multi<TMetric: Metric<VectorElementType>>(
     multidense_a: &MultiDenseVector,
     multidense_b: &MultiDenseVector,
 ) -> ScoreType {
