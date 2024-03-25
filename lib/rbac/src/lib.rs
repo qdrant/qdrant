@@ -4,6 +4,9 @@ use jwt::Claims;
 
 pub mod jwt;
 
+#[allow(dead_code)]
+mod access_control;
+
 #[derive(Clone)]
 pub struct JwtParser {
     key: DecodingKey,
