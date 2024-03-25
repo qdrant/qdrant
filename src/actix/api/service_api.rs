@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::sync::Arc;
 
 use actix_web::http::header::ContentType;
@@ -7,13 +8,16 @@ use actix_web::web::Query;
 use actix_web::{get, post, web, HttpResponse, Responder};
 use actix_web_validator::Json;
 use common::types::{DetailsLevel, TelemetryDetail};
+use rbac::jwt::Claims;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::{Deserialize, Serialize};
+use storage::content_manager::claims::check_manage_rights;
 use storage::content_manager::toc::TableOfContent;
 use tokio::sync::Mutex;
 
-use crate::actix::helpers::{self, process_response};
+use crate::actix::auth::Extension;
+use crate::actix::helpers::{self, process_response_error};
 use crate::common::health;
 use crate::common::helpers::LocksOption;
 use crate::common::metrics::MetricsData;
@@ -27,11 +31,13 @@ pub struct TelemetryParam {
 }
 
 #[get("/telemetry")]
-async fn telemetry(
+fn telemetry(
     telemetry_collector: web::Data<Mutex<TelemetryCollector>>,
     params: Query<TelemetryParam>,
-) -> impl Responder {
+    claims: Extension<Claims>,
+) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
+        check_manage_rights(claims.into_inner().as_ref())?;
         let anonymize = params.anonymize.unwrap_or(false);
         let details_level = params
             .details_level
@@ -49,7 +55,6 @@ async fn telemetry(
         };
         Ok(telemetry_data)
     })
-    .await
 }
 
 #[derive(Deserialize, Serialize, JsonSchema)]
@@ -61,7 +66,12 @@ pub struct MetricsParam {
 async fn metrics(
     telemetry_collector: web::Data<Mutex<TelemetryCollector>>,
     params: Query<MetricsParam>,
-) -> impl Responder {
+    claims: Extension<Claims>,
+) -> HttpResponse {
+    if let Err(err) = check_manage_rights(claims.into_inner().as_ref()) {
+        return process_response_error(err, Instant::now());
+    }
+
     let anonymize = params.anonymize.unwrap_or(false);
     let telemetry_collector = telemetry_collector.lock().await;
     let telemetry_data = telemetry_collector
@@ -82,35 +92,44 @@ async fn metrics(
 }
 
 #[post("/locks")]
-async fn put_locks(
+fn put_locks(
     toc: web::Data<TableOfContent>,
     locks_option: Json<LocksOption>,
-) -> impl Responder {
-    let timing = Instant::now();
-    let result = LocksOption {
-        write: toc.get_ref().is_write_locked(),
-        error_message: toc.get_ref().get_lock_error_message(),
-    };
-    toc.get_ref()
-        .set_locks(locks_option.write, locks_option.error_message.clone());
-    process_response(Ok(result), timing)
+    claims: Extension<Claims>,
+) -> impl Future<Output = HttpResponse> {
+    helpers::time(async move {
+        check_manage_rights(claims.into_inner().as_ref())?;
+        let result = LocksOption {
+            write: toc.get_ref().is_write_locked(),
+            error_message: toc.get_ref().get_lock_error_message(),
+        };
+        toc.get_ref()
+            .set_locks(locks_option.write, locks_option.error_message.clone());
+        Ok(result)
+    })
 }
 
 #[get("/locks")]
-async fn get_locks(toc: web::Data<TableOfContent>) -> impl Responder {
-    let timing = Instant::now();
-    let result = LocksOption {
-        write: toc.get_ref().is_write_locked(),
-        error_message: toc.get_ref().get_lock_error_message(),
-    };
-    process_response(Ok(result), timing)
+fn get_locks(
+    toc: web::Data<TableOfContent>,
+    claims: Extension<Claims>,
+) -> impl Future<Output = HttpResponse> {
+    helpers::time(async move {
+        check_manage_rights(claims.into_inner().as_ref())?;
+        let result = LocksOption {
+            write: toc.get_ref().is_write_locked(),
+            error_message: toc.get_ref().get_lock_error_message(),
+        };
+        Ok(result)
+    })
 }
 
 #[get("/stacktrace")]
-async fn get_stacktrace() -> impl Responder {
-    let timing = Instant::now();
-    let result = get_stack_trace();
-    process_response(Ok(result), timing)
+fn get_stacktrace(claims: Extension<Claims>) -> impl Future<Output = HttpResponse> {
+    helpers::time(async move {
+        check_manage_rights(claims.into_inner().as_ref())?;
+        Ok(get_stack_trace())
+    })
 }
 
 #[get("/healthz")]
