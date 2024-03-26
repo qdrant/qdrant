@@ -42,7 +42,7 @@ log = "0.4"
 env_logger = "0.11"
 merge = "0.1.0"
 async-trait = "0.1.79"
-arc-swap = "1.7.0"
+arc-swap = "1.7.1"
 tonic = { workspace = true }
 uuid = { workspace = true }
 url = { version = "2", features = ["serde"] }
