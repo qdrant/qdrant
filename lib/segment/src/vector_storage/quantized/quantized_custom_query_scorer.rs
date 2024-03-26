@@ -1,6 +1,6 @@
 use common::types::{PointOffsetType, ScoreType};
 
-use crate::data_types::vectors::{DenseVector, VectorElementType};
+use crate::data_types::vectors::{to_primitives_slice, DenseVector, VectorElementType};
 use crate::types::Distance;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
@@ -44,7 +44,9 @@ where
             .unwrap();
         let query = original_query
             .clone()
-            .transform(|v: DenseVector| Ok(quantized_storage.encode_query(&v)))
+            .transform(|v: DenseVector| {
+                Ok(quantized_storage.encode_query(to_primitives_slice(v.as_slice())))
+            })
             .unwrap();
 
         Self {
@@ -69,7 +71,8 @@ where
 {
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         self.query
-            .score_by(|this| self.quantized_storage.score_point(this, idx))
+            .score_by(|this| self.quantized_storage.score_point(this, idx).into())
+            .into()
     }
 
     fn score(&self, v2: &[VectorElementType]) -> ScoreType {

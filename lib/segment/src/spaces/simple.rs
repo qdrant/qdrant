@@ -72,7 +72,7 @@ impl Metric<VectorElementType> for EuclidMetric {
 
 impl MetricPostProcessing for EuclidMetric {
     fn postprocess(score: ScoreType) -> ScoreType {
-        score.abs().sqrt()
+        score.abs().sqrt().into()
     }
 }
 
@@ -116,7 +116,7 @@ impl Metric<VectorElementType> for ManhattanMetric {
 
 impl MetricPostProcessing for ManhattanMetric {
     fn postprocess(score: ScoreType) -> ScoreType {
-        score.abs()
+        score.abs().into()
     }
 }
 
@@ -211,30 +211,28 @@ impl MetricPostProcessing for CosineMetric {
 }
 
 pub fn euclid_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
-    -v1.iter()
-        .zip(v2)
-        .map(|(a, b)| (a - b).powi(2))
-        .sum::<ScoreType>()
+    (-v1.iter().zip(v2).map(|(a, b)| (a - b).powi(2)).sum::<f32>()).into()
 }
 
 pub fn manhattan_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
-    -v1.iter()
-        .zip(v2)
-        .map(|(a, b)| (a - b).abs())
-        .sum::<ScoreType>()
+    (-v1.iter().zip(v2).map(|(a, b)| (a - b).abs()).sum::<f32>()).into()
 }
 
 pub fn cosine_preprocess(vector: DenseVector) -> DenseVector {
-    let mut length: f32 = vector.iter().map(|x| x * x).sum();
-    if length < f32::EPSILON {
+    let mut length = vector.iter().map(|x| x * x).sum::<VectorElementType>();
+    if length < VectorElementType::EPSILON {
         return vector;
     }
-    length = length.sqrt();
-    vector.iter().map(|x| x / length).collect()
+    length = length.sqrt().into();
+    vector.iter().map(|x| *x / length).collect()
 }
 
 pub fn dot_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
-    v1.iter().zip(v2).map(|(a, b)| a * b).sum()
+    v1.iter()
+        .zip(v2)
+        .map(|(a, b)| *a * *b)
+        .sum::<VectorElementType>()
+        .into()
 }
 
 #[cfg(test)]

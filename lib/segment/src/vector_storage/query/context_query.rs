@@ -55,7 +55,7 @@ impl<T> ContextPair<T> {
 
         let difference = positive - negative - MARGIN;
 
-        fast_sigmoid(ScoreType::min(difference, 0.0))
+        fast_sigmoid(ScoreType::min(difference, 0.0.into()))
     }
 }
 

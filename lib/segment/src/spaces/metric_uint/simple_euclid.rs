@@ -15,10 +15,7 @@ impl Metric<VectorElementTypeByte> for EuclidMetric {
     }
 
     fn preprocess(vector: DenseVector) -> TypedDenseVector<VectorElementTypeByte> {
-        vector
-            .into_iter()
-            .map(|x| x as VectorElementTypeByte)
-            .collect()
+        vector.into_iter().map(|x| x.into()).collect()
     }
 }
 
@@ -26,13 +23,15 @@ fn euclid_similarity_bytes(
     v1: &[VectorElementTypeByte],
     v2: &[VectorElementTypeByte],
 ) -> ScoreType {
-    -v1.iter()
-        .zip(v2)
-        .map(|(a, b)| {
-            let diff = *a as i32 - *b as i32;
-            diff * diff
-        })
-        .sum::<i32>() as ScoreType
+    ScoreType::from(
+        -v1.iter()
+            .zip(v2)
+            .map(|(a, b)| {
+                let diff = *a as i32 - *b as i32;
+                diff * diff
+            })
+            .sum::<i32>(),
+    )
 }
 
 #[cfg(test)]

@@ -118,7 +118,7 @@ impl<'a, 'b> SearchContext<'a, 'b> {
             // reconstruct sparse vector and score against query
             let sparse_vector = SparseVector { indices, values };
             self.result_queue.push(ScoredPointOffset {
-                score: sparse_vector.score(&self.query).unwrap_or(0.0),
+                score: sparse_vector.score(&self.query).unwrap_or(0.0).into(),
                 idx: id,
             });
         }
@@ -136,7 +136,7 @@ impl<'a, 'b> SearchContext<'a, 'b> {
         // init batch scores
         let batch_len = batch_last_id - batch_start_id + 1;
         self.pooled.scores.clear(); // keep underlying allocated memory
-        self.pooled.scores.resize(batch_len as usize, 0.0);
+        self.pooled.scores.resize(batch_len as usize, 0.0.into());
 
         for posting in self.postings_iterators.iter_mut() {
             // offset at which the posting list stops contributing to the batch (relative to the batch start)
@@ -156,7 +156,7 @@ impl<'a, 'b> SearchContext<'a, 'b> {
                 let element_score = element.weight * posting.query_weight;
                 // update score for id
                 let local_id = (element_id - batch_start_id) as usize;
-                self.pooled.scores[local_id] += element_score;
+                self.pooled.scores[local_id] += element_score.into();
             }
             // advance posting list iterator
             match posting_stopped_at {
@@ -178,7 +178,7 @@ impl<'a, 'b> SearchContext<'a, 'b> {
             None
         };
         for (local_index, &score) in self.pooled.scores.iter().enumerate() {
-            if score != 0.0 && Some(score) > min_score_to_beat {
+            if *score != 0.0 && Some(*score) > min_score_to_beat.map(|s| *s) {
                 let real_id = batch_start_id + local_index as PointOffsetType;
                 // do not score if filter condition is not satisfied
                 if !filter_condition(real_id) {
@@ -204,7 +204,7 @@ impl<'a, 'b> SearchContext<'a, 'b> {
             }
             let score = element.weight * posting.query_weight;
             self.result_queue.push(ScoredPointOffset {
-                score,
+                score: score.into(),
                 idx: element.record_id,
             });
         }
@@ -310,17 +310,17 @@ impl<'a, 'b> SearchContext<'a, 'b> {
             if self.use_pruning && self.result_queue.len() == self.top {
                 // current min score
                 let new_min_score = self.result_queue.top().unwrap().score;
-                if new_min_score == best_min_score {
+                if *new_min_score == best_min_score {
                     // no improvement in lowest best score since last pruning - skip pruning
                     continue;
                 } else {
-                    best_min_score = new_min_score;
+                    best_min_score = *new_min_score;
                 }
                 // make sure the first posting list is the longest for pruning
                 self.promote_longest_posting_lists_to_the_front();
 
                 // prune posting list that cannot possibly contribute to the top results
-                let pruned = self.prune_longest_posting_list(new_min_score);
+                let pruned = self.prune_longest_posting_list(*new_min_score);
                 if pruned {
                     // update min_record_id
                     self.min_record_id = Self::next_min_id(&self.postings_iterators);

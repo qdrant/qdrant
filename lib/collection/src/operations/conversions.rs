@@ -17,7 +17,8 @@ use common::types::ScoreType;
 use itertools::Itertools;
 use segment::data_types::order_by::{OrderBy, StartFrom};
 use segment::data_types::vectors::{
-    BatchVectorStruct, Named, NamedQuery, Vector, VectorStruct, DEFAULT_VECTOR_NAME,
+    from_primitives_vec, to_primitives_vec, BatchVectorStruct, Named, NamedQuery, Vector,
+    VectorStruct, DEFAULT_VECTOR_NAME,
 };
 use segment::types::{DateTimeWrapper, Distance, QuantizationConfig, ScoredPoint};
 use segment::vector_storage::query::context_query::{ContextPair, ContextQuery};
@@ -972,8 +973,11 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for CoreSearchRequest {
             })?;
         }
 
-        let vector_struct =
-            api::grpc::conversions::into_named_vector_struct(vector_name, vector, sparse_indices)?;
+        let vector_struct = api::grpc::conversions::into_named_vector_struct(
+            vector_name,
+            from_primitives_vec(vector),
+            sparse_indices,
+        )?;
 
         Ok(Self {
             query: QueryEnum::Nearest(vector_struct),
@@ -983,7 +987,7 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for CoreSearchRequest {
             offset: offset.map(|v| v as usize).unwrap_or_default(),
             with_payload: with_payload.map(TryInto::try_into).transpose()?,
             with_vector: with_vectors.map(Into::into),
-            score_threshold: score_threshold.map(|s| s as ScoreType),
+            score_threshold: score_threshold.map(|s| ScoreType::from(s)),
         })
     }
 }
@@ -995,7 +999,7 @@ impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
         let (vector, sparse_indices) = match request.vector.get_vector().to_owned() {
             Vector::Dense(vector) => (vector, None),
             Vector::Sparse(vector) => (
-                vector.values,
+                from_primitives_vec(vector.values),
                 Some(api::grpc::qdrant::SparseIndices {
                     data: vector.indices,
                 }),
@@ -1007,13 +1011,13 @@ impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
         };
         Self {
             collection_name: collection_id,
-            vector,
+            vector: to_primitives_vec(vector),
             filter: request.filter.clone().map(|f| f.into()),
             limit: request.limit as u64,
             with_vectors: request.with_vector.clone().map(|wv| wv.into()),
             with_payload: request.with_payload.clone().map(|wp| wp.into()),
             params: request.params.map(|sp| sp.into()),
-            score_threshold: request.score_threshold,
+            score_threshold: request.score_threshold.map(|t| *t),
             offset: request.offset.map(|x| x as u64),
             vector_name: match request.vector.get_name() {
                 DEFAULT_VECTOR_NAME => None,
@@ -1090,7 +1094,7 @@ impl<'a> From<CollectionCoreSearchRequest<'a>> for api::grpc::qdrant::CoreSearch
             with_vectors: request.with_vector.clone().map(|wv| wv.into()),
             with_payload: request.with_payload.clone().map(|wp| wp.into()),
             params: request.params.map(|sp| sp.into()),
-            score_threshold: request.score_threshold,
+            score_threshold: request.score_threshold.map(|t| *t),
             offset: Some(request.offset as u64),
             vector_name: Some(request.query.get_vector_name().to_owned()),
             read_consistency: None,
@@ -1165,7 +1169,7 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
                     api::grpc::qdrant::query_enum::Query::NearestNeighbors(vector) => {
                         QueryEnum::Nearest(api::grpc::conversions::into_named_vector_struct(
                             value.vector_name,
-                            vector.data,
+                            from_primitives_vec(vector.data),
                             vector.indices.clone(),
                         )?)
                     }
@@ -1235,7 +1239,7 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
                     .map(|with_vectors| with_vectors.into())
                     .unwrap_or_default(),
             ),
-            score_threshold: value.score_threshold,
+            score_threshold: value.score_threshold.map(|t| t.into()),
         })
     }
 }
@@ -1247,7 +1251,7 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for SearchRequestInternal {
         Ok(SearchRequestInternal {
             vector: api::grpc::conversions::into_named_vector_struct(
                 value.vector_name,
-                value.vector,
+                from_primitives_vec(value.vector),
                 value.sparse_indices,
             )?,
             filter: value.filter.map(|f| f.try_into()).transpose()?,
@@ -1261,7 +1265,7 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for SearchRequestInternal {
                     .map(|with_vectors| with_vectors.into())
                     .unwrap_or_default(),
             ),
-            score_threshold: value.score_threshold,
+            score_threshold: value.score_threshold.map(|t| ScoreType::from(t)),
         })
     }
 }
@@ -1448,7 +1452,7 @@ impl TryFrom<api::grpc::qdrant::VectorExample> for RecommendExample {
                     Ok(Self::PointId(id.try_into()?))
                 }
                 api::grpc::qdrant::vector_example::Example::Vector(vector) => {
-                    Ok(Self::Dense(vector.data))
+                    Ok(Self::Dense(from_primitives_vec(vector.data)))
                 }
             })
     }
@@ -1499,7 +1503,7 @@ impl TryFrom<api::grpc::qdrant::RecommendPoints> for RecommendRequestInternal {
                     .map(|with_vectors| with_vectors.into())
                     .unwrap_or_default(),
             ),
-            score_threshold: value.score_threshold,
+            score_threshold: value.score_threshold.map(|t| t.into()),
             using: value.using.map(|name| name.into()),
             lookup_from: value.lookup_from.map(|x| x.into()),
         })

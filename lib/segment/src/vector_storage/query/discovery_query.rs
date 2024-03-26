@@ -70,7 +70,7 @@ impl<T> Query<T> for DiscoveryQuery<T> {
         let target_similarity = similarity(&self.target);
         let sigmoid_similarity = scaled_fast_sigmoid(target_similarity);
 
-        rank as ScoreType + sigmoid_similarity
+        ScoreType::from(rank) + sigmoid_similarity
     }
 }
 

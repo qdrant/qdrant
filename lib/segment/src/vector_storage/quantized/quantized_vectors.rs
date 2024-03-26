@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use super::quantized_scorer_builder::QuantizedScorerBuilder;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::vector_utils::TrySetCapacityExact;
-use crate::data_types::vectors::{QueryVector, VectorElementType};
+use crate::data_types::vectors::{to_primitives_slice, QueryVector, VectorElementType};
 use crate::types::{
     BinaryQuantization, BinaryQuantizationConfig, CompressionRatio, Distance, ProductQuantization,
     ProductQuantizationConfig, QuantizationConfig, ScalarQuantization, ScalarQuantizationConfig,
@@ -129,7 +129,8 @@ impl QuantizedVectors {
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
         let count = vector_storage.total_vector_count();
-        let vectors = (0..count as PointOffsetType).map(|i| vector_storage.get_dense(i));
+        let vectors =
+            (0..count as PointOffsetType).map(|i| to_primitives_slice(vector_storage.get_dense(i)));
         let on_disk_vector_storage = vector_storage.is_on_disk();
         let distance = vector_storage.distance();
         let dim = vector_storage.vector_dim();
@@ -262,7 +263,7 @@ impl QuantizedVectors {
     }
 
     fn create_scalar<'a>(
-        vectors: impl Iterator<Item = &'a [VectorElementType]> + Clone,
+        vectors: impl Iterator<Item = &'a [f32]> + Clone,
         vector_parameters: &quantization::VectorParameters,
         scalar_config: &ScalarQuantizationConfig,
         path: &Path,
@@ -302,7 +303,7 @@ impl QuantizedVectors {
     }
 
     fn create_pq<'a>(
-        vectors: impl Iterator<Item = &'a [VectorElementType]> + Clone + Send,
+        vectors: impl Iterator<Item = &'a [f32]> + Clone + Send,
         vector_parameters: &quantization::VectorParameters,
         pq_config: &ProductQuantizationConfig,
         path: &Path,
@@ -347,7 +348,7 @@ impl QuantizedVectors {
     }
 
     fn create_binary<'a>(
-        vectors: impl Iterator<Item = &'a [VectorElementType]> + Clone,
+        vectors: impl Iterator<Item = &'a [f32]> + Clone,
         vector_parameters: &quantization::VectorParameters,
         binary_config: &BinaryQuantizationConfig,
         path: &Path,

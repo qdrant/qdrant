@@ -1,6 +1,6 @@
 use common::types::{PointOffsetType, ScoreType};
 
-use crate::data_types::vectors::{DenseVector, VectorElementType};
+use crate::data_types::vectors::{to_primitives_slice, DenseVector, VectorElementType};
 use crate::types::Distance;
 use crate::vector_storage::query_scorer::QueryScorer;
 
@@ -24,7 +24,7 @@ where
         distance: Distance,
     ) -> Self {
         let original_query = distance.preprocess_vector(raw_query);
-        let query = quantized_data.encode_query(&original_query);
+        let query = quantized_data.encode_query(to_primitives_slice(original_query.as_slice()));
 
         Self {
             original_query,
@@ -41,7 +41,7 @@ where
     TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,
 {
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        self.quantized_data.score_point(&self.query, idx)
+        self.quantized_data.score_point(&self.query, idx).into()
     }
 
     fn score(&self, v2: &[VectorElementType]) -> ScoreType {
@@ -49,10 +49,10 @@ where
             false,
             "This method is not expected to be called for quantized scorer"
         );
-        self.distance.similarity(&self.original_query, v2)
+        self.distance.similarity(&self.original_query, v2).into()
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
-        self.quantized_data.score_internal(point_a, point_b)
+        self.quantized_data.score_internal(point_a, point_b).into()
     }
 }

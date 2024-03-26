@@ -1127,8 +1127,10 @@ name = "common"
 version = "0.0.0"
 dependencies = [
  "lazy_static",
+ "num-traits",
  "num_cpus",
  "ordered-float 4.2.0",
+ "schemars",
  "semver",
  "serde",
  "thiserror",

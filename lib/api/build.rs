@@ -24,6 +24,7 @@ fn main() -> std::io::Result<()> {
         .configure_validation()
         .file_descriptor_set_path(build_out_dir.join("qdrant_descriptor.bin"))
         .out_dir("src/grpc/") // saves generated structures at this location
+        .protoc_arg("--experimental_allow_proto3_optional")
         .compile(
             &["src/grpc/proto/qdrant.proto"], // proto entry point
             &["src/grpc/proto"], // specify the root location to search proto dependencies

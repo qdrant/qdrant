@@ -15,8 +15,8 @@ pub(crate) unsafe fn euclid_similarity_neon(
 ) -> ScoreType {
     let n = v1.len();
     let m = n - (n % 16);
-    let mut ptr1: *const f32 = v1.as_ptr();
-    let mut ptr2: *const f32 = v2.as_ptr();
+    let mut ptr1: *const f32 = v1.as_ptr() as *const f32;
+    let mut ptr2: *const f32 = v2.as_ptr() as *const f32;
     let mut sum1 = vdupq_n_f32(0.);
     let mut sum2 = vdupq_n_f32(0.);
     let mut sum3 = vdupq_n_f32(0.);
@@ -44,7 +44,7 @@ pub(crate) unsafe fn euclid_similarity_neon(
     for i in 0..n - m {
         result += (*ptr1.add(i) - *ptr2.add(i)).powi(2);
     }
-    -result
+    ScoreType::from(-result)
 }
 
 #[cfg(target_feature = "neon")]
@@ -54,8 +54,8 @@ pub(crate) unsafe fn manhattan_similarity_neon(
 ) -> ScoreType {
     let n = v1.len();
     let m = n - (n % 16);
-    let mut ptr1: *const f32 = v1.as_ptr();
-    let mut ptr2: *const f32 = v2.as_ptr();
+    let mut ptr1: *const f32 = v1.as_ptr() as *const f32;
+    let mut ptr2: *const f32 = v2.as_ptr() as *const f32;
     let mut sum1 = vdupq_n_f32(0.);
     let mut sum2 = vdupq_n_f32(0.);
     let mut sum3 = vdupq_n_f32(0.);
@@ -83,14 +83,14 @@ pub(crate) unsafe fn manhattan_similarity_neon(
     for i in 0..n - m {
         result += (*ptr1.add(i) - *ptr2.add(i)).abs();
     }
-    -result
+    ScoreType::from(-result)
 }
 
 #[cfg(target_feature = "neon")]
 pub(crate) unsafe fn cosine_preprocess_neon(vector: DenseVector) -> DenseVector {
     let n = vector.len();
     let m = n - (n % 16);
-    let mut ptr: *const f32 = vector.as_ptr();
+    let mut ptr: *const f32 = vector.as_ptr() as *const f32;
     let mut sum1 = vdupq_n_f32(0.);
     let mut sum2 = vdupq_n_f32(0.);
     let mut sum3 = vdupq_n_f32(0.);
@@ -121,7 +121,7 @@ pub(crate) unsafe fn cosine_preprocess_neon(vector: DenseVector) -> DenseVector 
         return vector;
     }
     let length = length.sqrt();
-    vector.into_iter().map(|x| x / length).collect()
+    vector.into_iter().map(|x| x / length.into()).collect()
 }
 
 #[cfg(target_feature = "neon")]
@@ -131,8 +131,8 @@ pub(crate) unsafe fn dot_similarity_neon(
 ) -> ScoreType {
     let n = v1.len();
     let m = n - (n % 16);
-    let mut ptr1: *const f32 = v1.as_ptr();
-    let mut ptr2: *const f32 = v2.as_ptr();
+    let mut ptr1: *const f32 = v1.as_ptr() as *const f32;
+    let mut ptr2: *const f32 = v2.as_ptr() as *const f32;
     let mut sum1 = vdupq_n_f32(0.);
     let mut sum2 = vdupq_n_f32(0.);
     let mut sum3 = vdupq_n_f32(0.);
@@ -152,7 +152,7 @@ pub(crate) unsafe fn dot_similarity_neon(
     for i in 0..n - m {
         result += (*ptr1.add(i)) * (*ptr2.add(i));
     }
-    result
+    result.into()
 }
 
 #[cfg(test)]

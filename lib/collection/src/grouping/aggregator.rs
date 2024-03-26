@@ -127,8 +127,8 @@ impl GroupsAggregator {
         self.group_best_scores
             .iter()
             .sorted_by_key(|(_, score)| match self.order {
-                Order::LargeBetter => -OrderedFloat(**score),
-                Order::SmallBetter => OrderedFloat(**score),
+                Order::LargeBetter => -OrderedFloat(***score),
+                Order::SmallBetter => OrderedFloat(***score),
             })
             .take(self.max_groups)
             .map(|(k, _)| k)
