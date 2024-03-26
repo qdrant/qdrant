@@ -27,6 +27,17 @@ pub struct AuthKeys {
 }
 
 impl AuthKeys {
+    fn get_jwt_parser(service_config: &ServiceConfig) -> Option<JwtParser> {
+        if service_config.jwt_rbac.unwrap_or_default() {
+            service_config
+                .api_key
+                .as_ref()
+                .map(|secret| JwtParser::new(secret))
+        } else {
+            None
+        }
+    }
+
     /// Defines the auth scheme given the service config
     ///
     /// Returns None if no scheme is specified.
@@ -39,10 +50,7 @@ impl AuthKeys {
             (read_write, read_only) => Some(Self {
                 read_write,
                 read_only,
-                jwt_parser: service_config
-                    .api_key
-                    .as_ref()
-                    .map(|secret| JwtParser::new(secret)),
+                jwt_parser: Self::get_jwt_parser(service_config),
                 toc,
             }),
         }
