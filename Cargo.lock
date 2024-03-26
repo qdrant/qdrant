@@ -1074,6 +1074,7 @@ dependencies = [
  "io",
  "issues",
  "itertools 0.12.1",
+ "lazy_static",
  "log",
  "merge",
  "ordered-float 4.2.0",

@@ -2,7 +2,9 @@ use std::cmp;
 use std::sync::Arc;
 
 use futures::{future, TryStreamExt as _};
+use lazy_static::lazy_static;
 use segment::types::QuantizationConfig;
+use semver::Version;
 
 use super::Collection;
 use crate::operations::config_diff::*;
@@ -11,6 +13,13 @@ use crate::operations::types::*;
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::replica_set::{Change, ReplicaState};
 use crate::shards::shard::PeerId;
+
+lazy_static! {
+    /// When dropping a shard, only cancel all related shard transfers to and from it when all nodes
+    /// are running at least this version. That way, we avoid getting an inconsistent state in
+    /// consensus if some nodes are still running an older version.
+    static ref ABORT_TRANSFERS_ON_SHARD_DROP_FROM_VERSION: Version = Version::parse("1.9.0-dev").unwrap();
+}
 
 impl Collection {
     /// Updates collection params:
@@ -193,14 +202,19 @@ impl Collection {
 
             replica_set.remove_peer(peer_id).await?;
 
-            // Collect shard transfers related to removed shard...
-            let transfers = shard_holder
-                .get_transfers(|transfer| transfer.from == peer_id || transfer.to == peer_id);
+            let all_nodes_cancel_transfers = self
+                .channel_service
+                .all_peers_at_version(ABORT_TRANSFERS_ON_SHARD_DROP_FROM_VERSION.clone());
+            if all_nodes_cancel_transfers {
+                // Collect shard transfers related to removed shard...
+                let transfers = shard_holder
+                    .get_transfers(|transfer| transfer.from == peer_id || transfer.to == peer_id);
 
-            // ...and cancel transfer tasks and remove transfers from internal state
-            for transfer in transfers {
-                self.finish_shard_transfer(transfer, Some(&shard_holder))
-                    .await?;
+                // ...and cancel transfer tasks and remove transfers from internal state
+                for transfer in transfers {
+                    self.finish_shard_transfer(transfer, Some(&shard_holder))
+                        .await?;
+                }
             }
         }
         Ok(())
