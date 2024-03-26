@@ -1,4 +1,5 @@
-use num_traits::{float::FloatCore, FromPrimitive};
+use crate::types::Float;
+use num_traits::FromPrimitive;
 use ordered_float::OrderedFloat;
 use schemars::{gen::SchemaGenerator, schema::Schema, JsonSchema};
 use serde::{Deserialize, Serialize};
@@ -8,10 +9,6 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::iter::Sum;
 use std::ops::{Add, AddAssign, Deref, DerefMut, Div, Mul, Neg, Sub};
-
-pub trait Float: FloatCore {}
-
-impl Float for f32 {}
 
 /// Type of vector matching score
 #[repr(transparent)]

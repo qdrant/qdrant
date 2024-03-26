@@ -1,7 +1,12 @@
 pub mod score_type;
+use num_traits::float::FloatCore;
 use ordered_float::OrderedFloat;
 pub use score_type::*;
 use std::cmp::Ordering;
+
+pub trait Float: FloatCore {}
+
+impl Float for f32 {}
 
 /// Type of point index inside a segment
 pub type PointOffsetType = u32;
