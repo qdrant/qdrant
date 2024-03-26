@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-use common::validation::{validate_move_shard_different_peers, validate_range_generic};
+use common::validation::{validate_range_generic, validate_shard_different_peers};
 use validator::{Validate, ValidationError, ValidationErrors};
 
 use super::qdrant as grpc;
@@ -126,7 +126,13 @@ impl Validate for grpc::update_collection_cluster_setup_request::Operation {
 
 impl Validate for grpc::MoveShard {
     fn validate(&self) -> Result<(), ValidationErrors> {
-        validate_move_shard_different_peers(self.from_peer_id, self.to_peer_id)
+        validate_shard_different_peers(self.from_peer_id, self.to_peer_id)
+    }
+}
+
+impl Validate for crate::grpc::qdrant::AbortShardTransfer {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        validate_shard_different_peers(self.from_peer_id, self.to_peer_id)
     }
 }
 

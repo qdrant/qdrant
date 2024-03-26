@@ -4,6 +4,7 @@
 ## Table of Contents
 
 - [collections.proto](#collections-proto)
+    - [AbortShardTransfer](#qdrant-AbortShardTransfer)
     - [AliasDescription](#qdrant-AliasDescription)
     - [AliasOperations](#qdrant-AliasOperations)
     - [BinaryQuantization](#qdrant-BinaryQuantization)
@@ -252,6 +253,23 @@
 <p align="right"><a href="#top">Top</a></p>
 
 ## collections.proto
+
+
+
+<a name="qdrant-AbortShardTransfer"></a>
+
+### AbortShardTransfer
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| shard_id | [uint32](#uint32) |  | Local shard id |
+| from_peer_id | [uint64](#uint64) |  |  |
+| to_peer_id | [uint64](#uint64) |  |  |
+
+
+
 
 
 
@@ -1251,7 +1269,7 @@ Note: 1kB = 1 vector of size 256. |
 | collection_name | [string](#string) |  | Name of the collection |
 | move_shard | [MoveShard](#qdrant-MoveShard) |  |  |
 | replicate_shard | [MoveShard](#qdrant-MoveShard) |  |  |
-| abort_transfer | [MoveShard](#qdrant-MoveShard) |  |  |
+| abort_transfer | [AbortShardTransfer](#qdrant-AbortShardTransfer) |  |  |
 | drop_replica | [Replica](#qdrant-Replica) |  |  |
 | create_shard_key | [CreateShardKey](#qdrant-CreateShardKey) |  |  |
 | delete_shard_key | [DeleteShardKey](#qdrant-DeleteShardKey) |  |  |
