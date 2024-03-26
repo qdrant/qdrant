@@ -64,7 +64,7 @@ smol_str = { version = "0.2.1", features = ["serde"] }
 fnv = { workspace = true }
 indexmap = { workspace = true }
 ahash = { version = "0.8.11", features = ["serde"] }
-smallvec = "1.13.1"
+smallvec = "1.13.2"
 is_sorted = "0.1.1"
 
 sysinfo = "0.30"
