@@ -54,7 +54,6 @@ pub struct Collection {
     channel_service: ChannelService,
     transfer_tasks: Mutex<TransferTasksPool>,
     request_shard_transfer_cb: RequestShardTransfer,
-    #[allow(dead_code)] //Might be useful in case of repartition implementation
     notify_peer_failure_cb: ChangePeerState,
     abort_shard_transfer_cb: replica_set::AbortShardTransfer,
     init_time: Duration,
@@ -376,7 +375,7 @@ impl Collection {
             // Terminate transfer if source or target replicas are now dead
             let related_transfers = shard_holder.get_related_transfers(&shard_id, &peer_id);
             for transfer in related_transfers {
-                self._abort_shard_transfer(transfer.key(), &shard_holder)
+                self.abort_shard_transfer(transfer.key(), Some(&shard_holder))
                     .await?;
             }
         }

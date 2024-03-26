@@ -371,7 +371,7 @@ impl ShardReplicaSet {
 
     /// Send all queue proxy updates to remote
     ///
-    /// This method allows to transfer queued updates at any point, fbefore the shard is
+    /// This method allows to transfer queued updates at any point, before the shard is
     /// unproxified for example. This allows for proper error handling at the time this method is
     /// called. Because the shard is transformed into a forward proxy after this operation it will
     /// not error again when the shard is eventually unproxified again.
