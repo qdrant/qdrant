@@ -58,7 +58,6 @@ void run_request(uint thread_index) {
     };
 
     search(point_id, entry);
-    uint search_scores = similarity_counter;
 
     ScoredPoint new_entry = get_nearest(0);
     for (uint i = 1; i < BHEAP(nearest, size); i += 1) {
@@ -108,19 +107,6 @@ void run_request(uint thread_index) {
             LINKS_SET_SIZE(other_point_id, selected_candidates_count);
         }
     }
-
-    set_nearest(0, ScoredPoint(
-        visited_count(),
-        0.0
-    ));
-    set_nearest(1, ScoredPoint(
-        search_scores,
-        0.0
-    ));
-    set_nearest(2, ScoredPoint(
-        similarity_counter - search_scores,
-        0.0
-    ));
 }
 
 #endif

@@ -4,7 +4,7 @@ use crate::entry::entry_point::OperationResult;
 use crate::types::PointOffsetType;
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
-pub const ALIGNMENT: usize = 16;
+pub const ALIGNMENT: usize = 32 * 4;
 pub const UPLOAD_CHUNK_SIZE: usize = 64 * 1024 * 1024;
 pub const STORAGES_COUNT: usize = 4;
 
@@ -258,7 +258,7 @@ mod tests {
             pipeline,
             &[descriptor_set, gpu_vector_storage.descriptor_set.clone()],
         );
-        context.dispatch(num_vectors, 1, 1);
+        context.dispatch(32 * num_vectors, 1, 1);
 
         let timer = std::time::Instant::now();
         context.run();
@@ -301,7 +301,7 @@ mod tests {
         let timer = std::time::Instant::now();
         for i in 0..num_vectors {
             let score = DotProductMetric::similarity(&points[test_point_id], &points[i]);
-            assert!((score - scores[i]).abs() < 1000.0);
+            assert!((score - scores[i]).abs() < 1.0);
         }
         println!("CPU scoring time = {:?}", timer.elapsed());
     }

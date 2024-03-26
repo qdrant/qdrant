@@ -1,8 +1,9 @@
 #ifndef COMMON_HEADER
 #define COMMON_HEADER
 
+//#define SUBGROUP_SIZE gl_SubgroupSize
 #define SUBGROUP_SIZE 32
-#define DIMENSION 32
+#define SUBGROUP_ID  gl_SubgroupID
 
 #define CONCAT(a, b) a##_##b
 
@@ -10,8 +11,8 @@
 
 const POINT_ID INVALID_POINT_ID = 0xffffffff;
 
-float positive_infinity = 1.0 / 0.0;
-float negative_infinity = -1.0 / 0.0;
+const float positive_infinity = 1.0 / 0.0;
+const float negative_infinity = -1.0 / 0.0;
 
 struct ScoredPoint {
     POINT_ID id;

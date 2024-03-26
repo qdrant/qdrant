@@ -1,6 +1,7 @@
 #version 450
 
 #extension GL_KHR_shader_subgroup_basic : enable
+#extension GL_KHR_shader_subgroup_arithmetic : enable
 
 #define VECTOR_STORAGE_LAYOUT_SET 1
 #include "vector_storage.comp"
@@ -12,9 +13,8 @@ layout(set = 0, binding = 0) buffer ScoresData {
 } scores;
 
 void main() {
-    set_request_vector(0);
     uint idx = gl_GlobalInvocationID.x / SUBGROUP_SIZE;
-    float score = similarity2(idx);
+    float score = similarity(0, idx);
     if (subgroupElect()) {
         scores.data[idx] = score;
     }

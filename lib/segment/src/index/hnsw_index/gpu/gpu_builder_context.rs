@@ -358,7 +358,7 @@ mod tests {
             for i in 0..num_vectors {
                 if point_levels[i] >= level {
                     let links_cpu = graph_layers_builder.links_layers[i][level].read().clone();
-                    let links_gpu = gpu_links.get_links(i as PointOffsetType).clone();
+                    let links_gpu = gpu_links.get_links(i as PointOffsetType);
 
                     println!("{}: {:?} vs {:?}", i, links_gpu, links_cpu);
                     assert_eq!(links_cpu, links_gpu);

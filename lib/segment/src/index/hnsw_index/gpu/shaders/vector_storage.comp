@@ -20,43 +20,114 @@ readonly uniform VectorStorageParams {
 
 #define STORAGES_COUNT 4
 
+#define STORAGE(STORAGE_INDEX) CONCAT(vectors, STORAGE_INDEX)
+
 #define VECTOR_STORAGE_DEFINE(STORAGE_INDEX) \
     layout(set = VECTOR_STORAGE_LAYOUT_SET, binding = 1 + STORAGE_INDEX) \
     readonly buffer CONCAT(Vectors, STORAGE_INDEX) { \
         vec4 data[]; \
-    } CONCAT(vectors, STORAGE_INDEX);
+    } STORAGE(STORAGE_INDEX);
 
 VECTOR_STORAGE_DEFINE(0)
 VECTOR_STORAGE_DEFINE(1)
 VECTOR_STORAGE_DEFINE(2)
 VECTOR_STORAGE_DEFINE(3)
 
-shared vec4[DIMENSION / 4] request_vector;
-
 #define VECTOR_STORAGE_SCORE(STORAGE_INDEX_A, STORAGE_INDEX_B) \
     for (uint i = 0; i < d; i++) { \
         result += dot( \
-            CONCAT(vectors, STORAGE_INDEX_A).data[aId + i], \
-            CONCAT(vectors, STORAGE_INDEX_B).data[bId + i] \
+            STORAGE(STORAGE_INDEX_A).data[aId + i], \
+            STORAGE(STORAGE_INDEX_B).data[bId + i] \
         ); \
     }
 
-uint similarity_counter = 0;
-
-void set_request_vector(uint idx) {
-    uint subgroup_len = DIMENSION / (4 * SUBGROUP_SIZE);
-    for (uint i = 0; i < subgroup_len; i++) {
-        request_vector[i] = CONCAT(vectors, idx % STORAGES_COUNT).data[(idx / STORAGES_COUNT) * DIMENSION / 4 + i];
+#define VECTOR_STORAGE_SCORE_SUBGROUP(STORAGE_INDEX_A, STORAGE_INDEX_B) \
+    for (uint i = 0; i < d; i += SUBGROUP_SIZE) { \
+        result += dot( \
+            STORAGE(STORAGE_INDEX_A).data[aId + i + SUBGROUP_ID], \
+            STORAGE(STORAGE_INDEX_B).data[bId + i + SUBGROUP_ID] \
+        ); \
     }
-}
 
-float similarity2(uint idx) {
-    return 0.0;
+float similarity(uint a, uint b) {
+    float result = 0.0;
+    uint d = DIM / 4;
+    uint aId = (a / STORAGES_COUNT) * d;
+    uint bId = (b / STORAGES_COUNT) * d;
+    uint storage_index_a = a % STORAGES_COUNT;
+    uint storage_index_b = b % STORAGES_COUNT;
+
+    switch (storage_index_a) {
+    case 0:
+        switch (storage_index_b) {
+        case 0:
+            VECTOR_STORAGE_SCORE_SUBGROUP(0, 0);
+            break;
+        case 1:
+            VECTOR_STORAGE_SCORE_SUBGROUP(0, 1);
+            break;
+        case 2:
+            VECTOR_STORAGE_SCORE_SUBGROUP(0, 2);
+            break;
+        case 3:
+            VECTOR_STORAGE_SCORE_SUBGROUP(0, 3);
+            break;
+        }
+        break;
+    case 1:
+        switch (storage_index_b) {
+        case 0:
+            VECTOR_STORAGE_SCORE_SUBGROUP(1, 0);
+            break;
+        case 1:
+            VECTOR_STORAGE_SCORE_SUBGROUP(1, 1);
+            break;
+        case 2:
+            VECTOR_STORAGE_SCORE_SUBGROUP(1, 2);
+            break;
+        case 3:
+            VECTOR_STORAGE_SCORE_SUBGROUP(1, 3);
+            break;
+        }
+        break;
+    case 2:
+        switch (storage_index_b) {
+        case 0:
+            VECTOR_STORAGE_SCORE_SUBGROUP(2, 0);
+            break;
+        case 1:
+            VECTOR_STORAGE_SCORE_SUBGROUP(2, 1);
+            break;
+        case 2:
+            VECTOR_STORAGE_SCORE_SUBGROUP(2, 2);
+            break;
+        case 3:
+            VECTOR_STORAGE_SCORE_SUBGROUP(2, 3);
+            break;
+        }
+        break;
+    case 3:
+        switch (storage_index_b) {
+        case 0:
+            VECTOR_STORAGE_SCORE_SUBGROUP(3, 0);
+            break;
+        case 1:
+            VECTOR_STORAGE_SCORE_SUBGROUP(3, 1);
+            break;
+        case 2:
+            VECTOR_STORAGE_SCORE_SUBGROUP(3, 2);
+            break;
+        case 3:
+            VECTOR_STORAGE_SCORE_SUBGROUP(3, 3);
+            break;
+        }
+        break;
+    }
+
+    return subgroupAdd(result);
 }
 
 float similarity_obsolete(uint a, uint b) {
-    similarity_counter += 1;
-
     mat4 result = mat4(0.0);
     uint d = DIM / 4;
     uint aId = (a / STORAGES_COUNT) * d;
