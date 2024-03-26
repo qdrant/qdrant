@@ -190,6 +190,14 @@ impl TableOfContent {
             });
             Ok(true)
         } else {
+            let path = self.get_collection_path(collection_name);
+            if path.exists() {
+                log::warn!(
+                    "Collection {} is not loaded, but its directory still exists. Deleting it.",
+                    collection_name
+                );
+                tokio::fs::remove_dir_all(path).await?;
+            }
             Ok(false)
         }
     }
