@@ -401,7 +401,7 @@ impl TableOfContent {
                     &transfer.key(),
                     &collection.state().await.transfers,
                 )?;
-                collection.finish_shard_transfer(transfer).await?;
+                collection.finish_shard_transfer(transfer, None).await?;
             }
             ShardTransferOperations::RecoveryToPartial(transfer)
             | ShardTransferOperations::SnapshotRecovered(transfer) => {
@@ -463,7 +463,7 @@ impl TableOfContent {
                     &collection.state().await.transfers,
                 )?;
                 log::warn!("Aborting shard transfer: {reason}");
-                collection.abort_shard_transfer(transfer).await?;
+                collection.abort_shard_transfer(transfer, None).await?;
             }
         };
         Ok(())

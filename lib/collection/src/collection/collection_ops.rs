@@ -2,7 +2,9 @@ use std::cmp;
 use std::sync::Arc;
 
 use futures::{future, TryStreamExt as _};
+use lazy_static::lazy_static;
 use segment::types::QuantizationConfig;
+use semver::Version;
 
 use super::Collection;
 use crate::operations::config_diff::*;
@@ -11,6 +13,13 @@ use crate::operations::types::*;
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::replica_set::{Change, ReplicaState};
 use crate::shards::shard::PeerId;
+
+lazy_static! {
+    /// When dropping a shard, only cancel all related shard transfers to and from it when all nodes
+    /// are running at least this version. That way, we avoid getting an inconsistent state in
+    /// consensus if some nodes are still running an older version.
+    static ref ABORT_TRANSFERS_ON_SHARD_DROP_FROM_VERSION: Version = Version::parse("1.9.0-dev").unwrap();
+}
 
 impl Collection {
     /// Updates collection params:
@@ -163,37 +172,48 @@ impl Collection {
         if replica_changes.is_empty() {
             return Ok(());
         }
-        let read_shard_holder = self.shards_holder.read().await;
+
+        let shard_holder = self.shards_holder.read().await;
 
         for change in replica_changes {
-            match change {
-                Change::Remove(shard_id, peer_id) => {
-                    let replica_set_opt = read_shard_holder.get_shard(&shard_id);
-                    let replica_set = if let Some(replica_set) = replica_set_opt {
-                        replica_set
-                    } else {
-                        return Err(CollectionError::BadRequest {
-                            description: format!("Shard {} of {} not found", shard_id, self.name()),
-                        });
-                    };
+            let (shard_id, peer_id) = match change {
+                Change::Remove(shard_id, peer_id) => (shard_id, peer_id),
+            };
 
-                    let peers = replica_set.peers();
+            let Some(replica_set) = shard_holder.get_shard(&shard_id) else {
+                return Err(CollectionError::BadRequest {
+                    description: format!("Shard {} of {} not found", shard_id, self.name()),
+                });
+            };
 
-                    if !peers.contains_key(&peer_id) {
-                        return Err(CollectionError::BadRequest {
-                            description: format!(
-                                "Peer {peer_id} has no replica of shard {shard_id}"
-                            ),
-                        });
-                    }
+            let peers = replica_set.peers();
 
-                    if peers.len() == 1 {
-                        return Err(CollectionError::BadRequest {
-                            description: format!("Shard {shard_id} must have at least one replica"),
-                        });
-                    }
+            if !peers.contains_key(&peer_id) {
+                return Err(CollectionError::BadRequest {
+                    description: format!("Peer {peer_id} has no replica of shard {shard_id}"),
+                });
+            }
 
-                    replica_set.remove_peer(peer_id).await?;
+            if peers.len() == 1 {
+                return Err(CollectionError::BadRequest {
+                    description: format!("Shard {shard_id} must have at least one replica"),
+                });
+            }
+
+            replica_set.remove_peer(peer_id).await?;
+
+            let all_nodes_cancel_transfers = self
+                .channel_service
+                .all_peers_at_version(ABORT_TRANSFERS_ON_SHARD_DROP_FROM_VERSION.clone());
+            if all_nodes_cancel_transfers {
+                // Collect shard transfers related to removed shard...
+                let transfers = shard_holder
+                    .get_transfers(|transfer| transfer.from == peer_id || transfer.to == peer_id);
+
+                // ...and cancel transfer tasks and remove transfers from internal state
+                for transfer in transfers {
+                    self.finish_shard_transfer(transfer, Some(&shard_holder))
+                        .await?;
                 }
             }
         }
