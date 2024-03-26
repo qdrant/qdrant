@@ -178,12 +178,13 @@ impl<T: Float> Sum<T> for VectorElementType<T> {
     }
 }
 
-// Compatibility layer for gRPC types
+// Compatibility layer for API types
 pub fn to_primitives_vec(vector: Vec<VectorElementType>) -> Vec<f32> {
     // no new allocation - check https://rust.godbolt.org/z/hqsnqeG3Y
     vector.into_iter().map(|e| *e).collect()
 }
 
 pub fn from_primitives_vec(vector: Vec<f32>) -> Vec<VectorElementType> {
+    // no new allocation- see above
     vector.into_iter().map(|e| e.into()).collect()
 }
