@@ -4,13 +4,12 @@ use collection::operations::cluster_ops::{
     ClusterOperations, CreateShardingKey, CreateShardingKeyOperation, DropShardingKey,
     DropShardingKeyOperation,
 };
-use rbac::jwt::Claims;
 use storage::dispatcher::Dispatcher;
 use tokio::time::Instant;
 
 use crate::actix::api::collections_api::WaitTimeout;
 use crate::actix::api::CollectionPath;
-use crate::actix::auth::Extension;
+use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::process_response;
 use crate::common::collections::do_update_collection_cluster;
 
@@ -22,7 +21,7 @@ async fn create_shard_key(
     collection: Path<CollectionPath>,
     request: Json<CreateShardingKey>,
     Query(query): Query<WaitTimeout>,
-    claims: Extension<Claims>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
     let wait_timeout = query.timeout();
@@ -38,7 +37,7 @@ async fn create_shard_key(
         &dispatcher,
         collection.name.clone(),
         operation,
-        claims.into_inner(),
+        access,
         wait_timeout,
     )
     .await;
@@ -52,7 +51,7 @@ async fn delete_shard_key(
     collection: Path<CollectionPath>,
     request: Json<DropShardingKey>,
     Query(query): Query<WaitTimeout>,
-    claims: Extension<Claims>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
     let wait_timeout = query.timeout();
@@ -68,7 +67,7 @@ async fn delete_shard_key(
         &dispatcher,
         collection.name.clone(),
         operation,
-        claims.into_inner(),
+        access,
         wait_timeout,
     )
     .await;

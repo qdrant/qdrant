@@ -1,8 +1,7 @@
-use std::collections::HashMap;
-
 use segment::json_path::JsonPath;
 use segment::types::{Condition, FieldCondition, Filter, Match, ValueVariants};
 use serde::{Deserialize, Serialize};
+use storage::rbac::access::PayloadClaim;
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct Claims {
@@ -22,8 +21,6 @@ pub struct Claims {
     /// Validate this token by looking for a value inside a collection.
     pub value_exists: Option<ValueExists>,
 }
-
-pub type PayloadClaim = HashMap<JsonPath, ValueVariants>;
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct KeyValuePair {

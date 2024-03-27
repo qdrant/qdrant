@@ -26,7 +26,7 @@ use crate::tonic::api::points_common::{
     delete, delete_field_index, delete_payload, get, overwrite_payload, recommend, recommend_batch,
     scroll, search, set_payload, upsert,
 };
-use crate::tonic::auth::extract_claims;
+use crate::tonic::auth::extract_access;
 
 pub struct PointsService {
     dispatcher: Arc<Dispatcher>,
@@ -46,7 +46,7 @@ impl Points for PointsService {
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_claims(&mut request);
+        let claims = extract_access(&mut request);
 
         upsert(
             self.dispatcher.toc().clone(),
@@ -65,7 +65,7 @@ impl Points for PointsService {
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_claims(&mut request);
+        let claims = extract_access(&mut request);
 
         delete(
             self.dispatcher.toc().clone(),
@@ -81,7 +81,7 @@ impl Points for PointsService {
     async fn get(&self, mut request: Request<GetPoints>) -> Result<Response<GetResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_claims(&mut request);
+        let claims = extract_access(&mut request);
 
         get(self.dispatcher.as_ref(), request.into_inner(), None, claims).await
     }
@@ -92,7 +92,7 @@ impl Points for PointsService {
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_claims(&mut request);
+        let claims = extract_access(&mut request);
 
         update_vectors(
             self.dispatcher.toc().clone(),
@@ -111,7 +111,7 @@ impl Points for PointsService {
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_claims(&mut request);
+        let claims = extract_access(&mut request);
 
         delete_vectors(
             self.dispatcher.toc().clone(),
@@ -130,7 +130,7 @@ impl Points for PointsService {
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_claims(&mut request);
+        let claims = extract_access(&mut request);
 
         set_payload(
             self.dispatcher.toc().clone(),
@@ -149,7 +149,7 @@ impl Points for PointsService {
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_claims(&mut request);
+        let claims = extract_access(&mut request);
 
         overwrite_payload(
             self.dispatcher.toc().clone(),
@@ -168,7 +168,7 @@ impl Points for PointsService {
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_claims(&mut request);
+        let claims = extract_access(&mut request);
 
         delete_payload(
             self.dispatcher.toc().clone(),
@@ -187,7 +187,7 @@ impl Points for PointsService {
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_claims(&mut request);
+        let claims = extract_access(&mut request);
 
         clear_payload(
             self.dispatcher.toc().clone(),
@@ -206,7 +206,7 @@ impl Points for PointsService {
     ) -> Result<Response<UpdateBatchResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_claims(&mut request);
+        let claims = extract_access(&mut request);
 
         update_batch(
             self.dispatcher.toc().clone(),
@@ -224,7 +224,7 @@ impl Points for PointsService {
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_claims(&mut request);
+        let claims = extract_access(&mut request);
 
         create_field_index(
             self.dispatcher.clone(),
@@ -243,7 +243,7 @@ impl Points for PointsService {
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_claims(&mut request);
+        let claims = extract_access(&mut request);
 
         delete_field_index(
             self.dispatcher.clone(),
@@ -261,7 +261,7 @@ impl Points for PointsService {
         mut request: Request<SearchPoints>,
     ) -> Result<Response<SearchResponse>, Status> {
         validate(request.get_ref())?;
-        let claims = extract_claims(&mut request);
+        let claims = extract_access(&mut request);
         search(self.dispatcher.as_ref(), request.into_inner(), None, claims).await
     }
 
@@ -271,7 +271,7 @@ impl Points for PointsService {
     ) -> Result<Response<SearchBatchResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_claims(&mut request);
+        let claims = extract_access(&mut request);
 
         let SearchBatchPoints {
             collection_name,
@@ -309,7 +309,7 @@ impl Points for PointsService {
         mut request: Request<SearchPointGroups>,
     ) -> Result<Response<SearchGroupsResponse>, Status> {
         validate(request.get_ref())?;
-        let claims = extract_claims(&mut request);
+        let claims = extract_access(&mut request);
         search_groups(self.dispatcher.as_ref(), request.into_inner(), None, claims).await
     }
 
@@ -319,7 +319,7 @@ impl Points for PointsService {
     ) -> Result<Response<ScrollResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_claims(&mut request);
+        let claims = extract_access(&mut request);
 
         scroll(self.dispatcher.as_ref(), request.into_inner(), None, claims).await
     }
@@ -329,7 +329,7 @@ impl Points for PointsService {
         mut request: Request<RecommendPoints>,
     ) -> Result<Response<RecommendResponse>, Status> {
         validate(request.get_ref())?;
-        let claims = extract_claims(&mut request);
+        let claims = extract_access(&mut request);
         recommend(self.dispatcher.as_ref(), request.into_inner(), claims).await
     }
 
@@ -338,7 +338,7 @@ impl Points for PointsService {
         mut request: Request<RecommendBatchPoints>,
     ) -> Result<Response<RecommendBatchResponse>, Status> {
         validate(request.get_ref())?;
-        let claims = extract_claims(&mut request);
+        let claims = extract_access(&mut request);
         let RecommendBatchPoints {
             collection_name,
             recommend_points,
@@ -362,7 +362,7 @@ impl Points for PointsService {
     ) -> Result<Response<RecommendGroupsResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_claims(&mut request);
+        let claims = extract_access(&mut request);
 
         recommend_groups(self.dispatcher.as_ref(), request.into_inner(), claims).await
     }
@@ -373,7 +373,7 @@ impl Points for PointsService {
     ) -> Result<Response<DiscoverResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_claims(&mut request);
+        let claims = extract_access(&mut request);
 
         discover(self.dispatcher.as_ref(), request.into_inner(), claims).await
     }
@@ -384,7 +384,7 @@ impl Points for PointsService {
     ) -> Result<Response<DiscoverBatchResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_claims(&mut request);
+        let claims = extract_access(&mut request);
 
         let DiscoverBatchPoints {
             collection_name,
@@ -410,7 +410,7 @@ impl Points for PointsService {
     ) -> Result<Response<CountResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_claims(&mut request);
+        let claims = extract_access(&mut request);
 
         count(self.dispatcher.as_ref(), request.into_inner(), None, claims).await
     }

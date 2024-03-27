@@ -13,7 +13,6 @@ use collection::operations::snapshot_ops::{
 };
 use collection::shards::shard::ShardId;
 use futures::{FutureExt as _, TryFutureExt as _};
-use rbac::jwt::Claims;
 use reqwest::Url;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -26,11 +25,12 @@ use storage::content_manager::snapshots::{
 };
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
+use storage::rbac::access::Access;
 use uuid::Uuid;
 use validator::Validate;
 
 use super::CollectionPath;
-use crate::actix::auth::Extension;
+use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{self, process_response, HttpError};
 use crate::common;
 use crate::common::collections::*;
@@ -67,10 +67,10 @@ pub struct SnapshottingForm {
 // Actix specific code
 pub async fn do_get_full_snapshot(
     toc: &TableOfContent,
-    claims: Option<Claims>,
+    access: Access,
     snapshot_name: &str,
 ) -> Result<NamedFile, HttpError> {
-    check_manage_rights(claims.as_ref())?;
+    check_manage_rights(&access)?;
     let file_name = get_full_snapshot_path(toc, snapshot_name).await?;
     Ok(NamedFile::open(file_name)?)
 }
@@ -120,11 +120,11 @@ pub async fn do_save_uploaded_snapshot(
 // Actix specific code
 pub async fn do_get_snapshot(
     toc: &TableOfContent,
-    claims: Option<Claims>,
+    access: Access,
     collection_name: &str,
     snapshot_name: &str,
 ) -> Result<NamedFile, HttpError> {
-    check_full_access_to_collection(claims.as_ref(), collection_name)?;
+    check_full_access_to_collection(&access, collection_name)?;
     let collection = toc.get_collection(collection_name).await?;
     let file_name = collection.get_snapshot_path(snapshot_name).await?;
     Ok(NamedFile::open(file_name)?)
@@ -134,12 +134,12 @@ pub async fn do_get_snapshot(
 async fn list_snapshots(
     toc: web::Data<TableOfContent>,
     path: web::Path<String>,
-    claims: Extension<Claims>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let collection_name = path.into_inner();
     let timing = Instant::now();
 
-    let response = do_list_snapshots(&toc, claims.into_inner(), &collection_name).await;
+    let response = do_list_snapshots(&toc, access, &collection_name).await;
     process_response(response, timing)
 }
 
@@ -148,11 +148,11 @@ async fn create_snapshot(
     dispatcher: web::Data<Dispatcher>,
     path: web::Path<String>,
     params: valid::Query<SnapshottingParam>,
-    claims: Extension<Claims>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let collection_name = path.into_inner();
     helpers::time_or_accept_with_handle(params.wait.unwrap_or(true), async move {
-        do_create_snapshot(dispatcher.get_ref(), claims.into_inner(), &collection_name)
+        do_create_snapshot(dispatcher.get_ref(), access, &collection_name)
     })
     .await
 }
@@ -164,12 +164,12 @@ async fn upload_snapshot(
     collection: valid::Path<CollectionPath>,
     MultipartForm(form): MultipartForm<SnapshottingForm>,
     params: valid::Query<SnapshotUploadingParam>,
-    claims: Extension<Claims>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     helpers::time_or_accept_with_handle(params.wait.unwrap_or(true), async move {
         let snapshot = form.snapshot;
 
-        check_manage_rights(claims.into_inner().as_ref())?;
+        check_manage_rights(&access)?;
 
         if let Some(checksum) = &params.checksum {
             let snapshot_checksum = hash_file(snapshot.file.path()).await?;
@@ -193,7 +193,7 @@ async fn upload_snapshot(
             dispatcher.get_ref(),
             &collection.name,
             snapshot_recover,
-            None,
+            Access::full(),
             http_client,
         )
     })
@@ -207,7 +207,7 @@ async fn recover_from_snapshot(
     collection: valid::Path<CollectionPath>,
     request: valid::Json<SnapshotRecover>,
     params: valid::Query<SnapshottingParam>,
-    claims: Extension<Claims>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     helpers::time_or_accept_with_handle(params.wait.unwrap_or(true), async move {
         let snapshot_recover = request.into_inner();
@@ -216,7 +216,7 @@ async fn recover_from_snapshot(
             dispatcher.get_ref(),
             &collection.name,
             snapshot_recover,
-            claims.into_inner(),
+            access,
             http_client,
         )
     })
@@ -227,19 +227,19 @@ async fn recover_from_snapshot(
 async fn get_snapshot(
     toc: web::Data<TableOfContent>,
     path: web::Path<(String, String)>,
-    claims: Extension<Claims>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let (collection_name, snapshot_name) = path.into_inner();
-    do_get_snapshot(&toc, claims.into_inner(), &collection_name, &snapshot_name).await
+    do_get_snapshot(&toc, access, &collection_name, &snapshot_name).await
 }
 
 #[get("/snapshots")]
 async fn list_full_snapshots(
     toc: web::Data<TableOfContent>,
-    claims: Extension<Claims>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
-    let response = do_list_full_snapshots(toc.get_ref(), claims.into_inner()).await;
+    let response = do_list_full_snapshots(toc.get_ref(), access).await;
     process_response(response, timing)
 }
 
@@ -247,10 +247,10 @@ async fn list_full_snapshots(
 async fn create_full_snapshot(
     dispatcher: web::Data<Dispatcher>,
     params: valid::Query<SnapshottingParam>,
-    claims: Extension<Claims>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     helpers::time_or_accept_with_handle(params.wait.unwrap_or(true), async move {
-        do_create_full_snapshot(dispatcher.get_ref(), claims.into_inner())
+        do_create_full_snapshot(dispatcher.get_ref(), access)
     })
     .await
 }
@@ -259,10 +259,10 @@ async fn create_full_snapshot(
 async fn get_full_snapshot(
     toc: web::Data<TableOfContent>,
     path: web::Path<String>,
-    claims: Extension<Claims>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let snapshot_name = path.into_inner();
-    do_get_full_snapshot(&toc, claims.into_inner(), &snapshot_name).await
+    do_get_full_snapshot(&toc, access, &snapshot_name).await
 }
 
 #[delete("/snapshots/{snapshot_name}")]
@@ -270,11 +270,11 @@ async fn delete_full_snapshot(
     dispatcher: web::Data<Dispatcher>,
     path: web::Path<String>,
     params: valid::Query<SnapshottingParam>,
-    claims: Extension<Claims>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     helpers::time_or_accept_with_handle(params.wait.unwrap_or(true), async move {
         let snapshot_name = path.into_inner();
-        do_delete_full_snapshot(dispatcher.get_ref(), claims.into_inner(), &snapshot_name).await
+        do_delete_full_snapshot(dispatcher.get_ref(), access, &snapshot_name).await
     })
     .await
 }
@@ -284,13 +284,13 @@ async fn delete_collection_snapshot(
     dispatcher: web::Data<Dispatcher>,
     path: web::Path<(String, String)>,
     params: valid::Query<SnapshottingParam>,
-    claims: Extension<Claims>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     helpers::time_or_accept_with_handle(params.wait.unwrap_or(true), async move {
         let (collection_name, snapshot_name) = path.into_inner();
         do_delete_collection_snapshot(
             dispatcher.get_ref(),
-            claims.into_inner(),
+            access,
             &collection_name,
             &snapshot_name,
         )
@@ -303,16 +303,12 @@ async fn delete_collection_snapshot(
 async fn list_shard_snapshots(
     toc: web::Data<TableOfContent>,
     path: web::Path<(String, ShardId)>,
-    claims: Extension<Claims>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let (collection, shard) = path.into_inner();
-    let future = common::snapshots::list_shard_snapshots(
-        toc.into_inner(),
-        claims.into_inner(),
-        collection,
-        shard,
-    )
-    .map_err(Into::into);
+    let future =
+        common::snapshots::list_shard_snapshots(toc.into_inner(), access, collection, shard)
+            .map_err(Into::into);
 
     helpers::time(future).await
 }
@@ -322,15 +318,11 @@ async fn create_shard_snapshot(
     toc: web::Data<TableOfContent>,
     path: web::Path<(String, ShardId)>,
     query: web::Query<SnapshottingParam>,
-    claims: Extension<Claims>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let (collection, shard) = path.into_inner();
-    let future = common::snapshots::create_shard_snapshot(
-        toc.into_inner(),
-        claims.into_inner(),
-        collection,
-        shard,
-    );
+    let future =
+        common::snapshots::create_shard_snapshot(toc.into_inner(), access, collection, shard);
 
     helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
 }
@@ -343,14 +335,14 @@ async fn recover_shard_snapshot(
     path: web::Path<(String, ShardId)>,
     query: web::Query<SnapshottingParam>,
     web::Json(request): web::Json<ShardSnapshotRecover>,
-    claims: Extension<Claims>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let future = async move {
         let (collection, shard) = path.into_inner();
 
         common::snapshots::recover_shard_snapshot(
             toc.into_inner(),
-            claims.into_inner(),
+            access,
             collection,
             shard,
             request.location,
@@ -373,7 +365,7 @@ async fn upload_shard_snapshot(
     path: web::Path<(String, ShardId)>,
     query: web::Query<SnapshotUploadingParam>,
     MultipartForm(form): MultipartForm<SnapshottingForm>,
-    claims: Extension<Claims>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let (collection, shard) = path.into_inner();
     let SnapshotUploadingParam {
@@ -387,7 +379,7 @@ async fn upload_shard_snapshot(
 
     let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
         // TODO: Run this check before the multipart blob is uploaded
-        check_manage_rights(claims.into_inner().as_ref())?;
+        check_manage_rights(&access)?;
 
         if let Some(checksum) = checksum {
             let snapshot_checksum = hash_file(form.snapshot.file.path()).await?;
@@ -427,10 +419,10 @@ async fn upload_shard_snapshot(
 async fn download_shard_snapshot(
     toc: web::Data<TableOfContent>,
     path: web::Path<(String, ShardId, String)>,
-    claims: Extension<Claims>,
+    ActixAccess(access): ActixAccess,
 ) -> Result<impl Responder, HttpError> {
     let (collection, shard, snapshot) = path.into_inner();
-    check_full_access_to_collection(claims.into_inner().as_ref(), &collection)?;
+    check_full_access_to_collection(&access, &collection)?;
     let collection = toc.get_collection(&collection).await?;
     let snapshot_path = collection.get_shard_snapshot_path(shard, &snapshot).await?;
 
@@ -442,12 +434,12 @@ async fn delete_shard_snapshot(
     toc: web::Data<TableOfContent>,
     path: web::Path<(String, ShardId, String)>,
     query: web::Query<SnapshottingParam>,
-    claims: Extension<Claims>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let (collection, shard, snapshot) = path.into_inner();
     let future = common::snapshots::delete_shard_snapshot(
         toc.into_inner(),
-        claims.into_inner(),
+        access,
         collection,
         shard,
         snapshot,

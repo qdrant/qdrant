@@ -7,7 +7,7 @@ use actix_web::dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Tr
 use actix_web::http::Method;
 use actix_web::{Error, FromRequest, HttpMessage as _, HttpResponse};
 use futures_util::future::LocalBoxFuture;
-use rbac::jwt::Claims;
+use storage::rbac::access::Access;
 
 use crate::common::auth::AuthKeys;
 
@@ -139,12 +139,12 @@ where
                 )
                 .await
             {
-                Ok(claims) => {
-                    if let Some(claims) = claims {
-                        let _previous = req.extensions_mut().insert::<Claims>(claims);
+                Ok(access) => {
+                    if let Some(access) = access {
+                        let _previous = req.extensions_mut().insert::<Access>(access);
                         debug_assert!(
                             _previous.is_none(),
-                            "Previous claims should not exist in the request"
+                            "Previous access object should not exist in the request"
                         );
                     }
                     service.call(req).await
@@ -157,17 +157,9 @@ where
     }
 }
 
-pub struct Extension<T> {
-    inner: Option<T>,
-}
+pub struct ActixAccess(pub Access);
 
-impl<T> Extension<T> {
-    pub fn into_inner(self) -> Option<T> {
-        self.inner
-    }
-}
-
-impl<T: 'static> FromRequest for Extension<T> {
+impl FromRequest for ActixAccess {
     type Error = Infallible;
     type Future = Ready<Result<Self, Self::Error>>;
 
@@ -175,8 +167,11 @@ impl<T: 'static> FromRequest for Extension<T> {
         req: &actix_web::HttpRequest,
         _payload: &mut actix_web::dev::Payload,
     ) -> Self::Future {
-        let ext = req.extensions_mut().remove::<T>();
-        ready(Ok(Extension { inner: ext }))
+        let access = req
+            .extensions_mut()
+            .remove::<Access>()
+            .unwrap_or_else(Access::full);
+        ready(Ok(ActixAccess(access)))
     }
 }
 

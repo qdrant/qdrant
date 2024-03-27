@@ -1,21 +1,22 @@
-use crate::access_control::collection_access_token::{CollectionAccess, CollectionsAccessToken};
-use crate::access_control::error::AccessDeniedError;
-use crate::access_control::AccessLevel;
-use crate::jwt::Claims;
+use super::access::Access;
+use super::access_level::AccessLevel;
+use super::collection_access::{CollectionAccess, CollectionsAccessToken};
+use super::error::AccessDeniedError;
 
 pub enum AccessToken {
     Global(AccessLevel),
     Collections(CollectionsAccessToken),
 }
 
-impl TryFrom<Claims> for AccessToken {
+impl TryFrom<Access> for AccessToken {
     type Error = AccessDeniedError;
 
-    fn try_from(claims: Claims) -> Result<Self, Self::Error> {
-        let allow_write = claims.w.unwrap_or_default();
+    fn try_from(access: Access) -> Result<Self, Self::Error> {
+        // TODO: this conversion should be refactored as structure of Access will be finalized.
 
-        // ToDo: this conversion should be refactored as structure of Claims will be finalized.
-        match (claims.collections, claims.payload) {
+        let allow_write = true;
+
+        match (access.collections, access.payload) {
             (Some(collections), Some(payload)) => {
                 let collection_access: Vec<_> = collections
                     .into_iter()

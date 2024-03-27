@@ -1,11 +1,7 @@
 use jsonwebtoken::errors::Error;
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
-use jwt::Claims;
 
-pub mod jwt;
-
-#[allow(dead_code)]
-mod access_control;
+use super::claims::Claims;
 
 #[derive(Clone)]
 pub struct JwtParser {

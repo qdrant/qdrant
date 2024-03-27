@@ -22,7 +22,7 @@ use tonic::{Request, Response, Status};
 use super::validate;
 use crate::common::collections::*;
 use crate::tonic::api::collections_common::get;
-use crate::tonic::auth::extract_claims;
+use crate::tonic::auth::extract_access;
 
 pub struct CollectionsService {
     dispatcher: Arc<Dispatcher>,
@@ -45,12 +45,12 @@ impl CollectionsService {
             >,
     {
         let timing = Instant::now();
-        let claims = extract_claims(&mut request);
+        let access = extract_access(&mut request);
         let operation = request.into_inner();
         let wait_timeout = operation.wait_timeout();
         let result = self
             .dispatcher
-            .submit_collection_meta_op(operation.try_into()?, claims, wait_timeout)
+            .submit_collection_meta_op(operation.try_into()?, access, wait_timeout)
             .await
             .map_err(error_to_status)?;
 
@@ -66,7 +66,7 @@ impl Collections for CollectionsService {
         mut request: Request<GetCollectionInfoRequest>,
     ) -> Result<Response<GetCollectionInfoResponse>, Status> {
         validate(request.get_ref())?;
-        let claims = extract_claims(&mut request);
+        let claims = extract_access(&mut request);
         get(self.dispatcher.as_ref(), request.into_inner(), claims, None).await
     }
 
@@ -76,7 +76,7 @@ impl Collections for CollectionsService {
     ) -> Result<Response<ListCollectionsResponse>, Status> {
         validate(request.get_ref())?;
         let timing = Instant::now();
-        let claims = extract_claims(&mut request);
+        let claims = extract_access(&mut request);
         let result = do_list_collections(&self.dispatcher, claims).await;
 
         let response = ListCollectionsResponse::from((timing, result));
@@ -121,7 +121,7 @@ impl Collections for CollectionsService {
     ) -> Result<Response<ListAliasesResponse>, Status> {
         validate(request.get_ref())?;
         let timing = Instant::now();
-        let claims = extract_claims(&mut request);
+        let claims = extract_access(&mut request);
         let ListCollectionAliasesRequest { collection_name } = request.into_inner();
         let CollectionsAliasesResponse { aliases } =
             do_list_collection_aliases(self.dispatcher.toc(), claims, &collection_name)
@@ -140,7 +140,7 @@ impl Collections for CollectionsService {
     ) -> Result<Response<ListAliasesResponse>, Status> {
         validate(request.get_ref())?;
         let timing = Instant::now();
-        let claims = extract_claims(&mut request);
+        let claims = extract_access(&mut request);
         let CollectionsAliasesResponse { aliases } = do_list_aliases(self.dispatcher.toc(), claims)
             .await
             .map_err(error_to_status)?;
@@ -157,7 +157,7 @@ impl Collections for CollectionsService {
     ) -> Result<Response<CollectionExistsResponse>, Status> {
         let timing = Instant::now();
         validate(request.get_ref())?;
-        let claims = extract_claims(&mut request);
+        let claims = extract_access(&mut request);
         let CollectionExistsRequest { collection_name } = request.into_inner();
         let result = do_collection_exists(self.dispatcher.toc(), claims, &collection_name)
             .await
@@ -175,7 +175,7 @@ impl Collections for CollectionsService {
         mut request: Request<CollectionClusterInfoRequest>,
     ) -> Result<Response<CollectionClusterInfoResponse>, Status> {
         validate(request.get_ref())?;
-        let claims = extract_claims(&mut request);
+        let claims = extract_access(&mut request);
         let response = do_get_collection_cluster(
             self.dispatcher.toc(),
             claims,
@@ -193,7 +193,7 @@ impl Collections for CollectionsService {
         mut request: Request<UpdateCollectionClusterSetupRequest>,
     ) -> Result<Response<UpdateCollectionClusterSetupResponse>, Status> {
         validate(request.get_ref())?;
-        let claims = extract_claims(&mut request);
+        let claims = extract_access(&mut request);
         let UpdateCollectionClusterSetupRequest {
             collection_name,
             operation,
@@ -220,7 +220,7 @@ impl Collections for CollectionsService {
         &self,
         mut request: Request<CreateShardKeyRequest>,
     ) -> Result<Response<CreateShardKeyResponse>, Status> {
-        let claims = extract_claims(&mut request);
+        let claims = extract_access(&mut request);
 
         let CreateShardKeyRequest {
             collection_name,
@@ -255,7 +255,7 @@ impl Collections for CollectionsService {
         &self,
         mut request: Request<DeleteShardKeyRequest>,
     ) -> Result<Response<DeleteShardKeyResponse>, Status> {
-        let claims = extract_claims(&mut request);
+        let claims = extract_access(&mut request);
 
         let DeleteShardKeyRequest {
             collection_name,

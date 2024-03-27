@@ -14,6 +14,7 @@ use storage::content_manager::collection_meta_ops::{
 use storage::content_manager::consensus::operation_sender::OperationSender;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
+use storage::rbac::access::Access;
 use storage::types::{PerformanceConfig, StorageConfig};
 use tempfile::Builder;
 use tokio::runtime::Runtime;
@@ -115,7 +116,7 @@ fn test_alias_operation() {
                         sharding_method: None,
                     },
                 )),
-                None,
+                Access::full(),
                 None,
             ),
         )
@@ -130,7 +131,7 @@ fn test_alias_operation() {
                     }
                     .into()],
             }),
-            None,
+            Access::full(),
             None,
         ))
         .unwrap();
@@ -155,7 +156,7 @@ fn test_alias_operation() {
                         .into(),
                     ],
             }),
-            None,
+            Access::full(),
             None,
         ))
         .unwrap();

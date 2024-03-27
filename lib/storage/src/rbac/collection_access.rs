@@ -1,6 +1,6 @@
-use crate::access_control::error::AccessDeniedError;
-use crate::access_control::AccessLevel;
-use crate::jwt::PayloadClaim;
+use super::access::PayloadClaim;
+use super::access_level::AccessLevel;
+use super::error::AccessDeniedError;
 
 pub(crate) struct CollectionAccess {
     pub(crate) collection_name: String,

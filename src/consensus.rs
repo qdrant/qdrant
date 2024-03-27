@@ -1151,6 +1151,7 @@ mod tests {
     use storage::content_manager::consensus_manager::{ConsensusManager, ConsensusStateRef};
     use storage::content_manager::toc::TableOfContent;
     use storage::dispatcher::Dispatcher;
+    use storage::rbac::access::Access;
     use tempfile::Builder;
 
     use super::Consensus;
@@ -1261,7 +1262,7 @@ mod tests {
                             sharding_method: None,
                         },
                     )),
-                    None,
+                    Access::full(),
                     None,
                 ),
             )

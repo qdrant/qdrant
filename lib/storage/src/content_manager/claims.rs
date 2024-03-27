@@ -11,10 +11,10 @@ use collection::operations::types::{
 use collection::operations::vector_ops::VectorOperations;
 use collection::operations::{CollectionUpdateOperations, FieldIndexOperations};
 use itertools::{Either, Itertools as _};
-use rbac::jwt::{Claims, PayloadClaim};
 use segment::types::{Condition, ExtendedPointId, FieldCondition, Filter, Match, Payload};
 
 use super::errors::StorageError;
+use crate::rbac::access::{Access, PayloadClaim};
 
 pub fn check_collection_name(
     collections: Option<&Vec<String>>,
@@ -28,45 +28,35 @@ pub fn check_collection_name(
     })
 }
 
-/// Check if a claim object is allowed to manage collections.
-pub fn check_manage_rights(claims: Option<&Claims>) -> Result<(), StorageError> {
-    if let Some(claims) = claims {
-        let Claims {
-            exp: _,
-            w: _,
-            value_exists: _,
-            collections,
-            payload,
-        } = claims;
-        if collections.is_some() {
-            return incompatible_with_collection_claim();
-        }
-        if payload.is_some() {
-            return incompatible_with_payload_claim();
-        }
+/// Check if a access object is allowed to manage collections.
+pub fn check_manage_rights(access: &Access) -> Result<(), StorageError> {
+    let Access {
+        collections,
+        payload,
+    } = access;
+    if collections.is_some() {
+        return incompatible_with_collection_claim();
+    }
+    if payload.is_some() {
+        return incompatible_with_payload_claim();
     }
     Ok(())
 }
 
 /// Check if a claim object has full access to a collection.
 pub fn check_full_access_to_collection(
-    claims: Option<&Claims>,
+    access: &Access,
     collection_name: &str,
 ) -> Result<(), StorageError> {
-    if let Some(claims) = claims {
-        let Claims {
-            exp: _,
-            w: _,
-            value_exists: _,
-            collections,
-            payload,
-        } = claims;
-        if let Some(collections) = collections {
-            check_collection_name(Some(collections), collection_name)?;
-        }
-        if payload.is_some() {
-            return incompatible_with_payload_claim();
-        }
+    let Access {
+        collections,
+        payload,
+    } = access;
+    if let Some(collections) = collections {
+        check_collection_name(Some(collections), collection_name)?;
+    }
+    if payload.is_some() {
+        return incompatible_with_payload_claim();
     }
     Ok(())
 }
