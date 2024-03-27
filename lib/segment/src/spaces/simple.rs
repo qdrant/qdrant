@@ -7,6 +7,7 @@ use super::simple_avx::*;
 use super::simple_neon::*;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use super::simple_sse::*;
+use super::tools::is_length_zero_or_normalized;
 use crate::data_types::vectors::{DenseVector, VectorElementType};
 use crate::types::Distance;
 
@@ -226,7 +227,7 @@ pub fn manhattan_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) 
 
 pub fn cosine_preprocess(vector: DenseVector) -> DenseVector {
     let mut length: f32 = vector.iter().map(|x| x * x).sum();
-    if length < f32::EPSILON {
+    if is_length_zero_or_normalized(length) {
         return vector;
     }
     length = length.sqrt();
@@ -239,11 +240,38 @@ pub fn dot_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> Sco
 
 #[cfg(test)]
 mod tests {
+    use rand::Rng;
+
     use super::*;
 
     #[test]
     fn test_cosine_preprocessing() {
         let res: DenseVector = CosineMetric::preprocess(vec![0.0, 0.0, 0.0, 0.0]);
         assert_eq!(res, vec![0.0, 0.0, 0.0, 0.0]);
+    }
+
+    /// If we preprocess a vector multiple times, we expect the same result.
+    /// Renormalization should not produce something different.
+    #[test]
+    fn test_cosine_stable_preprocessing() {
+        const DIM: usize = 1500;
+        const ATTEMPTS: usize = 100;
+
+        let mut rng = rand::thread_rng();
+
+        for attempt in 0..ATTEMPTS {
+            let range = rng.gen_range(-2.5..=0.0)..=rng.gen_range(0.0..2.5);
+            let vector: Vec<_> = (0..DIM).map(|_| rng.gen_range(range.clone())).collect();
+
+            // Preprocess and re-preprocess
+            let preprocess1 = CosineMetric::preprocess(vector);
+            let preprocess2: DenseVector = CosineMetric::preprocess(preprocess1.clone());
+
+            // All following preprocess attempts must be the same
+            assert_eq!(
+                preprocess1, preprocess2,
+                "renormalization is not stable (vector #{attempt})"
+            );
+        }
     }
 }

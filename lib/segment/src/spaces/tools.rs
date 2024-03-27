@@ -2,6 +2,19 @@ use std::cmp::Reverse;
 
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 
+/// Check if the length is zero or normalized enough.
+///
+/// When checking if normalized, we don't check if it's exactly 1.0 but rather whether it is close
+/// enough. It prevents multiple normalization iterations from being unstable due to floating point
+/// errors.
+///
+/// When checking normalized, we use 1.0e-6 as threshold. It should be big enough to make
+/// renormalizing stable, while small enough to not affect regular normalizations.
+#[inline]
+pub fn is_length_zero_or_normalized(length: f32) -> bool {
+    length < f32::EPSILON || (length - 1.0).abs() <= 1.0e-6
+}
+
 pub fn peek_top_smallest_iterable<I, E: Ord>(elements: I, top: usize) -> Vec<E>
 where
     I: IntoIterator<Item = E>,
