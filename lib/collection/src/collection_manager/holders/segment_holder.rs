@@ -773,7 +773,7 @@ impl<'s> SegmentHolder {
                 LockedSegment::Proxy(proxy_segment) => Some((proxy_id, proxy_segment)),
                 LockedSegment::Original(_) => None,
             }).for_each(|(proxy_id, proxy_segment)| {
-                if let Err(err) = proxy_segment.read().propagate_to_writeable() {
+                if let Err(err) = proxy_segment.read().propagate_to_wrapped() {
                     log::error!("Propagating proxy segment {proxy_id} changes to wrapped segment failed, ignoring: {err}");
                 }
             });
@@ -788,7 +788,7 @@ impl<'s> SegmentHolder {
                     let wrapped_segment = {
                         let proxy_segment = proxy_segment.read();
                         // TODO: can we simply ignore this if failed? what would be better to do?
-                        if let Err(err) = proxy_segment.propagate_to_writeable() {
+                        if let Err(err) = proxy_segment.propagate_to_wrapped() {
                             log::error!("Propagating proxy segment {proxy_id} changes to wrapped segment failed, ignoring: {err}");
                         }
                         proxy_segment.wrapped_segment.clone()

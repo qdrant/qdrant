@@ -169,9 +169,9 @@ impl ProxySegment {
     /// This is required if making both the wrapped segment and the writable segment available in a
     /// shard holder at the same time. If the wrapped segment is thrown away, then this is not
     /// required.
-    pub(super) fn propagate_to_writeable(&self) -> OperationResult<()> {
-        let write_segment = self.write_segment.get();
-        let mut write_segment = write_segment.write();
+    pub(super) fn propagate_to_wrapped(&self) -> OperationResult<()> {
+        let wrapped_segment = self.wrapped_segment.get();
+        let mut wrapped_segment = wrapped_segment.write();
 
         // TODO: define proper op_num here!
         let op_num = 0;
@@ -180,7 +180,7 @@ impl ProxySegment {
         {
             let deleted_points = self.deleted_points.upgradable_read();
             for point_id in deleted_points.iter() {
-                write_segment.delete_point(op_num, *point_id)?;
+                wrapped_segment.delete_point(op_num, *point_id)?;
             }
             RwLockUpgradableReadGuard::upgrade(deleted_points).clear();
         }
@@ -189,7 +189,7 @@ impl ProxySegment {
         {
             let deleted_indexes = self.deleted_indexes.upgradable_read();
             for key in deleted_indexes.iter() {
-                write_segment.delete_field_index(op_num, key)?;
+                wrapped_segment.delete_field_index(op_num, key)?;
             }
             RwLockUpgradableReadGuard::upgrade(deleted_indexes).clear();
         }
@@ -198,7 +198,7 @@ impl ProxySegment {
         {
             let created_indexes = self.created_indexes.upgradable_read();
             for (key, field_schema) in created_indexes.iter() {
-                write_segment.create_field_index(op_num, key, Some(field_schema))?;
+                wrapped_segment.create_field_index(op_num, key, Some(field_schema))?;
             }
             RwLockUpgradableReadGuard::upgrade(created_indexes).clear();
         }
