@@ -1,0 +1,125 @@
+#ifndef NEAREST_HEAP_HEADER
+#define NEAREST_HEAP_HEADER
+
+#ifndef NEAREST_HEAP_LAYOUT_SET
+#error "NEAREST_HEAP_LAYOUT_SET not defined"
+#endif
+
+#include "common.comp"
+#include "links.comp"
+
+layout(set = NEAREST_HEAP_LAYOUT_SET, binding = 0)
+readonly uniform SearcherParams {
+    uint capacity;
+} nearest_heap_params;
+
+layout(set = NEAREST_HEAP_LAYOUT_SET, binding = 1)
+buffer NearestScores {
+    float data[];
+} nearest_scores;
+
+layout(set = NEAREST_HEAP_LAYOUT_SET, binding = 2)
+buffer NearestIndices {
+    uint data[];
+} nearest_indices;
+
+float nearest_smaller_score;
+uint nearest_smaller_index;
+uint nearest_count;
+
+#define NEAREST_HEAP_CAPACITY nearest_heap_params.capacity
+#define NEAREST_BUFFER_OFFSET (EF * (gl_GlobalInvocationID.x / SUBGROUP_SIZE))
+
+void nearest_heap_init() {
+    nearest_count = 0;
+    nearest_smaller_index = 0;
+    nearest_smaller_score = positive_infinity;
+    
+    uint buffer_offset = NEAREST_BUFFER_OFFSET;
+    uint capacity = NEAREST_HEAP_CAPACITY;
+    for (uint i = SUBGROUP_INVOKATION_ID; i < capacity; i += SUBGROUP_SIZE) {
+        uint buffer_index = buffer_offset + i;
+        nearest_scores.data[buffer_index] = positive_infinity;
+    }
+}
+
+// Push the nearest `ScoredPoint`. Returns true if the `ScoredPoint` was added.
+bool push_nearest(ScoredPoint scored_point) {
+    if (nearest_count == EF) {
+        if (scored_point.score > nearest_smaller_score) {
+            uint buffer_offset = NEAREST_BUFFER_OFFSET;
+            if (nearest_smaller_index % SUBGROUP_SIZE == SUBGROUP_INVOKATION_ID) {
+                uint buffer_index = buffer_offset + nearest_smaller_index;
+                nearest_scores.data[buffer_index] = scored_point.score;
+                nearest_indices.data[buffer_index] = scored_point.idx;
+            }
+            groupMemoryBarrier(); // TODO: is this necessary? We write and read in the same shader invocation
+
+            nearest_smaller_index = 0;
+            nearest_smaller_score = positive_infinity;
+            uint capacity = NEAREST_HEAP_CAPACITY;
+            for (uint i = SUBGROUP_INVOKATION_ID; i < capacity; i += SUBGROUP_SIZE) {
+                uint buffer_index = buffer_offset + i;
+                float score = nearest_scores.data[buffer_index];
+                if (score < nearest_smaller_score) {
+                    nearest_smaller_score = score;
+                    nearest_smaller_index = i;
+                }
+            }
+
+            float exclusive_smaller = subgroupExclusiveMin(nearest_smaller_score);
+            bool is_min_thread = nearest_smaller_score < exclusive_smaller;
+            uvec4 subgroup_min_threads = subgroupBallot(is_min_thread);
+            uint subgroup_min_thread = subgroupBallotFindLSB(subgroup_min_threads);
+            nearest_smaller_index = subgroupShuffle(nearest_smaller_index, subgroup_min_thread);
+            nearest_smaller_score = subgroupShuffle(nearest_smaller_score, subgroup_min_thread);
+
+            return true;
+        } else {
+            return false;
+        }
+    } else {
+        if (nearest_count % SUBGROUP_SIZE == SUBGROUP_INVOKATION_ID) {
+            uint buffer_index = NEAREST_BUFFER_OFFSET + nearest_count;
+            nearest_scores.data[buffer_index] = scored_point.score;
+            nearest_indices.data[buffer_index] = scored_point.idx;
+        }
+        groupMemoryBarrier(); // TODO: is this necessary? We write and read in the same shader invocation
+
+        if (scored_point.score < nearest_smaller_score) {
+            nearest_smaller_score = scored_point.score;
+            nearest_smaller_index = nearest_count;
+        }
+        nearest_count++;
+        return true;
+    }
+}
+
+void sort_nearest() {
+    uint buffer_offset = NEAREST_BUFFER_OFFSET;
+    uint capacity = NEAREST_HEAP_CAPACITY;
+    uint other_invokation_id = SUBGROUP_INVOKATION_ID % 2 == 0 ? SUBGROUP_INVOKATION_ID + 1 : SUBGROUP_INVOKATION_ID - 1;
+    for (uint e = 0; i < EF; i++) {
+        for (uint i = SUBGROUP_INVOKATION_ID; i < capacity; i += SUBGROUP_SIZE) {
+            uint buffer_index = buffer_offset + i;
+            float score = nearest_scores.data[buffer_index];
+            float other_score = subgroupShuffle(score, other_invokation_id);
+            bool changed = false;
+            if (SUBGROUP_INVOKATION_ID % 2 == 0 && other_score > score) {
+                changed = true;
+                // swap
+                nearest_scores.data[buffer_index] = other_score;
+                nearest_scores.data[buffer_index + 1] = score;
+                uint tmp = nearest_indices.data[buffer_index];
+                nearest_indices.data[buffer_index] = nearest_indices.data[buffer_index + 1];
+                nearest_indices.data[buffer_index + 1] = tmp;
+            }
+
+            if (subgroupAny(changed)) {
+                groupMemoryBarrier();
+            }
+        }
+    }
+}
+
+#endif

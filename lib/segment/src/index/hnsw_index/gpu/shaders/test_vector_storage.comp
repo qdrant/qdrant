@@ -2,6 +2,7 @@
 
 #extension GL_KHR_shader_subgroup_basic : enable
 #extension GL_KHR_shader_subgroup_arithmetic : enable
+#extension GL_KHR_shader_subgroup_shuffle : enable
 
 #define VECTOR_STORAGE_LAYOUT_SET 1
 #include "vector_storage.comp"
