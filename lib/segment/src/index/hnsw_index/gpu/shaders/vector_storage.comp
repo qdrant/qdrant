@@ -42,18 +42,18 @@ VECTOR_STORAGE_DEFINE(3)
     }
 
 #define VECTOR_STORAGE_SCORE_SUBGROUP(STORAGE_INDEX_A, STORAGE_INDEX_B) \
-    for (uint i = 0; i < d; i += SUBGROUP_SIZE) { \
+    for (uint i = 0; i < d; i += SUBGROUP_SIZE, aIndex += SUBGROUP_SIZE, bIndex += SUBGROUP_SIZE) { \
         result += dot( \
-            STORAGE(STORAGE_INDEX_A).data[aId + i + SUBGROUP_ID], \
-            STORAGE(STORAGE_INDEX_B).data[bId + i + SUBGROUP_ID] \
+            STORAGE(STORAGE_INDEX_A).data[aIndex], \
+            STORAGE(STORAGE_INDEX_B).data[bIndex] \
         ); \
     }
 
 float similarity(uint a, uint b) {
     float result = 0.0;
     uint d = DIM / 4;
-    uint aId = (a / STORAGES_COUNT) * d;
-    uint bId = (b / STORAGES_COUNT) * d;
+    uint aIndex = (a / STORAGES_COUNT) * d + SUBGROUP_INVOKATION_ID;
+    uint bIndex = (b / STORAGES_COUNT) * d + SUBGROUP_INVOKATION_ID;
     uint storage_index_a = a % STORAGES_COUNT;
     uint storage_index_b = b % STORAGES_COUNT;
 

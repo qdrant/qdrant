@@ -1,5 +1,8 @@
 #version 450
 
+#extension GL_KHR_shader_subgroup_basic : enable
+#extension GL_KHR_shader_subgroup_arithmetic : enable
+
 #define VECTOR_STORAGE_LAYOUT_SET 0
 #define LINKS_LAYOUT_SET 1
 #define SEARCHER_LAYOUT_SET 2

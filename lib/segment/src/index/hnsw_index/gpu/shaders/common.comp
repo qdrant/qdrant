@@ -3,7 +3,8 @@
 
 //#define SUBGROUP_SIZE gl_SubgroupSize
 #define SUBGROUP_SIZE 32
-#define SUBGROUP_ID  gl_SubgroupID
+#define SUBGROUP_ID gl_SubgroupID
+#define SUBGROUP_INVOKATION_ID gl_SubgroupInvocationID 
 
 #define CONCAT(a, b) a##_##b
 
