@@ -19,6 +19,29 @@ pub struct ActixTelemetryTransform {
     telemetry_collector: Arc<Mutex<ActixTelemetryCollector>>,
 }
 
+// The uri will be `/collections/collection_name...`
+fn get_collection_from_uri(uri: &str) -> Option<String> {
+    let mut uri_segments = uri.split('/');
+    let seg0 = uri_segments.next();
+    if let Some(seg0) = seg0 {
+        if !seg0.is_empty() {
+            return None;
+        }
+    } else {
+        return None;
+    }
+    let seg1 = uri_segments.next();
+    if let Some(seg1) = seg1 {
+        if seg1 != "collections" {
+            return None;
+        }
+    } else {
+        return None;
+    }
+    let seg2 = uri_segments.next();
+    seg2.map(|seg2| seg2.to_owned())
+}
+
 /// Actix telemetry service. It hooks every request and looks into response status code.
 ///
 /// More about actix service with similar example
@@ -36,6 +59,7 @@ where
     actix_web::dev::forward_ready!(service);
 
     fn call(&self, request: ServiceRequest) -> Self::Future {
+        let collection_name = get_collection_from_uri(request.uri().path());
         let match_pattern = request
             .match_pattern()
             .unwrap_or_else(|| "unknown".to_owned());
@@ -48,7 +72,7 @@ where
             let status = response.response().status().as_u16();
             telemetry_data
                 .lock()
-                .add_response(request_key, status, instant);
+                .add_response(collection_name, request_key, status, instant);
             Ok(response)
         })
     }
