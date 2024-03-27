@@ -258,7 +258,7 @@ pub async fn do_update_collection_cluster(
         ClusterOperations::CreateShardingKey(CreateShardingKeyOperation {
             create_sharding_key,
         }) => {
-            if !create_sharding_key.has_default_params() {
+            if collections.is_some() && !create_sharding_key.has_default_params() {
                 return incompatible_with_collection_claim();
             }
         }
