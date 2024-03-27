@@ -1722,6 +1722,8 @@ impl Drop for Segment {
 
 #[cfg(test)]
 mod tests {
+    use rand::Rng;
+    use rstest::rstest;
     use tempfile::Builder;
 
     use super::*;
@@ -2470,6 +2472,36 @@ mod tests {
                 .vector_by_offset(wrong_name, internal_id)
                 .err()
                 .unwrap();
+        }
+    }
+
+    /// If we preprocess a vector multiple times, we expect the same result.
+    /// Renormalization should not produce something different.
+    #[rstest]
+    fn test_stable_normalize(
+        #[values(Distance::Cosine, Distance::Euclid, Distance::Dot, Distance::Manhattan)] distance: Distance,
+    ) {
+        const DIM: usize = 16;
+        const ATTEMPTS: usize = 100;
+        const TEST_COUNT: usize = 100;
+
+        let mut rng = rand::thread_rng();
+
+        for i in 0..TEST_COUNT {
+            let range = rng.gen_range(-2.5..=0.0)..=rng.gen_range(0.0..2.5);
+            let vector: Vec<_> = (0..DIM).map(|_| rng.gen_range(range.clone())).collect();
+            let mut vectors = NamedVectors::from([("vector1".into(), vector)]);
+
+            vectors.preprocess(|_| distance);
+            let base = vectors.clone();
+
+            for attempt in 2..=ATTEMPTS {
+                vectors.preprocess(|_| distance);
+                assert_eq!(
+                    vectors, base,
+                    "normalization attempt {attempt} gives a different vector (vector #{i})",
+                );
+            }
         }
     }
 }
