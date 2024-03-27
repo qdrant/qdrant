@@ -6,7 +6,6 @@ use std::sync::Arc;
 use common::types::ScoreType;
 use futures::future::try_join_all;
 use itertools::Itertools;
-use ordered_float::Float;
 use parking_lot::RwLock;
 use segment::common::operation_error::OperationError;
 use segment::common::BYTES_IN_KB;
@@ -95,7 +94,7 @@ impl SegmentsSearcher {
 
         // Therefore we need to track the lowest scored element per segment for each batch
         let mut lowest_scores_per_request: Vec<Vec<ScoreType>> = vec![
-            vec![f32::max_value(); batch_size]; // initial max score value for each batch
+            vec![ScoreType::max_value(); batch_size]; // initial max score value for each batch
             number_segments
         ];
 
@@ -112,7 +111,7 @@ impl SegmentsSearcher {
                 lowest_scores_per_request[segment_idx][batch_req_idx] = query_res
                     .last()
                     .map(|x| x.score)
-                    .unwrap_or_else(f32::min_value);
+                    .unwrap_or_else(ScoreType::min_value);
                 result_aggregator.update_batch_results(batch_req_idx, query_res.into_iter());
             }
         }

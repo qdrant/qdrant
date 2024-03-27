@@ -11,8 +11,10 @@ publish = false
 
 [dependencies]
 num_cpus = "1.16"
+num-traits = { workspace = true }
 ordered-float = "4.2"
 serde = { workspace = true }
+schemars = { workspace = true }
 tokio = { workspace = true }
 validator = { version = "0.16", features = ["derive"] }
 lazy_static = "1.4.0"

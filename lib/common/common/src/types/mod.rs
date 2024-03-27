@@ -1,27 +1,31 @@
+pub mod score_type;
+use num_traits::float::FloatCore;
+use ordered_float::OrderedFloat;
+pub use score_type::*;
 use std::cmp::Ordering;
 
-use ordered_float::OrderedFloat;
+pub trait Float: FloatCore {}
 
-/// Type of vector matching score
-pub type ScoreType = f32;
+impl Float for f32 {}
+
 /// Type of point index inside a segment
 pub type PointOffsetType = u32;
 
 #[derive(Copy, Clone, PartialEq, Debug, Default)]
-pub struct ScoredPointOffset {
+pub struct ScoredPointOffset<T: Float = f32> {
     pub idx: PointOffsetType,
-    pub score: ScoreType,
+    pub score: ScoreType<T>,
 }
 
-impl Eq for ScoredPointOffset {}
+impl<T: Float> Eq for ScoredPointOffset<T> {}
 
-impl Ord for ScoredPointOffset {
+impl<T: Float> Ord for ScoredPointOffset<T> {
     fn cmp(&self, other: &Self) -> Ordering {
-        OrderedFloat(self.score).cmp(&OrderedFloat(other.score))
+        OrderedFloat(*self.score).cmp(&OrderedFloat(*other.score))
     }
 }
 
-impl PartialOrd for ScoredPointOffset {
+impl<T: Float> PartialOrd for ScoredPointOffset<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }

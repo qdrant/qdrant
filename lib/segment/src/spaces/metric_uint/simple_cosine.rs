@@ -15,10 +15,7 @@ impl Metric<VectorElementTypeByte> for CosineMetric {
     }
 
     fn preprocess(vector: DenseVector) -> TypedDenseVector<VectorElementTypeByte> {
-        vector
-            .into_iter()
-            .map(|x| x as VectorElementTypeByte)
-            .collect()
+        vector.into_iter().map(|x| x.into()).collect()
     }
 }
 
@@ -37,8 +34,11 @@ fn cosine_similarity_bytes(
     }
 
     if norm1 == 0 || norm2 == 0 {
-        return 0.0;
+        return 0.0.into();
     }
 
-    dot_product as ScoreType / ((norm1 as ScoreType * norm2 as ScoreType).sqrt())
+    ScoreType::from(dot_product)
+        / ((ScoreType::<f32>::from(norm1) * ScoreType::<f32>::from(norm2))
+            .sqrt()
+            .into())
 }

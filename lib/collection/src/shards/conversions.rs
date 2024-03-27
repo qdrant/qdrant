@@ -439,7 +439,7 @@ pub fn try_scored_point_from_grpc(
     Ok(ScoredPoint {
         id,
         version: point.version,
-        score: point.score,
+        score: point.score.into(),
         payload,
         vector,
         shard_key: convert_shard_key_from_grpc_opt(point.shard_key),

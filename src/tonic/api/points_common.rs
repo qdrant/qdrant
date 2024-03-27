@@ -34,7 +34,7 @@ use collection::operations::{ClockTag, CollectionUpdateOperations, OperationWith
 use collection::shards::shard::ShardId;
 use itertools::Itertools;
 use rbac::jwt::Claims;
-use segment::data_types::vectors::VectorStruct;
+use segment::data_types::vectors::{from_primitives_vec, VectorStruct};
 use segment::types::{
     ExtendedPointId, Filter, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
 };
@@ -962,8 +962,11 @@ pub async fn search(
         sparse_indices,
     } = search_points;
 
-    let vector_struct =
-        api::grpc::conversions::into_named_vector_struct(vector_name, vector, sparse_indices)?;
+    let vector_struct = api::grpc::conversions::into_named_vector_struct(
+        vector_name,
+        from_primitives_vec(vector),
+        sparse_indices,
+    )?;
 
     let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
 
@@ -979,7 +982,7 @@ pub async fn search(
                 .map(|selector| selector.into())
                 .unwrap_or_default(),
         ),
-        score_threshold,
+        score_threshold: score_threshold.map(|t| t.into()),
     };
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
@@ -1185,7 +1188,7 @@ pub async fn recommend(
         .collect::<Result<Vec<RecommendExample>, Status>>()?;
     let negative_vectors = negative_vectors
         .into_iter()
-        .map(|v| RecommendExample::Dense(v.data))
+        .map(|v| RecommendExample::Dense(from_primitives_vec(v.data)))
         .collect();
     let negative = [negative_ids, negative_vectors].concat();
 
@@ -1203,7 +1206,7 @@ pub async fn recommend(
                 .map(|selector| selector.into())
                 .unwrap_or_default(),
         ),
-        score_threshold,
+        score_threshold: score_threshold.map(|t| t.into()),
         using: using.map(|u| u.into()),
         lookup_from: lookup_from.map(|l| l.into()),
     };

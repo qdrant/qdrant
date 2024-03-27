@@ -4,7 +4,7 @@ use std::time::Instant;
 use chrono::{NaiveDateTime, Timelike};
 use segment::data_types::integer_index::IntegerIndexType;
 use segment::data_types::text_index::TextIndexType;
-use segment::data_types::vectors::DenseVector;
+use segment::data_types::vectors::{from_primitives_vec, to_primitives_vec, DenseVector};
 use segment::json_path::JsonPath;
 use segment::types::{default_quantization_ignore_value, DateTimePayloadType, FloatPayloadType};
 use tonic::Status;
@@ -478,7 +478,7 @@ impl From<segment::data_types::vectors::Vector> for Vector {
     fn from(vector: segment::data_types::vectors::Vector) -> Self {
         match vector {
             segment::data_types::vectors::Vector::Dense(vector) => Self {
-                data: vector,
+                data: to_primitives_vec(vector),
                 indices: None,
             },
             segment::data_types::vectors::Vector::Sparse(vector) => Self {
@@ -500,7 +500,7 @@ impl TryFrom<Vector> for segment::data_types::vectors::Vector {
 
     fn try_from(vector: Vector) -> Result<Self, Self::Error> {
         Ok(match vector.indices {
-            None => segment::data_types::vectors::Vector::Dense(vector.data),
+            None => segment::data_types::vectors::Vector::Dense(from_primitives_vec(vector.data)),
             Some(indices) => segment::data_types::vectors::Vector::Sparse(
                 sparse::common::sparse_vector::SparseVector::new(indices.data, vector.data)
                     .map_err(|_| {
@@ -551,7 +551,7 @@ impl From<segment::types::ScoredPoint> for ScoredPoint {
         Self {
             id: Some(point.id.into()),
             payload: point.payload.map(payload_to_proto).unwrap_or_default(),
-            score: point.score,
+            score: *point.score,
             version: point.version,
             vectors: point.vector.map(|v| v.into()),
             shard_key: point.shard_key.map(convert_shard_key_to_grpc),
@@ -599,7 +599,9 @@ impl TryFrom<Vectors> for segment::data_types::vectors::VectorStruct {
         match vectors.vectors_options {
             Some(vectors_options) => Ok(match vectors_options {
                 VectorsOptions::Vector(vector) => {
-                    segment::data_types::vectors::VectorStruct::Single(vector.data)
+                    segment::data_types::vectors::VectorStruct::Single(from_primitives_vec(
+                        vector.data,
+                    ))
                 }
                 VectorsOptions::Vectors(vectors) => {
                     segment::data_types::vectors::VectorStruct::Multi(vectors.try_into()?)
@@ -1434,7 +1436,7 @@ pub fn into_named_vector_struct(
         Some(indices) => NamedVectorStruct::Sparse(NamedSparseVector {
             name: vector_name
                 .ok_or_else(|| Status::invalid_argument("Sparse vector must have a name"))?,
-            vector: SparseVector::new(indices.data, vector).map_err(|_| {
+            vector: SparseVector::new(indices.data, to_primitives_vec(vector)).map_err(|_| {
                 Status::invalid_argument("Sparse indices does not match sparse vector conditions")
             })?,
         }),

@@ -237,7 +237,7 @@ impl Eq for ScoredPoint {}
 
 impl Ord for ScoredPoint {
     fn cmp(&self, other: &Self) -> Ordering {
-        OrderedFloat(self.score).cmp(&OrderedFloat(other.score))
+        OrderedFloat(*self.score).cmp(&OrderedFloat(*other.score))
     }
 }
 

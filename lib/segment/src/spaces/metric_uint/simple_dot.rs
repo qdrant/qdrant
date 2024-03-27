@@ -15,10 +15,7 @@ impl Metric<VectorElementTypeByte> for DotProductMetric {
     }
 
     fn preprocess(vector: DenseVector) -> TypedDenseVector<VectorElementTypeByte> {
-        vector
-            .into_iter()
-            .map(|x| x as VectorElementTypeByte)
-            .collect()
+        vector.into_iter().map(|x| x.into()).collect()
     }
 }
 
@@ -29,5 +26,5 @@ fn dot_similarity_bytes(v1: &[VectorElementTypeByte], v2: &[VectorElementTypeByt
         dot_product += (*a as i32) * (*b as i32);
     }
 
-    dot_product as ScoreType
+    ScoreType::from(dot_product)
 }

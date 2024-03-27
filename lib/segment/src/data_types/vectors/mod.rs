@@ -1,3 +1,6 @@
+pub mod element;
+pub use element::*;
+
 use std::collections::HashMap;
 
 use schemars::JsonSchema;
@@ -159,11 +162,6 @@ impl<'a> From<&'a Vector> for VectorRef<'a> {
         }
     }
 }
-
-/// Type of vector element.
-pub type VectorElementType = f32;
-
-pub type VectorElementTypeByte = u8;
 
 pub const DEFAULT_VECTOR_NAME: &str = "";
 

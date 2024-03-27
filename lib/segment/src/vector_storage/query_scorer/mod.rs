@@ -23,7 +23,7 @@ pub fn score_multi<TMetric: Metric<VectorElementType>>(
     multidense_a: &MultiDenseVector,
     multidense_b: &MultiDenseVector,
 ) -> ScoreType {
-    let mut sum = 0.0;
+    let mut sum = ScoreType::from(0.0);
     for dense_a in multidense_a.iter() {
         sum += multidense_b
             .iter()

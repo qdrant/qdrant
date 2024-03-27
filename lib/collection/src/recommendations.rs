@@ -66,13 +66,13 @@ fn avg_vectors<'a>(vectors: impl Iterator<Item = VectorRef<'a>>) -> CollectionRe
         )),
         (_, 0) => {
             for item in &mut avg_dense {
-                *item /= dense_count as VectorElementType;
+                **item /= *VectorElementType::from(dense_count);
             }
             Ok(avg_dense.into())
         }
         (0, _) => {
             for item in &mut avg_sparse.values {
-                *item /= sparse_count as VectorElementType;
+                *item /= *VectorElementType::from(sparse_count);
             }
             Ok(avg_sparse.into())
         }
@@ -88,7 +88,7 @@ fn merge_positive_and_negative_avg(positive: Vector, negative: Vector) -> Collec
             let vector: DenseVector = positive
                 .iter()
                 .zip(negative.iter())
-                .map(|(pos, neg)| pos + pos - neg)
+                .map(|(pos, neg)| pos + pos - *neg)
                 .collect();
             Ok(vector.into())
         }
