@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use futures::future::BoxFuture;
-use rbac::jwt::Claims;
+use storage::rbac::access::Access;
 use tonic::body::BoxBody;
 use tonic::Status;
 use tower::{Layer, Service};
@@ -37,7 +37,7 @@ pub struct AuthMiddleware<S> {
 }
 
 async fn check(auth_keys: Arc<AuthKeys>, mut req: Request) -> Result<Request, Status> {
-    let claims = auth_keys
+    let access = auth_keys
         .validate_request(
             |key| req.headers().get(key).and_then(|val| val.to_str().ok()),
             is_read_only(&req),
@@ -45,11 +45,11 @@ async fn check(auth_keys: Arc<AuthKeys>, mut req: Request) -> Result<Request, St
         .await
         .map_err(Status::permission_denied)?;
 
-    if let Some(claims) = claims {
-        let _previous = req.extensions_mut().insert::<Claims>(claims);
+    if let Some(access) = access {
+        let _previous = req.extensions_mut().insert::<Access>(access);
         debug_assert!(
             _previous.is_none(),
-            "Previous claims should not exist in the request"
+            "Previous access object should not exist in the request"
         );
     }
 
@@ -105,8 +105,8 @@ impl<S> Layer<S> for AuthLayer {
     }
 }
 
-pub fn extract_claims<R>(req: &mut tonic::Request<R>) -> Option<Claims> {
-    req.extensions_mut().remove::<Claims>()
+pub fn extract_access<R>(req: &mut tonic::Request<R>) -> Option<Access> {
+    req.extensions_mut().remove::<Access>()
 }
 
 fn is_read_only<R>(req: &tonic::codegen::http::Request<R>) -> bool {

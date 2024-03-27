@@ -18,7 +18,6 @@ use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};
 use collection::shards::transfer::{ShardTransfer, ShardTransferKey, ShardTransferRestart};
 use itertools::Itertools;
 use rand::prelude::SliceRandom;
-use rbac::jwt::Claims;
 use storage::content_manager::claims::{
     check_collection_name, check_full_access_to_collection, incompatible_with_collection_claim,
 };
@@ -30,21 +29,19 @@ use storage::content_manager::collection_meta_ops::{
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
+use storage::rbac::access::Access;
 use tokio::task::JoinHandle;
 
 pub async fn do_collection_exists(
     toc: &TableOfContent,
-    claims: Option<Claims>,
+    access: Option<Access>,
     name: &str,
 ) -> Result<CollectionExists, StorageError> {
-    if let Some(claims) = claims.as_ref() {
-        let Claims {
-            exp: _,
-            w: _,
-            value_exists: _,
+    if let Some(access) = access.as_ref() {
+        let Access {
             collections,
             payload: _,
-        } = claims;
+        } = access;
         check_collection_name(collections.as_ref(), name)?;
     }
 
@@ -61,18 +58,15 @@ pub async fn do_collection_exists(
 
 pub async fn do_get_collection(
     toc: &TableOfContent,
-    claims: Option<Claims>,
+    access: Option<Access>,
     name: &str,
     shard_selection: Option<ShardId>,
 ) -> Result<CollectionInfo, StorageError> {
-    if let Some(claims) = claims.as_ref() {
-        let Claims {
-            exp: _,
-            w: _,
-            value_exists: _,
+    if let Some(access) = access.as_ref() {
+        let Access {
             collections,
             payload: _,
-        } = claims;
+        } = access;
         check_collection_name(collections.as_ref(), name)?;
     }
 
@@ -88,16 +82,13 @@ pub async fn do_get_collection(
 
 pub async fn do_list_collections(
     toc: &TableOfContent,
-    claims: Option<Claims>,
+    access: Option<Access>,
 ) -> CollectionsResponse {
-    let claims_collections = if let Some(claims) = claims.as_ref() {
-        let Claims {
-            exp: _,
-            w: _,
-            value_exists: _,
+    let access_collections = if let Some(access) = access.as_ref() {
+        let Access {
             collections,
             payload: _,
-        } = claims;
+        } = access;
         collections.as_ref()
     } else {
         None
@@ -108,7 +99,7 @@ pub async fn do_list_collections(
         .await
         .into_iter()
         .filter(|c| {
-            claims_collections.map_or(true, |claims_collections| claims_collections.contains(c))
+            access_collections.map_or(true, |access_collections| access_collections.contains(c))
         })
         .map(|name| CollectionDescription { name })
         .collect_vec();
@@ -157,17 +148,14 @@ fn generate_even_placement(
 
 pub async fn do_list_collection_aliases(
     toc: &TableOfContent,
-    claims: Option<Claims>,
+    access: Option<Access>,
     collection_name: &str,
 ) -> Result<CollectionsAliasesResponse, StorageError> {
-    let claims_collections = if let Some(claims) = claims.as_ref() {
-        let Claims {
-            exp: _,
-            w: _,
-            value_exists: _,
+    let access_collections = if let Some(access) = access.as_ref() {
+        let Access {
             collections,
             payload: _,
-        } = claims;
+        } = access;
         check_collection_name(collections.as_ref(), collection_name)?;
         collections.as_ref()
     } else {
@@ -179,8 +167,8 @@ pub async fn do_list_collection_aliases(
         .await?
         .into_iter()
         .filter(|alias| {
-            claims_collections.map_or(true, |claims_collections| {
-                claims_collections.contains(alias)
+            access_collections.map_or(true, |access_collections| {
+                access_collections.contains(alias)
             })
         })
         .map(|alias| AliasDescription {
@@ -193,16 +181,13 @@ pub async fn do_list_collection_aliases(
 
 pub async fn do_list_aliases(
     toc: &TableOfContent,
-    claims: Option<Claims>,
+    access: Option<Access>,
 ) -> Result<CollectionsAliasesResponse, StorageError> {
-    let claims_collections = if let Some(claims) = claims.as_ref() {
-        let Claims {
-            exp: _,
-            w: _,
-            value_exists: _,
+    let access_collections = if let Some(access) = access.as_ref() {
+        let Access {
             collections,
             payload: _,
-        } = claims;
+        } = access;
         collections.as_ref()
     } else {
         None
@@ -210,9 +195,9 @@ pub async fn do_list_aliases(
 
     let mut aliases = toc.list_aliases().await?;
     aliases.retain(|alias| {
-        claims_collections.map_or(true, |claims_collections| {
-            claims_collections.contains(&alias.collection_name)
-                && claims_collections.contains(&alias.alias_name)
+        access_collections.map_or(true, |access_collections| {
+            access_collections.contains(&alias.collection_name)
+                && access_collections.contains(&alias.alias_name)
         })
     });
 
@@ -221,10 +206,10 @@ pub async fn do_list_aliases(
 
 pub async fn do_list_snapshots(
     toc: &TableOfContent,
-    claims: Option<Claims>,
+    access: Option<Access>,
     collection_name: &str,
 ) -> Result<Vec<SnapshotDescription>, StorageError> {
-    check_full_access_to_collection(claims.as_ref(), collection_name)?;
+    check_full_access_to_collection(access.as_ref(), collection_name)?;
     Ok(toc
         .get_collection(collection_name)
         .await?
@@ -234,10 +219,10 @@ pub async fn do_list_snapshots(
 
 pub fn do_create_snapshot(
     dispatcher: &Dispatcher,
-    claims: Option<Claims>,
+    access: Option<Access>,
     collection_name: &str,
 ) -> Result<JoinHandle<Result<SnapshotDescription, StorageError>>, StorageError> {
-    check_full_access_to_collection(claims.as_ref(), collection_name)?;
+    check_full_access_to_collection(access.as_ref(), collection_name)?;
     let collection = collection_name.to_string();
     let dispatcher = dispatcher.clone();
     Ok(tokio::spawn(async move {
@@ -247,17 +232,14 @@ pub fn do_create_snapshot(
 
 pub async fn do_get_collection_cluster(
     toc: &TableOfContent,
-    claims: Option<Claims>,
+    access: Option<Access>,
     name: &str,
 ) -> Result<CollectionClusterInfo, StorageError> {
-    if let Some(claims) = claims.as_ref() {
-        let Claims {
-            exp: _,
-            w: _,
-            value_exists: _,
+    if let Some(access) = access.as_ref() {
+        let Access {
             collections,
             payload: _,
-        } = claims;
+        } = access;
         check_collection_name(collections.as_ref(), name)?;
     }
 
@@ -269,17 +251,15 @@ pub async fn do_update_collection_cluster(
     dispatcher: &Dispatcher,
     collection_name: String,
     operation: ClusterOperations,
-    claims: Option<Claims>,
+    access: Option<Access>,
     wait_timeout: Option<Duration>,
 ) -> Result<bool, StorageError> {
-    if let Some(claims) = claims.as_ref() {
-        let Claims {
-            exp: _,
-            w: _,
-            value_exists: _,
+    if let Some(access) = access.as_ref() {
+        let Access {
             collections,
             payload: _,
-        } = claims;
+        } = access;
+
         check_collection_name(collections.as_ref(), &collection_name)?;
         match &operation {
             ClusterOperations::MoveShard(_)

@@ -4,12 +4,12 @@ use actix_web_validator::{Json, Path, Query};
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
 use collection::operations::point_ops::{PointInsertOperations, PointsSelector, WriteOrdering};
 use collection::operations::vector_ops::{DeleteVectors, UpdateVectors};
-use rbac::jwt::Claims;
 use schemars::JsonSchema;
 use segment::json_path::{JsonPath, JsonPathInterface};
 use serde::{Deserialize, Serialize};
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
+use storage::rbac::access::Access;
 use validator::Validate;
 
 use super::CollectionPath;
@@ -40,7 +40,7 @@ async fn upsert_points(
     collection: Path<CollectionPath>,
     operation: Json<PointInsertOperations>,
     params: Query<UpdateParam>,
-    claims: Extension<Claims>,
+    access: Extension<Access>,
 ) -> impl Responder {
     let timing = Instant::now();
     let operation = operation.into_inner();
@@ -55,7 +55,7 @@ async fn upsert_points(
         None,
         wait,
         ordering,
-        claims.into_inner(),
+        access.into_inner(),
     )
     .await;
     process_response(response, timing)
@@ -67,7 +67,7 @@ async fn delete_points(
     collection: Path<CollectionPath>,
     operation: Json<PointsSelector>,
     params: Query<UpdateParam>,
-    claims: Extension<Claims>,
+    access: Extension<Access>,
 ) -> impl Responder {
     let timing = Instant::now();
     let operation = operation.into_inner();
@@ -82,7 +82,7 @@ async fn delete_points(
         None,
         wait,
         ordering,
-        claims.into_inner(),
+        access.into_inner(),
     )
     .await;
     process_response(response, timing)
@@ -94,7 +94,7 @@ async fn update_vectors(
     collection: Path<CollectionPath>,
     operation: Json<UpdateVectors>,
     params: Query<UpdateParam>,
-    claims: Extension<Claims>,
+    access: Extension<Access>,
 ) -> impl Responder {
     let timing = Instant::now();
     let operation = operation.into_inner();
@@ -109,7 +109,7 @@ async fn update_vectors(
         None,
         wait,
         ordering,
-        claims.into_inner(),
+        access.into_inner(),
     )
     .await;
     process_response(response, timing)
@@ -121,7 +121,7 @@ async fn delete_vectors(
     collection: Path<CollectionPath>,
     operation: Json<DeleteVectors>,
     params: Query<UpdateParam>,
-    claims: Extension<Claims>,
+    access: Extension<Access>,
 ) -> impl Responder {
     let timing = Instant::now();
     let operation = operation.into_inner();
@@ -136,7 +136,7 @@ async fn delete_vectors(
         None,
         wait,
         ordering,
-        claims.into_inner(),
+        access.into_inner(),
     )
     .await;
     process_response(response, timing)
@@ -148,7 +148,7 @@ async fn set_payload(
     collection: Path<CollectionPath>,
     operation: Json<SetPayload>,
     params: Query<UpdateParam>,
-    claims: Extension<Claims>,
+    access: Extension<Access>,
 ) -> impl Responder {
     let timing = Instant::now();
     let operation = operation.into_inner();
@@ -163,7 +163,7 @@ async fn set_payload(
         None,
         wait,
         ordering,
-        claims.into_inner(),
+        access.into_inner(),
     )
     .await;
     process_response(response, timing)
@@ -175,7 +175,7 @@ async fn overwrite_payload(
     collection: Path<CollectionPath>,
     operation: Json<SetPayload>,
     params: Query<UpdateParam>,
-    claims: Extension<Claims>,
+    access: Extension<Access>,
 ) -> impl Responder {
     let timing = Instant::now();
     let operation = operation.into_inner();
@@ -190,7 +190,7 @@ async fn overwrite_payload(
         None,
         wait,
         ordering,
-        claims.into_inner(),
+        access.into_inner(),
     )
     .await;
     process_response(response, timing)
@@ -202,7 +202,7 @@ async fn delete_payload(
     collection: Path<CollectionPath>,
     operation: Json<DeletePayload>,
     params: Query<UpdateParam>,
-    claims: Extension<Claims>,
+    access: Extension<Access>,
 ) -> impl Responder {
     let timing = Instant::now();
     let operation = operation.into_inner();
@@ -217,7 +217,7 @@ async fn delete_payload(
         None,
         wait,
         ordering,
-        claims.into_inner(),
+        access.into_inner(),
     )
     .await;
     process_response(response, timing)
@@ -229,7 +229,7 @@ async fn clear_payload(
     collection: Path<CollectionPath>,
     operation: Json<PointsSelector>,
     params: Query<UpdateParam>,
-    claims: Extension<Claims>,
+    access: Extension<Access>,
 ) -> impl Responder {
     let timing = Instant::now();
     let operation = operation.into_inner();
@@ -244,7 +244,7 @@ async fn clear_payload(
         None,
         wait,
         ordering,
-        claims.into_inner(),
+        access.into_inner(),
     )
     .await;
     process_response(response, timing)
@@ -256,7 +256,7 @@ async fn update_batch(
     collection: Path<CollectionPath>,
     operations: Json<UpdateOperations>,
     params: Query<UpdateParam>,
-    claims: Extension<Claims>,
+    access: Extension<Access>,
 ) -> impl Responder {
     let timing = Instant::now();
     let operations = operations.into_inner();
@@ -271,7 +271,7 @@ async fn update_batch(
         None,
         wait,
         ordering,
-        claims.into_inner(),
+        access.into_inner(),
     )
     .await;
     process_response(response, timing)
@@ -282,7 +282,7 @@ async fn create_field_index(
     collection: Path<CollectionPath>,
     operation: Json<CreateFieldIndex>,
     params: Query<UpdateParam>,
-    claims: Extension<Claims>,
+    access: Extension<Access>,
 ) -> impl Responder {
     let timing = Instant::now();
     let operation = operation.into_inner();
@@ -297,7 +297,7 @@ async fn create_field_index(
         None,
         wait,
         ordering,
-        claims.into_inner(),
+        access.into_inner(),
     )
     .await;
     process_response(response, timing)
@@ -309,7 +309,7 @@ async fn delete_field_index(
     collection: Path<CollectionPath>,
     field: Path<FieldPath>,
     params: Query<UpdateParam>,
-    claims: Extension<Claims>,
+    access: Extension<Access>,
 ) -> impl Responder {
     let timing = Instant::now();
     let wait = params.wait.unwrap_or(false);
@@ -323,7 +323,7 @@ async fn delete_field_index(
         None,
         wait,
         ordering,
-        claims.into_inner(),
+        access.into_inner(),
     )
     .await;
     process_response(response, timing)

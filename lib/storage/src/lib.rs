@@ -12,6 +12,7 @@ use types::ClusterStatus;
 
 pub mod content_manager;
 pub mod dispatcher;
+pub mod rbac;
 pub mod types;
 
 pub mod serialize_peer_addresses {

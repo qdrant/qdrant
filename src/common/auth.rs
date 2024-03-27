@@ -6,6 +6,7 @@ use rbac::jwt::{Claims, ValueExists};
 use rbac::JwtParser;
 use segment::types::{WithPayloadInterface, WithVector};
 use storage::content_manager::toc::TableOfContent;
+use storage::rbac::access::Access;
 
 use super::strings::ct_eq;
 use crate::settings::ServiceConfig;
@@ -67,7 +68,7 @@ impl AuthKeys {
         &self,
         get_header: impl Fn(&'a str) -> Option<&'a str>,
         is_read_only: bool,
-    ) -> Result<Option<Claims>, String> {
+    ) -> Result<Option<Access>, String> {
         let Some(key) = get_header("api-key")
             .or_else(|| get_header("authorization").and_then(|v| v.strip_prefix("Bearer ")))
         else {
@@ -87,19 +88,22 @@ impl AuthKeys {
                 exp: _, // already validated on decoding
                 w: write_access,
                 value_exists,
-                payload: _,     //
-                collections: _, // will be validated in TableOfContent
-            } = &claims;
+                collections,
+                payload,
+            } = claims;
 
             if !write_access.unwrap_or(false) && !is_read_only {
                 return Err("Write access denied".to_string());
             }
 
             if let Some(value_exists) = value_exists {
-                self.validate_value_exists(value_exists).await?;
+                self.validate_value_exists(&value_exists).await?;
             }
 
-            return Ok(Some(claims));
+            return Ok(Some(Access {
+                collections,
+                payload,
+            }));
         }
 
         Err("Invalid API key or JWT".to_string())

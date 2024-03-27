@@ -5,7 +5,6 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use collection::operations::snapshot_ops::SnapshotDescription;
-use rbac::jwt::Claims;
 use serde::{Deserialize, Serialize};
 use tar::Builder as TarBuilder;
 use tempfile::TempPath;
@@ -16,6 +15,7 @@ use super::claims::check_manage_rights;
 use crate::content_manager::claims::check_full_access_to_collection;
 use crate::content_manager::toc::FULL_SNAPSHOT_FILE_NAME;
 use crate::dispatcher::Dispatcher;
+use crate::rbac::access::Access;
 use crate::{StorageError, TableOfContent};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -58,10 +58,10 @@ pub async fn get_full_snapshot_path(
 
 pub async fn do_delete_full_snapshot(
     dispatcher: &Dispatcher,
-    claims: Option<Claims>,
+    access: Option<Access>,
     snapshot_name: &str,
 ) -> Result<JoinHandle<Result<bool, StorageError>>, StorageError> {
-    check_manage_rights(claims.as_ref())?;
+    check_manage_rights(access.as_ref())?;
     let dispatcher = dispatcher.clone();
     let snapshot_manager = dispatcher.clone().toc().get_snapshots_storage_manager();
     let snapshot_dir = get_full_snapshot_path(dispatcher.toc(), snapshot_name).await?;
@@ -73,11 +73,11 @@ pub async fn do_delete_full_snapshot(
 
 pub async fn do_delete_collection_snapshot(
     dispatcher: &Dispatcher,
-    claims: Option<Claims>,
+    access: Option<Access>,
     collection_name: &str,
     snapshot_name: &str,
 ) -> Result<JoinHandle<Result<bool, StorageError>>, StorageError> {
-    check_full_access_to_collection(claims.as_ref(), collection_name)?;
+    check_full_access_to_collection(access.as_ref(), collection_name)?;
     let collection_name = collection_name.to_string();
     let snapshot_name = snapshot_name.to_string();
     let collection = dispatcher.get_collection(&collection_name).await?;
@@ -92,9 +92,9 @@ pub async fn do_delete_collection_snapshot(
 
 pub async fn do_list_full_snapshots(
     toc: &TableOfContent,
-    claims: Option<Claims>,
+    access: Option<Access>,
 ) -> Result<Vec<SnapshotDescription>, StorageError> {
-    check_manage_rights(claims.as_ref())?;
+    check_manage_rights(access.as_ref())?;
     let snapshots_manager = toc.get_snapshots_storage_manager();
     let snapshots_path = Path::new(toc.snapshots_path());
     Ok(snapshots_manager.list_snapshots(snapshots_path).await?)
@@ -102,9 +102,9 @@ pub async fn do_list_full_snapshots(
 
 pub fn do_create_full_snapshot(
     dispatcher: &Dispatcher,
-    claims: Option<Claims>,
+    access: Option<Access>,
 ) -> Result<JoinHandle<Result<SnapshotDescription, StorageError>>, StorageError> {
-    check_manage_rights(claims.as_ref())?;
+    check_manage_rights(access.as_ref())?;
     let dispatcher = dispatcher.clone();
     Ok(tokio::spawn(async move {
         _do_create_full_snapshot(&dispatcher).await

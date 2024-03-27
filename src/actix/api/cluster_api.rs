@@ -2,13 +2,13 @@ use std::future::Future;
 
 use actix_web::{delete, get, post, web, HttpResponse};
 use actix_web_validator::Query;
-use rbac::jwt::Claims;
 use serde::Deserialize;
 use storage::content_manager::claims::check_manage_rights;
 use storage::content_manager::consensus_ops::ConsensusOperations;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
+use storage::rbac::access::Access;
 use validator::Validate;
 
 use crate::actix::auth::Extension;
@@ -26,10 +26,10 @@ struct QueryParams {
 #[get("/cluster")]
 fn cluster_status(
     dispatcher: web::Data<Dispatcher>,
-    claims: Extension<Claims>,
+    access: Extension<Access>,
 ) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        check_manage_rights(claims.into_inner().as_ref())?;
+        check_manage_rights(access.into_inner().as_ref())?;
         Ok(dispatcher.cluster_status())
     })
 }
@@ -37,10 +37,10 @@ fn cluster_status(
 #[post("/cluster/recover")]
 fn recover_current_peer(
     toc: web::Data<TableOfContent>,
-    claims: Extension<Claims>,
+    access: Extension<Access>,
 ) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        check_manage_rights(claims.into_inner().as_ref())?;
+        check_manage_rights(access.into_inner().as_ref())?;
         toc.request_snapshot()?;
         Ok(true)
     })
@@ -51,10 +51,10 @@ fn remove_peer(
     dispatcher: web::Data<Dispatcher>,
     peer_id: web::Path<u64>,
     Query(params): Query<QueryParams>,
-    claims: Extension<Claims>,
+    access: Extension<Access>,
 ) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        check_manage_rights(claims.into_inner().as_ref())?;
+        check_manage_rights(access.into_inner().as_ref())?;
 
         let dispatcher = dispatcher.into_inner();
         let peer_id = peer_id.into_inner();

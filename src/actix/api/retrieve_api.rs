@@ -5,11 +5,11 @@ use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{PointRequest, PointRequestInternal, Record, ScrollRequest};
 use itertools::Itertools;
-use rbac::jwt::Claims;
 use segment::types::{PointIdType, WithPayloadInterface};
 use serde::Deserialize;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
+use storage::rbac::access::Access;
 use validator::Validate;
 
 use super::read_params::ReadParams;
@@ -30,7 +30,7 @@ async fn do_get_point(
     collection_name: &str,
     point_id: PointIdType,
     read_consistency: Option<ReadConsistency>,
-    claims: Option<Claims>,
+    access: Option<Access>,
 ) -> Result<Option<Record>, StorageError> {
     let request = PointRequestInternal {
         ids: vec![point_id],
@@ -45,7 +45,7 @@ async fn do_get_point(
         request,
         read_consistency,
         shard_selection,
-        claims,
+        access,
     )
     .await
     .map(|points| points.into_iter().next())
@@ -57,7 +57,7 @@ async fn get_point(
     collection: Path<CollectionPath>,
     point: Path<PointPath>,
     params: Query<ReadParams>,
-    claims: Extension<Claims>,
+    access: Extension<Access>,
 ) -> impl Responder {
     helpers::time(async move {
         let point_id: PointIdType = point.id.parse().map_err(|_| StorageError::BadInput {
@@ -69,7 +69,7 @@ async fn get_point(
             &collection.name,
             point_id,
             params.consistency,
-            claims.into_inner(),
+            access.into_inner(),
         )
         .await?
         else {
@@ -89,7 +89,7 @@ async fn get_points(
     collection: Path<CollectionPath>,
     request: Json<PointRequest>,
     params: Query<ReadParams>,
-    claims: Extension<Claims>,
+    access: Extension<Access>,
 ) -> impl Responder {
     let timing = Instant::now();
 
@@ -109,7 +109,7 @@ async fn get_points(
         point_request,
         params.consistency,
         shard_selection,
-        claims.into_inner(),
+        access.into_inner(),
     )
     .await;
     let response = response.map(|v| v.into_iter().map(api::rest::Record::from).collect_vec());
@@ -122,7 +122,7 @@ async fn scroll_points(
     collection: Path<CollectionPath>,
     request: Json<ScrollRequest>,
     params: Query<ReadParams>,
-    claims: Extension<Claims>,
+    access: Extension<Access>,
 ) -> impl Responder {
     let timing = Instant::now();
 
@@ -143,7 +143,7 @@ async fn scroll_points(
             params.consistency,
             // TODO: handle params.timeout
             shard_selection,
-            claims.into_inner(),
+            access.into_inner(),
         )
         .await;
 

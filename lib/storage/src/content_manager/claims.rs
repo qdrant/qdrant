@@ -11,10 +11,11 @@ use collection::operations::types::{
 use collection::operations::vector_ops::VectorOperations;
 use collection::operations::{CollectionUpdateOperations, FieldIndexOperations};
 use itertools::{Either, Itertools as _};
-use rbac::jwt::{Claims, PayloadClaim};
+use rbac::jwt::PayloadClaim;
 use segment::types::{Condition, ExtendedPointId, FieldCondition, Filter, Match, Payload};
 
 use super::errors::StorageError;
+use crate::rbac::access::Access;
 
 pub fn check_collection_name(
     collections: Option<&Vec<String>>,
@@ -28,16 +29,13 @@ pub fn check_collection_name(
     })
 }
 
-/// Check if a claim object is allowed to manage collections.
-pub fn check_manage_rights(claims: Option<&Claims>) -> Result<(), StorageError> {
-    if let Some(claims) = claims {
-        let Claims {
-            exp: _,
-            w: _,
-            value_exists: _,
+/// Check if a access object is allowed to manage collections.
+pub fn check_manage_rights(access: Option<&Access>) -> Result<(), StorageError> {
+    if let Some(access) = access {
+        let Access {
             collections,
             payload,
-        } = claims;
+        } = access;
         if collections.is_some() {
             return incompatible_with_collection_claim();
         }
@@ -50,17 +48,14 @@ pub fn check_manage_rights(claims: Option<&Claims>) -> Result<(), StorageError> 
 
 /// Check if a claim object has full access to a collection.
 pub fn check_full_access_to_collection(
-    claims: Option<&Claims>,
+    access: Option<&Access>,
     collection_name: &str,
 ) -> Result<(), StorageError> {
-    if let Some(claims) = claims {
-        let Claims {
-            exp: _,
-            w: _,
-            value_exists: _,
+    if let Some(access) = access {
+        let Access {
             collections,
             payload,
-        } = claims;
+        } = access;
         if let Some(collections) = collections {
             check_collection_name(Some(collections), collection_name)?;
         }

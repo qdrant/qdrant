@@ -33,7 +33,6 @@ use collection::operations::vector_ops::{DeleteVectors, PointVectors, UpdateVect
 use collection::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
 use collection::shards::shard::ShardId;
 use itertools::Itertools;
-use rbac::jwt::Claims;
 use segment::data_types::vectors::VectorStruct;
 use segment::types::{
     ExtendedPointId, Filter, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
@@ -41,6 +40,7 @@ use segment::types::{
 use storage::content_manager::conversions::error_to_status;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
+use storage::rbac::access::Access;
 use tonic::{Response, Status};
 
 use crate::common::points::{
@@ -98,7 +98,7 @@ pub async fn upsert(
     upsert_points: UpsertPoints,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
-    claims: Option<Claims>,
+    access: Option<Access>,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let UpsertPoints {
         collection_name,
@@ -124,7 +124,7 @@ pub async fn upsert(
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
-        claims,
+        access,
     )
     .await
     .map_err(error_to_status)?;
@@ -138,7 +138,7 @@ pub async fn sync(
     sync_points: SyncPoints,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
-    claims: Option<Claims>,
+    access: Option<Access>,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let SyncPoints {
         collection_name,
@@ -178,7 +178,7 @@ pub async fn sync(
             wait.unwrap_or(false),
             write_ordering_from_proto(ordering)?,
             shard_selector,
-            claims,
+            access,
         )
         .await
         .map_err(error_to_status)?;
@@ -192,7 +192,7 @@ pub async fn delete(
     delete_points: DeletePoints,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
-    claims: Option<Claims>,
+    access: Option<Access>,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let DeletePoints {
         collection_name,
@@ -216,7 +216,7 @@ pub async fn delete(
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
-        claims,
+        access,
     )
     .await
     .map_err(error_to_status)?;
@@ -230,7 +230,7 @@ pub async fn update_vectors(
     update_point_vectors: UpdatePointVectors,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
-    claims: Option<Claims>,
+    access: Option<Access>,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let UpdatePointVectors {
         collection_name,
@@ -271,7 +271,7 @@ pub async fn update_vectors(
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
-        claims,
+        access,
     )
     .await
     .map_err(error_to_status)?;
@@ -285,7 +285,7 @@ pub async fn delete_vectors(
     delete_point_vectors: DeletePointVectors,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
-    claims: Option<Claims>,
+    access: Option<Access>,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let DeletePointVectors {
         collection_name,
@@ -318,7 +318,7 @@ pub async fn delete_vectors(
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
-        claims,
+        access,
     )
     .await
     .map_err(error_to_status)?;
@@ -332,7 +332,7 @@ pub async fn set_payload(
     set_payload_points: SetPayloadPoints,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
-    claims: Option<Claims>,
+    access: Option<Access>,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let SetPayloadPoints {
         collection_name,
@@ -363,7 +363,7 @@ pub async fn set_payload(
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
-        claims,
+        access,
     )
     .await
     .map_err(error_to_status)?;
@@ -377,7 +377,7 @@ pub async fn overwrite_payload(
     set_payload_points: SetPayloadPoints,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
-    claims: Option<Claims>,
+    access: Option<Access>,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let SetPayloadPoints {
         collection_name,
@@ -408,7 +408,7 @@ pub async fn overwrite_payload(
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
-        claims,
+        access,
     )
     .await
     .map_err(error_to_status)?;
@@ -422,7 +422,7 @@ pub async fn delete_payload(
     delete_payload_points: DeletePayloadPoints,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
-    claims: Option<Claims>,
+    access: Option<Access>,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let DeletePayloadPoints {
         collection_name,
@@ -451,7 +451,7 @@ pub async fn delete_payload(
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
-        claims,
+        access,
     )
     .await
     .map_err(error_to_status)?;
@@ -465,7 +465,7 @@ pub async fn clear_payload(
     clear_payload_points: ClearPayloadPoints,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
-    claims: Option<Claims>,
+    access: Option<Access>,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let ClearPayloadPoints {
         collection_name,
@@ -489,7 +489,7 @@ pub async fn clear_payload(
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
-        claims,
+        access,
     )
     .await
     .map_err(error_to_status)?;
@@ -503,7 +503,7 @@ pub async fn update_batch(
     update_batch_points: UpdateBatchPoints,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
-    claims: Option<Claims>,
+    access: Option<Access>,
 ) -> Result<Response<UpdateBatchResponse>, Status> {
     let UpdateBatchPoints {
         collection_name,
@@ -536,7 +536,7 @@ pub async fn update_batch(
                     },
                     clock_tag,
                     shard_selection,
-                    claims.clone(),
+                    access.clone(),
                 )
                 .await
             }
@@ -552,7 +552,7 @@ pub async fn update_batch(
                     },
                     clock_tag,
                     shard_selection,
-                    claims.clone(),
+                    access.clone(),
                 )
                 .await
             }
@@ -577,7 +577,7 @@ pub async fn update_batch(
                     },
                     clock_tag,
                     shard_selection,
-                    claims.clone(),
+                    access.clone(),
                 )
                 .await
             }
@@ -603,7 +603,7 @@ pub async fn update_batch(
                     },
                     clock_tag,
                     shard_selection,
-                    claims.clone(),
+                    access.clone(),
                 )
                 .await
             }
@@ -626,7 +626,7 @@ pub async fn update_batch(
                     },
                     clock_tag,
                     shard_selection,
-                    claims.clone(),
+                    access.clone(),
                 )
                 .await
             }
@@ -645,7 +645,7 @@ pub async fn update_batch(
                     },
                     clock_tag,
                     shard_selection,
-                    claims.clone(),
+                    access.clone(),
                 )
                 .await
             }
@@ -666,7 +666,7 @@ pub async fn update_batch(
                     },
                     clock_tag,
                     shard_selection,
-                    claims.clone(),
+                    access.clone(),
                 )
                 .await
             }
@@ -689,7 +689,7 @@ pub async fn update_batch(
                     },
                     clock_tag,
                     shard_selection,
-                    claims.clone(),
+                    access.clone(),
                 )
                 .await
             }
@@ -705,7 +705,7 @@ pub async fn update_batch(
                     },
                     clock_tag,
                     shard_selection,
-                    claims.clone(),
+                    access.clone(),
                 )
                 .await
             }
@@ -724,7 +724,7 @@ pub async fn update_batch(
                     },
                     clock_tag,
                     shard_selection,
-                    claims.clone(),
+                    access.clone(),
                 )
                 .await
             }
@@ -800,7 +800,7 @@ pub async fn create_field_index(
     create_field_index_collection: CreateFieldIndexCollection,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
-    claims: Option<Claims>,
+    access: Option<Access>,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let CreateFieldIndexCollection {
         collection_name,
@@ -828,7 +828,7 @@ pub async fn create_field_index(
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
-        claims,
+        access,
     )
     .await
     .map_err(error_to_status)?;
@@ -878,7 +878,7 @@ pub async fn delete_field_index(
     delete_field_index_collection: DeleteFieldIndexCollection,
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
-    claims: Option<Claims>,
+    access: Option<Access>,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let DeleteFieldIndexCollection {
         collection_name,
@@ -898,7 +898,7 @@ pub async fn delete_field_index(
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
-        claims,
+        access,
     )
     .await
     .map_err(error_to_status)?;
@@ -943,7 +943,7 @@ pub async fn search(
     toc: &TableOfContent,
     search_points: SearchPoints,
     shard_selection: Option<ShardId>,
-    claims: Option<Claims>,
+    access: Option<Access>,
 ) -> Result<Response<SearchResponse>, Status> {
     let SearchPoints {
         collection_name,
@@ -991,7 +991,7 @@ pub async fn search(
         search_request,
         read_consistency,
         shard_selector,
-        claims,
+        access,
         timeout.map(Duration::from_secs),
     )
     .await
@@ -1013,7 +1013,7 @@ pub async fn core_search_batch(
     collection_name: String,
     requests: Vec<(CoreSearchRequest, ShardSelectorInternal)>,
     read_consistency: Option<ReadConsistencyGrpc>,
-    claims: Option<Claims>,
+    access: Option<Access>,
     timeout: Option<Duration>,
 ) -> Result<Response<SearchBatchResponse>, Status> {
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
@@ -1025,7 +1025,7 @@ pub async fn core_search_batch(
         &collection_name,
         requests,
         read_consistency,
-        claims,
+        access,
         timeout,
     )
     .await
@@ -1050,7 +1050,7 @@ pub async fn core_search_list(
     search_points: Vec<CoreSearchPoints>,
     read_consistency: Option<ReadConsistencyGrpc>,
     shard_selection: Option<ShardId>,
-    claims: Option<Claims>,
+    access: Option<Access>,
     timeout: Option<Duration>,
 ) -> Result<Response<SearchBatchResponse>, Status> {
     let searches: Result<Vec<_>, Status> =
@@ -1080,7 +1080,7 @@ pub async fn core_search_list(
             request,
             read_consistency,
             shard_selection,
-            claims,
+            access,
             timeout,
         )
         .await
@@ -1103,7 +1103,7 @@ pub async fn search_groups(
     toc: &TableOfContent,
     search_point_groups: SearchPointGroups,
     shard_selection: Option<ShardId>,
-    claims: Option<Claims>,
+    access: Option<Access>,
 ) -> Result<Response<SearchGroupsResponse>, Status> {
     let search_groups_request = search_point_groups.clone().try_into()?;
 
@@ -1126,7 +1126,7 @@ pub async fn search_groups(
         search_groups_request,
         read_consistency,
         shard_selector,
-        claims,
+        access,
         timeout.map(Duration::from_secs),
     )
     .await
@@ -1143,7 +1143,7 @@ pub async fn search_groups(
 pub async fn recommend(
     toc: &TableOfContent,
     recommend_points: RecommendPoints,
-    claims: Option<Claims>,
+    access: Option<Access>,
 ) -> Result<Response<RecommendResponse>, Status> {
     // TODO(luis): check if we can make this into a From impl
     let RecommendPoints {
@@ -1219,7 +1219,7 @@ pub async fn recommend(
             request,
             read_consistency,
             shard_selector,
-            claims,
+            access,
             timeout,
         )
         .await
@@ -1241,7 +1241,7 @@ pub async fn recommend_batch(
     collection_name: String,
     recommend_points: Vec<RecommendPoints>,
     read_consistency: Option<ReadConsistencyGrpc>,
-    claims: Option<Claims>,
+    access: Option<Access>,
     timeout: Option<Duration>,
 ) -> Result<Response<RecommendBatchResponse>, Status> {
     let mut requests = Vec::with_capacity(recommend_points.len());
@@ -1262,7 +1262,7 @@ pub async fn recommend_batch(
             &collection_name,
             requests,
             read_consistency,
-            claims,
+            access,
             timeout,
         )
         .await
@@ -1284,7 +1284,7 @@ pub async fn recommend_batch(
 pub async fn recommend_groups(
     toc: &TableOfContent,
     recommend_point_groups: RecommendPointGroups,
-    claims: Option<Claims>,
+    access: Option<Access>,
 ) -> Result<Response<RecommendGroupsResponse>, Status> {
     let recommend_groups_request = recommend_point_groups.clone().try_into()?;
 
@@ -1307,7 +1307,7 @@ pub async fn recommend_groups(
         recommend_groups_request,
         read_consistency,
         shard_selector,
-        claims,
+        access,
         timeout.map(Duration::from_secs),
     )
     .await
@@ -1324,7 +1324,7 @@ pub async fn recommend_groups(
 pub async fn discover(
     toc: &TableOfContent,
     discover_points: DiscoverPoints,
-    claims: Option<Claims>,
+    access: Option<Access>,
 ) -> Result<Response<DiscoverResponse>, Status> {
     let (request, collection_name, read_consistency, timeout, shard_key_selector) =
         try_discover_request_from_grpc(discover_points)?;
@@ -1339,7 +1339,7 @@ pub async fn discover(
             request,
             read_consistency,
             shard_selector,
-            claims,
+            access,
             timeout,
         )
         .await
@@ -1361,7 +1361,7 @@ pub async fn discover_batch(
     collection_name: String,
     discover_points: Vec<DiscoverPoints>,
     read_consistency: Option<ReadConsistencyGrpc>,
-    claims: Option<Claims>,
+    access: Option<Access>,
     timeout: Option<Duration>,
 ) -> Result<Response<DiscoverBatchResponse>, Status> {
     let mut requests = Vec::with_capacity(discover_points.len());
@@ -1381,7 +1381,7 @@ pub async fn discover_batch(
             &collection_name,
             requests,
             read_consistency,
-            claims,
+            access,
             timeout,
         )
         .await
@@ -1403,7 +1403,7 @@ pub async fn scroll(
     toc: &TableOfContent,
     scroll_points: ScrollPoints,
     shard_selection: Option<ShardId>,
-    claims: Option<Claims>,
+    access: Option<Access>,
 ) -> Result<Response<ScrollResponse>, Status> {
     let ScrollPoints {
         collection_name,
@@ -1439,7 +1439,7 @@ pub async fn scroll(
         scroll_request,
         read_consistency,
         shard_selector,
-        claims,
+        access,
     )
     .await
     .map_err(error_to_status)?;
@@ -1462,7 +1462,7 @@ pub async fn count(
     toc: &TableOfContent,
     count_points: CountPoints,
     shard_selection: Option<ShardId>,
-    claims: Option<Claims>,
+    access: Option<Access>,
 ) -> Result<Response<CountResponse>, Status> {
     let CountPoints {
         collection_name,
@@ -1488,7 +1488,7 @@ pub async fn count(
         count_request,
         read_consistency,
         shard_selector,
-        claims,
+        access,
     )
     .await
     .map_err(error_to_status)?;
@@ -1505,7 +1505,7 @@ pub async fn get(
     toc: &TableOfContent,
     get_points: GetPoints,
     shard_selection: Option<ShardId>,
-    claims: Option<Claims>,
+    access: Option<Access>,
 ) -> Result<Response<GetResponse>, Status> {
     let GetPoints {
         collection_name,
@@ -1539,7 +1539,7 @@ pub async fn get(
         point_request,
         read_consistency,
         shard_selector,
-        claims,
+        access,
     )
     .await
     .map_err(error_to_status)?;

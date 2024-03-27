@@ -6,8 +6,8 @@ use collection::operations::types::{
     CoreSearchRequest, SearchGroupsRequest, SearchRequest, SearchRequestBatch,
 };
 use itertools::Itertools;
-use rbac::jwt::Claims;
 use storage::content_manager::toc::TableOfContent;
+use storage::rbac::access::Access;
 
 use super::read_params::ReadParams;
 use super::CollectionPath;
@@ -23,7 +23,7 @@ async fn search_points(
     collection: Path<CollectionPath>,
     request: Json<SearchRequest>,
     params: Query<ReadParams>,
-    claims: Extension<Claims>,
+    access: Extension<Access>,
 ) -> impl Responder {
     let timing = Instant::now();
 
@@ -43,7 +43,7 @@ async fn search_points(
         search_request.into(),
         params.consistency,
         shard_selection,
-        claims.into_inner(),
+        access.into_inner(),
         params.timeout(),
     )
     .await
@@ -63,7 +63,7 @@ async fn batch_search_points(
     collection: Path<CollectionPath>,
     request: Json<SearchRequestBatch>,
     params: Query<ReadParams>,
-    claims: Extension<Claims>,
+    access: Extension<Access>,
 ) -> impl Responder {
     let timing = Instant::now();
 
@@ -91,7 +91,7 @@ async fn batch_search_points(
         &collection.name,
         requests,
         params.consistency,
-        claims.into_inner(),
+        access.into_inner(),
         params.timeout(),
     )
     .await
@@ -116,7 +116,7 @@ async fn search_point_groups(
     collection: Path<CollectionPath>,
     request: Json<SearchGroupsRequest>,
     params: Query<ReadParams>,
-    claims: Extension<Claims>,
+    access: Extension<Access>,
 ) -> impl Responder {
     let timing = Instant::now();
 
@@ -136,7 +136,7 @@ async fn search_point_groups(
         search_group_request,
         params.consistency,
         shard_selection,
-        claims.into_inner(),
+        access.into_inner(),
         params.timeout(),
     )
     .await;

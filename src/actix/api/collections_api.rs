@@ -4,7 +4,6 @@ use actix_web::rt::time::Instant;
 use actix_web::{delete, get, patch, post, put, web, Responder};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::cluster_ops::ClusterOperations;
-use rbac::jwt::Claims;
 use serde::Deserialize;
 use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CollectionMetaOperations, CreateCollection, CreateCollectionOperation,
@@ -12,6 +11,7 @@ use storage::content_manager::collection_meta_ops::{
 };
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
+use storage::rbac::access::Access;
 use validator::Validate;
 
 use super::CollectionPath;
@@ -35,17 +35,17 @@ impl WaitTimeout {
 #[get("/collections")]
 async fn get_collections(
     toc: web::Data<TableOfContent>,
-    claims: Extension<Claims>,
+    access: Extension<Access>,
 ) -> impl Responder {
     let timing = Instant::now();
-    let response = Ok(do_list_collections(toc.get_ref(), claims.into_inner()).await);
+    let response = Ok(do_list_collections(toc.get_ref(), access.into_inner()).await);
     process_response(response, timing)
 }
 
 #[get("/aliases")]
-async fn get_aliases(toc: web::Data<TableOfContent>, claims: Extension<Claims>) -> impl Responder {
+async fn get_aliases(toc: web::Data<TableOfContent>, access: Extension<Access>) -> impl Responder {
     let timing = Instant::now();
-    let response = do_list_aliases(toc.get_ref(), claims.into_inner()).await;
+    let response = do_list_aliases(toc.get_ref(), access.into_inner()).await;
     process_response(response, timing)
 }
 
@@ -53,11 +53,11 @@ async fn get_aliases(toc: web::Data<TableOfContent>, claims: Extension<Claims>) 
 async fn get_collection(
     toc: web::Data<TableOfContent>,
     collection: Path<CollectionPath>,
-    claims: Extension<Claims>,
+    access: Extension<Access>,
 ) -> impl Responder {
     let timing = Instant::now();
     let response =
-        do_get_collection(toc.get_ref(), claims.into_inner(), &collection.name, None).await;
+        do_get_collection(toc.get_ref(), access.into_inner(), &collection.name, None).await;
     process_response(response, timing)
 }
 
@@ -65,10 +65,10 @@ async fn get_collection(
 async fn get_collection_existence(
     toc: web::Data<TableOfContent>,
     collection: Path<CollectionPath>,
-    claims: Extension<Claims>,
+    access: Extension<Access>,
 ) -> impl Responder {
     let timing = Instant::now();
-    let response = do_collection_exists(toc.get_ref(), claims.into_inner(), &collection.name).await;
+    let response = do_collection_exists(toc.get_ref(), access.into_inner(), &collection.name).await;
     process_response(response, timing)
 }
 
@@ -76,11 +76,11 @@ async fn get_collection_existence(
 async fn get_collection_aliases(
     toc: web::Data<TableOfContent>,
     collection: Path<CollectionPath>,
-    claims: Extension<Claims>,
+    access: Extension<Access>,
 ) -> impl Responder {
     let timing = Instant::now();
     let response =
-        do_list_collection_aliases(toc.get_ref(), claims.into_inner(), &collection.name).await;
+        do_list_collection_aliases(toc.get_ref(), access.into_inner(), &collection.name).await;
     process_response(response, timing)
 }
 
@@ -90,7 +90,7 @@ async fn create_collection(
     collection: Path<StrictCollectionPath>,
     operation: Json<CreateCollection>,
     Query(query): Query<WaitTimeout>,
-    claims: Extension<Claims>,
+    access: Extension<Access>,
 ) -> impl Responder {
     let timing = Instant::now();
     let response = dispatcher
@@ -99,7 +99,7 @@ async fn create_collection(
                 collection.name.clone(),
                 operation.into_inner(),
             )),
-            claims.into_inner(),
+            access.into_inner(),
             query.timeout(),
         )
         .await;
@@ -112,7 +112,7 @@ async fn update_collection(
     collection: Path<CollectionPath>,
     operation: Json<UpdateCollection>,
     Query(query): Query<WaitTimeout>,
-    claims: Extension<Claims>,
+    access: Extension<Access>,
 ) -> impl Responder {
     let timing = Instant::now();
     let name = collection.name.clone();
@@ -122,7 +122,7 @@ async fn update_collection(
                 name,
                 operation.into_inner(),
             )),
-            claims.into_inner(),
+            access.into_inner(),
             query.timeout(),
         )
         .await;
@@ -134,7 +134,7 @@ async fn delete_collection(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     Query(query): Query<WaitTimeout>,
-    claims: Extension<Claims>,
+    access: Extension<Access>,
 ) -> impl Responder {
     let timing = Instant::now();
     let response = dispatcher
@@ -142,7 +142,7 @@ async fn delete_collection(
             CollectionMetaOperations::DeleteCollection(DeleteCollectionOperation(
                 collection.name.clone(),
             )),
-            claims.into_inner(),
+            access.into_inner(),
             query.timeout(),
         )
         .await;
@@ -154,13 +154,13 @@ async fn update_aliases(
     dispatcher: web::Data<Dispatcher>,
     operation: Json<ChangeAliasesOperation>,
     Query(query): Query<WaitTimeout>,
-    claims: Extension<Claims>,
+    access: Extension<Access>,
 ) -> impl Responder {
     let timing = Instant::now();
     let response = dispatcher
         .submit_collection_meta_op(
             CollectionMetaOperations::ChangeAliases(operation.0),
-            claims.into_inner(),
+            access.into_inner(),
             query.timeout(),
         )
         .await;
@@ -171,11 +171,11 @@ async fn update_aliases(
 async fn get_cluster_info(
     toc: web::Data<TableOfContent>,
     collection: Path<CollectionPath>,
-    claims: Extension<Claims>,
+    access: Extension<Access>,
 ) -> impl Responder {
     let timing = Instant::now();
     let response =
-        do_get_collection_cluster(toc.get_ref(), claims.into_inner(), &collection.name).await;
+        do_get_collection_cluster(toc.get_ref(), access.into_inner(), &collection.name).await;
     process_response(response, timing)
 }
 
@@ -185,7 +185,7 @@ async fn update_collection_cluster(
     collection: Path<CollectionPath>,
     operation: Json<ClusterOperations>,
     Query(query): Query<WaitTimeout>,
-    claims: Extension<Claims>,
+    access: Extension<Access>,
 ) -> impl Responder {
     let timing = Instant::now();
     let wait_timeout = query.timeout();
@@ -193,7 +193,7 @@ async fn update_collection_cluster(
         &dispatcher.into_inner(),
         collection.name.clone(),
         operation.0,
-        claims.into_inner(),
+        access.into_inner(),
         wait_timeout,
     )
     .await;

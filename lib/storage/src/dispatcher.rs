@@ -5,13 +5,13 @@ use std::time::{Duration, Instant};
 
 use collection::config::ShardingMethod;
 use common::defaults::CONSENSUS_META_OP_WAIT;
-use rbac::jwt::Claims;
 
 use crate::content_manager::claims::{
     check_collection_name, incompatible_with_collection_claim, incompatible_with_payload_claim,
 };
 use crate::content_manager::collection_meta_ops::AliasOperations;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
+use crate::rbac::access::Access;
 use crate::{
     ClusterStatus, CollectionMetaOperations, ConsensusOperations, ConsensusStateRef, StorageError,
     TableOfContent,
@@ -51,16 +51,13 @@ impl Dispatcher {
     pub async fn submit_collection_meta_op(
         &self,
         mut operation: CollectionMetaOperations,
-        claims: Option<Claims>,
+        access: Option<Access>,
         wait_timeout: Option<Duration>,
     ) -> Result<bool, StorageError> {
-        if let Some(Claims {
-            exp: _,
-            w: _,
-            value_exists: _,
+        if let Some(Access {
             collections,
             payload,
-        }) = claims.as_ref()
+        }) = access.as_ref()
         {
             match &mut operation {
                 CollectionMetaOperations::CreateCollection(_)

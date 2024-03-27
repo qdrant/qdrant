@@ -8,12 +8,12 @@ use actix_web::web::Query;
 use actix_web::{get, post, web, HttpResponse, Responder};
 use actix_web_validator::Json;
 use common::types::{DetailsLevel, TelemetryDetail};
-use rbac::jwt::Claims;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::claims::check_manage_rights;
 use storage::content_manager::toc::TableOfContent;
+use storage::rbac::access::Access;
 use tokio::sync::Mutex;
 
 use crate::actix::auth::Extension;
@@ -34,10 +34,10 @@ pub struct TelemetryParam {
 fn telemetry(
     telemetry_collector: web::Data<Mutex<TelemetryCollector>>,
     params: Query<TelemetryParam>,
-    claims: Extension<Claims>,
+    access: Extension<Access>,
 ) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        check_manage_rights(claims.into_inner().as_ref())?;
+        check_manage_rights(access.into_inner().as_ref())?;
         let anonymize = params.anonymize.unwrap_or(false);
         let details_level = params
             .details_level
@@ -66,9 +66,9 @@ pub struct MetricsParam {
 async fn metrics(
     telemetry_collector: web::Data<Mutex<TelemetryCollector>>,
     params: Query<MetricsParam>,
-    claims: Extension<Claims>,
+    access: Extension<Access>,
 ) -> HttpResponse {
-    if let Err(err) = check_manage_rights(claims.into_inner().as_ref()) {
+    if let Err(err) = check_manage_rights(access.into_inner().as_ref()) {
         return process_response_error(err, Instant::now());
     }
 
@@ -95,10 +95,10 @@ async fn metrics(
 fn put_locks(
     toc: web::Data<TableOfContent>,
     locks_option: Json<LocksOption>,
-    claims: Extension<Claims>,
+    access: Extension<Access>,
 ) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        check_manage_rights(claims.into_inner().as_ref())?;
+        check_manage_rights(access.into_inner().as_ref())?;
         let result = LocksOption {
             write: toc.get_ref().is_write_locked(),
             error_message: toc.get_ref().get_lock_error_message(),
@@ -112,10 +112,10 @@ fn put_locks(
 #[get("/locks")]
 fn get_locks(
     toc: web::Data<TableOfContent>,
-    claims: Extension<Claims>,
+    access: Extension<Access>,
 ) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        check_manage_rights(claims.into_inner().as_ref())?;
+        check_manage_rights(access.into_inner().as_ref())?;
         let result = LocksOption {
             write: toc.get_ref().is_write_locked(),
             error_message: toc.get_ref().get_lock_error_message(),
@@ -125,9 +125,9 @@ fn get_locks(
 }
 
 #[get("/stacktrace")]
-fn get_stacktrace(claims: Extension<Claims>) -> impl Future<Output = HttpResponse> {
+fn get_stacktrace(access: Extension<Access>) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        check_manage_rights(claims.into_inner().as_ref())?;
+        check_manage_rights(access.into_inner().as_ref())?;
         Ok(get_stack_trace())
     })
 }

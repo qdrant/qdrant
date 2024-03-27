@@ -7,7 +7,7 @@ use actix_web::dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Tr
 use actix_web::http::Method;
 use actix_web::{Error, FromRequest, HttpMessage as _, HttpResponse};
 use futures_util::future::LocalBoxFuture;
-use rbac::jwt::Claims;
+use storage::rbac::access::Access;
 
 use crate::common::auth::AuthKeys;
 
@@ -139,12 +139,12 @@ where
                 )
                 .await
             {
-                Ok(claims) => {
-                    if let Some(claims) = claims {
-                        let _previous = req.extensions_mut().insert::<Claims>(claims);
+                Ok(access) => {
+                    if let Some(access) = access {
+                        let _previous = req.extensions_mut().insert::<Access>(access);
                         debug_assert!(
                             _previous.is_none(),
-                            "Previous claims should not exist in the request"
+                            "Previous access object should not exist in the request"
                         );
                     }
                     service.call(req).await

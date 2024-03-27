@@ -6,7 +6,6 @@ use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::shard_config::ShardType;
 use collection::shards::shard_versioning::latest_shard_paths;
-use rbac::jwt::Claims;
 use tokio::task::JoinHandle;
 
 use crate::content_manager::claims::check_manage_rights;
@@ -15,6 +14,7 @@ use crate::content_manager::collection_meta_ops::{
 };
 use crate::content_manager::snapshots::download::download_snapshot;
 use crate::dispatcher::Dispatcher;
+use crate::rbac::access::Access;
 use crate::{StorageError, TableOfContent};
 
 pub async fn activate_shard(
@@ -53,10 +53,10 @@ pub fn do_recover_from_snapshot(
     dispatcher: &Dispatcher,
     collection_name: &str,
     source: SnapshotRecover,
-    claims: Option<Claims>,
+    access: Option<Access>,
     client: reqwest::Client,
 ) -> Result<JoinHandle<Result<bool, StorageError>>, StorageError> {
-    check_manage_rights(claims.as_ref())?;
+    check_manage_rights(access.as_ref())?;
 
     let dispatch = dispatcher.clone();
     let collection_name = collection_name.to_string();
