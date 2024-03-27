@@ -301,11 +301,13 @@ impl RecoveryPoint {
         let key = Key::from_tag(tag);
 
         let mut any_equal = false;
+
         if let Some(&(tick, _)) = self.clocks.get(&key) {
             if tick >= tag.clock_tick {
                 self.clocks.remove(&key);
             }
-            any_equal |= tick == tag.clock_tick;
+
+            any_equal = any_equal || tick == tag.clock_tick;
         }
 
         any_equal
