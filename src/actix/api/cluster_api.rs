@@ -8,10 +8,9 @@ use storage::content_manager::consensus_ops::ConsensusOperations;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::access::Access;
 use validator::Validate;
 
-use crate::actix::auth::Extension;
+use crate::actix::auth::ActixAccess;
 use crate::actix::helpers;
 
 #[derive(Debug, Deserialize, Validate)]
@@ -26,10 +25,10 @@ struct QueryParams {
 #[get("/cluster")]
 fn cluster_status(
     dispatcher: web::Data<Dispatcher>,
-    access: Extension<Access>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        check_manage_rights(access.into_inner().as_ref())?;
+        check_manage_rights(&access)?;
         Ok(dispatcher.cluster_status())
     })
 }
@@ -37,10 +36,10 @@ fn cluster_status(
 #[post("/cluster/recover")]
 fn recover_current_peer(
     toc: web::Data<TableOfContent>,
-    access: Extension<Access>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        check_manage_rights(access.into_inner().as_ref())?;
+        check_manage_rights(&access)?;
         toc.request_snapshot()?;
         Ok(true)
     })
@@ -51,10 +50,10 @@ fn remove_peer(
     dispatcher: web::Data<Dispatcher>,
     peer_id: web::Path<u64>,
     Query(params): Query<QueryParams>,
-    access: Extension<Access>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        check_manage_rights(access.into_inner().as_ref())?;
+        check_manage_rights(&access)?;
 
         let dispatcher = dispatcher.into_inner();
         let peer_id = peer_id.into_inner();

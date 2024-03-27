@@ -16,7 +16,7 @@ use storage::rbac::access::Access;
 
 use super::read_params::ReadParams;
 use super::CollectionPath;
-use crate::actix::auth::Extension;
+use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::process_response;
 
 #[post("/collections/{name}/points/recommend")]
@@ -25,7 +25,7 @@ async fn recommend_points(
     collection: Path<CollectionPath>,
     request: Json<RecommendRequest>,
     params: Query<ReadParams>,
-    access: Extension<Access>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
 
@@ -45,7 +45,7 @@ async fn recommend_points(
             recommend_request,
             params.consistency,
             shard_selection,
-            access.into_inner(),
+            access,
             params.timeout(),
         )
         .await
@@ -64,7 +64,7 @@ async fn do_recommend_batch_points(
     collection_name: &str,
     request: RecommendRequestBatch,
     read_consistency: Option<ReadConsistency>,
-    access: Option<Access>,
+    access: Access,
     timeout: Option<Duration>,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     let requests = request
@@ -90,7 +90,7 @@ async fn recommend_batch_points(
     collection: Path<CollectionPath>,
     request: Json<RecommendRequestBatch>,
     params: Query<ReadParams>,
-    access: Extension<Access>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
 
@@ -99,7 +99,7 @@ async fn recommend_batch_points(
         &collection.name,
         request.into_inner(),
         params.consistency,
-        access.into_inner(),
+        access,
         params.timeout(),
     )
     .await
@@ -124,7 +124,7 @@ async fn recommend_point_groups(
     collection: Path<CollectionPath>,
     request: Json<RecommendGroupsRequest>,
     params: Query<ReadParams>,
-    access: Extension<Access>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
 
@@ -144,7 +144,7 @@ async fn recommend_point_groups(
         recommend_group_request,
         params.consistency,
         shard_selection,
-        access.into_inner(),
+        access,
         params.timeout(),
     )
     .await;

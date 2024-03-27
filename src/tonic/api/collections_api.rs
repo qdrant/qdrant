@@ -45,12 +45,12 @@ impl CollectionsService {
             >,
     {
         let timing = Instant::now();
-        let claims = extract_access(&mut request);
+        let access = extract_access(&mut request);
         let operation = request.into_inner();
         let wait_timeout = operation.wait_timeout();
         let result = self
             .dispatcher
-            .submit_collection_meta_op(operation.try_into()?, claims, wait_timeout)
+            .submit_collection_meta_op(operation.try_into()?, access, wait_timeout)
             .await
             .map_err(error_to_status)?;
 

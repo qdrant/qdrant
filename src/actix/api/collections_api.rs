@@ -11,12 +11,11 @@ use storage::content_manager::collection_meta_ops::{
 };
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::access::Access;
 use validator::Validate;
 
 use super::CollectionPath;
 use crate::actix::api::StrictCollectionPath;
-use crate::actix::auth::Extension;
+use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::process_response;
 use crate::common::collections::*;
 
@@ -35,17 +34,20 @@ impl WaitTimeout {
 #[get("/collections")]
 async fn get_collections(
     toc: web::Data<TableOfContent>,
-    access: Extension<Access>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
-    let response = Ok(do_list_collections(toc.get_ref(), access.into_inner()).await);
+    let response = Ok(do_list_collections(toc.get_ref(), access).await);
     process_response(response, timing)
 }
 
 #[get("/aliases")]
-async fn get_aliases(toc: web::Data<TableOfContent>, access: Extension<Access>) -> impl Responder {
+async fn get_aliases(
+    toc: web::Data<TableOfContent>,
+    ActixAccess(access): ActixAccess,
+) -> impl Responder {
     let timing = Instant::now();
-    let response = do_list_aliases(toc.get_ref(), access.into_inner()).await;
+    let response = do_list_aliases(toc.get_ref(), access).await;
     process_response(response, timing)
 }
 
@@ -53,11 +55,10 @@ async fn get_aliases(toc: web::Data<TableOfContent>, access: Extension<Access>) 
 async fn get_collection(
     toc: web::Data<TableOfContent>,
     collection: Path<CollectionPath>,
-    access: Extension<Access>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
-    let response =
-        do_get_collection(toc.get_ref(), access.into_inner(), &collection.name, None).await;
+    let response = do_get_collection(toc.get_ref(), access, &collection.name, None).await;
     process_response(response, timing)
 }
 
@@ -65,10 +66,10 @@ async fn get_collection(
 async fn get_collection_existence(
     toc: web::Data<TableOfContent>,
     collection: Path<CollectionPath>,
-    access: Extension<Access>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
-    let response = do_collection_exists(toc.get_ref(), access.into_inner(), &collection.name).await;
+    let response = do_collection_exists(toc.get_ref(), access, &collection.name).await;
     process_response(response, timing)
 }
 
@@ -76,11 +77,10 @@ async fn get_collection_existence(
 async fn get_collection_aliases(
     toc: web::Data<TableOfContent>,
     collection: Path<CollectionPath>,
-    access: Extension<Access>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
-    let response =
-        do_list_collection_aliases(toc.get_ref(), access.into_inner(), &collection.name).await;
+    let response = do_list_collection_aliases(toc.get_ref(), access, &collection.name).await;
     process_response(response, timing)
 }
 
@@ -90,7 +90,7 @@ async fn create_collection(
     collection: Path<StrictCollectionPath>,
     operation: Json<CreateCollection>,
     Query(query): Query<WaitTimeout>,
-    access: Extension<Access>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
     let response = dispatcher
@@ -99,7 +99,7 @@ async fn create_collection(
                 collection.name.clone(),
                 operation.into_inner(),
             )),
-            access.into_inner(),
+            access,
             query.timeout(),
         )
         .await;
@@ -112,7 +112,7 @@ async fn update_collection(
     collection: Path<CollectionPath>,
     operation: Json<UpdateCollection>,
     Query(query): Query<WaitTimeout>,
-    access: Extension<Access>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
     let name = collection.name.clone();
@@ -122,7 +122,7 @@ async fn update_collection(
                 name,
                 operation.into_inner(),
             )),
-            access.into_inner(),
+            access,
             query.timeout(),
         )
         .await;
@@ -134,7 +134,7 @@ async fn delete_collection(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     Query(query): Query<WaitTimeout>,
-    access: Extension<Access>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
     let response = dispatcher
@@ -142,7 +142,7 @@ async fn delete_collection(
             CollectionMetaOperations::DeleteCollection(DeleteCollectionOperation(
                 collection.name.clone(),
             )),
-            access.into_inner(),
+            access,
             query.timeout(),
         )
         .await;
@@ -154,13 +154,13 @@ async fn update_aliases(
     dispatcher: web::Data<Dispatcher>,
     operation: Json<ChangeAliasesOperation>,
     Query(query): Query<WaitTimeout>,
-    access: Extension<Access>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
     let response = dispatcher
         .submit_collection_meta_op(
             CollectionMetaOperations::ChangeAliases(operation.0),
-            access.into_inner(),
+            access,
             query.timeout(),
         )
         .await;
@@ -171,11 +171,10 @@ async fn update_aliases(
 async fn get_cluster_info(
     toc: web::Data<TableOfContent>,
     collection: Path<CollectionPath>,
-    access: Extension<Access>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
-    let response =
-        do_get_collection_cluster(toc.get_ref(), access.into_inner(), &collection.name).await;
+    let response = do_get_collection_cluster(toc.get_ref(), access, &collection.name).await;
     process_response(response, timing)
 }
 
@@ -185,7 +184,7 @@ async fn update_collection_cluster(
     collection: Path<CollectionPath>,
     operation: Json<ClusterOperations>,
     Query(query): Query<WaitTimeout>,
-    access: Extension<Access>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
     let wait_timeout = query.timeout();
@@ -193,7 +192,7 @@ async fn update_collection_cluster(
         &dispatcher.into_inner(),
         collection.name.clone(),
         operation.0,
-        access.into_inner(),
+        access,
         wait_timeout,
     )
     .await;

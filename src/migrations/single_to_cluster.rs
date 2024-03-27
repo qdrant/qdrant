@@ -11,6 +11,7 @@ use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::shard_distribution::ShardDistributionProposal;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
+use storage::rbac::access::Access;
 
 /// Processes the existing collections, which were created outside the consensus:
 /// - during the migration from single to cluster
@@ -22,6 +23,8 @@ pub async fn handle_existing_collections(
     this_peer_id: PeerId,
     collections: Vec<String>,
 ) {
+    let full_access = Access::full();
+
     consensus_state.is_leader_established.await_ready();
     for collection_name in collections {
         let collection_obj = match toc_arc.get_collection(&collection_name).await {
@@ -107,7 +110,7 @@ pub async fn handle_existing_collections(
 
         for operation in consensus_operations {
             let _res = dispatcher_arc
-                .submit_collection_meta_op(operation, None, None)
+                .submit_collection_meta_op(operation, full_access.clone(), None)
                 .await;
         }
 
@@ -122,7 +125,7 @@ pub async fn handle_existing_collections(
                             state: ReplicaState::Active,
                             from_state: None,
                         }),
-                        None,
+                        full_access.clone(),
                         None,
                     )
                     .await;

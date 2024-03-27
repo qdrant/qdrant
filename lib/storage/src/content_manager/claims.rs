@@ -30,38 +30,34 @@ pub fn check_collection_name(
 }
 
 /// Check if a access object is allowed to manage collections.
-pub fn check_manage_rights(access: Option<&Access>) -> Result<(), StorageError> {
-    if let Some(access) = access {
-        let Access {
-            collections,
-            payload,
-        } = access;
-        if collections.is_some() {
-            return incompatible_with_collection_claim();
-        }
-        if payload.is_some() {
-            return incompatible_with_payload_claim();
-        }
+pub fn check_manage_rights(access: &Access) -> Result<(), StorageError> {
+    let Access {
+        collections,
+        payload,
+    } = access;
+    if collections.is_some() {
+        return incompatible_with_collection_claim();
+    }
+    if payload.is_some() {
+        return incompatible_with_payload_claim();
     }
     Ok(())
 }
 
 /// Check if a claim object has full access to a collection.
 pub fn check_full_access_to_collection(
-    access: Option<&Access>,
+    access: &Access,
     collection_name: &str,
 ) -> Result<(), StorageError> {
-    if let Some(access) = access {
-        let Access {
-            collections,
-            payload,
-        } = access;
-        if let Some(collections) = collections {
-            check_collection_name(Some(collections), collection_name)?;
-        }
-        if payload.is_some() {
-            return incompatible_with_payload_claim();
-        }
+    let Access {
+        collections,
+        payload,
+    } = access;
+    if let Some(collections) = collections {
+        check_collection_name(Some(collections), collection_name)?;
+    }
+    if payload.is_some() {
+        return incompatible_with_payload_claim();
     }
     Ok(())
 }

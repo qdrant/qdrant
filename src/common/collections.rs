@@ -34,16 +34,14 @@ use tokio::task::JoinHandle;
 
 pub async fn do_collection_exists(
     toc: &TableOfContent,
-    access: Option<Access>,
+    access: Access,
     name: &str,
 ) -> Result<CollectionExists, StorageError> {
-    if let Some(access) = access.as_ref() {
-        let Access {
-            collections,
-            payload: _,
-        } = access;
-        check_collection_name(collections.as_ref(), name)?;
-    }
+    let Access {
+        collections,
+        payload: _,
+    } = &access;
+    check_collection_name(collections.as_ref(), name)?;
 
     // if this returns Ok, it means the collection exists.
     // if not, we check that the error is NotFound
@@ -58,17 +56,15 @@ pub async fn do_collection_exists(
 
 pub async fn do_get_collection(
     toc: &TableOfContent,
-    access: Option<Access>,
+    access: Access,
     name: &str,
     shard_selection: Option<ShardId>,
 ) -> Result<CollectionInfo, StorageError> {
-    if let Some(access) = access.as_ref() {
-        let Access {
-            collections,
-            payload: _,
-        } = access;
-        check_collection_name(collections.as_ref(), name)?;
-    }
+    let Access {
+        collections,
+        payload: _,
+    } = &access;
+    check_collection_name(collections.as_ref(), name)?;
 
     let collection = toc.get_collection(name).await?;
 
@@ -80,18 +76,13 @@ pub async fn do_get_collection(
     Ok(collection.info(&shard_selection).await?)
 }
 
-pub async fn do_list_collections(
-    toc: &TableOfContent,
-    access: Option<Access>,
-) -> CollectionsResponse {
-    let access_collections = if let Some(access) = access.as_ref() {
+pub async fn do_list_collections(toc: &TableOfContent, access: Access) -> CollectionsResponse {
+    let access_collections = {
         let Access {
             collections,
             payload: _,
-        } = access;
+        } = &access;
         collections.as_ref()
-    } else {
-        None
     };
 
     let collections = toc
@@ -148,18 +139,16 @@ fn generate_even_placement(
 
 pub async fn do_list_collection_aliases(
     toc: &TableOfContent,
-    access: Option<Access>,
+    access: Access,
     collection_name: &str,
 ) -> Result<CollectionsAliasesResponse, StorageError> {
-    let access_collections = if let Some(access) = access.as_ref() {
+    let access_collections = {
         let Access {
             collections,
             payload: _,
-        } = access;
+        } = &access;
         check_collection_name(collections.as_ref(), collection_name)?;
         collections.as_ref()
-    } else {
-        None
     };
 
     let aliases: Vec<AliasDescription> = toc
@@ -181,16 +170,14 @@ pub async fn do_list_collection_aliases(
 
 pub async fn do_list_aliases(
     toc: &TableOfContent,
-    access: Option<Access>,
+    access: Access,
 ) -> Result<CollectionsAliasesResponse, StorageError> {
-    let access_collections = if let Some(access) = access.as_ref() {
+    let access_collections = {
         let Access {
             collections,
             payload: _,
-        } = access;
+        } = &access;
         collections.as_ref()
-    } else {
-        None
     };
 
     let mut aliases = toc.list_aliases().await?;
@@ -206,10 +193,10 @@ pub async fn do_list_aliases(
 
 pub async fn do_list_snapshots(
     toc: &TableOfContent,
-    access: Option<Access>,
+    access: Access,
     collection_name: &str,
 ) -> Result<Vec<SnapshotDescription>, StorageError> {
-    check_full_access_to_collection(access.as_ref(), collection_name)?;
+    check_full_access_to_collection(&access, collection_name)?;
     Ok(toc
         .get_collection(collection_name)
         .await?
@@ -219,10 +206,10 @@ pub async fn do_list_snapshots(
 
 pub fn do_create_snapshot(
     dispatcher: &Dispatcher,
-    access: Option<Access>,
+    access: Access,
     collection_name: &str,
 ) -> Result<JoinHandle<Result<SnapshotDescription, StorageError>>, StorageError> {
-    check_full_access_to_collection(access.as_ref(), collection_name)?;
+    check_full_access_to_collection(&access, collection_name)?;
     let collection = collection_name.to_string();
     let dispatcher = dispatcher.clone();
     Ok(tokio::spawn(async move {
@@ -232,16 +219,14 @@ pub fn do_create_snapshot(
 
 pub async fn do_get_collection_cluster(
     toc: &TableOfContent,
-    access: Option<Access>,
+    access: Access,
     name: &str,
 ) -> Result<CollectionClusterInfo, StorageError> {
-    if let Some(access) = access.as_ref() {
-        let Access {
-            collections,
-            payload: _,
-        } = access;
-        check_collection_name(collections.as_ref(), name)?;
-    }
+    let Access {
+        collections,
+        payload: _,
+    } = &access;
+    check_collection_name(collections.as_ref(), name)?;
 
     let collection = toc.get_collection(name).await?;
     Ok(collection.cluster_info(toc.this_peer_id).await?)
@@ -251,38 +236,38 @@ pub async fn do_update_collection_cluster(
     dispatcher: &Dispatcher,
     collection_name: String,
     operation: ClusterOperations,
-    access: Option<Access>,
+    access: Access,
     wait_timeout: Option<Duration>,
 ) -> Result<bool, StorageError> {
-    if let Some(access) = access.as_ref() {
-        let Access {
-            collections,
-            payload: _,
-        } = access;
+    let Access {
+        collections,
+        payload: _,
+    } = &access;
 
-        check_collection_name(collections.as_ref(), &collection_name)?;
-        match &operation {
-            ClusterOperations::MoveShard(_)
-            | ClusterOperations::ReplicateShard(_)
-            | ClusterOperations::AbortTransfer(_)
-            | ClusterOperations::DropReplica(_)
-            | ClusterOperations::RestartTransfer(_) => {
-                if collections.is_some() {
-                    return incompatible_with_collection_claim();
-                }
+    check_collection_name(collections.as_ref(), &collection_name)?;
+    match &operation {
+        ClusterOperations::MoveShard(_)
+        | ClusterOperations::ReplicateShard(_)
+        | ClusterOperations::AbortTransfer(_)
+        | ClusterOperations::DropReplica(_)
+        | ClusterOperations::RestartTransfer(_) => {
+            if collections.is_some() {
+                return incompatible_with_collection_claim();
             }
-            ClusterOperations::CreateShardingKey(CreateShardingKeyOperation {
-                create_sharding_key,
-            }) => {
-                if !create_sharding_key.has_default_params() {
-                    return incompatible_with_collection_claim();
-                }
-            }
-            ClusterOperations::DropShardingKey(DropShardingKeyOperation {
-                drop_sharding_key: DropShardingKey { shard_key: _ },
-            }) => (),
         }
+        ClusterOperations::CreateShardingKey(CreateShardingKeyOperation {
+            create_sharding_key,
+        }) => {
+            if !create_sharding_key.has_default_params() {
+                return incompatible_with_collection_claim();
+            }
+        }
+        ClusterOperations::DropShardingKey(DropShardingKeyOperation {
+            drop_sharding_key: DropShardingKey { shard_key: _ },
+        }) => (),
     }
+
+    let full_access = Access::full(); // We already checked the request above
 
     if dispatcher.consensus_state().is_none() {
         return Err(StorageError::BadRequest {
@@ -348,7 +333,7 @@ pub async fn do_update_collection_cluster(
                             method: move_shard.method,
                         }),
                     ),
-                    None,
+                    full_access,
                     wait_timeout,
                 )
                 .await
@@ -383,7 +368,7 @@ pub async fn do_update_collection_cluster(
                             method: replicate_shard.method,
                         }),
                     ),
-                    None,
+                    full_access,
                     wait_timeout,
                 )
                 .await
@@ -413,7 +398,7 @@ pub async fn do_update_collection_cluster(
                             reason: "user request".to_string(),
                         },
                     ),
-                    None,
+                    full_access,
                     wait_timeout,
                 )
                 .await
@@ -440,7 +425,7 @@ pub async fn do_update_collection_cluster(
             dispatcher
                 .submit_collection_meta_op(
                     CollectionMetaOperations::UpdateCollection(update_operation),
-                    None,
+                    full_access,
                     wait_timeout,
                 )
                 .await
@@ -513,7 +498,7 @@ pub async fn do_update_collection_cluster(
                         shard_key: create_sharding_key.shard_key,
                         placement: exact_placement,
                     }),
-                    None,
+                    full_access,
                     wait_timeout,
                 )
                 .await
@@ -551,7 +536,7 @@ pub async fn do_update_collection_cluster(
                         collection_name,
                         shard_key: drop_sharding_key.shard_key,
                     }),
-                    None,
+                    full_access,
                     wait_timeout,
                 )
                 .await
@@ -590,7 +575,7 @@ pub async fn do_update_collection_cluster(
                             method,
                         }),
                     ),
-                    None,
+                    full_access,
                     wait_timeout,
                 )
                 .await

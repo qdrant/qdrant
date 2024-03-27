@@ -51,41 +51,39 @@ impl Dispatcher {
     pub async fn submit_collection_meta_op(
         &self,
         mut operation: CollectionMetaOperations,
-        access: Option<Access>,
+        access: Access,
         wait_timeout: Option<Duration>,
     ) -> Result<bool, StorageError> {
-        if let Some(Access {
+        let Access {
             collections,
             payload,
-        }) = access.as_ref()
-        {
-            match &mut operation {
-                CollectionMetaOperations::CreateCollection(_)
-                | CollectionMetaOperations::UpdateCollection(_)
-                | CollectionMetaOperations::DeleteCollection(_)
-                | CollectionMetaOperations::ChangeAliases(_)
-                | CollectionMetaOperations::TransferShard(_, _)
-                | CollectionMetaOperations::SetShardReplicaState(_)
-                | CollectionMetaOperations::CreateShardKey(_)
-                | CollectionMetaOperations::DropShardKey(_) => {
-                    if collections.is_some() {
-                        return incompatible_with_collection_claim();
-                    }
+        } = &access;
+        match &mut operation {
+            CollectionMetaOperations::CreateCollection(_)
+            | CollectionMetaOperations::UpdateCollection(_)
+            | CollectionMetaOperations::DeleteCollection(_)
+            | CollectionMetaOperations::ChangeAliases(_)
+            | CollectionMetaOperations::TransferShard(_, _)
+            | CollectionMetaOperations::SetShardReplicaState(_)
+            | CollectionMetaOperations::CreateShardKey(_)
+            | CollectionMetaOperations::DropShardKey(_) => {
+                if collections.is_some() {
+                    return incompatible_with_collection_claim();
                 }
-                CollectionMetaOperations::CreatePayloadIndex(op) => {
-                    check_collection_name(collections.as_ref(), &op.collection_name)?;
-                    if payload.is_some() {
-                        return incompatible_with_payload_claim();
-                    }
-                }
-                CollectionMetaOperations::DropPayloadIndex(op) => {
-                    check_collection_name(collections.as_ref(), &op.collection_name)?;
-                    if payload.is_some() {
-                        return incompatible_with_payload_claim();
-                    }
-                }
-                CollectionMetaOperations::Nop { token: _ } => (),
             }
+            CollectionMetaOperations::CreatePayloadIndex(op) => {
+                check_collection_name(collections.as_ref(), &op.collection_name)?;
+                if payload.is_some() {
+                    return incompatible_with_payload_claim();
+                }
+            }
+            CollectionMetaOperations::DropPayloadIndex(op) => {
+                check_collection_name(collections.as_ref(), &op.collection_name)?;
+                if payload.is_some() {
+                    return incompatible_with_payload_claim();
+                }
+            }
+            CollectionMetaOperations::Nop { token: _ } => (),
         }
 
         // if distributed deployment is enabled

@@ -53,10 +53,10 @@ pub fn do_recover_from_snapshot(
     dispatcher: &Dispatcher,
     collection_name: &str,
     source: SnapshotRecover,
-    access: Option<Access>,
+    access: Access,
     client: reqwest::Client,
 ) -> Result<JoinHandle<Result<bool, StorageError>>, StorageError> {
-    check_manage_rights(access.as_ref())?;
+    check_manage_rights(&access)?;
 
     let dispatch = dispatcher.clone();
     let collection_name = collection_name.to_string();
@@ -144,7 +144,7 @@ async fn _do_recover_from_snapshot(
                     snapshot_config.clone().into(),
                 ));
             dispatcher
-                .submit_collection_meta_op(operation, None, None)
+                .submit_collection_meta_op(operation, Access::full(), None)
                 .await?;
             toc.get_collection(collection_name).await?
         }

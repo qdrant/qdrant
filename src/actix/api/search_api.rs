@@ -7,11 +7,10 @@ use collection::operations::types::{
 };
 use itertools::Itertools;
 use storage::content_manager::toc::TableOfContent;
-use storage::rbac::access::Access;
 
 use super::read_params::ReadParams;
 use super::CollectionPath;
-use crate::actix::auth::Extension;
+use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::process_response;
 use crate::common::points::{
     do_core_search_points, do_search_batch_points, do_search_point_groups,
@@ -23,7 +22,7 @@ async fn search_points(
     collection: Path<CollectionPath>,
     request: Json<SearchRequest>,
     params: Query<ReadParams>,
-    access: Extension<Access>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
 
@@ -43,7 +42,7 @@ async fn search_points(
         search_request.into(),
         params.consistency,
         shard_selection,
-        access.into_inner(),
+        access,
         params.timeout(),
     )
     .await
@@ -63,7 +62,7 @@ async fn batch_search_points(
     collection: Path<CollectionPath>,
     request: Json<SearchRequestBatch>,
     params: Query<ReadParams>,
-    access: Extension<Access>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
 
@@ -91,7 +90,7 @@ async fn batch_search_points(
         &collection.name,
         requests,
         params.consistency,
-        access.into_inner(),
+        access,
         params.timeout(),
     )
     .await
@@ -116,7 +115,7 @@ async fn search_point_groups(
     collection: Path<CollectionPath>,
     request: Json<SearchGroupsRequest>,
     params: Query<ReadParams>,
-    access: Extension<Access>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
 
@@ -136,7 +135,7 @@ async fn search_point_groups(
         search_group_request,
         params.consistency,
         shard_selection,
-        access.into_inner(),
+        access,
         params.timeout(),
     )
     .await;

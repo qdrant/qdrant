@@ -35,17 +35,15 @@ impl TableOfContent {
         mut request: RecommendRequestInternal,
         read_consistency: Option<ReadConsistency>,
         shard_selector: ShardSelectorInternal,
-        access: Option<Access>,
+        access: Access,
         timeout: Option<Duration>,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
-        if let Some(Access {
+        let Access {
             collections,
             payload,
-        }) = access.as_ref()
-        {
-            check_collection_name(collections.as_ref(), collection_name)?;
-            check_points_op(collections.as_ref(), payload.as_ref(), &mut request)?;
-        }
+        } = &access;
+        check_collection_name(collections.as_ref(), collection_name)?;
+        check_points_op(collections.as_ref(), payload.as_ref(), &mut request)?;
 
         let collection = self.get_collection(collection_name).await?;
         recommendations::recommend_by(
@@ -75,18 +73,16 @@ impl TableOfContent {
         collection_name: &str,
         mut requests: Vec<(RecommendRequestInternal, ShardSelectorInternal)>,
         read_consistency: Option<ReadConsistency>,
-        access: Option<Access>,
+        access: Access,
         timeout: Option<Duration>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
-        if let Some(Access {
+        let Access {
             collections,
             payload,
-        }) = access.as_ref()
-        {
-            check_collection_name(collections.as_ref(), collection_name)?;
-            for (request, _shard_selector) in &mut requests {
-                check_points_op(collections.as_ref(), payload.as_ref(), request)?;
-            }
+        } = &access;
+        check_collection_name(collections.as_ref(), collection_name)?;
+        for (request, _shard_selector) in &mut requests {
+            check_points_op(collections.as_ref(), payload.as_ref(), request)?;
         }
 
         let collection = self.get_collection(collection_name).await?;
@@ -121,18 +117,16 @@ impl TableOfContent {
         mut request: CoreSearchRequestBatch,
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
-        access: Option<Access>,
+        access: Access,
         timeout: Option<Duration>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
-        if let Some(Access {
+        let Access {
             collections,
             payload,
-        }) = access.as_ref()
-        {
-            check_collection_name(collections.as_ref(), collection_name)?;
-            for req in &mut request.searches {
-                check_points_op(collections.as_ref(), payload.as_ref(), req)?;
-            }
+        } = &access;
+        check_collection_name(collections.as_ref(), collection_name)?;
+        for req in &mut request.searches {
+            check_points_op(collections.as_ref(), payload.as_ref(), req)?;
         }
 
         let collection = self.get_collection(collection_name).await?;
@@ -160,16 +154,14 @@ impl TableOfContent {
         mut request: CountRequestInternal,
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
-        access: Option<Access>,
+        access: Access,
     ) -> Result<CountResult, StorageError> {
-        if let Some(Access {
+        let Access {
             collections,
             payload,
-        }) = access.as_ref()
-        {
-            check_collection_name(collections.as_ref(), collection_name)?;
-            check_points_op(collections.as_ref(), payload.as_ref(), &mut request)?;
-        }
+        } = &access;
+        check_collection_name(collections.as_ref(), collection_name)?;
+        check_points_op(collections.as_ref(), payload.as_ref(), &mut request)?;
 
         let collection = self.get_collection(collection_name).await?;
         collection
@@ -195,16 +187,14 @@ impl TableOfContent {
         mut request: PointRequestInternal,
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
-        access: Option<Access>,
+        access: Access,
     ) -> Result<Vec<Record>, StorageError> {
-        if let Some(Access {
+        let Access {
             collections,
             payload,
-        }) = access.as_ref()
-        {
-            check_collection_name(collections.as_ref(), collection_name)?;
-            check_points_op(collections.as_ref(), payload.as_ref(), &mut request)?;
-        }
+        } = &access;
+        check_collection_name(collections.as_ref(), collection_name)?;
+        check_points_op(collections.as_ref(), payload.as_ref(), &mut request)?;
 
         let collection = self.get_collection(collection_name).await?;
         collection
@@ -219,17 +209,15 @@ impl TableOfContent {
         mut request: GroupRequest,
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
-        access: Option<Access>,
+        access: Access,
         timeout: Option<Duration>,
     ) -> Result<GroupsResult, StorageError> {
-        if let Some(Access {
+        let Access {
             collections,
             payload,
-        }) = access.as_ref()
-        {
-            check_collection_name(collections.as_ref(), collection_name)?;
-            check_points_op(collections.as_ref(), payload.as_ref(), &mut request)?;
-        }
+        } = &access;
+        check_collection_name(collections.as_ref(), collection_name)?;
+        check_points_op(collections.as_ref(), payload.as_ref(), &mut request)?;
 
         let collection = self.get_collection(collection_name).await?;
 
@@ -253,17 +241,15 @@ impl TableOfContent {
         mut request: DiscoverRequestInternal,
         read_consistency: Option<ReadConsistency>,
         shard_selector: ShardSelectorInternal,
-        access: Option<Access>,
+        access: Access,
         timeout: Option<Duration>,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
-        if let Some(Access {
+        let Access {
             collections,
             payload,
-        }) = access.as_ref()
-        {
-            check_collection_name(collections.as_ref(), collection_name)?;
-            check_points_op(collections.as_ref(), payload.as_ref(), &mut request)?;
-        }
+        } = &access;
+        check_collection_name(collections.as_ref(), collection_name)?;
+        check_points_op(collections.as_ref(), payload.as_ref(), &mut request)?;
 
         let collection = self.get_collection(collection_name).await?;
         discovery::discover(
@@ -283,18 +269,16 @@ impl TableOfContent {
         collection_name: &str,
         mut requests: Vec<(DiscoverRequestInternal, ShardSelectorInternal)>,
         read_consistency: Option<ReadConsistency>,
-        access: Option<Access>,
+        access: Access,
         timeout: Option<Duration>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
-        if let Some(Access {
+        let Access {
             collections,
             payload,
-        }) = access.as_ref()
-        {
-            check_collection_name(collections.as_ref(), collection_name)?;
-            for (request, _shard_selector) in &mut requests {
-                check_points_op(collections.as_ref(), payload.as_ref(), request)?;
-            }
+        } = &access;
+        check_collection_name(collections.as_ref(), collection_name)?;
+        for (request, _shard_selector) in &mut requests {
+            check_points_op(collections.as_ref(), payload.as_ref(), request)?;
         }
         let collection = self.get_collection(collection_name).await?;
 
@@ -326,16 +310,14 @@ impl TableOfContent {
         mut request: ScrollRequestInternal,
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
-        access: Option<Access>,
+        access: Access,
     ) -> Result<ScrollResult, StorageError> {
-        if let Some(Access {
+        let Access {
             collections,
             payload,
-        }) = access.as_ref()
-        {
-            check_collection_name(collections.as_ref(), collection_name)?;
-            check_points_op(collections.as_ref(), payload.as_ref(), &mut request)?;
-        }
+        } = &access;
+        check_collection_name(collections.as_ref(), collection_name)?;
+        check_points_op(collections.as_ref(), payload.as_ref(), &mut request)?;
 
         let collection = self.get_collection(collection_name).await?;
         collection
@@ -385,20 +367,18 @@ impl TableOfContent {
         wait: bool,
         ordering: WriteOrdering,
         shard_selector: ShardSelectorInternal,
-        access: Option<Access>,
+        access: Access,
     ) -> Result<UpdateResult, StorageError> {
-        if let Some(Access {
+        let Access {
             collections,
             payload,
-        }) = access.as_ref()
-        {
-            check_collection_name(collections.as_ref(), collection_name)?;
-            check_points_op(
-                collections.as_ref(),
-                payload.as_ref(),
-                &mut operation.operation,
-            )?;
-        }
+        } = &access;
+        check_collection_name(collections.as_ref(), collection_name)?;
+        check_points_op(
+            collections.as_ref(),
+            payload.as_ref(),
+            &mut operation.operation,
+        )?;
 
         // `TableOfContent::_update_shard_keys` and `Collection::update_from_*` are cancel safe,
         // so this method is cancel safe.

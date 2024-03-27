@@ -12,7 +12,7 @@ use crate::common::collections::do_get_collection;
 pub async fn get(
     toc: &TableOfContent,
     get_collection_info_request: GetCollectionInfoRequest,
-    access: Option<Access>,
+    access: Access,
     shard_selection: Option<ShardId>,
 ) -> Result<Response<GetCollectionInfoResponse>, Status> {
     let timing = Instant::now();

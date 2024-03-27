@@ -9,6 +9,7 @@ use api::grpc::qdrant::{
 };
 use storage::content_manager::conversions::error_to_status;
 use storage::content_manager::toc::TableOfContent;
+use storage::rbac::access::Access;
 use tonic::{Request, Response, Status};
 
 use super::validate_and_log;
@@ -42,7 +43,7 @@ impl CollectionsInternal for CollectionsInternalService {
         get(
             self.toc.as_ref(),
             get_collection_info_request,
-            None,
+            Access::full(),
             Some(shard_id),
         )
         .await

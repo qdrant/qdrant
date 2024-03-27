@@ -126,7 +126,7 @@ impl AuthKeys {
                 scroll_req,
                 None,
                 ShardSelectorInternal::All,
-                None,
+                Access::full(),
             )
             .await
             .map_err(|e| format!("Could not confirm validity of JWT: {e}"))?;

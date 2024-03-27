@@ -14,7 +14,7 @@ use validator::Validate;
 
 use super::read_params::ReadParams;
 use super::CollectionPath;
-use crate::actix::auth::Extension;
+use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{self, process_response};
 use crate::common::points::do_get_points;
 
@@ -30,7 +30,7 @@ async fn do_get_point(
     collection_name: &str,
     point_id: PointIdType,
     read_consistency: Option<ReadConsistency>,
-    access: Option<Access>,
+    access: Access,
 ) -> Result<Option<Record>, StorageError> {
     let request = PointRequestInternal {
         ids: vec![point_id],
@@ -57,7 +57,7 @@ async fn get_point(
     collection: Path<CollectionPath>,
     point: Path<PointPath>,
     params: Query<ReadParams>,
-    access: Extension<Access>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     helpers::time(async move {
         let point_id: PointIdType = point.id.parse().map_err(|_| StorageError::BadInput {
@@ -69,7 +69,7 @@ async fn get_point(
             &collection.name,
             point_id,
             params.consistency,
-            access.into_inner(),
+            access,
         )
         .await?
         else {
@@ -89,7 +89,7 @@ async fn get_points(
     collection: Path<CollectionPath>,
     request: Json<PointRequest>,
     params: Query<ReadParams>,
-    access: Extension<Access>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
 
@@ -109,7 +109,7 @@ async fn get_points(
         point_request,
         params.consistency,
         shard_selection,
-        access.into_inner(),
+        access,
     )
     .await;
     let response = response.map(|v| v.into_iter().map(api::rest::Record::from).collect_vec());
@@ -122,7 +122,7 @@ async fn scroll_points(
     collection: Path<CollectionPath>,
     request: Json<ScrollRequest>,
     params: Query<ReadParams>,
-    access: Extension<Access>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
 
@@ -143,7 +143,7 @@ async fn scroll_points(
             params.consistency,
             // TODO: handle params.timeout
             shard_selection,
-            access.into_inner(),
+            access,
         )
         .await;
 

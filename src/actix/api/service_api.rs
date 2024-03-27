@@ -13,10 +13,9 @@ use segment::common::anonymize::Anonymize;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::claims::check_manage_rights;
 use storage::content_manager::toc::TableOfContent;
-use storage::rbac::access::Access;
 use tokio::sync::Mutex;
 
-use crate::actix::auth::Extension;
+use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{self, process_response_error};
 use crate::common::health;
 use crate::common::helpers::LocksOption;
@@ -34,10 +33,10 @@ pub struct TelemetryParam {
 fn telemetry(
     telemetry_collector: web::Data<Mutex<TelemetryCollector>>,
     params: Query<TelemetryParam>,
-    access: Extension<Access>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        check_manage_rights(access.into_inner().as_ref())?;
+        check_manage_rights(&access)?;
         let anonymize = params.anonymize.unwrap_or(false);
         let details_level = params
             .details_level
@@ -66,9 +65,9 @@ pub struct MetricsParam {
 async fn metrics(
     telemetry_collector: web::Data<Mutex<TelemetryCollector>>,
     params: Query<MetricsParam>,
-    access: Extension<Access>,
+    ActixAccess(access): ActixAccess,
 ) -> HttpResponse {
-    if let Err(err) = check_manage_rights(access.into_inner().as_ref()) {
+    if let Err(err) = check_manage_rights(&access) {
         return process_response_error(err, Instant::now());
     }
 
@@ -95,10 +94,10 @@ async fn metrics(
 fn put_locks(
     toc: web::Data<TableOfContent>,
     locks_option: Json<LocksOption>,
-    access: Extension<Access>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        check_manage_rights(access.into_inner().as_ref())?;
+        check_manage_rights(&access)?;
         let result = LocksOption {
             write: toc.get_ref().is_write_locked(),
             error_message: toc.get_ref().get_lock_error_message(),
@@ -112,10 +111,10 @@ fn put_locks(
 #[get("/locks")]
 fn get_locks(
     toc: web::Data<TableOfContent>,
-    access: Extension<Access>,
+    ActixAccess(access): ActixAccess,
 ) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        check_manage_rights(access.into_inner().as_ref())?;
+        check_manage_rights(&access)?;
         let result = LocksOption {
             write: toc.get_ref().is_write_locked(),
             error_message: toc.get_ref().get_lock_error_message(),
@@ -125,9 +124,9 @@ fn get_locks(
 }
 
 #[get("/stacktrace")]
-fn get_stacktrace(access: Extension<Access>) -> impl Future<Output = HttpResponse> {
+fn get_stacktrace(ActixAccess(access): ActixAccess) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        check_manage_rights(access.into_inner().as_ref())?;
+        check_manage_rights(&access)?;
         Ok(get_stack_trace())
     })
 }

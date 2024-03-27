@@ -13,4 +13,14 @@ pub struct Access {
     pub payload: Option<PayloadClaim>,
 }
 
+impl Access {
+    // TODO: add an explanation comment in all places where this is used
+    pub fn full() -> Self {
+        Self {
+            collections: None,
+            payload: None,
+        }
+    }
+}
+
 pub type PayloadClaim = HashMap<JsonPath, ValueVariants>;
