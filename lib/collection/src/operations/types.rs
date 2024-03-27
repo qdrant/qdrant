@@ -1130,8 +1130,8 @@ impl From<JsonError> for CollectionError {
     }
 }
 
-impl From<futures::io::Error> for CollectionError {
-    fn from(err: futures::io::Error) -> Self {
+impl From<std::io::Error> for CollectionError {
+    fn from(err: std::io::Error) -> Self {
         CollectionError::ServiceError {
             error: format!("File IO error: {err}"),
             backtrace: Some(Backtrace::force_capture().to_string()),
