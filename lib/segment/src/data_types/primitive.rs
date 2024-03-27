@@ -25,11 +25,17 @@ impl PrimitiveVectorElement for VectorElementType {
 }
 
 impl PrimitiveVectorElement for VectorElementTypeByte {
-    fn from_vector_ref(_vector: VectorRef) -> OperationResult<Cow<[Self]>> {
-        unimplemented!("VectorElementUnsignedByte is not implemented")
+    fn from_vector_ref(vector: VectorRef) -> OperationResult<Cow<[Self]>> {
+        let vector_ref: &[VectorElementType] = vector.try_into()?;
+        let byte_vector = vector_ref.iter().map(|&x| x as u8).collect::<Vec<u8>>();
+        Ok(Cow::from(byte_vector))
     }
 
-    fn vector_to_cow(_vector: &[Self]) -> CowVector {
-        unimplemented!("VectorElementUnsignedByte is not implemented")
+    fn vector_to_cow(vector: &[Self]) -> CowVector {
+        vector
+            .iter()
+            .map(|&x| x as VectorElementType)
+            .collect::<Vec<VectorElementType>>()
+            .into()
     }
 }
