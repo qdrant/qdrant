@@ -4,6 +4,7 @@ use std::arch::aarch64::*;
 #[cfg(target_feature = "neon")]
 use common::types::ScoreType;
 
+use super::tools::is_length_zero_or_normalized;
 use crate::data_types::vectors::DenseVector;
 #[cfg(target_feature = "neon")]
 use crate::data_types::vectors::VectorElementType;
@@ -117,7 +118,7 @@ pub(crate) unsafe fn cosine_preprocess_neon(vector: DenseVector) -> DenseVector 
     for v in vector.iter().take(n).skip(m) {
         length += v.powi(2);
     }
-    if length < f32::EPSILON {
+    if is_length_zero_or_normalized(length) {
         return vector;
     }
     let length = length.sqrt();

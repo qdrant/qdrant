@@ -2,6 +2,7 @@ use std::arch::x86_64::*;
 
 use common::types::ScoreType;
 
+use super::tools::is_length_zero_or_normalized;
 use crate::data_types::vectors::{DenseVector, VectorElementType};
 
 #[target_feature(enable = "avx")]
@@ -143,7 +144,7 @@ pub(crate) unsafe fn cosine_preprocess_avx(vector: DenseVector) -> DenseVector {
     for i in 0..n - m {
         length += (*ptr.add(i)).powi(2);
     }
-    if length < f32::EPSILON {
+    if is_length_zero_or_normalized(length) {
         return vector;
     }
     length = length.sqrt();
