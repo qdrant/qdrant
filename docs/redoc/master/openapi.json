@@ -8755,6 +8755,10 @@
               }
             ]
           },
+          "jwt_rbac": {
+            "type": "boolean",
+            "nullable": true
+          },
           "startup": {
             "type": "string",
             "format": "date-time"
