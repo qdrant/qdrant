@@ -9,11 +9,11 @@ use collection::operations::snapshot_ops::{
 };
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::ShardId;
-use rbac::jwt::Claims;
 use storage::content_manager::claims::check_full_access_to_collection;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::snapshots;
 use storage::content_manager::toc::TableOfContent;
+use storage::rbac::access::Access;
 
 use super::http_client::HttpClient;
 
@@ -22,11 +22,11 @@ use super::http_client::HttpClient;
 /// This function is cancel safe.
 pub async fn create_shard_snapshot(
     toc: Arc<TableOfContent>,
-    claims: Option<Claims>,
+    access: Access,
     collection_name: String,
     shard_id: ShardId,
 ) -> Result<SnapshotDescription, StorageError> {
-    check_full_access_to_collection(claims.as_ref(), &collection_name)?;
+    check_full_access_to_collection(&access, &collection_name)?;
     let collection = toc.get_collection(&collection_name).await?;
 
     let snapshot = collection
@@ -41,11 +41,11 @@ pub async fn create_shard_snapshot(
 /// This function is cancel safe.
 pub async fn list_shard_snapshots(
     toc: Arc<TableOfContent>,
-    claims: Option<Claims>,
+    access: Access,
     collection_name: String,
     shard_id: ShardId,
 ) -> Result<Vec<SnapshotDescription>, StorageError> {
-    check_full_access_to_collection(claims.as_ref(), &collection_name)?;
+    check_full_access_to_collection(&access, &collection_name)?;
     let collection = toc.get_collection(&collection_name).await?;
     let snapshots = collection.list_shard_snapshots(shard_id).await?;
     Ok(snapshots)
@@ -56,12 +56,12 @@ pub async fn list_shard_snapshots(
 /// This function is cancel safe.
 pub async fn delete_shard_snapshot(
     toc: Arc<TableOfContent>,
-    claims: Option<Claims>,
+    access: Access,
     collection_name: String,
     shard_id: ShardId,
     snapshot_name: String,
 ) -> Result<(), StorageError> {
-    check_full_access_to_collection(claims.as_ref(), &collection_name)?;
+    check_full_access_to_collection(&access, &collection_name)?;
     let collection = toc.get_collection(&collection_name).await?;
     let snapshot_path = collection
         .get_shard_snapshot_path(shard_id, &snapshot_name)
@@ -80,7 +80,7 @@ pub async fn delete_shard_snapshot(
 #[allow(clippy::too_many_arguments)]
 pub async fn recover_shard_snapshot(
     toc: Arc<TableOfContent>,
-    claims: Option<Claims>,
+    access: Access,
     collection_name: String,
     shard_id: ShardId,
     snapshot_location: ShardSnapshotLocation,
@@ -88,7 +88,7 @@ pub async fn recover_shard_snapshot(
     checksum: Option<String>,
     client: HttpClient,
 ) -> Result<(), StorageError> {
-    check_full_access_to_collection(claims.as_ref(), &collection_name)?;
+    check_full_access_to_collection(&access, &collection_name)?;
 
     // - `download_dir` handled by `tempfile` and would be deleted, if request is cancelled
     //   - remote snapshot is downloaded into `download_dir` and would be deleted with it

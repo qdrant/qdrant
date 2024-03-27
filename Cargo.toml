@@ -81,6 +81,7 @@ rustls-pki-types = "1.4.0"
 rustls-pemfile = "2.1.1"
 prometheus = { version = "0.13.3", default-features = false }
 validator = { version = "0.16", features = ["derive"] }
+jsonwebtoken = "9.3.0"
 
 # Consensus related crates
 raft = { version = "0.7.0", features = ["prost-codec"], default-features = false }
@@ -93,7 +94,6 @@ common = { path = "lib/common/common" }
 cancel = { path = "lib/common/cancel" }
 memory = { path = "lib/common/memory" }
 issues = { path = "lib/common/issues" }
-rbac = { path = "lib/rbac" }
 segment = { path = "lib/segment" }
 collection = { path = "lib/collection" }
 storage = { path = "lib/storage" }
@@ -154,7 +154,6 @@ members = [
     "lib/api",
     "lib/collection",
     "lib/common/*",
-    "lib/rbac",
     "lib/segment",
     "lib/sparse",
     "lib/storage",
