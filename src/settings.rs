@@ -27,6 +27,8 @@ pub struct ServiceConfig {
     pub verify_https_client_certificate: bool,
     pub api_key: Option<String>,
     pub read_only_api_key: Option<String>,
+    #[serde(default)]
+    pub jwt_rbac: Option<bool>,
 
     /// Directory where static files are served from.
     /// For example, the Web-UI should be placed here.

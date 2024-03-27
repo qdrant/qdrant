@@ -47,6 +47,8 @@ pub struct AppBuildTelemetry {
     pub features: Option<AppFeaturesTelemetry>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub system: Option<RunningEnvironmentTelemetry>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub jwt_rbac: Option<bool>,
     pub startup: DateTime<Utc>,
 }
 
@@ -66,6 +68,7 @@ impl AppBuildTelemetry {
                 recovery_mode: settings.storage.recovery_mode.is_some(),
             }),
             system: (detail.level >= DetailsLevel::Level1).then(get_system_data),
+            jwt_rbac: settings.service.jwt_rbac,
             startup: collector.startup,
         }
     }
@@ -136,6 +139,7 @@ impl Anonymize for AppBuildTelemetry {
             version: self.version.clone(),
             features: self.features.anonymize(),
             system: self.system.anonymize(),
+            jwt_rbac: self.jwt_rbac,
             startup: self.startup.anonymize(),
         }
     }
