@@ -11,11 +11,10 @@ use collection::operations::types::{
 use collection::operations::vector_ops::VectorOperations;
 use collection::operations::{CollectionUpdateOperations, FieldIndexOperations};
 use itertools::{Either, Itertools as _};
-use rbac::jwt::PayloadClaim;
 use segment::types::{Condition, ExtendedPointId, FieldCondition, Filter, Match, Payload};
 
 use super::errors::StorageError;
-use crate::rbac::access::Access;
+use crate::rbac::access::{Access, PayloadClaim};
 
 pub fn check_collection_name(
     collections: Option<&Vec<String>>,

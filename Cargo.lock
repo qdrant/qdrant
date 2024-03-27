@@ -4000,6 +4000,7 @@ dependencies = [
  "futures-util",
  "issues",
  "itertools 0.12.1",
+ "jsonwebtoken",
  "log",
  "memory",
  "parking_lot",
@@ -4008,7 +4009,6 @@ dependencies = [
  "raft",
  "raft-proto",
  "rand 0.8.5",
- "rbac",
  "reqwest",
  "rstack-self",
  "rustls 0.22.2",
@@ -4222,15 +4222,6 @@ checksum = "1465873a3dfdaa8ae7cb14b4383657caab0b3e8a0aa9ae8e04b044854c8dfce2"
 dependencies = [
  "crossbeam-deque",
  "crossbeam-utils",
-]
-
-[[package]]
-name = "rbac"
-version = "0.0.0"
-dependencies = [
- "jsonwebtoken",
- "segment",
- "serde",
 ]
 
 [[package]]
@@ -5194,7 +5185,6 @@ dependencies = [
  "protobuf",
  "raft",
  "rand 0.8.5",
- "rbac",
  "reqwest",
  "schemars",
  "segment",

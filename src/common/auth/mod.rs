@@ -2,14 +2,17 @@ use std::sync::Arc;
 
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::ScrollRequestInternal;
-use rbac::jwt::{Claims, ValueExists};
-use rbac::JwtParser;
 use segment::types::{WithPayloadInterface, WithVector};
 use storage::content_manager::toc::TableOfContent;
 use storage::rbac::access::Access;
 
+use self::claims::{Claims, ValueExists};
+use self::jwt_parser::JwtParser;
 use super::strings::ct_eq;
 use crate::settings::ServiceConfig;
+
+pub mod claims;
+pub mod jwt_parser;
 
 /// The API keys used for auth
 #[derive(Clone)]
