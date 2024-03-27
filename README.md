@@ -84,7 +84,7 @@ Qdrant offers the following client libraries to help you integrate it into your 
 - [Quick Start Guide](https://github.com/qdrant/qdrant/blob/master/QUICK_START.md)
 - End to End [Colab Notebook](https://colab.research.google.com/drive/1Bz8RSVHwnNDaNtDwotfPj0w7AYzsdXZ-?usp=sharing) demo with SentenceBERT and Qdrant
 - Detailed [Documentation](https://qdrant.tech/documentation/) are great starting points
-- [Step-by-Step Tutorial](https://qdrant.to/qdrant-tutorial) to create your first neural network project with Qdrant
+- [Step-by-Step Tutorial](https://qdrant.tech/articles/neural-search-tutorial/) to create your first neural network project with Qdrant
 
 ## Demo Projects  <a href="https://replit.com/@qdrant"><img align="right" src="https://replit.com/badge/github/qdrant/qdrant" alt="Run on Repl.it"></a>
 
