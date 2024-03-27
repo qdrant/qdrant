@@ -451,14 +451,26 @@ impl Consensus {
         let mut previous_tick = Instant::now();
 
         loop {
-            let mut elapsed = Instant::now().duration_since(previous_tick);
-            let mut timeout = tick_period.saturating_sub(elapsed);
+            let mut state_updated = false;
 
-            while timeout > Duration::ZERO {
-                self.propose_updates(timeout)?;
+            let mut elapsed = Instant::now().duration_since(previous_tick);
+            let mut until_next_tick = tick_period.saturating_sub(elapsed);
+
+            while until_next_tick > Duration::ZERO {
+                let timeout = if !state_updated {
+                    until_next_tick
+                } else {
+                    Duration::ZERO
+                };
+
+                state_updated = self.propose_updates(timeout)?;
 
                 elapsed = Instant::now().duration_since(previous_tick);
-                timeout = tick_period.saturating_sub(elapsed);
+                until_next_tick = tick_period.saturating_sub(elapsed);
+
+                if !state_updated {
+                    break;
+                }
             }
 
             while elapsed > tick_period {
