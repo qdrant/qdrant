@@ -10,6 +10,7 @@ use super::TableOfContent;
 use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::consensus_ops::ConsensusOperations;
 use crate::content_manager::errors::StorageError;
+use crate::rbac::access::CollectionPass;
 
 impl TableOfContent {
     pub fn get_snapshots_storage_manager(&self) -> SnapshotStorageManager {
@@ -47,11 +48,11 @@ impl TableOfContent {
         Ok(snapshots_path)
     }
 
-    pub async fn create_snapshot(
+    pub async fn create_snapshot<'a>(
         &self,
-        collection_name: &str,
+        collection: &CollectionPass<'a>,
     ) -> Result<SnapshotDescription, StorageError> {
-        let collection = self.get_collection(collection_name).await?;
+        let collection = self.get_collection_by_pass(collection).await?;
         // We want to use temp dir inside the temp_path (storage if not specified), because it is possible, that
         // snapshot directory is mounted as network share and multiple writes to it could be slow
         let temp_dir = self.optional_temp_or_storage_temp_path()?;

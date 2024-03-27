@@ -106,10 +106,9 @@ impl<S> Layer<S> for AuthLayer {
 }
 
 pub fn extract_access<R>(req: &mut tonic::Request<R>) -> Access {
-    req.extensions_mut().remove::<Access>().unwrap_or(Access {
-        collections: None,
-        payload: None,
-    })
+    req.extensions_mut()
+        .remove::<Access>()
+        .unwrap_or(Access::full())
 }
 
 fn is_read_only<R>(req: &tonic::codegen::http::Request<R>) -> bool {

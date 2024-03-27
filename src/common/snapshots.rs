@@ -9,7 +9,6 @@ use collection::operations::snapshot_ops::{
 };
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::ShardId;
-use storage::content_manager::claims::check_full_access_to_collection;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::snapshots;
 use storage::content_manager::toc::TableOfContent;
@@ -26,8 +25,8 @@ pub async fn create_shard_snapshot(
     collection_name: String,
     shard_id: ShardId,
 ) -> Result<SnapshotDescription, StorageError> {
-    check_full_access_to_collection(&access, &collection_name)?;
-    let collection = toc.get_collection(&collection_name).await?;
+    let collection_pass = access.check_whole_collection_rights(&collection_name)?;
+    let collection = toc.get_collection_by_pass(&collection_pass).await?;
 
     let snapshot = collection
         .create_shard_snapshot(shard_id, &toc.optional_temp_or_snapshot_temp_path()?)
@@ -45,8 +44,8 @@ pub async fn list_shard_snapshots(
     collection_name: String,
     shard_id: ShardId,
 ) -> Result<Vec<SnapshotDescription>, StorageError> {
-    check_full_access_to_collection(&access, &collection_name)?;
-    let collection = toc.get_collection(&collection_name).await?;
+    let collection_pass = access.check_whole_collection_rights(&collection_name)?;
+    let collection = toc.get_collection_by_pass(&collection_pass).await?;
     let snapshots = collection.list_shard_snapshots(shard_id).await?;
     Ok(snapshots)
 }
@@ -61,8 +60,8 @@ pub async fn delete_shard_snapshot(
     shard_id: ShardId,
     snapshot_name: String,
 ) -> Result<(), StorageError> {
-    check_full_access_to_collection(&access, &collection_name)?;
-    let collection = toc.get_collection(&collection_name).await?;
+    let collection_pass = access.check_whole_collection_rights(&collection_name)?;
+    let collection = toc.get_collection_by_pass(&collection_pass).await?;
     let snapshot_path = collection
         .get_shard_snapshot_path(shard_id, &snapshot_name)
         .await?;
@@ -88,7 +87,9 @@ pub async fn recover_shard_snapshot(
     checksum: Option<String>,
     client: HttpClient,
 ) -> Result<(), StorageError> {
-    check_full_access_to_collection(&access, &collection_name)?;
+    let collection_pass = access
+        .check_whole_collection_rights(&collection_name)?
+        .into_static();
 
     // - `download_dir` handled by `tempfile` and would be deleted, if request is cancelled
     //   - remote snapshot is downloaded into `download_dir` and would be deleted with it
@@ -97,7 +98,7 @@ pub async fn recover_shard_snapshot(
 
     cancel::future::spawn_cancel_on_drop(move |cancel| async move {
         let future = async {
-            let collection = toc.get_collection(&collection_name).await?;
+            let collection = toc.get_collection_by_pass(&collection_pass).await?;
             collection.assert_shard_exists(shard_id).await?;
 
             let download_dir = toc.snapshots_download_tempdir()?;

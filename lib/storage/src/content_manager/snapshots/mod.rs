@@ -11,11 +11,9 @@ use tempfile::TempPath;
 use tokio::io::AsyncWriteExt;
 use tokio::task::JoinHandle;
 
-use super::claims::check_manage_rights;
-use crate::content_manager::claims::check_full_access_to_collection;
 use crate::content_manager::toc::FULL_SNAPSHOT_FILE_NAME;
 use crate::dispatcher::Dispatcher;
-use crate::rbac::access::Access;
+use crate::rbac::access::{Access, CollectionMultipass};
 use crate::{StorageError, TableOfContent};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -61,7 +59,7 @@ pub async fn do_delete_full_snapshot(
     access: Access,
     snapshot_name: &str,
 ) -> Result<JoinHandle<Result<bool, StorageError>>, StorageError> {
-    check_manage_rights(&access)?;
+    access.check_manage_rights()?;
     let dispatcher = dispatcher.clone();
     let snapshot_manager = dispatcher.clone().toc().get_snapshots_storage_manager();
     let snapshot_dir = get_full_snapshot_path(dispatcher.toc(), snapshot_name).await?;
@@ -77,10 +75,9 @@ pub async fn do_delete_collection_snapshot(
     collection_name: &str,
     snapshot_name: &str,
 ) -> Result<JoinHandle<Result<bool, StorageError>>, StorageError> {
-    check_full_access_to_collection(&access, collection_name)?;
-    let collection_name = collection_name.to_string();
+    let collection_pass = access.check_whole_collection_rights(collection_name)?;
     let snapshot_name = snapshot_name.to_string();
-    let collection = dispatcher.get_collection(&collection_name).await?;
+    let collection = dispatcher.get_collection_by_pass(&collection_pass).await?;
     let file_name = collection.get_snapshot_path(&snapshot_name).await?;
     let snapshot_manager = dispatcher.clone().toc().get_snapshots_storage_manager();
 
@@ -94,7 +91,7 @@ pub async fn do_list_full_snapshots(
     toc: &TableOfContent,
     access: Access,
 ) -> Result<Vec<SnapshotDescription>, StorageError> {
-    check_manage_rights(&access)?;
+    access.check_manage_rights()?;
     let snapshots_manager = toc.get_snapshots_storage_manager();
     let snapshots_path = Path::new(toc.snapshots_path());
     Ok(snapshots_manager.list_snapshots(snapshots_path).await?)
@@ -104,15 +101,16 @@ pub fn do_create_full_snapshot(
     dispatcher: &Dispatcher,
     access: Access,
 ) -> Result<JoinHandle<Result<SnapshotDescription, StorageError>>, StorageError> {
-    check_manage_rights(&access)?;
+    let multipass = access.check_manage_rights()?;
     let dispatcher = dispatcher.clone();
     Ok(tokio::spawn(async move {
-        _do_create_full_snapshot(&dispatcher).await
+        _do_create_full_snapshot(&dispatcher, multipass).await
     }))
 }
 
 async fn _do_create_full_snapshot(
     dispatcher: &Dispatcher,
+    multipass: CollectionMultipass,
 ) -> Result<SnapshotDescription, StorageError> {
     let dispatcher = dispatcher.clone();
 
@@ -121,7 +119,9 @@ async fn _do_create_full_snapshot(
     let all_collections = dispatcher.all_collections().await;
     let mut created_snapshots: Vec<(&str, SnapshotDescription)> = vec![];
     for collection_name in &all_collections {
-        let snapshot_details = dispatcher.create_snapshot(collection_name).await?;
+        let snapshot_details = dispatcher
+            .create_snapshot(&multipass.issue_pass(collection_name))
+            .await?;
         created_snapshots.push((collection_name, snapshot_details));
     }
     let current_time = chrono::Utc::now().format("%Y-%m-%d-%H-%M-%S").to_string();

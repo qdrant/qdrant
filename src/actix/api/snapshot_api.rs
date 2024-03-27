@@ -16,7 +16,6 @@ use futures::{FutureExt as _, TryFutureExt as _};
 use reqwest::Url;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use storage::content_manager::claims::{check_full_access_to_collection, check_manage_rights};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::snapshots::recover::do_recover_from_snapshot;
 use storage::content_manager::snapshots::{
@@ -70,7 +69,7 @@ pub async fn do_get_full_snapshot(
     access: Access,
     snapshot_name: &str,
 ) -> Result<NamedFile, HttpError> {
-    check_manage_rights(&access)?;
+    access.check_manage_rights()?;
     let file_name = get_full_snapshot_path(toc, snapshot_name).await?;
     Ok(NamedFile::open(file_name)?)
 }
@@ -124,8 +123,8 @@ pub async fn do_get_snapshot(
     collection_name: &str,
     snapshot_name: &str,
 ) -> Result<NamedFile, HttpError> {
-    check_full_access_to_collection(&access, collection_name)?;
-    let collection = toc.get_collection(collection_name).await?;
+    let collection_pass = access.check_whole_collection_rights(collection_name)?;
+    let collection = toc.get_collection_by_pass(&collection_pass).await?;
     let file_name = collection.get_snapshot_path(snapshot_name).await?;
     Ok(NamedFile::open(file_name)?)
 }
@@ -169,7 +168,7 @@ async fn upload_snapshot(
     helpers::time_or_accept_with_handle(params.wait.unwrap_or(true), async move {
         let snapshot = form.snapshot;
 
-        check_manage_rights(&access)?;
+        access.check_manage_rights()?;
 
         if let Some(checksum) = &params.checksum {
             let snapshot_checksum = hash_file(snapshot.file.path()).await?;
@@ -379,7 +378,7 @@ async fn upload_shard_snapshot(
 
     let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
         // TODO: Run this check before the multipart blob is uploaded
-        check_manage_rights(&access)?;
+        let multipass = access.check_manage_rights()?;
 
         if let Some(checksum) = checksum {
             let snapshot_checksum = hash_file(form.snapshot.file.path()).await?;
@@ -389,7 +388,9 @@ async fn upload_shard_snapshot(
         }
 
         let future = async {
-            let collection = toc.get_collection(&collection).await?;
+            let collection = toc
+                .get_collection_by_pass(&multipass.issue_pass(&collection))
+                .await?;
             collection.assert_shard_exists(shard).await?;
 
             Result::<_, StorageError>::Ok(collection)
@@ -422,8 +423,8 @@ async fn download_shard_snapshot(
     ActixAccess(access): ActixAccess,
 ) -> Result<impl Responder, HttpError> {
     let (collection, shard, snapshot) = path.into_inner();
-    check_full_access_to_collection(&access, &collection)?;
-    let collection = toc.get_collection(&collection).await?;
+    let collection_pass = access.check_whole_collection_rights(&collection)?;
+    let collection = toc.get_collection_by_pass(&collection_pass).await?;
     let snapshot_path = collection.get_shard_snapshot_path(shard, &snapshot).await?;
 
     Ok(NamedFile::open(snapshot_path))

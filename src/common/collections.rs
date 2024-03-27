@@ -18,9 +18,7 @@ use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};
 use collection::shards::transfer::{ShardTransfer, ShardTransferKey, ShardTransferRestart};
 use itertools::Itertools;
 use rand::prelude::SliceRandom;
-use storage::content_manager::claims::{
-    check_collection_name, check_full_access_to_collection, incompatible_with_collection_claim,
-};
+use storage::content_manager::claims::check_collection_name;
 use storage::content_manager::collection_meta_ops::ShardTransferOperations::{Abort, Start};
 use storage::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateShardKey, DropShardKey, ShardTransferOperations,
@@ -37,15 +35,11 @@ pub async fn do_collection_exists(
     access: Access,
     name: &str,
 ) -> Result<CollectionExists, StorageError> {
-    let Access {
-        collections,
-        payload: _,
-    } = &access;
-    check_collection_name(collections.as_ref(), name)?;
+    let collection_pass = access.check_partial_collection_rights(name)?;
 
     // if this returns Ok, it means the collection exists.
     // if not, we check that the error is NotFound
-    let Err(error) = toc.get_collection(name).await else {
+    let Err(error) = toc.get_collection_by_pass(&collection_pass).await else {
         return Ok(CollectionExists { exists: true });
     };
     match error {
@@ -60,13 +54,9 @@ pub async fn do_get_collection(
     name: &str,
     shard_selection: Option<ShardId>,
 ) -> Result<CollectionInfo, StorageError> {
-    let Access {
-        collections,
-        payload: _,
-    } = &access;
-    check_collection_name(collections.as_ref(), name)?;
+    let collection_pass = access.check_partial_collection_rights(name)?;
 
-    let collection = toc.get_collection(name).await?;
+    let collection = toc.get_collection_by_pass(&collection_pass).await?;
 
     let shard_selection = match shard_selection {
         None => ShardSelectorInternal::All,
@@ -77,21 +67,11 @@ pub async fn do_get_collection(
 }
 
 pub async fn do_list_collections(toc: &TableOfContent, access: Access) -> CollectionsResponse {
-    let access_collections = {
-        let Access {
-            collections,
-            payload: _,
-        } = &access;
-        collections.as_ref()
-    };
-
     let collections = toc
         .all_collections()
         .await
         .into_iter()
-        .filter(|c| {
-            access_collections.map_or(true, |access_collections| access_collections.contains(c))
-        })
+        .filter(|c| access.check_partial_collection_rights(c).is_ok())
         .map(|name| CollectionDescription { name })
         .collect_vec();
 
@@ -196,9 +176,9 @@ pub async fn do_list_snapshots(
     access: Access,
     collection_name: &str,
 ) -> Result<Vec<SnapshotDescription>, StorageError> {
-    check_full_access_to_collection(&access, collection_name)?;
+    let collection_pass = access.check_whole_collection_rights(collection_name)?;
     Ok(toc
-        .get_collection(collection_name)
+        .get_collection_by_pass(&collection_pass)
         .await?
         .list_snapshots()
         .await?)
@@ -209,11 +189,12 @@ pub fn do_create_snapshot(
     access: Access,
     collection_name: &str,
 ) -> Result<JoinHandle<Result<SnapshotDescription, StorageError>>, StorageError> {
-    check_full_access_to_collection(&access, collection_name)?;
-    let collection = collection_name.to_string();
+    let collection_pass = access
+        .check_whole_collection_rights(collection_name)?
+        .into_static();
     let dispatcher = dispatcher.clone();
     Ok(tokio::spawn(async move {
-        dispatcher.create_snapshot(&collection).await
+        dispatcher.create_snapshot(&collection_pass).await
     }))
 }
 
@@ -222,13 +203,8 @@ pub async fn do_get_collection_cluster(
     access: Access,
     name: &str,
 ) -> Result<CollectionClusterInfo, StorageError> {
-    let Access {
-        collections,
-        payload: _,
-    } = &access;
-    check_collection_name(collections.as_ref(), name)?;
-
-    let collection = toc.get_collection(name).await?;
+    let collection_pass = access.check_partial_collection_rights(name)?;
+    let collection = toc.get_collection_by_pass(&collection_pass).await?;
     Ok(collection.cluster_info(toc.this_peer_id).await?)
 }
 
@@ -239,34 +215,26 @@ pub async fn do_update_collection_cluster(
     access: Access,
     wait_timeout: Option<Duration>,
 ) -> Result<bool, StorageError> {
-    let Access {
-        collections,
-        payload: _,
-    } = &access;
-
-    check_collection_name(collections.as_ref(), &collection_name)?;
+    let collection_pass = access.check_whole_collection_rights(&collection_name)?;
     match &operation {
         ClusterOperations::MoveShard(_)
         | ClusterOperations::ReplicateShard(_)
         | ClusterOperations::AbortTransfer(_)
         | ClusterOperations::DropReplica(_)
         | ClusterOperations::RestartTransfer(_) => {
-            if collections.is_some() {
-                return incompatible_with_collection_claim();
-            }
+            access.check_manage_rights()?;
         }
         ClusterOperations::CreateShardingKey(CreateShardingKeyOperation {
             create_sharding_key,
         }) => {
-            if collections.is_some() && !create_sharding_key.has_default_params() {
-                return incompatible_with_collection_claim();
+            if !create_sharding_key.has_default_params() {
+                access.check_manage_rights()?;
             }
         }
         ClusterOperations::DropShardingKey(DropShardingKeyOperation {
             drop_sharding_key: DropShardingKey { shard_key: _ },
         }) => (),
     }
-
     let full_access = Access::full(); // We already checked the request above
 
     if dispatcher.consensus_state().is_none() {
@@ -302,7 +270,7 @@ pub async fn do_update_collection_cluster(
         Ok(())
     };
 
-    let collection = dispatcher.get_collection(&collection_name).await?;
+    let collection = dispatcher.get_collection_by_pass(&collection_pass).await?;
 
     match operation {
         ClusterOperations::MoveShard(MoveShardOperation { move_shard }) => {
