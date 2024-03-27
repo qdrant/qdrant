@@ -254,7 +254,7 @@ mod tests {
     /// Renormalization should not produce something different.
     #[test]
     fn test_cosine_stable_preprocessing() {
-        const DIM: usize = 16;
+        const DIM: usize = 1500;
         const ATTEMPTS: usize = 100;
 
         let mut rng = rand::thread_rng();
