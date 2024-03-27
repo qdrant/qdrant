@@ -64,14 +64,28 @@ impl Collection {
         // Dedicated temporary directory for this snapshot (deleted on drop)
         let snapshot_temp_target_dir = tempfile::Builder::new()
             .prefix(&format!("{snapshot_name}-target-"))
-            .tempdir_in(global_temp_dir)?;
+            .tempdir_in(global_temp_dir)
+            .map_err(|err| {
+                CollectionError::service_error(format!(
+                    "failed to create temporary snapshot directory {}/{snapshot_name}-target-XXXX: \
+                     {err}",
+                    global_temp_dir.display(),
+                ))
+            })?;
 
         let snapshot_temp_target_dir_path = snapshot_temp_target_dir.path().to_path_buf();
         // Create snapshot of each shard
         {
             let snapshot_temp_temp_dir = tempfile::Builder::new()
                 .prefix(&format!("{snapshot_name}-temp-"))
-                .tempdir_in(global_temp_dir)?;
+                .tempdir_in(global_temp_dir)
+                .map_err(|err| {
+                    CollectionError::service_error(format!(
+                        "failed to create temporary snapshot directory {}/{snapshot_name}-temp-XXXX: \
+                         {err}",
+                        global_temp_dir.display(),
+                    ))
+                })?;
             let shards_holder = self.shards_holder.read().await;
             // Create snapshot of each shard
             for (shard_id, replica_set) in shards_holder.get_shards() {
@@ -80,7 +94,15 @@ impl Collection {
                     *shard_id,
                     0,
                 );
-                fs::create_dir_all(&shard_snapshot_path).await?;
+                fs::create_dir_all(&shard_snapshot_path)
+                    .await
+                    .map_err(|err| {
+                        CollectionError::service_error(format!(
+                            "failed to create directory {}: {err}",
+                            shard_snapshot_path.display()
+                        ))
+                    })?;
+
                 // If node is listener, we can save whatever currently is in the storage
                 let save_wal = self.shared_storage_config.node_type != NodeType::Listener;
                 replica_set
@@ -89,7 +111,13 @@ impl Collection {
                         &shard_snapshot_path,
                         save_wal,
                     )
-                    .await?;
+                    .await
+                    .map_err(|err| {
+                        CollectionError::service_error(format!(
+                            "failed to create snapshot {}: {err}",
+                            shard_snapshot_path.display()
+                        ))
+                    })?;
             }
         }
 
@@ -113,7 +141,14 @@ impl Collection {
         // Dedicated temporary file for archiving this snapshot (deleted on drop)
         let mut snapshot_temp_arc_file = tempfile::Builder::new()
             .prefix(&format!("{snapshot_name}-arc-"))
-            .tempfile_in(global_temp_dir)?;
+            .tempfile_in(global_temp_dir)
+            .map_err(|err| {
+                CollectionError::service_error(format!(
+                    "failed to create temporary snapshot directory {}/{snapshot_name}-arc-XXXX: \
+                     {err}",
+                    global_temp_dir.display(),
+                ))
+            })?;
 
         // Archive snapshot folder into a single file
         log::debug!("Archiving snapshot {snapshot_temp_target_dir_path:?}");
@@ -126,12 +161,20 @@ impl Collection {
             // return ownership of the file
             Ok(snapshot_temp_arc_file)
         });
-        snapshot_temp_arc_file = archiving.await??;
+        snapshot_temp_arc_file = archiving.await?.map_err(|err| {
+            CollectionError::service_error(format!("failed to create snapshot archive: {err}"))
+        })?;
 
         let snapshot_manager = self.get_snapshots_storage_manager();
         snapshot_manager
             .store_file(snapshot_temp_arc_file.path(), snapshot_path.as_path())
             .await
+            .map_err(|err| {
+                CollectionError::service_error(format!(
+                    "failed to store snapshot archive to {}: {err}",
+                    snapshot_temp_arc_file.path().display()
+                ))
+            })
     }
 
     /// Restore collection from snapshot
