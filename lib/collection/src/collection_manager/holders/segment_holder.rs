@@ -236,6 +236,12 @@ impl<'s> SegmentHolder {
         self.segments.get(&id)
     }
 
+    pub fn has_appendable_segment(&self) -> bool {
+        self.segments
+            .iter()
+            .any(|(_idx, seg)| seg.get().read().is_appendable())
+    }
+
     pub fn appendable_segments(&self) -> Vec<SegmentId> {
         self.segments
             .iter()
@@ -807,9 +813,9 @@ impl<'s> SegmentHolder {
 
         // Finalize temporary segment we proxied writes to
         // Append a temp segment to collection if it is not empty or there is no other appendable segment
-        let has_appendable_segments = write_segments.random_appendable_segment().is_some();
         let available_points = tmp_segment.get().read().available_point_count();
-        if available_points > 0 || !has_appendable_segments {
+        let has_appendable_segment = write_segments.has_appendable_segment();
+        if available_points > 0 || !has_appendable_segment {
             log::trace!("Keeping temporary segment with {available_points} points");
             write_segments.add_locked(tmp_segment);
             drop(write_segments);
