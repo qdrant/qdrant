@@ -614,10 +614,12 @@ impl<'s> SegmentHolder {
     where
         F: Fn(Arc<RwLock<dyn SegmentEntry>>) -> OperationResult<()>,
     {
+        let segments_lock = segments.upgradable_read();
+
         // Proxy all segments
         log::trace!("Proxying all shard segments to apply function");
-        let (proxies, tmp_segment) =
-            Self::proxy_all_segments(segments.clone(), collection_path, collection_params)?;
+        let (proxies, tmp_segment, segments_lock) =
+            Self::proxy_all_segments(segments_lock, collection_path, collection_params)?;
 
         // Apply provided function
         log::trace!("Applying function on all proxied shard segments");
@@ -648,18 +650,23 @@ impl<'s> SegmentHolder {
         // Unproxy all segments
         // Always do this to prevent leaving proxy segments in place
         log::trace!("Unproxying all shard segments after function is applied");
-        Self::unproxy_all_segments(segments, proxies, tmp_segment)?;
+        Self::unproxy_all_segments(segments_lock, proxies, tmp_segment)?;
 
         // Return any function result we might have had
         result
     }
 
     /// Proxy all shard segments for [`proxy_all_segments_and_apply`]
-    fn proxy_all_segments(
-        segments: LockedSegmentHolder,
+    #[allow(clippy::type_complexity)]
+    fn proxy_all_segments<'a>(
+        segments_lock: RwLockUpgradableReadGuard<'a, SegmentHolder>,
         collection_path: &Path,
         collection_params: Option<&CollectionParams>,
-    ) -> OperationResult<(Vec<(SegmentId, LockedSegment)>, LockedSegment)> {
+    ) -> OperationResult<(
+        Vec<(SegmentId, LockedSegment)>,
+        LockedSegment,
+        RwLockUpgradableReadGuard<'a, SegmentHolder>,
+    )> {
         // Source config for temporary segment which we target all writes to
         let config = match collection_params {
             // Base config on collection params
@@ -678,7 +685,7 @@ impl<'s> SegmentHolder {
             },
             // Base config on existing appendable or non-appendable segment
             None => {
-                segments.read()
+                segments_lock
                     .random_appendable_segment()
                     .ok_or_else(|| OperationError::service_error("No existing segment to source temporary segment configuration from"))?
                     .get()
@@ -692,7 +699,6 @@ impl<'s> SegmentHolder {
         let tmp_segment = LockedSegment::new(build_segment(collection_path, &config, false)?);
 
         // List all segments we want to snapshot
-        let segments_lock = segments.upgradable_read();
         let segment_ids = segments_lock
             .segments
             .keys()
@@ -752,7 +758,7 @@ impl<'s> SegmentHolder {
 
     /// Unproxy all shard segments for [`proxy_all_segments_and_apply`]
     fn unproxy_all_segments(
-        segments: LockedSegmentHolder,
+        segments_lock: RwLockUpgradableReadGuard<SegmentHolder>,
         proxies: Vec<(SegmentId, LockedSegment)>,
         tmp_segment: LockedSegment,
     ) -> OperationResult<()> {
@@ -779,7 +785,7 @@ impl<'s> SegmentHolder {
 
         // Batch 2: propagate changes to wrapped segment in exclusive segments holder write lock
         // Swap out each proxy with wrapped segment once changes are propagated
-        let mut write_segments = segments.write();
+        let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
         for (proxy_id, proxy_segment) in proxies {
             match proxy_segment {
                 // Propagate proxied changes to wrapped segment, take it out and swap with proxy
