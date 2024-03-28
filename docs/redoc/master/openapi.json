@@ -5921,7 +5921,8 @@
           "prefix",
           "whitespace",
           "word",
-          "multilingual"
+          "multilingual",
+          "trigram"
         ]
       },
       "IntegerIndexParams": {

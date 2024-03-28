@@ -2,6 +2,30 @@ use charabia::Tokenize;
 
 use crate::data_types::text_index::{TextIndexParams, TokenizerType};
 
+struct TrigramTokenizer;
+
+impl TrigramTokenizer {
+    fn tokenize<C: FnMut(&str)>(text: &str, callback: C) {
+        text.split_whitespace()
+            .flat_map(|word| generate_trigrams(word))
+            .for_each(callback);
+    }
+}
+
+fn generate_trigrams(word: &str) -> Vec<&str> {
+    if word.len() < 3 {
+        // Return the word itself if it's less than 3 characters
+        return vec![word];
+    }
+
+    let mut trigrams = Vec::new();
+    for i in 0..word.len() - 2 {
+        if let Some(trigram) = word.get(i..i + 3) {
+            trigrams.push(trigram);
+        }
+    }
+    trigrams
+}
 struct WhiteSpaceTokenizer;
 
 impl WhiteSpaceTokenizer {
@@ -108,6 +132,7 @@ impl Tokenizer {
         let token_filter = Self::doc_token_filter(config, &mut callback);
         match config.tokenizer {
             TokenizerType::Whitespace => WhiteSpaceTokenizer::tokenize(text, token_filter),
+            TokenizerType::Trigram => TrigramTokenizer::tokenize(text, token_filter),
             TokenizerType::Word => WordTokenizer::tokenize(text, token_filter),
             TokenizerType::Multilingual => MultilingualTokenizer::tokenize(text, token_filter),
             TokenizerType::Prefix => PrefixTokenizer::tokenize(
@@ -123,6 +148,7 @@ impl Tokenizer {
         let token_filter = Self::doc_token_filter(config, &mut callback);
         match config.tokenizer {
             TokenizerType::Whitespace => WhiteSpaceTokenizer::tokenize(text, token_filter),
+            TokenizerType::Trigram => TrigramTokenizer::tokenize(text, token_filter),
             TokenizerType::Word => WordTokenizer::tokenize(text, token_filter),
             TokenizerType::Multilingual => MultilingualTokenizer::tokenize(text, token_filter),
             TokenizerType::Prefix => PrefixTokenizer::tokenize_query(
@@ -147,6 +173,17 @@ mod tests {
         assert_eq!(tokens.len(), 2);
         assert_eq!(tokens.first(), Some(&"hello".to_owned()));
         assert_eq!(tokens.get(1), Some(&"world".to_owned()));
+    }
+
+    #[test]
+    fn test_trigram_tokenizer() {
+        let text = "hello, world";
+        let mut tokens = Vec::new();
+        TrigramTokenizer::tokenize(text, |token| tokens.push(token.to_owned()));
+        assert_eq!(tokens.len(), 7);
+        assert_eq!(tokens.get(0), Some(&"hel".to_owned()));
+        assert_eq!(tokens.get(3), Some(&"lo,".to_owned()));
+        assert_eq!(tokens.get(6), Some(&"rld".to_owned()));
     }
 
     #[test]
