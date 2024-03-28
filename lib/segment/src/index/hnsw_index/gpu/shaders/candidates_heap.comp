@@ -1,0 +1,41 @@
+#ifndef CANDIDATES_HEAP_HEADER
+#define CANDIDATES_HEAP_HEADER
+
+#ifndef CANDIDATES_HEAP_LAYOUT_SET
+#error "CANDIDATES_HEAP_LAYOUT_SET not defined"
+#endif
+
+#include "common.comp"
+
+layout(set = CANDIDATES_HEAP_LAYOUT_SET, binding = 0)
+readonly uniform CandidatesHeapParams {
+    uint capacity;
+    uint maxes_capacity;
+} candidates_heap_params;
+
+layout(set = CANDIDATES_HEAP_LAYOUT_SET, binding = 1)
+buffer CandidatesScores {
+    float data[];
+} candidates_scores;
+
+layout(set = CANDIDATES_HEAP_LAYOUT_SET, binding = 2)
+buffer CandidatesIndices {
+    uint data[];
+} candidates_indices;
+
+uint candidates_count;
+
+#define CANDIDATES_HEAP_OFFSET (SUBGROUP_SIZE * )
+
+void candidates_heap_init() {
+    candidates_count = 0;
+}
+
+ScoredPoint pop_candidate() {
+    return ScoredPoint(0, 0.0);
+}
+
+void push_candidate(ScoredPoint scored_point) {
+}
+
+#endif

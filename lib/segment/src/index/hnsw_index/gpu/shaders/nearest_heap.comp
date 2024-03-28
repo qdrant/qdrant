@@ -9,7 +9,7 @@
 #include "links.comp"
 
 layout(set = NEAREST_HEAP_LAYOUT_SET, binding = 0)
-readonly uniform SearcherParams {
+readonly uniform NearestHeapParams {
     uint capacity;
 } nearest_heap_params;
 
