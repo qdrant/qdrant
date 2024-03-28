@@ -730,24 +730,24 @@ impl<'s> SegmentHolder {
         // Replace all segments with proxies
         // We cannot fail past this point to prevent only having some segments proxified
         let mut proxies = Vec::with_capacity(new_proxies.len());
-        {
-            let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
-            for (segment_id, mut proxy) in new_proxies {
-                // Replicate field indexes a the second time, because optimized segments could have
-                // been changed. The probability is small, though, so we can afford this operation
-                // under the full collection write lock
-                let op_num = 0;
-                if let Err(err) = proxy.replicate_field_indexes(op_num) {
-                    log::error!("Failed to replicate proxy segment field indexes, ignoring: {err}");
-                }
-
-                let (segment_id, segments) = write_segments.swap(proxy, &[segment_id]);
-                debug_assert_eq!(segments.len(), 1);
-                proxies.push((segment_id, segments[0].clone()));
+        let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
+        for (segment_id, mut proxy) in new_proxies {
+            // Replicate field indexes a the second time, because optimized segments could have
+            // been changed. The probability is small, though, so we can afford this operation
+            // under the full collection write lock
+            let op_num = 0;
+            if let Err(err) = proxy.replicate_field_indexes(op_num) {
+                log::error!("Failed to replicate proxy segment field indexes, ignoring: {err}");
             }
-        }
 
-        Ok((proxies, tmp_segment))
+            let (segment_id, segments) = write_segments.swap(proxy, &[segment_id]);
+            debug_assert_eq!(segments.len(), 1);
+            let locked_proxy_segment = write_segments.get(segment_id).cloned().unwrap();
+            proxies.push((segment_id, locked_proxy_segment));
+        }
+        let segments_lock = RwLockWriteGuard::downgrade_to_upgradable(write_segments);
+
+        Ok((proxies, tmp_segment, segments_lock))
     }
 
     /// Unproxy all shard segments for [`proxy_all_segments_and_apply`]
