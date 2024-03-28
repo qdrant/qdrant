@@ -97,7 +97,7 @@ struct Args {
     /// Path to an alternative configuration file.
     /// Format: <config_file_path>
     ///
-    /// Default path : config/config.yaml
+    /// Default path: config/config.yaml
     #[arg(long, value_name = "PATH")]
     config_path: Option<String>,
 
