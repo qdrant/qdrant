@@ -1,7 +1,7 @@
 use segment::json_path::JsonPath;
 use segment::types::{Condition, FieldCondition, Filter, Match, ValueVariants};
 use serde::{Deserialize, Serialize};
-use storage::rbac::access::PayloadClaim;
+use storage::rbac::access::Access;
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct Claims {
@@ -11,12 +11,8 @@ pub struct Claims {
     /// Write access, default is false. Read access is always enabled with a valid token.
     pub w: Option<bool>,
 
-    /// Collection names that are allowed to be accessed
-    pub collections: Option<Vec<String>>,
-
-    /// Payload constraints.
-    /// An object where each key is a JSON path, and each value is JSON value.
-    pub payload: Option<PayloadClaim>,
+    #[serde(flatten)]
+    pub access: Access,
 
     /// Validate this token by looking for a value inside a collection.
     pub value_exists: Option<ValueExists>,

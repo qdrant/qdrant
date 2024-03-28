@@ -44,6 +44,7 @@ use crate::content_manager::collections_ops::{Checker, Collections};
 use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
+use crate::rbac::access::CollectionPass;
 use crate::types::{PeerAddressById, StorageConfig};
 use crate::ConsensusOperations;
 
@@ -240,6 +241,13 @@ impl TableOfContent {
         Ok(RwLockReadGuard::map(read_collection, |collection| {
             collection.get(&real_collection_name).unwrap()
         }))
+    }
+
+    pub async fn get_collection_by_pass<'a>(
+        &self,
+        collection: &CollectionPass<'a>,
+    ) -> Result<RwLockReadGuard<Collection>, StorageError> {
+        self.get_collection(collection.name()).await
     }
 
     async fn get_collection_opt(

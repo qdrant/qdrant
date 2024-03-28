@@ -14,7 +14,6 @@ use futures::TryStreamExt as _;
 use segment::types::{ScoredPoint, ShardKey};
 
 use super::TableOfContent;
-use crate::content_manager::claims::{check_collection_name, check_points_op};
 use crate::content_manager::errors::StorageError;
 use crate::rbac::access::Access;
 
@@ -38,14 +37,10 @@ impl TableOfContent {
         access: Access,
         timeout: Option<Duration>,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
-        let Access {
-            collections,
-            payload,
-        } = &access;
-        check_collection_name(collections.as_ref(), collection_name)?;
-        check_points_op(collections.as_ref(), payload.as_ref(), &mut request)?;
+        let collection_pass = access.check_partial_collection_rights(collection_name)?;
+        access.check_point_op(&mut request)?;
 
-        let collection = self.get_collection(collection_name).await?;
+        let collection = self.get_collection_by_pass(&collection_pass).await?;
         recommendations::recommend_by(
             request,
             &collection,
@@ -76,16 +71,12 @@ impl TableOfContent {
         access: Access,
         timeout: Option<Duration>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
-        let Access {
-            collections,
-            payload,
-        } = &access;
-        check_collection_name(collections.as_ref(), collection_name)?;
+        let collection_pass = access.check_partial_collection_rights(collection_name)?;
         for (request, _shard_selector) in &mut requests {
-            check_points_op(collections.as_ref(), payload.as_ref(), request)?;
+            access.check_point_op(request)?;
         }
 
-        let collection = self.get_collection(collection_name).await?;
+        let collection = self.get_collection_by_pass(&collection_pass).await?;
         recommendations::recommend_batch_by(
             requests,
             &collection,
@@ -120,16 +111,12 @@ impl TableOfContent {
         access: Access,
         timeout: Option<Duration>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
-        let Access {
-            collections,
-            payload,
-        } = &access;
-        check_collection_name(collections.as_ref(), collection_name)?;
-        for req in &mut request.searches {
-            check_points_op(collections.as_ref(), payload.as_ref(), req)?;
+        let collection_pass = access.check_partial_collection_rights(collection_name)?;
+        for request in &mut request.searches {
+            access.check_point_op(request)?;
         }
 
-        let collection = self.get_collection(collection_name).await?;
+        let collection = self.get_collection_by_pass(&collection_pass).await?;
         collection
             .core_search_batch(request, read_consistency, shard_selection, timeout)
             .await
@@ -156,14 +143,10 @@ impl TableOfContent {
         shard_selection: ShardSelectorInternal,
         access: Access,
     ) -> Result<CountResult, StorageError> {
-        let Access {
-            collections,
-            payload,
-        } = &access;
-        check_collection_name(collections.as_ref(), collection_name)?;
-        check_points_op(collections.as_ref(), payload.as_ref(), &mut request)?;
+        let collection_pass = access.check_partial_collection_rights(collection_name)?;
+        access.check_point_op(&mut request)?;
 
-        let collection = self.get_collection(collection_name).await?;
+        let collection = self.get_collection_by_pass(&collection_pass).await?;
         collection
             .count(request, read_consistency, &shard_selection)
             .await
@@ -189,14 +172,10 @@ impl TableOfContent {
         shard_selection: ShardSelectorInternal,
         access: Access,
     ) -> Result<Vec<Record>, StorageError> {
-        let Access {
-            collections,
-            payload,
-        } = &access;
-        check_collection_name(collections.as_ref(), collection_name)?;
-        check_points_op(collections.as_ref(), payload.as_ref(), &mut request)?;
+        let collection_pass = access.check_partial_collection_rights(collection_name)?;
+        access.check_point_op(&mut request)?;
 
-        let collection = self.get_collection(collection_name).await?;
+        let collection = self.get_collection_by_pass(&collection_pass).await?;
         collection
             .retrieve(request, read_consistency, &shard_selection)
             .await
@@ -212,14 +191,10 @@ impl TableOfContent {
         access: Access,
         timeout: Option<Duration>,
     ) -> Result<GroupsResult, StorageError> {
-        let Access {
-            collections,
-            payload,
-        } = &access;
-        check_collection_name(collections.as_ref(), collection_name)?;
-        check_points_op(collections.as_ref(), payload.as_ref(), &mut request)?;
+        let collection_pass = access.check_partial_collection_rights(collection_name)?;
+        access.check_point_op(&mut request)?;
 
-        let collection = self.get_collection(collection_name).await?;
+        let collection = self.get_collection_by_pass(&collection_pass).await?;
 
         let collection_by_name = |name| self.get_collection_opt(name);
 
@@ -244,14 +219,10 @@ impl TableOfContent {
         access: Access,
         timeout: Option<Duration>,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
-        let Access {
-            collections,
-            payload,
-        } = &access;
-        check_collection_name(collections.as_ref(), collection_name)?;
-        check_points_op(collections.as_ref(), payload.as_ref(), &mut request)?;
+        let collection_pass = access.check_partial_collection_rights(collection_name)?;
+        access.check_point_op(&mut request)?;
 
-        let collection = self.get_collection(collection_name).await?;
+        let collection = self.get_collection_by_pass(&collection_pass).await?;
         discovery::discover(
             request,
             &collection,
@@ -272,15 +243,12 @@ impl TableOfContent {
         access: Access,
         timeout: Option<Duration>,
     ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
-        let Access {
-            collections,
-            payload,
-        } = &access;
-        check_collection_name(collections.as_ref(), collection_name)?;
+        let collection_pass = access.check_partial_collection_rights(collection_name)?;
         for (request, _shard_selector) in &mut requests {
-            check_points_op(collections.as_ref(), payload.as_ref(), request)?;
+            access.check_point_op(request)?;
         }
-        let collection = self.get_collection(collection_name).await?;
+
+        let collection = self.get_collection_by_pass(&collection_pass).await?;
 
         discovery::discover_batch(
             requests,
@@ -312,14 +280,10 @@ impl TableOfContent {
         shard_selection: ShardSelectorInternal,
         access: Access,
     ) -> Result<ScrollResult, StorageError> {
-        let Access {
-            collections,
-            payload,
-        } = &access;
-        check_collection_name(collections.as_ref(), collection_name)?;
-        check_points_op(collections.as_ref(), payload.as_ref(), &mut request)?;
+        let collection_pass = access.check_partial_collection_rights(collection_name)?;
+        access.check_point_op(&mut request)?;
 
-        let collection = self.get_collection(collection_name).await?;
+        let collection = self.get_collection_by_pass(&collection_pass).await?;
         collection
             .scroll_by(request, read_consistency, &shard_selection)
             .await
@@ -369,21 +333,13 @@ impl TableOfContent {
         shard_selector: ShardSelectorInternal,
         access: Access,
     ) -> Result<UpdateResult, StorageError> {
-        let Access {
-            collections,
-            payload,
-        } = &access;
-        check_collection_name(collections.as_ref(), collection_name)?;
-        check_points_op(
-            collections.as_ref(),
-            payload.as_ref(),
-            &mut operation.operation,
-        )?;
+        let collection_pass = access.check_partial_collection_rights(collection_name)?;
+        access.check_point_op(&mut operation.operation)?;
 
         // `TableOfContent::_update_shard_keys` and `Collection::update_from_*` are cancel safe,
         // so this method is cancel safe.
 
-        let collection = self.get_collection(collection_name).await?;
+        let collection = self.get_collection_by_pass(&collection_pass).await?;
 
         // Ordered operation flow:
         //

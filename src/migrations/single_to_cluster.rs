@@ -24,10 +24,16 @@ pub async fn handle_existing_collections(
     collections: Vec<String>,
 ) {
     let full_access = Access::full();
+    let multipass = full_access
+        .check_manage_rights()
+        .expect("Full access should have manage rights");
 
     consensus_state.is_leader_established.await_ready();
     for collection_name in collections {
-        let collection_obj = match toc_arc.get_collection(&collection_name).await {
+        let collection_obj = match toc_arc
+            .get_collection_by_pass(&multipass.issue_pass(&collection_name))
+            .await
+        {
             Ok(collection_obj) => collection_obj,
             Err(_) => break,
         };

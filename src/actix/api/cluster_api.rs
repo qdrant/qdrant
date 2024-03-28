@@ -3,7 +3,6 @@ use std::future::Future;
 use actix_web::{delete, get, post, web, HttpResponse};
 use actix_web_validator::Query;
 use serde::Deserialize;
-use storage::content_manager::claims::check_manage_rights;
 use storage::content_manager::consensus_ops::ConsensusOperations;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
@@ -28,7 +27,7 @@ fn cluster_status(
     ActixAccess(access): ActixAccess,
 ) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        check_manage_rights(&access)?;
+        access.check_manage_rights()?;
         Ok(dispatcher.cluster_status())
     })
 }
@@ -39,7 +38,7 @@ fn recover_current_peer(
     ActixAccess(access): ActixAccess,
 ) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        check_manage_rights(&access)?;
+        access.check_manage_rights()?;
         toc.request_snapshot()?;
         Ok(true)
     })
@@ -53,7 +52,7 @@ fn remove_peer(
     ActixAccess(access): ActixAccess,
 ) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        check_manage_rights(&access)?;
+        access.check_manage_rights()?;
 
         let dispatcher = dispatcher.into_inner();
         let peer_id = peer_id.into_inner();

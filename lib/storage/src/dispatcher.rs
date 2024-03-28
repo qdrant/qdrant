@@ -6,9 +6,6 @@ use std::time::{Duration, Instant};
 use collection::config::ShardingMethod;
 use common::defaults::CONSENSUS_META_OP_WAIT;
 
-use crate::content_manager::claims::{
-    check_collection_name, incompatible_with_collection_claim, incompatible_with_payload_claim,
-};
 use crate::content_manager::collection_meta_ops::AliasOperations;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::rbac::access::Access;
@@ -50,41 +47,11 @@ impl Dispatcher {
     /// This function needs to be called from a runtime with timers enabled.
     pub async fn submit_collection_meta_op(
         &self,
-        mut operation: CollectionMetaOperations,
+        operation: CollectionMetaOperations,
         access: Access,
         wait_timeout: Option<Duration>,
     ) -> Result<bool, StorageError> {
-        let Access {
-            collections,
-            payload,
-        } = &access;
-        match &mut operation {
-            CollectionMetaOperations::CreateCollection(_)
-            | CollectionMetaOperations::UpdateCollection(_)
-            | CollectionMetaOperations::DeleteCollection(_)
-            | CollectionMetaOperations::ChangeAliases(_)
-            | CollectionMetaOperations::TransferShard(_, _)
-            | CollectionMetaOperations::SetShardReplicaState(_)
-            | CollectionMetaOperations::CreateShardKey(_)
-            | CollectionMetaOperations::DropShardKey(_) => {
-                if collections.is_some() {
-                    return incompatible_with_collection_claim();
-                }
-            }
-            CollectionMetaOperations::CreatePayloadIndex(op) => {
-                check_collection_name(collections.as_ref(), &op.collection_name)?;
-                if payload.is_some() {
-                    return incompatible_with_payload_claim();
-                }
-            }
-            CollectionMetaOperations::DropPayloadIndex(op) => {
-                check_collection_name(collections.as_ref(), &op.collection_name)?;
-                if payload.is_some() {
-                    return incompatible_with_payload_claim();
-                }
-            }
-            CollectionMetaOperations::Nop { token: _ } => (),
-        }
+        access.check_collection_meta_operation(&operation)?;
 
         // if distributed deployment is enabled
         if let Some(state) = self.consensus_state.as_ref() {

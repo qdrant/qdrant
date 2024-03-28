@@ -90,9 +90,8 @@ impl AuthKeys {
             let Claims {
                 exp: _, // already validated on decoding
                 w: write_access,
+                access,
                 value_exists,
-                collections,
-                payload,
             } = claims;
 
             if !write_access.unwrap_or(false) && !is_read_only {
@@ -103,10 +102,7 @@ impl AuthKeys {
                 self.validate_value_exists(&value_exists).await?;
             }
 
-            return Ok(Some(Access {
-                collections,
-                payload,
-            }));
+            return Ok(Some(access));
         }
 
         Err("Invalid API key or JWT".to_string())
