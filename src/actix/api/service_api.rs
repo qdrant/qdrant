@@ -11,7 +11,6 @@ use common::types::{DetailsLevel, TelemetryDetail};
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::{Deserialize, Serialize};
-use storage::content_manager::claims::check_manage_rights;
 use storage::content_manager::toc::TableOfContent;
 use tokio::sync::Mutex;
 
@@ -36,7 +35,7 @@ fn telemetry(
     ActixAccess(access): ActixAccess,
 ) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        check_manage_rights(&access)?;
+        access.check_manage_rights()?;
         let anonymize = params.anonymize.unwrap_or(false);
         let details_level = params
             .details_level
@@ -67,7 +66,7 @@ async fn metrics(
     params: Query<MetricsParam>,
     ActixAccess(access): ActixAccess,
 ) -> HttpResponse {
-    if let Err(err) = check_manage_rights(&access) {
+    if let Err(err) = access.check_manage_rights() {
         return process_response_error(err, Instant::now());
     }
 
@@ -97,7 +96,7 @@ fn put_locks(
     ActixAccess(access): ActixAccess,
 ) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        check_manage_rights(&access)?;
+        access.check_manage_rights()?;
         let result = LocksOption {
             write: toc.get_ref().is_write_locked(),
             error_message: toc.get_ref().get_lock_error_message(),
@@ -114,7 +113,7 @@ fn get_locks(
     ActixAccess(access): ActixAccess,
 ) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        check_manage_rights(&access)?;
+        access.check_manage_rights()?;
         let result = LocksOption {
             write: toc.get_ref().is_write_locked(),
             error_message: toc.get_ref().get_lock_error_message(),
@@ -126,7 +125,7 @@ fn get_locks(
 #[get("/stacktrace")]
 fn get_stacktrace(ActixAccess(access): ActixAccess) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        check_manage_rights(&access)?;
+        access.check_manage_rights()?;
         Ok(get_stack_trace())
     })
 }

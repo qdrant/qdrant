@@ -8,13 +8,12 @@ use collection::shards::shard_config::ShardType;
 use collection::shards::shard_versioning::latest_shard_paths;
 use tokio::task::JoinHandle;
 
-use crate::content_manager::claims::check_manage_rights;
 use crate::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateCollectionOperation,
 };
 use crate::content_manager::snapshots::download::download_snapshot;
 use crate::dispatcher::Dispatcher;
-use crate::rbac::access::Access;
+use crate::rbac::access::{Access, CollectionPass};
 use crate::{StorageError, TableOfContent};
 
 pub async fn activate_shard(
@@ -56,18 +55,18 @@ pub fn do_recover_from_snapshot(
     access: Access,
     client: reqwest::Client,
 ) -> Result<JoinHandle<Result<bool, StorageError>>, StorageError> {
-    check_manage_rights(&access)?;
+    let multipass = access.check_manage_rights()?;
 
     let dispatch = dispatcher.clone();
-    let collection_name = collection_name.to_string();
+    let collection_pass = multipass.issue_pass(collection_name).into_static();
     Ok(tokio::spawn(async move {
-        _do_recover_from_snapshot(dispatch, &collection_name, source, &client).await
+        _do_recover_from_snapshot(dispatch, collection_pass, source, &client).await
     }))
 }
 
 async fn _do_recover_from_snapshot(
     dispatcher: Dispatcher,
-    collection_name: &str,
+    collection_pass: CollectionPass<'static>,
     source: SnapshotRecover,
     client: &reqwest::Client,
 ) -> Result<bool, StorageError> {
@@ -106,11 +105,11 @@ async fn _do_recover_from_snapshot(
     let temp_storage_path = toc.optional_temp_or_storage_temp_path()?;
 
     let tmp_collection_dir = tempfile::Builder::new()
-        .prefix(&format!("col-{collection_name}-recovery-"))
+        .prefix(&format!("col-{collection_pass}-recovery-"))
         .tempdir_in(temp_storage_path)?;
 
     log::debug!(
-        "Recovering collection {collection_name} from snapshot {}",
+        "Recovering collection {collection_pass} from snapshot {}",
         snapshot_path.display(),
     );
 
@@ -134,19 +133,19 @@ async fn _do_recover_from_snapshot(
     let snapshot_config = CollectionConfig::load(tmp_collection_dir.path())?;
     snapshot_config.validate_and_warn();
 
-    let collection = match toc.get_collection(collection_name).await.ok() {
+    let collection = match toc.get_collection_by_pass(&collection_pass).await.ok() {
         Some(collection) => collection,
         None => {
-            log::debug!("Collection {} does not exist, creating it", collection_name);
+            log::debug!("Collection {collection_pass} does not exist, creating it");
             let operation =
                 CollectionMetaOperations::CreateCollection(CreateCollectionOperation::new(
-                    collection_name.to_string(),
+                    collection_pass.to_string(),
                     snapshot_config.clone().into(),
                 ));
             dispatcher
                 .submit_collection_meta_op(operation, Access::full(), None)
                 .await?;
-            toc.get_collection(collection_name).await?
+            toc.get_collection_by_pass(&collection_pass).await?
         }
     };
 
@@ -176,7 +175,7 @@ async fn _do_recover_from_snapshot(
             Some(state) => {
                 if state != &ReplicaState::Partial {
                     toc.send_set_replica_state_proposal(
-                        collection_name.to_string(),
+                        collection_pass.to_string(),
                         this_peer_id,
                         *shard_id,
                         ReplicaState::Partial,
@@ -266,13 +265,13 @@ async fn _do_recover_from_snapshot(
 
                                 // Don't need more replicas, remove this one
                                 toc.request_remove_replica(
-                                    collection_name.to_string(),
+                                    collection_pass.to_string(),
                                     *shard_id,
                                     *peer_id,
                                 )?;
                             } else {
                                 toc.send_set_replica_state_proposal(
-                                    collection_name.to_string(),
+                                    collection_pass.to_string(),
                                     *peer_id,
                                     *shard_id,
                                     ReplicaState::Dead,
@@ -289,13 +288,13 @@ async fn _do_recover_from_snapshot(
                         log::debug!(
                             "Running synchronization for shard {} of collection {} from {}",
                             shard_id,
-                            collection_name,
+                            collection_pass,
                             replica_peer_id
                         );
 
                         // assume that if there is another peers, the server is distributed
                         toc.request_shard_transfer(
-                            collection_name.to_string(),
+                            collection_pass.to_string(),
                             *shard_id,
                             *replica_peer_id,
                             this_peer_id,
