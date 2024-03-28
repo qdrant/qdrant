@@ -691,30 +691,30 @@ impl<'s> SegmentHolder {
         // Create temporary appendable segment to direct all proxy writes into
         let tmp_segment = LockedSegment::new(build_segment(collection_path, &config, false)?);
 
-        let proxy_deleted_points = Arc::new(RwLock::default());
-        let proxy_deleted_indexes = Arc::new(RwLock::default());
-        let proxy_created_indexes = Arc::new(RwLock::default());
-
         // List all segments we want to snapshot
         let segments_lock = segments.upgradable_read();
-        let segment_ids = segments_lock.segments.keys().collect::<Vec<&SegmentId>>();
+        let segment_ids = segments_lock
+            .segments
+            .keys()
+            .copied()
+            .collect::<Vec<SegmentId>>();
 
         // Create proxy for all segments
         let mut new_proxies = Vec::with_capacity(segment_ids.len());
         for segment_id in segment_ids {
-            let segment = segments_lock.segments.get(segment_id).unwrap();
+            let segment = segments_lock.segments.get(&segment_id).unwrap();
             let mut proxy = ProxySegment::new(
                 segment.clone(),
                 tmp_segment.clone(),
-                proxy_deleted_points.clone(),
-                proxy_created_indexes.clone(),
-                proxy_deleted_indexes.clone(),
+                Default::default(),
+                Default::default(),
+                Default::default(),
             );
 
-            // Wrapped segment is fresh, so it has no operations
+            // Write segment is fresh, so it has no operations
             // Operation with number 0 will be applied
             proxy.replicate_field_indexes(0)?;
-            new_proxies.push((*segment_id, proxy));
+            new_proxies.push((segment_id, proxy));
         }
 
         // Save segment version once all payload indices have been converted
@@ -733,10 +733,9 @@ impl<'s> SegmentHolder {
         {
             let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
             for (segment_id, mut proxy) in new_proxies {
-                // replicate_field_indexes for the second time,
-                // because optimized segments could have been changed.
-                // The probability is small, though,
-                // so we can afford this operation under the full collection write lock
+                // Replicate field indexes a the second time, because optimized segments could have
+                // been changed. The probability is small, though, so we can afford this operation
+                // under the full collection write lock
                 let op_num = 0;
                 if let Err(err) = proxy.replicate_field_indexes(op_num) {
                     log::error!("Failed to replicate proxy segment field indexes, ignoring: {err}");
@@ -793,7 +792,8 @@ impl<'s> SegmentHolder {
                         }
                         proxy_segment.wrapped_segment.clone()
                     };
-                    write_segments.swap(wrapped_segment, &[proxy_id]);
+                    let (_, segments) = write_segments.swap(wrapped_segment, &[proxy_id]);
+                    debug_assert_eq!(segments.len(), 1);
                 }
                 // If already unproxied, do nothing
                 LockedSegment::Original(_) => {}
