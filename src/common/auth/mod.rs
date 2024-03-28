@@ -4,7 +4,7 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::ScrollRequestInternal;
 use segment::types::{WithPayloadInterface, WithVector};
 use storage::content_manager::toc::TableOfContent;
-use storage::rbac::access::Access;
+use storage::rbac::Access;
 
 use self::claims::{Claims, ValueExists};
 use self::jwt_parser::JwtParser;
@@ -61,48 +61,42 @@ impl AuthKeys {
     }
 
     /// Validate that the specified request is allowed for given keys.
-    ///
-    /// # Returns
-    ///
-    /// - `Ok(None)` if the request is allowed through the API key.
-    /// - `Ok(Some(claims))` if the request is allowed through the JWT token.
-    /// - `Err(description)` if the request is not allowed.
     pub async fn validate_request<'a>(
         &self,
         get_header: impl Fn(&'a str) -> Option<&'a str>,
         is_read_only: bool,
-    ) -> Result<Option<Access>, String> {
+    ) -> Result<Access, String> {
         let Some(key) = get_header("api-key")
             .or_else(|| get_header("authorization").and_then(|v| v.strip_prefix("Bearer ")))
         else {
             return Err("Must provide an API key or an Authorization bearer token".to_string());
         };
 
-        if self.can_write(key) || (is_read_only && self.can_read(key)) {
-            return Ok(None);
-        }
-
-        if !is_read_only && self.can_read(key) {
-            return Err("Write access denied".to_string());
+        if is_read_only {
+            if self.can_read(key) || self.can_write(key) {
+                return Ok(Access::full_ro("Read-only access by key"));
+            }
+        } else {
+            if self.can_write(key) {
+                return Ok(Access::full("Read-write access by key"));
+            }
+            if self.can_read(key) {
+                return Err("Write access denied".to_string());
+            }
         }
 
         if let Some(claims) = self.jwt_parser.as_ref().and_then(|p| p.decode(key).ok()) {
             let Claims {
                 exp: _, // already validated on decoding
-                w: write_access,
                 access,
                 value_exists,
             } = claims;
-
-            if !write_access.unwrap_or(false) && !is_read_only {
-                return Err("Write access denied".to_string());
-            }
 
             if let Some(value_exists) = value_exists {
                 self.validate_value_exists(&value_exists).await?;
             }
 
-            return Ok(Some(access));
+            return Ok(access);
         }
 
         Err("Invalid API key or JWT".to_string())
@@ -125,7 +119,7 @@ impl AuthKeys {
                 scroll_req,
                 None,
                 ShardSelectorInternal::All,
-                Access::full(),
+                Access::full("JWT stateful validation"),
             )
             .await
             .map_err(|e| format!("Could not confirm validity of JWT: {e}"))?;

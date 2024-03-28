@@ -12,7 +12,7 @@ use api::grpc::qdrant::{
     UpdateVectorsInternal, UpsertPointsInternal,
 };
 use storage::content_manager::toc::TableOfContent;
-use storage::rbac::access::Access;
+use storage::rbac::Access;
 use tonic::{Request, Response, Status};
 
 use super::points_common::core_search_list;
@@ -22,6 +22,8 @@ use crate::tonic::api::points_common::{
     delete_payload, delete_vectors, get, overwrite_payload, recommend, scroll, set_payload, sync,
     update_vectors, upsert,
 };
+
+const FULL_ACCESS: Access = Access::full("Internal API");
 
 /// This API is intended for P2P communication within a distributed deployment.
 pub struct PointsInternalService {
@@ -56,7 +58,7 @@ impl PointsInternal for PointsInternalService {
             upsert_points,
             clock_tag.map(Into::into),
             shard_id,
-            Access::full(),
+            FULL_ACCESS.clone(),
         )
         .await
     }
@@ -81,7 +83,7 @@ impl PointsInternal for PointsInternalService {
             delete_points,
             clock_tag.map(Into::into),
             shard_id,
-            Access::full(),
+            FULL_ACCESS.clone(),
         )
         .await
     }
@@ -106,7 +108,7 @@ impl PointsInternal for PointsInternalService {
             update_point_vectors,
             clock_tag.map(Into::into),
             shard_id,
-            Access::full(),
+            FULL_ACCESS.clone(),
         )
         .await
     }
@@ -131,7 +133,7 @@ impl PointsInternal for PointsInternalService {
             delete_point_vectors,
             clock_tag.map(Into::into),
             shard_id,
-            Access::full(),
+            FULL_ACCESS.clone(),
         )
         .await
     }
@@ -156,7 +158,7 @@ impl PointsInternal for PointsInternalService {
             set_payload_points,
             clock_tag.map(Into::into),
             shard_id,
-            Access::full(),
+            FULL_ACCESS.clone(),
         )
         .await
     }
@@ -181,7 +183,7 @@ impl PointsInternal for PointsInternalService {
             set_payload_points,
             clock_tag.map(Into::into),
             shard_id,
-            Access::full(),
+            FULL_ACCESS.clone(),
         )
         .await
     }
@@ -206,7 +208,7 @@ impl PointsInternal for PointsInternalService {
             delete_payload_points,
             clock_tag.map(Into::into),
             shard_id,
-            Access::full(),
+            FULL_ACCESS.clone(),
         )
         .await
     }
@@ -231,7 +233,7 @@ impl PointsInternal for PointsInternalService {
             clear_payload_points,
             clock_tag.map(Into::into),
             shard_id,
-            Access::full(),
+            FULL_ACCESS.clone(),
         )
         .await
     }
@@ -331,7 +333,7 @@ impl PointsInternal for PointsInternalService {
             search_points,
             None, // *Has* to be `None`!
             shard_id,
-            Access::full(),
+            FULL_ACCESS.clone(),
             timeout,
         )
         .await
@@ -354,7 +356,7 @@ impl PointsInternal for PointsInternalService {
 
         recommend_points.read_consistency = None; // *Have* to be `None`!
 
-        recommend(self.toc.as_ref(), recommend_points, Access::full()).await
+        recommend(self.toc.as_ref(), recommend_points, FULL_ACCESS.clone()).await
     }
 
     async fn scroll(
@@ -373,7 +375,13 @@ impl PointsInternal for PointsInternalService {
 
         scroll_points.read_consistency = None; // *Have* to be `None`!
 
-        scroll(self.toc.as_ref(), scroll_points, shard_id, Access::full()).await
+        scroll(
+            self.toc.as_ref(),
+            scroll_points,
+            shard_id,
+            FULL_ACCESS.clone(),
+        )
+        .await
     }
 
     async fn get(
@@ -392,7 +400,7 @@ impl PointsInternal for PointsInternalService {
 
         get_points.read_consistency = None; // *Have* to be `None`!
 
-        get(self.toc.as_ref(), get_points, shard_id, Access::full()).await
+        get(self.toc.as_ref(), get_points, shard_id, FULL_ACCESS.clone()).await
     }
 
     async fn count(
@@ -408,7 +416,13 @@ impl PointsInternal for PointsInternalService {
 
         let count_points =
             count_points.ok_or_else(|| Status::invalid_argument("CountPoints is missing"))?;
-        count(self.toc.as_ref(), count_points, shard_id, Access::full()).await
+        count(
+            self.toc.as_ref(),
+            count_points,
+            shard_id,
+            FULL_ACCESS.clone(),
+        )
+        .await
     }
 
     async fn sync(
@@ -430,7 +444,7 @@ impl PointsInternal for PointsInternalService {
             sync_points,
             clock_tag.map(Into::into),
             shard_id,
-            Access::full(),
+            FULL_ACCESS.clone(),
         )
         .await
     }

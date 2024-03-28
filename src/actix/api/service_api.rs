@@ -12,6 +12,7 @@ use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::toc::TableOfContent;
+use storage::rbac::ClusterAccessMode;
 use tokio::sync::Mutex;
 
 use crate::actix::auth::ActixAccess;
@@ -35,7 +36,7 @@ fn telemetry(
     ActixAccess(access): ActixAccess,
 ) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        access.check_manage_rights()?;
+        access.check_cluster_access(ClusterAccessMode::Read)?;
         let anonymize = params.anonymize.unwrap_or(false);
         let details_level = params
             .details_level
@@ -66,7 +67,7 @@ async fn metrics(
     params: Query<MetricsParam>,
     ActixAccess(access): ActixAccess,
 ) -> HttpResponse {
-    if let Err(err) = access.check_manage_rights() {
+    if let Err(err) = access.check_cluster_access(ClusterAccessMode::Read) {
         return process_response_error(err, Instant::now());
     }
 
@@ -96,7 +97,7 @@ fn put_locks(
     ActixAccess(access): ActixAccess,
 ) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        access.check_manage_rights()?;
+        access.check_cluster_access(ClusterAccessMode::ReadWrite)?;
         let result = LocksOption {
             write: toc.get_ref().is_write_locked(),
             error_message: toc.get_ref().get_lock_error_message(),
@@ -113,7 +114,7 @@ fn get_locks(
     ActixAccess(access): ActixAccess,
 ) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        access.check_manage_rights()?;
+        access.check_cluster_access(ClusterAccessMode::Read)?;
         let result = LocksOption {
             write: toc.get_ref().is_write_locked(),
             error_message: toc.get_ref().get_lock_error_message(),
@@ -125,7 +126,7 @@ fn get_locks(
 #[get("/stacktrace")]
 fn get_stacktrace(ActixAccess(access): ActixAccess) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        access.check_manage_rights()?;
+        access.check_cluster_access(ClusterAccessMode::Read)?;
         Ok(get_stack_trace())
     })
 }

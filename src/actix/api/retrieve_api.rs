@@ -9,7 +9,7 @@ use segment::types::{PointIdType, WithPayloadInterface};
 use serde::Deserialize;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
-use storage::rbac::access::Access;
+use storage::rbac::Access;
 use validator::Validate;
 
 use super::read_params::ReadParams;

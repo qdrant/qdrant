@@ -40,7 +40,7 @@ use segment::types::{
 use storage::content_manager::conversions::error_to_status;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::access::Access;
+use storage::rbac::Access;
 use tonic::{Response, Status};
 
 use crate::common::points::{

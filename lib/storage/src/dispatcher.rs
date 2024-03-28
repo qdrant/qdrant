@@ -1,5 +1,4 @@
 use std::num::NonZeroU32;
-use std::ops::Deref;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -8,7 +7,7 @@ use common::defaults::CONSENSUS_META_OP_WAIT;
 
 use crate::content_manager::collection_meta_ops::AliasOperations;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
-use crate::rbac::access::Access;
+use crate::rbac::Access;
 use crate::{
     ClusterStatus, CollectionMetaOperations, ConsensusOperations, ConsensusStateRef, StorageError,
     TableOfContent,
@@ -211,13 +210,5 @@ impl Dispatcher {
         } else {
             Ok(())
         }
-    }
-}
-
-impl Deref for Dispatcher {
-    type Target = TableOfContent;
-
-    fn deref(&self) -> &Self::Target {
-        self.toc.deref()
     }
 }

@@ -1,17 +1,13 @@
 use segment::json_path::JsonPath;
 use segment::types::{Condition, FieldCondition, Filter, Match, ValueVariants};
 use serde::{Deserialize, Serialize};
-use storage::rbac::access::Access;
+use storage::rbac::Access;
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct Claims {
     /// Expiration time (seconds since UNIX epoch)
     pub exp: Option<u64>,
 
-    /// Write access, default is false. Read access is always enabled with a valid token.
-    pub w: Option<bool>,
-
-    #[serde(flatten)]
     pub access: Access,
 
     /// Validate this token by looking for a value inside a collection.

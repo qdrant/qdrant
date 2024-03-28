@@ -101,7 +101,7 @@ pub fn init(
             api_key_whitelist.push(WhitelistItem::prefix(WEB_UI_PATH));
         }
 
-        let upload_dir = dispatcher_data.upload_dir().unwrap();
+        let upload_dir = dispatcher_data.toc().upload_dir().unwrap();
 
         let mut server = HttpServer::new(move || {
             let cors = Cors::default()

@@ -99,6 +99,7 @@ def test_value_exists_claim(uri: str):
     value = "token_42"
 
     claims = {
+        "access": "rw",
         "value_exists": {
             "collection": secondary_collection,
             "matches": [

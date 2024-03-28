@@ -10,7 +10,7 @@ use super::TableOfContent;
 use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::consensus_ops::ConsensusOperations;
 use crate::content_manager::errors::StorageError;
-use crate::rbac::access::CollectionPass;
+use crate::rbac::CollectionPass;
 
 impl TableOfContent {
     pub fn get_snapshots_storage_manager(&self) -> SnapshotStorageManager {

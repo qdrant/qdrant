@@ -4,7 +4,7 @@ use api::grpc::qdrant::{GetCollectionInfoRequest, GetCollectionInfoResponse};
 use collection::shards::shard::ShardId;
 use storage::content_manager::conversions::error_to_status;
 use storage::content_manager::toc::TableOfContent;
-use storage::rbac::access::Access;
+use storage::rbac::Access;
 use tonic::{Response, Status};
 
 use crate::common::collections::do_get_collection;

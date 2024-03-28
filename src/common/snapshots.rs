@@ -12,7 +12,7 @@ use collection::shards::shard::ShardId;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::snapshots;
 use storage::content_manager::toc::TableOfContent;
-use storage::rbac::access::Access;
+use storage::rbac::{Access, CollectionAccessMode};
 
 use super::http_client::HttpClient;
 
@@ -25,7 +25,8 @@ pub async fn create_shard_snapshot(
     collection_name: String,
     shard_id: ShardId,
 ) -> Result<SnapshotDescription, StorageError> {
-    let collection_pass = access.check_whole_collection_rights(&collection_name)?;
+    let collection_pass =
+        access.check_collection_access(&collection_name, true, CollectionAccessMode::ReadWrite)?;
     let collection = toc.get_collection_by_pass(&collection_pass).await?;
 
     let snapshot = collection
@@ -44,7 +45,8 @@ pub async fn list_shard_snapshots(
     collection_name: String,
     shard_id: ShardId,
 ) -> Result<Vec<SnapshotDescription>, StorageError> {
-    let collection_pass = access.check_whole_collection_rights(&collection_name)?;
+    let collection_pass =
+        access.check_collection_access(&collection_name, true, CollectionAccessMode::Read)?;
     let collection = toc.get_collection_by_pass(&collection_pass).await?;
     let snapshots = collection.list_shard_snapshots(shard_id).await?;
     Ok(snapshots)
@@ -60,7 +62,8 @@ pub async fn delete_shard_snapshot(
     shard_id: ShardId,
     snapshot_name: String,
 ) -> Result<(), StorageError> {
-    let collection_pass = access.check_whole_collection_rights(&collection_name)?;
+    let collection_pass =
+        access.check_collection_access(&collection_name, true, CollectionAccessMode::ReadWrite)?;
     let collection = toc.get_collection_by_pass(&collection_pass).await?;
     let snapshot_path = collection
         .get_shard_snapshot_path(shard_id, &snapshot_name)
@@ -88,7 +91,7 @@ pub async fn recover_shard_snapshot(
     client: HttpClient,
 ) -> Result<(), StorageError> {
     let collection_pass = access
-        .check_whole_collection_rights(&collection_name)?
+        .check_collection_access(&collection_name, true, CollectionAccessMode::Manage)?
         .into_static();
 
     // - `download_dir` handled by `tempfile` and would be deleted, if request is cancelled
