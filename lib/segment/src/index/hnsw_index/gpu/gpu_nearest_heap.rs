@@ -18,13 +18,11 @@ pub struct GpuNearestHeap {
 }
 
 impl GpuNearestHeap {
-    pub fn new(
-        device: Arc<gpu::Device>,
-        threads_count: usize,
-        ef: usize,
-    ) -> OperationResult<Self> {
+    pub fn new(device: Arc<gpu::Device>, threads_count: usize, ef: usize) -> OperationResult<Self> {
         if threads_count % device.subgroup_size() != 0 {
-            return Err(OperationError::service_error("Threads count must be a multiple of subgroup size"));
+            return Err(OperationError::service_error(
+                "Threads count must be a multiple of subgroup size",
+            ));
         }
 
         let ceiled_ef = ef.div_ceil(device.subgroup_size()) * device.subgroup_size();
@@ -145,11 +143,14 @@ mod tests {
             .add_shader(shader.clone())
             .build(device.clone());
 
-        context.bind_pipeline(pipeline, &[
-            descriptor_set.clone(),
-            gpu_links.descriptor_set.clone(),
-            gpu_nearest_heap.descriptor_set.clone(),
-        ]);
+        context.bind_pipeline(
+            pipeline,
+            &[
+                descriptor_set.clone(),
+                gpu_links.descriptor_set.clone(),
+                gpu_nearest_heap.descriptor_set.clone(),
+            ],
+        );
         context.dispatch(threads_count, 1, 1);
         context.run();
         context.wait_finish();
