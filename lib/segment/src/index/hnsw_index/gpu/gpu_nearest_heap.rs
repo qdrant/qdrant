@@ -92,21 +92,30 @@ impl GpuNearestHeap {
 
 #[cfg(test)]
 mod tests {
+    use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
 
     use super::*;
-    use crate::data_types::groups;
     use crate::index::hnsw_index::gpu::gpu_links::GpuLinks;
     use crate::types::PointOffsetType;
+    use crate::vector_storage::ScoredPointOffset;
 
     #[test]
     fn test_gpu_nearest_heap() {
         let m = 8;
-        let ef = 8;
+        let ef = 100;
         let points_count = 1024;
         let groups_count = 4;
         let inputs_count = 1024;
+
+        let mut rng = StdRng::seed_from_u64(42);
+        let inputs_data: Vec<ScoredPointOffset> = (0..inputs_count * groups_count)
+            .map(|i| ScoredPointOffset {
+                idx: (i % inputs_count) as PointOffsetType,
+                score: rng.gen_range(-1.0..1.0),
+            })
+            .collect();
 
         let debug_messenger = gpu::PanicIfErrorMessenger {};
         let instance =
@@ -116,8 +125,8 @@ mod tests {
 
         let threads_count = device.subgroup_size() * groups_count;
         let mut context = gpu::Context::new(device.clone());
-        let mut gpu_links = GpuLinks::new(device.clone(), m, ef, m, points_count).unwrap();
-        let mut gpu_nearest_heap = GpuNearestHeap::new(device.clone(), threads_count, ef).unwrap();
+        let gpu_links = GpuLinks::new(device.clone(), m, ef, m, points_count).unwrap();
+        let gpu_nearest_heap = GpuNearestHeap::new(device.clone(), threads_count, ef).unwrap();
 
         let shader = Arc::new(gpu::Shader::new(
             device.clone(),
@@ -130,10 +139,44 @@ mod tests {
             .add_storage_buffer(2)
             .build(device.clone());
 
+        let input_points_buffer = Arc::new(gpu::Buffer::new(
+            device.clone(),
+            gpu::BufferType::Storage,
+            inputs_count * groups_count * std::mem::size_of::<ScoredPointOffset>(),
+        ));
+
+        let upload_staging_buffer = Arc::new(gpu::Buffer::new(
+            device.clone(),
+            gpu::BufferType::CpuToGpu,
+            inputs_count * groups_count * std::mem::size_of::<ScoredPointOffset>(),
+        ));
+        upload_staging_buffer.upload(&inputs_data, 0);
+        context.copy_gpu_buffer(
+            upload_staging_buffer,
+            input_points_buffer.clone(),
+            0,
+            0,
+            input_points_buffer.size,
+        );
+        context.run();
+        context.wait_finish();
+
+        let scores_output_buffer = Arc::new(gpu::Buffer::new(
+            device.clone(),
+            gpu::BufferType::Storage,
+            inputs_count * groups_count * std::mem::size_of::<f32>(),
+        ));
+
+        let sorted_output_buffer = Arc::new(gpu::Buffer::new(
+            device.clone(),
+            gpu::BufferType::Storage,
+            ef * groups_count * std::mem::size_of::<ScoredPointOffset>(),
+        ));
+
         let descriptor_set = gpu::DescriptorSet::builder(descriptor_set_layout.clone())
-            //.add_storage_buffer(0, input_points_buffer.clone())
-            //.add_storage_buffer(1, scores_output_buffer.clone())
-            //.add_storage_buffer(2, sorted_output_buffer.clone())
+            .add_storage_buffer(0, input_points_buffer.clone())
+            .add_storage_buffer(1, scores_output_buffer.clone())
+            .add_storage_buffer(2, sorted_output_buffer.clone())
             .build();
 
         let pipeline = gpu::Pipeline::builder()
@@ -154,5 +197,57 @@ mod tests {
         context.dispatch(threads_count, 1, 1);
         context.run();
         context.wait_finish();
+
+        let download_staging_buffer = Arc::new(gpu::Buffer::new(
+            device.clone(),
+            gpu::BufferType::GpuToCpu,
+            std::cmp::max(
+                scores_output_buffer.size,
+                sorted_output_buffer.size,
+            ),
+        ));
+        context.copy_gpu_buffer(
+            scores_output_buffer.clone(),
+            download_staging_buffer.clone(),
+            0,
+            0,
+            scores_output_buffer.size,
+        );
+        context.run();
+        context.wait_finish();
+
+        let mut scores_output = vec![0.0; inputs_count * groups_count];
+        download_staging_buffer.download(&mut scores_output, 0);
+
+        context.copy_gpu_buffer(
+            sorted_output_buffer.clone(),
+            download_staging_buffer.clone(),
+            0,
+            0,
+            sorted_output_buffer.size,
+        );
+        context.run();
+        context.wait_finish();
+
+        let mut sorted_output = vec![ScoredPointOffset { idx: 0, score: 0.0 }; ef * groups_count];
+        download_staging_buffer.download(&mut sorted_output, 0);
+
+        let mut scores_output_cpu = vec![0.0; inputs_count * groups_count];
+        let mut sorted_output_cpu = vec![ScoredPointOffset { idx: 0, score: 0.0 }; ef * groups_count];
+        for group in 0..groups_count {
+            let mut queue = FixedLengthPriorityQueue::new(ef);
+            for i in 0..inputs_count {
+                let scored_point = inputs_data[group * inputs_count + i];
+                queue.push(scored_point);
+                scores_output_cpu[group * inputs_count + i] = queue.top().unwrap().score;
+            }
+            let sorted = queue.into_vec();
+            for i in 0..ef {
+                sorted_output_cpu[group * ef + i] = sorted[i];
+            }
+        }
+
+        assert_eq!(scores_output, scores_output_cpu);
+        assert_eq!(sorted_output, sorted_output_cpu);
     }
 }

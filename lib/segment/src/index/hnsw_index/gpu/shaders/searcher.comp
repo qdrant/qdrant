@@ -65,20 +65,6 @@ void set_candidate(uint i, ScoredPoint scored_point) {
     candidates.data[gl_GlobalInvocationID.x * searcher_params.candidates_capacity + i] = scored_point;
 }
 
-uint visited_count() {
-    uint count = 0;
-    for (uint i = 0; i < searcher_params.visited_flags_capacity; i++) {
-        uint value = visited_flags.data[gl_GlobalInvocationID.x * searcher_params.visited_flags_capacity + i];
-        for (uint j = 0; j < 4; j++) {
-            uint byte = (value >> (j * 8)) & BYTE_MASK;
-            if (byte == VISITED_GENERATION) {
-                count += 1;
-            }
-        }
-    }
-    return count;
-}
-
 bool check_and_process_visited(POINT_ID point_id) {
     uint index = gl_GlobalInvocationID.x * searcher_params.visited_flags_capacity + point_id / 4;
     uint byte_index = point_id % 4;
