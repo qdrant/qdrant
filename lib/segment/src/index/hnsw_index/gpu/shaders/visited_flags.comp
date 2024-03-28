@@ -1,0 +1,48 @@
+#ifndef VISITED_FLAGS_HEADER
+#define VISITED_FLAGS_HEADER
+
+#ifndef VISITED_FLAGS_LAYOUT_SET
+#error "VISITED_FLAGS_LAYOUT_SET not defined"
+#endif
+
+#include "common.comp"
+#include "vector_storage.comp"
+
+layout(set = VISITED_FLAGS_LAYOUT_SET, binding = 0)
+readonly uniform VisitedFlagsParams {
+    uint capacity;
+    uint generation;
+} visited_flags_params;
+
+layout(set = VISITED_FLAGS_LAYOUT_SET, binding = 1)
+buffer VisitedFlagsBuffer {
+    uint data[];
+} visited_flags;
+
+#define BYTE_MASK 0xFF
+#define VISITED_GENERATION visited_flags_params.generation
+
+bool check_and_process_visited(POINT_ID point_id) {
+    bool changed = false;
+    if (subgroupElect()) {
+        uint subgroup_index = gl_GlobalInvocationID.x / SUBGROUP_SIZE;
+        uint index = subgroup_index * visited_flags_params.capacity + point_id / 4;
+        uint byte_index = point_id % 4;
+        uint shift = byte_index * 8;
+        uint value = visited_flags.data[index];
+        uint prev_generation = (value >> shift) & BYTE_MASK;
+        changed = prev_generation != VISITED_GENERATION;
+
+        if (changed) {
+            uint cleared = value & (~(BYTE_MASK << shift));
+            visited_flags.data[index] = cleared | (VISITED_GENERATION << shift);
+        }
+    }
+    bool broadcasted_changed = subgroupBroadcastFirst(changed);
+    if (broadcasted_changed) {
+        groupMemoryBarrier();
+    }
+    return broadcasted_changed;
+}
+
+#endif

@@ -12,14 +12,8 @@ layout(local_size_x = SUBGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 #define VECTOR_STORAGE_LAYOUT_SET 1
 #include "vector_storage.comp"
 
-layout(set = 0, binding = 0) buffer ScoresData {
-    float data[];
-} scores;
+#define VISITED_FLAGS_LAYOUT_SET 2
+#include "visited_flags.comp"
 
 void main() {
-    uint idx = gl_GlobalInvocationID.x / SUBGROUP_SIZE;
-    float score = similarity(0, idx);
-    if (subgroupElect()) {
-        scores.data[idx] = score;
-    }
 }

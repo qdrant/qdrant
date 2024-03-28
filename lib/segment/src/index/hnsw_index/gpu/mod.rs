@@ -6,6 +6,7 @@ pub mod gpu_links;
 pub mod gpu_nearest_heap;
 pub mod gpu_search_context;
 pub mod gpu_vector_storage;
+pub mod gpu_visited_flags;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
