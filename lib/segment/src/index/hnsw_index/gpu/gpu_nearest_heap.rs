@@ -201,10 +201,7 @@ mod tests {
         let download_staging_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::GpuToCpu,
-            std::cmp::max(
-                scores_output_buffer.size,
-                sorted_output_buffer.size,
-            ),
+            std::cmp::max(scores_output_buffer.size, sorted_output_buffer.size),
         ));
         context.copy_gpu_buffer(
             scores_output_buffer.clone(),
@@ -233,7 +230,8 @@ mod tests {
         download_staging_buffer.download(&mut sorted_output, 0);
 
         let mut scores_output_cpu = vec![0.0; inputs_count * groups_count];
-        let mut sorted_output_cpu = vec![ScoredPointOffset { idx: 0, score: 0.0 }; ef * groups_count];
+        let mut sorted_output_cpu =
+            vec![ScoredPointOffset { idx: 0, score: 0.0 }; ef * groups_count];
         for group in 0..groups_count {
             let mut queue = FixedLengthPriorityQueue::new(ef);
             for i in 0..inputs_count {
