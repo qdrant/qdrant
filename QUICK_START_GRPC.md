@@ -132,6 +132,7 @@ Expected response:
 ```json
 {
   "result": {
+    "operationId": "0",
     "status": "Completed"
   },
   "time": 0.004128988
