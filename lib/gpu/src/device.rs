@@ -167,6 +167,11 @@ impl Device {
         let mut gpu_allocator = self.gpu_allocator.as_ref().unwrap().lock().unwrap();
         gpu_allocator.free(allocation).unwrap();
     }
+
+    pub fn subgroup_size(&self) -> usize {
+        // TODO: get from physical device properties
+        32
+    }
 }
 
 impl Drop for Device {

@@ -51,7 +51,7 @@ bool push_nearest(ScoredPoint scored_point) {
             if (nearest_smaller_index % SUBGROUP_SIZE == SUBGROUP_INVOKATION_ID) {
                 uint buffer_index = buffer_offset + nearest_smaller_index;
                 nearest_scores.data[buffer_index] = scored_point.score;
-                nearest_indices.data[buffer_index] = scored_point.idx;
+                nearest_indices.data[buffer_index] = scored_point.id;
             }
             groupMemoryBarrier(); // TODO: is this necessary? We write and read in the same shader invocation
 
@@ -82,7 +82,7 @@ bool push_nearest(ScoredPoint scored_point) {
         if (nearest_count % SUBGROUP_SIZE == SUBGROUP_INVOKATION_ID) {
             uint buffer_index = NEAREST_BUFFER_OFFSET + nearest_count;
             nearest_scores.data[buffer_index] = scored_point.score;
-            nearest_indices.data[buffer_index] = scored_point.idx;
+            nearest_indices.data[buffer_index] = scored_point.id;
         }
         groupMemoryBarrier(); // TODO: is this necessary? We write and read in the same shader invocation
 
@@ -99,7 +99,7 @@ void sort_nearest() {
     uint buffer_offset = NEAREST_BUFFER_OFFSET;
     uint capacity = NEAREST_HEAP_CAPACITY;
     uint other_invokation_id = SUBGROUP_INVOKATION_ID % 2 == 0 ? SUBGROUP_INVOKATION_ID + 1 : SUBGROUP_INVOKATION_ID - 1;
-    for (uint e = 0; i < EF; i++) {
+    for (uint e = 0; e < EF; e++) {
         for (uint i = SUBGROUP_INVOKATION_ID; i < capacity; i += SUBGROUP_SIZE) {
             uint buffer_index = buffer_offset + i;
             float score = nearest_scores.data[buffer_index];
