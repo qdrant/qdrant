@@ -34,7 +34,7 @@ void nearest_heap_init() {
     nearest_count = 0;
     nearest_smaller_index = 0;
     nearest_smaller_score = positive_infinity;
-    
+
     uint buffer_offset = NEAREST_BUFFER_OFFSET;
     uint capacity = NEAREST_HEAP_CAPACITY;
     for (uint i = SUBGROUP_INVOKATION_ID; i < capacity; i += SUBGROUP_SIZE) {
@@ -67,8 +67,8 @@ bool push_nearest(ScoredPoint scored_point) {
                 }
             }
 
-            float exclusive_smaller = subgroupExclusiveMin(nearest_smaller_score);
-            bool is_min_thread = nearest_smaller_score < exclusive_smaller;
+            float subgroup_smaller = subgroupMin(nearest_smaller_score);
+            bool is_min_thread = nearest_smaller_score == subgroup_smaller;
             uvec4 subgroup_min_threads = subgroupBallot(is_min_thread);
             uint subgroup_min_thread = subgroupBallotFindLSB(subgroup_min_threads);
             nearest_smaller_index = subgroupShuffle(nearest_smaller_index, subgroup_min_thread);
