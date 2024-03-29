@@ -600,11 +600,12 @@ impl<'s> SegmentHolder {
     /// significant amount of time.
     ///
     /// This calls function `f` on all segments, but each segment is temporarily proxified while
-    /// the function is called. All segments are also unproxied again when the given function
-    /// returns.
+    /// the function is called. All segments are also unproxied at the end when the given function
+    /// has been executed on all segments.
     ///
     /// A read lock is kept during the whole process to prevent external actors from messing with
-    /// the segment holder while segments are in proxified state.
+    /// the segment holder while segments are in proxified state. That means no other actors can
+    /// take a write lock while this operation is running.
     ///
     /// As part of this process, a new segment is created. All proxies direct their writes to this
     /// segment. The segment is added to the collection if it has any operations, otherwise it is
