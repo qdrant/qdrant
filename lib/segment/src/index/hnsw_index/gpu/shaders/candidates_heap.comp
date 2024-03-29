@@ -41,13 +41,14 @@ ScoredPoint pop_candidate() {
         }
     }
 
+/*
     float exclusive_smaller = subgroupExclusiveMin(nearest_smaller_score);
     bool is_min_thread = nearest_smaller_score < exclusive_smaller;
     uvec4 subgroup_min_threads = subgroupBallot(is_min_thread);
     uint subgroup_min_thread = subgroupBallotFindLSB(subgroup_min_threads);
     nearest_smaller_index = subgroupShuffle(nearest_smaller_index, subgroup_min_thread);
     nearest_smaller_score = subgroupShuffle(nearest_smaller_score, subgroup_min_thread);
-
+*/
     return ScoredPoint(0, 0.0);
 }
 

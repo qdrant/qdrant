@@ -28,7 +28,7 @@ uint nearest_smaller_index;
 uint nearest_count;
 
 #define NEAREST_HEAP_CAPACITY nearest_heap_params.capacity
-#define NEAREST_BUFFER_OFFSET (EF * (gl_GlobalInvocationID.x / SUBGROUP_SIZE))
+#define NEAREST_BUFFER_OFFSET (NEAREST_HEAP_CAPACITY * (gl_GlobalInvocationID.x / SUBGROUP_SIZE))
 
 void nearest_heap_init() {
     nearest_count = 0;

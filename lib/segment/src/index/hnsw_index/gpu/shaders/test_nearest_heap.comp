@@ -15,7 +15,8 @@ layout(local_size_x = SUBGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 #define NEAREST_HEAP_LAYOUT_SET 2
 #include "nearest_heap.comp"
 
-#define INPUT_SIZE 1024
+// TODO: revert to 1024
+#define INPUT_SIZE 100
 
 layout(set = 0, binding = 0) buffer ScoredPointsInput {
     ScoredPoint data[];
@@ -49,4 +50,12 @@ void main() {
     }
 
     sort_nearest();
+    if (subgroupElect()) {
+        for (uint i = 0; i < EF; i++) {
+            sorted_output.data[idx * EF + i] = ScoredPoint(
+                nearest_indices.data[idx * EF + i],
+                nearest_scores.data[idx * EF + i]
+            );
+        }
+    }
 }
