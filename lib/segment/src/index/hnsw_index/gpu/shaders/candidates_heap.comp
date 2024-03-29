@@ -10,32 +10,64 @@
 layout(set = CANDIDATES_HEAP_LAYOUT_SET, binding = 0)
 readonly uniform CandidatesHeapParams {
     uint capacity;
-    uint maxes_capacity;
 } candidates_heap_params;
 
 layout(set = CANDIDATES_HEAP_LAYOUT_SET, binding = 1)
 buffer CandidatesScores {
-    float data[];
-} candidates_scores;
-
-layout(set = CANDIDATES_HEAP_LAYOUT_SET, binding = 2)
-buffer CandidatesIndices {
-    uint data[];
-} candidates_indices;
+    ScoredPoint data[];
+} candidates;
 
 uint candidates_count;
 
-#define CANDIDATES_HEAP_OFFSET (SUBGROUP_SIZE * )
+// TODO
+#define CANDIDATES_HEAP_OFFSET 0
 
 void candidates_heap_init() {
     candidates_count = 0;
 }
 
 ScoredPoint pop_candidate() {
+    uint strides_count = candidates_heap_params.capacity / SUBGROUP_SIZE;
+    uint buffer_offset = CANDIDATES_HEAP_OFFSET;
+    uint buffer_stride_offset = buffer_offset + candidates_heap_params.capacity;
+
+    ScoredPoint popped_candidate = ScoredPoint(0, negative_infinity);
+    uint popped_stride_index = 0;
+    for (uint i = SUBGROUP_INVOKATION_ID; i < strides_count / SUBGROUP_SIZE; i++) {
+        ScoredPoint candidate = candidates.data[buffer_stride_offset + i];
+        if (candidate.score > popped_candidate.score) {
+            popped_candidate = candidate;
+            popped_stride_index = i;
+        }
+    }
+
+    float exclusive_smaller = subgroupExclusiveMin(nearest_smaller_score);
+    bool is_min_thread = nearest_smaller_score < exclusive_smaller;
+    uvec4 subgroup_min_threads = subgroupBallot(is_min_thread);
+    uint subgroup_min_thread = subgroupBallotFindLSB(subgroup_min_threads);
+    nearest_smaller_index = subgroupShuffle(nearest_smaller_index, subgroup_min_thread);
+    nearest_smaller_score = subgroupShuffle(nearest_smaller_score, subgroup_min_thread);
+
     return ScoredPoint(0, 0.0);
 }
 
 void push_candidate(ScoredPoint scored_point) {
+    if (candidates_count == candidates_heap_params.capacity) {
+        return;
+    }
+
+    if (subgroupElect()) {
+        uint buffer_offset = CANDIDATES_HEAP_OFFSET;
+        candidates.data[buffer_offset + candidates_count] = scored_point;
+
+        uint stride_index = candidates_heap_params.capacity + (candidates_count / SUBGROUP_SIZE);
+        if (scored_point.score > candidates.data[buffer_offset + stride_index].score) {
+            candidates.data[buffer_offset + stride_index] = scored_point;
+        }
+    }
+
+    candidates_count++;
+    subgroupMemoryBarrier();
 }
 
 #endif
