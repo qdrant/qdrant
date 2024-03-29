@@ -626,7 +626,7 @@ impl<'s> SegmentHolder {
 
         // Proxy all segments
         log::trace!("Proxying all shard segments to apply function");
-        let (proxies, tmp_segment, segments_lock) =
+        let (proxies, tmp_segment, mut segments_lock) =
             Self::proxy_all_segments(segments_lock, collection_path, collection_params)?;
 
         // Apply provided function
@@ -652,6 +652,11 @@ impl<'s> SegmentHolder {
                 )));
                 break;
             }
+
+            // Try to unproxy/release this segment since we don't use it anymore
+            // Unproxying now prevent unnecessary writes to the temporary segment
+            segments_lock =
+                Self::try_unproxy_segment(segments_lock, *proxy_id, proxy_segment.clone());
         }
 
         // Unproxy all segments
@@ -761,6 +766,56 @@ impl<'s> SegmentHolder {
         Ok((proxies, tmp_segment, segments_lock))
     }
 
+    /// Try to unproxy a single shard segment for [`proxy_all_segments_and_apply`]
+    ///
+    /// # Warning
+    ///
+    /// If unproxying fails the proxy is left behind in the shard holder.
+    fn try_unproxy_segment(
+        segments_lock: RwLockUpgradableReadGuard<SegmentHolder>,
+        proxy_id: SegmentId,
+        proxy_segment: LockedSegment,
+    ) -> RwLockUpgradableReadGuard<SegmentHolder> {
+        // We must propagate all changes in the proxy into their wrapped segments, as we'll put the
+        // wrapped segment back into the segment holder. This can be an expensive step if we
+        // collected a lot of changes in the proxy, so we do this in two batches to prevent
+        // unnecessary locking. First we propagate all changes with a read lock on the shard
+        // holder, to prevent blocking other readers. Second we propagate any new changes again
+        // with a write lock on the segment holder, blocking other operations. This second batch
+        // should be very fast, as we already propagated all changes in the first, which is why we
+        // can hold a write lock. Once done, we can swap out the proxy for the wrapped shard.
+
+        let proxy_segment = match proxy_segment {
+            LockedSegment::Proxy(proxy_segment) => proxy_segment,
+            LockedSegment::Original(_) => {
+                log::warn!("Unproxying segment {proxy_id} that is not proxified, that is unexpected, skipping");
+                return segments_lock;
+            }
+        };
+
+        // Batch 1: propagate changes to wrapped segment with segment holder read lock
+        if let Err(err) = proxy_segment.read().propagate_to_wrapped() {
+            log::error!("Propagating proxy segment {proxy_id} changes to wrapped segment failed, ignoring: {err}");
+        }
+
+        let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
+
+        // Batch 2: propagate changes to wrapped segment with segment holder write lock
+        // Propagate proxied changes to wrapped segment, take it out and swap with proxy
+        let wrapped_segment = {
+            let proxy_segment = proxy_segment.read();
+            if let Err(err) = proxy_segment.propagate_to_wrapped() {
+                log::error!("Propagating proxy segment {proxy_id} changes to wrapped segment failed, ignoring: {err}");
+            }
+            proxy_segment.wrapped_segment.clone()
+        };
+        let (_, segments) = write_segments.swap(wrapped_segment, &[proxy_id]);
+        debug_assert_eq!(segments.len(), 1);
+
+        // Downgrade write lock to read and give it back
+        RwLockWriteGuard::downgrade_to_upgradable(write_segments)
+    }
+
     /// Unproxy all shard segments for [`proxy_all_segments_and_apply`]
     fn unproxy_all_segments(
         segments_lock: RwLockUpgradableReadGuard<SegmentHolder>,
@@ -768,18 +823,18 @@ impl<'s> SegmentHolder {
         tmp_segment: LockedSegment,
     ) -> OperationResult<()> {
         // We must propagate all changes in the proxy into their wrapped segments, as we'll put the
-        // wrapped segments back into the segment holder. This can be an expensive step if we
-        // collected a lot of changes in the proxy, so we do this in two batches. First we
-        // propagate all changes with a read lock on the shard holder, to prevent blocking other
-        // readers. Second we propagate any new changes again with a write lock on the segment
-        // holder, blocking other operations. This second batch should be very fast, as we already
-        // propagated all changes in the first, which is why we can hold a write lock. Once done,
-        // we can swap out the proxy for the wrapped shard.
+        // wrapped segment back into the segment holder. This can be an expensive step if we
+        // collected a lot of changes in the proxy, so we do this in two batches to prevent
+        // unnecessary locking. First we propagate all changes with a read lock on the shard
+        // holder, to prevent blocking other readers. Second we propagate any new changes again
+        // with a write lock on the segment holder, blocking other operations. This second batch
+        // should be very fast, as we already propagated all changes in the first, which is why we
+        // can hold a write lock. Once done, we can swap out the proxy for the wrapped shard.
 
         // Batch 1: propagate changes to wrapped segment with segment holder read lock
         proxies
             .iter()
-            .flat_map(|(proxy_id, proxy_segment)| match proxy_segment {
+            .filter_map(|(proxy_id, proxy_segment)| match proxy_segment {
                 LockedSegment::Proxy(proxy_segment) => Some((proxy_id, proxy_segment)),
                 LockedSegment::Original(_) => None,
             }).for_each(|(proxy_id, proxy_segment)| {
