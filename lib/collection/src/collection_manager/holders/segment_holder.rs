@@ -818,10 +818,8 @@ impl<'s> SegmentHolder {
         if available_points > 0 || !has_appendable_segment {
             log::trace!("Keeping temporary segment with {available_points} points");
             write_segments.add_locked(tmp_segment);
-            drop(write_segments);
         } else {
             log::trace!("Dropping temporary segment with no changes");
-            drop(write_segments);
             tmp_segment.drop_data()?;
         }
 
