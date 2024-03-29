@@ -15,7 +15,7 @@ use segment::common::version::StorageVersion;
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::build_segment;
-use segment::types::{PayloadStorageType, PointIdType, SegmentConfig, SeqNumberType};
+use segment::types::{PointIdType, SegmentConfig, SeqNumberType};
 
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
 use crate::config::CollectionParams;
@@ -683,11 +683,7 @@ impl<'s> SegmentHolder {
                 sparse_vector_data: collection_params
                     .into_sparse_vector_data()
                     .map_err(|err| OperationError::service_error(format!("Failed to source sparse vector configuration from collection parameters: {err:?}")))?,
-                payload_storage_type: if collection_params.on_disk_payload {
-                    PayloadStorageType::OnDisk
-                } else {
-                    PayloadStorageType::InMemory
-                },
+                payload_storage_type: collection_params.payload_storage_type(),
             },
             // Base config on existing appendable or non-appendable segment
             None => {
