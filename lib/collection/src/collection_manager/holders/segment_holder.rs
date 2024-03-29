@@ -600,8 +600,11 @@ impl<'s> SegmentHolder {
     /// significant amount of time.
     ///
     /// This calls function `f` on all segments, but each segment is temporarily proxified while
-    /// the function is called. All segments are also unproxied at the end when the given function
-    /// has been executed on all segments.
+    /// the function is called.
+    ///
+    /// All segments are proxified at the same time on start. That ensures each wrapped (proxied)
+    /// segment is kept at the same point in time. Each segment is unproxied one by one, right
+    /// after function `f` has been applied. That helps keeping proxies as shortlived as possible.
     ///
     /// A read lock is kept during the whole process to prevent external actors from messing with
     /// the segment holder while segments are in proxified state. That means no other actors can
