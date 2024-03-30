@@ -21,25 +21,14 @@ pub struct ActixTelemetryTransform {
 
 // The uri will be `/collections/collection_name...`
 fn get_collection_from_uri(uri: &str) -> Option<String> {
-    let mut uri_segments = uri.split('/');
-    let seg0 = uri_segments.next();
-    if let Some(seg0) = seg0 {
-        if !seg0.is_empty() {
-            return None;
-        }
+    let remain = uri.strip_prefix("/collections/");
+    if let Some(remain) = remain {
+        let mut segments = remain.split('/');
+        let seg = segments.next();
+        seg.map(|seg| seg.to_owned())
     } else {
-        return None;
+        None
     }
-    let seg1 = uri_segments.next();
-    if let Some(seg1) = seg1 {
-        if seg1 != "collections" {
-            return None;
-        }
-    } else {
-        return None;
-    }
-    let seg2 = uri_segments.next();
-    seg2.map(|seg2| seg2.to_owned())
 }
 
 /// Actix telemetry service. It hooks every request and looks into response status code.
