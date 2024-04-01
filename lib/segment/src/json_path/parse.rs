@@ -87,4 +87,22 @@ mod tests {
             })
         );
     }
+
+    #[test]
+    fn test_key_needs_quoting() {
+        // Key needs no quoting
+        assert!(!key_needs_quoting("f"));
+        assert!(!key_needs_quoting("foo"));
+        assert!(!key_needs_quoting("foo_123-bar"));
+
+        // Key needs quoting
+        assert!(key_needs_quoting(""));
+        assert!(key_needs_quoting(" foo"));
+        assert!(key_needs_quoting("foo "));
+        assert!(key_needs_quoting("foo bar"));
+        assert!(key_needs_quoting("foo bar baz"));
+        assert!(key_needs_quoting("foo.bar.baz"));
+        assert!(key_needs_quoting("foo[]"));
+        assert!(key_needs_quoting("foo[0]"));
+    }
 }
