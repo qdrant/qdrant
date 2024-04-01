@@ -3,7 +3,7 @@ use std::str::FromStr;
 use nom::branch::alt;
 use nom::bytes::complete::tag;
 use nom::character::complete::{char, digit1, none_of, satisfy};
-use nom::combinator::{map_res, recognize};
+use nom::combinator::{all_consuming, map_res, recognize};
 use nom::multi::{many0, many1};
 use nom::sequence::{delimited, preceded};
 use nom::{IResult, Parser};
@@ -22,7 +22,8 @@ impl FromStr for JsonPathV2 {
 }
 
 pub fn key_needs_quoting(s: &str) -> bool {
-    raw_str(s).is_err()
+    let mut parser = all_consuming(raw_str);
+    parser(s).is_err()
 }
 
 fn json_path(input: &str) -> IResult<&str, JsonPathV2> {
@@ -85,5 +86,23 @@ mod tests {
                 ],
             })
         );
+    }
+
+    #[test]
+    fn test_key_needs_quoting() {
+        // Key needs no quoting
+        assert!(!key_needs_quoting("f"));
+        assert!(!key_needs_quoting("foo"));
+        assert!(!key_needs_quoting("foo_123-bar"));
+
+        // Key needs quoting
+        assert!(key_needs_quoting(""));
+        assert!(key_needs_quoting(" foo"));
+        assert!(key_needs_quoting("foo "));
+        assert!(key_needs_quoting("foo bar"));
+        assert!(key_needs_quoting("foo bar baz"));
+        assert!(key_needs_quoting("foo.bar.baz"));
+        assert!(key_needs_quoting("foo[]"));
+        assert!(key_needs_quoting("foo[0]"));
     }
 }
