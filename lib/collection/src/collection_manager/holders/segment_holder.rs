@@ -629,12 +629,13 @@ impl<'s> SegmentHolder {
 
         // Proxy all segments
         log::trace!("Proxying all shard segments to apply function");
-        let (proxies, tmp_segment, mut segments_lock) =
+        let (mut proxies, tmp_segment, mut segments_lock) =
             Self::proxy_all_segments(segments_lock, collection_path, collection_params)?;
 
         // Apply provided function
         log::trace!("Applying function on all proxied shard segments");
         let mut result = Ok(());
+        let mut unproxied_segment_ids = Vec::with_capacity(proxies.len());
         for (proxy_id, proxy_segment) in &proxies {
             // Get segment to snapshot
             let segment = match proxy_segment {
@@ -658,9 +659,15 @@ impl<'s> SegmentHolder {
 
             // Try to unproxy/release this segment since we don't use it anymore
             // Unproxying now prevent unnecessary writes to the temporary segment
-            segments_lock =
-                Self::try_unproxy_segment(segments_lock, *proxy_id, proxy_segment.clone());
+            match Self::try_unproxy_segment(segments_lock, *proxy_id, proxy_segment.clone()) {
+                Ok(lock) => {
+                    segments_lock = lock;
+                    unproxied_segment_ids.push(*proxy_id);
+                }
+                Err(lock) => segments_lock = lock,
+            }
         }
+        proxies.retain(|(id, _)| !unproxied_segment_ids.contains(id));
 
         // Unproxy all segments
         // Always do this to prevent leaving proxy segments behind
@@ -773,12 +780,14 @@ impl<'s> SegmentHolder {
     ///
     /// # Warning
     ///
-    /// If unproxying fails the proxy is left behind in the shard holder.
+    /// If unproxying fails an error is returned with the lock and the proxy is left behind in the
+    /// shard holder.
     fn try_unproxy_segment(
         segments_lock: RwLockUpgradableReadGuard<SegmentHolder>,
         proxy_id: SegmentId,
         proxy_segment: LockedSegment,
-    ) -> RwLockUpgradableReadGuard<SegmentHolder> {
+    ) -> Result<RwLockUpgradableReadGuard<SegmentHolder>, RwLockUpgradableReadGuard<SegmentHolder>>
+    {
         // We must propagate all changes in the proxy into their wrapped segments, as we'll put the
         // wrapped segment back into the segment holder. This can be an expensive step if we
         // collected a lot of changes in the proxy, so we do this in two batches to prevent
@@ -792,7 +801,7 @@ impl<'s> SegmentHolder {
             LockedSegment::Proxy(proxy_segment) => proxy_segment,
             LockedSegment::Original(_) => {
                 log::warn!("Unproxying segment {proxy_id} that is not proxified, that is unexpected, skipping");
-                return segments_lock;
+                return Err(segments_lock);
             }
         };
 
@@ -816,7 +825,7 @@ impl<'s> SegmentHolder {
         debug_assert_eq!(segments.len(), 1);
 
         // Downgrade write lock to read and give it back
-        RwLockWriteGuard::downgrade_to_upgradable(write_segments)
+        Ok(RwLockWriteGuard::downgrade_to_upgradable(write_segments))
     }
 
     /// Unproxy all shard segments for [`proxy_all_segments_and_apply`]
