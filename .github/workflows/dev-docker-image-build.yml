@@ -17,7 +17,7 @@ jobs:
             buildx_volumes=$(docker volume ls -qf "name=buildx_buildkit")
 
             echo "Buildx containers to delete: " "$buildx_containers"
-            echo "Buildx containers to delete: " "$buildx_volumes"
+            echo "Buildx volumes to delete: " "$buildx_volumes"
 
             docker container rm -f "$buildx_containers"
             docker volume rm "$buildx_volumes"
