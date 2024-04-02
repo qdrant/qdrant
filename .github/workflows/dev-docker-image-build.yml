@@ -11,9 +11,16 @@ jobs:
     runs-on: [self-hosted, linux, x64]
     steps:
         - uses: actions/checkout@v4
-        - uses: Swatinem/rust-cache@v2
         - name: Build the Docker image
           run: |
+            buildx_containers=$(docker container ls -qf "name=buildx_buildkit")
+            buildx_volumes=$(docker volume ls -qf "name=buildx_buildkit")
+
+            echo "Buildx containers to delete: " "$buildx_containers"
+            echo "Buildx containers to delete: " "$buildx_volumes"
+
+            docker container rm -f "$buildx_containers"
+            docker volume rm "$buildx_volumes"
 
             # Create build container
             docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
@@ -28,6 +35,4 @@ jobs:
             # Pull, retag and push to GitHub packages
             docker buildx build --platform='linux/amd64,linux/arm64' --build-arg GIT_COMMIT_ID=${{ github.sha }} $GITHUB_TAG --push --label "org.opencontainers.image.revision"=${{ github.sha }} .
 
-            docker container rm -f $(docker container ls -qf "name=buildx_buildkit")
-            docker volume rm $(docker volume ls -qf "name=buildx_buildkit")
 
