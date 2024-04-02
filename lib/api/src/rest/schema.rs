@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
 use schemars::JsonSchema;
+use segment::common::anonymize::Anonymize;
+use segment::telemetry::{PayloadIndexTelemetry, VectorIndexSearchesTelemetry};
+use segment::types::{PayloadStorageType, SegmentInfo, SparseVectorDataConfig, VectorDataConfig};
 use serde::{Deserialize, Serialize};
 
 /// Type for dense vector
@@ -99,4 +102,45 @@ pub struct Record {
     /// Shard Key
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<segment::types::ShardKey>,
+}
+
+#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct SegmentConfig {
+    #[serde(default)]
+    pub vector_data: HashMap<String, VectorDataConfig>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    pub sparse_vector_data: HashMap<String, SparseVectorDataConfig>,
+    /// Defines payload storage type
+    pub payload_storage_type: PayloadStorageType,
+}
+
+impl Anonymize for SegmentConfig {
+    fn anonymize(&self) -> Self {
+        SegmentConfig {
+            vector_data: self.vector_data.anonymize(),
+            sparse_vector_data: self.sparse_vector_data.anonymize(),
+            payload_storage_type: self.payload_storage_type,
+        }
+    }
+}
+
+#[derive(Serialize, Clone, Debug, JsonSchema)]
+pub struct SegmentTelemetry {
+    pub info: SegmentInfo,
+    pub config: SegmentConfig,
+    pub vector_index_searches: Vec<VectorIndexSearchesTelemetry>,
+    pub payload_field_indices: Vec<PayloadIndexTelemetry>,
+}
+
+impl Anonymize for SegmentTelemetry {
+    fn anonymize(&self) -> Self {
+        Self {
+            info: self.info.anonymize(),
+            config: self.config.anonymize(),
+            vector_index_searches: self.vector_index_searches.anonymize(),
+            payload_field_indices: self.payload_field_indices.anonymize(),
+        }
+    }
 }

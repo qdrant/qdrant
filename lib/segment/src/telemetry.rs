@@ -13,7 +13,8 @@ pub struct VectorIndexesTelemetry {
     vector_index_searches: Vec<VectorIndexSearchesTelemetry>,
 }
 
-#[derive(Serialize, Clone, Debug, JsonSchema)]
+/// internal type
+#[derive(Serialize, Clone, Debug)]
 pub struct SegmentTelemetry {
     pub info: SegmentInfo,
     pub config: SegmentConfig,

@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
+use api::rest;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::common::operation_time_statistics::OperationDurationStatistics;
-use segment::telemetry::SegmentTelemetry;
 use serde::Serialize;
 
 use crate::collection_manager::optimizers::TrackerTelemetry;
@@ -30,7 +30,7 @@ pub struct RemoteShardTelemetry {
 #[derive(Serialize, Clone, Debug, JsonSchema)]
 pub struct LocalShardTelemetry {
     pub variant_name: Option<String>,
-    pub segments: Vec<SegmentTelemetry>,
+    pub segments: Vec<rest::schema::SegmentTelemetry>,
     pub optimizations: OptimizerTelemetry,
 }
 

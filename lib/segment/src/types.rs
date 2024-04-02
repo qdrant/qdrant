@@ -657,7 +657,7 @@ impl PayloadStorageType {
     }
 }
 
-#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Default, Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentConfig {
     #[serde(default)]

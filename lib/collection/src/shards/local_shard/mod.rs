@@ -10,6 +10,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use api::rest::schema;
 use arc_swap::ArcSwap;
 use common::cpu::CpuBudget;
 use common::panic;
@@ -796,6 +797,10 @@ impl LocalShard {
             })
             .fold(Default::default(), |acc, x| acc + x);
 
+        let segments = segments
+            .into_iter()
+            .map(schema::SegmentTelemetry::from)
+            .collect();
         LocalShardTelemetry {
             variant_name: None,
             segments,
