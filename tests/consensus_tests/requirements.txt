@@ -1,3 +1,5 @@
 pytest
 requests
+grpc_requests
+grpc-interceptor
 pyjwt
