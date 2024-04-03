@@ -1,8 +1,12 @@
+from inspect import isfunction
 import json
 import pathlib
+import random
+import string
 import time
 from typing import List, Optional, Tuple
 
+import grpc
 import grpc_requests
 import pytest
 import requests
@@ -25,6 +29,10 @@ PEER_ID = 0
 SHARD_KEY = "existing_shard_key"
 
 
+def random_str():
+    return "".join(random.choices(string.ascii_lowercase, k=10))
+
+
 class Access:
     def __init__(self, r, rw, m):
         self.read = r
@@ -39,10 +47,34 @@ class AccessStub:
         self.grpc_stub = grpc_stub
 
 
-default_shard_key_config = {"shard_key": "a"}
-custom_shard_key_config = {"shard_key": "a", "replication_factor": 3}
-create_shard_key = AccessStub(False, False, True, default_shard_key_config) # TODO(this should be True for rw)
-custom_create_shard_key = AccessStub(False, False, True, default_shard_key_config)
+def default_shard_key_config():
+    return {"shard_key": random_str()}
+
+def default_shard_key_config_grpc():
+    return {
+        "collection_name": COLL_NAME,
+        "request": {"shard_key": {"keyword": random_str()}},
+    }
+
+def custom_shard_key_config():
+    return {"shard_key": random_str(), "replication_factor": 3}
+
+def custom_shard_key_config_grpc():
+    return {
+        "collection_name": COLL_NAME,
+        "request": {"shard_key": { "keyword": random_str()}, "replication_factor": 3 },
+    }
+
+### TABLE_OF_ACCESS_STUBS ###
+
+default_create_shard_key = AccessStub(
+    False,
+    True,
+    True,
+    default_shard_key_config,
+    default_shard_key_config_grpc,
+)
+custom_create_shard_key = AccessStub(False, False, True, custom_shard_key_config, custom_shard_key_config_grpc)
 delete_shard_key = AccessStub(False, True, True, {"shard_key": SHARD_KEY})
 list_collections = AccessStub(True, True, True)
 get_collection = AccessStub(True, True, True)
@@ -174,21 +206,15 @@ restart_transfer_operation = AccessStub(
             "to_peer_id": PEER_ID,
             "method": "stream_records",
         }
-    }
+    },
 )
 list_collection_aliases = AccessStub(False, False, True)
 list_aliases = AccessStub(False, False, True)
 
 
-
-
-# "endpoint": [allowed_with_r, allowed_with_rw, allowed_with_manage, body_stub]
-# allowed_with_r - token with read access
-# allowed_with_rw - token with read-write access
-# allowed_with_manage - token with manage access (global write access)
 TABLE_OF_ACCESS = {
     # Collections
-    "PUT /collections/{collection_name}/shards": [create_shard_key],
+    "PUT /collections/{collection_name}/shards": [default_create_shard_key, custom_create_shard_key],
     # "POST /collections/{collection_name}/shards/delete": [delete_shard_key],
     # "GET /collections": [list_collections],
     # "GET /collections/{collection_name}": [get_collection],
@@ -201,13 +227,13 @@ TABLE_OF_ACCESS = {
     # "DELETE /collections/{collection_name}/index/{field_name}": [delete_index],
     # "GET /collections/{collection_name}/cluster": [collection_exists],
     # "POST /collections/{collection_name}/cluster": [
-    #     move_shard_operation, 
-    #     replicate_shard_operation, 
-    #     abort_shard_transfer_operation, 
-    #     drop_shard_replica_operation, 
+    #     move_shard_operation,
+    #     replicate_shard_operation,
+    #     abort_shard_transfer_operation,
+    #     drop_shard_replica_operation,
     #     restart_transfer_operation,
-    #     default_create_shard_key_operation, 
-    #     custom_create_shard_key_operation, 
+    #     default_create_shard_key_operation,
+    #     custom_create_shard_key_operation,
     #     drop_shard_key_operation
     # ],
     # "GET /collections/{collection_name}/aliases": [list_collection_aliases],
@@ -284,53 +310,53 @@ TABLE_OF_ACCESS = {
 }
 
 GRPC_TO_REST_MAPPING = {
-    "/qdrant.Collections/Get": "GET /collections/{collection_name}",
-    "/qdrant.Collections/List": "GET /collections",
-    "/qdrant.Collections/Create": "PUT /collections/{collection_name}",
-    "/qdrant.Collections/Update": "PATCH /collections/{collection_name}",
-    "/qdrant.Collections/Delete": "DELETE /collections/{collection_name}",
-    "/qdrant.Collections/UpdateAliases": "POST /collections/aliases",
-    "/qdrant.Collections/ListCollectionAliases": "GET /collections/{collection_name}/aliases",
-    "/qdrant.Collections/ListAliases": "GET /aliases",
-    "/qdrant.Collections/CollectionClusterInfo": "GET /collections/{collection_name}/cluster",
-    "/qdrant.Collections/CollectionExists": "GET /collections/{collection_name}/exists",
-    "/qdrant.Collections/UpdateCollectionClusterSetup": "POST /collections/{collection_name}/cluster",
+    # "/qdrant.Collections/Get": "GET /collections/{collection_name}",
+    # "/qdrant.Collections/List": "GET /collections",
+    # "/qdrant.Collections/Create": "PUT /collections/{collection_name}",
+    # "/qdrant.Collections/Update": "PATCH /collections/{collection_name}",
+    # "/qdrant.Collections/Delete": "DELETE /collections/{collection_name}",
+    # "/qdrant.Collections/UpdateAliases": "POST /collections/aliases",
+    # "/qdrant.Collections/ListCollectionAliases": "GET /collections/{collection_name}/aliases",
+    # "/qdrant.Collections/ListAliases": "GET /aliases",
+    # "/qdrant.Collections/CollectionClusterInfo": "GET /collections/{collection_name}/cluster",
+    # "/qdrant.Collections/CollectionExists": "GET /collections/{collection_name}/exists",
+    # "/qdrant.Collections/UpdateCollectionClusterSetup": "POST /collections/{collection_name}/cluster",
     "/qdrant.Collections/CreateShardKey": "PUT /collections/{collection_name}/shards",
-    "/qdrant.Collections/DeleteShardKey": "POST /collections/{collection_name}/shards/delete",
-    "/qdrant.Points/Upsert": "PUT /collections/{collection_name}/points",
-    "/qdrant.Points/Delete": "POST /collections/{collection_name}/points/delete",
-    "/qdrant.Points/Get": "POST /collections/{collection_name}/points",
-    "/qdrant.Points/UpdateVectors": "PUT /collections/{collection_name}/points/vectors",
-    "/qdrant.Points/DeleteVectors": "POST /collections/{collection_name}/points/vectors/delete",
-    "/qdrant.Points/SetPayload": "POST /collections/{collection_name}/points/payload",
-    "/qdrant.Points/OverwritePayload": "PUT /collections/{collection_name}/points/payload",
-    "/qdrant.Points/DeletePayload": "POST /collections/{collection_name}/points/payload/delete",
-    "/qdrant.Points/ClearPayload": "POST /collections/{collection_name}/points/payload/clear",
-    "/qdrant.Points/CreateFieldIndex": "PUT /collections/{collection_name}/index",
-    "/qdrant.Points/DeleteFieldIndex": "DELETE /collections/{collection_name}/index/{field_name}",
-    "/qdrant.Points/Search": "POST /collections/{collection_name}/points/search",
-    "/qdrant.Points/SearchBatch": "POST /collections/{collection_name}/points/search/batch",
-    "/qdrant.Points/SearchGroups": "POST /collections/{collection_name}/points/search/groups",
-    "/qdrant.Points/Scroll": "POST /collections/{collection_name}/points/scroll",
-    "/qdrant.Points/Recommend": "POST /collections/{collection_name}/points/recommend",
-    "/qdrant.Points/RecommendBatch": "POST /collections/{collection_name}/points/recommend/batch",
-    "/qdrant.Points/RecommendGroups": "POST /collections/{collection_name}/points/recommend/groups",
-    "/qdrant.Points/Discover": "POST /collections/{collection_name}/points/discover",
-    "/qdrant.Points/DiscoverBatch": "POST /collections/{collection_name}/points/discover/batch",
-    "/qdrant.Points/Count": "POST /collections/{collection_name}/points/count",
-    "/qdrant.Points/UpdateBatch": "POST /collections/{collection_name}/points/batch",
-    "/qdrant.ShardSnapshots/Create": "POST /collections/{collection_name}/shards/{shard_id}/snapshots",
-    "/qdrant.ShardSnapshots/List": "GET /collections/{collection_name}/shards/{shard_id}/snapshots",
-    "/qdrant.ShardSnapshots/Delete": "DELETE /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}",
-    "/qdrant.ShardSnapshots/Recover": "PUT /collections/{collection_name}/shards/{shard_id}/snapshots/recover",
-    "/qdrant.Snapshots/Create": "POST /collections/{collection_name}/snapshots",
-    "/qdrant.Snapshots/List": "GET /collections/{collection_name}/snapshots",
-    "/qdrant.Snapshots/Delete": "DELETE /collections/{collection_name}/snapshots/{snapshot_name}",
-    "/qdrant.Snapshots/CreateFull": "POST /snapshots",
-    "/qdrant.Snapshots/ListFull": "GET /snapshots",
-    "/qdrant.Snapshots/DeleteFull": "DELETE /snapshots/{snapshot_name}",
-    "/qdrant.Qdrant/HealthCheck": "GET /healthz",
-    "/grpc.health.v1.Health/Check": "GET /healthz",
+    # "/qdrant.Collections/DeleteShardKey": "POST /collections/{collection_name}/shards/delete",
+    # "/qdrant.Points/Upsert": "PUT /collections/{collection_name}/points",
+    # "/qdrant.Points/Delete": "POST /collections/{collection_name}/points/delete",
+    # "/qdrant.Points/Get": "POST /collections/{collection_name}/points",
+    # "/qdrant.Points/UpdateVectors": "PUT /collections/{collection_name}/points/vectors",
+    # "/qdrant.Points/DeleteVectors": "POST /collections/{collection_name}/points/vectors/delete",
+    # "/qdrant.Points/SetPayload": "POST /collections/{collection_name}/points/payload",
+    # "/qdrant.Points/OverwritePayload": "PUT /collections/{collection_name}/points/payload",
+    # "/qdrant.Points/DeletePayload": "POST /collections/{collection_name}/points/payload/delete",
+    # "/qdrant.Points/ClearPayload": "POST /collections/{collection_name}/points/payload/clear",
+    # "/qdrant.Points/CreateFieldIndex": "PUT /collections/{collection_name}/index",
+    # "/qdrant.Points/DeleteFieldIndex": "DELETE /collections/{collection_name}/index/{field_name}",
+    # "/qdrant.Points/Search": "POST /collections/{collection_name}/points/search",
+    # "/qdrant.Points/SearchBatch": "POST /collections/{collection_name}/points/search/batch",
+    # "/qdrant.Points/SearchGroups": "POST /collections/{collection_name}/points/search/groups",
+    # "/qdrant.Points/Scroll": "POST /collections/{collection_name}/points/scroll",
+    # "/qdrant.Points/Recommend": "POST /collections/{collection_name}/points/recommend",
+    # "/qdrant.Points/RecommendBatch": "POST /collections/{collection_name}/points/recommend/batch",
+    # "/qdrant.Points/RecommendGroups": "POST /collections/{collection_name}/points/recommend/groups",
+    # "/qdrant.Points/Discover": "POST /collections/{collection_name}/points/discover",
+    # "/qdrant.Points/DiscoverBatch": "POST /collections/{collection_name}/points/discover/batch",
+    # "/qdrant.Points/Count": "POST /collections/{collection_name}/points/count",
+    # "/qdrant.Points/UpdateBatch": "POST /collections/{collection_name}/points/batch",
+    # "/qdrant.ShardSnapshots/Create": "POST /collections/{collection_name}/shards/{shard_id}/snapshots",
+    # "/qdrant.ShardSnapshots/List": "GET /collections/{collection_name}/shards/{shard_id}/snapshots",
+    # "/qdrant.ShardSnapshots/Delete": "DELETE /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}",
+    # "/qdrant.ShardSnapshots/Recover": "PUT /collections/{collection_name}/shards/{shard_id}/snapshots/recover",
+    # "/qdrant.Snapshots/Create": "POST /collections/{collection_name}/snapshots",
+    # "/qdrant.Snapshots/List": "GET /collections/{collection_name}/snapshots",
+    # "/qdrant.Snapshots/Delete": "DELETE /collections/{collection_name}/snapshots/{snapshot_name}",
+    # "/qdrant.Snapshots/CreateFull": "POST /snapshots",
+    # "/qdrant.Snapshots/ListFull": "GET /snapshots",
+    # "/qdrant.Snapshots/DeleteFull": "DELETE /snapshots/{snapshot_name}",
+    # "/qdrant.Qdrant/HealthCheck": "GET /healthz",
+    # "/grpc.health.v1.Health/Check": "GET /healthz",
 }
 
 
@@ -428,10 +454,16 @@ def uris(tmp_path_factory: pytest.TempPathFactory):
         sharding_method="custom",
         headers=API_KEY_HEADERS,
     )
-    
-    requests.put(f"{rest_uri}/collections/{COLL_NAME}/shards", json={"shard_key": SHARD_KEY}, headers=API_KEY_HEADERS)
 
-    fixtures.upsert_random_points(rest_uri, 100, COLL_NAME, shard_key=SHARD_KEY, headers=API_KEY_HEADERS)
+    requests.put(
+        f"{rest_uri}/collections/{COLL_NAME}/shards",
+        json={"shard_key": SHARD_KEY},
+        headers=API_KEY_HEADERS,
+    )
+
+    fixtures.upsert_random_points(
+        rest_uri, 100, COLL_NAME, shard_key=SHARD_KEY, headers=API_KEY_HEADERS
+    )
 
     # TODO: create fixtures for payload index, snapshots, shards, shard_key, alias,
 
@@ -538,17 +570,18 @@ def test_access(uris: Tuple[str, str]):
     token_read = encode_jwt({"access": "r"}, SECRET)
 
     # Collection read access token
-    token_coll_r = encode_jwt({"access": {"collections": [COLL_NAME], "access": "r"}}, SECRET)
+    token_coll_r = encode_jwt({"access": [{"collections": [COLL_NAME], "access": "r"}]}, SECRET)
 
     # Collection read-write access token
-    token_coll_rw = encode_jwt({"access": {"collections": [COLL_NAME], "access": "rw"}}, SECRET)
+    token_coll_rw = encode_jwt({"access": [{"collections": [COLL_NAME], "access": "rw"}]}, SECRET)
 
     # Global manage access token
-    token_manage = encode_jwt({"access": "rw"}, SECRET)
+    token_manage = encode_jwt({"access": "m"}, SECRET)
 
     # Check REST endpoints
     for endpoint, stubs in TABLE_OF_ACCESS.items():
         for stub in stubs:
+
             assert isinstance(stub, AccessStub)
 
             uri = rest_uri
@@ -569,7 +602,6 @@ def test_access(uris: Tuple[str, str]):
             check_rest_access(uri, method, path, body, allowed_for.read_write, token_coll_rw)
             check_rest_access(uri, method, path, body, allowed_for.manage, token_manage)
 
-    breakpoint()
     # Check GRPC endpoints
     grpc_read = grpc_requests.Client(
         grpc_uri, interceptors=[MetadataInterceptor([("authorization", f"Bearer {token_read}")])]
@@ -608,6 +640,9 @@ def test_access(uris: Tuple[str, str]):
 def check_rest_access(
     uri: str, method: str, path: str, body: Optional[dict], should_succeed: bool, token: str
 ):
+    if isfunction(body):
+        body = body()
+
     res = requests.request(
         method, f"{uri}{path}", headers={"authorization": f"Bearer {token}"}, json=body
     )
@@ -628,11 +663,13 @@ def check_grpc_access(
     request: Optional[dict],
     should_succeed: bool,
 ):
-    breakpoint()
-    res = client.request(service=service, method=method, request=request)
-    if should_succeed:
-        assert res.ok
-    else:
-        assert (
-            res.status_code == 7
-        ), f"{service}/{method} failed with {res.status_code}: {res.text}"
+    if isfunction(request):
+        request = request()
+
+    try:
+        _res = client.request(service=service, method=method, request=request)
+    except grpc.RpcError as e:
+        if should_succeed:
+            pytest.fail(f"{service}/{method} failed with {e.code()}: {e.details()}")
+        else:
+            assert e.code() == grpc.StatusCode.PERMISSION_DENIED
