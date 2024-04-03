@@ -15,23 +15,23 @@ from grpc_interceptor import ClientCallDetails, ClientInterceptor
 
 from .utils import encode_jwt, make_peer_folder, start_first_peer, wait_for
 
+def random_str():
+    return "".join(random.choices(string.ascii_lowercase, k=10))
+
 SECRET = "my_top_secret_key"
 
 API_KEY_HEADERS = {"Api-Key": SECRET}
 API_KEY_METADATA = [("api-key", SECRET)]
 
 COLL_NAME = "primary_test_collection"
+DELETABLE_COLL_NAMES = [random_str() for _ in range(10)]
 SHARD_ID = 0
 SNAPSHOT_NAME = "test_snapshot"
 POINT_ID = 0
 FIELD_NAME = "test_field"
 PEER_ID = 0
-DELETABLE_SHARD_KEYS = ["a", "b", "c", "d", "e", "f", "g", "h", "i"]
+DELETABLE_SHARD_KEYS = [random_str() for _ in range(10)]
 SHARD_KEY = "existing_shard_key"
-
-
-def random_str():
-    return "".join(random.choices(string.ascii_lowercase, k=10))
 
 
 class Access:
@@ -66,7 +66,7 @@ def custom_shard_key_config_grpc():
         "collection_name": COLL_NAME,
         "request": {"shard_key": { "keyword": random_str()}, "replication_factor": 3 },
     }
-    
+
 def create_collection_req():
     return {
         "collection_name": random_str(),
@@ -81,6 +81,16 @@ def delete_shard_key_req_grpc():
     return {
         "collection_name": COLL_NAME,
         "request": {"shard_key": { "keyword": next(deletable_shard_key)} },
+    }
+
+deletable_coll_name = iter(DELETABLE_COLL_NAMES)
+
+def delete_collection_name():
+    return next(deletable_coll_name)
+
+def delete_collection_req_grpc():
+    return {
+        "collection_name": next(deletable_coll_name),
     }
 
 ### TABLE_OF_ACCESS_STUBS ###
@@ -98,7 +108,7 @@ list_collections = AccessStub(True, True, True)
 get_collection = AccessStub(True, True, True, None, {"collection_name": COLL_NAME})
 create_collection = AccessStub(False, False, True, {}, create_collection_req, collection_name=random_str)
 update_collection_params = AccessStub(False, False, True, {}, {"collection_name": COLL_NAME})
-delete_collection = AccessStub(False, False, True)
+delete_collection = AccessStub(False, False, True, None, delete_collection_req_grpc, collection_name=delete_collection_name)
 create_alias = AccessStub(
     False,
     False,
@@ -238,7 +248,7 @@ TABLE_OF_ACCESS = {
     "GET /collections/{collection_name}": [get_collection],
     "PUT /collections/{collection_name}": [create_collection],
     "PATCH /collections/{collection_name}": [update_collection_params],
-    # "DELETE /collections/{collection_name}": [delete_collection],
+    "DELETE /collections/{collection_name}": [delete_collection],
     # "POST /collections/aliases": [create_alias, delete_alias, rename_alias],
     # "PUT /collections/{collection_name}/index": [create_index],
     # "GET /collections/{collection_name}/exists": [True, True, True, None],
@@ -332,7 +342,7 @@ GRPC_TO_REST_MAPPING = {
     "/qdrant.Collections/List": "GET /collections",
     "/qdrant.Collections/Create": "PUT /collections/{collection_name}",
     "/qdrant.Collections/Update": "PATCH /collections/{collection_name}",
-    # "/qdrant.Collections/Delete": "DELETE /collections/{collection_name}",
+    "/qdrant.Collections/Delete": "DELETE /collections/{collection_name}",
     # "/qdrant.Collections/UpdateAliases": "POST /collections/aliases",
     # "/qdrant.Collections/ListCollectionAliases": "GET /collections/{collection_name}/aliases",
     # "/qdrant.Collections/ListAliases": "GET /aliases",
@@ -472,6 +482,13 @@ def uris(tmp_path_factory: pytest.TempPathFactory):
         sharding_method="custom",
         headers=API_KEY_HEADERS,
     )
+    
+    for coll_name in DELETABLE_COLL_NAMES:
+        fixtures.create_collection(
+            rest_uri,
+            collection=coll_name,
+            headers=API_KEY_HEADERS,
+        )
 
     for shard_key in [*DELETABLE_SHARD_KEYS, SHARD_KEY]:
         requests.put(
