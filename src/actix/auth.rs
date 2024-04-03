@@ -7,7 +7,7 @@ use actix_web::dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Tr
 use actix_web::http::Method;
 use actix_web::{Error, FromRequest, HttpMessage as _, HttpResponse};
 use futures_util::future::LocalBoxFuture;
-use storage::rbac::access::Access;
+use storage::rbac::Access;
 
 use crate::common::auth::AuthKeys;
 
@@ -140,13 +140,11 @@ where
                 .await
             {
                 Ok(access) => {
-                    if let Some(access) = access {
-                        let _previous = req.extensions_mut().insert::<Access>(access);
-                        debug_assert!(
-                            _previous.is_none(),
-                            "Previous access object should not exist in the request"
-                        );
-                    }
+                    let _previous = req.extensions_mut().insert::<Access>(access);
+                    debug_assert!(
+                        _previous.is_none(),
+                        "Previous access object should not exist in the request"
+                    );
                     service.call(req).await
                 }
                 Err(e) => Ok(req
@@ -167,10 +165,9 @@ impl FromRequest for ActixAccess {
         req: &actix_web::HttpRequest,
         _payload: &mut actix_web::dev::Payload,
     ) -> Self::Future {
-        let access = req
-            .extensions_mut()
-            .remove::<Access>()
-            .unwrap_or_else(Access::full);
+        let access = req.extensions_mut().remove::<Access>().unwrap_or_else(|| {
+            Access::full("All requests have full by default access when API key is not configured")
+        });
         ready(Ok(ActixAccess(access)))
     }
 }

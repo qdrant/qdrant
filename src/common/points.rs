@@ -35,7 +35,7 @@ use storage::content_manager::collection_meta_ops::{
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::access::Access;
+use storage::rbac::Access;
 use validator::Validate;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
@@ -620,7 +620,7 @@ pub async fn do_create_index_internal(
         wait,
         ordering,
         shard_selector,
-        Access::full(),
+        Access::full("Internal API"),
     )
     .await
 }
@@ -701,7 +701,7 @@ pub async fn do_delete_index_internal(
         wait,
         ordering,
         shard_selector,
-        Access::full(),
+        Access::full("Internal API"),
     )
     .await
 }

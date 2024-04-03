@@ -83,7 +83,7 @@ impl Points for PointsService {
 
         let claims = extract_access(&mut request);
 
-        get(self.dispatcher.as_ref(), request.into_inner(), None, claims).await
+        get(self.dispatcher.toc(), request.into_inner(), None, claims).await
     }
 
     async fn update_vectors(
@@ -262,7 +262,7 @@ impl Points for PointsService {
     ) -> Result<Response<SearchResponse>, Status> {
         validate(request.get_ref())?;
         let claims = extract_access(&mut request);
-        search(self.dispatcher.as_ref(), request.into_inner(), None, claims).await
+        search(self.dispatcher.toc(), request.into_inner(), None, claims).await
     }
 
     async fn search_batch(
@@ -294,7 +294,7 @@ impl Points for PointsService {
         }
 
         core_search_batch(
-            self.dispatcher.as_ref(),
+            self.dispatcher.toc(),
             collection_name,
             requests,
             read_consistency,
@@ -310,7 +310,7 @@ impl Points for PointsService {
     ) -> Result<Response<SearchGroupsResponse>, Status> {
         validate(request.get_ref())?;
         let claims = extract_access(&mut request);
-        search_groups(self.dispatcher.as_ref(), request.into_inner(), None, claims).await
+        search_groups(self.dispatcher.toc(), request.into_inner(), None, claims).await
     }
 
     async fn scroll(
@@ -321,7 +321,7 @@ impl Points for PointsService {
 
         let claims = extract_access(&mut request);
 
-        scroll(self.dispatcher.as_ref(), request.into_inner(), None, claims).await
+        scroll(self.dispatcher.toc(), request.into_inner(), None, claims).await
     }
 
     async fn recommend(
@@ -330,7 +330,7 @@ impl Points for PointsService {
     ) -> Result<Response<RecommendResponse>, Status> {
         validate(request.get_ref())?;
         let claims = extract_access(&mut request);
-        recommend(self.dispatcher.as_ref(), request.into_inner(), claims).await
+        recommend(self.dispatcher.toc(), request.into_inner(), claims).await
     }
 
     async fn recommend_batch(
@@ -346,7 +346,7 @@ impl Points for PointsService {
             timeout,
         } = request.into_inner();
         recommend_batch(
-            self.dispatcher.as_ref(),
+            self.dispatcher.toc(),
             collection_name,
             recommend_points,
             read_consistency,
@@ -364,7 +364,7 @@ impl Points for PointsService {
 
         let claims = extract_access(&mut request);
 
-        recommend_groups(self.dispatcher.as_ref(), request.into_inner(), claims).await
+        recommend_groups(self.dispatcher.toc(), request.into_inner(), claims).await
     }
 
     async fn discover(
@@ -375,7 +375,7 @@ impl Points for PointsService {
 
         let claims = extract_access(&mut request);
 
-        discover(self.dispatcher.as_ref(), request.into_inner(), claims).await
+        discover(self.dispatcher.toc(), request.into_inner(), claims).await
     }
 
     async fn discover_batch(
@@ -394,7 +394,7 @@ impl Points for PointsService {
         } = request.into_inner();
 
         discover_batch(
-            self.dispatcher.as_ref(),
+            self.dispatcher.toc(),
             collection_name,
             discover_points,
             read_consistency,
@@ -412,6 +412,6 @@ impl Points for PointsService {
 
         let claims = extract_access(&mut request);
 
-        count(self.dispatcher.as_ref(), request.into_inner(), None, claims).await
+        count(self.dispatcher.toc(), request.into_inner(), None, claims).await
     }
 }

@@ -46,10 +46,11 @@ impl Snapshots for SnapshotsService {
         let collection_name = request.into_inner().collection_name;
         let timing = Instant::now();
         let dispatcher = self.dispatcher.clone();
-        let response =
-            async move { do_create_snapshot(&dispatcher, claims, &collection_name)?.await? }
-                .await
-                .map_err(error_to_status)?;
+        let response = async move {
+            do_create_snapshot(Arc::clone(dispatcher.toc()), claims, &collection_name)?.await?
+        }
+        .await
+        .map_err(error_to_status)?;
         Ok(Response::new(CreateSnapshotResponse {
             snapshot_description: Some(response.into()),
             time: timing.elapsed().as_secs_f64(),
@@ -65,7 +66,7 @@ impl Snapshots for SnapshotsService {
         let ListSnapshotsRequest { collection_name } = request.into_inner();
 
         let timing = Instant::now();
-        let snapshots = do_list_snapshots(&self.dispatcher, claims, &collection_name)
+        let snapshots = do_list_snapshots(self.dispatcher.toc(), claims, &collection_name)
             .await
             .map_err(error_to_status)?;
         Ok(Response::new(ListSnapshotsResponse {
@@ -126,7 +127,7 @@ impl Snapshots for SnapshotsService {
         validate(request.get_ref())?;
         let timing = Instant::now();
         let claims = extract_access(&mut request);
-        let snapshots = do_list_full_snapshots(&self.dispatcher, claims)
+        let snapshots = do_list_full_snapshots(self.dispatcher.toc(), claims)
             .await
             .map_err(error_to_status)?;
         Ok(Response::new(ListSnapshotsResponse {

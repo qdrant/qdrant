@@ -5,7 +5,6 @@ use self::consensus_manager::CollectionsSnapshot;
 use self::errors::StorageError;
 
 pub mod alias_mapping;
-pub mod claims;
 pub mod collection_meta_ops;
 mod collections_ops;
 pub mod consensus;

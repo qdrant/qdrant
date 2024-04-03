@@ -44,7 +44,7 @@ use crate::content_manager::collections_ops::{Checker, Collections};
 use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
-use crate::rbac::access::CollectionPass;
+use crate::rbac::CollectionPass;
 use crate::types::{PeerAddressById, StorageConfig};
 use crate::ConsensusOperations;
 

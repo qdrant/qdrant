@@ -14,10 +14,12 @@ use storage::content_manager::collection_meta_ops::{
 use storage::content_manager::consensus::operation_sender::OperationSender;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::access::Access;
+use storage::rbac::Access;
 use storage::types::{PerformanceConfig, StorageConfig};
 use tempfile::Builder;
 use tokio::runtime::Runtime;
+
+const FULL_ACCESS: Access = Access::full("For test");
 
 #[test]
 fn test_alias_operation() {
@@ -116,7 +118,7 @@ fn test_alias_operation() {
                         sharding_method: None,
                     },
                 )),
-                Access::full(),
+                FULL_ACCESS.clone(),
                 None,
             ),
         )
@@ -131,7 +133,7 @@ fn test_alias_operation() {
                     }
                     .into()],
             }),
-            Access::full(),
+            FULL_ACCESS.clone(),
             None,
         ))
         .unwrap();
@@ -156,12 +158,12 @@ fn test_alias_operation() {
                         .into(),
                     ],
             }),
-            Access::full(),
+            FULL_ACCESS.clone(),
             None,
         ))
         .unwrap();
 
     let _ = handle
-        .block_on(dispatcher.get_collection("test_alias3"))
+        .block_on(dispatcher.toc().get_collection("test_alias3"))
         .unwrap();
 }
