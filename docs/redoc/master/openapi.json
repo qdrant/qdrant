@@ -9141,6 +9141,11 @@
                 "nullable": true
               }
             ]
+          },
+          "multivec": {
+            "description": "Enable multiple vectors per point",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
