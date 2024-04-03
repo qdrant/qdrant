@@ -27,7 +27,7 @@ use storage::content_manager::collection_meta_ops::{
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::{Access, ClusterAccessMode, CollectionAccessMode};
+use storage::rbac::{Access, CollectionAccessMode, GlobalAccessMode};
 use tokio::task::JoinHandle;
 
 pub async fn do_collection_exists(
@@ -216,17 +216,13 @@ pub async fn do_update_collection_cluster(
         | ClusterOperations::AbortTransfer(_)
         | ClusterOperations::DropReplica(_)
         | ClusterOperations::RestartTransfer(_) => {
-            access.check_cluster_access(ClusterAccessMode::ReadWrite)?;
+            access.check_global_access(GlobalAccessMode::Manage)?;
         }
         ClusterOperations::CreateShardingKey(CreateShardingKeyOperation {
             create_sharding_key,
         }) => {
             if !create_sharding_key.has_default_params() {
-                access.check_collection_access(
-                    &collection_name,
-                    true,
-                    CollectionAccessMode::Manage,
-                )?;
+                access.check_global_access(GlobalAccessMode::Manage)?;
             }
         }
         ClusterOperations::DropShardingKey(DropShardingKeyOperation {

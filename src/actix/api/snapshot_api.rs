@@ -24,7 +24,7 @@ use storage::content_manager::snapshots::{
 };
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::{Access, ClusterAccessMode, CollectionAccessMode};
+use storage::rbac::{Access, CollectionAccessMode, GlobalAccessMode};
 use uuid::Uuid;
 use validator::Validate;
 
@@ -69,7 +69,7 @@ pub async fn do_get_full_snapshot(
     access: Access,
     snapshot_name: &str,
 ) -> Result<NamedFile, HttpError> {
-    access.check_cluster_access(ClusterAccessMode::Read)?;
+    access.check_global_access(GlobalAccessMode::Read)?;
     let file_name = get_full_snapshot_path(toc, snapshot_name).await?;
     Ok(NamedFile::open(file_name)?)
 }
@@ -169,7 +169,7 @@ async fn upload_snapshot(
     helpers::time_or_accept_with_handle(params.wait.unwrap_or(true), async move {
         let snapshot = form.snapshot;
 
-        access.check_cluster_access(ClusterAccessMode::ReadWrite)?;
+        access.check_global_access(GlobalAccessMode::Manage)?;
 
         if let Some(checksum) = &params.checksum {
             let snapshot_checksum = hash_file(snapshot.file.path()).await?;
@@ -379,8 +379,9 @@ async fn upload_shard_snapshot(
 
     let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
         // TODO: Run this check before the multipart blob is uploaded
-        let collection_pass =
-            access.check_collection_access(&collection, true, CollectionAccessMode::Manage)?;
+        let collection_pass = access
+            .check_global_access(GlobalAccessMode::Manage)?
+            .issue_pass(&collection);
 
         if let Some(checksum) = checksum {
             let snapshot_checksum = hash_file(form.snapshot.file.path()).await?;

@@ -13,7 +13,7 @@ use tokio::task::JoinHandle;
 
 use crate::content_manager::toc::FULL_SNAPSHOT_FILE_NAME;
 use crate::dispatcher::Dispatcher;
-use crate::rbac::{Access, ClusterAccessMode, CollectionAccessMode, CollectionMultipass};
+use crate::rbac::{Access, CollectionAccessMode, CollectionMultipass, GlobalAccessMode};
 use crate::{StorageError, TableOfContent};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -59,7 +59,7 @@ pub async fn do_delete_full_snapshot(
     access: Access,
     snapshot_name: &str,
 ) -> Result<JoinHandle<Result<bool, StorageError>>, StorageError> {
-    access.check_cluster_access(ClusterAccessMode::ReadWrite)?;
+    access.check_global_access(GlobalAccessMode::Manage)?;
     let toc = dispatcher.toc();
     let snapshot_manager = toc.get_snapshots_storage_manager();
     let snapshot_dir = get_full_snapshot_path(toc, snapshot_name).await?;
@@ -93,7 +93,7 @@ pub async fn do_list_full_snapshots(
     toc: &TableOfContent,
     access: Access,
 ) -> Result<Vec<SnapshotDescription>, StorageError> {
-    access.check_cluster_access(ClusterAccessMode::Read)?;
+    access.check_global_access(GlobalAccessMode::Read)?;
     let snapshots_manager = toc.get_snapshots_storage_manager();
     let snapshots_path = Path::new(toc.snapshots_path());
     Ok(snapshots_manager.list_snapshots(snapshots_path).await?)
@@ -103,7 +103,7 @@ pub fn do_create_full_snapshot(
     dispatcher: &Dispatcher,
     access: Access,
 ) -> Result<JoinHandle<Result<SnapshotDescription, StorageError>>, StorageError> {
-    let multipass = access.check_cluster_access(ClusterAccessMode::ReadWrite)?;
+    let multipass = access.check_global_access(GlobalAccessMode::Manage)?;
     let dispatcher = dispatcher.clone();
     Ok(tokio::spawn(async move {
         _do_create_full_snapshot(&dispatcher, multipass).await

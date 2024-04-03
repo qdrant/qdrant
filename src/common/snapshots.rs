@@ -12,7 +12,7 @@ use collection::shards::shard::ShardId;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::snapshots;
 use storage::content_manager::toc::TableOfContent;
-use storage::rbac::{Access, CollectionAccessMode};
+use storage::rbac::{Access, CollectionAccessMode, GlobalAccessMode};
 
 use super::http_client::HttpClient;
 
@@ -91,7 +91,8 @@ pub async fn recover_shard_snapshot(
     client: HttpClient,
 ) -> Result<(), StorageError> {
     let collection_pass = access
-        .check_collection_access(&collection_name, true, CollectionAccessMode::Manage)?
+        .check_global_access(GlobalAccessMode::Manage)?
+        .issue_pass(&collection_name)
         .into_static();
 
     // - `download_dir` handled by `tempfile` and would be deleted, if request is cancelled

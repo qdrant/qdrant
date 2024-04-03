@@ -40,7 +40,7 @@ impl JwtParser {
 mod tests {
     use segment::types::ValueVariants;
     use storage::rbac::{
-        Access, AccessCollection, AccessCollectionRule, ClusterAccessMode, CollectionAccessMode,
+        Access, CollectionAccess, CollectionAccessList, CollectionAccessMode, GlobalAccessMode,
         PayloadConstraint,
     };
 
@@ -62,7 +62,7 @@ mod tests {
             .as_secs();
         let claims = Claims {
             exp: Some(exp),
-            access: Access::Collection(AccessCollection(vec![AccessCollectionRule {
+            access: Access::Collection(CollectionAccessList(vec![CollectionAccess {
                 collections: vec!["collection".to_string()],
                 access: CollectionAccessMode::ReadWrite,
                 payload: Some(PayloadConstraint(
@@ -99,7 +99,7 @@ mod tests {
 
         let mut claims = Claims {
             exp: Some(exp),
-            access: Access::Cluster(ClusterAccessMode::Read),
+            access: Access::Global(GlobalAccessMode::Read),
             value_exists: None,
         };
 

@@ -1,11 +1,12 @@
 mod ops_checks;
 
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use segment::json_path::JsonPath;
 use segment::types::ValueVariants;
 use serde::{Deserialize, Serialize};
+use validator::{Validate, ValidateArgs, ValidationError, ValidationErrors};
 
 use crate::content_manager::errors::StorageError;
 
@@ -13,18 +14,22 @@ use crate::content_manager::errors::StorageError;
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 #[serde(untagged)]
 pub enum Access {
-    /// Cluster-wide access.
-    Cluster(ClusterAccessMode),
+    /// Global access.
+    Global(GlobalAccessMode),
     /// Access to specific collections.
-    Collection(AccessCollection),
+    Collection(CollectionAccessList),
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-pub struct AccessCollection(pub Vec<AccessCollectionRule>);
+pub struct CollectionAccessList(pub Vec<CollectionAccess>);
 
-#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
-pub struct AccessCollectionRule {
+#[derive(Serialize, Deserialize, Validate, PartialEq, Clone, Debug)]
+pub struct CollectionAccess {
     /// Collection names that are allowed to be accessed
+    #[validate(custom(
+        function = "validate_unique_collections",
+        arg = "&'v_a mut HashSet<String>"
+    ))]
     pub collections: Vec<String>,
 
     pub access: CollectionAccessMode,
@@ -35,18 +40,18 @@ pub struct AccessCollectionRule {
     pub payload: Option<PayloadConstraint>,
 }
 
-#[derive(Serialize, Deserialize, Eq, PartialEq, Ord, PartialOrd, Copy, Clone, Debug)]
-pub enum ClusterAccessMode {
-    /// Read-only access to the whole cluster.
+#[derive(Serialize, Deserialize, Eq, PartialEq, Copy, Clone, Debug)]
+pub enum GlobalAccessMode {
+    /// Read-only access
     #[serde(rename = "r")]
     Read,
 
-    /// Read and write access to the whole cluster.
-    #[serde(rename = "rw")]
-    ReadWrite,
+    /// Read and write access
+    #[serde(rename = "m")]
+    Manage,
 }
 
-#[derive(Serialize, Deserialize, Eq, PartialEq, Ord, PartialOrd, Copy, Clone, Debug)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Copy, Clone, Debug)]
 pub enum CollectionAccessMode {
     /// Read-only access to a collection.
     #[serde(rename = "r")]
@@ -55,10 +60,6 @@ pub enum CollectionAccessMode {
     /// Read and write access to a collection, with some restrictions.
     #[serde(rename = "rw")]
     ReadWrite,
-
-    /// Read and write access to a collection, with no restrictions.
-    #[serde(rename = "m")]
-    Manage,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
@@ -70,21 +71,30 @@ impl Access {
     /// explain why the access is granted, e.g. ``Access::full("Internal API")`` or
     /// ``Access::full("Test")``.
     pub const fn full(_reason: &'static str) -> Self {
-        Self::Cluster(ClusterAccessMode::ReadWrite)
+        Self::Global(GlobalAccessMode::Manage)
     }
 
     pub const fn full_ro(_reason: &'static str) -> Self {
-        Self::Cluster(ClusterAccessMode::Read)
+        Self::Global(GlobalAccessMode::Read)
     }
 
-    /// Check if the user has access to the whole cluster.
-    pub fn check_cluster_access(
+    /// Check if the user has global access.
+    pub fn check_global_access(
         &self,
-        min_mode: ClusterAccessMode,
+        min_mode: GlobalAccessMode,
     ) -> Result<CollectionMultipass, StorageError> {
         match self {
-            Access::Cluster(mode) if *mode >= min_mode => Ok(CollectionMultipass),
-            _ => Err(StorageError::unauthorized("Cluster access is not allowed")),
+            Access::Global(GlobalAccessMode::Manage) => Ok(CollectionMultipass),
+            Access::Global(GlobalAccessMode::Read) => {
+                if min_mode == GlobalAccessMode::Read {
+                    Ok(CollectionMultipass)
+                } else {
+                    Err(StorageError::unauthorized(
+                        "Only read-only access is allowed",
+                    ))
+                }
+            }
+            _ => Err(StorageError::unauthorized("Global access is not allowed")),
         }
     }
 
@@ -99,16 +109,16 @@ impl Access {
         mode: CollectionAccessMode,
     ) -> Result<CollectionPass<'a>, StorageError> {
         match self {
-            Access::Cluster(ClusterAccessMode::Read) => {
+            Access::Global(GlobalAccessMode::Read) => {
                 if mode != CollectionAccessMode::Read {
                     return Err(StorageError::unauthorized(
                         "Only read-only access is allowed",
                     ));
                 }
             }
-            Access::Cluster(ClusterAccessMode::ReadWrite) => (),
-            Access::Collection(rules) => {
-                let view = rules.find_view(collection_name)?;
+            Access::Global(GlobalAccessMode::Manage) => (),
+            Access::Collection(list) => {
+                let view = list.find_view(collection_name)?;
                 if whole_collection {
                     view.check_whole_access()?;
                 }
@@ -119,12 +129,12 @@ impl Access {
     }
 }
 
-impl AccessCollection {
+impl CollectionAccessList {
     pub(self) fn find_view<'a>(
         &'a self,
         collection_name: &'a str,
-    ) -> Result<AccessCollectionView<'a>, StorageError> {
-        let rule = self
+    ) -> Result<CollectionAccessView<'a>, StorageError> {
+        let access = self
             .0
             .iter()
             .find(|collections| {
@@ -136,21 +146,21 @@ impl AccessCollection {
             .ok_or_else(|| {
                 StorageError::unauthorized(format!("Collection {collection_name} is not allowed"))
             })?;
-        Ok(AccessCollectionView {
+        Ok(CollectionAccessView {
             collection: collection_name,
-            access: rule.access,
-            payload: &rule.payload,
+            access: access.access,
+            payload: &access.payload,
         })
     }
 }
 
-struct AccessCollectionView<'a> {
+struct CollectionAccessView<'a> {
     pub collection: &'a str,
     pub access: CollectionAccessMode,
     pub payload: &'a Option<PayloadConstraint>,
 }
 
-impl<'a> AccessCollectionView<'a> {
+impl<'a> CollectionAccessView<'a> {
     pub(self) fn check_whole_access(&self) -> Result<(), StorageError> {
         if self.payload.is_some() {
             return incompatible_with_payload_constraint(self.collection);
@@ -162,7 +172,7 @@ impl<'a> AccessCollectionView<'a> {
         &self,
         min_access: CollectionAccessMode,
     ) -> Result<(), StorageError> {
-        if self.access < min_access {
+        if self.access.allows_as_much_as(min_access) {
             return Err(StorageError::unauthorized(format!(
                 "Collection {} is not allowed",
                 self.collection,
@@ -172,6 +182,7 @@ impl<'a> AccessCollectionView<'a> {
     }
 }
 
+/// Creates [CollectionPass] objects for all collections
 pub struct CollectionMultipass;
 
 impl CollectionMultipass {
@@ -199,6 +210,47 @@ impl std::fmt::Display for CollectionPass<'_> {
     }
 }
 
+#[derive(Eq, PartialEq, Copy, Clone, Debug)]
+enum AccessMode {
+    Read,
+    ReadWrite,
+    Manage,
+}
+
+impl From<CollectionAccessMode> for AccessMode {
+    fn from(mode: CollectionAccessMode) -> Self {
+        match mode {
+            CollectionAccessMode::Read => AccessMode::Read,
+            CollectionAccessMode::ReadWrite => AccessMode::ReadWrite,
+        }
+    }
+}
+
+impl AccessMode {
+    /// Check if the access mode allows as much as the minimum mode.
+    fn allows_as_much_as(self, min_mode: Self) -> bool {
+        // NOTE: This is implemented explicitly rather than using #[derive(PartialOrd)] to avoid
+        // potential bugs when adding new variants.
+        match (self, min_mode) {
+            (AccessMode::Read, AccessMode::Read) => true,
+            (AccessMode::Read, AccessMode::ReadWrite | AccessMode::Manage) => false,
+
+            (AccessMode::ReadWrite, AccessMode::Read | AccessMode::ReadWrite) => true,
+            (AccessMode::ReadWrite, AccessMode::Manage) => false,
+
+            (AccessMode::Manage, AccessMode::Read | AccessMode::ReadWrite | AccessMode::Manage) => {
+                true
+            }
+        }
+    }
+}
+
+impl CollectionAccessMode {
+    fn allows_as_much_as(self, min_mode: Self) -> bool {
+        AccessMode::from(self).allows_as_much_as(AccessMode::from(min_mode))
+    }
+}
+
 /// Helper function to indicate that the operation is not allowed when `payload` constraint is
 /// present.
 fn incompatible_with_payload_constraint<T>(collection_name: &str) -> Result<T, StorageError> {
@@ -206,4 +258,46 @@ fn incompatible_with_payload_constraint<T>(collection_name: &str) -> Result<T, S
         "This operation is not allowed when \"payload\" restriction is present for collection \
          {collection_name}"
     )))
+}
+
+impl Access {
+    /// Return a list of validation errors in a format suitable for [ValidationErrors::merge_all].
+    pub fn validate(&self) -> Vec<Result<(), ValidationErrors>> {
+        match self {
+            Access::Global(_) => Vec::new(),
+            Access::Collection(list) => {
+                let mut used_collections = HashSet::new();
+                list.0
+                    .iter()
+                    .map(|x| {
+                        ValidationErrors::merge(
+                            Ok(()),
+                            "access",
+                            x.validate_args(&mut used_collections),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            }
+        }
+    }
+}
+
+fn validate_unique_collections(
+    collections: &[String],
+    used_collections: &mut HashSet<String>,
+) -> Result<(), ValidationError> {
+    let duplicates = collections
+        .iter()
+        .filter(|&collection| !used_collections.insert(collection.clone()))
+        .cloned()
+        .collect::<Vec<_>>();
+    if duplicates.is_empty() {
+        Ok(())
+    } else {
+        Err(ValidationError {
+            code: Cow::from("unique"),
+            message: Some(Cow::from("Collection name should be unique")),
+            params: HashMap::from([(Cow::from("collections"), duplicates.into())]),
+        })
+    }
 }

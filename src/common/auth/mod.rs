@@ -5,6 +5,7 @@ use collection::operations::types::ScrollRequestInternal;
 use segment::types::{WithPayloadInterface, WithVector};
 use storage::content_manager::toc::TableOfContent;
 use storage::rbac::Access;
+use validator::Validate as _;
 
 use self::claims::{Claims, ValueExists};
 use self::jwt_parser::JwtParser;
@@ -86,6 +87,10 @@ impl AuthKeys {
         }
 
         if let Some(claims) = self.jwt_parser.as_ref().and_then(|p| p.decode(key).ok()) {
+            if let Err(e) = claims.validate() {
+                return Err(format!("Invalid JWT: {e}"));
+            }
+
             let Claims {
                 exp: _, // already validated on decoding
                 access,
