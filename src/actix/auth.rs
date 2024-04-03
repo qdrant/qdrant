@@ -5,11 +5,12 @@ use std::sync::Arc;
 use actix_web::body::{BoxBody, EitherBody};
 use actix_web::dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform};
 use actix_web::http::Method;
-use actix_web::{Error, FromRequest, HttpMessage as _, HttpResponse};
+use actix_web::{Error, FromRequest, HttpMessage as _, HttpResponse, ResponseError};
 use futures_util::future::LocalBoxFuture;
 use storage::rbac::Access;
 
-use crate::common::auth::AuthKeys;
+use super::helpers::HttpError;
+use crate::common::auth::{AuthError, AuthKeys};
 
 /// List of read-only POST request paths. List MUST be sorted.
 const READ_ONLY_POST_PATTERNS: [&str; 11] = [
@@ -147,9 +148,14 @@ where
                     );
                     service.call(req).await
                 }
-                Err(e) => Ok(req
-                    .into_response(HttpResponse::Forbidden().body(e))
-                    .map_into_right_body()),
+                Err(e) => {
+                    let resp = match e {
+                        AuthError::Unauthorized(e) => HttpResponse::Unauthorized().body(e),
+                        AuthError::Forbidden(e) => HttpResponse::Forbidden().body(e),
+                        AuthError::StorageError(e) => HttpError::from(e).error_response(),
+                    };
+                    Ok(req.into_response(resp).map_into_right_body())
+                }
             }
         })
     }

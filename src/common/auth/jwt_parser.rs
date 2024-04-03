@@ -1,7 +1,9 @@
-use jsonwebtoken::errors::Error;
+use jsonwebtoken::errors::ErrorKind;
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
+use validator::Validate;
 
 use super::claims::Claims;
+use super::AuthError;
 
 #[derive(Clone)]
 pub struct JwtParser {
@@ -28,11 +30,22 @@ impl JwtParser {
         JwtParser { key, validation }
     }
 
-    /// Decode the token and return the claims, this already validates the `exp` claim with some leeway
-    pub fn decode(&self, token: &str) -> Result<Claims, Error> {
-        let claims = decode::<Claims>(token, &self.key, &self.validation)?.claims;
-
-        Ok(claims)
+    /// Decode the token and return the claims, this already validates the `exp` claim with some leeway.
+    /// Returns None when the token doesn't look like a JWT.
+    pub fn decode(&self, token: &str) -> Option<Result<Claims, AuthError>> {
+        let claims = match decode::<Claims>(token, &self.key, &self.validation) {
+            Ok(token_data) => token_data.claims,
+            Err(e) => match e.kind() {
+                ErrorKind::ExpiredSignature | ErrorKind::InvalidSignature => {
+                    return Some(Err(AuthError::Forbidden(e.to_string())))
+                }
+                _ => return None,
+            },
+        };
+        if let Err(e) = claims.validate() {
+            return Some(Err(AuthError::Unauthorized(e.to_string())));
+        }
+        Some(Ok(claims))
     }
 }
 
@@ -84,7 +97,7 @@ mod tests {
 
         let secret = "secret";
         let parser = JwtParser::new(secret);
-        let decoded_claims = parser.decode(&token).unwrap();
+        let decoded_claims = parser.decode(&token).unwrap().unwrap();
 
         assert_eq!(claims, decoded_claims);
     }
@@ -107,14 +120,34 @@ mod tests {
 
         let secret = "secret";
         let parser = JwtParser::new(secret);
-        assert!(parser.decode(&token).is_err());
+        assert!(matches!(
+            parser.decode(&token),
+            Some(Err(AuthError::Forbidden(_)))
+        ));
 
         // Remove the exp claim and it should work
         claims.exp = None;
         let token = create_token(&claims);
 
-        let decoded_claims = parser.decode(&token).unwrap();
+        let decoded_claims = parser.decode(&token).unwrap().unwrap();
 
         assert_eq!(claims, decoded_claims);
+    }
+
+    #[test]
+    fn test_invalid_token() {
+        let claims = Claims {
+            exp: None,
+            access: Access::Global(GlobalAccessMode::Read),
+            value_exists: None,
+        };
+        let token = create_token(&claims);
+
+        assert!(matches!(
+            JwtParser::new("wrong-secret").decode(&token),
+            Some(Err(AuthError::Forbidden(_)))
+        ));
+
+        assert!(JwtParser::new("secret").decode("foo.bar.baz").is_none());
     }
 }
