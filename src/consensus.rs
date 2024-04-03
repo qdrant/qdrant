@@ -239,7 +239,10 @@ impl Consensus {
             }
             log::debug!("Local raft state found - skipping initialization");
         };
+
         let mut node = Node::new(&raft_config, state_ref.clone(), logger)?;
+        node.set_batch_append(true);
+
         // Before consensus has started apply any unapplied committed entries
         // They might have not been applied due to unplanned Qdrant shutdown
         let _stop_consensus = state_ref.apply_entries(&mut node)?;
