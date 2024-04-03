@@ -228,7 +228,7 @@ TABLE_OF_ACCESS = {
     # Collections
     "PUT /collections/{collection_name}/shards": [default_create_shard_key, custom_create_shard_key],
     "POST /collections/{collection_name}/shards/delete": [delete_shard_key],
-    # "GET /collections": [list_collections],
+    "GET /collections": [list_collections],
     # "GET /collections/{collection_name}": [get_collection],
     # "PUT /collections/{collection_name}": [create_collection],
     # "PATCH /collections/{collection_name}": [update_collection_params],
@@ -323,7 +323,7 @@ TABLE_OF_ACCESS = {
 
 GRPC_TO_REST_MAPPING = {
     # "/qdrant.Collections/Get": "GET /collections/{collection_name}",
-    # "/qdrant.Collections/List": "GET /collections",
+    "/qdrant.Collections/List": "GET /collections",
     # "/qdrant.Collections/Create": "PUT /collections/{collection_name}",
     # "/qdrant.Collections/Update": "PATCH /collections/{collection_name}",
     # "/qdrant.Collections/Delete": "DELETE /collections/{collection_name}",
