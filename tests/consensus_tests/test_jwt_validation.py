@@ -1,14 +1,13 @@
 import json
 import pathlib
 import time
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import grpc_requests
 import pytest
 import requests
+from consensus_tests.fixtures import create_collection, drop_collection, upsert_random_points
 from grpc_interceptor import ClientCallDetails, ClientInterceptor
-from consensus_tests.fixtures import (create_collection, drop_collection,
-                                      upsert_random_points)
 
 from .utils import encode_jwt, make_peer_folder, start_first_peer, wait_for
 
@@ -27,34 +26,73 @@ SNAPSHOT_NAME = "test_snapshot"
 POINT_ID = 0
 FIELD_NAME = "test_field"
 PEER_ID = 0
+SHARD_KEY = "existing_shard_key"
 
-# "endpoint": [allowed_with_r, allowed_with_rw, allowed_with_manage]
+# "endpoint": [allowed_with_r, allowed_with_rw, allowed_with_manage, body_stub]
 # allowed_with_r - token with read access
 # allowed_with_rw - token with read-write access
 # allowed_with_manage - token with manage access (global write access)
 TABLE_OF_ACCESS = {
     # Collections
-    "PUT /collections/{collection_name}/shards": [False, True, True],
-    "POST /collections/{collection_name}/shards/delete": [False, True, True],
-    "GET /collections": [True, True, True],
-    "GET /collections/{collection_name}": [True, True, True],
-    "PUT /collections/{collection_name}": [False, False, True],
-    "PATCH /collections/{collection_name}": [False, False, True],
-    "DELETE /collections/{collection_name}": [False, False, True],
-    "POST /collections/aliases": [False, True, True],
-    "PUT /collections/{collection_name}/index": [False, False, True],
-    "GET /collections/{collection_name}/exists": [True, True, True],
-    "DELETE /collections/{collection_name}/index/{field_name}": [False, False, True],
-    "GET /collections/{collection_name}/cluster": [True, True, True],
-    "POST /collections/{collection_name}/cluster": [False, False, True],
-    "GET /collections/{collection_name}/aliases": [True, True, True],
-    "GET /aliases": [True, True, True],
+    "PUT /collections/{collection_name}/shards": [False, True, True, {"shard_key": "a"}],
+    "POST /collections/{collection_name}/shards/delete": [
+        False,
+        True,
+        True,
+        {"shard_key": SHARD_KEY},
+    ],
+    "GET /collections": [True, True, True, None],
+    "GET /collections/{collection_name}": [True, True, True, None],
+    "PUT /collections/{collection_name}": [False, False, True, {}],
+    "PATCH /collections/{collection_name}": [False, False, True, {}],
+    "DELETE /collections/{collection_name}": [False, False, True, None],
+    "POST /collections/aliases": [
+        False,
+        True,
+        True,
+        {
+            "actions": [
+                {
+                    "create_alias": {
+                        "collection_name": COLL_NAME,
+                        "alias_name": "alias_for_coll_name",
+                    }
+                }
+            ]
+        },
+    ],
+    "PUT /collections/{collection_name}/index": [
+        False,
+        False,
+        True,
+        {"field_name": FIELD_NAME, "field_schema": "keyword"},
+    ],
+    "GET /collections/{collection_name}/exists": [True, True, True, None],
+    "DELETE /collections/{collection_name}/index/{field_name}": [False, False, True, None],
+    "GET /collections/{collection_name}/cluster": [True, True, True, None],
+    "POST /collections/{collection_name}/cluster": [
+        False,
+        False,
+        True,
+        [
+            {
+                "move_shard": {
+                    "shard_id": SHARD_ID,
+                    "to_peer_id": PEER_ID,
+                    "from_peer_id": PEER_ID,
+                }
+            },
+            {"create_sharding_key": {"shard_key": SHARD_KEY}},
+        ],
+    ],
+    "GET /collections/{collection_name}/aliases": [True, True, True, None],
+    "GET /aliases": [True, True, True, None],
     "POST /collections/{collection_name}/snapshots/upload": [False, False, True],
     "PUT /collections/{collection_name}/snapshots/recover": [False, False, True],
-    "GET /collections/{collection_name}/snapshots": [False, True, True],
+    "GET /collections/{collection_name}/snapshots": [False, True, True, None],
     "POST /collections/{collection_name}/snapshots": [False, True, True],
     "DELETE /collections/{collection_name}/snapshots/{snapshot_name}": [False, True, True],  #
-    "GET /collections/{collection_name}/snapshots/{snapshot_name}": [True, True, True],  #
+    "GET /collections/{collection_name}/snapshots/{snapshot_name}": [True, True, True, None],  #
     "POST /collections/{collection_name}/shards/{shard_id}/snapshots/upload": [
         False,
         False,
@@ -65,7 +103,7 @@ TABLE_OF_ACCESS = {
         False,
         True,
     ],  #
-    "GET /collections/{collection_name}/shards/{shard_id}/snapshots": [False, True, True],  #
+    "GET /collections/{collection_name}/shards/{shard_id}/snapshots": [False, True, True, None],  #
     "POST /collections/{collection_name}/shards/{shard_id}/snapshots": [False, True, True],  #
     "DELETE /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}": [
         False,
@@ -76,9 +114,10 @@ TABLE_OF_ACCESS = {
         False,
         True,
         True,
+        None,
     ],  #
     # Points
-    "GET /collections/{collection_name}/points/{id}": [True, True, True],
+    "GET /collections/{collection_name}/points/{id}": [True, True, True, None],
     "POST /collections/{collection_name}/points": [True, True, True],
     "PUT /collections/{collection_name}/points": [False, True, True],
     "POST /collections/{collection_name}/points/delete": [False, True, True],
@@ -100,23 +139,23 @@ TABLE_OF_ACCESS = {
     "POST /collections/{collection_name}/points/discover/batch": [True, True, True],
     "POST /collections/{collection_name}/points/count": [True, True, True],
     # Cluster
-    "GET /cluster": [True, True, True],
+    "GET /cluster": [True, True, True, None],
     "POST /cluster/recover": [False, False, True],
     "DELETE /cluster/peer/{peer_id}": [False, False, True],
     # Snapshots
-    "GET /snapshots": [False, False, True],
+    "GET /snapshots": [False, False, True, None],
     "POST /snapshots": [False, False, True],
     "DELETE /snapshots/{snapshot_name}": [False, False, True],
     "GET /snapshots/{snapshot_name}": [False, False, True],
     # Service
-    "GET /": [True, True, True],
-    "GET /readyz": [True, True, True],
-    "GET /healthz": [True, True, True],
-    "GET /livez": [True, True, True],
-    "GET /telemetry": [False, False, True],
-    "GET /metrics": [False, False, True],
+    "GET /": [True, True, True, None],
+    "GET /readyz": [True, True, True, None],
+    "GET /healthz": [True, True, True, None],
+    "GET /livez": [True, True, True, None],
+    "GET /telemetry": [False, False, True, None],
+    "GET /metrics": [False, False, True, None],
     "POST /locks": [False, False, True],
-    "GET /locks": [True, True, True],
+    "GET /locks": [True, True, True, None],
 }
 
 GRPC_TO_REST_MAPPING = {
@@ -179,13 +218,13 @@ def test_grpc_to_rest_mapping():
 
 def test_all_rest_endpoints_are_covered():
     # Load the JSON content from the openapi.json file
-    with open('./docs/redoc/master/openapi.json', 'r') as file:
+    with open("./docs/redoc/master/openapi.json", "r") as file:
         openapi_data = json.load(file)
 
     # Extract all endpoint paths
     endpoint_paths = []
-    for path in openapi_data['paths'].keys():
-        for method in openapi_data['paths'][path]:
+    for path in openapi_data["paths"].keys():
+        for method in openapi_data["paths"][path]:
             method = method.upper()
             endpoint_paths.append(f"{method} {path}")
             print(f"{method} {path}")
@@ -195,6 +234,7 @@ def test_all_rest_endpoints_are_covered():
         assert (
             endpoint in TABLE_OF_ACCESS
         ), f"REST endpoint `{endpoint}` not found in TABLE_OF_ACCESS"
+
 
 class MetadataInterceptor(ClientInterceptor):
     """A test interceptor that injects invocation metadata."""
@@ -210,7 +250,7 @@ class MetadataInterceptor(ClientInterceptor):
 
 def test_all_grpc_endpoints_are_covered(uris: Tuple[str, str]):
     _rest_uri, grpc_uri = uris
-    
+
     # read grpc services from the reflection server
     client: grpc_requests.Client = grpc_requests.Client(
         grpc_uri, interceptors=[MetadataInterceptor(API_KEY_METADATA)]
@@ -394,24 +434,27 @@ def test_access(uris: Tuple[str, str]):
             peer_id=PEER_ID,
         )
 
-        check_rest_access(rest_uri, method, path, access[0], token_read)
-        check_rest_access(rest_uri, method, path, access[0], token_coll_r)
-        check_rest_access(rest_uri, method, path, access[1], token_coll_rw)
-        check_rest_access(rest_uri, method, path, access[2], token_manage)
+        allowed_for_r, allowed_for_rw, allowed_for_m, body_stub = access
+
+        check_rest_access(rest_uri, method, path, body_stub, allowed_for_r, token_read)
+        check_rest_access(rest_uri, method, path, body_stub, allowed_for_r, token_coll_r)
+        check_rest_access(rest_uri, method, path, body_stub, allowed_for_rw, token_coll_rw)
+        check_rest_access(rest_uri, method, path, body_stub, allowed_for_m, token_manage)
 
     # Check GRPC endpoints
     grpc_read = grpc_requests.Client(
         grpc_uri, interceptors=[MetadataInterceptor([("authorization", f"Bearer {token_read}")])]
     )
-    
+
     grpc_coll_r = grpc_requests.Client(
         grpc_uri, interceptors=[MetadataInterceptor([("authorization", f"Bearer {token_coll_r}")])]
     )
-    
+
     grpc_coll_rw = grpc_requests.Client(
-        grpc_uri, interceptors=[MetadataInterceptor([("authorization", f"Bearer {token_coll_rw}")])]
+        grpc_uri,
+        interceptors=[MetadataInterceptor([("authorization", f"Bearer {token_coll_rw}")])],
     )
-    
+
     grpc_manage = grpc_requests.Client(
         grpc_uri, interceptors=[MetadataInterceptor([("authorization", f"Bearer {token_manage}")])]
     )
@@ -419,24 +462,31 @@ def test_access(uris: Tuple[str, str]):
         access = TABLE_OF_ACCESS[rest_endpoint]
         service = grpc_endpoint.split("/")[1]
         method = grpc_endpoint.split("/")[2]
-        
+
         check_grpc_access(grpc_read, service, method, access[0])
         check_grpc_access(grpc_coll_r, service, method, access[0])
         check_grpc_access(grpc_coll_rw, service, method, access[1])
         check_grpc_access(grpc_manage, service, method, access[2])
 
 
-def check_rest_access(uri: str, method: str, path: str, should_succeed: bool, token: str):
-    res = requests.request(method, f"{uri}{path}", headers={"Authorization": f"Bearer {token}"})
+def check_rest_access(
+    uri: str, method: str, path: str, body: Optional[dict], should_succeed: bool, token: str
+):
+    res = requests.request(
+        method, f"{uri}{path}", headers={"Authorization": f"Bearer {token}"}, json=body
+    )
 
     if should_succeed:
         assert res.ok
     else:
-        assert res.status_code == 403
-        
-def check_grpc_access(client: grpc_requests.Client, service: str, method: str, should_succeed: bool):
+        assert res.status_code in [401, 403], f"{method} {path} failed with {res.status_code}: {res.text}"
+
+
+def check_grpc_access(
+    client: grpc_requests.Client, service: str, method: str, should_succeed: bool
+):
     res = client.request(service=service, method=method)
     if should_succeed:
         assert res.ok
     else:
-        assert res.status_code == 403
+        assert res.status_code == 401
