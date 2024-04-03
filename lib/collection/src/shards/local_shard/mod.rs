@@ -883,6 +883,11 @@ impl LocalShard {
             }
         }
 
+        // If still green while optimization conditions are triggered, mark as grey
+        if self.update_handler.lock().await.has_pending_optimizations() {
+            status = CollectionStatus::Grey;
+        }
+
         CollectionInfoInternal {
             status,
             optimizer_status,
