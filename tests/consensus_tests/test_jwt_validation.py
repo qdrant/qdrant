@@ -42,10 +42,11 @@ class Access:
 
 
 class AccessStub:
-    def __init__(self, read, read_write, manage, rest_stub=None, grpc_stub=None):
+    def __init__(self, read, read_write, manage, rest_req=None, grpc_req=None, collection_name=COLL_NAME):
         self.access = Access(read, read_write, manage)
-        self.rest_stub = rest_stub
-        self.grpc_stub = grpc_stub
+        self.rest_req = rest_req
+        self.grpc_req = grpc_req
+        self.collection_name = collection_name
 
 
 def default_shard_key_config():
@@ -64,6 +65,11 @@ def custom_shard_key_config_grpc():
     return {
         "collection_name": COLL_NAME,
         "request": {"shard_key": { "keyword": random_str()}, "replication_factor": 3 },
+    }
+    
+def create_collection_req():
+    return {
+        "collection_name": random_str(),
     }
 
 deletable_shard_key = iter(DELETABLE_SHARD_KEYS)
@@ -90,7 +96,7 @@ custom_create_shard_key = AccessStub(False, False, True, custom_shard_key_config
 delete_shard_key = AccessStub(False, True, True, delete_shard_key_req, delete_shard_key_req_grpc)
 list_collections = AccessStub(True, True, True)
 get_collection = AccessStub(True, True, True, None, {"collection_name": COLL_NAME})
-create_collection = AccessStub(False, False, True, {})
+create_collection = AccessStub(False, False, True, {}, create_collection_req, collection_name=random_str)
 update_collection_params = AccessStub(False, False, True, {})
 delete_collection = AccessStub(False, False, True)
 create_alias = AccessStub(
@@ -230,7 +236,7 @@ TABLE_OF_ACCESS = {
     "POST /collections/{collection_name}/shards/delete": [delete_shard_key],
     "GET /collections": [list_collections],
     "GET /collections/{collection_name}": [get_collection],
-    # "PUT /collections/{collection_name}": [create_collection],
+    "PUT /collections/{collection_name}": [create_collection],
     # "PATCH /collections/{collection_name}": [update_collection_params],
     # "DELETE /collections/{collection_name}": [delete_collection],
     # "POST /collections/aliases": [create_alias, delete_alias, rename_alias],
@@ -324,7 +330,7 @@ TABLE_OF_ACCESS = {
 GRPC_TO_REST_MAPPING = {
     "/qdrant.Collections/Get": "GET /collections/{collection_name}",
     "/qdrant.Collections/List": "GET /collections",
-    # "/qdrant.Collections/Create": "PUT /collections/{collection_name}",
+    "/qdrant.Collections/Create": "PUT /collections/{collection_name}",
     # "/qdrant.Collections/Update": "PATCH /collections/{collection_name}",
     # "/qdrant.Collections/Delete": "DELETE /collections/{collection_name}",
     # "/qdrant.Collections/UpdateAliases": "POST /collections/aliases",
@@ -596,11 +602,13 @@ def test_access(uris: Tuple[str, str]):
         for stub in stubs:
 
             assert isinstance(stub, AccessStub)
+            
+            coll_name = stub.collection_name() if isfunction(stub.collection_name) else stub.collection_name
 
             uri = rest_uri
             method, path = endpoint.split(" ")
             path = path.format(
-                collection_name=COLL_NAME,
+                collection_name=coll_name,
                 shard_id=SHARD_ID,
                 snapshot_name=SNAPSHOT_NAME,
                 id=POINT_ID,
@@ -608,7 +616,7 @@ def test_access(uris: Tuple[str, str]):
                 peer_id=PEER_ID,
             )
             allowed_for = stub.access
-            body = stub.rest_stub
+            body = stub.rest_req
 
             check_rest_access(uri, method, path, body, allowed_for.read, token_read)
             check_rest_access(uri, method, path, body, allowed_for.read, token_coll_r)
@@ -642,7 +650,7 @@ def test_access(uris: Tuple[str, str]):
             method = grpc_endpoint.split("/")[2]
 
             allowed_for = stub.access
-            request = stub.grpc_stub
+            request = stub.grpc_req
 
             check_grpc_access(grpc_read, service, method, request, allowed_for.read)
             check_grpc_access(grpc_coll_r, service, method, request, allowed_for.read)
