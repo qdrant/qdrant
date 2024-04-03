@@ -23,7 +23,7 @@ use segment::types::{DateTimeWrapper, Distance, QuantizationConfig, ScoredPoint}
 use segment::vector_storage::query::context_query::{ContextPair, ContextQuery};
 use segment::vector_storage::query::discovery_query::DiscoveryQuery;
 use segment::vector_storage::query::reco_query::RecoQuery;
-use sparse::common::sparse_vector::validate_sparse_vector_impl;
+use sparse::common::sparse_vector::{validate_sparse_vector_impl, SparseVector};
 use tonic::Status;
 
 use super::consistency_params::ReadConsistency;
@@ -1449,7 +1449,22 @@ impl TryFrom<api::grpc::qdrant::VectorExample> for RecommendExample {
                     Ok(Self::PointId(id.try_into()?))
                 }
                 api::grpc::qdrant::vector_example::Example::Vector(vector) => {
-                    Ok(Self::Dense(vector.data))
+                    match vector.indices {
+                        Some(indices) => {
+                            validate_sparse_vector_impl(&indices.data, &vector.data).map_err(
+                                |_| {
+                                    Status::invalid_argument(
+                                        "Sparse indices does not match sparse vector conditions",
+                                    )
+                                },
+                            )?;
+                            Ok(Self::Sparse(SparseVector {
+                                indices: indices.data,
+                                values: vector.data,
+                            }))
+                        }
+                        None => Ok(Self::Dense(vector.data)),
+                    }
                 }
             })
     }
