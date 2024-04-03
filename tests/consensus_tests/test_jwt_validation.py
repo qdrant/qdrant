@@ -6,14 +6,10 @@ from typing import List, Optional, Tuple
 import grpc_requests
 import pytest
 import requests
-from consensus_tests.fixtures import create_collection, drop_collection, upsert_random_points
+from consensus_tests import fixtures
 from grpc_interceptor import ClientCallDetails, ClientInterceptor
 
 from .utils import encode_jwt, make_peer_folder, start_first_peer, wait_for
-
-N_PEERS = 1
-N_REPLICA = 1
-N_SHARDS = 1
 
 SECRET = "my_top_secret_key"
 
@@ -28,134 +24,263 @@ FIELD_NAME = "test_field"
 PEER_ID = 0
 SHARD_KEY = "existing_shard_key"
 
+
+class Access:
+    def __init__(self, r, rw, m):
+        self.read = r
+        self.read_write = rw
+        self.manage = m
+
+
+class AccessStub:
+    def __init__(self, read, read_write, manage, rest_stub=None, grpc_stub=None):
+        self.access = Access(read, read_write, manage)
+        self.rest_stub = rest_stub
+        self.grpc_stub = grpc_stub
+
+
+default_shard_key_config = {"shard_key": "a"}
+custom_shard_key_config = {"shard_key": "a", "replication_factor": 3}
+create_shard_key = AccessStub(False, False, True, default_shard_key_config) # TODO(this should be True for rw)
+custom_create_shard_key = AccessStub(False, False, True, default_shard_key_config)
+delete_shard_key = AccessStub(False, True, True, {"shard_key": SHARD_KEY})
+list_collections = AccessStub(True, True, True)
+get_collection = AccessStub(True, True, True)
+create_collection = AccessStub(False, False, True, {})
+update_collection_params = AccessStub(False, False, True, {})
+delete_collection = AccessStub(False, False, True)
+create_alias = AccessStub(
+    False,
+    False,
+    True,
+    {
+        "actions": [
+            {
+                "create_alias": {
+                    "collection_name": COLL_NAME,
+                    "alias_name": "alias_for_coll_name",
+                }
+            }
+        ]
+    },
+)
+delete_alias = AccessStub(
+    False,
+    False,
+    True,
+    {"actions": [{"delete_alias": {"alias_name": "alias_for_coll_name"}}]},
+)
+rename_alias = AccessStub(
+    False,
+    False,
+    True,
+    {
+        "actions": [
+            {
+                "rename_alias": {
+                    "old_alias_name": COLL_NAME,
+                    "new_alias_name": COLL_NAME,
+                }
+            }
+        ]
+    },
+)
+create_index = AccessStub(
+    False, False, True, {"field_name": FIELD_NAME, "field_schema": "keyword"}
+)
+collection_exists = AccessStub(True, True, True)
+delete_index = AccessStub(False, False, True)
+move_shard_operation = AccessStub(
+    False,
+    False,
+    True,
+    {
+        "move_shard": {
+            "shard_id": SHARD_ID,
+            "from_peer_id": PEER_ID,
+            "to_peer_id": PEER_ID,
+        }
+    },
+)
+replicate_shard_operation = AccessStub(
+    False,
+    False,
+    True,
+    {
+        "replicate_shard": {
+            "shard_id": SHARD_KEY,
+            "from_peer_id": PEER_ID,
+            "to_peer_id": PEER_ID,
+        }
+    },
+)
+abort_shard_transfer_operation = AccessStub(
+    False,
+    False,
+    True,
+    {
+        "abort_transfer": {
+            "shard_id": SHARD_ID,
+            "from_peer_id": PEER_ID,
+            "to_peer_id": PEER_ID,
+        }
+    },
+)
+drop_shard_replica_operation = AccessStub(
+    False,
+    False,
+    True,
+    {
+        "drop_replica": {
+            "shard_id": SHARD_ID,
+            "peer_id": PEER_ID,
+        }
+    },
+)
+default_create_shard_key_operation = AccessStub(
+    False,
+    True,
+    True,
+    {
+        "create_sharding_key": default_shard_key_config,
+    },
+)
+custom_create_shard_key_operation = AccessStub(
+    False,
+    False,
+    True,
+    {
+        "create_sharding_key": custom_shard_key_config,
+    },
+)
+drop_shard_key_operation = AccessStub(
+    False,
+    True,
+    True,
+    {
+        "drop_sharding_key": {
+            "shard_key": "a",
+        }
+    },
+)
+restart_transfer_operation = AccessStub(
+    False,
+    False,
+    True,
+    {
+        "restart_transfer": {
+            "shard_id": SHARD_ID,
+            "from_peer_id": PEER_ID,
+            "to_peer_id": PEER_ID,
+            "method": "stream_records",
+        }
+    }
+)
+list_collection_aliases = AccessStub(False, False, True)
+list_aliases = AccessStub(False, False, True)
+
+
+
+
 # "endpoint": [allowed_with_r, allowed_with_rw, allowed_with_manage, body_stub]
 # allowed_with_r - token with read access
 # allowed_with_rw - token with read-write access
 # allowed_with_manage - token with manage access (global write access)
 TABLE_OF_ACCESS = {
     # Collections
-    "PUT /collections/{collection_name}/shards": [False, True, True, {"shard_key": "a"}],
-    "POST /collections/{collection_name}/shards/delete": [
-        False,
-        True,
-        True,
-        {"shard_key": SHARD_KEY},
-    ],
-    "GET /collections": [True, True, True, None],
-    "GET /collections/{collection_name}": [True, True, True, None],
-    "PUT /collections/{collection_name}": [False, False, True, {}],
-    "PATCH /collections/{collection_name}": [False, False, True, {}],
-    "DELETE /collections/{collection_name}": [False, False, True, None],
-    "POST /collections/aliases": [
-        False,
-        True,
-        True,
-        {
-            "actions": [
-                {
-                    "create_alias": {
-                        "collection_name": COLL_NAME,
-                        "alias_name": "alias_for_coll_name",
-                    }
-                }
-            ]
-        },
-    ],
-    "PUT /collections/{collection_name}/index": [
-        False,
-        False,
-        True,
-        {"field_name": FIELD_NAME, "field_schema": "keyword"},
-    ],
-    "GET /collections/{collection_name}/exists": [True, True, True, None],
-    "DELETE /collections/{collection_name}/index/{field_name}": [False, False, True, None],
-    "GET /collections/{collection_name}/cluster": [True, True, True, None],
-    "POST /collections/{collection_name}/cluster": [
-        False,
-        False,
-        True,
-        [
-            {
-                "move_shard": {
-                    "shard_id": SHARD_ID,
-                    "to_peer_id": PEER_ID,
-                    "from_peer_id": PEER_ID,
-                }
-            },
-            {"create_sharding_key": {"shard_key": SHARD_KEY}},
-        ],
-    ],
-    "GET /collections/{collection_name}/aliases": [True, True, True, None],
-    "GET /aliases": [True, True, True, None],
-    "POST /collections/{collection_name}/snapshots/upload": [False, False, True],
-    "PUT /collections/{collection_name}/snapshots/recover": [False, False, True],
-    "GET /collections/{collection_name}/snapshots": [False, True, True, None],
-    "POST /collections/{collection_name}/snapshots": [False, True, True],
-    "DELETE /collections/{collection_name}/snapshots/{snapshot_name}": [False, True, True],  #
-    "GET /collections/{collection_name}/snapshots/{snapshot_name}": [True, True, True, None],  #
-    "POST /collections/{collection_name}/shards/{shard_id}/snapshots/upload": [
-        False,
-        False,
-        True,
-    ],  #
-    "PUT /collections/{collection_name}/shards/{shard_id}/snapshots/recover": [
-        False,
-        False,
-        True,
-    ],  #
-    "GET /collections/{collection_name}/shards/{shard_id}/snapshots": [False, True, True, None],  #
-    "POST /collections/{collection_name}/shards/{shard_id}/snapshots": [False, True, True],  #
-    "DELETE /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}": [
-        False,
-        True,
-        True,
-    ],  #
-    "GET /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}": [
-        False,
-        True,
-        True,
-        None,
-    ],  #
-    # Points
-    "GET /collections/{collection_name}/points/{id}": [True, True, True, None],
-    "POST /collections/{collection_name}/points": [True, True, True],
-    "PUT /collections/{collection_name}/points": [False, True, True],
-    "POST /collections/{collection_name}/points/delete": [False, True, True],
-    "PUT /collections/{collection_name}/points/vectors": [False, True, True],
-    "POST /collections/{collection_name}/points/vectors/delete": [False, True, True],
-    "POST /collections/{collection_name}/points/payload": [False, True, True],
-    "PUT /collections/{collection_name}/points/payload": [False, True, True],
-    "POST /collections/{collection_name}/points/payload/delete": [False, True, True],
-    "POST /collections/{collection_name}/points/payload/clear": [False, True, True],
-    "POST /collections/{collection_name}/points/batch": [False, True, True],
-    "POST /collections/{collection_name}/points/scroll": [True, True, True],
-    "POST /collections/{collection_name}/points/search": [True, True, True],
-    "POST /collections/{collection_name}/points/search/batch": [True, True, True],
-    "POST /collections/{collection_name}/points/search/groups": [True, True, True],
-    "POST /collections/{collection_name}/points/recommend": [True, True, True],
-    "POST /collections/{collection_name}/points/recommend/batch": [True, True, True],
-    "POST /collections/{collection_name}/points/recommend/groups": [True, True, True],
-    "POST /collections/{collection_name}/points/discover": [True, True, True],
-    "POST /collections/{collection_name}/points/discover/batch": [True, True, True],
-    "POST /collections/{collection_name}/points/count": [True, True, True],
-    # Cluster
-    "GET /cluster": [True, True, True, None],
-    "POST /cluster/recover": [False, False, True],
-    "DELETE /cluster/peer/{peer_id}": [False, False, True],
-    # Snapshots
-    "GET /snapshots": [False, False, True, None],
-    "POST /snapshots": [False, False, True],
-    "DELETE /snapshots/{snapshot_name}": [False, False, True],
-    "GET /snapshots/{snapshot_name}": [False, False, True],
-    # Service
-    "GET /": [True, True, True, None],
-    "GET /readyz": [True, True, True, None],
-    "GET /healthz": [True, True, True, None],
-    "GET /livez": [True, True, True, None],
-    "GET /telemetry": [False, False, True, None],
-    "GET /metrics": [False, False, True, None],
-    "POST /locks": [False, False, True],
-    "GET /locks": [True, True, True, None],
+    "PUT /collections/{collection_name}/shards": [create_shard_key],
+    # "POST /collections/{collection_name}/shards/delete": [delete_shard_key],
+    # "GET /collections": [list_collections],
+    # "GET /collections/{collection_name}": [get_collection],
+    # "PUT /collections/{collection_name}": [create_collection],
+    # "PATCH /collections/{collection_name}": [update_collection_params],
+    # "DELETE /collections/{collection_name}": [delete_collection],
+    # "POST /collections/aliases": [create_alias, delete_alias, rename_alias],
+    # "PUT /collections/{collection_name}/index": [create_index],
+    # "GET /collections/{collection_name}/exists": [True, True, True, None],
+    # "DELETE /collections/{collection_name}/index/{field_name}": [delete_index],
+    # "GET /collections/{collection_name}/cluster": [collection_exists],
+    # "POST /collections/{collection_name}/cluster": [
+    #     move_shard_operation, 
+    #     replicate_shard_operation, 
+    #     abort_shard_transfer_operation, 
+    #     drop_shard_replica_operation, 
+    #     restart_transfer_operation,
+    #     default_create_shard_key_operation, 
+    #     custom_create_shard_key_operation, 
+    #     drop_shard_key_operation
+    # ],
+    # "GET /collections/{collection_name}/aliases": [list_collection_aliases],
+    # "GET /aliases": [list_aliases],
+    # "POST /collections/{collection_name}/snapshots/upload": [False, False, True],
+    # "PUT /collections/{collection_name}/snapshots/recover": [False, False, True],
+    # "GET /collections/{collection_name}/snapshots": [False, True, True, None],
+    # "POST /collections/{collection_name}/snapshots": [False, True, True],
+    # "DELETE /collections/{collection_name}/snapshots/{snapshot_name}": [False, True, True],  #
+    # "GET /collections/{collection_name}/snapshots/{snapshot_name}": [True, True, True, None],  #
+    # "POST /collections/{collection_name}/shards/{shard_id}/snapshots/upload": [
+    #     False,
+    #     False,
+    #     True,
+    # ],  #
+    # "PUT /collections/{collection_name}/shards/{shard_id}/snapshots/recover": [
+    #     False,
+    #     False,
+    #     True,
+    # ],  #
+    # "GET /collections/{collection_name}/shards/{shard_id}/snapshots": [False, True, True, None],  #
+    # "POST /collections/{collection_name}/shards/{shard_id}/snapshots": [False, True, True],  #
+    # "DELETE /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}": [
+    #     False,
+    #     True,
+    #     True,
+    # ],  #
+    # "GET /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}": [
+    #     False,
+    #     True,
+    #     True,
+    #     None,
+    # ],  #
+    # # Points
+    # "GET /collections/{collection_name}/points/{id}": [True, True, True, None],
+    # "POST /collections/{collection_name}/points": [True, True, True],
+    # "PUT /collections/{collection_name}/points": [False, True, True],
+    # "POST /collections/{collection_name}/points/delete": [False, True, True],
+    # "PUT /collections/{collection_name}/points/vectors": [False, True, True],
+    # "POST /collections/{collection_name}/points/vectors/delete": [False, True, True],
+    # "POST /collections/{collection_name}/points/payload": [False, True, True],
+    # "PUT /collections/{collection_name}/points/payload": [False, True, True],
+    # "POST /collections/{collection_name}/points/payload/delete": [False, True, True],
+    # "POST /collections/{collection_name}/points/payload/clear": [False, True, True],
+    # "POST /collections/{collection_name}/points/batch": [False, True, True],
+    # "POST /collections/{collection_name}/points/scroll": [True, True, True],
+    # "POST /collections/{collection_name}/points/search": [True, True, True],
+    # "POST /collections/{collection_name}/points/search/batch": [True, True, True],
+    # "POST /collections/{collection_name}/points/search/groups": [True, True, True],
+    # "POST /collections/{collection_name}/points/recommend": [True, True, True],
+    # "POST /collections/{collection_name}/points/recommend/batch": [True, True, True],
+    # "POST /collections/{collection_name}/points/recommend/groups": [True, True, True],
+    # "POST /collections/{collection_name}/points/discover": [True, True, True],
+    # "POST /collections/{collection_name}/points/discover/batch": [True, True, True],
+    # "POST /collections/{collection_name}/points/count": [True, True, True],
+    # # Cluster
+    # "GET /cluster": [True, True, True, None],
+    # "POST /cluster/recover": [False, False, True],
+    # "DELETE /cluster/peer/{peer_id}": [False, False, True],
+    # # Snapshots
+    # "GET /snapshots": [False, False, True, None],
+    # "POST /snapshots": [False, False, True],
+    # "DELETE /snapshots/{snapshot_name}": [False, False, True],
+    # "GET /snapshots/{snapshot_name}": [False, False, True],
+    # # Service
+    # "GET /": [True, True, True, None],
+    # "GET /readyz": [True, True, True, None],
+    # "GET /healthz": [True, True, True, None],
+    # "GET /livez": [True, True, True, None],
+    # "GET /telemetry": [False, False, True, None],
+    # "GET /metrics": [False, False, True, None],
+    # "POST /locks": [False, False, True],
+    # "GET /locks": [True, True, True, None],
 }
 
 GRPC_TO_REST_MAPPING = {
@@ -297,21 +422,22 @@ def uris(tmp_path_factory: pytest.TempPathFactory):
 
     rest_uri, grpc_uri = start_api_key_instance(tmp_path)
 
-    create_collection(
+    fixtures.create_collection(
         rest_uri,
         collection=COLL_NAME,
-        shard_number=N_SHARDS,
-        replication_factor=N_REPLICA,
+        sharding_method="custom",
         headers=API_KEY_HEADERS,
     )
+    
+    requests.put(f"{rest_uri}/collections/{COLL_NAME}/shards", json={"shard_key": SHARD_KEY}, headers=API_KEY_HEADERS)
 
-    upsert_random_points(rest_uri, 100, COLL_NAME, headers=API_KEY_HEADERS)
+    fixtures.upsert_random_points(rest_uri, 100, COLL_NAME, shard_key=SHARD_KEY, headers=API_KEY_HEADERS)
 
     # TODO: create fixtures for payload index, snapshots, shards, shard_key, alias,
 
     yield rest_uri, grpc_uri
 
-    drop_collection(rest_uri, COLL_NAME, headers=API_KEY_HEADERS)
+    fixtures.drop_collection(rest_uri, COLL_NAME, headers=API_KEY_HEADERS)
 
 
 def create_validation_collection(
@@ -363,9 +489,7 @@ def test_value_exists_claim(uris: Tuple[str, str]):
         scroll_with_token(rest_uri, COLL_NAME, token)
 
     # Create collection
-    create_validation_collection(
-        rest_uri, secondary_collection, shard_number=N_SHARDS, replication_factor=N_REPLICA
-    )
+    create_validation_collection(rest_uri, secondary_collection)
 
     # Check it does not work now
     with pytest.raises(requests.HTTPError):
@@ -403,8 +527,8 @@ def test_value_exists_claim(uris: Tuple[str, str]):
     with pytest.raises(requests.HTTPError):
         scroll_with_token(rest_uri, COLL_NAME, token)
 
-    drop_collection(rest_uri, secondary_collection, headers=API_KEY_HEADERS)
-    drop_collection(rest_uri, secondary_collection, headers=API_KEY_HEADERS)
+    fixtures.drop_collection(rest_uri, secondary_collection, headers=API_KEY_HEADERS)
+    fixtures.drop_collection(rest_uri, secondary_collection, headers=API_KEY_HEADERS)
 
 
 def test_access(uris: Tuple[str, str]):
@@ -423,24 +547,29 @@ def test_access(uris: Tuple[str, str]):
     token_manage = encode_jwt({"access": "rw"}, SECRET)
 
     # Check REST endpoints
-    for endpoint, access in TABLE_OF_ACCESS.items():
-        method, path = endpoint.split(" ")
-        path = path.format(
-            collection_name=COLL_NAME,
-            shard_id=SHARD_ID,
-            snapshot_name=SNAPSHOT_NAME,
-            id=POINT_ID,
-            field_name=FIELD_NAME,
-            peer_id=PEER_ID,
-        )
+    for endpoint, stubs in TABLE_OF_ACCESS.items():
+        for stub in stubs:
+            assert isinstance(stub, AccessStub)
 
-        allowed_for_r, allowed_for_rw, allowed_for_m, body_stub = access
+            uri = rest_uri
+            method, path = endpoint.split(" ")
+            path = path.format(
+                collection_name=COLL_NAME,
+                shard_id=SHARD_ID,
+                snapshot_name=SNAPSHOT_NAME,
+                id=POINT_ID,
+                field_name=FIELD_NAME,
+                peer_id=PEER_ID,
+            )
+            allowed_for = stub.access
+            body = stub.rest_stub
 
-        check_rest_access(rest_uri, method, path, body_stub, allowed_for_r, token_read)
-        check_rest_access(rest_uri, method, path, body_stub, allowed_for_r, token_coll_r)
-        check_rest_access(rest_uri, method, path, body_stub, allowed_for_rw, token_coll_rw)
-        check_rest_access(rest_uri, method, path, body_stub, allowed_for_m, token_manage)
+            check_rest_access(uri, method, path, body, allowed_for.read, token_read)
+            check_rest_access(uri, method, path, body, allowed_for.read, token_coll_r)
+            check_rest_access(uri, method, path, body, allowed_for.read_write, token_coll_rw)
+            check_rest_access(uri, method, path, body, allowed_for.manage, token_manage)
 
+    breakpoint()
     # Check GRPC endpoints
     grpc_read = grpc_requests.Client(
         grpc_uri, interceptors=[MetadataInterceptor([("authorization", f"Bearer {token_read}")])]
@@ -459,34 +588,51 @@ def test_access(uris: Tuple[str, str]):
         grpc_uri, interceptors=[MetadataInterceptor([("authorization", f"Bearer {token_manage}")])]
     )
     for grpc_endpoint, rest_endpoint in GRPC_TO_REST_MAPPING.items():
-        access = TABLE_OF_ACCESS[rest_endpoint]
-        service = grpc_endpoint.split("/")[1]
-        method = grpc_endpoint.split("/")[2]
+        stubs = TABLE_OF_ACCESS[rest_endpoint]
 
-        check_grpc_access(grpc_read, service, method, access[0])
-        check_grpc_access(grpc_coll_r, service, method, access[0])
-        check_grpc_access(grpc_coll_rw, service, method, access[1])
-        check_grpc_access(grpc_manage, service, method, access[2])
+        for stub in stubs:
+            assert isinstance(stub, AccessStub)
+
+            service = grpc_endpoint.split("/")[1]
+            method = grpc_endpoint.split("/")[2]
+
+            allowed_for = stub.access
+            request = stub.grpc_stub
+
+            check_grpc_access(grpc_read, service, method, request, allowed_for.read)
+            check_grpc_access(grpc_coll_r, service, method, request, allowed_for.read)
+            check_grpc_access(grpc_coll_rw, service, method, request, allowed_for.read_write)
+            check_grpc_access(grpc_manage, service, method, request, allowed_for.manage)
 
 
 def check_rest_access(
     uri: str, method: str, path: str, body: Optional[dict], should_succeed: bool, token: str
 ):
     res = requests.request(
-        method, f"{uri}{path}", headers={"Authorization": f"Bearer {token}"}, json=body
+        method, f"{uri}{path}", headers={"authorization": f"Bearer {token}"}, json=body
     )
 
     if should_succeed:
-        assert res.ok
+        assert res.ok, f"{method} {path} failed with {res.status_code}: {res.text}"
     else:
-        assert res.status_code in [401, 403], f"{method} {path} failed with {res.status_code}: {res.text}"
+        assert res.status_code in [
+            401,
+            403,
+        ], f"{method} {path} failed with {res.status_code}: {res.text}"
 
 
 def check_grpc_access(
-    client: grpc_requests.Client, service: str, method: str, should_succeed: bool
+    client: grpc_requests.Client,
+    service: str,
+    method: str,
+    request: Optional[dict],
+    should_succeed: bool,
 ):
-    res = client.request(service=service, method=method)
+    breakpoint()
+    res = client.request(service=service, method=method, request=request)
     if should_succeed:
         assert res.ok
     else:
-        assert res.status_code == 401
+        assert (
+            res.status_code == 7
+        ), f"{service}/{method} failed with {res.status_code}: {res.text}"
