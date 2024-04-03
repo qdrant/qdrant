@@ -884,7 +884,9 @@ impl LocalShard {
         }
 
         // If still green while optimization conditions are triggered, mark as grey
-        if self.update_handler.lock().await.has_pending_optimizations() {
+        if status == CollectionStatus::Green
+            && self.update_handler.lock().await.has_pending_optimizations()
+        {
             // TODO(1.10): enable grey status in Qdrant 1.10+
             // status = CollectionStatus::Grey;
             if optimizer_status == OptimizersStatus::Ok {
