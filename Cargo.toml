@@ -163,6 +163,9 @@ members = [
 
 [profile.release]
 lto = "fat"
+# Emit only the line info tables, not full debug info, in release builds. This
+# tends to be the right trade-off between debuggability and size.
+debug = 1
 
 # Inherit from release, because we are not rebuilding often,
 # and we don't want the huge binary sizes from debug builds.
