@@ -130,6 +130,7 @@ pub fn build_segment_3(path: &Path) -> Segment {
                         storage_type: VectorStorageType::Memory,
                         index: Indexes::Plain {},
                         quantization_config: None,
+                        multivec: None,
                     },
                 ),
                 (
@@ -140,6 +141,7 @@ pub fn build_segment_3(path: &Path) -> Segment {
                         storage_type: VectorStorageType::Memory,
                         index: Indexes::Plain {},
                         quantization_config: None,
+                        multivec: None,
                     },
                 ),
                 (
@@ -150,6 +152,7 @@ pub fn build_segment_3(path: &Path) -> Segment {
                         storage_type: VectorStorageType::Memory,
                         index: Indexes::Plain {},
                         quantization_config: None,
+                        multivec: None,
                     },
                 ),
             ]),

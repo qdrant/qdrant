@@ -771,6 +771,9 @@ pub struct VectorDataConfig {
     pub index: Indexes,
     /// Vector specific quantization config that overrides collection config
     pub quantization_config: Option<QuantizationConfig>,
+    /// Enable multiple vectors per point
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub multivec: Option<bool>,
 }
 
 impl VectorDataConfig {

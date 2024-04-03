@@ -47,6 +47,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
                 storage_type: VectorStorageType::Memory,
                 index: Indexes::Plain {},
                 quantization_config: None,
+                multivec: None,
             },
         )]),
         sparse_vector_data: Default::default(),
