@@ -743,7 +743,7 @@ impl<'s> SegmentHolder {
             // Replicate field indexes a the second time, because optimized segments could have
             // been changed. The probability is small, though, so we can afford this operation
             // under the full collection write lock
-            let op_num = 0;
+            let op_num = proxy.version() + 1;
             if let Err(err) = proxy.replicate_field_indexes(op_num) {
                 log::error!("Failed to replicate proxy segment field indexes, ignoring: {err}");
             }
