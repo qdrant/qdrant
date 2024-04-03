@@ -269,15 +269,6 @@ impl ShardReplicaSet {
                              {err}"
                         );
 
-                        match err {
-                            CollectionError::ServiceError { ref backtrace, .. } => {
-                                if let Some(bt) = backtrace {
-                                    log::error!("Backtrace: {bt}");
-                                }
-                            }
-                            _ => (),
-                        }
-
                         Shard::Dummy(DummyShard::new(format!(
                             "Failed to load local shard {shard_path:?}: {err}"
                         )))
