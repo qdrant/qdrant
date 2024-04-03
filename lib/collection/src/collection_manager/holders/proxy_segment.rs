@@ -179,28 +179,34 @@ impl ProxySegment {
         // Propagate deleted points
         {
             let deleted_points = self.deleted_points.upgradable_read();
-            for point_id in deleted_points.iter() {
-                wrapped_segment.delete_point(op_num, *point_id)?;
+            if !deleted_points.is_empty() {
+                for point_id in deleted_points.iter() {
+                    wrapped_segment.delete_point(op_num, *point_id)?;
+                }
+                RwLockUpgradableReadGuard::upgrade(deleted_points).clear();
             }
-            RwLockUpgradableReadGuard::upgrade(deleted_points).clear();
         }
 
         // Propagate deleted indexes
         {
             let deleted_indexes = self.deleted_indexes.upgradable_read();
-            for key in deleted_indexes.iter() {
-                wrapped_segment.delete_field_index(op_num, key)?;
+            if !deleted_indexes.is_empty() {
+                for key in deleted_indexes.iter() {
+                    wrapped_segment.delete_field_index(op_num, key)?;
+                }
+                RwLockUpgradableReadGuard::upgrade(deleted_indexes).clear();
             }
-            RwLockUpgradableReadGuard::upgrade(deleted_indexes).clear();
         }
 
         // Propagate created indexes
         {
             let created_indexes = self.created_indexes.upgradable_read();
-            for (key, field_schema) in created_indexes.iter() {
-                wrapped_segment.create_field_index(op_num, key, Some(field_schema))?;
+            if !created_indexes.is_empty() {
+                for (key, field_schema) in created_indexes.iter() {
+                    wrapped_segment.create_field_index(op_num, key, Some(field_schema))?;
+                }
+                RwLockUpgradableReadGuard::upgrade(created_indexes).clear();
             }
-            RwLockUpgradableReadGuard::upgrade(created_indexes).clear();
         }
 
         Ok(())
