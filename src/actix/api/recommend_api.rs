@@ -12,7 +12,7 @@ use itertools::Itertools;
 use segment::types::ScoredPoint;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
-use storage::rbac::access::Access;
+use storage::rbac::Access;
 
 use super::read_params::ReadParams;
 use super::CollectionPath;

@@ -13,7 +13,7 @@ use tokio::task::JoinHandle;
 
 use crate::content_manager::toc::FULL_SNAPSHOT_FILE_NAME;
 use crate::dispatcher::Dispatcher;
-use crate::rbac::access::{Access, CollectionMultipass};
+use crate::rbac::{Access, AccessRequrements, CollectionMultipass};
 use crate::{StorageError, TableOfContent};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -59,10 +59,10 @@ pub async fn do_delete_full_snapshot(
     access: Access,
     snapshot_name: &str,
 ) -> Result<JoinHandle<Result<bool, StorageError>>, StorageError> {
-    access.check_manage_rights()?;
-    let dispatcher = dispatcher.clone();
-    let snapshot_manager = dispatcher.clone().toc().get_snapshots_storage_manager();
-    let snapshot_dir = get_full_snapshot_path(dispatcher.toc(), snapshot_name).await?;
+    access.check_global_access(AccessRequrements::new().manage())?;
+    let toc = dispatcher.toc();
+    let snapshot_manager = toc.get_snapshots_storage_manager();
+    let snapshot_dir = get_full_snapshot_path(toc, snapshot_name).await?;
     log::info!("Deleting full storage snapshot {:?}", snapshot_dir);
     Ok(tokio::spawn(async move {
         Ok(snapshot_manager.delete_snapshot(&snapshot_dir).await?)
@@ -75,11 +75,13 @@ pub async fn do_delete_collection_snapshot(
     collection_name: &str,
     snapshot_name: &str,
 ) -> Result<JoinHandle<Result<bool, StorageError>>, StorageError> {
-    let collection_pass = access.check_whole_collection_rights(collection_name)?;
+    let collection_pass = access
+        .check_collection_access(collection_name, AccessRequrements::new().write().whole())?;
+    let toc = dispatcher.toc();
     let snapshot_name = snapshot_name.to_string();
-    let collection = dispatcher.get_collection_by_pass(&collection_pass).await?;
+    let collection = toc.get_collection_by_pass(&collection_pass).await?;
     let file_name = collection.get_snapshot_path(&snapshot_name).await?;
-    let snapshot_manager = dispatcher.clone().toc().get_snapshots_storage_manager();
+    let snapshot_manager = toc.get_snapshots_storage_manager();
 
     log::info!("Deleting collection snapshot {:?}", file_name);
     Ok(tokio::spawn(async move {
@@ -91,7 +93,7 @@ pub async fn do_list_full_snapshots(
     toc: &TableOfContent,
     access: Access,
 ) -> Result<Vec<SnapshotDescription>, StorageError> {
-    access.check_manage_rights()?;
+    access.check_global_access(AccessRequrements::new())?;
     let snapshots_manager = toc.get_snapshots_storage_manager();
     let snapshots_path = Path::new(toc.snapshots_path());
     Ok(snapshots_manager.list_snapshots(snapshots_path).await?)
@@ -101,7 +103,7 @@ pub fn do_create_full_snapshot(
     dispatcher: &Dispatcher,
     access: Access,
 ) -> Result<JoinHandle<Result<SnapshotDescription, StorageError>>, StorageError> {
-    let multipass = access.check_manage_rights()?;
+    let multipass = access.check_global_access(AccessRequrements::new().manage())?;
     let dispatcher = dispatcher.clone();
     Ok(tokio::spawn(async move {
         _do_create_full_snapshot(&dispatcher, multipass).await
@@ -112,14 +114,14 @@ async fn _do_create_full_snapshot(
     dispatcher: &Dispatcher,
     multipass: CollectionMultipass,
 ) -> Result<SnapshotDescription, StorageError> {
-    let dispatcher = dispatcher.clone();
+    let toc = dispatcher.toc();
 
-    let snapshot_dir = Path::new(dispatcher.snapshots_path()).to_path_buf();
+    let snapshot_dir = Path::new(toc.snapshots_path()).to_path_buf();
 
-    let all_collections = dispatcher.all_collections().await;
+    let all_collections = toc.all_collections().await;
     let mut created_snapshots: Vec<(&str, SnapshotDescription)> = vec![];
     for collection_name in &all_collections {
-        let snapshot_details = dispatcher
+        let snapshot_details = toc
             .create_snapshot(&multipass.issue_pass(collection_name))
             .await?;
         created_snapshots.push((collection_name, snapshot_details));
@@ -137,7 +139,7 @@ async fn _do_create_full_snapshot(
 
     let mut alias_mapping: HashMap<String, String> = Default::default();
     for collection_name in &all_collections {
-        for alias in dispatcher.collection_aliases(collection_name).await? {
+        for alias in toc.collection_aliases(collection_name).await? {
             alias_mapping.insert(alias.to_string(), collection_name.to_string());
         }
     }
@@ -161,7 +163,7 @@ async fn _do_create_full_snapshot(
 
     let full_snapshot_path = snapshot_dir.join(&snapshot_name);
 
-    let temp_full_snapshot_path = dispatcher
+    let temp_full_snapshot_path = toc
         .optional_temp_or_storage_temp_path()?
         .join(&snapshot_name);
 
@@ -173,8 +175,8 @@ async fn _do_create_full_snapshot(
     // (tempfile_with_snapshot, snapshot_name)
     let mut temp_collection_snapshots = vec![];
 
-    let temp_storage_path = dispatcher.optional_temp_or_storage_temp_path()?;
-    let snapshot_manager = dispatcher.toc().get_snapshots_storage_manager();
+    let temp_storage_path = toc.optional_temp_or_storage_temp_path()?;
+    let snapshot_manager = toc.get_snapshots_storage_manager();
 
     for (collection_name, snapshot_details) in &created_snapshots {
         let snapshot_path = snapshot_dir

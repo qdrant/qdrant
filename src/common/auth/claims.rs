@@ -1,17 +1,15 @@
 use segment::json_path::JsonPath;
 use segment::types::{Condition, FieldCondition, Filter, Match, ValueVariants};
 use serde::{Deserialize, Serialize};
-use storage::rbac::access::Access;
+use storage::rbac::Access;
+use validator::{Validate, ValidationErrors};
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct Claims {
     /// Expiration time (seconds since UNIX epoch)
     pub exp: Option<u64>,
 
-    /// Write access, default is false. Read access is always enabled with a valid token.
-    pub w: Option<bool>,
-
-    #[serde(flatten)]
+    #[serde(default = "default_access")]
     pub access: Access,
 
     /// Validate this token by looking for a value inside a collection.
@@ -39,6 +37,10 @@ pub struct ValueExists {
     matches: Vec<KeyValuePair>,
 }
 
+fn default_access() -> Access {
+    Access::full("Give full access when the access field is not present")
+}
+
 impl ValueExists {
     pub fn get_collection(&self) -> &str {
         &self.collection
@@ -57,5 +59,11 @@ impl ValueExists {
             must: Some(conditions),
             must_not: None,
         }
+    }
+}
+
+impl Validate for Claims {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        ValidationErrors::merge_all(Ok(()), "access", self.access.validate())
     }
 }

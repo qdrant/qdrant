@@ -24,7 +24,7 @@ use storage::content_manager::snapshots::{
 };
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::access::Access;
+use storage::rbac::{Access, AccessRequrements};
 use uuid::Uuid;
 use validator::Validate;
 
@@ -69,7 +69,7 @@ pub async fn do_get_full_snapshot(
     access: Access,
     snapshot_name: &str,
 ) -> Result<NamedFile, HttpError> {
-    access.check_manage_rights()?;
+    access.check_global_access(AccessRequrements::new())?;
     let file_name = get_full_snapshot_path(toc, snapshot_name).await?;
     Ok(NamedFile::open(file_name)?)
 }
@@ -123,7 +123,8 @@ pub async fn do_get_snapshot(
     collection_name: &str,
     snapshot_name: &str,
 ) -> Result<NamedFile, HttpError> {
-    let collection_pass = access.check_whole_collection_rights(collection_name)?;
+    let collection_pass =
+        access.check_collection_access(collection_name, AccessRequrements::new().whole())?;
     let collection = toc.get_collection_by_pass(&collection_pass).await?;
     let file_name = collection.get_snapshot_path(snapshot_name).await?;
     Ok(NamedFile::open(file_name)?)
@@ -151,7 +152,7 @@ async fn create_snapshot(
 ) -> impl Responder {
     let collection_name = path.into_inner();
     helpers::time_or_accept_with_handle(params.wait.unwrap_or(true), async move {
-        do_create_snapshot(dispatcher.get_ref(), access, &collection_name)
+        do_create_snapshot(dispatcher.toc().clone(), access, &collection_name)
     })
     .await
 }
@@ -168,7 +169,7 @@ async fn upload_snapshot(
     helpers::time_or_accept_with_handle(params.wait.unwrap_or(true), async move {
         let snapshot = form.snapshot;
 
-        access.check_manage_rights()?;
+        access.check_global_access(AccessRequrements::new().manage())?;
 
         if let Some(checksum) = &params.checksum {
             let snapshot_checksum = hash_file(snapshot.file.path()).await?;
@@ -178,7 +179,7 @@ async fn upload_snapshot(
         }
 
         let snapshot_location =
-            do_save_uploaded_snapshot(dispatcher.get_ref(), &collection.name, snapshot).await?;
+            do_save_uploaded_snapshot(dispatcher.toc(), &collection.name, snapshot).await?;
 
         let http_client = http_client.client()?;
 
@@ -192,7 +193,7 @@ async fn upload_snapshot(
             dispatcher.get_ref(),
             &collection.name,
             snapshot_recover,
-            Access::full(),
+            Access::full("Already checked"),
             http_client,
         )
     })
@@ -378,7 +379,9 @@ async fn upload_shard_snapshot(
 
     let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
         // TODO: Run this check before the multipart blob is uploaded
-        let multipass = access.check_manage_rights()?;
+        let collection_pass = access
+            .check_global_access(AccessRequrements::new().manage())?
+            .issue_pass(&collection);
 
         if let Some(checksum) = checksum {
             let snapshot_checksum = hash_file(form.snapshot.file.path()).await?;
@@ -388,9 +391,7 @@ async fn upload_shard_snapshot(
         }
 
         let future = async {
-            let collection = toc
-                .get_collection_by_pass(&multipass.issue_pass(&collection))
-                .await?;
+            let collection = toc.get_collection_by_pass(&collection_pass).await?;
             collection.assert_shard_exists(shard).await?;
 
             Result::<_, StorageError>::Ok(collection)
@@ -423,7 +424,8 @@ async fn download_shard_snapshot(
     ActixAccess(access): ActixAccess,
 ) -> Result<impl Responder, HttpError> {
     let (collection, shard, snapshot) = path.into_inner();
-    let collection_pass = access.check_whole_collection_rights(&collection)?;
+    let collection_pass =
+        access.check_collection_access(&collection, AccessRequrements::new().whole())?;
     let collection = toc.get_collection_by_pass(&collection_pass).await?;
     let snapshot_path = collection.get_shard_snapshot_path(shard, &snapshot).await?;
 

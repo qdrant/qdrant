@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use futures::future::BoxFuture;
-use storage::rbac::access::Access;
+use storage::rbac::Access;
 use tonic::body::BoxBody;
 use tonic::Status;
 use tower::{Layer, Service};
@@ -45,13 +45,11 @@ async fn check(auth_keys: Arc<AuthKeys>, mut req: Request) -> Result<Request, St
         .await
         .map_err(Status::permission_denied)?;
 
-    if let Some(access) = access {
-        let _previous = req.extensions_mut().insert::<Access>(access);
-        debug_assert!(
-            _previous.is_none(),
-            "Previous access object should not exist in the request"
-        );
-    }
+    let _previous = req.extensions_mut().insert::<Access>(access);
+    debug_assert!(
+        _previous.is_none(),
+        "Previous access object should not exist in the request"
+    );
 
     Ok(req)
 }
@@ -106,9 +104,9 @@ impl<S> Layer<S> for AuthLayer {
 }
 
 pub fn extract_access<R>(req: &mut tonic::Request<R>) -> Access {
-    req.extensions_mut()
-        .remove::<Access>()
-        .unwrap_or(Access::full())
+    req.extensions_mut().remove::<Access>().unwrap_or_else(|| {
+        Access::full("All requests have full by default access when API key is not configured")
+    })
 }
 
 fn is_read_only<R>(req: &tonic::codegen::http::Request<R>) -> bool {

@@ -67,7 +67,7 @@ impl Collections for CollectionsService {
     ) -> Result<Response<GetCollectionInfoResponse>, Status> {
         validate(request.get_ref())?;
         let claims = extract_access(&mut request);
-        get(self.dispatcher.as_ref(), request.into_inner(), claims, None).await
+        get(self.dispatcher.toc(), request.into_inner(), claims, None).await
     }
 
     async fn list(
@@ -77,7 +77,7 @@ impl Collections for CollectionsService {
         validate(request.get_ref())?;
         let timing = Instant::now();
         let claims = extract_access(&mut request);
-        let result = do_list_collections(&self.dispatcher, claims).await;
+        let result = do_list_collections(self.dispatcher.toc(), claims).await;
 
         let response = ListCollectionsResponse::from((timing, result));
         Ok(Response::new(response))
