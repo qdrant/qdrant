@@ -97,7 +97,7 @@ delete_shard_key = AccessStub(False, True, True, delete_shard_key_req, delete_sh
 list_collections = AccessStub(True, True, True)
 get_collection = AccessStub(True, True, True, None, {"collection_name": COLL_NAME})
 create_collection = AccessStub(False, False, True, {}, create_collection_req, collection_name=random_str)
-update_collection_params = AccessStub(False, False, True, {})
+update_collection_params = AccessStub(False, False, True, {}, {"collection_name": COLL_NAME})
 delete_collection = AccessStub(False, False, True)
 create_alias = AccessStub(
     False,
@@ -237,7 +237,7 @@ TABLE_OF_ACCESS = {
     "GET /collections": [list_collections],
     "GET /collections/{collection_name}": [get_collection],
     "PUT /collections/{collection_name}": [create_collection],
-    # "PATCH /collections/{collection_name}": [update_collection_params],
+    "PATCH /collections/{collection_name}": [update_collection_params],
     # "DELETE /collections/{collection_name}": [delete_collection],
     # "POST /collections/aliases": [create_alias, delete_alias, rename_alias],
     # "PUT /collections/{collection_name}/index": [create_index],
@@ -331,7 +331,7 @@ GRPC_TO_REST_MAPPING = {
     "/qdrant.Collections/Get": "GET /collections/{collection_name}",
     "/qdrant.Collections/List": "GET /collections",
     "/qdrant.Collections/Create": "PUT /collections/{collection_name}",
-    # "/qdrant.Collections/Update": "PATCH /collections/{collection_name}",
+    "/qdrant.Collections/Update": "PATCH /collections/{collection_name}",
     # "/qdrant.Collections/Delete": "DELETE /collections/{collection_name}",
     # "/qdrant.Collections/UpdateAliases": "POST /collections/aliases",
     # "/qdrant.Collections/ListCollectionAliases": "GET /collections/{collection_name}/aliases",
