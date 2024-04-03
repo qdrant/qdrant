@@ -640,7 +640,7 @@ impl<'s> SegmentHolder {
                 }
                 // All segments to snapshot should be proxy, warn if this is not the case
                 LockedSegment::Original(segment) => {
-                    log::warn!("Reached non-proxy segment while applying function to proxies, this should not happen, ignoring");
+                    debug_assert!(false, "Reached non-proxy segment while applying function to proxies, this should not happen, ignoring");
                     segment.clone()
                 }
             };
@@ -740,10 +740,10 @@ impl<'s> SegmentHolder {
         let mut proxies = Vec::with_capacity(new_proxies.len());
         let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
         for (segment_id, mut proxy) in new_proxies {
-            // Replicate field indexes a the second time, because optimized segments could have
+            // Replicate field indexes the second time, because optimized segments could have
             // been changed. The probability is small, though, so we can afford this operation
             // under the full collection write lock
-            let op_num = proxy.version() + 1;
+            let op_num = proxy.version();
             if let Err(err) = proxy.replicate_field_indexes(op_num) {
                 log::error!("Failed to replicate proxy segment field indexes, ignoring: {err}");
             }

@@ -172,7 +172,7 @@ impl ProxySegment {
     pub(super) fn propagate_to_wrapped(&self) -> OperationResult<()> {
         let wrapped_segment = self.wrapped_segment.get();
         let mut wrapped_segment = wrapped_segment.write();
-        let op_num = wrapped_segment.version() + 1;
+        let op_num = wrapped_segment.version();
 
         // Propagate deleted points
         {
