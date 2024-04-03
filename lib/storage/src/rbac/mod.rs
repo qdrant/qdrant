@@ -85,7 +85,7 @@ impl Access {
     ) -> Result<CollectionMultipass, StorageError> {
         match self {
             Access::Global(mode) => mode.meets_requirements(requirements)?,
-            _ => return Err(StorageError::unauthorized("Global access is not allowed")),
+            _ => return Err(StorageError::unauthorized("Global access is required")),
         }
         Ok(CollectionMultipass)
     }
@@ -121,7 +121,9 @@ impl CollectionAccessList {
                     .any(|name| name == collection_name)
             })
             .ok_or_else(|| {
-                StorageError::unauthorized(format!("Collection {collection_name} is not allowed"))
+                StorageError::unauthorized(format!(
+                    "Access to collection {collection_name} is required"
+                ))
             })?;
         Ok(CollectionAccessView {
             collection: collection_name,
@@ -155,7 +157,7 @@ impl<'a> CollectionAccessView<'a> {
             match self.access {
                 CollectionAccessMode::Read => {
                     return Err(StorageError::unauthorized(format!(
-                        "Only read-only access is allowed for collection {}",
+                        "Write access to collection {} is required",
                         self.collection,
                     )))
                 }
@@ -163,10 +165,11 @@ impl<'a> CollectionAccessView<'a> {
             }
         }
         if manage {
-            return Err(StorageError::unauthorized(format!(
-                "Manage access is not allowed for collection {}",
-                self.collection,
-            )));
+            // Don't specify collection name since the manage access could be enabled globally, and
+            // not per collection.
+            return Err(StorageError::unauthorized(
+                "Manage access for this operation is required",
+            ));
         }
         if whole && self.payload.is_some() {
             return incompatible_with_payload_constraint(self.collection);
@@ -251,7 +254,7 @@ impl GlobalAccessMode {
             match self {
                 GlobalAccessMode::Read => {
                     return Err(StorageError::unauthorized(
-                        "Only read-only access is allowed",
+                        "Global manage access is required",
                     ))
                 }
                 GlobalAccessMode::Manage => (),
