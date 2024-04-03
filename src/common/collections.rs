@@ -55,8 +55,7 @@ pub async fn do_get_collection(
     name: &str,
     shard_selection: Option<ShardId>,
 ) -> Result<CollectionInfo, StorageError> {
-    let collection_pass =
-        access.check_collection_access(name, true, CollectionAccessMode::Read)?;
+    let collection_pass = access.check_collection_access(name, true, CollectionAccessMode::Read)?;
 
     let collection = toc.get_collection_by_pass(&collection_pass).await?;
 

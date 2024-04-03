@@ -274,7 +274,7 @@ impl ShardReplicaSet {
                                 if let Some(bt) = backtrace {
                                     log::error!("Backtrace: {bt}");
                                 }
-                            },
+                            }
                             _ => (),
                         }
 
