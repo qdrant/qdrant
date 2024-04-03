@@ -750,8 +750,10 @@ impl<'s> SegmentHolder {
 
             let (segment_id, segments) = write_segments.swap(proxy, &[segment_id]);
             debug_assert_eq!(segments.len(), 1);
-            // TODO: do not unwrap here?
-            let locked_proxy_segment = write_segments.get(segment_id).cloned().unwrap();
+            let locked_proxy_segment = write_segments
+                .get(segment_id)
+                .cloned()
+                .expect("failed to get segment from segment holder we just swapped in");
             proxies.push((segment_id, locked_proxy_segment));
         }
         let segments_lock = RwLockWriteGuard::downgrade_to_upgradable(write_segments);
