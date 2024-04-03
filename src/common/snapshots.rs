@@ -12,7 +12,7 @@ use collection::shards::shard::ShardId;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::snapshots;
 use storage::content_manager::toc::TableOfContent;
-use storage::rbac::{Access, CollectionAccessMode, GlobalAccessMode};
+use storage::rbac::{Access, AccessRequrements};
 
 use super::http_client::HttpClient;
 
@@ -25,8 +25,8 @@ pub async fn create_shard_snapshot(
     collection_name: String,
     shard_id: ShardId,
 ) -> Result<SnapshotDescription, StorageError> {
-    let collection_pass =
-        access.check_collection_access(&collection_name, true, CollectionAccessMode::ReadWrite)?;
+    let collection_pass = access
+        .check_collection_access(&collection_name, AccessRequrements::new().write().whole())?;
     let collection = toc.get_collection_by_pass(&collection_pass).await?;
 
     let snapshot = collection
@@ -46,7 +46,7 @@ pub async fn list_shard_snapshots(
     shard_id: ShardId,
 ) -> Result<Vec<SnapshotDescription>, StorageError> {
     let collection_pass =
-        access.check_collection_access(&collection_name, true, CollectionAccessMode::Read)?;
+        access.check_collection_access(&collection_name, AccessRequrements::new().whole())?;
     let collection = toc.get_collection_by_pass(&collection_pass).await?;
     let snapshots = collection.list_shard_snapshots(shard_id).await?;
     Ok(snapshots)
@@ -62,8 +62,8 @@ pub async fn delete_shard_snapshot(
     shard_id: ShardId,
     snapshot_name: String,
 ) -> Result<(), StorageError> {
-    let collection_pass =
-        access.check_collection_access(&collection_name, true, CollectionAccessMode::ReadWrite)?;
+    let collection_pass = access
+        .check_collection_access(&collection_name, AccessRequrements::new().write().whole())?;
     let collection = toc.get_collection_by_pass(&collection_pass).await?;
     let snapshot_path = collection
         .get_shard_snapshot_path(shard_id, &snapshot_name)
@@ -91,7 +91,7 @@ pub async fn recover_shard_snapshot(
     client: HttpClient,
 ) -> Result<(), StorageError> {
     let collection_pass = access
-        .check_global_access(GlobalAccessMode::Manage)?
+        .check_global_access(AccessRequrements::new().manage())?
         .issue_pass(&collection_name)
         .into_static();
 

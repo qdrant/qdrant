@@ -81,49 +81,26 @@ impl Access {
     /// Check if the user has global access.
     pub fn check_global_access(
         &self,
-        min_mode: GlobalAccessMode,
+        requirements: AccessRequrements,
     ) -> Result<CollectionMultipass, StorageError> {
         match self {
-            Access::Global(GlobalAccessMode::Manage) => Ok(CollectionMultipass),
-            Access::Global(GlobalAccessMode::Read) => {
-                if min_mode == GlobalAccessMode::Read {
-                    Ok(CollectionMultipass)
-                } else {
-                    Err(StorageError::unauthorized(
-                        "Only read-only access is allowed",
-                    ))
-                }
-            }
-            _ => Err(StorageError::unauthorized("Global access is not allowed")),
+            Access::Global(mode) => mode.meets_requirements(requirements)?,
+            _ => return Err(StorageError::unauthorized("Global access is not allowed")),
         }
+        Ok(CollectionMultipass)
     }
 
-    /// Check if the user has access to a collection with given constraints.
-    ///
-    /// If ``whole_collection`` is true, then the access should not limited by a payload
-    /// restriction.
+    /// Check if the user has access to a collection with given requirements.
     pub fn check_collection_access<'a>(
         &self,
         collection_name: &'a str,
-        whole_collection: bool,
-        mode: CollectionAccessMode,
+        requirements: AccessRequrements,
     ) -> Result<CollectionPass<'a>, StorageError> {
         match self {
-            Access::Global(GlobalAccessMode::Read) => {
-                if mode != CollectionAccessMode::Read {
-                    return Err(StorageError::unauthorized(
-                        "Only read-only access is allowed",
-                    ));
-                }
-            }
-            Access::Global(GlobalAccessMode::Manage) => (),
-            Access::Collection(list) => {
-                let view = list.find_view(collection_name)?;
-                if whole_collection {
-                    view.check_whole_access()?;
-                }
-                view.check_access_mode(mode)?;
-            }
+            Access::Global(mode) => mode.meets_requirements(requirements)?,
+            Access::Collection(list) => list
+                .find_view(collection_name)?
+                .meets_requirements(requirements)?,
         }
         Ok(CollectionPass(Cow::Borrowed(collection_name)))
     }
@@ -168,15 +145,31 @@ impl<'a> CollectionAccessView<'a> {
         Ok(())
     }
 
-    pub(self) fn check_access_mode(
-        &self,
-        min_access: CollectionAccessMode,
-    ) -> Result<(), StorageError> {
-        if self.access.allows_as_much_as(min_access) {
+    fn meets_requirements(&self, requirements: AccessRequrements) -> Result<(), StorageError> {
+        let AccessRequrements {
+            write,
+            manage,
+            whole,
+        } = requirements;
+        if write {
+            match self.access {
+                CollectionAccessMode::Read => {
+                    return Err(StorageError::unauthorized(format!(
+                        "Only read-only access is allowed for collection {}",
+                        self.collection,
+                    )))
+                }
+                CollectionAccessMode::ReadWrite => (),
+            }
+        }
+        if manage {
             return Err(StorageError::unauthorized(format!(
-                "Collection {} is not allowed",
+                "Manage access is not allowed for collection {}",
                 self.collection,
             )));
+        }
+        if whole && self.payload.is_some() {
+            return incompatible_with_payload_constraint(self.collection);
         }
         Ok(())
     }
@@ -210,44 +203,61 @@ impl std::fmt::Display for CollectionPass<'_> {
     }
 }
 
-#[derive(Eq, PartialEq, Copy, Clone, Debug)]
-enum AccessMode {
-    Read,
-    ReadWrite,
-    Manage,
+#[derive(Default, Debug, Copy, Clone)]
+pub struct AccessRequrements {
+    /// Write access is required.
+    pub write: bool,
+    /// Manage access is required, implies write access.
+    pub manage: bool,
+    /// If true, the access should be not limited by a payload restrictions.
+    pub whole: bool,
 }
 
-impl From<CollectionAccessMode> for AccessMode {
-    fn from(mode: CollectionAccessMode) -> Self {
-        match mode {
-            CollectionAccessMode::Read => AccessMode::Read,
-            CollectionAccessMode::ReadWrite => AccessMode::ReadWrite,
+impl AccessRequrements {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn write(&self) -> Self {
+        Self {
+            write: true,
+            ..*self
+        }
+    }
+
+    pub fn manage(&self) -> Self {
+        Self {
+            manage: true,
+            ..*self
+        }
+    }
+
+    pub fn whole(&self) -> Self {
+        Self {
+            whole: true,
+            ..*self
         }
     }
 }
 
-impl AccessMode {
-    /// Check if the access mode allows as much as the minimum mode.
-    fn allows_as_much_as(self, min_mode: Self) -> bool {
-        // NOTE: This is implemented explicitly rather than using #[derive(PartialOrd)] to avoid
-        // potential bugs when adding new variants.
-        match (self, min_mode) {
-            (AccessMode::Read, AccessMode::Read) => true,
-            (AccessMode::Read, AccessMode::ReadWrite | AccessMode::Manage) => false,
-
-            (AccessMode::ReadWrite, AccessMode::Read | AccessMode::ReadWrite) => true,
-            (AccessMode::ReadWrite, AccessMode::Manage) => false,
-
-            (AccessMode::Manage, AccessMode::Read | AccessMode::ReadWrite | AccessMode::Manage) => {
-                true
+impl GlobalAccessMode {
+    fn meets_requirements(&self, requirements: AccessRequrements) -> Result<(), StorageError> {
+        let AccessRequrements {
+            write,
+            manage,
+            whole: _,
+        } = requirements;
+        if write || manage {
+            match self {
+                GlobalAccessMode::Read => {
+                    return Err(StorageError::unauthorized(
+                        "Only read-only access is allowed",
+                    ))
+                }
+                GlobalAccessMode::Manage => (),
             }
         }
-    }
-}
-
-impl CollectionAccessMode {
-    fn allows_as_much_as(self, min_mode: Self) -> bool {
-        AccessMode::from(self).allows_as_much_as(AccessMode::from(min_mode))
+        Ok(())
     }
 }
 

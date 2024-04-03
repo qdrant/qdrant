@@ -13,7 +13,7 @@ use crate::content_manager::collection_meta_ops::{
 };
 use crate::content_manager::snapshots::download::download_snapshot;
 use crate::dispatcher::Dispatcher;
-use crate::rbac::{Access, CollectionPass, GlobalAccessMode};
+use crate::rbac::{Access, AccessRequrements, CollectionPass};
 use crate::{StorageError, TableOfContent};
 
 pub async fn activate_shard(
@@ -55,7 +55,7 @@ pub fn do_recover_from_snapshot(
     access: Access,
     client: reqwest::Client,
 ) -> Result<JoinHandle<Result<bool, StorageError>>, StorageError> {
-    let multipass = access.check_global_access(GlobalAccessMode::Manage)?;
+    let multipass = access.check_global_access(AccessRequrements::new().manage())?;
 
     let dispatch = dispatcher.clone();
     let collection_pass = multipass.issue_pass(collection_name).into_static();

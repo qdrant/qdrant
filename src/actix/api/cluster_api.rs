@@ -7,7 +7,7 @@ use storage::content_manager::consensus_ops::ConsensusOperations;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::GlobalAccessMode;
+use storage::rbac::AccessRequrements;
 use validator::Validate;
 
 use crate::actix::auth::ActixAccess;
@@ -28,7 +28,7 @@ fn cluster_status(
     ActixAccess(access): ActixAccess,
 ) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        access.check_global_access(GlobalAccessMode::Read)?;
+        access.check_global_access(AccessRequrements::new())?;
         Ok(dispatcher.cluster_status())
     })
 }
@@ -39,7 +39,7 @@ fn recover_current_peer(
     ActixAccess(access): ActixAccess,
 ) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        access.check_global_access(GlobalAccessMode::Manage)?;
+        access.check_global_access(AccessRequrements::new().manage())?;
         toc.request_snapshot()?;
         Ok(true)
     })
@@ -53,7 +53,7 @@ fn remove_peer(
     ActixAccess(access): ActixAccess,
 ) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        access.check_global_access(GlobalAccessMode::Manage)?;
+        access.check_global_access(AccessRequrements::new().manage())?;
 
         let dispatcher = dispatcher.into_inner();
         let toc = dispatcher.toc();

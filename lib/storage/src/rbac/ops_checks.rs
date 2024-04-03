@@ -16,9 +16,8 @@ use collection::operations::CollectionUpdateOperations;
 use segment::types::{Condition, ExtendedPointId, FieldCondition, Filter, Match, Payload};
 
 use super::{
-    incompatible_with_payload_constraint, Access, AccessMode, CollectionAccessList,
-    CollectionAccessMode, CollectionAccessView, CollectionPass, GlobalAccessMode,
-    PayloadConstraint,
+    incompatible_with_payload_constraint, Access, AccessRequrements, CollectionAccessList,
+    CollectionAccessView, CollectionPass, PayloadConstraint,
 };
 use crate::content_manager::collection_meta_ops::CollectionMetaOperations;
 use crate::content_manager::errors::StorageError;
@@ -30,23 +29,12 @@ impl Access {
         collection_name: &'a str,
         op: &mut impl CheckableCollectionOperation,
     ) -> Result<CollectionPass<'a>, StorageError> {
-        let min_access_mode_for_operation = op.min_access_mode();
+        let requirements = op.access_requrements();
         match self {
-            Access::Global(GlobalAccessMode::Manage) => (),
-            Access::Global(GlobalAccessMode::Read) => {
-                if min_access_mode_for_operation != AccessMode::Read {
-                    return Err(StorageError::unauthorized(
-                        "Only read-only access is allowed",
-                    ));
-                }
-            }
+            Access::Global(mode) => mode.meets_requirements(requirements)?,
             Access::Collection(list) => {
                 let view = list.find_view(collection_name)?;
-                if !AccessMode::from(view.access).allows_as_much_as(min_access_mode_for_operation) {
-                    return Err(StorageError::unauthorized(format!(
-                        "Insufficient access rights for the collection {collection_name}"
-                    )));
-                }
+                view.meets_requirements(requirements)?;
                 op.check_access(view, list)?;
             }
         }
@@ -66,20 +54,18 @@ impl Access {
             | CollectionMetaOperations::SetShardReplicaState(_)
             | CollectionMetaOperations::CreateShardKey(_)
             | CollectionMetaOperations::DropShardKey(_) => {
-                self.check_global_access(GlobalAccessMode::Manage)?;
+                self.check_global_access(AccessRequrements::new().manage())?;
             }
             CollectionMetaOperations::CreatePayloadIndex(op) => {
                 self.check_collection_access(
                     &op.collection_name,
-                    true,
-                    CollectionAccessMode::ReadWrite,
+                    AccessRequrements::new().write().whole(),
                 )?;
             }
             CollectionMetaOperations::DropPayloadIndex(op) => {
                 self.check_collection_access(
                     &op.collection_name,
-                    true,
-                    CollectionAccessMode::ReadWrite,
+                    AccessRequrements::new().write().whole(),
                 )?;
             }
             CollectionMetaOperations::Nop { token: _ } => (),
@@ -90,7 +76,7 @@ impl Access {
 
 trait CheckableCollectionOperation {
     /// Used to distinguish whether the operation is read-only or read-write.
-    fn min_access_mode(&self) -> AccessMode;
+    fn access_requrements(&self) -> AccessRequrements;
 
     fn check_access(
         &mut self,
@@ -142,8 +128,12 @@ impl<'a> CollectionAccessView<'a> {
 }
 
 impl CheckableCollectionOperation for RecommendRequestInternal {
-    fn min_access_mode(&self) -> AccessMode {
-        AccessMode::Read
+    fn access_requrements(&self) -> AccessRequrements {
+        AccessRequrements {
+            write: false,
+            manage: false,
+            whole: false,
+        }
     }
 
     fn check_access(
@@ -164,23 +154,30 @@ impl CheckableCollectionOperation for RecommendRequestInternal {
 }
 
 impl CheckableCollectionOperation for PointRequestInternal {
-    fn min_access_mode(&self) -> AccessMode {
-        AccessMode::Read
+    fn access_requrements(&self) -> AccessRequrements {
+        AccessRequrements {
+            write: false,
+            manage: false,
+            whole: true,
+        }
     }
 
     fn check_access(
         &mut self,
-        view: CollectionAccessView<'_>,
+        _view: CollectionAccessView<'_>,
         _access: &CollectionAccessList,
     ) -> Result<(), StorageError> {
-        view.check_whole_access()?;
         Ok(())
     }
 }
 
 impl CheckableCollectionOperation for CoreSearchRequest {
-    fn min_access_mode(&self) -> AccessMode {
-        AccessMode::Read
+    fn access_requrements(&self) -> AccessRequrements {
+        AccessRequrements {
+            write: false,
+            manage: false,
+            whole: false,
+        }
     }
 
     fn check_access(
@@ -194,8 +191,12 @@ impl CheckableCollectionOperation for CoreSearchRequest {
 }
 
 impl CheckableCollectionOperation for CountRequestInternal {
-    fn min_access_mode(&self) -> AccessMode {
-        AccessMode::Read
+    fn access_requrements(&self) -> AccessRequrements {
+        AccessRequrements {
+            write: false,
+            manage: false,
+            whole: false,
+        }
     }
 
     fn check_access(
@@ -209,8 +210,12 @@ impl CheckableCollectionOperation for CountRequestInternal {
 }
 
 impl CheckableCollectionOperation for GroupRequest {
-    fn min_access_mode(&self) -> AccessMode {
-        AccessMode::Read
+    fn access_requrements(&self) -> AccessRequrements {
+        AccessRequrements {
+            write: false,
+            manage: false,
+            whole: false,
+        }
     }
 
     fn check_access(
@@ -230,8 +235,12 @@ impl CheckableCollectionOperation for GroupRequest {
 }
 
 impl CheckableCollectionOperation for DiscoverRequestInternal {
-    fn min_access_mode(&self) -> AccessMode {
-        AccessMode::Read
+    fn access_requrements(&self) -> AccessRequrements {
+        AccessRequrements {
+            write: false,
+            manage: false,
+            whole: false,
+        }
     }
 
     fn check_access(
@@ -254,8 +263,12 @@ impl CheckableCollectionOperation for DiscoverRequestInternal {
 }
 
 impl CheckableCollectionOperation for ScrollRequestInternal {
-    fn min_access_mode(&self) -> AccessMode {
-        AccessMode::Read
+    fn access_requrements(&self) -> AccessRequrements {
+        AccessRequrements {
+            write: false,
+            manage: false,
+            whole: false,
+        }
     }
 
     fn check_access(
@@ -269,12 +282,20 @@ impl CheckableCollectionOperation for ScrollRequestInternal {
 }
 
 impl CheckableCollectionOperation for CollectionUpdateOperations {
-    fn min_access_mode(&self) -> AccessMode {
+    fn access_requrements(&self) -> AccessRequrements {
         match self {
             CollectionUpdateOperations::PointOperation(_)
             | CollectionUpdateOperations::VectorOperation(_)
-            | CollectionUpdateOperations::PayloadOperation(_) => AccessMode::ReadWrite,
-            CollectionUpdateOperations::FieldIndexOperation(_) => AccessMode::Manage,
+            | CollectionUpdateOperations::PayloadOperation(_) => AccessRequrements {
+                write: true,
+                manage: false,
+                whole: false, // Checked in `check_access()`
+            },
+            CollectionUpdateOperations::FieldIndexOperation(_) => AccessRequrements {
+                write: true,
+                manage: true,
+                whole: true,
+            },
         }
     }
 
@@ -397,11 +418,7 @@ impl CheckableCollectionOperation for CollectionUpdateOperations {
                 }
             }
 
-            // These are already checked in CollectionMetaOperations, but we'll check them anyway
-            // to be sure.
-            CollectionUpdateOperations::FieldIndexOperation(_) => {
-                view.check_whole_access()?;
-            }
+            CollectionUpdateOperations::FieldIndexOperation(_) => (),
         }
         Ok(())
     }

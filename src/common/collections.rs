@@ -27,7 +27,7 @@ use storage::content_manager::collection_meta_ops::{
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::{Access, CollectionAccessMode, GlobalAccessMode};
+use storage::rbac::{Access, AccessRequrements};
 use tokio::task::JoinHandle;
 
 pub async fn do_collection_exists(
@@ -35,8 +35,7 @@ pub async fn do_collection_exists(
     access: Access,
     name: &str,
 ) -> Result<CollectionExists, StorageError> {
-    let collection_pass =
-        access.check_collection_access(name, false, CollectionAccessMode::Read)?;
+    let collection_pass = access.check_collection_access(name, AccessRequrements::new())?;
 
     // if this returns Ok, it means the collection exists.
     // if not, we check that the error is NotFound
@@ -55,7 +54,7 @@ pub async fn do_get_collection(
     name: &str,
     shard_selection: Option<ShardId>,
 ) -> Result<CollectionInfo, StorageError> {
-    let collection_pass = access.check_collection_access(name, true, CollectionAccessMode::Read)?;
+    let collection_pass = access.check_collection_access(name, AccessRequrements::new().whole())?;
 
     let collection = toc.get_collection_by_pass(&collection_pass).await?;
 
@@ -74,7 +73,7 @@ pub async fn do_list_collections(toc: &TableOfContent, access: Access) -> Collec
         .into_iter()
         .filter(|c| {
             access
-                .check_collection_access(c, false, CollectionAccessMode::Read)
+                .check_collection_access(c, AccessRequrements::new())
                 .is_ok()
         })
         .map(|name| CollectionDescription { name })
@@ -127,14 +126,14 @@ pub async fn do_list_collection_aliases(
     access: Access,
     collection_name: &str,
 ) -> Result<CollectionsAliasesResponse, StorageError> {
-    access.check_collection_access(collection_name, false, CollectionAccessMode::Read)?;
+    access.check_collection_access(collection_name, AccessRequrements::new())?;
     let aliases: Vec<AliasDescription> = toc
         .collection_aliases(collection_name)
         .await?
         .into_iter()
         .filter(|alias| {
             access
-                .check_collection_access(alias, false, CollectionAccessMode::Read)
+                .check_collection_access(alias, AccessRequrements::new())
                 .is_ok()
         })
         .map(|alias| AliasDescription {
@@ -152,10 +151,10 @@ pub async fn do_list_aliases(
     let mut aliases = toc.list_aliases().await?;
     aliases.retain(|alias| {
         access
-            .check_collection_access(&alias.collection_name, false, CollectionAccessMode::Read)
+            .check_collection_access(&alias.collection_name, AccessRequrements::new())
             .is_ok()
             && access
-                .check_collection_access(&alias.alias_name, false, CollectionAccessMode::Read)
+                .check_collection_access(&alias.alias_name, AccessRequrements::new())
                 .is_ok()
     });
 
@@ -168,7 +167,7 @@ pub async fn do_list_snapshots(
     collection_name: &str,
 ) -> Result<Vec<SnapshotDescription>, StorageError> {
     let collection_pass =
-        access.check_collection_access(collection_name, true, CollectionAccessMode::Read)?;
+        access.check_collection_access(collection_name, AccessRequrements::new().whole())?;
     Ok(toc
         .get_collection_by_pass(&collection_pass)
         .await?
@@ -182,7 +181,7 @@ pub fn do_create_snapshot(
     collection_name: &str,
 ) -> Result<JoinHandle<Result<SnapshotDescription, StorageError>>, StorageError> {
     let collection_pass = access
-        .check_collection_access(collection_name, true, CollectionAccessMode::ReadWrite)?
+        .check_collection_access(collection_name, AccessRequrements::new().write().whole())?
         .into_static();
     Ok(tokio::spawn(async move {
         toc.create_snapshot(&collection_pass).await
@@ -194,8 +193,7 @@ pub async fn do_get_collection_cluster(
     access: Access,
     name: &str,
 ) -> Result<CollectionClusterInfo, StorageError> {
-    let collection_pass =
-        access.check_collection_access(name, false, CollectionAccessMode::Read)?;
+    let collection_pass = access.check_collection_access(name, AccessRequrements::new())?;
     let collection = toc.get_collection_by_pass(&collection_pass).await?;
     Ok(collection.cluster_info(toc.this_peer_id).await?)
 }
@@ -207,21 +205,21 @@ pub async fn do_update_collection_cluster(
     access: Access,
     wait_timeout: Option<Duration>,
 ) -> Result<bool, StorageError> {
-    let collection_pass =
-        access.check_collection_access(&collection_name, true, CollectionAccessMode::ReadWrite)?;
+    let collection_pass = access
+        .check_collection_access(&collection_name, AccessRequrements::new().write().whole())?;
     match &operation {
         ClusterOperations::MoveShard(_)
         | ClusterOperations::ReplicateShard(_)
         | ClusterOperations::AbortTransfer(_)
         | ClusterOperations::DropReplica(_)
         | ClusterOperations::RestartTransfer(_) => {
-            access.check_global_access(GlobalAccessMode::Manage)?;
+            access.check_global_access(AccessRequrements::new().manage())?;
         }
         ClusterOperations::CreateShardingKey(CreateShardingKeyOperation {
             create_sharding_key,
         }) => {
             if !create_sharding_key.has_default_params() {
-                access.check_global_access(GlobalAccessMode::Manage)?;
+                access.check_global_access(AccessRequrements::new().manage())?;
             }
         }
         ClusterOperations::DropShardingKey(DropShardingKeyOperation {
