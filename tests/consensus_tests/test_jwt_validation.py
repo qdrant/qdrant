@@ -26,6 +26,7 @@ SNAPSHOT_NAME = "test_snapshot"
 POINT_ID = 0
 FIELD_NAME = "test_field"
 PEER_ID = 0
+DELETABLE_SHARD_KEYS = ["a", "b", "c", "d", "e", "f", "g", "h", "i"]
 SHARD_KEY = "existing_shard_key"
 
 
@@ -65,6 +66,17 @@ def custom_shard_key_config_grpc():
         "request": {"shard_key": { "keyword": random_str()}, "replication_factor": 3 },
     }
 
+deletable_shard_key = iter(DELETABLE_SHARD_KEYS)
+
+def delete_shard_key_req():
+    return {"shard_key": next(deletable_shard_key)}
+
+def delete_shard_key_req_grpc():
+    return {
+        "collection_name": COLL_NAME,
+        "request": {"shard_key": { "keyword": next(deletable_shard_key)} },
+    }
+
 ### TABLE_OF_ACCESS_STUBS ###
 
 default_create_shard_key = AccessStub(
@@ -75,7 +87,7 @@ default_create_shard_key = AccessStub(
     default_shard_key_config_grpc,
 )
 custom_create_shard_key = AccessStub(False, False, True, custom_shard_key_config, custom_shard_key_config_grpc)
-delete_shard_key = AccessStub(False, True, True, {"shard_key": SHARD_KEY})
+delete_shard_key = AccessStub(False, True, True, delete_shard_key_req, delete_shard_key_req_grpc)
 list_collections = AccessStub(True, True, True)
 get_collection = AccessStub(True, True, True)
 create_collection = AccessStub(False, False, True, {})
@@ -215,7 +227,7 @@ list_aliases = AccessStub(False, False, True)
 TABLE_OF_ACCESS = {
     # Collections
     "PUT /collections/{collection_name}/shards": [default_create_shard_key, custom_create_shard_key],
-    # "POST /collections/{collection_name}/shards/delete": [delete_shard_key],
+    "POST /collections/{collection_name}/shards/delete": [delete_shard_key],
     # "GET /collections": [list_collections],
     # "GET /collections/{collection_name}": [get_collection],
     # "PUT /collections/{collection_name}": [create_collection],
@@ -322,7 +334,7 @@ GRPC_TO_REST_MAPPING = {
     # "/qdrant.Collections/CollectionExists": "GET /collections/{collection_name}/exists",
     # "/qdrant.Collections/UpdateCollectionClusterSetup": "POST /collections/{collection_name}/cluster",
     "/qdrant.Collections/CreateShardKey": "PUT /collections/{collection_name}/shards",
-    # "/qdrant.Collections/DeleteShardKey": "POST /collections/{collection_name}/shards/delete",
+    "/qdrant.Collections/DeleteShardKey": "POST /collections/{collection_name}/shards/delete",
     # "/qdrant.Points/Upsert": "PUT /collections/{collection_name}/points",
     # "/qdrant.Points/Delete": "POST /collections/{collection_name}/points/delete",
     # "/qdrant.Points/Get": "POST /collections/{collection_name}/points",
@@ -455,12 +467,13 @@ def uris(tmp_path_factory: pytest.TempPathFactory):
         headers=API_KEY_HEADERS,
     )
 
-    requests.put(
-        f"{rest_uri}/collections/{COLL_NAME}/shards",
-        json={"shard_key": SHARD_KEY},
-        headers=API_KEY_HEADERS,
-    )
-
+    for shard_key in [*DELETABLE_SHARD_KEYS, SHARD_KEY]:
+        requests.put(
+            f"{rest_uri}/collections/{COLL_NAME}/shards",
+            json={"shard_key": shard_key},
+            headers=API_KEY_HEADERS,
+        )
+    
     fixtures.upsert_random_points(
         rest_uri, 100, COLL_NAME, shard_key=SHARD_KEY, headers=API_KEY_HEADERS
     )
