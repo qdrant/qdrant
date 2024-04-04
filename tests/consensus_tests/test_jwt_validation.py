@@ -199,6 +199,7 @@ delete_index = AccessStub(
     delete_index_req,
     delete_index_req_grpc,
 )
+get_collection_cluster_info = AccessStub(True, True, True, None, {"collection_name": COLL_NAME}) # TODO: are these the expected permissions?
 move_shard_operation = AccessStub(
     False,
     False,
@@ -302,7 +303,7 @@ TABLE_OF_ACCESS = {
     "PUT /collections/{collection_name}/index": [create_index],
     "GET /collections/{collection_name}/exists": [collection_exists],
     "DELETE /collections/{collection_name}/index/{field_name}": [delete_index],
-    # "GET /collections/{collection_name}/cluster": [collection_exists],
+    "GET /collections/{collection_name}/cluster": [get_collection_cluster_info],
     # "POST /collections/{collection_name}/cluster": [
     #     move_shard_operation,
     #     replicate_shard_operation,
@@ -395,7 +396,7 @@ GRPC_TO_REST_MAPPING = {
     "/qdrant.Collections/UpdateAliases": "POST /collections/aliases",
     # "/qdrant.Collections/ListCollectionAliases": "GET /collections/{collection_name}/aliases",
     # "/qdrant.Collections/ListAliases": "GET /aliases",
-    # "/qdrant.Collections/CollectionClusterInfo": "GET /collections/{collection_name}/cluster",
+    "/qdrant.Collections/CollectionClusterInfo": "GET /collections/{collection_name}/cluster",
     "/qdrant.Collections/CollectionExists": "GET /collections/{collection_name}/exists",
     # "/qdrant.Collections/UpdateCollectionClusterSetup": "POST /collections/{collection_name}/cluster",
     "/qdrant.Collections/CreateShardKey": "PUT /collections/{collection_name}/shards",
