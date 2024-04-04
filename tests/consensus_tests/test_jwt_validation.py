@@ -333,6 +333,10 @@ restart_transfer_operation = AccessStub(
 list_collection_aliases = AccessStub(True, True, True, None, {"collection_name": COLL_NAME})
 list_aliases = AccessStub(True, True, True)
 
+list_collection_snapshots = AccessStub(
+    True, True, True, None, {"collection_name": COLL_NAME}
+)  # TODO: access should be (False, True, True)
+
 
 TABLE_OF_ACCESS = {
     # Collections
@@ -351,7 +355,7 @@ TABLE_OF_ACCESS = {
     "GET /collections/{collection_name}/exists": [collection_exists],
     "DELETE /collections/{collection_name}/index/{field_name}": [delete_index],
     "GET /collections/{collection_name}/cluster": [get_collection_cluster_info],
-    "POST /collections/{collection_name}/cluster": [ # TODO: prepare second peer for these tests
+    "POST /collections/{collection_name}/cluster": [  # TODO: prepare second peer for these tests
         # move_shard_operation,
         # replicate_shard_operation,
         # abort_shard_transfer_operation,
@@ -365,7 +369,7 @@ TABLE_OF_ACCESS = {
     "GET /aliases": [list_aliases],
     # "POST /collections/{collection_name}/snapshots/upload": [False, False, True],
     # "PUT /collections/{collection_name}/snapshots/recover": [False, False, True],
-    # "GET /collections/{collection_name}/snapshots": [False, True, True, None],
+    "GET /collections/{collection_name}/snapshots": [list_collection_snapshots],
     # "POST /collections/{collection_name}/snapshots": [False, True, True],
     # "DELETE /collections/{collection_name}/snapshots/{snapshot_name}": [False, True, True],  #
     # "GET /collections/{collection_name}/snapshots/{snapshot_name}": [True, True, True, None],  #
@@ -475,7 +479,7 @@ GRPC_TO_REST_MAPPING = {
     # "/qdrant.ShardSnapshots/Delete": "DELETE /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}",
     # "/qdrant.ShardSnapshots/Recover": "PUT /collections/{collection_name}/shards/{shard_id}/snapshots/recover",
     # "/qdrant.Snapshots/Create": "POST /collections/{collection_name}/snapshots",
-    # "/qdrant.Snapshots/List": "GET /collections/{collection_name}/snapshots",
+    "/qdrant.Snapshots/List": "GET /collections/{collection_name}/snapshots",
     # "/qdrant.Snapshots/Delete": "DELETE /collections/{collection_name}/snapshots/{snapshot_name}",
     # "/qdrant.Snapshots/CreateFull": "POST /snapshots",
     # "/qdrant.Snapshots/ListFull": "GET /snapshots",
@@ -587,7 +591,7 @@ def uris(tmp_path_factory: pytest.TempPathFactory):
             headers=API_KEY_HEADERS,
         )
 
-    for shard_key in [SHARD_KEY, * DELETABLE_SHARD_KEYS, *MOVABLE_SHARD_KEYS]:
+    for shard_key in [SHARD_KEY, *DELETABLE_SHARD_KEYS, *MOVABLE_SHARD_KEYS]:
         requests.put(
             f"{rest_uri}/collections/{COLL_NAME}/shards",
             json={"shard_key": shard_key},
