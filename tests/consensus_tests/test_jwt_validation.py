@@ -27,6 +27,7 @@ COLL_NAME = "primary_test_collection"
 DELETABLE_COLL_NAMES = [random_str() for _ in range(10)]
 DELETABLE_ALIASES = [random_str() for _ in range(10)]
 RENAMABLE_ALIASES = [random_str() for _ in range(10)]
+DELETABLE_FIELD_INDEX = [random_str() for _ in range(10)]
 SHARD_ID = 0
 SNAPSHOT_NAME = "test_snapshot"
 POINT_ID = 0
@@ -135,7 +136,17 @@ def delete_alias_req():
 def delete_alias_req_grpc():
     return delete_alias_req()
 
+deletable_field_index = iter(DELETABLE_FIELD_INDEX)
+
+def delete_index_req():
+    return {"field_name": next(deletable_field_index)}
     
+def delete_index_req_grpc():
+    return {
+        "collection_name": COLL_NAME,
+        "field_name": next(deletable_field_index),
+    }
+
 ### TABLE_OF_ACCESS ACTIONS ###   
 
 default_create_shard_key = AccessStub(
@@ -181,7 +192,13 @@ create_index = AccessStub(
     {"collection_name": COLL_NAME, "field_name": FIELD_NAME, "field_type": 0}
 )
 collection_exists = AccessStub(True, True, True, None, {"collection_name": COLL_NAME})
-delete_index = AccessStub(False, False, True)
+delete_index = AccessStub(
+    False, 
+    True, 
+    True,
+    delete_index_req,
+    delete_index_req_grpc,
+)
 move_shard_operation = AccessStub(
     False,
     False,
@@ -284,7 +301,7 @@ TABLE_OF_ACCESS = {
     "POST /collections/aliases": [create_alias, rename_alias, delete_alias],
     "PUT /collections/{collection_name}/index": [create_index],
     "GET /collections/{collection_name}/exists": [collection_exists],
-    # "DELETE /collections/{collection_name}/index/{field_name}": [delete_index],
+    "DELETE /collections/{collection_name}/index/{field_name}": [delete_index],
     # "GET /collections/{collection_name}/cluster": [collection_exists],
     # "POST /collections/{collection_name}/cluster": [
     #     move_shard_operation,
@@ -393,7 +410,7 @@ GRPC_TO_REST_MAPPING = {
     # "/qdrant.Points/DeletePayload": "POST /collections/{collection_name}/points/payload/delete",
     # "/qdrant.Points/ClearPayload": "POST /collections/{collection_name}/points/payload/clear",
     "/qdrant.Points/CreateFieldIndex": "PUT /collections/{collection_name}/index",
-    # "/qdrant.Points/DeleteFieldIndex": "DELETE /collections/{collection_name}/index/{field_name}",
+    "/qdrant.Points/DeleteFieldIndex": "DELETE /collections/{collection_name}/index/{field_name}",
     # "/qdrant.Points/Search": "POST /collections/{collection_name}/points/search",
     # "/qdrant.Points/SearchBatch": "POST /collections/{collection_name}/points/search/batch",
     # "/qdrant.Points/SearchGroups": "POST /collections/{collection_name}/points/search/groups",
@@ -542,6 +559,13 @@ def uris(tmp_path_factory: pytest.TempPathFactory):
                     }
                 ]
             },
+            headers=API_KEY_HEADERS,
+        ).raise_for_status()
+        
+    for field_name in DELETABLE_FIELD_INDEX:
+        requests.put(
+            f"{rest_uri}/collections/{COLL_NAME}/index",
+            json={"field_name": field_name, "field_schema": "keyword"},
             headers=API_KEY_HEADERS,
         ).raise_for_status()
     
