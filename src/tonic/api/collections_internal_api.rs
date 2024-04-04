@@ -9,13 +9,19 @@ use api::grpc::qdrant::{
 };
 use storage::content_manager::conversions::error_to_status;
 use storage::content_manager::toc::TableOfContent;
-use storage::rbac::Access;
+use storage::rbac::{Access, AccessRequrements, CollectionPass};
 use tonic::{Request, Response, Status};
 
 use super::validate_and_log;
 use crate::tonic::api::collections_common::get;
 
 const FULL_ACCESS: Access = Access::full("Internal API");
+
+fn full_access_pass(collection_name: &str) -> Result<CollectionPass<'_>, Status> {
+    FULL_ACCESS
+        .check_collection_access(collection_name, AccessRequrements::new())
+        .map_err(error_to_status)
+}
 
 pub struct CollectionsInternalService {
     toc: Arc<TableOfContent>,
@@ -96,7 +102,7 @@ impl CollectionsInternal for CollectionsInternalService {
 
         let collection_read = self
             .toc
-            .get_collection(&collection_name)
+            .get_collection_by_pass(&full_access_pass(&collection_name)?)
             .await
             .map_err(|err| {
                 Status::not_found(format!(
@@ -135,7 +141,7 @@ impl CollectionsInternal for CollectionsInternalService {
 
         let collection_read = self
             .toc
-            .get_collection(&collection_name)
+            .get_collection_by_pass(&full_access_pass(&collection_name)?)
             .await
             .map_err(|err| {
                 Status::not_found(format!(
@@ -177,7 +183,7 @@ impl CollectionsInternal for CollectionsInternalService {
 
         let collection_read = self
             .toc
-            .get_collection(&collection_name)
+            .get_collection_by_pass(&full_access_pass(&collection_name)?)
             .await
             .map_err(|err| {
                 Status::not_found(format!(
