@@ -226,7 +226,7 @@ mod tests {
     use crate::fixtures::payload_context_fixture::FixtureIdTracker;
     use crate::id_tracker::IdTracker;
     use crate::types::{PointIdType, QuantizationConfig, ScalarQuantizationConfig};
-    use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_vector_storage;
+    use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
     use crate::vector_storage::new_raw_scorer;
     use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 
@@ -258,7 +258,7 @@ mod tests {
         {
             let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
             let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
-            let storage2 = open_simple_vector_storage(
+            let storage2 = open_simple_dense_vector_storage(
                 db,
                 DB_VECTOR_CF,
                 4,
@@ -295,7 +295,7 @@ mod tests {
         {
             let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
             let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
-            let storage2 = open_simple_vector_storage(
+            let storage2 = open_simple_dense_vector_storage(
                 db,
                 DB_VECTOR_CF,
                 4,
@@ -361,7 +361,7 @@ mod tests {
         {
             let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
             let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
-            let storage2 = open_simple_vector_storage(
+            let storage2 = open_simple_dense_vector_storage(
                 db,
                 DB_VECTOR_CF,
                 4,
@@ -492,7 +492,7 @@ mod tests {
         {
             let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
             let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
-            let storage2 = open_simple_vector_storage(
+            let storage2 = open_simple_dense_vector_storage(
                 db,
                 DB_VECTOR_CF,
                 4,
@@ -578,7 +578,7 @@ mod tests {
         {
             let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
             let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
-            let storage2 = open_simple_vector_storage(
+            let storage2 = open_simple_dense_vector_storage(
                 db,
                 DB_VECTOR_CF,
                 4,
@@ -664,7 +664,7 @@ mod tests {
         {
             let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
             let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
-            let storage2 = open_simple_vector_storage(
+            let storage2 = open_simple_dense_vector_storage(
                 db,
                 DB_VECTOR_CF,
                 4,

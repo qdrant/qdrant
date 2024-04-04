@@ -12,7 +12,7 @@ use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::id_tracker::IdTracker;
 use crate::types::Distance;
 use crate::vector_storage::dense::memmap_dense_vector_storage::open_memmap_vector_storage_with_async_io;
-use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_vector_storage;
+use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
 use crate::vector_storage::vector_storage_base::VectorStorage;
 use crate::vector_storage::{async_raw_scorer, new_raw_scorer, VectorStorageEnum};
 
@@ -66,7 +66,7 @@ fn test_async_raw_scorer(
 
         let db = rocksdb_wrapper::open_db(dir.path(), &[rocksdb_wrapper::DB_VECTOR_CF])?;
 
-        let mutable_storage = open_simple_vector_storage(
+        let mutable_storage = open_simple_dense_vector_storage(
             db,
             rocksdb_wrapper::DB_VECTOR_CF,
             4,

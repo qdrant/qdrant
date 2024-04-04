@@ -22,7 +22,7 @@ use crate::types::{
 };
 #[cfg(target_os = "linux")]
 use crate::vector_storage::dense::memmap_dense_vector_storage::open_memmap_vector_storage_with_async_io;
-use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_vector_storage;
+use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::query::context_query::{ContextPair, ContextQuery};
 use crate::vector_storage::query::discovery_query::DiscoveryQuery;
@@ -112,7 +112,7 @@ fn random_context_query<R: Rng + ?Sized>(
 }
 
 fn ram_storage(dir: &Path) -> AtomicRefCell<VectorStorageEnum> {
-    let storage = open_simple_vector_storage(
+    let storage = open_simple_dense_vector_storage(
         rocksdb_wrapper::open_db(dir, &[rocksdb_wrapper::DB_VECTOR_CF]).unwrap(),
         rocksdb_wrapper::DB_VECTOR_CF,
         DIMS,
@@ -197,7 +197,7 @@ fn scoring_equivalency(
 
     let db = rocksdb_wrapper::open_db(raw_dir.path(), &[rocksdb_wrapper::DB_VECTOR_CF])?;
 
-    let raw_storage = open_simple_vector_storage(
+    let raw_storage = open_simple_dense_vector_storage(
         db,
         rocksdb_wrapper::DB_VECTOR_CF,
         DIMS,

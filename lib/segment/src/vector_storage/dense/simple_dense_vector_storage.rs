@@ -85,7 +85,7 @@ fn open_simple_dense_vector_storage_impl<T: PrimitiveVectorElement>(
     })
 }
 
-pub fn open_simple_vector_storage(
+pub fn open_simple_dense_vector_storage(
     database: Arc<RwLock<DB>>,
     database_column_name: &str,
     dim: usize,
