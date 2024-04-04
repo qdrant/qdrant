@@ -983,13 +983,7 @@ impl LocalShard {
         if status == CollectionStatus::Green
             && self.update_handler.lock().await.has_pending_optimizations()
         {
-            // TODO(1.10): enable grey status in Qdrant 1.10+
-            // status = CollectionStatus::Grey;
-            if optimizer_status == OptimizersStatus::Ok {
-                optimizer_status = OptimizersStatus::Error(
-                    "optimizations pending, awaiting update operation".into(),
-                );
-            }
+            status = CollectionStatus::Grey;
         }
 
         CollectionInfoInternal {
