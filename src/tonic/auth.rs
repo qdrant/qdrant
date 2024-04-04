@@ -2,12 +2,13 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use futures::future::BoxFuture;
+use storage::content_manager::conversions::error_to_status;
 use storage::rbac::Access;
 use tonic::body::BoxBody;
 use tonic::Status;
 use tower::{Layer, Service};
 
-use crate::common::auth::AuthKeys;
+use crate::common::auth::{AuthError, AuthKeys};
 use crate::common::strings::ct_eq;
 
 type Request = tonic::codegen::http::Request<tonic::transport::Body>;
@@ -43,7 +44,11 @@ async fn check(auth_keys: Arc<AuthKeys>, mut req: Request) -> Result<Request, St
             is_read_only(&req),
         )
         .await
-        .map_err(Status::permission_denied)?;
+        .map_err(|e| match e {
+            AuthError::Unauthorized(e) => Status::unauthenticated(e),
+            AuthError::Forbidden(e) => Status::permission_denied(e),
+            AuthError::StorageError(e) => error_to_status(e),
+        })?;
 
     let _previous = req.extensions_mut().insert::<Access>(access);
     debug_assert!(

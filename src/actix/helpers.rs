@@ -156,7 +156,7 @@ impl ResponseError for HttpError {
             StorageError::Timeout { .. } => http::StatusCode::REQUEST_TIMEOUT,
             StorageError::AlreadyExists { .. } => http::StatusCode::CONFLICT,
             StorageError::ChecksumMismatch { .. } => http::StatusCode::BAD_REQUEST,
-            StorageError::Unauthorized { .. } => http::StatusCode::UNAUTHORIZED,
+            StorageError::Forbidden { .. } => http::StatusCode::FORBIDDEN,
         }
     }
 }
