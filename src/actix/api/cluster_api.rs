@@ -56,7 +56,7 @@ fn remove_peer(
         access.check_global_access(AccessRequrements::new().manage())?;
 
         let dispatcher = dispatcher.into_inner();
-        let toc = dispatcher.toc();
+        let toc = dispatcher.toc(&access);
         let peer_id = peer_id.into_inner();
 
         let has_shards = toc.peer_has_shards(peer_id).await;

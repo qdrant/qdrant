@@ -6,6 +6,7 @@ use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::Serialize;
 use storage::dispatcher::Dispatcher;
+use storage::rbac::Access;
 use uuid::Uuid;
 
 use crate::common::telemetry_ops::app_telemetry::{AppBuildTelemetry, AppBuildTelemetryCollector};
@@ -71,10 +72,10 @@ impl TelemetryCollector {
         }
     }
 
-    pub async fn prepare_data(&self, detail: TelemetryDetail) -> TelemetryData {
+    pub async fn prepare_data(&self, access: &Access, detail: TelemetryDetail) -> TelemetryData {
         TelemetryData {
             id: self.process_id.to_string(),
-            collections: CollectionsTelemetry::collect(detail, self.dispatcher.toc()).await,
+            collections: CollectionsTelemetry::collect(detail, self.dispatcher.toc(access)).await,
             app: AppBuildTelemetry::collect(detail, &self.app_telemetry_collector, &self.settings),
             cluster: ClusterTelemetry::collect(detail, &self.dispatcher, &self.settings),
             requests: RequestsTelemetry::collect(

@@ -49,7 +49,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         upsert(
-            self.dispatcher.toc().clone(),
+            self.dispatcher.toc(&access).clone(),
             request.into_inner(),
             None,
             None,
@@ -68,7 +68,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         delete(
-            self.dispatcher.toc().clone(),
+            self.dispatcher.toc(&access).clone(),
             request.into_inner(),
             None,
             None,
@@ -83,7 +83,13 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
 
-        get(self.dispatcher.toc(), request.into_inner(), None, access).await
+        get(
+            self.dispatcher.toc(&access),
+            request.into_inner(),
+            None,
+            access,
+        )
+        .await
     }
 
     async fn update_vectors(
@@ -95,7 +101,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         update_vectors(
-            self.dispatcher.toc().clone(),
+            self.dispatcher.toc(&access).clone(),
             request.into_inner(),
             None,
             None,
@@ -114,7 +120,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         delete_vectors(
-            self.dispatcher.toc().clone(),
+            self.dispatcher.toc(&access).clone(),
             request.into_inner(),
             None,
             None,
@@ -133,7 +139,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         set_payload(
-            self.dispatcher.toc().clone(),
+            self.dispatcher.toc(&access).clone(),
             request.into_inner(),
             None,
             None,
@@ -152,7 +158,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         overwrite_payload(
-            self.dispatcher.toc().clone(),
+            self.dispatcher.toc(&access).clone(),
             request.into_inner(),
             None,
             None,
@@ -171,7 +177,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         delete_payload(
-            self.dispatcher.toc().clone(),
+            self.dispatcher.toc(&access).clone(),
             request.into_inner(),
             None,
             None,
@@ -190,7 +196,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         clear_payload(
-            self.dispatcher.toc().clone(),
+            self.dispatcher.toc(&access).clone(),
             request.into_inner(),
             None,
             None,
@@ -209,7 +215,7 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
 
         update_batch(
-            self.dispatcher.toc().clone(),
+            self.dispatcher.toc(&access).clone(),
             request.into_inner(),
             None,
             None,
@@ -262,7 +268,13 @@ impl Points for PointsService {
     ) -> Result<Response<SearchResponse>, Status> {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
-        search(self.dispatcher.toc(), request.into_inner(), None, access).await
+        search(
+            self.dispatcher.toc(&access),
+            request.into_inner(),
+            None,
+            access,
+        )
+        .await
     }
 
     async fn search_batch(
@@ -294,7 +306,7 @@ impl Points for PointsService {
         }
 
         core_search_batch(
-            self.dispatcher.toc(),
+            self.dispatcher.toc(&access),
             collection_name,
             requests,
             read_consistency,
@@ -310,7 +322,13 @@ impl Points for PointsService {
     ) -> Result<Response<SearchGroupsResponse>, Status> {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
-        search_groups(self.dispatcher.toc(), request.into_inner(), None, access).await
+        search_groups(
+            self.dispatcher.toc(&access),
+            request.into_inner(),
+            None,
+            access,
+        )
+        .await
     }
 
     async fn scroll(
@@ -321,7 +339,13 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
 
-        scroll(self.dispatcher.toc(), request.into_inner(), None, access).await
+        scroll(
+            self.dispatcher.toc(&access),
+            request.into_inner(),
+            None,
+            access,
+        )
+        .await
     }
 
     async fn recommend(
@@ -330,7 +354,7 @@ impl Points for PointsService {
     ) -> Result<Response<RecommendResponse>, Status> {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
-        recommend(self.dispatcher.toc(), request.into_inner(), access).await
+        recommend(self.dispatcher.toc(&access), request.into_inner(), access).await
     }
 
     async fn recommend_batch(
@@ -346,7 +370,7 @@ impl Points for PointsService {
             timeout,
         } = request.into_inner();
         recommend_batch(
-            self.dispatcher.toc(),
+            self.dispatcher.toc(&access),
             collection_name,
             recommend_points,
             read_consistency,
@@ -364,7 +388,7 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
 
-        recommend_groups(self.dispatcher.toc(), request.into_inner(), access).await
+        recommend_groups(self.dispatcher.toc(&access), request.into_inner(), access).await
     }
 
     async fn discover(
@@ -375,7 +399,7 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
 
-        discover(self.dispatcher.toc(), request.into_inner(), access).await
+        discover(self.dispatcher.toc(&access), request.into_inner(), access).await
     }
 
     async fn discover_batch(
@@ -394,7 +418,7 @@ impl Points for PointsService {
         } = request.into_inner();
 
         discover_batch(
-            self.dispatcher.toc(),
+            self.dispatcher.toc(&access),
             collection_name,
             discover_points,
             read_consistency,
@@ -412,6 +436,12 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
 
-        count(self.dispatcher.toc(), request.into_inner(), None, access).await
+        count(
+            self.dispatcher.toc(&access),
+            request.into_inner(),
+            None,
+            access,
+        )
+        .await
     }
 }

@@ -164,6 +164,6 @@ fn test_alias_operation() {
         .unwrap();
 
     let _ = handle
-        .block_on(dispatcher.toc().get_collection("test_alias3"))
+        .block_on(dispatcher.toc(&FULL_ACCESS).get_collection("test_alias3"))
         .unwrap();
 }

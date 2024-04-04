@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use common::types::{DetailsLevel, TelemetryDetail};
 use segment::common::anonymize::Anonymize;
+use storage::rbac::Access;
 use tokio::sync::Mutex;
 
 use super::telemetry::TelemetryCollector;
@@ -17,6 +18,8 @@ pub struct TelemetryReporter {
     telemetry_url: String,
     telemetry: Arc<Mutex<TelemetryCollector>>,
 }
+
+const FULL_ACCESS: Access = Access::full("Telemetry reporter");
 
 impl TelemetryReporter {
     fn new(telemetry: Arc<Mutex<TelemetryCollector>>) -> Self {
@@ -37,7 +40,7 @@ impl TelemetryReporter {
             .telemetry
             .lock()
             .await
-            .prepare_data(DETAIL)
+            .prepare_data(&FULL_ACCESS, DETAIL)
             .await
             .anonymize();
         let client = reqwest::Client::new();

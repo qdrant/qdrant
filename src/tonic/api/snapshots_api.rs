@@ -47,7 +47,12 @@ impl Snapshots for SnapshotsService {
         let timing = Instant::now();
         let dispatcher = self.dispatcher.clone();
         let response = async move {
-            do_create_snapshot(Arc::clone(dispatcher.toc()), access, &collection_name)?.await?
+            do_create_snapshot(
+                Arc::clone(dispatcher.toc(&access)),
+                access,
+                &collection_name,
+            )?
+            .await?
         }
         .await
         .map_err(error_to_status)?;
@@ -66,7 +71,7 @@ impl Snapshots for SnapshotsService {
         let ListSnapshotsRequest { collection_name } = request.into_inner();
 
         let timing = Instant::now();
-        let snapshots = do_list_snapshots(self.dispatcher.toc(), access, &collection_name)
+        let snapshots = do_list_snapshots(self.dispatcher.toc(&access), access, &collection_name)
             .await
             .map_err(error_to_status)?;
         Ok(Response::new(ListSnapshotsResponse {
@@ -127,7 +132,7 @@ impl Snapshots for SnapshotsService {
         validate(request.get_ref())?;
         let timing = Instant::now();
         let access = extract_access(&mut request);
-        let snapshots = do_list_full_snapshots(self.dispatcher.toc(), access)
+        let snapshots = do_list_full_snapshots(self.dispatcher.toc(&access), access)
             .await
             .map_err(error_to_status)?;
         Ok(Response::new(ListSnapshotsResponse {

@@ -67,7 +67,13 @@ impl Collections for CollectionsService {
     ) -> Result<Response<GetCollectionInfoResponse>, Status> {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
-        get(self.dispatcher.toc(), request.into_inner(), access, None).await
+        get(
+            self.dispatcher.toc(&access),
+            request.into_inner(),
+            access,
+            None,
+        )
+        .await
     }
 
     async fn list(
@@ -77,7 +83,7 @@ impl Collections for CollectionsService {
         validate(request.get_ref())?;
         let timing = Instant::now();
         let access = extract_access(&mut request);
-        let result = do_list_collections(self.dispatcher.toc(), access).await;
+        let result = do_list_collections(self.dispatcher.toc(&access), access).await;
 
         let response = ListCollectionsResponse::from((timing, result));
         Ok(Response::new(response))
@@ -124,7 +130,7 @@ impl Collections for CollectionsService {
         let access = extract_access(&mut request);
         let ListCollectionAliasesRequest { collection_name } = request.into_inner();
         let CollectionsAliasesResponse { aliases } =
-            do_list_collection_aliases(self.dispatcher.toc(), access, &collection_name)
+            do_list_collection_aliases(self.dispatcher.toc(&access), access, &collection_name)
                 .await
                 .map_err(error_to_status)?;
         let response = ListAliasesResponse {
@@ -141,9 +147,10 @@ impl Collections for CollectionsService {
         validate(request.get_ref())?;
         let timing = Instant::now();
         let access = extract_access(&mut request);
-        let CollectionsAliasesResponse { aliases } = do_list_aliases(self.dispatcher.toc(), access)
-            .await
-            .map_err(error_to_status)?;
+        let CollectionsAliasesResponse { aliases } =
+            do_list_aliases(self.dispatcher.toc(&access), access)
+                .await
+                .map_err(error_to_status)?;
         let response = ListAliasesResponse {
             aliases: aliases.into_iter().map(|alias| alias.into()).collect(),
             time: timing.elapsed().as_secs_f64(),
@@ -159,7 +166,7 @@ impl Collections for CollectionsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         let CollectionExistsRequest { collection_name } = request.into_inner();
-        let result = do_collection_exists(self.dispatcher.toc(), access, &collection_name)
+        let result = do_collection_exists(self.dispatcher.toc(&access), access, &collection_name)
             .await
             .map_err(error_to_status)?;
         let response = CollectionExistsResponse {
@@ -177,7 +184,7 @@ impl Collections for CollectionsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         let response = do_get_collection_cluster(
-            self.dispatcher.toc(),
+            self.dispatcher.toc(&access),
             access,
             request.into_inner().collection_name.as_str(),
         )

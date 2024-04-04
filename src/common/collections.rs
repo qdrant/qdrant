@@ -262,7 +262,7 @@ pub async fn do_update_collection_cluster(
     };
 
     let collection = dispatcher
-        .toc()
+        .toc(&full_access)
         .get_collection_by_pass(&collection_pass)
         .await?;
 

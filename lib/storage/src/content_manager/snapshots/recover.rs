@@ -57,15 +57,16 @@ pub fn do_recover_from_snapshot(
 ) -> Result<JoinHandle<Result<bool, StorageError>>, StorageError> {
     let multipass = access.check_global_access(AccessRequrements::new().manage())?;
 
-    let dispatch = dispatcher.clone();
+    let dispatcher = dispatcher.clone();
     let collection_pass = multipass.issue_pass(collection_name).into_static();
     Ok(tokio::spawn(async move {
-        _do_recover_from_snapshot(dispatch, collection_pass, source, &client).await
+        _do_recover_from_snapshot(dispatcher, access, collection_pass, source, &client).await
     }))
 }
 
 async fn _do_recover_from_snapshot(
     dispatcher: Dispatcher,
+    access: Access,
     collection_pass: CollectionPass<'static>,
     source: SnapshotRecover,
     client: &reqwest::Client,
@@ -75,7 +76,7 @@ async fn _do_recover_from_snapshot(
         priority,
         checksum,
     } = source;
-    let toc = dispatcher.toc();
+    let toc = dispatcher.toc(&access);
 
     let this_peer_id = toc.this_peer_id;
 

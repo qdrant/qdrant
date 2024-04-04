@@ -46,7 +46,7 @@ fn telemetry(
             histograms: false,
         };
         let telemetry_collector = telemetry_collector.lock().await;
-        let telemetry_data = telemetry_collector.prepare_data(detail).await;
+        let telemetry_data = telemetry_collector.prepare_data(&access, detail).await;
         let telemetry_data = if anonymize {
             telemetry_data.anonymize()
         } else {
@@ -74,10 +74,13 @@ async fn metrics(
     let anonymize = params.anonymize.unwrap_or(false);
     let telemetry_collector = telemetry_collector.lock().await;
     let telemetry_data = telemetry_collector
-        .prepare_data(TelemetryDetail {
-            level: DetailsLevel::Level1,
-            histograms: true,
-        })
+        .prepare_data(
+            &access,
+            TelemetryDetail {
+                level: DetailsLevel::Level1,
+                histograms: true,
+            },
+        )
         .await;
     let telemetry_data = if anonymize {
         telemetry_data.anonymize()

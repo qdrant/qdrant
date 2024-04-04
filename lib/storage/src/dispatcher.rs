@@ -34,7 +34,10 @@ impl Dispatcher {
         }
     }
 
-    pub fn toc(&self) -> &Arc<TableOfContent> {
+    /// Get the table of content.
+    /// The `_access` parameter is not used, but it's required to verivy caller's possession of the
+    /// `Access` object.
+    pub fn toc(&self, _access: &Access) -> &Arc<TableOfContent> {
         &self.toc
     }
 

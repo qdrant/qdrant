@@ -60,7 +60,7 @@ pub async fn do_delete_full_snapshot(
     snapshot_name: &str,
 ) -> Result<JoinHandle<Result<bool, StorageError>>, StorageError> {
     access.check_global_access(AccessRequrements::new().manage())?;
-    let toc = dispatcher.toc();
+    let toc = dispatcher.toc(&access);
     let snapshot_manager = toc.get_snapshots_storage_manager();
     let snapshot_dir = get_full_snapshot_path(toc, snapshot_name).await?;
     log::info!("Deleting full storage snapshot {:?}", snapshot_dir);
@@ -77,7 +77,7 @@ pub async fn do_delete_collection_snapshot(
 ) -> Result<JoinHandle<Result<bool, StorageError>>, StorageError> {
     let collection_pass = access
         .check_collection_access(collection_name, AccessRequrements::new().write().whole())?;
-    let toc = dispatcher.toc();
+    let toc = dispatcher.toc(&access);
     let snapshot_name = snapshot_name.to_string();
     let collection = toc.get_collection_by_pass(&collection_pass).await?;
     let file_name = collection.get_snapshot_path(&snapshot_name).await?;
@@ -104,18 +104,16 @@ pub fn do_create_full_snapshot(
     access: Access,
 ) -> Result<JoinHandle<Result<SnapshotDescription, StorageError>>, StorageError> {
     let multipass = access.check_global_access(AccessRequrements::new().manage())?;
-    let dispatcher = dispatcher.clone();
+    let toc = dispatcher.toc(&access).clone();
     Ok(tokio::spawn(async move {
-        _do_create_full_snapshot(&dispatcher, multipass).await
+        _do_create_full_snapshot(&toc, multipass).await
     }))
 }
 
 async fn _do_create_full_snapshot(
-    dispatcher: &Dispatcher,
+    toc: &TableOfContent,
     multipass: CollectionMultipass,
 ) -> Result<SnapshotDescription, StorageError> {
-    let toc = dispatcher.toc();
-
     let snapshot_dir = Path::new(toc.snapshots_path()).to_path_buf();
 
     let all_collections = toc.all_collections().await;

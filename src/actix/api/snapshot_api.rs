@@ -152,7 +152,7 @@ async fn create_snapshot(
 ) -> impl Responder {
     let collection_name = path.into_inner();
     helpers::time_or_accept_with_handle(params.wait.unwrap_or(true), async move {
-        do_create_snapshot(dispatcher.toc().clone(), access, &collection_name)
+        do_create_snapshot(dispatcher.toc(&access).clone(), access, &collection_name)
     })
     .await
 }
@@ -179,7 +179,7 @@ async fn upload_snapshot(
         }
 
         let snapshot_location =
-            do_save_uploaded_snapshot(dispatcher.toc(), &collection.name, snapshot).await?;
+            do_save_uploaded_snapshot(dispatcher.toc(&access), &collection.name, snapshot).await?;
 
         let http_client = http_client.client()?;
 
