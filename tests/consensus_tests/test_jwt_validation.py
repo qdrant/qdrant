@@ -330,7 +330,7 @@ restart_transfer_operation = AccessStub(
         }
     },
 )
-list_collection_aliases = AccessStub(False, False, True)
+list_collection_aliases = AccessStub(True, True, True, None, {"collection_name": COLL_NAME})
 list_aliases = AccessStub(False, False, True)
 
 
@@ -361,7 +361,7 @@ TABLE_OF_ACCESS = {
         # custom_create_shard_key_operation,
         # drop_shard_key_operation
     ],
-    # "GET /collections/{collection_name}/aliases": [list_collection_aliases],
+    "GET /collections/{collection_name}/aliases": [list_collection_aliases],
     # "GET /aliases": [list_aliases],
     # "POST /collections/{collection_name}/snapshots/upload": [False, False, True],
     # "PUT /collections/{collection_name}/snapshots/recover": [False, False, True],
@@ -441,7 +441,7 @@ GRPC_TO_REST_MAPPING = {
     "/qdrant.Collections/Update": "PATCH /collections/{collection_name}",
     "/qdrant.Collections/Delete": "DELETE /collections/{collection_name}",
     "/qdrant.Collections/UpdateAliases": "POST /collections/aliases",
-    # "/qdrant.Collections/ListCollectionAliases": "GET /collections/{collection_name}/aliases",
+    "/qdrant.Collections/ListCollectionAliases": "GET /collections/{collection_name}/aliases",
     # "/qdrant.Collections/ListAliases": "GET /aliases",
     "/qdrant.Collections/CollectionClusterInfo": "GET /collections/{collection_name}/cluster",
     "/qdrant.Collections/CollectionExists": "GET /collections/{collection_name}/exists",
