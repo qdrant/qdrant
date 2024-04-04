@@ -30,6 +30,7 @@ use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseI
 use crate::json_path::{JsonPath, JsonPathInterface};
 use crate::spaces::metric::{Metric, MetricPostProcessing};
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
+use crate::types::MultiVectorConfig::MaxSim;
 use crate::vector_storage::simple_sparse_vector_storage::SPARSE_VECTOR_DISTANCE;
 
 pub type PayloadKeyType = JsonPath;
@@ -747,6 +748,20 @@ pub enum VectorStorageType {
     ChunkedMmap,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone)]
+pub enum MultiVectorConfig {
+    MaxSim(MaxSimConfig),
+}
+
+impl Default for MultiVectorConfig {
+    fn default() -> Self {
+        MaxSim(MaxSimConfig::default())
+    }
+}
+
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone)]
+pub struct MaxSimConfig {}
+
 impl VectorStorageType {
     /// Whether this storage type is a mmap on disk
     pub fn is_on_disk(&self) -> bool {
@@ -771,6 +786,9 @@ pub struct VectorDataConfig {
     pub index: Indexes,
     /// Vector specific quantization config that overrides collection config
     pub quantization_config: Option<QuantizationConfig>,
+    /// Vector specific configuration to enable multiple vectors per point
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub multi_vec_config: Option<MultiVectorConfig>,
 }
 
 impl VectorDataConfig {

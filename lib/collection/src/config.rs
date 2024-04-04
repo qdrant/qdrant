@@ -347,6 +347,8 @@ impl CollectionParams {
                         } else {
                             VectorStorageType::Memory
                         },
+                        // TODO(colbert) add `multivec` to `VectorParams`
+                        multi_vec_config: None,
                     },
                 )
             })

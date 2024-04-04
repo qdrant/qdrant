@@ -17,8 +17,8 @@ use segment::index::hnsw_index::hnsw::HNSWIndex;
 use segment::index::VectorIndex;
 use segment::segment_constructor::build_segment;
 use segment::types::{
-    Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload, PayloadSchemaType,
-    SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageType,
+    Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, MultiVectorConfig, Payload,
+    PayloadSchemaType, SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageType,
 };
 use segment::vector_storage::simple_multi_dense_vector_storage::open_simple_multi_dense_vector_storage;
 use segment::vector_storage::VectorStorage;
@@ -47,6 +47,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
                 storage_type: VectorStorageType::Memory,
                 index: Indexes::Plain {},
                 quantization_config: None,
+                multi_vec_config: None,
             },
         )]),
         sparse_vector_data: Default::default(),
@@ -68,6 +69,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
         DB_VECTOR_CF,
         dim,
         distance,
+        MultiVectorConfig::default(),
         &AtomicBool::new(false),
     )
     .unwrap();

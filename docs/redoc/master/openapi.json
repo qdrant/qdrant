@@ -9142,6 +9142,17 @@
                 "nullable": true
               }
             ]
+          },
+          "multi_vec_config": {
+            "description": "Vector specific configuration to enable multiple vectors per point",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MultiVectorConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -9213,6 +9224,25 @@
             }
           }
         ]
+      },
+      "MultiVectorConfig": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "MaxSim"
+            ],
+            "properties": {
+              "MaxSim": {
+                "$ref": "#/components/schemas/MaxSimConfig"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "MaxSimConfig": {
+        "type": "object"
       },
       "SparseVectorDataConfig": {
         "description": "Config of single sparse vector data storage",
