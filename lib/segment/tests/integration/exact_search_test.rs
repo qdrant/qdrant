@@ -51,7 +51,7 @@ fn exact_search_test() {
                 storage_type: VectorStorageType::Memory,
                 index: Indexes::Plain {},
                 quantization_config: None,
-                multivec: None,
+                multi_vec_config: None,
             },
         )]),
         sparse_vector_data: Default::default(),

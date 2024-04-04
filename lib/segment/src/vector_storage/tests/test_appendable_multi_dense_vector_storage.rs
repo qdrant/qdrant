@@ -9,7 +9,7 @@ use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use crate::data_types::vectors::{DenseVector, MultiDenseVector};
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::id_tracker::IdTrackerSS;
-use crate::types::Distance;
+use crate::types::{Distance, MultiVectorConfig};
 use crate::vector_storage::simple_multi_dense_vector_storage::open_simple_multi_dense_vector_storage;
 use crate::vector_storage::{new_raw_scorer, VectorStorage, VectorStorageEnum};
 
@@ -151,6 +151,7 @@ fn do_test_update_from_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnu
             DB_VECTOR_CF,
             4,
             Distance::Dot,
+            MultiVectorConfig::default(),
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -225,6 +226,7 @@ fn test_delete_points_in_simple_multi_dense_vector_storage() {
             DB_VECTOR_CF,
             4,
             Distance::Dot,
+            MultiVectorConfig::default(),
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -237,6 +239,7 @@ fn test_delete_points_in_simple_multi_dense_vector_storage() {
         DB_VECTOR_CF,
         4,
         Distance::Dot,
+        MultiVectorConfig::default(),
         &AtomicBool::new(false),
     )
     .unwrap();
@@ -252,6 +255,7 @@ fn test_update_from_delete_points_simple_multi_dense_vector_storage() {
             DB_VECTOR_CF,
             4,
             Distance::Dot,
+            MultiVectorConfig::default(),
             &AtomicBool::new(false),
         )
         .unwrap();
@@ -265,6 +269,7 @@ fn test_update_from_delete_points_simple_multi_dense_vector_storage() {
         DB_VECTOR_CF,
         4,
         Distance::Dot,
+        MultiVectorConfig::default(),
         &AtomicBool::new(false),
     )
     .unwrap();

@@ -28,6 +28,18 @@ impl<'a, TMetric: Metric<VectorElementType>, TVectorStorage: MultiVectorStorage>
             metric: PhantomData,
         }
     }
+
+    fn score_multi(
+        &self,
+        multi_dense_a: &MultiDenseVector,
+        multi_dense_b: &MultiDenseVector,
+    ) -> ScoreType {
+        score_multi::<TMetric>(
+            self.vector_storage.multi_vector_config(),
+            multi_dense_a,
+            multi_dense_b,
+        )
+    }
 }
 
 impl<'a, TMetric: Metric<VectorElementType>, TVectorStorage: MultiVectorStorage>
@@ -35,17 +47,17 @@ impl<'a, TMetric: Metric<VectorElementType>, TVectorStorage: MultiVectorStorage>
 {
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        score_multi::<TMetric>(&self.query, self.vector_storage.get_multi(idx))
+        self.score_multi(&self.query, self.vector_storage.get_multi(idx))
     }
 
     #[inline]
     fn score(&self, v2: &MultiDenseVector) -> ScoreType {
-        score_multi::<TMetric>(&self.query, v2)
+        self.score_multi(&self.query, v2)
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
         let v1 = self.vector_storage.get_multi(point_a);
         let v2 = self.vector_storage.get_multi(point_b);
-        score_multi::<TMetric>(v1, v2)
+        self.score_multi(v1, v2)
     }
 }

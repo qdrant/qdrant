@@ -57,8 +57,9 @@ impl<
 
     #[inline]
     fn score(&self, against: &MultiDenseVector) -> ScoreType {
-        self.query
-            .score_by(|example| score_multi::<TMetric>(example, against))
+        self.query.score_by(|example| {
+            score_multi::<TMetric>(self.vector_storage.multi_vector_config(), example, against)
+        })
     }
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {

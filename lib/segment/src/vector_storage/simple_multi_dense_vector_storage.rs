@@ -13,7 +13,7 @@ use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::{DenseVector, MultiDenseVector, VectorRef};
-use crate::types::Distance;
+use crate::types::{Distance, MultiVectorConfig};
 use crate::vector_storage::bitvec::bitvec_set_deleted;
 use crate::vector_storage::common::StoredRecord;
 use crate::vector_storage::{MultiVectorStorage, VectorStorage, VectorStorageEnum};
@@ -24,6 +24,7 @@ type StoredMultiDenseVector = StoredRecord<MultiDenseVector>;
 pub struct SimpleMultiDenseVectorStorage {
     dim: usize,
     distance: Distance,
+    multi_vector_config: MultiVectorConfig,
     /// Keep vectors in memory
     vectors: Vec<MultiDenseVector>,
     db_wrapper: DatabaseColumnWrapper,
@@ -40,6 +41,7 @@ pub fn open_simple_multi_dense_vector_storage(
     database_column_name: &str,
     dim: usize,
     distance: Distance,
+    multi_vector_config: MultiVectorConfig,
     stopped: &AtomicBool,
 ) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
     let mut vectors = vec![];
@@ -70,6 +72,7 @@ pub fn open_simple_multi_dense_vector_storage(
         VectorStorageEnum::MultiDenseSimple(SimpleMultiDenseVectorStorage {
             dim,
             distance,
+            multi_vector_config,
             vectors,
             db_wrapper,
             update_buffer: StoredMultiDenseVector {
@@ -126,6 +129,10 @@ impl SimpleMultiDenseVectorStorage {
 impl MultiVectorStorage for SimpleMultiDenseVectorStorage {
     fn get_multi(&self, key: PointOffsetType) -> &MultiDenseVector {
         self.vectors.get(key as usize).expect("vector not found")
+    }
+
+    fn multi_vector_config(&self) -> &MultiVectorConfig {
+        &self.multi_vector_config
     }
 }
 

@@ -45,7 +45,7 @@ fn test_graph_connectivity() {
                 storage_type: VectorStorageType::Memory,
                 index: Indexes::Plain {},
                 quantization_config: None,
-                multivec: None,
+                multi_vec_config: None,
             },
         )]),
         payload_storage_type: Default::default(),
