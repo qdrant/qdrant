@@ -123,6 +123,7 @@ fn create_segment(
             // In memory
             VectorStorageType::Memory => {
                 let db_column_name = get_vector_name_with_prefix(DB_VECTOR_CF, vector_name);
+                // TODO(colbert) open multivec storage
                 open_simple_vector_storage(
                     database.clone(),
                     &db_column_name,
