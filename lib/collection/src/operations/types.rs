@@ -63,6 +63,8 @@ pub enum CollectionStatus {
     Green,
     // Collection is available, but some segments might be under optimization
     Yellow,
+    // Collection is available, but some segments are pending optimization
+    Grey,
     // Something is not OK:
     // - some operations failed and was not recovered
     Red,

@@ -1122,6 +1122,8 @@ pub enum CollectionStatus {
     Yellow = 2,
     /// Something went wrong
     Red = 3,
+    /// Optimization is pending
+    Grey = 4,
 }
 impl CollectionStatus {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -1134,6 +1136,7 @@ impl CollectionStatus {
             CollectionStatus::Green => "Green",
             CollectionStatus::Yellow => "Yellow",
             CollectionStatus::Red => "Red",
+            CollectionStatus::Grey => "Grey",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -1143,6 +1146,7 @@ impl CollectionStatus {
             "Green" => Some(Self::Green),
             "Yellow" => Some(Self::Yellow),
             "Red" => Some(Self::Red),
+            "Grey" => Some(Self::Grey),
             _ => None,
         }
     }

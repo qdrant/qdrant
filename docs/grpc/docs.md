@@ -1455,6 +1455,7 @@ Note: 1kB = 1 vector of size 256. |
 | Green | 1 | All segments are ready |
 | Yellow | 2 | Optimization in process |
 | Red | 3 | Something went wrong |
+| Grey | 4 | Optimization is pending |
 
 
 

@@ -340,6 +340,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                 CollectionStatus::Green => api::grpc::qdrant::CollectionStatus::Green,
                 CollectionStatus::Yellow => api::grpc::qdrant::CollectionStatus::Yellow,
                 CollectionStatus::Red => api::grpc::qdrant::CollectionStatus::Red,
+                CollectionStatus::Grey => api::grpc::qdrant::CollectionStatus::Grey,
             }
             .into(),
             optimizer_status: Some(match optimizer_status {
