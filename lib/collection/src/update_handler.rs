@@ -1,7 +1,7 @@
 use std::cmp::min;
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use common::cpu::CpuBudget;
@@ -109,6 +109,8 @@ pub struct UpdateHandler {
     /// Maximum number of concurrent optimization jobs in this update handler.
     /// This parameter depends on the optimizer config and should be updated accordingly.
     pub max_optimization_threads: Option<usize>,
+    /// Whether optimizers are currently blocked by limits, such as CPU or handle limits.
+    optimizers_pending_limits: Arc<AtomicBool>,
     /// Highest and cutoff clocks for the shard WAL.
     clocks: LocalShardClocks,
     shard_path: PathBuf,
@@ -145,6 +147,7 @@ impl UpdateHandler {
             flush_interval_sec,
             optimization_handles: Arc::new(TokioMutex::new(vec![])),
             max_optimization_threads,
+            optimizers_pending_limits: Default::default(),
             clocks,
             shard_path,
         }
@@ -161,6 +164,7 @@ impl UpdateHandler {
             self.optimization_handles.clone(),
             self.optimizers_log.clone(),
             self.optimizer_cpu_budget.clone(),
+            self.optimizers_pending_limits.clone(),
             self.max_optimization_threads,
         )));
         self.update_worker = Some(self.runtime_handle.spawn(Self::update_worker_fn(
@@ -376,6 +380,12 @@ impl UpdateHandler {
     ///
     /// In other words, if this returns true we have pending optimizations.
     pub(crate) fn has_pending_optimizations(&self) -> bool {
+        // If optimizations are not pending updates, but are blocked by limits, we do not consider
+        // them to be pending. They'll progress once other optimizations finalize
+        if self.optimizers_pending_limits.load(Ordering::Relaxed) {
+            return false;
+        }
+
         let excluded_ids = HashSet::<_>::default();
         self.optimizers.iter().any(|optimizer| {
             let nonoptimal_segment_ids =
@@ -448,6 +458,7 @@ impl UpdateHandler {
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
         optimizer_cpu_budget: CpuBudget,
+        optimizers_pending_limits: Arc<AtomicBool>,
         max_handles: Option<usize>,
     ) {
         let max_handles = max_handles.unwrap_or(usize::MAX);
@@ -502,6 +513,7 @@ impl UpdateHandler {
                                 sender.clone(),
                             ));
                         }
+                        optimizers_pending_limits.store(true, Ordering::Relaxed);
                         continue;
                     }
 
@@ -515,8 +527,12 @@ impl UpdateHandler {
                         log::trace!(
                             "Skipping optimization check, we reached optimization thread limit"
                         );
+                        optimizers_pending_limits.store(true, Ordering::Relaxed);
                         continue;
                     }
+
+                    // Reset optimizers are pending limits state
+                    optimizers_pending_limits.store(false, Ordering::Relaxed);
 
                     Self::process_optimization(
                         optimizers.clone(),
