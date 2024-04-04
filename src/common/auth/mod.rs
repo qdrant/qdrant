@@ -3,9 +3,9 @@ use std::sync::Arc;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::ScrollRequestInternal;
 use segment::types::{WithPayloadInterface, WithVector};
+use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::rbac::Access;
-use validator::Validate as _;
 
 use self::claims::{Claims, ValueExists};
 use self::jwt_parser::JwtParser;
@@ -29,6 +29,13 @@ pub struct AuthKeys {
 
     /// Table of content, needed to do stateful validation of JWT
     toc: Arc<TableOfContent>,
+}
+
+#[derive(Debug)]
+pub enum AuthError {
+    Unauthorized(String),
+    Forbidden(String),
+    StorageError(StorageError),
 }
 
 impl AuthKeys {
@@ -66,11 +73,13 @@ impl AuthKeys {
         &self,
         get_header: impl Fn(&'a str) -> Option<&'a str>,
         is_read_only: bool,
-    ) -> Result<Access, String> {
+    ) -> Result<Access, AuthError> {
         let Some(key) = get_header("api-key")
             .or_else(|| get_header("authorization").and_then(|v| v.strip_prefix("Bearer ")))
         else {
-            return Err("Must provide an API key or an Authorization bearer token".to_string());
+            return Err(AuthError::Unauthorized(
+                "Must provide an API key or an Authorization bearer token".to_string(),
+            ));
         };
 
         if is_read_only {
@@ -82,20 +91,16 @@ impl AuthKeys {
                 return Ok(Access::full("Read-write access by key"));
             }
             if self.can_read(key) {
-                return Err("Write access denied".to_string());
+                return Err(AuthError::Forbidden("Write access denied".to_string()));
             }
         }
 
-        if let Some(claims) = self.jwt_parser.as_ref().and_then(|p| p.decode(key).ok()) {
-            if let Err(e) = claims.validate() {
-                return Err(format!("Invalid JWT: {e}"));
-            }
-
+        if let Some(claims) = self.jwt_parser.as_ref().and_then(|p| p.decode(key)) {
             let Claims {
                 exp: _, // already validated on decoding
                 access,
                 value_exists,
-            } = claims;
+            } = claims?;
 
             if let Some(value_exists) = value_exists {
                 self.validate_value_exists(&value_exists).await?;
@@ -104,10 +109,13 @@ impl AuthKeys {
             return Ok(access);
         }
 
-        Err("Invalid API key or JWT".to_string())
+        // Err("Invalid API key or JWT".to_string())
+        Err(AuthError::Unauthorized(
+            "Invalid API key or JWT".to_string(),
+        ))
     }
 
-    async fn validate_value_exists(&self, value_exists: &ValueExists) -> Result<(), String> {
+    async fn validate_value_exists(&self, value_exists: &ValueExists) -> Result<(), AuthError> {
         let scroll_req = ScrollRequestInternal {
             offset: None,
             limit: Some(1),
@@ -127,10 +135,17 @@ impl AuthKeys {
                 Access::full("JWT stateful validation"),
             )
             .await
-            .map_err(|e| format!("Could not confirm validity of JWT: {e}"))?;
+            .map_err(|e| match e {
+                StorageError::NotFound { .. } => {
+                    AuthError::Forbidden("Invalid JWT, stateful validation failed".to_string())
+                }
+                _ => AuthError::StorageError(e),
+            })?;
 
         if res.points.is_empty() {
-            return Err("Invalid JWT, stateful validation failed".to_string());
+            return Err(AuthError::Unauthorized(
+                "Invalid JWT, stateful validation failed".to_string(),
+            ));
         };
 
         Ok(())

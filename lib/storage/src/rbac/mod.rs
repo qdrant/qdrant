@@ -85,7 +85,7 @@ impl Access {
     ) -> Result<CollectionMultipass, StorageError> {
         match self {
             Access::Global(mode) => mode.meets_requirements(requirements)?,
-            _ => return Err(StorageError::unauthorized("Global access is not allowed")),
+            _ => return Err(StorageError::forbidden("Global access is required")),
         }
         Ok(CollectionMultipass)
     }
@@ -121,7 +121,9 @@ impl CollectionAccessList {
                     .any(|name| name == collection_name)
             })
             .ok_or_else(|| {
-                StorageError::unauthorized(format!("Collection {collection_name} is not allowed"))
+                StorageError::forbidden(format!(
+                    "Access to collection {collection_name} is required"
+                ))
             })?;
         Ok(CollectionAccessView {
             collection: collection_name,
@@ -154,8 +156,8 @@ impl<'a> CollectionAccessView<'a> {
         if write {
             match self.access {
                 CollectionAccessMode::Read => {
-                    return Err(StorageError::unauthorized(format!(
-                        "Only read-only access is allowed for collection {}",
+                    return Err(StorageError::forbidden(format!(
+                        "Write access to collection {} is required",
                         self.collection,
                     )))
                 }
@@ -163,10 +165,11 @@ impl<'a> CollectionAccessView<'a> {
             }
         }
         if manage {
-            return Err(StorageError::unauthorized(format!(
-                "Manage access is not allowed for collection {}",
-                self.collection,
-            )));
+            // Don't specify collection name since the manage access could be enabled globally, and
+            // not per collection.
+            return Err(StorageError::forbidden(
+                "Manage access for this operation is required",
+            ));
         }
         if whole && self.payload.is_some() {
             return incompatible_with_payload_constraint(self.collection);
@@ -250,9 +253,7 @@ impl GlobalAccessMode {
         if write || manage {
             match self {
                 GlobalAccessMode::Read => {
-                    return Err(StorageError::unauthorized(
-                        "Only read-only access is allowed",
-                    ))
+                    return Err(StorageError::forbidden("Global manage access is required"))
                 }
                 GlobalAccessMode::Manage => (),
             }
@@ -264,7 +265,7 @@ impl GlobalAccessMode {
 /// Helper function to indicate that the operation is not allowed when `payload` constraint is
 /// present.
 fn incompatible_with_payload_constraint<T>(collection_name: &str) -> Result<T, StorageError> {
-    Err(StorageError::unauthorized(format!(
+    Err(StorageError::forbidden(format!(
         "This operation is not allowed when \"payload\" restriction is present for collection \
          {collection_name}"
     )))
