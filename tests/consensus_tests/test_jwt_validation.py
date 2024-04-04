@@ -180,7 +180,7 @@ create_index = AccessStub(
     {"field_name": FIELD_NAME, "field_schema": "keyword"}, 
     {"collection_name": COLL_NAME, "field_name": FIELD_NAME, "field_type": 0}
 )
-collection_exists = AccessStub(True, True, True)
+collection_exists = AccessStub(True, True, True, None, {"collection_name": COLL_NAME})
 delete_index = AccessStub(False, False, True)
 move_shard_operation = AccessStub(
     False,
@@ -283,7 +283,7 @@ TABLE_OF_ACCESS = {
     "DELETE /collections/{collection_name}": [delete_collection],
     "POST /collections/aliases": [create_alias, rename_alias, delete_alias],
     "PUT /collections/{collection_name}/index": [create_index],
-    # "GET /collections/{collection_name}/exists": [True, True, True, None],
+    "GET /collections/{collection_name}/exists": [collection_exists],
     # "DELETE /collections/{collection_name}/index/{field_name}": [delete_index],
     # "GET /collections/{collection_name}/cluster": [collection_exists],
     # "POST /collections/{collection_name}/cluster": [
@@ -379,7 +379,7 @@ GRPC_TO_REST_MAPPING = {
     # "/qdrant.Collections/ListCollectionAliases": "GET /collections/{collection_name}/aliases",
     # "/qdrant.Collections/ListAliases": "GET /aliases",
     # "/qdrant.Collections/CollectionClusterInfo": "GET /collections/{collection_name}/cluster",
-    # "/qdrant.Collections/CollectionExists": "GET /collections/{collection_name}/exists",
+    "/qdrant.Collections/CollectionExists": "GET /collections/{collection_name}/exists",
     # "/qdrant.Collections/UpdateCollectionClusterSetup": "POST /collections/{collection_name}/cluster",
     "/qdrant.Collections/CreateShardKey": "PUT /collections/{collection_name}/shards",
     "/qdrant.Collections/DeleteShardKey": "POST /collections/{collection_name}/shards/delete",
