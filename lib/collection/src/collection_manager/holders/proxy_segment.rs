@@ -1428,6 +1428,7 @@ mod tests {
                         storage_type: VectorStorageType::Memory,
                         index: Indexes::Plain {},
                         quantization_config: None,
+                        multi_vec_config: None,
                     },
                 ),
                 (
@@ -1438,6 +1439,7 @@ mod tests {
                         storage_type: VectorStorageType::Memory,
                         index: Indexes::Plain {},
                         quantization_config: None,
+                        multi_vec_config: None,
                     },
                 ),
             ]),

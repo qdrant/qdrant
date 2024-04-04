@@ -90,6 +90,7 @@ fn estimate_build_time(segment: &Segment, stop_delay_millis: u64) -> (u64, bool)
                 storage_type: VectorStorageType::Memory,
                 index: Indexes::Hnsw(Default::default()),
                 quantization_config: None,
+                multi_vec_config: None,
             },
         )]),
         sparse_vector_data: Default::default(),
