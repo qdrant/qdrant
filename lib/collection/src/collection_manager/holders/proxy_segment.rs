@@ -158,6 +158,57 @@ impl ProxySegment {
             }
         }
     }
+
+    /// Propagate changes in this proxy to the wrapped segment
+    ///
+    /// This propagates:
+    /// - delete (or moved) points
+    /// - deleted payload indexes
+    /// - created payload indexes
+    ///
+    /// This is required if making both the wrapped segment and the writable segment available in a
+    /// shard holder at the same time. If the wrapped segment is thrown away, then this is not
+    /// required.
+    pub(super) fn propagate_to_wrapped(&self) -> OperationResult<()> {
+        let wrapped_segment = self.wrapped_segment.get();
+        let mut wrapped_segment = wrapped_segment.write();
+        let op_num = wrapped_segment.version();
+
+        // Propagate deleted points
+        {
+            let deleted_points = self.deleted_points.upgradable_read();
+            if !deleted_points.is_empty() {
+                for point_id in deleted_points.iter() {
+                    wrapped_segment.delete_point(op_num, *point_id)?;
+                }
+                RwLockUpgradableReadGuard::upgrade(deleted_points).clear();
+            }
+        }
+
+        // Propagate deleted indexes
+        {
+            let deleted_indexes = self.deleted_indexes.upgradable_read();
+            if !deleted_indexes.is_empty() {
+                for key in deleted_indexes.iter() {
+                    wrapped_segment.delete_field_index(op_num, key)?;
+                }
+                RwLockUpgradableReadGuard::upgrade(deleted_indexes).clear();
+            }
+        }
+
+        // Propagate created indexes
+        {
+            let created_indexes = self.created_indexes.upgradable_read();
+            if !created_indexes.is_empty() {
+                for (key, field_schema) in created_indexes.iter() {
+                    wrapped_segment.create_field_index(op_num, key, Some(field_schema))?;
+                }
+                RwLockUpgradableReadGuard::upgrade(created_indexes).clear();
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl SegmentEntry for ProxySegment {

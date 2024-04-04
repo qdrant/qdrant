@@ -11,8 +11,8 @@ use segment::common::anonymize::Anonymize;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::types::{
-    Distance, HnswConfig, Indexes, QuantizationConfig, SparseVectorDataConfig, VectorDataConfig,
-    VectorStorageType,
+    Distance, HnswConfig, Indexes, PayloadStorageType, QuantizationConfig, SparseVectorDataConfig,
+    VectorDataConfig, VectorStorageType,
 };
 use serde::{Deserialize, Serialize};
 use validator::Validate;
@@ -104,6 +104,16 @@ pub struct CollectionParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[validate]
     pub sparse_vectors: Option<BTreeMap<String, SparseVectorParams>>,
+}
+
+impl CollectionParams {
+    pub fn payload_storage_type(&self) -> PayloadStorageType {
+        if self.on_disk_payload {
+            PayloadStorageType::OnDisk
+        } else {
+            PayloadStorageType::InMemory
+        }
+    }
 }
 
 impl Anonymize for CollectionParams {

@@ -11,11 +11,14 @@ use parking_lot::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWrit
 use rand::seq::SliceRandom;
 use rand::{thread_rng, Rng};
 use segment::common::operation_error::{OperationError, OperationResult};
+use segment::common::version::StorageVersion;
 use segment::entry::entry_point::SegmentEntry;
-use segment::segment::Segment;
-use segment::types::{PointIdType, SeqNumberType};
+use segment::segment::{Segment, SegmentVersion};
+use segment::segment_constructor::build_segment;
+use segment::types::{PointIdType, SegmentConfig, SeqNumberType};
 
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
+use crate::config::CollectionParams;
 use crate::operations::types::CollectionError;
 use crate::shards::update_tracker::UpdateTracker;
 
@@ -231,6 +234,12 @@ impl<'s> SegmentHolder {
 
     pub fn get(&self, id: SegmentId) -> Option<&LockedSegment> {
         self.segments.get(&id)
+    }
+
+    pub fn has_appendable_segment(&self) -> bool {
+        self.segments
+            .iter()
+            .any(|(_idx, seg)| seg.get().read().is_appendable())
     }
 
     pub fn appendable_segments(&self) -> Vec<SegmentId> {
@@ -584,20 +593,263 @@ impl<'s> SegmentHolder {
             .collect()
     }
 
+    /// Temporarily proxify all segments and apply function `f` to it.
+    ///
+    /// Intended to smoothly accept writes while performing long-running read operations on each
+    /// segment, such as during snapshotting. It should prevent blocking reads on segments for any
+    /// significant amount of time.
+    ///
+    /// This calls function `f` on all segments, but each segment is temporarily proxified while
+    /// the function is called. All segments are also unproxied at the end when the given function
+    /// has been executed on all segments.
+    ///
+    /// A read lock is kept during the whole process to prevent external actors from messing with
+    /// the segment holder while segments are in proxified state. That means no other actors can
+    /// take a write lock while this operation is running.
+    ///
+    /// As part of this process, a new segment is created. All proxies direct their writes to this
+    /// segment. The segment is added to the collection if it has any operations, otherwise it is
+    /// deleted when all segments are unproxied again.
+    ///
+    /// It is recommended to provide collection parameters. The segment configuration will be
+    /// sourced from it.
+    pub fn proxy_all_segments_and_apply<F>(
+        segments: LockedSegmentHolder,
+        collection_path: &Path,
+        collection_params: Option<&CollectionParams>,
+        f: F,
+    ) -> OperationResult<()>
+    where
+        F: Fn(Arc<RwLock<dyn SegmentEntry>>) -> OperationResult<()>,
+    {
+        let segments_lock = segments.upgradable_read();
+
+        // Proxy all segments
+        log::trace!("Proxying all shard segments to apply function");
+        let (proxies, tmp_segment, segments_lock) =
+            Self::proxy_all_segments(segments_lock, collection_path, collection_params)?;
+
+        // Apply provided function
+        log::trace!("Applying function on all proxied shard segments");
+        let mut result = Ok(());
+        for (proxy_id, proxy_segment) in &proxies {
+            // Get segment to snapshot
+            let segment = match proxy_segment {
+                LockedSegment::Proxy(proxy_segment) => {
+                    proxy_segment.read().wrapped_segment.clone().get()
+                }
+                // All segments to snapshot should be proxy, warn if this is not the case
+                LockedSegment::Original(segment) => {
+                    debug_assert!(false, "Reached non-proxy segment while applying function to proxies, this should not happen, ignoring");
+                    segment.clone()
+                }
+            };
+
+            // Call provided function on segment
+            if let Err(err) = f(segment) {
+                result = Err(OperationError::service_error(format!(
+                    "Applying function to a proxied shard segment {proxy_id} failed: {err}"
+                )));
+                break;
+            }
+        }
+
+        // Unproxy all segments
+        // Always do this to prevent leaving proxy segments behind
+        log::trace!("Unproxying all shard segments after function is applied");
+        Self::unproxy_all_segments(segments_lock, proxies, tmp_segment)?;
+
+        result
+    }
+
+    /// Proxy all shard segments for [`proxy_all_segments_and_apply`]
+    #[allow(clippy::type_complexity)]
+    fn proxy_all_segments<'a>(
+        segments_lock: RwLockUpgradableReadGuard<'a, SegmentHolder>,
+        collection_path: &Path,
+        collection_params: Option<&CollectionParams>,
+    ) -> OperationResult<(
+        Vec<(SegmentId, LockedSegment)>,
+        LockedSegment,
+        RwLockUpgradableReadGuard<'a, SegmentHolder>,
+    )> {
+        // Source config for temporary segment which we target all writes to
+        let config = match collection_params {
+            // Base config on collection params
+            Some(collection_params) => SegmentConfig {
+                vector_data: collection_params
+                    .into_base_vector_data()
+                    .map_err(|err| OperationError::service_error(format!("Failed to source dense vector configuration from collection parameters: {err:?}")))?,
+                sparse_vector_data: collection_params
+                    .into_sparse_vector_data()
+                    .map_err(|err| OperationError::service_error(format!("Failed to source sparse vector configuration from collection parameters: {err:?}")))?,
+                payload_storage_type: collection_params.payload_storage_type(),
+            },
+            // Base config on existing appendable or non-appendable segment
+            None => {
+                segments_lock
+                    .random_appendable_segment()
+                    .ok_or_else(|| OperationError::service_error("No existing segment to source temporary segment configuration from"))?
+                    .get()
+                    .read()
+                    .config()
+                    .clone()
+            }
+        };
+
+        // Create temporary appendable segment to direct all proxy writes into
+        let tmp_segment = LockedSegment::new(build_segment(collection_path, &config, false)?);
+
+        // List all segments we want to snapshot
+        let segment_ids = segments_lock
+            .segments
+            .keys()
+            .copied()
+            .collect::<Vec<SegmentId>>();
+
+        // Create proxy for all segments
+        let mut new_proxies = Vec::with_capacity(segment_ids.len());
+        for segment_id in segment_ids {
+            let segment = segments_lock.segments.get(&segment_id).unwrap();
+            let mut proxy = ProxySegment::new(
+                segment.clone(),
+                tmp_segment.clone(),
+                Default::default(),
+                Default::default(),
+                Default::default(),
+            );
+
+            // Write segment is fresh, so it has no operations
+            // Operation with number 0 will be applied
+            proxy.replicate_field_indexes(0)?;
+            new_proxies.push((segment_id, proxy));
+        }
+
+        // Save segment version once all payload indices have been converted
+        // If this ends up not being saved due to a crash, the segment will not be used
+        match &tmp_segment {
+            LockedSegment::Original(segment) => {
+                let segment_path = &segment.read().current_path;
+                SegmentVersion::save(segment_path)?;
+            }
+            LockedSegment::Proxy(_) => unreachable!(),
+        }
+
+        // Replace all segments with proxies
+        // We cannot fail past this point to prevent only having some segments proxified
+        let mut proxies = Vec::with_capacity(new_proxies.len());
+        let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
+        for (segment_id, mut proxy) in new_proxies {
+            // Replicate field indexes the second time, because optimized segments could have
+            // been changed. The probability is small, though, so we can afford this operation
+            // under the full collection write lock
+            let op_num = proxy.version();
+            if let Err(err) = proxy.replicate_field_indexes(op_num) {
+                log::error!("Failed to replicate proxy segment field indexes, ignoring: {err}");
+            }
+
+            let (segment_id, segments) = write_segments.swap(proxy, &[segment_id]);
+            debug_assert_eq!(segments.len(), 1);
+            let locked_proxy_segment = write_segments
+                .get(segment_id)
+                .cloned()
+                .expect("failed to get segment from segment holder we just swapped in");
+            proxies.push((segment_id, locked_proxy_segment));
+        }
+        let segments_lock = RwLockWriteGuard::downgrade_to_upgradable(write_segments);
+
+        Ok((proxies, tmp_segment, segments_lock))
+    }
+
+    /// Unproxy all shard segments for [`proxy_all_segments_and_apply`]
+    fn unproxy_all_segments(
+        segments_lock: RwLockUpgradableReadGuard<SegmentHolder>,
+        proxies: Vec<(SegmentId, LockedSegment)>,
+        tmp_segment: LockedSegment,
+    ) -> OperationResult<()> {
+        // We must propagate all changes in the proxy into their wrapped segments, as we'll put the
+        // wrapped segments back into the segment holder. This can be an expensive step if we
+        // collected a lot of changes in the proxy, so we do this in two batches. First we
+        // propagate all changes with a read lock on the shard holder, to prevent blocking other
+        // readers. Second we propagate any new changes again with a write lock on the segment
+        // holder, blocking other operations. This second batch should be very fast, as we already
+        // propagated all changes in the first, which is why we can hold a write lock. Once done,
+        // we can swap out the proxy for the wrapped shard.
+
+        // Batch 1: propagate changes to wrapped segment with segment holder read lock
+        proxies
+            .iter()
+            .flat_map(|(proxy_id, proxy_segment)| match proxy_segment {
+                LockedSegment::Proxy(proxy_segment) => Some((proxy_id, proxy_segment)),
+                LockedSegment::Original(_) => None,
+            }).for_each(|(proxy_id, proxy_segment)| {
+                if let Err(err) = proxy_segment.read().propagate_to_wrapped() {
+                    log::error!("Propagating proxy segment {proxy_id} changes to wrapped segment failed, ignoring: {err}");
+                }
+            });
+
+        // Batch 2: propagate changes to wrapped segment with segment holder write lock
+        // Swap out each proxy with wrapped segment once changes are propagated
+        let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
+        for (proxy_id, proxy_segment) in proxies {
+            match proxy_segment {
+                // Propagate proxied changes to wrapped segment, take it out and swap with proxy
+                LockedSegment::Proxy(proxy_segment) => {
+                    let wrapped_segment = {
+                        let proxy_segment = proxy_segment.read();
+                        if let Err(err) = proxy_segment.propagate_to_wrapped() {
+                            log::error!("Propagating proxy segment {proxy_id} changes to wrapped segment failed, ignoring: {err}");
+                        }
+                        proxy_segment.wrapped_segment.clone()
+                    };
+                    let (_, segments) = write_segments.swap(wrapped_segment, &[proxy_id]);
+                    debug_assert_eq!(segments.len(), 1);
+                }
+                // If already unproxied, do nothing
+                LockedSegment::Original(_) => {}
+            }
+        }
+
+        // Finalize temporary segment we proxied writes to
+        // Append a temp segment to collection if it is not empty or there is no other appendable segment
+        let available_points = tmp_segment.get().read().available_point_count();
+        let has_appendable_segment = write_segments.has_appendable_segment();
+        if available_points > 0 || !has_appendable_segment {
+            log::trace!("Keeping temporary segment with {available_points} points");
+            write_segments.add_locked(tmp_segment);
+        } else {
+            log::trace!("Dropping temporary segment with no changes");
+            tmp_segment.drop_data()?;
+        }
+
+        Ok(())
+    }
+
     /// Take a snapshot of all segments into `snapshot_dir_path`
     ///
-    /// Shortcuts at the first failing segment snapshot
+    /// It is recommended to provide collection parameters. This function internally creates a
+    /// temporary segment, which will source the configuration from it.
+    ///
+    /// Shortcuts at the first failing segment snapshot.
     pub fn snapshot_all_segments(
-        &self,
+        segments: LockedSegmentHolder,
+        collection_path: &Path,
+        collection_params: Option<&CollectionParams>,
         temp_dir: &Path,
         snapshot_dir_path: &Path,
     ) -> OperationResult<()> {
-        for segment in self.segments.values() {
-            let segment_lock = segment.get();
-            let read_segment = segment_lock.read();
-            read_segment.take_snapshot(temp_dir, snapshot_dir_path)?;
-        }
-        Ok(())
+        // Snapshotting may take long-running read locks on segments blocking incoming writes, do
+        // this through proxied segments to allow writes to continue.
+        Self::proxy_all_segments_and_apply(
+            segments,
+            collection_path,
+            collection_params,
+            |segment| {
+                let read_segment = segment.read();
+                read_segment.take_snapshot(temp_dir, snapshot_dir_path)?;
+                Ok(())
+            },
+        )
     }
 
     pub fn report_optimizer_error<E: Into<CollectionError>>(&mut self, error: E) {
@@ -850,11 +1102,19 @@ mod tests {
         let sid2 = holder.add(segment2);
         assert_ne!(sid1, sid2);
 
+        let holder = Arc::new(RwLock::new(holder));
+
+        let collection_dir = Builder::new().prefix("collection_dir").tempdir().unwrap();
         let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
         let snapshot_dir = Builder::new().prefix("snapshot_dir").tempdir().unwrap();
-        holder
-            .snapshot_all_segments(temp_dir.path(), snapshot_dir.path())
-            .unwrap();
+        SegmentHolder::snapshot_all_segments(
+            holder,
+            collection_dir.path(),
+            None,
+            temp_dir.path(),
+            snapshot_dir.path(),
+        )
+        .unwrap();
 
         let archive_count = read_dir(&snapshot_dir).unwrap().count();
         // one archive produced per concrete segment in the SegmentHolder
