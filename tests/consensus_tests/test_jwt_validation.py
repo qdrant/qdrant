@@ -15,8 +15,10 @@ from grpc_interceptor import ClientCallDetails, ClientInterceptor
 
 from .utils import encode_jwt, make_peer_folder, start_first_peer, wait_for
 
+
 def random_str():
     return "".join(random.choices(string.ascii_lowercase, k=10))
+
 
 SECRET = "my_top_secret_key"
 
@@ -28,12 +30,14 @@ DELETABLE_COLL_NAMES = [random_str() for _ in range(10)]
 DELETABLE_ALIASES = [random_str() for _ in range(10)]
 RENAMABLE_ALIASES = [random_str() for _ in range(10)]
 DELETABLE_FIELD_INDEX = [random_str() for _ in range(10)]
-SHARD_ID = 0
+MOVABLE_SHARD_IDS = [i + 2 for i in range(10)]
+SHARD_ID = 1
 SNAPSHOT_NAME = "test_snapshot"
 POINT_ID = 0
 FIELD_NAME = "test_field"
 PEER_ID = 0
 DELETABLE_SHARD_KEYS = [random_str() for _ in range(10)]
+MOVABLE_SHARD_KEYS = [random_str() for _ in range(10)]
 SHARD_KEY = "existing_shard_key"
 
 
@@ -45,7 +49,9 @@ class Access:
 
 
 class AccessStub:
-    def __init__(self, read, read_write, manage, rest_req=None, grpc_req=None, collection_name=COLL_NAME):
+    def __init__(
+        self, read, read_write, manage, rest_req=None, grpc_req=None, collection_name=COLL_NAME
+    ):
         self.access = Access(read, read_write, manage)
         self.rest_req = rest_req
         self.grpc_req = grpc_req
@@ -55,47 +61,58 @@ class AccessStub:
 def default_shard_key_config():
     return {"shard_key": random_str()}
 
+
 def default_shard_key_config_grpc():
     return {
         "collection_name": COLL_NAME,
         "request": {"shard_key": {"keyword": random_str()}},
     }
 
+
 def custom_shard_key_config():
     return {"shard_key": random_str(), "replication_factor": 3}
+
 
 def custom_shard_key_config_grpc():
     return {
         "collection_name": COLL_NAME,
-        "request": {"shard_key": { "keyword": random_str()}, "replication_factor": 3 },
+        "request": {"shard_key": {"keyword": random_str()}, "replication_factor": 3},
     }
+
 
 def create_collection_req():
     return {
         "collection_name": random_str(),
     }
 
+
 deletable_shard_key = iter(DELETABLE_SHARD_KEYS)
+
 
 def delete_shard_key_req():
     return {"shard_key": next(deletable_shard_key)}
 
+
 def delete_shard_key_req_grpc():
     return {
         "collection_name": COLL_NAME,
-        "request": {"shard_key": { "keyword": next(deletable_shard_key)} },
+        "request": {"shard_key": {"keyword": next(deletable_shard_key)}},
     }
+
 
 deletable_coll_names = iter(DELETABLE_COLL_NAMES)
 
+
 def delete_collection_name():
     return next(deletable_coll_names)
+
 
 def delete_collection_req_grpc():
     return {
         "collection_name": next(deletable_coll_names),
     }
-    
+
+
 def create_alias_req():
     return {
         "actions": [
@@ -108,10 +125,13 @@ def create_alias_req():
         ]
     }
 
+
 def create_alias_req_grpc():
     return create_alias_req()
 
+
 renamable_aliases = iter(RENAMABLE_ALIASES)
+
 
 def rename_alias_req():
     return {
@@ -125,29 +145,37 @@ def rename_alias_req():
         ]
     }
 
+
 def rename_alias_req_grpc():
     return rename_alias_req()
 
+
 deletable_aliases = iter(DELETABLE_ALIASES)
 
+
 def delete_alias_req():
-    return {"actions": [{"delete_alias":{"alias_name": next(deletable_aliases)}}]}
+    return {"actions": [{"delete_alias": {"alias_name": next(deletable_aliases)}}]}
+
 
 def delete_alias_req_grpc():
     return delete_alias_req()
 
+
 deletable_field_index = iter(DELETABLE_FIELD_INDEX)
+
 
 def delete_index_req():
     return {"field_name": next(deletable_field_index)}
-    
+
+
 def delete_index_req_grpc():
     return {
         "collection_name": COLL_NAME,
         "field_name": next(deletable_field_index),
     }
 
-### TABLE_OF_ACCESS ACTIONS ###   
+
+### TABLE_OF_ACCESS ACTIONS ###
 
 default_create_shard_key = AccessStub(
     False,
@@ -156,13 +184,19 @@ default_create_shard_key = AccessStub(
     default_shard_key_config,
     default_shard_key_config_grpc,
 )
-custom_create_shard_key = AccessStub(False, False, True, custom_shard_key_config, custom_shard_key_config_grpc)
+custom_create_shard_key = AccessStub(
+    False, False, True, custom_shard_key_config, custom_shard_key_config_grpc
+)
 delete_shard_key = AccessStub(False, True, True, delete_shard_key_req, delete_shard_key_req_grpc)
 list_collections = AccessStub(True, True, True)
 get_collection = AccessStub(True, True, True, None, {"collection_name": COLL_NAME})
-create_collection = AccessStub(False, False, True, {}, create_collection_req, collection_name=random_str)
+create_collection = AccessStub(
+    False, False, True, {}, create_collection_req, collection_name=random_str
+)
 update_collection_params = AccessStub(False, False, True, {}, {"collection_name": COLL_NAME})
-delete_collection = AccessStub(False, False, True, None, delete_collection_req_grpc, collection_name=delete_collection_name)
+delete_collection = AccessStub(
+    False, False, True, None, delete_collection_req_grpc, collection_name=delete_collection_name
+)
 create_alias = AccessStub(
     False,
     False,
@@ -185,21 +219,23 @@ delete_alias = AccessStub(
     delete_alias_req_grpc,
 )
 create_index = AccessStub(
-    False, 
+    False,
     True,
     True,
-    {"field_name": FIELD_NAME, "field_schema": "keyword"}, 
-    {"collection_name": COLL_NAME, "field_name": FIELD_NAME, "field_type": 0}
+    {"field_name": FIELD_NAME, "field_schema": "keyword"},
+    {"collection_name": COLL_NAME, "field_name": FIELD_NAME, "field_type": 0},
 )
 collection_exists = AccessStub(True, True, True, None, {"collection_name": COLL_NAME})
 delete_index = AccessStub(
-    False, 
-    True, 
+    False,
+    True,
     True,
     delete_index_req,
     delete_index_req_grpc,
 )
-get_collection_cluster_info = AccessStub(True, True, True, None, {"collection_name": COLL_NAME}) # TODO: are these the expected permissions?
+get_collection_cluster_info = AccessStub(
+    True, True, True, None, {"collection_name": COLL_NAME}
+)  # TODO: are these the expected permissions?
 move_shard_operation = AccessStub(
     False,
     False,
@@ -208,8 +244,16 @@ move_shard_operation = AccessStub(
         "move_shard": {
             "shard_id": SHARD_ID,
             "from_peer_id": PEER_ID,
-            "to_peer_id": PEER_ID,
+            "to_peer_id": PEER_ID + 1,
         }
+    },
+    {
+        "collection_name": COLL_NAME,
+        "move_shard": {
+            "shard_id": SHARD_ID,
+            "from_peer_id": PEER_ID,
+            "to_peer_id": PEER_ID + 1,
+        },
     },
 )
 replicate_shard_operation = AccessStub(
@@ -218,7 +262,7 @@ replicate_shard_operation = AccessStub(
     True,
     {
         "replicate_shard": {
-            "shard_id": SHARD_KEY,
+            "shard_id": SHARD_ID,
             "from_peer_id": PEER_ID,
             "to_peer_id": PEER_ID,
         }
@@ -292,7 +336,10 @@ list_aliases = AccessStub(False, False, True)
 
 TABLE_OF_ACCESS = {
     # Collections
-    "PUT /collections/{collection_name}/shards": [default_create_shard_key, custom_create_shard_key],
+    "PUT /collections/{collection_name}/shards": [
+        default_create_shard_key,
+        custom_create_shard_key,
+    ],
     "POST /collections/{collection_name}/shards/delete": [delete_shard_key],
     "GET /collections": [list_collections],
     "GET /collections/{collection_name}": [get_collection],
@@ -304,16 +351,16 @@ TABLE_OF_ACCESS = {
     "GET /collections/{collection_name}/exists": [collection_exists],
     "DELETE /collections/{collection_name}/index/{field_name}": [delete_index],
     "GET /collections/{collection_name}/cluster": [get_collection_cluster_info],
-    # "POST /collections/{collection_name}/cluster": [
-    #     move_shard_operation,
-    #     replicate_shard_operation,
-    #     abort_shard_transfer_operation,
-    #     drop_shard_replica_operation,
-    #     restart_transfer_operation,
-    #     default_create_shard_key_operation,
-    #     custom_create_shard_key_operation,
-    #     drop_shard_key_operation
-    # ],
+    "POST /collections/{collection_name}/cluster": [ # TODO: prepare second peer for these tests
+        # move_shard_operation,
+        # replicate_shard_operation,
+        # abort_shard_transfer_operation,
+        # drop_shard_replica_operation,
+        # restart_transfer_operation,
+        # default_create_shard_key_operation,
+        # custom_create_shard_key_operation,
+        # drop_shard_key_operation
+    ],
     # "GET /collections/{collection_name}/aliases": [list_collection_aliases],
     # "GET /aliases": [list_aliases],
     # "POST /collections/{collection_name}/snapshots/upload": [False, False, True],
@@ -398,7 +445,7 @@ GRPC_TO_REST_MAPPING = {
     # "/qdrant.Collections/ListAliases": "GET /aliases",
     "/qdrant.Collections/CollectionClusterInfo": "GET /collections/{collection_name}/cluster",
     "/qdrant.Collections/CollectionExists": "GET /collections/{collection_name}/exists",
-    # "/qdrant.Collections/UpdateCollectionClusterSetup": "POST /collections/{collection_name}/cluster",
+    "/qdrant.Collections/UpdateCollectionClusterSetup": "POST /collections/{collection_name}/cluster",
     "/qdrant.Collections/CreateShardKey": "PUT /collections/{collection_name}/shards",
     "/qdrant.Collections/DeleteShardKey": "POST /collections/{collection_name}/shards/delete",
     # "/qdrant.Points/Upsert": "PUT /collections/{collection_name}/points",
@@ -532,7 +579,7 @@ def uris(tmp_path_factory: pytest.TempPathFactory):
         sharding_method="custom",
         headers=API_KEY_HEADERS,
     )
-    
+
     for coll_name in DELETABLE_COLL_NAMES:
         fixtures.create_collection(
             rest_uri,
@@ -540,13 +587,13 @@ def uris(tmp_path_factory: pytest.TempPathFactory):
             headers=API_KEY_HEADERS,
         )
 
-    for shard_key in [*DELETABLE_SHARD_KEYS, SHARD_KEY]:
+    for shard_key in [SHARD_KEY, * DELETABLE_SHARD_KEYS, *MOVABLE_SHARD_KEYS]:
         requests.put(
             f"{rest_uri}/collections/{COLL_NAME}/shards",
             json={"shard_key": shard_key},
             headers=API_KEY_HEADERS,
         ).raise_for_status()
-    
+
     for alias in [*DELETABLE_ALIASES, *RENAMABLE_ALIASES]:
         requests.post(
             f"{rest_uri}/collections/aliases",
@@ -562,14 +609,14 @@ def uris(tmp_path_factory: pytest.TempPathFactory):
             },
             headers=API_KEY_HEADERS,
         ).raise_for_status()
-        
+
     for field_name in DELETABLE_FIELD_INDEX:
         requests.put(
             f"{rest_uri}/collections/{COLL_NAME}/index",
             json={"field_name": field_name, "field_schema": "keyword"},
             headers=API_KEY_HEADERS,
         ).raise_for_status()
-    
+
     fixtures.upsert_random_points(
         rest_uri, 100, COLL_NAME, shard_key=SHARD_KEY, headers=API_KEY_HEADERS
     )
@@ -692,8 +739,12 @@ def test_access(uris: Tuple[str, str]):
         for stub in stubs:
 
             assert isinstance(stub, AccessStub)
-            
-            coll_name = stub.collection_name() if isfunction(stub.collection_name) else stub.collection_name
+
+            coll_name = (
+                stub.collection_name()
+                if isfunction(stub.collection_name)
+                else stub.collection_name
+            )
 
             uri = rest_uri
             method, path = endpoint.split(" ")
