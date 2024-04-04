@@ -25,6 +25,8 @@ API_KEY_METADATA = [("api-key", SECRET)]
 
 COLL_NAME = "primary_test_collection"
 DELETABLE_COLL_NAMES = [random_str() for _ in range(10)]
+DELETABLE_ALIASES = [random_str() for _ in range(10)]
+RENAMABLE_ALIASES = [random_str() for _ in range(10)]
 SHARD_ID = 0
 SNAPSHOT_NAME = "test_snapshot"
 POINT_ID = 0
@@ -83,17 +85,58 @@ def delete_shard_key_req_grpc():
         "request": {"shard_key": { "keyword": next(deletable_shard_key)} },
     }
 
-deletable_coll_name = iter(DELETABLE_COLL_NAMES)
+deletable_coll_names = iter(DELETABLE_COLL_NAMES)
 
 def delete_collection_name():
-    return next(deletable_coll_name)
+    return next(deletable_coll_names)
 
 def delete_collection_req_grpc():
     return {
-        "collection_name": next(deletable_coll_name),
+        "collection_name": next(deletable_coll_names),
+    }
+    
+def create_alias_req():
+    return {
+        "actions": [
+            {
+                "create_alias": {
+                    "collection_name": COLL_NAME,
+                    "alias_name": random_str(),
+                }
+            }
+        ]
     }
 
-### TABLE_OF_ACCESS_STUBS ###
+def create_alias_req_grpc():
+    return create_alias_req()
+
+renamable_aliases = iter(RENAMABLE_ALIASES)
+
+def rename_alias_req():
+    return {
+        "actions": [
+            {
+                "rename_alias": {
+                    "old_alias_name": next(renamable_aliases),
+                    "new_alias_name": random_str(),
+                }
+            }
+        ]
+    }
+
+def rename_alias_req_grpc():
+    return rename_alias_req()
+
+deletable_aliases = iter(DELETABLE_ALIASES)
+
+def delete_alias_req():
+    return {"actions": [{"delete_alias":{"alias_name": next(deletable_aliases)}}]}
+
+def delete_alias_req_grpc():
+    return delete_alias_req()
+
+    
+### TABLE_OF_ACCESS_STUBS ###   
 
 default_create_shard_key = AccessStub(
     False,
@@ -113,37 +156,22 @@ create_alias = AccessStub(
     False,
     False,
     True,
-    {
-        "actions": [
-            {
-                "create_alias": {
-                    "collection_name": COLL_NAME,
-                    "alias_name": "alias_for_coll_name",
-                }
-            }
-        ]
-    },
-)
-delete_alias = AccessStub(
-    False,
-    False,
-    True,
-    {"actions": [{"delete_alias": {"alias_name": "alias_for_coll_name"}}]},
+    create_alias_req,
+    create_alias_req_grpc,
 )
 rename_alias = AccessStub(
     False,
     False,
     True,
-    {
-        "actions": [
-            {
-                "rename_alias": {
-                    "old_alias_name": COLL_NAME,
-                    "new_alias_name": COLL_NAME,
-                }
-            }
-        ]
-    },
+    rename_alias_req,
+    rename_alias_req_grpc,
+)
+delete_alias = AccessStub(
+    False,
+    False,
+    True,
+    delete_alias_req,
+    delete_alias_req_grpc,
 )
 create_index = AccessStub(
     False, False, True, {"field_name": FIELD_NAME, "field_schema": "keyword"}
@@ -249,7 +277,7 @@ TABLE_OF_ACCESS = {
     "PUT /collections/{collection_name}": [create_collection],
     "PATCH /collections/{collection_name}": [update_collection_params],
     "DELETE /collections/{collection_name}": [delete_collection],
-    # "POST /collections/aliases": [create_alias, delete_alias, rename_alias],
+    "POST /collections/aliases": [create_alias, rename_alias, delete_alias],
     # "PUT /collections/{collection_name}/index": [create_index],
     # "GET /collections/{collection_name}/exists": [True, True, True, None],
     # "DELETE /collections/{collection_name}/index/{field_name}": [delete_index],
@@ -343,7 +371,7 @@ GRPC_TO_REST_MAPPING = {
     "/qdrant.Collections/Create": "PUT /collections/{collection_name}",
     "/qdrant.Collections/Update": "PATCH /collections/{collection_name}",
     "/qdrant.Collections/Delete": "DELETE /collections/{collection_name}",
-    # "/qdrant.Collections/UpdateAliases": "POST /collections/aliases",
+    "/qdrant.Collections/UpdateAliases": "POST /collections/aliases",
     # "/qdrant.Collections/ListCollectionAliases": "GET /collections/{collection_name}/aliases",
     # "/qdrant.Collections/ListAliases": "GET /aliases",
     # "/qdrant.Collections/CollectionClusterInfo": "GET /collections/{collection_name}/cluster",
@@ -495,7 +523,23 @@ def uris(tmp_path_factory: pytest.TempPathFactory):
             f"{rest_uri}/collections/{COLL_NAME}/shards",
             json={"shard_key": shard_key},
             headers=API_KEY_HEADERS,
-        )
+        ).raise_for_status()
+    
+    for alias in [*DELETABLE_ALIASES, *RENAMABLE_ALIASES]:
+        requests.post(
+            f"{rest_uri}/collections/aliases",
+            json={
+                "actions": [
+                    {
+                        "create_alias": {
+                            "collection_name": COLL_NAME,
+                            "alias_name": alias,
+                        }
+                    }
+                ]
+            },
+            headers=API_KEY_HEADERS,
+        ).raise_for_status()
     
     fixtures.upsert_random_points(
         rest_uri, 100, COLL_NAME, shard_key=SHARD_KEY, headers=API_KEY_HEADERS
