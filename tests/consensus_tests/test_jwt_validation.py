@@ -335,7 +335,10 @@ list_aliases = AccessStub(True, True, True)
 
 list_collection_snapshots = AccessStub(
     True, True, True, None, {"collection_name": COLL_NAME}
-)  # TODO: access should be (False, True, True)
+) # TODO: this should not be allowed with payload constraints
+
+create_collection_snapshot = AccessStub(False, True, True, None, {"collection_name": COLL_NAME})
+
 
 
 TABLE_OF_ACCESS = {
@@ -370,7 +373,7 @@ TABLE_OF_ACCESS = {
     # "POST /collections/{collection_name}/snapshots/upload": [False, False, True],
     # "PUT /collections/{collection_name}/snapshots/recover": [False, False, True],
     "GET /collections/{collection_name}/snapshots": [list_collection_snapshots],
-    # "POST /collections/{collection_name}/snapshots": [False, True, True],
+    "POST /collections/{collection_name}/snapshots": [create_collection_snapshot],
     # "DELETE /collections/{collection_name}/snapshots/{snapshot_name}": [False, True, True],  #
     # "GET /collections/{collection_name}/snapshots/{snapshot_name}": [True, True, True, None],  #
     # "POST /collections/{collection_name}/shards/{shard_id}/snapshots/upload": [
@@ -478,7 +481,7 @@ GRPC_TO_REST_MAPPING = {
     # "/qdrant.ShardSnapshots/List": "GET /collections/{collection_name}/shards/{shard_id}/snapshots",
     # "/qdrant.ShardSnapshots/Delete": "DELETE /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}",
     # "/qdrant.ShardSnapshots/Recover": "PUT /collections/{collection_name}/shards/{shard_id}/snapshots/recover",
-    # "/qdrant.Snapshots/Create": "POST /collections/{collection_name}/snapshots",
+    "/qdrant.Snapshots/Create": "POST /collections/{collection_name}/snapshots",
     "/qdrant.Snapshots/List": "GET /collections/{collection_name}/snapshots",
     # "/qdrant.Snapshots/Delete": "DELETE /collections/{collection_name}/snapshots/{snapshot_name}",
     # "/qdrant.Snapshots/CreateFull": "POST /snapshots",
