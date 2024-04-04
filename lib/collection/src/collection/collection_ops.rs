@@ -11,6 +11,7 @@ use crate::operations::config_diff::*;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::*;
 use crate::optimizers_builder::OptimizersConfig;
+use crate::shards::local_shard::OPTIMIZATIONS_PENDING_MSG;
 use crate::shards::replica_set::{Change, ReplicaState};
 use crate::shards::shard::PeerId;
 
@@ -277,6 +278,14 @@ impl Collection {
                     .and_modify(|info_schema| info_schema.points += response_schema.points)
                     .or_insert(response_schema);
             }
+        }
+
+        // Strip optimizations pending message if collection status is not green
+        // TODO(1.10): remove this, we don't report through optimizer status anymore
+        if info.status != CollectionStatus::Green
+            && matches!(info.optimizer_status, OptimizersStatus::Error(ref msg) if msg == OPTIMIZATIONS_PENDING_MSG)
+        {
+            info.optimizer_status = OptimizersStatus::Ok;
         }
 
         Ok(info)

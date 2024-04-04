@@ -60,6 +60,10 @@ use crate::wal_delta::{LockedWal, RecoverableWal};
 /// If rendering WAL load progression in basic text form, report progression every 60 seconds.
 const WAL_LOAD_REPORT_EVERY: Duration = Duration::from_secs(60);
 
+/// Message shown as optimizer status when optimizations are pending.
+// TODO(1.10): remove this, we don't report through optimizer status anymore
+pub const OPTIMIZATIONS_PENDING_MSG: &str = "optimizations pending, awaiting update operation";
+
 /// LocalShard
 ///
 /// LocalShard is an entity that can be moved between peers and contains some part of one collections data.
@@ -900,9 +904,7 @@ impl LocalShard {
             // TODO(1.10): enable grey status in Qdrant 1.10+
             // status = CollectionStatus::Grey;
             if optimizer_status == OptimizersStatus::Ok {
-                optimizer_status = OptimizersStatus::Error(
-                    "optimizations pending, awaiting update operation".into(),
-                );
+                optimizer_status = OptimizersStatus::Error(OPTIMIZATIONS_PENDING_MSG.into());
             }
         }
 
