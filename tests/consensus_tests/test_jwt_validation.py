@@ -136,7 +136,7 @@ def delete_alias_req_grpc():
     return delete_alias_req()
 
     
-### TABLE_OF_ACCESS_STUBS ###   
+### TABLE_OF_ACCESS ACTIONS ###   
 
 default_create_shard_key = AccessStub(
     False,
@@ -174,7 +174,11 @@ delete_alias = AccessStub(
     delete_alias_req_grpc,
 )
 create_index = AccessStub(
-    False, False, True, {"field_name": FIELD_NAME, "field_schema": "keyword"}
+    False, 
+    True,
+    True,
+    {"field_name": FIELD_NAME, "field_schema": "keyword"}, 
+    {"collection_name": COLL_NAME, "field_name": FIELD_NAME, "field_type": 0}
 )
 collection_exists = AccessStub(True, True, True)
 delete_index = AccessStub(False, False, True)
@@ -278,7 +282,7 @@ TABLE_OF_ACCESS = {
     "PATCH /collections/{collection_name}": [update_collection_params],
     "DELETE /collections/{collection_name}": [delete_collection],
     "POST /collections/aliases": [create_alias, rename_alias, delete_alias],
-    # "PUT /collections/{collection_name}/index": [create_index],
+    "PUT /collections/{collection_name}/index": [create_index],
     # "GET /collections/{collection_name}/exists": [True, True, True, None],
     # "DELETE /collections/{collection_name}/index/{field_name}": [delete_index],
     # "GET /collections/{collection_name}/cluster": [collection_exists],
@@ -388,7 +392,7 @@ GRPC_TO_REST_MAPPING = {
     # "/qdrant.Points/OverwritePayload": "PUT /collections/{collection_name}/points/payload",
     # "/qdrant.Points/DeletePayload": "POST /collections/{collection_name}/points/payload/delete",
     # "/qdrant.Points/ClearPayload": "POST /collections/{collection_name}/points/payload/clear",
-    # "/qdrant.Points/CreateFieldIndex": "PUT /collections/{collection_name}/index",
+    "/qdrant.Points/CreateFieldIndex": "PUT /collections/{collection_name}/index",
     # "/qdrant.Points/DeleteFieldIndex": "DELETE /collections/{collection_name}/index/{field_name}",
     # "/qdrant.Points/Search": "POST /collections/{collection_name}/points/search",
     # "/qdrant.Points/SearchBatch": "POST /collections/{collection_name}/points/search/batch",
