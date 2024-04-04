@@ -83,7 +83,9 @@ impl Collections for CollectionsService {
         validate(request.get_ref())?;
         let timing = Instant::now();
         let access = extract_access(&mut request);
-        let result = do_list_collections(self.dispatcher.toc(&access), access).await;
+        let result = do_list_collections(self.dispatcher.toc(&access), access)
+            .await
+            .map_err(error_to_status)?;
 
         let response = ListCollectionsResponse::from((timing, result));
         Ok(Response::new(response))

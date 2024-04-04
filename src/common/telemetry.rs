@@ -75,7 +75,8 @@ impl TelemetryCollector {
     pub async fn prepare_data(&self, access: &Access, detail: TelemetryDetail) -> TelemetryData {
         TelemetryData {
             id: self.process_id.to_string(),
-            collections: CollectionsTelemetry::collect(detail, self.dispatcher.toc(access)).await,
+            collections: CollectionsTelemetry::collect(detail, access, self.dispatcher.toc(access))
+                .await,
             app: AppBuildTelemetry::collect(detail, &self.app_telemetry_collector, &self.settings),
             cluster: ClusterTelemetry::collect(detail, &self.dispatcher, &self.settings),
             requests: RequestsTelemetry::collect(

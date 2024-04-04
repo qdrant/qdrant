@@ -27,7 +27,7 @@ pub async fn create_shard_snapshot(
 ) -> Result<SnapshotDescription, StorageError> {
     let collection_pass = access
         .check_collection_access(&collection_name, AccessRequrements::new().write().whole())?;
-    let collection = toc.get_collection_by_pass(&collection_pass).await?;
+    let collection = toc.get_collection(&collection_pass).await?;
 
     let snapshot = collection
         .create_shard_snapshot(shard_id, &toc.optional_temp_or_snapshot_temp_path()?)
@@ -47,7 +47,7 @@ pub async fn list_shard_snapshots(
 ) -> Result<Vec<SnapshotDescription>, StorageError> {
     let collection_pass =
         access.check_collection_access(&collection_name, AccessRequrements::new().whole())?;
-    let collection = toc.get_collection_by_pass(&collection_pass).await?;
+    let collection = toc.get_collection(&collection_pass).await?;
     let snapshots = collection.list_shard_snapshots(shard_id).await?;
     Ok(snapshots)
 }
@@ -64,7 +64,7 @@ pub async fn delete_shard_snapshot(
 ) -> Result<(), StorageError> {
     let collection_pass = access
         .check_collection_access(&collection_name, AccessRequrements::new().write().whole())?;
-    let collection = toc.get_collection_by_pass(&collection_pass).await?;
+    let collection = toc.get_collection(&collection_pass).await?;
     let snapshot_path = collection
         .get_shard_snapshot_path(shard_id, &snapshot_name)
         .await?;
@@ -102,7 +102,7 @@ pub async fn recover_shard_snapshot(
 
     cancel::future::spawn_cancel_on_drop(move |cancel| async move {
         let future = async {
-            let collection = toc.get_collection_by_pass(&collection_pass).await?;
+            let collection = toc.get_collection(&collection_pass).await?;
             collection.assert_shard_exists(shard_id).await?;
 
             let download_dir = toc.snapshots_download_tempdir()?;

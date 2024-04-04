@@ -39,7 +39,7 @@ pub async fn do_collection_exists(
 
     // if this returns Ok, it means the collection exists.
     // if not, we check that the error is NotFound
-    let Err(error) = toc.get_collection_by_pass(&collection_pass).await else {
+    let Err(error) = toc.get_collection(&collection_pass).await else {
         return Ok(CollectionExists { exists: true });
     };
     match error {
@@ -56,7 +56,7 @@ pub async fn do_get_collection(
 ) -> Result<CollectionInfo, StorageError> {
     let collection_pass = access.check_collection_access(name, AccessRequrements::new().whole())?;
 
-    let collection = toc.get_collection_by_pass(&collection_pass).await?;
+    let collection = toc.get_collection(&collection_pass).await?;
 
     let shard_selection = match shard_selection {
         None => ShardSelectorInternal::All,
@@ -66,20 +66,20 @@ pub async fn do_get_collection(
     Ok(collection.info(&shard_selection).await?)
 }
 
-pub async fn do_list_collections(toc: &TableOfContent, access: Access) -> CollectionsResponse {
+pub async fn do_list_collections(
+    toc: &TableOfContent,
+    access: Access,
+) -> Result<CollectionsResponse, StorageError> {
     let collections = toc
-        .all_collections()
+        .all_collections(&access)
         .await
         .into_iter()
-        .filter(|c| {
-            access
-                .check_collection_access(c, AccessRequrements::new())
-                .is_ok()
+        .map(|pass| CollectionDescription {
+            name: pass.name().to_string(),
         })
-        .map(|name| CollectionDescription { name })
         .collect_vec();
 
-    CollectionsResponse { collections }
+    Ok(CollectionsResponse { collections })
 }
 
 /// Construct shards-replicas layout for the shard from the given scope of peers
@@ -126,16 +126,12 @@ pub async fn do_list_collection_aliases(
     access: Access,
     collection_name: &str,
 ) -> Result<CollectionsAliasesResponse, StorageError> {
-    access.check_collection_access(collection_name, AccessRequrements::new())?;
+    let collection_pass =
+        access.check_collection_access(collection_name, AccessRequrements::new())?;
     let aliases: Vec<AliasDescription> = toc
-        .collection_aliases(collection_name)
+        .collection_aliases(&collection_pass, &access)
         .await?
         .into_iter()
-        .filter(|alias| {
-            access
-                .check_collection_access(alias, AccessRequrements::new())
-                .is_ok()
-        })
         .map(|alias| AliasDescription {
             alias_name: alias,
             collection_name: collection_name.to_string(),
@@ -148,16 +144,7 @@ pub async fn do_list_aliases(
     toc: &TableOfContent,
     access: Access,
 ) -> Result<CollectionsAliasesResponse, StorageError> {
-    let mut aliases = toc.list_aliases().await?;
-    aliases.retain(|alias| {
-        access
-            .check_collection_access(&alias.collection_name, AccessRequrements::new())
-            .is_ok()
-            && access
-                .check_collection_access(&alias.alias_name, AccessRequrements::new())
-                .is_ok()
-    });
-
+    let aliases = toc.list_aliases(&access).await?;
     Ok(CollectionsAliasesResponse { aliases })
 }
 
@@ -169,7 +156,7 @@ pub async fn do_list_snapshots(
     let collection_pass =
         access.check_collection_access(collection_name, AccessRequrements::new().whole())?;
     Ok(toc
-        .get_collection_by_pass(&collection_pass)
+        .get_collection(&collection_pass)
         .await?
         .list_snapshots()
         .await?)
@@ -194,7 +181,7 @@ pub async fn do_get_collection_cluster(
     name: &str,
 ) -> Result<CollectionClusterInfo, StorageError> {
     let collection_pass = access.check_collection_access(name, AccessRequrements::new())?;
-    let collection = toc.get_collection_by_pass(&collection_pass).await?;
+    let collection = toc.get_collection(&collection_pass).await?;
     Ok(collection.cluster_info(toc.this_peer_id).await?)
 }
 
@@ -263,7 +250,7 @@ pub async fn do_update_collection_cluster(
 
     let collection = dispatcher
         .toc(&full_access)
-        .get_collection_by_pass(&collection_pass)
+        .get_collection(&collection_pass)
         .await?;
 
     match operation {

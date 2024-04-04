@@ -134,7 +134,7 @@ async fn _do_recover_from_snapshot(
     let snapshot_config = CollectionConfig::load(tmp_collection_dir.path())?;
     snapshot_config.validate_and_warn();
 
-    let collection = match toc.get_collection_by_pass(&collection_pass).await.ok() {
+    let collection = match toc.get_collection(&collection_pass).await.ok() {
         Some(collection) => collection,
         None => {
             log::debug!("Collection {collection_pass} does not exist, creating it");
@@ -146,7 +146,7 @@ async fn _do_recover_from_snapshot(
             dispatcher
                 .submit_collection_meta_op(operation, Access::full("Already checked"), None)
                 .await?;
-            toc.get_collection_by_pass(&collection_pass).await?
+            toc.get_collection(&collection_pass).await?
         }
     };
 

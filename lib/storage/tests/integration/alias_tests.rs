@@ -14,7 +14,7 @@ use storage::content_manager::collection_meta_ops::{
 use storage::content_manager::consensus::operation_sender::OperationSender;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::Access;
+use storage::rbac::{Access, AccessRequrements};
 use storage::types::{PerformanceConfig, StorageConfig};
 use tempfile::Builder;
 use tokio::runtime::Runtime;
@@ -164,6 +164,12 @@ fn test_alias_operation() {
         .unwrap();
 
     let _ = handle
-        .block_on(dispatcher.toc(&FULL_ACCESS).get_collection("test_alias3"))
+        .block_on(
+            dispatcher.toc(&FULL_ACCESS).get_collection(
+                &FULL_ACCESS
+                    .check_collection_access("test_alias3", AccessRequrements::new())
+                    .unwrap(),
+            ),
+        )
         .unwrap();
 }

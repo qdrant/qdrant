@@ -113,7 +113,9 @@ impl TableOfContent {
             quantization_config,
             sparse_vectors,
         } = operation.update_collection;
-        let collection = self.get_collection(&operation.collection_name).await?;
+        let collection = self
+            .get_collection_unchecked(&operation.collection_name)
+            .await?;
         let mut recreate_optimizers = false;
 
         if let Some(diff) = optimizers_config {
@@ -253,7 +255,7 @@ impl TableOfContent {
         collection_id: CollectionId,
         transfer_operation: ShardTransferOperations,
     ) -> Result<(), StorageError> {
-        let collection = self.get_collection(&collection_id).await?;
+        let collection = self.get_collection_unchecked(&collection_id).await?;
         let proposal_sender = if let Some(proposal_sender) = self.consensus_proposal_sender.clone()
         {
             proposal_sender
@@ -411,7 +413,7 @@ impl TableOfContent {
                     &collection.state().await.transfers,
                 )?;
 
-                let collection = self.get_collection(&collection_id).await?;
+                let collection = self.get_collection_unchecked(&collection_id).await?;
 
                 let current_state = collection
                     .state()
@@ -473,7 +475,7 @@ impl TableOfContent {
         &self,
         operation: SetShardReplicaState,
     ) -> Result<(), StorageError> {
-        self.get_collection(&operation.collection_name)
+        self.get_collection_unchecked(&operation.collection_name)
             .await?
             .set_shard_replica_state(
                 operation.shard_id,
@@ -486,7 +488,7 @@ impl TableOfContent {
     }
 
     async fn create_shard_key(&self, operation: CreateShardKey) -> Result<(), StorageError> {
-        self.get_collection(&operation.collection_name)
+        self.get_collection_unchecked(&operation.collection_name)
             .await?
             .create_shard_key(operation.shard_key, operation.placement)
             .await?;
@@ -494,7 +496,7 @@ impl TableOfContent {
     }
 
     async fn drop_shard_key(&self, operation: DropShardKey) -> Result<(), StorageError> {
-        self.get_collection(&operation.collection_name)
+        self.get_collection_unchecked(&operation.collection_name)
             .await?
             .drop_shard_key(operation.shard_key)
             .await?;
@@ -505,7 +507,7 @@ impl TableOfContent {
         &self,
         operation: CreatePayloadIndex,
     ) -> Result<(), StorageError> {
-        self.get_collection(&operation.collection_name)
+        self.get_collection_unchecked(&operation.collection_name)
             .await?
             .create_payload_index(operation.field_name, operation.field_schema)
             .await?;
@@ -513,7 +515,7 @@ impl TableOfContent {
     }
 
     async fn drop_payload_index(&self, operation: DropPayloadIndex) -> Result<(), StorageError> {
-        self.get_collection(&operation.collection_name)
+        self.get_collection_unchecked(&operation.collection_name)
             .await?
             .drop_payload_index(operation.field_name)
             .await?;

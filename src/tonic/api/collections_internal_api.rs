@@ -102,7 +102,7 @@ impl CollectionsInternal for CollectionsInternalService {
 
         let collection_read = self
             .toc
-            .get_collection_by_pass(&full_access_pass(&collection_name)?)
+            .get_collection(&full_access_pass(&collection_name)?)
             .await
             .map_err(|err| {
                 Status::not_found(format!(
@@ -141,7 +141,7 @@ impl CollectionsInternal for CollectionsInternalService {
 
         let collection_read = self
             .toc
-            .get_collection_by_pass(&full_access_pass(&collection_name)?)
+            .get_collection(&full_access_pass(&collection_name)?)
             .await
             .map_err(|err| {
                 Status::not_found(format!(
@@ -183,7 +183,7 @@ impl CollectionsInternal for CollectionsInternalService {
 
         let collection_read = self
             .toc
-            .get_collection_by_pass(&full_access_pass(&collection_name)?)
+            .get_collection(&full_access_pass(&collection_name)?)
             .await
             .map_err(|err| {
                 Status::not_found(format!(

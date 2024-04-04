@@ -15,6 +15,7 @@ use futures::stream::FuturesUnordered;
 use futures::{FutureExt as _, StreamExt as _, TryStreamExt as _};
 use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::toc::TableOfContent;
+use storage::rbac::Access;
 use tokio::{runtime, sync, time};
 
 const READY_CHECK_TIMEOUT: Duration = Duration::from_millis(500);
@@ -293,12 +294,15 @@ impl Task {
 
     async fn unhealthy_shards(&self) -> HashSet<Shard> {
         let this_peer_id = self.toc.this_peer_id;
-        let collections = self.toc.all_collections().await;
+        let collections = self
+            .toc
+            .all_collections(&Access::full("For health check"))
+            .await;
 
         let mut unhealthy_shards = HashSet::new();
 
-        for collection in &collections {
-            let state = match self.toc.get_collection(collection).await {
+        for collection_pass in &collections {
+            let state = match self.toc.get_collection(collection_pass).await {
                 Ok(collection) => collection.state().await,
                 Err(_) => continue,
             };
@@ -312,7 +316,7 @@ impl Task {
                     continue;
                 }
 
-                unhealthy_shards.insert(Shard::new(collection, shard));
+                unhealthy_shards.insert(Shard::new(collection_pass.name(), shard));
             }
         }
 

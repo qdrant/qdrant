@@ -125,7 +125,7 @@ pub async fn do_get_snapshot(
 ) -> Result<NamedFile, HttpError> {
     let collection_pass =
         access.check_collection_access(collection_name, AccessRequrements::new().whole())?;
-    let collection = toc.get_collection_by_pass(&collection_pass).await?;
+    let collection = toc.get_collection(&collection_pass).await?;
     let file_name = collection.get_snapshot_path(snapshot_name).await?;
     Ok(NamedFile::open(file_name)?)
 }
@@ -391,7 +391,7 @@ async fn upload_shard_snapshot(
         }
 
         let future = async {
-            let collection = toc.get_collection_by_pass(&collection_pass).await?;
+            let collection = toc.get_collection(&collection_pass).await?;
             collection.assert_shard_exists(shard).await?;
 
             Result::<_, StorageError>::Ok(collection)
@@ -426,7 +426,7 @@ async fn download_shard_snapshot(
     let (collection, shard, snapshot) = path.into_inner();
     let collection_pass =
         access.check_collection_access(&collection, AccessRequrements::new().whole())?;
-    let collection = toc.get_collection_by_pass(&collection_pass).await?;
+    let collection = toc.get_collection(&collection_pass).await?;
     let snapshot_path = collection.get_shard_snapshot_path(shard, &snapshot).await?;
 
     Ok(NamedFile::open(snapshot_path))

@@ -1,7 +1,8 @@
+use std::future::Future;
 use std::time::Duration;
 
 use actix_web::rt::time::Instant;
-use actix_web::{delete, get, patch, post, put, web, Responder};
+use actix_web::{delete, get, patch, post, put, web, HttpResponse, Responder};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::cluster_ops::ClusterOperations;
 use serde::Deserialize;
@@ -16,7 +17,7 @@ use validator::Validate;
 use super::CollectionPath;
 use crate::actix::api::StrictCollectionPath;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers::process_response;
+use crate::actix::helpers::{self, process_response};
 use crate::common::collections::*;
 
 #[derive(Debug, Deserialize, Validate)]
@@ -32,13 +33,11 @@ impl WaitTimeout {
 }
 
 #[get("/collections")]
-async fn get_collections(
+fn get_collections(
     toc: web::Data<TableOfContent>,
     ActixAccess(access): ActixAccess,
-) -> impl Responder {
-    let timing = Instant::now();
-    let response = Ok(do_list_collections(toc.get_ref(), access).await);
-    process_response(response, timing)
+) -> impl Future<Output = HttpResponse> {
+    helpers::time(async move { do_list_collections(toc.get_ref(), access).await })
 }
 
 #[get("/aliases")]
