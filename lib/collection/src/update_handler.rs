@@ -109,11 +109,11 @@ pub struct UpdateHandler {
     /// Maximum number of concurrent optimization jobs in this update handler.
     /// This parameter depends on the optimizer config and should be updated accordingly.
     pub max_optimization_threads: Option<usize>,
-    /// Whether optimizers are currently blocked by limits, such as CPU or handle limits.
-    optimizers_pending_limits: Arc<AtomicBool>,
     /// Highest and cutoff clocks for the shard WAL.
     clocks: LocalShardClocks,
     shard_path: PathBuf,
+    /// Whether we have ever triggered optimizers since starting.
+    has_triggered_optimizers: Arc<AtomicBool>,
 }
 
 impl UpdateHandler {
@@ -147,9 +147,9 @@ impl UpdateHandler {
             flush_interval_sec,
             optimization_handles: Arc::new(TokioMutex::new(vec![])),
             max_optimization_threads,
-            optimizers_pending_limits: Default::default(),
             clocks,
             shard_path,
+            has_triggered_optimizers: Default::default(),
         }
     }
 
@@ -164,8 +164,8 @@ impl UpdateHandler {
             self.optimization_handles.clone(),
             self.optimizers_log.clone(),
             self.optimizer_cpu_budget.clone(),
-            self.optimizers_pending_limits.clone(),
             self.max_optimization_threads,
+            self.has_triggered_optimizers.clone(),
         )));
         self.update_worker = Some(self.runtime_handle.spawn(Self::update_worker_fn(
             update_receiver,
@@ -380,9 +380,8 @@ impl UpdateHandler {
     ///
     /// In other words, if this returns true we have pending optimizations.
     pub(crate) fn has_pending_optimizations(&self) -> bool {
-        // If optimizations are not pending updates, but are blocked by limits, we do not consider
-        // them to be pending. They'll progress once other optimizations finalize
-        if self.optimizers_pending_limits.load(Ordering::Relaxed) {
+        // If we did trigger optimizers at least once, we do not consider to be pending
+        if self.has_triggered_optimizers.load(Ordering::Relaxed) {
             return false;
         }
 
@@ -458,8 +457,8 @@ impl UpdateHandler {
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
         optimizer_cpu_budget: CpuBudget,
-        optimizers_pending_limits: Arc<AtomicBool>,
         max_handles: Option<usize>,
+        has_triggered_optimizers: Arc<AtomicBool>,
     ) {
         let max_handles = max_handles.unwrap_or(usize::MAX);
         let max_indexing_threads = optimizers
@@ -484,6 +483,8 @@ impl UpdateHandler {
                 Err(Elapsed { .. }) => continue,
                 // Optimizer signal
                 Ok(Some(signal @ (OptimizerSignal::Nop | OptimizerSignal::Operation(_)))) => {
+                    has_triggered_optimizers.store(true, Ordering::Relaxed);
+
                     // If not forcing with Nop, wait on next signal if we have too many handles
                     if signal != OptimizerSignal::Nop
                         && optimization_handles.lock().await.len() >= max_handles
@@ -513,7 +514,6 @@ impl UpdateHandler {
                                 sender.clone(),
                             ));
                         }
-                        optimizers_pending_limits.store(true, Ordering::Relaxed);
                         continue;
                     }
 
@@ -527,12 +527,8 @@ impl UpdateHandler {
                         log::trace!(
                             "Skipping optimization check, we reached optimization thread limit"
                         );
-                        optimizers_pending_limits.store(true, Ordering::Relaxed);
                         continue;
                     }
-
-                    // Reset optimizers are pending limits state
-                    optimizers_pending_limits.store(false, Ordering::Relaxed);
 
                     Self::process_optimization(
                         optimizers.clone(),
