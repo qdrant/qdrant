@@ -5299,6 +5299,7 @@
         "enum": [
           "green",
           "yellow",
+          "grey",
           "red"
         ]
       },

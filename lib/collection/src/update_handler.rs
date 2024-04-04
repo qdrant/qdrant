@@ -372,6 +372,18 @@ impl UpdateHandler {
         handles
     }
 
+    /// Checks conditions for all optimizers and returns whether any is satisfied
+    ///
+    /// In other words, if this returns true we have pending optimizations.
+    pub(crate) fn has_pending_optimizations(&self) -> bool {
+        let excluded_ids = HashSet::<_>::default();
+        self.optimizers.iter().any(|optimizer| {
+            let nonoptimal_segment_ids =
+                optimizer.check_condition(self.segments.clone(), &excluded_ids);
+            !nonoptimal_segment_ids.is_empty()
+        })
+    }
+
     pub(crate) async fn process_optimization(
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         segments: LockedSegmentHolder,
