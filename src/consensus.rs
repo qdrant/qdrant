@@ -549,6 +549,14 @@ impl Consensus {
                         Ok(())
                     }
                     _ => {
+                        // For debug:
+                        // Drop message with 30% probability
+                        #[cfg(feature = "chaos-test")]
+                        if rand::random::<f64>() < 0.3 {
+                            log::warn!("Dropping message with 30% probability: {:?}", &operation);
+                            return Ok(true);
+                        }
+
                         let message = match serde_cbor::to_vec(&operation) {
                             Ok(message) => message,
                             Err(err) => {

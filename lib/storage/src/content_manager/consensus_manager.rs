@@ -542,12 +542,15 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     }
 
     async fn await_receiver(
+        &self,
         mut receiver: Receiver<Result<bool, StorageError>>,
         wait_timeout: Duration,
+        operation: &ConsensusOperations,
     ) -> Result<bool, StorageError> {
         let timeout_res = tokio::time::timeout(wait_timeout, receiver.recv())
             .await
             .map_err(|_: Elapsed| {
+                self.on_consensus_op_apply.lock().remove(operation);
                 StorageError::service_error(format!(
                     "Waiting for consensus operation commit failed. Timeout set at: {} seconds",
                     wait_timeout.as_secs_f64(),
@@ -691,12 +694,14 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                     // propose operation to consensus thread
                     self.propose_sender.send(operation.clone())?;
                     // insert new sender
-                    on_apply_lock.insert(operation, sender);
+                    on_apply_lock.insert(operation.clone(), sender);
                 }
             };
         }
 
-        let res = Self::await_receiver(receiver, wait_timeout).await?;
+        let res = self
+            .await_receiver(receiver, wait_timeout, &operation)
+            .await?;
         Ok(res)
     }
 
