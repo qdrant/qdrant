@@ -32,6 +32,7 @@ tracy = ["tracing-tracy"]
 tracing-tracy = ["tracing", "dep:tracing-tracy"]
 tokio-tracing = ["tokio/tracing"]
 stacktrace = ["rstack-self"]
+chaos-testing = []
 
 [dev-dependencies]
 serde_urlencoded = "0.7"
