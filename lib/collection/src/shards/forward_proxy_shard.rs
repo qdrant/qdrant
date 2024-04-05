@@ -175,7 +175,7 @@ impl ShardOperation for ForwardProxyShard {
     async fn update(
         &self,
         operation: OperationWithClockTag,
-        wait: bool,
+        _wait: bool,
     ) -> CollectionResult<UpdateResult> {
         // If we apply `local_shard` update, we *have to* execute `remote_shard` update to completion
         // (or we *might* introduce an inconsistency between shards?), so this method is not cancel
@@ -185,7 +185,10 @@ impl ShardOperation for ForwardProxyShard {
 
         // Shard update is within a write lock scope, because we need a way to block the shard updates
         // during the transfer restart and finalization.
-        let mut result = self.wrapped_shard.update(operation.clone(), wait).await?;
+
+        // We always have to wait for the result of the update, cause after we release the lock,
+        // the transfer needs to have access to the latest version of points.
+        let mut result = self.wrapped_shard.update(operation.clone(), true).await?;
 
         let remote_result = self
             .remote_shard
