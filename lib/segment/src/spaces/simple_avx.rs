@@ -7,7 +7,8 @@ use crate::data_types::vectors::{DenseVector, VectorElementType};
 
 #[target_feature(enable = "avx")]
 #[target_feature(enable = "fma")]
-unsafe fn hsum256_ps_avx(x: __m256) -> f32 {
+#[allow(clippy::missing_safety_doc)]
+pub unsafe fn hsum256_ps_avx(x: __m256) -> f32 {
     let x128: __m128 = _mm_add_ps(_mm256_extractf128_ps(x, 1), _mm256_castps256_ps128(x));
     let x64: __m128 = _mm_add_ps(x128, _mm_movehl_ps(x128, x128));
     let x32: __m128 = _mm_add_ss(x64, _mm_shuffle_ps(x64, x64, 0x55));
