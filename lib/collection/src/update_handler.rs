@@ -1,7 +1,7 @@
 use std::cmp::min;
 use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use common::cpu::CpuBudget;
@@ -112,6 +112,8 @@ pub struct UpdateHandler {
     /// Highest and cutoff clocks for the shard WAL.
     clocks: LocalShardClocks,
     shard_path: PathBuf,
+    /// Whether we have ever triggered optimizers since starting.
+    has_triggered_optimizers: Arc<AtomicBool>,
 }
 
 impl UpdateHandler {
@@ -147,6 +149,7 @@ impl UpdateHandler {
             max_optimization_threads,
             clocks,
             shard_path,
+            has_triggered_optimizers: Default::default(),
         }
     }
 
@@ -162,6 +165,7 @@ impl UpdateHandler {
             self.optimizers_log.clone(),
             self.optimizer_cpu_budget.clone(),
             self.max_optimization_threads,
+            self.has_triggered_optimizers.clone(),
         )));
         self.update_worker = Some(self.runtime_handle.spawn(Self::update_worker_fn(
             update_receiver,
@@ -376,6 +380,11 @@ impl UpdateHandler {
     ///
     /// In other words, if this returns true we have pending optimizations.
     pub(crate) fn has_pending_optimizations(&self) -> bool {
+        // If we did trigger optimizers at least once, we do not consider to be pending
+        if self.has_triggered_optimizers.load(Ordering::Relaxed) {
+            return false;
+        }
+
         let excluded_ids = HashSet::<_>::default();
         self.optimizers.iter().any(|optimizer| {
             let nonoptimal_segment_ids =
@@ -449,6 +458,7 @@ impl UpdateHandler {
         optimizers_log: Arc<Mutex<TrackerLog>>,
         optimizer_cpu_budget: CpuBudget,
         max_handles: Option<usize>,
+        has_triggered_optimizers: Arc<AtomicBool>,
     ) {
         let max_handles = max_handles.unwrap_or(usize::MAX);
         let max_indexing_threads = optimizers
@@ -473,6 +483,8 @@ impl UpdateHandler {
                 Err(Elapsed { .. }) => continue,
                 // Optimizer signal
                 Ok(Some(signal @ (OptimizerSignal::Nop | OptimizerSignal::Operation(_)))) => {
+                    has_triggered_optimizers.store(true, Ordering::Relaxed);
+
                     // If not forcing with Nop, wait on next signal if we have too many handles
                     if signal != OptimizerSignal::Nop
                         && optimization_handles.lock().await.len() >= max_handles
