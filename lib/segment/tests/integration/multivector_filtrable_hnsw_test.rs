@@ -91,20 +91,26 @@ fn random_multi_vec_query<R: Rng + ?Sized>(
     }
 }
 
+/// Check all cases with single vector per multi and several vectors per multi
 #[rstest]
-#[case::nearest(QueryVariant::Nearest, 32, 5)]
-#[case::discovery(QueryVariant::Discovery, 128, 10)] // tests that check better precision are in `hnsw_discover_test.rs`
-#[case::recommend(QueryVariant::RecommendBestScore, 64, 10)]
+#[case::nearest_eq(QueryVariant::Nearest, 1, 32, 5)]
+#[case::nearest_multi(QueryVariant::Nearest, 3, 32, 13)]
+#[case::discovery_eq(QueryVariant::Discovery, 1, 128, 5)]
+#[case::discovery_multi(QueryVariant::Discovery, 3, 128, 10)]
+#[case::recommend_eq(QueryVariant::RecommendBestScore, 1, 64, 5)]
+#[case::recommend_multi(QueryVariant::RecommendBestScore, 2, 64, 10)]
 fn test_multi_filterable_hnsw(
     #[case] query_variant: QueryVariant,
+    #[case] num_vector_per_points: usize,
     #[case] ef: usize,
     #[case] max_failures: usize, // out of 100
 ) {
-    _test_multi_filterable_hnsw(query_variant, ef, max_failures);
+    _test_multi_filterable_hnsw(query_variant, num_vector_per_points, ef, max_failures);
 }
 
 fn _test_multi_filterable_hnsw(
     query_variant: QueryVariant,
+    num_vector_per_points: usize,
     ef: usize,
     max_failures: usize, // out of 100
 ) {
@@ -113,10 +119,9 @@ fn _test_multi_filterable_hnsw(
     let vector_dim = 8;
     let m = 8;
     let num_points: u64 = 5_000;
-    let num_vector_per_points = 2;
     let ef_construct = 16;
     let distance = Distance::Cosine;
-    let full_scan_threshold = 16; // KB
+    let full_scan_threshold = 8; // KB
     let indexing_threshold = 500; // num vectors
     let num_payload_values = 2;
 
@@ -132,7 +137,7 @@ fn _test_multi_filterable_hnsw(
                 size: vector_dim,
                 distance,
                 storage_type: VectorStorageType::Memory,
-                index: Indexes::Plain {}, // uses plain index
+                index: Indexes::Plain {}, // uses plain index for comparison
                 quantization_config: None,
                 multi_vec_config: Some(MultiVectorConfig::default()), // uses multivec config
             },
@@ -214,7 +219,6 @@ fn _test_multi_filterable_hnsw(
     }
     let expected_blocks = num_points as usize / indexing_threshold * 2;
 
-    eprintln!("blocks.len() = {:#?}", blocks.len());
     assert!(
         (blocks.len() as i64 - expected_blocks as i64).abs() <= 3,
         "real number of payload blocks is too far from expected"
@@ -282,6 +286,11 @@ fn _test_multi_filterable_hnsw(
 
         if plain_result == index_result {
             hits += 1;
+        } else {
+            eprintln!("Attempt {}/{}", i, attempts);
+            eprintln!("Different results for query {:?}", query);
+            eprintln!("plain_result = {:#?}", plain_result);
+            eprintln!("index_result = {:#?}", index_result);
         }
     }
     assert!(
