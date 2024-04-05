@@ -94,7 +94,7 @@ fn random_multi_vec_query<R: Rng + ?Sized>(
 /// Check all cases with single vector per multi and several vectors per multi
 #[rstest]
 #[case::nearest_eq(QueryVariant::Nearest, 1, 32, 5)]
-#[case::nearest_multi(QueryVariant::Nearest, 3, 32, 13)]
+#[case::nearest_multi(QueryVariant::Nearest, 3, 32, 20)]
 #[case::discovery_eq(QueryVariant::Discovery, 1, 128, 5)]
 #[case::discovery_multi(QueryVariant::Discovery, 3, 128, 10)]
 #[case::recommend_eq(QueryVariant::RecommendBestScore, 1, 64, 5)]
