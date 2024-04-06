@@ -162,6 +162,13 @@ members = [
 
 [profile.release]
 lto = "fat"
+opt-level = 3
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
+debug-assertions = false
+overflow-checks = false
+rpath = false
 
 # Inherit from release, because we are not rebuilding often,
 # and we don't want the huge binary sizes from debug builds.
