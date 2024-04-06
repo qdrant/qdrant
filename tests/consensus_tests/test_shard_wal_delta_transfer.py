@@ -28,6 +28,7 @@ def run_update_points_in_background(peer_url, collection_name, init_offset=0, th
     p.start()
     return p
 
+
 def check_data_consistency(data):
 
     assert(len(data) > 1)
@@ -39,8 +40,8 @@ def check_data_consistency(data):
         data_j = data[j]
 
         if data_i != data_j:
-            ids_i = set(x.id for x in data_i)
-            ids_j = set(x.id for x in data_j)
+            ids_i = set(x.id for x in data_i["points"])
+            ids_j = set(x.id for x in data_j["points"])
 
             diff = ids_i - ids_j
 

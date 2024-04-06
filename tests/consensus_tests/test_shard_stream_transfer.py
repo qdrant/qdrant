@@ -31,6 +31,29 @@ def run_update_points_in_background(peer_url, collection_name, init_offset=0, th
     return p
 
 
+def check_data_consistency(data):
+
+    assert(len(data) > 1)
+
+    for i in range(len(data) - 1):
+        j = i + 1
+
+        data_i = data[i]
+        data_j = data[j]
+
+        if data_i != data_j:
+            ids_i = set(x["id"] for x in data_i["points"])
+            ids_j = set(x["id"] for x in data_j["points"])
+
+            diff = ids_i - ids_j
+
+            if len(diff) < 100:
+                print(f"Diff between {i} and {j}: {diff}")
+            else:
+                print(f"Diff len between {i} and {j}: {len(diff)}")
+
+            assert False, "Data on all nodes should be consistent"
+
 # Transfer shards from one node to another
 #
 # Simply does the most basic transfer: no concurrent updates during the
@@ -238,4 +261,21 @@ def test_shard_stream_transfer_fast_burst(tmp_path: pathlib.Path):
         )
         assert_http_ok(r)
         counts.append(r.json()["result"]['count'])
-    assert counts[0] == counts[1] == counts[2]
+
+    if counts[0] != counts[1] or counts[1] != counts[2]:
+        data = []
+        for uri in peer_api_uris:
+            r = requests.post(
+                f"{uri}/collections/{COLLECTION_NAME}/points/scroll", json={
+                    "limit": 999999999,
+                    "with_vectors": False,
+                    "with_payload": False,
+                }
+            )
+            assert_http_ok(r)
+            data.append(r.json()["result"])
+
+        check_data_consistency(data)
+
+
+
