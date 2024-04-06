@@ -105,7 +105,7 @@ impl Collection {
                 replica_set.set_local(shard, Some(initial_state)).await?;
             } else {
                 replica_set
-                    .add_remote(shard_transfer.to, initial_state)
+                    .ensure_replica_with_state(&shard_transfer.to, initial_state)
                     .await?;
             }
 
