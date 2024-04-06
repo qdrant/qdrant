@@ -30,6 +30,8 @@ pub enum StorageError {
     ChecksumMismatch { expected: String, actual: String },
     #[error("Forbidden: {description}")]
     Forbidden { description: String },
+    #[error("Pre-condition failure: {description}")]
+    PreconditionFailed { description: String }, // system is not in the state to perform the operation
 }
 
 impl StorageError {
@@ -122,6 +124,9 @@ impl StorageError {
             CollectionError::Timeout { .. } => StorageError::Timeout {
                 description: overriding_description,
             },
+            CollectionError::PreConditionFailed { .. } => StorageError::PreconditionFailed {
+                description: overriding_description,
+            },
         }
     }
 }
@@ -161,6 +166,9 @@ impl From<CollectionError> for StorageError {
                 backtrace: None,
             },
             CollectionError::Timeout { .. } => StorageError::Timeout {
+                description: format!("{err}"),
+            },
+            CollectionError::PreConditionFailed { .. } => StorageError::PreconditionFailed {
                 description: format!("{err}"),
             },
         }

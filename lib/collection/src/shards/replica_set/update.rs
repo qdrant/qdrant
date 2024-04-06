@@ -432,6 +432,14 @@ impl ShardReplicaSet {
                 continue;
             }
 
+            if peer_state == ReplicaState::Partial
+                && matches!(err, CollectionError::PreConditionFailed { .. })
+            {
+                // Handles a special case where transfer receiver haven't created a shard yet.
+                // In this case update should be handled by source shard and forward proxy.
+                continue;
+            }
+
             if err.is_transient() || peer_state == ReplicaState::Initializing {
                 // If the error is transient, we should not deactivate the peer
                 // before allowing other operations to continue.

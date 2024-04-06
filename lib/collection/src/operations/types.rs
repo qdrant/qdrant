@@ -938,6 +938,8 @@ pub enum CollectionError {
     OutOfMemory { description: String, free: u64 },
     #[error("Timeout error: {description}")]
     Timeout { description: String },
+    #[error("Precondition failed: {description}")]
+    PreConditionFailed { description: String },
 }
 
 impl CollectionError {
@@ -998,6 +1000,12 @@ impl CollectionError {
         }
     }
 
+    pub fn pre_condition_failed(description: impl Into<String>) -> CollectionError {
+        CollectionError::PreConditionFailed {
+            description: description.into(),
+        }
+    }
+
     /// Returns true if the error is transient and the operation can be retried.
     /// Returns false if the error is not transient and the operation should fail on all replicas.
     pub fn is_transient(&self) -> bool {
@@ -1007,6 +1015,7 @@ impl CollectionError {
             Self::Timeout { .. } => true,
             Self::Cancelled { .. } => true,
             Self::OutOfMemory { .. } => true,
+            Self::PreConditionFailed { .. } => true,
             // Not transient
             Self::BadInput { .. } => false,
             Self::NotFound { .. } => false,
@@ -1179,6 +1188,9 @@ impl From<tonic::Status> for CollectionError {
                 description: format!("Deadline Exceeded: {err}"),
             },
             tonic::Code::Cancelled => CollectionError::Cancelled {
+                description: format!("{err}"),
+            },
+            tonic::Code::FailedPrecondition => CollectionError::PreConditionFailed {
                 description: format!("{err}"),
             },
             _other => CollectionError::ServiceError {
