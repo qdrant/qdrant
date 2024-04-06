@@ -44,7 +44,7 @@ use crate::content_manager::collections_ops::{Checker, Collections};
 use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
-use crate::rbac::{Access, AccessRequrements, CollectionPass};
+use crate::rbac::{Access, AccessRequirements, CollectionPass};
 use crate::types::{PeerAddressById, StorageConfig};
 use crate::ConsensusOperations;
 
@@ -221,7 +221,7 @@ impl TableOfContent {
             .keys()
             .filter_map(|name| {
                 access
-                    .check_collection_access(name, AccessRequrements::new())
+                    .check_collection_access(name, AccessRequirements::new())
                     .ok()
                     .map(|pass| pass.into_static())
             })
@@ -237,6 +237,10 @@ impl TableOfContent {
             .collect()
     }
 
+    /// Same as `get_collection`, but does not check access rights
+    /// Intended for internal use only
+    ///
+    /// **Do no make public**
     pub(self) async fn get_collection_unchecked(
         &self,
         collection_name: &str,
@@ -310,7 +314,7 @@ impl TableOfContent {
             .collection_aliases(collection_pass.name());
         result.retain(|alias| {
             access
-                .check_collection_access(alias, AccessRequrements::new())
+                .check_collection_access(alias, AccessRequirements::new())
                 .is_ok()
         });
         Ok(result)

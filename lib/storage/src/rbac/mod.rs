@@ -81,7 +81,7 @@ impl Access {
     /// Check if the user has global access.
     pub fn check_global_access(
         &self,
-        requirements: AccessRequrements,
+        requirements: AccessRequirements,
     ) -> Result<CollectionMultipass, StorageError> {
         match self {
             Access::Global(mode) => mode.meets_requirements(requirements)?,
@@ -94,7 +94,7 @@ impl Access {
     pub fn check_collection_access<'a>(
         &self,
         collection_name: &'a str,
-        requirements: AccessRequrements,
+        requirements: AccessRequirements,
     ) -> Result<CollectionPass<'a>, StorageError> {
         match self {
             Access::Global(mode) => mode.meets_requirements(requirements)?,
@@ -147,8 +147,8 @@ impl<'a> CollectionAccessView<'a> {
         Ok(())
     }
 
-    fn meets_requirements(&self, requirements: AccessRequrements) -> Result<(), StorageError> {
-        let AccessRequrements {
+    fn meets_requirements(&self, requirements: AccessRequirements) -> Result<(), StorageError> {
+        let AccessRequirements {
             write,
             manage,
             whole,
@@ -207,7 +207,7 @@ impl std::fmt::Display for CollectionPass<'_> {
 }
 
 #[derive(Default, Debug, Copy, Clone)]
-pub struct AccessRequrements {
+pub struct AccessRequirements {
     /// Write access is required.
     pub write: bool,
     /// Manage access is required, implies write access.
@@ -216,7 +216,7 @@ pub struct AccessRequrements {
     pub whole: bool,
 }
 
-impl AccessRequrements {
+impl AccessRequirements {
     pub fn new() -> Self {
         Self::default()
     }
@@ -244,8 +244,8 @@ impl AccessRequrements {
 }
 
 impl GlobalAccessMode {
-    fn meets_requirements(&self, requirements: AccessRequrements) -> Result<(), StorageError> {
-        let AccessRequrements {
+    fn meets_requirements(&self, requirements: AccessRequirements) -> Result<(), StorageError> {
+        let AccessRequirements {
             write,
             manage,
             whole: _,

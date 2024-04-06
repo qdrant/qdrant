@@ -55,8 +55,7 @@ pub fn init(
     settings: Settings,
 ) -> io::Result<()> {
     actix_web::rt::System::new().block_on(async {
-        let toc = dispatcher.toc(&Access::full("For Actix")).clone();
-        let toc_data = web::Data::from(toc.clone());
+        let toc = dispatcher.toc(&Access::full("For JWT validation")).clone();
         let auth_keys = AuthKeys::try_create(&settings.service, toc.clone());
         let dispatcher_data = web::Data::from(dispatcher);
         let actix_telemetry_collector = telemetry_collector
@@ -140,7 +139,6 @@ pub fn init(
                     actix_telemetry_collector.clone(),
                 ))
                 .app_data(dispatcher_data.clone())
-                .app_data(toc_data.clone())
                 .app_data(telemetry_collector_data.clone())
                 .app_data(http_client.clone())
                 .app_data(health_checker.clone())

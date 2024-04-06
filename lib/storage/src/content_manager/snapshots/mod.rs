@@ -13,7 +13,7 @@ use tokio::task::JoinHandle;
 
 use crate::content_manager::toc::FULL_SNAPSHOT_FILE_NAME;
 use crate::dispatcher::Dispatcher;
-use crate::rbac::{Access, AccessRequrements};
+use crate::rbac::{Access, AccessRequirements};
 use crate::{StorageError, TableOfContent};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -59,7 +59,7 @@ pub async fn do_delete_full_snapshot(
     access: Access,
     snapshot_name: &str,
 ) -> Result<JoinHandle<Result<bool, StorageError>>, StorageError> {
-    access.check_global_access(AccessRequrements::new().manage())?;
+    access.check_global_access(AccessRequirements::new().manage())?;
     let toc = dispatcher.toc(&access);
     let snapshot_manager = toc.get_snapshots_storage_manager();
     let snapshot_dir = get_full_snapshot_path(toc, snapshot_name).await?;
@@ -76,7 +76,7 @@ pub async fn do_delete_collection_snapshot(
     snapshot_name: &str,
 ) -> Result<JoinHandle<Result<bool, StorageError>>, StorageError> {
     let collection_pass = access
-        .check_collection_access(collection_name, AccessRequrements::new().write().whole())?;
+        .check_collection_access(collection_name, AccessRequirements::new().write().whole())?;
     let toc = dispatcher.toc(&access);
     let snapshot_name = snapshot_name.to_string();
     let collection = toc.get_collection(&collection_pass).await?;
@@ -93,7 +93,7 @@ pub async fn do_list_full_snapshots(
     toc: &TableOfContent,
     access: Access,
 ) -> Result<Vec<SnapshotDescription>, StorageError> {
-    access.check_global_access(AccessRequrements::new())?;
+    access.check_global_access(AccessRequirements::new())?;
     let snapshots_manager = toc.get_snapshots_storage_manager();
     let snapshots_path = Path::new(toc.snapshots_path());
     Ok(snapshots_manager.list_snapshots(snapshots_path).await?)
@@ -103,7 +103,7 @@ pub fn do_create_full_snapshot(
     dispatcher: &Dispatcher,
     access: Access,
 ) -> Result<JoinHandle<Result<SnapshotDescription, StorageError>>, StorageError> {
-    access.check_global_access(AccessRequrements::new().manage())?;
+    access.check_global_access(AccessRequirements::new().manage())?;
     let toc = dispatcher.toc(&access).clone();
     Ok(tokio::spawn(async move {
         _do_create_full_snapshot(&toc, access).await

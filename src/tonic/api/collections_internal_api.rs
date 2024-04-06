@@ -9,7 +9,7 @@ use api::grpc::qdrant::{
 };
 use storage::content_manager::conversions::error_to_status;
 use storage::content_manager::toc::TableOfContent;
-use storage::rbac::{Access, AccessRequrements, CollectionPass};
+use storage::rbac::{Access, AccessRequirements, CollectionPass};
 use tonic::{Request, Response, Status};
 
 use super::validate_and_log;
@@ -19,7 +19,7 @@ const FULL_ACCESS: Access = Access::full("Internal API");
 
 fn full_access_pass(collection_name: &str) -> Result<CollectionPass<'_>, Status> {
     FULL_ACCESS
-        .check_collection_access(collection_name, AccessRequrements::new())
+        .check_collection_access(collection_name, AccessRequirements::new())
         .map_err(error_to_status)
 }
 

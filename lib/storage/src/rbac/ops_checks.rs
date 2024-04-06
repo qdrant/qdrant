@@ -16,7 +16,7 @@ use collection::operations::CollectionUpdateOperations;
 use segment::types::{Condition, ExtendedPointId, FieldCondition, Filter, Match, Payload};
 
 use super::{
-    incompatible_with_payload_constraint, Access, AccessRequrements, CollectionAccessList,
+    incompatible_with_payload_constraint, Access, AccessRequirements, CollectionAccessList,
     CollectionAccessView, CollectionPass, PayloadConstraint,
 };
 use crate::content_manager::collection_meta_ops::CollectionMetaOperations;
@@ -54,18 +54,18 @@ impl Access {
             | CollectionMetaOperations::SetShardReplicaState(_)
             | CollectionMetaOperations::CreateShardKey(_)
             | CollectionMetaOperations::DropShardKey(_) => {
-                self.check_global_access(AccessRequrements::new().manage())?;
+                self.check_global_access(AccessRequirements::new().manage())?;
             }
             CollectionMetaOperations::CreatePayloadIndex(op) => {
                 self.check_collection_access(
                     &op.collection_name,
-                    AccessRequrements::new().write().whole(),
+                    AccessRequirements::new().write().whole(),
                 )?;
             }
             CollectionMetaOperations::DropPayloadIndex(op) => {
                 self.check_collection_access(
                     &op.collection_name,
-                    AccessRequrements::new().write().whole(),
+                    AccessRequirements::new().write().whole(),
                 )?;
             }
             CollectionMetaOperations::Nop { token: _ } => (),
@@ -76,7 +76,7 @@ impl Access {
 
 trait CheckableCollectionOperation {
     /// Used to distinguish whether the operation is read-only or read-write.
-    fn access_requrements(&self) -> AccessRequrements;
+    fn access_requrements(&self) -> AccessRequirements;
 
     fn check_access(
         &mut self,
@@ -128,8 +128,8 @@ impl<'a> CollectionAccessView<'a> {
 }
 
 impl CheckableCollectionOperation for RecommendRequestInternal {
-    fn access_requrements(&self) -> AccessRequrements {
-        AccessRequrements {
+    fn access_requrements(&self) -> AccessRequirements {
+        AccessRequirements {
             write: false,
             manage: false,
             whole: false,
@@ -154,8 +154,8 @@ impl CheckableCollectionOperation for RecommendRequestInternal {
 }
 
 impl CheckableCollectionOperation for PointRequestInternal {
-    fn access_requrements(&self) -> AccessRequrements {
-        AccessRequrements {
+    fn access_requrements(&self) -> AccessRequirements {
+        AccessRequirements {
             write: false,
             manage: false,
             whole: true,
@@ -172,8 +172,8 @@ impl CheckableCollectionOperation for PointRequestInternal {
 }
 
 impl CheckableCollectionOperation for CoreSearchRequest {
-    fn access_requrements(&self) -> AccessRequrements {
-        AccessRequrements {
+    fn access_requrements(&self) -> AccessRequirements {
+        AccessRequirements {
             write: false,
             manage: false,
             whole: false,
@@ -191,8 +191,8 @@ impl CheckableCollectionOperation for CoreSearchRequest {
 }
 
 impl CheckableCollectionOperation for CountRequestInternal {
-    fn access_requrements(&self) -> AccessRequrements {
-        AccessRequrements {
+    fn access_requrements(&self) -> AccessRequirements {
+        AccessRequirements {
             write: false,
             manage: false,
             whole: false,
@@ -210,8 +210,8 @@ impl CheckableCollectionOperation for CountRequestInternal {
 }
 
 impl CheckableCollectionOperation for GroupRequest {
-    fn access_requrements(&self) -> AccessRequrements {
-        AccessRequrements {
+    fn access_requrements(&self) -> AccessRequirements {
+        AccessRequirements {
             write: false,
             manage: false,
             whole: false,
@@ -235,8 +235,8 @@ impl CheckableCollectionOperation for GroupRequest {
 }
 
 impl CheckableCollectionOperation for DiscoverRequestInternal {
-    fn access_requrements(&self) -> AccessRequrements {
-        AccessRequrements {
+    fn access_requrements(&self) -> AccessRequirements {
+        AccessRequirements {
             write: false,
             manage: false,
             whole: false,
@@ -263,8 +263,8 @@ impl CheckableCollectionOperation for DiscoverRequestInternal {
 }
 
 impl CheckableCollectionOperation for ScrollRequestInternal {
-    fn access_requrements(&self) -> AccessRequrements {
-        AccessRequrements {
+    fn access_requrements(&self) -> AccessRequirements {
+        AccessRequirements {
             write: false,
             manage: false,
             whole: false,
@@ -282,16 +282,16 @@ impl CheckableCollectionOperation for ScrollRequestInternal {
 }
 
 impl CheckableCollectionOperation for CollectionUpdateOperations {
-    fn access_requrements(&self) -> AccessRequrements {
+    fn access_requrements(&self) -> AccessRequirements {
         match self {
             CollectionUpdateOperations::PointOperation(_)
             | CollectionUpdateOperations::VectorOperation(_)
-            | CollectionUpdateOperations::PayloadOperation(_) => AccessRequrements {
+            | CollectionUpdateOperations::PayloadOperation(_) => AccessRequirements {
                 write: true,
                 manage: false,
                 whole: false, // Checked in `check_access()`
             },
-            CollectionUpdateOperations::FieldIndexOperation(_) => AccessRequrements {
+            CollectionUpdateOperations::FieldIndexOperation(_) => AccessRequirements {
                 write: true,
                 manage: true,
                 whole: true,

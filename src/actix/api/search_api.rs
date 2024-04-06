@@ -6,7 +6,7 @@ use collection::operations::types::{
     CoreSearchRequest, SearchGroupsRequest, SearchRequest, SearchRequestBatch,
 };
 use itertools::Itertools;
-use storage::content_manager::toc::TableOfContent;
+use storage::dispatcher::Dispatcher;
 
 use super::read_params::ReadParams;
 use super::CollectionPath;
@@ -18,7 +18,7 @@ use crate::common::points::{
 
 #[post("/collections/{name}/points/search")]
 async fn search_points(
-    toc: web::Data<TableOfContent>,
+    dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     request: Json<SearchRequest>,
     params: Query<ReadParams>,
@@ -37,7 +37,7 @@ async fn search_points(
     };
 
     let response = do_core_search_points(
-        toc.get_ref(),
+        dispatcher.toc(&access),
         &collection.name,
         search_request.into(),
         params.consistency,
@@ -58,7 +58,7 @@ async fn search_points(
 
 #[post("/collections/{name}/points/search/batch")]
 async fn batch_search_points(
-    toc: web::Data<TableOfContent>,
+    dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     request: Json<SearchRequestBatch>,
     params: Query<ReadParams>,
@@ -86,7 +86,7 @@ async fn batch_search_points(
         .collect();
 
     let response = do_search_batch_points(
-        toc.get_ref(),
+        dispatcher.toc(&access),
         &collection.name,
         requests,
         params.consistency,
@@ -111,7 +111,7 @@ async fn batch_search_points(
 
 #[post("/collections/{name}/points/search/groups")]
 async fn search_point_groups(
-    toc: web::Data<TableOfContent>,
+    dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     request: Json<SearchGroupsRequest>,
     params: Query<ReadParams>,
@@ -130,7 +130,7 @@ async fn search_point_groups(
     };
 
     let response = do_search_point_groups(
-        toc.get_ref(),
+        dispatcher.toc(&access),
         &collection.name,
         search_group_request,
         params.consistency,
