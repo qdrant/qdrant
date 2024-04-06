@@ -1,17 +1,18 @@
-from inspect import isfunction
 import json
 import pathlib
 import random
 import string
 import time
-from typing import List, Optional, Tuple
+from inspect import isfunction
+from typing import Callable, List, Optional, Tuple, Union
 
 import grpc
 import grpc_requests
 import pytest
 import requests
-from consensus_tests import fixtures
 from grpc_interceptor import ClientCallDetails, ClientInterceptor
+
+from consensus_tests import fixtures
 
 from .utils import encode_jwt, make_peer_folder, start_first_peer, wait_for
 
@@ -20,25 +21,42 @@ def random_str():
     return "".join(random.choices(string.ascii_lowercase, k=10))
 
 
+PORT_SEED = 10000
+REST_URI = f"http://127.0.0.1:{PORT_SEED + 2}"
+GRPC_URI = f"127.0.0.1:{PORT_SEED + 1}"
+
 SECRET = "my_top_secret_key"
 
 API_KEY_HEADERS = {"Api-Key": SECRET}
 API_KEY_METADATA = [("api-key", SECRET)]
 
 COLL_NAME = "primary_test_collection"
-DELETABLE_COLL_NAMES = [random_str() for _ in range(10)]
-DELETABLE_ALIASES = [random_str() for _ in range(10)]
+
+# Global read access token
+TOKEN_R = encode_jwt({"access": "r"}, SECRET)
+
+# Collection read access token
+TOKEN_COLL_R = encode_jwt({"access": [{"collections": [COLL_NAME], "access": "r"}]}, SECRET)
+
+# Collection read-write access token
+TOKEN_COLL_RW = encode_jwt({"access": [{"collections": [COLL_NAME], "access": "rw"}]}, SECRET)
+
+# Global manage access token
+TOKEN_M = encode_jwt({"access": "m"}, SECRET)
+
 RENAMABLE_ALIASES = [random_str() for _ in range(10)]
-DELETABLE_FIELD_INDEX = [random_str() for _ in range(10)]
 MOVABLE_SHARD_IDS = [i + 2 for i in range(10)]
 SHARD_ID = 1
 SNAPSHOT_NAME = "test_snapshot"
 POINT_ID = 0
 FIELD_NAME = "test_field"
 PEER_ID = 0
-DELETABLE_SHARD_KEYS = [random_str() for _ in range(10)]
-MOVABLE_SHARD_KEYS = [random_str() for _ in range(10)]
+DELETABLE_SHARD_KEYS = [random_str() for _ in range(2)]
+MOVABLE_SHARD_KEYS = [random_str() for _ in range(2)]
 SHARD_KEY = "existing_shard_key"
+DELETABLE_COLLECTION_SNAPSHOTS = []
+
+_cached_clients = None
 
 
 class Access:
@@ -50,12 +68,20 @@ class Access:
 
 class AccessStub:
     def __init__(
-        self, read, read_write, manage, rest_req=None, grpc_req=None, collection_name=COLL_NAME
+        self,
+        read,
+        read_write,
+        manage,
+        rest_req=None,
+        grpc_req=None,
+        collection_name=COLL_NAME,
+        snapshot_name=SNAPSHOT_NAME,
     ):
         self.access = Access(read, read_write, manage)
         self.rest_req = rest_req
         self.grpc_req = grpc_req
         self.collection_name = collection_name
+        self.snapshot_name = snapshot_name
 
 
 def default_shard_key_config():
@@ -100,81 +126,6 @@ def delete_shard_key_req_grpc():
     }
 
 
-deletable_coll_names = iter(DELETABLE_COLL_NAMES)
-
-
-def delete_collection_name():
-    return next(deletable_coll_names)
-
-
-def delete_collection_req_grpc():
-    return {
-        "collection_name": next(deletable_coll_names),
-    }
-
-
-def create_alias_req():
-    return {
-        "actions": [
-            {
-                "create_alias": {
-                    "collection_name": COLL_NAME,
-                    "alias_name": random_str(),
-                }
-            }
-        ]
-    }
-
-
-def create_alias_req_grpc():
-    return create_alias_req()
-
-
-renamable_aliases = iter(RENAMABLE_ALIASES)
-
-
-def rename_alias_req():
-    return {
-        "actions": [
-            {
-                "rename_alias": {
-                    "old_alias_name": next(renamable_aliases),
-                    "new_alias_name": random_str(),
-                }
-            }
-        ]
-    }
-
-
-def rename_alias_req_grpc():
-    return rename_alias_req()
-
-
-deletable_aliases = iter(DELETABLE_ALIASES)
-
-
-def delete_alias_req():
-    return {"actions": [{"delete_alias": {"alias_name": next(deletable_aliases)}}]}
-
-
-def delete_alias_req_grpc():
-    return delete_alias_req()
-
-
-deletable_field_index = iter(DELETABLE_FIELD_INDEX)
-
-
-def delete_index_req():
-    return {"field_name": next(deletable_field_index)}
-
-
-def delete_index_req_grpc():
-    return {
-        "collection_name": COLL_NAME,
-        "field_name": next(deletable_field_index),
-    }
-
-
 ### TABLE_OF_ACCESS ACTIONS ###
 
 default_create_shard_key = AccessStub(
@@ -195,28 +146,24 @@ create_collection = AccessStub(
 )
 update_collection_params = AccessStub(False, False, True, {}, {"collection_name": COLL_NAME})
 delete_collection = AccessStub(
-    False, False, True, None, delete_collection_req_grpc, collection_name=delete_collection_name
+    False,
+    False,
+    True,
 )
 create_alias = AccessStub(
     False,
     False,
     True,
-    create_alias_req,
-    create_alias_req_grpc,
 )
 rename_alias = AccessStub(
     False,
     False,
     True,
-    rename_alias_req,
-    rename_alias_req_grpc,
 )
 delete_alias = AccessStub(
     False,
     False,
     True,
-    delete_alias_req,
-    delete_alias_req_grpc,
 )
 create_index = AccessStub(
     False,
@@ -230,8 +177,6 @@ delete_index = AccessStub(
     False,
     True,
     True,
-    delete_index_req,
-    delete_index_req_grpc,
 )
 get_collection_cluster_info = AccessStub(
     True, True, True, None, {"collection_name": COLL_NAME}
@@ -335,13 +280,141 @@ list_aliases = AccessStub(True, True, True)
 
 list_collection_snapshots = AccessStub(
     True, True, True, None, {"collection_name": COLL_NAME}
-) # TODO: this should not be allowed with payload constraints
+)  # TODO: this should not be allowed with payload constraints
 
 create_collection_snapshot = AccessStub(False, True, True, None, {"collection_name": COLL_NAME})
+delete_collection_snapshot = AccessStub(
+    False,
+    True,
+    True,
+    None,
+)
 
 
+class EndpointAccess:
+    def __init__(self, r, rw, m, rest_endpoint, grpc_endpoint=None):
+        self.access = Access(r, rw, m)
+        self.rest_endpoint = rest_endpoint
+        self.grpc_endpoint = grpc_endpoint
 
-TABLE_OF_ACCESS = {
+
+ACTION_ACCESS = {
+    "list_collections": EndpointAccess(
+        True, True, True, "GET /collections", "qdrant.Collections/List"
+    ),
+    "get_collection": EndpointAccess(
+        True, True, True, "GET /collections/{collection_name}", "qdrant.Collections/Get"
+    ),
+    "create_collection": EndpointAccess(
+        False, False, True, "PUT /collections/{collection_name}", "qdrant.Collections/Create"
+    ),
+    "delete_collection": EndpointAccess(
+        False, False, True, "DELETE /collections/{collection_name}", "qdrant.Collections/Delete"
+    ),
+    "create_alias": EndpointAccess(
+        False,
+        False,
+        True,
+        "POST /collections/aliases",
+        "qdrant.Collections/UpdateAliases",
+    ),
+    "rename_alias": EndpointAccess(
+        False,
+        False,
+        True,
+        "POST /collections/aliases",
+        "qdrant.Collections/UpdateAliases",
+    ),
+    "delete_alias": EndpointAccess(
+        False,
+        False,
+        True,
+        "POST /collections/aliases",
+        "qdrant.Collections/UpdateAliases",
+    ),
+    "list_collection_aliases": EndpointAccess(
+        True,
+        True,
+        True,
+        "GET /collections/{collection_name}/aliases",
+        "qdrant.Collections/ListCollectionAliases",
+    ),
+    "list_aliases": EndpointAccess(
+        True, True, True, "GET /aliases", "qdrant.Collections/ListAliases"
+    ),
+    "get_collection_cluster_info": EndpointAccess(
+        True,
+        True,
+        True,
+        "GET /collections/{collection_name}/cluster",
+        "qdrant.Collections/CollectionClusterInfo",
+    ),  # TODO: are these the expected permissions for coll cluster info?
+    "collection_exists": EndpointAccess(
+        True,
+        True,
+        True,
+        "GET /collections/{collection_name}/exists",
+        "qdrant.Collections/CollectionExists",
+    ),
+    "create_default_shard_key": EndpointAccess(
+        False,
+        True,
+        True,
+        "PUT /collections/{collection_name}/shards",
+        "qdrant.Collections/CreateShardKey",
+    ),
+    "create_custom_shard_key": EndpointAccess(
+        False,
+        False,
+        True,
+        "PUT /collections/{collection_name}/shards",
+        "qdrant.Collections/CreateShardKey",
+    ),
+    "delete_shard_key": EndpointAccess(
+        False,
+        True,
+        True,
+        "POST /collections/{collection_name}/shards/delete",
+        "qdrant.Collections/DeleteShardKey",
+    ),
+    "create_index": EndpointAccess(
+        False,
+        True,
+        True,
+        "PUT /collections/{collection_name}/index",
+        "qdrant.Points/CreateFieldIndex",
+    ),
+    "delete_index": EndpointAccess(
+        False,
+        True,
+        True,
+        "DELETE /collections/{collection_name}/index/{field_name}",
+        "qdrant.Points/DeleteFieldIndex",
+    ),
+    "list_collection_snapshots": EndpointAccess(
+        True,
+        True,
+        True,
+        "GET /collections/{collection_name}/snapshots",
+        "qdrant.Snapshots/List",
+    ),  # TODO: this should not be allowed with payload constraints
+    "create_collection_snapshot": EndpointAccess(
+        False,
+        True,
+        True,
+        "POST /collections/{collection_name}/snapshots",
+        "qdrant.Snapshots/Create",
+    ),
+    "delete_collection_snapshot": EndpointAccess(
+        False,
+        True,
+        True,
+        "DELETE /collections/{collection_name}/snapshots/{snapshot_name}",
+        "qdrant.Snapshots/Delete",
+    ),
+}
+
+REST_TO_ACTION_MAPPING = {
     # Collections
     "PUT /collections/{collection_name}/shards": [
         default_create_shard_key,
@@ -374,7 +447,9 @@ TABLE_OF_ACCESS = {
     # "PUT /collections/{collection_name}/snapshots/recover": [False, False, True],
     "GET /collections/{collection_name}/snapshots": [list_collection_snapshots],
     "POST /collections/{collection_name}/snapshots": [create_collection_snapshot],
-    # "DELETE /collections/{collection_name}/snapshots/{snapshot_name}": [False, True, True],  #
+    "DELETE /collections/{collection_name}/snapshots/{snapshot_name}": [
+        delete_collection_snapshot
+    ],  #
     # "GET /collections/{collection_name}/snapshots/{snapshot_name}": [True, True, True, None],  #
     # "POST /collections/{collection_name}/shards/{shard_id}/snapshots/upload": [
     #     False,
@@ -483,7 +558,7 @@ GRPC_TO_REST_MAPPING = {
     # "/qdrant.ShardSnapshots/Recover": "PUT /collections/{collection_name}/shards/{shard_id}/snapshots/recover",
     "/qdrant.Snapshots/Create": "POST /collections/{collection_name}/snapshots",
     "/qdrant.Snapshots/List": "GET /collections/{collection_name}/snapshots",
-    # "/qdrant.Snapshots/Delete": "DELETE /collections/{collection_name}/snapshots/{snapshot_name}",
+    "/qdrant.Snapshots/Delete": "DELETE /collections/{collection_name}/snapshots/{snapshot_name}",
     # "/qdrant.Snapshots/CreateFull": "POST /snapshots",
     # "/qdrant.Snapshots/ListFull": "GET /snapshots",
     # "/qdrant.Snapshots/DeleteFull": "DELETE /snapshots/{snapshot_name}",
@@ -492,11 +567,19 @@ GRPC_TO_REST_MAPPING = {
 }
 
 
-def test_grpc_to_rest_mapping():
-    for rest_endpoint in GRPC_TO_REST_MAPPING.values():
-        assert (
-            rest_endpoint in TABLE_OF_ACCESS
-        ), f"REST endpoint `{rest_endpoint}` not found in TABLE_OF_ACCESS"
+def test_all_actions_have_tests():
+    # for each action
+    for action_name in ACTION_ACCESS.keys():
+        # a test_{action_name} exists in this file
+        # TODO
+        pytest.fail("not implemented")
+
+
+# def test_grpc_to_rest_mapping():
+#     for rest_endpoint in GRPC_TO_REST_MAPPING.values():
+#         assert (
+#             rest_endpoint in REST_TO_ACTION_MAPPING
+#         ), f"REST endpoint `{rest_endpoint}` not found in TABLE_OF_ACCESS"
 
 
 def test_all_rest_endpoints_are_covered():
@@ -510,13 +593,13 @@ def test_all_rest_endpoints_are_covered():
         for method in openapi_data["paths"][path]:
             method = method.upper()
             endpoint_paths.append(f"{method} {path}")
-            print(f"{method} {path}")
 
-    # check that all endpoints are covered in TABLE_OF_ACCESS
+    # check that all endpoints are covered in ACTION_ACCESS
+    covered_endpoints = set(v.rest_endpoint for v in ACTION_ACCESS.values())
     for endpoint in endpoint_paths:
         assert (
-            endpoint in TABLE_OF_ACCESS
-        ), f"REST endpoint `{endpoint}` not found in TABLE_OF_ACCESS"
+            endpoint in covered_endpoints
+        ), f"REST endpoint `{endpoint}` not found in any of the `ACTION_ACCESS` REST endpoints"
 
 
 class MetadataInterceptor(ClientInterceptor):
@@ -531,35 +614,38 @@ class MetadataInterceptor(ClientInterceptor):
         return method(request_or_iterator, new_details)
 
 
-def test_all_grpc_endpoints_are_covered(uris: Tuple[str, str]):
-    _rest_uri, grpc_uri = uris
-
+def test_all_grpc_endpoints_are_covered():
     # read grpc services from the reflection server
     client: grpc_requests.Client = grpc_requests.Client(
-        grpc_uri, interceptors=[MetadataInterceptor(API_KEY_METADATA)]
+        GRPC_URI, interceptors=[MetadataInterceptor(API_KEY_METADATA)]
     )
 
     # check that all endpoints are covered in GRPC_TO_REST_MAPPING
+    covered_endpoints = set(v.grpc_endpoint for v in ACTION_ACCESS.values())
+
     for service_name in client.service_names:
         service = client.service(service_name)
         for method in service.method_names:
-            grpc_endpoint = f"/{service_name}/{method}"
+            grpc_endpoint = f"{service_name}/{method}"
             assert (
-                grpc_endpoint in GRPC_TO_REST_MAPPING
-            ), f"GRPC endpoint `{grpc_endpoint}` not found in GRPC_TO_REST_MAPPING"
+                grpc_endpoint in covered_endpoints
+            ), f"gRPC endpoint `{grpc_endpoint}` not found in ACTION_ACCESS gRPC endpoints"
 
 
-def start_api_key_instance(tmp_path: pathlib.Path, port_seed=10000) -> Tuple[str, str]:
+def start_api_key_instance(tmp_path: pathlib.Path) -> Tuple[str, str]:
     extra_env = {
         "QDRANT__SERVICE__API_KEY": SECRET,
         "QDRANT__SERVICE__JWT_RBAC": "true",
+        "QDRANT__STORAGE__WAL__WAL_CAPACITY_MB": "1",
     }
 
     peer_dir = make_peer_folder(tmp_path, 0)
 
     (rest_uri, _bootstrap_uri) = start_first_peer(
-        peer_dir, "api_key_peer.log", port=port_seed, extra_env=extra_env
+        peer_dir, "api_key_peer.log", port=PORT_SEED, extra_env=extra_env
     )
+
+    assert rest_uri == REST_URI
 
     time.sleep(0.5)
 
@@ -567,14 +653,12 @@ def start_api_key_instance(tmp_path: pathlib.Path, port_seed=10000) -> Tuple[str
         res = requests.get(f"{uri}/readyz")
         return res.ok
 
-    wait_for(check_readyz, rest_uri)
+    wait_for(check_readyz, REST_URI)
 
-    grpc_uri = f"127.0.0.1:{port_seed + 1}"
-
-    return rest_uri, grpc_uri
+    return REST_URI, GRPC_URI
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="module", autouse=True)
 def uris(tmp_path_factory: pytest.TempPathFactory):
     tmp_path = tmp_path_factory.mktemp("api_key_instance")
 
@@ -587,48 +671,15 @@ def uris(tmp_path_factory: pytest.TempPathFactory):
         headers=API_KEY_HEADERS,
     )
 
-    for coll_name in DELETABLE_COLL_NAMES:
-        fixtures.create_collection(
-            rest_uri,
-            collection=coll_name,
-            headers=API_KEY_HEADERS,
-        )
-
-    for shard_key in [SHARD_KEY, *DELETABLE_SHARD_KEYS, *MOVABLE_SHARD_KEYS]:
-        requests.put(
-            f"{rest_uri}/collections/{COLL_NAME}/shards",
-            json={"shard_key": shard_key},
-            headers=API_KEY_HEADERS,
-        ).raise_for_status()
-
-    for alias in [*DELETABLE_ALIASES, *RENAMABLE_ALIASES]:
-        requests.post(
-            f"{rest_uri}/collections/aliases",
-            json={
-                "actions": [
-                    {
-                        "create_alias": {
-                            "collection_name": COLL_NAME,
-                            "alias_name": alias,
-                        }
-                    }
-                ]
-            },
-            headers=API_KEY_HEADERS,
-        ).raise_for_status()
-
-    for field_name in DELETABLE_FIELD_INDEX:
-        requests.put(
-            f"{rest_uri}/collections/{COLL_NAME}/index",
-            json={"field_name": field_name, "field_schema": "keyword"},
-            headers=API_KEY_HEADERS,
-        ).raise_for_status()
+    requests.put(
+        f"{rest_uri}/collections/{COLL_NAME}/shards",
+        json={"shard_key": SHARD_KEY},
+        headers=API_KEY_HEADERS,
+    ).raise_for_status()
 
     fixtures.upsert_random_points(
         rest_uri, 100, COLL_NAME, shard_key=SHARD_KEY, headers=API_KEY_HEADERS
     )
-
-    # TODO: create fixtures for payload index, snapshots, shards, shard_key, alias,
 
     yield rest_uri, grpc_uri
 
@@ -726,94 +777,25 @@ def test_value_exists_claim(uris: Tuple[str, str]):
     fixtures.drop_collection(rest_uri, secondary_collection, headers=API_KEY_HEADERS)
 
 
-def test_access(uris: Tuple[str, str]):
-    rest_uri, grpc_uri = uris
-
-    # Global read access token
-    token_read = encode_jwt({"access": "r"}, SECRET)
-
-    # Collection read access token
-    token_coll_r = encode_jwt({"access": [{"collections": [COLL_NAME], "access": "r"}]}, SECRET)
-
-    # Collection read-write access token
-    token_coll_rw = encode_jwt({"access": [{"collections": [COLL_NAME], "access": "rw"}]}, SECRET)
-
-    # Global manage access token
-    token_manage = encode_jwt({"access": "m"}, SECRET)
-
-    # Check REST endpoints
-    for endpoint, stubs in TABLE_OF_ACCESS.items():
-        for stub in stubs:
-
-            assert isinstance(stub, AccessStub)
-
-            coll_name = (
-                stub.collection_name()
-                if isfunction(stub.collection_name)
-                else stub.collection_name
-            )
-
-            uri = rest_uri
-            method, path = endpoint.split(" ")
-            path = path.format(
-                collection_name=coll_name,
-                shard_id=SHARD_ID,
-                snapshot_name=SNAPSHOT_NAME,
-                id=POINT_ID,
-                field_name=FIELD_NAME,
-                peer_id=PEER_ID,
-            )
-            allowed_for = stub.access
-            body = stub.rest_req
-
-            check_rest_access(uri, method, path, body, allowed_for.read, token_read)
-            check_rest_access(uri, method, path, body, allowed_for.read, token_coll_r)
-            check_rest_access(uri, method, path, body, allowed_for.read_write, token_coll_rw)
-            check_rest_access(uri, method, path, body, allowed_for.manage, token_manage)
-
-    # Check GRPC endpoints
-    grpc_read = grpc_requests.Client(
-        grpc_uri, interceptors=[MetadataInterceptor([("authorization", f"Bearer {token_read}")])]
-    )
-
-    grpc_coll_r = grpc_requests.Client(
-        grpc_uri, interceptors=[MetadataInterceptor([("authorization", f"Bearer {token_coll_r}")])]
-    )
-
-    grpc_coll_rw = grpc_requests.Client(
-        grpc_uri,
-        interceptors=[MetadataInterceptor([("authorization", f"Bearer {token_coll_rw}")])],
-    )
-
-    grpc_manage = grpc_requests.Client(
-        grpc_uri, interceptors=[MetadataInterceptor([("authorization", f"Bearer {token_manage}")])]
-    )
-    for grpc_endpoint, rest_endpoint in GRPC_TO_REST_MAPPING.items():
-        stubs = TABLE_OF_ACCESS[rest_endpoint]
-
-        for stub in stubs:
-            assert isinstance(stub, AccessStub)
-
-            service = grpc_endpoint.split("/")[1]
-            method = grpc_endpoint.split("/")[2]
-
-            allowed_for = stub.access
-            request = stub.grpc_req
-
-            check_grpc_access(grpc_read, service, method, request, allowed_for.read)
-            check_grpc_access(grpc_coll_r, service, method, request, allowed_for.read)
-            check_grpc_access(grpc_coll_rw, service, method, request, allowed_for.read_write)
-            check_grpc_access(grpc_manage, service, method, request, allowed_for.manage)
-
-
 def check_rest_access(
-    uri: str, method: str, path: str, body: Optional[dict], should_succeed: bool, token: str
+    method: str,
+    path: str,
+    body: Optional[Union[dict, Callable[[], dict]]],
+    should_succeed: bool,
+    token: str,
+    path_params: dict = {},
 ):
     if isfunction(body):
         body = body()
 
+    concrete_path_params = {}
+    for key, value in path_params.items():
+        concrete_path_params[key] = value() if isfunction(value) else value
+
+    path = path.format(**concrete_path_params)
+
     res = requests.request(
-        method, f"{uri}{path}", headers={"authorization": f"Bearer {token}"}, json=body
+        method, f"{REST_URI}{path}", headers={"authorization": f"Bearer {token}"}, json=body
     )
 
     if should_succeed:
@@ -842,3 +824,357 @@ def check_grpc_access(
             pytest.fail(f"{service}/{method} failed with {e.code()}: {e.details()}")
         else:
             assert e.code() == grpc.StatusCode.PERMISSION_DENIED
+
+
+class GrpcClients:
+    def __init__(self):
+        self.r = grpc_requests.Client(
+            GRPC_URI, interceptors=[MetadataInterceptor([("authorization", f"Bearer {TOKEN_R}")])]
+        )
+        self.coll_r = grpc_requests.Client(
+            GRPC_URI,
+            interceptors=[MetadataInterceptor([("authorization", f"Bearer {TOKEN_COLL_R}")])],
+        )
+        self.coll_rw = grpc_requests.Client(
+            GRPC_URI,
+            interceptors=[MetadataInterceptor([("authorization", f"Bearer {TOKEN_COLL_RW}")])],
+        )
+        self.m = grpc_requests.Client(
+            GRPC_URI, interceptors=[MetadataInterceptor([("authorization", f"Bearer {TOKEN_M}")])]
+        )
+
+
+def get_auth_grpc_clients() -> GrpcClients:
+    global _cached_clients
+    if _cached_clients is None:
+        _cached_clients = GrpcClients()
+
+    return _cached_clients
+
+
+def check_access(action_name: str, rest_request=None, grpc_request=None, path_params={}):
+    action_access: EndpointAccess = ACTION_ACCESS[action_name]
+
+    ## Check Rest
+    assert isinstance(action_access, EndpointAccess)
+
+    method, path = action_access.rest_endpoint.split(" ")
+
+    allowed_for = action_access.access
+    
+    check_rest_access(
+        method, path, rest_request, allowed_for.read, TOKEN_R, path_params=path_params
+    )
+    check_rest_access(
+        method, path, rest_request, allowed_for.read, TOKEN_COLL_R, path_params=path_params
+    )
+    check_rest_access(
+        method, path, rest_request, allowed_for.read_write, TOKEN_COLL_RW, path_params=path_params
+    )
+    check_rest_access(
+        method, path, rest_request, allowed_for.manage, TOKEN_M, path_params=path_params
+    )
+
+    ## Check GRPC
+    grpc_endpoint = action_access.grpc_endpoint
+    service = grpc_endpoint.split("/")[0]
+    method = grpc_endpoint.split("/")[1]
+
+    allowed_for = action_access.access
+
+    grpc = get_auth_grpc_clients()
+
+    check_grpc_access(grpc.r, service, method, grpc_request, allowed_for.read)
+    check_grpc_access(grpc.coll_r, service, method, grpc_request, allowed_for.read)
+    check_grpc_access(grpc.coll_rw, service, method, grpc_request, allowed_for.read_write)
+    check_grpc_access(grpc.m, service, method, grpc_request, allowed_for.manage)
+
+
+def test_list_collections():
+    check_access("list_collections")
+
+
+def test_get_collection():
+    check_access(
+        "get_collection",
+        grpc_request={"collection_name": COLL_NAME},
+        path_params={"collection_name": COLL_NAME},
+    )
+
+
+def test_create_collection():
+    def grpc_req():
+        return {"collection_name": random_str()}
+
+    check_access(
+        "create_collection",
+        rest_request={},
+        grpc_request=grpc_req,
+        path_params={"collection_name": lambda: random_str()},
+    )
+
+
+def test_delete_collection():
+    # create collections
+    coll_names = [random_str() for _ in range(10)]
+    for collection_name in coll_names:
+        requests.put(
+            f"{REST_URI}/collections/{collection_name}", json={}, headers=API_KEY_HEADERS
+        ).raise_for_status()
+
+    coll_names_iter = iter(coll_names)
+
+    def grpc_req():
+        return {"collection_name": next(coll_names_iter)}
+
+    check_access(
+        "delete_collection",
+        grpc_request=grpc_req,
+        path_params={"collection_name": lambda: next(coll_names_iter)},
+    )
+
+    # teardown
+    for collection_name in coll_names:
+        requests.delete(f"{REST_URI}/collections/{collection_name}", headers=API_KEY_HEADERS)
+
+
+def test_create_alias():
+    def req():
+        return {
+            "actions": [
+                {
+                    "create_alias": {
+                        "collection_name": COLL_NAME,
+                        "alias_name": random_str(),
+                    }
+                }
+            ]
+        }
+
+    check_access(
+        "create_alias",
+        rest_request=req,
+        grpc_request=req,
+    )
+
+
+def test_rename_alias():
+    alias_names = [random_str() for _ in range(10)]
+
+    for alias in alias_names:
+        requests.post(
+            f"{REST_URI}/collections/aliases",
+            json={
+                "actions": [
+                    {
+                        "create_alias": {
+                            "collection_name": COLL_NAME,
+                            "alias_name": alias,
+                        }
+                    }
+                ]
+            },
+            headers=API_KEY_HEADERS,
+        ).raise_for_status()
+
+    names_iter = iter(alias_names)
+
+    def req():
+        return {
+            "actions": [
+                {
+                    "rename_alias": {
+                        "old_alias_name": next(names_iter),
+                        "new_alias_name": random_str(),
+                    }
+                }
+            ]
+        }
+
+    check_access(
+        "rename_alias",
+        rest_request=req,
+        grpc_request=req,
+    )
+
+
+def test_delete_alias():
+    alias_names = [random_str() for _ in range(10)]
+    deletable_aliases = iter(alias_names)
+
+    for alias in alias_names:
+        requests.post(
+            f"{REST_URI}/collections/aliases",
+            json={
+                "actions": [
+                    {
+                        "create_alias": {
+                            "collection_name": COLL_NAME,
+                            "alias_name": alias,
+                        }
+                    }
+                ]
+            },
+            headers=API_KEY_HEADERS,
+        ).raise_for_status()
+
+    def req():
+        return {"actions": [{"delete_alias": {"alias_name": next(deletable_aliases)}}]}
+
+    check_access(
+        "delete_alias",
+        rest_request=req,
+        grpc_request=req,
+    )
+
+
+def test_list_collection_aliases():
+    check_access(
+        "list_collection_aliases",
+        grpc_request={"collection_name": COLL_NAME},
+        path_params={"collection_name": COLL_NAME},
+    )
+
+
+def test_list_aliases():
+    check_access("list_aliases")
+
+
+def test_get_collection_cluster_info():
+    check_access(
+        "get_collection_cluster_info",
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={"collection_name": COLL_NAME},
+    )
+
+
+def test_collection_exists():
+    check_access(
+        "collection_exists",
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={"collection_name": COLL_NAME},
+    )
+
+
+def test_create_default_shard_key():
+    def rest_req():
+        return {"shard_key": random_str()}
+
+    def grpc_req():
+        return {
+            "collection_name": COLL_NAME,
+            "request": {"shard_key": {"keyword": random_str()}},
+        }
+
+    check_access(
+        "create_default_shard_key",
+        rest_request=rest_req,
+        path_params={"collection_name": COLL_NAME},
+        grpc_request=grpc_req,
+    )
+
+
+def test_create_custom_shard_key():
+    def rest_req():
+        return {"shard_key": random_str(), "replication_factor": 3}
+
+    def grpc_req():
+        return {
+            "collection_name": COLL_NAME,
+            "request": {"shard_key": {"keyword": random_str()}, "replication_factor": 3},
+        }
+
+    check_access(
+        "create_custom_shard_key",
+        rest_request=rest_req,
+        path_params={"collection_name": COLL_NAME},
+        grpc_request=grpc_req,
+    )
+
+
+def test_delete_shard_key():
+    deletable_shard_keys = [random_str() for _ in range(10)]
+
+    for shard_key in deletable_shard_keys:
+        requests.put(
+            f"{REST_URI}/collections/{COLL_NAME}/shards",
+            json={"shard_key": shard_key},
+            headers=API_KEY_HEADERS,
+        ).raise_for_status()
+
+    keys_iter = iter(deletable_shard_keys)
+
+    def rest_req():
+        return {"shard_key": next(keys_iter)}
+
+    def grpc_req():
+        return {
+            "collection_name": COLL_NAME,
+            "request": {"shard_key": {"keyword": next(keys_iter)}},
+        }
+
+    check_access(
+        "delete_shard_key",
+        rest_request=rest_req,
+        path_params={"collection_name": COLL_NAME},
+        grpc_request=grpc_req,
+    )
+
+
+def test_create_index():
+    check_access(
+        "create_index",
+        rest_request={"field_name": FIELD_NAME, "field_schema": "keyword"},
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={"collection_name": COLL_NAME, "field_name": FIELD_NAME, "field_type": 0},
+    )
+
+
+def test_delete_index():
+    check_access(
+        "delete_index",
+        path_params={"collection_name": COLL_NAME, "field_name": "fake_field_name"},
+        grpc_request={"collection_name": COLL_NAME, "field_name": "fake_field_name"},
+    )
+
+
+def test_list_collection_snapshots():
+    check_access(
+        "list_collection_snapshots",
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={"collection_name": COLL_NAME},
+    )
+
+
+def test_create_collection_snapshot():
+    check_access(
+        "create_collection_snapshot",
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={"collection_name": COLL_NAME},
+    )
+
+
+def test_delete_collection_snapshot():
+    # create snapshots
+    snapshot_names = []
+    for _ in range(8):
+        res = requests.post(
+            f"{REST_URI}/collections/{COLL_NAME}/snapshots?wait=true",
+            headers=API_KEY_HEADERS,
+        )
+        res.raise_for_status()
+        filename = res.json()["result"]["name"]
+        snapshot_names.append(filename)
+        # names are only different if they are 1 second apart
+        time.sleep(1)
+
+    snapshot_names_iter = iter(snapshot_names)
+
+    def grpc_req():
+        return {"collection_name": COLL_NAME, "snapshot_name": next(snapshot_names_iter)}
+
+    check_access(
+        "delete_collection_snapshot",
+        path_params={"collection_name": COLL_NAME, "snapshot_name": lambda : next(snapshot_names_iter)},
+        grpc_request=grpc_req,
+    )
