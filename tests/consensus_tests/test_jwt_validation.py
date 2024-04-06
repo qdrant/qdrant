@@ -412,6 +412,11 @@ ACTION_ACCESS = {
         "DELETE /collections/{collection_name}/snapshots/{snapshot_name}",
         "qdrant.Snapshots/Delete",
     ),
+    # TODO: confirm access rights
+    "download_collection_snapshot": EndpointAccess(
+        True, True, True, "GET /collections/{collection_name}/snapshots/{snapshot_name}", None
+    ),
+    
 }
 
 REST_TO_ACTION_MAPPING = {
@@ -450,7 +455,7 @@ REST_TO_ACTION_MAPPING = {
     "DELETE /collections/{collection_name}/snapshots/{snapshot_name}": [
         delete_collection_snapshot
     ],  #
-    # "GET /collections/{collection_name}/snapshots/{snapshot_name}": [True, True, True, None],  #
+    "GET /collections/{collection_name}/snapshots/{snapshot_name}": [True, True, True, None],  #
     # "POST /collections/{collection_name}/shards/{shard_id}/snapshots/upload": [
     #     False,
     #     False,
@@ -877,17 +882,18 @@ def check_access(action_name: str, rest_request=None, grpc_request=None, path_pa
 
     ## Check GRPC
     grpc_endpoint = action_access.grpc_endpoint
-    service = grpc_endpoint.split("/")[0]
-    method = grpc_endpoint.split("/")[1]
+    if grpc_endpoint is not None:
+        service = grpc_endpoint.split("/")[0]
+        method = grpc_endpoint.split("/")[1]
 
-    allowed_for = action_access.access
+        allowed_for = action_access.access
 
-    grpc = get_auth_grpc_clients()
+        grpc = get_auth_grpc_clients()
 
-    check_grpc_access(grpc.r, service, method, grpc_request, allowed_for.read)
-    check_grpc_access(grpc.coll_r, service, method, grpc_request, allowed_for.read)
-    check_grpc_access(grpc.coll_rw, service, method, grpc_request, allowed_for.read_write)
-    check_grpc_access(grpc.m, service, method, grpc_request, allowed_for.manage)
+        check_grpc_access(grpc.r, service, method, grpc_request, allowed_for.read)
+        check_grpc_access(grpc.coll_r, service, method, grpc_request, allowed_for.read)
+        check_grpc_access(grpc.coll_rw, service, method, grpc_request, allowed_for.read_write)
+        check_grpc_access(grpc.m, service, method, grpc_request, allowed_for.manage)
 
 
 def test_list_collections():
@@ -1178,3 +1184,18 @@ def test_delete_collection_snapshot():
         path_params={"collection_name": COLL_NAME, "snapshot_name": lambda : next(snapshot_names_iter)},
         grpc_request=grpc_req,
     )
+
+def test_download_collection_snapshot():
+    res = requests.post(
+        f"{REST_URI}/collections/{COLL_NAME}/snapshots?wait=true",
+        headers=API_KEY_HEADERS,
+    )
+    res.raise_for_status()
+    filename = res.json()["result"]["name"]
+    
+    check_access(
+        "download_collection_snapshot",
+        path_params={"collection_name": COLL_NAME, "snapshot_name": filename}
+    )
+    
+
