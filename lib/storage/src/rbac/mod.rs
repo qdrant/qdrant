@@ -1,5 +1,3 @@
-mod ops_checks;
-
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
@@ -9,6 +7,8 @@ use serde::{Deserialize, Serialize};
 use validator::{Validate, ValidateArgs, ValidationError, ValidationErrors};
 
 use crate::content_manager::errors::StorageError;
+
+mod ops_checks;
 
 /// A structure that defines access rights.
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
@@ -30,7 +30,7 @@ pub struct CollectionAccess {
         function = "validate_unique_collections",
         arg = "&'v_a mut HashSet<String>"
     ))]
-    pub collections: Vec<String>,
+    pub collection: String,
 
     pub access: CollectionAccessMode,
 
@@ -114,12 +114,7 @@ impl CollectionAccessList {
         let access = self
             .0
             .iter()
-            .find(|collections| {
-                collections
-                    .collections
-                    .iter()
-                    .any(|name| name == collection_name)
-            })
+            .find(|collections| collections.collection == collection_name)
             .ok_or_else(|| {
                 StorageError::forbidden(format!(
                     "Access to collection {collection_name} is required"
@@ -294,21 +289,17 @@ impl Access {
 }
 
 fn validate_unique_collections(
-    collections: &[String],
+    collection: &str,
     used_collections: &mut HashSet<String>,
 ) -> Result<(), ValidationError> {
-    let duplicates = collections
-        .iter()
-        .filter(|&collection| !used_collections.insert(collection.clone()))
-        .cloned()
-        .collect::<Vec<_>>();
-    if duplicates.is_empty() {
+    let unique = used_collections.insert(collection.to_owned());
+    if unique {
         Ok(())
     } else {
         Err(ValidationError {
             code: Cow::from("unique"),
             message: Some(Cow::from("Collection name should be unique")),
-            params: HashMap::from([(Cow::from("collections"), duplicates.into())]),
+            params: HashMap::from([(Cow::from("collection"), collection.to_owned().into())]),
         })
     }
 }
