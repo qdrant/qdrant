@@ -1,20 +1,17 @@
 use std::arch::x86_64::*;
 
-use common::types::ScoreType;
-
-use crate::data_types::vectors::VectorElementTypeByte;
-use crate::spaces::simple_sse::hsum128_ps_sse;
-
 #[target_feature(enable = "avx")]
 #[target_feature(enable = "fma")]
 #[allow(unused)]
 pub unsafe fn sse_cosine_similarity_bytes(
-    v1: &[VectorElementTypeByte],
-    v2: &[VectorElementTypeByte],
-) -> ScoreType {
+    v1: &[u8],
+    v2: &[u8],
+) -> f32 {
+    use crate::hsum128_ps_sse;
+
     debug_assert!(v1.len() == v2.len());
-    let mut ptr1: *const VectorElementTypeByte = v1.as_ptr();
-    let mut ptr2: *const VectorElementTypeByte = v2.as_ptr();
+    let mut ptr1: *const u8 = v1.as_ptr();
+    let mut ptr2: *const u8 = v2.as_ptr();
 
     // sum accumulator for 8x32 bit integers
     let mut acc = _mm_setzero_si128();
@@ -105,31 +102,50 @@ pub unsafe fn sse_cosine_similarity_bytes(
             remainder_norm1 += (v1 as i32) * (v1 as i32);
             remainder_norm2 += (v2 as i32) * (v2 as i32);
         }
-        dot_product += remainder_dot_product as ScoreType;
-        norm1 += remainder_norm1 as ScoreType;
-        norm2 += remainder_norm2 as ScoreType;
+        dot_product += remainder_dot_product as f32;
+        norm1 += remainder_norm1 as f32;
+        norm2 += remainder_norm2 as f32;
     }
 
-    dot_product as ScoreType / ((norm1 as ScoreType * norm2 as ScoreType).sqrt())
+    dot_product as f32 / ((norm1 as f32 * norm2 as f32).sqrt())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::spaces::metric::Metric;
-    use crate::spaces::simple::*;
+
+    fn cosine_similarity_bytes(
+        v1: &[u8],
+        v2: &[u8],
+    ) -> f32 {
+        let mut dot_product = 0;
+        let mut norm1 = 0;
+        let mut norm2 = 0;
+    
+        for (a, b) in v1.iter().zip(v2) {
+            dot_product += (*a as i32) * (*b as i32);
+            norm1 += (*a as i32) * (*a as i32);
+            norm2 += (*b as i32) * (*b as i32);
+        }
+    
+        if norm1 == 0 || norm2 == 0 {
+            return 0.0;
+        }
+    
+        dot_product as f32 / ((norm1 as f32 * norm2 as f32).sqrt())
+    }
 
     #[test]
     fn test_spaces_avx() {
         if is_x86_feature_detected!("avx") && is_x86_feature_detected!("fma") {
-            let v1: Vec<VectorElementTypeByte> = vec![
+            let v1: Vec<u8> = vec![
                 255, 255, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 255, 255,
                 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 255, 255, 0, 1, 2, 3,
                 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 255, 255, 0, 1, 2, 3, 4, 5, 6, 7,
                 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 255, 255, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
                 11, 12, 13, 14, 15, 16, 17,
             ];
-            let v2: Vec<VectorElementTypeByte> = vec![
+            let v2: Vec<u8> = vec![
                 255, 255, 0, 254, 253, 252, 251, 250, 249, 248, 247, 246, 245, 244, 243, 242, 241,
                 240, 239, 238, 255, 255, 255, 254, 253, 252, 251, 250, 249, 248, 247, 246, 245,
                 244, 243, 242, 241, 240, 239, 238, 255, 255, 255, 254, 253, 252, 251, 250, 249,
@@ -140,7 +156,7 @@ mod tests {
             ];
 
             let dot_simd = unsafe { sse_cosine_similarity_bytes(&v1, &v2) };
-            let dot = <CosineMetric as Metric<VectorElementTypeByte>>::similarity(&v1, &v2);
+            let dot = cosine_similarity_bytes(&v1, &v2);
             assert_eq!(dot_simd, dot);
         } else {
             println!("avx test skipped");

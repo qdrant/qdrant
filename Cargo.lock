@@ -576,6 +576,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 
 [[package]]
+name = "avx"
+version = "0.0.0"
+
+[[package]]
 name = "axum"
 version = "0.6.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3267,6 +3271,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5ce46fe64a9d73be07dcbe690a38ce1b293be448fd8ce1e6c1b8062c9f72c6a"
 
 [[package]]
+name = "neon"
+version = "0.0.0"
+
+[[package]]
 name = "nias"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4070,6 +4078,7 @@ dependencies = [
  "actix-web-validator",
  "anyhow",
  "api",
+ "avx",
  "cancel",
  "chrono",
  "clap",
@@ -4086,6 +4095,7 @@ dependencies = [
  "jsonwebtoken",
  "log",
  "memory",
+ "neon",
  "parking_lot",
  "prometheus",
  "prost 0.11.9",
@@ -4107,6 +4117,7 @@ dependencies = [
  "serde_urlencoded",
  "slog",
  "slog-stdlog",
+ "sse",
  "storage",
  "sys-info",
  "tar",
@@ -4854,6 +4865,7 @@ dependencies = [
  "ahash",
  "atomic_refcell",
  "atomicwrites",
+ "avx",
  "bincode",
  "bitpacking",
  "bitvec",
@@ -4876,6 +4888,7 @@ dependencies = [
  "macro_rules_attribute",
  "memmap2 0.9.4",
  "memory",
+ "neon",
  "nom",
  "num-cmp",
  "num-derive",
@@ -4902,6 +4915,7 @@ dependencies = [
  "smallvec",
  "smol_str",
  "sparse",
+ "sse",
  "sysinfo",
  "tar",
  "tempfile",
@@ -5233,6 +5247,10 @@ name = "spin"
 version = "0.9.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
+
+[[package]]
+name = "sse"
+version = "0.0.0"
 
 [[package]]
 name = "stable_deref_trait"

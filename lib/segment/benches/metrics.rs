@@ -1,20 +1,20 @@
 #[cfg(not(target_os = "windows"))]
 mod prof;
 
+use avx::avx_cosine::avx_cosine_similarity_bytes;
+use avx::avx_dot::avx_dot_similarity_bytes;
+use avx::avx_euclid::avx_euclid_similarity_bytes;
+use avx::avx_manhattan::avx_manhattan_similarity_bytes;
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use segment::data_types::vectors::VectorElementTypeByte;
 use segment::spaces::metric::Metric;
-use segment::spaces::metric_uint::avx_cosine::avx_cosine_similarity_bytes;
-use segment::spaces::metric_uint::avx_dot::avx_dot_similarity_bytes;
-use segment::spaces::metric_uint::avx_euclid::avx_euclid_similarity_bytes;
-use segment::spaces::metric_uint::avx_manhattan::avx_manhattan_similarity_bytes;
-use segment::spaces::metric_uint::sse_cosine::sse_cosine_similarity_bytes;
-use segment::spaces::metric_uint::sse_dot::sse_dot_similarity_bytes;
-use segment::spaces::metric_uint::sse_euclid::sse_euclid_similarity_bytes;
-use segment::spaces::metric_uint::sse_manhattan::sse_manhattan_similarity_bytes;
 use segment::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
+use sse::sse_cosine::sse_cosine_similarity_bytes;
+use sse::sse_dot::sse_dot_similarity_bytes;
+use sse::sse_euclid::sse_euclid_similarity_bytes;
+use sse::sse_manhattan::sse_manhattan_similarity_bytes;
 
 const DIM: usize = 1024;
 const COUNT: usize = 100_000;
