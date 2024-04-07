@@ -2,10 +2,7 @@ use std::arch::x86_64::*;
 
 #[target_feature(enable = "sse")]
 #[allow(unused)]
-pub unsafe fn sse_euclid_similarity_bytes(
-    v1: &[u8],
-    v2: &[u8],
-) -> f32 {
+pub unsafe fn sse_euclid_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
     use crate::hsum128_ps_sse;
 
     debug_assert!(v1.len() == v2.len());
@@ -79,10 +76,7 @@ pub unsafe fn sse_euclid_similarity_bytes(
 mod tests {
     use super::*;
 
-    fn euclid_similarity_bytes(
-        v1: &[u8],
-        v2: &[u8],
-    ) -> f32 {
+    fn euclid_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
         -v1.iter()
             .zip(v2)
             .map(|(a, b)| {

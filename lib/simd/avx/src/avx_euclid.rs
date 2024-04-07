@@ -3,10 +3,7 @@ use std::arch::x86_64::*;
 #[target_feature(enable = "avx")]
 #[target_feature(enable = "fma")]
 #[allow(unused)]
-pub unsafe fn avx_euclid_similarity_bytes(
-    v1: &[u8],
-    v2: &[u8],
-) -> f32 {
+pub unsafe fn avx_euclid_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
     use crate::hsum256_ps_avx;
 
     debug_assert!(v1.len() == v2.len());
@@ -80,10 +77,7 @@ pub unsafe fn avx_euclid_similarity_bytes(
 mod tests {
     use super::*;
 
-    fn euclid_similarity_bytes(
-        v1: &[u8],
-        v2: &[u8],
-    ) -> f32 {
+    fn euclid_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
         -v1.iter()
             .zip(v2)
             .map(|(a, b)| {

@@ -2,10 +2,7 @@ use std::arch::x86_64::*;
 
 #[target_feature(enable = "sse")]
 #[allow(unused)]
-pub unsafe fn sse_dot_similarity_bytes(
-    v1: &[u8],
-    v2: &[u8],
-) -> f32 {
+pub unsafe fn sse_dot_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
     use crate::hsum128_ps_sse;
 
     debug_assert!(v1.len() == v2.len());
@@ -79,11 +76,11 @@ mod tests {
 
     fn dot_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
         let mut dot_product = 0;
-    
+
         for (a, b) in v1.iter().zip(v2) {
             dot_product += (*a as i32) * (*b as i32);
         }
-    
+
         dot_product as f32
     }
 

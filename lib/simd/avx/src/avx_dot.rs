@@ -3,10 +3,7 @@ use std::arch::x86_64::*;
 #[target_feature(enable = "avx")]
 #[target_feature(enable = "fma")]
 #[allow(unused)]
-pub unsafe fn avx_dot_similarity_bytes(
-    v1: &[u8],
-    v2: &[u8],
-) -> f32 {
+pub unsafe fn avx_dot_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
     use crate::hsum256_ps_avx;
 
     debug_assert!(v1.len() == v2.len());
@@ -80,13 +77,13 @@ mod tests {
 
     fn dot_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
         let mut dot_product = 0;
-    
+
         for (a, b) in v1.iter().zip(v2) {
             dot_product += (*a as i32) * (*b as i32);
         }
-    
+
         dot_product as f32
-    }    
+    }
 
     #[test]
     fn test_spaces_avx() {
