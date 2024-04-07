@@ -60,23 +60,23 @@ pub unsafe fn avx_euclid_similarity_bytes(
     }
 
     let mul_ps = _mm256_cvtepi32_ps(acc);
-    let score = hsum256_ps_avx(mul_ps);
+    let mut score = hsum256_ps_avx(mul_ps);
 
-    let mut remainder = 0;
-    for _ in 0..len % 32 {
-        let v1 = *ptr1 as i32;
-        let v2 = *ptr2 as i32;
-        ptr1 = ptr1.add(1);
-        ptr2 = ptr2.add(1);
-        let diff = v1 - v2;
-        remainder += diff * diff;
-    }
-
+    let remainder = len % 32;
     if remainder != 0 {
-        -score - remainder as f32
-    } else {
-        -score
+        let mut remainder_score = 0;
+        for _ in 0..remainder {
+            let v1 = *ptr1 as i32;
+            let v2 = *ptr2 as i32;
+            ptr1 = ptr1.add(1);
+            ptr2 = ptr2.add(1);
+            let diff = v1 - v2;
+            remainder_score += diff * diff;
+        }
+        score += remainder_score as f32;
     }
+
+    -score
 }
 
 #[cfg(test)]

@@ -8,6 +8,9 @@ authors = [
 license = "Apache-2.0"
 edition = "2021"
 
+#[build]
+#rustflags = "-C target-feature=+avx2"
+
 [features]
 multiling-chinese = ["charabia/chinese"]
 multiling-japanese = ["charabia/japanese"]
@@ -23,7 +26,6 @@ proptest = "1.4.0"
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
 pprof = { version = "0.12", features = ["flamegraph", "prost-codec"] }
-
 
 [dependencies]
 bitpacking = "0.9.2"
@@ -131,4 +133,8 @@ harness = false
 
 [[bench]]
 name = "multi_vector_search"
+harness = false
+
+[[bench]]
+name = "metrics"
 harness = false

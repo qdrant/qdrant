@@ -58,22 +58,22 @@ pub unsafe fn sse_dot_similarity_bytes(
     }
 
     let mul_ps = _mm_cvtepi32_ps(acc);
-    let score = hsum128_ps_sse(mul_ps);
+    let mut score = hsum128_ps_sse(mul_ps);
 
-    let mut remainder = 0;
-    for _ in 0..len % 16 {
-        let v1 = *ptr1;
-        let v2 = *ptr2;
-        ptr1 = ptr1.add(1);
-        ptr2 = ptr2.add(1);
-        remainder += (v1 as i32) * (v2 as i32);
-    }
-
+    let mut remainder = len % 16;
     if remainder != 0 {
-        score + remainder as f32
-    } else {
-        score
+        let mut remainder_score = 0;
+        for _ in 0..remainder {
+            let v1 = *ptr1;
+            let v2 = *ptr2;
+            ptr1 = ptr1.add(1);
+            ptr2 = ptr2.add(1);
+            remainder_score += (v1 as i32) * (v2 as i32);
+        }
+        score += remainder_score as f32;
     }
+
+    score
 }
 
 #[cfg(test)]

@@ -1,38 +1,38 @@
 #[cfg(target_arch = "x86_64")]
-mod avx_dot;
+pub mod avx_dot;
 
 #[cfg(target_arch = "x86_64")]
-mod avx_cosine;
+pub mod avx_cosine;
 
 #[cfg(target_arch = "x86_64")]
-mod avx_simple_manhattan;
+pub mod avx_manhattan;
 
 #[cfg(target_arch = "x86_64")]
-mod avx_euclid;
+pub mod avx_euclid;
 
 #[cfg(target_arch = "aarch64")]
-mod neon_dot;
+pub mod neon_dot;
 
 #[cfg(target_arch = "aarch64")]
-mod neon_cosine;
+pub mod neon_cosine;
 
 #[cfg(target_arch = "aarch64")]
-mod neon_simple_manhattan;
+pub mod neon_simple_manhattan;
 
 #[cfg(target_arch = "aarch64")]
-mod neon_euclid;
+pub mod neon_euclid;
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-mod sse_dot;
+pub mod sse_dot;
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-mod sse_cosine;
+pub mod sse_cosine;
 
 #[cfg(target_arch = "x86_64")]
-mod sse_simple_manhattan;
+pub mod sse_manhattan;
 
 #[cfg(target_arch = "x86_64")]
-mod sse_euclid;
+pub mod sse_euclid;
 
 mod simple_cosine;
 mod simple_dot;

@@ -43,10 +43,12 @@ pub fn plain_boolean_query_points(c: &mut Criterion) {
             query_count += 1;
         })
     });
-    eprintln!(
-        "result_size / query_count = {:#?}",
-        result_size / query_count
-    );
+    if query_count != 0 {
+        eprintln!(
+            "result_size / query_count = {:#?}",
+            result_size / query_count
+        );
+    }
 }
 
 pub fn struct_boolean_query_points(c: &mut Criterion) {
@@ -68,10 +70,12 @@ pub fn struct_boolean_query_points(c: &mut Criterion) {
             query_count += 1;
         })
     });
-    eprintln!(
-        "result_size / query_count = {:#?}",
-        result_size / query_count
-    );
+    if query_count != 0 {
+        eprintln!(
+            "result_size / query_count = {:#?}",
+            result_size / query_count
+        );
+    }
 
     group.finish();
 }
@@ -108,10 +112,12 @@ pub fn keyword_index_boolean_query_points(c: &mut Criterion) {
             query_count += 1;
         })
     });
-    eprintln!(
-        "result_size / query_count = {:#?}",
-        result_size / query_count
-    );
+    if query_count != 0 {
+        eprintln!(
+            "result_size / query_count = {:#?}",
+            result_size / query_count
+        );
+    }
 
     group.finish();
 }
