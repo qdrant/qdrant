@@ -9,4 +9,7 @@ license = "Apache-2.0"
 edition = "2021"
 publish = false
 
+[build]
+rustflags = "-C target-feature=+sse3,+avx,+fma"
+
 [dependencies]
