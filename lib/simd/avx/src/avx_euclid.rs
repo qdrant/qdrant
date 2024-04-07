@@ -36,21 +36,15 @@ pub unsafe fn avx_euclid_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
         // p2 = [byte0, byte1, byte2, byte3, ..] -> [0, byte1, 0, byte3, ..]
         // and calculate 16bit multiplication with taking lower 16 bits
         // wa can use signed multiplication because sign bit is always 0
-        let mul16 = _mm256_mullo_epi16(masked_abs_diff, masked_abs_diff);
-
-        acc = _mm256_add_epi32(acc, _mm256_and_si256(mul16, mask_epu32_epu16));
-        let mul16 = _mm256_bsrli_epi128(mul16, 2);
-        acc = _mm256_add_epi32(acc, _mm256_and_si256(mul16, mask_epu32_epu16));
+        let mul16 = _mm256_madd_epi16(masked_abs_diff, masked_abs_diff);
+        acc = _mm256_add_epi32(acc, mul16);
 
         // shift right by 1 byte for p1 and p2 and repeat previous steps
         let abs_diff = _mm256_bsrli_epi128(abs_diff, 1);
         let masked_abs_diff = _mm256_and_si256(abs_diff, mask_epu16_epu8);
 
-        let mul16 = _mm256_mullo_epi16(masked_abs_diff, masked_abs_diff);
-
-        acc = _mm256_add_epi32(acc, _mm256_and_si256(mul16, mask_epu32_epu16));
-        let mul16 = _mm256_bsrli_epi128(mul16, 2);
-        acc = _mm256_add_epi32(acc, _mm256_and_si256(mul16, mask_epu32_epu16));
+        let mul16 = _mm256_madd_epi16(masked_abs_diff, masked_abs_diff);
+        acc = _mm256_add_epi32(acc, mul16);
     }
 
     let mul_ps = _mm256_cvtepi32_ps(acc);

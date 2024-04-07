@@ -32,48 +32,30 @@ pub unsafe fn sse_cosine_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
         // and calculate 16bit multiplication with taking lower 16 bits
         // wa can use signed multiplication because sign bit is always 0
         let masked_p1 = _mm_and_si128(p1, mask_epu16_epu8);
-        let mul16 = _mm_mullo_epi16(masked_p1, masked_p1);
-
-        norm1 = _mm_add_epi32(norm1, _mm_and_si128(mul16, mask_epu32_epu16));
-        let mul16 = _mm_bsrli_si128(mul16, 2);
-        norm1 = _mm_add_epi32(norm1, _mm_and_si128(mul16, mask_epu32_epu16));
+        let mul16 = _mm_madd_epi16(masked_p1, masked_p1);
+        norm1 = _mm_add_epi32(norm1, mul16);
 
         let masked_p2 = _mm_and_si128(p2, mask_epu16_epu8);
-        let mul16 = _mm_mullo_epi16(masked_p2, masked_p2);
+        let mul16 = _mm_madd_epi16(masked_p2, masked_p2);
+        norm2 = _mm_add_epi32(norm2, mul16);
 
-        norm2 = _mm_add_epi32(norm2, _mm_and_si128(mul16, mask_epu32_epu16));
-        let mul16 = _mm_bsrli_si128(mul16, 2);
-        norm2 = _mm_add_epi32(norm2, _mm_and_si128(mul16, mask_epu32_epu16));
-
-        let mul16 = _mm_mullo_epi16(masked_p1, masked_p2);
-
-        acc = _mm_add_epi32(acc, _mm_and_si128(mul16, mask_epu32_epu16));
-        let mul16 = _mm_bsrli_si128(mul16, 2);
-        acc = _mm_add_epi32(acc, _mm_and_si128(mul16, mask_epu32_epu16));
+        let mul16 = _mm_madd_epi16(masked_p1, masked_p2);
+        acc = _mm_add_epi32(acc, mul16);
 
         // shift right by 1 byte for p1 and p2 and repeat previous steps
         let p1 = _mm_bsrli_si128(p1, 1);
         let p2 = _mm_bsrli_si128(p2, 1);
 
         let masked_p1 = _mm_and_si128(p1, mask_epu16_epu8);
-        let mul16 = _mm_mullo_epi16(masked_p1, masked_p1);
-
-        norm1 = _mm_add_epi32(norm1, _mm_and_si128(mul16, mask_epu32_epu16));
-        let mul16 = _mm_bsrli_si128(mul16, 2);
-        norm1 = _mm_add_epi32(norm1, _mm_and_si128(mul16, mask_epu32_epu16));
+        let mul16 = _mm_madd_epi16(masked_p1, masked_p1);
+        norm1 = _mm_add_epi32(norm1, mul16);
 
         let masked_p2 = _mm_and_si128(p2, mask_epu16_epu8);
-        let mul16 = _mm_mullo_epi16(masked_p2, masked_p2);
+        let mul16 = _mm_madd_epi16(masked_p2, masked_p2);
+        norm2 = _mm_add_epi32(norm2, mul16);
 
-        norm2 = _mm_add_epi32(norm2, _mm_and_si128(mul16, mask_epu32_epu16));
-        let mul16 = _mm_bsrli_si128(mul16, 2);
-        norm2 = _mm_add_epi32(norm2, _mm_and_si128(mul16, mask_epu32_epu16));
-
-        let mul16 = _mm_mullo_epi16(masked_p1, masked_p2);
-
-        acc = _mm_add_epi32(acc, _mm_and_si128(mul16, mask_epu32_epu16));
-        let mul16 = _mm_bsrli_si128(mul16, 2);
-        acc = _mm_add_epi32(acc, _mm_and_si128(mul16, mask_epu32_epu16));
+        let mul16 = _mm_madd_epi16(masked_p1, masked_p2);
+        acc = _mm_add_epi32(acc, mul16);
     }
 
     let mul_ps = _mm_cvtepi32_ps(acc);
