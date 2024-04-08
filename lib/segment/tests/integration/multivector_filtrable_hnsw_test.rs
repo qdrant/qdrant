@@ -101,7 +101,7 @@ fn random_multi_vec_query<R: Rng + ?Sized>(
 #[case::recommend_multi(QueryVariant::RecommendBestScore, 2, 64, 10)]
 fn test_multi_filterable_hnsw(
     #[case] query_variant: QueryVariant,
-    #[case] num_vector_per_points: usize,
+    #[case] max_num_vector_per_points: usize,
     #[case] ef: usize,
     #[case] max_failures: usize, // out of 100
 ) {
@@ -141,7 +141,9 @@ fn test_multi_filterable_hnsw(
     let mut segment = build_segment(dir.path(), &config, true).unwrap();
     for n in 0..num_points {
         let idx = n.into();
-        let multi_vec = random_multi_vector(&mut rnd, vector_dim, num_vector_per_points);
+        // Random number of vectors per multivec point
+        let num_vector_for_point = rnd.gen_range(1..=max_num_vector_per_points);
+        let multi_vec = random_multi_vector(&mut rnd, vector_dim, num_vector_for_point);
 
         let int_payload = random_int_payload(&mut rnd, num_payload_values..=num_payload_values);
         let payload: Payload = json!({int_key:int_payload,}).into();
@@ -194,8 +196,10 @@ fn test_multi_filterable_hnsw(
     let mut hits = 0;
     let attempts = 100;
     for i in 0..attempts {
+        // Random number of vectors per multivec query
+        let num_vector_for_query = rnd.gen_range(1..=max_num_vector_per_points);
         let query =
-            random_multi_vec_query(&query_variant, &mut rnd, vector_dim, num_vector_per_points);
+            random_multi_vec_query(&query_variant, &mut rnd, vector_dim, num_vector_for_query);
 
         let range_size = 40;
         let left_range = rnd.gen_range(0..400);
