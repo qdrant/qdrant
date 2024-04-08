@@ -449,13 +449,13 @@ ACTION_ACCESS = {
     #     "POST /collections/{collection_name}/points/payload/clear",
     #     "qdrant.Points/ClearPayload",
     # ),
-    # "scroll_points": EndpointAccess(
-    #     True,
-    #     True,
-    #     True,
-    #     "POST /collections/{collection_name}/points/scroll",
-    #     "qdrant.Points/Scroll",
-    # ),
+    "scroll_points": EndpointAccess(
+        True,
+        True,
+        True,
+        "POST /collections/{collection_name}/points/scroll",
+        "qdrant.Points/Scroll",
+    ),
     "search_points": EndpointAccess(
         True,
         True,
@@ -512,9 +512,9 @@ ACTION_ACCESS = {
         "POST /collections/{collection_name}/points/discover/batch",
         "qdrant.Points/DiscoverBatch",
     ),
-    # "count_points": EndpointAccess(
-    #     True, True, True, "POST /collections/{collection_name}/points/count", "qdrant.Points/Count"
-    # ),
+    "count_points": EndpointAccess(
+        True, True, True, "POST /collections/{collection_name}/points/count", "qdrant.Points/Count"
+    ),
     ### Service ###
     # TODO: add tests for these actions
     # "get_root": EndpointAccess(True, True, True, "GET /", "qdrant.Qdrant/HealthCheck"),
@@ -1366,6 +1366,15 @@ def test_delete_peer():
     check_access("delete_peer", path_params={"peer_id": "2000"})
 
 
+def test_scroll_points():
+    check_access(
+        "scroll_points",
+        rest_request={"limit": 10},
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={"collection_name": COLL_NAME, "limit": 10},
+    )
+
+
 def test_search_points():
     check_access(
         "search_points",
@@ -1424,7 +1433,7 @@ def test_recommend_points_batch():
     )
 
 
-def test_recommend_groups():
+def test_recommend_point_groups():
     check_access(
         "recommend_point_groups",
         rest_request={"positive": [1], "limit": 10, "group_by": FIELD_NAME, "group_size": 3},
@@ -1455,4 +1464,13 @@ def test_discover_points_batch():
                 "limit": 10,
             }]
         },
+    )
+
+
+def test_count_points():
+    check_access(
+        "count_points",
+        rest_request={},
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={"collection_name": COLL_NAME},
     )
