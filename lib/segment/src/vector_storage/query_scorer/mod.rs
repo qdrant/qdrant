@@ -1,4 +1,5 @@
 use common::types::{PointOffsetType, ScoreType};
+use ordered_float::OrderedFloat;
 
 use crate::data_types::vectors::{MultiDenseVector, VectorElementType};
 use crate::spaces::metric::Metric;
@@ -24,12 +25,16 @@ pub fn score_max_similarity<TMetric: Metric<VectorElementType>>(
     multi_dense_a: &MultiDenseVector,
     multi_dense_b: &MultiDenseVector,
 ) -> ScoreType {
+    // TODO(colbert) add user input validation
+    debug_assert!(!multi_dense_a.is_empty());
+    debug_assert!(!multi_dense_b.is_empty());
     let mut sum = 0.0;
     for dense_a in multi_dense_a.iter() {
         sum += multi_dense_b
             .iter()
             .map(|dense_b| TMetric::similarity(dense_a, dense_b))
-            .fold(ScoreType::NEG_INFINITY, |a, b| if a > b { a } else { b });
+            .max_by(|a, b| OrderedFloat(*a).cmp(&OrderedFloat(*b)))
+            .expect("At least one element in multi-dense vector")
     }
     sum
 }

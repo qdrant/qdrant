@@ -185,7 +185,19 @@ fn check_vector_against_config(
             Ok(())
         }
         VectorRef::Sparse(_) => Err(OperationError::WrongSparse),
-        VectorRef::MultiDense(_) => Err(OperationError::WrongMulti),
+        VectorRef::MultiDense(vectors) => {
+            // Check dimensionality
+            let dim = vector_config.size;
+            for vector in vectors {
+                if vector.len() != dim {
+                    return Err(OperationError::WrongVector {
+                        expected_dim: dim,
+                        received_dim: vector.len(),
+                    });
+                }
+            }
+            Ok(())
+        }
     }
 }
 
