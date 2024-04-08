@@ -477,27 +477,27 @@ ACTION_ACCESS = {
         "POST /collections/{collection_name}/points/search/groups",
         "qdrant.Points/SearchGroups",
     ),
-    # "recommend_points": EndpointAccess(
-    #     True,
-    #     True,
-    #     True,
-    #     "POST /collections/{collection_name}/points/recommend",
-    #     "qdrant.Points/Recommend",
-    # ),
-    # "recommend_points_batch": EndpointAccess(
-    #     True,
-    #     True,
-    #     True,
-    #     "POST /collections/{collection_name}/points/recommend/batch",
-    #     "qdrant.Points/RecommendBatch",
-    # ),
-    # "recommend_point_groups": EndpointAccess(
-    #     True,
-    #     True,
-    #     True,
-    #     "POST /collections/{collection_name}/points/recommend/groups",
-    #     "qdrant.Points/RecommendGroups",
-    # ),
+    "recommend_points": EndpointAccess(
+        True,
+        True,
+        True,
+        "POST /collections/{collection_name}/points/recommend",
+        "qdrant.Points/Recommend",
+    ),
+    "recommend_points_batch": EndpointAccess(
+        True,
+        True,
+        True,
+        "POST /collections/{collection_name}/points/recommend/batch",
+        "qdrant.Points/RecommendBatch",
+    ),
+    "recommend_point_groups": EndpointAccess(
+        True,
+        True,
+        True,
+        "POST /collections/{collection_name}/points/recommend/groups",
+        "qdrant.Points/RecommendGroups",
+    ),
     # "discover_points": EndpointAccess(
     #     True,
     #     True,
@@ -1397,3 +1397,34 @@ def test_search_point_groups():
         grpc_request={ "collection_name": COLL_NAME, **query },
     )
 
+def test_recommend_points():
+    check_access(
+        "recommend_points",
+        rest_request={"positive": [1], "limit": 10},
+        path_params={ "collection_name": COLL_NAME },
+        grpc_request={ "collection_name": COLL_NAME, "positive": [{"num": 1}], "limit": 10 },
+    )
+
+def test_recommend_points_batch():
+    check_access(
+        "recommend_points_batch",
+        rest_request={"searches": [{"positive": [1], "limit": 10}]},
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={
+            "collection_name": COLL_NAME,
+            "recommend_points": [
+                {
+                    "collection_name": COLL_NAME,
+                    "positive": [{"num": 1}], "limit": 10,
+                }
+            ],
+        },
+    )
+    
+def test_recommend_groups():
+    check_access(
+        "recommend_point_groups",
+        rest_request={"positive": [1], "limit": 10, "group_by": FIELD_NAME, "group_size": 3},
+        path_params={ "collection_name": COLL_NAME },
+        grpc_request={ "collection_name": COLL_NAME, "positive": [{"num": 1}], "limit": 10, "group_by": FIELD_NAME, "group_size": 3 },
+    )
