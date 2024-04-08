@@ -12,6 +12,7 @@ use itertools::Itertools;
 use segment::types::ScoredPoint;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
+use storage::dispatcher::Dispatcher;
 use storage::rbac::Access;
 
 use super::read_params::ReadParams;
@@ -21,7 +22,7 @@ use crate::actix::helpers::process_response;
 
 #[post("/collections/{name}/points/recommend")]
 async fn recommend_points(
-    toc: web::Data<TableOfContent>,
+    dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     request: Json<RecommendRequest>,
     params: Query<ReadParams>,
@@ -39,7 +40,8 @@ async fn recommend_points(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    let response = toc
+    let response = dispatcher
+        .toc(&access)
         .recommend(
             &collection.name,
             recommend_request,
@@ -86,7 +88,7 @@ async fn do_recommend_batch_points(
 
 #[post("/collections/{name}/points/recommend/batch")]
 async fn recommend_batch_points(
-    toc: web::Data<TableOfContent>,
+    dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     request: Json<RecommendRequestBatch>,
     params: Query<ReadParams>,
@@ -95,7 +97,7 @@ async fn recommend_batch_points(
     let timing = Instant::now();
 
     let response = do_recommend_batch_points(
-        toc.get_ref(),
+        dispatcher.toc(&access),
         &collection.name,
         request.into_inner(),
         params.consistency,
@@ -120,7 +122,7 @@ async fn recommend_batch_points(
 
 #[post("/collections/{name}/points/recommend/groups")]
 async fn recommend_point_groups(
-    toc: web::Data<TableOfContent>,
+    dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     request: Json<RecommendGroupsRequest>,
     params: Query<ReadParams>,
@@ -139,7 +141,7 @@ async fn recommend_point_groups(
     };
 
     let response = crate::common::points::do_recommend_point_groups(
-        toc.get_ref(),
+        dispatcher.toc(&access),
         &collection.name,
         recommend_group_request,
         params.consistency,

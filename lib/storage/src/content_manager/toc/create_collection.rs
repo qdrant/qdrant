@@ -219,7 +219,7 @@ impl TableOfContent {
         sparse_vectors: &Option<BTreeMap<String, SparseVectorParams>>,
         source_collection: &CollectionId,
     ) -> Result<(), StorageError> {
-        let collection = self.get_collection(source_collection).await?;
+        let collection = self.get_collection_unchecked(source_collection).await?;
         let collection_vectors_schema = collection.state().await.config.params.vectors;
         collection_vectors_schema.check_compatible(vectors)?;
         let collection_sparse_vectors_schema =

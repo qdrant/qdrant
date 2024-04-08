@@ -46,14 +46,14 @@ impl Points for PointsService {
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_access(&mut request);
+        let access = extract_access(&mut request);
 
         upsert(
-            self.dispatcher.toc().clone(),
+            self.dispatcher.toc(&access).clone(),
             request.into_inner(),
             None,
             None,
-            claims,
+            access,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -65,14 +65,14 @@ impl Points for PointsService {
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_access(&mut request);
+        let access = extract_access(&mut request);
 
         delete(
-            self.dispatcher.toc().clone(),
+            self.dispatcher.toc(&access).clone(),
             request.into_inner(),
             None,
             None,
-            claims,
+            access,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -81,9 +81,15 @@ impl Points for PointsService {
     async fn get(&self, mut request: Request<GetPoints>) -> Result<Response<GetResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_access(&mut request);
+        let access = extract_access(&mut request);
 
-        get(self.dispatcher.toc(), request.into_inner(), None, claims).await
+        get(
+            self.dispatcher.toc(&access),
+            request.into_inner(),
+            None,
+            access,
+        )
+        .await
     }
 
     async fn update_vectors(
@@ -92,14 +98,14 @@ impl Points for PointsService {
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_access(&mut request);
+        let access = extract_access(&mut request);
 
         update_vectors(
-            self.dispatcher.toc().clone(),
+            self.dispatcher.toc(&access).clone(),
             request.into_inner(),
             None,
             None,
-            claims,
+            access,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -111,14 +117,14 @@ impl Points for PointsService {
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_access(&mut request);
+        let access = extract_access(&mut request);
 
         delete_vectors(
-            self.dispatcher.toc().clone(),
+            self.dispatcher.toc(&access).clone(),
             request.into_inner(),
             None,
             None,
-            claims,
+            access,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -130,14 +136,14 @@ impl Points for PointsService {
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_access(&mut request);
+        let access = extract_access(&mut request);
 
         set_payload(
-            self.dispatcher.toc().clone(),
+            self.dispatcher.toc(&access).clone(),
             request.into_inner(),
             None,
             None,
-            claims,
+            access,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -149,14 +155,14 @@ impl Points for PointsService {
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_access(&mut request);
+        let access = extract_access(&mut request);
 
         overwrite_payload(
-            self.dispatcher.toc().clone(),
+            self.dispatcher.toc(&access).clone(),
             request.into_inner(),
             None,
             None,
-            claims,
+            access,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -168,14 +174,14 @@ impl Points for PointsService {
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_access(&mut request);
+        let access = extract_access(&mut request);
 
         delete_payload(
-            self.dispatcher.toc().clone(),
+            self.dispatcher.toc(&access).clone(),
             request.into_inner(),
             None,
             None,
-            claims,
+            access,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -187,14 +193,14 @@ impl Points for PointsService {
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_access(&mut request);
+        let access = extract_access(&mut request);
 
         clear_payload(
-            self.dispatcher.toc().clone(),
+            self.dispatcher.toc(&access).clone(),
             request.into_inner(),
             None,
             None,
-            claims,
+            access,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -206,14 +212,14 @@ impl Points for PointsService {
     ) -> Result<Response<UpdateBatchResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_access(&mut request);
+        let access = extract_access(&mut request);
 
         update_batch(
-            self.dispatcher.toc().clone(),
+            self.dispatcher.toc(&access).clone(),
             request.into_inner(),
             None,
             None,
-            claims,
+            access,
         )
         .await
     }
@@ -224,14 +230,14 @@ impl Points for PointsService {
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_access(&mut request);
+        let access = extract_access(&mut request);
 
         create_field_index(
             self.dispatcher.clone(),
             request.into_inner(),
             None,
             None,
-            claims,
+            access,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -243,14 +249,14 @@ impl Points for PointsService {
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_access(&mut request);
+        let access = extract_access(&mut request);
 
         delete_field_index(
             self.dispatcher.clone(),
             request.into_inner(),
             None,
             None,
-            claims,
+            access,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -261,8 +267,14 @@ impl Points for PointsService {
         mut request: Request<SearchPoints>,
     ) -> Result<Response<SearchResponse>, Status> {
         validate(request.get_ref())?;
-        let claims = extract_access(&mut request);
-        search(self.dispatcher.toc(), request.into_inner(), None, claims).await
+        let access = extract_access(&mut request);
+        search(
+            self.dispatcher.toc(&access),
+            request.into_inner(),
+            None,
+            access,
+        )
+        .await
     }
 
     async fn search_batch(
@@ -271,7 +283,7 @@ impl Points for PointsService {
     ) -> Result<Response<SearchBatchResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_access(&mut request);
+        let access = extract_access(&mut request);
 
         let SearchBatchPoints {
             collection_name,
@@ -294,11 +306,11 @@ impl Points for PointsService {
         }
 
         core_search_batch(
-            self.dispatcher.toc(),
+            self.dispatcher.toc(&access),
             collection_name,
             requests,
             read_consistency,
-            claims,
+            access,
             timeout,
         )
         .await
@@ -309,8 +321,14 @@ impl Points for PointsService {
         mut request: Request<SearchPointGroups>,
     ) -> Result<Response<SearchGroupsResponse>, Status> {
         validate(request.get_ref())?;
-        let claims = extract_access(&mut request);
-        search_groups(self.dispatcher.toc(), request.into_inner(), None, claims).await
+        let access = extract_access(&mut request);
+        search_groups(
+            self.dispatcher.toc(&access),
+            request.into_inner(),
+            None,
+            access,
+        )
+        .await
     }
 
     async fn scroll(
@@ -319,9 +337,15 @@ impl Points for PointsService {
     ) -> Result<Response<ScrollResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_access(&mut request);
+        let access = extract_access(&mut request);
 
-        scroll(self.dispatcher.toc(), request.into_inner(), None, claims).await
+        scroll(
+            self.dispatcher.toc(&access),
+            request.into_inner(),
+            None,
+            access,
+        )
+        .await
     }
 
     async fn recommend(
@@ -329,8 +353,8 @@ impl Points for PointsService {
         mut request: Request<RecommendPoints>,
     ) -> Result<Response<RecommendResponse>, Status> {
         validate(request.get_ref())?;
-        let claims = extract_access(&mut request);
-        recommend(self.dispatcher.toc(), request.into_inner(), claims).await
+        let access = extract_access(&mut request);
+        recommend(self.dispatcher.toc(&access), request.into_inner(), access).await
     }
 
     async fn recommend_batch(
@@ -338,7 +362,7 @@ impl Points for PointsService {
         mut request: Request<RecommendBatchPoints>,
     ) -> Result<Response<RecommendBatchResponse>, Status> {
         validate(request.get_ref())?;
-        let claims = extract_access(&mut request);
+        let access = extract_access(&mut request);
         let RecommendBatchPoints {
             collection_name,
             recommend_points,
@@ -346,11 +370,11 @@ impl Points for PointsService {
             timeout,
         } = request.into_inner();
         recommend_batch(
-            self.dispatcher.toc(),
+            self.dispatcher.toc(&access),
             collection_name,
             recommend_points,
             read_consistency,
-            claims,
+            access,
             timeout.map(Duration::from_secs),
         )
         .await
@@ -362,9 +386,9 @@ impl Points for PointsService {
     ) -> Result<Response<RecommendGroupsResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_access(&mut request);
+        let access = extract_access(&mut request);
 
-        recommend_groups(self.dispatcher.toc(), request.into_inner(), claims).await
+        recommend_groups(self.dispatcher.toc(&access), request.into_inner(), access).await
     }
 
     async fn discover(
@@ -373,9 +397,9 @@ impl Points for PointsService {
     ) -> Result<Response<DiscoverResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_access(&mut request);
+        let access = extract_access(&mut request);
 
-        discover(self.dispatcher.toc(), request.into_inner(), claims).await
+        discover(self.dispatcher.toc(&access), request.into_inner(), access).await
     }
 
     async fn discover_batch(
@@ -384,7 +408,7 @@ impl Points for PointsService {
     ) -> Result<Response<DiscoverBatchResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_access(&mut request);
+        let access = extract_access(&mut request);
 
         let DiscoverBatchPoints {
             collection_name,
@@ -394,11 +418,11 @@ impl Points for PointsService {
         } = request.into_inner();
 
         discover_batch(
-            self.dispatcher.toc(),
+            self.dispatcher.toc(&access),
             collection_name,
             discover_points,
             read_consistency,
-            claims,
+            access,
             timeout.map(Duration::from_secs),
         )
         .await
@@ -410,8 +434,14 @@ impl Points for PointsService {
     ) -> Result<Response<CountResponse>, Status> {
         validate(request.get_ref())?;
 
-        let claims = extract_access(&mut request);
+        let access = extract_access(&mut request);
 
-        count(self.dispatcher.toc(), request.into_inner(), None, claims).await
+        count(
+            self.dispatcher.toc(&access),
+            request.into_inner(),
+            None,
+            access,
+        )
+        .await
     }
 }

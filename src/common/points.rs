@@ -653,6 +653,8 @@ pub async fn do_create_index(
     // Default consensus timeout will be used
     let wait_timeout = None; // ToDo: make it configurable
 
+    let toc = dispatcher.toc(&access).clone();
+
     // TODO: Is `submit_collection_meta_op` cancel-safe!? Should be, I think?.. 🤔
     dispatcher
         .submit_collection_meta_op(consensus_op, access, wait_timeout)
@@ -663,7 +665,7 @@ pub async fn do_create_index(
     // The idea is to migrate from the point-like interface to consensus-like interface in the next few versions
 
     do_create_index_internal(
-        dispatcher.toc().clone(),
+        toc,
         collection_name,
         operation.field_name,
         Some(field_schema),
@@ -727,13 +729,15 @@ pub async fn do_delete_index(
     // Default consensus timeout will be used
     let wait_timeout = None; // ToDo: make it configurable
 
+    let toc = dispatcher.toc(&access).clone();
+
     // TODO: Is `submit_collection_meta_op` cancel-safe!? Should be, I think?.. 🤔
     dispatcher
         .submit_collection_meta_op(consensus_op, access, wait_timeout)
         .await?;
 
     do_delete_index_internal(
-        dispatcher.toc().clone(),
+        toc,
         collection_name,
         index_name,
         clock_tag,

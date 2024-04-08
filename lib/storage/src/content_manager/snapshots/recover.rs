@@ -13,7 +13,7 @@ use crate::content_manager::collection_meta_ops::{
 };
 use crate::content_manager::snapshots::download::download_snapshot;
 use crate::dispatcher::Dispatcher;
-use crate::rbac::{Access, AccessRequrements, CollectionPass};
+use crate::rbac::{Access, AccessRequirements, CollectionPass};
 use crate::{StorageError, TableOfContent};
 
 pub async fn activate_shard(
@@ -55,17 +55,18 @@ pub fn do_recover_from_snapshot(
     access: Access,
     client: reqwest::Client,
 ) -> Result<JoinHandle<Result<bool, StorageError>>, StorageError> {
-    let multipass = access.check_global_access(AccessRequrements::new().manage())?;
+    let multipass = access.check_global_access(AccessRequirements::new().manage())?;
 
-    let dispatch = dispatcher.clone();
+    let dispatcher = dispatcher.clone();
     let collection_pass = multipass.issue_pass(collection_name).into_static();
     Ok(tokio::spawn(async move {
-        _do_recover_from_snapshot(dispatch, collection_pass, source, &client).await
+        _do_recover_from_snapshot(dispatcher, access, collection_pass, source, &client).await
     }))
 }
 
 async fn _do_recover_from_snapshot(
     dispatcher: Dispatcher,
+    access: Access,
     collection_pass: CollectionPass<'static>,
     source: SnapshotRecover,
     client: &reqwest::Client,
@@ -75,7 +76,7 @@ async fn _do_recover_from_snapshot(
         priority,
         checksum,
     } = source;
-    let toc = dispatcher.toc();
+    let toc = dispatcher.toc(&access);
 
     let this_peer_id = toc.this_peer_id;
 
@@ -133,7 +134,7 @@ async fn _do_recover_from_snapshot(
     let snapshot_config = CollectionConfig::load(tmp_collection_dir.path())?;
     snapshot_config.validate_and_warn();
 
-    let collection = match toc.get_collection_by_pass(&collection_pass).await.ok() {
+    let collection = match toc.get_collection(&collection_pass).await.ok() {
         Some(collection) => collection,
         None => {
             log::debug!("Collection {collection_pass} does not exist, creating it");
@@ -143,9 +144,9 @@ async fn _do_recover_from_snapshot(
                     snapshot_config.clone().into(),
                 ));
             dispatcher
-                .submit_collection_meta_op(operation, Access::full("Already checked"), None)
+                .submit_collection_meta_op(operation, access, None)
                 .await?;
-            toc.get_collection_by_pass(&collection_pass).await?
+            toc.get_collection(&collection_pass).await?
         }
     };
 

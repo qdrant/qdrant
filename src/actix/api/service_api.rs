@@ -11,8 +11,8 @@ use common::types::{DetailsLevel, TelemetryDetail};
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::{Deserialize, Serialize};
-use storage::content_manager::toc::TableOfContent;
-use storage::rbac::AccessRequrements;
+use storage::dispatcher::Dispatcher;
+use storage::rbac::AccessRequirements;
 use tokio::sync::Mutex;
 
 use crate::actix::auth::ActixAccess;
@@ -36,7 +36,7 @@ fn telemetry(
     ActixAccess(access): ActixAccess,
 ) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        access.check_global_access(AccessRequrements::new())?;
+        access.check_global_access(AccessRequirements::new())?;
         let anonymize = params.anonymize.unwrap_or(false);
         let details_level = params
             .details_level
@@ -46,7 +46,7 @@ fn telemetry(
             histograms: false,
         };
         let telemetry_collector = telemetry_collector.lock().await;
-        let telemetry_data = telemetry_collector.prepare_data(detail).await;
+        let telemetry_data = telemetry_collector.prepare_data(&access, detail).await;
         let telemetry_data = if anonymize {
             telemetry_data.anonymize()
         } else {
@@ -67,17 +67,20 @@ async fn metrics(
     params: Query<MetricsParam>,
     ActixAccess(access): ActixAccess,
 ) -> HttpResponse {
-    if let Err(err) = access.check_global_access(AccessRequrements::new()) {
+    if let Err(err) = access.check_global_access(AccessRequirements::new()) {
         return process_response_error(err, Instant::now());
     }
 
     let anonymize = params.anonymize.unwrap_or(false);
     let telemetry_collector = telemetry_collector.lock().await;
     let telemetry_data = telemetry_collector
-        .prepare_data(TelemetryDetail {
-            level: DetailsLevel::Level1,
-            histograms: true,
-        })
+        .prepare_data(
+            &access,
+            TelemetryDetail {
+                level: DetailsLevel::Level1,
+                histograms: true,
+            },
+        )
         .await;
     let telemetry_data = if anonymize {
         telemetry_data.anonymize()
@@ -92,32 +95,33 @@ async fn metrics(
 
 #[post("/locks")]
 fn put_locks(
-    toc: web::Data<TableOfContent>,
+    dispatcher: web::Data<Dispatcher>,
     locks_option: Json<LocksOption>,
     ActixAccess(access): ActixAccess,
 ) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        access.check_global_access(AccessRequrements::new().manage())?;
+        let toc = dispatcher.toc(&access);
+        access.check_global_access(AccessRequirements::new().manage())?;
         let result = LocksOption {
-            write: toc.get_ref().is_write_locked(),
-            error_message: toc.get_ref().get_lock_error_message(),
+            write: toc.is_write_locked(),
+            error_message: toc.get_lock_error_message(),
         };
-        toc.get_ref()
-            .set_locks(locks_option.write, locks_option.error_message.clone());
+        toc.set_locks(locks_option.write, locks_option.error_message.clone());
         Ok(result)
     })
 }
 
 #[get("/locks")]
 fn get_locks(
-    toc: web::Data<TableOfContent>,
+    dispatcher: web::Data<Dispatcher>,
     ActixAccess(access): ActixAccess,
 ) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        access.check_global_access(AccessRequrements::new())?;
+        access.check_global_access(AccessRequirements::new())?;
+        let toc = dispatcher.toc(&access);
         let result = LocksOption {
-            write: toc.get_ref().is_write_locked(),
-            error_message: toc.get_ref().get_lock_error_message(),
+            write: toc.is_write_locked(),
+            error_message: toc.get_lock_error_message(),
         };
         Ok(result)
     })
@@ -126,7 +130,7 @@ fn get_locks(
 #[get("/stacktrace")]
 fn get_stacktrace(ActixAccess(access): ActixAccess) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        access.check_global_access(AccessRequrements::new())?;
+        access.check_global_access(AccessRequirements::new())?;
         Ok(get_stack_trace())
     })
 }
