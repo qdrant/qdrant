@@ -32,6 +32,7 @@ use storage::content_manager::consensus_manager::{ConsensusManager, ConsensusSta
 use storage::content_manager::toc::transfer::ShardTransferDispatcher;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
+use storage::rbac::Access;
 #[cfg(all(
     not(target_env = "msvc"),
     any(target_arch = "x86_64", target_arch = "aarch64")
@@ -56,6 +57,8 @@ use crate::startup::{remove_started_file_indicator, touch_started_file_indicator
 ))]
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
+
+const FULL_ACCESS: Access = Access::full("For main");
 
 /// Qdrant (read: quadrant ) is a vector similarity search engine.
 /// It provides a production-ready service with a convenient API to store, search, and manage points - vectors with an additional payload.
@@ -256,7 +259,7 @@ fn main() -> anyhow::Result<()> {
 
     // Here we load all stored collections.
     runtime_handle.block_on(async {
-        for collection in toc.all_collections().await {
+        for collection in toc.all_collections(&FULL_ACCESS).await {
             log::debug!("Loaded collection: {collection}");
         }
     });
@@ -342,8 +345,12 @@ fn main() -> anyhow::Result<()> {
         });
 
         let collections_to_recover_in_consensus = if is_new_deployment {
-            let existing_collections = runtime_handle.block_on(toc_arc.all_collections());
+            let existing_collections =
+                runtime_handle.block_on(toc_arc.all_collections(&FULL_ACCESS));
             existing_collections
+                .into_iter()
+                .map(|pass| pass.name().to_string())
+                .collect()
         } else {
             restored_collections
         };

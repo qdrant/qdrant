@@ -52,7 +52,7 @@ impl TableOfContent {
         &self,
         collection: &CollectionPass<'a>,
     ) -> Result<SnapshotDescription, StorageError> {
-        let collection = self.get_collection_by_pass(collection).await?;
+        let collection = self.get_collection(collection).await?;
         // We want to use temp dir inside the temp_path (storage if not specified), because it is possible, that
         // snapshot directory is mounted as network share and multiple writes to it could be slow
         let temp_dir = self.optional_temp_or_storage_temp_path()?;

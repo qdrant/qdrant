@@ -6,6 +6,7 @@ use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::Serialize;
 use storage::content_manager::toc::TableOfContent;
+use storage::rbac::Access;
 
 #[derive(Serialize, Clone, Debug, JsonSchema)]
 pub struct CollectionsAggregatedTelemetry {
@@ -46,11 +47,11 @@ impl From<CollectionTelemetry> for CollectionsAggregatedTelemetry {
 }
 
 impl CollectionsTelemetry {
-    pub async fn collect(detail: TelemetryDetail, toc: &TableOfContent) -> Self {
-        let number_of_collections = toc.all_collections().await.len();
+    pub async fn collect(detail: TelemetryDetail, access: &Access, toc: &TableOfContent) -> Self {
+        let number_of_collections = toc.all_collections(access).await.len();
         let collections = if detail.level >= DetailsLevel::Level1 {
             let telemetry_data = toc
-                .get_telemetry_data(detail)
+                .get_telemetry_data(detail, access)
                 .await
                 .into_iter()
                 .map(|telemetry| {

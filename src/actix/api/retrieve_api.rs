@@ -9,6 +9,7 @@ use segment::types::{PointIdType, WithPayloadInterface};
 use serde::Deserialize;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
+use storage::dispatcher::Dispatcher;
 use storage::rbac::Access;
 use validator::Validate;
 
@@ -53,7 +54,7 @@ async fn do_get_point(
 
 #[get("/collections/{name}/points/{id}")]
 async fn get_point(
-    toc: web::Data<TableOfContent>,
+    dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     point: Path<PointPath>,
     params: Query<ReadParams>,
@@ -65,7 +66,7 @@ async fn get_point(
         })?;
 
         let Some(record) = do_get_point(
-            toc.get_ref(),
+            dispatcher.toc(&access),
             &collection.name,
             point_id,
             params.consistency,
@@ -85,7 +86,7 @@ async fn get_point(
 
 #[post("/collections/{name}/points")]
 async fn get_points(
-    toc: web::Data<TableOfContent>,
+    dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     request: Json<PointRequest>,
     params: Query<ReadParams>,
@@ -104,7 +105,7 @@ async fn get_points(
     };
 
     let response = do_get_points(
-        toc.get_ref(),
+        dispatcher.toc(&access),
         &collection.name,
         point_request,
         params.consistency,
@@ -118,7 +119,7 @@ async fn get_points(
 
 #[post("/collections/{name}/points/scroll")]
 async fn scroll_points(
-    toc: web::Data<TableOfContent>,
+    dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     request: Json<ScrollRequest>,
     params: Query<ReadParams>,
@@ -136,7 +137,8 @@ async fn scroll_points(
         Some(shard_keys) => ShardSelectorInternal::from(shard_keys),
     };
 
-    let response = toc
+    let response = dispatcher
+        .toc(&access)
         .scroll(
             &collection.name,
             scroll_request,

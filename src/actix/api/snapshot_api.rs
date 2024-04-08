@@ -24,7 +24,7 @@ use storage::content_manager::snapshots::{
 };
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::{Access, AccessRequrements};
+use storage::rbac::{Access, AccessRequirements};
 use uuid::Uuid;
 use validator::Validate;
 
@@ -69,7 +69,7 @@ pub async fn do_get_full_snapshot(
     access: Access,
     snapshot_name: &str,
 ) -> Result<NamedFile, HttpError> {
-    access.check_global_access(AccessRequrements::new())?;
+    access.check_global_access(AccessRequirements::new())?;
     let file_name = get_full_snapshot_path(toc, snapshot_name).await?;
     Ok(NamedFile::open(file_name)?)
 }
@@ -124,22 +124,22 @@ pub async fn do_get_snapshot(
     snapshot_name: &str,
 ) -> Result<NamedFile, HttpError> {
     let collection_pass =
-        access.check_collection_access(collection_name, AccessRequrements::new().whole())?;
-    let collection = toc.get_collection_by_pass(&collection_pass).await?;
+        access.check_collection_access(collection_name, AccessRequirements::new().whole())?;
+    let collection = toc.get_collection(&collection_pass).await?;
     let file_name = collection.get_snapshot_path(snapshot_name).await?;
     Ok(NamedFile::open(file_name)?)
 }
 
 #[get("/collections/{name}/snapshots")]
 async fn list_snapshots(
-    toc: web::Data<TableOfContent>,
+    dispatcher: web::Data<Dispatcher>,
     path: web::Path<String>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let collection_name = path.into_inner();
     let timing = Instant::now();
 
-    let response = do_list_snapshots(&toc, access, &collection_name).await;
+    let response = do_list_snapshots(dispatcher.toc(&access), access, &collection_name).await;
     process_response(response, timing)
 }
 
@@ -152,7 +152,7 @@ async fn create_snapshot(
 ) -> impl Responder {
     let collection_name = path.into_inner();
     helpers::time_or_accept_with_handle(params.wait.unwrap_or(true), async move {
-        do_create_snapshot(dispatcher.toc().clone(), access, &collection_name)
+        do_create_snapshot(dispatcher.toc(&access).clone(), access, &collection_name)
     })
     .await
 }
@@ -169,7 +169,7 @@ async fn upload_snapshot(
     helpers::time_or_accept_with_handle(params.wait.unwrap_or(true), async move {
         let snapshot = form.snapshot;
 
-        access.check_global_access(AccessRequrements::new().manage())?;
+        access.check_global_access(AccessRequirements::new().manage())?;
 
         if let Some(checksum) = &params.checksum {
             let snapshot_checksum = hash_file(snapshot.file.path()).await?;
@@ -179,7 +179,7 @@ async fn upload_snapshot(
         }
 
         let snapshot_location =
-            do_save_uploaded_snapshot(dispatcher.toc(), &collection.name, snapshot).await?;
+            do_save_uploaded_snapshot(dispatcher.toc(&access), &collection.name, snapshot).await?;
 
         let http_client = http_client.client()?;
 
@@ -193,7 +193,7 @@ async fn upload_snapshot(
             dispatcher.get_ref(),
             &collection.name,
             snapshot_recover,
-            Access::full("Already checked"),
+            access,
             http_client,
         )
     })
@@ -225,21 +225,27 @@ async fn recover_from_snapshot(
 
 #[get("/collections/{name}/snapshots/{snapshot_name}")]
 async fn get_snapshot(
-    toc: web::Data<TableOfContent>,
+    dispatcher: web::Data<Dispatcher>,
     path: web::Path<(String, String)>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let (collection_name, snapshot_name) = path.into_inner();
-    do_get_snapshot(&toc, access, &collection_name, &snapshot_name).await
+    do_get_snapshot(
+        dispatcher.toc(&access),
+        access,
+        &collection_name,
+        &snapshot_name,
+    )
+    .await
 }
 
 #[get("/snapshots")]
 async fn list_full_snapshots(
-    toc: web::Data<TableOfContent>,
+    dispatcher: web::Data<Dispatcher>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
-    let response = do_list_full_snapshots(toc.get_ref(), access).await;
+    let response = do_list_full_snapshots(dispatcher.toc(&access), access).await;
     process_response(response, timing)
 }
 
@@ -257,12 +263,12 @@ async fn create_full_snapshot(
 
 #[get("/snapshots/{snapshot_name}")]
 async fn get_full_snapshot(
-    toc: web::Data<TableOfContent>,
+    dispatcher: web::Data<Dispatcher>,
     path: web::Path<String>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let snapshot_name = path.into_inner();
-    do_get_full_snapshot(&toc, access, &snapshot_name).await
+    do_get_full_snapshot(dispatcher.toc(&access), access, &snapshot_name).await
 }
 
 #[delete("/snapshots/{snapshot_name}")]
@@ -301,28 +307,36 @@ async fn delete_collection_snapshot(
 
 #[get("/collections/{collection}/shards/{shard}/snapshots")]
 async fn list_shard_snapshots(
-    toc: web::Data<TableOfContent>,
+    dispatcher: web::Data<Dispatcher>,
     path: web::Path<(String, ShardId)>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let (collection, shard) = path.into_inner();
-    let future =
-        common::snapshots::list_shard_snapshots(toc.into_inner(), access, collection, shard)
-            .map_err(Into::into);
+    let future = common::snapshots::list_shard_snapshots(
+        dispatcher.toc(&access).clone(),
+        access,
+        collection,
+        shard,
+    )
+    .map_err(Into::into);
 
     helpers::time(future).await
 }
 
 #[post("/collections/{collection}/shards/{shard}/snapshots")]
 async fn create_shard_snapshot(
-    toc: web::Data<TableOfContent>,
+    dispatcher: web::Data<Dispatcher>,
     path: web::Path<(String, ShardId)>,
     query: web::Query<SnapshottingParam>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let (collection, shard) = path.into_inner();
-    let future =
-        common::snapshots::create_shard_snapshot(toc.into_inner(), access, collection, shard);
+    let future = common::snapshots::create_shard_snapshot(
+        dispatcher.toc(&access).clone(),
+        access,
+        collection,
+        shard,
+    );
 
     helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
 }
@@ -330,7 +344,7 @@ async fn create_shard_snapshot(
 // TODO: `PUT` (same as `recover_from_snapshot`) or `POST`!?
 #[put("/collections/{collection}/shards/{shard}/snapshots/recover")]
 async fn recover_shard_snapshot(
-    toc: web::Data<TableOfContent>,
+    dispatcher: web::Data<Dispatcher>,
     http_client: web::Data<HttpClient>,
     path: web::Path<(String, ShardId)>,
     query: web::Query<SnapshottingParam>,
@@ -341,7 +355,7 @@ async fn recover_shard_snapshot(
         let (collection, shard) = path.into_inner();
 
         common::snapshots::recover_shard_snapshot(
-            toc.into_inner(),
+            dispatcher.toc(&access).clone(),
             access,
             collection,
             shard,
@@ -361,7 +375,7 @@ async fn recover_shard_snapshot(
 // TODO: `POST` (same as `upload_snapshot`) or `PUT`!?
 #[post("/collections/{collection}/shards/{shard}/snapshots/upload")]
 async fn upload_shard_snapshot(
-    toc: web::Data<TableOfContent>,
+    dispatcher: web::Data<Dispatcher>,
     path: web::Path<(String, ShardId)>,
     query: web::Query<SnapshotUploadingParam>,
     MultipartForm(form): MultipartForm<SnapshottingForm>,
@@ -380,7 +394,7 @@ async fn upload_shard_snapshot(
     let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
         // TODO: Run this check before the multipart blob is uploaded
         let collection_pass = access
-            .check_global_access(AccessRequrements::new().manage())?
+            .check_global_access(AccessRequirements::new().manage())?
             .issue_pass(&collection);
 
         if let Some(checksum) = checksum {
@@ -391,7 +405,10 @@ async fn upload_shard_snapshot(
         }
 
         let future = async {
-            let collection = toc.get_collection_by_pass(&collection_pass).await?;
+            let collection = dispatcher
+                .toc(&access)
+                .get_collection(&collection_pass)
+                .await?;
             collection.assert_shard_exists(shard).await?;
 
             Result::<_, StorageError>::Ok(collection)
@@ -401,7 +418,7 @@ async fn upload_shard_snapshot(
 
         // `recover_shard_snapshot_impl` is *not* cancel safe
         common::snapshots::recover_shard_snapshot_impl(
-            &toc,
+            dispatcher.toc(&access),
             &collection,
             shard,
             form.snapshot.file.path(),
@@ -419,14 +436,17 @@ async fn upload_shard_snapshot(
 
 #[get("/collections/{collection}/shards/{shard}/snapshots/{snapshot}")]
 async fn download_shard_snapshot(
-    toc: web::Data<TableOfContent>,
+    dispatcher: web::Data<Dispatcher>,
     path: web::Path<(String, ShardId, String)>,
     ActixAccess(access): ActixAccess,
 ) -> Result<impl Responder, HttpError> {
     let (collection, shard, snapshot) = path.into_inner();
     let collection_pass =
-        access.check_collection_access(&collection, AccessRequrements::new().whole())?;
-    let collection = toc.get_collection_by_pass(&collection_pass).await?;
+        access.check_collection_access(&collection, AccessRequirements::new().whole())?;
+    let collection = dispatcher
+        .toc(&access)
+        .get_collection(&collection_pass)
+        .await?;
     let snapshot_path = collection.get_shard_snapshot_path(shard, &snapshot).await?;
 
     Ok(NamedFile::open(snapshot_path))
@@ -434,14 +454,14 @@ async fn download_shard_snapshot(
 
 #[delete("/collections/{collection}/shards/{shard}/snapshots/{snapshot}")]
 async fn delete_shard_snapshot(
-    toc: web::Data<TableOfContent>,
+    dispatcher: web::Data<Dispatcher>,
     path: web::Path<(String, ShardId, String)>,
     query: web::Query<SnapshottingParam>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let (collection, shard, snapshot) = path.into_inner();
     let future = common::snapshots::delete_shard_snapshot(
-        toc.into_inner(),
+        dispatcher.toc(&access).clone(),
         access,
         collection,
         shard,

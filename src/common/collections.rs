@@ -5,9 +5,8 @@ use api::grpc::models::{CollectionDescription, CollectionsResponse};
 use api::grpc::qdrant::CollectionExists;
 use collection::config::ShardingMethod;
 use collection::operations::cluster_ops::{
-    AbortTransferOperation, ClusterOperations, CreateShardingKeyOperation, DropReplicaOperation,
-    DropShardingKey, DropShardingKeyOperation, MoveShardOperation, ReplicateShardOperation,
-    RestartTransfer, RestartTransferOperation,
+    AbortTransferOperation, ClusterOperations, DropReplicaOperation, MoveShardOperation,
+    ReplicateShardOperation, RestartTransfer, RestartTransferOperation,
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::snapshot_ops::SnapshotDescription;
@@ -27,7 +26,7 @@ use storage::content_manager::collection_meta_ops::{
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
-use storage::rbac::{Access, AccessRequrements};
+use storage::rbac::{Access, AccessRequirements};
 use tokio::task::JoinHandle;
 
 pub async fn do_collection_exists(
@@ -35,11 +34,11 @@ pub async fn do_collection_exists(
     access: Access,
     name: &str,
 ) -> Result<CollectionExists, StorageError> {
-    let collection_pass = access.check_collection_access(name, AccessRequrements::new())?;
+    let collection_pass = access.check_collection_access(name, AccessRequirements::new())?;
 
     // if this returns Ok, it means the collection exists.
     // if not, we check that the error is NotFound
-    let Err(error) = toc.get_collection_by_pass(&collection_pass).await else {
+    let Err(error) = toc.get_collection(&collection_pass).await else {
         return Ok(CollectionExists { exists: true });
     };
     match error {
@@ -54,9 +53,10 @@ pub async fn do_get_collection(
     name: &str,
     shard_selection: Option<ShardId>,
 ) -> Result<CollectionInfo, StorageError> {
-    let collection_pass = access.check_collection_access(name, AccessRequrements::new().whole())?;
+    let collection_pass =
+        access.check_collection_access(name, AccessRequirements::new().whole())?;
 
-    let collection = toc.get_collection_by_pass(&collection_pass).await?;
+    let collection = toc.get_collection(&collection_pass).await?;
 
     let shard_selection = match shard_selection {
         None => ShardSelectorInternal::All,
@@ -66,20 +66,20 @@ pub async fn do_get_collection(
     Ok(collection.info(&shard_selection).await?)
 }
 
-pub async fn do_list_collections(toc: &TableOfContent, access: Access) -> CollectionsResponse {
+pub async fn do_list_collections(
+    toc: &TableOfContent,
+    access: Access,
+) -> Result<CollectionsResponse, StorageError> {
     let collections = toc
-        .all_collections()
+        .all_collections(&access)
         .await
         .into_iter()
-        .filter(|c| {
-            access
-                .check_collection_access(c, AccessRequrements::new())
-                .is_ok()
+        .map(|pass| CollectionDescription {
+            name: pass.name().to_string(),
         })
-        .map(|name| CollectionDescription { name })
         .collect_vec();
 
-    CollectionsResponse { collections }
+    Ok(CollectionsResponse { collections })
 }
 
 /// Construct shards-replicas layout for the shard from the given scope of peers
@@ -126,16 +126,12 @@ pub async fn do_list_collection_aliases(
     access: Access,
     collection_name: &str,
 ) -> Result<CollectionsAliasesResponse, StorageError> {
-    access.check_collection_access(collection_name, AccessRequrements::new())?;
+    let collection_pass =
+        access.check_collection_access(collection_name, AccessRequirements::new())?;
     let aliases: Vec<AliasDescription> = toc
-        .collection_aliases(collection_name)
+        .collection_aliases(&collection_pass, &access)
         .await?
         .into_iter()
-        .filter(|alias| {
-            access
-                .check_collection_access(alias, AccessRequrements::new())
-                .is_ok()
-        })
         .map(|alias| AliasDescription {
             alias_name: alias,
             collection_name: collection_name.to_string(),
@@ -148,16 +144,7 @@ pub async fn do_list_aliases(
     toc: &TableOfContent,
     access: Access,
 ) -> Result<CollectionsAliasesResponse, StorageError> {
-    let mut aliases = toc.list_aliases().await?;
-    aliases.retain(|alias| {
-        access
-            .check_collection_access(&alias.collection_name, AccessRequrements::new())
-            .is_ok()
-            && access
-                .check_collection_access(&alias.alias_name, AccessRequrements::new())
-                .is_ok()
-    });
-
+    let aliases = toc.list_aliases(&access).await?;
     Ok(CollectionsAliasesResponse { aliases })
 }
 
@@ -167,9 +154,9 @@ pub async fn do_list_snapshots(
     collection_name: &str,
 ) -> Result<Vec<SnapshotDescription>, StorageError> {
     let collection_pass =
-        access.check_collection_access(collection_name, AccessRequrements::new().whole())?;
+        access.check_collection_access(collection_name, AccessRequirements::new().whole())?;
     Ok(toc
-        .get_collection_by_pass(&collection_pass)
+        .get_collection(&collection_pass)
         .await?
         .list_snapshots()
         .await?)
@@ -181,7 +168,7 @@ pub fn do_create_snapshot(
     collection_name: &str,
 ) -> Result<JoinHandle<Result<SnapshotDescription, StorageError>>, StorageError> {
     let collection_pass = access
-        .check_collection_access(collection_name, AccessRequrements::new().write().whole())?
+        .check_collection_access(collection_name, AccessRequirements::new().write().whole())?
         .into_static();
     Ok(tokio::spawn(async move {
         toc.create_snapshot(&collection_pass).await
@@ -193,8 +180,8 @@ pub async fn do_get_collection_cluster(
     access: Access,
     name: &str,
 ) -> Result<CollectionClusterInfo, StorageError> {
-    let collection_pass = access.check_collection_access(name, AccessRequrements::new())?;
-    let collection = toc.get_collection_by_pass(&collection_pass).await?;
+    let collection_pass = access.check_collection_access(name, AccessRequirements::new())?;
+    let collection = toc.get_collection(&collection_pass).await?;
     Ok(collection.cluster_info(toc.this_peer_id).await?)
 }
 
@@ -205,28 +192,10 @@ pub async fn do_update_collection_cluster(
     access: Access,
     wait_timeout: Option<Duration>,
 ) -> Result<bool, StorageError> {
-    let collection_pass = access
-        .check_collection_access(&collection_name, AccessRequrements::new().write().whole())?;
-    match &operation {
-        ClusterOperations::MoveShard(_)
-        | ClusterOperations::ReplicateShard(_)
-        | ClusterOperations::AbortTransfer(_)
-        | ClusterOperations::DropReplica(_)
-        | ClusterOperations::RestartTransfer(_) => {
-            access.check_global_access(AccessRequrements::new().manage())?;
-        }
-        ClusterOperations::CreateShardingKey(CreateShardingKeyOperation {
-            create_sharding_key,
-        }) => {
-            if !create_sharding_key.has_default_params() {
-                access.check_global_access(AccessRequrements::new().manage())?;
-            }
-        }
-        ClusterOperations::DropShardingKey(DropShardingKeyOperation {
-            drop_sharding_key: DropShardingKey { shard_key: _ },
-        }) => (),
-    }
-    let full_access = Access::full("Already checked");
+    let collection_pass = access.check_collection_access(
+        &collection_name,
+        AccessRequirements::new().write().manage().whole(),
+    )?;
 
     if dispatcher.consensus_state().is_none() {
         return Err(StorageError::BadRequest {
@@ -262,8 +231,8 @@ pub async fn do_update_collection_cluster(
     };
 
     let collection = dispatcher
-        .toc()
-        .get_collection_by_pass(&collection_pass)
+        .toc(&access)
+        .get_collection(&collection_pass)
         .await?;
 
     match operation {
@@ -295,7 +264,7 @@ pub async fn do_update_collection_cluster(
                             method: move_shard.method,
                         }),
                     ),
-                    full_access,
+                    access,
                     wait_timeout,
                 )
                 .await
@@ -330,7 +299,7 @@ pub async fn do_update_collection_cluster(
                             method: replicate_shard.method,
                         }),
                     ),
-                    full_access,
+                    access,
                     wait_timeout,
                 )
                 .await
@@ -360,7 +329,7 @@ pub async fn do_update_collection_cluster(
                             reason: "user request".to_string(),
                         },
                     ),
-                    full_access,
+                    access,
                     wait_timeout,
                 )
                 .await
@@ -387,7 +356,7 @@ pub async fn do_update_collection_cluster(
             dispatcher
                 .submit_collection_meta_op(
                     CollectionMetaOperations::UpdateCollection(update_operation),
-                    full_access,
+                    access,
                     wait_timeout,
                 )
                 .await
@@ -460,7 +429,7 @@ pub async fn do_update_collection_cluster(
                         shard_key: create_sharding_key.shard_key,
                         placement: exact_placement,
                     }),
-                    full_access,
+                    access,
                     wait_timeout,
                 )
                 .await
@@ -498,7 +467,7 @@ pub async fn do_update_collection_cluster(
                         collection_name,
                         shard_key: drop_sharding_key.shard_key,
                     }),
-                    full_access,
+                    access,
                     wait_timeout,
                 )
                 .await
@@ -537,7 +506,7 @@ pub async fn do_update_collection_cluster(
                             method,
                         }),
                     ),
-                    full_access,
+                    access,
                     wait_timeout,
                 )
                 .await

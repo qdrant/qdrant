@@ -39,7 +39,7 @@ impl TableOfContent {
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         let collection_pass = access.check_point_op(collection_name, &mut request)?;
 
-        let collection = self.get_collection_by_pass(&collection_pass).await?;
+        let collection = self.get_collection(&collection_pass).await?;
         recommendations::recommend_by(
             request,
             &collection,
@@ -78,7 +78,7 @@ impl TableOfContent {
             return Ok(vec![]);
         };
 
-        let collection = self.get_collection_by_pass(&collection_pass).await?;
+        let collection = self.get_collection(&collection_pass).await?;
         recommendations::recommend_batch_by(
             requests,
             &collection,
@@ -121,7 +121,7 @@ impl TableOfContent {
             return Ok(vec![]);
         };
 
-        let collection = self.get_collection_by_pass(&collection_pass).await?;
+        let collection = self.get_collection(&collection_pass).await?;
         collection
             .core_search_batch(request, read_consistency, shard_selection, timeout)
             .await
@@ -150,7 +150,7 @@ impl TableOfContent {
     ) -> Result<CountResult, StorageError> {
         let collection_pass = access.check_point_op(collection_name, &mut request)?;
 
-        let collection = self.get_collection_by_pass(&collection_pass).await?;
+        let collection = self.get_collection(&collection_pass).await?;
         collection
             .count(request, read_consistency, &shard_selection)
             .await
@@ -178,7 +178,7 @@ impl TableOfContent {
     ) -> Result<Vec<Record>, StorageError> {
         let collection_pass = access.check_point_op(collection_name, &mut request)?;
 
-        let collection = self.get_collection_by_pass(&collection_pass).await?;
+        let collection = self.get_collection(&collection_pass).await?;
         collection
             .retrieve(request, read_consistency, &shard_selection)
             .await
@@ -196,7 +196,7 @@ impl TableOfContent {
     ) -> Result<GroupsResult, StorageError> {
         let collection_pass = access.check_point_op(collection_name, &mut request)?;
 
-        let collection = self.get_collection_by_pass(&collection_pass).await?;
+        let collection = self.get_collection(&collection_pass).await?;
 
         let collection_by_name = |name| self.get_collection_opt(name);
 
@@ -223,7 +223,7 @@ impl TableOfContent {
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         let collection_pass = access.check_point_op(collection_name, &mut request)?;
 
-        let collection = self.get_collection_by_pass(&collection_pass).await?;
+        let collection = self.get_collection(&collection_pass).await?;
         discovery::discover(
             request,
             &collection,
@@ -252,7 +252,7 @@ impl TableOfContent {
             return Ok(vec![]);
         };
 
-        let collection = self.get_collection_by_pass(&collection_pass).await?;
+        let collection = self.get_collection(&collection_pass).await?;
 
         discovery::discover_batch(
             requests,
@@ -286,7 +286,7 @@ impl TableOfContent {
     ) -> Result<ScrollResult, StorageError> {
         let collection_pass = access.check_point_op(collection_name, &mut request)?;
 
-        let collection = self.get_collection_by_pass(&collection_pass).await?;
+        let collection = self.get_collection(&collection_pass).await?;
         collection
             .scroll_by(request, read_consistency, &shard_selection)
             .await
@@ -341,7 +341,7 @@ impl TableOfContent {
         // `TableOfContent::_update_shard_keys` and `Collection::update_from_*` are cancel safe,
         // so this method is cancel safe.
 
-        let collection = self.get_collection_by_pass(&collection_pass).await?;
+        let collection = self.get_collection(&collection_pass).await?;
 
         // Ordered operation flow:
         //

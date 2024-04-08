@@ -3,7 +3,7 @@ use actix_web_validator::{Json, Path, Query};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{DiscoverRequest, DiscoverRequestBatch};
 use itertools::Itertools;
-use storage::content_manager::toc::TableOfContent;
+use storage::dispatcher::Dispatcher;
 use tokio::time::Instant;
 
 use crate::actix::api::read_params::ReadParams;
@@ -14,7 +14,7 @@ use crate::common::points::do_discover_batch_points;
 
 #[post("/collections/{name}/points/discover")]
 async fn discover_points(
-    toc: web::Data<TableOfContent>,
+    dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     request: Json<DiscoverRequest>,
     params: Query<ReadParams>,
@@ -32,7 +32,8 @@ async fn discover_points(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    let response = toc
+    let response = dispatcher
+        .toc(&access)
         .discover(
             &collection.name,
             discover_request,
@@ -54,7 +55,7 @@ async fn discover_points(
 
 #[post("/collections/{name}/points/discover/batch")]
 async fn discover_batch_points(
-    toc: web::Data<TableOfContent>,
+    dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     request: Json<DiscoverRequestBatch>,
     params: Query<ReadParams>,
@@ -63,7 +64,7 @@ async fn discover_batch_points(
     let timing = Instant::now();
 
     let response = do_discover_batch_points(
-        toc.get_ref(),
+        dispatcher.toc(&access),
         &collection.name,
         request.into_inner(),
         params.consistency,

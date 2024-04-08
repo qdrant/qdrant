@@ -31,6 +31,7 @@ use ::api::grpc::QDRANT_DESCRIPTOR_SET;
 use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
+use storage::rbac::Access;
 use tokio::runtime::Handle;
 use tokio::signal;
 use tonic::codec::CompressionEncoding;
@@ -194,8 +195,13 @@ pub fn init(
                 telemetry_collector,
             ))
             .option_layer({
-                AuthKeys::try_create(&settings.service, dispatcher.toc().clone())
-                    .map(auth::AuthLayer::new)
+                AuthKeys::try_create(
+                    &settings.service,
+                    dispatcher
+                        .toc(&Access::full("For tonic auth middleware"))
+                        .clone(),
+                )
+                .map(auth::AuthLayer::new)
             })
             .into_inner();
 

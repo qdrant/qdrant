@@ -44,7 +44,7 @@ use crate::content_manager::collections_ops::{Checker, Collections};
 use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
-use crate::rbac::CollectionPass;
+use crate::rbac::{Access, AccessRequirements, CollectionPass};
 use crate::types::{PeerAddressById, StorageConfig};
 use crate::ConsensusOperations;
 
@@ -213,9 +213,19 @@ impl TableOfContent {
         &self.storage_config.storage_path
     }
 
-    /// List of all collections
-    pub async fn all_collections(&self) -> Vec<String> {
-        self.collections.read().await.keys().cloned().collect()
+    /// List of all collections to which the user has access
+    pub async fn all_collections(&self, access: &Access) -> Vec<CollectionPass<'static>> {
+        self.collections
+            .read()
+            .await
+            .keys()
+            .filter_map(|name| {
+                access
+                    .check_collection_access(name, AccessRequirements::new())
+                    .ok()
+                    .map(|pass| pass.into_static())
+            })
+            .collect()
     }
 
     /// List of all collections
@@ -227,7 +237,11 @@ impl TableOfContent {
             .collect()
     }
 
-    pub async fn get_collection(
+    /// Same as `get_collection`, but does not check access rights.
+    /// Intended for internal use only.
+    ///
+    /// **Do no make public**
+    pub(self) async fn get_collection_unchecked(
         &self,
         collection_name: &str,
     ) -> Result<RwLockReadGuard<Collection>, StorageError> {
@@ -243,18 +257,18 @@ impl TableOfContent {
         }))
     }
 
-    pub async fn get_collection_by_pass<'a>(
+    pub async fn get_collection<'a>(
         &self,
         collection: &CollectionPass<'a>,
     ) -> Result<RwLockReadGuard<Collection>, StorageError> {
-        self.get_collection(collection.name()).await
+        self.get_collection_unchecked(collection.name()).await
     }
 
     async fn get_collection_opt(
         &self,
         collection_name: String,
     ) -> Option<RwLockReadGuard<Collection>> {
-        self.get_collection(&collection_name).await.ok()
+        self.get_collection_unchecked(&collection_name).await.ok()
     }
 
     /// Finds the original name of the collection
@@ -290,25 +304,34 @@ impl TableOfContent {
     /// List of all aliases for a given collection
     pub async fn collection_aliases(
         &self,
-        collection_name: &str,
+        collection_pass: &CollectionPass<'_>,
+        access: &Access,
     ) -> Result<Vec<String>, StorageError> {
-        let result = self
+        let mut result = self
             .alias_persistence
             .read()
             .await
-            .collection_aliases(collection_name);
+            .collection_aliases(collection_pass.name());
+        result.retain(|alias| {
+            access
+                .check_collection_access(alias, AccessRequirements::new())
+                .is_ok()
+        });
         Ok(result)
     }
 
     /// List of all aliases across all collections
-    pub async fn list_aliases(&self) -> Result<Vec<AliasDescription>, StorageError> {
-        let all_collections = self.all_collections().await;
+    pub async fn list_aliases(
+        &self,
+        access: &Access,
+    ) -> Result<Vec<AliasDescription>, StorageError> {
+        let all_collections = self.all_collections(access).await;
         let mut aliases: Vec<AliasDescription> = Default::default();
-        for collection_name in &all_collections {
-            for alias in self.collection_aliases(collection_name).await? {
+        for collection_pass in &all_collections {
+            for alias in self.collection_aliases(collection_pass, access).await? {
                 aliases.push(AliasDescription {
                     alias_name: alias.to_string(),
-                    collection_name: collection_name.to_string(),
+                    collection_name: collection_pass.to_string(),
                 });
             }
         }
@@ -368,7 +391,7 @@ impl TableOfContent {
 
         // TODO: Ensure cancel safety!
         let initiate_shard_transfer_future = self
-            .get_collection(&collection_name)
+            .get_collection_unchecked(&collection_name)
             .await?
             .initiate_shard_transfer(shard_id);
         initiate_shard_transfer_future.await?;
@@ -405,11 +428,15 @@ impl TableOfContent {
         false
     }
 
-    pub async fn get_telemetry_data(&self, detail: TelemetryDetail) -> Vec<CollectionTelemetry> {
+    pub async fn get_telemetry_data(
+        &self,
+        detail: TelemetryDetail,
+        access: &Access,
+    ) -> Vec<CollectionTelemetry> {
         let mut result = Vec::new();
-        let all_collections = self.all_collections().await;
-        for collection_name in &all_collections {
-            if let Ok(collection) = self.get_collection(collection_name).await {
+        let all_collections = self.all_collections(access).await;
+        for collection_pass in &all_collections {
+            if let Ok(collection) = self.get_collection(collection_pass).await {
                 result.push(collection.get_telemetry_data(detail).await);
             }
         }

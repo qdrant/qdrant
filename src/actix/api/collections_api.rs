@@ -1,7 +1,8 @@
+use std::future::Future;
 use std::time::Duration;
 
 use actix_web::rt::time::Instant;
-use actix_web::{delete, get, patch, post, put, web, Responder};
+use actix_web::{delete, get, patch, post, put, web, HttpResponse, Responder};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::cluster_ops::ClusterOperations;
 use serde::Deserialize;
@@ -9,14 +10,13 @@ use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CollectionMetaOperations, CreateCollection, CreateCollectionOperation,
     DeleteCollectionOperation, UpdateCollection, UpdateCollectionOperation,
 };
-use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use validator::Validate;
 
 use super::CollectionPath;
 use crate::actix::api::StrictCollectionPath;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers::process_response;
+use crate::actix::helpers::{self, process_response};
 use crate::common::collections::*;
 
 #[derive(Debug, Deserialize, Validate)]
@@ -32,55 +32,54 @@ impl WaitTimeout {
 }
 
 #[get("/collections")]
-async fn get_collections(
-    toc: web::Data<TableOfContent>,
+fn get_collections(
+    dispatcher: web::Data<Dispatcher>,
     ActixAccess(access): ActixAccess,
-) -> impl Responder {
-    let timing = Instant::now();
-    let response = Ok(do_list_collections(toc.get_ref(), access).await);
-    process_response(response, timing)
+) -> impl Future<Output = HttpResponse> {
+    helpers::time(async move { do_list_collections(dispatcher.toc(&access), access).await })
 }
 
 #[get("/aliases")]
 async fn get_aliases(
-    toc: web::Data<TableOfContent>,
+    dispatcher: web::Data<Dispatcher>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
-    let response = do_list_aliases(toc.get_ref(), access).await;
+    let response = do_list_aliases(dispatcher.toc(&access), access).await;
     process_response(response, timing)
 }
 
 #[get("/collections/{name}")]
 async fn get_collection(
-    toc: web::Data<TableOfContent>,
+    dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
-    let response = do_get_collection(toc.get_ref(), access, &collection.name, None).await;
+    let response = do_get_collection(dispatcher.toc(&access), access, &collection.name, None).await;
     process_response(response, timing)
 }
 
 #[get("/collections/{name}/exists")]
 async fn get_collection_existence(
-    toc: web::Data<TableOfContent>,
+    dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
-    let response = do_collection_exists(toc.get_ref(), access, &collection.name).await;
+    let response = do_collection_exists(dispatcher.toc(&access), access, &collection.name).await;
     process_response(response, timing)
 }
 
 #[get("/collections/{name}/aliases")]
 async fn get_collection_aliases(
-    toc: web::Data<TableOfContent>,
+    dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
-    let response = do_list_collection_aliases(toc.get_ref(), access, &collection.name).await;
+    let response =
+        do_list_collection_aliases(dispatcher.toc(&access), access, &collection.name).await;
     process_response(response, timing)
 }
 
@@ -169,12 +168,13 @@ async fn update_aliases(
 
 #[get("/collections/{name}/cluster")]
 async fn get_cluster_info(
-    toc: web::Data<TableOfContent>,
+    dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
-    let response = do_get_collection_cluster(toc.get_ref(), access, &collection.name).await;
+    let response =
+        do_get_collection_cluster(dispatcher.toc(&access), access, &collection.name).await;
     process_response(response, timing)
 }
 
