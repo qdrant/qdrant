@@ -408,10 +408,13 @@ ACTION_ACCESS = {
         True,
         "PUT /collections/{collection_name}/shards/{shard_id}/snapshots/recover",
     ),
+    "create_shard_snapshot": EndpointAccess(
+        False, True, True,
+        "POST /collections/{collection_name}/shards/{shard_id}/snapshots"
+    ),
     "list_shard_snapshots": EndpointAccess(
         True, True, True, "GET /collections/{collection_name}/shards/{shard_id}/snapshots"
     ),
-    
 }
 
 REST_TO_ACTION_MAPPING = {
@@ -461,7 +464,7 @@ REST_TO_ACTION_MAPPING = {
         False,
         True,
     ], 
-    # "POST /collections/{collection_name}/shards/{shard_id}/snapshots": [False, True, True],  #
+    "POST /collections/{collection_name}/shards/{shard_id}/snapshots": [False, True, True],  #
     "GET /collections/{collection_name}/shards/{shard_id}/snapshots": [False, True, True, None],  #
     # "DELETE /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}": [
     #     False,
@@ -1268,5 +1271,12 @@ def test_recover_shard_snapshot(shard_snapshot_name: str):
 def test_list_shard_snapshots():
     check_access(
         "list_shard_snapshots",
+        path_params={"collection_name": COLL_NAME, "shard_id": SHARD_ID},
+    )
+
+
+def test_create_shard_snapshot():
+    check_access(
+        "create_shard_snapshot",
         path_params={"collection_name": COLL_NAME, "shard_id": SHARD_ID},
     )
