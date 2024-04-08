@@ -498,20 +498,20 @@ ACTION_ACCESS = {
         "POST /collections/{collection_name}/points/recommend/groups",
         "qdrant.Points/RecommendGroups",
     ),
-    # "discover_points": EndpointAccess(
-    #     True,
-    #     True,
-    #     True,
-    #     "POST /collections/{collection_name}/points/discover",
-    #     "qdrant.Points/Discover",
-    # ),
-    # "discover_points_batch": EndpointAccess(
-    #     True,
-    #     True,
-    #     True,
-    #     "POST /collections/{collection_name}/points/discover/batch",
-    #     "qdrant.Points/DiscoverBatch",
-    # ),
+    "discover_points": EndpointAccess(
+        True,
+        True,
+        True,
+        "POST /collections/{collection_name}/points/discover",
+        "qdrant.Points/Discover",
+    ),
+    "discover_points_batch": EndpointAccess(
+        True,
+        True,
+        True,
+        "POST /collections/{collection_name}/points/discover/batch",
+        "qdrant.Points/DiscoverBatch",
+    ),
     # "count_points": EndpointAccess(
     #     True, True, True, "POST /collections/{collection_name}/points/count", "qdrant.Points/Count"
     # ),
@@ -1397,6 +1397,7 @@ def test_search_point_groups():
         grpc_request={ "collection_name": COLL_NAME, **query },
     )
 
+
 def test_recommend_points():
     check_access(
         "recommend_points",
@@ -1404,6 +1405,7 @@ def test_recommend_points():
         path_params={ "collection_name": COLL_NAME },
         grpc_request={ "collection_name": COLL_NAME, "positive": [{"num": 1}], "limit": 10 },
     )
+
 
 def test_recommend_points_batch():
     check_access(
@@ -1420,11 +1422,37 @@ def test_recommend_points_batch():
             ],
         },
     )
-    
+
+
 def test_recommend_groups():
     check_access(
         "recommend_point_groups",
         rest_request={"positive": [1], "limit": 10, "group_by": FIELD_NAME, "group_size": 3},
         path_params={ "collection_name": COLL_NAME },
         grpc_request={ "collection_name": COLL_NAME, "positive": [{"num": 1}], "limit": 10, "group_by": FIELD_NAME, "group_size": 3 },
+    )
+
+
+def test_discover_points():
+    check_access(
+        "discover_points",
+        rest_request={"target": 1, "limit": 10},
+        path_params={ "collection_name": COLL_NAME },
+        grpc_request={ "collection_name": COLL_NAME, "target": {"single": {"id": {"num": 1}}}, "limit": 10 },
+    )
+
+
+def test_discover_points_batch():
+    check_access(
+        "discover_points_batch",
+        rest_request={"searches": [{"target": 1, "limit": 10}]},
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={
+            "collection_name": COLL_NAME,
+            "discover_points": [{
+                "collection_name": COLL_NAME,
+                "target": {"single": {"id": {"num": 1}}},
+                "limit": 10,
+            }]
+        },
     )
