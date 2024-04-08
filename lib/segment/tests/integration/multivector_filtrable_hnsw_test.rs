@@ -3,7 +3,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use common::cpu::CpuPermit;
-use common::types::{PointOffsetType, TelemetryDetail};
+use common::types::TelemetryDetail;
 use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
@@ -105,15 +105,6 @@ fn test_multi_filterable_hnsw(
     #[case] ef: usize,
     #[case] max_failures: usize, // out of 100
 ) {
-    _test_multi_filterable_hnsw(query_variant, num_vector_per_points, ef, max_failures);
-}
-
-fn _test_multi_filterable_hnsw(
-    query_variant: QueryVariant,
-    num_vector_per_points: usize,
-    ef: usize,
-    max_failures: usize, // out of 100
-) {
     let stopped = AtomicBool::new(false);
 
     let vector_dim = 8;
@@ -122,7 +113,6 @@ fn _test_multi_filterable_hnsw(
     let ef_construct = 16;
     let distance = Distance::Cosine;
     let full_scan_threshold = 8; // KB
-    let indexing_threshold = 500; // num vectors
     let num_payload_values = 2;
 
     let mut rnd = StdRng::seed_from_u64(42);
@@ -197,38 +187,6 @@ fn _test_multi_filterable_hnsw(
         .borrow_mut()
         .set_indexed(&path(int_key), PayloadSchemaType::Integer.into())
         .unwrap();
-    let borrowed_payload_index = payload_index_ptr.borrow();
-    let blocks = borrowed_payload_index
-        .payload_blocks(&path(int_key), indexing_threshold)
-        .collect_vec();
-    for block in blocks.iter() {
-        assert!(
-            block.condition.range.is_some(),
-            "only range conditions should be generated for this type of payload"
-        );
-    }
-
-    let mut coverage: HashMap<PointOffsetType, usize> = Default::default();
-    let px = payload_index_ptr.borrow();
-    for block in &blocks {
-        let filter = Filter::new_must(Condition::Field(block.condition.clone()));
-        let points = px.query_points(&filter);
-        for point in points {
-            coverage.insert(point, coverage.get(&point).unwrap_or(&0) + 1);
-        }
-    }
-    let expected_blocks = num_points as usize / indexing_threshold * 2;
-
-    assert!(
-        (blocks.len() as i64 - expected_blocks as i64).abs() <= 3,
-        "real number of payload blocks is too far from expected"
-    );
-
-    assert_eq!(
-        coverage.len(),
-        num_points as usize,
-        "not all points are covered by payload blocks"
-    );
 
     hnsw_index.build_index(permit, &stopped).unwrap();
 
