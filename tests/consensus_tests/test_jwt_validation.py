@@ -64,8 +64,6 @@ class Access:
         self.coll_r = r if coll_r is None else coll_r
 
 
-
-
 ### operation stubs to use for update_collection_cluster_setup tests
 #
 # class AccessStub:
@@ -458,27 +456,27 @@ ACTION_ACCESS = {
     #     "POST /collections/{collection_name}/points/scroll",
     #     "qdrant.Points/Scroll",
     # ),
-    # "search_points": EndpointAccess(
-    #     True,
-    #     True,
-    #     True,
-    #     "POST /collections/{collection_name}/points/search",
-    #     "qdrant.Points/Search",
-    # ),
-    # "search_points_batch": EndpointAccess(
-    #     True,
-    #     True,
-    #     True,
-    #     "POST /collections/{collection_name}/points/search/batch",
-    #     "qdrant.Points/SearchBatch",
-    # ),
-    # "search_point_groups": EndpointAccess(
-    #     True,
-    #     True,
-    #     True,
-    #     "POST /collections/{collection_name}/points/search/groups",
-    #     "qdrant.Points/SearchGroups",
-    # ),
+    "search_points": EndpointAccess(
+        True,
+        True,
+        True,
+        "POST /collections/{collection_name}/points/search",
+        "qdrant.Points/Search",
+    ),
+    "search_points_batch": EndpointAccess(
+        True,
+        True,
+        True,
+        "POST /collections/{collection_name}/points/search/batch",
+        "qdrant.Points/SearchBatch",
+    ),
+    "search_point_groups": EndpointAccess(
+        True,
+        True,
+        True,
+        "POST /collections/{collection_name}/points/search/groups",
+        "qdrant.Points/SearchGroups",
+    ),
     # "recommend_points": EndpointAccess(
     #     True,
     #     True,
@@ -1366,3 +1364,36 @@ def test_recover_raft_state():
 
 def test_delete_peer():
     check_access("delete_peer", path_params={"peer_id": "2000"})
+
+
+def test_search_points():
+    check_access(
+        "search_points",
+        rest_request={"vector": [1,2,3,4], "limit": 10},
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={"collection_name": COLL_NAME, "vector": [1,2,3,4], "limit": 10},
+    )
+
+
+def test_search_points_batch():
+    query = {"vector": [1, 2, 3, 4], "limit": 10}
+    check_access(
+        "search_points_batch",
+        rest_request={"searches": [query]},
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={
+            "collection_name": COLL_NAME,
+            "search_points": [{"collection_name": COLL_NAME, **query}],
+        },
+    )
+
+
+def test_search_point_groups():
+    query = {"vector": [1, 2, 3, 4], "limit": 10, "group_by": FIELD_NAME, "group_size": 3}
+    check_access(
+        "search_point_groups",
+        rest_request=query,
+        path_params={ "collection_name": COLL_NAME },
+        grpc_request={ "collection_name": COLL_NAME, **query },
+    )
+
