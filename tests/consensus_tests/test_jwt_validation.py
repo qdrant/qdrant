@@ -87,180 +87,101 @@ class AccessStub:
         self.snapshot_name = snapshot_name
 
 
-def default_shard_key_config():
-    return {"shard_key": random_str()}
-
-
-def default_shard_key_config_grpc():
-    return {
-        "collection_name": COLL_NAME,
-        "request": {"shard_key": {"keyword": random_str()}},
-    }
-
-
-### TABLE_OF_ACCESS ACTIONS ###
-
-default_create_shard_key = AccessStub(
-    False,
-    True,
-    True,
-    default_shard_key_config,
-    default_shard_key_config_grpc,
-)
-custom_create_shard_key = AccessStub(
-    False, False, True
-)
-delete_shard_key = AccessStub(False, True, True)
-list_collections = AccessStub(True, True, True)
-get_collection = AccessStub(True, True, True, None, {"collection_name": COLL_NAME})
-create_collection = AccessStub(
-    False, False, True
-)
-update_collection_params = AccessStub(False, False, True, {}, {"collection_name": COLL_NAME})
-delete_collection = AccessStub(
-    False,
-    False,
-    True,
-)
-create_alias = AccessStub(
-    False,
-    False,
-    True,
-)
-rename_alias = AccessStub(
-    False,
-    False,
-    True,
-)
-delete_alias = AccessStub(
-    False,
-    False,
-    True,
-)
-create_index = AccessStub(
-    False,
-    True,
-    True,
-    {"field_name": FIELD_NAME, "field_schema": "keyword"},
-    {"collection_name": COLL_NAME, "field_name": FIELD_NAME, "field_type": 0},
-)
-collection_exists = AccessStub(True, True, True, None, {"collection_name": COLL_NAME})
-delete_index = AccessStub(
-    False,
-    True,
-    True,
-)
-get_collection_cluster_info = AccessStub(
-    True, True, True, None, {"collection_name": COLL_NAME}
-)  # TODO: are these the expected permissions?
-move_shard_operation = AccessStub(
-    False,
-    False,
-    True,
-    {
-        "move_shard": {
-            "shard_id": SHARD_ID,
-            "from_peer_id": PEER_ID,
-            "to_peer_id": PEER_ID + 1,
-        }
-    },
-    {
-        "collection_name": COLL_NAME,
-        "move_shard": {
-            "shard_id": SHARD_ID,
-            "from_peer_id": PEER_ID,
-            "to_peer_id": PEER_ID + 1,
-        },
-    },
-)
-replicate_shard_operation = AccessStub(
-    False,
-    False,
-    True,
-    {
-        "replicate_shard": {
-            "shard_id": SHARD_ID,
-            "from_peer_id": PEER_ID,
-            "to_peer_id": PEER_ID,
-        }
-    },
-)
-abort_shard_transfer_operation = AccessStub(
-    False,
-    False,
-    True,
-    {
-        "abort_transfer": {
-            "shard_id": SHARD_ID,
-            "from_peer_id": PEER_ID,
-            "to_peer_id": PEER_ID,
-        }
-    },
-)
-drop_shard_replica_operation = AccessStub(
-    False,
-    False,
-    True,
-    {
-        "drop_replica": {
-            "shard_id": SHARD_ID,
-            "peer_id": PEER_ID,
-        }
-    },
-)
-default_create_shard_key_operation = AccessStub(
-    False,
-    True,
-    True,
-    {
-        "create_sharding_key": default_shard_key_config,
-    },
-)
-custom_create_shard_key_operation = AccessStub(
-    False,
-    False,
-    True,
-    {
-        "create_sharding_key": None,
-    },
-)
-drop_shard_key_operation = AccessStub(
-    False,
-    True,
-    True,
-    {
-        "drop_sharding_key": {
-            "shard_key": "a",
-        }
-    },
-)
-restart_transfer_operation = AccessStub(
-    False,
-    False,
-    True,
-    {
-        "restart_transfer": {
-            "shard_id": SHARD_ID,
-            "from_peer_id": PEER_ID,
-            "to_peer_id": PEER_ID,
-            "method": "stream_records",
-        }
-    },
-)
-list_collection_aliases = AccessStub(True, True, True, None, {"collection_name": COLL_NAME})
-list_aliases = AccessStub(True, True, True)
-
-list_collection_snapshots = AccessStub(
-    True, True, True, None, {"collection_name": COLL_NAME}
-)  # TODO: this should not be allowed with payload constraints
-
-create_collection_snapshot = AccessStub(False, True, True, None, {"collection_name": COLL_NAME})
-delete_collection_snapshot = AccessStub(
-    False,
-    True,
-    True,
-    None,
-)
+### operation stubs to use for update_collection_cluster_setup tests
+# move_shard_operation = AccessStub(
+#     False,
+#     False,
+#     True,
+#     {
+#         "move_shard": {
+#             "shard_id": SHARD_ID,
+#             "from_peer_id": PEER_ID,
+#             "to_peer_id": PEER_ID + 1,
+#         }
+#     },
+#     {
+#         "collection_name": COLL_NAME,
+#         "move_shard": {
+#             "shard_id": SHARD_ID,
+#             "from_peer_id": PEER_ID,
+#             "to_peer_id": PEER_ID + 1,
+#         },
+#     },
+# )
+# replicate_shard_operation = AccessStub(
+#     False,
+#     False,
+#     True,
+#     {
+#         "replicate_shard": {
+#             "shard_id": SHARD_ID,
+#             "from_peer_id": PEER_ID,
+#             "to_peer_id": PEER_ID,
+#         }
+#     },
+# )
+# abort_shard_transfer_operation = AccessStub(
+#     False,
+#     False,
+#     True,
+#     {
+#         "abort_transfer": {
+#             "shard_id": SHARD_ID,
+#             "from_peer_id": PEER_ID,
+#             "to_peer_id": PEER_ID,
+#         }
+#     },
+# )
+# drop_shard_replica_operation = AccessStub(
+#     False,
+#     False,
+#     True,
+#     {
+#         "drop_replica": {
+#             "shard_id": SHARD_ID,
+#             "peer_id": PEER_ID,
+#         }
+#     },
+# )
+# default_create_shard_key_operation = AccessStub(
+#     False,
+#     True,
+#     True,
+#     {
+#         "create_sharding_key": default_shard_key_config,
+#     },
+# )
+# custom_create_shard_key_operation = AccessStub(
+#     False,
+#     False,
+#     True,
+#     {
+#         "create_sharding_key": None,
+#     },
+# )
+# drop_shard_key_operation = AccessStub(
+#     False,
+#     True,
+#     True,
+#     {
+#         "drop_sharding_key": {
+#             "shard_key": "a",
+#         }
+#     },
+# )
+# restart_transfer_operation = AccessStub(
+#     False,
+#     False,
+#     True,
+#     {
+#         "restart_transfer": {
+#             "shard_id": SHARD_ID,
+#             "from_peer_id": PEER_ID,
+#             "to_peer_id": PEER_ID,
+#             "method": "stream_records",
+#         }
+#     },
+# )
 
 
 class EndpointAccess:
@@ -271,6 +192,7 @@ class EndpointAccess:
 
 
 ACTION_ACCESS = {
+    ### Collections ###
     "list_collections": EndpointAccess(
         True, True, True, "GET /collections", "qdrant.Collections/List"
     ),
@@ -283,6 +205,39 @@ ACTION_ACCESS = {
     "delete_collection": EndpointAccess(
         False, False, True, "DELETE /collections/{collection_name}", "qdrant.Collections/Delete"
     ),
+    "update_collection_params": EndpointAccess(
+        False, False, True, "PATCH /collections/{collection_name}", "qdrant.Collections/Update"
+    ),
+    "get_collection_cluster_info": EndpointAccess(
+        True,
+        True,
+        True,
+        "GET /collections/{collection_name}/cluster",
+        "qdrant.Collections/CollectionClusterInfo",
+    ),  # TODO: are these the expected permissions for coll cluster info?
+    "collection_exists": EndpointAccess(
+        True,
+        True,
+        True,
+        "GET /collections/{collection_name}/exists",
+        "qdrant.Collections/CollectionExists",
+    ),
+    # TODO: also test these actions for update cluster setup:
+    # "move_shard_operation": EndpointAccess(
+    #     False,
+    #     False,
+    #     True,
+    #     "POST /collections/{collection_name}/cluster",
+    #     "qdrant.Collections/UpdateCollectionClusterSetup",
+    # ),
+    # replicate_shard_operation,
+    # abort_shard_transfer_operation,
+    # drop_shard_replica_operation,
+    # restart_transfer_operation,
+    # default_create_shard_key_operation,
+    # custom_create_shard_key_operation,
+    # drop_shard_key_operation
+    ### Aliases ###
     "create_alias": EndpointAccess(
         False,
         False,
@@ -314,20 +269,7 @@ ACTION_ACCESS = {
     "list_aliases": EndpointAccess(
         True, True, True, "GET /aliases", "qdrant.Collections/ListAliases"
     ),
-    "get_collection_cluster_info": EndpointAccess(
-        True,
-        True,
-        True,
-        "GET /collections/{collection_name}/cluster",
-        "qdrant.Collections/CollectionClusterInfo",
-    ),  # TODO: are these the expected permissions for coll cluster info?
-    "collection_exists": EndpointAccess(
-        True,
-        True,
-        True,
-        "GET /collections/{collection_name}/exists",
-        "qdrant.Collections/CollectionExists",
-    ),
+    ### Shard Keys ###
     "create_default_shard_key": EndpointAccess(
         False,
         True,
@@ -349,6 +291,7 @@ ACTION_ACCESS = {
         "POST /collections/{collection_name}/shards/delete",
         "qdrant.Collections/DeleteShardKey",
     ),
+    ### Payload Indexes ###
     "create_index": EndpointAccess(
         False,
         True,
@@ -363,6 +306,7 @@ ACTION_ACCESS = {
         "DELETE /collections/{collection_name}/index/{field_name}",
         "qdrant.Points/DeleteFieldIndex",
     ),
+    ### Collection Snapshots ###
     "list_collection_snapshots": EndpointAccess(
         True,
         True,
@@ -384,10 +328,9 @@ ACTION_ACCESS = {
         "DELETE /collections/{collection_name}/snapshots/{snapshot_name}",
         "qdrant.Snapshots/Delete",
     ),
-    # TODO: confirm access rights
     "download_collection_snapshot": EndpointAccess(
         True, True, True, "GET /collections/{collection_name}/snapshots/{snapshot_name}"
-    ),
+    ),  # TODO: confirm access rights
     "upload_collection_snapshot": EndpointAccess(
         False, False, True, "POST /collections/{collection_name}/snapshots/upload"
     ),
@@ -397,6 +340,7 @@ ACTION_ACCESS = {
         True,
         "PUT /collections/{collection_name}/snapshots/recover",
     ),
+    ### Shard Snapshots ###
     "upload_shard_snapshot": EndpointAccess(
         False,
         False,
@@ -410,25 +354,29 @@ ACTION_ACCESS = {
         "PUT /collections/{collection_name}/shards/{shard_id}/snapshots/recover",
     ),
     "create_shard_snapshot": EndpointAccess(
-        False, True, True,
-        "POST /collections/{collection_name}/shards/{shard_id}/snapshots"
+        False, True, True, "POST /collections/{collection_name}/shards/{shard_id}/snapshots"
     ),
     "list_shard_snapshots": EndpointAccess(
         True, True, True, "GET /collections/{collection_name}/shards/{shard_id}/snapshots"
     ),
     "delete_shard_snapshot": EndpointAccess(
-        False, True, True,
-        "DELETE /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}"
+        False,
+        True,
+        True,
+        "DELETE /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}",
     ),
     "download_shard_snapshot": EndpointAccess(
-        True, True, True,
-        "GET /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}"  
+        True,
+        True,
+        True,
+        "GET /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}",
     ),
+    ### Full Snapshots ###
     "list_full_snapshots": EndpointAccess(
-        True, False, True, "GET /snapshots", coll_r=False
+        True, False, True, "GET /snapshots", "qdrant.Snapshots/ListFull", coll_r=False
     ),
     "create_full_snapshot": EndpointAccess(
-        False, False, True, "POST /snapshots","qdrant.Snapshots/CreateFull"
+        False, False, True, "POST /snapshots", "qdrant.Snapshots/CreateFull"
     ),
     "delete_full_snapshot": EndpointAccess(
         False, False, True, "DELETE /snapshots/{snapshot_name}", "qdrant.Snapshots/DeleteFull"
@@ -436,163 +384,153 @@ ACTION_ACCESS = {
     "download_full_snapshot": EndpointAccess(
         True, False, True, "GET /snapshots/{snapshot_name}", coll_r=False
     ),
-    "get_cluster": EndpointAccess(
-        True, False, True, "GET /cluster", coll_r=False
-    ),
-    "recover_raft_state": EndpointAccess(
-        False, False, True, "POST /cluster/recover"
-    ),
-    "delete_peer": EndpointAccess(
-        False, False, True, "DELETE /cluster/peer/{peer_id}"
-    )
-}
-
-REST_TO_ACTION_MAPPING = {
-    # Collections
-    "PUT /collections/{collection_name}/shards": [
-        default_create_shard_key,
-        custom_create_shard_key,
-    ],
-    "POST /collections/{collection_name}/shards/delete": [delete_shard_key],
-    "GET /collections": [list_collections],
-    "GET /collections/{collection_name}": [get_collection],
-    "PUT /collections/{collection_name}": [create_collection],
-    "PATCH /collections/{collection_name}": [update_collection_params],
-    "DELETE /collections/{collection_name}": [delete_collection],
-    "POST /collections/aliases": [create_alias, rename_alias, delete_alias],
-    "PUT /collections/{collection_name}/index": [create_index],
-    "GET /collections/{collection_name}/exists": [collection_exists],
-    "DELETE /collections/{collection_name}/index/{field_name}": [delete_index],
-    "GET /collections/{collection_name}/cluster": [get_collection_cluster_info],
-    "POST /collections/{collection_name}/cluster": [  # TODO: prepare second peer for these tests
-        # move_shard_operation,
-        # replicate_shard_operation,
-        # abort_shard_transfer_operation,
-        # drop_shard_replica_operation,
-        # restart_transfer_operation,
-        # default_create_shard_key_operation,
-        # custom_create_shard_key_operation,
-        # drop_shard_key_operation
-    ],
-    "GET /collections/{collection_name}/aliases": [list_collection_aliases],
-    "GET /aliases": [list_aliases],
-    "POST /collections/{collection_name}/snapshots/upload": [False, False, True],
-    "PUT /collections/{collection_name}/snapshots/recover": [False, False, True],
-    "GET /collections/{collection_name}/snapshots": [list_collection_snapshots],
-    "POST /collections/{collection_name}/snapshots": [create_collection_snapshot],
-    "DELETE /collections/{collection_name}/snapshots/{snapshot_name}": [
-        delete_collection_snapshot
-    ],  #
-    "GET /collections/{collection_name}/snapshots/{snapshot_name}": [True, True, True, None],  #
-    "POST /collections/{collection_name}/shards/{shard_id}/snapshots/upload": [
-        False,
-        False,
-        True,
-    ],
-    "PUT /collections/{collection_name}/shards/{shard_id}/snapshots/recover": [
-        False,
-        False,
-        True,
-    ], 
-    "POST /collections/{collection_name}/shards/{shard_id}/snapshots": [False, True, True],  #
-    "GET /collections/{collection_name}/shards/{shard_id}/snapshots": [False, True, True, None],  #
-    "DELETE /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}": [
-        False,
-        True,
-        True,
-    ],  #
-    "GET /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}": [
-        False,
-        True,
-        True,
-        None,
-    ],  #
-    # # Points
-    # "GET /collections/{collection_name}/points/{id}": [True, True, True, None],
-    # "POST /collections/{collection_name}/points": [True, True, True],
-    # "PUT /collections/{collection_name}/points": [False, True, True],
-    # "POST /collections/{collection_name}/points/delete": [False, True, True],
-    # "PUT /collections/{collection_name}/points/vectors": [False, True, True],
-    # "POST /collections/{collection_name}/points/vectors/delete": [False, True, True],
-    # "POST /collections/{collection_name}/points/payload": [False, True, True],
-    # "PUT /collections/{collection_name}/points/payload": [False, True, True],
-    # "POST /collections/{collection_name}/points/payload/delete": [False, True, True],
-    # "POST /collections/{collection_name}/points/payload/clear": [False, True, True],
-    # "POST /collections/{collection_name}/points/batch": [False, True, True],
-    # "POST /collections/{collection_name}/points/scroll": [True, True, True],
-    # "POST /collections/{collection_name}/points/search": [True, True, True],
-    # "POST /collections/{collection_name}/points/search/batch": [True, True, True],
-    # "POST /collections/{collection_name}/points/search/groups": [True, True, True],
-    # "POST /collections/{collection_name}/points/recommend": [True, True, True],
-    # "POST /collections/{collection_name}/points/recommend/batch": [True, True, True],
-    # "POST /collections/{collection_name}/points/recommend/groups": [True, True, True],
-    # "POST /collections/{collection_name}/points/discover": [True, True, True],
-    # "POST /collections/{collection_name}/points/discover/batch": [True, True, True],
-    # "POST /collections/{collection_name}/points/count": [True, True, True],
-    # # Cluster
-    "GET /cluster": [True, True, True, None],
-    "POST /cluster/recover": [False, False, True],
-    "DELETE /cluster/peer/{peer_id}": [False, False, True],
-    # # Snapshots
-    "GET /snapshots": [False, False, True, None],
-    "POST /snapshots": [False, False, True],
-    "DELETE /snapshots/{snapshot_name}": [False, False, True],
-    "GET /snapshots/{snapshot_name}": [False, False, True],
-    # # Service
-    # "GET /": [True, True, True, None],
-    # "GET /readyz": [True, True, True, None],
-    # "GET /healthz": [True, True, True, None],
-    # "GET /livez": [True, True, True, None],
-    # "GET /telemetry": [False, False, True, None],
-    # "GET /metrics": [False, False, True, None],
-    # "POST /locks": [False, False, True],
-    # "GET /locks": [True, True, True, None],
-}
-
-GRPC_TO_REST_MAPPING = {
-    "/qdrant.Collections/Get": "GET /collections/{collection_name}",
-    "/qdrant.Collections/List": "GET /collections",
-    "/qdrant.Collections/Create": "PUT /collections/{collection_name}",
-    "/qdrant.Collections/Update": "PATCH /collections/{collection_name}",
-    "/qdrant.Collections/Delete": "DELETE /collections/{collection_name}",
-    "/qdrant.Collections/UpdateAliases": "POST /collections/aliases",
-    "/qdrant.Collections/ListCollectionAliases": "GET /collections/{collection_name}/aliases",
-    "/qdrant.Collections/ListAliases": "GET /aliases",
-    "/qdrant.Collections/CollectionClusterInfo": "GET /collections/{collection_name}/cluster",
-    "/qdrant.Collections/CollectionExists": "GET /collections/{collection_name}/exists",
-    "/qdrant.Collections/UpdateCollectionClusterSetup": "POST /collections/{collection_name}/cluster",
-    "/qdrant.Collections/CreateShardKey": "PUT /collections/{collection_name}/shards",
-    "/qdrant.Collections/DeleteShardKey": "POST /collections/{collection_name}/shards/delete",
-    # "/qdrant.Points/Upsert": "PUT /collections/{collection_name}/points",
-    # "/qdrant.Points/Delete": "POST /collections/{collection_name}/points/delete",
-    # "/qdrant.Points/Get": "POST /collections/{collection_name}/points",
-    # "/qdrant.Points/UpdateVectors": "PUT /collections/{collection_name}/points/vectors",
-    # "/qdrant.Points/DeleteVectors": "POST /collections/{collection_name}/points/vectors/delete",
-    # "/qdrant.Points/SetPayload": "POST /collections/{collection_name}/points/payload",
-    # "/qdrant.Points/OverwritePayload": "PUT /collections/{collection_name}/points/payload",
-    # "/qdrant.Points/DeletePayload": "POST /collections/{collection_name}/points/payload/delete",
-    # "/qdrant.Points/ClearPayload": "POST /collections/{collection_name}/points/payload/clear",
-    "/qdrant.Points/CreateFieldIndex": "PUT /collections/{collection_name}/index",
-    "/qdrant.Points/DeleteFieldIndex": "DELETE /collections/{collection_name}/index/{field_name}",
-    # "/qdrant.Points/Search": "POST /collections/{collection_name}/points/search",
-    # "/qdrant.Points/SearchBatch": "POST /collections/{collection_name}/points/search/batch",
-    # "/qdrant.Points/SearchGroups": "POST /collections/{collection_name}/points/search/groups",
-    # "/qdrant.Points/Scroll": "POST /collections/{collection_name}/points/scroll",
-    # "/qdrant.Points/Recommend": "POST /collections/{collection_name}/points/recommend",
-    # "/qdrant.Points/RecommendBatch": "POST /collections/{collection_name}/points/recommend/batch",
-    # "/qdrant.Points/RecommendGroups": "POST /collections/{collection_name}/points/recommend/groups",
-    # "/qdrant.Points/Discover": "POST /collections/{collection_name}/points/discover",
-    # "/qdrant.Points/DiscoverBatch": "POST /collections/{collection_name}/points/discover/batch",
-    # "/qdrant.Points/Count": "POST /collections/{collection_name}/points/count",
-    # "/qdrant.Points/UpdateBatch": "POST /collections/{collection_name}/points/batch",
-    "/qdrant.Snapshots/Create": "POST /collections/{collection_name}/snapshots",
-    "/qdrant.Snapshots/List": "GET /collections/{collection_name}/snapshots",
-    "/qdrant.Snapshots/Delete": "DELETE /collections/{collection_name}/snapshots/{snapshot_name}",
-    "/qdrant.Snapshots/CreateFull": "POST /snapshots",
-    "/qdrant.Snapshots/ListFull": "GET /snapshots",
-    "/qdrant.Snapshots/DeleteFull": "DELETE /snapshots/{snapshot_name}",
-    # "/qdrant.Qdrant/HealthCheck": "GET /healthz",
-    # "/grpc.health.v1.Health/Check": "GET /healthz",
+    ### Cluster ###
+    "get_cluster": EndpointAccess(True, False, True, "GET /cluster", coll_r=False),
+    "recover_raft_state": EndpointAccess(False, False, True, "POST /cluster/recover"),
+    "delete_peer": EndpointAccess(False, False, True, "DELETE /cluster/peer/{peer_id}"),
+    ### Points ###
+    # TODO: add tests for these actions
+    # "get_point": EndpointAccess(
+    #     True, True, True, "GET /collections/{collection_name}/points/{id}"
+    # ),
+    # "get_points": EndpointAccess(
+    #     True, True, True, "POST /collections/{collection_name}/points", "qdrant.Points/Get"
+    # ),
+    # "upsert_points": EndpointAccess(
+    #     False, True, True, "PUT /collections/{collection_name}/points", "qdrant.Points/Upsert"
+    # ),
+    # "update_points_batch": EndpointAccess(
+    #     False,
+    #     True,
+    #     True,
+    #     "POST /collections/{collection_name}/points/batch",
+    #     "qdrant.Points/UpdateBatch",
+    # ),
+    # "delete_points": EndpointAccess(
+    #     False,
+    #     True,
+    #     True,
+    #     "POST /collections/{collection_name}/points/delete",
+    #     "qdrant.Points/Delete",
+    # ),
+    # "update_vectors": EndpointAccess(
+    #     False,
+    #     True,
+    #     True,
+    #     "PUT /collections/{collection_name}/points/vectors",
+    #     "qdrant.Points/UpdateVectors",
+    # ),
+    # "delete_vectors": EndpointAccess(
+    #     False,
+    #     True,
+    #     True,
+    #     "POST /collections/{collection_name}/points/vectors/delete",
+    #     "qdrant.Points/DeleteVectors",
+    # ),
+    # "set_payload": EndpointAccess(
+    #     False,
+    #     True,
+    #     True,
+    #     "POST /collections/{collection_name}/points/payload",
+    #     "qdrant.Points/SetPayload",
+    # ),
+    # "overwrite_payload": EndpointAccess(
+    #     False,
+    #     True,
+    #     True,
+    #     "PUT /collections/{collection_name}/points/payload",
+    #     "qdrant.Points/OverwritePayload",
+    # ),
+    # "delete_payload": EndpointAccess(
+    #     False,
+    #     True,
+    #     True,
+    #     "POST /collections/{collection_name}/points/payload/delete",
+    #     "qdrant.Points/DeletePayload",
+    # ),
+    # "clear_payload": EndpointAccess(
+    #     False,
+    #     True,
+    #     True,
+    #     "POST /collections/{collection_name}/points/payload/clear",
+    #     "qdrant.Points/ClearPayload",
+    # ),
+    # "scroll_points": EndpointAccess(
+    #     True,
+    #     True,
+    #     True,
+    #     "POST /collections/{collection_name}/points/scroll",
+    #     "qdrant.Points/Scroll",
+    # ),
+    # "search_points": EndpointAccess(
+    #     True,
+    #     True,
+    #     True,
+    #     "POST /collections/{collection_name}/points/search",
+    #     "qdrant.Points/Search",
+    # ),
+    # "search_points_batch": EndpointAccess(
+    #     True,
+    #     True,
+    #     True,
+    #     "POST /collections/{collection_name}/points/search/batch",
+    #     "qdrant.Points/SearchBatch",
+    # ),
+    # "search_point_groups": EndpointAccess(
+    #     True,
+    #     True,
+    #     True,
+    #     "POST /collections/{collection_name}/points/search/groups",
+    #     "qdrant.Points/SearchGroups",
+    # ),
+    # "recommend_points": EndpointAccess(
+    #     True,
+    #     True,
+    #     True,
+    #     "POST /collections/{collection_name}/points/recommend",
+    #     "qdrant.Points/Recommend",
+    # ),
+    # "recommend_points_batch": EndpointAccess(
+    #     True,
+    #     True,
+    #     True,
+    #     "POST /collections/{collection_name}/points/recommend/batch",
+    #     "qdrant.Points/RecommendBatch",
+    # ),
+    # "recommend_point_groups": EndpointAccess(
+    #     True,
+    #     True,
+    #     True,
+    #     "POST /collections/{collection_name}/points/recommend/groups",
+    #     "qdrant.Points/RecommendGroups",
+    # ),
+    # "discover_points": EndpointAccess(
+    #     True,
+    #     True,
+    #     True,
+    #     "POST /collections/{collection_name}/points/discover",
+    #     "qdrant.Points/Discover",
+    # ),
+    # "discover_points_batch": EndpointAccess(
+    #     True,
+    #     True,
+    #     True,
+    #     "POST /collections/{collection_name}/points/discover/batch",
+    #     "qdrant.Points/DiscoverBatch",
+    # ),
+    # "count_points": EndpointAccess(
+    #     True, True, True, "POST /collections/{collection_name}/points/count", "qdrant.Points/Count"
+    # ),
+    ### Service ###
+    # TODO: add tests for these actions
+    # "get_root": EndpointAccess(True, True, True, "GET /", "qdrant.Qdrant/HealthCheck"),
+    # "readyz": EndpointAccess(True, True, True, "GET /readyz", "grpc.health.v1.Health/Check"),
+    # "healthz": EndpointAccess(True, True, True, "GET /healthz", "grpc.health.v1.Health/Check"),
+    # "livez": EndpointAccess(True, True, True, "GET /livez", "grpc.health.v1.Health/Check"),
+    # "telemetry": EndpointAccess(True, False, True, "GET /telemetry"),
+    # "metrics": EndpointAccess(True, False, True, "GET /metrics"),
+    # "set_lock_options": EndpointAccess(False, False, True, "POST /locks"),
+    # "get_lock_options": EndpointAccess(True, True, True, "GET /locks"),
 }
 
 
@@ -600,15 +538,10 @@ def test_all_actions_have_tests():
     # for each action
     for action_name in ACTION_ACCESS.keys():
         # a test_{action_name} exists in this file
-        # TODO
-        pytest.fail("not implemented")
-
-
-# def test_grpc_to_rest_mapping():
-#     for rest_endpoint in GRPC_TO_REST_MAPPING.values():
-#         assert (
-#             rest_endpoint in REST_TO_ACTION_MAPPING
-#         ), f"REST endpoint `{rest_endpoint}` not found in TABLE_OF_ACCESS"
+        test_name = f"test_{action_name}"
+        assert (
+            test_name in globals()
+        ), f"An action is not tested: `{test_name}` was not found in this file"
 
 
 def test_all_rest_endpoints_are_covered():
@@ -716,16 +649,11 @@ def uris(tmp_path_factory: pytest.TempPathFactory):
 
 
 def create_validation_collection(
-    uris: Tuple[str, str], collection: str, shard_number: int, replication_factor: int, timeout=10
+    collection: str, timeout=10
 ):
-    uri = uris[0]
     res = requests.put(
-        f"{uri}/collections/{collection}?timeout={timeout}",
-        json={
-            "vectors": {"size": 1, "distance": "Dot"},
-            "shard_number": shard_number,
-            "replication_factor": replication_factor,
-        },
+        f"{REST_URI}/collections/{collection}?timeout={timeout}",
+        json={},
         headers=API_KEY_HEADERS,
     )
     res.raise_for_status()
@@ -746,14 +674,14 @@ def scroll_with_token(uri: str, collection: str, token: str) -> requests.Respons
 def test_value_exists_claim(uris: Tuple[str, str]):
     rest_uri, grpc_uri = uris
 
-    secondary_collection = "secondary_test_collection"
+    validation_collection = "secondary_test_collection"
 
     key = "tokenId"
     value = "token_42"
 
     claims = {
         "value_exists": {
-            "collection": secondary_collection,
+            "collection": validation_collection,
             "matches": [{"key": key, "value": value}],
         },
     }
@@ -764,7 +692,7 @@ def test_value_exists_claim(uris: Tuple[str, str]):
         scroll_with_token(rest_uri, COLL_NAME, token)
 
     # Create collection
-    create_validation_collection(rest_uri, secondary_collection)
+    create_validation_collection(validation_collection)
 
     # Check it does not work now
     with pytest.raises(requests.HTTPError):
@@ -772,12 +700,12 @@ def test_value_exists_claim(uris: Tuple[str, str]):
 
     # Upload validation point
     res = requests.put(
-        f"{rest_uri}/collections/{secondary_collection}/points?wait=true",
+        f"{rest_uri}/collections/{validation_collection}/points?wait=true",
         json={
             "points": [
                 {
                     "id": 42,
-                    "vector": [0],
+                    "vectors": {},
                     "payload": {key: value},
                 }
             ]
@@ -792,7 +720,7 @@ def test_value_exists_claim(uris: Tuple[str, str]):
 
     # Delete validation point
     res = requests.post(
-        f"{rest_uri}/collections/{secondary_collection}/points/delete?wait=true",
+        f"{rest_uri}/collections/{validation_collection}/points/delete?wait=true",
         json={"points": [42]},
         headers=API_KEY_HEADERS,
     )
@@ -802,8 +730,8 @@ def test_value_exists_claim(uris: Tuple[str, str]):
     with pytest.raises(requests.HTTPError):
         scroll_with_token(rest_uri, COLL_NAME, token)
 
-    fixtures.drop_collection(rest_uri, secondary_collection, headers=API_KEY_HEADERS)
-    fixtures.drop_collection(rest_uri, secondary_collection, headers=API_KEY_HEADERS)
+    fixtures.drop_collection(rest_uri, validation_collection, headers=API_KEY_HEADERS)
+    fixtures.drop_collection(rest_uri, validation_collection, headers=API_KEY_HEADERS)
 
 
 def check_rest_access(
@@ -813,7 +741,7 @@ def check_rest_access(
     should_succeed: bool,
     token: str,
     path_params: dict = {},
-    request_kwargs: dict = {}
+    request_kwargs: dict = {},
 ):
     if isfunction(body):
         body = body()
@@ -823,9 +751,13 @@ def check_rest_access(
         concrete_path_params[key] = value() if isfunction(value) else value
 
     path = path.format(**concrete_path_params)
-    
+
     res = requests.request(
-        method, f"{REST_URI}{path}", headers={"authorization": f"Bearer {token}" }, json=body, **request_kwargs
+        method,
+        f"{REST_URI}{path}",
+        headers={"authorization": f"Bearer {token}"},
+        json=body,
+        **request_kwargs,
     )
 
     if should_succeed:
@@ -882,7 +814,9 @@ def get_auth_grpc_clients() -> GrpcClients:
     return _cached_clients
 
 
-def check_access(action_name: str, rest_request=None, grpc_request=None, path_params={}, rest_req_kwargs={}):
+def check_access(
+    action_name: str, rest_request=None, grpc_request=None, path_params={}, rest_req_kwargs={}
+):
     action_access: EndpointAccess = ACTION_ACCESS[action_name]
 
     ## Check Rest
@@ -891,7 +825,7 @@ def check_access(action_name: str, rest_request=None, grpc_request=None, path_pa
     method, path = action_access.rest_endpoint.split(" ")
 
     allowed_for = action_access.access
-    
+
     check_rest_access(
         method, path, rest_request, allowed_for.read, TOKEN_R, path_params, rest_req_kwargs
     )
@@ -899,7 +833,13 @@ def check_access(action_name: str, rest_request=None, grpc_request=None, path_pa
         method, path, rest_request, allowed_for.coll_r, TOKEN_COLL_R, path_params, rest_req_kwargs
     )
     check_rest_access(
-        method, path, rest_request, allowed_for.coll_rw, TOKEN_COLL_RW, path_params, rest_req_kwargs
+        method,
+        path,
+        rest_request,
+        allowed_for.coll_rw,
+        TOKEN_COLL_RW,
+        path_params,
+        rest_req_kwargs,
     )
     check_rest_access(
         method, path, rest_request, allowed_for.manage, TOKEN_M, path_params, rest_req_kwargs
@@ -916,7 +856,7 @@ def check_access(action_name: str, rest_request=None, grpc_request=None, path_pa
         grpc = get_auth_grpc_clients()
 
         check_grpc_access(grpc.r, service, method, grpc_request, allowed_for.read)
-        check_grpc_access(grpc.coll_r, service, method, grpc_request, allowed_for.read)
+        check_grpc_access(grpc.coll_r, service, method, grpc_request, allowed_for.coll_r)
         check_grpc_access(grpc.coll_rw, service, method, grpc_request, allowed_for.coll_rw)
         check_grpc_access(grpc.m, service, method, grpc_request, allowed_for.manage)
 
@@ -967,6 +907,15 @@ def test_delete_collection():
     # teardown
     for collection_name in coll_names:
         requests.delete(f"{REST_URI}/collections/{collection_name}", headers=API_KEY_HEADERS)
+
+
+def test_update_collection_params():
+    check_access(
+        "update_collection_params",
+        rest_request={},
+        grpc_request={"collection_name": COLL_NAME},
+        path_params={"collection_name": COLL_NAME},
+    )
 
 
 def test_create_alias():
@@ -1206,7 +1155,10 @@ def test_delete_collection_snapshot():
 
     check_access(
         "delete_collection_snapshot",
-        path_params={"collection_name": COLL_NAME, "snapshot_name": lambda : next(snapshot_names_iter)},
+        path_params={
+            "collection_name": COLL_NAME,
+            "snapshot_name": lambda: next(snapshot_names_iter),
+        },
         grpc_request=grpc_req,
     )
 
@@ -1218,7 +1170,7 @@ def test_download_collection_snapshot():
     )
     res.raise_for_status()
     filename = res.json()["result"]["name"]
-    
+
     check_access(
         "download_collection_snapshot",
         path_params={"collection_name": COLL_NAME, "snapshot_name": filename},
@@ -1233,22 +1185,23 @@ def collection_snapshot():
     )
     res.raise_for_status()
     filename = res.json()["result"]["name"]
-    
+
     res = requests.get(
         f"{REST_URI}/collections/{COLL_NAME}/snapshots/{filename}",
         headers=API_KEY_HEADERS,
     )
     res.raise_for_status()
-    
+
     return res.content
 
 
 def test_upload_collection_snapshot(collection_snapshot: bytes):
     check_access(
         "upload_collection_snapshot",
-        rest_req_kwargs={'files': {"snapshot": collection_snapshot}},
+        rest_req_kwargs={"files": {"snapshot": collection_snapshot}},
         path_params={"collection_name": COLL_NAME},
     )
+
 
 def test_recover_collection_snapshot(collection_snapshot: bytes):
     # Save file to temp file
@@ -1287,9 +1240,10 @@ def shard_snapshot(shard_snapshot_name):
 def test_upload_shard_snapshot(shard_snapshot: bytes):
     check_access(
         "upload_shard_snapshot",
-        rest_req_kwargs={'files': {"snapshot": shard_snapshot}},
+        rest_req_kwargs={"files": {"snapshot": shard_snapshot}},
         path_params={"collection_name": COLL_NAME, "shard_id": SHARD_ID},
     )
+
 
 def test_recover_shard_snapshot(shard_snapshot_name: str):
     check_access(
@@ -1297,6 +1251,7 @@ def test_recover_shard_snapshot(shard_snapshot_name: str):
         rest_request={"location": shard_snapshot_name},
         path_params={"collection_name": COLL_NAME, "shard_id": SHARD_ID},
     )
+
 
 def test_list_shard_snapshots():
     check_access(
@@ -1310,7 +1265,8 @@ def test_create_shard_snapshot():
         "create_shard_snapshot",
         path_params={"collection_name": COLL_NAME, "shard_id": SHARD_ID},
     )
-    
+
+
 def test_delete_shard_snapshot():
     shard_snapshot_names = []
     for _ in range(8):
@@ -1327,28 +1283,42 @@ def test_delete_shard_snapshot():
     snapshot_names_iter = iter(shard_snapshot_names)
 
     def grpc_req():
-        return {"collection_name": COLL_NAME, "shard_id": SHARD_ID, "snapshot_name": next(snapshot_names_iter)}
+        return {
+            "collection_name": COLL_NAME,
+            "shard_id": SHARD_ID,
+            "snapshot_name": next(snapshot_names_iter),
+        }
 
     check_access(
         "delete_shard_snapshot",
-        path_params={"collection_name": COLL_NAME, "shard_id": SHARD_ID, "snapshot_name": lambda : next(snapshot_names_iter)},
+        path_params={
+            "collection_name": COLL_NAME,
+            "shard_id": SHARD_ID,
+            "snapshot_name": lambda: next(snapshot_names_iter),
+        },
         grpc_request=grpc_req,
     )
-    
+
+
 def test_download_shard_snapshot(shard_snapshot_name: str):
     check_access(
         "download_shard_snapshot",
-        path_params={"collection_name": COLL_NAME, "shard_id": SHARD_ID, "snapshot_name": shard_snapshot_name},
+        path_params={
+            "collection_name": COLL_NAME,
+            "shard_id": SHARD_ID,
+            "snapshot_name": shard_snapshot_name,
+        },
     )
-    
+
 
 def test_list_full_snapshots():
     check_access("list_full_snapshots")
-    
-    
+
+
 def test_create_full_snapshot():
     check_access("create_full_snapshot")
-    
+
+
 def test_delete_full_snapshot():
     snapshot_names = []
     for _ in range(8):
@@ -1369,10 +1339,11 @@ def test_delete_full_snapshot():
 
     check_access(
         "delete_full_snapshot",
-        path_params={"snapshot_name": lambda : next(snapshot_names_iter)},
+        path_params={"snapshot_name": lambda: next(snapshot_names_iter)},
         grpc_request=grpc_req,
     )
-    
+
+
 def test_download_full_snapshot():
     res = requests.post(
         f"{REST_URI}/snapshots?wait=true",
@@ -1380,7 +1351,7 @@ def test_download_full_snapshot():
     )
     res.raise_for_status()
     name = res.json()["result"]["name"]
-    
+
     check_access(
         "download_full_snapshot",
         path_params={"snapshot_name": name},
@@ -1389,12 +1360,11 @@ def test_download_full_snapshot():
 
 def test_get_cluster():
     check_access("get_cluster")
-    
+
 
 def test_recover_raft_state():
     check_access("recover_raft_state")
-    
+
 
 def test_delete_peer():
     check_access("delete_peer", path_params={"peer_id": "2000"})
-    
