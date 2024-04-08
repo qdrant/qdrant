@@ -442,6 +442,9 @@ ACTION_ACCESS = {
     "recover_raft_state": EndpointAccess(
         False, False, True, "POST /cluster/recover"
     ),
+    "delete_peer": EndpointAccess(
+        False, False, True, "DELETE /cluster/peer/{peer_id}"
+    )
 }
 
 REST_TO_ACTION_MAPPING = {
@@ -529,7 +532,7 @@ REST_TO_ACTION_MAPPING = {
     # # Cluster
     "GET /cluster": [True, True, True, None],
     "POST /cluster/recover": [False, False, True],
-    # "DELETE /cluster/peer/{peer_id}": [False, False, True],
+    "DELETE /cluster/peer/{peer_id}": [False, False, True],
     # # Snapshots
     "GET /snapshots": [False, False, True, None],
     "POST /snapshots": [False, False, True],
@@ -1390,4 +1393,8 @@ def test_get_cluster():
 
 def test_recover_raft_state():
     check_access("recover_raft_state")
+    
+
+def test_delete_peer():
+    check_access("delete_peer", path_params={"peer_id": "2000"})
     
