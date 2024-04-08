@@ -95,37 +95,6 @@ def default_shard_key_config_grpc():
     }
 
 
-def custom_shard_key_config():
-    return {"shard_key": random_str(), "replication_factor": 3}
-
-
-def custom_shard_key_config_grpc():
-    return {
-        "collection_name": COLL_NAME,
-        "request": {"shard_key": {"keyword": random_str()}, "replication_factor": 3},
-    }
-
-
-def create_collection_req():
-    return {
-        "collection_name": random_str(),
-    }
-
-
-deletable_shard_key = iter(DELETABLE_SHARD_KEYS)
-
-
-def delete_shard_key_req():
-    return {"shard_key": next(deletable_shard_key)}
-
-
-def delete_shard_key_req_grpc():
-    return {
-        "collection_name": COLL_NAME,
-        "request": {"shard_key": {"keyword": next(deletable_shard_key)}},
-    }
-
-
 ### TABLE_OF_ACCESS ACTIONS ###
 
 default_create_shard_key = AccessStub(
@@ -136,13 +105,13 @@ default_create_shard_key = AccessStub(
     default_shard_key_config_grpc,
 )
 custom_create_shard_key = AccessStub(
-    False, False, True, custom_shard_key_config, custom_shard_key_config_grpc
+    False, False, True
 )
-delete_shard_key = AccessStub(False, True, True, delete_shard_key_req, delete_shard_key_req_grpc)
+delete_shard_key = AccessStub(False, True, True)
 list_collections = AccessStub(True, True, True)
 get_collection = AccessStub(True, True, True, None, {"collection_name": COLL_NAME})
 create_collection = AccessStub(
-    False, False, True, {}, create_collection_req, collection_name=random_str
+    False, False, True
 )
 update_collection_params = AccessStub(False, False, True, {}, {"collection_name": COLL_NAME})
 delete_collection = AccessStub(
@@ -249,7 +218,7 @@ custom_create_shard_key_operation = AccessStub(
     False,
     True,
     {
-        "create_sharding_key": custom_shard_key_config,
+        "create_sharding_key": None,
     },
 )
 drop_shard_key_operation = AccessStub(
@@ -412,11 +381,13 @@ ACTION_ACCESS = {
         "DELETE /collections/{collection_name}/snapshots/{snapshot_name}",
         "qdrant.Snapshots/Delete",
     ),
+    "upload_collection_snapshot": EndpointAccess(
+        False, False, True, "POST /collections/{collection_name}/snapshots/upload"
+    ),
     # TODO: confirm access rights
     "download_collection_snapshot": EndpointAccess(
-        True, True, True, "GET /collections/{collection_name}/snapshots/{snapshot_name}", None
+        True, True, True, "GET /collections/{collection_name}/snapshots/{snapshot_name}"
     ),
-    
 }
 
 REST_TO_ACTION_MAPPING = {
@@ -448,7 +419,7 @@ REST_TO_ACTION_MAPPING = {
     ],
     "GET /collections/{collection_name}/aliases": [list_collection_aliases],
     "GET /aliases": [list_aliases],
-    # "POST /collections/{collection_name}/snapshots/upload": [False, False, True],
+    "POST /collections/{collection_name}/snapshots/upload": [False, False, True],
     # "PUT /collections/{collection_name}/snapshots/recover": [False, False, True],
     "GET /collections/{collection_name}/snapshots": [list_collection_snapshots],
     "POST /collections/{collection_name}/snapshots": [create_collection_snapshot],
@@ -456,11 +427,11 @@ REST_TO_ACTION_MAPPING = {
         delete_collection_snapshot
     ],  #
     "GET /collections/{collection_name}/snapshots/{snapshot_name}": [True, True, True, None],  #
-    # "POST /collections/{collection_name}/shards/{shard_id}/snapshots/upload": [
-    #     False,
-    #     False,
-    #     True,
-    # ],  #
+    "POST /collections/{collection_name}/shards/{shard_id}/snapshots/upload": [
+        False,
+        False,
+        True,
+    ],  #
     # "PUT /collections/{collection_name}/shards/{shard_id}/snapshots/recover": [
     #     False,
     #     False,
@@ -789,6 +760,7 @@ def check_rest_access(
     should_succeed: bool,
     token: str,
     path_params: dict = {},
+    request_kwargs: dict = {}
 ):
     if isfunction(body):
         body = body()
@@ -798,9 +770,9 @@ def check_rest_access(
         concrete_path_params[key] = value() if isfunction(value) else value
 
     path = path.format(**concrete_path_params)
-
+    
     res = requests.request(
-        method, f"{REST_URI}{path}", headers={"authorization": f"Bearer {token}"}, json=body
+        method, f"{REST_URI}{path}", headers={"authorization": f"Bearer {token}" }, data=body, **request_kwargs
     )
 
     if should_succeed:
@@ -857,7 +829,7 @@ def get_auth_grpc_clients() -> GrpcClients:
     return _cached_clients
 
 
-def check_access(action_name: str, rest_request=None, grpc_request=None, path_params={}):
+def check_access(action_name: str, rest_request=None, grpc_request=None, path_params={}, rest_req_kwargs={}):
     action_access: EndpointAccess = ACTION_ACCESS[action_name]
 
     ## Check Rest
@@ -868,16 +840,16 @@ def check_access(action_name: str, rest_request=None, grpc_request=None, path_pa
     allowed_for = action_access.access
     
     check_rest_access(
-        method, path, rest_request, allowed_for.read, TOKEN_R, path_params=path_params
+        method, path, rest_request, allowed_for.read, TOKEN_R, path_params, rest_req_kwargs
     )
     check_rest_access(
-        method, path, rest_request, allowed_for.read, TOKEN_COLL_R, path_params=path_params
+        method, path, rest_request, allowed_for.read, TOKEN_COLL_R, path_params, rest_req_kwargs
     )
     check_rest_access(
-        method, path, rest_request, allowed_for.read_write, TOKEN_COLL_RW, path_params=path_params
+        method, path, rest_request, allowed_for.read_write, TOKEN_COLL_RW, path_params, rest_req_kwargs
     )
     check_rest_access(
-        method, path, rest_request, allowed_for.manage, TOKEN_M, path_params=path_params
+        method, path, rest_request, allowed_for.manage, TOKEN_M, path_params, rest_req_kwargs
     )
 
     ## Check GRPC
@@ -1185,6 +1157,29 @@ def test_delete_collection_snapshot():
         grpc_request=grpc_req,
     )
 
+
+def test_upload_collection_snapshot():
+    res = requests.post(
+        f"{REST_URI}/collections/{COLL_NAME}/snapshots?wait=true",
+        headers=API_KEY_HEADERS,
+    )
+    res.raise_for_status()
+    filename = res.json()["result"]["name"]
+
+    res = requests.get(
+        f"{REST_URI}/collections/{COLL_NAME}/snapshots/{filename}?priority=snapshot", 
+        headers=API_KEY_HEADERS,
+    )
+    res.raise_for_status()
+    file = res.content
+    
+    check_access(
+        "upload_collection_snapshot",
+        rest_req_kwargs={'files': {"snapshot": file}},
+        path_params={"collection_name": COLL_NAME},
+    )
+
+
 def test_download_collection_snapshot():
     res = requests.post(
         f"{REST_URI}/collections/{COLL_NAME}/snapshots?wait=true",
@@ -1195,7 +1190,5 @@ def test_download_collection_snapshot():
     
     check_access(
         "download_collection_snapshot",
-        path_params={"collection_name": COLL_NAME, "snapshot_name": filename}
+        path_params={"collection_name": COLL_NAME, "snapshot_name": filename},
     )
-    
-
