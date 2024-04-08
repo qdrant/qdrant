@@ -5,9 +5,8 @@ use api::grpc::models::{CollectionDescription, CollectionsResponse};
 use api::grpc::qdrant::CollectionExists;
 use collection::config::ShardingMethod;
 use collection::operations::cluster_ops::{
-    AbortTransferOperation, ClusterOperations, CreateShardingKeyOperation, DropReplicaOperation,
-    DropShardingKey, DropShardingKeyOperation, MoveShardOperation, ReplicateShardOperation,
-    RestartTransfer, RestartTransferOperation,
+    AbortTransferOperation, ClusterOperations, DropReplicaOperation, MoveShardOperation,
+    ReplicateShardOperation, RestartTransfer, RestartTransferOperation,
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::snapshot_ops::SnapshotDescription;
@@ -193,27 +192,10 @@ pub async fn do_update_collection_cluster(
     access: Access,
     wait_timeout: Option<Duration>,
 ) -> Result<bool, StorageError> {
-    let collection_pass = access
-        .check_collection_access(&collection_name, AccessRequirements::new().write().whole())?;
-    match &operation {
-        ClusterOperations::MoveShard(_)
-        | ClusterOperations::ReplicateShard(_)
-        | ClusterOperations::AbortTransfer(_)
-        | ClusterOperations::DropReplica(_)
-        | ClusterOperations::RestartTransfer(_) => {
-            access.check_global_access(AccessRequirements::new().manage())?;
-        }
-        ClusterOperations::CreateShardingKey(CreateShardingKeyOperation {
-            create_sharding_key,
-        }) => {
-            if !create_sharding_key.has_default_params() {
-                access.check_global_access(AccessRequirements::new().manage())?;
-            }
-        }
-        ClusterOperations::DropShardingKey(DropShardingKeyOperation {
-            drop_sharding_key: DropShardingKey { shard_key: _ },
-        }) => (),
-    }
+    let collection_pass = access.check_collection_access(
+        &collection_name,
+        AccessRequirements::new().write().manage().whole(),
+    )?;
 
     if dispatcher.consensus_state().is_none() {
         return Err(StorageError::BadRequest {
