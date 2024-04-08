@@ -46,19 +46,14 @@ TOKEN_COLL_RW = encode_jwt({"access": [{"collections": [COLL_NAME], "access": "r
 # Global manage access token
 TOKEN_M = encode_jwt({"access": "m"}, SECRET)
 
-RENAMABLE_ALIASES = [random_str() for _ in range(10)]
-MOVABLE_SHARD_IDS = [i + 2 for i in range(10)]
 SHARD_ID = 1
 SNAPSHOT_NAME = "test_snapshot"
 POINT_ID = 0
 FIELD_NAME = "test_field"
 PEER_ID = 0
-DELETABLE_SHARD_KEYS = [random_str() for _ in range(2)]
-MOVABLE_SHARD_KEYS = [random_str() for _ in range(2)]
 SHARD_KEY = "existing_shard_key"
-DELETABLE_COLLECTION_SNAPSHOTS = []
 
-_cached_clients = None
+_cached_grpc_clients = None
 
 
 class Access:
@@ -69,25 +64,26 @@ class Access:
         self.coll_r = r if coll_r is None else coll_r
 
 
-class AccessStub:
-    def __init__(
-        self,
-        read,
-        read_write,
-        manage,
-        rest_req=None,
-        grpc_req=None,
-        collection_name=COLL_NAME,
-        snapshot_name=SNAPSHOT_NAME,
-    ):
-        self.access = Access(read, read_write, manage)
-        self.rest_req = rest_req
-        self.grpc_req = grpc_req
-        self.collection_name = collection_name
-        self.snapshot_name = snapshot_name
 
 
 ### operation stubs to use for update_collection_cluster_setup tests
+#
+# class AccessStub:
+#     def __init__(
+#         self,
+#         read,
+#         read_write,
+#         manage,
+#         rest_req=None,
+#         grpc_req=None,
+#         collection_name=COLL_NAME,
+#         snapshot_name=SNAPSHOT_NAME,
+#     ):
+#         self.access = Access(read, read_write, manage)
+#         self.rest_req = rest_req
+#         self.grpc_req = grpc_req
+#         self.collection_name = collection_name
+#         self.snapshot_name = snapshot_name
 # move_shard_operation = AccessStub(
 #     False,
 #     False,
@@ -809,11 +805,11 @@ class GrpcClients:
 
 
 def get_auth_grpc_clients() -> GrpcClients:
-    global _cached_clients
-    if _cached_clients is None:
-        _cached_clients = GrpcClients()
+    global _cached_grpc_clients
+    if _cached_grpc_clients is None:
+        _cached_grpc_clients = GrpcClients()
 
-    return _cached_clients
+    return _cached_grpc_clients
 
 
 def check_access(
