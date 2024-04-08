@@ -406,20 +406,20 @@ ACTION_ACCESS = {
         "POST /collections/{collection_name}/points/delete",
         "qdrant.Points/Delete",
     ),
-    # "update_vectors": EndpointAccess(
-    #     False,
-    #     True,
-    #     True,
-    #     "PUT /collections/{collection_name}/points/vectors",
-    #     "qdrant.Points/UpdateVectors",
-    # ),
-    # "delete_vectors": EndpointAccess(
-    #     False,
-    #     True,
-    #     True,
-    #     "POST /collections/{collection_name}/points/vectors/delete",
-    #     "qdrant.Points/DeleteVectors",
-    # ),
+    "update_vectors": EndpointAccess(
+        False,
+        True,
+        True,
+        "PUT /collections/{collection_name}/points/vectors",
+        "qdrant.Points/UpdateVectors",
+    ),
+    "delete_vectors": EndpointAccess(
+        False,
+        True,
+        True,
+        "POST /collections/{collection_name}/points/vectors/delete",
+        "qdrant.Points/DeleteVectors",
+    ),
     # "set_payload": EndpointAccess(
     #     False,
     #     True,
@@ -1442,6 +1442,34 @@ def test_delete_points():
         rest_request={"points": [1], "shard_key": SHARD_KEY},
         path_params={"collection_name": COLL_NAME},
         grpc_request={"collection_name": COLL_NAME, "points": {"points": {"ids": [{"num": 1}]}}, **SHARD_KEY_SELECTOR},
+    )
+
+
+def test_update_vectors():
+    check_access(
+        "update_vectors",
+        rest_request={"points": [{"id": 1, "vector": [1, 2, 3, 4]}],
+                      "shard_key": SHARD_KEY},
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={
+            "collection_name": COLL_NAME,
+            "points": [{"id": {"num": 1}, "vectors": {"vector": {"data": [1, 2, 3, 4]}}}],
+            "shard_key_selector": {"shard_keys": [{"keyword": SHARD_KEY}]},
+        },
+    )
+
+
+def test_delete_vectors():
+    check_access(
+        "delete_vectors",
+        rest_request={"points": [1], "vector": [""], "shard_key": SHARD_KEY},
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={
+            "collection_name": COLL_NAME,
+            "points_selector": {"points": {"ids": [{"num": 1}]}},
+            "vectors": {"names": [""]},
+            **SHARD_KEY_SELECTOR,
+        },
     )
 
 
