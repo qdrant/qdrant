@@ -1,19 +1,34 @@
 #[cfg(not(target_os = "windows"))]
 mod prof;
 
+#[cfg(target_arch = "x86_64")]
 use avx::avx_cosine::avx_cosine_similarity_bytes;
+#[cfg(target_arch = "x86_64")]
 use avx::avx_dot::avx_dot_similarity_bytes;
+#[cfg(target_arch = "x86_64")]
 use avx::avx_euclid::avx_euclid_similarity_bytes;
+#[cfg(target_arch = "x86_64")]
 use avx::avx_manhattan::avx_manhattan_similarity_bytes;
 use criterion::{criterion_group, criterion_main, Criterion};
+use neon::neon_cosine::neon_cosine_similarity_bytes;
+#[cfg(target_arch = "aarch64")]
+use neon::neon_dot::neon_dot_similarity_bytes;
+#[cfg(target_arch = "aarch64")]
+use neon::neon_euclid::neon_euclid_similarity_bytes;
+#[cfg(target_arch = "aarch64")]
+use neon::neon_simple_manhattan::neon_manhattan_similarity_bytes;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use segment::data_types::vectors::VectorElementTypeByte;
 use segment::spaces::metric::Metric;
 use segment::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
+#[cfg(target_arch = "x86_64")]
 use sse::sse_cosine::sse_cosine_similarity_bytes;
+#[cfg(target_arch = "x86_64")]
 use sse::sse_dot::sse_dot_similarity_bytes;
+#[cfg(target_arch = "x86_64")]
 use sse::sse_euclid::sse_euclid_similarity_bytes;
+#[cfg(target_arch = "x86_64")]
 use sse::sse_manhattan::sse_manhattan_similarity_bytes;
 
 const DIM: usize = 1024;
@@ -42,6 +57,7 @@ fn byte_metrics_bench(c: &mut Criterion) {
         });
     });
 
+    #[cfg(target_arch = "x86_64")]
     group.bench_function("byte-dot-avx", |b| {
         let mut i = 0;
         b.iter(|| unsafe {
@@ -50,11 +66,21 @@ fn byte_metrics_bench(c: &mut Criterion) {
         });
     });
 
+    #[cfg(target_arch = "x86_64")]
     group.bench_function("byte-dot-sse", |b| {
         let mut i = 0;
         b.iter(|| unsafe {
             i = (i + 1) % COUNT;
             sse_dot_similarity_bytes(&random_vectors_1[i], &random_vectors_2[i])
+        });
+    });
+
+    #[cfg(target_arch = "aarch64")]
+    group.bench_function("byte-dot-neon", |b| {
+        let mut i = 0;
+        b.iter(|| unsafe {
+            i = (i + 1) % COUNT;
+            neon_dot_similarity_bytes(&random_vectors_1[i], &random_vectors_2[i])
         });
     });
 
@@ -69,6 +95,7 @@ fn byte_metrics_bench(c: &mut Criterion) {
         });
     });
 
+    #[cfg(target_arch = "x86_64")]
     group.bench_function("byte-cosine-avx", |b| {
         let mut i = 0;
         b.iter(|| unsafe {
@@ -77,11 +104,21 @@ fn byte_metrics_bench(c: &mut Criterion) {
         });
     });
 
+    #[cfg(target_arch = "x86_64")]
     group.bench_function("byte-cosine-sse", |b| {
         let mut i = 0;
         b.iter(|| unsafe {
             i = (i + 1) % COUNT;
             sse_cosine_similarity_bytes(&random_vectors_1[i], &random_vectors_2[i])
+        });
+    });
+
+    #[cfg(target_arch = "aarch64")]
+    group.bench_function("byte-cosine-neon", |b| {
+        let mut i = 0;
+        b.iter(|| unsafe {
+            i = (i + 1) % COUNT;
+            neon_cosine_similarity_bytes(&random_vectors_1[i], &random_vectors_2[i])
         });
     });
 
@@ -96,6 +133,7 @@ fn byte_metrics_bench(c: &mut Criterion) {
         });
     });
 
+    #[cfg(target_arch = "x86_64")]
     group.bench_function("byte-euclid-avx", |b| {
         let mut i = 0;
         b.iter(|| unsafe {
@@ -104,11 +142,21 @@ fn byte_metrics_bench(c: &mut Criterion) {
         });
     });
 
+    #[cfg(target_arch = "x86_64")]
     group.bench_function("byte-euclid-sse", |b| {
         let mut i = 0;
         b.iter(|| unsafe {
             i = (i + 1) % COUNT;
             sse_euclid_similarity_bytes(&random_vectors_1[i], &random_vectors_2[i])
+        });
+    });
+
+    #[cfg(target_arch = "aarch64")]
+    group.bench_function("byte-euclid-neon", |b| {
+        let mut i = 0;
+        b.iter(|| unsafe {
+            i = (i + 1) % COUNT;
+            neon_euclid_similarity_bytes(&random_vectors_1[i], &random_vectors_2[i])
         });
     });
 
@@ -123,6 +171,7 @@ fn byte_metrics_bench(c: &mut Criterion) {
         });
     });
 
+    #[cfg(target_arch = "x86_64")]
     group.bench_function("byte-manhattan-avx", |b| {
         let mut i = 0;
         b.iter(|| unsafe {
@@ -131,11 +180,21 @@ fn byte_metrics_bench(c: &mut Criterion) {
         });
     });
 
+    #[cfg(target_arch = "x86_64")]
     group.bench_function("byte-manhattan-sse", |b| {
         let mut i = 0;
         b.iter(|| unsafe {
             i = (i + 1) % COUNT;
             sse_manhattan_similarity_bytes(&random_vectors_1[i], &random_vectors_2[i])
+        });
+    });
+
+    #[cfg(target_arch = "aarch64")]
+    group.bench_function("byte-manhattan-neon", |b| {
+        let mut i = 0;
+        b.iter(|| unsafe {
+            i = (i + 1) % COUNT;
+            neon_manhattan_similarity_bytes(&random_vectors_1[i], &random_vectors_2[i])
         });
     });
 }
