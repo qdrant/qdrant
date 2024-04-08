@@ -424,11 +424,14 @@ ACTION_ACCESS = {
         True, True, True,
         "GET /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}"  
     ),
-    "list_snapshots": EndpointAccess(
+    "list_full_snapshots": EndpointAccess(
         True, False, True, "GET /snapshots", coll_r=False
     ),
-    "create_snapshot": EndpointAccess(
-        False, False, True, "POST /snapshots"
+    "create_full_snapshot": EndpointAccess(
+        False, False, True, "POST /snapshots","qdrant.Snapshots/CreateFull"
+    ),
+    "delete_full_snapshot": EndpointAccess(
+        False, False, True, "DELETE /snapshots/{snapshot_name}", "qdrant.Snapshots/DeleteFull"
     )
 }
 
@@ -573,9 +576,9 @@ GRPC_TO_REST_MAPPING = {
     "/qdrant.Snapshots/Create": "POST /collections/{collection_name}/snapshots",
     "/qdrant.Snapshots/List": "GET /collections/{collection_name}/snapshots",
     "/qdrant.Snapshots/Delete": "DELETE /collections/{collection_name}/snapshots/{snapshot_name}",
-    # "/qdrant.Snapshots/CreateFull": "POST /snapshots",
-    # "/qdrant.Snapshots/ListFull": "GET /snapshots",
-    # "/qdrant.Snapshots/DeleteFull": "DELETE /snapshots/{snapshot_name}",
+    "/qdrant.Snapshots/CreateFull": "POST /snapshots",
+    "/qdrant.Snapshots/ListFull": "GET /snapshots",
+    "/qdrant.Snapshots/DeleteFull": "DELETE /snapshots/{snapshot_name}",
     # "/qdrant.Qdrant/HealthCheck": "GET /healthz",
     # "/grpc.health.v1.Health/Check": "GET /healthz",
 }
@@ -1327,10 +1330,33 @@ def test_download_shard_snapshot(shard_snapshot_name: str):
     )
     
 
-def test_list_snapshots():
-    check_access("list_snapshots")
+def test_list_full_snapshots():
+    check_access("list_full_snapshots")
     
     
-def test_create_snapshot():
-    check_access("create_snapshot")
+def test_create_full_snapshot():
+    check_access("create_full_snapshot")
     
+def test_delete_full_snapshot():
+    snapshot_names = []
+    for _ in range(8):
+        res = requests.post(
+            f"{REST_URI}/snapshots?wait=true",
+            headers=API_KEY_HEADERS,
+        )
+        res.raise_for_status()
+        filename = res.json()["result"]["name"]
+        snapshot_names.append(filename)
+        # names are only different if they are 1 second apart
+        time.sleep(1)
+
+    snapshot_names_iter = iter(snapshot_names)
+
+    def grpc_req():
+        return {"snapshot_name": next(snapshot_names_iter)}
+
+    check_access(
+        "delete_full_snapshot",
+        path_params={"snapshot_name": lambda : next(snapshot_names_iter)},
+        grpc_request=grpc_req,
+    )
