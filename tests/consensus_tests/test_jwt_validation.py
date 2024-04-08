@@ -432,7 +432,10 @@ ACTION_ACCESS = {
     ),
     "delete_full_snapshot": EndpointAccess(
         False, False, True, "DELETE /snapshots/{snapshot_name}", "qdrant.Snapshots/DeleteFull"
-    )
+    ),
+    "download_full_snapshot": EndpointAccess(
+        True, False, True, "GET /snapshots/{snapshot_name}", coll_r=False
+    ),
 }
 
 REST_TO_ACTION_MAPPING = {
@@ -524,8 +527,8 @@ REST_TO_ACTION_MAPPING = {
     # # Snapshots
     "GET /snapshots": [False, False, True, None],
     "POST /snapshots": [False, False, True],
-    # "DELETE /snapshots/{snapshot_name}": [False, False, True],
-    # "GET /snapshots/{snapshot_name}": [False, False, True],
+    "DELETE /snapshots/{snapshot_name}": [False, False, True],
+    "GET /snapshots/{snapshot_name}": [False, False, True],
     # # Service
     # "GET /": [True, True, True, None],
     # "GET /readyz": [True, True, True, None],
@@ -579,7 +582,7 @@ GRPC_TO_REST_MAPPING = {
     "/qdrant.Snapshots/CreateFull": "POST /snapshots",
     "/qdrant.Snapshots/ListFull": "GET /snapshots",
     "/qdrant.Snapshots/DeleteFull": "DELETE /snapshots/{snapshot_name}",
-    # "/qdrant.Qdrant/HealthCheck": "GET /healthz",
+    "/qdrant.Qdrant/HealthCheck": "GET /healthz",
     # "/grpc.health.v1.Health/Check": "GET /healthz",
 }
 
@@ -1360,3 +1363,17 @@ def test_delete_full_snapshot():
         path_params={"snapshot_name": lambda : next(snapshot_names_iter)},
         grpc_request=grpc_req,
     )
+    
+def test_download_full_snapshot():
+    res = requests.post(
+        f"{REST_URI}/snapshots?wait=true",
+        headers=API_KEY_HEADERS,
+    )
+    res.raise_for_status()
+    name = res.json()["result"]["name"]
+    
+    check_access(
+        "download_full_snapshot",
+        path_params={"snapshot_name": name},
+    )
+
