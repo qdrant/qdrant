@@ -395,6 +395,12 @@ ACTION_ACCESS = {
         True,
         "PUT /collections/{collection_name}/snapshots/recover",
     ),
+    "upload_shard_snapshot": EndpointAccess(
+        False,
+        False,
+        True,
+        "POST /collections/{collection_name}/shards/{shard_id}/snapshots/upload",
+    ),
 }
 
 REST_TO_ACTION_MAPPING = {
@@ -434,11 +440,11 @@ REST_TO_ACTION_MAPPING = {
         delete_collection_snapshot
     ],  #
     "GET /collections/{collection_name}/snapshots/{snapshot_name}": [True, True, True, None],  #
-    # "POST /collections/{collection_name}/shards/{shard_id}/snapshots/upload": [
-    #     False,
-    #     False,
-    #     True,
-    # ],  #
+    "POST /collections/{collection_name}/shards/{shard_id}/snapshots/upload": [
+        False,
+        False,
+        True,
+    ],  #
     # "PUT /collections/{collection_name}/shards/{shard_id}/snapshots/recover": [
     #     False,
     #     False,
@@ -1177,44 +1183,37 @@ def test_download_collection_snapshot():
         "download_collection_snapshot",
         path_params={"collection_name": COLL_NAME, "snapshot_name": filename},
     )
-    
-    
+
+
 @pytest.fixture(scope="module")
-def collection_snapshot_name():
+def collection_snapshot():
     res = requests.post(
         f"{REST_URI}/collections/{COLL_NAME}/snapshots?wait=true",
         headers=API_KEY_HEADERS,
     )
     res.raise_for_status()
     filename = res.json()["result"]["name"]
-    return filename
-
-
-def test_upload_collection_snapshot(collection_snapshot_name: str):
+    
     res = requests.get(
-        f"{REST_URI}/collections/{COLL_NAME}/snapshots/{collection_snapshot_name}", 
+        f"{REST_URI}/collections/{COLL_NAME}/snapshots/{filename}",
         headers=API_KEY_HEADERS,
     )
     res.raise_for_status()
-    file = res.content
     
+    return res.content
+
+
+def test_upload_collection_snapshot(collection_snapshot: bytes):
     check_access(
         "upload_collection_snapshot",
-        rest_req_kwargs={'files': {"snapshot": file}},
+        rest_req_kwargs={'files': {"snapshot": collection_snapshot}},
         path_params={"collection_name": COLL_NAME},
     )
 
-def test_recover_collection_snapshot(collection_snapshot_name: str):
-    res = requests.get(
-        f"{REST_URI}/collections/{COLL_NAME}/snapshots/{collection_snapshot_name}?priority=snapshot", 
-        headers=API_KEY_HEADERS,
-    )
-    res.raise_for_status()
-    file = res.content
-    
+def test_recover_collection_snapshot(collection_snapshot: bytes):
     # Save file to temp file
     temp_file = tempfile.NamedTemporaryFile(suffix=".snapshot")
-    temp_file.write(file)
+    temp_file.write(collection_snapshot)
     temp_file.seek(0)
     file = temp_file.name
 
@@ -1222,4 +1221,29 @@ def test_recover_collection_snapshot(collection_snapshot_name: str):
         "recover_collection_snapshot",
         rest_request={"location": f"file://{file}"},
         path_params={"collection_name": COLL_NAME},
+    )
+
+
+@pytest.fixture(scope="module")
+def shard_snapshot():
+    res = requests.post(
+        f"{REST_URI}/collections/{COLL_NAME}/shards/{SHARD_ID}/snapshots?wait=true",
+        headers=API_KEY_HEADERS,
+    )
+    res.raise_for_status()
+    filename = res.json()["result"]["name"]
+
+    res = requests.get(
+        f"{REST_URI}/collections/{COLL_NAME}/shards/{SHARD_ID}/snapshots/{filename}",
+        headers=API_KEY_HEADERS,
+    )
+    res.raise_for_status()
+    return res.content
+
+
+def test_upload_shard_snapshot(shard_snapshot: bytes):
+    check_access(
+        "upload_shard_snapshot",
+        rest_req_kwargs={'files': {"snapshot": shard_snapshot}},
+        path_params={"collection_name": COLL_NAME, "shard_id": SHARD_ID},
     )
