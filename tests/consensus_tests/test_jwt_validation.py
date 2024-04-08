@@ -438,7 +438,10 @@ ACTION_ACCESS = {
     ),
     "get_cluster": EndpointAccess(
         True, False, True, "GET /cluster", coll_r=False
-    )
+    ),
+    "recover_raft_state": EndpointAccess(
+        False, False, True, "POST /cluster/recover"
+    ),
 }
 
 REST_TO_ACTION_MAPPING = {
@@ -525,7 +528,7 @@ REST_TO_ACTION_MAPPING = {
     # "POST /collections/{collection_name}/points/count": [True, True, True],
     # # Cluster
     "GET /cluster": [True, True, True, None],
-    # "POST /cluster/recover": [False, False, True],
+    "POST /cluster/recover": [False, False, True],
     # "DELETE /cluster/peer/{peer_id}": [False, False, True],
     # # Snapshots
     "GET /snapshots": [False, False, True, None],
@@ -1383,3 +1386,8 @@ def test_download_full_snapshot():
 
 def test_get_cluster():
     check_access("get_cluster")
+    
+
+def test_recover_raft_state():
+    check_access("recover_raft_state")
+    
