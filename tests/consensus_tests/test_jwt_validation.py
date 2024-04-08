@@ -401,6 +401,12 @@ ACTION_ACCESS = {
         True,
         "POST /collections/{collection_name}/shards/{shard_id}/snapshots/upload",
     ),
+    "recover_shard_snapshot": EndpointAccess(
+        False,
+        False,
+        True,
+        "PUT /collections/{collection_name}/shards/{shard_id}/snapshots/recover",
+    ),
 }
 
 REST_TO_ACTION_MAPPING = {
@@ -444,12 +450,12 @@ REST_TO_ACTION_MAPPING = {
         False,
         False,
         True,
-    ],  #
-    # "PUT /collections/{collection_name}/shards/{shard_id}/snapshots/recover": [
-    #     False,
-    #     False,
-    #     True,
-    # ],  #
+    ],
+    "PUT /collections/{collection_name}/shards/{shard_id}/snapshots/recover": [
+        False,
+        False,
+        True,
+    ], 
     # "GET /collections/{collection_name}/shards/{shard_id}/snapshots": [False, True, True, None],  #
     # "POST /collections/{collection_name}/shards/{shard_id}/snapshots": [False, True, True],  #
     # "DELETE /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}": [
@@ -541,10 +547,6 @@ GRPC_TO_REST_MAPPING = {
     # "/qdrant.Points/DiscoverBatch": "POST /collections/{collection_name}/points/discover/batch",
     # "/qdrant.Points/Count": "POST /collections/{collection_name}/points/count",
     # "/qdrant.Points/UpdateBatch": "POST /collections/{collection_name}/points/batch",
-    # "/qdrant.ShardSnapshots/Create": "POST /collections/{collection_name}/shards/{shard_id}/snapshots",
-    # "/qdrant.ShardSnapshots/List": "GET /collections/{collection_name}/shards/{shard_id}/snapshots",
-    # "/qdrant.ShardSnapshots/Delete": "DELETE /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}",
-    # "/qdrant.ShardSnapshots/Recover": "PUT /collections/{collection_name}/shards/{shard_id}/snapshots/recover",
     "/qdrant.Snapshots/Create": "POST /collections/{collection_name}/snapshots",
     "/qdrant.Snapshots/List": "GET /collections/{collection_name}/snapshots",
     "/qdrant.Snapshots/Delete": "DELETE /collections/{collection_name}/snapshots/{snapshot_name}",
@@ -1225,16 +1227,19 @@ def test_recover_collection_snapshot(collection_snapshot: bytes):
 
 
 @pytest.fixture(scope="module")
-def shard_snapshot():
+def shard_snapshot_name():
     res = requests.post(
         f"{REST_URI}/collections/{COLL_NAME}/shards/{SHARD_ID}/snapshots?wait=true",
         headers=API_KEY_HEADERS,
     )
     res.raise_for_status()
-    filename = res.json()["result"]["name"]
+    return res.json()["result"]["name"]
 
+
+@pytest.fixture(scope="module")
+def shard_snapshot(shard_snapshot_name):
     res = requests.get(
-        f"{REST_URI}/collections/{COLL_NAME}/shards/{SHARD_ID}/snapshots/{filename}",
+        f"{REST_URI}/collections/{COLL_NAME}/shards/{SHARD_ID}/snapshots/{shard_snapshot_name}",
         headers=API_KEY_HEADERS,
     )
     res.raise_for_status()
@@ -1245,5 +1250,12 @@ def test_upload_shard_snapshot(shard_snapshot: bytes):
     check_access(
         "upload_shard_snapshot",
         rest_req_kwargs={'files': {"snapshot": shard_snapshot}},
+        path_params={"collection_name": COLL_NAME, "shard_id": SHARD_ID},
+    )
+
+def test_recover_shard_snapshot(shard_snapshot_name: str):
+    check_access(
+        "recover_shard_snapshot",
+        rest_request={"location": shard_snapshot_name},
         path_params={"collection_name": COLL_NAME, "shard_id": SHARD_ID},
     )
