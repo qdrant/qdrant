@@ -34,8 +34,9 @@ use crate::types::{
 };
 use crate::vector_storage::dense::appendable_mmap_dense_vector_storage::open_appendable_memmap_vector_storage;
 use crate::vector_storage::dense::memmap_dense_vector_storage::open_memmap_vector_storage;
-use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_vector_storage;
+use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+use crate::vector_storage::simple_multi_dense_vector_storage::open_simple_multi_dense_vector_storage;
 use crate::vector_storage::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
 use crate::vector_storage::VectorStorage;
 
@@ -123,14 +124,24 @@ fn create_segment(
             // In memory
             VectorStorageType::Memory => {
                 let db_column_name = get_vector_name_with_prefix(DB_VECTOR_CF, vector_name);
-                // TODO(colbert) open multivec storage
-                open_simple_vector_storage(
-                    database.clone(),
-                    &db_column_name,
-                    vector_config.size,
-                    vector_config.distance,
-                    stopped,
-                )?
+                if let Some(multi_vec_config) = &vector_config.multi_vec_config {
+                    open_simple_multi_dense_vector_storage(
+                        database.clone(),
+                        &db_column_name,
+                        vector_config.size,
+                        vector_config.distance,
+                        *multi_vec_config,
+                        stopped,
+                    )?
+                } else {
+                    open_simple_dense_vector_storage(
+                        database.clone(),
+                        &db_column_name,
+                        vector_config.size,
+                        vector_config.distance,
+                        stopped,
+                    )?
+                }
             }
             // Mmap on disk, not appendable
             VectorStorageType::Mmap => open_memmap_vector_storage(

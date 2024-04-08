@@ -227,7 +227,11 @@ pub fn default_vector(vec: DenseVector) -> NamedVectors<'static> {
 }
 
 pub fn only_default_vector(vec: &[VectorElementType]) -> NamedVectors {
-    NamedVectors::from_ref(DEFAULT_VECTOR_NAME, vec.into())
+    NamedVectors::from_ref(DEFAULT_VECTOR_NAME, VectorRef::from(vec))
+}
+
+pub fn only_default_multi_vector(vec: &[DenseVector]) -> NamedVectors {
+    NamedVectors::from_ref(DEFAULT_VECTOR_NAME, VectorRef::MultiDense(vec))
 }
 
 /// Full vector data per point separator with single and multiple vector modes
@@ -516,6 +520,12 @@ impl From<Vector> for QueryVector {
 impl From<SparseVector> for QueryVector {
     fn from(vec: SparseVector) -> Self {
         Self::Nearest(Vector::Sparse(vec))
+    }
+}
+
+impl From<MultiDenseVector> for QueryVector {
+    fn from(vec: MultiDenseVector) -> Self {
+        Self::Nearest(Vector::MultiDense(vec))
     }
 }
 
