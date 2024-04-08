@@ -237,8 +237,8 @@ impl TableOfContent {
             .collect()
     }
 
-    /// Same as `get_collection`, but does not check access rights
-    /// Intended for internal use only
+    /// Same as `get_collection`, but does not check access rights.
+    /// Intended for internal use only.
     ///
     /// **Do no make public**
     pub(self) async fn get_collection_unchecked(
