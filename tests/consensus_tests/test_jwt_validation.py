@@ -383,23 +383,22 @@ ACTION_ACCESS = {
     "recover_raft_state": EndpointAccess(False, False, True, "POST /cluster/recover"),
     "delete_peer": EndpointAccess(False, False, True, "DELETE /cluster/peer/{peer_id}"),
     ### Points ###
-    # TODO: add tests for these actions
-    # "get_point": EndpointAccess(
-    #     True, True, True, "GET /collections/{collection_name}/points/{id}"
-    # ),
-    # "get_points": EndpointAccess(
-    #     True, True, True, "POST /collections/{collection_name}/points", "qdrant.Points/Get"
-    # ),
-    # "upsert_points": EndpointAccess(
-    #     False, True, True, "PUT /collections/{collection_name}/points", "qdrant.Points/Upsert"
-    # ),
-    # "update_points_batch": EndpointAccess(
-    #     False,
-    #     True,
-    #     True,
-    #     "POST /collections/{collection_name}/points/batch",
-    #     "qdrant.Points/UpdateBatch",
-    # ),
+    "get_point": EndpointAccess(
+        True, True, True, "GET /collections/{collection_name}/points/{id}"
+    ),
+    "get_points": EndpointAccess(
+        True, True, True, "POST /collections/{collection_name}/points", "qdrant.Points/Get"
+    ),
+    "upsert_points": EndpointAccess(
+        False, True, True, "PUT /collections/{collection_name}/points", "qdrant.Points/Upsert"
+    ),
+    "update_points_batch": EndpointAccess(
+        False,
+        True,
+        True,
+        "POST /collections/{collection_name}/points/batch",
+        "qdrant.Points/UpdateBatch",
+    ),
     # "delete_points": EndpointAccess(
     #     False,
     #     True,
@@ -1366,6 +1365,32 @@ def test_delete_peer():
     check_access("delete_peer", path_params={"peer_id": "2000"})
 
 
+def test_get_point():
+    check_access(
+        "get_point",
+        path_params={"collection_name": COLL_NAME, "id": 1},
+    )
+    
+def test_get_points():
+    check_access(
+        "get_points",
+        rest_request={"ids": [1]},
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={"collection_name": COLL_NAME, "ids": [{"num": 1}]},
+    )
+
+def test_upsert_points():
+    check_access(
+        "upsert_points",
+        rest_request={"points": [{"id": 1, "vector": [1,2,3,4]}], "shard_key": SHARD_KEY},
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={
+            "collection_name": COLL_NAME, 
+            "points": [{"id": { "num": 1 }, "vectors": { "vector": {"data": [1,2,3,4] } } }], 
+            "shard_key_selector": {"shard_keys": [{"keyword": SHARD_KEY}]}
+        },
+    )
+    
 def test_scroll_points():
     check_access(
         "scroll_points",
