@@ -415,6 +415,10 @@ ACTION_ACCESS = {
     "list_shard_snapshots": EndpointAccess(
         True, True, True, "GET /collections/{collection_name}/shards/{shard_id}/snapshots"
     ),
+    "delete_shard_snapshot": EndpointAccess(
+        False, True, True,
+        "DELETE /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}"
+    ),
 }
 
 REST_TO_ACTION_MAPPING = {
@@ -466,11 +470,11 @@ REST_TO_ACTION_MAPPING = {
     ], 
     "POST /collections/{collection_name}/shards/{shard_id}/snapshots": [False, True, True],  #
     "GET /collections/{collection_name}/shards/{shard_id}/snapshots": [False, True, True, None],  #
-    # "DELETE /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}": [
-    #     False,
-    #     True,
-    #     True,
-    # ],  #
+    "DELETE /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}": [
+        False,
+        True,
+        True,
+    ],  #
     # "GET /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}": [
     #     False,
     #     True,
@@ -1280,3 +1284,28 @@ def test_create_shard_snapshot():
         "create_shard_snapshot",
         path_params={"collection_name": COLL_NAME, "shard_id": SHARD_ID},
     )
+    
+def test_delete_shard_snapshot():
+    shard_snapshot_names = []
+    for _ in range(8):
+        res = requests.post(
+            f"{REST_URI}/collections/{COLL_NAME}/shards/{SHARD_ID}/snapshots?wait=true",
+            headers=API_KEY_HEADERS,
+        )
+        res.raise_for_status()
+        filename = res.json()["result"]["name"]
+        shard_snapshot_names.append(filename)
+        # names are only different if they are 1 second apart
+        time.sleep(1)
+
+    snapshot_names_iter = iter(shard_snapshot_names)
+
+    def grpc_req():
+        return {"collection_name": COLL_NAME, "shard_id": SHARD_ID, "snapshot_name": next(snapshot_names_iter)}
+
+    check_access(
+        "delete_shard_snapshot",
+        path_params={"collection_name": COLL_NAME, "shard_id": SHARD_ID, "snapshot_name": lambda : next(snapshot_names_iter)},
+        grpc_request=grpc_req,
+    )
+    
