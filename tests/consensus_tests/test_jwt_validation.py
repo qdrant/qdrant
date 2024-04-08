@@ -2,6 +2,7 @@ import json
 import pathlib
 import random
 import string
+import tempfile
 import time
 from inspect import isfunction
 from typing import Callable, List, Optional, Tuple, Union
@@ -388,6 +389,12 @@ ACTION_ACCESS = {
     "download_collection_snapshot": EndpointAccess(
         True, True, True, "GET /collections/{collection_name}/snapshots/{snapshot_name}"
     ),
+    "recover_collection_snapshot": EndpointAccess(
+        False,
+        False,
+        True,
+        "PUT /collections/{collection_name}/snapshots/recover",
+    ),
 }
 
 REST_TO_ACTION_MAPPING = {
@@ -420,18 +427,18 @@ REST_TO_ACTION_MAPPING = {
     "GET /collections/{collection_name}/aliases": [list_collection_aliases],
     "GET /aliases": [list_aliases],
     "POST /collections/{collection_name}/snapshots/upload": [False, False, True],
-    # "PUT /collections/{collection_name}/snapshots/recover": [False, False, True],
+    "PUT /collections/{collection_name}/snapshots/recover": [False, False, True],
     "GET /collections/{collection_name}/snapshots": [list_collection_snapshots],
     "POST /collections/{collection_name}/snapshots": [create_collection_snapshot],
     "DELETE /collections/{collection_name}/snapshots/{snapshot_name}": [
         delete_collection_snapshot
     ],  #
     "GET /collections/{collection_name}/snapshots/{snapshot_name}": [True, True, True, None],  #
-    "POST /collections/{collection_name}/shards/{shard_id}/snapshots/upload": [
-        False,
-        False,
-        True,
-    ],  #
+    # "POST /collections/{collection_name}/shards/{shard_id}/snapshots/upload": [
+    #     False,
+    #     False,
+    #     True,
+    # ],  #
     # "PUT /collections/{collection_name}/shards/{shard_id}/snapshots/recover": [
     #     False,
     #     False,
@@ -772,7 +779,7 @@ def check_rest_access(
     path = path.format(**concrete_path_params)
     
     res = requests.request(
-        method, f"{REST_URI}{path}", headers={"authorization": f"Bearer {token}" }, data=body, **request_kwargs
+        method, f"{REST_URI}{path}", headers={"authorization": f"Bearer {token}" }, json=body, **request_kwargs
     )
 
     if should_succeed:
@@ -1157,17 +1164,20 @@ def test_delete_collection_snapshot():
         grpc_request=grpc_req,
     )
 
-
-def test_upload_collection_snapshot():
+@pytest.fixture(scope="module")
+def snapshot_name():
     res = requests.post(
         f"{REST_URI}/collections/{COLL_NAME}/snapshots?wait=true",
         headers=API_KEY_HEADERS,
     )
     res.raise_for_status()
     filename = res.json()["result"]["name"]
+    return filename
 
+
+def test_upload_collection_snapshot(snapshot_name: str):
     res = requests.get(
-        f"{REST_URI}/collections/{COLL_NAME}/snapshots/{filename}?priority=snapshot", 
+        f"{REST_URI}/collections/{COLL_NAME}/snapshots/{snapshot_name}", 
         headers=API_KEY_HEADERS,
     )
     res.raise_for_status()
@@ -1191,4 +1201,24 @@ def test_download_collection_snapshot():
     check_access(
         "download_collection_snapshot",
         path_params={"collection_name": COLL_NAME, "snapshot_name": filename},
+    )
+
+def test_recover_collection_snapshot(snapshot_name: str):
+    res = requests.get(
+        f"{REST_URI}/collections/{COLL_NAME}/snapshots/{snapshot_name}?priority=snapshot", 
+        headers=API_KEY_HEADERS,
+    )
+    res.raise_for_status()
+    file = res.content
+    
+    # Save file to temp file
+    temp_file = tempfile.NamedTemporaryFile(suffix=".snapshot")
+    temp_file.write(file)
+    temp_file.seek(0)
+    file = temp_file.name
+
+    check_access(
+        "recover_collection_snapshot",
+        rest_request={"location": f"file://{file}"},
+        path_params={"collection_name": COLL_NAME},
     )
