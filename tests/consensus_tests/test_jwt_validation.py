@@ -2,6 +2,7 @@ import json
 import pathlib
 import random
 import string
+from tabnanny import check
 import tempfile
 import time
 from inspect import isfunction
@@ -407,6 +408,10 @@ ACTION_ACCESS = {
         True,
         "PUT /collections/{collection_name}/shards/{shard_id}/snapshots/recover",
     ),
+    "list_shard_snapshots": EndpointAccess(
+        True, True, True, "GET /collections/{collection_name}/shards/{shard_id}/snapshots"
+    ),
+    
 }
 
 REST_TO_ACTION_MAPPING = {
@@ -456,8 +461,8 @@ REST_TO_ACTION_MAPPING = {
         False,
         True,
     ], 
-    # "GET /collections/{collection_name}/shards/{shard_id}/snapshots": [False, True, True, None],  #
     # "POST /collections/{collection_name}/shards/{shard_id}/snapshots": [False, True, True],  #
+    "GET /collections/{collection_name}/shards/{shard_id}/snapshots": [False, True, True, None],  #
     # "DELETE /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}": [
     #     False,
     #     True,
@@ -1257,5 +1262,11 @@ def test_recover_shard_snapshot(shard_snapshot_name: str):
     check_access(
         "recover_shard_snapshot",
         rest_request={"location": shard_snapshot_name},
+        path_params={"collection_name": COLL_NAME, "shard_id": SHARD_ID},
+    )
+
+def test_list_shard_snapshots():
+    check_access(
+        "list_shard_snapshots",
         path_params={"collection_name": COLL_NAME, "shard_id": SHARD_ID},
     )
