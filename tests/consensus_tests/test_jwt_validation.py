@@ -419,6 +419,10 @@ ACTION_ACCESS = {
         False, True, True,
         "DELETE /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}"
     ),
+    "download_shard_snapshot": EndpointAccess(
+        True, True, True,
+        "GET /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}"  
+    ),
 }
 
 REST_TO_ACTION_MAPPING = {
@@ -475,12 +479,12 @@ REST_TO_ACTION_MAPPING = {
         True,
         True,
     ],  #
-    # "GET /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}": [
-    #     False,
-    #     True,
-    #     True,
-    #     None,
-    # ],  #
+    "GET /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}": [
+        False,
+        True,
+        True,
+        None,
+    ],  #
     # # Points
     # "GET /collections/{collection_name}/points/{id}": [True, True, True, None],
     # "POST /collections/{collection_name}/points": [True, True, True],
@@ -1307,5 +1311,11 @@ def test_delete_shard_snapshot():
         "delete_shard_snapshot",
         path_params={"collection_name": COLL_NAME, "shard_id": SHARD_ID, "snapshot_name": lambda : next(snapshot_names_iter)},
         grpc_request=grpc_req,
+    )
+    
+def test_download_shard_snapshot(shard_snapshot_name: str):
+    check_access(
+        "download_shard_snapshot",
+        path_params={"collection_name": COLL_NAME, "shard_id": SHARD_ID, "snapshot_name": shard_snapshot_name},
     )
     
