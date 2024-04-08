@@ -382,12 +382,12 @@ ACTION_ACCESS = {
         "DELETE /collections/{collection_name}/snapshots/{snapshot_name}",
         "qdrant.Snapshots/Delete",
     ),
-    "upload_collection_snapshot": EndpointAccess(
-        False, False, True, "POST /collections/{collection_name}/snapshots/upload"
-    ),
     # TODO: confirm access rights
     "download_collection_snapshot": EndpointAccess(
         True, True, True, "GET /collections/{collection_name}/snapshots/{snapshot_name}"
+    ),
+    "upload_collection_snapshot": EndpointAccess(
+        False, False, True, "POST /collections/{collection_name}/snapshots/upload"
     ),
     "recover_collection_snapshot": EndpointAccess(
         False,
@@ -1164,31 +1164,6 @@ def test_delete_collection_snapshot():
         grpc_request=grpc_req,
     )
 
-@pytest.fixture(scope="module")
-def snapshot_name():
-    res = requests.post(
-        f"{REST_URI}/collections/{COLL_NAME}/snapshots?wait=true",
-        headers=API_KEY_HEADERS,
-    )
-    res.raise_for_status()
-    filename = res.json()["result"]["name"]
-    return filename
-
-
-def test_upload_collection_snapshot(snapshot_name: str):
-    res = requests.get(
-        f"{REST_URI}/collections/{COLL_NAME}/snapshots/{snapshot_name}", 
-        headers=API_KEY_HEADERS,
-    )
-    res.raise_for_status()
-    file = res.content
-    
-    check_access(
-        "upload_collection_snapshot",
-        rest_req_kwargs={'files': {"snapshot": file}},
-        path_params={"collection_name": COLL_NAME},
-    )
-
 
 def test_download_collection_snapshot():
     res = requests.post(
@@ -1202,10 +1177,36 @@ def test_download_collection_snapshot():
         "download_collection_snapshot",
         path_params={"collection_name": COLL_NAME, "snapshot_name": filename},
     )
+    
+    
+@pytest.fixture(scope="module")
+def collection_snapshot_name():
+    res = requests.post(
+        f"{REST_URI}/collections/{COLL_NAME}/snapshots?wait=true",
+        headers=API_KEY_HEADERS,
+    )
+    res.raise_for_status()
+    filename = res.json()["result"]["name"]
+    return filename
 
-def test_recover_collection_snapshot(snapshot_name: str):
+
+def test_upload_collection_snapshot(collection_snapshot_name: str):
     res = requests.get(
-        f"{REST_URI}/collections/{COLL_NAME}/snapshots/{snapshot_name}?priority=snapshot", 
+        f"{REST_URI}/collections/{COLL_NAME}/snapshots/{collection_snapshot_name}", 
+        headers=API_KEY_HEADERS,
+    )
+    res.raise_for_status()
+    file = res.content
+    
+    check_access(
+        "upload_collection_snapshot",
+        rest_req_kwargs={'files': {"snapshot": file}},
+        path_params={"collection_name": COLL_NAME},
+    )
+
+def test_recover_collection_snapshot(collection_snapshot_name: str):
+    res = requests.get(
+        f"{REST_URI}/collections/{COLL_NAME}/snapshots/{collection_snapshot_name}?priority=snapshot", 
         headers=API_KEY_HEADERS,
     )
     res.raise_for_status()
