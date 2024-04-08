@@ -76,7 +76,7 @@ mod tests {
         let claims = Claims {
             exp: Some(exp),
             access: Access::Collection(CollectionAccessList(vec![CollectionAccess {
-                collections: vec!["collection".to_string()],
+                collection: "collection".to_string(),
                 access: CollectionAccessMode::ReadWrite,
                 payload: Some(PayloadConstraint(
                     vec![
