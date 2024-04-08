@@ -55,7 +55,7 @@ SHARD_KEY = "existing_shard_key"
 
 _cached_grpc_clients = None
 
-
+SHARD_KEY_SELECTOR = {"shard_key_selector": {"shard_keys": [{"keyword": SHARD_KEY}]}}
 class Access:
     def __init__(self, r, coll_rw, m=True, coll_r=None):
         self.read = r
@@ -399,13 +399,13 @@ ACTION_ACCESS = {
         "POST /collections/{collection_name}/points/batch",
         "qdrant.Points/UpdateBatch",
     ),
-    # "delete_points": EndpointAccess(
-    #     False,
-    #     True,
-    #     True,
-    #     "POST /collections/{collection_name}/points/delete",
-    #     "qdrant.Points/Delete",
-    # ),
+    "delete_points": EndpointAccess(
+        False,
+        True,
+        True,
+        "POST /collections/{collection_name}/points/delete",
+        "qdrant.Points/Delete",
+    ),
     # "update_vectors": EndpointAccess(
     #     False,
     #     True,
@@ -537,7 +537,7 @@ def test_all_actions_have_tests():
         ), f"An action is not tested: `{test_name}` was not found in this file"
 
 
-@pytest.mark.skip("Not all endpoints are covered yet") # TODO: remove this skip
+@pytest.mark.skip("Not all endpoints are covered yet")  # TODO: remove this skip
 def test_all_rest_endpoints_are_covered():
     # Load the JSON content from the openapi.json file
     with open("./docs/redoc/master/openapi.json", "r") as file:
@@ -570,7 +570,7 @@ class MetadataInterceptor(ClientInterceptor):
         return method(request_or_iterator, new_details)
 
 
-@pytest.mark.skip("Not all endpoints are covered yet") # TODO: remove this skip
+@pytest.mark.skip("Not all endpoints are covered yet")  # TODO: remove this skip
 def test_all_grpc_endpoints_are_covered():
     # read grpc services from the reflection server
     client: grpc_requests.Client = grpc_requests.Client(
@@ -643,9 +643,7 @@ def uris(tmp_path_factory: pytest.TempPathFactory):
     fixtures.drop_collection(rest_uri, COLL_NAME, headers=API_KEY_HEADERS)
 
 
-def create_validation_collection(
-    collection: str, timeout=10
-):
+def create_validation_collection(collection: str, timeout=10):
     res = requests.put(
         f"{REST_URI}/collections/{collection}?timeout={timeout}",
         json={},
@@ -1370,7 +1368,8 @@ def test_get_point():
         "get_point",
         path_params={"collection_name": COLL_NAME, "id": 1},
     )
-    
+
+
 def test_get_points():
     check_access(
         "get_points",
@@ -1379,18 +1378,73 @@ def test_get_points():
         grpc_request={"collection_name": COLL_NAME, "ids": [{"num": 1}]},
     )
 
+
 def test_upsert_points():
     check_access(
         "upsert_points",
-        rest_request={"points": [{"id": 1, "vector": [1,2,3,4]}], "shard_key": SHARD_KEY},
+        rest_request={"points": [{"id": 1, "vector": [1, 2, 3, 4]}], "shard_key": SHARD_KEY},
         path_params={"collection_name": COLL_NAME},
         grpc_request={
-            "collection_name": COLL_NAME, 
-            "points": [{"id": { "num": 1 }, "vectors": { "vector": {"data": [1,2,3,4] } } }], 
-            "shard_key_selector": {"shard_keys": [{"keyword": SHARD_KEY}]}
+            "collection_name": COLL_NAME,
+            "points": [{"id": {"num": 1}, "vectors": {"vector": {"data": [1, 2, 3, 4]}}}],
+            "shard_key_selector": {"shard_keys": [{"keyword": SHARD_KEY}]},
         },
     )
+
+
+def test_update_points_batch():
+    rest_operations = [
+        {"upsert": {"shard_key": SHARD_KEY, "points": [{"id": 1, "vector": [1, 2, 3, 4]}]}},
+        {"delete": {"shard_key": SHARD_KEY, "points": [2]}},
+        {"set_payload": {"shard_key": SHARD_KEY, "points": [1], "payload": {"key": "value"}}},
+        {
+            "overwrite_payload": {
+                "shard_key": SHARD_KEY,
+                "points": [1],
+                "payload": {"key": "value"},
+            }
+        },
+        {"delete_payload": {"shard_key": SHARD_KEY, "points": [1], "keys": ["key"]}},
+        {"clear_payload": {"shard_key": SHARD_KEY, "points": [1]}},
+        {
+            "update_vectors": {
+                "shard_key": SHARD_KEY,
+                "points": [{"id": 1, "vector": [1, 2, 3, 4]}],
+            }
+        },
+        {"delete_vectors": {"shard_key": SHARD_KEY, "points": [1], "vector": [""]}},
+    ]
     
+    grpc_operations = [
+        {
+            "upsert": { 
+                **SHARD_KEY_SELECTOR, 
+                "points": [{"id": {"num": 1}, "vectors": {"vector": {"data": [1, 2, 3, 4]}}, "payload": {}}]
+            }
+        }
+        # TODO: add the rest of operations
+    ]
+    
+    check_access(
+        "update_points_batch",
+        rest_request={"operations": rest_operations},
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={
+            "collection_name": COLL_NAME,
+            "operations": grpc_operations,
+        },
+    )
+
+
+def test_delete_points():
+    check_access(
+        "delete_points",
+        rest_request={"points": [1], "shard_key": SHARD_KEY},
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={"collection_name": COLL_NAME, "points": {"points": {"ids": [{"num": 1}]}}, **SHARD_KEY_SELECTOR},
+    )
+
+
 def test_scroll_points():
     check_access(
         "scroll_points",
@@ -1403,9 +1457,9 @@ def test_scroll_points():
 def test_search_points():
     check_access(
         "search_points",
-        rest_request={"vector": [1,2,3,4], "limit": 10},
+        rest_request={"vector": [1, 2, 3, 4], "limit": 10},
         path_params={"collection_name": COLL_NAME},
-        grpc_request={"collection_name": COLL_NAME, "vector": [1,2,3,4], "limit": 10},
+        grpc_request={"collection_name": COLL_NAME, "vector": [1, 2, 3, 4], "limit": 10},
     )
 
 
@@ -1427,8 +1481,8 @@ def test_search_point_groups():
     check_access(
         "search_point_groups",
         rest_request=query,
-        path_params={ "collection_name": COLL_NAME },
-        grpc_request={ "collection_name": COLL_NAME, **query },
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={"collection_name": COLL_NAME, **query},
     )
 
 
@@ -1436,8 +1490,8 @@ def test_recommend_points():
     check_access(
         "recommend_points",
         rest_request={"positive": [1], "limit": 10},
-        path_params={ "collection_name": COLL_NAME },
-        grpc_request={ "collection_name": COLL_NAME, "positive": [{"num": 1}], "limit": 10 },
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={"collection_name": COLL_NAME, "positive": [{"num": 1}], "limit": 10},
     )
 
 
@@ -1451,7 +1505,8 @@ def test_recommend_points_batch():
             "recommend_points": [
                 {
                     "collection_name": COLL_NAME,
-                    "positive": [{"num": 1}], "limit": 10,
+                    "positive": [{"num": 1}],
+                    "limit": 10,
                 }
             ],
         },
@@ -1462,8 +1517,14 @@ def test_recommend_point_groups():
     check_access(
         "recommend_point_groups",
         rest_request={"positive": [1], "limit": 10, "group_by": FIELD_NAME, "group_size": 3},
-        path_params={ "collection_name": COLL_NAME },
-        grpc_request={ "collection_name": COLL_NAME, "positive": [{"num": 1}], "limit": 10, "group_by": FIELD_NAME, "group_size": 3 },
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={
+            "collection_name": COLL_NAME,
+            "positive": [{"num": 1}],
+            "limit": 10,
+            "group_by": FIELD_NAME,
+            "group_size": 3,
+        },
     )
 
 
@@ -1471,8 +1532,12 @@ def test_discover_points():
     check_access(
         "discover_points",
         rest_request={"target": 1, "limit": 10},
-        path_params={ "collection_name": COLL_NAME },
-        grpc_request={ "collection_name": COLL_NAME, "target": {"single": {"id": {"num": 1}}}, "limit": 10 },
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={
+            "collection_name": COLL_NAME,
+            "target": {"single": {"id": {"num": 1}}},
+            "limit": 10,
+        },
     )
 
 
@@ -1483,11 +1548,13 @@ def test_discover_points_batch():
         path_params={"collection_name": COLL_NAME},
         grpc_request={
             "collection_name": COLL_NAME,
-            "discover_points": [{
-                "collection_name": COLL_NAME,
-                "target": {"single": {"id": {"num": 1}}},
-                "limit": 10,
-            }]
+            "discover_points": [
+                {
+                    "collection_name": COLL_NAME,
+                    "target": {"single": {"id": {"num": 1}}},
+                    "limit": 10,
+                }
+            ],
         },
     )
 
