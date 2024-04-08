@@ -436,6 +436,9 @@ ACTION_ACCESS = {
     "download_full_snapshot": EndpointAccess(
         True, False, True, "GET /snapshots/{snapshot_name}", coll_r=False
     ),
+    "get_cluster": EndpointAccess(
+        True, False, True, "GET /cluster", coll_r=False
+    )
 }
 
 REST_TO_ACTION_MAPPING = {
@@ -521,7 +524,7 @@ REST_TO_ACTION_MAPPING = {
     # "POST /collections/{collection_name}/points/discover/batch": [True, True, True],
     # "POST /collections/{collection_name}/points/count": [True, True, True],
     # # Cluster
-    # "GET /cluster": [True, True, True, None],
+    "GET /cluster": [True, True, True, None],
     # "POST /cluster/recover": [False, False, True],
     # "DELETE /cluster/peer/{peer_id}": [False, False, True],
     # # Snapshots
@@ -582,7 +585,7 @@ GRPC_TO_REST_MAPPING = {
     "/qdrant.Snapshots/CreateFull": "POST /snapshots",
     "/qdrant.Snapshots/ListFull": "GET /snapshots",
     "/qdrant.Snapshots/DeleteFull": "DELETE /snapshots/{snapshot_name}",
-    "/qdrant.Qdrant/HealthCheck": "GET /healthz",
+    # "/qdrant.Qdrant/HealthCheck": "GET /healthz",
     # "/grpc.health.v1.Health/Check": "GET /healthz",
 }
 
@@ -1377,3 +1380,6 @@ def test_download_full_snapshot():
         path_params={"snapshot_name": name},
     )
 
+
+def test_get_cluster():
+    check_access("get_cluster")
