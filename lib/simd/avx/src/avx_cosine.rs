@@ -1,6 +1,6 @@
 use std::arch::x86_64::*;
 
-#[target_feature(enable = "avx")]
+#[target_feature(enable = "avx2")]
 #[target_feature(enable = "fma")]
 pub unsafe fn avx_cosine_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
     use crate::hsum256_ps_avx;
