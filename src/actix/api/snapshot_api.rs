@@ -28,7 +28,7 @@ use storage::rbac::{Access, AccessRequrements};
 use uuid::Uuid;
 use validator::Validate;
 
-use super::CollectionPath;
+use super::{CollectionPath, StrictCollectionPath};
 use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{self, process_response, HttpError};
 use crate::common;
@@ -161,7 +161,7 @@ async fn create_snapshot(
 async fn upload_snapshot(
     dispatcher: web::Data<Dispatcher>,
     http_client: web::Data<HttpClient>,
-    collection: valid::Path<CollectionPath>,
+    collection: valid::Path<StrictCollectionPath>,
     MultipartForm(form): MultipartForm<SnapshottingForm>,
     params: valid::Query<SnapshotUploadingParam>,
     ActixAccess(access): ActixAccess,
