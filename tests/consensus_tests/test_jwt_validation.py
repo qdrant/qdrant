@@ -62,10 +62,11 @@ _cached_clients = None
 
 
 class Access:
-    def __init__(self, r, rw, m):
+    def __init__(self, r, coll_rw, m=True, coll_r=None):
         self.read = r
-        self.read_write = rw
+        self.coll_rw = coll_rw
         self.manage = m
+        self.coll_r = r if coll_r is None else coll_r
 
 
 class AccessStub:
@@ -263,8 +264,8 @@ delete_collection_snapshot = AccessStub(
 
 
 class EndpointAccess:
-    def __init__(self, r, rw, m, rest_endpoint, grpc_endpoint=None):
-        self.access = Access(r, rw, m)
+    def __init__(self, r, coll_rw, m, rest_endpoint, grpc_endpoint=None, **kwargs):
+        self.access = Access(r, coll_rw, m, **kwargs)
         self.rest_endpoint = rest_endpoint
         self.grpc_endpoint = grpc_endpoint
 
@@ -423,6 +424,12 @@ ACTION_ACCESS = {
         True, True, True,
         "GET /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}"  
     ),
+    "list_snapshots": EndpointAccess(
+        True, False, True, "GET /snapshots", coll_r=False
+    ),
+    "create_snapshot": EndpointAccess(
+        False, False, True, "POST /snapshots"
+    )
 }
 
 REST_TO_ACTION_MAPPING = {
@@ -512,8 +519,8 @@ REST_TO_ACTION_MAPPING = {
     # "POST /cluster/recover": [False, False, True],
     # "DELETE /cluster/peer/{peer_id}": [False, False, True],
     # # Snapshots
-    # "GET /snapshots": [False, False, True, None],
-    # "POST /snapshots": [False, False, True],
+    "GET /snapshots": [False, False, True, None],
+    "POST /snapshots": [False, False, True],
     # "DELETE /snapshots/{snapshot_name}": [False, False, True],
     # "GET /snapshots/{snapshot_name}": [False, False, True],
     # # Service
@@ -874,10 +881,10 @@ def check_access(action_name: str, rest_request=None, grpc_request=None, path_pa
         method, path, rest_request, allowed_for.read, TOKEN_R, path_params, rest_req_kwargs
     )
     check_rest_access(
-        method, path, rest_request, allowed_for.read, TOKEN_COLL_R, path_params, rest_req_kwargs
+        method, path, rest_request, allowed_for.coll_r, TOKEN_COLL_R, path_params, rest_req_kwargs
     )
     check_rest_access(
-        method, path, rest_request, allowed_for.read_write, TOKEN_COLL_RW, path_params, rest_req_kwargs
+        method, path, rest_request, allowed_for.coll_rw, TOKEN_COLL_RW, path_params, rest_req_kwargs
     )
     check_rest_access(
         method, path, rest_request, allowed_for.manage, TOKEN_M, path_params, rest_req_kwargs
@@ -895,7 +902,7 @@ def check_access(action_name: str, rest_request=None, grpc_request=None, path_pa
 
         check_grpc_access(grpc.r, service, method, grpc_request, allowed_for.read)
         check_grpc_access(grpc.coll_r, service, method, grpc_request, allowed_for.read)
-        check_grpc_access(grpc.coll_rw, service, method, grpc_request, allowed_for.read_write)
+        check_grpc_access(grpc.coll_rw, service, method, grpc_request, allowed_for.coll_rw)
         check_grpc_access(grpc.m, service, method, grpc_request, allowed_for.manage)
 
 
@@ -1318,4 +1325,12 @@ def test_download_shard_snapshot(shard_snapshot_name: str):
         "download_shard_snapshot",
         path_params={"collection_name": COLL_NAME, "shard_id": SHARD_ID, "snapshot_name": shard_snapshot_name},
     )
+    
+
+def test_list_snapshots():
+    check_access("list_snapshots")
+    
+    
+def test_create_snapshot():
+    check_access("create_snapshot")
     
