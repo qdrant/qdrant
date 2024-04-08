@@ -420,34 +420,34 @@ ACTION_ACCESS = {
         "POST /collections/{collection_name}/points/vectors/delete",
         "qdrant.Points/DeleteVectors",
     ),
-    # "set_payload": EndpointAccess(
-    #     False,
-    #     True,
-    #     True,
-    #     "POST /collections/{collection_name}/points/payload",
-    #     "qdrant.Points/SetPayload",
-    # ),
-    # "overwrite_payload": EndpointAccess(
-    #     False,
-    #     True,
-    #     True,
-    #     "PUT /collections/{collection_name}/points/payload",
-    #     "qdrant.Points/OverwritePayload",
-    # ),
-    # "delete_payload": EndpointAccess(
-    #     False,
-    #     True,
-    #     True,
-    #     "POST /collections/{collection_name}/points/payload/delete",
-    #     "qdrant.Points/DeletePayload",
-    # ),
-    # "clear_payload": EndpointAccess(
-    #     False,
-    #     True,
-    #     True,
-    #     "POST /collections/{collection_name}/points/payload/clear",
-    #     "qdrant.Points/ClearPayload",
-    # ),
+    "set_payload": EndpointAccess(
+        False,
+        True,
+        True,
+        "POST /collections/{collection_name}/points/payload",
+        "qdrant.Points/SetPayload",
+    ),
+    "overwrite_payload": EndpointAccess(
+        False,
+        True,
+        True,
+        "PUT /collections/{collection_name}/points/payload",
+        "qdrant.Points/OverwritePayload",
+    ),
+    "delete_payload": EndpointAccess(
+        False,
+        True,
+        True,
+        "POST /collections/{collection_name}/points/payload/delete",
+        "qdrant.Points/DeletePayload",
+    ),
+    "clear_payload": EndpointAccess(
+        False,
+        True,
+        True,
+        "POST /collections/{collection_name}/points/payload/clear",
+        "qdrant.Points/ClearPayload",
+    ),
     "scroll_points": EndpointAccess(
         True,
         True,
@@ -1472,6 +1472,46 @@ def test_delete_vectors():
         },
     )
 
+def test_set_payload():
+    check_access(
+        "set_payload",
+        rest_request={"points": [1], "payload": {"my_key": "value"}, "shard_key": SHARD_KEY},
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={
+            "collection_name": COLL_NAME,
+            "points_selector": {"points": {"ids": [{"num": 1}]}}, 
+            "payload": {"my_key": {"string_value": "value"}},
+            **SHARD_KEY_SELECTOR,
+        },
+    )
+    
+
+def test_delete_payload():
+    check_access(
+        "delete_payload",
+        rest_request={"points": [1], "keys": ["my_key"], "shard_key": SHARD_KEY},
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={
+            "collection_name": COLL_NAME,
+            "points_selector": {"points": {"ids": [{"num": 1}]}}, 
+            "keys": ["my_key"],
+            **SHARD_KEY_SELECTOR,
+        },
+    )
+    
+    
+def test_clear_payload():
+    check_access(
+        "clear_payload",
+        rest_request={"points": [1], "shard_key": SHARD_KEY},
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={
+            "collection_name": COLL_NAME,
+            "points": {"points": {"ids": [{"num": 1}]}}, 
+            **SHARD_KEY_SELECTOR,
+        },
+    )
+    
 
 def test_scroll_points():
     check_access(
