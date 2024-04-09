@@ -1,21 +1,19 @@
 import json
-import pathlib
 import random
 import string
 import tempfile
-import time
 from inspect import isfunction
-from tabnanny import check
 from typing import Callable, List, Optional, Tuple, Union
 
 import grpc
 import grpc_requests
 import pytest
 import requests
-from consensus_tests import fixtures
 from grpc_interceptor import ClientCallDetails, ClientInterceptor
 
-from .utils import encode_jwt, make_peer_folder, start_cluster, start_first_peer, wait_for
+from consensus_tests import fixtures
+
+from .utils import encode_jwt, start_cluster
 
 
 def random_str():
@@ -1155,7 +1153,8 @@ def test_move_shard_operation():
             **move_shard_op,
         },
     )
-    
+
+
 def test_abort_shard_transfer_operation():
     abort_shard_transfer = {
         "abort_transfer": {
@@ -1173,7 +1172,8 @@ def test_abort_shard_transfer_operation():
             **abort_shard_transfer,
         },
     )
-    
+
+
 def test_drop_shard_replica_operation():
     drop_shard_replica = {
         "drop_replica": {
@@ -1190,7 +1190,8 @@ def test_drop_shard_replica_operation():
             **drop_shard_replica,
         },
     )
-    
+
+
 def test_restart_transfer_operation():
     check_access(
         "restart_transfer_operation",
@@ -1210,9 +1211,10 @@ def test_restart_transfer_operation():
                 "from_peer_id": PEER_ID,
                 "to_peer_id": PEER_ID,
                 "method": 0,
-            }
+            },
         },
     )
+
 
 def test_create_default_shard_key(new_shard_keys):
     keys_iter = iter(new_shard_keys)
@@ -1542,7 +1544,7 @@ def test_update_points_batch():
                 ],
             }
         }
-        # TODO: add the rest of operations
+        # TODO?: add the rest of operations
     ]
 
     check_access(
