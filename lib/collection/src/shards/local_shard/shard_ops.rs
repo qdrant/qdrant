@@ -11,6 +11,7 @@ use segment::types::{
 use tokio::runtime::Handle;
 use tokio::sync::oneshot;
 
+use crate::collection_manager::holders::segment_holder::LockedSegment;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::common::stopping_guard::StoppingGuard;
 use crate::operations::types::{
@@ -113,29 +114,31 @@ impl LocalShard {
     ) -> CollectionResult<Vec<Record>> {
         let segments = self.segments();
 
-        let read_handles: Vec<_> = {
-            let segments_guard = segments.read();
-            let segments = segments_guard.non_appendable_then_appendable_segments();
-            segments
-                .into_iter()
-                .map(|segment| {
-                    let segment = segment.clone();
-                    let filter = filter.cloned();
-
-                    search_runtime_handle.spawn_blocking(move || {
-                        segment
-                            .get()
-                            .read()
-                            .read_filtered(offset, Some(limit), filter.as_ref())
-                    })
-                })
-                .collect()
+        let (non_appendable, appendable) = {
+            let segments = segments.read();
+            (
+                segments.collect_non_appendable_segments(),
+                segments.collect_appendable_segments(),
+            )
         };
 
-        let all_points = try_join_all(read_handles).await?;
+        let read_filtered = |segment: LockedSegment| {
+            let filter = filter.cloned();
 
-        let point_ids = all_points
+            search_runtime_handle.spawn_blocking(move || {
+                segment
+                    .get()
+                    .read()
+                    .read_filtered(offset, Some(limit), filter.as_ref())
+            })
+        };
+
+        let non_appendable = try_join_all(non_appendable.into_iter().map(read_filtered)).await?;
+        let appendable = try_join_all(appendable.into_iter().map(read_filtered)).await?;
+
+        let point_ids = non_appendable
             .into_iter()
+            .chain(appendable)
             .flatten()
             .sorted()
             .dedup()
@@ -161,31 +164,34 @@ impl LocalShard {
         order_by: &OrderBy,
     ) -> CollectionResult<Vec<Record>> {
         let segments = self.segments();
-        let read_handles: Vec<_> = {
-            let segments_guard = segments.read();
-            let segments = segments_guard.non_appendable_then_appendable_segments();
-            segments
-                .into_iter()
-                .map(|segment| {
-                    let segment = segment.clone();
-                    let filter = filter.cloned();
 
-                    let order_by = order_by.clone();
-
-                    search_runtime_handle.spawn_blocking(move || {
-                        segment.get().read().read_ordered_filtered(
-                            Some(limit),
-                            filter.as_ref(),
-                            &order_by,
-                        )
-                    })
-                })
-                .collect()
+        let (non_appendable, appendable) = {
+            let segments = segments.read();
+            (
+                segments.collect_non_appendable_segments(),
+                segments.collect_appendable_segments(),
+            )
         };
 
-        let all_reads = try_join_all(read_handles)
-            .await?
+        let read_ordered_filtered = |segment: LockedSegment| {
+            let filter = filter.cloned();
+            let order_by = order_by.clone();
+
+            search_runtime_handle.spawn_blocking(move || {
+                segment
+                    .get()
+                    .read()
+                    .read_ordered_filtered(Some(limit), filter.as_ref(), &order_by)
+            })
+        };
+
+        let non_appendable =
+            try_join_all(non_appendable.into_iter().map(read_ordered_filtered)).await?;
+        let appendable = try_join_all(appendable.into_iter().map(read_ordered_filtered)).await?;
+
+        let all_reads = non_appendable
             .into_iter()
+            .chain(appendable)
             .collect::<Result<Vec<_>, _>>()?;
 
         let top_records = all_reads
