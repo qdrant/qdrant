@@ -91,9 +91,8 @@ pub unsafe fn sse_cosine_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use crate::spaces::metric_uint::simple_cosine::cosine_similarity_bytes;
-
     use super::*;
+    use crate::spaces::metric_uint::simple_cosine::cosine_similarity_bytes;
 
     #[test]
     fn test_spaces_avx() {

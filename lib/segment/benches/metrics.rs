@@ -58,10 +58,7 @@ fn byte_metrics_bench(c: &mut Criterion) {
         let mut i = 0;
         b.iter(|| {
             i = (i + 1) % COUNT;
-            dot_similarity_bytes(
-                &random_vectors_1[i],
-                &random_vectors_2[i],
-            )
+            dot_similarity_bytes(&random_vectors_1[i], &random_vectors_2[i])
         });
     });
 
@@ -107,10 +104,7 @@ fn byte_metrics_bench(c: &mut Criterion) {
         let mut i = 0;
         b.iter(|| {
             i = (i + 1) % COUNT;
-            cosine_similarity_bytes(
-                &random_vectors_1[i],
-                &random_vectors_2[i],
-            )
+            cosine_similarity_bytes(&random_vectors_1[i], &random_vectors_2[i])
         });
     });
 
@@ -156,10 +150,7 @@ fn byte_metrics_bench(c: &mut Criterion) {
         let mut i = 0;
         b.iter(|| {
             i = (i + 1) % COUNT;
-            euclid_similarity_bytes(
-                &random_vectors_1[i],
-                &random_vectors_2[i],
-            )
+            euclid_similarity_bytes(&random_vectors_1[i], &random_vectors_2[i])
         });
     });
 
@@ -205,10 +196,7 @@ fn byte_metrics_bench(c: &mut Criterion) {
         let mut i = 0;
         b.iter(|| {
             i = (i + 1) % COUNT;
-            manhattan_similarity_bytes(
-                &random_vectors_1[i],
-                &random_vectors_2[i],
-            )
+            manhattan_similarity_bytes(&random_vectors_1[i], &random_vectors_2[i])
         });
     });
 

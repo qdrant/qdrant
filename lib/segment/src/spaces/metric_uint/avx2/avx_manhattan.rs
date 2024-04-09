@@ -49,9 +49,8 @@ pub unsafe fn avx_manhattan_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use crate::spaces::metric_uint::simple_manhattan::manhattan_similarity_bytes;
-
     use super::*;
+    use crate::spaces::metric_uint::simple_manhattan::manhattan_similarity_bytes;
 
     #[test]
     fn test_spaces_avx() {

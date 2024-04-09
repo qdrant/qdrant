@@ -22,7 +22,10 @@ impl Metric<VectorElementTypeByte> for DotProductMetric {
     }
 }
 
-pub fn dot_similarity_bytes(v1: &[VectorElementTypeByte], v2: &[VectorElementTypeByte]) -> ScoreType {
+pub fn dot_similarity_bytes(
+    v1: &[VectorElementTypeByte],
+    v2: &[VectorElementTypeByte],
+) -> ScoreType {
     let mut dot_product = 0;
 
     for (a, b) in v1.iter().zip(v2) {
