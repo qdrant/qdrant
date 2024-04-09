@@ -22,9 +22,7 @@ use crate::common::operation_error::{
     get_service_error, OperationError, OperationResult, SegmentFailedState,
 };
 use crate::common::version::{StorageVersion, VERSION_FILE};
-use crate::common::{
-    check_named_vectors, check_query_vectors, check_stopped, check_vector, check_vector_name,
-};
+use crate::common::{check_named_vectors, check_query_vectors, check_stopped, check_vector_name};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{Direction, OrderBy, OrderingValue};
 use crate::data_types::vectors::{MultiDenseVector, QueryVector, Vector, VectorRef};
@@ -906,6 +904,33 @@ impl Segment {
             ))
             .spawn(move || tasks.iter().for_each(mmap_ops::PrefaultMmapPages::exec));
     }
+
+    /// This function is a simplified version of `search_batch` intended for testing purposes.
+    #[allow(clippy::too_many_arguments)]
+    pub fn search(
+        &self,
+        vector_name: &str,
+        vector: &QueryVector,
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
+        top: usize,
+        params: Option<&SearchParams>,
+    ) -> OperationResult<Vec<ScoredPoint>> {
+        let result = self.search_batch(
+            vector_name,
+            &[vector],
+            with_payload,
+            with_vector,
+            filter,
+            top,
+            params,
+            &false.into(),
+            usize::MAX,
+        )?;
+
+        Ok(result.into_iter().next().unwrap())
+    }
 }
 
 /// This is a basic implementation of `SegmentEntry`,
@@ -920,32 +945,6 @@ impl SegmentEntry for Segment {
         id_tracker
             .internal_id(point_id)
             .and_then(|internal_id| id_tracker.internal_version(internal_id))
-    }
-
-    fn search(
-        &self,
-        vector_name: &str,
-        vector: &QueryVector,
-        with_payload: &WithPayload,
-        with_vector: &WithVector,
-        filter: Option<&Filter>,
-        top: usize,
-        params: Option<&SearchParams>,
-        is_stopped: &AtomicBool,
-    ) -> OperationResult<Vec<ScoredPoint>> {
-        check_vector(vector_name, vector, &self.segment_config)?;
-        let vector_data = &self.vector_data[vector_name];
-        let internal_result = &vector_data.vector_index.borrow().search(
-            &[vector],
-            filter,
-            top,
-            params,
-            is_stopped,
-            usize::MAX,
-        )?[0];
-
-        check_stopped(is_stopped)?;
-        self.process_search_result(internal_result, with_payload, with_vector)
     }
 
     fn search_batch(
@@ -1809,7 +1808,6 @@ mod tests {
                 None,
                 10,
                 None,
-                &false.into(),
             )
             .unwrap();
         eprintln!("search_result = {search_result:#?}");
@@ -1907,7 +1905,6 @@ mod tests {
                 Some(&filter_valid),
                 1,
                 None,
-                &false.into(),
             )
             .unwrap();
         assert_eq!(results_with_valid_filter.len(), 1);
@@ -1921,7 +1918,6 @@ mod tests {
                 Some(&filter_invalid),
                 1,
                 None,
-                &false.into(),
             )
             .unwrap();
         assert!(results_with_invalid_filter.is_empty());
@@ -2108,7 +2104,6 @@ mod tests {
                 None,
                 10,
                 None,
-                &false.into(),
             )
             .unwrap();
 
@@ -2132,7 +2127,6 @@ mod tests {
                 None,
                 10,
                 None,
-                &false.into(),
             )
             .unwrap();
 
@@ -2430,7 +2424,6 @@ mod tests {
                     None,
                     1,
                     None,
-                    &false.into(),
                 )
                 .err()
                 .unwrap();

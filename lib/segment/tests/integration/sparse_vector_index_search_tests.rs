@@ -648,7 +648,6 @@ fn sparse_vector_index_persistence_test() {
             None,
             top,
             None,
-            &stopped,
         )
         .unwrap();
 
@@ -669,7 +668,6 @@ fn sparse_vector_index_persistence_test() {
             None,
             top,
             None,
-            &stopped,
         )
         .unwrap();
 
