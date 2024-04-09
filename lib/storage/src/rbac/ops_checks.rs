@@ -29,7 +29,7 @@ impl Access {
         collection_name: &'a str,
         op: &mut impl CheckableCollectionOperation,
     ) -> Result<CollectionPass<'a>, StorageError> {
-        let requirements = op.access_requrements();
+        let requirements = op.access_requirements();
         match self {
             Access::Global(mode) => mode.meets_requirements(requirements)?,
             Access::Collection(list) => {
@@ -76,7 +76,7 @@ impl Access {
 
 trait CheckableCollectionOperation {
     /// Used to distinguish whether the operation is read-only or read-write.
-    fn access_requrements(&self) -> AccessRequirements;
+    fn access_requirements(&self) -> AccessRequirements;
 
     fn check_access(
         &mut self,
@@ -128,7 +128,7 @@ impl<'a> CollectionAccessView<'a> {
 }
 
 impl CheckableCollectionOperation for RecommendRequestInternal {
-    fn access_requrements(&self) -> AccessRequirements {
+    fn access_requirements(&self) -> AccessRequirements {
         AccessRequirements {
             write: false,
             manage: false,
@@ -154,7 +154,7 @@ impl CheckableCollectionOperation for RecommendRequestInternal {
 }
 
 impl CheckableCollectionOperation for PointRequestInternal {
-    fn access_requrements(&self) -> AccessRequirements {
+    fn access_requirements(&self) -> AccessRequirements {
         AccessRequirements {
             write: false,
             manage: false,
@@ -172,7 +172,7 @@ impl CheckableCollectionOperation for PointRequestInternal {
 }
 
 impl CheckableCollectionOperation for CoreSearchRequest {
-    fn access_requrements(&self) -> AccessRequirements {
+    fn access_requirements(&self) -> AccessRequirements {
         AccessRequirements {
             write: false,
             manage: false,
@@ -191,7 +191,7 @@ impl CheckableCollectionOperation for CoreSearchRequest {
 }
 
 impl CheckableCollectionOperation for CountRequestInternal {
-    fn access_requrements(&self) -> AccessRequirements {
+    fn access_requirements(&self) -> AccessRequirements {
         AccessRequirements {
             write: false,
             manage: false,
@@ -210,7 +210,7 @@ impl CheckableCollectionOperation for CountRequestInternal {
 }
 
 impl CheckableCollectionOperation for GroupRequest {
-    fn access_requrements(&self) -> AccessRequirements {
+    fn access_requirements(&self) -> AccessRequirements {
         AccessRequirements {
             write: false,
             manage: false,
@@ -235,7 +235,7 @@ impl CheckableCollectionOperation for GroupRequest {
 }
 
 impl CheckableCollectionOperation for DiscoverRequestInternal {
-    fn access_requrements(&self) -> AccessRequirements {
+    fn access_requirements(&self) -> AccessRequirements {
         AccessRequirements {
             write: false,
             manage: false,
@@ -263,7 +263,7 @@ impl CheckableCollectionOperation for DiscoverRequestInternal {
 }
 
 impl CheckableCollectionOperation for ScrollRequestInternal {
-    fn access_requrements(&self) -> AccessRequirements {
+    fn access_requirements(&self) -> AccessRequirements {
         AccessRequirements {
             write: false,
             manage: false,
@@ -282,7 +282,7 @@ impl CheckableCollectionOperation for ScrollRequestInternal {
 }
 
 impl CheckableCollectionOperation for CollectionUpdateOperations {
-    fn access_requrements(&self) -> AccessRequirements {
+    fn access_requirements(&self) -> AccessRequirements {
         match self {
             CollectionUpdateOperations::PointOperation(_)
             | CollectionUpdateOperations::VectorOperation(_)
@@ -304,6 +304,12 @@ impl CheckableCollectionOperation for CollectionUpdateOperations {
         view: CollectionAccessView<'_>,
         _access: &CollectionAccessList,
     ) -> Result<(), StorageError> {
+        // Currently, this whole function is shortcut with an error when there is a payload constraint
+        // TODO: Handle payload constraints for all ops and remove this block
+        if let Some(_payload) = &view.payload {
+            // Reject as not implemented, yet
+            return incompatible_with_payload_constraint(view.collection);
+        }
         match self {
             CollectionUpdateOperations::PointOperation(op) => match op {
                 PointOperations::UpsertPoints(_) => {
