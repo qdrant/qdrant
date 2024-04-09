@@ -79,7 +79,7 @@ tar = "0.4.40"
 reqwest = { version = "0.11", default-features = false, features = ["stream", "rustls-tls", "blocking"] }
 rustls = "0.22.2"
 rustls-pki-types = "1.4.1"
-rustls-pemfile = "2.1.1"
+rustls-pemfile = "2.1.2"
 prometheus = { version = "0.13.3", default-features = false }
 validator = { version = "0.16", features = ["derive"] }
 jsonwebtoken = "9.3.0"
