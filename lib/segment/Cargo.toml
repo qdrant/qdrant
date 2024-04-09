@@ -76,9 +76,6 @@ common = { path = "../common/common" }
 io = { path = "../common/io" }
 memory = { path = "../common/memory" }
 sparse = { path = "../sparse" }
-sse = { path = "../simd/sse" }
-avx = { path = "../simd/avx" }
-neon = { path = "../simd/neon" }
 
 tracing = { workspace = true, optional = true }
 macro_rules_attribute = "0.2.0"

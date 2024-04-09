@@ -22,7 +22,7 @@ impl Metric<VectorElementTypeByte> for EuclidMetric {
     }
 }
 
-fn euclid_similarity_bytes(
+pub fn euclid_similarity_bytes(
     v1: &[VectorElementTypeByte],
     v2: &[VectorElementTypeByte],
 ) -> ScoreType {

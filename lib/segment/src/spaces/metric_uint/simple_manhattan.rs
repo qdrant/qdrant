@@ -22,7 +22,7 @@ impl Metric<VectorElementTypeByte> for ManhattanMetric {
     }
 }
 
-fn manhattan_similarity_bytes(
+pub fn manhattan_similarity_bytes(
     v1: &[VectorElementTypeByte],
     v2: &[VectorElementTypeByte],
 ) -> ScoreType {

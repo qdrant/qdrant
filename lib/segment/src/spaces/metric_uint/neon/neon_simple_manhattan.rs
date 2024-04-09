@@ -1,34 +1,36 @@
-use std::arch::x86_64::*;
+use std::arch::aarch64::*;
 
-#[target_feature(enable = "sse")]
+#[target_feature(enable = "neon")]
 #[allow(unused)]
-pub unsafe fn sse_manhattan_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
-    use crate::hsum128_ps_sse;
-
+pub unsafe fn neon_manhattan_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
     debug_assert!(v1.len() == v2.len());
     let mut ptr1: *const u8 = v1.as_ptr();
     let mut ptr2: *const u8 = v2.as_ptr();
 
-    // sum accumulator for 4x32 bit integers
-    let mut acc = _mm_setzero_si128();
-    // mask to take only lower 8 bits from 16 bits
-    let mask_epu16_epu8 = _mm_set1_epi16(0xFF);
-    // mask to take only lower 16 bits from 32 bits
-    let mask_epu32_epu16 = _mm_set1_epi32(0xFFFF);
+    let mut sum16_low = vdupq_n_u16(0);
+    let mut sum16_high = vdupq_n_u16(0);
     let len = v1.len();
     for _ in 0..len / 16 {
-        // load 16 bytes
-        let p1 = _mm_loadu_si128(ptr1 as *const __m128i);
-        let p2 = _mm_loadu_si128(ptr2 as *const __m128i);
+        let p1 = vld1q_u8(ptr1);
+        let p2 = vld1q_u8(ptr2);
         ptr1 = ptr1.add(16);
         ptr2 = ptr2.add(16);
 
-        let sad = _mm_sad_epu8(p1, p2);
-        acc = _mm_add_epi32(acc, sad);
-    }
+        let abs_diff = vabdq_u8(p1, p2);
+        let abs_diff16_low = vmovl_u8(vget_low_u8(abs_diff));
+        let abs_diff16_high = vmovl_u8(vget_high_u8(abs_diff));
 
-    let mul_ps = _mm_cvtepi32_ps(acc);
-    let mut score = hsum128_ps_sse(mul_ps);
+        sum16_low = vaddq_u16(sum16_low, abs_diff16_low);
+        sum16_high = vaddq_u16(sum16_high, abs_diff16_high);
+    }
+    // Horizontal sum of 16-bit integers
+    let sum32_low = vpaddlq_u16(sum16_low);
+    let sum32_high = vpaddlq_u16(sum16_high);
+    let sum32 = vaddq_u32(sum32_low, sum32_high);
+
+    let sum64_low = vadd_u32(vget_low_u32(sum32), vget_high_u32(sum32));
+    let sum64_high = vpadd_u32(sum64_low, sum64_low);
+    let mut score = vget_lane_u32(sum64_high, 0) as f32;
 
     let mut remainder = len % 16;
     if remainder != 0 {
@@ -48,18 +50,13 @@ pub unsafe fn sse_manhattan_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::arch::is_aarch64_feature_detected;
 
-    fn manhattan_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
-        -v1.iter()
-            .zip(v2)
-            .map(|(a, b)| (*a as i32 - *b as i32).abs())
-            .sum::<i32>() as f32
-    }
+    use super::*;
 
     #[test]
     fn test_spaces_sse() {
-        if is_x86_feature_detected!("sse") {
+        if is_aarch64_feature_detected!("neon") {
             let v1: Vec<u8> = vec![
                 255, 255, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 255, 255,
                 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 255, 255, 0, 1, 2, 3,
@@ -77,7 +74,7 @@ mod tests {
                 240, 239, 238,
             ];
 
-            let dot_simd = unsafe { sse_manhattan_similarity_bytes(&v1, &v2) };
+            let dot_simd = unsafe { neon_manhattan_similarity_bytes(&v1, &v2) };
             let dot = manhattan_similarity_bytes(&v1, &v2);
             assert_eq!(dot_simd, dot);
         } else {

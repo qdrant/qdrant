@@ -96,9 +96,6 @@ common = { path = "lib/common/common" }
 cancel = { path = "lib/common/cancel" }
 memory = { path = "lib/common/memory" }
 issues = { path = "lib/common/issues" }
-sse = { path = "lib/simd/sse" }
-avx = { path = "lib/simd/avx" }
-neon = { path = "lib/simd/neon" }
 segment = { path = "lib/segment" }
 collection = { path = "lib/collection" }
 storage = { path = "lib/storage" }
@@ -162,7 +159,6 @@ members = [
     "lib/api",
     "lib/collection",
     "lib/common/*",
-    "lib/simd/*",
     "lib/segment",
     "lib/sparse",
     "lib/storage",

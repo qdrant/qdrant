@@ -1,35 +1,32 @@
 #[cfg(not(target_os = "windows"))]
 mod prof;
 
-#[cfg(target_arch = "x86_64")]
-use avx::avx_cosine::avx_cosine_similarity_bytes;
-#[cfg(target_arch = "x86_64")]
-use avx::avx_dot::avx_dot_similarity_bytes;
-#[cfg(target_arch = "x86_64")]
-use avx::avx_euclid::avx_euclid_similarity_bytes;
-#[cfg(target_arch = "x86_64")]
-use avx::avx_manhattan::avx_manhattan_similarity_bytes;
 use criterion::{criterion_group, criterion_main, Criterion};
-use neon::neon_cosine::neon_cosine_similarity_bytes;
-#[cfg(target_arch = "aarch64")]
-use neon::neon_dot::neon_dot_similarity_bytes;
-#[cfg(target_arch = "aarch64")]
-use neon::neon_euclid::neon_euclid_similarity_bytes;
-#[cfg(target_arch = "aarch64")]
-use neon::neon_simple_manhattan::neon_manhattan_similarity_bytes;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use segment::data_types::vectors::VectorElementTypeByte;
 use segment::spaces::metric::Metric;
+#[cfg(target_arch = "x86_64")]
+use segment::spaces::metric_uint::avx2::avx_cosine::avx_cosine_similarity_bytes;
+#[cfg(target_arch = "x86_64")]
+use segment::spaces::metric_uint::avx2::avx_dot::avx_dot_similarity_bytes;
+#[cfg(target_arch = "x86_64")]
+use segment::spaces::metric_uint::avx2::avx_euclid::avx_euclid_similarity_bytes;
+#[cfg(target_arch = "x86_64")]
+use segment::spaces::metric_uint::avx2::avx_manhattan::avx_manhattan_similarity_bytes;
+use segment::spaces::metric_uint::simple_cosine::cosine_similarity_bytes;
+use segment::spaces::metric_uint::simple_dot::dot_similarity_bytes;
+use segment::spaces::metric_uint::simple_euclid::euclid_similarity_bytes;
+use segment::spaces::metric_uint::simple_manhattan::manhattan_similarity_bytes;
+#[cfg(target_arch = "x86_64")]
+use segment::spaces::metric_uint::sse2::sse_cosine::sse_cosine_similarity_bytes;
+#[cfg(target_arch = "x86_64")]
+use segment::spaces::metric_uint::sse2::sse_dot::sse_dot_similarity_bytes;
+#[cfg(target_arch = "x86_64")]
+use segment::spaces::metric_uint::sse2::sse_euclid::sse_euclid_similarity_bytes;
+#[cfg(target_arch = "x86_64")]
+use segment::spaces::metric_uint::sse2::sse_manhattan::sse_manhattan_similarity_bytes;
 use segment::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
-#[cfg(target_arch = "x86_64")]
-use sse::sse_cosine::sse_cosine_similarity_bytes;
-#[cfg(target_arch = "x86_64")]
-use sse::sse_dot::sse_dot_similarity_bytes;
-#[cfg(target_arch = "x86_64")]
-use sse::sse_euclid::sse_euclid_similarity_bytes;
-#[cfg(target_arch = "x86_64")]
-use sse::sse_manhattan::sse_manhattan_similarity_bytes;
 
 const DIM: usize = 1024;
 const COUNT: usize = 100_000;
@@ -46,11 +43,22 @@ fn byte_metrics_bench(c: &mut Criterion) {
         .map(|_| (0..DIM).map(|_| rng.gen_range(0..255)).collect())
         .collect();
 
-    group.bench_function("byte-dot-no-simd", |b| {
+    group.bench_function("byte-dot", |b| {
         let mut i = 0;
         b.iter(|| {
             i = (i + 1) % COUNT;
             <DotProductMetric as Metric<VectorElementTypeByte>>::similarity(
+                &random_vectors_1[i],
+                &random_vectors_2[i],
+            )
+        });
+    });
+
+    group.bench_function("byte-dot-no-simd", |b| {
+        let mut i = 0;
+        b.iter(|| {
+            i = (i + 1) % COUNT;
+            dot_similarity_bytes(
                 &random_vectors_1[i],
                 &random_vectors_2[i],
             )
@@ -84,11 +92,22 @@ fn byte_metrics_bench(c: &mut Criterion) {
         });
     });
 
-    group.bench_function("byte-cosine-no-simd", |b| {
+    group.bench_function("byte-cosine", |b| {
         let mut i = 0;
         b.iter(|| {
             i = (i + 1) % COUNT;
             <CosineMetric as Metric<VectorElementTypeByte>>::similarity(
+                &random_vectors_1[i],
+                &random_vectors_2[i],
+            )
+        });
+    });
+
+    group.bench_function("byte-cosine-no-simd", |b| {
+        let mut i = 0;
+        b.iter(|| {
+            i = (i + 1) % COUNT;
+            cosine_similarity_bytes(
                 &random_vectors_1[i],
                 &random_vectors_2[i],
             )
@@ -122,11 +141,22 @@ fn byte_metrics_bench(c: &mut Criterion) {
         });
     });
 
-    group.bench_function("byte-euclid-no-simd", |b| {
+    group.bench_function("byte-euclid", |b| {
         let mut i = 0;
         b.iter(|| {
             i = (i + 1) % COUNT;
             <EuclidMetric as Metric<VectorElementTypeByte>>::similarity(
+                &random_vectors_1[i],
+                &random_vectors_2[i],
+            )
+        });
+    });
+
+    group.bench_function("byte-euclid-no-simd", |b| {
+        let mut i = 0;
+        b.iter(|| {
+            i = (i + 1) % COUNT;
+            euclid_similarity_bytes(
                 &random_vectors_1[i],
                 &random_vectors_2[i],
             )
@@ -160,11 +190,22 @@ fn byte_metrics_bench(c: &mut Criterion) {
         });
     });
 
-    group.bench_function("byte-manhattan-no-simd", |b| {
+    group.bench_function("byte-manhattan", |b| {
         let mut i = 0;
         b.iter(|| {
             i = (i + 1) % COUNT;
             <ManhattanMetric as Metric<VectorElementTypeByte>>::similarity(
+                &random_vectors_1[i],
+                &random_vectors_2[i],
+            )
+        });
+    });
+
+    group.bench_function("byte-manhattan-no-simd", |b| {
+        let mut i = 0;
+        b.iter(|| {
+            i = (i + 1) % COUNT;
+            manhattan_similarity_bytes(
                 &random_vectors_1[i],
                 &random_vectors_2[i],
             )

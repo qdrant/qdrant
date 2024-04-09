@@ -72,24 +72,6 @@ mod tests {
 
     use super::*;
 
-    fn cosine_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
-        let mut dot_product = 0;
-        let mut norm1 = 0;
-        let mut norm2 = 0;
-
-        for (a, b) in v1.iter().zip(v2) {
-            dot_product += (*a as i32) * (*b as i32);
-            norm1 += (*a as i32) * (*a as i32);
-            norm2 += (*b as i32) * (*b as i32);
-        }
-
-        if norm1 == 0 || norm2 == 0 {
-            return 0.0;
-        }
-
-        dot_product as f32 / ((norm1 as f32 * norm2 as f32).sqrt())
-    }
-
     #[test]
     fn test_spaces_avx() {
         if is_aarch64_feature_detected!("neon") {

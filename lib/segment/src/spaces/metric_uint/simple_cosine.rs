@@ -22,7 +22,7 @@ impl Metric<VectorElementTypeByte> for CosineMetric {
     }
 }
 
-fn cosine_similarity_bytes(
+pub fn cosine_similarity_bytes(
     v1: &[VectorElementTypeByte],
     v2: &[VectorElementTypeByte],
 ) -> ScoreType {

@@ -2,7 +2,7 @@ use std::arch::aarch64::*;
 
 #[target_feature(enable = "neon")]
 #[allow(unused)]
-pub unsafe fn neon_dot_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
+pub unsafe fn neon_euclid_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
     debug_assert!(v1.len() == v2.len());
     let mut ptr1: *const u8 = v1.as_ptr();
     let mut ptr2: *const u8 = v2.as_ptr();
@@ -16,8 +16,13 @@ pub unsafe fn neon_dot_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
         ptr1 = ptr1.add(16);
         ptr2 = ptr2.add(16);
 
-        let mul_low = vmull_u8(vget_low_u8(p1), vget_low_u8(p2));
-        let mul_high = vmull_u8(vget_high_u8(p1), vget_high_u8(p2));
+        let abs_diff = vabdq_u8(p1, p2);
+        let abs_diff_low = vget_low_u8(abs_diff);
+        let abs_diff_high = vget_high_u8(abs_diff);
+
+        let mul_low = vmull_u8(abs_diff_low, abs_diff_low);
+        let mul_high = vmull_u8(abs_diff_high, abs_diff_high);
+
         mul1 = vpadalq_u16(mul1, mul_low);
         mul2 = vpadalq_u16(mul2, mul_high);
     }
@@ -27,16 +32,17 @@ pub unsafe fn neon_dot_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
     if remainder != 0 {
         let mut remainder_score = 0;
         for _ in 0..remainder {
-            let v1 = *ptr1;
-            let v2 = *ptr2;
+            let v1 = *ptr1 as i32;
+            let v2 = *ptr2 as i32;
             ptr1 = ptr1.add(1);
             ptr2 = ptr2.add(1);
-            remainder_score += (v1 as i32) * (v2 as i32);
+            let diff = v1 - v2;
+            remainder_score += diff * diff;
         }
         score += remainder_score as f32;
     }
 
-    score
+    -score
 }
 
 #[cfg(test)]
@@ -44,16 +50,6 @@ mod tests {
     use std::arch::is_aarch64_feature_detected;
 
     use super::*;
-
-    fn dot_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
-        let mut dot_product = 0;
-
-        for (a, b) in v1.iter().zip(v2) {
-            dot_product += (*a as i32) * (*b as i32);
-        }
-
-        dot_product as f32
-    }
 
     #[test]
     fn test_spaces_sse() {
@@ -75,8 +71,8 @@ mod tests {
                 240, 239, 238,
             ];
 
-            let dot_simd = unsafe { neon_dot_similarity_bytes(&v1, &v2) };
-            let dot = dot_similarity_bytes(&v1, &v2);
+            let dot_simd = unsafe { neon_euclid_similarity_bytes(&v1, &v2) };
+            let dot = euclid_similarity_bytes(&v1, &v2);
             assert_eq!(dot_simd, dot);
         } else {
             println!("avx test skipped");

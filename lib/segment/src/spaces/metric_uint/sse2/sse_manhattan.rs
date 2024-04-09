@@ -1,10 +1,10 @@
 use std::arch::x86_64::*;
 
+use crate::spaces::simple_sse::hsum128_ps_sse;
+
 #[target_feature(enable = "sse")]
 #[allow(unused)]
-pub unsafe fn sse_euclid_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
-    use crate::hsum128_ps_sse;
-
+pub unsafe fn sse_manhattan_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
     debug_assert!(v1.len() == v2.len());
     let mut ptr1: *const u8 = v1.as_ptr();
     let mut ptr2: *const u8 = v2.as_ptr();
@@ -23,27 +23,8 @@ pub unsafe fn sse_euclid_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
         ptr1 = ptr1.add(16);
         ptr2 = ptr2.add(16);
 
-        // Compute the difference in both directions and take the maximum for abs
-        let diff1 = _mm_subs_epu8(p1, p2);
-        let diff2 = _mm_subs_epu8(p2, p1);
-
-        let abs_diff = _mm_max_epu8(diff1, diff2);
-        let masked_abs_diff = _mm_and_si128(abs_diff, mask_epu16_epu8);
-
-        // take from lane p1 and p2 parts (using bitwise AND):
-        // p1 = [byte0, byte1, byte2, byte3, ..] -> [0, byte1, 0, byte3, ..]
-        // p2 = [byte0, byte1, byte2, byte3, ..] -> [0, byte1, 0, byte3, ..]
-        // and calculate 16bit multiplication with taking lower 16 bits
-        // wa can use signed multiplication because sign bit is always 0
-        let mul16 = _mm_madd_epi16(masked_abs_diff, masked_abs_diff);
-        acc = _mm_add_epi32(acc, mul16);
-
-        // shift right by 1 byte for p1 and p2 and repeat previous steps
-        let abs_diff = _mm_bsrli_si128(abs_diff, 1);
-        let masked_abs_diff = _mm_and_si128(abs_diff, mask_epu16_epu8);
-
-        let mul16 = _mm_madd_epi16(masked_abs_diff, masked_abs_diff);
-        acc = _mm_add_epi32(acc, mul16);
+        let sad = _mm_sad_epu8(p1, p2);
+        acc = _mm_add_epi32(acc, sad);
     }
 
     let mul_ps = _mm_cvtepi32_ps(acc);
@@ -52,13 +33,12 @@ pub unsafe fn sse_euclid_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
     let mut remainder = len % 16;
     if remainder != 0 {
         let mut remainder_score = 0;
-        for _ in 0..remainder {
+        for _ in 0..len % 16 {
             let v1 = *ptr1 as i32;
             let v2 = *ptr2 as i32;
             ptr1 = ptr1.add(1);
             ptr2 = ptr2.add(1);
-            let diff = v1 - v2;
-            remainder_score += diff * diff;
+            remainder_score += (v1 - v2).abs();
         }
         score += remainder_score as f32;
     }
@@ -68,17 +48,9 @@ pub unsafe fn sse_euclid_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::spaces::metric_uint::simple_manhattan::manhattan_similarity_bytes;
 
-    fn euclid_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
-        -v1.iter()
-            .zip(v2)
-            .map(|(a, b)| {
-                let diff = *a as i32 - *b as i32;
-                diff * diff
-            })
-            .sum::<i32>() as f32
-    }
+    use super::*;
 
     #[test]
     fn test_spaces_sse() {
@@ -100,8 +72,8 @@ mod tests {
                 240, 239, 238,
             ];
 
-            let dot_simd = unsafe { sse_euclid_similarity_bytes(&v1, &v2) };
-            let dot = euclid_similarity_bytes(&v1, &v2);
+            let dot_simd = unsafe { sse_manhattan_similarity_bytes(&v1, &v2) };
+            let dot = manhattan_similarity_bytes(&v1, &v2);
             assert_eq!(dot_simd, dot);
         } else {
             println!("avx test skipped");

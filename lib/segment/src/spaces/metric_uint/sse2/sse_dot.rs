@@ -1,10 +1,10 @@
 use std::arch::x86_64::*;
 
+use crate::spaces::simple_sse::hsum128_ps_sse;
+
 #[target_feature(enable = "sse")]
 #[allow(unused)]
 pub unsafe fn sse_dot_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
-    use crate::hsum128_ps_sse;
-
     debug_assert!(v1.len() == v2.len());
     let mut ptr1: *const u8 = v1.as_ptr();
     let mut ptr2: *const u8 = v2.as_ptr();
@@ -68,17 +68,9 @@ pub unsafe fn sse_dot_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
 
 #[cfg(test)]
 mod tests {
+    use crate::spaces::metric_uint::simple_dot::dot_similarity_bytes;
+
     use super::*;
-
-    fn dot_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
-        let mut dot_product = 0;
-
-        for (a, b) in v1.iter().zip(v2) {
-            dot_product += (*a as i32) * (*b as i32);
-        }
-
-        dot_product as f32
-    }
 
     #[test]
     fn test_spaces_sse() {
