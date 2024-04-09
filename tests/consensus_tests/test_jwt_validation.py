@@ -776,22 +776,12 @@ def test_create_collection():
 
 
 def test_delete_collection():
-    # create collections
-    coll_names = [random_str() for _ in range(10)]
-    coll_names_iter = iter(coll_names)
-
-    def grpc_req():
-        return {"collection_name": next(coll_names_iter)}
-
+    fake_name = random_str()
     check_access(
         "delete_collection",
-        grpc_request=grpc_req,
-        path_params={"collection_name": lambda: next(coll_names_iter)},
+        grpc_request={"collection_name": fake_name},
+        path_params={"collection_name": fake_name},
     )
-
-    # teardown
-    for collection_name in coll_names:
-        requests.delete(f"{REST_URI}/collections/{collection_name}", headers=API_KEY_HEADERS)
 
 
 def test_update_collection_params():
@@ -1211,19 +1201,14 @@ def test_create_collection_snapshot():
 
 
 def test_delete_collection_snapshot():
-    snapshot_names = [random_str() for _ in range(8)]
-    snapshot_names_iter = iter(snapshot_names)
-
-    def grpc_req():
-        return {"collection_name": COLL_NAME, "snapshot_name": next(snapshot_names_iter)}
-
+    fake_name = random_str()
     check_access(
         "delete_collection_snapshot",
         path_params={
             "collection_name": COLL_NAME,
-            "snapshot_name": lambda: next(snapshot_names_iter),
+            "snapshot_name": fake_name,
         },
-        grpc_request=grpc_req,
+        grpc_request={"collection_name": COLL_NAME, "snapshot_name": fake_name},
     )
 
 
@@ -1332,25 +1317,18 @@ def test_create_shard_snapshot():
 
 
 def test_delete_shard_snapshot():
-    shard_snapshot_names = [random_str() for _ in range(8)]
-
-    snapshot_names_iter = iter(shard_snapshot_names)
-
-    def grpc_req():
-        return {
-            "collection_name": COLL_NAME,
-            "shard_id": SHARD_ID,
-            "snapshot_name": next(snapshot_names_iter),
-        }
-
     check_access(
         "delete_shard_snapshot",
         path_params={
             "collection_name": COLL_NAME,
             "shard_id": SHARD_ID,
-            "snapshot_name": lambda: next(snapshot_names_iter),
+            "snapshot_name": random_str(),
         },
-        grpc_request=grpc_req,
+        grpc_request={
+            "collection_name": COLL_NAME,
+            "shard_id": SHARD_ID,
+            "snapshot_name": random_str(),
+        },
     )
 
 
@@ -1374,30 +1352,17 @@ def test_create_full_snapshot():
 
 
 def test_delete_full_snapshot():
-    snapshot_names = [random_str() for _ in range(8)]
-    snapshot_names_iter = iter(snapshot_names)
-
-    def grpc_req():
-        return {"snapshot_name": next(snapshot_names_iter)}
-
     check_access(
         "delete_full_snapshot",
-        path_params={"snapshot_name": lambda: next(snapshot_names_iter)},
-        grpc_request=grpc_req,
+        path_params={"snapshot_name": random_str()},
+        grpc_request={"snapshot_name": random_str()},
     )
 
 
 def test_download_full_snapshot():
-    res = requests.post(
-        f"{REST_URI}/snapshots?wait=true",
-        headers=API_KEY_HEADERS,
-    )
-    res.raise_for_status()
-    name = res.json()["result"]["name"]
-
     check_access(
         "download_full_snapshot",
-        path_params={"snapshot_name": name},
+        path_params={"snapshot_name": random_str()},
     )
 
 
@@ -1740,4 +1705,4 @@ def test_post_locks():
 
 def test_get_locks():
     check_access("get_locks")
-    check_access("get_locks")
+    
