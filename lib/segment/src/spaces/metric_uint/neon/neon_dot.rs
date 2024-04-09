@@ -44,9 +44,10 @@ mod tests {
     use std::arch::is_aarch64_feature_detected;
 
     use super::*;
+    use crate::spaces::metric_uint::simple_dot::dot_similarity_bytes;
 
     #[test]
-    fn test_spaces_sse() {
+    fn test_spaces_neon() {
         if is_aarch64_feature_detected!("neon") {
             let v1: Vec<u8> = vec![
                 255, 255, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 255, 255,
