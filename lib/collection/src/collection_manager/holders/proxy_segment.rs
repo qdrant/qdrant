@@ -106,29 +106,34 @@ impl ProxySegment {
             // Point is already removed from wrapped segment
             return Ok(false);
         }
-        let wrapped_segment = self.wrapped_segment.get();
-        let wrapped_segment_guard = wrapped_segment.read();
-        if !wrapped_segment_guard.has_point(point_id) {
-            // Point is not in wrapped segment
-            return Ok(false);
-        }
 
-        let (all_vectors, payload) = (
-            wrapped_segment_guard.all_vectors(point_id)?,
-            wrapped_segment_guard.payload(point_id)?,
-        );
+        {
+            let wrapped_segment = self.wrapped_segment.get();
+            let wrapped_segment_guard = wrapped_segment.read();
+            if !wrapped_segment_guard.has_point(point_id) {
+                // Point is not in wrapped segment
+                return Ok(false);
+            }
+
+            let (all_vectors, payload) = (
+                wrapped_segment_guard.all_vectors(point_id)?,
+                wrapped_segment_guard.payload(point_id)?,
+            );
+
+            {
+                let segment_arc = self.write_segment.get();
+                let mut write_segment = segment_arc.write();
+
+                write_segment.upsert_point(op_num, point_id, all_vectors)?;
+                if !payload.is_empty() {
+                    write_segment.set_full_payload(op_num, point_id, &payload)?;
+                }
+            }
+        };
 
         {
             let mut deleted_points_write = RwLockUpgradableReadGuard::upgrade(deleted_points_guard);
             deleted_points_write.insert(point_id);
-        }
-
-        let segment_arc = self.write_segment.get();
-        let mut write_segment = segment_arc.write();
-
-        write_segment.upsert_point(op_num, point_id, all_vectors)?;
-        if !payload.is_empty() {
-            write_segment.set_full_payload(op_num, point_id, &payload)?;
         }
 
         Ok(true)
@@ -170,18 +175,20 @@ impl ProxySegment {
     /// shard holder at the same time. If the wrapped segment is thrown away, then this is not
     /// required.
     pub(super) fn propagate_to_wrapped(&self) -> OperationResult<()> {
+        let deleted_points = self.deleted_points.upgradable_read();
         let wrapped_segment = self.wrapped_segment.get();
         let mut wrapped_segment = wrapped_segment.write();
         let op_num = wrapped_segment.version();
 
         // Propagate deleted points
         {
-            let deleted_points = self.deleted_points.upgradable_read();
             if !deleted_points.is_empty() {
                 for point_id in deleted_points.iter() {
                     wrapped_segment.delete_point(op_num, *point_id)?;
                 }
                 RwLockUpgradableReadGuard::upgrade(deleted_points).clear();
+            } else {
+                drop(deleted_points);
             }
         }
 
