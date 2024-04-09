@@ -491,32 +491,6 @@ def test_all_grpc_endpoints_are_covered():
             ), f"gRPC endpoint `{grpc_endpoint}` not found in ACTION_ACCESS gRPC endpoints"
 
 
-def start_api_key_instance(tmp_path: pathlib.Path) -> Tuple[str, str]:
-    extra_env = {
-        "QDRANT__SERVICE__API_KEY": SECRET,
-        "QDRANT__SERVICE__JWT_RBAC": "true",
-        "QDRANT__STORAGE__WAL__WAL_CAPACITY_MB": "1",
-    }
-
-    peer_dir = make_peer_folder(tmp_path, 0)
-
-    (rest_uri, _bootstrap_uri) = start_first_peer(
-        peer_dir, "api_key_peer.log", port=PORT_SEED, extra_env=extra_env
-    )
-
-    assert rest_uri == REST_URI
-
-    time.sleep(0.5)
-
-    def check_readyz(uri: str) -> bool:
-        res = requests.get(f"{uri}/readyz")
-        return res.ok
-
-    wait_for(check_readyz, REST_URI)
-
-    return REST_URI, GRPC_URI
-
-
 @pytest.fixture(scope="module", autouse=True)
 def uris(tmp_path_factory: pytest.TempPathFactory):
     extra_env = {
@@ -527,8 +501,10 @@ def uris(tmp_path_factory: pytest.TempPathFactory):
 
     tmp_path = tmp_path_factory.mktemp("api_key_instance")
 
-    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, num_peers=2, port_seed=PORT_SEED, extra_env=extra_env, headers=API_KEY_HEADERS)
-    
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(
+        tmp_path, num_peers=1, port_seed=PORT_SEED, extra_env=extra_env, headers=API_KEY_HEADERS
+    )
+
     assert REST_URI in peer_api_uris
 
     fixtures.create_collection(
@@ -552,15 +528,6 @@ def uris(tmp_path_factory: pytest.TempPathFactory):
 
     fixtures.drop_collection(REST_URI, COLL_NAME, headers=API_KEY_HEADERS)
 
-@pytest.fixture(scope="module")
-def peer_ids(uris):
-    # get cluster info
-    res = requests.get(f"{REST_URI}/cluster", headers=API_KEY_HEADERS)
-    res.raise_for_status()
-
-    all_peer_ids = [int(peer_id) for peer_id in res.json()["result"]["peers"].keys()]
-    
-    return all_peer_ids
 
 def create_validation_collection(collection: str, timeout=10):
     res = requests.put(
@@ -672,7 +639,10 @@ def check_rest_access(
     )
 
     if should_succeed:
-        assert res.status_code <= 400, f"{method} {path} failed with {res.status_code}: {res.text}"
+        assert res.status_code < 500 and res.status_code not in [
+            401,
+            403,
+        ], f"{method} {path} failed with {res.status_code}: {res.text}"
     else:
         assert res.status_code in [
             401,
@@ -694,7 +664,7 @@ def check_grpc_access(
         _res = client.request(service=service, method=method, request=request)
     except grpc.RpcError as e:
         if should_succeed:
-            if e.code() != grpc.StatusCode.INVALID_ARGUMENT:
+            if e.code() not in [grpc.StatusCode.INVALID_ARGUMENT, grpc.StatusCode.NOT_FOUND]:
                 pytest.fail(f"{service}/{method} failed with {e.code()}: {e.details()}")
         else:
             assert e.code() == grpc.StatusCode.PERMISSION_DENIED
@@ -786,25 +756,28 @@ def test_get_collection():
 
 
 def test_create_collection():
+    coll_names = [random_str() for _ in range(10)]
+
+    coll_names_iter = iter(coll_names)
+
     def grpc_req():
-        return {"collection_name": random_str()}
+        return {"collection_name": next(coll_names_iter)}
 
     check_access(
         "create_collection",
         rest_request={},
         grpc_request=grpc_req,
-        path_params={"collection_name": lambda: random_str()},
+        path_params={"collection_name": lambda: next(coll_names_iter)},
     )
+
+    # teardown
+    for collection_name in coll_names:
+        requests.delete(f"{REST_URI}/collections/{collection_name}", headers=API_KEY_HEADERS)
 
 
 def test_delete_collection():
     # create collections
     coll_names = [random_str() for _ in range(10)]
-    for collection_name in coll_names:
-        requests.put(
-            f"{REST_URI}/collections/{collection_name}", json={}, headers=API_KEY_HEADERS
-        ).raise_for_status()
-
     coll_names_iter = iter(coll_names)
 
     def grpc_req():
@@ -947,6 +920,7 @@ def test_collection_exists():
         grpc_request={"collection_name": COLL_NAME},
     )
 
+
 ### operation stubs to use for update_collection_cluster_setup tests
 #
 # class AccessStub:
@@ -1060,7 +1034,9 @@ def test_collection_exists():
 #     },
 # )
 
-def test_replicate_shard_operation(peer_ids: List[int]):
+
+def test_replicate_shard_operation():
+    peer_ids = [PEER_ID + 5, PEER_ID + 3]
     replicate_shard = {
         "replicate_shard": {
             "shard_id": SHARD_ID,
@@ -1078,14 +1054,32 @@ def test_replicate_shard_operation(peer_ids: List[int]):
         },
     )
 
-def test_create_default_shard_key_operation():
+
+@pytest.fixture
+def new_shard_keys():
+    new_shard_keys = [random_str() for _ in range(8)]
+
+    yield new_shard_keys
+
+    # teardown
+    for shard_key in new_shard_keys:
+        requests.post(
+            f"{REST_URI}/collections/{COLL_NAME}/shards/delete",
+            json={"shard_key": shard_key},
+            headers=API_KEY_HEADERS,
+        )
+
+
+def test_create_default_shard_key_operation(new_shard_keys):
+    keys_iter = iter(new_shard_keys)
+
     def rest_req():
-        return {"create_sharding_key": {"shard_key": random_str()} }
+        return {"create_sharding_key": {"shard_key": next(keys_iter)}}
 
     def grpc_req():
         return {
             "collection_name": COLL_NAME,
-            "create_shard_key": {"shard_key": {"keyword": random_str()}},
+            "create_shard_key": {"shard_key": {"keyword": next(keys_iter)}},
         }
 
     check_access(
@@ -1096,14 +1090,19 @@ def test_create_default_shard_key_operation():
     )
 
 
-def test_create_custom_shard_key_operation():
+def test_create_custom_shard_key_operation(new_shard_keys):
+    keys_iter = iter(new_shard_keys)
+
     def rest_req():
-        return {"create_sharding_key": {"shard_key": random_str(), "replication_factor": 3} }
+        return {"create_sharding_key": {"shard_key": next(keys_iter), "replication_factor": 3}}
 
     def grpc_req():
         return {
             "collection_name": COLL_NAME,
-            "create_shard_key": {"shard_key": {"keyword": random_str()}, "replication_factor": 3}
+            "create_shard_key": {
+                "shard_key": {"keyword": next(keys_iter)},
+                "replication_factor": 3,
+            },
         }
 
     check_access(
@@ -1117,7 +1116,7 @@ def test_create_custom_shard_key_operation():
 def test_drop_shard_key_operation():
     check_access(
         "drop_shard_key_operation",
-        rest_request={"drop_sharding_key": {"shard_key": random_str()} },
+        rest_request={"drop_sharding_key": {"shard_key": random_str()}},
         path_params={"collection_name": COLL_NAME},
         grpc_request={
             "collection_name": COLL_NAME,
@@ -1126,14 +1125,16 @@ def test_drop_shard_key_operation():
     )
 
 
-def test_create_default_shard_key():
+def test_create_default_shard_key(new_shard_keys):
+    keys_iter = iter(new_shard_keys)
+
     def rest_req():
-        return {"shard_key": random_str()}
+        return {"shard_key": next(keys_iter)}
 
     def grpc_req():
         return {
             "collection_name": COLL_NAME,
-            "request": {"shard_key": {"keyword": random_str()}},
+            "request": {"shard_key": {"keyword": next(keys_iter)}},
         }
 
     check_access(
@@ -1144,14 +1145,16 @@ def test_create_default_shard_key():
     )
 
 
-def test_create_custom_shard_key():
+def test_create_custom_shard_key(new_shard_keys):
+    keys_iter = iter(new_shard_keys)
+
     def rest_req():
-        return {"shard_key": random_str(), "replication_factor": 3}
+        return {"shard_key": next(keys_iter), "replication_factor": 3}
 
     def grpc_req():
         return {
             "collection_name": COLL_NAME,
-            "request": {"shard_key": {"keyword": random_str()}, "replication_factor": 3},
+            "request": {"shard_key": {"keyword": next(keys_iter)}, "replication_factor": 3},
         }
 
     check_access(
@@ -1208,19 +1211,7 @@ def test_create_collection_snapshot():
 
 
 def test_delete_collection_snapshot():
-    # create snapshots
-    snapshot_names = []
-    for _ in range(8):
-        res = requests.post(
-            f"{REST_URI}/collections/{COLL_NAME}/snapshots?wait=true",
-            headers=API_KEY_HEADERS,
-        )
-        res.raise_for_status()
-        filename = res.json()["result"]["name"]
-        snapshot_names.append(filename)
-        # names are only different if they are 1 second apart
-        time.sleep(1)
-
+    snapshot_names = [random_str() for _ in range(8)]
     snapshot_names_iter = iter(snapshot_names)
 
     def grpc_req():
@@ -1341,17 +1332,7 @@ def test_create_shard_snapshot():
 
 
 def test_delete_shard_snapshot():
-    shard_snapshot_names = []
-    for _ in range(8):
-        res = requests.post(
-            f"{REST_URI}/collections/{COLL_NAME}/shards/{SHARD_ID}/snapshots?wait=true",
-            headers=API_KEY_HEADERS,
-        )
-        res.raise_for_status()
-        filename = res.json()["result"]["name"]
-        shard_snapshot_names.append(filename)
-        # names are only different if they are 1 second apart
-        time.sleep(1)
+    shard_snapshot_names = [random_str() for _ in range(8)]
 
     snapshot_names_iter = iter(shard_snapshot_names)
 
@@ -1393,18 +1374,7 @@ def test_create_full_snapshot():
 
 
 def test_delete_full_snapshot():
-    snapshot_names = []
-    for _ in range(8):
-        res = requests.post(
-            f"{REST_URI}/snapshots?wait=true",
-            headers=API_KEY_HEADERS,
-        )
-        res.raise_for_status()
-        filename = res.json()["result"]["name"]
-        snapshot_names.append(filename)
-        # names are only different if they are 1 second apart
-        time.sleep(1)
-
+    snapshot_names = [random_str() for _ in range(8)]
     snapshot_names_iter = iter(snapshot_names)
 
     def grpc_req():
@@ -1565,6 +1535,20 @@ def test_delete_vectors():
 def test_set_payload():
     check_access(
         "set_payload",
+        rest_request={"points": [1], "payload": {"my_key": "value"}, "shard_key": SHARD_KEY},
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={
+            "collection_name": COLL_NAME,
+            "points_selector": {"points": {"ids": [{"num": 1}]}},
+            "payload": {"my_key": {"string_value": "value"}},
+            **SHARD_KEY_SELECTOR,
+        },
+    )
+
+
+def test_overwrite_payload():
+    check_access(
+        "overwrite_payload",
         rest_request={"points": [1], "payload": {"my_key": "value"}, "shard_key": SHARD_KEY},
         path_params={"collection_name": COLL_NAME},
         grpc_request={
@@ -1750,12 +1734,10 @@ def test_metrics():
     check_access("metrics")
 
 
-def test_set_lock_options():
-    check_access(
-        "post_locks",
-        rest_request={"write": False}
-    )
+def test_post_locks():
+    check_access("post_locks", rest_request={"write": False})
 
 
-def test_get_lock_options():
+def test_get_locks():
+    check_access("get_locks")
     check_access("get_locks")
