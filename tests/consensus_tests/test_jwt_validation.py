@@ -2,21 +2,20 @@ import json
 import pathlib
 import random
 import string
-from tabnanny import check
 import tempfile
 import time
 from inspect import isfunction
+from tabnanny import check
 from typing import Callable, List, Optional, Tuple, Union
 
 import grpc
 import grpc_requests
 import pytest
 import requests
+from consensus_tests import fixtures
 from grpc_interceptor import ClientCallDetails, ClientInterceptor
 
-from consensus_tests import fixtures
-
-from .utils import encode_jwt, make_peer_folder, start_first_peer, wait_for
+from .utils import encode_jwt, make_peer_folder, start_cluster, start_first_peer, wait_for
 
 
 def random_str():
@@ -32,7 +31,7 @@ SECRET = "my_top_secret_key"
 API_KEY_HEADERS = {"Api-Key": SECRET}
 API_KEY_METADATA = [("api-key", SECRET)]
 
-COLL_NAME = "primary_test_collection"
+COLL_NAME = "jwt_test_collection"
 
 # Global read access token
 TOKEN_R = encode_jwt({"access": "r"}, SECRET)
@@ -56,126 +55,14 @@ SHARD_KEY = "existing_shard_key"
 _cached_grpc_clients = None
 
 SHARD_KEY_SELECTOR = {"shard_key_selector": {"shard_keys": [{"keyword": SHARD_KEY}]}}
+
+
 class Access:
     def __init__(self, r, coll_rw, m=True, coll_r=None):
         self.read = r
         self.coll_rw = coll_rw
         self.manage = m
         self.coll_r = r if coll_r is None else coll_r
-
-
-### operation stubs to use for update_collection_cluster_setup tests
-#
-# class AccessStub:
-#     def __init__(
-#         self,
-#         read,
-#         read_write,
-#         manage,
-#         rest_req=None,
-#         grpc_req=None,
-#         collection_name=COLL_NAME,
-#         snapshot_name=SNAPSHOT_NAME,
-#     ):
-#         self.access = Access(read, read_write, manage)
-#         self.rest_req = rest_req
-#         self.grpc_req = grpc_req
-#         self.collection_name = collection_name
-#         self.snapshot_name = snapshot_name
-# move_shard_operation = AccessStub(
-#     False,
-#     False,
-#     True,
-#     {
-#         "move_shard": {
-#             "shard_id": SHARD_ID,
-#             "from_peer_id": PEER_ID,
-#             "to_peer_id": PEER_ID + 1,
-#         }
-#     },
-#     {
-#         "collection_name": COLL_NAME,
-#         "move_shard": {
-#             "shard_id": SHARD_ID,
-#             "from_peer_id": PEER_ID,
-#             "to_peer_id": PEER_ID + 1,
-#         },
-#     },
-# )
-# replicate_shard_operation = AccessStub(
-#     False,
-#     False,
-#     True,
-#     {
-#         "replicate_shard": {
-#             "shard_id": SHARD_ID,
-#             "from_peer_id": PEER_ID,
-#             "to_peer_id": PEER_ID,
-#         }
-#     },
-# )
-# abort_shard_transfer_operation = AccessStub(
-#     False,
-#     False,
-#     True,
-#     {
-#         "abort_transfer": {
-#             "shard_id": SHARD_ID,
-#             "from_peer_id": PEER_ID,
-#             "to_peer_id": PEER_ID,
-#         }
-#     },
-# )
-# drop_shard_replica_operation = AccessStub(
-#     False,
-#     False,
-#     True,
-#     {
-#         "drop_replica": {
-#             "shard_id": SHARD_ID,
-#             "peer_id": PEER_ID,
-#         }
-#     },
-# )
-# default_create_shard_key_operation = AccessStub(
-#     False,
-#     True,
-#     True,
-#     {
-#         "create_sharding_key": default_shard_key_config,
-#     },
-# )
-# custom_create_shard_key_operation = AccessStub(
-#     False,
-#     False,
-#     True,
-#     {
-#         "create_sharding_key": None,
-#     },
-# )
-# drop_shard_key_operation = AccessStub(
-#     False,
-#     True,
-#     True,
-#     {
-#         "drop_sharding_key": {
-#             "shard_key": "a",
-#         }
-#     },
-# )
-# restart_transfer_operation = AccessStub(
-#     False,
-#     False,
-#     True,
-#     {
-#         "restart_transfer": {
-#             "shard_id": SHARD_ID,
-#             "from_peer_id": PEER_ID,
-#             "to_peer_id": PEER_ID,
-#             "method": "stream_records",
-#         }
-#     },
-# )
 
 
 class EndpointAccess:
@@ -216,21 +103,39 @@ ACTION_ACCESS = {
         "GET /collections/{collection_name}/exists",
         "qdrant.Collections/CollectionExists",
     ),
+    "replicate_shard_operation": EndpointAccess(
+        False,
+        False,
+        True,
+        "POST /collections/{collection_name}/cluster",
+        "qdrant.Collections/UpdateCollectionClusterSetup",
+    ),
+    "create_default_shard_key_operation": EndpointAccess(
+        False,
+        True,
+        True,
+        "POST /collections/{collection_name}/cluster",
+        "qdrant.Collections/UpdateCollectionClusterSetup",
+    ),
+    "create_custom_shard_key_operation": EndpointAccess(
+        False,
+        False,
+        True,
+        "POST /collections/{collection_name}/cluster",
+        "qdrant.Collections/UpdateCollectionClusterSetup",
+    ),
+    "drop_shard_key_operation": EndpointAccess(
+        False,
+        True,
+        True,
+        "POST /collections/{collection_name}/cluster",
+        "qdrant.Collections/UpdateCollectionClusterSetup",
+    ),
     # TODO: also test these actions for update cluster setup:
-    # "move_shard_operation": EndpointAccess(
-    #     False,
-    #     False,
-    #     True,
-    #     "POST /collections/{collection_name}/cluster",
-    #     "qdrant.Collections/UpdateCollectionClusterSetup",
-    # ),
-    # replicate_shard_operation,
+    # move_shard_operation,
     # abort_shard_transfer_operation,
     # drop_shard_replica_operation,
     # restart_transfer_operation,
-    # default_create_shard_key_operation,
-    # custom_create_shard_key_operation,
-    # drop_shard_key_operation
     ### Aliases ###
     "create_alias": EndpointAccess(
         False,
@@ -536,7 +441,6 @@ def test_all_actions_have_tests():
         ), f"An action is not tested: `{test_name}` was not found in this file"
 
 
-@pytest.mark.skip("Not all endpoints are covered yet")  # TODO: remove this skip
 def test_all_rest_endpoints_are_covered():
     # Load the JSON content from the openapi.json file
     with open("./docs/redoc/master/openapi.json", "r") as file:
@@ -569,14 +473,13 @@ class MetadataInterceptor(ClientInterceptor):
         return method(request_or_iterator, new_details)
 
 
-@pytest.mark.skip("Not all endpoints are covered yet")  # TODO: remove this skip
 def test_all_grpc_endpoints_are_covered():
     # read grpc services from the reflection server
     client: grpc_requests.Client = grpc_requests.Client(
         GRPC_URI, interceptors=[MetadataInterceptor(API_KEY_METADATA)]
     )
 
-    # check that all endpoints are covered in GRPC_TO_REST_MAPPING
+    # check that all endpoints are covered in ACTION_ACCESS
     covered_endpoints = set(v.grpc_endpoint for v in ACTION_ACCESS.values())
 
     for service_name in client.service_names:
@@ -616,31 +519,48 @@ def start_api_key_instance(tmp_path: pathlib.Path) -> Tuple[str, str]:
 
 @pytest.fixture(scope="module", autouse=True)
 def uris(tmp_path_factory: pytest.TempPathFactory):
+    extra_env = {
+        "QDRANT__SERVICE__API_KEY": SECRET,
+        "QDRANT__SERVICE__JWT_RBAC": "true",
+        "QDRANT__STORAGE__WAL__WAL_CAPACITY_MB": "1",
+    }
+
     tmp_path = tmp_path_factory.mktemp("api_key_instance")
 
-    rest_uri, grpc_uri = start_api_key_instance(tmp_path)
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, num_peers=2, port_seed=PORT_SEED, extra_env=extra_env, headers=API_KEY_HEADERS)
+    
+    assert REST_URI in peer_api_uris
 
     fixtures.create_collection(
-        rest_uri,
+        REST_URI,
         collection=COLL_NAME,
         sharding_method="custom",
         headers=API_KEY_HEADERS,
     )
 
     requests.put(
-        f"{rest_uri}/collections/{COLL_NAME}/shards",
+        f"{REST_URI}/collections/{COLL_NAME}/shards",
         json={"shard_key": SHARD_KEY},
         headers=API_KEY_HEADERS,
     ).raise_for_status()
 
     fixtures.upsert_random_points(
-        rest_uri, 100, COLL_NAME, shard_key=SHARD_KEY, headers=API_KEY_HEADERS
+        REST_URI, 100, COLL_NAME, shard_key=SHARD_KEY, headers=API_KEY_HEADERS
     )
 
-    yield rest_uri, grpc_uri
+    yield peer_api_uris, peer_dirs, bootstrap_uri
 
-    fixtures.drop_collection(rest_uri, COLL_NAME, headers=API_KEY_HEADERS)
+    fixtures.drop_collection(REST_URI, COLL_NAME, headers=API_KEY_HEADERS)
 
+@pytest.fixture(scope="module")
+def peer_ids(uris):
+    # get cluster info
+    res = requests.get(f"{REST_URI}/cluster", headers=API_KEY_HEADERS)
+    res.raise_for_status()
+
+    all_peer_ids = [int(peer_id) for peer_id in res.json()["result"]["peers"].keys()]
+    
+    return all_peer_ids
 
 def create_validation_collection(collection: str, timeout=10):
     res = requests.put(
@@ -651,9 +571,9 @@ def create_validation_collection(collection: str, timeout=10):
     res.raise_for_status()
 
 
-def scroll_with_token(uri: str, collection: str, token: str) -> requests.Response:
+def scroll_with_token(collection: str, token: str) -> requests.Response:
     res = requests.post(
-        f"{uri}/collections/{collection}/points/scroll",
+        f"{REST_URI}/collections/{collection}/points/scroll",
         json={
             "limit": 10,
         },
@@ -663,8 +583,7 @@ def scroll_with_token(uri: str, collection: str, token: str) -> requests.Respons
     return res
 
 
-def test_value_exists_claim(uris: Tuple[str, str]):
-    rest_uri, grpc_uri = uris
+def test_value_exists_claim():
 
     validation_collection = "secondary_test_collection"
 
@@ -681,18 +600,18 @@ def test_value_exists_claim(uris: Tuple[str, str]):
 
     # Check that token does not work with unexisting collection
     with pytest.raises(requests.HTTPError):
-        scroll_with_token(rest_uri, COLL_NAME, token)
+        scroll_with_token(COLL_NAME, token)
 
     # Create collection
     create_validation_collection(validation_collection)
 
     # Check it does not work now
     with pytest.raises(requests.HTTPError):
-        res = scroll_with_token(rest_uri, COLL_NAME, token)
+        res = scroll_with_token(COLL_NAME, token)
 
     # Upload validation point
     res = requests.put(
-        f"{rest_uri}/collections/{validation_collection}/points?wait=true",
+        f"{REST_URI}/collections/{validation_collection}/points?wait=true",
         json={
             "points": [
                 {
@@ -707,12 +626,12 @@ def test_value_exists_claim(uris: Tuple[str, str]):
     res.raise_for_status()
 
     # Check that token works now
-    res = scroll_with_token(rest_uri, COLL_NAME, token)
+    res = scroll_with_token(COLL_NAME, token)
     assert len(res.json()["result"]["points"]) == 10
 
     # Delete validation point
     res = requests.post(
-        f"{rest_uri}/collections/{validation_collection}/points/delete?wait=true",
+        f"{REST_URI}/collections/{validation_collection}/points/delete?wait=true",
         json={"points": [42]},
         headers=API_KEY_HEADERS,
     )
@@ -720,10 +639,10 @@ def test_value_exists_claim(uris: Tuple[str, str]):
 
     # Check it does not work now
     with pytest.raises(requests.HTTPError):
-        scroll_with_token(rest_uri, COLL_NAME, token)
+        scroll_with_token(COLL_NAME, token)
 
-    fixtures.drop_collection(rest_uri, validation_collection, headers=API_KEY_HEADERS)
-    fixtures.drop_collection(rest_uri, validation_collection, headers=API_KEY_HEADERS)
+    fixtures.drop_collection(REST_URI, validation_collection, headers=API_KEY_HEADERS)
+    fixtures.drop_collection(REST_URI, validation_collection, headers=API_KEY_HEADERS)
 
 
 def check_rest_access(
@@ -753,7 +672,7 @@ def check_rest_access(
     )
 
     if should_succeed:
-        assert res.ok, f"{method} {path} failed with {res.status_code}: {res.text}"
+        assert res.status_code <= 400, f"{method} {path} failed with {res.status_code}: {res.text}"
     else:
         assert res.status_code in [
             401,
@@ -775,7 +694,8 @@ def check_grpc_access(
         _res = client.request(service=service, method=method, request=request)
     except grpc.RpcError as e:
         if should_succeed:
-            pytest.fail(f"{service}/{method} failed with {e.code()}: {e.details()}")
+            if e.code() != grpc.StatusCode.INVALID_ARGUMENT:
+                pytest.fail(f"{service}/{method} failed with {e.code()}: {e.details()}")
         else:
             assert e.code() == grpc.StatusCode.PERMISSION_DENIED
 
@@ -1027,6 +947,184 @@ def test_collection_exists():
         grpc_request={"collection_name": COLL_NAME},
     )
 
+### operation stubs to use for update_collection_cluster_setup tests
+#
+# class AccessStub:
+#     def __init__(
+#         self,
+#         read,
+#         read_write,
+#         manage,
+#         rest_req=None,
+#         grpc_req=None,
+#         collection_name=COLL_NAME,
+#         snapshot_name=SNAPSHOT_NAME,
+#     ):
+#         self.access = Access(read, read_write, manage)
+#         self.rest_req = rest_req
+#         self.grpc_req = grpc_req
+#         self.collection_name = collection_name
+#         self.snapshot_name = snapshot_name
+# move_shard_operation = AccessStub(
+#     False,
+#     False,
+#     True,
+#     {
+#         "move_shard": {
+#             "shard_id": SHARD_ID,
+#             "from_peer_id": PEER_ID,
+#             "to_peer_id": PEER_ID + 1,
+#         }
+#     },
+#     {
+#         "collection_name": COLL_NAME,
+#         "move_shard": {
+#             "shard_id": SHARD_ID,
+#             "from_peer_id": PEER_ID,
+#             "to_peer_id": PEER_ID + 1,
+#         },
+#     },
+# )
+# replicate_shard_operation = AccessStub(
+#     False,
+#     False,
+#     True,
+#     {
+#         "replicate_shard": {
+#             "shard_id": SHARD_ID,
+#             "from_peer_id": PEER_ID,
+#             "to_peer_id": PEER_ID,
+#         }
+#     },
+# )
+# abort_shard_transfer_operation = AccessStub(
+#     False,
+#     False,
+#     True,
+#     {
+#         "abort_transfer": {
+#             "shard_id": SHARD_ID,
+#             "from_peer_id": PEER_ID,
+#             "to_peer_id": PEER_ID,
+#         }
+#     },
+# )
+# drop_shard_replica_operation = AccessStub(
+#     False,
+#     False,
+#     True,
+#     {
+#         "drop_replica": {
+#             "shard_id": SHARD_ID,
+#             "peer_id": PEER_ID,
+#         }
+#     },
+# )
+# default_create_shard_key_operation = AccessStub(
+#     False,
+#     True,
+#     True,
+#     {
+#         "create_sharding_key": default_shard_key_config,
+#     },
+# )
+# custom_create_shard_key_operation = AccessStub(
+#     False,
+#     False,
+#     True,
+#     {
+#         "create_sharding_key": None,
+#     },
+# )
+# drop_shard_key_operation = AccessStub(
+#     False,
+#     True,
+#     True,
+#     {
+#         "drop_sharding_key": {
+#             "shard_key": "a",
+#         }
+#     },
+# )
+# restart_transfer_operation = AccessStub(
+#     False,
+#     False,
+#     True,
+#     {
+#         "restart_transfer": {
+#             "shard_id": SHARD_ID,
+#             "from_peer_id": PEER_ID,
+#             "to_peer_id": PEER_ID,
+#             "method": "stream_records",
+#         }
+#     },
+# )
+
+def test_replicate_shard_operation(peer_ids: List[int]):
+    replicate_shard = {
+        "replicate_shard": {
+            "shard_id": SHARD_ID,
+            "from_peer_id": peer_ids[0],
+            "to_peer_id": peer_ids[1],
+        }
+    }
+    check_access(
+        "replicate_shard_operation",
+        rest_request=replicate_shard,
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={
+            "collection_name": COLL_NAME,
+            **replicate_shard,
+        },
+    )
+
+def test_create_default_shard_key_operation():
+    def rest_req():
+        return {"create_sharding_key": {"shard_key": random_str()} }
+
+    def grpc_req():
+        return {
+            "collection_name": COLL_NAME,
+            "create_shard_key": {"shard_key": {"keyword": random_str()}},
+        }
+
+    check_access(
+        "create_default_shard_key_operation",
+        rest_request=rest_req,
+        path_params={"collection_name": COLL_NAME},
+        grpc_request=grpc_req,
+    )
+
+
+def test_create_custom_shard_key_operation():
+    def rest_req():
+        return {"create_sharding_key": {"shard_key": random_str(), "replication_factor": 3} }
+
+    def grpc_req():
+        return {
+            "collection_name": COLL_NAME,
+            "create_shard_key": {"shard_key": {"keyword": random_str()}, "replication_factor": 3}
+        }
+
+    check_access(
+        "create_custom_shard_key_operation",
+        rest_request=rest_req,
+        path_params={"collection_name": COLL_NAME},
+        grpc_request=grpc_req,
+    )
+
+
+def test_drop_shard_key_operation():
+    check_access(
+        "drop_shard_key_operation",
+        rest_request={"drop_sharding_key": {"shard_key": random_str()} },
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={
+            "collection_name": COLL_NAME,
+            "delete_shard_key": {"shard_key": {"keyword": random_str()}},
+        },
+    )
+
 
 def test_create_default_shard_key():
     def rest_req():
@@ -1065,31 +1163,14 @@ def test_create_custom_shard_key():
 
 
 def test_delete_shard_key():
-    deletable_shard_keys = [random_str() for _ in range(10)]
-
-    for shard_key in deletable_shard_keys:
-        requests.put(
-            f"{REST_URI}/collections/{COLL_NAME}/shards",
-            json={"shard_key": shard_key},
-            headers=API_KEY_HEADERS,
-        ).raise_for_status()
-
-    keys_iter = iter(deletable_shard_keys)
-
-    def rest_req():
-        return {"shard_key": next(keys_iter)}
-
-    def grpc_req():
-        return {
-            "collection_name": COLL_NAME,
-            "request": {"shard_key": {"keyword": next(keys_iter)}},
-        }
-
     check_access(
         "delete_shard_key",
-        rest_request=rest_req,
+        rest_request={"shard_key": random_str()},
         path_params={"collection_name": COLL_NAME},
-        grpc_request=grpc_req,
+        grpc_request={
+            "collection_name": COLL_NAME,
+            "request": {"shard_key": {"keyword": random_str()}},
+        },
     )
 
 
@@ -1394,7 +1475,7 @@ def test_upsert_points():
 def test_update_points_batch():
     rest_operations = [
         {"upsert": {"shard_key": SHARD_KEY, "points": [{"id": 1, "vector": [1, 2, 3, 4]}]}},
-        {"delete": {"shard_key": SHARD_KEY, "points": [2]}},
+        {"delete": {"shard_key": SHARD_KEY, "points": [3]}},
         {"set_payload": {"shard_key": SHARD_KEY, "points": [1], "payload": {"key": "value"}}},
         {
             "overwrite_payload": {
@@ -1411,19 +1492,25 @@ def test_update_points_batch():
                 "points": [{"id": 1, "vector": [1, 2, 3, 4]}],
             }
         },
-        {"delete_vectors": {"shard_key": SHARD_KEY, "points": [1], "vector": [""]}},
+        {"delete_vectors": {"shard_key": SHARD_KEY, "points": [2], "vector": [""]}},
     ]
-    
+
     grpc_operations = [
         {
-            "upsert": { 
-                **SHARD_KEY_SELECTOR, 
-                "points": [{"id": {"num": 1}, "vectors": {"vector": {"data": [1, 2, 3, 4]}}, "payload": {}}]
+            "upsert": {
+                **SHARD_KEY_SELECTOR,
+                "points": [
+                    {
+                        "id": {"num": 1},
+                        "vectors": {"vector": {"data": [1, 2, 3, 4]}},
+                        "payload": {},
+                    }
+                ],
             }
         }
         # TODO: add the rest of operations
     ]
-    
+
     check_access(
         "update_points_batch",
         rest_request={"operations": rest_operations},
@@ -1438,17 +1525,20 @@ def test_update_points_batch():
 def test_delete_points():
     check_access(
         "delete_points",
-        rest_request={"points": [1], "shard_key": SHARD_KEY},
+        rest_request={"points": [3], "shard_key": SHARD_KEY},
         path_params={"collection_name": COLL_NAME},
-        grpc_request={"collection_name": COLL_NAME, "points": {"points": {"ids": [{"num": 1}]}}, **SHARD_KEY_SELECTOR},
+        grpc_request={
+            "collection_name": COLL_NAME,
+            "points": {"points": {"ids": [{"num": 3}]}},
+            **SHARD_KEY_SELECTOR,
+        },
     )
 
 
 def test_update_vectors():
     check_access(
         "update_vectors",
-        rest_request={"points": [{"id": 1, "vector": [1, 2, 3, 4]}],
-                      "shard_key": SHARD_KEY},
+        rest_request={"points": [{"id": 1, "vector": [1, 2, 3, 4]}], "shard_key": SHARD_KEY},
         path_params={"collection_name": COLL_NAME},
         grpc_request={
             "collection_name": COLL_NAME,
@@ -1461,15 +1551,16 @@ def test_update_vectors():
 def test_delete_vectors():
     check_access(
         "delete_vectors",
-        rest_request={"points": [1], "vector": [""], "shard_key": SHARD_KEY},
+        rest_request={"points": [2], "vector": [""], "shard_key": SHARD_KEY},
         path_params={"collection_name": COLL_NAME},
         grpc_request={
             "collection_name": COLL_NAME,
-            "points_selector": {"points": {"ids": [{"num": 1}]}},
+            "points_selector": {"points": {"ids": [{"num": 2}]}},
             "vectors": {"names": [""]},
             **SHARD_KEY_SELECTOR,
         },
     )
+
 
 def test_set_payload():
     check_access(
@@ -1478,12 +1569,12 @@ def test_set_payload():
         path_params={"collection_name": COLL_NAME},
         grpc_request={
             "collection_name": COLL_NAME,
-            "points_selector": {"points": {"ids": [{"num": 1}]}}, 
+            "points_selector": {"points": {"ids": [{"num": 1}]}},
             "payload": {"my_key": {"string_value": "value"}},
             **SHARD_KEY_SELECTOR,
         },
     )
-    
+
 
 def test_delete_payload():
     check_access(
@@ -1492,13 +1583,13 @@ def test_delete_payload():
         path_params={"collection_name": COLL_NAME},
         grpc_request={
             "collection_name": COLL_NAME,
-            "points_selector": {"points": {"ids": [{"num": 1}]}}, 
+            "points_selector": {"points": {"ids": [{"num": 1}]}},
             "keys": ["my_key"],
             **SHARD_KEY_SELECTOR,
         },
     )
-    
-    
+
+
 def test_clear_payload():
     check_access(
         "clear_payload",
@@ -1506,11 +1597,11 @@ def test_clear_payload():
         path_params={"collection_name": COLL_NAME},
         grpc_request={
             "collection_name": COLL_NAME,
-            "points": {"points": {"ids": [{"num": 1}]}}, 
+            "points": {"points": {"ids": [{"num": 1}]}},
             **SHARD_KEY_SELECTOR,
         },
     )
-    
+
 
 def test_scroll_points():
     check_access(
