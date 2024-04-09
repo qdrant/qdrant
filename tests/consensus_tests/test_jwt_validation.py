@@ -131,11 +131,34 @@ ACTION_ACCESS = {
         "POST /collections/{collection_name}/cluster",
         "qdrant.Collections/UpdateCollectionClusterSetup",
     ),
-    # TODO: also test these actions for update cluster setup:
-    # move_shard_operation,
-    # abort_shard_transfer_operation,
-    # drop_shard_replica_operation,
-    # restart_transfer_operation,
+    "move_shard_operation": EndpointAccess(
+        False,
+        False,
+        True,
+        "POST /collections/{collection_name}/cluster",
+        "qdrant.Collections/UpdateCollectionClusterSetup",
+    ),
+    "abort_shard_transfer_operation": EndpointAccess(
+        False,
+        False,
+        True,
+        "POST /collections/{collection_name}/cluster",
+        "qdrant.Collections/UpdateCollectionClusterSetup",
+    ),
+    "drop_shard_replica_operation": EndpointAccess(
+        False,
+        False,
+        True,
+        "POST /collections/{collection_name}/cluster",
+        "qdrant.Collections/UpdateCollectionClusterSetup",
+    ),
+    "restart_transfer_operation": EndpointAccess(
+        False,
+        False,
+        True,
+        "POST /collections/{collection_name}/cluster",
+        "qdrant.Collections/UpdateCollectionClusterSetup",
+    ),
     ### Aliases ###
     "create_alias": EndpointAccess(
         False,
@@ -1115,6 +1138,82 @@ def test_drop_shard_key_operation():
     )
 
 
+def test_move_shard_operation():
+    move_shard_op = {
+        "move_shard": {
+            "shard_id": SHARD_ID,
+            "from_peer_id": PEER_ID + 6,
+            "to_peer_id": PEER_ID + 7,
+        }
+    }
+    check_access(
+        "move_shard_operation",
+        rest_request=move_shard_op,
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={
+            "collection_name": COLL_NAME,
+            **move_shard_op,
+        },
+    )
+    
+def test_abort_shard_transfer_operation():
+    abort_shard_transfer = {
+        "abort_transfer": {
+            "shard_id": SHARD_ID,
+            "from_peer_id": PEER_ID + 6,
+            "to_peer_id": PEER_ID + 7,
+        }
+    }
+    check_access(
+        "abort_shard_transfer_operation",
+        rest_request=abort_shard_transfer,
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={
+            "collection_name": COLL_NAME,
+            **abort_shard_transfer,
+        },
+    )
+    
+def test_drop_shard_replica_operation():
+    drop_shard_replica = {
+        "drop_replica": {
+            "shard_id": SHARD_ID,
+            "peer_id": PEER_ID + 6,
+        }
+    }
+    check_access(
+        "drop_shard_replica_operation",
+        rest_request=drop_shard_replica,
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={
+            "collection_name": COLL_NAME,
+            **drop_shard_replica,
+        },
+    )
+    
+def test_restart_transfer_operation():
+    check_access(
+        "restart_transfer_operation",
+        rest_request={
+            "restart_transfer": {
+                "shard_id": SHARD_ID,
+                "from_peer_id": PEER_ID,
+                "to_peer_id": PEER_ID,
+                "method": "stream_records",
+            }
+        },
+        path_params={"collection_name": COLL_NAME},
+        grpc_request={
+            "collection_name": COLL_NAME,
+            "restart_transfer": {
+                "shard_id": SHARD_ID,
+                "from_peer_id": PEER_ID,
+                "to_peer_id": PEER_ID,
+                "method": 0,
+            }
+        },
+    )
+
 def test_create_default_shard_key(new_shard_keys):
     keys_iter = iter(new_shard_keys)
 
@@ -1705,4 +1804,3 @@ def test_post_locks():
 
 def test_get_locks():
     check_access("get_locks")
-    
