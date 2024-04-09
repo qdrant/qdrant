@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::ops::Deref;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -9,13 +8,11 @@ use itertools::Itertools;
 use ordered_float::Float;
 use parking_lot::RwLock;
 use segment::common::operation_error::OperationError;
-use segment::common::BYTES_IN_KB;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{QueryVector, VectorStruct};
-use segment::entry::entry_point::SegmentEntry;
 use segment::types::{
     Filter, Indexes, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SeqNumberType,
-    WithPayload, WithPayloadInterface, WithVector, VECTOR_ELEMENT_SIZE,
+    WithPayload, WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
@@ -24,9 +21,7 @@ use super::holders::segment_holder::LockedSegmentHolder;
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
 use crate::collection_manager::probabilistic_segment_search_sampling::find_search_sampling_over_point_distribution;
 use crate::collection_manager::search_result_aggregator::BatchResultAggregator;
-use crate::operations::types::{
-    CollectionError, CollectionResult, CoreSearchRequestBatch, QueryEnum, Record,
-};
+use crate::operations::types::{CollectionResult, CoreSearchRequestBatch, QueryEnum, Record};
 
 type BatchOffset = usize;
 type SegmentOffset = usize;
@@ -533,20 +528,6 @@ fn execute_batch_search(
         search_params.top
     };
 
-    let ignore_plain_index = search_params
-        .params
-        .map(|p| p.indexed_only)
-        .unwrap_or(false);
-    if ignore_plain_index
-        && !is_search_optimized(
-            read_segment.deref(),
-            search_optimized_threshold_kb,
-            search_params.vector_name,
-        )?
-    {
-        let batch_len = vectors_batch.len();
-        return Ok((vec![vec![]; batch_len], vec![false; batch_len]));
-    }
     let vectors_batch = &vectors_batch.iter().collect_vec();
     let res = read_segment.search_batch(
         search_params.vector_name,
@@ -557,6 +538,7 @@ fn execute_batch_search(
         top,
         search_params.params,
         is_stopped,
+        search_optimized_threshold_kb,
     )?;
 
     let further_results = res
@@ -565,54 +547,6 @@ fn execute_batch_search(
         .collect();
 
     Ok((res, further_results))
-}
-
-/// Check if the segment is indexed enough to be searched with `indexed_only` parameter
-fn is_search_optimized(
-    segment: &dyn SegmentEntry,
-    search_optimized_threshold_kb: usize,
-    vector_name: &str,
-) -> CollectionResult<bool> {
-    let segment_info = segment.info();
-    let vector_name_error =
-        || CollectionError::bad_request(format!("Vector {} doesn't exist", vector_name));
-
-    let vector_data_info = segment_info
-        .vector_data
-        .get(vector_name)
-        .ok_or_else(vector_name_error)?;
-
-    // check only dense vectors because sparse vectors are always indexed
-    let vector_size = segment
-        .config()
-        .vector_data
-        .get(vector_name)
-        .ok_or_else(vector_name_error)?
-        .size;
-
-    let vector_size_bytes = vector_size * VECTOR_ELEMENT_SIZE;
-
-    let unindexed_vectors = vector_data_info
-        .num_vectors
-        .saturating_sub(vector_data_info.num_indexed_vectors);
-
-    let unindexed_volume = vector_size_bytes.saturating_mul(unindexed_vectors);
-
-    let indexing_threshold_bytes = search_optimized_threshold_kb * BYTES_IN_KB;
-
-    // Examples:
-    // Threshold = 20_000 Kb
-    // Indexed vectors: 100000
-    // Total vectors: 100010
-    // unindexed_volume = 100010 - 100000 = 10
-    // Result: true
-
-    // Threshold = 20_000 Kb
-    // Indexed vectors: 0
-    // Total vectors: 100000
-    // unindexed_volume = 100000
-    // Result: false
-    Ok(unindexed_volume < indexing_threshold_bytes)
 }
 
 /// Find the HNSW ef_construct for a named vector
@@ -631,6 +565,7 @@ fn get_hnsw_ef_construct(config: &SegmentConfig, vector_name: &str) -> Option<us
 
 #[cfg(test)]
 mod tests {
+    use segment::entry::entry_point::SegmentEntry;
     use segment::fixtures::index_fixtures::random_vector;
     use segment::types::SegmentType;
     use tempfile::Builder;
@@ -648,11 +583,11 @@ mod tests {
 
         let segment1 = random_segment(dir.path(), 10, 200, 256);
 
-        let res_1 = is_search_optimized(&segment1, 25, "").unwrap();
+        let res_1 = segment1.is_search_optimized(25, "").unwrap();
 
         assert!(!res_1);
 
-        let res_2 = is_search_optimized(&segment1, 225, "").unwrap();
+        let res_2 = segment1.is_search_optimized(225, "").unwrap();
 
         assert!(res_2);
 
@@ -666,9 +601,20 @@ mod tests {
             SegmentType::Indexed
         );
 
-        let res_3 = is_search_optimized(indexed_segment_read.deref(), 25, "").unwrap();
-
-        assert!(res_3);
+        match indexed_segment {
+            LockedSegment::Original(indexed_segment) => {
+                let indexed_segment_read = indexed_segment.read();
+                assert_eq!(
+                    indexed_segment_read.info().segment_type,
+                    SegmentType::Indexed
+                );
+                let res_3 = indexed_segment_read.is_search_optimized(25, "").unwrap();
+                assert!(res_3);
+            }
+            LockedSegment::Proxy(_) => {
+                panic!("Expected original segment, got proxy");
+            }
+        }
     }
 
     #[tokio::test]
