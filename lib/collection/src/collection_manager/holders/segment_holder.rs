@@ -472,8 +472,12 @@ impl<'s> SegmentHolder {
     where
         F: FnMut(PointIdType, &RwLockReadGuard<dyn SegmentEntry>) -> OperationResult<bool>,
     {
+        // List non-appendable segments first, then appendable segments
+        let mut segments = self.segments.values().collect::<Vec<_>>();
+        segments.sort_by_key(|segment| segment.get().read().is_appendable());
+
         let mut read_points = 0;
-        for segment in self.segments.values() {
+        for segment in segments {
             let segment_arc = segment.get();
             let read_segment = segment_arc.read();
             for point in ids.iter().cloned().filter(|id| read_segment.has_point(*id)) {
