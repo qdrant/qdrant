@@ -35,10 +35,10 @@ COLL_NAME = "jwt_test_collection"
 TOKEN_R = encode_jwt({"access": "r"}, SECRET)
 
 # Collection read access token
-TOKEN_COLL_R = encode_jwt({"access": [{"collections": [COLL_NAME], "access": "r"}]}, SECRET)
+TOKEN_COLL_R = encode_jwt({"access": [{"collection": COLL_NAME, "access": "r"}]}, SECRET)
 
 # Collection read-write access token
-TOKEN_COLL_RW = encode_jwt({"access": [{"collections": [COLL_NAME], "access": "rw"}]}, SECRET)
+TOKEN_COLL_RW = encode_jwt({"access": [{"collection": COLL_NAME, "access": "rw"}]}, SECRET)
 
 # Global manage access token
 TOKEN_M = encode_jwt({"access": "m"}, SECRET)
