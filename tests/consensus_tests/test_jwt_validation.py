@@ -515,15 +515,14 @@ ACTION_ACCESS = {
         True, True, True, "POST /collections/{collection_name}/points/count", "qdrant.Points/Count"
     ),
     ### Service ###
-    # TODO: add tests for these actions
-    # "get_root": EndpointAccess(True, True, True, "GET /", "qdrant.Qdrant/HealthCheck"),
-    # "readyz": EndpointAccess(True, True, True, "GET /readyz", "grpc.health.v1.Health/Check"),
-    # "healthz": EndpointAccess(True, True, True, "GET /healthz", "grpc.health.v1.Health/Check"),
-    # "livez": EndpointAccess(True, True, True, "GET /livez", "grpc.health.v1.Health/Check"),
-    # "telemetry": EndpointAccess(True, False, True, "GET /telemetry"),
-    # "metrics": EndpointAccess(True, False, True, "GET /metrics"),
-    # "set_lock_options": EndpointAccess(False, False, True, "POST /locks"),
-    # "get_lock_options": EndpointAccess(True, True, True, "GET /locks"),
+    "root": EndpointAccess(True, True, True, "GET /", "qdrant.Qdrant/HealthCheck"),
+    "readyz": EndpointAccess(True, True, True, "GET /readyz", "grpc.health.v1.Health/Check"),
+    "healthz": EndpointAccess(True, True, True, "GET /healthz", "grpc.health.v1.Health/Check"),
+    "livez": EndpointAccess(True, True, True, "GET /livez", "grpc.health.v1.Health/Check"),
+    "telemetry": EndpointAccess(True, False, True, "GET /telemetry", coll_r=False),
+    "metrics": EndpointAccess(True, False, True, "GET /metrics", coll_r=False),
+    "post_locks": EndpointAccess(False, False, True, "POST /locks"),
+    "get_locks": EndpointAccess(True, False, True, "GET /locks", coll_r=False),
 }
 
 
@@ -1634,3 +1633,38 @@ def test_count_points():
         path_params={"collection_name": COLL_NAME},
         grpc_request={"collection_name": COLL_NAME},
     )
+
+
+def test_root():
+    check_access("root")
+
+
+def test_readyz():
+    check_access("readyz")
+
+
+def test_healthz():
+    check_access("healthz")
+
+
+def test_livez():
+    check_access("livez")
+
+
+def test_telemetry():
+    check_access("telemetry")
+
+
+def test_metrics():
+    check_access("metrics")
+
+
+def test_set_lock_options():
+    check_access(
+        "post_locks",
+        rest_request={"write": False}
+    )
+
+
+def test_get_lock_options():
+    check_access("get_locks")
