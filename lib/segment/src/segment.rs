@@ -22,7 +22,10 @@ use crate::common::operation_error::{
     get_service_error, OperationError, OperationResult, SegmentFailedState,
 };
 use crate::common::version::{StorageVersion, VERSION_FILE};
-use crate::common::{BYTES_IN_KB, check_named_vectors, check_query_vectors, check_stopped, check_vector, check_vector_name};
+use crate::common::{
+    check_named_vectors, check_query_vectors, check_stopped, check_vector, check_vector_name,
+    BYTES_IN_KB,
+};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{Direction, OrderBy, OrderingValue};
 use crate::data_types::vectors::{QueryVector, Vector, VectorRef};
