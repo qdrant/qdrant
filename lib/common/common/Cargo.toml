@@ -14,7 +14,7 @@ num_cpus = "1.16"
 ordered-float = "4.2"
 serde = { workspace = true }
 tokio = { workspace = true }
-validator = { version = "0.16", features = ["derive"] }
+validator = { version = "0.18", features = ["derive"] }
 lazy_static = "1.4.0"
 semver = { workspace = true }
 
