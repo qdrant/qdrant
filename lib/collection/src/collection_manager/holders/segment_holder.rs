@@ -242,6 +242,13 @@ impl<'s> SegmentHolder {
             .any(|(_idx, seg)| seg.get().read().is_appendable())
     }
 
+    /// Get all locked segments, non-appendable first, then appendable.
+    pub fn non_appendable_then_appendable_segments(&self) -> Vec<LockedSegment> {
+        let mut segments = self.segments.values().cloned().collect::<Vec<_>>();
+        segments.sort_by_key(|seg| seg.get().read().is_appendable());
+        segments
+    }
+
     pub fn appendable_segments(&self) -> Vec<SegmentId> {
         self.segments
             .iter()
@@ -472,8 +479,13 @@ impl<'s> SegmentHolder {
     where
         F: FnMut(PointIdType, &RwLockReadGuard<dyn SegmentEntry>) -> OperationResult<bool>,
     {
+        // We must go over non-appendable segments first, then go over appendable segments after
+        // Points may be moved from non-appendable to appendable, because we don't lock all
+        // segments together read ordering is very important here!
+        let segments = self.non_appendable_then_appendable_segments();
+
         let mut read_points = 0;
-        for segment in self.segments.values() {
+        for segment in segments {
             let segment_arc = segment.get();
             let read_segment = segment_arc.read();
             for point in ids.iter().cloned().filter(|id| read_segment.has_point(*id)) {
