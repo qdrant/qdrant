@@ -115,9 +115,10 @@ impl LocalShard {
 
         let read_handles: Vec<_> = {
             let segments_guard = segments.read();
-            segments_guard
-                .iter()
-                .map(|(_, segment)| {
+            let segments = segments_guard.non_appendable_then_appendable_segments();
+            segments
+                .into_iter()
+                .map(|segment| {
                     let segment = segment.clone();
                     let filter = filter.cloned();
 
@@ -162,9 +163,10 @@ impl LocalShard {
         let segments = self.segments();
         let read_handles: Vec<_> = {
             let segments_guard = segments.read();
-            segments_guard
-                .iter()
-                .map(|(_, segment)| {
+            let segments = segments_guard.non_appendable_then_appendable_segments();
+            segments
+                .into_iter()
+                .map(|segment| {
                     let segment = segment.clone();
                     let filter = filter.cloned();
 

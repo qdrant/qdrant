@@ -168,9 +168,10 @@ impl SegmentsSearcher {
                 let segments = segments.read();
 
                 if !segments.is_empty() {
+                    let segments = segments.non_appendable_then_appendable_segments();
                     let available_point_count = segments
-                        .iter()
-                        .map(|(_, segment)| segment.get().read().available_point_count())
+                        .into_iter()
+                        .map(|segment| segment.get().read().available_point_count())
                         .sum();
 
                     Some(available_point_count)
@@ -189,6 +190,7 @@ impl SegmentsSearcher {
             // Unfortunately, we have to do `segments.read()` twice, once in blocking task
             // and once here, due to `Send` bounds :/
             let segments = segments.read();
+            let segments = segments.non_appendable_then_appendable_segments();
 
             // Probabilistic sampling for the `limit` parameter avoids over-fetching points from segments.
             // e.g. 10 segments with limit 1000 would fetch 10000 points in total and discard 9000 points.
@@ -200,8 +202,8 @@ impl SegmentsSearcher {
             let use_sampling = sampling_enabled && segments.len() > 1 && available_point_count > 0;
 
             segments
-                .iter()
-                .map(|(_id, segment)| {
+                .into_iter()
+                .map(|segment| {
                     let search = runtime_handle.spawn_blocking({
                         let (segment, batch_request) = (segment.clone(), batch_request.clone());
                         let is_stopped_clone = is_stopped.clone();
