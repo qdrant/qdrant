@@ -9,9 +9,8 @@ import grpc
 import grpc_requests
 import pytest
 import requests
-from grpc_interceptor import ClientCallDetails, ClientInterceptor
-
 from consensus_tests import fixtures
+from grpc_interceptor import ClientCallDetails, ClientInterceptor
 
 from .utils import encode_jwt, start_cluster
 
@@ -110,7 +109,7 @@ ACTION_ACCESS = {
     ),
     "create_default_shard_key_operation": EndpointAccess(
         False,
-        True,
+        False,
         True,
         "POST /collections/{collection_name}/cluster",
         "qdrant.Collections/UpdateCollectionClusterSetup",
@@ -124,7 +123,7 @@ ACTION_ACCESS = {
     ),
     "drop_shard_key_operation": EndpointAccess(
         False,
-        True,
+        False,
         True,
         "POST /collections/{collection_name}/cluster",
         "qdrant.Collections/UpdateCollectionClusterSetup",
@@ -192,7 +191,7 @@ ACTION_ACCESS = {
     ### Shard Keys ###
     "create_default_shard_key": EndpointAccess(
         False,
-        True,
+        False,
         True,
         "PUT /collections/{collection_name}/shards",
         "qdrant.Collections/CreateShardKey",
@@ -206,7 +205,7 @@ ACTION_ACCESS = {
     ),
     "delete_shard_key": EndpointAccess(
         False,
-        True,
+        False,
         True,
         "POST /collections/{collection_name}/shards/delete",
         "qdrant.Collections/DeleteShardKey",
@@ -930,120 +929,6 @@ def test_collection_exists():
         path_params={"collection_name": COLL_NAME},
         grpc_request={"collection_name": COLL_NAME},
     )
-
-
-### operation stubs to use for update_collection_cluster_setup tests
-#
-# class AccessStub:
-#     def __init__(
-#         self,
-#         read,
-#         read_write,
-#         manage,
-#         rest_req=None,
-#         grpc_req=None,
-#         collection_name=COLL_NAME,
-#         snapshot_name=SNAPSHOT_NAME,
-#     ):
-#         self.access = Access(read, read_write, manage)
-#         self.rest_req = rest_req
-#         self.grpc_req = grpc_req
-#         self.collection_name = collection_name
-#         self.snapshot_name = snapshot_name
-# move_shard_operation = AccessStub(
-#     False,
-#     False,
-#     True,
-#     {
-#         "move_shard": {
-#             "shard_id": SHARD_ID,
-#             "from_peer_id": PEER_ID,
-#             "to_peer_id": PEER_ID + 1,
-#         }
-#     },
-#     {
-#         "collection_name": COLL_NAME,
-#         "move_shard": {
-#             "shard_id": SHARD_ID,
-#             "from_peer_id": PEER_ID,
-#             "to_peer_id": PEER_ID + 1,
-#         },
-#     },
-# )
-# replicate_shard_operation = AccessStub(
-#     False,
-#     False,
-#     True,
-#     {
-#         "replicate_shard": {
-#             "shard_id": SHARD_ID,
-#             "from_peer_id": PEER_ID,
-#             "to_peer_id": PEER_ID,
-#         }
-#     },
-# )
-# abort_shard_transfer_operation = AccessStub(
-#     False,
-#     False,
-#     True,
-#     {
-#         "abort_transfer": {
-#             "shard_id": SHARD_ID,
-#             "from_peer_id": PEER_ID,
-#             "to_peer_id": PEER_ID,
-#         }
-#     },
-# )
-# drop_shard_replica_operation = AccessStub(
-#     False,
-#     False,
-#     True,
-#     {
-#         "drop_replica": {
-#             "shard_id": SHARD_ID,
-#             "peer_id": PEER_ID,
-#         }
-#     },
-# )
-# default_create_shard_key_operation = AccessStub(
-#     False,
-#     True,
-#     True,
-#     {
-#         "create_sharding_key": default_shard_key_config,
-#     },
-# )
-# custom_create_shard_key_operation = AccessStub(
-#     False,
-#     False,
-#     True,
-#     {
-#         "create_sharding_key": None,
-#     },
-# )
-# drop_shard_key_operation = AccessStub(
-#     False,
-#     True,
-#     True,
-#     {
-#         "drop_sharding_key": {
-#             "shard_key": "a",
-#         }
-#     },
-# )
-# restart_transfer_operation = AccessStub(
-#     False,
-#     False,
-#     True,
-#     {
-#         "restart_transfer": {
-#             "shard_id": SHARD_ID,
-#             "from_peer_id": PEER_ID,
-#             "to_peer_id": PEER_ID,
-#             "method": "stream_records",
-#         }
-#     },
-# )
 
 
 def test_replicate_shard_operation():
