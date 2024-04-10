@@ -327,7 +327,7 @@ impl CollectionParams {
     ///
     /// It is the job of the segment optimizer to change this configuration with optimized settings
     /// based on threshold configurations.
-    pub fn into_base_vector_data(&self) -> CollectionResult<HashMap<String, VectorDataConfig>> {
+    pub fn to_base_vector_data(&self) -> CollectionResult<HashMap<String, VectorDataConfig>> {
         Ok(self
             .vectors
             .params_iter()
@@ -359,7 +359,7 @@ impl CollectionParams {
     ///
     /// It is the job of the segment optimizer to change this configuration with optimized settings
     /// based on threshold configurations.
-    pub fn into_sparse_vector_data(
+    pub fn to_sparse_vector_data(
         &self,
     ) -> CollectionResult<HashMap<String, SparseVectorDataConfig>> {
         if let Some(sparse_vectors) = &self.sparse_vectors {
