@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::slice::ChunksMut;
+use std::slice::ChunksExactMut;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -190,11 +190,11 @@ impl MultiDenseVector {
 
     /// Slices the multi vector into the underlying individual vectors
     pub fn multi_vectors(&self) -> impl Iterator<Item = &[VectorElementType]> {
-        self.inner_vector.chunks(self.dim)
+        self.inner_vector.chunks_exact(self.dim)
     }
 
-    pub fn multi_vectors_mut(&mut self) -> ChunksMut<VectorElementType> {
-        self.inner_vector.chunks_mut(self.dim)
+    pub fn multi_vectors_mut(&mut self) -> ChunksExactMut<'_, VectorElementType> {
+        self.inner_vector.chunks_exact_mut(self.dim)
     }
 
     pub fn is_empty(&self) -> bool {
