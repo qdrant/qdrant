@@ -3,7 +3,7 @@ use std::arch::x86_64::*;
 use crate::spaces::simple_sse::hsum128_ps_sse;
 
 #[target_feature(enable = "sse")]
-#[allow(unused)]
+#[allow(clippy::missing_safety_doc)]
 pub unsafe fn sse_manhattan_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
     debug_assert!(v1.len() == v2.len());
     let mut ptr1: *const u8 = v1.as_ptr();

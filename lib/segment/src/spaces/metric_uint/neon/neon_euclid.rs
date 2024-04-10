@@ -1,7 +1,7 @@
 use std::arch::aarch64::*;
 
 #[target_feature(enable = "neon")]
-#[allow(unused)]
+#[allow(clippy::missing_safety_doc)]
 pub unsafe fn neon_euclid_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
     debug_assert!(v1.len() == v2.len());
     let mut ptr1: *const u8 = v1.as_ptr();
@@ -28,7 +28,7 @@ pub unsafe fn neon_euclid_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
     }
     let mut score = vaddvq_u32(vaddq_u32(mul1, mul2)) as f32;
 
-    let mut remainder = len % 16;
+    let remainder = len % 16;
     if remainder != 0 {
         let mut remainder_score = 0;
         for _ in 0..remainder {

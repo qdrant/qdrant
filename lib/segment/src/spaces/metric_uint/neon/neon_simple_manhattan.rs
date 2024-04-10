@@ -1,7 +1,7 @@
 use std::arch::aarch64::*;
 
 #[target_feature(enable = "neon")]
-#[allow(unused)]
+#[allow(clippy::missing_safety_doc)]
 pub unsafe fn neon_manhattan_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
     debug_assert!(v1.len() == v2.len());
     let mut ptr1: *const u8 = v1.as_ptr();
@@ -32,7 +32,7 @@ pub unsafe fn neon_manhattan_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
     let sum64_high = vpadd_u32(sum64_low, sum64_low);
     let mut score = vget_lane_u32(sum64_high, 0) as f32;
 
-    let mut remainder = len % 16;
+    let remainder = len % 16;
     if remainder != 0 {
         let mut remainder_score = 0;
         for _ in 0..len % 16 {

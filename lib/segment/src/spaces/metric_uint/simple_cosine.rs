@@ -2,7 +2,9 @@ use common::types::ScoreType;
 
 use crate::data_types::vectors::{DenseVector, TypedDenseVector, VectorElementTypeByte};
 use crate::spaces::metric::Metric;
-use crate::spaces::simple::CosineMetric;
+#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+use crate::spaces::metric_uint::neon::neon_cosine::neon_cosine_similarity_bytes;
+use crate::spaces::simple::{CosineMetric, MIN_DIM_SIZE_SIMD};
 use crate::types::Distance;
 
 impl Metric<VectorElementTypeByte> for CosineMetric {
@@ -11,6 +13,30 @@ impl Metric<VectorElementTypeByte> for CosineMetric {
     }
 
     fn similarity(v1: &[VectorElementTypeByte], v2: &[VectorElementTypeByte]) -> ScoreType {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if is_x86_feature_detected!("avx")
+                && is_x86_feature_detected!("fma")
+                && v1.len() >= MIN_DIM_SIZE_AVX
+            {
+                return unsafe { avx_cosine_similarity_bytes(v1, v2) };
+            }
+        }
+
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+        {
+            if is_x86_feature_detected!("sse") && v1.len() >= MIN_DIM_SIZE_SIMD {
+                return unsafe { sse_cosine_similarity_bytes(v1, v2) };
+            }
+        }
+
+        #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+        {
+            if std::arch::is_aarch64_feature_detected!("neon") && v1.len() >= MIN_DIM_SIZE_SIMD {
+                return unsafe { neon_cosine_similarity_bytes(v1, v2) };
+            }
+        }
+
         cosine_similarity_bytes(v1, v2)
     }
 

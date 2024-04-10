@@ -1,7 +1,7 @@
 use std::arch::aarch64::*;
 
 #[target_feature(enable = "neon")]
-#[allow(unused)]
+#[allow(clippy::missing_safety_doc)]
 pub unsafe fn neon_cosine_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
     debug_assert!(v1.len() == v2.len());
     let mut ptr1: *const u8 = v1.as_ptr();
