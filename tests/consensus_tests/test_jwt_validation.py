@@ -1763,3 +1763,72 @@ def test_post_locks():
 
 def test_get_locks():
     check_access("get_locks")
+
+
+def test_payload_filters_queries():
+    token = encode_jwt(
+        {
+            "access": [{
+                "collection": COLL_NAME,
+                "access": "r",
+                "payload": {
+                    "city": "Berlin"
+                }
+            }]
+        },
+        SECRET
+    )
+
+    # With scroll
+    res = requests.post(
+        f"{REST_URI}/collections/{COLL_NAME}/points/scroll",
+        json={
+            "limit": 100,
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    res.raise_for_status()
+
+    cities_in_payload = set(point["payload"]["city"] for point in res.json()["result"]["points"])
+
+    assert cities_in_payload == {"Berlin"}
+
+    # With search
+    res = requests.post(
+        f"{REST_URI}/collections/{COLL_NAME}/points/search",
+        json={
+            "vector": [1, 2, 3, 4],
+            "limit": 100,
+            "with_payload": True,
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    res.raise_for_status()
+    
+    cities_in_payload = set(point["payload"]["city"] for point in res.json()["result"])
+    
+    assert cities_in_payload == {"Berlin"}
+    
+    # With count
+    res = requests.post(
+        f"{REST_URI}/collections/{COLL_NAME}/points/count",
+        json={},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    res.raise_for_status()
+    
+    res_expected = requests.post(
+        f"{REST_URI}/collections/{COLL_NAME}/points/count",
+        json={
+            "filter": {
+                "must": [
+                    {"key": "city", "match": {"value": "Berlin"}}
+                ]
+            }
+        },
+        headers=API_KEY_HEADERS,
+    )
+    res_expected.raise_for_status()
+    
+    assert res.json()["result"] == res_expected.json()["result"]
+    
