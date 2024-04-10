@@ -249,20 +249,13 @@ impl<'s> SegmentHolder {
         segments
     }
 
-    pub fn collect_non_appendable_segments(&self) -> Vec<LockedSegment> {
+    pub fn collect_non_appendable_and_appendable_segments(
+        &self,
+    ) -> (Vec<LockedSegment>, Vec<LockedSegment>) {
         self.segments
             .values()
-            .filter(|segment| !segment.get().read().is_appendable())
             .cloned()
-            .collect()
-    }
-
-    pub fn collect_appendable_segments(&self) -> Vec<LockedSegment> {
-        self.segments
-            .values()
-            .filter(|segment| segment.get().read().is_appendable())
-            .cloned()
-            .collect()
+            .partition(|segment| !segment.get().read().is_appendable())
     }
 
     pub fn appendable_segments(&self) -> Vec<SegmentId> {
