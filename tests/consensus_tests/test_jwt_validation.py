@@ -9,8 +9,9 @@ import grpc
 import grpc_requests
 import pytest
 import requests
-from consensus_tests import fixtures
 from grpc_interceptor import ClientCallDetails, ClientInterceptor
+
+from consensus_tests import fixtures
 
 from .utils import encode_jwt, start_cluster
 
@@ -39,6 +40,16 @@ TOKEN_COLL_R = encode_jwt({"access": [{"collection": COLL_NAME, "access": "r"}]}
 # Collection read-write access token
 TOKEN_COLL_RW = encode_jwt({"access": [{"collection": COLL_NAME, "access": "rw"}]}, SECRET)
 
+# Collection read-write access token with payload constraint
+TOKEN_COLL_RW_PAYLOAD = encode_jwt(
+    {"access": [{"collection": COLL_NAME, "access": "rw", "payload": {"user_id": "123"}}]}, SECRET
+)
+
+# Collection read access token with payload constraint
+TOKEN_COLL_R_PAYLOAD = encode_jwt(
+    {"access": [{"collection": COLL_NAME, "access": "r", "payload": {"user_id": 123}}]}, SECRET
+)
+
 # Global manage access token
 TOKEN_M = encode_jwt({"access": "m"}, SECRET)
 
@@ -55,11 +66,13 @@ SHARD_KEY_SELECTOR = {"shard_key_selector": {"shard_keys": [{"keyword": SHARD_KE
 
 
 class Access:
-    def __init__(self, r, coll_rw, m=True, coll_r=None):
+    def __init__(self, r, coll_rw, m=True, coll_r=None, coll_rw_payload=None):
         self.read = r
         self.coll_rw = coll_rw
         self.manage = m
         self.coll_r = r if coll_r is None else coll_r
+        self.coll_rw_payload = coll_rw if coll_rw_payload is None else coll_rw_payload
+        self.coll_r_payload = self.read and self.coll_rw_payload
 
 
 class EndpointAccess:
@@ -75,7 +88,12 @@ ACTION_ACCESS = {
         True, True, True, "GET /collections", "qdrant.Collections/List"
     ),
     "get_collection": EndpointAccess(
-        True, True, True, "GET /collections/{collection_name}", "qdrant.Collections/Get"
+        True,
+        True,
+        True,
+        "GET /collections/{collection_name}",
+        "qdrant.Collections/Get",
+        coll_rw_payload=False,
     ),
     "create_collection": EndpointAccess(
         False, False, True, "PUT /collections/{collection_name}", "qdrant.Collections/Create"
@@ -217,6 +235,7 @@ ACTION_ACCESS = {
         True,
         "PUT /collections/{collection_name}/index",
         "qdrant.Points/CreateFieldIndex",
+        coll_rw_payload=False,
     ),
     "delete_index": EndpointAccess(
         False,
@@ -224,6 +243,7 @@ ACTION_ACCESS = {
         True,
         "DELETE /collections/{collection_name}/index/{field_name}",
         "qdrant.Points/DeleteFieldIndex",
+        coll_rw_payload=False,
     ),
     ### Collection Snapshots ###
     "list_collection_snapshots": EndpointAccess(
@@ -232,6 +252,7 @@ ACTION_ACCESS = {
         True,
         "GET /collections/{collection_name}/snapshots",
         "qdrant.Snapshots/List",
+        coll_rw_payload=False,
     ),  # TODO: this should not be allowed with payload constraints
     "create_collection_snapshot": EndpointAccess(
         False,
@@ -239,6 +260,7 @@ ACTION_ACCESS = {
         True,
         "POST /collections/{collection_name}/snapshots",
         "qdrant.Snapshots/Create",
+        coll_rw_payload=False,
     ),
     "delete_collection_snapshot": EndpointAccess(
         False,
@@ -246,10 +268,15 @@ ACTION_ACCESS = {
         True,
         "DELETE /collections/{collection_name}/snapshots/{snapshot_name}",
         "qdrant.Snapshots/Delete",
+        coll_rw_payload=False,
     ),
     "download_collection_snapshot": EndpointAccess(
-        True, True, True, "GET /collections/{collection_name}/snapshots/{snapshot_name}"
-    ),  # TODO: confirm access rights
+        True,
+        True,
+        True,
+        "GET /collections/{collection_name}/snapshots/{snapshot_name}",
+        coll_rw_payload=False,
+    ),
     "upload_collection_snapshot": EndpointAccess(
         False, False, True, "POST /collections/{collection_name}/snapshots/upload"
     ),
@@ -273,26 +300,41 @@ ACTION_ACCESS = {
         "PUT /collections/{collection_name}/shards/{shard_id}/snapshots/recover",
     ),
     "create_shard_snapshot": EndpointAccess(
-        False, True, True, "POST /collections/{collection_name}/shards/{shard_id}/snapshots"
+        False,
+        True,
+        True,
+        "POST /collections/{collection_name}/shards/{shard_id}/snapshots",
+        coll_rw_payload=False,
     ),
     "list_shard_snapshots": EndpointAccess(
-        True, True, True, "GET /collections/{collection_name}/shards/{shard_id}/snapshots"
+        True,
+        True,
+        True,
+        "GET /collections/{collection_name}/shards/{shard_id}/snapshots",
+        coll_rw_payload=False,
     ),
     "delete_shard_snapshot": EndpointAccess(
         False,
         True,
         True,
         "DELETE /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}",
+        coll_rw_payload=False,
     ),
     "download_shard_snapshot": EndpointAccess(
         True,
         True,
         True,
         "GET /collections/{collection_name}/shards/{shard_id}/snapshots/{snapshot_name}",
+        coll_rw_payload=False,
     ),
     ### Full Snapshots ###
     "list_full_snapshots": EndpointAccess(
-        True, False, True, "GET /snapshots", "qdrant.Snapshots/ListFull", coll_r=False
+        True,
+        False,
+        True,
+        "GET /snapshots",
+        "qdrant.Snapshots/ListFull",
+        coll_r=False,
     ),
     "create_full_snapshot": EndpointAccess(
         False, False, True, "POST /snapshots", "qdrant.Snapshots/CreateFull"
@@ -309,13 +351,27 @@ ACTION_ACCESS = {
     "delete_peer": EndpointAccess(False, False, True, "DELETE /cluster/peer/{peer_id}"),
     ### Points ###
     "get_point": EndpointAccess(
-        True, True, True, "GET /collections/{collection_name}/points/{id}"
+        True,
+        True,
+        True,
+        "GET /collections/{collection_name}/points/{id}",
+        coll_rw_payload=False,
     ),
     "get_points": EndpointAccess(
-        True, True, True, "POST /collections/{collection_name}/points", "qdrant.Points/Get"
+        True,
+        True,
+        True,
+        "POST /collections/{collection_name}/points",
+        "qdrant.Points/Get",
+        coll_rw_payload=False,
     ),
     "upsert_points": EndpointAccess(
-        False, True, True, "PUT /collections/{collection_name}/points", "qdrant.Points/Upsert"
+        False,
+        True,
+        True,
+        "PUT /collections/{collection_name}/points",
+        "qdrant.Points/Upsert",
+        coll_rw_payload=False,
     ),
     "update_points_batch": EndpointAccess(
         False,
@@ -323,6 +379,7 @@ ACTION_ACCESS = {
         True,
         "POST /collections/{collection_name}/points/batch",
         "qdrant.Points/UpdateBatch",
+        coll_rw_payload=False,
     ),
     "delete_points": EndpointAccess(
         False,
@@ -337,6 +394,7 @@ ACTION_ACCESS = {
         True,
         "PUT /collections/{collection_name}/points/vectors",
         "qdrant.Points/UpdateVectors",
+        coll_rw_payload=False,
     ),
     "delete_vectors": EndpointAccess(
         False,
@@ -351,6 +409,7 @@ ACTION_ACCESS = {
         True,
         "POST /collections/{collection_name}/points/payload",
         "qdrant.Points/SetPayload",
+        coll_rw_payload=False,
     ),
     "overwrite_payload": EndpointAccess(
         False,
@@ -358,6 +417,7 @@ ACTION_ACCESS = {
         True,
         "PUT /collections/{collection_name}/points/payload",
         "qdrant.Points/OverwritePayload",
+        coll_rw_payload=False,
     ),
     "delete_payload": EndpointAccess(
         False,
@@ -365,6 +425,7 @@ ACTION_ACCESS = {
         True,
         "POST /collections/{collection_name}/points/payload/delete",
         "qdrant.Points/DeletePayload",
+        coll_rw_payload=False,
     ),
     "clear_payload": EndpointAccess(
         False,
@@ -372,6 +433,7 @@ ACTION_ACCESS = {
         True,
         "POST /collections/{collection_name}/points/payload/clear",
         "qdrant.Points/ClearPayload",
+        coll_rw_payload=False,
     ),
     "scroll_points": EndpointAccess(
         True,
@@ -407,6 +469,7 @@ ACTION_ACCESS = {
         True,
         "POST /collections/{collection_name}/points/recommend",
         "qdrant.Points/Recommend",
+        coll_rw_payload=False,
     ),
     "recommend_points_batch": EndpointAccess(
         True,
@@ -414,6 +477,7 @@ ACTION_ACCESS = {
         True,
         "POST /collections/{collection_name}/points/recommend/batch",
         "qdrant.Points/RecommendBatch",
+        coll_rw_payload=False,
     ),
     "recommend_point_groups": EndpointAccess(
         True,
@@ -421,6 +485,7 @@ ACTION_ACCESS = {
         True,
         "POST /collections/{collection_name}/points/recommend/groups",
         "qdrant.Points/RecommendGroups",
+        coll_rw_payload=False,
     ),
     "discover_points": EndpointAccess(
         True,
@@ -428,6 +493,7 @@ ACTION_ACCESS = {
         True,
         "POST /collections/{collection_name}/points/discover",
         "qdrant.Points/Discover",
+        coll_rw_payload=False,
     ),
     "discover_points_batch": EndpointAccess(
         True,
@@ -435,6 +501,7 @@ ACTION_ACCESS = {
         True,
         "POST /collections/{collection_name}/points/discover/batch",
         "qdrant.Points/DiscoverBatch",
+        coll_rw_payload=False,
     ),
     "count_points": EndpointAccess(
         True, True, True, "POST /collections/{collection_name}/points/count", "qdrant.Points/Count"
@@ -516,7 +583,7 @@ def uris(tmp_path_factory: pytest.TempPathFactory):
     extra_env = {
         "QDRANT__SERVICE__API_KEY": SECRET,
         "QDRANT__SERVICE__JWT_RBAC": "true",
-        "QDRANT__STORAGE__WAL__WAL_CAPACITY_MB": "1",
+        "QDRANT__STORAGE__WAL__WAL_CAPACITY_MB": "1", # to speed up snapshot tests
     }
 
     tmp_path = tmp_path_factory.mktemp("api_key_instance")
@@ -571,7 +638,8 @@ def scroll_with_token(collection: str, token: str) -> requests.Response:
 
 
 def test_value_exists_claim():
-    validation_collection = "secondary_test_collection"
+
+    validation_collection = "jwt_validation_collection"
 
     key = "tokenId"
     value = "token_42"
@@ -591,12 +659,12 @@ def test_value_exists_claim():
     # Create collection
     create_validation_collection(validation_collection)
 
-    # Check it does not work now
+    # Check it still does not work
     with pytest.raises(requests.HTTPError):
         res = scroll_with_token(COLL_NAME, token)
 
     # Upload validation point
-    res = requests.put(
+    requests.put(
         f"{REST_URI}/collections/{validation_collection}/points?wait=true",
         json={
             "points": [
@@ -608,8 +676,7 @@ def test_value_exists_claim():
             ]
         },
         headers=API_KEY_HEADERS,
-    )
-    res.raise_for_status()
+    ).raise_for_status()
 
     # Check that token works now
     res = scroll_with_token(COLL_NAME, token)
@@ -620,14 +687,12 @@ def test_value_exists_claim():
         f"{REST_URI}/collections/{validation_collection}/points/delete?wait=true",
         json={"points": [42]},
         headers=API_KEY_HEADERS,
-    )
-    res.raise_for_status()
+    ).raise_for_status()
 
     # Check it does not work now
     with pytest.raises(requests.HTTPError):
         scroll_with_token(COLL_NAME, token)
 
-    fixtures.drop_collection(REST_URI, validation_collection, headers=API_KEY_HEADERS)
     fixtures.drop_collection(REST_URI, validation_collection, headers=API_KEY_HEADERS)
 
 
@@ -702,6 +767,18 @@ class GrpcClients:
             GRPC_URI,
             interceptors=[MetadataInterceptor([("authorization", f"Bearer {TOKEN_COLL_RW}")])],
         )
+        self.coll_rw_payload = grpc_requests.Client(
+            GRPC_URI,
+            interceptors=[
+                MetadataInterceptor([("authorization", f"Bearer {TOKEN_COLL_RW_PAYLOAD}")])
+            ],
+        )
+        self.coll_r_payload = grpc_requests.Client(
+            GRPC_URI,
+            interceptors=[
+                MetadataInterceptor([("authorization", f"Bearer {TOKEN_COLL_R_PAYLOAD}")])
+            ],
+        )
         self.m = grpc_requests.Client(
             GRPC_URI, interceptors=[MetadataInterceptor([("authorization", f"Bearer {TOKEN_M}")])]
         )
@@ -720,9 +797,9 @@ def check_access(
 ):
     action_access: EndpointAccess = ACTION_ACCESS[action_name]
 
-    ## Check Rest
     assert isinstance(action_access, EndpointAccess)
 
+    ## Check Rest
     method, path = action_access.rest_endpoint.split(" ")
 
     allowed_for = action_access.access
@@ -743,6 +820,24 @@ def check_access(
         rest_req_kwargs,
     )
     check_rest_access(
+        method,
+        path,
+        rest_request,
+        allowed_for.coll_r_payload,
+        TOKEN_COLL_R_PAYLOAD,
+        path_params,
+        rest_req_kwargs,
+    )
+    check_rest_access(
+        method,
+        path,
+        rest_request,
+        allowed_for.coll_rw_payload,
+        TOKEN_COLL_RW_PAYLOAD,
+        path_params,
+        rest_req_kwargs,
+    )
+    check_rest_access(
         method, path, rest_request, allowed_for.manage, TOKEN_M, path_params, rest_req_kwargs
     )
 
@@ -758,6 +853,12 @@ def check_access(
         check_grpc_access(grpc.r, service, method, grpc_request, allowed_for.read)
         check_grpc_access(grpc.coll_r, service, method, grpc_request, allowed_for.coll_r)
         check_grpc_access(grpc.coll_rw, service, method, grpc_request, allowed_for.coll_rw)
+        check_grpc_access(
+            grpc.coll_r_payload, service, method, grpc_request, allowed_for.coll_r_payload
+        )
+        check_grpc_access(
+            grpc.coll_rw_payload, service, method, grpc_request, allowed_for.coll_rw_payload
+        )
         check_grpc_access(grpc.m, service, method, grpc_request, allowed_for.manage)
 
 
@@ -774,7 +875,7 @@ def test_get_collection():
 
 
 def test_create_collection():
-    coll_names = [random_str() for _ in range(10)]
+    coll_names = [random_str() for _ in range(12)]
 
     coll_names_iter = iter(coll_names)
 
@@ -833,23 +934,7 @@ def test_create_alias():
 
 
 def test_rename_alias():
-    alias_names = [random_str() for _ in range(10)]
-
-    for alias in alias_names:
-        requests.post(
-            f"{REST_URI}/collections/aliases",
-            json={
-                "actions": [
-                    {
-                        "create_alias": {
-                            "collection_name": COLL_NAME,
-                            "alias_name": alias,
-                        }
-                    }
-                ]
-            },
-            headers=API_KEY_HEADERS,
-        ).raise_for_status()
+    alias_names = [random_str() for _ in range(12)]
 
     names_iter = iter(alias_names)
 
@@ -873,27 +958,7 @@ def test_rename_alias():
 
 
 def test_delete_alias():
-    alias_names = [random_str() for _ in range(10)]
-    deletable_aliases = iter(alias_names)
-
-    for alias in alias_names:
-        requests.post(
-            f"{REST_URI}/collections/aliases",
-            json={
-                "actions": [
-                    {
-                        "create_alias": {
-                            "collection_name": COLL_NAME,
-                            "alias_name": alias,
-                        }
-                    }
-                ]
-            },
-            headers=API_KEY_HEADERS,
-        ).raise_for_status()
-
-    def req():
-        return {"actions": [{"delete_alias": {"alias_name": next(deletable_aliases)}}]}
+    req = {"actions": [{"delete_alias": {"alias_name": random_str()}}]}
 
     check_access(
         "delete_alias",
@@ -952,7 +1017,7 @@ def test_replicate_shard_operation():
 
 @pytest.fixture
 def new_shard_keys():
-    new_shard_keys = [random_str() for _ in range(8)]
+    new_shard_keys = [random_str() for _ in range(12)]
 
     try:
         yield new_shard_keys
@@ -1428,8 +1493,15 @@ def test_update_points_batch():
                     }
                 ],
             }
-        }
-        # TODO?: add the rest of operations
+        },
+        {"delete_points": {**SHARD_KEY_SELECTOR, "points": {"points": {"ids": [{"num": 10}]}}}},
+        {"set_payload": {**SHARD_KEY_SELECTOR, "points_selector": {"points": {"ids": [{"num": 11}]}}, "payload": {"my_key": {"string_value": "value"}}}},
+        {"overwrite_payload": {**SHARD_KEY_SELECTOR, "points_selector": {"points": {"ids": [{"num": 11}]}}, "payload": {"my_key": {"string_value": "value"}}}},
+        {"delete_payload": {**SHARD_KEY_SELECTOR, "points_selector": {"points": {"ids": [{"num": 11}]}}, "keys": ["my_key"]}},
+        {"update_vectors": {**SHARD_KEY_SELECTOR, "points": [{"id": {"num": 11}, "vectors": {"vector": {"data": [0,1,2,3]}}}]}},
+        {"delete_vectors": {**SHARD_KEY_SELECTOR, "points_selector": {"points": {"ids": [{"num": 11}]}}, "vectors": {"names": ["my_name"]}}},
+        {"delete_points": {**SHARD_KEY_SELECTOR, "points": {"points": {"ids": [{"num": 11}]}}}},
+        {"clear_payload": {**SHARD_KEY_SELECTOR, "points": {"points": {"ids": [{"num": 11}]}}}},
     ]
 
     check_access(
