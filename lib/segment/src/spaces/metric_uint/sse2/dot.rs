@@ -25,27 +25,15 @@ pub unsafe fn sse_dot_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
         ptr1 = ptr1.add(16);
         ptr2 = ptr2.add(16);
 
-        // take from lane p1 and p2 parts (using bitwise AND):
-        // p1 = [byte0, byte1, byte2, byte3, ..] -> [0, byte1, 0, byte3, ..]
-        // p2 = [byte0, byte1, byte2, byte3, ..] -> [0, byte1, 0, byte3, ..]
-        // and calculate 16bit multiplication with taking lower 16 bits
-        // wa can use signed multiplication because sign bit is always 0
-        let mul16 = _mm_madd_epi16(
-            _mm_and_si128(p1, mask_epu16_epu8),
-            _mm_and_si128(p2, mask_epu16_epu8),
-        );
+        let p1_low = _mm_and_si128(p1, mask_epu16_epu8);
+        let p2_low = _mm_and_si128(p2, mask_epu16_epu8);
+        let p1_high = _mm_and_si128(_mm_bsrli_si128(p1, 1), mask_epu16_epu8);
+        let p2_high = _mm_and_si128(_mm_bsrli_si128(p2, 1), mask_epu16_epu8);
 
+        let mul16 = _mm_madd_epi16(p1_low, p2_low);
         acc = _mm_add_epi32(acc, mul16);
 
-        // shift right by 1 byte for p1 and p2 and repeat previous steps
-        let p1 = _mm_bsrli_si128(p1, 1);
-        let p2 = _mm_bsrli_si128(p2, 1);
-
-        let mul16 = _mm_madd_epi16(
-            _mm_and_si128(p1, mask_epu16_epu8),
-            _mm_and_si128(p2, mask_epu16_epu8),
-        );
-
+        let mul16 = _mm_madd_epi16(p1_high, p2_high);
         acc = _mm_add_epi32(acc, mul16);
     }
 

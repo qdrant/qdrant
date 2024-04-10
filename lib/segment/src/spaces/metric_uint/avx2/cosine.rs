@@ -16,9 +16,12 @@ pub unsafe fn avx_cosine_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
     let mut ptr2: *const u8 = v2.as_ptr();
 
     // sum accumulator for 8x32 bit integers
-    let mut acc = _mm256_setzero_si256();
-    let mut norm1 = _mm256_setzero_si256();
-    let mut norm2 = _mm256_setzero_si256();
+    let mut acc_low = _mm256_setzero_si256();
+    let mut acc_high = _mm256_setzero_si256();
+    let mut norm1_low = _mm256_setzero_si256();
+    let mut norm1_high = _mm256_setzero_si256();
+    let mut norm2_low = _mm256_setzero_si256();
+    let mut norm2_high = _mm256_setzero_si256();
     // mask to take only lower 8 bits from 16 bits
     let mask_epu16_epu8 = _mm256_set1_epi16(0xFF);
     let len = v1.len();
@@ -29,45 +32,37 @@ pub unsafe fn avx_cosine_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
         ptr1 = ptr1.add(32);
         ptr2 = ptr2.add(32);
 
-        // take from lane p1 and p2 parts (using bitwise AND):
-        // p1 = [byte0, byte1, byte2, byte3, ..] -> [0, byte1, 0, byte3, ..]
-        // p2 = [byte0, byte1, byte2, byte3, ..] -> [0, byte1, 0, byte3, ..]
-        // and calculate 16bit multiplication with taking lower 16 bits
-        // wa can use signed multiplication because sign bit is always 0
-        let masked_p1 = _mm256_and_si256(p1, mask_epu16_epu8);
-        let mul16 = _mm256_madd_epi16(masked_p1, masked_p1);
-        norm1 = _mm256_add_epi32(norm1, mul16);
+        let p1_low = _mm256_and_si256(p1, mask_epu16_epu8);
+        let p1_high = _mm256_and_si256(_mm256_bsrli_epi128(p1, 1), mask_epu16_epu8);
+        let p2_low = _mm256_and_si256(p2, mask_epu16_epu8);
+        let p2_high = _mm256_and_si256(_mm256_bsrli_epi128(p2, 1), mask_epu16_epu8);
 
-        let masked_p2 = _mm256_and_si256(p2, mask_epu16_epu8);
-        let mul16 = _mm256_madd_epi16(masked_p2, masked_p2);
-        norm2 = _mm256_add_epi32(norm2, mul16);
+        let norm16_low = _mm256_madd_epi16(p1_low, p1_low);
+        norm1_low = _mm256_add_epi32(norm1_low, norm16_low);
 
-        let mul16 = _mm256_madd_epi16(masked_p1, masked_p2);
-        acc = _mm256_add_epi32(acc, mul16);
+        let norm16_low = _mm256_madd_epi16(p2_low, p2_low);
+        norm2_low = _mm256_add_epi32(norm2_low, norm16_low);
 
-        // shift right by 1 byte for p1 and p2 and repeat previous steps
-        let p1 = _mm256_bsrli_epi128(p1, 1);
-        let p2 = _mm256_bsrli_epi128(p2, 1);
+        let mul16_low = _mm256_madd_epi16(p1_low, p2_low);
+        acc_low = _mm256_add_epi32(acc_low, mul16_low);
 
-        let masked_p1 = _mm256_and_si256(p1, mask_epu16_epu8);
-        let mul16 = _mm256_madd_epi16(masked_p1, masked_p1);
-        norm1 = _mm256_add_epi32(norm1, mul16);
+        let norm16_high = _mm256_madd_epi16(p1_high, p1_high);
+        norm1_high = _mm256_add_epi32(norm1_high, norm16_high);
 
-        let masked_p2 = _mm256_and_si256(p2, mask_epu16_epu8);
-        let mul16 = _mm256_madd_epi16(masked_p2, masked_p2);
-        norm2 = _mm256_add_epi32(norm2, mul16);
+        let norm16_high = _mm256_madd_epi16(p2_high, p2_high);
+        norm2_high = _mm256_add_epi32(norm2_high, norm16_high);
 
-        let mul16 = _mm256_madd_epi16(masked_p1, masked_p2);
-        acc = _mm256_add_epi32(acc, mul16);
+        let mul16_high = _mm256_madd_epi16(p1_high, p2_high);
+        acc_high = _mm256_add_epi32(acc_high, mul16_high);
     }
 
-    let mul_ps = _mm256_cvtepi32_ps(acc);
+    let mul_ps = _mm256_cvtepi32_ps(_mm256_add_epi32(acc_low, acc_high));
     let mut dot_product = hsum256_ps_avx(mul_ps);
 
-    let norm1_ps = _mm256_cvtepi32_ps(norm1);
+    let norm1_ps = _mm256_cvtepi32_ps(_mm256_add_epi32(norm1_low, norm1_high));
     let mut norm1 = hsum256_ps_avx(norm1_ps);
 
-    let norm2_ps = _mm256_cvtepi32_ps(norm2);
+    let norm2_ps = _mm256_cvtepi32_ps(_mm256_add_epi32(norm2_low, norm2_high));
     let mut norm2 = hsum256_ps_avx(norm2_ps);
 
     let remainder = len % 32;
