@@ -222,9 +222,7 @@ impl<'a> NamedVectors<'a> {
                     for dense_vector in v.to_mut().multi_vectors_mut() {
                         let preprocessed_vector = distance.preprocess_vector(dense_vector.to_vec());
                         // replace dense vector with preprocessed vector
-                        for (position, value) in preprocessed_vector.iter().enumerate() {
-                            dense_vector[position] = *value;
-                        }
+                        dense_vector.copy_from_slice(&preprocessed_vector);
                     }
                 }
             }
