@@ -1211,6 +1211,16 @@ pub enum ValueVariants {
     Bool(bool),
 }
 
+impl ValueVariants {
+    pub fn to_value(&self) -> Value {
+        match self {
+            ValueVariants::Keyword(keyword) => Value::String(keyword.clone()),
+            &ValueVariants::Integer(integer) => Value::Number(integer.into()),
+            &ValueVariants::Bool(flag) => Value::Bool(flag),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum AnyVariants {

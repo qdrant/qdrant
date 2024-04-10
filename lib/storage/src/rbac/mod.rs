@@ -128,6 +128,7 @@ impl CollectionAccessList {
     }
 }
 
+#[derive(Debug)]
 struct CollectionAccessView<'a> {
     pub collection: &'a str,
     pub access: CollectionAccessMode,
@@ -183,6 +184,7 @@ impl CollectionMultipass {
 }
 
 /// A pass that allows access to a specific collection.
+#[derive(Debug)]
 pub struct CollectionPass<'a>(pub(self) Cow<'a, str>);
 
 impl<'a> CollectionPass<'a> {
@@ -301,5 +303,56 @@ fn validate_unique_collections(
             message: Some(Cow::from("Collection name should be unique")),
             params: HashMap::from([(Cow::from("collection"), collection.to_owned().into())]),
         })
+    }
+}
+
+#[cfg(test)]
+struct AccessCollectionBuilder(pub Vec<CollectionAccess>);
+
+#[cfg(test)]
+impl AccessCollectionBuilder {
+    pub(self) fn new() -> Self {
+        Self(Vec::new())
+    }
+
+    pub(self) fn add(mut self, name: &str, write: bool, whole: bool) -> Self {
+        self.0.push(CollectionAccess {
+            collection: name.to_string(),
+            access: if write {
+                CollectionAccessMode::ReadWrite
+            } else {
+                CollectionAccessMode::Read
+            },
+            payload: (!whole).then(|| PayloadConstraint::new_test(name)),
+        });
+        self
+    }
+}
+
+#[cfg(test)]
+impl From<AccessCollectionBuilder> for Access {
+    fn from(builder: AccessCollectionBuilder) -> Self {
+        Access::Collection(CollectionAccessList(builder.0))
+    }
+}
+
+#[cfg(test)]
+impl PayloadConstraint {
+    /// Create a dummy value for testing.
+    pub fn new_test(name: &str) -> Self {
+        PayloadConstraint(HashMap::from([(
+            format!("f_{name}").parse().unwrap(),
+            ValueVariants::Keyword(format!("v_{name}")),
+        )]))
+    }
+
+    /// Create a dummy payload that matches this constraint.
+    pub fn to_test_payload(&self) -> segment::types::Payload {
+        segment::types::Payload(
+            self.0
+                .iter()
+                .map(|(path, value)| (path.to_string(), value.to_value()))
+                .collect(),
+        )
     }
 }
