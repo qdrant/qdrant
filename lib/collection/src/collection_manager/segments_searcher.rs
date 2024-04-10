@@ -167,17 +167,16 @@ impl SegmentsSearcher {
             tokio::task::spawn_blocking(move || {
                 let segments = segments.read();
 
-                if !segments.is_empty() {
-                    let segments = segments.non_appendable_then_appendable_segments();
-                    let available_point_count = segments
-                        .into_iter()
-                        .map(|segment| segment.get().read().available_point_count())
-                        .sum();
-
-                    Some(available_point_count)
-                } else {
-                    None
+                if segments.is_empty() {
+                    return None;
                 }
+
+                let segments = segments.non_appendable_then_appendable_segments();
+                let available_point_count = segments
+                    .into_iter()
+                    .map(|segment| segment.get().read().available_point_count())
+                    .sum();
+                Some(available_point_count)
             })
         };
 
