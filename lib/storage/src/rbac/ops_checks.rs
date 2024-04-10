@@ -107,15 +107,10 @@ impl CollectionAccessList {
 }
 
 impl<'a> CollectionAccessView<'a> {
-    fn apply_filter(&self, filter: &mut Filter) {
+    fn apply_filter(&self, filter: &mut Option<Filter>) {
         if let Some(payload) = &self.payload {
-            *filter = take(filter).merge_owned(payload.to_filter());
-        }
-    }
-
-    fn apply_filter_opt(&self, filter: &mut Option<Filter>) {
-        if let Some(filter) = filter {
-            self.apply_filter(filter);
+            let f = filter.get_or_insert_with(Default::default);
+            *f = take(f).merge_owned(payload.to_filter());
         }
     }
 
@@ -148,7 +143,7 @@ impl CheckableCollectionOperation for RecommendRequestInternal {
             view.check_recommend_example(e)?;
         }
         access.check_lookup_from(&self.lookup_from)?;
-        view.apply_filter_opt(&mut self.filter);
+        view.apply_filter(&mut self.filter);
         Ok(())
     }
 }
@@ -185,7 +180,7 @@ impl CheckableCollectionOperation for CoreSearchRequest {
         view: CollectionAccessView<'_>,
         _access: &CollectionAccessList,
     ) -> Result<(), StorageError> {
-        view.apply_filter_opt(&mut self.filter);
+        view.apply_filter(&mut self.filter);
         Ok(())
     }
 }
@@ -204,7 +199,7 @@ impl CheckableCollectionOperation for CountRequestInternal {
         view: CollectionAccessView<'_>,
         _access: &CollectionAccessList,
     ) -> Result<(), StorageError> {
-        view.apply_filter_opt(&mut self.filter);
+        view.apply_filter(&mut self.filter);
         Ok(())
     }
 }
@@ -225,7 +220,7 @@ impl CheckableCollectionOperation for GroupRequest {
     ) -> Result<(), StorageError> {
         match &mut self.source {
             SourceRequest::Search(s) => {
-                view.apply_filter_opt(&mut s.filter);
+                view.apply_filter(&mut s.filter);
             }
             SourceRequest::Recommend(r) => r.check_access(view, access)?,
         }
@@ -256,7 +251,7 @@ impl CheckableCollectionOperation for DiscoverRequestInternal {
             view.check_recommend_example(positive)?;
             view.check_recommend_example(negative)?;
         }
-        view.apply_filter_opt(&mut self.filter);
+        view.apply_filter(&mut self.filter);
         access.check_lookup_from(&self.lookup_from)?;
         Ok(())
     }
@@ -276,7 +271,7 @@ impl CheckableCollectionOperation for ScrollRequestInternal {
         view: CollectionAccessView<'_>,
         _access: &CollectionAccessList,
     ) -> Result<(), StorageError> {
-        view.apply_filter_opt(&mut self.filter);
+        view.apply_filter(&mut self.filter);
         Ok(())
     }
 }
