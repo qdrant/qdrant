@@ -214,7 +214,12 @@ impl TryFrom<Vec<DenseVector>> for MultiDenseVector {
     type Error = OperationError;
 
     fn try_from(value: Vec<DenseVector>) -> Result<Self, Self::Error> {
-        let dim = value.first().map(|v| v.len()).unwrap_or(0);
+        if value.is_empty() {
+            return Err(OperationError::ValidationError {
+                description: "MultiDenseVector cannot be empty".to_string(),
+            });
+        }
+        let dim = value[0].len();
         // assert all vectors have the same dimension
         if let Some(bad_vec) = value.iter().find(|v| v.len() != dim) {
             Err(OperationError::WrongVector {
