@@ -63,7 +63,7 @@ pub unsafe fn neon_cosine_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
         norm2 += remainder_norm2 as f32;
     }
 
-    dot_product as f32 / ((norm1 as f32 * norm2 as f32).sqrt())
+    dot_product / ((norm1 * norm2).sqrt())
 }
 
 #[cfg(test)]

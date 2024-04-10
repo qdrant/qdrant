@@ -7,13 +7,13 @@ use rand::{Rng, SeedableRng};
 use segment::data_types::vectors::VectorElementTypeByte;
 use segment::spaces::metric::Metric;
 #[cfg(target_arch = "x86_64")]
-use segment::spaces::metric_uint::avx2::avx_cosine::avx_cosine_similarity_bytes;
+use segment::spaces::metric_uint::avx2::cosine::avx_cosine_similarity_bytes;
 #[cfg(target_arch = "x86_64")]
-use segment::spaces::metric_uint::avx2::avx_dot::avx_dot_similarity_bytes;
+use segment::spaces::metric_uint::avx2::dot::avx_dot_similarity_bytes;
 #[cfg(target_arch = "x86_64")]
-use segment::spaces::metric_uint::avx2::avx_euclid::avx_euclid_similarity_bytes;
+use segment::spaces::metric_uint::avx2::euclid::avx_euclid_similarity_bytes;
 #[cfg(target_arch = "x86_64")]
-use segment::spaces::metric_uint::avx2::avx_manhattan::avx_manhattan_similarity_bytes;
+use segment::spaces::metric_uint::avx2::manhattan::avx_manhattan_similarity_bytes;
 #[cfg(target_arch = "aarch64")]
 use segment::spaces::metric_uint::neon::neon_cosine::neon_cosine_similarity_bytes;
 #[cfg(target_arch = "aarch64")]
@@ -27,13 +27,13 @@ use segment::spaces::metric_uint::simple_dot::dot_similarity_bytes;
 use segment::spaces::metric_uint::simple_euclid::euclid_similarity_bytes;
 use segment::spaces::metric_uint::simple_manhattan::manhattan_similarity_bytes;
 #[cfg(target_arch = "x86_64")]
-use segment::spaces::metric_uint::sse2::sse_cosine::sse_cosine_similarity_bytes;
+use segment::spaces::metric_uint::sse2::cosine::sse_cosine_similarity_bytes;
 #[cfg(target_arch = "x86_64")]
-use segment::spaces::metric_uint::sse2::sse_dot::sse_dot_similarity_bytes;
+use segment::spaces::metric_uint::sse2::dot::sse_dot_similarity_bytes;
 #[cfg(target_arch = "x86_64")]
-use segment::spaces::metric_uint::sse2::sse_euclid::sse_euclid_similarity_bytes;
+use segment::spaces::metric_uint::sse2::euclid::sse_euclid_similarity_bytes;
 #[cfg(target_arch = "x86_64")]
-use segment::spaces::metric_uint::sse2::sse_manhattan::sse_manhattan_similarity_bytes;
+use segment::spaces::metric_uint::sse2::manhattan::sse_manhattan_similarity_bytes;
 use segment::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 
 const DIM: usize = 1024;

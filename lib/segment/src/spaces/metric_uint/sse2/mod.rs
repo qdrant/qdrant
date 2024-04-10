@@ -1,4 +1,4 @@
-pub mod sse_cosine;
-pub mod sse_dot;
-pub mod sse_euclid;
-pub mod sse_manhattan;
+pub mod cosine;
+pub mod dot;
+pub mod euclid;
+pub mod manhattan;

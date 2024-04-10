@@ -3,11 +3,11 @@ use common::types::ScoreType;
 use crate::data_types::vectors::{DenseVector, TypedDenseVector, VectorElementTypeByte};
 use crate::spaces::metric::Metric;
 #[cfg(target_arch = "x86_64")]
-use crate::spaces::metric_uint::avx2::avx_dot::avx_dot_similarity_bytes;
+use crate::spaces::metric_uint::avx2::dot::avx_dot_similarity_bytes;
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-use crate::spaces::metric_uint::neon::neon_dot::neon_dot_similarity_bytes;
+use crate::spaces::metric_uint::neon::dot::neon_dot_similarity_bytes;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-use crate::spaces::metric_uint::sse2::sse_dot::sse_dot_similarity_bytes;
+use crate::spaces::metric_uint::sse2::dot::sse_dot_similarity_bytes;
 #[cfg(target_arch = "x86_64")]
 use crate::spaces::simple::MIN_DIM_SIZE_AVX;
 use crate::spaces::simple::{DotProductMetric, MIN_DIM_SIZE_SIMD};

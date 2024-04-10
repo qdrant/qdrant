@@ -8,9 +8,6 @@ authors = [
 license = "Apache-2.0"
 edition = "2021"
 
-#[build]
-#rustflags = "-C target-feature=+avx2"
-
 [features]
 multiling-chinese = ["charabia/chinese"]
 multiling-japanese = ["charabia/japanese"]

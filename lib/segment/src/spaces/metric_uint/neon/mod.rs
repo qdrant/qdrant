@@ -1,4 +1,4 @@
-pub mod neon_cosine;
-pub mod neon_dot;
-pub mod neon_euclid;
-pub mod neon_simple_manhattan;
+pub mod cosine;
+pub mod dot;
+pub mod euclid;
+pub mod manhattan;
