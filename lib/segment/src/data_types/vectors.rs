@@ -181,9 +181,9 @@ pub struct MultiDenseVector {
 }
 
 impl MultiDenseVector {
-    pub fn new(vectors: DenseVector, dim: usize) -> Self {
+    pub fn new(flattened_vectors: DenseVector, dim: usize) -> Self {
         Self {
-            inner_vector: vectors,
+            inner_vector: flattened_vectors,
             dim,
         }
     }
