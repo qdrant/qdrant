@@ -11,10 +11,6 @@ pub unsafe fn sse_manhattan_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
 
     // sum accumulator for 4x32 bit integers
     let mut acc = _mm_setzero_si128();
-    // mask to take only lower 8 bits from 16 bits
-    let mask_epu16_epu8 = _mm_set1_epi16(0xFF);
-    // mask to take only lower 16 bits from 32 bits
-    let mask_epu32_epu16 = _mm_set1_epi32(0xFFFF);
     let len = v1.len();
     for _ in 0..len / 16 {
         // load 16 bytes
@@ -30,7 +26,7 @@ pub unsafe fn sse_manhattan_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
     let mul_ps = _mm_cvtepi32_ps(acc);
     let mut score = hsum128_ps_sse(mul_ps);
 
-    let mut remainder = len % 16;
+    let remainder = len % 16;
     if remainder != 0 {
         let mut remainder_score = 0;
         for _ in 0..len % 16 {

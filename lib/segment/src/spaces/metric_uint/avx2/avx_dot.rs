@@ -47,7 +47,7 @@ pub unsafe fn avx_dot_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
     let mul_ps = _mm256_cvtepi32_ps(acc);
     let mut score = hsum256_ps_avx(mul_ps);
 
-    let mut remainder = len % 32;
+    let remainder = len % 32;
     if remainder != 0 {
         let mut remainder_dot = 0;
         for _ in 0..remainder {

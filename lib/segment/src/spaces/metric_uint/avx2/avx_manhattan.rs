@@ -12,10 +12,6 @@ pub unsafe fn avx_manhattan_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
 
     // sum accumulator for 8x32 bit integers
     let mut acc = _mm256_setzero_si256();
-    // mask to take only lower 8 bits from 16 bits
-    let mask_epu16_epu8 = _mm256_set1_epi16(0xFF);
-    // mask to take only lower 16 bits from 32 bits
-    let mask_epu32_epu16 = _mm256_set1_epi32(0xFFFF);
     let len = v1.len();
     for _ in 0..len / 32 {
         // load 32 bytes
@@ -31,7 +27,7 @@ pub unsafe fn avx_manhattan_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
     let mul_ps = _mm256_cvtepi32_ps(acc);
     let mut score = hsum256_ps_avx(mul_ps);
 
-    let mut remainder = len % 32;
+    let remainder = len % 32;
     if remainder != 0 {
         let mut remainder_score = 0;
         for _ in 0..len % 32 {

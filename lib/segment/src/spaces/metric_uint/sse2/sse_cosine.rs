@@ -16,8 +16,6 @@ pub unsafe fn sse_cosine_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
     let mut norm2 = _mm_setzero_si128();
     // mask to take only lower 8 bits from 16 bits
     let mask_epu16_epu8 = _mm_set1_epi16(0xFF);
-    // mask to take only lower 16 bits from 32 bits
-    let mask_epu32_epu16 = _mm_set1_epi32(0xFFFF);
     let len = v1.len();
     for _ in 0..len / 16 {
         // load 16 bytes
