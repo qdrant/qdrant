@@ -61,7 +61,7 @@ pub fn open_simple_multi_dense_vector_storage(
         }
         let point_id_usize = point_id as usize;
         if point_id_usize >= vectors.len() {
-            vectors.resize(point_id_usize + 1, MultiDenseVector::default());
+            vectors.resize(point_id_usize + 1, MultiDenseVector::placeholder(dim));
         }
         vectors[point_id_usize] = stored_record.vector;
 
@@ -77,7 +77,7 @@ pub fn open_simple_multi_dense_vector_storage(
             db_wrapper,
             update_buffer: StoredMultiDenseVector {
                 deleted: false,
-                vector: MultiDenseVector::default(),
+                vector: MultiDenseVector::placeholder(dim),
             },
             deleted,
             deleted_count,
@@ -164,7 +164,7 @@ impl VectorStorage for SimpleMultiDenseVectorStorage {
         let key_usize = key as usize;
         if key_usize >= self.vectors.len() {
             self.vectors
-                .resize(key_usize + 1, MultiDenseVector::default());
+                .resize(key_usize + 1, MultiDenseVector::placeholder(self.dim));
         }
         self.vectors[key_usize] = multi_vector.clone();
         self.set_deleted(key, false);

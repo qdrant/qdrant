@@ -174,7 +174,7 @@ pub type TypedDenseVector<T> = Vec<T>;
 pub type DenseVector = TypedDenseVector<VectorElementType>;
 
 /// Type for multi dense vector
-#[derive(Debug, Default, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct MultiDenseVector {
     pub inner_vector: DenseVector, // vectors are flattened into a single vector
     pub dim: usize,                // dimension of each vector
@@ -184,6 +184,14 @@ impl MultiDenseVector {
     pub fn new(flattened_vectors: DenseVector, dim: usize) -> Self {
         Self {
             inner_vector: flattened_vectors,
+            dim,
+        }
+    }
+
+    /// MultiDenseVector cannot be empty, so we use a placeholder vector instead
+    pub fn placeholder(dim: usize) -> Self {
+        Self {
+            inner_vector: vec![1.0; dim],
             dim,
         }
     }

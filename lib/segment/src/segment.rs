@@ -220,7 +220,7 @@ impl Segment {
                         }
                         VectorStorageEnum::SparseSimple(_) => Vector::from(SparseVector::default()),
                         VectorStorageEnum::MultiDenseSimple(_) => {
-                            Vector::from(MultiDenseVector::default())
+                            Vector::from(MultiDenseVector::placeholder(dim))
                         }
                     };
                     vector_storage.insert_vector(new_index, VectorRef::from(&vector))?;
