@@ -2,11 +2,16 @@ use std::arch::x86_64::*;
 
 use crate::spaces::simple_avx::hsum256_ps_avx;
 
+#[target_feature(enable = "avx")]
 #[target_feature(enable = "avx2")]
 #[target_feature(enable = "fma")]
 #[allow(clippy::missing_safety_doc)]
 pub unsafe fn avx_cosine_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
     debug_assert!(v1.len() == v2.len());
+    debug_assert!(is_x86_feature_detected!("avx"));
+    debug_assert!(is_x86_feature_detected!("avx2"));
+    debug_assert!(is_x86_feature_detected!("fma"));
+
     let mut ptr1: *const u8 = v1.as_ptr();
     let mut ptr2: *const u8 = v2.as_ptr();
 
@@ -94,7 +99,10 @@ mod tests {
 
     #[test]
     fn test_spaces_avx() {
-        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+        if is_x86_feature_detected!("avx")
+            && is_x86_feature_detected!("avx2")
+            && is_x86_feature_detected!("fma")
+        {
             let v1: Vec<u8> = vec![
                 255, 255, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 255, 255,
                 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 255, 255, 0, 1, 2, 3,

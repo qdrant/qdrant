@@ -22,6 +22,7 @@ impl Metric<VectorElementTypeByte> for DotProductMetric {
         #[cfg(target_arch = "x86_64")]
         {
             if is_x86_feature_detected!("avx")
+                && is_x86_feature_detected!("avx2")
                 && is_x86_feature_detected!("fma")
                 && v1.len() >= MIN_DIM_SIZE_AVX
             {
@@ -31,7 +32,10 @@ impl Metric<VectorElementTypeByte> for DotProductMetric {
 
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         {
-            if is_x86_feature_detected!("sse") && v1.len() >= MIN_DIM_SIZE_SIMD {
+            if is_x86_feature_detected!("sse")
+                && is_x86_feature_detected!("sse2")
+                && v1.len() >= MIN_DIM_SIZE_SIMD
+            {
                 return unsafe { sse_dot_similarity_bytes(v1, v2) };
             }
         }
