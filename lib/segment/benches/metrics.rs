@@ -15,13 +15,13 @@ use segment::spaces::metric_uint::avx2::euclid::avx_euclid_similarity_bytes;
 #[cfg(target_arch = "x86_64")]
 use segment::spaces::metric_uint::avx2::manhattan::avx_manhattan_similarity_bytes;
 #[cfg(target_arch = "aarch64")]
-use segment::spaces::metric_uint::neon::neon_cosine::neon_cosine_similarity_bytes;
+use segment::spaces::metric_uint::neon::cosine::neon_cosine_similarity_bytes;
 #[cfg(target_arch = "aarch64")]
-use segment::spaces::metric_uint::neon::neon_dot::neon_dot_similarity_bytes;
+use segment::spaces::metric_uint::neon::dot::neon_dot_similarity_bytes;
 #[cfg(target_arch = "aarch64")]
-use segment::spaces::metric_uint::neon::neon_euclid::neon_euclid_similarity_bytes;
+use segment::spaces::metric_uint::neon::euclid::neon_euclid_similarity_bytes;
 #[cfg(target_arch = "aarch64")]
-use segment::spaces::metric_uint::neon::neon_simple_manhattan::neon_manhattan_similarity_bytes;
+use segment::spaces::metric_uint::neon::manhattan::neon_manhattan_similarity_bytes;
 use segment::spaces::metric_uint::simple_cosine::cosine_similarity_bytes;
 use segment::spaces::metric_uint::simple_dot::dot_similarity_bytes;
 use segment::spaces::metric_uint::simple_euclid::euclid_similarity_bytes;

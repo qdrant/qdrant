@@ -5,7 +5,7 @@ use crate::spaces::metric::Metric;
 #[cfg(target_arch = "x86_64")]
 use crate::spaces::metric_uint::avx2::manhattan::avx_manhattan_similarity_bytes;
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-use crate::spaces::metric_uint::neon::simple_manhattan::neon_manhattan_similarity_bytes;
+use crate::spaces::metric_uint::neon::manhattan::neon_manhattan_similarity_bytes;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use crate::spaces::metric_uint::sse2::manhattan::sse_manhattan_similarity_bytes;
 #[cfg(target_arch = "x86_64")]
