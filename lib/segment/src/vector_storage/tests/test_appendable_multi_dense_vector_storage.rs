@@ -24,7 +24,7 @@ fn multi_points_fixtures() -> Vec<MultiDenseVector> {
             vec![value, value, 0.0, value],
             vec![value, 0.0, 0.0, value],
         ];
-        let multi = MultiDenseVector::new(vectors.into_iter().flatten().collect(), 4);
+        let multi = MultiDenseVector::try_from(vectors).unwrap();
         multis.push(multi);
     }
     multis
