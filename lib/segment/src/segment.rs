@@ -24,7 +24,6 @@ use crate::common::operation_error::{
 use crate::common::version::{StorageVersion, VERSION_FILE};
 use crate::common::{
     check_named_vectors, check_query_vectors, check_stopped, check_vector, check_vector_name,
-    BYTES_IN_KB,
 };
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{Direction, OrderBy, OrderingValue};
@@ -42,7 +41,6 @@ use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef,
     PayloadSchemaType, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
     SegmentState, SegmentType, SeqNumberType, VectorDataInfo, WithPayload, WithVector,
-    VECTOR_ELEMENT_SIZE,
 };
 use crate::utils;
 use crate::utils::fs::find_symlink;
@@ -908,55 +906,6 @@ impl Segment {
             ))
             .spawn(move || tasks.iter().for_each(mmap_ops::PrefaultMmapPages::exec));
     }
-
-    /// Check if the segment is indexed enough to be searched with `indexed_only` parameter
-    pub fn is_search_optimized(
-        &self,
-        search_optimized_threshold_kb: usize,
-        vector_name: &str,
-    ) -> OperationResult<bool> {
-        let segment_info = self.info();
-        let vector_name_error = || OperationError::MissedVectorName {
-            received_name: vector_name.to_string(),
-        };
-
-        let vector_data_info = segment_info
-            .vector_data
-            .get(vector_name)
-            .ok_or_else(vector_name_error)?;
-
-        // check only dense vectors because sparse vectors are always indexed
-        let vector_size = self
-            .config()
-            .vector_data
-            .get(vector_name)
-            .ok_or_else(vector_name_error)?
-            .size;
-
-        let vector_size_bytes = vector_size * VECTOR_ELEMENT_SIZE;
-
-        let unindexed_vectors = vector_data_info
-            .num_vectors
-            .saturating_sub(vector_data_info.num_indexed_vectors);
-
-        let unindexed_volume = vector_size_bytes.saturating_mul(unindexed_vectors);
-
-        let indexing_threshold_bytes = search_optimized_threshold_kb * BYTES_IN_KB;
-
-        // Examples:
-        // Threshold = 20_000 Kb
-        // Indexed vectors: 100000
-        // Total vectors: 100010
-        // unindexed_volume = 100010 - 100000 = 10
-        // Result: true
-
-        // Threshold = 20_000 Kb
-        // Indexed vectors: 0
-        // Total vectors: 100000
-        // unindexed_volume = 100000
-        // Result: false
-        Ok(unindexed_volume < indexing_threshold_bytes)
-    }
 }
 
 /// This is a basic implementation of `SegmentEntry`,
@@ -992,6 +941,7 @@ impl SegmentEntry for Segment {
             top,
             params,
             is_stopped,
+            usize::MAX,
         )?[0];
 
         check_stopped(is_stopped)?;
@@ -1010,14 +960,6 @@ impl SegmentEntry for Segment {
         is_stopped: &AtomicBool,
         search_optimized_threshold_kb: usize,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
-        let ignore_plain_index = params.map(|p| p.indexed_only).unwrap_or(false);
-
-        if ignore_plain_index
-            && !self.is_search_optimized(search_optimized_threshold_kb, vector_name)?
-        {
-            return Ok(vec![vec![]; query_vectors.len()]);
-        }
-
         check_query_vectors(vector_name, query_vectors, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
         let internal_results = vector_data.vector_index.borrow().search(
@@ -1026,6 +968,7 @@ impl SegmentEntry for Segment {
             top,
             params,
             is_stopped,
+            search_optimized_threshold_kb,
         )?;
 
         check_stopped(is_stopped)?;

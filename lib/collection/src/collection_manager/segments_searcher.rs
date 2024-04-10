@@ -565,15 +565,15 @@ fn get_hnsw_ef_construct(config: &SegmentConfig, vector_name: &str) -> Option<us
 
 #[cfg(test)]
 mod tests {
-    use segment::entry::entry_point::SegmentEntry;
+    use std::collections::HashSet;
+
     use segment::fixtures::index_fixtures::random_vector;
-    use segment::types::SegmentType;
+    use segment::index::VectorIndexEnum;
+    use segment::types::{Condition, HasIdCondition};
     use tempfile::Builder;
 
     use super::*;
-    use crate::collection_manager::fixtures::{
-        build_test_holder, optimize_segment, random_segment,
-    };
+    use crate::collection_manager::fixtures::{build_test_holder, random_segment};
     use crate::operations::types::{CoreSearchRequest, SearchRequestInternal};
     use crate::optimizers_builder::DEFAULT_INDEXING_THRESHOLD_KB;
 
@@ -583,37 +583,26 @@ mod tests {
 
         let segment1 = random_segment(dir.path(), 10, 200, 256);
 
-        let res_1 = segment1.is_search_optimized(25, "").unwrap();
+        let vector_index = segment1.vector_data.get("").unwrap().vector_index.clone();
 
-        assert!(!res_1);
+        let vector_index_borrow = vector_index.borrow();
 
-        let res_2 = segment1.is_search_optimized(225, "").unwrap();
+        match &*vector_index_borrow {
+            VectorIndexEnum::Plain(plain_index) => {
+                let res_1 = plain_index.is_small_enough_for_unindexed_search(25, None);
+                assert!(!res_1);
 
-        assert!(res_2);
+                let res_2 = plain_index.is_small_enough_for_unindexed_search(225, None);
+                assert!(res_2);
 
-        let indexed_segment = optimize_segment(segment1);
+                let ids: HashSet<_> = vec![1, 2].into_iter().map(PointIdType::from).collect();
 
-        let indexed_segment_get = indexed_segment.get();
-        let indexed_segment_read = indexed_segment_get.read();
+                let ids_filter = Filter::new_must(Condition::HasId(HasIdCondition::from(ids)));
 
-        assert_eq!(
-            indexed_segment_read.info().segment_type,
-            SegmentType::Indexed
-        );
-
-        match indexed_segment {
-            LockedSegment::Original(indexed_segment) => {
-                let indexed_segment_read = indexed_segment.read();
-                assert_eq!(
-                    indexed_segment_read.info().segment_type,
-                    SegmentType::Indexed
-                );
-                let res_3 = indexed_segment_read.is_search_optimized(25, "").unwrap();
+                let res_3 = plain_index.is_small_enough_for_unindexed_search(25, Some(&ids_filter));
                 assert!(res_3);
             }
-            LockedSegment::Proxy(_) => {
-                panic!("Expected original segment, got proxy");
-            }
+            _ => panic!("Expected plain index"),
         }
     }
 

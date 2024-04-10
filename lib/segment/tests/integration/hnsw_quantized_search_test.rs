@@ -197,7 +197,7 @@ fn check_matches(
             segment.vector_data[DEFAULT_VECTOR_NAME]
                 .vector_index
                 .borrow()
-                .search(&[&query], filter, top, None, &false.into())
+                .search(&[&query], filter, top, None, &false.into(), usize::MAX)
                 .unwrap()
         })
         .collect::<Vec<_>>();
@@ -215,6 +215,7 @@ fn check_matches(
                     ..Default::default()
                 }),
                 &false.into(),
+                usize::MAX,
             )
             .unwrap();
         sames += sames_count(&index_result, plain_result);
@@ -248,6 +249,7 @@ fn check_oversampling(
                     ..Default::default()
                 }),
                 &false.into(),
+                usize::MAX,
             )
             .unwrap();
         let best_1 = oversampling_1_result[0][0];
@@ -268,6 +270,7 @@ fn check_oversampling(
                     ..Default::default()
                 }),
                 &false.into(),
+                usize::MAX,
             )
             .unwrap();
         let best_2 = oversampling_2_result[0][0];
@@ -305,6 +308,7 @@ fn check_rescoring(
                     ..Default::default()
                 }),
                 &false.into(),
+                usize::MAX,
             )
             .unwrap();
         for result in &index_result[0] {
