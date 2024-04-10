@@ -6,7 +6,7 @@ use super::{Query, TransformInto};
 use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::{QueryVector, Vector};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RecoQuery<T> {
     pub positives: Vec<T>,
     pub negatives: Vec<T>,

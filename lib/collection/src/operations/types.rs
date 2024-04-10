@@ -291,7 +291,7 @@ pub struct ScrollRequest {
     pub shard_key: Option<ShardKeySelector>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(untagged)]
 pub enum OrderByInterface {
     Key(JsonPath),
@@ -312,7 +312,7 @@ impl From<OrderByInterface> for OrderBy {
 }
 
 /// Scroll request - paginate over all points which matches given condition
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct ScrollRequestInternal {
     /// Start ID to read points from.
@@ -374,7 +374,7 @@ pub struct SearchRequest {
 /// Search request.
 /// Holds all conditions and parameters for the search of most similar points by vector similarity
 /// given the filtering restrictions.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[derive(Deserialize, Serialize, JsonSchema, Validate, Clone, Debug, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct SearchRequestInternal {
     /// Look for vectors closest to this
@@ -413,7 +413,7 @@ pub struct SearchRequestBatch {
     pub searches: Vec<SearchRequest>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum QueryEnum {
     Nearest(NamedVectorStruct),
     RecommendBestScore(NamedQuery<RecoQuery<Vector>>),
@@ -450,7 +450,7 @@ impl AsRef<QueryEnum> for QueryEnum {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CoreSearchRequest {
     /// Every kind of query that can be performed on segment level
     pub query: QueryEnum,
@@ -528,7 +528,7 @@ pub struct PointRequest {
     pub shard_key: Option<ShardKeySelector>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct PointRequestInternal {
     /// Look for points with ids
@@ -590,7 +590,7 @@ pub enum RecommendStrategy {
     BestScore,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case", untagged)]
 pub enum UsingVector {
     Name(String),
@@ -604,7 +604,7 @@ impl From<String> for UsingVector {
 
 /// Defines a location to use for looking up the vector.
 /// Specifies collection and vector field name.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct LookupLocation {
     /// Name of the collection used for lookup
@@ -637,7 +637,7 @@ pub struct RecommendRequest {
 /// Service should look for the points which are closer to positive examples and at the same time
 /// further to negative examples. The concrete way of how to compare negative and positive distances
 /// is up to the `strategy` chosen.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Default, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Default, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct RecommendRequestInternal {
     /// Look for vectors closest to those
@@ -712,7 +712,7 @@ pub struct RecommendGroupsRequest {
     pub shard_key: Option<ShardKeySelector>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]
 pub struct RecommendGroupsRequestInternal {
     /// Look for vectors closest to those
     #[serde(default)]
@@ -760,7 +760,7 @@ pub struct RecommendGroupsRequestInternal {
     pub group_request: BaseGroupRequest,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]
 pub struct ContextExamplePair {
     #[validate]
     pub positive: RecommendExample,
@@ -785,7 +785,7 @@ pub struct DiscoverRequest {
 }
 
 /// Use context and a target to find the most similar points, constrained by the context.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[derive(Deserialize, Serialize, JsonSchema, Validate, Clone, Debug, PartialEq)]
 pub struct DiscoverRequestInternal {
     /// Look for vectors closest to this.
     ///
@@ -881,7 +881,7 @@ pub struct CountRequest {
 /// Count Request
 /// Counts the number of points which satisfy the given filter.
 /// If filter is not provided, the count of all points in the collection will be returned.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
+#[derive(Deserialize, Serialize, JsonSchema, Validate, Clone, Debug, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct CountRequestInternal {
     /// Look only for points which satisfies this conditions
@@ -1748,7 +1748,7 @@ pub enum NodeType {
     Listener,
 }
 
-#[derive(Validate, Serialize, Deserialize, JsonSchema, Debug, Clone)]
+#[derive(Validate, Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
 pub struct BaseGroupRequest {
     /// Payload field to group by, must be a string or number field.
     /// If the field contains more than 1 value, all values will be used for grouping.

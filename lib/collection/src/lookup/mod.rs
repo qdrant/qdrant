@@ -15,7 +15,7 @@ use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{CollectionError, CollectionResult, PointRequestInternal, Record};
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct WithLookup {
     /// Name of the collection to use for points lookup
     #[serde(rename = "collection")]

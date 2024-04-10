@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use super::WithLookup;
 
-#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone)]
+#[derive(Serialize, Deserialize, JsonSchema, Debug, Clone, PartialEq)]
 #[serde(untagged)]
 pub enum WithLookupInterface {
     Collection(String),

@@ -1895,7 +1895,7 @@ impl Validate for Condition {
 }
 
 /// Options for specifying which payload to include or not
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(untagged, rename_all = "snake_case")]
 pub enum WithPayloadInterface {
     /// If `true` - return all payload,
