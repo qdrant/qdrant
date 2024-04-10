@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::slice::ChunksMut;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -23,7 +24,7 @@ pub enum Vector {
 pub enum VectorRef<'a> {
     Dense(&'a [VectorElementType]),
     Sparse(&'a SparseVector),
-    MultiDense(&'a [DenseVector]),
+    MultiDense(&'a MultiDenseVector),
 }
 
 impl<'a> TryFrom<VectorRef<'a>> for &'a [VectorElementType] {
@@ -50,7 +51,7 @@ impl<'a> TryFrom<VectorRef<'a>> for &'a SparseVector {
     }
 }
 
-impl<'a> TryFrom<VectorRef<'a>> for &'a [DenseVector] {
+impl<'a> TryFrom<VectorRef<'a>> for &'a MultiDenseVector {
     type Error = OperationError;
 
     fn try_from(value: VectorRef<'a>) -> Result<Self, Self::Error> {
@@ -173,7 +174,60 @@ pub type TypedDenseVector<T> = Vec<T>;
 pub type DenseVector = TypedDenseVector<VectorElementType>;
 
 /// Type for multi dense vector
-pub type MultiDenseVector = Vec<DenseVector>;
+#[derive(Debug, Default, Clone, PartialEq, Deserialize, Serialize)]
+pub struct MultiDenseVector {
+    pub inner_vector: DenseVector, // vectors are flattened into a single vector
+    pub dim: usize,                // dimension of each vector
+}
+
+impl MultiDenseVector {
+    pub fn new(vectors: DenseVector, dim: usize) -> Self {
+        Self {
+            inner_vector: vectors,
+            dim,
+        }
+    }
+
+    /// Slices the multi vector into the underlying individual vectors
+    pub fn multi_vectors(&self) -> impl Iterator<Item = &[VectorElementType]> {
+        self.inner_vector.chunks(self.dim)
+    }
+
+    pub fn multi_vectors_mut(&mut self) -> ChunksMut<VectorElementType> {
+        self.inner_vector.chunks_mut(self.dim)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.inner_vector.is_empty()
+    }
+}
+
+impl TryFrom<Vec<DenseVector>> for MultiDenseVector {
+    type Error = OperationError;
+
+    fn try_from(value: Vec<DenseVector>) -> Result<Self, Self::Error> {
+        let dim = value.first().map(|v| v.len()).unwrap_or(0);
+        // assert all vectors have the same dimension
+        if let Some(bad_vec) = value.iter().find(|v| v.len() != dim) {
+            Err(OperationError::WrongVector {
+                expected_dim: dim,
+                received_dim: bad_vec.len(),
+            })
+        } else {
+            let inner_vector = value.into_iter().flatten().collect();
+            let multi_dense = MultiDenseVector { inner_vector, dim };
+            Ok(multi_dense)
+        }
+    }
+}
+
+impl TryFrom<Vec<DenseVector>> for Vector {
+    type Error = OperationError;
+
+    fn try_from(value: Vec<DenseVector>) -> Result<Self, Self::Error> {
+        MultiDenseVector::try_from(value).map(Vector::MultiDense)
+    }
+}
 
 impl<'a> VectorRef<'a> {
     // Cannot use `ToOwned` trait because of `Borrow` implementation for `Vector`
@@ -181,7 +235,7 @@ impl<'a> VectorRef<'a> {
         match self {
             VectorRef::Dense(v) => Vector::Dense(v.to_vec()),
             VectorRef::Sparse(v) => Vector::Sparse(v.clone()),
-            VectorRef::MultiDense(v) => Vector::MultiDense(v.to_vec()),
+            VectorRef::MultiDense(v) => Vector::MultiDense(v.clone()),
         }
     }
 }
@@ -210,10 +264,10 @@ impl<'a> TryInto<&'a SparseVector> for &'a Vector {
     }
 }
 
-impl<'a> TryInto<&'a [DenseVector]> for &'a Vector {
+impl<'a> TryInto<&'a MultiDenseVector> for &'a Vector {
     type Error = OperationError;
 
-    fn try_into(self) -> Result<&'a [DenseVector], Self::Error> {
+    fn try_into(self) -> Result<&'a MultiDenseVector, Self::Error> {
         match self {
             Vector::Dense(_) => Err(OperationError::WrongMulti),
             Vector::Sparse(_) => Err(OperationError::WrongSparse),
@@ -230,7 +284,7 @@ pub fn only_default_vector(vec: &[VectorElementType]) -> NamedVectors {
     NamedVectors::from_ref(DEFAULT_VECTOR_NAME, VectorRef::from(vec))
 }
 
-pub fn only_default_multi_vector(vec: &[DenseVector]) -> NamedVectors {
+pub fn only_default_multi_vector(vec: &MultiDenseVector) -> NamedVectors {
     NamedVectors::from_ref(DEFAULT_VECTOR_NAME, VectorRef::MultiDense(vec))
 }
 
@@ -492,9 +546,9 @@ impl<'a> From<&'a [VectorElementType]> for QueryVector {
     }
 }
 
-impl<'a> From<&'a [DenseVector]> for QueryVector {
-    fn from(vec: &'a [DenseVector]) -> Self {
-        Self::Nearest(Vector::MultiDense(vec.to_vec()))
+impl<'a> From<&'a MultiDenseVector> for QueryVector {
+    fn from(vec: &'a MultiDenseVector) -> Self {
+        Self::Nearest(Vector::MultiDense(vec.clone()))
     }
 }
 

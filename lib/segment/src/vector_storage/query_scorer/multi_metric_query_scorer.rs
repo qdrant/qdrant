@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use common::types::{PointOffsetType, ScoreType};
 
 use super::score_multi;
-use crate::data_types::vectors::{MultiDenseVector, VectorElementType};
+use crate::data_types::vectors::{DenseVector, MultiDenseVector, VectorElementType};
 use crate::spaces::metric::Metric;
 use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::MultiVectorStorage;
@@ -22,8 +22,13 @@ impl<'a, TMetric: Metric<VectorElementType>, TVectorStorage: MultiVectorStorage>
     MultiMetricQueryScorer<'a, TMetric, TVectorStorage>
 {
     pub fn new(query: MultiDenseVector, vector_storage: &'a TVectorStorage) -> Self {
+        let slices = query.multi_vectors();
+        let preprocessed: DenseVector = slices
+            .into_iter()
+            .flat_map(|slice| TMetric::preprocess(slice.to_vec()))
+            .collect();
         Self {
-            query: query.into_iter().map(|v| TMetric::preprocess(v)).collect(),
+            query: MultiDenseVector::new(preprocessed, query.dim),
             vector_storage,
             metric: PhantomData,
         }

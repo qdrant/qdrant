@@ -14,7 +14,7 @@ type CowKey<'a> = Cow<'a, str>;
 pub enum CowVector<'a> {
     Dense(Cow<'a, [VectorElementType]>),
     Sparse(Cow<'a, SparseVector>),
-    MultiDense(Cow<'a, [DenseVector]>),
+    MultiDense(Cow<'a, MultiDenseVector>),
 }
 
 impl<'a> Default for CowVector<'a> {
@@ -88,8 +88,8 @@ impl<'a> From<&'a [VectorElementType]> for CowVector<'a> {
     }
 }
 
-impl<'a> From<&'a [DenseVector]> for CowVector<'a> {
-    fn from(v: &'a [DenseVector]) -> Self {
+impl<'a> From<&'a MultiDenseVector> for CowVector<'a> {
+    fn from(v: &'a MultiDenseVector) -> Self {
         CowVector::MultiDense(Cow::Borrowed(v))
     }
 }
@@ -219,9 +219,12 @@ impl<'a> NamedVectors<'a> {
                     v.to_mut().sort_by_indices();
                 }
                 CowVector::MultiDense(v) => {
-                    for dense_vector in v.to_mut() {
+                    for dense_vector in v.to_mut().multi_vectors_mut() {
                         let preprocessed_vector = distance.preprocess_vector(dense_vector.to_vec());
-                        *dense_vector = preprocessed_vector;
+                        // replace dense vector with preprocessed vector
+                        for (position, value) in preprocessed_vector.iter().enumerate() {
+                            dense_vector[position] = *value;
+                        }
                     }
                 }
             }
