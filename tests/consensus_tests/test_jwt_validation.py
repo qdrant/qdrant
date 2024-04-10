@@ -9,9 +9,8 @@ import grpc
 import grpc_requests
 import pytest
 import requests
-from grpc_interceptor import ClientCallDetails, ClientInterceptor
-
 from consensus_tests import fixtures
+from grpc_interceptor import ClientCallDetails, ClientInterceptor
 
 from .utils import encode_jwt, start_cluster
 
@@ -583,7 +582,7 @@ def uris(tmp_path_factory: pytest.TempPathFactory):
     extra_env = {
         "QDRANT__SERVICE__API_KEY": SECRET,
         "QDRANT__SERVICE__JWT_RBAC": "true",
-        "QDRANT__STORAGE__WAL__WAL_CAPACITY_MB": "1", # to speed up snapshot tests
+        "QDRANT__STORAGE__WAL__WAL_CAPACITY_MB": "1",  # to speed up snapshot tests
     }
 
     tmp_path = tmp_path_factory.mktemp("api_key_instance")
@@ -638,7 +637,6 @@ def scroll_with_token(collection: str, token: str) -> requests.Response:
 
 
 def test_value_exists_claim():
-
     validation_collection = "jwt_validation_collection"
 
     key = "tokenId"
@@ -1495,11 +1493,40 @@ def test_update_points_batch():
             }
         },
         {"delete_points": {**SHARD_KEY_SELECTOR, "points": {"points": {"ids": [{"num": 10}]}}}},
-        {"set_payload": {**SHARD_KEY_SELECTOR, "points_selector": {"points": {"ids": [{"num": 11}]}}, "payload": {"my_key": {"string_value": "value"}}}},
-        {"overwrite_payload": {**SHARD_KEY_SELECTOR, "points_selector": {"points": {"ids": [{"num": 11}]}}, "payload": {"my_key": {"string_value": "value"}}}},
-        {"delete_payload": {**SHARD_KEY_SELECTOR, "points_selector": {"points": {"ids": [{"num": 11}]}}, "keys": ["my_key"]}},
-        {"update_vectors": {**SHARD_KEY_SELECTOR, "points": [{"id": {"num": 11}, "vectors": {"vector": {"data": [0,1,2,3]}}}]}},
-        {"delete_vectors": {**SHARD_KEY_SELECTOR, "points_selector": {"points": {"ids": [{"num": 11}]}}, "vectors": {"names": ["my_name"]}}},
+        {
+            "set_payload": {
+                **SHARD_KEY_SELECTOR,
+                "points_selector": {"points": {"ids": [{"num": 11}]}},
+                "payload": {"my_key": {"string_value": "value"}},
+            }
+        },
+        {
+            "overwrite_payload": {
+                **SHARD_KEY_SELECTOR,
+                "points_selector": {"points": {"ids": [{"num": 11}]}},
+                "payload": {"my_key": {"string_value": "value"}},
+            }
+        },
+        {
+            "delete_payload": {
+                **SHARD_KEY_SELECTOR,
+                "points_selector": {"points": {"ids": [{"num": 11}]}},
+                "keys": ["my_key"],
+            }
+        },
+        {
+            "update_vectors": {
+                **SHARD_KEY_SELECTOR,
+                "points": [{"id": {"num": 11}, "vectors": {"vector": {"data": [0, 1, 2, 3]}}}],
+            }
+        },
+        {
+            "delete_vectors": {
+                **SHARD_KEY_SELECTOR,
+                "points_selector": {"points": {"ids": [{"num": 11}]}},
+                "vectors": {"names": ["my_name"]},
+            }
+        },
         {"delete_points": {**SHARD_KEY_SELECTOR, "points": {"points": {"ids": [{"num": 11}]}}}},
         {"clear_payload": {**SHARD_KEY_SELECTOR, "points": {"points": {"ids": [{"num": 11}]}}}},
     ]
@@ -1767,16 +1794,8 @@ def test_get_locks():
 
 def test_payload_filters_queries():
     token = encode_jwt(
-        {
-            "access": [{
-                "collection": COLL_NAME,
-                "access": "r",
-                "payload": {
-                    "city": "Berlin"
-                }
-            }]
-        },
-        SECRET
+        {"access": [{"collection": COLL_NAME, "access": "r", "payload": {"city": "Berlin"}}]},
+        SECRET,
     )
 
     # With scroll
@@ -1804,11 +1823,11 @@ def test_payload_filters_queries():
         headers={"Authorization": f"Bearer {token}"},
     )
     res.raise_for_status()
-    
+
     cities_in_payload = set(point["payload"]["city"] for point in res.json()["result"])
-    
+
     assert cities_in_payload == {"Berlin"}
-    
+
     # With count
     res = requests.post(
         f"{REST_URI}/collections/{COLL_NAME}/points/count",
@@ -1816,19 +1835,12 @@ def test_payload_filters_queries():
         headers={"Authorization": f"Bearer {token}"},
     )
     res.raise_for_status()
-    
+
     res_expected = requests.post(
         f"{REST_URI}/collections/{COLL_NAME}/points/count",
-        json={
-            "filter": {
-                "must": [
-                    {"key": "city", "match": {"value": "Berlin"}}
-                ]
-            }
-        },
+        json={"filter": {"must": [{"key": "city", "match": {"value": "Berlin"}}]}},
         headers=API_KEY_HEADERS,
     )
     res_expected.raise_for_status()
-    
+
     assert res.json()["result"] == res_expected.json()["result"]
-    
