@@ -81,8 +81,8 @@ pub trait SegmentOptimizer {
     fn temp_segment(&self, save_version: bool) -> CollectionResult<LockedSegment> {
         let collection_params = self.collection_params();
         let config = SegmentConfig {
-            vector_data: collection_params.into_base_vector_data()?,
-            sparse_vector_data: collection_params.into_sparse_vector_data()?,
+            vector_data: collection_params.to_base_vector_data()?,
+            sparse_vector_data: collection_params.to_sparse_vector_data()?,
             payload_storage_type: if collection_params.on_disk_payload {
                 PayloadStorageType::OnDisk
             } else {
@@ -154,8 +154,8 @@ pub trait SegmentOptimizer {
         let threshold_is_on_disk = maximal_vector_store_size_bytes
             >= thresholds.memmap_threshold.saturating_mul(BYTES_IN_KB);
 
-        let mut vector_data = collection_params.into_base_vector_data()?;
-        let mut sparse_vector_data = collection_params.into_sparse_vector_data()?;
+        let mut vector_data = collection_params.to_base_vector_data()?;
+        let mut sparse_vector_data = collection_params.to_sparse_vector_data()?;
 
         // If indexing, change to HNSW index and quantization
         if threshold_is_indexed {

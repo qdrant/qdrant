@@ -699,10 +699,10 @@ impl<'s> SegmentHolder {
             // Base config on collection params
             Some(collection_params) => SegmentConfig {
                 vector_data: collection_params
-                    .into_base_vector_data()
+                    .to_base_vector_data()
                     .map_err(|err| OperationError::service_error(format!("Failed to source dense vector configuration from collection parameters: {err:?}")))?,
                 sparse_vector_data: collection_params
-                    .into_sparse_vector_data()
+                    .to_sparse_vector_data()
                     .map_err(|err| OperationError::service_error(format!("Failed to source sparse vector configuration from collection parameters: {err:?}")))?,
                 payload_storage_type: collection_params.payload_storage_type(),
             },
