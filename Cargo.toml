@@ -81,7 +81,7 @@ rustls = "0.22.2"
 rustls-pki-types = "1.4.1"
 rustls-pemfile = "2.1.2"
 prometheus = { version = "0.13.3", default-features = false }
-validator = { version = "0.16", features = ["derive"] }
+validator = { workspace = true }
 jsonwebtoken = "9.3.0"
 
 # Consensus related crates
@@ -138,6 +138,7 @@ tonic = { version = "0.9.2", features = ["gzip", "tls"] }
 tonic-reflection = "0.9.2"
 tracing = { version = "0.1", features = ["async-await"] }
 uuid = { version = "1.8", features = ["v4", "serde"] }
+validator = { version = "0.16.1", features = ["derive"] }
 
 [[bin]]
 name = "schema_generator"

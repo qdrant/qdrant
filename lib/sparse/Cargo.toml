@@ -18,6 +18,6 @@ serde = { workspace = true }
 tempfile = "3.10.1"
 ordered-float = "4.2"
 rand = "0.8.5"
-validator = "0.16"
+validator = { workspace = true }
 itertools = "0.12.1"
 parking_lot = "0.12.1"
