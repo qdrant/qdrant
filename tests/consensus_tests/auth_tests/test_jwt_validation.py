@@ -111,7 +111,8 @@ ACTION_ACCESS = {
         True,
         "GET /collections/{collection_name}/cluster",
         "qdrant.Collections/CollectionClusterInfo",
-    ),  # TODO: are these the expected permissions for coll cluster info?
+        coll_rw_payload=False,
+    ),
     "collection_exists": EndpointAccess(
         True,
         True,
@@ -254,7 +255,7 @@ ACTION_ACCESS = {
         "GET /collections/{collection_name}/snapshots",
         "qdrant.Snapshots/List",
         coll_rw_payload=False,
-    ),  # TODO: this should not be allowed with payload constraints
+    ),
     "create_collection_snapshot": EndpointAccess(
         False,
         True,
