@@ -120,6 +120,7 @@ fn test_batch_and_single_request_equivalency() {
                 10,
                 None,
                 &false.into(),
+                10_000,
             )
             .unwrap();
 
@@ -175,11 +176,25 @@ fn test_batch_and_single_request_equivalency() {
         )));
 
         let search_res_1 = hnsw_index
-            .search(&[&query_vector_1], Some(&filter), 10, None, &false.into())
+            .search(
+                &[&query_vector_1],
+                Some(&filter),
+                10,
+                None,
+                &false.into(),
+                usize::MAX,
+            )
             .unwrap();
 
         let search_res_2 = hnsw_index
-            .search(&[&query_vector_2], Some(&filter), 10, None, &false.into())
+            .search(
+                &[&query_vector_2],
+                Some(&filter),
+                10,
+                None,
+                &false.into(),
+                usize::MAX,
+            )
             .unwrap();
 
         let batch_res = hnsw_index
@@ -189,6 +204,7 @@ fn test_batch_and_single_request_equivalency() {
                 10,
                 None,
                 &false.into(),
+                usize::MAX,
             )
             .unwrap();
 

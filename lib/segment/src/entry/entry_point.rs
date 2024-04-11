@@ -52,6 +52,7 @@ pub trait SegmentEntry {
         top: usize,
         params: Option<&SearchParams>,
         is_stopped: &AtomicBool,
+        search_optimized_threshold_kb: usize,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>>;
 
     fn upsert_point(
