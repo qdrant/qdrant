@@ -76,7 +76,7 @@ tonic-reflection = { workspace = true }
 tower = { version = "0.4.13" }
 tower-layer = "0.3.2"
 tar = "0.4.40"
-reqwest = { version = "0.11", default-features = false, features = ["stream", "rustls-tls", "blocking"] }
+reqwest = { workspace = true }
 rustls = "0.22.2"
 rustls-pki-types = "1.4.1"
 rustls-pemfile = "2.1.2"
@@ -126,6 +126,7 @@ indexmap = { version = "2", features = ["serde"] }
 parking_lot = { version = "0.12.1", features = ["deadlock_detection", "serde"] }
 prost = "0.11.9"
 prost-wkt-types = "0.4.2"
+reqwest = { version = "0.12.3", default-features = false, features = ["http2", "stream", "rustls-tls", "blocking"] }
 schemars = { version = "0.8.16", features = ["uuid1", "preserve_order", "chrono", "url", "indexmap2"] }
 semver = { version = "1.0", features = ["serde"] }
 serde = { version = "~1.0", features = ["derive", "rc"] }

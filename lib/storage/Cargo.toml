@@ -51,7 +51,7 @@ futures = { workspace = true }
 anyhow = "1.0.81"
 uuid = { workspace = true }
 url = "2.5.0"
-reqwest = { version = "0.11", default-features = false, features = ["stream", "rustls-tls"] }
+reqwest = { workspace = true }
 tempfile = "3.10.1"
 async-trait = "0.1.79"
 
