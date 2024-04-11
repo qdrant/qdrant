@@ -721,15 +721,11 @@ def check_rest_access(
     )
 
     if should_succeed:
-        assert res.status_code < 500 and res.status_code not in [
-            401,
-            403,
-        ], f"{method} {path} failed with {res.status_code}: {res.text}"
+        assert (
+            res.status_code < 500 and res.status_code != 403
+        ), f"{method} {path} failed with {res.status_code}: {res.text}"
     else:
-        assert res.status_code in [
-            401,
-            403,
-        ], f"{method} {path} failed with {res.status_code}: {res.text}"
+        assert res.status_code == 403, f"{method} {path} failed with {res.status_code}: {res.text}"
 
 
 def check_grpc_access(
