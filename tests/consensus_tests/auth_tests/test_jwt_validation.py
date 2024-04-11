@@ -1806,12 +1806,13 @@ def test_payload_filters_queries():
         f"{REST_URI}/collections/{COLL_NAME}/points/scroll",
         json={
             "limit": 100,
+            "with_payload": True,
         },
         headers={"Authorization": f"Bearer {token}"},
     )
     res.raise_for_status()
 
-    cities_in_payload = set(point["payload"]["city"] for point in res.json()["result"]["points"])
+    cities_in_payload = set(point["payload"].get("city") for point in res.json()["result"]["points"])
 
     assert cities_in_payload == {"Berlin"}
 
@@ -1827,7 +1828,7 @@ def test_payload_filters_queries():
     )
     res.raise_for_status()
 
-    cities_in_payload = set(point["payload"]["city"] for point in res.json()["result"])
+    cities_in_payload = set(point["payload"].get("city") for point in res.json()["result"])
 
     assert cities_in_payload == {"Berlin"}
 
