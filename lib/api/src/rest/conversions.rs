@@ -1,4 +1,5 @@
 use super::schema::{BatchVectorStruct, ScoredPoint, Vector, VectorStruct};
+use crate::rest::{DenseVector, NamedVectorStruct};
 
 impl From<segment::data_types::vectors::Vector> for Vector {
     fn from(value: segment::data_types::vectors::Vector) -> Self {
@@ -107,5 +108,49 @@ impl From<ScoredPoint> for segment::types::ScoredPoint {
             vector: value.vector.map(From::from),
             shard_key: value.shard_key,
         }
+    }
+}
+
+impl From<NamedVectorStruct> for segment::data_types::vectors::NamedVectorStruct {
+    fn from(value: NamedVectorStruct) -> Self {
+        match value {
+            NamedVectorStruct::Default(vector) => {
+                segment::data_types::vectors::NamedVectorStruct::Default(vector)
+            }
+            NamedVectorStruct::Dense(vector) => {
+                segment::data_types::vectors::NamedVectorStruct::Dense(vector)
+            }
+            NamedVectorStruct::Sparse(vector) => {
+                segment::data_types::vectors::NamedVectorStruct::Sparse(vector)
+            }
+        }
+    }
+}
+
+impl From<segment::data_types::vectors::NamedVectorStruct> for NamedVectorStruct {
+    fn from(value: segment::data_types::vectors::NamedVectorStruct) -> Self {
+        match value {
+            segment::data_types::vectors::NamedVectorStruct::Default(vector) => {
+                NamedVectorStruct::Default(vector)
+            }
+            segment::data_types::vectors::NamedVectorStruct::Dense(vector) => {
+                NamedVectorStruct::Dense(vector)
+            }
+            segment::data_types::vectors::NamedVectorStruct::Sparse(vector) => {
+                NamedVectorStruct::Sparse(vector)
+            }
+        }
+    }
+}
+
+impl From<DenseVector> for NamedVectorStruct {
+    fn from(v: DenseVector) -> Self {
+        NamedVectorStruct::Default(v)
+    }
+}
+
+impl From<segment::data_types::vectors::NamedVector> for NamedVectorStruct {
+    fn from(v: segment::data_types::vectors::NamedVector) -> Self {
+        NamedVectorStruct::Dense(v)
     }
 }

@@ -77,7 +77,7 @@ fn validate_error_sparse_vector_points_list() {
 #[test]
 fn validate_error_sparse_vector_search_request_internal() {
     check_validation_error(SearchRequestInternal {
-        vector: wrong_named_vector_struct(),
+        vector: wrong_named_vector_struct().into(),
         filter: None,
         params: None,
         limit: 5,
@@ -91,7 +91,7 @@ fn validate_error_sparse_vector_search_request_internal() {
 #[test]
 fn validate_error_sparse_vector_search_groups_request_internal() {
     check_validation_error(SearchGroupsRequestInternal {
-        vector: wrong_named_vector_struct(),
+        vector: wrong_named_vector_struct().into(),
         filter: None,
         params: None,
         with_payload: None,

@@ -12,12 +12,13 @@ use api::grpc::qdrant::quantization_config_diff::Quantization;
 use api::grpc::qdrant::update_collection_cluster_setup_request::{
     Operation as ClusterOperationsPb, Operation,
 };
-use api::grpc::qdrant::{CreateShardKey, SearchPoints};
+use api::grpc::qdrant::CreateShardKey;
 use common::types::ScoreType;
 use itertools::Itertools;
 use segment::data_types::order_by::{OrderBy, StartFrom};
 use segment::data_types::vectors::{
-    BatchVectorStruct, Named, NamedQuery, Vector, VectorStruct, DEFAULT_VECTOR_NAME,
+    BatchVectorStruct, Named, NamedQuery, NamedVectorStruct, Vector, VectorStruct,
+    DEFAULT_VECTOR_NAME,
 };
 use segment::types::{DateTimeWrapper, Distance, QuantizationConfig, ScoredPoint};
 use segment::vector_storage::query::context_query::{ContextPair, ContextQuery};
@@ -951,7 +952,7 @@ impl From<CountResult> for api::grpc::qdrant::CountResult {
 impl TryFrom<api::grpc::qdrant::SearchPoints> for CoreSearchRequest {
     type Error = Status;
     fn try_from(value: api::grpc::qdrant::SearchPoints) -> Result<Self, Self::Error> {
-        let SearchPoints {
+        let api::grpc::qdrant::SearchPoints {
             collection_name: _,
             vector,
             filter,
@@ -994,7 +995,12 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for CoreSearchRequest {
 impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
     fn from(value: CollectionSearchRequest<'a>) -> Self {
         let (collection_id, request) = value.0;
-        let (vector, sparse_indices) = match request.vector.get_vector().to_owned() {
+        let named_vector = NamedVectorStruct::from(request.clone().vector);
+        let vector_name = match named_vector.get_name() {
+            DEFAULT_VECTOR_NAME => None,
+            vector_name => Some(vector_name.to_string()),
+        };
+        let (vector, sparse_indices) = match named_vector.to_vector() {
             Vector::Dense(vector) => (vector, None),
             Vector::Sparse(vector) => (
                 vector.values,
@@ -1017,10 +1023,7 @@ impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
             params: request.params.map(|sp| sp.into()),
             score_threshold: request.score_threshold,
             offset: request.offset.map(|x| x as u64),
-            vector_name: match request.vector.get_name() {
-                DEFAULT_VECTOR_NAME => None,
-                vector_name => Some(vector_name.to_string()),
-            },
+            vector_name,
             read_consistency: None,
             timeout: None,
             shard_key_selector: None,
@@ -1251,7 +1254,8 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for SearchRequestInternal {
                 value.vector_name,
                 value.vector,
                 value.sparse_indices,
-            )?,
+            )?
+            .into(),
             filter: value.filter.map(|f| f.try_into()).transpose()?,
             params: value.params.map(|p| p.into()),
             limit: value.limit as usize,

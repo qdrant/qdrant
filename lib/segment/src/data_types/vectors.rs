@@ -378,8 +378,8 @@ impl VectorStruct {
     }
 }
 
-/// Vector data with name
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+/// Dense vector data with name
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct NamedVector {
     /// Name of vector data
@@ -414,7 +414,7 @@ pub struct NamedSparseVector {
 ///     "name": "image-embeddings"
 ///   }
 /// }
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
 pub enum NamedVectorStruct {
@@ -480,16 +480,6 @@ impl NamedVectorStruct {
             NamedVectorStruct::Default(v) => v.into(),
             NamedVectorStruct::Dense(v) => v.vector.into(),
             NamedVectorStruct::Sparse(v) => v.vector.into(),
-        }
-    }
-}
-
-impl Validate for NamedVectorStruct {
-    fn validate(&self) -> Result<(), validator::ValidationErrors> {
-        match self {
-            NamedVectorStruct::Default(_) => Ok(()),
-            NamedVectorStruct::Dense(_) => Ok(()),
-            NamedVectorStruct::Sparse(v) => v.validate(),
         }
     }
 }

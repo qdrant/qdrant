@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use schemars::JsonSchema;
+use segment::data_types::vectors::{NamedSparseVector, NamedVector};
 use serde::{Deserialize, Serialize};
 
 /// Type for dense vector
@@ -99,4 +100,13 @@ pub struct Record {
     /// Shard Key
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<segment::types::ShardKey>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(rename_all = "snake_case")]
+#[serde(untagged)]
+pub enum NamedVectorStruct {
+    Default(segment::data_types::vectors::DenseVector),
+    Dense(NamedVector),
+    Sparse(NamedSparseVector),
 }
