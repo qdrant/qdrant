@@ -52,8 +52,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      - name: Install pytest
-        run: pip install -r ./tests/consensus_tests/requirements-freeze.txt
+      - name: Install python deps
+        run: pip install -r ./tests/consensus_tests/requirements.txt
       - name: Build
         run: cargo build --features service_debug
       - name: Run integration tests - 1 peer

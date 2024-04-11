@@ -155,7 +155,7 @@ def start_first_peer(peer_dir: Path, log_file: str, port=None, extra_env=None) -
     return get_uri(http_port), bootstrap_uri
 
 
-def start_cluster(tmp_path, num_peers, port_seed=None, extra_env=None):
+def start_cluster(tmp_path, num_peers, port_seed=None, extra_env=None, headers={}):
     assert_project_root()
     peer_dirs = make_peer_folders(tmp_path, num_peers)
 
@@ -168,7 +168,7 @@ def start_cluster(tmp_path, num_peers, port_seed=None, extra_env=None):
     peer_api_uris.append(bootstrap_api_uri)
 
     # Wait for leader
-    leader = wait_peer_added(bootstrap_api_uri)
+    leader = wait_peer_added(bootstrap_api_uri, headers=headers)
 
     port = None
     # Start other peers
@@ -178,7 +178,7 @@ def start_cluster(tmp_path, num_peers, port_seed=None, extra_env=None):
         peer_api_uris.append(start_peer(peer_dirs[i], f"peer_0_{i}.log", bootstrap_uri, port=port, extra_env=extra_env))
 
     # Wait for cluster
-    wait_for_uniform_cluster_status(peer_api_uris, leader)
+    wait_for_uniform_cluster_status(peer_api_uris, leader, headers=headers)
 
     return peer_api_uris, peer_dirs, bootstrap_uri
 
@@ -252,15 +252,15 @@ def print_collection_cluster_info(peer_api_uri: str, collection_name: str):
     print(json.dumps(get_collection_cluster_info(peer_api_uri, collection_name), indent=4))
 
 
-def get_leader(peer_api_uri: str) -> str:
-    r = requests.get(f"{peer_api_uri}/cluster")
+def get_leader(peer_api_uri: str, headers={}) -> str:
+    r = requests.get(f"{peer_api_uri}/cluster", headers=headers)
     assert_http_ok(r)
     return r.json()["result"]["raft_info"]["leader"]
 
 
-def check_leader(peer_api_uri: str, expected_leader: str) -> bool:
+def check_leader(peer_api_uri: str, expected_leader: str, headers={}) -> bool:
     try:
-        r = requests.get(f"{peer_api_uri}/cluster")
+        r = requests.get(f"{peer_api_uri}/cluster", headers=headers)
         assert_http_ok(r)
         leader = r.json()["result"]["raft_info"]["leader"]
         correct_leader = leader == expected_leader
@@ -273,9 +273,9 @@ def check_leader(peer_api_uri: str, expected_leader: str) -> bool:
         return False
 
 
-def leader_is_defined(peer_api_uri: str) -> bool:
+def leader_is_defined(peer_api_uri: str, headers={}) -> bool:
     try:
-        r = requests.get(f"{peer_api_uri}/cluster")
+        r = requests.get(f"{peer_api_uri}/cluster", headers=headers)
         assert_http_ok(r)
         leader = r.json()["result"]["raft_info"]["leader"]
         return leader is not None
@@ -285,9 +285,9 @@ def leader_is_defined(peer_api_uri: str) -> bool:
         return False
 
 
-def check_cluster_size(peer_api_uri: str, expected_size: int) -> bool:
+def check_cluster_size(peer_api_uri: str, expected_size: int, headers={}) -> bool:
     try:
-        r = requests.get(f"{peer_api_uri}/cluster")
+        r = requests.get(f"{peer_api_uri}/cluster", headers=headers)
         assert_http_ok(r)
         peers = r.json()["result"]["peers"]
         correct_size = len(peers) == expected_size
@@ -300,10 +300,10 @@ def check_cluster_size(peer_api_uri: str, expected_size: int) -> bool:
         return False
 
 
-def all_nodes_cluster_info_consistent(peer_api_uris: [str], expected_leader: str) -> bool:
+def all_nodes_cluster_info_consistent(peer_api_uris: [str], expected_leader: str, headers={}) -> bool:
     expected_size = len(peer_api_uris)
     for uri in peer_api_uris:
-        if check_leader(uri, expected_leader) and check_cluster_size(uri, expected_size):
+        if check_leader(uri, expected_leader, headers=headers) and check_cluster_size(uri, expected_size, headers=headers):
             continue
         else:
             return False
@@ -424,10 +424,10 @@ WAIT_TIME_SEC = 30
 RETRY_INTERVAL_SEC = 0.5
 
 
-def wait_peer_added(peer_api_uri: str, expected_size: int = 1) -> str:
-    wait_for(check_cluster_size, peer_api_uri, expected_size)
-    wait_for(leader_is_defined, peer_api_uri)
-    return get_leader(peer_api_uri)
+def wait_peer_added(peer_api_uri: str, expected_size: int = 1, headers={}) -> str:
+    wait_for(check_cluster_size, peer_api_uri, expected_size, headers=headers)
+    wait_for(leader_is_defined, peer_api_uri, headers=headers)
+    return get_leader(peer_api_uri, headers=headers)
 
 
 def wait_for_some_replicas_not_active(peer_api_uri: str, collection_name: str):
@@ -446,9 +446,9 @@ def wait_for_all_replicas_active(peer_api_uri: str, collection_name: str):
         raise e
 
 
-def wait_for_uniform_cluster_status(peer_api_uris: [str], expected_leader: str):
+def wait_for_uniform_cluster_status(peer_api_uris: [str], expected_leader: str, headers={}):
     try:
-        wait_for(all_nodes_cluster_info_consistent, peer_api_uris, expected_leader)
+        wait_for(all_nodes_cluster_info_consistent, peer_api_uris, expected_leader, headers=headers)
     except Exception as e:
         print_clusters_info(peer_api_uris)
         raise e
