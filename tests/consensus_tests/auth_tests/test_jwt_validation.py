@@ -9,10 +9,12 @@ import grpc
 import grpc_requests
 import pytest
 import requests
-from consensus_tests import fixtures
+
 from grpc_interceptor import ClientCallDetails, ClientInterceptor
 
-from .utils import encode_jwt, start_cluster
+from consensus_tests import fixtures
+
+from consensus_tests.utils import encode_jwt, start_cluster
 
 
 def random_str():
