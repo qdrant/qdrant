@@ -410,21 +410,6 @@ pub struct NamedSparseVector {
     pub vector: SparseVector,
 }
 
-/// Vector data separator for named and unnamed modes
-/// Unnamed mode:
-///
-/// {
-///   "vector": [1.0, 2.0, 3.0]
-/// }
-///
-/// or named mode:
-///
-/// {
-///   "vector": {
-///     "vector": [1.0, 2.0, 3.0],
-///     "name": "image-embeddings"
-///   }
-/// }
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]

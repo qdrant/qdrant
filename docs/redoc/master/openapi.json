@@ -6324,7 +6324,7 @@
         ]
       },
       "NamedVector": {
-        "description": "Vector data with name",
+        "description": "Dense vector data with name",
         "type": "object",
         "required": [
           "name",
