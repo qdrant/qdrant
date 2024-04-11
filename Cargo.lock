@@ -2414,7 +2414,7 @@ dependencies = [
  "http 1.0.0",
  "hyper 1.2.0",
  "hyper-util",
- "rustls 0.22.2",
+ "rustls 0.22.3",
  "rustls-pki-types",
  "tokio",
  "tokio-rustls 0.25.0",
@@ -4093,7 +4093,7 @@ dependencies = [
  "rand 0.8.5",
  "reqwest",
  "rstack-self",
- "rustls 0.22.2",
+ "rustls 0.22.3",
  "rustls-pemfile 2.1.2",
  "rustls-pki-types",
  "rusty-hook",
@@ -4393,7 +4393,7 @@ dependencies = [
  "once_cell",
  "percent-encoding",
  "pin-project-lite",
- "rustls 0.22.2",
+ "rustls 0.22.3",
  "rustls-pemfile 2.1.2",
  "rustls-pki-types",
  "serde",
@@ -4646,9 +4646,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.22.2"
+version = "0.22.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e87c9956bd9807afa1f77e0f7594af32566e830e088a5576d27c5b6f30f49d41"
+checksum = "99008d7ad0bbbea527ec27bddbc0e432c5b87d8175178cee68d2eec9c4a1813c"
 dependencies = [
  "log",
  "ring 0.17.5",
@@ -5630,7 +5630,7 @@ version = "0.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "775e0c0f0adb3a2f22a00c4745d728b479985fc15ee7ca6a2608388c5569860f"
 dependencies = [
- "rustls 0.22.2",
+ "rustls 0.22.3",
  "rustls-pki-types",
  "tokio",
 ]
@@ -6018,7 +6018,7 @@ dependencies = [
  "base64 0.21.0",
  "log",
  "once_cell",
- "rustls 0.22.2",
+ "rustls 0.22.3",
  "rustls-pki-types",
  "rustls-webpki 0.102.2",
  "url",
