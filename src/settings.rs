@@ -16,7 +16,9 @@ pub struct ServiceConfig {
     #[validate(length(min = 1))]
     pub host: String,
     pub http_port: u16,
+    pub http_publish_port: Option<u16>,
     pub grpc_port: Option<u16>, // None means that gRPC is disabled
+    // grpc is not currently used for any internal communication (p2p is), so there is no publish port.
     pub max_request_size_mb: usize,
     pub max_workers: Option<usize>,
     #[serde(default = "default_cors")]
@@ -274,6 +276,13 @@ impl Settings {
         // Build and merge config and deserialize into Settings, attach any load errors we had
         let mut settings: Settings = config.build()?.try_deserialize()?;
         settings.load_errors.extend(load_errors);
+
+        // Set any defaults that are based on other values.
+        settings.service.http_publish_port = settings
+            .service
+            .http_publish_port
+            .or(Some(settings.service.http_port));
+
         Ok(settings)
     }
 }

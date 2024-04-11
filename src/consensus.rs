@@ -1194,7 +1194,12 @@ mod tests {
             update_runtime,
             general_runtime,
             CpuBudget::default(),
-            ChannelService::new(settings.service.http_port),
+            ChannelService::new(
+                settings
+                    .service
+                    .http_publish_port
+                    .expect("Publish port not set (should default to http_port)."),
+            ),
             persistent_state.this_peer_id(),
             Some(operation_sender.clone()),
         );

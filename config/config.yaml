@@ -166,6 +166,9 @@ service:
   # HTTP(S) port to bind the service on
   http_port: 6333
 
+  # HTTP(S) port to publish to the world
+  http_publish_port: 6333
+
   # gRPC port to bind the service on.
   # If `null` - gRPC is disabled. Default: null
   # Comment to disable gRPC:
@@ -193,7 +196,7 @@ service:
   #
   # Uncomment to enable.
   # api_key: your_secret_api_key_here
-   
+
   # Set an api-key for read-only operations.
   # If set, all requests must include a header with the api-key.
   # example header: `api-key: <API-KEY>`

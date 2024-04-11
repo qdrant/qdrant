@@ -222,7 +222,12 @@ fn main() -> anyhow::Result<()> {
 
     // Channel service is used to manage connections between peers.
     // It allocates required number of channels and manages proper reconnection handling
-    let mut channel_service = ChannelService::new(settings.service.http_port);
+    let mut channel_service = ChannelService::new(
+        settings
+            .service
+            .http_publish_port
+            .expect("Publish port not set (should default to http_port)"),
+    );
 
     if is_distributed_deployment {
         // We only need channel_service in case if cluster is enabled.

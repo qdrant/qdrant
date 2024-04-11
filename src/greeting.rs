@@ -109,7 +109,7 @@ pub fn welcome(settings: &Settings) {
         } else {
             &settings.service.host
         },
-        settings.service.http_port
+        settings.service.http_publish_port.expect("Publish port not set (should default to http_port).")
     );
 
     println!(

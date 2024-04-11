@@ -3,6 +3,8 @@ log_level: DEBUG
 service:
   host: 127.0.0.1
   http_port: 6333
+  # Uncomment to set a separate publish port
+  #http_publish_port: 6333
   # Uncomment to enable gRPC:
   #grpc_port: 6334
   #api_key: your_secret_api_key_here
