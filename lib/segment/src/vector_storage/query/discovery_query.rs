@@ -22,7 +22,7 @@ impl<T> ContextPair<T> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DiscoveryQuery<T> {
     pub target: T,
     pub pairs: Vec<ContextPair<T>>,

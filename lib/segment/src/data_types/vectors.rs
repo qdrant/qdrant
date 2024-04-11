@@ -379,7 +379,7 @@ impl VectorStruct {
 }
 
 /// Vector data with name
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct NamedVector {
     /// Name of vector data
@@ -389,7 +389,7 @@ pub struct NamedVector {
 }
 
 /// Sparse vector data with name
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Validate)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Validate, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct NamedSparseVector {
     /// Name of vector data
@@ -414,7 +414,7 @@ pub struct NamedSparseVector {
 ///     "name": "image-embeddings"
 ///   }
 /// }
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Clone)]
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
 pub enum NamedVectorStruct {
@@ -521,7 +521,7 @@ impl BatchVectorStruct {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct NamedQuery<TQuery> {
     pub query: TQuery,
     pub using: Option<String>,

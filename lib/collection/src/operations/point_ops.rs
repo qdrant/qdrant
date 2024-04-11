@@ -9,6 +9,7 @@ use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{Vector, DEFAULT_VECTOR_NAME};
 use segment::types::{Filter, Payload, PointIdType};
 use serde::{Deserialize, Serialize};
+use strum::{EnumDiscriminants, EnumIter};
 use validator::Validate;
 
 use super::{point_to_shard, split_iter_by_shard, OperationToShard, SplitByShard};
@@ -221,7 +222,8 @@ impl PointInsertOperations {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, EnumDiscriminants)]
+#[strum_discriminants(derive(EnumIter))]
 #[serde(rename_all = "snake_case")]
 pub enum PointInsertOperationsInternal {
     /// Inset points from a batch.
@@ -335,7 +337,8 @@ impl From<Vec<PointStruct>> for PointInsertOperationsInternal {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, EnumDiscriminants)]
+#[strum_discriminants(derive(EnumIter))]
 #[serde(rename_all = "snake_case")]
 pub enum PointOperations {
     /// Insert or update points

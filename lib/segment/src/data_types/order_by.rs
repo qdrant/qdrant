@@ -11,7 +11,7 @@ use crate::types::{
 
 const INTERNAL_KEY_OF_ORDER_BY_VALUE: &str = "____ordered_with____";
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, Default)]
+#[derive(Deserialize, Serialize, JsonSchema, Copy, Clone, Debug, Default, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum Direction {
     #[default]
@@ -38,7 +38,7 @@ impl Direction {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(untagged)]
 pub enum StartFrom {
     Integer(IntPayloadType),
@@ -48,7 +48,7 @@ pub enum StartFrom {
     Datetime(DateTimePayloadType),
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
+#[derive(Deserialize, Serialize, JsonSchema, Validate, Clone, Debug, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct OrderBy {
     /// Payload key to order by
