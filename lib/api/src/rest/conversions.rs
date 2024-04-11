@@ -139,6 +139,10 @@ impl From<segment::data_types::vectors::NamedVectorStruct> for NamedVectorStruct
             segment::data_types::vectors::NamedVectorStruct::Sparse(vector) => {
                 NamedVectorStruct::Sparse(vector)
             }
+            segment::data_types::vectors::NamedVectorStruct::MultiDense(_vector) => {
+                // TODO(colbert)
+                unimplemented!("MultiDense is not available in the API yet")
+            }
         }
     }
 }
