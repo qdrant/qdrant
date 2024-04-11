@@ -571,7 +571,6 @@ def scroll_with_token(collection: str, token: str) -> requests.Response:
 
 
 def test_value_exists_claim():
-
     validation_collection = "secondary_test_collection"
 
     key = "tokenId"
@@ -750,8 +749,7 @@ def check_access(
     ## Check GRPC
     grpc_endpoint = action_access.grpc_endpoint
     if grpc_endpoint is not None:
-        service = grpc_endpoint.split("/")[0]
-        method = grpc_endpoint.split("/")[1]
+        service, method = grpc_endpoint.split("/")
 
         allowed_for = action_access.access
 
@@ -783,16 +781,17 @@ def test_create_collection():
     def grpc_req():
         return {"collection_name": next(coll_names_iter)}
 
-    check_access(
-        "create_collection",
-        rest_request={},
-        grpc_request=grpc_req,
-        path_params={"collection_name": lambda: next(coll_names_iter)},
-    )
+    try:
+        check_access(
+            "create_collection",
+            rest_request={},
+            grpc_request=grpc_req,
+            path_params={"collection_name": lambda: next(coll_names_iter)},
+        )
 
-    # teardown
-    for collection_name in coll_names:
-        requests.delete(f"{REST_URI}/collections/{collection_name}", headers=API_KEY_HEADERS)
+    finally:
+        for collection_name in coll_names:
+            requests.delete(f"{REST_URI}/collections/{collection_name}", headers=API_KEY_HEADERS)
 
 
 def test_delete_collection():
@@ -955,15 +954,16 @@ def test_replicate_shard_operation():
 def new_shard_keys():
     new_shard_keys = [random_str() for _ in range(8)]
 
-    yield new_shard_keys
+    try:
+        yield new_shard_keys
 
-    # teardown
-    for shard_key in new_shard_keys:
-        requests.post(
-            f"{REST_URI}/collections/{COLL_NAME}/shards/delete",
-            json={"shard_key": shard_key},
-            headers=API_KEY_HEADERS,
-        )
+    finally:
+        for shard_key in new_shard_keys:
+            requests.post(
+                f"{REST_URI}/collections/{COLL_NAME}/shards/delete",
+                json={"shard_key": shard_key},
+                headers=API_KEY_HEADERS,
+            )
 
 
 def test_create_default_shard_key_operation(new_shard_keys):
