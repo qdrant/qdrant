@@ -23,10 +23,13 @@ pub unsafe fn sse_manhattan_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
         ptr1 = ptr1.add(16);
         ptr2 = ptr2.add(16);
 
+        // Computes the absolute differences of packed unsigned 8-bit integers in a and b
+        // with horizontal sum and adding to accumulator
         let sad = _mm_sad_epu8(p1, p2);
         acc = _mm_add_epi32(acc, sad);
     }
 
+    // convert 4x32 bit integers into 8x32 bit floats and calculate horizontal sum
     let mul_ps = _mm_cvtepi32_ps(acc);
     let mut score = hsum128_ps_sse(mul_ps);
 

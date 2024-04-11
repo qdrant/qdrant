@@ -33,13 +33,16 @@ pub unsafe fn sse_euclid_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
         let abs_diff_low = _mm_and_si128(abs_diff, mask_epu16_epu8);
         let abs_diff_high = _mm_and_si128(_mm_bsrli_si128(abs_diff, 1), mask_epu16_epu8);
 
+        // calculate 16bit multiplication with taking lower 16 bits and adding to accumulator
         let mul16 = _mm_madd_epi16(abs_diff_low, abs_diff_low);
         acc = _mm_add_epi32(acc, mul16);
 
+        // calculate 16bit multiplication with taking lower 16 bits and adding to accumulator
         let mul16 = _mm_madd_epi16(abs_diff_high, abs_diff_high);
         acc = _mm_add_epi32(acc, mul16);
     }
 
+    // convert 4x32 bit integers into 8x32 bit floats and calculate horizontal sum
     let mul_ps = _mm_cvtepi32_ps(acc);
     let mut score = hsum128_ps_sse(mul_ps);
 

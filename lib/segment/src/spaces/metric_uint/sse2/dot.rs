@@ -14,7 +14,7 @@ pub unsafe fn sse_dot_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
     let mut ptr2: *const u8 = v2.as_ptr();
 
     // sum accumulator for 4x32 bit integers
-    let mut acc = _mm_setzero_si128();
+    let mut dot_acc = _mm_setzero_si128();
     // mask to take only lower 8 bits from 16 bits
     let mask_epu16_epu8 = _mm_set1_epi16(0xFF);
     let len = v1.len();
@@ -25,20 +25,28 @@ pub unsafe fn sse_dot_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
         ptr1 = ptr1.add(16);
         ptr2 = ptr2.add(16);
 
+        // convert 16x8 bit integers into 8x16 bit integers using bitwise AND
+        // convertion is done by taking only lower 8 bits from 16 bits
+        // p1 = [byte0, byte1, byte2, byte3, ..]
+        // p1_low = [0, byte1, 0, byte3, ..]
+        // p1_high = [0, byte0, 0, byte2, ..]
         let p1_low = _mm_and_si128(p1, mask_epu16_epu8);
-        let p2_low = _mm_and_si128(p2, mask_epu16_epu8);
         let p1_high = _mm_and_si128(_mm_bsrli_si128(p1, 1), mask_epu16_epu8);
+        let p2_low = _mm_and_si128(p2, mask_epu16_epu8);
         let p2_high = _mm_and_si128(_mm_bsrli_si128(p2, 1), mask_epu16_epu8);
 
-        let mul16 = _mm_madd_epi16(p1_low, p2_low);
-        acc = _mm_add_epi32(acc, mul16);
+        // calculate 16bit multiplication with taking lower 16 bits and adding to accumulator
+        let dot_low = _mm_madd_epi16(p1_low, p2_low);
+        dot_acc = _mm_add_epi32(dot_acc, dot_low);
 
-        let mul16 = _mm_madd_epi16(p1_high, p2_high);
-        acc = _mm_add_epi32(acc, mul16);
+        // calculate 16bit multiplication with taking lower 16 bits and adding to accumulator
+        let dot_high = _mm_madd_epi16(p1_high, p2_high);
+        dot_acc = _mm_add_epi32(dot_acc, dot_high);
     }
 
-    let mul_ps = _mm_cvtepi32_ps(acc);
-    let mut score = hsum128_ps_sse(mul_ps);
+    // convert 4x32 bit integers into 8x32 bit floats and calculate horizontal sum
+    let dot_ps = _mm_cvtepi32_ps(dot_acc);
+    let mut score = hsum128_ps_sse(dot_ps);
 
     let remainder = len % 16;
     if remainder != 0 {
