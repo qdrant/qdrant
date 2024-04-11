@@ -28,7 +28,7 @@ pub unsafe fn avx_dot_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
         ptr2 = ptr2.add(32);
 
         // convert 32x8 bit integers into 16x16 bit integers using bitwise AND
-        // convertion is done by taking only lower 8 bits from 16 bits
+        // conversion is done by taking only lower 8 bits from 16 bits
         // p1 = [byte0, byte1, byte2, byte3, ..]
         // p1_low = [0, byte1, 0, byte3, ..]
         // p1_high = [0, byte0, 0, byte2, ..]
