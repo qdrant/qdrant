@@ -14,6 +14,7 @@ use collection::operations::types::{
 use collection::operations::vector_ops::VectorOperations;
 use collection::operations::CollectionUpdateOperations;
 use segment::types::{Condition, ExtendedPointId, FieldCondition, Filter, Match, Payload};
+use strum::IntoEnumIterator as _;
 
 use super::{
     incompatible_with_payload_constraint, Access, AccessRequirements, CollectionAccessList,
@@ -525,8 +526,10 @@ mod tests_ops {
     use std::fmt::Debug;
 
     use api::rest::{BatchVectorStruct, VectorStruct};
+    use collection::operations::payload_ops::PayloadOpsDiscriminants;
     use collection::operations::point_ops::{
-        Batch, PointInsertOperationsInternal, PointStruct, PointSyncOperation,
+        Batch, PointInsertOperationsInternal, PointInsertOperationsInternalDiscriminants,
+        PointStruct, PointSyncOperation,
     };
     use collection::operations::types::{
         OrderByInterface, QueryEnum, RecommendStrategy, SearchRequestInternal, UsingVector,
@@ -974,24 +977,27 @@ mod tests_ops {
 
     #[test]
     fn test_collection_update_operations_upsert_points() {
-        let op1 = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
-            PointInsertOperationsInternal::PointsBatch(Batch {
-                ids: vec![ExtendedPointId::NumId(12345)],
-                vectors: BatchVectorStruct::Single(vec![vec![0.0, 1.0, 2.0]]),
-                payloads: None,
-            }),
-        ));
+        for discr in PointInsertOperationsInternalDiscriminants::iter() {
+            let inner = match discr {
+                PointInsertOperationsInternalDiscriminants::PointsBatch => {
+                    PointInsertOperationsInternal::PointsBatch(Batch {
+                        ids: vec![ExtendedPointId::NumId(12345)],
+                        vectors: BatchVectorStruct::Single(vec![vec![0.0, 1.0, 2.0]]),
+                        payloads: None,
+                    })
+                }
+                PointInsertOperationsInternalDiscriminants::PointsList => {
+                    PointInsertOperationsInternal::PointsList(vec![PointStruct {
+                        id: ExtendedPointId::NumId(12345),
+                        vector: VectorStruct::Single(vec![0.0, 1.0, 2.0]),
+                        payload: None,
+                    }])
+                }
+            };
 
-        let op2 = CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(
-            PointInsertOperationsInternal::PointsList(vec![PointStruct {
-                id: ExtendedPointId::NumId(12345),
-                vector: VectorStruct::Single(vec![0.0, 1.0, 2.0]),
-                payload: None,
-            }]),
-        ));
-
-        for op in &[op1, op2] {
-            assert_requires_whole_write_access(op);
+            let op =
+                CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(inner));
+            assert_requires_whole_write_access(&op);
         }
     }
 
@@ -1114,25 +1120,41 @@ mod tests_ops {
 
     #[test]
     fn test_collection_update_operations_payload() {
-        let op1 = CollectionUpdateOperations::PayloadOperation(PayloadOps::ClearPayload {
-            points: vec![ExtendedPointId::NumId(12345)],
-        });
+        for discr in PayloadOpsDiscriminants::iter() {
+            let inner = match discr {
+                PayloadOpsDiscriminants::SetPayload => PayloadOps::SetPayload(SetPayloadOp {
+                    payload: Payload::default(),
+                    points: Some(vec![ExtendedPointId::NumId(12345)]),
+                    filter: None,
+                    key: None,
+                }),
+                PayloadOpsDiscriminants::DeletePayload => {
+                    PayloadOps::DeletePayload(DeletePayloadOp {
+                        keys: vec!["path".parse().unwrap()],
+                        points: Some(vec![ExtendedPointId::NumId(12345)]),
+                        filter: None,
+                    })
+                }
+                PayloadOpsDiscriminants::ClearPayload => PayloadOps::ClearPayload {
+                    points: vec![ExtendedPointId::NumId(12345)],
+                },
+                PayloadOpsDiscriminants::ClearPayloadByFilter => {
+                    PayloadOps::ClearPayloadByFilter(make_filter_from_ids(vec![
+                        ExtendedPointId::NumId(12345),
+                    ]))
+                }
+                PayloadOpsDiscriminants::OverwritePayload => {
+                    PayloadOps::OverwritePayload(SetPayloadOp {
+                        payload: Payload::default(),
+                        points: Some(vec![ExtendedPointId::NumId(12345)]),
+                        filter: None,
+                        key: None,
+                    })
+                }
+            };
 
-        let op2 = CollectionUpdateOperations::PayloadOperation(PayloadOps::ClearPayloadByFilter(
-            make_filter_from_ids(vec![ExtendedPointId::NumId(12345)]),
-        ));
-
-        let op3 = CollectionUpdateOperations::PayloadOperation(PayloadOps::OverwritePayload(
-            SetPayloadOp {
-                payload: Payload::default(),
-                points: Some(vec![ExtendedPointId::NumId(12345)]),
-                filter: None,
-                key: None,
-            },
-        ));
-
-        for op in &[op1, op2, op3] {
-            assert_requires_whole_write_access(op);
+            let op = CollectionUpdateOperations::PayloadOperation(inner);
+            assert_requires_whole_write_access(&op);
         }
     }
 

@@ -3,6 +3,7 @@ use segment::json_path::JsonPath;
 use segment::types::{Filter, Payload, PayloadKeyType, PointIdType};
 use serde;
 use serde::{Deserialize, Serialize};
+use strum::{EnumDiscriminants, EnumIter};
 use validator::Validate;
 
 use super::{split_iter_by_shard, OperationToShard, SplitByShard};
@@ -134,7 +135,8 @@ impl TryFrom<DeletePayloadShadow> for DeletePayload {
 }
 
 /// Define operations description for point payloads manipulation
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, EnumDiscriminants)]
+#[strum_discriminants(derive(EnumIter))]
 #[serde(rename_all = "snake_case")]
 pub enum PayloadOps {
     /// Set payload value, overrides if it is already exists
