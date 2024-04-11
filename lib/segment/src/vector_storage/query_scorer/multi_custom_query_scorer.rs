@@ -1,10 +1,9 @@
 use std::marker::PhantomData;
 
 use common::types::{PointOffsetType, ScoreType};
-use itertools::Itertools;
 
 use super::score_multi;
-use crate::data_types::vectors::{MultiDenseVector, VectorElementType};
+use crate::data_types::vectors::{DenseVector, MultiDenseVector, VectorElementType};
 use crate::spaces::metric::Metric;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
@@ -30,7 +29,14 @@ impl<
 {
     pub fn new(query: TQuery, vector_storage: &'a TVectorStorage) -> Self {
         let query = query
-            .transform(|vector| Ok(vector.into_iter().map(TMetric::preprocess).collect_vec()))
+            .transform(|vector| {
+                let slices = vector.multi_vectors();
+                let preprocessed: DenseVector = slices
+                    .into_iter()
+                    .flat_map(|slice| TMetric::preprocess(slice.to_vec()))
+                    .collect();
+                Ok(MultiDenseVector::new(preprocessed, vector.dim))
+            })
             .unwrap();
 
         Self {
