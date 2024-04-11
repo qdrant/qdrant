@@ -7,7 +7,7 @@ use rand::prelude::StdRng;
 use rand::SeedableRng;
 use segment::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use segment::data_types::vectors::{
-    only_default_vector, QueryVector, Vector, VectorRef, DEFAULT_VECTOR_NAME,
+    only_default_vector, MultiDenseVector, QueryVector, VectorRef, DEFAULT_VECTOR_NAME,
 };
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::index_fixtures::random_vector;
@@ -77,7 +77,8 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
     for n in 0..num_vectors {
         let idx = n.into();
         let vector = random_vector(&mut rnd, dim);
-        let vector_multi = vec![distance.preprocess_vector(vector.clone())];
+        let vector_multi =
+            MultiDenseVector::new(distance.preprocess_vector(vector.clone()), vector.len());
 
         let int_payload = random_int_payload(&mut rnd, num_payload_values..=num_payload_values);
         let payload: Payload = json!({int_key:int_payload,}).into();
@@ -145,7 +146,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
     for _ in 0..10 {
         let random_vector = random_vector(&mut rnd, dim);
         let query_vector = random_vector.clone().into();
-        let query_vector_multi = QueryVector::Nearest(Vector::from(vec![random_vector]));
+        let query_vector_multi = QueryVector::Nearest(vec![random_vector].try_into().unwrap());
 
         let payload_value = random_int_payload(&mut rnd, 1..=1).pop().unwrap();
 

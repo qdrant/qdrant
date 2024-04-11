@@ -128,9 +128,10 @@ pub fn random_multi_vector<R: Rng + ?Sized>(
 ) -> MultiDenseVector {
     let mut vectors = vec![];
     for _ in 0..num_vector_per_points {
-        vectors.push(random_vector(rnd_gen, vector_size));
+        let vec = random_vector(rnd_gen, vector_size);
+        vectors.extend(vec);
     }
-    vectors
+    MultiDenseVector::new(vectors, vector_size)
 }
 
 pub fn random_uncommon_condition<R: Rng + ?Sized>(rnd_gen: &mut R) -> Condition {
