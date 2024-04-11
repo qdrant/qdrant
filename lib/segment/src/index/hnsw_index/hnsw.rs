@@ -514,6 +514,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         top: usize,
         params: Option<&SearchParams>,
         is_stopped: &AtomicBool,
+        _search_optimized_threshold_kb: usize,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         let exact = params.map(|params| params.exact).unwrap_or(false);
         match filter {

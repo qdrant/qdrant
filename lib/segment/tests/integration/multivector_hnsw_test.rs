@@ -156,7 +156,14 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
         )));
 
         let search_res_dense = hnsw_index_dense
-            .search(&[&query_vector], Some(&filter), 10, None, &false.into())
+            .search(
+                &[&query_vector],
+                Some(&filter),
+                10,
+                None,
+                &false.into(),
+                usize::MAX,
+            )
             .unwrap();
 
         let search_res_multi = hnsw_index_multi
@@ -166,6 +173,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
                 10,
                 None,
                 &false.into(),
+                usize::MAX,
             )
             .unwrap();
 

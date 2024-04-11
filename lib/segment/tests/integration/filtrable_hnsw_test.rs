@@ -240,6 +240,7 @@ fn _test_filterable_hnsw(
                     ..Default::default()
                 }),
                 &false.into(),
+                usize::MAX,
             )
             .unwrap();
 
@@ -255,7 +256,14 @@ fn _test_filterable_hnsw(
         let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(&[&query], filter_query, top, None, &false.into())
+            .search(
+                &[&query],
+                filter_query,
+                top,
+                None,
+                &false.into(),
+                usize::MAX,
+            )
             .unwrap();
 
         if plain_result == index_result {

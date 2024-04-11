@@ -367,6 +367,7 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         top: usize,
         _params: Option<&SearchParams>,
         is_stopped: &AtomicBool,
+        _search_optimized_threshold_kb: usize,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         let mut results = Vec::with_capacity(vectors.len());
         let mut prefiltered_points = None;

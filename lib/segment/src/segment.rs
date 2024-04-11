@@ -941,6 +941,7 @@ impl SegmentEntry for Segment {
             top,
             params,
             is_stopped,
+            usize::MAX,
         )?[0];
 
         check_stopped(is_stopped)?;
@@ -957,6 +958,7 @@ impl SegmentEntry for Segment {
         top: usize,
         params: Option<&SearchParams>,
         is_stopped: &AtomicBool,
+        search_optimized_threshold_kb: usize,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         check_query_vectors(vector_name, query_vectors, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
@@ -966,6 +968,7 @@ impl SegmentEntry for Segment {
             top,
             params,
             is_stopped,
+            search_optimized_threshold_kb,
         )?;
 
         check_stopped(is_stopped)?;
@@ -1725,6 +1728,7 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
+    use crate::common::check_vector;
     use crate::common::operation_error::OperationError::PointIdError;
     use crate::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
     use crate::segment_constructor::{build_segment, load_segment};
@@ -1820,6 +1824,7 @@ mod tests {
                 10,
                 None,
                 &false.into(),
+                10_000,
             )
             .unwrap();
         eprintln!("search_batch_result = {search_batch_result:#?}");
@@ -2442,6 +2447,7 @@ mod tests {
                     1,
                     None,
                     &false.into(),
+                    10_000,
                 )
                 .err()
                 .unwrap();

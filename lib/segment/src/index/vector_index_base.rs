@@ -26,6 +26,7 @@ pub trait VectorIndex {
         top: usize,
         params: Option<&SearchParams>,
         is_stopped: &AtomicBool,
+        search_optimized_threshold_kb: usize,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>>;
 
     /// Force internal index rebuild.
@@ -70,20 +71,23 @@ impl VectorIndex for VectorIndexEnum {
         top: usize,
         params: Option<&SearchParams>,
         is_stopped: &AtomicBool,
+        opt_threshold_kb: usize,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         match self {
-            VectorIndexEnum::Plain(index) => index.search(vectors, filter, top, params, is_stopped),
+            VectorIndexEnum::Plain(index) => {
+                index.search(vectors, filter, top, params, is_stopped, opt_threshold_kb)
+            }
             VectorIndexEnum::HnswRam(index) => {
-                index.search(vectors, filter, top, params, is_stopped)
+                index.search(vectors, filter, top, params, is_stopped, opt_threshold_kb)
             }
             VectorIndexEnum::HnswMmap(index) => {
-                index.search(vectors, filter, top, params, is_stopped)
+                index.search(vectors, filter, top, params, is_stopped, opt_threshold_kb)
             }
             VectorIndexEnum::SparseRam(index) => {
-                index.search(vectors, filter, top, params, is_stopped)
+                index.search(vectors, filter, top, params, is_stopped, opt_threshold_kb)
             }
             VectorIndexEnum::SparseMmap(index) => {
-                index.search(vectors, filter, top, params, is_stopped)
+                index.search(vectors, filter, top, params, is_stopped, opt_threshold_kb)
             }
         }
     }

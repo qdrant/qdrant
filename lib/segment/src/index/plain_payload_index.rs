@@ -14,7 +14,7 @@ use crate::common::operation_error::OperationResult;
 use crate::common::operation_time_statistics::{
     OperationDurationStatistics, OperationDurationsAggregator, ScopeDurationMeasurer,
 };
-use crate::common::Flusher;
+use crate::common::{Flusher, BYTES_IN_KB};
 use crate::data_types::vectors::{QueryVector, VectorRef};
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
@@ -26,9 +26,9 @@ use crate::payload_storage::{ConditionCheckerSS, FilterContext};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
-    SearchParams,
+    SearchParams, VECTOR_ELEMENT_SIZE,
 };
-use crate::vector_storage::{new_stoppable_raw_scorer, VectorStorageEnum};
+use crate::vector_storage::{new_stoppable_raw_scorer, VectorStorage, VectorStorageEnum};
 
 /// Implementation of `PayloadIndex` which does not really indexes anything.
 ///
@@ -224,6 +224,27 @@ impl PlainIndex {
             unfiltered_searches_telemetry: OperationDurationsAggregator::new(),
         }
     }
+
+    pub fn is_small_enough_for_unindexed_search(
+        &self,
+        search_optimized_threshold_kb: usize,
+        filter: Option<&Filter>,
+    ) -> bool {
+        let vector_storage = self.vector_storage.borrow();
+        let vector_size_bytes = vector_storage.vector_dim() * VECTOR_ELEMENT_SIZE;
+        let indexing_threshold_bytes = search_optimized_threshold_kb * BYTES_IN_KB;
+
+        if let Some(payload_filter) = filter {
+            let payload_index = self.payload_index.borrow();
+            let cardinality = payload_index.estimate_cardinality(payload_filter);
+            let scan_size = vector_size_bytes.saturating_mul(cardinality.max);
+            scan_size <= indexing_threshold_bytes
+        } else {
+            let vector_count = vector_storage.available_vector_count();
+            let vector_storage_size = vector_size_bytes.saturating_mul(vector_count);
+            vector_storage_size <= indexing_threshold_bytes
+        }
+    }
 }
 
 impl VectorIndex for PlainIndex {
@@ -232,9 +253,17 @@ impl VectorIndex for PlainIndex {
         vectors: &[&QueryVector],
         filter: Option<&Filter>,
         top: usize,
-        _params: Option<&SearchParams>,
+        params: Option<&SearchParams>,
         is_stopped: &AtomicBool,
+        search_optimized_threshold_kb: usize,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
+        let is_indexed_only = params.map(|p| p.indexed_only).unwrap_or(false);
+        if is_indexed_only
+            && !self.is_small_enough_for_unindexed_search(search_optimized_threshold_kb, filter)
+        {
+            return Ok(vec![vec![]; vectors.len()]);
+        }
+
         match filter {
             Some(filter) => {
                 let _timer = ScopeDurationMeasurer::new(&self.filtered_searches_telemetry);

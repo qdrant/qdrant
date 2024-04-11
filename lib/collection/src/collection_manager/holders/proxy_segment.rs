@@ -307,6 +307,7 @@ impl SegmentEntry for ProxySegment {
         top: usize,
         params: Option<&SearchParams>,
         is_stopped: &AtomicBool,
+        search_optimized_threshold_kb: usize,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         let deleted_points = self.deleted_points.read();
 
@@ -330,6 +331,7 @@ impl SegmentEntry for ProxySegment {
                 top,
                 params,
                 is_stopped,
+                search_optimized_threshold_kb,
             )?
         } else {
             self.wrapped_segment.get().read().search_batch(
@@ -341,6 +343,7 @@ impl SegmentEntry for ProxySegment {
                 top,
                 params,
                 is_stopped,
+                search_optimized_threshold_kb,
             )?
         };
         let mut write_results = self.write_segment.get().read().search_batch(
@@ -352,6 +355,7 @@ impl SegmentEntry for ProxySegment {
             top,
             params,
             is_stopped,
+            search_optimized_threshold_kb,
         )?;
         for (index, write_result) in write_results.iter_mut().enumerate() {
             wrapped_results[index].append(write_result)
@@ -1029,6 +1033,7 @@ mod tests {
                 10,
                 None,
                 &false.into(),
+                10_000,
             )
             .unwrap();
 
@@ -1084,6 +1089,7 @@ mod tests {
                 10,
                 None,
                 &false.into(),
+                10_000,
             )
             .unwrap();
 
@@ -1149,6 +1155,7 @@ mod tests {
                 10,
                 None,
                 &false.into(),
+                10_000,
             )
             .unwrap();
 
