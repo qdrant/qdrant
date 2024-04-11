@@ -14,7 +14,6 @@ use collection::operations::types::{
 use collection::operations::vector_ops::VectorOperations;
 use collection::operations::CollectionUpdateOperations;
 use segment::types::{Condition, ExtendedPointId, FieldCondition, Filter, Match, Payload};
-use strum::IntoEnumIterator as _;
 
 use super::{
     incompatible_with_payload_constraint, Access, AccessRequirements, CollectionAccessList,
@@ -529,15 +528,20 @@ mod tests_ops {
     use collection::operations::payload_ops::PayloadOpsDiscriminants;
     use collection::operations::point_ops::{
         Batch, PointInsertOperationsInternal, PointInsertOperationsInternalDiscriminants,
-        PointStruct, PointSyncOperation,
+        PointOperationsDiscriminants, PointStruct, PointSyncOperation,
     };
     use collection::operations::types::{
         OrderByInterface, QueryEnum, RecommendStrategy, SearchRequestInternal, UsingVector,
     };
-    use collection::operations::vector_ops::{PointVectors, UpdateVectorsOp};
-    use collection::operations::{CreateIndex, FieldIndexOperations};
+    use collection::operations::vector_ops::{
+        PointVectors, UpdateVectorsOp, VectorOperationsDiscriminants,
+    };
+    use collection::operations::{
+        CollectionUpdateOperationsDiscriminants, CreateIndex, FieldIndexOperations,
+    };
     use segment::data_types::vectors::NamedVectorStruct;
     use segment::types::{PointIdType, SearchParams, WithPayloadInterface, WithVector};
+    use strum::IntoEnumIterator as _;
 
     use super::*;
     use crate::rbac::{AccessCollectionBuilder, GlobalAccessMode};
@@ -976,149 +980,187 @@ mod tests_ops {
     }
 
     #[test]
-    fn test_collection_update_operations_upsert_points() {
-        for discr in PointInsertOperationsInternalDiscriminants::iter() {
-            let inner = match discr {
-                PointInsertOperationsInternalDiscriminants::PointsBatch => {
-                    PointInsertOperationsInternal::PointsBatch(Batch {
-                        ids: vec![ExtendedPointId::NumId(12345)],
-                        vectors: BatchVectorStruct::Single(vec![vec![0.0, 1.0, 2.0]]),
-                        payloads: None,
-                    })
-                }
-                PointInsertOperationsInternalDiscriminants::PointsList => {
-                    PointInsertOperationsInternal::PointsList(vec![PointStruct {
-                        id: ExtendedPointId::NumId(12345),
-                        vector: VectorStruct::Single(vec![0.0, 1.0, 2.0]),
-                        payload: None,
-                    }])
-                }
-            };
-
-            let op =
-                CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(inner));
-            assert_requires_whole_write_access(&op);
-        }
-    }
-
-    #[test]
-    fn test_collection_update_operations_delete_points() {
-        let op1 = CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints {
-            ids: vec![ExtendedPointId::NumId(12345)],
+    fn test_collection_update_operations() {
+        CollectionUpdateOperationsDiscriminants::iter().for_each(|discr| match discr {
+            CollectionUpdateOperationsDiscriminants::PointOperation => {
+                test_collection_update_operations_points()
+            }
+            CollectionUpdateOperationsDiscriminants::VectorOperation => {
+                test_collection_update_operations_update_vectors()
+            }
+            CollectionUpdateOperationsDiscriminants::PayloadOperation => {
+                test_collection_update_operations_payload()
+            }
+            CollectionUpdateOperationsDiscriminants::FieldIndexOperation => {
+                test_collection_update_operations_field_index()
+            }
         });
-        let op2 =
-            CollectionUpdateOperations::PointOperation(PointOperations::DeletePointsByFilter(
-                make_filter_from_ids(vec![ExtendedPointId::NumId(12345)]),
-            ));
+    }
 
-        for op in &[op1, op2] {
-            assert_allowed(op, &Access::Global(GlobalAccessMode::Manage));
-            assert_forbidden(op, &Access::Global(GlobalAccessMode::Read));
+    /// Tests for [`CollectionUpdateOperations::PointOperation`].
+    fn test_collection_update_operations_points() {
+        PointOperationsDiscriminants::iter().for_each(|discr| match discr {
+            PointOperationsDiscriminants::UpsertPoints => {
+                for discr in PointInsertOperationsInternalDiscriminants::iter() {
+                    let inner = match discr {
+                        PointInsertOperationsInternalDiscriminants::PointsBatch => {
+                            PointInsertOperationsInternal::PointsBatch(Batch {
+                                ids: vec![ExtendedPointId::NumId(12345)],
+                                vectors: BatchVectorStruct::Single(vec![vec![0.0, 1.0, 2.0]]),
+                                payloads: None,
+                            })
+                        }
+                        PointInsertOperationsInternalDiscriminants::PointsList => {
+                            PointInsertOperationsInternal::PointsList(vec![PointStruct {
+                                id: ExtendedPointId::NumId(12345),
+                                vector: VectorStruct::Single(vec![0.0, 1.0, 2.0]),
+                                payload: None,
+                            }])
+                        }
+                    };
 
-            assert_allowed(
-                op,
-                &AccessCollectionBuilder::new().add("col", true, true).into(),
-            );
-            assert_forbidden(
-                op,
-                &AccessCollectionBuilder::new()
-                    .add("col", false, true)
-                    .into(),
-            );
-
-            assert_allowed_rewrite(
-                op,
-                &AccessCollectionBuilder::new()
-                    .add("col", true, false)
-                    .into(),
-                |op| {
-                    *op = CollectionUpdateOperations::PointOperation(
-                        PointOperations::DeletePointsByFilter(
-                            make_filter_from_ids(vec![ExtendedPointId::NumId(12345)])
-                                .merge_owned(PayloadConstraint::new_test("col").to_filter()),
-                        ),
+                    let op = CollectionUpdateOperations::PointOperation(
+                        PointOperations::UpsertPoints(inner),
                     );
-                },
-            );
-        }
+                    assert_requires_whole_write_access(&op);
+                }
+            }
+
+            PointOperationsDiscriminants::DeletePoints => {
+                let op =
+                    CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints {
+                        ids: vec![ExtendedPointId::NumId(12345)],
+                    });
+                test_collection_update_operations_delete_points(&op);
+            }
+
+            PointOperationsDiscriminants::DeletePointsByFilter => {
+                let op = CollectionUpdateOperations::PointOperation(
+                    PointOperations::DeletePointsByFilter(make_filter_from_ids(vec![
+                        ExtendedPointId::NumId(12345),
+                    ])),
+                );
+                test_collection_update_operations_delete_points(&op);
+            }
+
+            PointOperationsDiscriminants::SyncPoints => {
+                let op = CollectionUpdateOperations::PointOperation(PointOperations::SyncPoints(
+                    PointSyncOperation {
+                        from_id: None,
+                        to_id: None,
+                        points: Vec::new(),
+                    },
+                ));
+                assert_requires_whole_write_access(&op);
+            }
+        });
     }
 
-    #[test]
-    fn test_collection_update_operations_sync_points() {
-        let op = CollectionUpdateOperations::PointOperation(PointOperations::SyncPoints(
-            PointSyncOperation {
-                from_id: None,
-                to_id: None,
-                points: Vec::new(),
+    /// Tests for [`CollectionUpdateOperations::PointOperation`] with
+    /// [`PointOperations::DeletePoints`] and [`PointOperations::DeletePointsByFilter`].
+    fn test_collection_update_operations_delete_points(op: &CollectionUpdateOperations) {
+        assert_allowed(op, &Access::Global(GlobalAccessMode::Manage));
+        assert_forbidden(op, &Access::Global(GlobalAccessMode::Read));
+
+        assert_allowed(
+            op,
+            &AccessCollectionBuilder::new().add("col", true, true).into(),
+        );
+        assert_forbidden(
+            op,
+            &AccessCollectionBuilder::new()
+                .add("col", false, true)
+                .into(),
+        );
+
+        assert_allowed_rewrite(
+            op,
+            &AccessCollectionBuilder::new()
+                .add("col", true, false)
+                .into(),
+            |op| {
+                *op = CollectionUpdateOperations::PointOperation(
+                    PointOperations::DeletePointsByFilter(
+                        make_filter_from_ids(vec![ExtendedPointId::NumId(12345)])
+                            .merge_owned(PayloadConstraint::new_test("col").to_filter()),
+                    ),
+                );
             },
-        ));
-
-        assert_requires_whole_write_access(&op);
+        );
     }
 
-    #[test]
+    /// Tests for [`CollectionUpdateOperations::VectorOperation`].
     fn test_collection_update_operations_update_vectors() {
-        let op = CollectionUpdateOperations::VectorOperation(VectorOperations::UpdateVectors(
-            UpdateVectorsOp {
-                points: vec![PointVectors {
-                    id: ExtendedPointId::NumId(12345),
-                    vector: VectorStruct::Single(vec![0.0, 1.0, 2.0]),
-                }],
-            },
-        ));
-        assert_requires_whole_write_access(&op);
+        VectorOperationsDiscriminants::iter().for_each(|discr| match discr {
+            VectorOperationsDiscriminants::UpdateVectors => {
+                let op = CollectionUpdateOperations::VectorOperation(
+                    VectorOperations::UpdateVectors(UpdateVectorsOp {
+                        points: vec![PointVectors {
+                            id: ExtendedPointId::NumId(12345),
+                            vector: VectorStruct::Single(vec![0.0, 1.0, 2.0]),
+                        }],
+                    }),
+                );
+                assert_requires_whole_write_access(&op);
+            }
+            VectorOperationsDiscriminants::DeleteVectors => {
+                let op =
+                    CollectionUpdateOperations::VectorOperation(VectorOperations::DeleteVectors(
+                        PointIdsList {
+                            points: vec![ExtendedPointId::NumId(12345)],
+                            shard_key: None,
+                        },
+                        vec!["vector".to_string()],
+                    ));
+                test_collection_update_operations_delete_vectors(&op);
+            }
+            VectorOperationsDiscriminants::DeleteVectorsByFilter => {
+                let op = CollectionUpdateOperations::VectorOperation(
+                    VectorOperations::DeleteVectorsByFilter(
+                        make_filter_from_ids(vec![ExtendedPointId::NumId(12345)]),
+                        vec!["vector".to_string()],
+                    ),
+                );
+                test_collection_update_operations_delete_vectors(&op);
+            }
+        });
     }
 
-    #[test]
-    fn test_collection_update_operations_delete_vectors() {
-        let op1 = CollectionUpdateOperations::VectorOperation(VectorOperations::DeleteVectors(
-            PointIdsList {
-                points: vec![ExtendedPointId::NumId(12345)],
-                shard_key: None,
+    /// Tests for [`CollectionUpdateOperations::VectorOperation`] with
+    /// [`VectorOperations::DeleteVectors`] and [`VectorOperations::DeleteVectorsByFilter`].
+    fn test_collection_update_operations_delete_vectors(op: &CollectionUpdateOperations) {
+        assert_allowed(op, &Access::Global(GlobalAccessMode::Manage));
+        assert_forbidden(op, &Access::Global(GlobalAccessMode::Read));
+
+        assert_allowed(
+            op,
+            &AccessCollectionBuilder::new().add("col", true, true).into(),
+        );
+        assert_forbidden(
+            op,
+            &AccessCollectionBuilder::new()
+                .add("col", false, true)
+                .into(),
+        );
+
+        assert_allowed_rewrite(
+            op,
+            &AccessCollectionBuilder::new()
+                .add("col", true, false)
+                .into(),
+            |op| {
+                *op = CollectionUpdateOperations::VectorOperation(
+                    VectorOperations::DeleteVectorsByFilter(
+                        make_filter_from_ids(vec![ExtendedPointId::NumId(12345)])
+                            .merge_owned(PayloadConstraint::new_test("col").to_filter()),
+                        vec!["vector".to_string()],
+                    ),
+                );
             },
-            vec!["vector".to_string()],
-        ));
-
-        let op2 =
-            CollectionUpdateOperations::VectorOperation(VectorOperations::DeleteVectorsByFilter(
-                make_filter_from_ids(vec![ExtendedPointId::NumId(12345)]),
-                vec!["vector".to_string()],
-            ));
-
-        for op in &[op1, op2] {
-            assert_allowed(op, &Access::Global(GlobalAccessMode::Manage));
-            assert_forbidden(op, &Access::Global(GlobalAccessMode::Read));
-
-            assert_allowed(
-                op,
-                &AccessCollectionBuilder::new().add("col", true, true).into(),
-            );
-            assert_forbidden(
-                op,
-                &AccessCollectionBuilder::new()
-                    .add("col", false, true)
-                    .into(),
-            );
-
-            assert_allowed_rewrite(
-                op,
-                &AccessCollectionBuilder::new()
-                    .add("col", true, false)
-                    .into(),
-                |op| {
-                    *op = CollectionUpdateOperations::VectorOperation(
-                        VectorOperations::DeleteVectorsByFilter(
-                            make_filter_from_ids(vec![ExtendedPointId::NumId(12345)])
-                                .merge_owned(PayloadConstraint::new_test("col").to_filter()),
-                            vec!["vector".to_string()],
-                        ),
-                    );
-                },
-            );
-        }
+        );
     }
 
-    #[test]
+    /// Tests for [`CollectionUpdateOperations::PayloadOperation`].
     fn test_collection_update_operations_payload() {
         for discr in PayloadOpsDiscriminants::iter() {
             let inner = match discr {
@@ -1158,7 +1200,7 @@ mod tests_ops {
         }
     }
 
-    #[test]
+    /// Tests for [`CollectionUpdateOperations::FieldIndexOperation`].
     fn test_collection_update_operations_field_index() {
         let op = CollectionUpdateOperations::FieldIndexOperation(
             FieldIndexOperations::CreateIndex(CreateIndex {

@@ -337,7 +337,8 @@ impl From<Vec<PointStruct>> for PointInsertOperationsInternal {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, EnumDiscriminants)]
+#[strum_discriminants(derive(EnumIter))]
 #[serde(rename_all = "snake_case")]
 pub enum PointOperations {
     /// Insert or update points

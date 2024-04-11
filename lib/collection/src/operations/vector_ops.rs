@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 use schemars::JsonSchema;
 use segment::types::{Filter, PointIdType};
 use serde::{Deserialize, Serialize};
+use strum::{EnumDiscriminants, EnumIter};
 use validator::{Validate, ValidationError, ValidationErrors};
 
 use super::point_ops::PointIdsList;
@@ -68,7 +69,8 @@ pub struct UpdateVectorsOp {
     pub points: Vec<PointVectors>,
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, EnumDiscriminants)]
+#[strum_discriminants(derive(EnumIter))]
 #[serde(rename_all = "snake_case")]
 pub enum VectorOperations {
     /// Update vectors
