@@ -216,6 +216,33 @@ impl ProxySegment {
 
         Ok(())
     }
+
+    /// This function is a simplified version of `search_batch` intended for testing purposes.
+    #[allow(clippy::too_many_arguments)]
+    pub fn search(
+        &self,
+        vector_name: &str,
+        vector: &QueryVector,
+        with_payload: &WithPayload,
+        with_vector: &WithVector,
+        filter: Option<&Filter>,
+        top: usize,
+        params: Option<&SearchParams>,
+    ) -> OperationResult<Vec<ScoredPoint>> {
+        let result = self.search_batch(
+            vector_name,
+            &[vector],
+            with_payload,
+            with_vector,
+            filter,
+            top,
+            params,
+            &false.into(),
+            usize::MAX,
+        )?;
+
+        Ok(result.into_iter().next().unwrap())
+    }
 }
 
 impl SegmentEntry for ProxySegment {
@@ -233,68 +260,6 @@ impl SegmentEntry for ProxySegment {
             .read()
             .point_version(point_id)
             .or_else(|| self.wrapped_segment.get().read().point_version(point_id))
-    }
-
-    fn search(
-        &self,
-        vector_name: &str,
-        vector: &QueryVector,
-        with_payload: &WithPayload,
-        with_vector: &WithVector,
-        filter: Option<&Filter>,
-        top: usize,
-        params: Option<&SearchParams>,
-        is_stopped: &AtomicBool,
-    ) -> OperationResult<Vec<ScoredPoint>> {
-        let deleted_points = self.deleted_points.read();
-
-        // Some point might be deleted after temporary segment creation
-        // We need to prevent them from being found by search request
-        // That is why we need to pass additional filter for deleted points
-        let do_update_filter = !deleted_points.is_empty();
-        let mut wrapped_result = if do_update_filter {
-            // ToDo: Come up with better way to pass deleted points into Filter
-            // e.g. implement AtomicRefCell for Serializer.
-            // This copy might slow process down if there will be a lot of deleted points
-            let wrapped_filter =
-                self.add_deleted_points_condition_to_filter(filter, &deleted_points);
-
-            self.wrapped_segment.get().read().search(
-                vector_name,
-                vector,
-                with_payload,
-                with_vector,
-                Some(&wrapped_filter),
-                top,
-                params,
-                is_stopped,
-            )?
-        } else {
-            self.wrapped_segment.get().read().search(
-                vector_name,
-                vector,
-                with_payload,
-                with_vector,
-                filter,
-                top,
-                params,
-                is_stopped,
-            )?
-        };
-
-        let mut write_result = self.write_segment.get().read().search(
-            vector_name,
-            vector,
-            with_payload,
-            with_vector,
-            filter,
-            top,
-            params,
-            is_stopped,
-        )?;
-
-        wrapped_result.append(&mut write_result);
-        Ok(wrapped_result)
     }
 
     fn search_batch(
@@ -949,7 +914,6 @@ mod tests {
                 None,
                 10,
                 None,
-                &false.into(),
             )
             .unwrap();
 
@@ -1017,7 +981,6 @@ mod tests {
                 None,
                 10,
                 None,
-                &false.into(),
             )
             .unwrap();
 
@@ -1073,7 +1036,6 @@ mod tests {
                 None,
                 10,
                 None,
-                &false.into(),
             )
             .unwrap();
 
@@ -1137,7 +1099,6 @@ mod tests {
                     None,
                     10,
                     None,
-                    &false.into(),
                 )
                 .unwrap();
             all_single_results.push(res);
