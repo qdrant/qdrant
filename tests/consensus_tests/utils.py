@@ -2,7 +2,6 @@ import json
 import os
 import re
 import shutil
-import jwt
 from subprocess import Popen
 import time
 from typing import Tuple, Callable, Dict, List
@@ -40,15 +39,18 @@ def _occupy_port(port):
     busy_ports[port] = True
     return port
 
-
-@pytest.fixture(autouse=True)
-def every_test():
-    yield
+def kill_all_processes():
     print()
     while len(processes) > 0:
         p = processes.pop(0)
         print(f"Killing {p.pid}")
         p.kill()
+
+
+@pytest.fixture(autouse=True)
+def every_test():
+    yield
+    kill_all_processes()
 
 
 def get_port() -> int:
@@ -593,8 +595,3 @@ def wait_collection_exists_and_active_on_all_peers(collection_name: str, peer_ap
     for peer_uri in peer_api_uris:
         # Collection is active on all peers
         wait_for_all_replicas_active(collection_name=collection_name, peer_api_uri=peer_uri)
-
-
-def encode_jwt(claims: dict, secret: str) -> str:
-    return jwt.encode(claims, secret, algorithm="HS256")
-
