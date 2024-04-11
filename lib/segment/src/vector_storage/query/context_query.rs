@@ -8,7 +8,7 @@ use super::{Query, TransformInto};
 use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::{QueryVector, Vector};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ContextPair<T> {
     pub positive: T,
     pub negative: T,
@@ -69,7 +69,7 @@ impl<T> From<(T, T)> for ContextPair<T> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ContextQuery<T> {
     pub pairs: Vec<ContextPair<T>>,
 }

@@ -27,13 +27,13 @@ use crate::recommendations::recommend_into_core_search;
 const MAX_GET_GROUPS_REQUESTS: usize = 5;
 const MAX_GROUP_FILLING_REQUESTS: usize = 5;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum SourceRequest {
     Search(SearchRequestInternal),
     Recommend(RecommendRequestInternal),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct GroupRequest {
     /// Request to use (search or recommend)
     pub source: SourceRequest,

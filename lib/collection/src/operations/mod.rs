@@ -19,6 +19,7 @@ use std::collections::HashMap;
 use segment::json_path::JsonPath;
 use segment::types::{ExtendedPointId, PayloadFieldSchema};
 use serde::{Deserialize, Serialize};
+use strum::{EnumDiscriminants, EnumIter};
 use validator::Validate;
 
 use crate::hash_ring::HashRing;
@@ -33,7 +34,8 @@ pub struct CreateIndex {
     pub field_schema: Option<PayloadFieldSchema>,
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, EnumDiscriminants)]
+#[strum_discriminants(derive(EnumIter))]
 #[serde(rename_all = "snake_case")]
 pub enum FieldIndexOperations {
     /// Create index for payload field
@@ -130,7 +132,8 @@ impl From<ClockTag> for api::grpc::qdrant::ClockTag {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, EnumDiscriminants)]
+#[strum_discriminants(derive(EnumIter))]
 #[serde(untagged, rename_all = "snake_case")]
 pub enum CollectionUpdateOperations {
     PointOperation(point_ops::PointOperations),
