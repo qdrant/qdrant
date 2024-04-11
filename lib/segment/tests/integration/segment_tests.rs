@@ -36,7 +36,6 @@ fn test_point_exclusion() {
             None,
             1,
             None,
-            &false.into(),
         )
         .unwrap();
 
@@ -56,7 +55,6 @@ fn test_point_exclusion() {
             Some(&frt),
             1,
             None,
-            &false.into(),
         )
         .unwrap();
 
@@ -91,7 +89,6 @@ fn test_named_vector_search() {
             None,
             1,
             None,
-            &false.into(),
         )
         .unwrap();
 
@@ -116,7 +113,6 @@ fn test_named_vector_search() {
             Some(&frt),
             1,
             None,
-            &false.into(),
         )
         .unwrap();
 
@@ -211,7 +207,6 @@ fn ordered_deletion_test() {
             None,
             1,
             None,
-            &false.into(),
         )
         .unwrap();
     let best_match = res.first().expect("Non-empty result");
@@ -276,7 +271,6 @@ fn test_update_named_vector() {
             None,
             1,
             Some(&search_params),
-            &false.into(),
         )
         .unwrap();
     let nearest_upsert = nearest_upsert.first().unwrap();
@@ -314,7 +308,6 @@ fn test_update_named_vector() {
             None,
             1,
             Some(&search_params),
-            &false.into(),
         )
         .unwrap();
     let nearest_update = nearest_update.first().unwrap();

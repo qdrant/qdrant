@@ -29,19 +29,6 @@ pub trait SegmentEntry {
     fn point_version(&self, point_id: PointIdType) -> Option<SeqNumberType>;
 
     #[allow(clippy::too_many_arguments)]
-    fn search(
-        &self,
-        vector_name: &str,
-        query_vector: &QueryVector,
-        with_payload: &WithPayload,
-        with_vector: &WithVector,
-        filter: Option<&Filter>,
-        top: usize,
-        params: Option<&SearchParams>,
-        is_stopped: &AtomicBool,
-    ) -> OperationResult<Vec<ScoredPoint>>;
-
-    #[allow(clippy::too_many_arguments)]
     fn search_batch(
         &self,
         vector_name: &str,
