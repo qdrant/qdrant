@@ -538,6 +538,7 @@ mod tests_ops {
     };
     use collection::operations::{
         CollectionUpdateOperationsDiscriminants, CreateIndex, FieldIndexOperations,
+        FieldIndexOperationsDiscriminants,
     };
     use segment::data_types::vectors::NamedVectorStruct;
     use segment::types::{PointIdType, SearchParams, WithPayloadInterface, WithVector};
@@ -685,7 +686,7 @@ mod tests_ops {
     }
 
     #[test]
-    fn test_scroll_request_internal() {
+    fn test_point_request_internal() {
         let op = PointRequestInternal {
             ids: vec![PointIdType::NumId(12345)],
             with_payload: None,
@@ -948,7 +949,7 @@ mod tests_ops {
     }
 
     #[test]
-    fn check_test_scroll_request_internal() {
+    fn test_scroll_request_internal() {
         let op = ScrollRequestInternal {
             offset: Some(ExtendedPointId::NumId(12345)),
             limit: Some(100),
@@ -983,22 +984,22 @@ mod tests_ops {
     fn test_collection_update_operations() {
         CollectionUpdateOperationsDiscriminants::iter().for_each(|discr| match discr {
             CollectionUpdateOperationsDiscriminants::PointOperation => {
-                test_collection_update_operations_points()
+                check_collection_update_operations_points()
             }
             CollectionUpdateOperationsDiscriminants::VectorOperation => {
-                test_collection_update_operations_update_vectors()
+                check_collection_update_operations_update_vectors()
             }
             CollectionUpdateOperationsDiscriminants::PayloadOperation => {
-                test_collection_update_operations_payload()
+                check_collection_update_operations_payload()
             }
             CollectionUpdateOperationsDiscriminants::FieldIndexOperation => {
-                test_collection_update_operations_field_index()
+                check_collection_update_operations_field_index()
             }
         });
     }
 
     /// Tests for [`CollectionUpdateOperations::PointOperation`].
-    fn test_collection_update_operations_points() {
+    fn check_collection_update_operations_points() {
         PointOperationsDiscriminants::iter().for_each(|discr| match discr {
             PointOperationsDiscriminants::UpsertPoints => {
                 for discr in PointInsertOperationsInternalDiscriminants::iter() {
@@ -1031,7 +1032,7 @@ mod tests_ops {
                     CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints {
                         ids: vec![ExtendedPointId::NumId(12345)],
                     });
-                test_collection_update_operations_delete_points(&op);
+                check_collection_update_operations_delete_points(&op);
             }
 
             PointOperationsDiscriminants::DeletePointsByFilter => {
@@ -1040,7 +1041,7 @@ mod tests_ops {
                         ExtendedPointId::NumId(12345),
                     ])),
                 );
-                test_collection_update_operations_delete_points(&op);
+                check_collection_update_operations_delete_points(&op);
             }
 
             PointOperationsDiscriminants::SyncPoints => {
@@ -1058,7 +1059,7 @@ mod tests_ops {
 
     /// Tests for [`CollectionUpdateOperations::PointOperation`] with
     /// [`PointOperations::DeletePoints`] and [`PointOperations::DeletePointsByFilter`].
-    fn test_collection_update_operations_delete_points(op: &CollectionUpdateOperations) {
+    fn check_collection_update_operations_delete_points(op: &CollectionUpdateOperations) {
         assert_allowed(op, &Access::Global(GlobalAccessMode::Manage));
         assert_forbidden(op, &Access::Global(GlobalAccessMode::Read));
 
@@ -1090,7 +1091,7 @@ mod tests_ops {
     }
 
     /// Tests for [`CollectionUpdateOperations::VectorOperation`].
-    fn test_collection_update_operations_update_vectors() {
+    fn check_collection_update_operations_update_vectors() {
         VectorOperationsDiscriminants::iter().for_each(|discr| match discr {
             VectorOperationsDiscriminants::UpdateVectors => {
                 let op = CollectionUpdateOperations::VectorOperation(
@@ -1112,7 +1113,7 @@ mod tests_ops {
                         },
                         vec!["vector".to_string()],
                     ));
-                test_collection_update_operations_delete_vectors(&op);
+                check_collection_update_operations_delete_vectors(&op);
             }
             VectorOperationsDiscriminants::DeleteVectorsByFilter => {
                 let op = CollectionUpdateOperations::VectorOperation(
@@ -1121,14 +1122,14 @@ mod tests_ops {
                         vec!["vector".to_string()],
                     ),
                 );
-                test_collection_update_operations_delete_vectors(&op);
+                check_collection_update_operations_delete_vectors(&op);
             }
         });
     }
 
     /// Tests for [`CollectionUpdateOperations::VectorOperation`] with
     /// [`VectorOperations::DeleteVectors`] and [`VectorOperations::DeleteVectorsByFilter`].
-    fn test_collection_update_operations_delete_vectors(op: &CollectionUpdateOperations) {
+    fn check_collection_update_operations_delete_vectors(op: &CollectionUpdateOperations) {
         assert_allowed(op, &Access::Global(GlobalAccessMode::Manage));
         assert_forbidden(op, &Access::Global(GlobalAccessMode::Read));
 
@@ -1161,7 +1162,7 @@ mod tests_ops {
     }
 
     /// Tests for [`CollectionUpdateOperations::PayloadOperation`].
-    fn test_collection_update_operations_payload() {
+    fn check_collection_update_operations_payload() {
         for discr in PayloadOpsDiscriminants::iter() {
             let inner = match discr {
                 PayloadOpsDiscriminants::SetPayload => PayloadOps::SetPayload(SetPayloadOp {
@@ -1201,24 +1202,33 @@ mod tests_ops {
     }
 
     /// Tests for [`CollectionUpdateOperations::FieldIndexOperation`].
-    fn test_collection_update_operations_field_index() {
-        let op = CollectionUpdateOperations::FieldIndexOperation(
-            FieldIndexOperations::CreateIndex(CreateIndex {
-                field_name: "path".parse().unwrap(),
-                field_schema: None,
-            }),
-        );
-        assert_allowed(&op, &Access::Global(GlobalAccessMode::Manage));
-        assert_forbidden(&op, &Access::Global(GlobalAccessMode::Read));
-        assert_forbidden(
-            &op,
-            &AccessCollectionBuilder::new().add("col", true, true).into(),
-        );
-        assert_forbidden(
-            &op,
-            &AccessCollectionBuilder::new()
-                .add("col", false, true)
-                .into(),
-        );
+    fn check_collection_update_operations_field_index() {
+        for discr in FieldIndexOperationsDiscriminants::iter() {
+            let inner = match discr {
+                FieldIndexOperationsDiscriminants::CreateIndex => {
+                    FieldIndexOperations::CreateIndex(CreateIndex {
+                        field_name: "path".parse().unwrap(),
+                        field_schema: None,
+                    })
+                }
+                FieldIndexOperationsDiscriminants::DeleteIndex => {
+                    FieldIndexOperations::DeleteIndex("path".parse().unwrap())
+                }
+            };
+
+            let op = CollectionUpdateOperations::FieldIndexOperation(inner);
+            assert_allowed(&op, &Access::Global(GlobalAccessMode::Manage));
+            assert_forbidden(&op, &Access::Global(GlobalAccessMode::Read));
+            assert_forbidden(
+                &op,
+                &AccessCollectionBuilder::new().add("col", true, true).into(),
+            );
+            assert_forbidden(
+                &op,
+                &AccessCollectionBuilder::new()
+                    .add("col", false, true)
+                    .into(),
+            );
+        }
     }
 }
