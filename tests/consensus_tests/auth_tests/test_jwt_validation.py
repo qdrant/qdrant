@@ -727,7 +727,9 @@ def check_rest_access(
             res.status_code < 500 and res.status_code != 403
         ), f"{method} {path} failed with {res.status_code}: {res.text}"
     else:
-        assert res.status_code == 403, f"{method} {path} failed with {res.status_code}: {res.text}"
+        assert (
+            res.status_code == 403
+        ), f"{method} {path} should've gotten `403` status code, but got `{res.status_code}: {res.text}`"
 
 
 def check_grpc_access(
@@ -747,7 +749,9 @@ def check_grpc_access(
             if e.code() not in [grpc.StatusCode.INVALID_ARGUMENT, grpc.StatusCode.NOT_FOUND]:
                 pytest.fail(f"{service}/{method} failed with {e.code()}: {e.details()}")
         else:
-            assert e.code() == grpc.StatusCode.PERMISSION_DENIED
+            assert (
+                e.code() == grpc.StatusCode.PERMISSION_DENIED
+            ), f"{service}/{method} should've gotten `PERMISSION_DENIED` status code, but got `{e.code()}: {e.details()}`"
 
 
 class GrpcClients:
