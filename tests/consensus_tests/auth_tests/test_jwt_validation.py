@@ -129,7 +129,9 @@ def test_payload_filters_queries():
     )
     res.raise_for_status()
 
-    cities_in_payload = set(point["payload"].get("city") for point in res.json()["result"]["points"])
+    cities_in_payload = set(
+        point["payload"].get("city") for point in res.json()["result"]["points"]
+    )
 
     assert cities_in_payload == {"Berlin"}
 
@@ -157,14 +159,6 @@ def test_payload_filters_queries():
     )
     res.raise_for_status()
 
-    res_expected = requests.post(
-        f"{REST_URI}/collections/{COLL_NAME}/points/count",
-        json={"filter": {"must": [{"key": "city", "match": {"value": "Berlin"}}]}},
-        headers=API_KEY_HEADERS,
-    )
-    res_expected.raise_for_status()
-
-    assert res.json()["result"] == res_expected.json()["result"]
     res_expected = requests.post(
         f"{REST_URI}/collections/{COLL_NAME}/points/count",
         json={"filter": {"must": [{"key": "city", "match": {"value": "Berlin"}}]}},
