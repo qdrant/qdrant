@@ -30,11 +30,16 @@ pub fn score_max_similarity<TMetric: Metric<VectorElementType>>(
     debug_assert!(!multi_dense_b.is_empty());
     let mut sum = 0.0;
     for dense_a in multi_dense_a.multi_vectors() {
-        sum += multi_dense_b
-            .multi_vectors()
-            .map(|dense_b| TMetric::similarity(dense_a, dense_b))
-            .max_by(|a, b| OrderedFloat(*a).cmp(&OrderedFloat(*b)))
-            .expect("At least one element in multi-dense vector")
+        let mut max_sim = OrderedFloat(ScoreType::NEG_INFINITY);
+        // manual `max_by` for performance
+        for dense_b in multi_dense_b.multi_vectors() {
+            let sim = OrderedFloat(TMetric::similarity(dense_a, dense_b));
+            if sim > max_sim {
+                max_sim = sim;
+            }
+        }
+        // sum of max similarity
+        sum += max_sim.into_inner();
     }
     sum
 }
