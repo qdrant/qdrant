@@ -1,3 +1,6 @@
+#[cfg(not(target_os = "windows"))]
+mod prof;
+
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -85,13 +88,14 @@ fn multi_vector_search_benchmark(c: &mut Criterion) {
 
     hnsw_index.build_index(permit.clone(), &stopped).unwrap();
 
-    let query = random_multi_vector(&mut rnd, VECTOR_DIM, NUM_VECTORS_PER_POINT).into();
-
     // intent: bench `search` without filter
     group.bench_function("hnsw-multivec-search", |b| {
         b.iter(|| {
+            // new query to avoid caching effects
+            let query = random_multi_vector(&mut rnd, VECTOR_DIM, NUM_VECTORS_PER_POINT).into();
+
             let results = hnsw_index
-                .search(&[&query], None, TOP, None, &stopped)
+                .search(&[&query], None, TOP, None, &stopped, 0)
                 .unwrap();
             assert_eq!(results[0].len(), TOP);
         })
@@ -102,7 +106,7 @@ fn multi_vector_search_benchmark(c: &mut Criterion) {
 
 criterion_group! {
     name = benches;
-    config = Criterion::default();
+    config = Criterion::default().with_profiler(prof::FlamegraphProfiler::new(100));
     targets = multi_vector_search_benchmark
 }
 
