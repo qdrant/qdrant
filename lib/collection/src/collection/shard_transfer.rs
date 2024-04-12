@@ -104,7 +104,9 @@ impl Collection {
 
                 replica_set.set_local(shard, Some(initial_state)).await?;
             } else {
-                replica_set.set_replica_state(&shard_transfer.to, initial_state)?;
+                replica_set
+                    .ensure_replica_with_state(&shard_transfer.to, initial_state)
+                    .await?;
             }
 
             is_local && is_sender

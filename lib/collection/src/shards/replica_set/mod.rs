@@ -515,6 +515,8 @@ impl ShardReplicaSet {
     }
 
     pub async fn add_remote(&self, peer_id: PeerId, state: ReplicaState) -> CollectionResult<()> {
+        debug_assert!(peer_id != self.this_peer_id());
+
         self.replica_state.write(|rs| {
             rs.set_peer_state(peer_id, state);
         })?;
@@ -557,7 +559,7 @@ impl ShardReplicaSet {
         peer_id: &PeerId,
         state: ReplicaState,
     ) -> CollectionResult<()> {
-        if *peer_id == self.replica_state.read().this_peer_id {
+        if *peer_id == self.this_peer_id() {
             self.set_replica_state(peer_id, state)?;
         } else {
             // Create remote shard if necessary

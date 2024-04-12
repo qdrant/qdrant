@@ -157,6 +157,7 @@ impl ResponseError for HttpError {
             StorageError::AlreadyExists { .. } => http::StatusCode::CONFLICT,
             StorageError::ChecksumMismatch { .. } => http::StatusCode::BAD_REQUEST,
             StorageError::Forbidden { .. } => http::StatusCode::FORBIDDEN,
+            StorageError::PreconditionFailed { .. } => http::StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
