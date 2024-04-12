@@ -7,10 +7,8 @@ import grpc
 import grpc_requests
 import pytest
 import requests
-from grpc_interceptor import ClientCallDetails, ClientInterceptor
-
 from consensus_tests import fixtures
-from consensus_tests.utils import kill_all_processes
+from grpc_interceptor import ClientCallDetails, ClientInterceptor
 
 from .utils import (
     API_KEY_HEADERS,
@@ -20,7 +18,6 @@ from .utils import (
     SECRET,
     encode_jwt,
     random_str,
-    start_jwt_protected_cluster,
 )
 
 COLL_NAME = "jwt_test_collection"
@@ -62,10 +59,8 @@ SHARD_KEY_SELECTOR = {"shard_key_selector": {"shard_keys": [{"keyword": SHARD_KE
 
 
 @pytest.fixture(scope="module", autouse=True)
-def setup(tmp_path_factory: pytest.TempPathFactory):
-    tmp_path = tmp_path_factory.mktemp("api_key_instance")
-
-    peer_api_uris, peer_dirs, bootstrap_uri = start_jwt_protected_cluster(tmp_path)
+def setup(jwt_cluster):
+    peer_api_uris, peer_dirs, bootstrap_uri = jwt_cluster
 
     fixtures.create_collection(
         REST_URI,
@@ -83,7 +78,6 @@ def setup(tmp_path_factory: pytest.TempPathFactory):
     yield peer_api_uris, peer_dirs, bootstrap_uri
 
     fixtures.drop_collection(REST_URI, COLL_NAME, headers=API_KEY_HEADERS)
-    kill_all_processes()
 
 
 class Access:
@@ -1695,4 +1689,5 @@ def test_post_locks():
 
 
 def test_get_locks():
+    check_access("get_locks")
     check_access("get_locks")

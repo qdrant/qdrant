@@ -1,24 +1,15 @@
 import pytest
 import requests
 from consensus_tests import fixtures
-from consensus_tests.utils import kill_all_processes
 
-from .utils import (
-    API_KEY_HEADERS,
-    REST_URI,
-    SECRET,
-    encode_jwt,
-    start_jwt_protected_cluster,
-)
+from .utils import API_KEY_HEADERS, REST_URI, SECRET, encode_jwt
 
 COLL_NAME = "jwt_test_collection"
 
 
 @pytest.fixture(scope="module", autouse=True)
-def setup(tmp_path_factory: pytest.TempPathFactory):
-    tmp_path = tmp_path_factory.mktemp("api_key_instance")
-
-    peer_api_uris, peer_dirs, bootstrap_uri = start_jwt_protected_cluster(tmp_path)
+def setup(jwt_cluster):
+    peer_api_uris, peer_dirs, bootstrap_uri = jwt_cluster
 
     fixtures.create_collection(
         REST_URI,
@@ -31,7 +22,6 @@ def setup(tmp_path_factory: pytest.TempPathFactory):
     yield peer_api_uris, peer_dirs, bootstrap_uri
 
     fixtures.drop_collection(REST_URI, COLL_NAME, headers=API_KEY_HEADERS)
-    kill_all_processes()
 
 
 def create_validation_collection(collection: str, timeout=10):
