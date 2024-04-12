@@ -1,6 +1,7 @@
 use validator::Validate;
 
 use super::schema::{BatchVectorStruct, Vector, VectorStruct};
+use crate::rest::NamedVectorStruct;
 
 impl Validate for VectorStruct {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
@@ -27,6 +28,16 @@ impl Validate for Vector {
         match self {
             Vector::Dense(_) => Ok(()),
             Vector::Sparse(v) => v.validate(),
+        }
+    }
+}
+
+impl Validate for NamedVectorStruct {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        match self {
+            NamedVectorStruct::Default(_) => Ok(()),
+            NamedVectorStruct::Dense(_) => Ok(()),
+            NamedVectorStruct::Sparse(v) => v.validate(),
         }
     }
 }
