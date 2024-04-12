@@ -50,7 +50,7 @@ client = QdrantClient(path="path/to/db")  # Persists changes to disk, fast proto
 
 ### Client-Server
 
-This is the recommended method for production usage. To run the container, use the command:
+To run the container, use the command:
 
 ```bash
 docker run -p 6333:6333 qdrant/qdrant
@@ -59,7 +59,7 @@ docker run -p 6333:6333 qdrant/qdrant
 Now you can connect to this with any client, including Python:
 
 ```python
-qdrant = QdrantClient("http://localhost:6333") # Connect to existing Qdrant instance, for production
+qdrant = QdrantClient("http://localhost:6333") # Connect to existing Qdrant instance
 ```
 
 ### Clients
@@ -204,7 +204,7 @@ Qdrant offers comprehensive horizontal scaling support through two key mechanism
 * **Query Planning and Payload Indexes** - leverages stored payload information to optimize query execution strategy.
 * **SIMD Hardware Acceleration** - utilizes modern CPU x86-x64 and Neon architectures to deliver better performance.
 * **Async I/O** - uses `io_uring` to maximize disk throughput utilization even on a network-attached storage.
-* **Write-Ahead Logging** - ensures data persistence with update confirmation, even during power outages. 
+* **Write-Ahead Logging** - ensures data persistence with update confirmation, even during power outages.
 
 
 # Integrations
