@@ -159,6 +159,7 @@ impl TableOfContent {
         &self,
         collection_name: &str,
     ) -> Result<bool, StorageError> {
+        let _collection_create_guard = self.collection_create_lock.lock().await;
         if let Some(removed) = self.collections.write().await.remove(collection_name) {
             self.alias_persistence
                 .write()
@@ -192,6 +193,8 @@ impl TableOfContent {
             });
             Ok(true)
         } else {
+            // we hold the collection_create lock to make sure no one is creating this collection
+            // otherwise we would delete its content now
             let path = self.get_collection_path(collection_name);
             if path.exists() {
                 log::warn!(
