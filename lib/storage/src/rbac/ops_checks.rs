@@ -778,7 +778,7 @@ mod tests_ops {
         let op = GroupRequest {
             // NOTE: SourceRequest::Recommend is already tested in test_recommend_request_internal
             source: SourceRequest::Search(SearchRequestInternal {
-                vector: NamedVectorStruct::Default(vec![0.0, 1.0, 2.0]),
+                vector: NamedVectorStruct::Default(vec![0.0, 1.0, 2.0]).into(),
                 filter: None,
                 params: Some(SearchParams::default()),
                 limit: 100,
