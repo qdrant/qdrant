@@ -379,7 +379,7 @@ pub struct SearchRequest {
 pub struct SearchRequestInternal {
     /// Look for vectors closest to this
     #[validate]
-    pub vector: NamedVectorStruct,
+    pub vector: api::rest::NamedVectorStruct,
     /// Look only for points which satisfies this conditions
     #[validate]
     pub filter: Option<Filter>,
@@ -490,7 +490,7 @@ pub struct SearchGroupsRequest {
 pub struct SearchGroupsRequestInternal {
     /// Look for vectors closest to this
     #[validate]
-    pub vector: NamedVectorStruct,
+    pub vector: api::rest::NamedVectorStruct,
 
     /// Look only for points which satisfies this conditions
     #[validate]
@@ -1784,7 +1784,7 @@ pub struct BaseGroupRequest {
 impl From<SearchRequestInternal> for CoreSearchRequest {
     fn from(request: SearchRequestInternal) -> Self {
         Self {
-            query: QueryEnum::Nearest(request.vector),
+            query: QueryEnum::Nearest(request.vector.into()),
             filter: request.filter,
             params: request.params,
             limit: request.limit,

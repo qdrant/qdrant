@@ -69,6 +69,7 @@ impl From<NamedVectorStruct> for Vector {
             NamedVectorStruct::Default(v) => Vector::Dense(v),
             NamedVectorStruct::Dense(v) => Vector::Dense(v.vector),
             NamedVectorStruct::Sparse(v) => Vector::Sparse(v.vector),
+            NamedVectorStruct::MultiDense(v) => Vector::MultiDense(v.vector),
         }
     }
 }
@@ -378,7 +379,7 @@ impl VectorStruct {
     }
 }
 
-/// Vector data with name
+/// Dense vector data with name
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct NamedVector {
@@ -386,6 +387,15 @@ pub struct NamedVector {
     pub name: String,
     /// Vector data
     pub vector: DenseVector,
+}
+
+/// MultiDense vector data with name
+#[derive(Debug, Clone, PartialEq)]
+pub struct NamedMultiDenseVector {
+    /// Name of vector data
+    pub name: String,
+    /// Vector data
+    pub vector: MultiDenseVector,
 }
 
 /// Sparse vector data with name
@@ -399,28 +409,12 @@ pub struct NamedSparseVector {
     pub vector: SparseVector,
 }
 
-/// Vector data separator for named and unnamed modes
-/// Unnamed mode:
-///
-/// {
-///   "vector": [1.0, 2.0, 3.0]
-/// }
-///
-/// or named mode:
-///
-/// {
-///   "vector": {
-///     "vector": [1.0, 2.0, 3.0],
-///     "name": "image-embeddings"
-///   }
-/// }
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Clone)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum NamedVectorStruct {
     Default(DenseVector),
     Dense(NamedVector),
     Sparse(NamedSparseVector),
+    MultiDense(NamedMultiDenseVector),
 }
 
 impl From<DenseVector> for NamedVectorStruct {
@@ -451,6 +445,7 @@ impl Named for NamedVectorStruct {
             NamedVectorStruct::Default(_) => DEFAULT_VECTOR_NAME,
             NamedVectorStruct::Dense(v) => &v.name,
             NamedVectorStruct::Sparse(v) => &v.name,
+            NamedVectorStruct::MultiDense(v) => &v.name,
         }
     }
 }
@@ -460,9 +455,8 @@ impl NamedVectorStruct {
         match vector {
             Vector::Dense(vector) => NamedVectorStruct::Dense(NamedVector { name, vector }),
             Vector::Sparse(vector) => NamedVectorStruct::Sparse(NamedSparseVector { name, vector }),
-            Vector::MultiDense(_) => {
-                // TODO(colbert)
-                unimplemented!("MultiDenseVector cannot be converted to NamedVectorStruct")
+            Vector::MultiDense(vector) => {
+                NamedVectorStruct::MultiDense(NamedMultiDenseVector { name, vector })
             }
         }
     }
@@ -472,6 +466,7 @@ impl NamedVectorStruct {
             NamedVectorStruct::Default(v) => v.as_slice().into(),
             NamedVectorStruct::Dense(v) => v.vector.as_slice().into(),
             NamedVectorStruct::Sparse(v) => (&v.vector).into(),
+            NamedVectorStruct::MultiDense(v) => (&v.vector).into(),
         }
     }
 
@@ -480,16 +475,7 @@ impl NamedVectorStruct {
             NamedVectorStruct::Default(v) => v.into(),
             NamedVectorStruct::Dense(v) => v.vector.into(),
             NamedVectorStruct::Sparse(v) => v.vector.into(),
-        }
-    }
-}
-
-impl Validate for NamedVectorStruct {
-    fn validate(&self) -> Result<(), validator::ValidationErrors> {
-        match self {
-            NamedVectorStruct::Default(_) => Ok(()),
-            NamedVectorStruct::Dense(_) => Ok(()),
-            NamedVectorStruct::Sparse(v) => v.validate(),
+            NamedVectorStruct::MultiDense(v) => v.vector.into(),
         }
     }
 }
