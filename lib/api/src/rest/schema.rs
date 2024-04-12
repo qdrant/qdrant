@@ -116,7 +116,7 @@ pub struct Record {
 ///     "name": "image-embeddings"
 ///   }
 /// }
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
 pub enum NamedVectorStruct {

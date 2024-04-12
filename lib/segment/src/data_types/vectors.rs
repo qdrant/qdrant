@@ -380,7 +380,7 @@ impl VectorStruct {
 }
 
 /// Dense vector data with name
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct NamedVector {
     /// Name of vector data
@@ -390,8 +390,7 @@ pub struct NamedVector {
 }
 
 /// MultiDense vector data with name
-#[derive(Debug, Deserialize, Serialize, Clone)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq)]
 pub struct NamedMultiDenseVector {
     /// Name of vector data
     pub name: String,
@@ -410,7 +409,7 @@ pub struct NamedSparseVector {
     pub vector: SparseVector,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum NamedVectorStruct {
     Default(DenseVector),
     Dense(NamedVector),
