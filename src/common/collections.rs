@@ -180,7 +180,8 @@ pub async fn do_get_collection_cluster(
     access: Access,
     name: &str,
 ) -> Result<CollectionClusterInfo, StorageError> {
-    let collection_pass = access.check_collection_access(name, AccessRequirements::new())?;
+    let collection_pass =
+        access.check_collection_access(name, AccessRequirements::new().whole())?;
     let collection = toc.get_collection(&collection_pass).await?;
     Ok(collection.cluster_info(toc.this_peer_id).await?)
 }
