@@ -117,7 +117,9 @@ impl Collection {
         if let Some(result) = result {
             Ok(result)
         } else {
-            Err(CollectionError::service_error(format!(
+            // Special error type needed to handle creation of partial shards
+            // In all other scenarios, equivalent to `service_error`
+            Err(CollectionError::pre_condition_failed(format!(
                 "No target shard {shard_selection} found for update"
             )))
         }
