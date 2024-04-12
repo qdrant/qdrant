@@ -25,6 +25,8 @@ from .utils import (
 
 COLL_NAME = "jwt_test_collection"
 
+MAX_CALLS_IN_CHECK_ACCESS = 12
+
 # Global read access token
 TOKEN_R = encode_jwt({"access": "r"}, SECRET)
 
@@ -777,7 +779,7 @@ def test_get_collection():
 
 
 def test_create_collection():
-    coll_names = [random_str() for _ in range(12)]
+    coll_names = [random_str() for _ in range(MAX_CALLS_IN_CHECK_ACCESS)]
 
     coll_names_iter = iter(coll_names)
 
@@ -836,7 +838,7 @@ def test_create_alias():
 
 
 def test_rename_alias():
-    alias_names = [random_str() for _ in range(12)]
+    alias_names = [random_str() for _ in range(MAX_CALLS_IN_CHECK_ACCESS)]
 
     names_iter = iter(alias_names)
 
@@ -919,7 +921,7 @@ def test_replicate_shard_operation():
 
 @pytest.fixture
 def new_shard_keys():
-    new_shard_keys = [random_str() for _ in range(12)]
+    new_shard_keys = [random_str() for _ in range(MAX_CALLS_IN_CHECK_ACCESS)]
 
     try:
         yield new_shard_keys
