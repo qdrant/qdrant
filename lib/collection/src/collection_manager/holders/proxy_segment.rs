@@ -718,10 +718,12 @@ impl SegmentEntry for ProxySegment {
             Ok(flushed_version)
         } else {
             // If intermediate state is not empty - that is possible that some changes are not persisted
-            Ok(self
-                .last_flushed_version
-                .read()
-                .unwrap_or_else(|| self.wrapped_segment.get().read().version()))
+            let flushed_version = match *self.last_flushed_version.read() {
+                Some(last_flushed_version) => last_flushed_version,
+                None => self.wrapped_segment.get().read().flush(sync)?,
+            };
+
+            Ok(flushed_version)
         }
     }
 
