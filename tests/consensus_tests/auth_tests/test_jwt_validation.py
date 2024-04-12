@@ -5,12 +5,13 @@ from consensus_tests.utils import kill_all_processes
 
 from .utils import (
     API_KEY_HEADERS,
-    COLL_NAME,
     REST_URI,
     SECRET,
     encode_jwt,
     start_jwt_protected_cluster,
 )
+
+COLL_NAME = "jwt_test_collection"
 
 
 @pytest.fixture(scope="module", autouse=True)

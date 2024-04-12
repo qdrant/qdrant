@@ -13,8 +13,6 @@ SECRET = "my_top_secret_key"
 API_KEY_HEADERS = {"Api-Key": SECRET}
 API_KEY_METADATA = [("api-key", SECRET)]
 
-COLL_NAME = "jwt_test_collection"
-
 
 def start_jwt_protected_cluster(tmp_path, num_peers=1):
     extra_env = {
