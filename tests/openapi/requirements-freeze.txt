@@ -13,7 +13,7 @@ httpx==0.24.0
 hypothesis==6.97.4
 hypothesis-graphql==0.11.0
 hypothesis-jsonschema==0.23.0
-idna==3.4
+idna==3.7
 iniconfig==2.0.0
 jsonschema==4.21.1
 jsonschema-specifications==2023.11.2
