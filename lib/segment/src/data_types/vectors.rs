@@ -410,9 +410,7 @@ pub struct NamedSparseVector {
     pub vector: SparseVector,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
-#[serde(rename_all = "snake_case")]
-#[serde(untagged)]
+#[derive(Debug, Clone)]
 pub enum NamedVectorStruct {
     Default(DenseVector),
     Dense(NamedVector),
