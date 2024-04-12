@@ -10,7 +10,7 @@ use crate::vector_storage::{RawScorer, VectorStorage, VectorStorageEnum};
 pub type Result<T, E = Error> = result::Result<T, E>;
 pub type Error = Box<dyn error::Error>;
 
-pub fn sampler(rng: impl rand::Rng) -> impl Iterator<Item = f32> {
+pub fn sampler(rng: impl rand::Rng) -> impl Iterator<Item = VectorElementType> {
     rng.sample_iter(rand::distributions::Standard)
 }
 
@@ -22,7 +22,7 @@ pub fn insert_distributed_vectors(
     let start = storage.total_vector_count() as u32;
     let end = start + vectors as u32;
 
-    let mut vector = vec![0.; storage.vector_dim()];
+    let mut vector = vec![Default::default(); storage.vector_dim()];
 
     for offset in start..end {
         for (item, value) in vector.iter_mut().zip(&mut *sampler) {

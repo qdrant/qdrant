@@ -1,6 +1,9 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::slice::ChunksExactMut;
 
+#[cfg(feature = "f16")]
+use half::f16;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use sparse::common::sparse_vector::SparseVector;
@@ -163,7 +166,86 @@ impl<'a> From<&'a Vector> for VectorRef<'a> {
 }
 
 /// Type of vector element.
+#[cfg(not(feature = "f16"))]
 pub type VectorElementType = f32;
+
+/// Type of vector element.
+#[cfg(feature = "f16")]
+pub type VectorElementType = f16;
+
+pub trait IntoVectorElement: Sized {
+    fn into_vector_element(self) -> VectorElementType;
+}
+
+impl IntoVectorElement for f32 {
+    #[cfg(not(feature = "f16"))]
+    fn into_vector_element(self) -> VectorElementType {
+        self
+    }
+    #[cfg(feature = "f16")]
+    fn into_vector_element(self) -> VectorElementType {
+        f16::from_f32(self)
+    }
+}
+
+impl<T: IntoVectorElement + Copy> IntoVectorElement for &T {
+    fn into_vector_element(self) -> VectorElementType {
+        (*self).into_vector_element()
+    }
+}
+
+pub trait FromVectorElement {
+    fn from_vector_element(x: VectorElementType) -> Self;
+}
+
+impl FromVectorElement for f32 {
+    #[cfg(not(feature = "f16"))]
+    fn from_vector_element(x: VectorElementType) -> Self {
+        x
+    }
+    #[cfg(feature = "f16")]
+    fn from_vector_element(x: VectorElementType) -> Self {
+        x.to_f32()
+    }
+}
+
+pub trait IntoVectorElementArray<const N: usize>: Sized {
+    fn into_vector_element_array(self) -> [VectorElementType; N];
+}
+
+impl<const N: usize> IntoVectorElementArray<N> for [f32; N] {
+    #[cfg(not(feature = "f16"))]
+    fn into_vector_element_array(self) -> [VectorElementType; N] {
+        self
+    }
+    #[cfg(feature = "f16")]
+    fn into_vector_element_array(self) -> [VectorElementType; N] {
+        use half::slice::HalfFloatSliceExt;
+
+        let mut output = [VectorElementType::default(); N];
+        output.convert_from_f32_slice(&self);
+        output
+    }
+}
+
+pub trait FromVectorElementArray<const N: usize>: Sized {
+    fn from_vector_element_array(x: [VectorElementType; N]) -> Self;
+}
+
+impl<const N: usize> FromVectorElementArray<N> for [f32; N] {
+    #[cfg(not(feature = "f16"))]
+    fn from_vector_element_array(x: [VectorElementType; N]) -> Self {
+        x
+    }
+    #[cfg(feature = "f16")]
+    fn from_vector_element_array(x: [VectorElementType; N]) -> Self {
+        use half::slice::HalfFloatSliceExt;
+
+        let mut output = [0f32; N];
+        x.convert_to_f32_slice(&mut output);
+        output
+    }
+}
 
 pub type VectorElementTypeByte = u8;
 
@@ -173,6 +255,127 @@ pub type TypedDenseVector<T> = Vec<T>;
 
 /// Type for dense vector
 pub type DenseVector = TypedDenseVector<VectorElementType>;
+
+pub trait IntoDenseVector {
+    fn into_dense_vector(self) -> DenseVector;
+}
+
+impl<const N: usize> IntoDenseVector for [f32; N] {
+    #[cfg(not(feature = "f16"))]
+    fn into_dense_vector(self) -> DenseVector {
+        self.to_vec()
+    }
+    #[cfg(feature = "f16")]
+    fn into_dense_vector(self) -> DenseVector {
+        use half::vec::HalfFloatVecExt;
+
+        DenseVector::from_f32_slice(&self)
+    }
+}
+
+impl IntoDenseVector for &[f32] {
+    #[cfg(not(feature = "f16"))]
+    fn into_dense_vector(self) -> DenseVector {
+        self.to_vec()
+    }
+    #[cfg(feature = "f16")]
+    fn into_dense_vector(self) -> DenseVector {
+        use half::vec::HalfFloatVecExt;
+
+        DenseVector::from_f32_slice(self)
+    }
+}
+
+impl IntoDenseVector for &[u8] {
+    #[cfg(not(feature = "f16"))]
+    fn into_dense_vector(self) -> DenseVector {
+        self.iter().map(|x| *x as f32).collect()
+    }
+    #[cfg(feature = "f16")]
+    fn into_dense_vector(self) -> DenseVector {
+        use half::slice::HalfFloatSliceExt;
+
+        let mut output = Vec::with_capacity(self.len());
+        let mut array_f32 = [0f32; 8];
+        let mut array_f16 = [f16::ZERO; 8];
+        let mut x_iter = self.chunks_exact(8);
+        for x in x_iter.by_ref() {
+            for (x, a) in x.iter().copied().zip(array_f32.iter_mut()) {
+                *a = x as f32;
+            }
+            array_f16.convert_from_f32_slice(&array_f32);
+            output.extend(array_f16);
+        }
+        output.extend(x_iter.remainder().iter().map(|x| f16::from(*x)));
+        output
+    }
+}
+
+pub trait FromDenseVector: Sized {
+    fn from_dense_vector(x: DenseVector) -> Self;
+}
+
+impl FromDenseVector for Vec<f32> {
+    #[cfg(not(feature = "f16"))]
+    fn from_dense_vector(x: DenseVector) -> Self {
+        x
+    }
+    #[cfg(feature = "f16")]
+    fn from_dense_vector(x: DenseVector) -> Self {
+        use half::slice::HalfFloatSliceExt;
+
+        x.to_f32_vec()
+    }
+}
+
+pub trait FromVectorElementSlice<'a>: Sized {
+    fn from_vector_element_slice(x: &'a [VectorElementType]) -> Self;
+}
+
+impl<'a> FromVectorElementSlice<'a> for Vec<f32> {
+    #[cfg(not(feature = "f16"))]
+    fn from_vector_element_slice(x: &'a [VectorElementType]) -> Self {
+        x.to_vec()
+    }
+    #[cfg(feature = "f16")]
+    fn from_vector_element_slice(x: &'a [VectorElementType]) -> Self {
+        use half::slice::HalfFloatSliceExt;
+
+        x.to_f32_vec()
+    }
+}
+
+impl<'a> FromVectorElementSlice<'a> for Vec<u8> {
+    #[cfg(not(feature = "f16"))]
+    fn from_vector_element_slice(x: &'a [VectorElementType]) -> Self {
+        x.iter().map(|x| *x as u8).collect()
+    }
+    #[cfg(feature = "f16")]
+    fn from_vector_element_slice(x: &'a [VectorElementType]) -> Self {
+        use half::slice::HalfFloatSliceExt;
+
+        let mut output = Vec::with_capacity(x.len());
+        let mut array = [0f32; 8];
+        let mut x_iter = x.chunks_exact(array.len());
+        for x in x_iter.by_ref() {
+            x.convert_to_f32_slice(&mut array);
+            output.extend(array.map(|a| a as u8));
+        }
+        output.extend(x_iter.remainder().iter().map(|x| x.to_f32() as u8));
+        output
+    }
+}
+
+impl<'a> FromVectorElementSlice<'a> for Cow<'a, [f32]> {
+    #[cfg(not(feature = "f16"))]
+    fn from_vector_element_slice(x: &'a [VectorElementType]) -> Self {
+        x.into()
+    }
+    #[cfg(feature = "f16")]
+    fn from_vector_element_slice(x: &'a [VectorElementType]) -> Self {
+        Vec::from_vector_element_slice(x).into()
+    }
+}
 
 /// Type for multi dense vector
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
@@ -192,7 +395,7 @@ impl MultiDenseVector {
     /// MultiDenseVector cannot be empty, so we use a placeholder vector instead
     pub fn placeholder(dim: usize) -> Self {
         Self {
-            inner_vector: vec![1.0; dim],
+            inner_vector: vec![num_traits::One::one(); dim],
             dim,
         }
     }
@@ -380,7 +583,8 @@ impl VectorStruct {
 }
 
 /// Dense vector data with name
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
+#[cfg_attr(not(feature = "f16"), derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub struct NamedVector {
     /// Name of vector data
@@ -416,6 +620,44 @@ pub enum NamedVectorStruct {
     Sparse(NamedSparseVector),
     MultiDense(NamedMultiDenseVector),
 }
+
+#[cfg(feature = "f16")]
+const _: () = {
+    #[derive(JsonSchema)]
+    #[allow(dead_code)]
+    struct NamedVectorF32 {
+        /// Name of vector data
+        pub name: String,
+        /// Vector data
+        pub vector: Vec<f32>,
+    }
+
+    impl JsonSchema for NamedVector {
+        fn schema_name() -> String {
+            "NamedVector".to_string()
+        }
+        fn json_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+            NamedVectorF32::json_schema(gen)
+        }
+    }
+
+    #[derive(JsonSchema)]
+    #[allow(dead_code)]
+    enum NamedVectorStructF32 {
+        Default(Vec<f32>),
+        Dense(NamedVectorF32),
+        Sparse(NamedSparseVector),
+    }
+
+    impl JsonSchema for NamedVectorStruct {
+        fn schema_name() -> String {
+            "NamedVector".to_string()
+        }
+        fn json_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+            NamedVectorStructF32::json_schema(gen)
+        }
+    }
+};
 
 impl From<DenseVector> for NamedVectorStruct {
     fn from(v: DenseVector) -> Self {
@@ -588,42 +830,45 @@ mod tests {
 
     #[test]
     fn vector_struct_merge_single_into_single() {
-        let mut a = VectorStruct::Single(vec![0.2, 0.1, 0.0, 0.9]);
-        let b = VectorStruct::Single(vec![0.1, 0.9, 0.6, 0.3]);
+        let mut a = VectorStruct::Single([0.2, 0.1, 0.0, 0.9].into_dense_vector());
+        let b = VectorStruct::Single([0.1, 0.9, 0.6, 0.3].into_dense_vector());
         a.merge(b);
-        assert_eq!(a, VectorStruct::Single(vec![0.1, 0.9, 0.6, 0.3]));
+        assert_eq!(
+            a,
+            VectorStruct::Single([0.1, 0.9, 0.6, 0.3].into_dense_vector())
+        );
     }
 
     #[test]
     fn vector_struct_merge_single_into_multi() {
         // Single into multi without default vector
         let mut a = VectorStruct::Multi(HashMap::from([
-            ("a".into(), vec![0.8, 0.3, 0.0, 0.1].into()),
-            ("b".into(), vec![0.4, 0.5, 0.8, 0.3].into()),
+            ("a".into(), [0.8, 0.3, 0.0, 0.1].into_dense_vector().into()),
+            ("b".into(), [0.4, 0.5, 0.8, 0.3].into_dense_vector().into()),
         ]));
-        let b = VectorStruct::Single(vec![0.5, 0.3, 0.0, 0.4]);
+        let b = VectorStruct::Single([0.5, 0.3, 0.0, 0.4].into_dense_vector());
         a.merge(b);
         assert_eq!(
             a,
             VectorStruct::Multi(HashMap::from([
-                ("a".into(), vec![0.8, 0.3, 0.0, 0.1].into()),
-                ("b".into(), vec![0.4, 0.5, 0.8, 0.3].into()),
-                ("".into(), vec![0.5, 0.3, 0.0, 0.4].into()),
+                ("a".into(), [0.8, 0.3, 0.0, 0.1].into_dense_vector().into(),),
+                ("b".into(), [0.4, 0.5, 0.8, 0.3].into_dense_vector().into(),),
+                ("".into(), [0.5, 0.3, 0.0, 0.4].into_dense_vector().into(),),
             ])),
         );
 
         // Single into multi with default vector
         let mut a = VectorStruct::Multi(HashMap::from([
-            ("a".into(), vec![0.2, 0.0, 0.5, 0.1].into()),
-            ("".into(), vec![0.3, 0.7, 0.6, 0.4].into()),
+            ("a".into(), [0.2, 0.0, 0.5, 0.1].into_dense_vector().into()),
+            ("".into(), [0.3, 0.7, 0.6, 0.4].into_dense_vector().into()),
         ]));
-        let b = VectorStruct::Single(vec![0.4, 0.4, 0.8, 0.5]);
+        let b = VectorStruct::Single([0.4, 0.4, 0.8, 0.5].into_dense_vector());
         a.merge(b);
         assert_eq!(
             a,
             VectorStruct::Multi(HashMap::from([
-                ("a".into(), vec![0.2, 0.0, 0.5, 0.1].into()),
-                ("".into(), vec![0.4, 0.4, 0.8, 0.5].into()),
+                ("a".into(), [0.2, 0.0, 0.5, 0.1].into_dense_vector().into()),
+                ("".into(), [0.4, 0.4, 0.8, 0.5].into_dense_vector().into()),
             ])),
         );
     }
@@ -633,7 +878,7 @@ mod tests {
         // Empty multi into multi shouldn't do anything
         let mut a = VectorStruct::Multi(HashMap::from([(
             "a".into(),
-            vec![0.0, 0.5, 0.9, 0.0].into(),
+            [0.0, 0.5, 0.9, 0.0].into_dense_vector().into(),
         )]));
         let b = VectorStruct::Multi(HashMap::new());
         a.merge(b);
@@ -641,7 +886,7 @@ mod tests {
             a,
             VectorStruct::Multi(HashMap::from([(
                 "a".into(),
-                vec![0.0, 0.5, 0.9, 0.0].into()
+                [0.0, 0.5, 0.9, 0.0].into_dense_vector().into(),
             ),])),
         );
 
@@ -649,51 +894,54 @@ mod tests {
         let mut a = VectorStruct::Multi(HashMap::new());
         let b = VectorStruct::Multi(HashMap::from([(
             "a".into(),
-            vec![0.2, 0.0, 0.6, 0.5].into(),
+            [0.2, 0.0, 0.6, 0.5].into_dense_vector().into(),
         )]));
         a.merge(b);
         assert_eq!(
             a,
             VectorStruct::Multi(HashMap::from([(
                 "a".into(),
-                vec![0.2, 0.0, 0.6, 0.5].into(),
+                [0.2, 0.0, 0.6, 0.5].into_dense_vector().into(),
             )]))
         );
 
         // Non-overlapping multi into multi
         let mut a = VectorStruct::Multi(HashMap::from([(
             "a".into(),
-            vec![0.8, 0.6, 0.2, 0.1].into(),
+            [0.8, 0.6, 0.2, 0.1].into_dense_vector().into(),
         )]));
         let b = VectorStruct::Multi(HashMap::from([(
             "b".into(),
-            vec![0.1, 0.9, 0.8, 0.2].into(),
+            [0.1, 0.9, 0.8, 0.2].into_dense_vector().into(),
         )]));
         a.merge(b);
         assert_eq!(
             a,
             VectorStruct::Multi(HashMap::from([
-                ("a".into(), vec![0.8, 0.6, 0.2, 0.1].into()),
-                ("b".into(), vec![0.1, 0.9, 0.8, 0.2].into()),
+                ("a".into(), [0.8, 0.6, 0.2, 0.1].into_dense_vector().into()),
+                ("b".into(), [0.1, 0.9, 0.8, 0.2].into_dense_vector().into(),),
             ])),
         );
 
         // Overlapping multi into multi
         let mut a = VectorStruct::Multi(HashMap::from([
-            ("a".into(), vec![0.3, 0.2, 0.7, 0.5].into()),
-            ("b".into(), vec![0.6, 0.3, 0.8, 0.3].into()),
+            ("a".into(), [0.3, 0.2, 0.7, 0.5].into_dense_vector().into()),
+            ("b".into(), [0.6, 0.3, 0.8, 0.3].into_dense_vector().into()),
         ]));
         let b = VectorStruct::Multi(HashMap::from([
-            ("b".into(), vec![0.8, 0.2, 0.4, 0.9].into()),
-            ("c".into(), vec![0.4, 0.8, 0.9, 0.6].into()),
+            ("b".into(), [0.8, 0.2, 0.4, 0.9].into_dense_vector().into()),
+            ("c".into(), [0.4, 0.8, 0.9, 0.6].into_dense_vector().into()),
         ]));
         a.merge(b);
         assert_eq!(
             a,
             VectorStruct::Multi(HashMap::from([
-                ("a".into(), vec![0.3, 0.2, 0.7, 0.5].into()),
-                ("b".into(), vec![0.8, 0.2, 0.4, 0.9].into()),
-                ("c".into(), vec![0.4, 0.8, 0.9, 0.6].into()),
+                ("a".into(), [0.3, 0.2, 0.7, 0.5].into_dense_vector().into(),),
+                (
+                    "b".into(),
+                    [0.8, 0.2, 0.4, 0.9].into_dense_vector().to_vec().into(),
+                ),
+                ("c".into(), [0.4, 0.8, 0.9, 0.6].into_dense_vector().into(),),
             ])),
         );
     }
@@ -701,54 +949,57 @@ mod tests {
     #[test]
     fn vector_struct_merge_multi_into_single() {
         // Empty multi into single shouldn't do anything
-        let mut a = VectorStruct::Single(vec![0.0, 0.8, 0.4, 0.1]);
+        let mut a = VectorStruct::Single([0.0, 0.8, 0.4, 0.1].into_dense_vector());
         let b = VectorStruct::Multi(HashMap::new());
         a.merge(b);
-        assert_eq!(a, VectorStruct::Single(vec![0.0, 0.8, 0.4, 0.1]),);
+        assert_eq!(
+            a,
+            VectorStruct::Single([0.0, 0.8, 0.4, 0.1].into_dense_vector()),
+        );
 
         // Non-overlapping multi into single
-        let mut a = VectorStruct::Single(vec![0.2, 0.5, 0.5, 0.1]);
+        let mut a = VectorStruct::Single([0.2, 0.5, 0.5, 0.1].into_dense_vector());
         let b = VectorStruct::Multi(HashMap::from([(
             "a".into(),
-            vec![0.1, 0.9, 0.7, 0.6].into(),
+            [0.1, 0.9, 0.7, 0.6].into_dense_vector().into(),
         )]));
         a.merge(b);
         assert_eq!(
             a,
             VectorStruct::Multi(HashMap::from([
-                ("".into(), vec![0.2, 0.5, 0.5, 0.1].into()),
-                ("a".into(), vec![0.1, 0.9, 0.7, 0.6].into()),
+                ("".into(), [0.2, 0.5, 0.5, 0.1].into_dense_vector().into()),
+                ("a".into(), [0.1, 0.9, 0.7, 0.6].into_dense_vector().into()),
             ])),
         );
 
         // Overlapping multi ("") into single
         // This becomes a multi even if other has a multi with only a default vector
-        let mut a = VectorStruct::Single(vec![0.3, 0.1, 0.8, 0.1]);
+        let mut a = VectorStruct::Single([0.3, 0.1, 0.8, 0.1].into_dense_vector());
         let b = VectorStruct::Multi(HashMap::from([(
             "".into(),
-            vec![0.6, 0.1, 0.3, 0.4].into(),
+            [0.6, 0.1, 0.3, 0.4].into_dense_vector().into(),
         )]));
         a.merge(b);
         assert_eq!(
             a,
             VectorStruct::Multi(HashMap::from([(
                 "".into(),
-                vec![0.6, 0.1, 0.3, 0.4].into()
+                [0.6, 0.1, 0.3, 0.4].into_dense_vector().into()
             )])),
         );
 
         // Overlapping multi into single
-        let mut a = VectorStruct::Single(vec![0.6, 0.9, 0.7, 0.6]);
+        let mut a = VectorStruct::Single([0.6, 0.9, 0.7, 0.6].into_dense_vector());
         let b = VectorStruct::Multi(HashMap::from([
-            ("".into(), vec![0.7, 0.5, 0.8, 0.1].into()),
-            ("a".into(), vec![0.2, 0.9, 0.7, 0.0].into()),
+            ("".into(), [0.7, 0.5, 0.8, 0.1].into_dense_vector().into()),
+            ("a".into(), [0.2, 0.9, 0.7, 0.0].into_dense_vector().into()),
         ]));
         a.merge(b);
         assert_eq!(
             a,
             VectorStruct::Multi(HashMap::from([
-                ("".into(), vec![0.7, 0.5, 0.8, 0.1].into()),
-                ("a".into(), vec![0.2, 0.9, 0.7, 0.0].into()),
+                ("".into(), [0.7, 0.5, 0.8, 0.1].into_dense_vector().into()),
+                ("a".into(), [0.2, 0.9, 0.7, 0.0].into_dense_vector().into()),
             ])),
         );
     }

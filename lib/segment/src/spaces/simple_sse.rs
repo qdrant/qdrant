@@ -6,7 +6,9 @@ use std::arch::x86_64::*;
 use common::types::ScoreType;
 
 use super::tools::is_length_zero_or_normalized;
-use crate::data_types::vectors::{DenseVector, VectorElementType};
+use crate::data_types::vectors::{
+    DenseVector, FromVectorElement, IntoVectorElement, VectorElementType,
+};
 
 #[target_feature(enable = "sse")]
 unsafe fn hsum128_ps_sse(x: __m128) -> f32 {
@@ -22,14 +24,34 @@ pub(crate) unsafe fn euclid_similarity_sse(
 ) -> ScoreType {
     let n = v1.len();
     let m = n - (n % 16);
-    let mut ptr1: *const f32 = v1.as_ptr();
-    let mut ptr2: *const f32 = v2.as_ptr();
+    let mut ptr1_in = v1.as_ptr();
+    let mut ptr2_in = v2.as_ptr();
+    #[cfg(feature = "f16")]
+    let mut array1 = [0f32; 16];
+    #[cfg(feature = "f16")]
+    let mut array2 = [0f32; 16];
     let mut sum128_1: __m128 = _mm_setzero_ps();
     let mut sum128_2: __m128 = _mm_setzero_ps();
     let mut sum128_3: __m128 = _mm_setzero_ps();
     let mut sum128_4: __m128 = _mm_setzero_ps();
     let mut i: usize = 0;
     while i < m {
+        #[cfg(not(feature = "f16"))]
+        let ptr1 = ptr1_in;
+        #[cfg(not(feature = "f16"))]
+        let ptr2 = ptr2_in;
+        #[cfg(feature = "f16")]
+        {
+            use half::slice::HalfFloatSliceExt;
+
+            std::slice::from_raw_parts(ptr1_in, array1.len()).convert_to_f32_slice(&mut array1);
+            std::slice::from_raw_parts(ptr2_in, array2.len()).convert_to_f32_slice(&mut array2);
+        }
+        #[cfg(feature = "f16")]
+        let ptr1 = array1.as_ptr();
+        #[cfg(feature = "f16")]
+        let ptr2 = array2.as_ptr();
+
         let sub128_1 = _mm_sub_ps(_mm_loadu_ps(ptr1), _mm_loadu_ps(ptr2));
         sum128_1 = _mm_add_ps(_mm_mul_ps(sub128_1, sub128_1), sum128_1);
 
@@ -42,8 +64,8 @@ pub(crate) unsafe fn euclid_similarity_sse(
         let sub128_4 = _mm_sub_ps(_mm_loadu_ps(ptr1.add(12)), _mm_loadu_ps(ptr2.add(12)));
         sum128_4 = _mm_add_ps(_mm_mul_ps(sub128_4, sub128_4), sum128_4);
 
-        ptr1 = ptr1.add(16);
-        ptr2 = ptr2.add(16);
+        ptr1_in = ptr1_in.add(16);
+        ptr2_in = ptr2_in.add(16);
         i += 16;
     }
 
@@ -52,7 +74,9 @@ pub(crate) unsafe fn euclid_similarity_sse(
         + hsum128_ps_sse(sum128_3)
         + hsum128_ps_sse(sum128_4);
     for i in 0..n - m {
-        result += (*ptr1.add(i) - *ptr2.add(i)).powi(2);
+        let a = f32::from_vector_element(*ptr1_in.add(i));
+        let b = f32::from_vector_element(*ptr2_in.add(i));
+        result += (a - b).powi(2);
     }
     -result
 }
@@ -66,14 +90,34 @@ pub(crate) unsafe fn manhattan_similarity_sse(
 
     let n = v1.len();
     let m = n - (n % 16);
-    let mut ptr1: *const f32 = v1.as_ptr();
-    let mut ptr2: *const f32 = v2.as_ptr();
+    let mut ptr1_in = v1.as_ptr();
+    let mut ptr2_in = v2.as_ptr();
+    #[cfg(feature = "f16")]
+    let mut array1 = [0f32; 16];
+    #[cfg(feature = "f16")]
+    let mut array2 = [0f32; 16];
     let mut sum128_1: __m128 = _mm_setzero_ps();
     let mut sum128_2: __m128 = _mm_setzero_ps();
     let mut sum128_3: __m128 = _mm_setzero_ps();
     let mut sum128_4: __m128 = _mm_setzero_ps();
     let mut i: usize = 0;
     while i < m {
+        #[cfg(not(feature = "f16"))]
+        let ptr1 = ptr1_in;
+        #[cfg(not(feature = "f16"))]
+        let ptr2 = ptr2_in;
+        #[cfg(feature = "f16")]
+        {
+            use half::slice::HalfFloatSliceExt;
+
+            std::slice::from_raw_parts(ptr1_in, array1.len()).convert_to_f32_slice(&mut array1);
+            std::slice::from_raw_parts(ptr2_in, array2.len()).convert_to_f32_slice(&mut array2);
+        }
+        #[cfg(feature = "f16")]
+        let ptr1 = array1.as_ptr();
+        #[cfg(feature = "f16")]
+        let ptr2 = array2.as_ptr();
+
         let sub128_1 = _mm_sub_ps(_mm_loadu_ps(ptr1), _mm_loadu_ps(ptr2));
         sum128_1 = _mm_add_ps(_mm_andnot_ps(mask, sub128_1), sum128_1);
 
@@ -86,8 +130,8 @@ pub(crate) unsafe fn manhattan_similarity_sse(
         let sub128_4 = _mm_sub_ps(_mm_loadu_ps(ptr1.add(12)), _mm_loadu_ps(ptr2.add(12)));
         sum128_4 = _mm_add_ps(_mm_andnot_ps(mask, sub128_4), sum128_4);
 
-        ptr1 = ptr1.add(16);
-        ptr2 = ptr2.add(16);
+        ptr1_in = ptr1_in.add(16);
+        ptr2_in = ptr2_in.add(16);
         i += 16;
     }
 
@@ -96,7 +140,9 @@ pub(crate) unsafe fn manhattan_similarity_sse(
         + hsum128_ps_sse(sum128_3)
         + hsum128_ps_sse(sum128_4);
     for i in 0..n - m {
-        result += (*ptr1.add(i) - *ptr2.add(i)).abs();
+        let a = f32::from_vector_element(*ptr1_in.add(i));
+        let b = f32::from_vector_element(*ptr2_in.add(i));
+        result += (a - b).abs();
     }
     -result
 }
@@ -105,7 +151,9 @@ pub(crate) unsafe fn manhattan_similarity_sse(
 pub(crate) unsafe fn cosine_preprocess_sse(vector: DenseVector) -> DenseVector {
     let n = vector.len();
     let m = n - (n % 16);
-    let mut ptr: *const f32 = vector.as_ptr();
+    let mut ptr_in = vector.as_ptr();
+    #[cfg(feature = "f16")]
+    let mut array = [0f32; 16];
     let mut sum128_1: __m128 = _mm_setzero_ps();
     let mut sum128_2: __m128 = _mm_setzero_ps();
     let mut sum128_3: __m128 = _mm_setzero_ps();
@@ -113,6 +161,17 @@ pub(crate) unsafe fn cosine_preprocess_sse(vector: DenseVector) -> DenseVector {
 
     let mut i: usize = 0;
     while i < m {
+        #[cfg(not(feature = "f16"))]
+        let ptr = ptr_in;
+        #[cfg(feature = "f16")]
+        {
+            use half::slice::HalfFloatSliceExt;
+
+            std::slice::from_raw_parts(ptr_in, array.len()).convert_to_f32_slice(&mut array);
+        }
+        #[cfg(feature = "f16")]
+        let ptr = array.as_ptr();
+
         let m128_1 = _mm_loadu_ps(ptr);
         sum128_1 = _mm_add_ps(_mm_mul_ps(m128_1, m128_1), sum128_1);
 
@@ -125,7 +184,7 @@ pub(crate) unsafe fn cosine_preprocess_sse(vector: DenseVector) -> DenseVector {
         let m128_4 = _mm_loadu_ps(ptr.add(12));
         sum128_4 = _mm_add_ps(_mm_mul_ps(m128_4, m128_4), sum128_4);
 
-        ptr = ptr.add(16);
+        ptr_in = ptr_in.add(16);
         i += 16;
     }
 
@@ -134,13 +193,17 @@ pub(crate) unsafe fn cosine_preprocess_sse(vector: DenseVector) -> DenseVector {
         + hsum128_ps_sse(sum128_3)
         + hsum128_ps_sse(sum128_4);
     for i in 0..n - m {
-        length += (*ptr.add(i)).powi(2);
+        let a = f32::from_vector_element(*ptr_in.add(i));
+        length += a.powi(2);
     }
     if is_length_zero_or_normalized(length) {
         return vector;
     }
     length = length.sqrt();
-    vector.into_iter().map(|x| x / length).collect()
+    vector
+        .into_iter()
+        .map(|x| (f32::from_vector_element(x) / length).into_vector_element())
+        .collect()
 }
 
 #[target_feature(enable = "sse")]
@@ -150,8 +213,12 @@ pub(crate) unsafe fn dot_similarity_sse(
 ) -> ScoreType {
     let n = v1.len();
     let m = n - (n % 16);
-    let mut ptr1: *const f32 = v1.as_ptr();
-    let mut ptr2: *const f32 = v2.as_ptr();
+    let mut ptr1_in = v1.as_ptr();
+    let mut ptr2_in = v2.as_ptr();
+    #[cfg(feature = "f16")]
+    let mut array1 = [0f32; 16];
+    #[cfg(feature = "f16")]
+    let mut array2 = [0f32; 16];
     let mut sum128_1: __m128 = _mm_setzero_ps();
     let mut sum128_2: __m128 = _mm_setzero_ps();
     let mut sum128_3: __m128 = _mm_setzero_ps();
@@ -159,6 +226,22 @@ pub(crate) unsafe fn dot_similarity_sse(
 
     let mut i: usize = 0;
     while i < m {
+        #[cfg(not(feature = "f16"))]
+        let ptr1 = ptr1_in;
+        #[cfg(not(feature = "f16"))]
+        let ptr2 = ptr2_in;
+        #[cfg(feature = "f16")]
+        {
+            use half::slice::HalfFloatSliceExt;
+
+            std::slice::from_raw_parts(ptr1_in, array1.len()).convert_to_f32_slice(&mut array1);
+            std::slice::from_raw_parts(ptr2_in, array2.len()).convert_to_f32_slice(&mut array2);
+        }
+        #[cfg(feature = "f16")]
+        let ptr1 = array1.as_ptr();
+        #[cfg(feature = "f16")]
+        let ptr2 = array2.as_ptr();
+
         sum128_1 = _mm_add_ps(_mm_mul_ps(_mm_loadu_ps(ptr1), _mm_loadu_ps(ptr2)), sum128_1);
 
         sum128_2 = _mm_add_ps(
@@ -176,8 +259,8 @@ pub(crate) unsafe fn dot_similarity_sse(
             sum128_4,
         );
 
-        ptr1 = ptr1.add(16);
-        ptr2 = ptr2.add(16);
+        ptr1_in = ptr1_in.add(16);
+        ptr2_in = ptr2_in.add(16);
         i += 16;
     }
 
@@ -186,7 +269,9 @@ pub(crate) unsafe fn dot_similarity_sse(
         + hsum128_ps_sse(sum128_3)
         + hsum128_ps_sse(sum128_4);
     for i in 0..n - m {
-        result += (*ptr1.add(i)) * (*ptr2.add(i));
+        let a = f32::from_vector_element(*ptr1_in.add(i));
+        let b = f32::from_vector_element(*ptr2_in.add(i));
+        result += a * b;
     }
     result
 }
@@ -196,21 +281,24 @@ mod tests {
     #[test]
     fn test_spaces_sse() {
         use super::*;
+        use crate::data_types::vectors::IntoDenseVector;
         use crate::spaces::simple::*;
 
         if is_x86_feature_detected!("sse") {
-            let v1: Vec<f32> = vec![
+            let v1 = [
                 10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25.,
                 10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25.,
                 10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25.,
                 26., 27., 28., 29., 30., 31.,
-            ];
-            let v2: Vec<f32> = vec![
+            ]
+            .into_dense_vector();
+            let v2 = [
                 40., 41., 42., 43., 44., 45., 46., 47., 48., 49., 50., 51., 52., 53., 54., 55.,
                 10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25.,
                 10., 11., 12., 13., 14., 15., 16., 17., 18., 19., 20., 21., 22., 23., 24., 25.,
                 56., 57., 58., 59., 60., 61.,
-            ];
+            ]
+            .into_dense_vector();
 
             let euclid_simd = unsafe { euclid_similarity_sse(&v1, &v2) };
             let euclid = euclid_similarity(&v1, &v2);

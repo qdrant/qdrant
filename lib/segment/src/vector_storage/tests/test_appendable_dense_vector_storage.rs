@@ -6,7 +6,7 @@ use common::types::{PointOffsetType, ScoredPointOffset};
 use tempfile::Builder;
 
 use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
-use crate::data_types::vectors::QueryVector;
+use crate::data_types::vectors::{IntoDenseVector, QueryVector};
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::id_tracker::{IdTracker, IdTrackerSS};
 use crate::types::{Distance, PointIdType, QuantizationConfig, ScalarQuantizationConfig};
@@ -17,12 +17,13 @@ use crate::vector_storage::{new_raw_scorer, VectorStorage, VectorStorageEnum};
 
 fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
     let points = [
-        vec![1.0, 0.0, 1.0, 1.0],
-        vec![1.0, 0.0, 1.0, 0.0],
-        vec![1.0, 1.0, 1.0, 1.0],
-        vec![1.0, 1.0, 0.0, 1.0],
-        vec![1.0, 0.0, 0.0, 0.0],
-    ];
+        [1.0, 0.0, 1.0, 1.0],
+        [1.0, 0.0, 1.0, 0.0],
+        [1.0, 1.0, 1.0, 1.0],
+        [1.0, 1.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0, 0.0],
+    ]
+    .map(IntoDenseVector::into_dense_vector);
     let delete_mask = [false, false, true, true, false];
     let id_tracker: Arc<AtomicRefCell<IdTrackerSS>> =
         Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
@@ -52,7 +53,7 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         "2 vectors must be deleted"
     );
 
-    let vector = vec![0.0, 1.0, 1.1, 1.0];
+    let vector = [0.0, 1.0, 1.1, 1.0].into_dense_vector();
     let query = vector.as_slice().into();
     let closest = new_raw_scorer(
         query,
@@ -79,7 +80,7 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         "3 vectors must be deleted"
     );
 
-    let vector = vec![1.0, 0.0, 0.0, 0.0];
+    let vector = [1.0, 0.0, 0.0, 0.0].into_dense_vector();
     let query = vector.as_slice().into();
     let closest = new_raw_scorer(
         query,
@@ -105,7 +106,7 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         "all vectors must be deleted"
     );
 
-    let vector = vec![1.0, 0.0, 0.0, 0.0];
+    let vector = [1.0, 0.0, 0.0, 0.0].into_dense_vector();
     let query = vector.as_slice().into();
     let closest = new_raw_scorer(
         query,
@@ -119,12 +120,13 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
 
 fn do_test_update_from_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
     let points = [
-        vec![1.0, 0.0, 1.0, 1.0],
-        vec![1.0, 0.0, 1.0, 0.0],
-        vec![1.0, 1.0, 1.0, 1.0],
-        vec![1.0, 1.0, 0.0, 1.0],
-        vec![1.0, 0.0, 0.0, 0.0],
-    ];
+        [1.0, 0.0, 1.0, 1.0],
+        [1.0, 0.0, 1.0, 0.0],
+        [1.0, 1.0, 1.0, 1.0],
+        [1.0, 1.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0, 0.0],
+    ]
+    .map(IntoDenseVector::into_dense_vector);
     let delete_mask = [false, false, true, true, false];
     let id_tracker: Arc<AtomicRefCell<IdTrackerSS>> =
         Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
@@ -170,7 +172,7 @@ fn do_test_update_from_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnu
         "2 vectors must be deleted from other storage"
     );
 
-    let vector = vec![0.0, 1.0, 1.1, 1.0];
+    let vector = [0.0, 1.0, 1.1, 1.0].into_dense_vector();
     let query = vector.as_slice().into();
 
     let closest = new_raw_scorer(
@@ -204,12 +206,13 @@ fn do_test_update_from_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnu
 
 fn do_test_score_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
     let points = [
-        vec![1.0, 0.0, 1.0, 1.0],
-        vec![1.0, 0.0, 1.0, 0.0],
-        vec![1.0, 1.0, 1.0, 1.0],
-        vec![1.0, 1.0, 0.0, 1.0],
-        vec![1.0, 0.0, 0.0, 0.0],
-    ];
+        [1.0, 0.0, 1.0, 1.0],
+        [1.0, 0.0, 1.0, 0.0],
+        [1.0, 1.0, 1.0, 1.0],
+        [1.0, 1.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0, 0.0],
+    ]
+    .map(IntoDenseVector::into_dense_vector);
     let id_tracker: Arc<AtomicRefCell<IdTrackerSS>> =
         Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
     let mut borrowed_id_tracker = id_tracker.borrow_mut();
@@ -221,7 +224,7 @@ fn do_test_score_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
             .unwrap();
     }
 
-    let query: QueryVector = [0.0, 1.0, 1.1, 1.0].into();
+    let query: QueryVector = [0.0, 1.0, 1.1, 1.0].into_dense_vector().into();
 
     let closest = new_raw_scorer(
         query.clone(),
@@ -281,12 +284,13 @@ fn do_test_score_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
 
 fn test_score_quantized_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
     let points = [
-        vec![1.0, 0.0, 1.0, 1.0],
-        vec![1.0, 0.0, 1.0, 0.0],
-        vec![1.0, 1.0, 1.0, 1.0],
-        vec![1.0, 1.0, 0.0, 1.0],
-        vec![1.0, 0.0, 0.0, 0.0],
-    ];
+        [1.0, 0.0, 1.0, 1.0],
+        [1.0, 0.0, 1.0, 0.0],
+        [1.0, 1.0, 1.0, 1.0],
+        [1.0, 1.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0, 0.0],
+    ]
+    .map(IntoDenseVector::into_dense_vector);
     let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
     let mut borrowed_storage = storage.borrow_mut();
     let borrowed_id_tracker = id_tracker.borrow_mut();
@@ -313,7 +317,7 @@ fn test_score_quantized_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
     let quantized_vectors =
         QuantizedVectors::create(&borrowed_storage, &config, dir.path(), 1, &stopped).unwrap();
 
-    let query: QueryVector = vec![0.5, 0.5, 0.5, 0.5].into();
+    let query: QueryVector = [0.5, 0.5, 0.5, 0.5].into_dense_vector().into();
 
     let scorer_quant = quantized_vectors
         .raw_scorer(

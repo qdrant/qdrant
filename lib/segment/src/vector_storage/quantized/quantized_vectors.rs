@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 use super::quantized_scorer_builder::QuantizedScorerBuilder;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::vector_utils::TrySetCapacityExact;
+#[cfg(feature = "f16")]
+use crate::data_types::vectors::FromVectorElementSlice;
 use crate::data_types::vectors::{QueryVector, VectorElementType};
 use crate::types::{
     BinaryQuantization, BinaryQuantizationConfig, CompressionRatio, Distance, ProductQuantization,
@@ -272,6 +274,11 @@ impl QuantizedVectors {
         let quantized_vector_size =
             EncodedVectorsU8::<QuantizedMmapStorage>::get_quantized_vector_size(vector_parameters);
         let in_ram = Self::is_ram(scalar_config.always_ram, on_disk_vector_storage);
+        // TODO: Avoid cloning iterator.
+        #[cfg(feature = "f16")]
+        let vectors: Vec<_> = vectors.map(Vec::from_vector_element_slice).collect();
+        #[cfg(feature = "f16")]
+        let vectors = vectors.iter().map(Vec::as_slice);
         if in_ram {
             let mut storage_builder = ChunkedVectors::<u8>::new(quantized_vector_size);
             storage_builder.try_set_capacity_exact(vector_parameters.count)?;
@@ -317,6 +324,11 @@ impl QuantizedVectors {
                 bucket_size,
             );
         let in_ram = Self::is_ram(pq_config.always_ram, on_disk_vector_storage);
+        // TODO: Avoid cloning iterator.
+        #[cfg(feature = "f16")]
+        let vectors: Vec<_> = vectors.map(Vec::from_vector_element_slice).collect();
+        #[cfg(feature = "f16")]
+        let vectors = vectors.iter().map(Vec::as_slice);
         if in_ram {
             let mut storage_builder = ChunkedVectors::<u8>::new(quantized_vector_size);
             storage_builder.try_set_capacity_exact(vector_parameters.count)?;
@@ -359,6 +371,11 @@ impl QuantizedVectors {
                 vector_parameters,
             );
         let in_ram = Self::is_ram(binary_config.always_ram, on_disk_vector_storage);
+        // TODO: Avoid cloning iterator.
+        #[cfg(feature = "f16")]
+        let vectors: Vec<_> = vectors.map(Vec::from_vector_element_slice).collect();
+        #[cfg(feature = "f16")]
+        let vectors = vectors.iter().map(Vec::as_slice);
         if in_ram {
             let mut storage_builder = ChunkedVectors::<u8>::new(quantized_vector_size);
             storage_builder.try_set_capacity_exact(vector_parameters.count)?;

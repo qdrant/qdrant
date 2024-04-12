@@ -1,6 +1,6 @@
 use common::types::{PointOffsetType, ScoreType};
 
-use crate::data_types::vectors::{DenseVector, VectorElementType};
+use crate::data_types::vectors::{DenseVector, FromDenseVector, VectorElementType};
 use crate::types::Distance;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
@@ -44,7 +44,9 @@ where
             .unwrap();
         let query = original_query
             .clone()
-            .transform(|v: DenseVector| Ok(quantized_storage.encode_query(&v)))
+            .transform(|v: DenseVector| {
+                Ok(quantized_storage.encode_query(&Vec::from_dense_vector(v)))
+            })
             .unwrap();
 
         Self {

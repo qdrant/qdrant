@@ -6,7 +6,7 @@ use common::types::PointOffsetType;
 use tempfile::Builder;
 
 use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
-use crate::data_types::vectors::{MultiDenseVector, QueryVector};
+use crate::data_types::vectors::{IntoDenseVector, MultiDenseVector, QueryVector};
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::id_tracker::IdTrackerSS;
 use crate::types::{Distance, MultiVectorConfig};
@@ -17,13 +17,16 @@ fn multi_points_fixtures() -> Vec<MultiDenseVector> {
     let mut multis: Vec<MultiDenseVector> = Vec::new();
     for i in 0..5 {
         let value = i as f32;
-        let vectors = vec![
-            vec![value, 0.0, value, value],
-            vec![value, 0.0, value, 0.0],
-            vec![value, value, value, value],
-            vec![value, value, 0.0, value],
-            vec![value, 0.0, 0.0, value],
-        ];
+        let vectors: Vec<_> = [
+            [value, 0.0, value, value],
+            [value, 0.0, value, 0.0],
+            [value, value, value, value],
+            [value, value, 0.0, value],
+            [value, 0.0, 0.0, value],
+        ]
+        .map(IntoDenseVector::into_dense_vector)
+        .into_iter()
+        .collect();
         let multi = MultiDenseVector::try_from(vectors).unwrap();
         multis.push(multi);
     }
@@ -69,7 +72,7 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         2,
         "2 vectors must be deleted"
     );
-    let vector: Vec<Vec<f32>> = vec![vec![0.0, 1.0, 1.1, 1.0]];
+    let vector = vec![[0.0, 1.0, 1.1, 1.0].into_dense_vector()];
     let query = QueryVector::Nearest(vector.try_into().unwrap());
     let closest = new_raw_scorer(
         query,
@@ -96,7 +99,7 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         "3 vectors must be deleted"
     );
 
-    let vector: Vec<Vec<f32>> = vec![vec![1.0, 0.0, 0.0, 0.0]];
+    let vector = vec![[1.0, 0.0, 0.0, 0.0].into_dense_vector()];
     let query = QueryVector::Nearest(vector.try_into().unwrap());
     let closest = new_raw_scorer(
         query,
@@ -122,7 +125,7 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         "all vectors must be deleted"
     );
 
-    let vector: Vec<Vec<f32>> = vec![vec![1.0, 0.0, 0.0, 0.0]];
+    let vector = vec![[1.0, 0.0, 0.0, 0.0].into_dense_vector()];
     let query = QueryVector::Nearest(vector.try_into().unwrap());
     let closest = new_raw_scorer(
         query,
@@ -184,7 +187,7 @@ fn do_test_update_from_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnu
         "2 vectors must be deleted from other storage"
     );
 
-    let vector: Vec<Vec<f32>> = vec![vec![0.0, 1.0, 1.1, 1.0]];
+    let vector = vec![[0.0, 1.0, 1.1, 1.0].into_dense_vector()];
 
     let query = QueryVector::Nearest(vector.try_into().unwrap());
 

@@ -13,7 +13,7 @@ use rstest::rstest;
 
 use super::utils::sampler;
 use crate::common::rocksdb_wrapper;
-use crate::data_types::vectors::{QueryVector, VectorElementType};
+use crate::data_types::vectors::{IntoVectorElement, QueryVector, VectorElementType};
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::id_tracker::id_tracker_base::IdTracker;
 use crate::types::{
@@ -48,7 +48,7 @@ type WithQuantization = (
 fn random_query<R: Rng + ?Sized>(
     query_variant: &QueryVariant,
     rnd: &mut R,
-    sampler: &mut impl Iterator<Item = f32>,
+    sampler: &mut impl Iterator<Item = VectorElementType>,
 ) -> QueryVector {
     match query_variant {
         QueryVariant::Recommend => random_reco_query(rnd, sampler),
@@ -59,7 +59,7 @@ fn random_query<R: Rng + ?Sized>(
 
 fn random_reco_query<R: Rng + ?Sized>(
     rnd: &mut R,
-    sampler: &mut impl Iterator<Item = f32>,
+    sampler: &mut impl Iterator<Item = VectorElementType>,
 ) -> QueryVector {
     let num_positives: usize = rnd.gen_range(0..MAX_EXAMPLES);
     let num_negatives: usize = rnd.gen_range(1..MAX_EXAMPLES);
@@ -77,7 +77,7 @@ fn random_reco_query<R: Rng + ?Sized>(
 
 fn random_discovery_query<R: Rng + ?Sized>(
     rnd: &mut R,
-    sampler: &mut impl Iterator<Item = f32>,
+    sampler: &mut impl Iterator<Item = VectorElementType>,
 ) -> QueryVector {
     let num_pairs: usize = rnd.gen_range(0..MAX_EXAMPLES);
 
@@ -96,7 +96,7 @@ fn random_discovery_query<R: Rng + ?Sized>(
 
 fn random_context_query<R: Rng + ?Sized>(
     rnd: &mut R,
-    sampler: &mut impl Iterator<Item = f32>,
+    sampler: &mut impl Iterator<Item = VectorElementType>,
 ) -> QueryVector {
     let num_pairs: usize = rnd.gen_range(0..MAX_EXAMPLES);
 
@@ -140,7 +140,9 @@ fn scalar_u8() -> Option<WithQuantization> {
 
     let sampler = {
         let rng = StdRng::seed_from_u64(SEED);
-        Box::new(rng.sample_iter(rand_distr::Normal::new(0.0, 8.0).unwrap()))
+        Box::new(rng.sample_iter(
+            rand_distr::Normal::new(0.0.into_vector_element(), 8.0.into_vector_element()).unwrap(),
+        ))
     };
 
     Some((config, sampler))
@@ -171,7 +173,7 @@ fn binary() -> Option<WithQuantization> {
         let rng = StdRng::seed_from_u64(SEED);
         Box::new(
             rng.sample_iter(rand::distributions::Uniform::new_inclusive(-1.0, 1.0))
-                .map(|x| x as u8 as f32),
+                .map(|x| (x as u8 as f32).into_vector_element()),
         )
     };
 

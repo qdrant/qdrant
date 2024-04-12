@@ -222,7 +222,9 @@ mod tests {
 
     use super::*;
     use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
-    use crate::data_types::vectors::{DenseVector, QueryVector};
+    use crate::data_types::vectors::{
+        DenseVector, IntoDenseVector, IntoVectorElementArray, QueryVector,
+    };
     use crate::fixtures::payload_context_fixture::FixtureIdTracker;
     use crate::id_tracker::IdTracker;
     use crate::types::{PointIdType, QuantizationConfig, ScalarQuantizationConfig};
@@ -235,12 +237,13 @@ mod tests {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
         let points = [
-            vec![1.0, 0.0, 1.0, 1.0],
-            vec![1.0, 0.0, 1.0, 0.0],
-            vec![1.0, 1.0, 1.0, 1.0],
-            vec![1.0, 1.0, 0.0, 1.0],
-            vec![1.0, 0.0, 0.0, 0.0],
-        ];
+            [1.0, 0.0, 1.0, 1.0],
+            [1.0, 0.0, 1.0, 0.0],
+            [1.0, 1.0, 1.0, 1.0],
+            [1.0, 1.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0, 0.0],
+        ]
+        .map(IntoDenseVector::into_dense_vector);
         let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
         let storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
         let mut borrowed_id_tracker = id_tracker.borrow_mut();
@@ -346,12 +349,13 @@ mod tests {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
         let points = [
-            vec![1.0, 0.0, 1.0, 1.0],
-            vec![1.0, 0.0, 1.0, 0.0],
-            vec![1.0, 1.0, 1.0, 1.0],
-            vec![1.0, 1.0, 0.0, 1.0],
-            vec![1.0, 0.0, 0.0, 0.0],
-        ];
+            [1.0, 0.0, 1.0, 1.0],
+            [1.0, 0.0, 1.0, 0.0],
+            [1.0, 1.0, 1.0, 1.0],
+            [1.0, 1.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0, 0.0],
+        ]
+        .map(IntoDenseVector::into_dense_vector);
         let delete_mask = [false, false, true, true, false];
         let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
         let storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
@@ -405,7 +409,7 @@ mod tests {
             "2 vectors must be deleted"
         );
 
-        let vector = vec![0.0, 1.0, 1.1, 1.0];
+        let vector = [0.0, 1.0, 1.1, 1.0].into_dense_vector();
         let query = vector.as_slice().into();
         let closest = new_raw_scorer(
             query,
@@ -432,7 +436,7 @@ mod tests {
             "3 vectors must be deleted"
         );
 
-        let vector = vec![1.0, 0.0, 0.0, 0.0];
+        let vector = [1.0, 0.0, 0.0, 0.0].into_dense_vector();
         let query = vector.as_slice().into();
 
         let closest = new_raw_scorer(
@@ -459,7 +463,7 @@ mod tests {
             "all vectors must be deleted"
         );
 
-        let vector = vec![1.0, 0.0, 0.0, 0.0];
+        let vector = [1.0, 0.0, 0.0, 0.0].into_dense_vector();
         let query = vector.as_slice().into();
         let closest = new_raw_scorer(
             query,
@@ -477,12 +481,13 @@ mod tests {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
         let points = [
-            vec![1.0, 0.0, 1.0, 1.0],
-            vec![1.0, 0.0, 1.0, 0.0],
-            vec![1.0, 1.0, 1.0, 1.0],
-            vec![1.0, 1.0, 0.0, 1.0],
-            vec![1.0, 0.0, 0.0, 0.0],
-        ];
+            [1.0, 0.0, 1.0, 1.0],
+            [1.0, 0.0, 1.0, 0.0],
+            [1.0, 1.0, 1.0, 1.0],
+            [1.0, 1.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0, 0.0],
+        ]
+        .map(IntoDenseVector::into_dense_vector);
         let delete_mask = [false, false, true, true, false];
         let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
         let storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
@@ -528,7 +533,7 @@ mod tests {
             "2 vectors must be deleted from other storage"
         );
 
-        let vector = vec![0.0, 1.0, 1.1, 1.0];
+        let vector = [0.0, 1.0, 1.1, 1.0].into_dense_vector();
         let query = vector.as_slice().into();
         let closest = new_raw_scorer(
             query,
@@ -564,12 +569,13 @@ mod tests {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
         let points = [
-            vec![1.0, 0.0, 1.0, 1.0],
-            vec![1.0, 0.0, 1.0, 0.0],
-            vec![1.0, 1.0, 1.0, 1.0],
-            vec![1.0, 1.0, 0.0, 1.0],
-            vec![1.0, 0.0, 0.0, 0.0],
-        ];
+            [1.0, 0.0, 1.0, 1.0],
+            [1.0, 0.0, 1.0, 0.0],
+            [1.0, 1.0, 1.0, 1.0],
+            [1.0, 1.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0, 0.0],
+        ]
+        .map(IntoDenseVector::into_dense_vector);
         let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
         let storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
         let borrowed_id_tracker = id_tracker.borrow_mut();
@@ -603,7 +609,7 @@ mod tests {
                 .unwrap();
         }
 
-        let vector = vec![-1.0, -1.0, -1.0, -1.0];
+        let vector = [-1.0, -1.0, -1.0, -1.0].into_dense_vector();
         let query = vector.as_slice().into();
         let query_points: Vec<PointOffsetType> = vec![0, 2, 4];
 
@@ -628,7 +634,7 @@ mod tests {
 
     #[test]
     fn test_casts() {
-        let data: DenseVector = vec![0.42, 0.069, 333.1, 100500.];
+        let data: DenseVector = [0.42, 0.069, 333.1, 100500.].into_dense_vector();
 
         let raw_data = transmute_to_u8_slice(&data);
 
@@ -650,12 +656,13 @@ mod tests {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
         let points = [
-            vec![1.0, 0.0, 1.0, 1.0],
-            vec![1.0, 0.0, 1.0, 0.0],
-            vec![1.0, 1.0, 1.0, 1.0],
-            vec![1.0, 1.0, 0.0, 1.0],
-            vec![1.0, 0.0, 0.0, 0.0],
-        ];
+            [1.0, 0.0, 1.0, 1.0],
+            [1.0, 0.0, 1.0, 0.0],
+            [1.0, 1.0, 1.0, 1.0],
+            [1.0, 1.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0, 0.0],
+        ]
+        .map(IntoDenseVector::into_dense_vector);
         let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
         let storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
         let borrowed_id_tracker = id_tracker.borrow_mut();
@@ -700,7 +707,7 @@ mod tests {
         let quantized_vectors =
             QuantizedVectors::create(&borrowed_storage, &config, dir.path(), 1, &stopped).unwrap();
 
-        let query: QueryVector = [0.5, 0.5, 0.5, 0.5].into();
+        let query: QueryVector = [0.5, 0.5, 0.5, 0.5].into_vector_element_array().into();
 
         let scorer_quant = quantized_vectors
             .raw_scorer(

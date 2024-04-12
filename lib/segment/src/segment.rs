@@ -214,7 +214,7 @@ impl Segment {
                         VectorStorageEnum::DenseSimple(_)
                         | VectorStorageEnum::DenseMemmap(_)
                         | VectorStorageEnum::DenseAppendableMemmap(_) => {
-                            Vector::from(vec![1.0; dim])
+                            Vector::from(vec![num_traits::One::one(); dim])
                         }
                         VectorStorageEnum::SparseSimple(_) => Vector::from(SparseVector::default()),
                         VectorStorageEnum::MultiDenseSimple(_) => {
@@ -1729,7 +1729,9 @@ mod tests {
     use super::*;
     use crate::common::check_vector;
     use crate::common::operation_error::OperationError::PointIdError;
-    use crate::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
+    use crate::data_types::vectors::{
+        only_default_vector, IntoDenseVector, IntoVectorElementArray, DEFAULT_VECTOR_NAME,
+    };
     use crate::segment_constructor::{build_segment, load_segment};
     use crate::types::{Distance, Indexes, SegmentConfig, VectorDataConfig, VectorStorageType};
 
@@ -1788,17 +1790,17 @@ mod tests {
         };
         let mut segment = build_segment(dir.path(), &config, true).unwrap();
 
-        let vec4 = vec![1.1, 1.0, 0.0, 1.0];
+        let vec4 = [1.1, 1.0, 0.0, 1.0].into_dense_vector();
         segment
             .upsert_point(100, 4.into(), only_default_vector(&vec4))
             .unwrap();
-        let vec6 = vec![1.0, 1.0, 0.5, 1.0];
+        let vec6 = [1.0, 1.0, 0.5, 1.0].into_dense_vector();
         segment
             .upsert_point(101, 6.into(), only_default_vector(&vec6))
             .unwrap();
         segment.delete_point(102, 1.into()).unwrap();
 
-        let query_vector = [1.0, 1.0, 1.0, 1.0].into();
+        let query_vector = [1.0, 1.0, 1.0, 1.0].into_vector_element_array().into();
         let search_result = segment
             .search(
                 DEFAULT_VECTOR_NAME,
@@ -1863,7 +1865,11 @@ mod tests {
 
         let mut segment = build_segment(dir.path(), &config, true).unwrap();
         segment
-            .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]))
+            .upsert_point(
+                0,
+                0.into(),
+                only_default_vector(&[1.0, 1.0].into_vector_element_array()),
+            )
             .unwrap();
 
         let payload: Payload = serde_json::from_str(data).unwrap();
@@ -1899,7 +1905,7 @@ mod tests {
         let results_with_valid_filter = segment
             .search(
                 DEFAULT_VECTOR_NAME,
-                &[1.0, 1.0].into(),
+                &[1.0, 1.0].into_vector_element_array().into(),
                 &WithPayload::default(),
                 &false.into(),
                 Some(&filter_valid),
@@ -1912,7 +1918,7 @@ mod tests {
         let results_with_invalid_filter = segment
             .search(
                 DEFAULT_VECTOR_NAME,
-                &[1.0, 1.0].into(),
+                &[1.0, 1.0].into_vector_element_array().into(),
                 &WithPayload::default(),
                 &false.into(),
                 Some(&filter_invalid),
@@ -1955,7 +1961,11 @@ mod tests {
         let mut segment = build_segment(segment_base_dir.path(), &config, true).unwrap();
 
         segment
-            .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]))
+            .upsert_point(
+                0,
+                0.into(),
+                only_default_vector(&[1.0, 1.0].into_vector_element_array()),
+            )
             .unwrap();
 
         segment
@@ -2050,7 +2060,11 @@ mod tests {
 
         let mut segment = build_segment(segment_base_dir.path(), &config, true).unwrap();
         segment
-            .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]))
+            .upsert_point(
+                0,
+                0.into(),
+                only_default_vector(&[1.0, 1.0].into_vector_element_array()),
+            )
             .unwrap();
 
         let payload: Payload = serde_json::from_str(data).unwrap();
@@ -2082,11 +2096,11 @@ mod tests {
         };
         let mut segment = build_segment(dir.path(), &config, true).unwrap();
 
-        let vec4 = vec![1.1, 1.0, 0.0, 1.0];
+        let vec4 = [1.1, 1.0, 0.0, 1.0].into_dense_vector();
         segment
             .upsert_point(100, 4.into(), only_default_vector(&vec4))
             .unwrap();
-        let vec6 = vec![1.0, 1.0, 0.5, 1.0];
+        let vec6 = [1.0, 1.0, 0.5, 1.0].into_dense_vector();
         segment
             .upsert_point(101, 6.into(), only_default_vector(&vec6))
             .unwrap();
@@ -2094,7 +2108,7 @@ mod tests {
         // first pass on consistent data
         segment.check_consistency_and_repair().unwrap();
 
-        let query_vector = [1.0, 1.0, 1.0, 1.0].into();
+        let query_vector = [1.0, 1.0, 1.0, 1.0].into_vector_element_array().into();
         let search_result = segment
             .search(
                 DEFAULT_VECTOR_NAME,
@@ -2178,10 +2192,18 @@ mod tests {
 
         // Insert point ID 4 and 6, assert counts
         segment
-            .upsert_point(100, 4.into(), only_default_vector(&[0.4]))
+            .upsert_point(
+                100,
+                4.into(),
+                only_default_vector(&[0.4].into_vector_element_array()),
+            )
             .unwrap();
         segment
-            .upsert_point(101, 6.into(), only_default_vector(&[0.6]))
+            .upsert_point(
+                101,
+                6.into(),
+                only_default_vector(&[0.6].into_vector_element_array()),
+            )
             .unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 2);
@@ -2247,24 +2269,34 @@ mod tests {
             .upsert_point(
                 100,
                 4.into(),
-                NamedVectors::from([("a".into(), vec![0.4]), ("b".into(), vec![0.5])]),
+                NamedVectors::from([
+                    ("a".into(), [0.4].into_dense_vector()),
+                    ("b".into(), [0.5].into_dense_vector()),
+                ]),
             )
             .unwrap();
         segment
             .upsert_point(
                 101,
                 6.into(),
-                NamedVectors::from([("a".into(), vec![0.6]), ("b".into(), vec![0.7])]),
+                NamedVectors::from([
+                    ("a".into(), [0.6].into_dense_vector()),
+                    ("b".into(), [0.7].into_dense_vector()),
+                ]),
             )
             .unwrap();
         segment
-            .upsert_point(102, 8.into(), NamedVectors::from([("a".into(), vec![0.0])]))
+            .upsert_point(
+                102,
+                8.into(),
+                NamedVectors::from([("a".into(), [0.0].into_dense_vector())]),
+            )
             .unwrap();
         segment
             .upsert_point(
                 103,
                 10.into(),
-                NamedVectors::from([("b".into(), vec![1.0])]),
+                NamedVectors::from([("b".into(), [1.0].into_dense_vector())]),
             )
             .unwrap();
         let segment_info = segment.info();
@@ -2298,7 +2330,10 @@ mod tests {
         // Replace vector 'a' for point 8, counts should remain the same
         let internal_8 = segment.lookup_internal_id(8.into()).unwrap();
         segment
-            .replace_all_vectors(internal_8, NamedVectors::from([("a".into(), vec![0.1])]))
+            .replace_all_vectors(
+                internal_8,
+                NamedVectors::from([("a".into(), [0.1].into_dense_vector())]),
+            )
             .unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 3);
@@ -2308,7 +2343,10 @@ mod tests {
         segment
             .replace_all_vectors(
                 internal_8,
-                NamedVectors::from([("a".into(), vec![0.1]), ("b".into(), vec![0.1])]),
+                NamedVectors::from([
+                    ("a".into(), [0.1].into_dense_vector()),
+                    ("b".into(), [0.1].into_dense_vector()),
+                ]),
             )
             .unwrap();
         let segment_info = segment.info();
@@ -2357,8 +2395,8 @@ mod tests {
                 100,
                 point_id,
                 NamedVectors::from([
-                    ("a".into(), vec![0.1, 0.2, 0.3, 0.4]),
-                    ("b".into(), vec![1.0, 0.9]),
+                    ("a".into(), [0.1, 0.2, 0.3, 0.4].into_dense_vector()),
+                    ("b".into(), [1.0, 0.9].into_dense_vector()),
                 ]),
             )
             .unwrap();
@@ -2368,41 +2406,41 @@ mod tests {
         let wrong_vectors_single = vec![
             // Incorrect dimensionality
             ("a", vec![]),
-            ("a", vec![0.0, 1.0, 0.0]),
-            ("a", vec![0.0, 1.0, 0.0, 1.0, 0.0]),
+            ("a", [0.0, 1.0, 0.0].into_dense_vector()),
+            ("a", [0.0, 1.0, 0.0, 1.0, 0.0].into_dense_vector()),
             ("b", vec![]),
-            ("b", vec![0.5]),
-            ("b", vec![0.0, 0.1, 0.2, 0.3]),
+            ("b", [0.5].into_dense_vector()),
+            ("b", [0.0, 0.1, 0.2, 0.3].into_dense_vector()),
             // Incorrect names
-            ("aa", vec![0.0, 0.1, 0.2, 0.3]),
-            ("bb", vec![0.0, 0.1]),
+            ("aa", [0.0, 0.1, 0.2, 0.3].into_dense_vector()),
+            ("bb", [0.0, 0.1].into_dense_vector()),
         ];
         let wrong_vectors_multi = vec![
             // Incorrect dimensionality
             NamedVectors::from_ref("a", [].as_slice().into()),
-            NamedVectors::from_ref("a", [0.0, 1.0, 0.0].as_slice().into()),
-            NamedVectors::from_ref("a", [0.0, 1.0, 0.0, 1.0, 0.0].as_slice().into()),
+            NamedVectors::from([("a".into(), [0.0, 1.0, 0.0].into_dense_vector())]),
+            NamedVectors::from([("a".into(), [0.0, 1.0, 0.0, 1.0, 0.0].into_dense_vector())]),
             NamedVectors::from_ref("b", [].as_slice().into()),
-            NamedVectors::from_ref("b", [0.5].as_slice().into()),
-            NamedVectors::from_ref("b", [0.0, 0.1, 0.2, 0.3].as_slice().into()),
+            NamedVectors::from([("b".into(), [0.5].into_dense_vector())]),
+            NamedVectors::from([("b".into(), [0.0, 0.1, 0.2, 0.3].into_dense_vector())]),
             NamedVectors::from([
-                ("a".into(), vec![0.1, 0.2, 0.3]),
-                ("b".into(), vec![1.0, 0.9]),
+                ("a".into(), [0.1, 0.2, 0.3].into_dense_vector()),
+                ("b".into(), [1.0, 0.9].into_dense_vector()),
             ]),
             NamedVectors::from([
-                ("a".into(), vec![0.1, 0.2, 0.3, 0.4]),
-                ("b".into(), vec![1.0, 0.9, 0.0]),
+                ("a".into(), [0.1, 0.2, 0.3, 0.4].into_dense_vector()),
+                ("b".into(), [1.0, 0.9, 0.0].into_dense_vector()),
             ]),
             // Incorrect names
-            NamedVectors::from_ref("aa", [0.0, 0.1, 0.2, 0.3].as_slice().into()),
-            NamedVectors::from_ref("bb", [0.0, 0.1].as_slice().into()),
+            NamedVectors::from([("aa".into(), [0.0, 0.1, 0.2, 0.3].into_dense_vector())]),
+            NamedVectors::from([("bb".into(), [0.0, 0.1].into_dense_vector())]),
             NamedVectors::from([
-                ("aa".into(), vec![0.1, 0.2, 0.3, 0.4]),
-                ("b".into(), vec![1.0, 0.9]),
+                ("aa".into(), [0.1, 0.2, 0.3, 0.4].into_dense_vector()),
+                ("b".into(), [1.0, 0.9].into_dense_vector()),
             ]),
             NamedVectors::from([
-                ("a".into(), vec![0.1, 0.2, 0.3, 0.4]),
-                ("bb".into(), vec![1.0, 0.9]),
+                ("a".into(), [0.1, 0.2, 0.3, 0.4].into_dense_vector()),
+                ("bb".into(), [1.0, 0.9].into_dense_vector()),
             ]),
         ];
         let wrong_names = vec!["aa", "bb", ""];

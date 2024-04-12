@@ -2,9 +2,12 @@ use std::borrow::Cow;
 
 use serde::{Deserialize, Serialize};
 
+use super::vectors::IntoDenseVector;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowVector;
-use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte, VectorRef};
+use crate::data_types::vectors::{
+    FromVectorElementSlice, VectorElementType, VectorElementTypeByte, VectorRef,
+};
 
 pub trait PrimitiveVectorElement:
     Copy + Clone + Default + Serialize + for<'a> Deserialize<'a>
@@ -27,15 +30,11 @@ impl PrimitiveVectorElement for VectorElementType {
 impl PrimitiveVectorElement for VectorElementTypeByte {
     fn from_vector_ref(vector: VectorRef) -> OperationResult<Cow<[Self]>> {
         let vector_ref: &[VectorElementType] = vector.try_into()?;
-        let byte_vector = vector_ref.iter().map(|&x| x as u8).collect::<Vec<u8>>();
+        let byte_vector = Vec::<u8>::from_vector_element_slice(vector_ref);
         Ok(Cow::from(byte_vector))
     }
 
     fn vector_to_cow(vector: &[Self]) -> CowVector {
-        vector
-            .iter()
-            .map(|&x| x as VectorElementType)
-            .collect::<Vec<VectorElementType>>()
-            .into()
+        vector.into_dense_vector().into()
     }
 }

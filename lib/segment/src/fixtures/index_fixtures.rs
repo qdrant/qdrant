@@ -10,7 +10,7 @@ use rand::Rng;
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
-use crate::data_types::vectors::{DenseVector, VectorElementType, VectorRef};
+use crate::data_types::vectors::{DenseVector, IntoVectorElement, VectorElementType, VectorRef};
 use crate::payload_storage::FilterContext;
 use crate::spaces::metric::Metric;
 use crate::types::Distance;
@@ -21,7 +21,9 @@ use crate::vector_storage::{
 };
 
 pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> DenseVector {
-    (0..size).map(|_| rnd_gen.gen_range(-1.0..1.0)).collect()
+    (0..size)
+        .map(|_| rnd_gen.gen_range(-1.0..1.0).into_vector_element())
+        .collect()
 }
 
 pub struct FakeFilterContext {}

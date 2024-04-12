@@ -171,7 +171,7 @@ fn hnsw_quantized_search_test(
 
     // check that rescoring is working
     // to check it, set all vectors to zero and expect zero scores
-    let zero_vector = vec![0.0; dim];
+    let zero_vector = vec![Default::default(); dim];
     for n in 0..num_vectors {
         let idx = n.into();
         segment

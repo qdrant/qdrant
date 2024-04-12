@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::cpu::CpuPermit;
 use segment::data_types::named_vectors::NamedVectors;
+use segment::data_types::vectors::IntoDenseVector;
 use segment::entry::entry_point::SegmentEntry;
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::segment::Segment;
@@ -30,8 +31,14 @@ fn test_rebuild_with_removed_vectors() {
                 1,
                 i.into(),
                 NamedVectors::from([
-                    ("vector1".to_string(), vec![i as f32, 0., 0., 0.]),
-                    ("vector2".to_string(), vec![0., i as f32, 0., 0., 0., 0.]),
+                    (
+                        "vector1".to_string(),
+                        [i as f32, 0., 0., 0.].into_dense_vector(),
+                    ),
+                    (
+                        "vector2".to_string(),
+                        [0., i as f32, 0., 0., 0., 0.].into_dense_vector(),
+                    ),
                 ]),
             )
             .unwrap();
@@ -39,11 +46,20 @@ fn test_rebuild_with_removed_vectors() {
 
     for i in 0..NUM_VECTORS_2 {
         let vectors = if i % 5 == 0 {
-            NamedVectors::from([("vector1".to_string(), vec![0., 0., i as f32, 0.])])
+            NamedVectors::from([(
+                "vector1".to_string(),
+                [0., 0., i as f32, 0.].into_dense_vector(),
+            )])
         } else {
             NamedVectors::from([
-                ("vector1".to_string(), vec![0., 0., i as f32, 0.]),
-                ("vector2".to_string(), vec![0., 0., 0., i as f32, 0., 0.]),
+                (
+                    "vector1".to_string(),
+                    [0., 0., i as f32, 0.].into_dense_vector(),
+                ),
+                (
+                    "vector2".to_string(),
+                    [0., 0., 0., i as f32, 0., 0.].into_dense_vector(),
+                ),
             ])
         };
 

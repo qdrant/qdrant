@@ -8,7 +8,9 @@ use super::simple_neon::*;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 use super::simple_sse::*;
 use super::tools::is_length_zero_or_normalized;
-use crate::data_types::vectors::{DenseVector, VectorElementType};
+use crate::data_types::vectors::{
+    DenseVector, FromVectorElement, IntoVectorElement, VectorElementType,
+};
 use crate::types::Distance;
 
 #[cfg(target_arch = "x86_64")]
@@ -214,6 +216,7 @@ impl MetricPostProcessing for CosineMetric {
 pub fn euclid_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
     -v1.iter()
         .zip(v2)
+        .map(|(a, b)| (f32::from_vector_element(*a), f32::from_vector_element(*b)))
         .map(|(a, b)| (a - b).powi(2))
         .sum::<ScoreType>()
 }
@@ -221,21 +224,35 @@ pub fn euclid_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> 
 pub fn manhattan_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
     -v1.iter()
         .zip(v2)
+        .map(|(a, b)| (f32::from_vector_element(*a), f32::from_vector_element(*b)))
         .map(|(a, b)| (a - b).abs())
         .sum::<ScoreType>()
 }
 
 pub fn cosine_preprocess(vector: DenseVector) -> DenseVector {
-    let mut length: f32 = vector.iter().map(|x| x * x).sum();
+    let mut length: f32 = vector
+        .iter()
+        .map(|x| f32::from_vector_element(*x))
+        .map(|x| x * x)
+        .sum();
     if is_length_zero_or_normalized(length) {
         return vector;
     }
     length = length.sqrt();
-    vector.iter().map(|x| x / length).collect()
+    vector
+        .iter()
+        .map(|x| f32::from_vector_element(*x))
+        .map(|x| x / length)
+        .map(|x| x.into_vector_element())
+        .collect()
 }
 
 pub fn dot_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
-    v1.iter().zip(v2).map(|(a, b)| a * b).sum()
+    v1.iter()
+        .zip(v2)
+        .map(|(a, b)| (f32::from_vector_element(*a), f32::from_vector_element(*b)))
+        .map(|(a, b)| a * b)
+        .sum()
 }
 
 #[cfg(test)]
@@ -243,11 +260,12 @@ mod tests {
     use rand::Rng;
 
     use super::*;
+    use crate::data_types::vectors::IntoDenseVector;
 
     #[test]
     fn test_cosine_preprocessing() {
-        let res: DenseVector = CosineMetric::preprocess(vec![0.0, 0.0, 0.0, 0.0]);
-        assert_eq!(res, vec![0.0, 0.0, 0.0, 0.0]);
+        let res: DenseVector = CosineMetric::preprocess([0.0, 0.0, 0.0, 0.0].into_dense_vector());
+        assert_eq!(res, [0.0, 0.0, 0.0, 0.0].into_dense_vector());
     }
 
     /// If we preprocess a vector multiple times, we expect the same result.
@@ -261,7 +279,9 @@ mod tests {
 
         for attempt in 0..ATTEMPTS {
             let range = rng.gen_range(-2.5..=0.0)..=rng.gen_range(0.0..2.5);
-            let vector: Vec<_> = (0..DIM).map(|_| rng.gen_range(range.clone())).collect();
+            let vector: Vec<_> = (0..DIM)
+                .map(|_| rng.gen_range(range.clone()).into_vector_element())
+                .collect();
 
             // Preprocess and re-preprocess
             let preprocess1 = CosineMetric::preprocess(vector);

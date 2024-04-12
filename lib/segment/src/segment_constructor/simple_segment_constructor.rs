@@ -87,7 +87,7 @@ mod tests {
 
     use super::*;
     use crate::common::operation_error::OperationError;
-    use crate::data_types::vectors::only_default_vector;
+    use crate::data_types::vectors::{only_default_vector, IntoDenseVector};
     use crate::entry::entry_point::SegmentEntry;
 
     #[test]
@@ -102,13 +102,13 @@ mod tests {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let mut segment = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
 
-        let wrong_vec = vec![1.0, 1.0, 1.0];
+        let wrong_vec = [1.0, 1.0, 1.0].into_dense_vector();
 
-        let vec1 = vec![1.0, 0.0, 1.0, 1.0];
-        let vec2 = vec![1.0, 0.0, 1.0, 0.0];
-        let vec3 = vec![1.0, 1.0, 1.0, 1.0];
-        let vec4 = vec![1.0, 1.0, 0.0, 1.0];
-        let vec5 = vec![1.0, 0.0, 0.0, 0.0];
+        let vec1 = [1.0, 0.0, 1.0, 1.0].into_dense_vector();
+        let vec2 = [1.0, 0.0, 1.0, 0.0].into_dense_vector();
+        let vec3 = [1.0, 1.0, 1.0, 1.0].into_dense_vector();
+        let vec4 = [1.0, 1.0, 0.0, 1.0].into_dense_vector();
+        let vec5 = [1.0, 0.0, 0.0, 0.0].into_dense_vector();
 
         match segment.upsert_point(1, 120.into(), only_default_vector(&wrong_vec)) {
             Err(OperationError::WrongVector { .. }) => (),

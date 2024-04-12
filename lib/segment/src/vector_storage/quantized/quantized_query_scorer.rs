@@ -1,6 +1,8 @@
+use std::borrow::Cow;
+
 use common::types::{PointOffsetType, ScoreType};
 
-use crate::data_types::vectors::{DenseVector, VectorElementType};
+use crate::data_types::vectors::{DenseVector, FromVectorElementSlice, VectorElementType};
 use crate::types::Distance;
 use crate::vector_storage::query_scorer::QueryScorer;
 
@@ -24,7 +26,7 @@ where
         distance: Distance,
     ) -> Self {
         let original_query = distance.preprocess_vector(raw_query);
-        let query = quantized_data.encode_query(&original_query);
+        let query = quantized_data.encode_query(&Cow::from_vector_element_slice(&original_query));
 
         Self {
             original_query,

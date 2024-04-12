@@ -1,6 +1,8 @@
 use common::types::ScoreType;
 
-use crate::data_types::vectors::{DenseVector, TypedDenseVector, VectorElementTypeByte};
+use crate::data_types::vectors::{
+    DenseVector, FromVectorElementSlice, TypedDenseVector, VectorElementTypeByte,
+};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::CosineMetric;
 use crate::types::Distance;
@@ -15,10 +17,7 @@ impl Metric<VectorElementTypeByte> for CosineMetric {
     }
 
     fn preprocess(vector: DenseVector) -> TypedDenseVector<VectorElementTypeByte> {
-        vector
-            .into_iter()
-            .map(|x| x as VectorElementTypeByte)
-            .collect()
+        Vec::from_vector_element_slice(&vector)
     }
 }
 

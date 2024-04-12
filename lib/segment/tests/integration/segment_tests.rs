@@ -6,7 +6,8 @@ use itertools::Itertools;
 use segment::common::operation_error::OperationError;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{
-    only_default_vector, VectorRef, VectorStruct, DEFAULT_VECTOR_NAME,
+    only_default_vector, FromVectorElement, IntoDenseVector, IntoVectorElementArray,
+    VectorElementType, VectorRef, VectorStruct, DEFAULT_VECTOR_NAME,
 };
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::index_fixtures::random_vector;
@@ -25,7 +26,7 @@ fn test_point_exclusion() {
 
     assert!(segment.has_point(3.into()));
 
-    let query_vector = [1.0, 1.0, 1.0, 1.0].into();
+    let query_vector = [1.0, 1.0, 1.0, 1.0].into_vector_element_array().into();
 
     let res = segment
         .search(
@@ -78,7 +79,7 @@ fn test_named_vector_search() {
 
     assert!(segment.has_point(3.into()));
 
-    let query_vector = [1.0, 1.0, 1.0, 1.0].into();
+    let query_vector = [1.0, 1.0, 1.0, 1.0].into_vector_element_array().into();
 
     let res = segment
         .search(
@@ -138,8 +139,8 @@ fn test_missed_vector_name() {
             7,
             1.into(),
             NamedVectors::from([
-                ("vector2".to_owned(), vec![10.]),
-                ("vector3".to_owned(), vec![5., 6., 7., 8.]),
+                ("vector2".to_owned(), [10.].into_dense_vector()),
+                ("vector3".to_owned(), [5., 6., 7., 8.].into_dense_vector()),
             ]),
         )
         .unwrap();
@@ -150,8 +151,8 @@ fn test_missed_vector_name() {
             8,
             6.into(),
             NamedVectors::from([
-                ("vector2".to_owned(), vec![10.]),
-                ("vector3".to_owned(), vec![5., 6., 7., 8.]),
+                ("vector2".to_owned(), [10.].into_dense_vector()),
+                ("vector3".to_owned(), [5., 6., 7., 8.].into_dense_vector()),
             ]),
         )
         .unwrap();
@@ -167,10 +168,10 @@ fn test_vector_name_not_exists() {
         6,
         6.into(),
         NamedVectors::from([
-            ("vector1".to_owned(), vec![5., 6., 7., 8.]),
-            ("vector2".to_owned(), vec![10.]),
-            ("vector3".to_owned(), vec![5., 6., 7., 8.]),
-            ("vector4".to_owned(), vec![5., 6., 7., 8.]),
+            ("vector1".to_owned(), [5., 6., 7., 8.].into_dense_vector()),
+            ("vector2".to_owned(), [10.].into_dense_vector()),
+            ("vector3".to_owned(), [5., 6., 7., 8.].into_dense_vector()),
+            ("vector4".to_owned(), [5., 6., 7., 8.].into_dense_vector()),
         ]),
     );
 
@@ -196,7 +197,7 @@ fn ordered_deletion_test() {
     let segment = load_segment(&path, &AtomicBool::new(false))
         .unwrap()
         .unwrap();
-    let query_vector = [1.0, 1.0, 1.0, 1.0].into();
+    let query_vector = [1.0, 1.0, 1.0, 1.0].into_vector_element_array().into();
 
     let res = segment
         .search(
@@ -275,7 +276,13 @@ fn test_update_named_vector() {
         .unwrap();
     let nearest_upsert = nearest_upsert.first().unwrap();
 
-    let sqrt_distance = |v: &[f32]| -> f32 { v.iter().map(|x| x * x).sum::<f32>().sqrt() };
+    let sqrt_distance = |v: &[VectorElementType]| -> f32 {
+        v.iter()
+            .map(|x| f32::from_vector_element(*x))
+            .map(|x| x * x)
+            .sum::<f32>()
+            .sqrt()
+    };
 
     // check if nearest_upsert is normalized
     match &nearest_upsert.vector {

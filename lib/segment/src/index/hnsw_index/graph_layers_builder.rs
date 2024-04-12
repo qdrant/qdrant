@@ -484,7 +484,9 @@ mod tests {
     use rand::SeedableRng;
 
     use super::*;
-    use crate::data_types::vectors::{DenseVector, VectorElementType};
+    use crate::data_types::vectors::{
+        DenseVector, FromVectorElement, IntoDenseVector, VectorElementType,
+    };
     use crate::fixtures::index_fixtures::{
         random_vector, FakeFilterContext, TestRawScorerProducer,
     };
@@ -836,24 +838,29 @@ mod tests {
         let ef_construct = 32;
 
         // See illustration in docs
-        let points: Vec<DenseVector> = vec![
-            vec![21.79, 7.18],  // Target
-            vec![20.58, 5.46],  // 1  B - yes
-            vec![21.19, 4.51],  // 2  C
-            vec![24.73, 8.24],  // 3  D - yes
-            vec![24.55, 9.98],  // 4  E
-            vec![26.11, 6.85],  // 5  F
-            vec![17.64, 11.14], // 6  G - yes
-            vec![14.97, 11.52], // 7  I
-            vec![14.97, 9.60],  // 8  J
-            vec![16.23, 14.32], // 9  H
-            vec![12.69, 19.13], // 10 K
-        ];
+        let points: Vec<DenseVector> = [
+            [21.79, 7.18],  // Target
+            [20.58, 5.46],  // 1  B - yes
+            [21.19, 4.51],  // 2  C
+            [24.73, 8.24],  // 3  D - yes
+            [24.55, 9.98],  // 4  E
+            [26.11, 6.85],  // 5  F
+            [17.64, 11.14], // 6  G - yes
+            [14.97, 11.52], // 7  I
+            [14.97, 9.60],  // 8  J
+            [16.23, 14.32], // 9  H
+            [12.69, 19.13], // 10 K
+        ]
+        .into_iter()
+        .map(|x| x.into_dense_vector())
+        .collect();
 
         let scorer = |a: PointOffsetType, b: PointOffsetType| {
-            -((points[a as usize][0] - points[b as usize][0]).powi(2)
-                + (points[a as usize][1] - points[b as usize][1]).powi(2))
-            .sqrt()
+            let ax = f32::from_vector_element(points[a as usize][0]);
+            let ay = f32::from_vector_element(points[a as usize][1]);
+            let bx = f32::from_vector_element(points[b as usize][0]);
+            let by = f32::from_vector_element(points[b as usize][1]);
+            -((ax - bx).powi(2) + (ay - by).powi(2)).sqrt()
         };
 
         let mut insert_ids = (1..points.len() as PointOffsetType).collect_vec();

@@ -1,6 +1,8 @@
 use common::types::ScoreType;
 
-use crate::data_types::vectors::{DenseVector, TypedDenseVector, VectorElementTypeByte};
+use crate::data_types::vectors::{
+    DenseVector, FromVectorElementSlice, TypedDenseVector, VectorElementTypeByte,
+};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::EuclidMetric;
 use crate::types::Distance;
@@ -15,10 +17,7 @@ impl Metric<VectorElementTypeByte> for EuclidMetric {
     }
 
     fn preprocess(vector: DenseVector) -> TypedDenseVector<VectorElementTypeByte> {
-        vector
-            .into_iter()
-            .map(|x| x as VectorElementTypeByte)
-            .collect()
+        Vec::from_vector_element_slice(&vector)
     }
 }
 
@@ -38,10 +37,11 @@ fn euclid_similarity_bytes(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data_types::vectors::IntoDenseVector;
 
     #[test]
     fn test_conversion_to_bytes() {
-        let dense_vector = DenseVector::from(vec![-10.0, 1.0, 2.0, 3.0, 255., 300.]);
+        let dense_vector = [-10.0, 1.0, 2.0, 3.0, 255., 300.].into_dense_vector();
         let typed_dense_vector: TypedDenseVector<VectorElementTypeByte> =
             EuclidMetric::preprocess(dense_vector);
         let expected: TypedDenseVector<VectorElementTypeByte> = vec![0, 1, 2, 3, 255, 255];

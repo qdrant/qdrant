@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::vectors::{only_default_vector, DenseVector};
+use segment::data_types::vectors::{only_default_vector, DenseVector, IntoDenseVector};
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
@@ -18,11 +18,11 @@ pub fn empty_segment(path: &Path) -> Segment {
 pub fn build_segment_1(path: &Path) -> Segment {
     let mut segment1 = empty_segment(path);
 
-    let vec1 = vec![1.0, 0.0, 1.0, 1.0];
-    let vec2 = vec![1.0, 0.0, 1.0, 0.0];
-    let vec3 = vec![1.0, 1.0, 1.0, 1.0];
-    let vec4 = vec![1.0, 1.0, 0.0, 1.0];
-    let vec5 = vec![1.0, 0.0, 0.0, 0.0];
+    let vec1 = [1.0, 0.0, 1.0, 1.0].into_dense_vector();
+    let vec2 = [1.0, 0.0, 1.0, 0.0].into_dense_vector();
+    let vec3 = [1.0, 1.0, 1.0, 1.0].into_dense_vector();
+    let vec4 = [1.0, 1.0, 0.0, 1.0].into_dense_vector();
+    let vec5 = [1.0, 0.0, 0.0, 0.0].into_dense_vector();
 
     segment1
         .upsert_point(1, 1.into(), only_default_vector(&vec1))
@@ -69,11 +69,11 @@ pub fn build_segment_1(path: &Path) -> Segment {
 pub fn build_segment_2(path: &Path) -> Segment {
     let mut segment2 = empty_segment(path);
 
-    let vec1 = vec![-1.0, 0.0, 1.0, 1.0];
-    let vec2 = vec![-1.0, 0.0, 1.0, 0.0];
-    let vec3 = vec![-1.0, 1.0, 1.0, 1.0];
-    let vec4 = vec![-1.0, 1.0, 0.0, 1.0];
-    let vec5 = vec![-1.0, 0.0, 0.0, 0.0];
+    let vec1 = [-1.0, 0.0, 1.0, 1.0].into_dense_vector();
+    let vec2 = [-1.0, 0.0, 1.0, 0.0].into_dense_vector();
+    let vec3 = [-1.0, 1.0, 1.0, 1.0].into_dense_vector();
+    let vec4 = [-1.0, 1.0, 0.0, 1.0].into_dense_vector();
+    let vec5 = [-1.0, 0.0, 0.0, 0.0].into_dense_vector();
 
     segment2
         .upsert_point(11, 11.into(), only_default_vector(&vec1))
@@ -172,29 +172,29 @@ pub fn build_segment_3(path: &Path) -> Segment {
     };
 
     let vec1 = [
-        vec![1.0, 0.0, 1.0, 1.0],
-        vec![0.0],
-        vec![-1.0, 0.0, 1.0, 1.0],
+        [1.0, 0.0, 1.0, 1.0].into_dense_vector(),
+        [0.0].into_dense_vector(),
+        [-1.0, 0.0, 1.0, 1.0].into_dense_vector(),
     ];
     let vec2 = [
-        vec![1.0, 0.0, 1.0, 0.0],
-        vec![1.0],
-        vec![-1.0, 0.0, 1.0, 1.0],
+        [1.0, 0.0, 1.0, 0.0].into_dense_vector(),
+        [1.0].into_dense_vector(),
+        [-1.0, 0.0, 1.0, 1.0].into_dense_vector(),
     ];
     let vec3 = [
-        vec![1.0, 1.0, 1.0, 1.0],
-        vec![2.0],
-        vec![-1.0, 0.0, 1.0, 1.0],
+        [1.0, 1.0, 1.0, 1.0].into_dense_vector(),
+        [2.0].into_dense_vector(),
+        [-1.0, 0.0, 1.0, 1.0].into_dense_vector(),
     ];
     let vec4 = [
-        vec![1.0, 1.0, 0.0, 1.0],
-        vec![3.0],
-        vec![-1.0, 0.0, 1.0, 1.0],
+        [1.0, 1.0, 0.0, 1.0].into_dense_vector(),
+        [3.0].into_dense_vector(),
+        [-1.0, 0.0, 1.0, 1.0].into_dense_vector(),
     ];
     let vec5 = [
-        vec![1.0, 0.0, 0.0, 0.0],
-        vec![4.0],
-        vec![-1.0, 0.0, 1.0, 1.0],
+        [1.0, 0.0, 0.0, 0.0].into_dense_vector(),
+        [4.0].into_dense_vector(),
+        [-1.0, 0.0, 1.0, 1.0].into_dense_vector(),
     ];
 
     segment3

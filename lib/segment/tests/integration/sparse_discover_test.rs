@@ -8,7 +8,7 @@ use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::vectors::{QueryVector, VectorElementType};
+use segment::data_types::vectors::{FromVectorElement, QueryVector, VectorElementType};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::random_vector;
 use segment::index::hnsw_index::num_rayon_threads;
@@ -33,7 +33,7 @@ fn convert_to_sparse_vector(vector: &[VectorElementType]) -> SparseVector {
     let mut sparse_vector = SparseVector::default();
     for (idx, value) in vector.iter().enumerate() {
         sparse_vector.indices.push(idx as u32);
-        sparse_vector.values.push(*value);
+        sparse_vector.values.push(f32::from_vector_element(*value));
     }
     sparse_vector
 }
