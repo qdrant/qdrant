@@ -8,6 +8,7 @@ use tokio::fs;
 use super::Collection;
 use crate::collection::CollectionVersion;
 use crate::common::snapshots_manager::SnapshotStorageManager;
+use crate::common::validate_snapshot_archive::validate_open_snapshot_archive;
 use crate::config::{CollectionConfig, ShardingMethod};
 use crate::operations::snapshot_ops::SnapshotDescription;
 use crate::operations::types::{CollectionError, CollectionResult, NodeType};
@@ -187,8 +188,7 @@ impl Collection {
         is_distributed: bool,
     ) -> CollectionResult<()> {
         // decompress archive
-        let archive_file = std::fs::File::open(snapshot_path)?;
-        let mut ar = tar::Archive::new(archive_file);
+        let mut ar = validate_open_snapshot_archive(snapshot_path)?;
         ar.unpack(target_dir)?;
 
         let config = CollectionConfig::load(target_dir)?;
