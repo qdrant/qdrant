@@ -72,10 +72,8 @@ async fn _test_snapshot_collection(node_type: NodeType) {
 
     let snapshots_path = Builder::new().prefix("test_snapshots").tempdir().unwrap();
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
-    let recover_dir = Builder::new()
-        .prefix("test_collection_rec")
-        .tempdir()
-        .unwrap();
+
+
     let collection_name = "test".to_string();
     let collection_name_rec = "test_rec".to_string();
     let mut shards = HashMap::new();
@@ -115,14 +113,26 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         .unwrap();
 
     assert_eq!(snapshot_description.checksum.unwrap().len(), 64);
-    // Do not recover in local mode if some shards are remote
-    assert!(Collection::restore_snapshot(
-        &snapshots_path.path().join(&snapshot_description.name),
-        recover_dir.path(),
-        0,
-        false,
-    )
-    .is_err());
+
+    {
+        let recover_dir = Builder::new()
+            .prefix("test_collection_rec")
+            .tempdir()
+            .unwrap();
+        // Do not recover in local mode if some shards are remote
+        assert!(Collection::restore_snapshot(
+            &snapshots_path.path().join(&snapshot_description.name),
+            recover_dir.path(),
+            0,
+            false,
+        )
+            .is_err());
+    }
+
+    let recover_dir = Builder::new()
+        .prefix("test_collection_rec")
+        .tempdir()
+        .unwrap();
 
     if let Err(err) = Collection::restore_snapshot(
         &snapshots_path.path().join(snapshot_description.name),
