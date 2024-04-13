@@ -73,7 +73,6 @@ async fn _test_snapshot_collection(node_type: NodeType) {
     let snapshots_path = Builder::new().prefix("test_snapshots").tempdir().unwrap();
     let collection_dir = Builder::new().prefix("test_collection").tempdir().unwrap();
 
-
     let collection_name = "test".to_string();
     let collection_name_rec = "test_rec".to_string();
     let mut shards = HashMap::new();
@@ -126,7 +125,7 @@ async fn _test_snapshot_collection(node_type: NodeType) {
             0,
             false,
         )
-            .is_err());
+        .is_err());
     }
 
     let recover_dir = Builder::new()
