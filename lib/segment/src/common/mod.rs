@@ -5,6 +5,7 @@ pub mod mmap_type;
 pub mod operation_error;
 pub mod operation_time_statistics;
 pub mod rocksdb_buffered_delete_wrapper;
+pub mod rocksdb_buffered_update_wrapper;
 pub mod rocksdb_wrapper;
 pub mod utils;
 pub mod vector_utils;

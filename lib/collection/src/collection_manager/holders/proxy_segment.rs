@@ -717,6 +717,7 @@ impl SegmentEntry for ProxySegment {
             *self.last_flushed_version.write() = Some(flushed_version);
             Ok(flushed_version)
         } else {
+            let _write_segment_version = self.write_segment.get().read().flush(sync)?;
             // If intermediate state is not empty - that is possible that some changes are not persisted
             Ok(self
                 .last_flushed_version
