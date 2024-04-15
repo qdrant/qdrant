@@ -18,10 +18,15 @@ pub fn open_snapshot_archive_with_validation<P: AsRef<Path>>(
         let mut ar = Archive::new(archive_file);
 
         for entry in ar.entries_with_seek()? {
-            let entry = entry?;
-            if entry.header().entry_type() == tar::EntryType::Symlink {
+            let entry_type = entry?.header().entry_type();
+            if !matches!(
+                entry_type,
+                tar::EntryType::Regular | tar::EntryType::Directory,
+            ) {
                 return Err(OperationError::ValidationError {
-                    description: "Malformed snapshot".to_string(),
+                    description: format!(
+                        "Malformed snapshot, tar archive contains {entry_type:?} entry",
+                    ),
                 });
             }
         }
