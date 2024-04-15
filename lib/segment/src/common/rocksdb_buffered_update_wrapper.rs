@@ -34,7 +34,9 @@ impl DatabaseColumnScheduledUpdateWrapper {
         V: AsRef<[u8]>,
     {
         self.deleted_pending_persistence.lock().remove(key.as_ref());
-        self.insert_pending_persistence.lock().insert(key.as_ref().to_vec(), value.as_ref().to_vec());
+        self.insert_pending_persistence
+            .lock()
+            .insert(key.as_ref().to_vec(), value.as_ref().to_vec());
         Ok(())
     }
 
@@ -44,9 +46,7 @@ impl DatabaseColumnScheduledUpdateWrapper {
     {
         let key = key.as_ref();
         self.insert_pending_persistence.lock().remove(key);
-        self.deleted_pending_persistence
-            .lock()
-            .insert(key.to_vec());
+        self.deleted_pending_persistence.lock().insert(key.to_vec());
         Ok(())
     }
 
