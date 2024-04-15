@@ -7,7 +7,8 @@ use itertools::Itertools;
 use schemars::JsonSchema;
 use segment::types::Filter;
 use serde::{Deserialize, Serialize};
-use storage::content_manager::toc::TableOfContent;
+use storage::dispatcher::Dispatcher;
+use storage::rbac::Access;
 use tokio::runtime;
 use tokio::runtime::Runtime;
 use tonic::transport::{Certificate, ClientTlsConfig, Identity, ServerTlsConfig};
@@ -133,7 +134,7 @@ pub fn tonic_error_to_io_error(err: tonic::transport::Error) -> io::Error {
 pub async fn post_process_slow_request(
     duration: Duration,
     threshold_ratio: f64,
-    toc: &TableOfContent,
+    dispatcher: &Dispatcher,
     collection_name: &str,
     filters: Vec<Option<Filter>>,
 ) {
@@ -147,7 +148,10 @@ pub async fn post_process_slow_request(
             return;
         }
 
-        let Ok(collection_info) = do_get_collection(toc, collection_name, None).await else {
+        let access = Access::full("For post-processing slow_request");
+        let Ok(collection_info) =
+            do_get_collection(dispatcher.toc(&access), access, collection_name, None).await
+        else {
             return;
         };
 

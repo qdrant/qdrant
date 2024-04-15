@@ -58,7 +58,7 @@ async fn search_points(
     crate::common::helpers::post_process_slow_request(
         timing.elapsed(),
         1.0,
-        toc.get_ref(),
+        &dispatcher,
         &collection.name,
         vec![filter],
     )
@@ -127,7 +127,7 @@ async fn batch_search_points(
     crate::common::helpers::post_process_slow_request(
         timing.elapsed(),
         1.0,
-        toc.get_ref(),
+        &dispatcher,
         &collection.name,
         filters,
     )

@@ -6,15 +6,15 @@ use issues::{Action, CodeType, ImmediateSolution, Issue, Solution};
 use itertools::Itertools;
 
 use crate::common::operation_error::OperationError;
-use crate::common::utils::JsonPathPayload;
 use crate::data_types::text_index::{TextIndexParams, TextIndexType, TokenizerType};
+use crate::json_path::{JsonPathInterface, JsonPathV2};
 use crate::types::{
     AnyVariants, Condition, FieldCondition, Filter, Match, MatchValue, PayloadFieldSchema,
     PayloadKeyType, PayloadSchemaParams, PayloadSchemaType,
 };
 
 pub struct UnindexedField {
-    field_name: String,
+    field_name: JsonPathV2,
     field_schemas: Vec<PayloadFieldSchema>,
     collection_name: String,
 }
@@ -22,7 +22,7 @@ pub struct UnindexedField {
 impl UnindexedField {
     pub const SLOW_SEARCH_THRESHOLD: Duration = Duration::from_millis(300);
 
-    pub fn get_code(collection_name: &str, field_name: &str) -> CodeType {
+    pub fn get_code(collection_name: &str, field_name: &JsonPathV2) -> CodeType {
         format!("{collection_name}/UNINDEXED_FIELD/{field_name}")
     }
 
@@ -232,7 +232,7 @@ impl<'a> Extractor<'a> {
             .collect()
     }
 
-    fn update_from_filter(&mut self, nested_prefix: Option<&JsonPathPayload>, filter: &Filter) {
+    fn update_from_filter(&mut self, nested_prefix: Option<&JsonPathV2>, filter: &Filter) {
         let Filter {
             must,
             should,
@@ -254,19 +254,15 @@ impl<'a> Extractor<'a> {
         .for_each(|condition| self.update_from_condition(nested_prefix, condition));
     }
 
-    fn update_from_condition(
-        &mut self,
-        nested_prefix: Option<&JsonPathPayload>,
-        condition: &Condition,
-    ) {
+    fn update_from_condition(&mut self, nested_prefix: Option<&JsonPathV2>, condition: &Condition) {
         match condition {
             Condition::Field(field_condition) => {
-                let full_key = JsonPathPayload::extend_or_new(nested_prefix, &field_condition.key);
+                let full_key = JsonPathV2::extend_or_new(nested_prefix, &field_condition.key);
 
                 let inferred = infer_schema_from_field_condition(field_condition);
 
                 let mut needs_index = false;
-                match self.payload_schema.get(&full_key.path) {
+                match self.payload_schema.get(&full_key) {
                     Some(index_info) => {
                         let already_indexed =
                             inferred.iter().any(|inferred| inferred == index_info);
@@ -282,7 +278,7 @@ impl<'a> Extractor<'a> {
 
                 if needs_index {
                     self.unindexed_schema
-                        .entry(full_key.path)
+                        .entry(full_key)
                         .and_modify(|entry| entry.extend(inferred))
                         .or_default();
                 }
@@ -291,10 +287,7 @@ impl<'a> Extractor<'a> {
                 self.update_from_filter(nested_prefix, filter);
             }
             Condition::Nested(nested) => self.update_from_filter(
-                Some(&JsonPathPayload::extend_or_new(
-                    nested_prefix,
-                    nested.raw_key(),
-                )),
+                Some(&JsonPathV2::extend_or_new(nested_prefix, nested.raw_key())),
                 nested.filter(),
             ),
             // TODO: what to do with these? Any index would suffice
