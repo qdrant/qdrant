@@ -21,6 +21,7 @@ use crate::common::operation_error::OperationError::TypeInferenceError;
 use crate::common::operation_error::{
     get_service_error, OperationError, OperationResult, SegmentFailedState,
 };
+use crate::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
 use crate::common::version::{StorageVersion, VERSION_FILE};
 use crate::common::{check_named_vectors, check_query_vectors, check_stopped, check_vector_name};
 use crate::data_types::named_vectors::NamedVectors;
@@ -474,19 +475,13 @@ impl Segment {
     pub fn restore_snapshot(snapshot_path: &Path, segment_id: &str) -> OperationResult<()> {
         let segment_path = snapshot_path.parent().unwrap().join(segment_id);
 
-        let archive_file = File::open(snapshot_path).map_err(|err| {
+        let mut archive = open_snapshot_archive_with_validation(snapshot_path)?;
+
+        archive.unpack(&segment_path).map_err(|err| {
             OperationError::service_error(format!(
-                "failed to open segment snapshot archive {snapshot_path:?}: {err}"
+                "failed to unpack segment snapshot archive {snapshot_path:?}: {err}"
             ))
         })?;
-
-        tar::Archive::new(archive_file)
-            .unpack(&segment_path)
-            .map_err(|err| {
-                OperationError::service_error(format!(
-                    "failed to unpack segment snapshot archive {snapshot_path:?}: {err}"
-                ))
-            })?;
 
         let snapshot_path = segment_path.join(SNAPSHOT_PATH);
 

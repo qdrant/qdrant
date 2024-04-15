@@ -8,6 +8,7 @@ pub mod rocksdb_buffered_delete_wrapper;
 pub mod rocksdb_buffered_update_wrapper;
 pub mod rocksdb_wrapper;
 pub mod utils;
+pub mod validate_snapshot_archive;
 pub mod vector_utils;
 pub mod version;
 

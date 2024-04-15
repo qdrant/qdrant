@@ -2,6 +2,7 @@ use std::fs::{self, remove_dir_all, rename};
 use std::path::{Path, PathBuf};
 
 use collection::collection::Collection;
+use collection::common::validate_snapshot_archive::validate_open_snapshot_archive;
 use collection::shards::shard::PeerId;
 use log::info;
 use storage::content_manager::alias_mapping::AliasPersistence;
@@ -94,8 +95,7 @@ pub fn recover_full_snapshot(
     fs::create_dir_all(&snapshot_temp_path).unwrap();
 
     // Un-tar snapshot into temporary directory
-    let archive_file = fs::File::open(snapshot_path).unwrap();
-    let mut ar = tar::Archive::new(archive_file);
+    let mut ar = validate_open_snapshot_archive(snapshot_path).unwrap();
     ar.unpack(&snapshot_temp_path).unwrap();
 
     // Read configuration file with snapshot-to-collection mapping
