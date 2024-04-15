@@ -50,7 +50,7 @@ client = QdrantClient(path="path/to/db")  # Persists changes to disk, fast proto
 
 ### Client-Server
 
-To run the container, use the command:
+To experience the full power of Qdrant locally, run the container with this command:
 
 ```bash
 docker run -p 6333:6333 qdrant/qdrant
@@ -61,6 +61,8 @@ Now you can connect to this with any client, including Python:
 ```python
 qdrant = QdrantClient("http://localhost:6333") # Connect to existing Qdrant instance
 ```
+
+Before deploying Qdrant to production, be sure to read our [installation](https://qdrant.tech/documentation/guides/installation/) and [security](https://qdrant.tech/documentation/guides/security/) guides.
 
 ### Clients
 
