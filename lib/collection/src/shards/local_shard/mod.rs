@@ -212,12 +212,18 @@ impl LocalShard {
 
         let mut load_handlers = vec![];
 
+        // This semaphore is used to limit the number of threads that load segments concurrently.
+        // Uncomment it if you need to debug segment loading.
+        // let semaphore = Arc::new(parking_lot::Mutex::new(()));
+
         for entry in segment_dirs {
             let segments_path = entry.unwrap().path();
+            // let semaphore_clone = semaphore.clone();
             load_handlers.push(
                 thread::Builder::new()
                     .name(format!("shard-load-{collection_id}-{id}"))
                     .spawn(move || {
+                        // let _guard = semaphore_clone.lock();
                         let mut res = load_segment(&segments_path, &AtomicBool::new(false))?;
                         if let Some(segment) = &mut res {
                             segment.check_consistency_and_repair()?;
@@ -287,7 +293,7 @@ impl LocalShard {
 
         let clocks = LocalShardClocks::load(shard_path)?;
 
-        let collection = LocalShard::new(
+        let local_shard = LocalShard::new(
             segment_holder,
             collection_config,
             shared_storage_config,
@@ -300,10 +306,10 @@ impl LocalShard {
         )
         .await;
 
-        collection.load_from_wal(collection_id).await?;
+        local_shard.load_from_wal(collection_id).await?;
 
         let available_memory_bytes = Mem::new().available_memory_bytes() as usize;
-        let vectors_size_bytes = collection.estimate_vector_data_size().await;
+        let vectors_size_bytes = local_shard.estimate_vector_data_size().await;
 
         // Simple heuristic to exclude mmap prefaulting for collections that won't benefit from it.
         //
@@ -316,14 +322,14 @@ impl LocalShard {
         let do_mmap_prefault = available_memory_bytes * 2 > vectors_size_bytes;
 
         if do_mmap_prefault {
-            for (_, segment) in collection.segments.read().iter() {
+            for (_, segment) in local_shard.segments.read().iter() {
                 if let LockedSegment::Original(segment) = segment {
                     segment.read().prefault_mmap_pages();
                 }
             }
         }
 
-        Ok(collection)
+        Ok(local_shard)
     }
 
     pub fn shard_path(&self) -> PathBuf {
