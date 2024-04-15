@@ -109,7 +109,6 @@ impl AuthKeys {
             return Ok(access);
         }
 
-        // Err("Invalid API key or JWT".to_string())
         Err(AuthError::Unauthorized(
             "Invalid API key or JWT".to_string(),
         ))

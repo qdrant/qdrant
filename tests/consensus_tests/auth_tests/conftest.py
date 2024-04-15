@@ -9,6 +9,7 @@ def jwt_cluster(tmp_path_factory: pytest.TempPathFactory):
 
     peer_api_uris, peer_dirs, bootstrap_uri = start_jwt_protected_cluster(tmp_path)
 
-    yield peer_api_uris, peer_dirs, bootstrap_uri
-
-    kill_all_processes()
+    try:
+        yield peer_api_uris, peer_dirs, bootstrap_uri
+    finally:
+        kill_all_processes()

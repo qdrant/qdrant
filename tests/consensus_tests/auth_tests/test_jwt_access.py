@@ -14,6 +14,8 @@ from .utils import (
     API_KEY_HEADERS,
     API_KEY_METADATA,
     GRPC_URI,
+    READ_ONLY_API_KEY,
+    READ_ONLY_API_KEY_METADATA,
     REST_URI,
     SECRET,
     encode_jwt,
@@ -22,7 +24,7 @@ from .utils import (
 
 COLL_NAME = "jwt_test_collection"
 
-MAX_CALLS_IN_CHECK_ACCESS = 12
+MAX_CALLS_IN_CHECK_ACCESS = 16
 
 # Global read access token
 TOKEN_R = encode_jwt({"access": "r"}, SECRET)
@@ -612,22 +614,30 @@ def check_rest_access(
 
     path = path.format(**concrete_path_params)
 
-    res = requests.request(
-        method,
-        f"{REST_URI}{path}",
-        headers={"authorization": f"Bearer {token}"},
-        json=body,
-        **request_kwargs,
-    )
+    try:
+        res = requests.request(
+            method,
+            f"{REST_URI}{path}",
+            headers={"authorization": f"Bearer {token}"},
+            json=body,
+            **request_kwargs,
+        )
 
-    if should_succeed:
-        assert (
-            res.status_code < 500 and res.status_code != 403
-        ), f"{method} {path} failed with {res.status_code}: {res.text}"
-    else:
-        assert (
-            res.status_code == 403
-        ), f"{method} {path} should've gotten `403` status code, but got `{res.status_code}: {res.text}`"
+        if should_succeed:
+            assert (
+                res.status_code < 500 and res.status_code != 403
+            ), f"{method} {path} failed with {res.status_code}: {res.text}"
+        else:
+            assert (
+                res.status_code == 403
+            ), f"{method} {path} should've gotten `403` status code, but got `{res.status_code}: {res.text}`"
+
+    except requests.exceptions.ConnectionError as e:
+        # File upload requests might hang if we get an early response (like 401 or 403),
+        # but `requests` does not handle those properly
+        # https://github.com/psf/requests/issues/5425
+        if should_succeed or not isinstance(e.args[0].args[1], TimeoutError):
+            raise e
 
 
 def check_grpc_access(
@@ -679,6 +689,12 @@ class GrpcClients:
         )
         self.m = grpc_requests.Client(
             GRPC_URI, interceptors=[MetadataInterceptor([("authorization", f"Bearer {TOKEN_M}")])]
+        )
+        self.api_key = grpc_requests.Client(
+            GRPC_URI, interceptors=[MetadataInterceptor(API_KEY_METADATA)]
+        )
+        self.read_only_api_key = grpc_requests.Client(
+            GRPC_URI, interceptors=[MetadataInterceptor(READ_ONLY_API_KEY_METADATA)]
         )
 
 
@@ -739,6 +755,28 @@ def check_access(
         method, path, rest_request, allowed_for.manage, TOKEN_M, path_params, rest_req_kwargs
     )
 
+    # Check that API key is the same as manage token
+    check_rest_access(
+        method,
+        path,
+        rest_request,
+        allowed_for.manage,
+        SECRET,
+        path_params,
+        rest_req_kwargs,
+    )
+
+    # Check that read-only API key is the same as read-only token
+    check_rest_access(
+        method,
+        path,
+        rest_request,
+        allowed_for.read,
+        READ_ONLY_API_KEY,
+        path_params,
+        rest_req_kwargs,
+    )
+
     ## Check GRPC
     grpc_endpoint = action_access.grpc_endpoint
     if grpc_endpoint is not None:
@@ -758,6 +796,12 @@ def check_access(
             grpc.coll_rw_payload, service, method, grpc_request, allowed_for.coll_rw_payload
         )
         check_grpc_access(grpc.m, service, method, grpc_request, allowed_for.manage)
+
+        # Check that API key is the same as manage token
+        check_grpc_access(grpc.api_key, service, method, grpc_request, allowed_for.manage)
+
+        # Check that read-only API key is the same as read-only token
+        check_grpc_access(grpc.read_only_api_key, service, method, grpc_request, allowed_for.read)
 
 
 def test_list_collections():
@@ -1196,7 +1240,7 @@ def collection_snapshot():
 def test_upload_collection_snapshot(collection_snapshot: bytes):
     check_access(
         "upload_collection_snapshot",
-        rest_req_kwargs={"files": {"snapshot": collection_snapshot}},
+        rest_req_kwargs={"files": {"snapshot": collection_snapshot}, "timeout": 1},
         path_params={"collection_name": COLL_NAME},
     )
 
@@ -1238,7 +1282,7 @@ def shard_snapshot(shard_snapshot_name):
 def test_upload_shard_snapshot(shard_snapshot: bytes):
     check_access(
         "upload_shard_snapshot",
-        rest_req_kwargs={"files": {"snapshot": shard_snapshot}},
+        rest_req_kwargs={"files": {"snapshot": shard_snapshot}, "timeout": 1},
         path_params={"collection_name": COLL_NAME, "shard_id": SHARD_ID},
     )
 
@@ -1689,5 +1733,4 @@ def test_post_locks():
 
 
 def test_get_locks():
-    check_access("get_locks")
     check_access("get_locks")
