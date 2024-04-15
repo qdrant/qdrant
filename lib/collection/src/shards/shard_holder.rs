@@ -12,6 +12,7 @@ use tokio::sync::RwLock;
 
 use super::replica_set::AbortShardTransfer;
 use super::transfer::transfer_tasks_pool::TransferTasksPool;
+use crate::common::validate_snapshot_archive::validate_open_snapshot_archive;
 use crate::config::{CollectionConfig, ShardingMethod};
 use crate::hash_ring::HashRing;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
@@ -802,14 +803,13 @@ impl ShardHolder {
             return Err(shard_not_found_error(shard_id));
         }
 
-        let snapshot = std::fs::File::open(snapshot_path)?;
-
         if !temp_dir.exists() {
             std::fs::create_dir_all(temp_dir)?;
         }
 
         let snapshot_file_name = snapshot_path.file_name().unwrap().to_string_lossy();
 
+        let snapshot_path = snapshot_path.to_path_buf();
         let snapshot_temp_dir = tempfile::Builder::new()
             .prefix(&format!(
                 "{collection_name}-shard-{shard_id}-{snapshot_file_name}"
@@ -822,7 +822,7 @@ impl ShardHolder {
             cancel::blocking::spawn_cancel_on_token(
                 cancel.child_token(),
                 move |cancel| -> CollectionResult<_> {
-                    let mut tar = tar::Archive::new(snapshot);
+                    let mut tar = validate_open_snapshot_archive(snapshot_path)?;
 
                     if cancel.is_cancelled() {
                         return Err(cancel::Error::Cancelled.into());
