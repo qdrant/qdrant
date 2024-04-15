@@ -13,7 +13,7 @@ publish = false
 chrono = { workspace = true }
 dashmap = "5.5.3"
 http = "1.0.0"
-http-serde = "2.0.0"
+http-serde = "2.1.0"
 log = "0.4.20"
 schemars = { workspace = true }
 serde = { workspace = true }
