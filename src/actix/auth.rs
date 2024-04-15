@@ -5,7 +5,7 @@ use std::sync::Arc;
 use actix_web::body::{BoxBody, EitherBody};
 use actix_web::dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform};
 use actix_web::http::Method;
-use actix_web::{Error, FromRequest, HttpMessage as _, HttpResponse, ResponseError};
+use actix_web::{Error, FromRequest, HttpMessage, HttpResponse, ResponseError};
 use futures_util::future::LocalBoxFuture;
 use storage::rbac::Access;
 

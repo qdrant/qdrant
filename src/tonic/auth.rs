@@ -14,10 +14,14 @@ use crate::common::strings::ct_eq;
 type Request = tonic::codegen::http::Request<tonic::transport::Body>;
 type Response = tonic::codegen::http::Response<BoxBody>;
 
-const READ_ONLY_RPC_PATHS: [&str; 14] = [
+const READ_ONLY_RPC_PATHS: [&str; 22] = [
+    "/grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo",
     "/qdrant.Collections/CollectionExists",
     "/qdrant.Collections/List",
     "/qdrant.Collections/Get",
+    "/qdrant.Collections/ListCollectionAliases",
+    "/qdrant.Collections/ListAliases",
+    "/qdrant.Collections/CollectionClusterInfo",
     "/qdrant.Points/Scroll",
     "/qdrant.Points/Get",
     "/qdrant.Points/Count",
@@ -29,6 +33,10 @@ const READ_ONLY_RPC_PATHS: [&str; 14] = [
     "/qdrant.Points/RecommendBatch",
     "/qdrant.Points/Discover",
     "/qdrant.Points/DiscoverBatch",
+    "/qdrant.Snapshots/List",
+    "/qdrant.Snapshots/ListFull",
+    "/qdrant.Qdrant/HealthCheck",
+    "/grpc.health.v1.Health/Check",
 ];
 
 #[derive(Clone)]
