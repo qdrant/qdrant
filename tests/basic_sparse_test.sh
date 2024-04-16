@@ -141,8 +141,8 @@ curl -L -X POST "http://$QDRANT_HOST/collections/$COLLECTION_NAME/points" \
       "with_vectors": true
     }' | jq
 
-SAVED_VECTORS_COUNT=$(curl --fail -s "http://$QDRANT_HOST/collections/$COLLECTION_NAME" | jq '.result.vectors_count')
-[[ "$SAVED_VECTORS_COUNT" == "6" ]] || {
+SAVED_POINTS_COUNT=$(curl --fail -s "http://$QDRANT_HOST/collections/$COLLECTION_NAME" | jq '.result.points_count')
+[[ "$SAVED_POINTS_COUNT" == "6" ]] || {
   echo 'check failed - 6 points expected'
   exit 1
 }

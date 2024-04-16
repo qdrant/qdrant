@@ -38,7 +38,7 @@ def test_points_retrieve():
         path_params={'collection_name': collection_name},
     )
     assert response.ok
-    assert response.json()['result']['vectors_count'] == 16
+    assert response.json()['result']['points_count'] == 8
 
     response = request_with_validation(
         api='/collections/{collection_name}/points/search',
