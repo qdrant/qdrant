@@ -46,7 +46,7 @@ fn avg_vectors<'a>(vectors: impl Iterator<Item = VectorRef<'a>>) -> CollectionRe
             }
             VectorRef::Sparse(vector) => {
                 sparse_count += 1;
-                avg_sparse = vector.combine_aggregate(&avg_sparse, |v1, v2| v1 + v2);
+                avg_sparse.combine_aggregate(vector, |v1, v2| v1 + v2);
             }
             VectorRef::MultiDense(_) => {
                 // TODO(colbert)
@@ -92,9 +92,10 @@ fn merge_positive_and_negative_avg(positive: Vector, negative: Vector) -> Collec
                 .collect();
             Ok(vector.into())
         }
-        (Vector::Sparse(positive), Vector::Sparse(negative)) => Ok(positive
-            .combine_aggregate(&negative, |pos, neg| pos + pos - neg)
-            .into()),
+        (Vector::Sparse(mut positive), Vector::Sparse(negative)) => {
+            positive.combine_aggregate(&negative, |pos, neg| pos + pos - neg);
+            Ok(Vector::from(positive))
+        },
         _ => Err(CollectionError::bad_input(
             "Positive and negative vectors should be of the same type, either all dense or all sparse".to_owned(),
         )),

@@ -86,51 +86,87 @@ impl SparseVector {
         }
     }
 
-    /// Construct a new vector that is the result of performing all indices-wise operations
+    /// Perform all indices-wise operations with other vector
     pub fn combine_aggregate(
-        &self,
+        &mut self,
         other: &SparseVector,
         op: impl Fn(DimWeight, DimWeight) -> DimWeight,
-    ) -> Self {
-        debug_assert!(self.is_sorted());
-        debug_assert!(other.is_sorted());
+    ) {
+        assert!(self.is_sorted());
+        let len = self.indices.len();
 
-        let mut result = SparseVector::default();
-        let mut i = 0;
-        let mut j = 0;
-        while i < self.indices.len() && j < other.indices.len() {
-            match self.indices[i].cmp(&other.indices[j]) {
-                std::cmp::Ordering::Less => {
-                    result.indices.push(self.indices[i]);
-                    result.values.push(op(self.values[i], 0.0));
-                    i += 1;
+        if other.is_sorted() {
+            // if other is sorted, to it in linear time
+            let mut i = 0;
+            let mut j = 0;
+            while i < self.indices.len() && j < other.indices.len() {
+                match self.indices[i].cmp(&other.indices[j]) {
+                    std::cmp::Ordering::Less => {
+                        self.values[i] = op(self.values[i], 0.0);
+                        i += 1;
+                    }
+                    std::cmp::Ordering::Greater => {
+                        self.indices.push(other.indices[j]);
+                        self.values.push(op(0.0, other.values[j]));
+                        j += 1;
+                    }
+                    std::cmp::Ordering::Equal => {
+                        self.values[i] = op(self.values[i], other.values[j]);
+                        i += 1;
+                        j += 1;
+                    }
                 }
-                std::cmp::Ordering::Greater => {
-                    result.indices.push(other.indices[j]);
-                    result.values.push(op(0.0, other.values[j]));
-                    j += 1;
+            }
+            while i < len {
+                self.values[i] = op(self.values[i], 0.0);
+                i += 1;
+            }
+            while j < other.indices.len() {
+                self.indices.push(other.indices[j]);
+                self.values.push(op(0.0, other.values[j]));
+                j += 1;
+            }
+        } else {
+            // if other is not sorted, to it in `O(N*log(N))` time
+            let get_dirty = |x: u32| x | 1 << 31;
+            let get_clear = |x: u32| x & !(1 << 31);
+            let check_dirty = |x: u32| x & (1 << 31) != 0;
+
+            // mark all indices in self as dirty
+            for i in 0..len {
+                self.indices[i] = get_dirty(self.indices[i]);
+            }
+
+            for (&other_index, &other_value) in other.indices.iter().zip(other.values.iter()) {
+                let binary_search_result = self.indices[0..len]
+                    .binary_search_by(|&index| get_clear(index).cmp(&other_index));
+                match binary_search_result {
+                    Ok(i) => {
+                        self.values[i] = op(self.values[i], other_value);
+                        self.indices[i] = get_clear(self.indices[i]);
+                    }
+                    Err(_) => {
+                        self.indices.push(other_index);
+                        self.values.push(op(0.0, other_value));
+                    }
                 }
-                std::cmp::Ordering::Equal => {
-                    result.indices.push(self.indices[i]);
-                    result.values.push(op(self.values[i], other.values[j]));
-                    i += 1;
-                    j += 1;
+            }
+
+            // find dirty indices and apply op to them
+            for i in 0..len {
+                if check_dirty(self.indices[i]) {
+                    self.values[i] = op(self.values[i], 0.0);
+                    self.indices[i] = get_clear(self.indices[i]);
                 }
             }
         }
-        while i < self.indices.len() {
-            result.indices.push(self.indices[i]);
-            result.values.push(op(self.values[i], 0.0));
-            i += 1;
+
+        // if some new indices were added, we need to sort the vector
+        if len != self.indices.len() {
+            self.sort_by_indices();
         }
-        while j < other.indices.len() {
-            result.indices.push(other.indices[j]);
-            result.values.push(op(0.0, other.values[j]));
-            j += 1;
-        }
-        debug_assert!(result.is_sorted());
-        debug_assert!(result.validate().is_ok());
-        result
+        assert!(self.is_sorted());
+        assert!(self.validate().is_ok());
     }
 }
 
@@ -249,14 +285,28 @@ mod tests {
 
     #[test]
     fn combine_aggregate_test() {
-        let a = SparseVector::new(vec![1, 2, 3], vec![0.1, 0.2, 0.3]).unwrap();
+        let mut a = SparseVector::new(vec![1, 2, 3], vec![0.1, 0.2, 0.3]).unwrap();
         let b = SparseVector::new(vec![2, 3, 4], vec![2.0, 3.0, 4.0]).unwrap();
-        let sum = a.combine_aggregate(&b, |x, y| x + 2.0 * y);
-        assert_eq!(sum.indices, vec![1, 2, 3, 4]);
-        assert_eq!(sum.values, vec![0.1, 4.2, 6.3, 8.0]);
+        a.combine_aggregate(&b, |x, y| x + 2.0 * y);
+        assert_eq!(a.indices, vec![1, 2, 3, 4]);
+        assert_eq!(a.values, vec![0.1, 4.2, 6.3, 8.0]);
 
-        let sum = b.combine_aggregate(&a, |x, y| x + 2.0 * y);
-        assert_eq!(sum.indices, vec![1, 2, 3, 4]);
-        assert_eq!(sum.values, vec![0.2, 2.4, 3.6, 4.0]);
+        let a = SparseVector::new(vec![1, 2, 3], vec![0.1, 0.2, 0.3]).unwrap();
+        let mut b = SparseVector::new(vec![2, 3, 4], vec![2.0, 3.0, 4.0]).unwrap();
+        b.combine_aggregate(&a, |x, y| x + 2.0 * y);
+        assert_eq!(b.indices, vec![1, 2, 3, 4]);
+        assert_eq!(b.values, vec![0.2, 2.4, 3.6, 4.0]);
+
+        let mut a = SparseVector::new(vec![1, 2, 3], vec![0.1, 0.2, 0.3]).unwrap();
+        let b = SparseVector::new(vec![4, 2, 3], vec![4.0, 2.0, 3.0]).unwrap();
+        a.combine_aggregate(&b, |x, y| x + 2.0 * y);
+        assert_eq!(a.indices, vec![1, 2, 3, 4]);
+        assert_eq!(a.values, vec![0.1, 4.2, 6.3, 8.0]);
+
+        let a = SparseVector::new(vec![1, 3, 2], vec![0.1, 0.3, 0.2]).unwrap();
+        let mut b = SparseVector::new(vec![2, 3, 4], vec![2.0, 3.0, 4.0]).unwrap();
+        b.combine_aggregate(&a, |x, y| x + 2.0 * y);
+        assert_eq!(b.indices, vec![1, 2, 3, 4]);
+        assert_eq!(b.values, vec![0.2, 2.4, 3.6, 4.0]);
     }
 }
