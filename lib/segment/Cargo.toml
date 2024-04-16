@@ -18,7 +18,7 @@ criterion = "0.5"
 rmp-serde = "~1.1"
 rand_distr = "0.4.3"
 walkdir = "2.5.0"
-rstest = "0.18.2"
+rstest = "0.19.0"
 proptest = "1.4.0"
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
