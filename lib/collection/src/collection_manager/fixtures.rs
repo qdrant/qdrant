@@ -300,7 +300,7 @@ pub fn optimize_segment(segment: Segment) -> LockedSegment {
 
     let mut holder = locked_holder.write();
 
-    let segment_id = *holder.non_appendable_segments().first().unwrap();
+    let segment_id = *holder.non_appendable_segments_ids().first().unwrap();
 
     let mut segments = holder.remove(&[segment_id]);
 

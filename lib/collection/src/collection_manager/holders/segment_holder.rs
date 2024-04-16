@@ -141,7 +141,8 @@ impl From<ProxySegment> for LockedSegment {
 
 #[derive(Default)]
 pub struct SegmentHolder {
-    segments: HashMap<SegmentId, LockedSegment>,
+    appendable_segments: HashMap<SegmentId, LockedSegment>,
+    non_appendable_segments: HashMap<SegmentId, LockedSegment>,
 
     update_tracker: UpdateTracker,
 
@@ -157,15 +158,17 @@ pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
 
 impl<'s> SegmentHolder {
     pub fn iter(&'s self) -> impl Iterator<Item = (&SegmentId, &LockedSegment)> + 's {
-        self.segments.iter()
+        self.appendable_segments
+            .iter()
+            .chain(self.non_appendable_segments.iter())
     }
 
     pub fn len(&self) -> usize {
-        self.segments.len()
+        self.appendable_segments.len() + self.non_appendable_segments.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.segments.is_empty()
+        self.appendable_segments.is_empty() && self.non_appendable_segments.is_empty()
     }
 
     pub fn update_tracker(&self) -> UpdateTracker {
@@ -174,11 +177,23 @@ impl<'s> SegmentHolder {
 
     fn generate_new_key(&self) -> SegmentId {
         let key = thread_rng().gen::<SegmentId>();
-        if self.segments.contains_key(&key) {
+        if self.appendable_segments.contains_key(&key)
+            || self.non_appendable_segments.contains_key(&key)
+        {
             self.generate_new_key()
         } else {
             key
         }
+    }
+
+    fn _insert(&mut self, segment: LockedSegment) -> SegmentId {
+        let key = self.generate_new_key();
+        if segment.get().read().is_appendable() {
+            self.appendable_segments.insert(key, segment);
+        } else {
+            self.non_appendable_segments.insert(key, segment);
+        }
+        key
     }
 
     /// Add new segment to storage
@@ -186,22 +201,23 @@ impl<'s> SegmentHolder {
     where
         T: Into<LockedSegment>,
     {
-        let key = self.generate_new_key();
-        self.segments.insert(key, segment.into());
-        key
+        let locked_segment = segment.into();
+        self._insert(locked_segment)
     }
 
     /// Add new segment to storage which is already LockedSegment
     pub fn add_locked(&mut self, segment: LockedSegment) -> SegmentId {
-        let key = self.generate_new_key();
-        self.segments.insert(key, segment);
-        key
+        self._insert(segment)
     }
 
     pub fn remove(&mut self, remove_ids: &[SegmentId]) -> Vec<LockedSegment> {
         let mut removed_segments = vec![];
         for remove_id in remove_ids {
-            let removed_segment = self.segments.remove(remove_id);
+            let removed_segment = self.appendable_segments.remove(remove_id);
+            if let Some(segment) = removed_segment {
+                removed_segments.push(segment);
+            }
+            let removed_segment = self.non_appendable_segments.remove(remove_id);
             if let Some(segment) = removed_segment {
                 removed_segments.push(segment);
             }
@@ -233,52 +249,54 @@ impl<'s> SegmentHolder {
     }
 
     pub fn get(&self, id: SegmentId) -> Option<&LockedSegment> {
-        self.segments.get(&id)
+        self.appendable_segments
+            .get(&id)
+            .or_else(|| self.non_appendable_segments.get(&id))
     }
 
     pub fn has_appendable_segment(&self) -> bool {
-        self.segments
-            .iter()
-            .any(|(_idx, seg)| seg.get().read().is_appendable())
+        !self.appendable_segments.is_empty()
     }
 
     /// Get all locked segments, non-appendable first, then appendable.
-    pub fn non_appendable_then_appendable_segments(&self) -> Vec<LockedSegment> {
-        let mut segments = self.segments.values().cloned().collect::<Vec<_>>();
-        segments.sort_by_key(|seg| seg.get().read().is_appendable());
-        segments
+    pub fn non_appendable_then_appendable_segments(
+        &'s self,
+    ) -> impl Iterator<Item = LockedSegment> + 's {
+        self.non_appendable_segments
+            .values()
+            .chain(self.appendable_segments.values())
+            .cloned()
     }
 
     pub fn collect_non_appendable_and_appendable_segments(
         &self,
     ) -> (Vec<LockedSegment>, Vec<LockedSegment>) {
-        self.segments
-            .values()
-            .cloned()
-            .partition(|segment| !segment.get().read().is_appendable())
+        (
+            self.non_appendable_segments.values().cloned().collect(),
+            self.appendable_segments.values().cloned().collect(),
+        )
     }
 
-    pub fn appendable_segments(&self) -> Vec<SegmentId> {
-        self.segments
-            .iter()
-            .filter(|(_idx, seg)| seg.get().read().is_appendable())
-            .map(|(idx, _seg)| *idx)
-            .collect()
+    pub fn appendable_segments_ids(&self) -> Vec<SegmentId> {
+        self.appendable_segments.keys().copied().collect()
     }
 
-    pub fn non_appendable_segments(&self) -> Vec<SegmentId> {
-        self.segments
-            .iter()
-            .filter(|(_idx, seg)| !seg.get().read().is_appendable())
-            .map(|(idx, _seg)| *idx)
+    pub fn non_appendable_segments_ids(&self) -> Vec<SegmentId> {
+        self.non_appendable_segments.keys().copied().collect()
+    }
+
+    pub fn segment_ids(&self) -> Vec<SegmentId> {
+        self.appendable_segments_ids()
+            .into_iter()
+            .chain(self.non_appendable_segments_ids())
             .collect()
     }
 
     pub fn random_appendable_segment(&self) -> Option<LockedSegment> {
-        let segment_ids: Vec<_> = self.appendable_segments();
+        let segment_ids: Vec<_> = self.appendable_segments_ids();
         segment_ids
             .choose(&mut rand::thread_rng())
-            .and_then(|idx| self.segments.get(idx).cloned())
+            .and_then(|idx| self.appendable_segments.get(idx).cloned())
     }
 
     /// Selects point ids, which is stored in this segment
@@ -294,7 +312,7 @@ impl<'s> SegmentHolder {
         F: FnMut(&RwLockReadGuard<dyn SegmentEntry + 'static>) -> OperationResult<bool>,
     {
         let mut processed_segments = 0;
-        for segment in self.segments.values() {
+        for (_id, segment) in self.iter() {
             let is_applied = f(&segment.get().read())?;
             processed_segments += is_applied as usize;
         }
@@ -308,7 +326,7 @@ impl<'s> SegmentHolder {
         let _update_guard = self.update_tracker.update();
 
         let mut processed_segments = 0;
-        for segment in self.segments.values() {
+        for (_id, segment) in self.iter() {
             let is_applied = f(&mut segment.get().write())?;
             processed_segments += is_applied as usize;
         }
@@ -336,7 +354,7 @@ impl<'s> SegmentHolder {
         let _update_guard = self.update_tracker.update();
 
         let mut applied_points = 0;
-        for (idx, segment) in &self.segments {
+        for (idx, segment) in self.iter() {
             // Collect affected points first, we want to lock segment for writing as rare as possible
             let segment_arc = segment.get();
             let segment_lock = segment_arc.upgradable_read();
@@ -393,7 +411,7 @@ impl<'s> SegmentHolder {
 
         // Try to access each segment first without any timeout (fast)
         for segment_id in segment_ids {
-            let segment_opt = self.segments.get(segment_id).map(|x| x.get());
+            let segment_opt = self.get(*segment_id).map(|x| x.get());
             match segment_opt {
                 None => {}
                 Some(segment_lock) => {
@@ -443,7 +461,7 @@ impl<'s> SegmentHolder {
         let _update_guard = self.update_tracker.update();
 
         // Choose random appendable segment from this
-        let appendable_segments = self.appendable_segments();
+        let appendable_segments = self.appendable_segments_ids();
 
         let mut applied_points: HashSet<PointIdType> = Default::default();
 
@@ -491,6 +509,14 @@ impl<'s> SegmentHolder {
         // We must go over non-appendable segments first, then go over appendable segments after
         // Points may be moved from non-appendable to appendable, because we don't lock all
         // segments together read ordering is very important here!
+        //
+        // Consider the following sequence:
+        //
+        // 1. Read-lock non-appendable segment A
+        // 2. Atomic move from A to B
+        // 3. Read-lock appendable segment B
+        //
+        // We are guaranteed to read all data consistently, and don't lose any points
         let segments = self.non_appendable_then_appendable_segments();
 
         let mut read_points = 0;
@@ -511,8 +537,8 @@ impl<'s> SegmentHolder {
     /// This is done to ensure that all data, transferred from non-appendable segments to appendable segments
     /// is persisted, before marking records in non-appendable segments as removed.
     fn segment_flush_ordering(&self) -> impl Iterator<Item = SegmentId> {
-        let appendable_segments = self.appendable_segments();
-        let non_appendable_segments = self.non_appendable_segments();
+        let appendable_segments = self.appendable_segments_ids();
+        let non_appendable_segments = self.non_appendable_segments_ids();
 
         appendable_segments
             .into_iter()
@@ -604,8 +630,7 @@ impl<'s> SegmentHolder {
         segment_ids
             .into_iter()
             .map(|segment_id| {
-                self.segments
-                    .get(&segment_id)
+                self.get(segment_id)
                     .ok_or_else(|| {
                         OperationError::service_error(format!("No segment with ID {segment_id}"))
                     })
@@ -722,16 +747,12 @@ impl<'s> SegmentHolder {
         let tmp_segment = LockedSegment::new(build_segment(collection_path, &config, false)?);
 
         // List all segments we want to snapshot
-        let segment_ids = segments_lock
-            .segments
-            .keys()
-            .copied()
-            .collect::<Vec<SegmentId>>();
+        let segment_ids = segments_lock.segment_ids();
 
         // Create proxy for all segments
         let mut new_proxies = Vec::with_capacity(segment_ids.len());
         for segment_id in segment_ids {
-            let segment = segments_lock.segments.get(&segment_id).unwrap();
+            let segment = segments_lock.get(segment_id).unwrap();
             let mut proxy = ProxySegment::new(
                 segment.clone(),
                 tmp_segment.clone(),
@@ -895,7 +916,7 @@ impl<'s> SegmentHolder {
 
         let mut removed_points = 0;
         for (segment_id, points) in points_to_remove {
-            let locked_segment = self.segments.get(&segment_id).unwrap();
+            let locked_segment = self.get(segment_id).unwrap();
             let segment_arc = locked_segment.get();
             let mut write_segment = segment_arc.write();
             for point_id in points {
@@ -910,7 +931,6 @@ impl<'s> SegmentHolder {
 
     fn find_duplicated_points(&self) -> OperationResult<HashMap<SegmentId, Vec<PointIdType>>> {
         let segments = self
-            .segments
             .iter()
             .map(|(&segment_id, locked_segment)| (segment_id, locked_segment.get()))
             .collect_vec();
