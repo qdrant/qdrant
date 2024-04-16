@@ -213,6 +213,7 @@ impl Segment {
                     // placeholder vector for marking deletion
                     let vector = match *vector_storage {
                         VectorStorageEnum::DenseSimple(_)
+                        | VectorStorageEnum::DenseSimpleByte(_)
                         | VectorStorageEnum::DenseMemmap(_)
                         | VectorStorageEnum::DenseAppendableMemmap(_) => {
                             Vector::from(vec![1.0; dim])
@@ -1842,6 +1843,7 @@ mod tests {
                     index: Indexes::Plain {},
                     quantization_config: None,
                     multi_vec_config: None,
+                    datatype: None,
                 },
             )]),
             sparse_vector_data: Default::default(),
@@ -1916,6 +1918,7 @@ mod tests {
                     index: Indexes::Plain {},
                     quantization_config: None,
                     multi_vec_config: None,
+                    datatype: None,
                 },
             )]),
             sparse_vector_data: Default::default(),
@@ -2007,6 +2010,7 @@ mod tests {
                     index: Indexes::Plain {},
                     quantization_config: None,
                     multi_vec_config: None,
+                    datatype: None,
                 },
             )]),
             sparse_vector_data: Default::default(),
@@ -2103,6 +2107,7 @@ mod tests {
                     index: Indexes::Plain {},
                     quantization_config: None,
                     multi_vec_config: None,
+                    datatype: None,
                 },
             )]),
             sparse_vector_data: Default::default(),
@@ -2136,6 +2141,7 @@ mod tests {
                     index: Indexes::Plain {},
                     quantization_config: None,
                     multi_vec_config: None,
+                    datatype: None,
                 },
             )]),
             sparse_vector_data: Default::default(),
@@ -2230,6 +2236,7 @@ mod tests {
                     index: Indexes::Plain {},
                     quantization_config: None,
                     multi_vec_config: None,
+                    datatype: None,
                 },
             )]),
             sparse_vector_data: Default::default(),
@@ -2284,6 +2291,7 @@ mod tests {
                         index: Indexes::Plain {},
                         quantization_config: None,
                         multi_vec_config: None,
+                        datatype: None,
                     },
                 ),
                 (
@@ -2295,6 +2303,7 @@ mod tests {
                         index: Indexes::Plain {},
                         quantization_config: None,
                         multi_vec_config: None,
+                        datatype: None,
                     },
                 ),
             ]),
@@ -2392,6 +2401,7 @@ mod tests {
                         index: Indexes::Plain {},
                         quantization_config: None,
                         multi_vec_config: None,
+                        datatype: None,
                     },
                 ),
                 (
@@ -2403,6 +2413,7 @@ mod tests {
                         index: Indexes::Plain {},
                         quantization_config: None,
                         multi_vec_config: None,
+                        datatype: None,
                     },
                 ),
             ]),

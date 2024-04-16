@@ -30,11 +30,13 @@ use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::segment::{Segment, SegmentVersion, VectorData, SEGMENT_STATE_FILE};
 use crate::types::{
     Distance, Indexes, PayloadStorageType, SegmentConfig, SegmentState, SegmentType, SeqNumberType,
-    VectorStorageType,
+    VectorStorageDatatype, VectorStorageType,
 };
 use crate::vector_storage::dense::appendable_mmap_dense_vector_storage::open_appendable_memmap_vector_storage;
 use crate::vector_storage::dense::memmap_dense_vector_storage::open_memmap_vector_storage;
-use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
+use crate::vector_storage::dense::simple_dense_vector_storage::{
+    open_simple_dense_byte_vector_storage, open_simple_dense_vector_storage,
+};
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::simple_multi_dense_vector_storage::open_simple_multi_dense_vector_storage;
 use crate::vector_storage::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
@@ -134,13 +136,23 @@ fn create_segment(
                         stopped,
                     )?
                 } else {
-                    open_simple_dense_vector_storage(
-                        database.clone(),
-                        &db_column_name,
-                        vector_config.size,
-                        vector_config.distance,
-                        stopped,
-                    )?
+                    let storage_element_type = vector_config.datatype.unwrap_or_default();
+                    match storage_element_type {
+                        VectorStorageDatatype::Float => open_simple_dense_vector_storage(
+                            database.clone(),
+                            &db_column_name,
+                            vector_config.size,
+                            vector_config.distance,
+                            stopped,
+                        )?,
+                        VectorStorageDatatype::Uint8 => open_simple_dense_byte_vector_storage(
+                            database.clone(),
+                            &db_column_name,
+                            vector_config.size,
+                            vector_config.distance,
+                            stopped,
+                        )?,
+                    }
                 }
             }
             // Mmap on disk, not appendable

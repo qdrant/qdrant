@@ -48,6 +48,15 @@ impl<'a> CowVector<'a> {
     }
 }
 
+impl<'a> From<Cow<'a, [VectorElementType]>> for CowVector<'a> {
+    fn from(v: Cow<'a, [VectorElementType]>) -> Self {
+        match v {
+            Cow::Borrowed(v) => CowVector::Dense(Cow::Borrowed(v)),
+            Cow::Owned(v) => CowVector::Dense(Cow::Owned(v)),
+        }
+    }
+}
+
 impl<'a> From<Vector> for CowVector<'a> {
     fn from(v: Vector) -> Self {
         match v {

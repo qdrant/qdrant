@@ -12,7 +12,9 @@ use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
-use crate::data_types::vectors::{MultiDenseVector, VectorElementType, VectorRef};
+use crate::data_types::vectors::{
+    MultiDenseVector, VectorElementType, VectorElementTypeByte, VectorRef,
+};
 use crate::types::{Distance, MultiVectorConfig};
 use crate::vector_storage::dense::appendable_mmap_dense_vector_storage::AppendableMmapDenseVectorStorage;
 use crate::vector_storage::simple_multi_dense_vector_storage::SimpleMultiDenseVectorStorage;
@@ -113,6 +115,7 @@ pub trait MultiVectorStorage: VectorStorage {
 
 pub enum VectorStorageEnum {
     DenseSimple(SimpleDenseVectorStorage<VectorElementType>),
+    DenseSimpleByte(SimpleDenseVectorStorage<VectorElementTypeByte>),
     DenseMemmap(Box<MemmapDenseVectorStorage<VectorElementType>>),
     DenseAppendableMemmap(Box<AppendableMmapDenseVectorStorage<VectorElementType>>),
     SparseSimple(SimpleSparseVectorStorage),
@@ -123,6 +126,7 @@ impl VectorStorage for VectorStorageEnum {
     fn vector_dim(&self) -> usize {
         match self {
             VectorStorageEnum::DenseSimple(v) => v.vector_dim(),
+            VectorStorageEnum::DenseSimpleByte(v) => v.vector_dim(),
             VectorStorageEnum::DenseMemmap(v) => v.vector_dim(),
             VectorStorageEnum::DenseAppendableMemmap(v) => v.vector_dim(),
             VectorStorageEnum::SparseSimple(v) => v.vector_dim(),
@@ -133,6 +137,7 @@ impl VectorStorage for VectorStorageEnum {
     fn distance(&self) -> Distance {
         match self {
             VectorStorageEnum::DenseSimple(v) => v.distance(),
+            VectorStorageEnum::DenseSimpleByte(v) => v.distance(),
             VectorStorageEnum::DenseMemmap(v) => v.distance(),
             VectorStorageEnum::DenseAppendableMemmap(v) => v.distance(),
             VectorStorageEnum::SparseSimple(v) => v.distance(),
@@ -143,6 +148,7 @@ impl VectorStorage for VectorStorageEnum {
     fn is_on_disk(&self) -> bool {
         match self {
             VectorStorageEnum::DenseSimple(v) => v.is_on_disk(),
+            VectorStorageEnum::DenseSimpleByte(v) => v.is_on_disk(),
             VectorStorageEnum::DenseMemmap(v) => v.is_on_disk(),
             VectorStorageEnum::DenseAppendableMemmap(v) => v.is_on_disk(),
             VectorStorageEnum::SparseSimple(v) => v.is_on_disk(),
@@ -153,6 +159,7 @@ impl VectorStorage for VectorStorageEnum {
     fn total_vector_count(&self) -> usize {
         match self {
             VectorStorageEnum::DenseSimple(v) => v.total_vector_count(),
+            VectorStorageEnum::DenseSimpleByte(v) => v.total_vector_count(),
             VectorStorageEnum::DenseMemmap(v) => v.total_vector_count(),
             VectorStorageEnum::DenseAppendableMemmap(v) => v.total_vector_count(),
             VectorStorageEnum::SparseSimple(v) => v.total_vector_count(),
@@ -163,6 +170,7 @@ impl VectorStorage for VectorStorageEnum {
     fn get_vector(&self, key: PointOffsetType) -> CowVector {
         match self {
             VectorStorageEnum::DenseSimple(v) => v.get_vector(key),
+            VectorStorageEnum::DenseSimpleByte(v) => v.get_vector(key),
             VectorStorageEnum::DenseMemmap(v) => v.get_vector(key),
             VectorStorageEnum::DenseAppendableMemmap(v) => v.get_vector(key),
             VectorStorageEnum::SparseSimple(v) => v.get_vector(key),
@@ -173,6 +181,7 @@ impl VectorStorage for VectorStorageEnum {
     fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
         match self {
             VectorStorageEnum::DenseSimple(v) => v.get_vector_opt(key),
+            VectorStorageEnum::DenseSimpleByte(v) => v.get_vector_opt(key),
             VectorStorageEnum::DenseMemmap(v) => v.get_vector_opt(key),
             VectorStorageEnum::DenseAppendableMemmap(v) => v.get_vector_opt(key),
             VectorStorageEnum::SparseSimple(v) => v.get_vector_opt(key),
@@ -183,6 +192,7 @@ impl VectorStorage for VectorStorageEnum {
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
         match self {
             VectorStorageEnum::DenseSimple(v) => v.insert_vector(key, vector),
+            VectorStorageEnum::DenseSimpleByte(v) => v.insert_vector(key, vector),
             VectorStorageEnum::DenseMemmap(v) => v.insert_vector(key, vector),
             VectorStorageEnum::DenseAppendableMemmap(v) => v.insert_vector(key, vector),
             VectorStorageEnum::SparseSimple(v) => v.insert_vector(key, vector),
@@ -198,6 +208,7 @@ impl VectorStorage for VectorStorageEnum {
     ) -> OperationResult<Range<PointOffsetType>> {
         match self {
             VectorStorageEnum::DenseSimple(v) => v.update_from(other, other_ids, stopped),
+            VectorStorageEnum::DenseSimpleByte(v) => v.update_from(other, other_ids, stopped),
             VectorStorageEnum::DenseMemmap(v) => v.update_from(other, other_ids, stopped),
             VectorStorageEnum::DenseAppendableMemmap(v) => v.update_from(other, other_ids, stopped),
             VectorStorageEnum::SparseSimple(v) => v.update_from(other, other_ids, stopped),
@@ -208,6 +219,7 @@ impl VectorStorage for VectorStorageEnum {
     fn flusher(&self) -> Flusher {
         match self {
             VectorStorageEnum::DenseSimple(v) => v.flusher(),
+            VectorStorageEnum::DenseSimpleByte(v) => v.flusher(),
             VectorStorageEnum::DenseMemmap(v) => v.flusher(),
             VectorStorageEnum::DenseAppendableMemmap(v) => v.flusher(),
             VectorStorageEnum::SparseSimple(v) => v.flusher(),
@@ -218,6 +230,7 @@ impl VectorStorage for VectorStorageEnum {
     fn files(&self) -> Vec<PathBuf> {
         match self {
             VectorStorageEnum::DenseSimple(v) => v.files(),
+            VectorStorageEnum::DenseSimpleByte(v) => v.files(),
             VectorStorageEnum::DenseMemmap(v) => v.files(),
             VectorStorageEnum::DenseAppendableMemmap(v) => v.files(),
             VectorStorageEnum::SparseSimple(v) => v.files(),
@@ -228,6 +241,7 @@ impl VectorStorage for VectorStorageEnum {
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
         match self {
             VectorStorageEnum::DenseSimple(v) => v.delete_vector(key),
+            VectorStorageEnum::DenseSimpleByte(v) => v.delete_vector(key),
             VectorStorageEnum::DenseMemmap(v) => v.delete_vector(key),
             VectorStorageEnum::DenseAppendableMemmap(v) => v.delete_vector(key),
             VectorStorageEnum::SparseSimple(v) => v.delete_vector(key),
@@ -238,6 +252,7 @@ impl VectorStorage for VectorStorageEnum {
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
         match self {
             VectorStorageEnum::DenseSimple(v) => v.is_deleted_vector(key),
+            VectorStorageEnum::DenseSimpleByte(v) => v.is_deleted_vector(key),
             VectorStorageEnum::DenseMemmap(v) => v.is_deleted_vector(key),
             VectorStorageEnum::DenseAppendableMemmap(v) => v.is_deleted_vector(key),
             VectorStorageEnum::SparseSimple(v) => v.is_deleted_vector(key),
@@ -248,6 +263,7 @@ impl VectorStorage for VectorStorageEnum {
     fn deleted_vector_count(&self) -> usize {
         match self {
             VectorStorageEnum::DenseSimple(v) => v.deleted_vector_count(),
+            VectorStorageEnum::DenseSimpleByte(v) => v.deleted_vector_count(),
             VectorStorageEnum::DenseMemmap(v) => v.deleted_vector_count(),
             VectorStorageEnum::DenseAppendableMemmap(v) => v.deleted_vector_count(),
             VectorStorageEnum::SparseSimple(v) => v.deleted_vector_count(),
@@ -258,6 +274,7 @@ impl VectorStorage for VectorStorageEnum {
     fn deleted_vector_bitslice(&self) -> &BitSlice {
         match self {
             VectorStorageEnum::DenseSimple(v) => v.deleted_vector_bitslice(),
+            VectorStorageEnum::DenseSimpleByte(v) => v.deleted_vector_bitslice(),
             VectorStorageEnum::DenseMemmap(v) => v.deleted_vector_bitslice(),
             VectorStorageEnum::DenseAppendableMemmap(v) => v.deleted_vector_bitslice(),
             VectorStorageEnum::SparseSimple(v) => v.deleted_vector_bitslice(),

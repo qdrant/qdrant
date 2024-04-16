@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use super::quantized_scorer_builder::QuantizedScorerBuilder;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::vector_utils::TrySetCapacityExact;
+use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{QueryVector, VectorElementType};
 use crate::types::{
     BinaryQuantization, BinaryQuantizationConfig, CompressionRatio, Distance, ProductQuantization,
@@ -110,6 +111,9 @@ impl QuantizedVectors {
             VectorStorageEnum::DenseSimple(v) => {
                 Self::create_impl(v, quantization_config, path, max_threads, stopped)
             }
+            VectorStorageEnum::DenseSimpleByte(v) => {
+                Self::create_impl(v, quantization_config, path, max_threads, stopped)
+            }
             VectorStorageEnum::DenseMemmap(v) => {
                 Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
             }
@@ -121,18 +125,22 @@ impl QuantizedVectors {
         }
     }
 
-    fn create_impl<TVectorStorage: DenseVectorStorage<VectorElementType> + Send + Sync>(
+    fn create_impl<
+        TElement: PrimitiveVectorElement,
+        TVectorStorage: DenseVectorStorage<TElement> + Send + Sync,
+    >(
         vector_storage: &TVectorStorage,
         quantization_config: &QuantizationConfig,
         path: &Path,
         max_threads: usize,
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
+        let dim = vector_storage.vector_dim();
         let count = vector_storage.total_vector_count();
-        let vectors = (0..count as PointOffsetType).map(|i| vector_storage.get_dense(i));
+        let vectors = (0..count as PointOffsetType)
+            .map(|i| PrimitiveVectorElement::slice_to_float_cow(vector_storage.get_dense(i)));
         let on_disk_vector_storage = vector_storage.is_on_disk();
         let distance = vector_storage.distance();
-        let dim = vector_storage.vector_dim();
 
         let vector_parameters = Self::construct_vector_parameters(distance, dim, count);
 
@@ -262,7 +270,7 @@ impl QuantizedVectors {
     }
 
     fn create_scalar<'a>(
-        vectors: impl Iterator<Item = &'a [VectorElementType]> + Clone,
+        vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone,
         vector_parameters: &quantization::VectorParameters,
         scalar_config: &ScalarQuantizationConfig,
         path: &Path,
@@ -302,7 +310,7 @@ impl QuantizedVectors {
     }
 
     fn create_pq<'a>(
-        vectors: impl Iterator<Item = &'a [VectorElementType]> + Clone + Send,
+        vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone + Send,
         vector_parameters: &quantization::VectorParameters,
         pq_config: &ProductQuantizationConfig,
         path: &Path,
@@ -347,7 +355,7 @@ impl QuantizedVectors {
     }
 
     fn create_binary<'a>(
-        vectors: impl Iterator<Item = &'a [VectorElementType]> + Clone,
+        vectors: impl Iterator<Item = impl AsRef<[VectorElementType]> + 'a> + Clone,
         vector_parameters: &quantization::VectorParameters,
         binary_config: &BinaryQuantizationConfig,
         path: &Path,

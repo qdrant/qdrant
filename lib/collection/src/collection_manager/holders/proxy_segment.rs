@@ -1400,6 +1400,7 @@ mod tests {
                         index: Indexes::Plain {},
                         quantization_config: None,
                         multi_vec_config: None,
+                        datatype: None,
                     },
                 ),
                 (
@@ -1411,6 +1412,7 @@ mod tests {
                         index: Indexes::Plain {},
                         quantization_config: None,
                         multi_vec_config: None,
+                        datatype: None,
                     },
                 ),
             ]),

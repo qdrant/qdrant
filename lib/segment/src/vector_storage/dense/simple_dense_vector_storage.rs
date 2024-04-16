@@ -15,7 +15,7 @@ use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
-use crate::data_types::vectors::{VectorElementType, VectorRef};
+use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte, VectorRef};
 use crate::types::Distance;
 use crate::vector_storage::bitvec::bitvec_set_deleted;
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
@@ -105,6 +105,26 @@ pub fn open_simple_dense_vector_storage(
     )))
 }
 
+pub fn open_simple_dense_byte_vector_storage(
+    database: Arc<RwLock<DB>>,
+    database_column_name: &str,
+    dim: usize,
+    distance: Distance,
+    stopped: &AtomicBool,
+) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
+    let storage = open_simple_dense_vector_storage_impl::<VectorElementTypeByte>(
+        database,
+        database_column_name,
+        dim,
+        distance,
+        stopped,
+    )?;
+
+    Ok(Arc::new(AtomicRefCell::new(
+        VectorStorageEnum::DenseSimpleByte(storage),
+    )))
+}
+
 impl<T: PrimitiveVectorElement> SimpleDenseVectorStorage<T> {
     /// Set deleted flag for given key. Returns previous deleted state.
     #[inline]
@@ -146,8 +166,8 @@ impl<T: PrimitiveVectorElement> SimpleDenseVectorStorage<T> {
     }
 }
 
-impl DenseVectorStorage<VectorElementType> for SimpleDenseVectorStorage<VectorElementType> {
-    fn get_dense(&self, key: PointOffsetType) -> &[VectorElementType] {
+impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for SimpleDenseVectorStorage<T> {
+    fn get_dense(&self, key: PointOffsetType) -> &[T] {
         self.vectors.get(key)
     }
 }
@@ -170,7 +190,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleDenseVectorStorage<T> {
     }
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {
-        T::vector_to_cow(self.vectors.get(key))
+        CowVector::from(T::slice_to_float_cow(self.vectors.get(key)))
     }
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {

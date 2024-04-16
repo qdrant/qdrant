@@ -130,6 +130,7 @@ fn test_multi_filterable_hnsw(
                 index: Indexes::Plain {}, // uses plain index for comparison
                 quantization_config: None,
                 multi_vec_config: Some(MultiVectorConfig::default()), // uses multivec config
+                datatype: None,
             },
         )]),
         sparse_vector_data: Default::default(),

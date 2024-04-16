@@ -46,6 +46,7 @@ fn test_graph_connectivity() {
                 index: Indexes::Plain {},
                 quantization_config: None,
                 multi_vec_config: None,
+                datatype: None,
             },
         )]),
         payload_storage_type: Default::default(),

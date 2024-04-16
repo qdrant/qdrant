@@ -3,12 +3,14 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use common::cpu::CpuPermit;
-use common::types::PointOffsetType;
+use common::types::{PointOffsetType, TelemetryDetail};
 use itertools::Itertools;
-use rand::{thread_rng, Rng};
-use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
+use rand::prelude::StdRng;
+use rand::{Rng, SeedableRng};
+use rstest::rstest;
+use segment::data_types::vectors::{only_default_vector, QueryVector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
-use segment::fixtures::payload_fixtures::{random_int_payload, random_vector};
+use segment::fixtures::payload_fixtures::{random_dense_byte_vector, random_int_payload};
 use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::hnsw::HNSWIndex;
 use segment::index::hnsw_index::num_rayon_threads;
@@ -16,28 +18,92 @@ use segment::index::{PayloadIndex, VectorIndex};
 use segment::segment_constructor::build_segment;
 use segment::types::{
     Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload, PayloadSchemaType,
-    Range, SearchParams, SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageType,
+    Range, SearchParams, SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageDatatype,
+    VectorStorageType,
 };
+use segment::vector_storage::query::context_query::ContextPair;
+use segment::vector_storage::query::discovery_query::DiscoveryQuery;
+use segment::vector_storage::query::reco_query::RecoQuery;
+use segment::vector_storage::VectorStorageEnum;
 use serde_json::json;
 use tempfile::Builder;
 
 use crate::utils::path;
 
-#[test]
-fn exact_search_test() {
+const MAX_EXAMPLE_PAIRS: usize = 4;
+
+enum QueryVariant {
+    Nearest,
+    RecommendBestScore,
+    Discovery,
+}
+
+fn random_discovery_query<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> QueryVector {
+    let num_pairs: usize = rnd.gen_range(1..MAX_EXAMPLE_PAIRS);
+
+    let target = random_dense_byte_vector(rnd, dim).into();
+
+    let pairs = (0..num_pairs)
+        .map(|_| {
+            let positive = random_dense_byte_vector(rnd, dim).into();
+            let negative = random_dense_byte_vector(rnd, dim).into();
+            ContextPair { positive, negative }
+        })
+        .collect_vec();
+
+    DiscoveryQuery::new(target, pairs).into()
+}
+
+fn random_reco_query<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> QueryVector {
+    let num_examples: usize = rnd.gen_range(1..MAX_EXAMPLE_PAIRS);
+
+    let positive = (0..num_examples)
+        .map(|_| random_dense_byte_vector(rnd, dim).into())
+        .collect_vec();
+    let negative = (0..num_examples)
+        .map(|_| random_dense_byte_vector(rnd, dim).into())
+        .collect_vec();
+
+    RecoQuery::new(positive, negative).into()
+}
+
+fn random_query<R: Rng + ?Sized>(variant: &QueryVariant, rnd: &mut R, dim: usize) -> QueryVector {
+    match variant {
+        QueryVariant::Nearest => random_dense_byte_vector(rnd, dim).into(),
+        QueryVariant::Discovery => random_discovery_query(rnd, dim),
+        QueryVariant::RecommendBestScore => random_reco_query(rnd, dim),
+    }
+}
+
+#[rstest]
+#[case::nearest(QueryVariant::Nearest, 32, 10)]
+#[case::discovery(QueryVariant::Discovery, 128, 20)] // tests that check better precision are in `hnsw_discover_test.rs`
+#[case::recommend(QueryVariant::RecommendBestScore, 64, 20)]
+fn test_filterable_hnsw(
+    #[case] query_variant: QueryVariant,
+    #[case] ef: usize,
+    #[case] max_failures: usize, // out of 100
+) {
+    _test_filterable_hnsw(query_variant, ef, max_failures);
+}
+
+fn _test_filterable_hnsw(
+    query_variant: QueryVariant,
+    ef: usize,
+    max_failures: usize, // out of 100
+) {
     let stopped = AtomicBool::new(false);
 
     let dim = 8;
     let m = 8;
     let num_vectors: u64 = 5_000;
-    let ef = 32;
     let ef_construct = 16;
     let distance = Distance::Cosine;
     let full_scan_threshold = 16; // KB
     let indexing_threshold = 500; // num vectors
     let num_payload_values = 2;
 
-    let mut rnd = thread_rng();
+    let mut rnd = StdRng::seed_from_u64(42);
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
@@ -52,7 +118,7 @@ fn exact_search_test() {
                 index: Indexes::Plain {},
                 quantization_config: None,
                 multi_vec_config: None,
-                datatype: None,
+                datatype: Some(VectorStorageDatatype::Uint8),
             },
         )]),
         sparse_vector_data: Default::default(),
@@ -62,9 +128,20 @@ fn exact_search_test() {
     let int_key = "int";
 
     let mut segment = build_segment(dir.path(), &config, true).unwrap();
+    {
+        let borrowed_storage = segment.vector_data[DEFAULT_VECTOR_NAME]
+            .vector_storage
+            .borrow();
+        let raw_storage: &VectorStorageEnum = &borrowed_storage;
+        assert!(matches!(
+            raw_storage,
+            &VectorStorageEnum::DenseSimpleByte(_)
+        ));
+    }
+
     for n in 0..num_vectors {
         let idx = n.into();
-        let vector = random_vector(&mut rnd, dim);
+        let vector = random_dense_byte_vector(&mut rnd, dim);
 
         let int_payload = random_int_payload(&mut rnd, num_payload_values..=num_payload_values);
         let payload: Payload = json!({int_key:int_payload,}).into();
@@ -76,7 +153,6 @@ fn exact_search_test() {
             .set_full_payload(n as SeqNumberType, idx, &payload)
             .unwrap();
     }
-    // let opnum = num_vectors + 1;
 
     let payload_index_ptr = segment.payload_index.clone();
 
@@ -92,15 +168,13 @@ fn exact_search_test() {
     let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
     let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
 
+    let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
+    let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
     let mut hnsw_index = HNSWIndex::<GraphLinksRam>::open(
         hnsw_dir.path(),
         segment.id_tracker.clone(),
-        segment.vector_data[DEFAULT_VECTOR_NAME]
-            .vector_storage
-            .clone(),
-        segment.vector_data[DEFAULT_VECTOR_NAME]
-            .quantized_vectors
-            .clone(),
+        vector_storage.clone(),
+        quantized_vectors.clone(),
         payload_index_ptr.clone(),
         hnsw_config,
     )
@@ -124,8 +198,8 @@ fn exact_search_test() {
     }
 
     let mut coverage: HashMap<PointOffsetType, usize> = Default::default();
+    let px = payload_index_ptr.borrow();
     for block in &blocks {
-        let px = payload_index_ptr.borrow();
         let filter = Filter::new_must(Condition::Field(block.condition.clone()));
         let points = px.query_points(&filter);
         for point in points {
@@ -149,34 +223,10 @@ fn exact_search_test() {
     hnsw_index.build_index(permit, &stopped).unwrap();
 
     let top = 3;
-    let attempts = 50;
-    for _i in 0..attempts {
-        let query = random_vector(&mut rnd, dim).into();
-
-        let index_result = hnsw_index
-            .search(
-                &[&query],
-                None,
-                top,
-                Some(&SearchParams {
-                    hnsw_ef: Some(ef),
-                    exact: true,
-                    ..Default::default()
-                }),
-                &false.into(),
-                usize::MAX,
-            )
-            .unwrap();
-        let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
-            .vector_index
-            .borrow()
-            .search(&[&query], None, top, None, &false.into(), usize::MAX)
-            .unwrap();
-
-        assert_eq!(
-            index_result, plain_result,
-            "Exact search is not equal to plain search"
-        );
+    let mut hits = 0;
+    let attempts = 100;
+    for i in 0..attempts {
+        let query = random_query(&query_variant, &mut rnd, dim);
 
         let range_size = 40;
         let left_range = rnd.gen_range(0..400);
@@ -193,6 +243,7 @@ fn exact_search_test() {
         )));
 
         let filter_query = Some(&filter);
+
         let index_result = hnsw_index
             .search(
                 &[&query],
@@ -200,13 +251,22 @@ fn exact_search_test() {
                 top,
                 Some(&SearchParams {
                     hnsw_ef: Some(ef),
-                    exact: true,
                     ..Default::default()
                 }),
                 &false.into(),
                 usize::MAX,
             )
             .unwrap();
+
+        // check that search was performed using HNSW index
+        assert_eq!(
+            hnsw_index
+                .get_telemetry_data(TelemetryDetail::default())
+                .filtered_large_cardinality
+                .count,
+            i + 1
+        );
+
         let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
@@ -220,9 +280,13 @@ fn exact_search_test() {
             )
             .unwrap();
 
-        assert_eq!(
-            index_result, plain_result,
-            "Exact search is not equal to plain search"
-        );
+        if plain_result == index_result {
+            hits += 1;
+        }
     }
+    assert!(
+        attempts - hits <= max_failures,
+        "hits: {hits} of {attempts}"
+    );
+    eprintln!("hits = {hits:#?} out of {attempts}");
 }

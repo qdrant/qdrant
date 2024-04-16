@@ -112,7 +112,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapDenseVectorStora
     }
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {
-        T::vector_to_cow(self.vectors.get(key))
+        CowVector::from(T::slice_to_float_cow(self.vectors.get(key)))
     }
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {

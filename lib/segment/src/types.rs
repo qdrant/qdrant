@@ -748,6 +748,16 @@ pub enum VectorStorageType {
     ChunkedMmap,
 }
 
+/// Storage types for vectors
+#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone)]
+pub enum VectorStorageDatatype {
+    /// Single-precsion floating point
+    #[default]
+    Float,
+    /// Unsigned 8-bit integer
+    Uint8,
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone)]
 pub enum MultiVectorConfig {
     MaxSim(MaxSimConfig),
@@ -789,6 +799,9 @@ pub struct VectorDataConfig {
     /// Vector specific configuration to enable multiple vectors per point
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub multi_vec_config: Option<MultiVectorConfig>,
+    /// Vector specific configuration to enable multiple vectors per point
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub datatype: Option<VectorStorageDatatype>,
 }
 
 impl VectorDataConfig {
