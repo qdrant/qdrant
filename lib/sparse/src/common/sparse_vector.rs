@@ -87,6 +87,7 @@ impl SparseVector {
     }
 
     /// Construct a new vector that is the result of performing all indices-wise operations
+    /// Warning: Expects both vectors to be sorted by indices.
     pub fn combine_aggregate(
         &self,
         other: &SparseVector,
