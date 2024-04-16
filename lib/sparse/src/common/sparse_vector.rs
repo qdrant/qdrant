@@ -94,7 +94,9 @@ impl SparseVector {
         other: &SparseVector,
         op: impl Fn(DimWeight, DimWeight) -> DimWeight,
     ) {
-        assert!(self.is_sorted());
+        if !self.is_sorted() {
+            self.sort_by_indices();
+        }
         let len = self.indices.len();
 
         let cow_other: Cow<SparseVector> = if !other.is_sorted() {
