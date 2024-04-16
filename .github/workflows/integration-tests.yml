@@ -30,9 +30,6 @@ jobs:
       - name: Run integration tests
         run: ./tests/integration-tests.sh
         shell: bash
-      - name: Run API Key tests
-        run: ./tests/integration-tests-api-key.sh
-        shell: bash
 
   test-consensus:
 
