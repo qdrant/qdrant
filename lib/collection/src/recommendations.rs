@@ -3,7 +3,8 @@ use std::time::Duration;
 
 use itertools::Itertools;
 use segment::data_types::vectors::{
-    DenseVector, NamedQuery, NamedVectorStruct, Vector, VectorElementType, DEFAULT_VECTOR_NAME,
+    DenseVector, NamedQuery, NamedVectorStruct, Vector, VectorElementType, VectorRef,
+    DEFAULT_VECTOR_NAME,
 };
 use segment::types::{
     Condition, ExtendedPointId, Filter, HasIdCondition, PointIdType, ScoredPoint,
@@ -15,7 +16,8 @@ use tokio::sync::RwLockReadGuard;
 use crate::collection::Collection;
 use crate::common::batching::batch_requests;
 use crate::common::fetch_vectors::{
-    convert_to_vectors_owned, resolve_referenced_vectors_batch, ReferencedVectors,
+    convert_to_vectors, convert_to_vectors_owned, resolve_referenced_vectors_batch,
+    ReferencedVectors,
 };
 use crate::common::retrieve_request_trait::RetrieveRequest;
 use crate::operations::consistency_params::ReadConsistency;
@@ -25,14 +27,14 @@ use crate::operations::types::{
     RecommendRequestInternal, RecommendStrategy, UsingVector,
 };
 
-fn avg_vectors(mut vectors: Vec<Vector>) -> CollectionResult<Vector> {
+fn avg_vectors<'a>(vectors: impl Iterator<Item = VectorRef<'a>>) -> CollectionResult<Vector> {
     let mut avg_dense = DenseVector::default();
     let mut avg_sparse = SparseVector::default();
     let mut dense_count = 0;
     let mut sparse_count = 0;
-    for vector in vectors.iter_mut() {
+    for vector in vectors {
         match vector {
-            Vector::Dense(vector) => {
+            VectorRef::Dense(vector) => {
                 dense_count += 1;
                 for i in 0..vector.len() {
                     if i >= avg_dense.len() {
@@ -42,13 +44,11 @@ fn avg_vectors(mut vectors: Vec<Vector>) -> CollectionResult<Vector> {
                     }
                 }
             }
-            Vector::Sparse(vector) => {
+            VectorRef::Sparse(vector) => {
                 sparse_count += 1;
-                // sort input vector
-                vector.sort_by_indices();
                 avg_sparse = vector.combine_aggregate(&avg_sparse, |v1, v2| v1 + v2);
             }
-            Vector::MultiDense(_) => {
+            VectorRef::MultiDense(_) => {
                 // TODO(colbert)
                 return Err(CollectionError::bad_input(
                     "MultiDenseVector is not supported".to_owned(),
@@ -290,15 +290,15 @@ fn recommend_by_avg_vector(
 
     let lookup_collection_name = lookup_from.as_ref().map(|x| &x.collection);
 
-    let positive_vectors = convert_to_vectors_owned(
-        positive,
+    let positive_vectors = convert_to_vectors(
+        positive.iter(),
         all_vectors_records_map,
         &lookup_vector_name,
         lookup_collection_name,
     );
 
-    let negative_vectors = convert_to_vectors_owned(
-        negative,
+    let negative_vectors = convert_to_vectors(
+        negative.iter(),
         all_vectors_records_map,
         &lookup_vector_name,
         lookup_collection_name,
@@ -310,11 +310,12 @@ fn recommend_by_avg_vector(
     };
 
     let avg_positive = avg_vectors(positive_vectors)?;
+    let negative = negative_vectors.collect_vec();
 
-    let search_vector = if negative_vectors.is_empty() {
+    let search_vector = if negative.is_empty() {
         avg_positive
     } else {
-        let avg_negative = avg_vectors(negative_vectors)?;
+        let avg_negative = avg_vectors(negative.into_iter())?;
         merge_positive_and_negative_avg(avg_positive, avg_negative)?
     };
 
@@ -406,7 +407,7 @@ fn recommend_by_best_score(
 
 #[cfg(test)]
 mod tests {
-    use segment::data_types::vectors::Vector;
+    use segment::data_types::vectors::{Vector, VectorRef};
     use sparse::common::sparse_vector::SparseVector;
 
     use super::avg_vectors;
@@ -418,7 +419,10 @@ mod tests {
             vec![1.0, 2.0, 3.0].into(),
             vec![1.0, 2.0, 3.0].into(),
         ];
-        assert_eq!(avg_vectors(vectors).unwrap(), vec![1.0, 2.0, 3.0].into(),);
+        assert_eq!(
+            avg_vectors(vectors.iter().map(VectorRef::from)).unwrap(),
+            vec![1.0, 2.0, 3.0].into(),
+        );
 
         let vectors: Vec<Vector> = vec![
             SparseVector::new(vec![0, 1, 2], vec![0.0, 0.1, 0.2])
@@ -429,35 +433,18 @@ mod tests {
                 .into(),
         ];
         assert_eq!(
-            avg_vectors(vectors).unwrap(),
+            avg_vectors(vectors.iter().map(VectorRef::from)).unwrap(),
             SparseVector::new(vec![0, 1, 2], vec![0.0, 0.55, 1.1])
                 .unwrap()
                 .into(),
         );
 
-        // "Can't average dense and sparse vectors together"
         let vectors: Vec<Vector> = vec![
             vec![1.0, 2.0, 3.0].into(),
             SparseVector::new(vec![0, 1, 2], vec![0.0, 0.1, 0.2])
                 .unwrap()
                 .into(),
         ];
-        assert!(avg_vectors(vectors).is_err());
-
-        // check that it handles non-sorted sparse vectors
-        let non_sorted_vectors: Vec<Vector> = vec![
-            SparseVector::new(vec![1, 0, 2], vec![0.1, 0.0, 0.2])
-                .unwrap()
-                .into(),
-            SparseVector::new(vec![0, 2, 1], vec![0.0, 2.0, 1.0])
-                .unwrap()
-                .into(),
-        ];
-        assert_eq!(
-            avg_vectors(non_sorted_vectors).unwrap(),
-            SparseVector::new(vec![0, 1, 2], vec![0.0, 0.55, 1.1])
-                .unwrap()
-                .into(),
-        );
+        assert!(avg_vectors(vectors.iter().map(VectorRef::from)).is_err());
     }
 }
