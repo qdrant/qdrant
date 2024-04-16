@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use itertools::Itertools;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -95,8 +97,15 @@ impl SparseVector {
         assert!(self.is_sorted());
         let len = self.indices.len();
 
-        let mut other = other.clone();
-        other.sort_by_indices();
+        let cow_other: Cow<SparseVector> = if !other.is_sorted() {
+            let mut other = other.clone();
+            other.sort_by_indices();
+            Cow::Owned(other)
+        } else {
+            Cow::Borrowed(other)
+        };
+        let other = &cow_other;
+        assert!(other.is_sorted());
 
         let mut i = 0;
         let mut j = 0;
