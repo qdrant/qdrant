@@ -55,8 +55,14 @@ pub fn init(
     settings: Settings,
 ) -> io::Result<()> {
     actix_web::rt::System::new().block_on(async {
-        let toc = dispatcher.toc(&Access::full("For JWT validation")).clone();
-        let auth_keys = AuthKeys::try_create(&settings.service, toc.clone());
+        let auth_keys = AuthKeys::try_create(
+            &settings.service,
+            dispatcher.toc(&Access::full("For JWT validation")).clone(),
+        );
+        let upload_dir = dispatcher
+            .toc(&Access::full("For upload dir"))
+            .upload_dir()
+            .unwrap();
         let dispatcher_data = web::Data::from(dispatcher);
         let actix_telemetry_collector = telemetry_collector
             .lock()
@@ -101,8 +107,6 @@ pub fn init(
         if web_ui_available {
             api_key_whitelist.push(WhitelistItem::prefix(WEB_UI_PATH));
         }
-
-        let upload_dir = toc.upload_dir().unwrap();
 
         let mut server = HttpServer::new(move || {
             let cors = Cors::default()

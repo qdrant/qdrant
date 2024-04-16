@@ -4,28 +4,12 @@ use std::sync::Arc;
 
 use actix_web::body::{BoxBody, EitherBody};
 use actix_web::dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform};
-use actix_web::http::Method;
 use actix_web::{Error, FromRequest, HttpMessage, HttpResponse, ResponseError};
 use futures_util::future::LocalBoxFuture;
 use storage::rbac::Access;
 
 use super::helpers::HttpError;
 use crate::common::auth::{AuthError, AuthKeys};
-
-/// List of read-only POST request paths. List MUST be sorted.
-const READ_ONLY_POST_PATTERNS: [&str; 11] = [
-    "/collections/{name}/points",
-    "/collections/{name}/points/count",
-    "/collections/{name}/points/discover",
-    "/collections/{name}/points/discover/batch",
-    "/collections/{name}/points/recommend",
-    "/collections/{name}/points/recommend/batch",
-    "/collections/{name}/points/recommend/groups",
-    "/collections/{name}/points/scroll",
-    "/collections/{name}/points/search",
-    "/collections/{name}/points/search/batch",
-    "/collections/{name}/points/search/groups",
-];
 
 pub struct Auth {
     auth_keys: AuthKeys,
@@ -134,10 +118,7 @@ where
         let service = self.service.clone();
         Box::pin(async move {
             match auth_keys
-                .validate_request(
-                    |key| req.headers().get(key).and_then(|val| val.to_str().ok()),
-                    is_read_only(&req),
-                )
+                .validate_request(|key| req.headers().get(key).and_then(|val| val.to_str().ok()))
                 .await
             {
                 Ok(access) => {
@@ -175,35 +156,5 @@ impl FromRequest for ActixAccess {
             Access::full("All requests have full by default access when API key is not configured")
         });
         ready(Ok(ActixAccess(access)))
-    }
-}
-
-fn is_read_only(req: &ServiceRequest) -> bool {
-    match *req.method() {
-        Method::GET => true,
-        Method::POST => req
-            .match_pattern()
-            .map(|pattern| {
-                READ_ONLY_POST_PATTERNS
-                    .binary_search(&pattern.as_str())
-                    .is_ok()
-            })
-            .unwrap_or_default(),
-        _ => false,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn read_only_post_patterns_sorted() {
-        let mut sorted = READ_ONLY_POST_PATTERNS;
-        sorted.sort_unstable();
-        assert_eq!(
-            READ_ONLY_POST_PATTERNS, sorted,
-            "The READ_ONLY_POST_PATTERNS list must be sorted"
-        );
     }
 }

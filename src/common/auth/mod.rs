@@ -72,7 +72,6 @@ impl AuthKeys {
     pub async fn validate_request<'a>(
         &self,
         get_header: impl Fn(&'a str) -> Option<&'a str>,
-        is_read_only: bool,
     ) -> Result<Access, AuthError> {
         let Some(key) = get_header("api-key")
             .or_else(|| get_header("authorization").and_then(|v| v.strip_prefix("Bearer ")))
@@ -82,17 +81,12 @@ impl AuthKeys {
             ));
         };
 
-        if is_read_only {
-            if self.can_read(key) || self.can_write(key) {
-                return Ok(Access::full_ro("Read-only access by key"));
-            }
-        } else {
-            if self.can_write(key) {
-                return Ok(Access::full("Read-write access by key"));
-            }
-            if self.can_read(key) {
-                return Err(AuthError::Forbidden("Write access denied".to_string()));
-            }
+        if self.can_write(key) {
+            return Ok(Access::full("Read-write access by key"));
+        }
+
+        if self.can_read(key) {
+            return Ok(Access::full_ro("Read-only access by key"));
         }
 
         if let Some(claims) = self.jwt_parser.as_ref().and_then(|p| p.decode(key)) {

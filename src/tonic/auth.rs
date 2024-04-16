@@ -9,35 +9,9 @@ use tonic::Status;
 use tower::{Layer, Service};
 
 use crate::common::auth::{AuthError, AuthKeys};
-use crate::common::strings::ct_eq;
 
 type Request = tonic::codegen::http::Request<tonic::transport::Body>;
 type Response = tonic::codegen::http::Response<BoxBody>;
-
-const READ_ONLY_RPC_PATHS: [&str; 22] = [
-    "/grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo",
-    "/qdrant.Collections/CollectionExists",
-    "/qdrant.Collections/List",
-    "/qdrant.Collections/Get",
-    "/qdrant.Collections/ListCollectionAliases",
-    "/qdrant.Collections/ListAliases",
-    "/qdrant.Collections/CollectionClusterInfo",
-    "/qdrant.Points/Scroll",
-    "/qdrant.Points/Get",
-    "/qdrant.Points/Count",
-    "/qdrant.Points/Search",
-    "/qdrant.Points/SearchGroups",
-    "/qdrant.Points/SearchBatch",
-    "/qdrant.Points/Recommend",
-    "/qdrant.Points/RecommendGroups",
-    "/qdrant.Points/RecommendBatch",
-    "/qdrant.Points/Discover",
-    "/qdrant.Points/DiscoverBatch",
-    "/qdrant.Snapshots/List",
-    "/qdrant.Snapshots/ListFull",
-    "/qdrant.Qdrant/HealthCheck",
-    "/grpc.health.v1.Health/Check",
-];
 
 #[derive(Clone)]
 pub struct AuthMiddleware<S> {
@@ -47,10 +21,7 @@ pub struct AuthMiddleware<S> {
 
 async fn check(auth_keys: Arc<AuthKeys>, mut req: Request) -> Result<Request, Status> {
     let access = auth_keys
-        .validate_request(
-            |key| req.headers().get(key).and_then(|val| val.to_str().ok()),
-            is_read_only(&req),
-        )
+        .validate_request(|key| req.headers().get(key).and_then(|val| val.to_str().ok()))
         .await
         .map_err(|e| match e {
             AuthError::Unauthorized(e) => Status::unauthenticated(e),
@@ -120,11 +91,4 @@ pub fn extract_access<R>(req: &mut tonic::Request<R>) -> Access {
     req.extensions_mut().remove::<Access>().unwrap_or_else(|| {
         Access::full("All requests have full by default access when API key is not configured")
     })
-}
-
-fn is_read_only<R>(req: &tonic::codegen::http::Request<R>) -> bool {
-    let uri_path = req.uri().path();
-    READ_ONLY_RPC_PATHS
-        .iter()
-        .any(|ro_uri_path| ct_eq(uri_path, ro_uri_path))
 }
