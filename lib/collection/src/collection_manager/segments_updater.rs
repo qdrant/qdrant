@@ -43,7 +43,7 @@ pub(crate) fn delete_points(
         .apply_points(
             ids,
             |_| (),
-            |id, _idx, write_segment, ()| write_segment.delete_point(op_num, id),
+            |id, _idx, write_segment, ()| write_segment.delete_point(op_num, id, false),
         )
         .map_err(Into::into)
 }
@@ -122,7 +122,7 @@ pub(crate) fn overwrite_payload(
     let updated_points = segments.apply_points_with_conditional_move(
         op_num,
         points,
-        |id, write_segment| write_segment.set_full_payload(op_num, id, payload),
+        |id, write_segment| write_segment.set_full_payload(op_num, id, payload, false),
         |segment| segment.get_indexed_fields().is_empty(),
     )?;
 
@@ -294,9 +294,9 @@ fn upsert_with_payload(
     vectors: NamedVectors,
     payload: Option<&Payload>,
 ) -> OperationResult<bool> {
-    let mut res = segment.upsert_point(op_num, point_id, vectors)?;
+    let mut res = segment.upsert_point(op_num, point_id, vectors, false)?;
     if let Some(full_payload) = payload {
-        res &= segment.set_full_payload(op_num, point_id, full_payload)?;
+        res &= segment.set_full_payload(op_num, point_id, full_payload, false)?;
     }
     Ok(res)
 }

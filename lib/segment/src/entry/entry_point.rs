@@ -47,12 +47,14 @@ pub trait SegmentEntry {
         op_num: SeqNumberType,
         point_id: PointIdType,
         vectors: NamedVectors,
+        force: bool,
     ) -> OperationResult<bool>;
 
     fn delete_point(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
+        force: bool,
     ) -> OperationResult<bool>;
 
     fn update_vectors(
@@ -82,6 +84,7 @@ pub trait SegmentEntry {
         op_num: SeqNumberType,
         point_id: PointIdType,
         full_payload: &Payload,
+        force: bool,
     ) -> OperationResult<bool>;
 
     fn delete_payload(

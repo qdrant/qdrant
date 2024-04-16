@@ -467,11 +467,21 @@ impl<'s> SegmentHolder {
                             let all_vectors = write_segment.all_vectors(point_id)?;
                             let payload = write_segment.payload(point_id)?;
 
-                            appendable_write_segment.upsert_point(op_num, point_id, all_vectors)?;
-                            appendable_write_segment
-                                .set_full_payload(op_num, point_id, &payload)?;
+                            // TODO: rather than forcing all operations here, we should only force
+                            // if we're currently replaying WAL operations
 
-                            write_segment.delete_point(op_num, point_id)?;
+                            // TODO: rather than 'force', we likely want a more descriptive name
+
+                            appendable_write_segment.upsert_point(
+                                op_num,
+                                point_id,
+                                all_vectors,
+                                true,
+                            )?;
+                            appendable_write_segment
+                                .set_full_payload(op_num, point_id, &payload, true)?;
+
+                            write_segment.delete_point(op_num, point_id, true)?;
 
                             point_operation(point_id, appendable_write_segment)
                         },
@@ -901,7 +911,7 @@ impl<'s> SegmentHolder {
             for point_id in points {
                 if let Some(point_version) = write_segment.point_version(point_id) {
                     removed_points += 1;
-                    write_segment.delete_point(point_version, point_id)?;
+                    write_segment.delete_point(point_version, point_id, false)?;
                 }
             }
         }

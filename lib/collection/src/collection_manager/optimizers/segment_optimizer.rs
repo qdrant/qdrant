@@ -385,7 +385,7 @@ pub trait SegmentOptimizer {
 
         for &point_id in &deleted_points_snapshot {
             optimized_segment
-                .delete_point(optimized_segment.version(), point_id)
+                .delete_point(optimized_segment.version(), point_id, false)
                 .unwrap();
         }
 
@@ -565,7 +565,7 @@ pub trait SegmentOptimizer {
             let points_diff = deleted_points.difference(&already_remove_points);
             for &point_id in points_diff {
                 optimized_segment
-                    .delete_point(optimized_segment.version(), point_id)
+                    .delete_point(optimized_segment.version(), point_id, false)
                     .unwrap();
             }
 

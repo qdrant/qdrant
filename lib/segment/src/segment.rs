@@ -257,6 +257,7 @@ impl Segment {
         op_num: SeqNumberType,
         op_point_offset: Option<PointOffsetType>,
         operation: F,
+        force: bool,
     ) -> OperationResult<bool>
     where
         F: FnOnce(&mut Segment) -> OperationResult<(bool, Option<PointOffsetType>)>,
@@ -276,7 +277,7 @@ impl Segment {
             } // else: Re-try operation
         }
 
-        let res = self.handle_version(op_num, op_point_offset, operation);
+        let res = self.handle_version(op_num, op_point_offset, operation, force);
 
         match get_service_error(&res) {
             None => {
@@ -322,6 +323,7 @@ impl Segment {
         op_num: SeqNumberType,
         op_point_offset: Option<PointOffsetType>,
         operation: F,
+        force: bool,
     ) -> OperationResult<bool>
     where
         F: FnOnce(&mut Segment) -> OperationResult<(bool, Option<PointOffsetType>)>,
@@ -329,8 +331,9 @@ impl Segment {
         match op_point_offset {
             None => {
                 // Not a point operation *or* point does not exist.
-                // Use global version to check if operation has been already applied.
-                if self.version.unwrap_or(0) > op_num {
+                // Use global version to check if operation has been already applied and isn't
+                // forced
+                if !force && self.version.unwrap_or(0) > op_num {
                     return Ok(false); // Skip without execution
                 }
             }
@@ -982,51 +985,63 @@ impl SegmentEntry for Segment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         mut vectors: NamedVectors,
+        force: bool,
     ) -> OperationResult<bool> {
         debug_assert!(self.is_appendable());
         check_named_vectors(&vectors, &self.segment_config)?;
         vectors.preprocess(|name| self.segment_config.distance(name).unwrap());
         let stored_internal_point = self.id_tracker.borrow().internal_id(point_id);
-        self.handle_version_and_failure(op_num, stored_internal_point, |segment| {
-            if let Some(existing_internal_id) = stored_internal_point {
-                segment.replace_all_vectors(existing_internal_id, vectors)?;
-                Ok((true, Some(existing_internal_id)))
-            } else {
-                let new_index = segment.insert_new_vectors(point_id, vectors)?;
-                Ok((false, Some(new_index)))
-            }
-        })
+        self.handle_version_and_failure(
+            op_num,
+            stored_internal_point,
+            |segment| {
+                if let Some(existing_internal_id) = stored_internal_point {
+                    segment.replace_all_vectors(existing_internal_id, vectors)?;
+                    Ok((true, Some(existing_internal_id)))
+                } else {
+                    let new_index = segment.insert_new_vectors(point_id, vectors)?;
+                    Ok((false, Some(new_index)))
+                }
+            },
+            force,
+        )
     }
 
     fn delete_point(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
+        force: bool,
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         match internal_id {
             // Point does already not exist anymore
             None => Ok(false),
             Some(internal_id) => {
-                self.handle_version_and_failure(op_num, Some(internal_id), |segment| {
-                    // Mark point as deleted, drop mapping
-                    segment.payload_index.borrow_mut().drop(internal_id)?;
-                    segment.id_tracker.borrow_mut().drop(point_id)?;
+                self.handle_version_and_failure(
+                    op_num,
+                    Some(internal_id),
+                    |segment| {
+                        // Mark point as deleted, drop mapping
+                        segment.payload_index.borrow_mut().drop(internal_id)?;
+                        segment.id_tracker.borrow_mut().drop(point_id)?;
 
-                    // Before, we propagated point deletions to also delete its vectors. This turns
-                    // out to be problematic because this sometimes makes us loose vector data
-                    // because we cannot control the order of segment flushes.
-                    // Disabled until we properly fix it or find a better way to clean up old
-                    // vectors.
-                    //
-                    // // Propagate point deletion to all its vectors
-                    // for vector_data in segment.vector_data.values() {
-                    //     let mut vector_storage = vector_data.vector_storage.borrow_mut();
-                    //     vector_storage.delete_vector(internal_id)?;
-                    // }
+                        // Before, we propagated point deletions to also delete its vectors. This turns
+                        // out to be problematic because this sometimes makes us loose vector data
+                        // because we cannot control the order of segment flushes.
+                        // Disabled until we properly fix it or find a better way to clean up old
+                        // vectors.
+                        //
+                        // // Propagate point deletion to all its vectors
+                        // for vector_data in segment.vector_data.values() {
+                        //     let mut vector_storage = vector_data.vector_storage.borrow_mut();
+                        //     vector_storage.delete_vector(internal_id)?;
+                        // }
 
-                    Ok((true, Some(internal_id)))
-                })
+                        Ok((true, Some(internal_id)))
+                    },
+                    force,
+                )
             }
         }
     }
@@ -1044,12 +1059,15 @@ impl SegmentEntry for Segment {
             None => Err(OperationError::PointIdError {
                 missed_point_id: point_id,
             }),
-            Some(internal_id) => {
-                self.handle_version_and_failure(op_num, Some(internal_id), |segment| {
+            Some(internal_id) => self.handle_version_and_failure(
+                op_num,
+                Some(internal_id),
+                |segment| {
                     segment.update_vectors(internal_id, vectors)?;
                     Ok((true, Some(internal_id)))
-                })
-            }
+                },
+                false,
+            ),
         }
     }
 
@@ -1065,8 +1083,10 @@ impl SegmentEntry for Segment {
             None => Err(OperationError::PointIdError {
                 missed_point_id: point_id,
             }),
-            Some(internal_id) => {
-                self.handle_version_and_failure(op_num, Some(internal_id), |segment| {
+            Some(internal_id) => self.handle_version_and_failure(
+                op_num,
+                Some(internal_id),
+                |segment| {
                     let vector_data = segment.vector_data.get(vector_name).ok_or(
                         OperationError::VectorNameNotExists {
                             received_name: vector_name.to_string(),
@@ -1075,8 +1095,9 @@ impl SegmentEntry for Segment {
                     let mut vector_storage = vector_data.vector_storage.borrow_mut();
                     let is_deleted = vector_storage.delete_vector(internal_id)?;
                     Ok((is_deleted, Some(internal_id)))
-                })
-            }
+                },
+                false,
+            ),
         }
     }
 
@@ -1085,20 +1106,26 @@ impl SegmentEntry for Segment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         full_payload: &Payload,
+        force: bool,
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
-        self.handle_version_and_failure(op_num, internal_id, |segment| match internal_id {
-            Some(internal_id) => {
-                segment
-                    .payload_index
-                    .borrow_mut()
-                    .assign_all(internal_id, full_payload)?;
-                Ok((true, Some(internal_id)))
-            }
-            None => Err(OperationError::PointIdError {
-                missed_point_id: point_id,
-            }),
-        })
+        self.handle_version_and_failure(
+            op_num,
+            internal_id,
+            |segment| match internal_id {
+                Some(internal_id) => {
+                    segment
+                        .payload_index
+                        .borrow_mut()
+                        .assign_all(internal_id, full_payload)?;
+                    Ok((true, Some(internal_id)))
+                }
+                None => Err(OperationError::PointIdError {
+                    missed_point_id: point_id,
+                }),
+            },
+            force,
+        )
     }
 
     fn set_payload(
@@ -1109,18 +1136,23 @@ impl SegmentEntry for Segment {
         key: &Option<JsonPath>,
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
-        self.handle_version_and_failure(op_num, internal_id, |segment| match internal_id {
-            Some(internal_id) => {
-                segment
-                    .payload_index
-                    .borrow_mut()
-                    .assign(internal_id, payload, key)?;
-                Ok((true, Some(internal_id)))
-            }
-            None => Err(OperationError::PointIdError {
-                missed_point_id: point_id,
-            }),
-        })
+        self.handle_version_and_failure(
+            op_num,
+            internal_id,
+            |segment| match internal_id {
+                Some(internal_id) => {
+                    segment
+                        .payload_index
+                        .borrow_mut()
+                        .assign(internal_id, payload, key)?;
+                    Ok((true, Some(internal_id)))
+                }
+                None => Err(OperationError::PointIdError {
+                    missed_point_id: point_id,
+                }),
+            },
+            false,
+        )
     }
 
     fn delete_payload(
@@ -1130,18 +1162,23 @@ impl SegmentEntry for Segment {
         key: PayloadKeyTypeRef,
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
-        self.handle_version_and_failure(op_num, internal_id, |segment| match internal_id {
-            Some(internal_id) => {
-                segment
-                    .payload_index
-                    .borrow_mut()
-                    .delete(internal_id, key)?;
-                Ok((true, Some(internal_id)))
-            }
-            None => Err(OperationError::PointIdError {
-                missed_point_id: point_id,
-            }),
-        })
+        self.handle_version_and_failure(
+            op_num,
+            internal_id,
+            |segment| match internal_id {
+                Some(internal_id) => {
+                    segment
+                        .payload_index
+                        .borrow_mut()
+                        .delete(internal_id, key)?;
+                    Ok((true, Some(internal_id)))
+                }
+                None => Err(OperationError::PointIdError {
+                    missed_point_id: point_id,
+                }),
+            },
+            false,
+        )
     }
 
     fn clear_payload(
@@ -1150,15 +1187,20 @@ impl SegmentEntry for Segment {
         point_id: PointIdType,
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
-        self.handle_version_and_failure(op_num, internal_id, |segment| match internal_id {
-            Some(internal_id) => {
-                segment.payload_index.borrow_mut().drop(internal_id)?;
-                Ok((true, Some(internal_id)))
-            }
-            None => Err(OperationError::PointIdError {
-                missed_point_id: point_id,
-            }),
-        })
+        self.handle_version_and_failure(
+            op_num,
+            internal_id,
+            |segment| match internal_id {
+                Some(internal_id) => {
+                    segment.payload_index.borrow_mut().drop(internal_id)?;
+                    Ok((true, Some(internal_id)))
+                }
+                None => Err(OperationError::PointIdError {
+                    missed_point_id: point_id,
+                }),
+            },
+            false,
+        )
     }
 
     fn vector(&self, vector_name: &str, point_id: PointIdType) -> OperationResult<Option<Vector>> {
@@ -1483,10 +1525,15 @@ impl SegmentEntry for Segment {
     }
 
     fn delete_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
-        self.handle_version_and_failure(op_num, None, |segment| {
-            segment.payload_index.borrow_mut().drop_index(key)?;
-            Ok((true, None))
-        })
+        self.handle_version_and_failure(
+            op_num,
+            None,
+            |segment| {
+                segment.payload_index.borrow_mut().drop_index(key)?;
+                Ok((true, None))
+            },
+            false,
+        )
     }
 
     fn create_field_index(
@@ -1495,27 +1542,32 @@ impl SegmentEntry for Segment {
         key: PayloadKeyTypeRef,
         field_type: Option<&PayloadFieldSchema>,
     ) -> OperationResult<bool> {
-        self.handle_version_and_failure(op_num, None, |segment| match field_type {
-            Some(schema) => {
-                segment
-                    .payload_index
-                    .borrow_mut()
-                    .set_indexed(key, schema.clone())?;
-                Ok((true, None))
-            }
-            None => match segment.infer_from_payload_data(key)? {
-                None => Err(TypeInferenceError {
-                    field_name: key.clone(),
-                }),
-                Some(schema_type) => {
+        self.handle_version_and_failure(
+            op_num,
+            None,
+            |segment| match field_type {
+                Some(schema) => {
                     segment
                         .payload_index
                         .borrow_mut()
-                        .set_indexed(key, schema_type.into())?;
+                        .set_indexed(key, schema.clone())?;
                     Ok((true, None))
                 }
+                None => match segment.infer_from_payload_data(key)? {
+                    None => Err(TypeInferenceError {
+                        field_name: key.clone(),
+                    }),
+                    Some(schema_type) => {
+                        segment
+                            .payload_index
+                            .borrow_mut()
+                            .set_indexed(key, schema_type.into())?;
+                        Ok((true, None))
+                    }
+                },
             },
-        })
+            false,
+        )
     }
 
     fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
@@ -1533,7 +1585,7 @@ impl SegmentEntry for Segment {
     ) -> OperationResult<usize> {
         let mut deleted_points = 0;
         for point_id in self.read_filtered(None, None, Some(filter)) {
-            deleted_points += self.delete_point(op_num, point_id)? as usize;
+            deleted_points += self.delete_point(op_num, point_id, false)? as usize;
         }
 
         Ok(deleted_points)
