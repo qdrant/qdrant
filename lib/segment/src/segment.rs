@@ -1582,10 +1582,11 @@ impl SegmentEntry for Segment {
         &'a mut self,
         op_num: SeqNumberType,
         filter: &'a Filter,
+        force: bool,
     ) -> OperationResult<usize> {
         let mut deleted_points = 0;
         for point_id in self.read_filtered(None, None, Some(filter)) {
-            deleted_points += self.delete_point(op_num, point_id, false)? as usize;
+            deleted_points += self.delete_point(op_num, point_id, force)? as usize;
         }
 
         Ok(deleted_points)

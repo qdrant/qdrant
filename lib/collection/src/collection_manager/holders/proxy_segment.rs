@@ -800,6 +800,7 @@ impl SegmentEntry for ProxySegment {
         &'a mut self,
         op_num: SeqNumberType,
         filter: &'a Filter,
+        force: bool,
     ) -> OperationResult<usize> {
         let mut deleted_points = 0;
 
@@ -818,7 +819,7 @@ impl SegmentEntry for ProxySegment {
             .write_segment
             .get()
             .write()
-            .delete_filtered(op_num, filter)?;
+            .delete_filtered(op_num, filter, force)?;
 
         Ok(deleted_points)
     }

@@ -38,12 +38,13 @@ pub(crate) fn delete_points(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
     ids: &[PointIdType],
+    force: bool,
 ) -> CollectionResult<usize> {
     segments
         .apply_points(
             ids,
             |_| (),
-            |id, _idx, write_segment, ()| write_segment.delete_point(op_num, id, false),
+            |id, _idx, write_segment, ()| write_segment.delete_point(op_num, id, force),
         )
         .map_err(Into::into)
 }
@@ -75,6 +76,7 @@ pub(crate) fn update_vectors(
             write_segment.update_vectors(op_num, id, vectors)
         },
         |_| false,
+        false,
     )?;
     check_unprocessed_points(&ids, &updated_points)?;
     Ok(updated_points.len())
@@ -124,6 +126,7 @@ pub(crate) fn overwrite_payload(
         points,
         |id, write_segment| write_segment.set_full_payload(op_num, id, payload, false),
         |segment| segment.get_indexed_fields().is_empty(),
+        false,
     )?;
 
     check_unprocessed_points(points, &updated_points)?;
@@ -156,6 +159,7 @@ pub(crate) fn set_payload(
                 !indexed_path.is_affected_by_value_set(&payload.0, key.as_ref())
             })
         },
+        false,
     )?;
 
     check_unprocessed_points(points, &updated_points)?;
@@ -209,6 +213,7 @@ pub(crate) fn delete_payload(
                 },
             )
         },
+        false,
     )?;
 
     check_unprocessed_points(points, &updated_points)?;
@@ -235,6 +240,7 @@ pub(crate) fn clear_payload(
         points,
         |id, write_segment| write_segment.clear_payload(op_num, id),
         |segment| segment.get_indexed_fields().is_empty(),
+        false,
     )?;
 
     check_unprocessed_points(points, &updated_points)?;
@@ -254,6 +260,7 @@ pub(crate) fn clear_payload_by_filter(
         points_to_clear.as_slice(),
         |id, write_segment| write_segment.clear_payload(op_num, id),
         |segment| segment.get_indexed_fields().is_empty(),
+        false,
     )?;
 
     Ok(updated_points.len())
@@ -317,6 +324,7 @@ pub(crate) fn sync_points(
     from_id: Option<PointIdType>,
     to_id: Option<PointIdType>,
     points: &[PointStruct],
+    force: bool,
 ) -> CollectionResult<(usize, usize, usize)> {
     let id_to_point = points
         .iter()
@@ -330,7 +338,7 @@ pub(crate) fn sync_points(
         .collect();
     // 2. Remove points, which are not present in the sync operation
     let points_to_remove: Vec<_> = stored_point_ids.difference(&sync_points).copied().collect();
-    let deleted = delete_points(segments, op_num, points_to_remove.as_slice())?;
+    let deleted = delete_points(segments, op_num, points_to_remove.as_slice(), force)?;
     // 3. Retrieve overlapping points, detect which one of them are changed
     let existing_point_ids: Vec<_> = stored_point_ids
         .intersection(&sync_points)
@@ -372,7 +380,7 @@ pub(crate) fn sync_points(
     });
 
     // 5. Upsert points which differ from the stored ones
-    let num_replaced = upsert_points(segments, op_num, points_to_update)?;
+    let num_replaced = upsert_points(segments, op_num, points_to_update, force)?;
     debug_assert_eq!(num_replaced, num_updated);
 
     Ok((deleted, num_new, num_updated))
@@ -385,6 +393,7 @@ pub(crate) fn upsert_points<'a, T>(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
     points: T,
+    force: bool,
 ) -> CollectionResult<usize>
 where
     T: IntoIterator<Item = &'a PointStruct>,
@@ -408,6 +417,7 @@ where
             )
         },
         |_| false,
+        force,
     )?;
 
     let mut res = updated_points.len();
@@ -444,9 +454,12 @@ pub(crate) fn process_point_operation(
     segments: &RwLock<SegmentHolder>,
     op_num: SeqNumberType,
     point_operation: PointOperations,
+    force: bool,
 ) -> CollectionResult<usize> {
     match point_operation {
-        PointOperations::DeletePoints { ids, .. } => delete_points(&segments.read(), op_num, &ids),
+        PointOperations::DeletePoints { ids, .. } => {
+            delete_points(&segments.read(), op_num, &ids, force)
+        }
         PointOperations::UpsertPoints(operation) => {
             let points: Vec<_> = match operation {
                 PointInsertOperationsInternal::PointsBatch(batch) => {
@@ -473,11 +486,11 @@ pub(crate) fn process_point_operation(
                 }
                 PointInsertOperationsInternal::PointsList(points) => points,
             };
-            let res = upsert_points(&segments.read(), op_num, points.iter())?;
+            let res = upsert_points(&segments.read(), op_num, points.iter(), force)?;
             Ok(res)
         }
         PointOperations::DeletePointsByFilter(filter) => {
-            delete_points_by_filter(&segments.read(), op_num, &filter)
+            delete_points_by_filter(&segments.read(), op_num, &filter, force)
         }
         PointOperations::SyncPoints(operation) => {
             let (deleted, new, updated) = sync_points(
@@ -486,6 +499,7 @@ pub(crate) fn process_point_operation(
                 operation.from_id,
                 operation.to_id,
                 &operation.points,
+                force,
             )?;
             Ok(deleted + new + updated)
         }
@@ -583,10 +597,11 @@ pub(crate) fn delete_points_by_filter(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
     filter: &Filter,
+    force: bool,
 ) -> CollectionResult<usize> {
     let mut deleted = 0;
     segments.apply_segments(|s| {
-        deleted += s.delete_filtered(op_num, filter)?;
+        deleted += s.delete_filtered(op_num, filter, force)?;
         Ok(true)
     })?;
     Ok(deleted)

@@ -201,6 +201,7 @@ pub trait SegmentEntry {
         &'a mut self,
         op_num: SeqNumberType,
         filter: &'a Filter,
+        force: bool,
     ) -> OperationResult<usize>;
 
     /// Take a snapshot of the segment.

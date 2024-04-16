@@ -522,7 +522,7 @@ impl LocalShard {
             }
 
             // Propagate `CollectionError::ServiceError`, but skip other error types.
-            match &CollectionUpdater::update(segments, op_num, update.operation) {
+            match &CollectionUpdater::update(segments, op_num, update.operation, true) {
                 Err(err @ CollectionError::ServiceError { error, backtrace }) => {
                     let path = self.path.display();
 

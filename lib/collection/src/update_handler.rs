@@ -234,7 +234,7 @@ impl UpdateHandler {
             Some(first_failed_op) => {
                 let wal_lock = wal.lock();
                 for (op_num, operation) in wal_lock.read(first_failed_op) {
-                    CollectionUpdater::update(&segments, op_num, operation.operation)?;
+                    CollectionUpdater::update(&segments, op_num, operation.operation, false)?;
                 }
             }
         };
@@ -570,8 +570,9 @@ impl UpdateHandler {
                         Ok(())
                     };
 
-                    let operation_result = flush_res
-                        .and_then(|_| CollectionUpdater::update(&segments, op_num, operation));
+                    let operation_result = flush_res.and_then(|_| {
+                        CollectionUpdater::update(&segments, op_num, operation, false)
+                    });
 
                     let res = match operation_result {
                         Ok(update_res) => optimize_sender

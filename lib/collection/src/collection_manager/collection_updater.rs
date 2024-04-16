@@ -46,12 +46,13 @@ impl CollectionUpdater {
         segments: &RwLock<SegmentHolder>,
         op_num: SeqNumberType,
         operation: CollectionUpdateOperations,
+        force: bool,
     ) -> CollectionResult<usize> {
         // Allow only one update at a time, ensure no data races between segments.
         // let _lock = self.update_lock.lock().unwrap();
         let operation_result = match operation {
             CollectionUpdateOperations::PointOperation(point_operation) => {
-                process_point_operation(segments, op_num, point_operation)
+                process_point_operation(segments, op_num, point_operation, force)
             }
             CollectionUpdateOperations::VectorOperation(vector_operation) => {
                 process_vector_operation(segments, op_num, vector_operation)
