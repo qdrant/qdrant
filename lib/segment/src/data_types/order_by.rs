@@ -93,8 +93,8 @@ impl OrderBy {
                 StartFrom::Datetime(dt) => OrderingValue::Int(dt.timestamp()),
             })
             .unwrap_or_else(|| match self.direction() {
-                Direction::Asc => OrderingValue::Int(std::i64::MIN),
-                Direction::Desc => OrderingValue::Int(std::i64::MAX),
+                Direction::Asc => OrderingValue::MIN,
+                Direction::Desc => OrderingValue::MAX,
             })
     }
 
@@ -109,20 +109,26 @@ impl OrderBy {
         new_payload
     }
 
-    pub fn remove_order_value_from_payload(&self, payload: Option<&mut Payload>) -> f64 {
+    pub fn get_order_value_from_payload(&self, payload: Option<&Payload>) -> OrderingValue {
         payload
-            .and_then(|payload| payload.0.remove(INTERNAL_KEY_OF_ORDER_BY_VALUE))
-            .and_then(|v| v.as_f64())
+            .and_then(|payload| payload.0.get(INTERNAL_KEY_OF_ORDER_BY_VALUE))
+            .and_then(|v| OrderingValue::try_from(v.clone()).ok())
             .unwrap_or_else(|| match self.direction() {
-                Direction::Asc => std::f64::MAX,
-                Direction::Desc => std::f64::MIN,
+                Direction::Asc => OrderingValue::MAX,
+                Direction::Desc => OrderingValue::MIN,
             })
     }
 }
 
+#[derive(Debug)]
 pub enum OrderingValue {
     Float(FloatPayloadType),
     Int(IntPayloadType),
+}
+
+impl OrderingValue {
+    const MAX: Self = Self::Float(f64::NAN);
+    const MIN: Self = Self::Float(f64::MIN);
 }
 
 impl From<OrderingValue> for serde_json::Value {
@@ -133,6 +139,18 @@ impl From<OrderingValue> for serde_json::Value {
                 .unwrap_or(serde_json::Value::Null),
             OrderingValue::Int(value) => serde_json::Value::Number(serde_json::Number::from(value)),
         }
+    }
+}
+
+impl TryFrom<serde_json::Value> for OrderingValue {
+    type Error = ();
+
+    fn try_from(value: serde_json::Value) -> Result<Self, Self::Error> {
+        value
+            .as_i64()
+            .map(Self::from)
+            .or_else(|| value.as_f64().map(Self::from))
+            .ok_or(())
     }
 }
 
@@ -185,6 +203,30 @@ impl Ord for OrderingValue {
                 // Ditto, but the NaN is on the right side of the comparison.
                 a.num_cmp(*b).unwrap_or(std::cmp::Ordering::Less)
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use proptest::proptest;
+
+    use crate::data_types::order_by::OrderingValue;
+
+    proptest! {
+
+        #[test]
+        fn test_min_ordering_value(a in i64::MIN..0, b in f64::MIN..0.0) {
+            assert!(OrderingValue::MIN.cmp(&OrderingValue::from(a)).is_le());
+            assert!(OrderingValue::MIN.cmp(&OrderingValue::from(b)).is_le());
+            assert!(OrderingValue::MIN.cmp(&OrderingValue::from(f64::NAN)).is_le());
+        }
+
+        #[test]
+        fn test_max_ordering_value(a in 0..i64::MAX, b in 0.0..f64::MAX) {
+            assert!(OrderingValue::MAX.cmp(&OrderingValue::from(a)).is_ge());
+            assert!(OrderingValue::MAX.cmp(&OrderingValue::from(b)).is_ge());
+            assert!(OrderingValue::MAX.cmp(&OrderingValue::from(f64::NAN)).is_ge());
         }
     }
 }

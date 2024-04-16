@@ -153,7 +153,6 @@ impl LocalShard {
     async fn scroll_by_field(
         &self,
         limit: usize,
-        with_payload_interface: &WithPayloadInterface,
         with_vector: &WithVector,
         filter: Option<&Filter>,
         search_runtime_handle: &Handle,
@@ -196,11 +195,12 @@ impl LocalShard {
             .take(limit)
             .collect_vec();
 
-        let with_payload = WithPayload::from(with_payload_interface);
+        // Payload will be added after merging from shards
+        let with_payload = WithPayload::from(false);
 
         let point_ids = top_records.iter().map(|(_, id)| *id).collect_vec();
 
-        // Fetch with the requested vector and payload
+        // Fetch with the requested vector
         let mut records =
             SegmentsSearcher::retrieve(segments, &point_ids, &with_payload, with_vector)?;
 
@@ -314,15 +314,8 @@ impl ShardOperation for LocalShard {
                 .await
             }
             Some(order_by) => {
-                self.scroll_by_field(
-                    limit,
-                    with_payload_interface,
-                    with_vector,
-                    filter,
-                    search_runtime_handle,
-                    order_by,
-                )
-                .await
+                self.scroll_by_field(limit, with_vector, filter, search_runtime_handle, order_by)
+                    .await
             }
         }
     }
