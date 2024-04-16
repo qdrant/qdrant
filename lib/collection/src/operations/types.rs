@@ -112,6 +112,7 @@ pub struct CollectionInfo {
     /// All vectors in collection are available for querying.
     /// Calculated as `points_count x vectors_per_point`.
     /// Where `vectors_per_point` is a number of named vectors in schema.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub vectors_count: Option<usize>,
     /// Approximate number of indexed vectors in the collection.
     /// Indexed vectors in large segments are faster to query,
