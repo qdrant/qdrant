@@ -130,7 +130,7 @@ fn get_locks(
 #[get("/stacktrace")]
 fn get_stacktrace(ActixAccess(access): ActixAccess) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        access.check_global_access(AccessRequirements::new())?;
+        access.check_global_access(AccessRequirements::new().manage())?;
         Ok(get_stack_trace())
     })
 }
