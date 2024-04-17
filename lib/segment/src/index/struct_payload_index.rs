@@ -6,7 +6,6 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use common::types::PointOffsetType;
-use issues::Issue;
 use log::debug;
 use parking_lot::RwLock;
 use rocksdb::DB;

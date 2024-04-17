@@ -36,8 +36,6 @@ async fn search_points(
         Some(shard_keys) => shard_keys.into(),
     };
 
-    let filter = search_request.filter.clone();
-
     let response = do_core_search_points(
         dispatcher.toc(&access),
         &collection.name,
@@ -55,15 +53,6 @@ async fn search_points(
             .collect_vec()
     });
 
-    crate::common::helpers::post_process_slow_request(
-        timing.elapsed(),
-        1.0,
-        &dispatcher,
-        &collection.name,
-        vec![filter],
-    )
-    .await;
-
     process_response(response, timing)
 }
 
@@ -78,13 +67,6 @@ async fn batch_search_points(
     let timing = Instant::now();
 
     let request = request.into_inner();
-
-    let filters = request
-        .searches
-        .iter()
-        .map(|req| req.search_request.filter.clone())
-        .collect::<Vec<_>>();
-
     let requests = request
         .searches
         .into_iter()
@@ -123,15 +105,6 @@ async fn batch_search_points(
             })
             .collect_vec()
     });
-
-    crate::common::helpers::post_process_slow_request(
-        timing.elapsed(),
-        1.0,
-        &dispatcher,
-        &collection.name,
-        filters,
-    )
-    .await;
 
     process_response(response, timing)
 }
