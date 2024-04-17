@@ -339,7 +339,7 @@ impl Collection {
                     let ids = ordered_records.iter().map(|record| record.id).collect();
                     let request = PointRequestInternal {
                         ids,
-                        with_payload: request.with_payload.clone(),
+                        with_payload: Some(original_with_payload_interface),
                         with_vector: false.into(),
                     };
 

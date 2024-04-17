@@ -132,7 +132,7 @@ def test_order_by_from_remote_shard(tmp_path, every_test):
     ).raise_for_status()
 
     res = requests.post(
-        f"{uri}/collections/{COLL_NAME}/points/scroll", json={"limit": 10, "order_by": "index", "with_payload": True}
+        f"{uri}/collections/{COLL_NAME}/points/scroll", json={"limit": 10, "order_by": "index"}
     )
     
     res.raise_for_status()
