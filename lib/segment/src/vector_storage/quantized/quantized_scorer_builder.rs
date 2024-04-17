@@ -54,7 +54,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
         }
     }
 
-    pub fn build_with_metric<TMetric: Metric<VectorElementType>>(
+    pub fn build_with_metric<TMetric: Metric<VectorElementType> + 'a>(
         self,
     ) -> OperationResult<Box<dyn RawScorer + 'a>> {
         match self.quantized_storage {
@@ -80,7 +80,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
     }
 
     #[inline]
-    fn new_quantized_scorer<TMetric: Metric<VectorElementType>, TEncodedQuery: 'a>(
+    fn new_quantized_scorer<TMetric: Metric<VectorElementType> + 'a, TEncodedQuery: 'a>(
         self,
         quantized_storage: &'a impl EncodedVectors<TEncodedQuery>,
     ) -> OperationResult<Box<dyn RawScorer + 'a>> {
@@ -90,7 +90,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
             point_deleted,
             vec_deleted,
             is_stopped,
-            distance,
+            distance: _,
         } = self;
 
         match query {
