@@ -254,7 +254,7 @@ impl Segment {
         operation: F,
     ) -> OperationResult<bool>
     where
-        F: FnOnce(&mut Segment) -> OperationResult<(bool, Option<PointOffsetType>)>,
+        F: FnOnce(&mut Segment) -> OperationResult<bool>,
     {
         if let Some(SegmentFailedState {
             version: failed_version,
@@ -373,22 +373,16 @@ impl Segment {
         operation: F,
     ) -> OperationResult<bool>
     where
-        F: FnOnce(&mut Segment) -> OperationResult<(bool, Option<PointOffsetType>)>,
+        F: FnOnce(&mut Segment) -> OperationResult<bool>,
     {
         // Global version to check if operation has already been applied, then skip without execution
         if self.version.unwrap_or(0) > op_num {
             return Ok(false);
         }
 
-        let (applied, point_id) = operation(self)?;
+        let applied = operation(self)?;
 
         self.version = Some(max(op_num, self.version.unwrap_or(0)));
-
-        if let Some(point_id) = point_id {
-            self.id_tracker
-                .borrow_mut()
-                .set_internal_version(point_id, op_num)?;
-        }
 
         Ok(applied)
     }
@@ -1556,7 +1550,7 @@ impl SegmentEntry for Segment {
     fn delete_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
         self.handle_segment_version_and_failure(op_num, |segment| {
             segment.payload_index.borrow_mut().drop_index(key)?;
-            Ok((true, None))
+            Ok(true)
         })
     }
 
@@ -1572,7 +1566,7 @@ impl SegmentEntry for Segment {
                     .payload_index
                     .borrow_mut()
                     .set_indexed(key, schema.clone())?;
-                Ok((true, None))
+                Ok(true)
             }
             None => match segment.infer_from_payload_data(key)? {
                 None => Err(TypeInferenceError {
@@ -1583,7 +1577,7 @@ impl SegmentEntry for Segment {
                         .payload_index
                         .borrow_mut()
                         .set_indexed(key, schema_type.into())?;
-                    Ok((true, None))
+                    Ok(true)
                 }
             },
         })
