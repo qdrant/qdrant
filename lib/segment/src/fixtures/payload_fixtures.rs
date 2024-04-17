@@ -8,7 +8,7 @@ use rand::seq::SliceRandom;
 use rand::Rng;
 use serde_json::{json, Value};
 
-use crate::data_types::vectors::{DenseVector, MultiDenseVector};
+use crate::data_types::vectors::{DenseVector, MultiDenseVector, VectorElementType};
 use crate::types::{
     AnyVariants, Condition, ExtendedPointId, FieldCondition, Filter, HasIdCondition,
     IsEmptyCondition, Match, MatchAny, Payload, PayloadField, Range as RangeCondition, ValuesCount,
@@ -119,6 +119,16 @@ pub fn random_bool_payload<R: Rng + ?Sized>(
 
 pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> DenseVector {
     (0..size).map(|_| rnd_gen.gen()).collect()
+}
+
+pub fn random_dense_byte_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> DenseVector {
+    (0..size)
+        .map(|_| {
+            rnd_gen
+                .gen_range::<VectorElementType, _>(0.0..=255.0)
+                .round()
+        })
+        .collect()
 }
 
 pub fn random_multi_vector<R: Rng + ?Sized>(

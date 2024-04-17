@@ -91,6 +91,7 @@ fn estimate_build_time(segment: &Segment, stop_delay_millis: u64) -> (u64, bool)
                 index: Indexes::Hnsw(Default::default()),
                 quantization_config: None,
                 multi_vec_config: None,
+                datatype: None,
             },
         )]),
         sparse_vector_data: Default::default(),
