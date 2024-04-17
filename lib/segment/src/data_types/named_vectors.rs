@@ -218,9 +218,9 @@ impl<'a> NamedVectors<'a> {
 
     pub fn preprocess(&mut self, segment_config: &SegmentConfig) {
         for (name, vector) in self.map.iter_mut() {
-            let config = segment_config.vector_data.get(name.as_ref()).unwrap();
             match vector {
                 CowVector::Dense(v) => {
+                    let config = segment_config.vector_data.get(name.as_ref()).unwrap();
                     let preprocessed_vector = Self::preprocess_dense_vector(v.to_vec(), config);
                     *vector = CowVector::Dense(Cow::Owned(preprocessed_vector))
                 }
@@ -229,6 +229,7 @@ impl<'a> NamedVectors<'a> {
                     v.to_mut().sort_by_indices();
                 }
                 CowVector::MultiDense(v) => {
+                    let config = segment_config.vector_data.get(name.as_ref()).unwrap();
                     for dense_vector in v.to_mut().multi_vectors_mut() {
                         let preprocessed_vector =
                             Self::preprocess_dense_vector(dense_vector.to_vec(), config);
