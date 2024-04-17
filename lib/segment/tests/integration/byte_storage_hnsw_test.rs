@@ -3,7 +3,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use common::cpu::CpuPermit;
-use common::types::{PointOffsetType, TelemetryDetail};
+use common::types::{ScoredPointOffset, TelemetryDetail};
 use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
@@ -13,13 +13,11 @@ use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_dense_byte_vector, random_int_payload};
 use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::hnsw::HNSWIndex;
-use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::{PayloadIndex, VectorIndex};
 use segment::segment_constructor::build_segment;
 use segment::types::{
-    Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload, PayloadSchemaType,
-    Range, SearchParams, SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageDatatype,
-    VectorStorageType,
+    Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload, Range, SearchParams,
+    SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageDatatype, VectorStorageType,
 };
 use segment::vector_storage::query::context_query::ContextPair;
 use segment::vector_storage::query::discovery_query::DiscoveryQuery;
@@ -75,23 +73,29 @@ fn random_query<R: Rng + ?Sized>(variant: &QueryVariant, rnd: &mut R, dim: usize
     }
 }
 
+fn compare_search_result(result_a: &[Vec<ScoredPointOffset>], result_b: &[Vec<ScoredPointOffset>]) {
+    assert_eq!(result_a.len(), result_b.len());
+    for (a, b) in result_a.iter().zip(result_b) {
+        assert_eq!(a.len(), b.len());
+        for (a, b) in a.iter().zip(b) {
+            assert_eq!(a.idx, b.idx);
+            assert!((a.score - b.score).abs() < 1e-6);
+        }
+    }
+}
+
 #[rstest]
 #[case::nearest(QueryVariant::Nearest, 32, 10)]
-#[case::discovery(QueryVariant::Discovery, 128, 20)] // tests that check better precision are in `hnsw_discover_test.rs`
+#[case::discovery(QueryVariant::Discovery, 128, 20)]
 #[case::recommend(QueryVariant::RecommendBestScore, 64, 20)]
-fn test_filterable_hnsw(
+fn test_byte_storage_hnsw(
     #[case] query_variant: QueryVariant,
     #[case] ef: usize,
     #[case] max_failures: usize, // out of 100
 ) {
-    _test_filterable_hnsw(query_variant, ef, max_failures);
-}
+    use segment::index::hnsw_index::num_rayon_threads;
+    use segment::types::PayloadSchemaType;
 
-fn _test_filterable_hnsw(
-    query_variant: QueryVariant,
-    ef: usize,
-    max_failures: usize, // out of 100
-) {
     let stopped = AtomicBool::new(false);
 
     let dim = 8;
@@ -100,15 +104,34 @@ fn _test_filterable_hnsw(
     let ef_construct = 16;
     let distance = Distance::Cosine;
     let full_scan_threshold = 16; // KB
-    let indexing_threshold = 500; // num vectors
     let num_payload_values = 2;
 
     let mut rnd = StdRng::seed_from_u64(42);
 
-    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
+    let dir_float = Builder::new()
+        .prefix("segment_dir_float")
+        .tempdir()
+        .unwrap();
+    let dir_byte = Builder::new().prefix("segment_dir_byte").tempdir().unwrap();
+    let hnsw_dir_byte = Builder::new().prefix("hnsw_dir_byte").tempdir().unwrap();
 
-    let config = SegmentConfig {
+    let config_float = SegmentConfig {
+        vector_data: HashMap::from([(
+            DEFAULT_VECTOR_NAME.to_owned(),
+            VectorDataConfig {
+                size: dim,
+                distance,
+                storage_type: VectorStorageType::Memory,
+                index: Indexes::Plain {},
+                quantization_config: None,
+                multi_vec_config: None,
+                datatype: None,
+            },
+        )]),
+        sparse_vector_data: Default::default(),
+        payload_storage_type: Default::default(),
+    };
+    let config_byte = SegmentConfig {
         vector_data: HashMap::from([(
             DEFAULT_VECTOR_NAME.to_owned(),
             VectorDataConfig {
@@ -127,9 +150,11 @@ fn _test_filterable_hnsw(
 
     let int_key = "int";
 
-    let mut segment = build_segment(dir.path(), &config, true).unwrap();
+    let mut segment_float = build_segment(dir_float.path(), &config_float, true).unwrap();
+    let mut segment_byte = build_segment(dir_byte.path(), &config_byte, true).unwrap();
+    // check that `segment_byte` uses byte storage
     {
-        let borrowed_storage = segment.vector_data[DEFAULT_VECTOR_NAME]
+        let borrowed_storage = segment_byte.vector_data[DEFAULT_VECTOR_NAME]
             .vector_storage
             .borrow();
         let raw_storage: &VectorStorageEnum = &borrowed_storage;
@@ -146,15 +171,30 @@ fn _test_filterable_hnsw(
         let int_payload = random_int_payload(&mut rnd, num_payload_values..=num_payload_values);
         let payload: Payload = json!({int_key:int_payload,}).into();
 
-        segment
+        segment_float
             .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector))
             .unwrap();
-        segment
+        segment_float
+            .set_full_payload(n as SeqNumberType, idx, &payload)
+            .unwrap();
+        segment_byte
+            .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector))
+            .unwrap();
+        segment_byte
             .set_full_payload(n as SeqNumberType, idx, &payload)
             .unwrap();
     }
 
-    let payload_index_ptr = segment.payload_index.clone();
+    segment_float
+        .payload_index
+        .borrow_mut()
+        .set_indexed(&path(int_key), PayloadSchemaType::Integer.into())
+        .unwrap();
+    segment_byte
+        .payload_index
+        .borrow_mut()
+        .set_indexed(&path(int_key), PayloadSchemaType::Integer.into())
+        .unwrap();
 
     let hnsw_config = HnswConfig {
         m,
@@ -167,60 +207,21 @@ fn _test_filterable_hnsw(
 
     let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
     let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
-
-    let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
-    let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
-    let mut hnsw_index = HNSWIndex::<GraphLinksRam>::open(
-        hnsw_dir.path(),
-        segment.id_tracker.clone(),
-        vector_storage.clone(),
-        quantized_vectors.clone(),
-        payload_index_ptr.clone(),
+    let mut hnsw_index_byte = HNSWIndex::<GraphLinksRam>::open(
+        hnsw_dir_byte.path(),
+        segment_byte.id_tracker.clone(),
+        segment_byte.vector_data[DEFAULT_VECTOR_NAME]
+            .vector_storage
+            .clone(),
+        segment_byte.vector_data[DEFAULT_VECTOR_NAME]
+            .quantized_vectors
+            .clone(),
+        segment_byte.payload_index.clone(),
         hnsw_config,
     )
     .unwrap();
 
-    hnsw_index.build_index(permit.clone(), &stopped).unwrap();
-
-    payload_index_ptr
-        .borrow_mut()
-        .set_indexed(&path(int_key), PayloadSchemaType::Integer.into())
-        .unwrap();
-    let borrowed_payload_index = payload_index_ptr.borrow();
-    let blocks = borrowed_payload_index
-        .payload_blocks(&path(int_key), indexing_threshold)
-        .collect_vec();
-    for block in blocks.iter() {
-        assert!(
-            block.condition.range.is_some(),
-            "only range conditions should be generated for this type of payload"
-        );
-    }
-
-    let mut coverage: HashMap<PointOffsetType, usize> = Default::default();
-    let px = payload_index_ptr.borrow();
-    for block in &blocks {
-        let filter = Filter::new_must(Condition::Field(block.condition.clone()));
-        let points = px.query_points(&filter);
-        for point in points {
-            coverage.insert(point, coverage.get(&point).unwrap_or(&0) + 1);
-        }
-    }
-    let expected_blocks = num_vectors as usize / indexing_threshold * 2;
-
-    eprintln!("blocks.len() = {:#?}", blocks.len());
-    assert!(
-        (blocks.len() as i64 - expected_blocks as i64).abs() <= 3,
-        "real number of payload blocks is too far from expected"
-    );
-
-    assert_eq!(
-        coverage.len(),
-        num_vectors as usize,
-        "not all points are covered by payload blocks"
-    );
-
-    hnsw_index.build_index(permit, &stopped).unwrap();
+    hnsw_index_byte.build_index(permit, &stopped).unwrap();
 
     let top = 3;
     let mut hits = 0;
@@ -244,7 +245,7 @@ fn _test_filterable_hnsw(
 
         let filter_query = Some(&filter);
 
-        let index_result = hnsw_index
+        let index_result_byte = hnsw_index_byte
             .search(
                 &[&query],
                 filter_query,
@@ -260,14 +261,14 @@ fn _test_filterable_hnsw(
 
         // check that search was performed using HNSW index
         assert_eq!(
-            hnsw_index
+            hnsw_index_byte
                 .get_telemetry_data(TelemetryDetail::default())
                 .filtered_large_cardinality
                 .count,
             i + 1
         );
 
-        let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
+        let plain_result_float = segment_float.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
             .search(
@@ -279,8 +280,21 @@ fn _test_filterable_hnsw(
                 usize::MAX,
             )
             .unwrap();
+        let plain_result_byte = segment_byte.vector_data[DEFAULT_VECTOR_NAME]
+            .vector_index
+            .borrow()
+            .search(
+                &[&query],
+                filter_query,
+                top,
+                None,
+                &false.into(),
+                usize::MAX,
+            )
+            .unwrap();
+        compare_search_result(&plain_result_float, &plain_result_byte);
 
-        if plain_result == index_result {
+        if plain_result_byte == index_result_byte {
             hits += 1;
         }
     }
