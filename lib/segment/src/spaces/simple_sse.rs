@@ -9,7 +9,8 @@ use super::tools::is_length_zero_or_normalized;
 use crate::data_types::vectors::{DenseVector, VectorElementType};
 
 #[target_feature(enable = "sse")]
-unsafe fn hsum128_ps_sse(x: __m128) -> f32 {
+#[allow(clippy::missing_safety_doc)]
+pub unsafe fn hsum128_ps_sse(x: __m128) -> f32 {
     let x64: __m128 = _mm_add_ps(x, _mm_movehl_ps(x, x));
     let x32: __m128 = _mm_add_ss(x64, _mm_shuffle_ps(x64, x64, 0x55));
     _mm_cvtss_f32(x32)
