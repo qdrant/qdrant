@@ -32,7 +32,7 @@ impl<
     ) -> Self {
         let preprocessed_vector = TMetric::preprocess(query);
         Self {
-            query: TElement::from_dense_vector(&preprocessed_vector).to_vec(),
+            query: TElement::slice_from_float_cow(&preprocessed_vector).to_vec(),
             vector_storage,
             metric: PhantomData,
         }

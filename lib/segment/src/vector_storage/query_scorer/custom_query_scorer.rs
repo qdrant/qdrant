@@ -37,7 +37,7 @@ impl<
         let query = query
             .transform(|vector| {
                 let preprocessed_vector = TMetric::preprocess(vector);
-                Ok(TElement::from_dense_vector(&preprocessed_vector).to_vec())
+                Ok(TElement::slice_from_float_cow(&preprocessed_vector).to_vec())
             })
             .unwrap();
 

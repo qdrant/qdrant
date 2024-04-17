@@ -195,7 +195,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleDenseVectorStorage<T> {
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
         let vector: &[VectorElementType] = vector.try_into()?;
-        let vector = T::from_dense_vector(vector);
+        let vector = T::slice_from_float_cow(vector);
         self.vectors.insert(key, vector.as_ref())?;
         self.set_deleted(key, false);
         self.update_stored(key, false, Some(vector.as_ref()))?;
@@ -214,7 +214,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleDenseVectorStorage<T> {
             // Do not perform preprocessing - vectors should be already processed
             let other_vector = other.get_vector(point_id);
             let other_vector: &[VectorElementType] = other_vector.as_vec_ref().try_into()?;
-            let other_vector = T::from_dense_vector(other_vector);
+            let other_vector = T::slice_from_float_cow(other_vector);
             let other_deleted = other.is_deleted_vector(point_id);
             let new_id = self.vectors.push(other_vector.as_ref())?;
             self.set_deleted(new_id, other_deleted);
