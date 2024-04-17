@@ -1070,6 +1070,108 @@ mod tests {
         assert_eq!(read_segment_2.has_point(12.into()), update_nonappendable);
     }
 
+    /// Test applying points and conditionally moving them if operation versions are off
+    ///
+    /// More specifically, this tests the move is still applied correctly even if segments already
+    /// have a newer version. That very situation can happen when replaying the WAL after a crash
+    /// where only some of the segments have been flushed properly.
+    #[rstest::rstest]
+    #[case::segments_older(false, false)]
+    #[case::non_appendable_newer_appendable_older(true, false)]
+    #[case::non_appendable_older_appendable_newer(false, true)]
+    #[case::segments_newer(true, true)]
+    fn test_apply_and_move_old_versions(
+        #[case] segment_1_high_version: bool,
+        #[case] segment_2_high_version: bool,
+    ) {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+        let mut segment1 = build_segment_1(dir.path());
+        let mut segment2 = build_segment_2(dir.path());
+
+        // Insert operation 100 with point 123 and 456 into segment 1, and 789 into segment 2
+        segment1
+            .upsert_point(
+                100,
+                123.into(),
+                segment::data_types::vectors::only_default_vector(&[0.0, 1.0, 2.0, 3.0]),
+            )
+            .unwrap();
+        segment1
+            .upsert_point(
+                100,
+                456.into(),
+                segment::data_types::vectors::only_default_vector(&[0.0, 1.0, 2.0, 3.0]),
+            )
+            .unwrap();
+        segment2
+            .upsert_point(
+                100,
+                789.into(),
+                segment::data_types::vectors::only_default_vector(&[0.0, 1.0, 2.0, 3.0]),
+            )
+            .unwrap();
+
+        // Bump segment version of segment 1 and/or 2 to a high value
+        // Here we insert a random point to achieve this, normally this could happen on restart if
+        // segments are not all flushed at the same time
+        if segment_1_high_version {
+            segment1
+                .upsert_point(
+                    99999,
+                    99999.into(),
+                    segment::data_types::vectors::only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
+                )
+                .unwrap();
+        }
+        if segment_2_high_version {
+            segment2
+                .upsert_point(
+                    99999,
+                    99999.into(),
+                    segment::data_types::vectors::only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
+                )
+                .unwrap();
+        }
+
+        // Segment 1 is non-appendable, segment 2 is appendable
+        segment1.appendable_flag = false;
+
+        let mut holder = SegmentHolder::default();
+        let sid1 = holder.add(segment1);
+        let sid2 = holder.add(segment2);
+
+        // Update point 123, 456 and 789 in the non-appendable segment to move it to segment 2
+        let op_num = 101;
+        let mut processed_points: Vec<PointIdType> = vec![];
+        holder
+            .apply_points_with_conditional_move(
+                op_num,
+                &[123.into(), 456.into(), 789.into()],
+                |point_id, segment| {
+                    processed_points.push(point_id);
+                    assert!(segment.has_point(point_id));
+                    Ok(true)
+                },
+                |_| false,
+            )
+            .unwrap();
+        assert_eq!(3, processed_points.len());
+
+        let locked_segment_1 = holder.get(sid1).unwrap().get();
+        let read_segment_1 = locked_segment_1.read();
+        let locked_segment_2 = holder.get(sid2).unwrap().get();
+        let read_segment_2 = locked_segment_2.read();
+
+        // Point 123 and 456 should have moved from segment 1 into 2
+        assert!(!read_segment_1.has_point(123.into()));
+        assert!(!read_segment_1.has_point(456.into()));
+        assert!(!read_segment_1.has_point(789.into()));
+        assert!(read_segment_2.has_point(123.into()));
+        assert!(read_segment_2.has_point(456.into()));
+        assert!(read_segment_2.has_point(789.into()));
+    }
+
     #[test]
     fn test_points_deduplication() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
