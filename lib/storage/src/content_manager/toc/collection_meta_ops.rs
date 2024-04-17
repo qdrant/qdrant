@@ -60,17 +60,7 @@ impl TableOfContent {
             }
             CollectionMetaOperations::DeleteCollection(operation) => {
                 log::info!("Deleting collection {}", operation.0);
-                let res = self.delete_collection(&operation.0).await;
-
-                // We can solve all issues related to this collection
-                if *res.as_ref().unwrap_or(&false) {
-                    issues::solve_by_filter(|code| {
-                        code.split('/')
-                            .next()
-                            .map_or(false, |collection_name| collection_name == operation.0)
-                    });
-                }
-                res
+                self.delete_collection(&operation.0).await
             }
             CollectionMetaOperations::ChangeAliases(operation) => {
                 log::debug!("Changing aliases");
@@ -98,20 +88,9 @@ impl TableOfContent {
             }
             CollectionMetaOperations::CreatePayloadIndex(create_payload_index) => {
                 log::debug!("Create payload index {:?}", create_payload_index);
-                let collection_name = create_payload_index.collection_name.clone();
-                let field_name = create_payload_index.field_name.clone();
-
-                let res = self
-                    .create_payload_index(create_payload_index)
+                self.create_payload_index(create_payload_index)
                     .await
-                    .map(|()| true);
-
-                // We can solve issues related to this missing index
-                if *res.as_ref().unwrap_or(&false) {
-                    issues::solve(UnindexedField::get_code(&collection_name, &field_name));
-                }
-
-                res
+                    .map(|()| true)
             }
             CollectionMetaOperations::DropPayloadIndex(drop_payload_index) => {
                 log::debug!("Drop payload index {:?}", drop_payload_index);
@@ -200,6 +179,13 @@ impl TableOfContent {
                 .join(collection_name)
                 .with_extension(uuid);
             tokio::fs::rename(path, &deleted_path).await?;
+
+            // Solve all issues related to this collection
+            issues::solve_by_filter(|code| {
+                code.split('/')
+                    .next()
+                    .map_or(false, |coll_name| coll_name == collection_name)
+            });
 
             // At this point collection is removed from memory and moved to ".deleted" folder.
             // Next time we load service the collection will not appear in the list of collections.
@@ -534,8 +520,15 @@ impl TableOfContent {
     ) -> Result<(), StorageError> {
         self.get_collection_unchecked(&operation.collection_name)
             .await?
-            .create_payload_index(operation.field_name, operation.field_schema)
+            .create_payload_index(operation.field_name.clone(), operation.field_schema)
             .await?;
+
+        // We can solve issues related to this missing index
+        issues::solve(UnindexedField::get_code(
+            &operation.collection_name,
+            &operation.field_name,
+        ));
+
         Ok(())
     }
 
