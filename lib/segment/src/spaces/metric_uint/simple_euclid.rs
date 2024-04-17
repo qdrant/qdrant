@@ -70,6 +70,8 @@ pub fn euclid_similarity_bytes(
 
 #[cfg(test)]
 mod tests {
+    use std::borrow::Cow;
+
     use super::*;
     use crate::data_types::primitive::PrimitiveVectorElement;
     use crate::data_types::vectors::{TypedDenseVector, VectorElementType};
@@ -79,7 +81,8 @@ mod tests {
         let dense_vector = DenseVector::from(vec![-10.0, 1.0, 2.0, 3.0, 255., 300.]);
         let preprocessed_vector =
             <EuclidMetric as Metric<VectorElementType>>::preprocess(dense_vector);
-        let typed_dense_vector = VectorElementTypeByte::slice_from_float_cow(&preprocessed_vector);
+        let typed_dense_vector =
+            VectorElementTypeByte::slice_from_float_cow(Cow::from(preprocessed_vector));
         let expected: TypedDenseVector<VectorElementTypeByte> = vec![0, 1, 2, 3, 255, 255];
         assert_eq!(typed_dense_vector, expected);
     }

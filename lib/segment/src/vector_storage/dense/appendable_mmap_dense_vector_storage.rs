@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fs::create_dir_all;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -137,12 +138,12 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapDenseVectorStora
     }
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {
-        CowVector::from(T::slice_to_float_cow(self.vectors.get(key)))
+        CowVector::from(T::slice_to_float_cow(self.vectors.get(key).into()))
     }
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
         let vector: &[VectorElementType] = vector.try_into()?;
-        let vector = T::slice_from_float_cow(vector);
+        let vector = T::slice_from_float_cow(Cow::from(vector));
         self.vectors.insert(key, vector.as_ref())?;
         self.set_deleted(key, false)?;
         Ok(())
@@ -160,8 +161,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapDenseVectorStora
             // Do not perform preprocessing - vectors should be already processed
             let other_deleted = other.is_deleted_vector(point_id);
             let other_vector = other.get_vector(point_id);
-            let other_vector: &[VectorElementType] = other_vector.as_vec_ref().try_into()?;
-            let other_vector = T::slice_from_float_cow(other_vector);
+            let other_vector = T::slice_from_float_cow(Cow::try_from(other_vector)?);
             let new_id = self.vectors.push(other_vector.as_ref())?;
             self.set_deleted(new_id, other_deleted)?;
         }

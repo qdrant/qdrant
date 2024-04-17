@@ -131,6 +131,18 @@ impl<'a> TryFrom<CowVector<'a>> for DenseVector {
     }
 }
 
+impl<'a> TryFrom<CowVector<'a>> for Cow<'a, [VectorElementType]> {
+    type Error = OperationError;
+
+    fn try_from(value: CowVector<'a>) -> Result<Self, Self::Error> {
+        match value {
+            CowVector::Dense(v) => Ok(v),
+            CowVector::Sparse(_) => Err(OperationError::WrongSparse),
+            CowVector::MultiDense(_) => Err(OperationError::WrongMulti),
+        }
+    }
+}
+
 impl<'a> From<VectorRef<'a>> for CowVector<'a> {
     fn from(v: VectorRef<'a>) -> Self {
         match v {

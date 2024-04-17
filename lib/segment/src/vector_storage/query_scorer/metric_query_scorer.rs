@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::marker::PhantomData;
 
 use common::types::{PointOffsetType, ScoreType};
@@ -32,7 +33,9 @@ impl<
     ) -> Self {
         let preprocessed_vector = TMetric::preprocess(query);
         Self {
-            query: TElement::slice_from_float_cow(&preprocessed_vector).to_vec(),
+            query: TypedDenseVector::from(TElement::slice_from_float_cow(Cow::from(
+                preprocessed_vector,
+            ))),
             vector_storage,
             metric: PhantomData,
         }

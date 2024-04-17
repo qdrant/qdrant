@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fs::{create_dir_all, File, OpenOptions};
 use std::io::{self, Write};
 use std::ops::Range;
@@ -151,7 +152,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {
         CowVector::from(T::slice_to_float_cow(
-            self.mmap_store.as_ref().unwrap().get_vector(key),
+            self.mmap_store.as_ref().unwrap().get_vector(key).into(),
         ))
     }
 
@@ -181,8 +182,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
         for id in other_ids {
             check_process_stopped(stopped)?;
             let other_vector = other.get_vector(id);
-            let other_vector: &[VectorElementType] = other_vector.as_vec_ref().try_into()?;
-            let vector = T::slice_from_float_cow(other_vector);
+            let vector = T::slice_from_float_cow(Cow::try_from(other_vector)?);
             let raw_bites = mmap_ops::transmute_to_u8_slice(vector.as_ref());
             vectors_file.write_all(raw_bites)?;
             end_index += 1;
