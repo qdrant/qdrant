@@ -108,7 +108,7 @@ pub struct CollectionInfo {
     pub status: CollectionStatus,
     /// Status of optimizers
     pub optimizer_status: OptimizersStatus,
-    /// DEPRECATED
+    /// DEPRECATED:
     /// Approximate number of vectors in collection.
     /// All vectors in collection are available for querying.
     /// Calculated as `points_count x vectors_per_point`.
