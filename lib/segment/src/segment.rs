@@ -2542,4 +2542,66 @@ mod tests {
                 .unwrap();
         }
     }
+
+    /// Test handling point versions
+    ///
+    /// Apply if the point version is equal or higher. Always apply if the point does not exist
+    /// yet.
+    #[test]
+    fn test_handle_point_version() {
+        // Create base segment with a single point
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let dim = 4;
+        let config = SegmentConfig {
+            vector_data: HashMap::from([(
+                DEFAULT_VECTOR_NAME.to_owned(),
+                VectorDataConfig {
+                    size: dim,
+                    distance: Distance::Dot,
+                    storage_type: VectorStorageType::Memory,
+                    index: Indexes::Plain {},
+                    quantization_config: None,
+                    multi_vec_config: None,
+                },
+            )]),
+            sparse_vector_data: Default::default(),
+            payload_storage_type: Default::default(),
+        };
+        let mut segment = build_segment(dir.path(), &config, true).unwrap();
+        segment
+            .upsert_point(100, 1.into(), only_default_vector(&[1.1, 1.0, 0.0, 1.0]))
+            .unwrap();
+
+        // Do not handle operation on existing point when providing an old version
+        let applied = segment
+            .handle_point_version(99, Some(0), |_segment| Ok((true, None)))
+            .unwrap();
+        assert!(!applied);
+
+        // Do handle operation on existing point when providing the current version
+        let applied = segment
+            .handle_point_version(100, Some(0), |_segment| Ok((true, None)))
+            .unwrap();
+        assert!(applied);
+
+        // Do handle operation on existing point when providing a newer version
+        let applied = segment
+            .handle_point_version(100, Some(0), |_segment| Ok((true, None)))
+            .unwrap();
+        assert!(applied);
+
+        // Always handle operations on non-existent points
+        let applied = segment
+            .handle_point_version(99, None, |_segment| Ok((true, None)))
+            .unwrap();
+        assert!(applied);
+        let applied = segment
+            .handle_point_version(100, None, |_segment| Ok((true, None)))
+            .unwrap();
+        assert!(applied);
+        let applied = segment
+            .handle_point_version(101, None, |_segment| Ok((true, None)))
+            .unwrap();
+        assert!(applied);
+    }
 }
