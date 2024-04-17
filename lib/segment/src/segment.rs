@@ -215,7 +215,9 @@ impl Segment {
                         VectorStorageEnum::DenseSimple(_)
                         | VectorStorageEnum::DenseSimpleByte(_)
                         | VectorStorageEnum::DenseMemmap(_)
-                        | VectorStorageEnum::DenseAppendableMemmap(_) => {
+                        | VectorStorageEnum::DenseMemmapByte(_)
+                        | VectorStorageEnum::DenseAppendableMemmap(_)
+                        | VectorStorageEnum::DenseAppendableMemmapByte(_) => {
                             Vector::from(vec![1.0; dim])
                         }
                         VectorStorageEnum::SparseSimple(_) => Vector::from(SparseVector::default()),

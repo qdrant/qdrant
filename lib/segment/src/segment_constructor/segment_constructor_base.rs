@@ -32,8 +32,12 @@ use crate::types::{
     Distance, Indexes, PayloadStorageType, SegmentConfig, SegmentState, SegmentType, SeqNumberType,
     VectorStorageDatatype, VectorStorageType,
 };
-use crate::vector_storage::dense::appendable_mmap_dense_vector_storage::open_appendable_memmap_vector_storage;
-use crate::vector_storage::dense::memmap_dense_vector_storage::open_memmap_vector_storage;
+use crate::vector_storage::dense::appendable_mmap_dense_vector_storage::{
+    open_appendable_memmap_vector_storage, open_appendable_memmap_vector_storage_byte,
+};
+use crate::vector_storage::dense::memmap_dense_vector_storage::{
+    open_memmap_vector_storage, open_memmap_vector_storage_byte,
+};
 use crate::vector_storage::dense::simple_dense_vector_storage::{
     open_simple_dense_byte_vector_storage, open_simple_dense_vector_storage,
 };
@@ -122,6 +126,7 @@ fn create_segment(
         let vector_index_path = get_vector_index_path(segment_path, vector_name);
 
         // Select suitable vector storage type based on configuration
+        let storage_element_type = vector_config.datatype.unwrap_or_default();
         let vector_storage = match vector_config.storage_type {
             // In memory
             VectorStorageType::Memory => {
@@ -136,7 +141,6 @@ fn create_segment(
                         stopped,
                     )?
                 } else {
-                    let storage_element_type = vector_config.datatype.unwrap_or_default();
                     match storage_element_type {
                         VectorStorageDatatype::Float => open_simple_dense_vector_storage(
                             database.clone(),
@@ -156,18 +160,33 @@ fn create_segment(
                 }
             }
             // Mmap on disk, not appendable
-            VectorStorageType::Mmap => open_memmap_vector_storage(
-                &vector_storage_path,
-                vector_config.size,
-                vector_config.distance,
-            )?,
+            VectorStorageType::Mmap => match storage_element_type {
+                VectorStorageDatatype::Float => open_memmap_vector_storage(
+                    &vector_storage_path,
+                    vector_config.size,
+                    vector_config.distance,
+                )?,
+                VectorStorageDatatype::Uint8 => open_memmap_vector_storage_byte(
+                    &vector_storage_path,
+                    vector_config.size,
+                    vector_config.distance,
+                )?,
+            },
             // Chunked mmap on disk, appendable
-            VectorStorageType::ChunkedMmap => open_appendable_memmap_vector_storage(
-                &vector_storage_path,
-                vector_config.size,
-                vector_config.distance,
-                stopped,
-            )?,
+            VectorStorageType::ChunkedMmap => match storage_element_type {
+                VectorStorageDatatype::Float => open_appendable_memmap_vector_storage(
+                    &vector_storage_path,
+                    vector_config.size,
+                    vector_config.distance,
+                    stopped,
+                )?,
+                VectorStorageDatatype::Uint8 => open_appendable_memmap_vector_storage_byte(
+                    &vector_storage_path,
+                    vector_config.size,
+                    vector_config.distance,
+                    stopped,
+                )?,
+            },
         };
 
         // Warn when number of points between ID tracker and storage differs

@@ -136,8 +136,16 @@ pub fn new_stoppable_raw_scorer<'a>(
             raw_scorer_impl(query, vs.as_ref(), point_deleted, is_stopped)
         }
 
+        // TODO(byte_storage): Implement async raw scorer for DenseAppendableMemmapByte
+        VectorStorageEnum::DenseMemmapByte(vs) => {
+            raw_scorer_byte_impl(query, vs.as_ref(), point_deleted, is_stopped)
+        }
+
         VectorStorageEnum::DenseAppendableMemmap(vs) => {
             raw_scorer_impl(query, vs.as_ref(), point_deleted, is_stopped)
+        }
+        VectorStorageEnum::DenseAppendableMemmapByte(vs) => {
+            raw_scorer_byte_impl(query, vs.as_ref(), point_deleted, is_stopped)
         }
         VectorStorageEnum::SparseSimple(vs) => {
             raw_sparse_scorer_impl(query, vs, point_deleted, is_stopped)

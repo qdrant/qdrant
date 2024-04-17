@@ -14,7 +14,7 @@ use crate::common::operation_error::{check_process_stopped, OperationResult};
 use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
-use crate::data_types::vectors::{VectorElementType, VectorRef};
+use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte, VectorRef};
 use crate::types::Distance;
 use crate::vector_storage::common::get_async_scorer;
 use crate::vector_storage::dense::mmap_dense_vectors::MmapDenseVectors;
@@ -41,7 +41,31 @@ pub fn open_memmap_vector_storage(
     dim: usize,
     distance: Distance,
 ) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
-    open_memmap_vector_storage_with_async_io(path, dim, distance, get_async_scorer())
+    let storage = open_memmap_vector_storage_with_async_io_impl::<VectorElementType>(
+        path,
+        dim,
+        distance,
+        get_async_scorer(),
+    )?;
+    Ok(Arc::new(AtomicRefCell::new(
+        VectorStorageEnum::DenseMemmap(storage),
+    )))
+}
+
+pub fn open_memmap_vector_storage_byte(
+    path: &Path,
+    dim: usize,
+    distance: Distance,
+) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
+    let storage = open_memmap_vector_storage_with_async_io_impl::<VectorElementTypeByte>(
+        path,
+        dim,
+        distance,
+        get_async_scorer(),
+    )?;
+    Ok(Arc::new(AtomicRefCell::new(
+        VectorStorageEnum::DenseMemmapByte(storage),
+    )))
 }
 
 pub fn open_memmap_vector_storage_with_async_io(
@@ -50,20 +74,35 @@ pub fn open_memmap_vector_storage_with_async_io(
     distance: Distance,
     with_async_io: bool,
 ) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
+    let storage = open_memmap_vector_storage_with_async_io_impl::<VectorElementTypeByte>(
+        path,
+        dim,
+        distance,
+        with_async_io,
+    )?;
+    Ok(Arc::new(AtomicRefCell::new(
+        VectorStorageEnum::DenseMemmapByte(storage),
+    )))
+}
+
+fn open_memmap_vector_storage_with_async_io_impl<T: PrimitiveVectorElement>(
+    path: &Path,
+    dim: usize,
+    distance: Distance,
+    with_async_io: bool,
+) -> OperationResult<Box<MemmapDenseVectorStorage<T>>> {
     create_dir_all(path)?;
 
     let vectors_path = path.join(VECTORS_PATH);
     let deleted_path = path.join(DELETED_PATH);
     let mmap_store = MmapDenseVectors::open(&vectors_path, &deleted_path, dim, with_async_io)?;
 
-    Ok(Arc::new(AtomicRefCell::new(
-        VectorStorageEnum::DenseMemmap(Box::new(MemmapDenseVectorStorage {
-            vectors_path,
-            deleted_path,
-            mmap_store: Some(mmap_store),
-            distance,
-        })),
-    )))
+    Ok(Box::new(MemmapDenseVectorStorage {
+        vectors_path,
+        deleted_path,
+        mmap_store: Some(mmap_store),
+        distance,
+    }))
 }
 
 impl<T: PrimitiveVectorElement> MemmapDenseVectorStorage<T> {
@@ -87,8 +126,8 @@ impl<T: PrimitiveVectorElement> MemmapDenseVectorStorage<T> {
     }
 }
 
-impl DenseVectorStorage<VectorElementType> for MemmapDenseVectorStorage<VectorElementType> {
-    fn get_dense(&self, key: PointOffsetType) -> &[VectorElementType] {
+impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for MemmapDenseVectorStorage<T> {
+    fn get_dense(&self, key: PointOffsetType) -> &[T] {
         self.mmap_store.as_ref().unwrap().get_vector(key)
     }
 }
