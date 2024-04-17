@@ -188,7 +188,17 @@ impl<'s> SegmentHolder {
         }
     }
 
-    fn _insert(&mut self, segment: LockedSegment) -> SegmentId {
+    /// Add new segment to storage
+    pub fn add<T>(&mut self, segment: T) -> SegmentId
+    where
+        T: Into<LockedSegment>,
+    {
+        let locked_segment = segment.into();
+        self.add_locked(locked_segment)
+    }
+
+    /// Add new segment to storage which is already LockedSegment
+    pub fn add_locked(&mut self, segment: LockedSegment) -> SegmentId {
         let key = self.generate_new_key();
         if segment.get().read().is_appendable() {
             self.appendable_segments.insert(key, segment);
@@ -196,20 +206,6 @@ impl<'s> SegmentHolder {
             self.non_appendable_segments.insert(key, segment);
         }
         key
-    }
-
-    /// Add new segment to storage
-    pub fn add<T>(&mut self, segment: T) -> SegmentId
-    where
-        T: Into<LockedSegment>,
-    {
-        let locked_segment = segment.into();
-        self._insert(locked_segment)
-    }
-
-    /// Add new segment to storage which is already LockedSegment
-    pub fn add_locked(&mut self, segment: LockedSegment) -> SegmentId {
-        self._insert(segment)
     }
 
     pub fn remove(&mut self, remove_ids: &[SegmentId]) -> Vec<LockedSegment> {
