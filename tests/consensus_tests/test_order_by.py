@@ -132,14 +132,14 @@ def test_order_by_from_remote_shard(tmp_path, every_test):
     ).raise_for_status()
 
     res = requests.post(
-        f"{uri}/collections/{COLL_NAME}/points/scroll", json={"limit": 10, "order_by": "index", "with_payload": False}
+        f"{uri}/collections/{COLL_NAME}/points/scroll", json={"limit": 10, "order_by": "index", "with_payload": True}
     )
     
     res.raise_for_status()
     
-    ids = [point["id"] for point in res.json()['result']["points"]]
+    for point in res.json()['result']["points"]:
+        assert point["payload"] is not None
+
+    ids = [point["payload"]["index"] for point in res.json()['result']["points"]]
     
     assert ids == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-    
-    for point in res.json()['result']["points"]:
-        assert point["payload"] is None
