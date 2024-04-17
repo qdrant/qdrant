@@ -136,8 +136,9 @@ impl Anonymize for VectorDataConfig {
             distance: self.distance,
             storage_type: self.storage_type,
             index: self.index.clone(),
-            quantization_config: None,
-            multi_vec_config: None,
+            quantization_config: self.quantization_config.clone(),
+            multi_vec_config: self.multi_vec_config,
+            datatype: self.datatype,
         }
     }
 }

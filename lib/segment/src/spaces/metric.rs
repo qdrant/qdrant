@@ -1,7 +1,7 @@
 use common::types::ScoreType;
 
 use crate::data_types::primitive::PrimitiveVectorElement;
-use crate::data_types::vectors::{TypedDenseVector, VectorElementType};
+use crate::data_types::vectors::DenseVector;
 use crate::types::Distance;
 
 /// Defines how to compare vectors
@@ -13,7 +13,7 @@ pub trait Metric<T: PrimitiveVectorElement> {
 
     /// Necessary vector transformations performed before adding it to the collection (like normalization)
     /// If no transformation is needed - returns the same vector
-    fn preprocess(vector: TypedDenseVector<VectorElementType>) -> TypedDenseVector<T>;
+    fn preprocess(vector: DenseVector) -> DenseVector;
 }
 
 pub trait MetricPostProcessing {

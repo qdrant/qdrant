@@ -9153,6 +9153,17 @@
                 "nullable": true
               }
             ]
+          },
+          "datatype": {
+            "description": "Vector specific configuration to set specific storage element type",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VectorStorageDatatype"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -9243,6 +9254,25 @@
       },
       "MaxSimConfig": {
         "type": "object"
+      },
+      "VectorStorageDatatype": {
+        "description": "Storage types for vectors",
+        "oneOf": [
+          {
+            "description": "Single-precsion floating point",
+            "type": "string",
+            "enum": [
+              "Float"
+            ]
+          },
+          {
+            "description": "Unsigned 8-bit integer",
+            "type": "string",
+            "enum": [
+              "Uint8"
+            ]
+          }
+        ]
       },
       "SparseVectorDataConfig": {
         "description": "Config of single sparse vector data storage",

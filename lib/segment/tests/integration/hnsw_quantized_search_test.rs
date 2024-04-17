@@ -72,6 +72,7 @@ fn hnsw_quantized_search_test(
                 index: Indexes::Plain {},
                 quantization_config: None,
                 multi_vec_config: None,
+                datatype: None,
             },
         )]),
         sparse_vector_data: Default::default(),

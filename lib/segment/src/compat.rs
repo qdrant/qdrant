@@ -53,6 +53,7 @@ impl From<SegmentConfigV5> for SegmentConfig {
                         .then_some(VectorStorageType::Mmap)
                         .unwrap_or_else(|| old_segment.storage_type.into()),
                     multi_vec_config: None,
+                    datatype: None,
                 };
 
                 (vector_name, new_data)

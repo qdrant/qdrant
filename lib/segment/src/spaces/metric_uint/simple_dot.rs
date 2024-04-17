@@ -1,6 +1,6 @@
 use common::types::ScoreType;
 
-use crate::data_types::vectors::{DenseVector, TypedDenseVector, VectorElementTypeByte};
+use crate::data_types::vectors::{DenseVector, VectorElementTypeByte};
 use crate::spaces::metric::Metric;
 #[cfg(target_arch = "x86_64")]
 use crate::spaces::metric_uint::avx2::dot::avx_dot_similarity_bytes;
@@ -50,11 +50,8 @@ impl Metric<VectorElementTypeByte> for DotProductMetric {
         dot_similarity_bytes(v1, v2)
     }
 
-    fn preprocess(vector: DenseVector) -> TypedDenseVector<VectorElementTypeByte> {
+    fn preprocess(vector: DenseVector) -> DenseVector {
         vector
-            .into_iter()
-            .map(|x| x as VectorElementTypeByte)
-            .collect()
     }
 }
 
