@@ -137,8 +137,12 @@ impl QuantizedVectors {
     ) -> OperationResult<Self> {
         let dim = vector_storage.vector_dim();
         let count = vector_storage.total_vector_count();
-        let vectors = (0..count as PointOffsetType)
-            .map(|i| PrimitiveVectorElement::slice_to_float_cow(vector_storage.get_dense(i)));
+        let vectors = (0..count as PointOffsetType).map(|i| {
+            PrimitiveVectorElement::quantization_preprocess(
+                quantization_config,
+                vector_storage.get_dense(i),
+            )
+        });
         let on_disk_vector_storage = vector_storage.is_on_disk();
         let distance = vector_storage.distance();
 
