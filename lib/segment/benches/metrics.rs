@@ -45,10 +45,10 @@ fn byte_metrics_bench(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(42);
 
     let random_vectors_1: Vec<Vec<u8>> = (0..COUNT)
-        .map(|_| (0..DIM).map(|_| rng.gen_range(0..255)).collect())
+        .map(|_| (0..DIM).map(|_| rng.gen_range(0..=255)).collect())
         .collect();
     let random_vectors_2: Vec<Vec<u8>> = (0..COUNT)
-        .map(|_| (0..DIM).map(|_| rng.gen_range(0..255)).collect())
+        .map(|_| (0..DIM).map(|_| rng.gen_range(0..=255)).collect())
         .collect();
 
     group.bench_function("byte-dot", |b| {
