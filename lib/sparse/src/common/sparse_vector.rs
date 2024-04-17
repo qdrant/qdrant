@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use itertools::Itertools;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -86,23 +88,42 @@ impl SparseVector {
         }
     }
 
-    /// Construct a new vector that is the result of performing all indices-wise operations
+    /// Construct a new vector that is the result of performing all indices-wise operations.
+    /// Automatically sort input vectors if necessary.
     pub fn combine_aggregate(
         &self,
         other: &SparseVector,
         op: impl Fn(DimWeight, DimWeight) -> DimWeight,
     ) -> Self {
-        debug_assert!(self.is_sorted());
-        debug_assert!(other.is_sorted());
+        // Copy and sort `self` vector if not already sorted
+        let this: Cow<SparseVector> = if !self.is_sorted() {
+            let mut this = self.clone();
+            this.sort_by_indices();
+            Cow::Owned(this)
+        } else {
+            Cow::Borrowed(self)
+        };
+        assert!(this.is_sorted());
+
+        // Copy and sort `other` vector if not already sorted
+        let cow_other: Cow<SparseVector> = if !other.is_sorted() {
+            let mut other = other.clone();
+            other.sort_by_indices();
+            Cow::Owned(other)
+        } else {
+            Cow::Borrowed(other)
+        };
+        let other = &cow_other;
+        assert!(other.is_sorted());
 
         let mut result = SparseVector::default();
         let mut i = 0;
         let mut j = 0;
-        while i < self.indices.len() && j < other.indices.len() {
-            match self.indices[i].cmp(&other.indices[j]) {
+        while i < this.indices.len() && j < other.indices.len() {
+            match this.indices[i].cmp(&other.indices[j]) {
                 std::cmp::Ordering::Less => {
-                    result.indices.push(self.indices[i]);
-                    result.values.push(op(self.values[i], 0.0));
+                    result.indices.push(this.indices[i]);
+                    result.values.push(op(this.values[i], 0.0));
                     i += 1;
                 }
                 std::cmp::Ordering::Greater => {
@@ -111,16 +132,16 @@ impl SparseVector {
                     j += 1;
                 }
                 std::cmp::Ordering::Equal => {
-                    result.indices.push(self.indices[i]);
-                    result.values.push(op(self.values[i], other.values[j]));
+                    result.indices.push(this.indices[i]);
+                    result.values.push(op(this.values[i], other.values[j]));
                     i += 1;
                     j += 1;
                 }
             }
         }
-        while i < self.indices.len() {
-            result.indices.push(self.indices[i]);
-            result.values.push(op(self.values[i], 0.0));
+        while i < this.indices.len() {
+            result.indices.push(this.indices[i]);
+            result.values.push(op(this.values[i], 0.0));
             i += 1;
         }
         while j < other.indices.len() {
@@ -249,14 +270,23 @@ mod tests {
 
     #[test]
     fn combine_aggregate_test() {
+        // Test with missing index
         let a = SparseVector::new(vec![1, 2, 3], vec![0.1, 0.2, 0.3]).unwrap();
         let b = SparseVector::new(vec![2, 3, 4], vec![2.0, 3.0, 4.0]).unwrap();
         let sum = a.combine_aggregate(&b, |x, y| x + 2.0 * y);
         assert_eq!(sum.indices, vec![1, 2, 3, 4]);
         assert_eq!(sum.values, vec![0.1, 4.2, 6.3, 8.0]);
 
+        // reverse arguments
         let sum = b.combine_aggregate(&a, |x, y| x + 2.0 * y);
         assert_eq!(sum.indices, vec![1, 2, 3, 4]);
         assert_eq!(sum.values, vec![0.2, 2.4, 3.6, 4.0]);
+
+        // Test with non-sorted input
+        let a = SparseVector::new(vec![1, 2, 3], vec![0.1, 0.2, 0.3]).unwrap();
+        let b = SparseVector::new(vec![4, 2, 3], vec![4.0, 2.0, 3.0]).unwrap();
+        let sum = a.combine_aggregate(&b, |x, y| x + 2.0 * y);
+        assert_eq!(sum.indices, vec![1, 2, 3, 4]);
+        assert_eq!(sum.values, vec![0.1, 4.2, 6.3, 8.0]);
     }
 }
