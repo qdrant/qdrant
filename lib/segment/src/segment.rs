@@ -2590,7 +2590,7 @@ mod tests {
 
         // Do handle operation on existing point when providing a newer version
         let applied = segment
-            .handle_point_version(100, Some(0), |_segment| Ok((true, None)))
+            .handle_point_version(101, Some(0), |_segment| Ok((true, None)))
             .unwrap();
         assert!(applied);
 
