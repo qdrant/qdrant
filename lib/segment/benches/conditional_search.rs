@@ -35,10 +35,12 @@ fn conditional_plain_search_benchmark(c: &mut Criterion) {
             query_count += 1;
         })
     });
-    eprintln!(
-        "result_size / query_count = {:#?}",
-        result_size / query_count
-    );
+    if query_count != 0 {
+        eprintln!(
+            "result_size / query_count = {:#?}",
+            result_size / query_count
+        );
+    }
 
     let mut result_size = 0;
     let mut query_count = 0;
@@ -51,10 +53,12 @@ fn conditional_plain_search_benchmark(c: &mut Criterion) {
             query_count += 1;
         })
     });
-    eprintln!(
-        "result_size / query_count = {:#?}",
-        result_size / query_count
-    );
+    if query_count != 0 {
+        eprintln!(
+            "result_size / query_count = {:#?}",
+            result_size / query_count
+        );
+    }
 
     let mut result_size = 0;
     let mut query_count = 0;
@@ -76,10 +80,12 @@ fn conditional_plain_search_benchmark(c: &mut Criterion) {
         })
     });
 
-    eprintln!(
-        "result_size / query_count = {:#?}",
-        result_size / query_count
-    );
+    if query_count != 0 {
+        eprintln!(
+            "result_size / query_count = {:#?}",
+            result_size / query_count
+        );
+    }
 
     let mut result_size = 0;
     let mut query_count = 0;
@@ -146,10 +152,12 @@ fn conditional_struct_search_benchmark(c: &mut Criterion) {
             query_count += 1;
         })
     });
-    eprintln!(
-        "result_size / query_count = {:#?}",
-        result_size / query_count
-    );
+    if query_count != 0 {
+        eprintln!(
+            "result_size / query_count = {:#?}",
+            result_size / query_count
+        );
+    }
 
     let mut result_size = 0;
     let mut query_count = 0;
@@ -171,10 +179,12 @@ fn conditional_struct_search_benchmark(c: &mut Criterion) {
         })
     });
 
-    eprintln!(
-        "result_size / query_count = {:#?}",
-        result_size / query_count
-    );
+    if query_count != 0 {
+        eprintln!(
+            "result_size / query_count = {:#?}",
+            result_size / query_count
+        );
+    }
 
     group.finish();
 }
