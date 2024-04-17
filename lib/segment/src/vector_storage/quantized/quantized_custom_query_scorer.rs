@@ -1,47 +1,45 @@
+use std::marker::PhantomData;
+
 use common::types::{PointOffsetType, ScoreType};
 
 use crate::data_types::vectors::{DenseVector, VectorElementType};
-use crate::types::Distance;
+use crate::spaces::metric::Metric;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
 
 pub struct QuantizedCustomQueryScorer<
     'a,
+    TMetric,
     TEncodedQuery,
     TEncodedVectors,
+    TQuery,
+    TOriginalQuery,
+> where
+    TMetric: Metric<VectorElementType>,
+    TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,
     TQuery: Query<TEncodedQuery>,
     TOriginalQuery: Query<DenseVector>,
-> where
-    TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,
 {
     original_query: TOriginalQuery,
     query: TQuery,
     quantized_storage: &'a TEncodedVectors,
-    distance: Distance,
-    phantom: std::marker::PhantomData<TEncodedQuery>,
+    phantom: PhantomData<TEncodedQuery>,
+    metric: PhantomData<TMetric>,
 }
 
-impl<
-        'a,
-        TEncodedQuery,
-        TEncodedVectors,
-        TQuery: Query<TEncodedQuery>,
-        TOriginalQuery: Query<DenseVector>
-            + Clone
-            + TransformInto<TOriginalQuery>
-            + TransformInto<TQuery, DenseVector, TEncodedQuery>,
-    > QuantizedCustomQueryScorer<'a, TEncodedQuery, TEncodedVectors, TQuery, TOriginalQuery>
+impl<'a, TMetric, TEncodedQuery, TEncodedVectors, TQuery, TOriginalQuery>
+    QuantizedCustomQueryScorer<'a, TMetric, TEncodedQuery, TEncodedVectors, TQuery, TOriginalQuery>
 where
+    TMetric: Metric<VectorElementType>,
     TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,
+    TQuery: Query<TEncodedQuery>,
+    TOriginalQuery: Query<DenseVector>
+        + Clone
+        + TransformInto<TOriginalQuery>
+        + TransformInto<TQuery, DenseVector, TEncodedQuery>,
 {
-    pub fn new(
-        raw_query: TOriginalQuery,
-        quantized_storage: &'a TEncodedVectors,
-        distance: Distance,
-    ) -> Self {
-        let original_query = raw_query
-            .transform(|v| Ok(distance.preprocess_vector(v)))
-            .unwrap();
+    pub fn new(raw_query: TOriginalQuery, quantized_storage: &'a TEncodedVectors) -> Self {
+        let original_query = raw_query.transform(|v| Ok(TMetric::preprocess(v))).unwrap();
         let query = original_query
             .clone()
             .transform(|v: DenseVector| Ok(quantized_storage.encode_query(&v)))
@@ -51,20 +49,29 @@ where
             original_query,
             query,
             quantized_storage,
-            distance,
-            phantom: std::marker::PhantomData,
+            phantom: PhantomData,
+            metric: PhantomData,
         }
     }
 }
 
 impl<
+        TMetric,
         TEncodedQuery,
         TEncodedVectors,
         TOriginalQuery: Query<DenseVector>,
         TQuery: Query<TEncodedQuery>,
     > QueryScorer<[VectorElementType]>
-    for QuantizedCustomQueryScorer<'_, TEncodedQuery, TEncodedVectors, TQuery, TOriginalQuery>
+    for QuantizedCustomQueryScorer<
+        '_,
+        TMetric,
+        TEncodedQuery,
+        TEncodedVectors,
+        TQuery,
+        TOriginalQuery,
+    >
 where
+    TMetric: Metric<VectorElementType>,
     TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,
 {
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
@@ -78,7 +85,7 @@ where
             "This method is not expected to be called for quantized scorer"
         );
         self.original_query
-            .score_by(|this| self.distance.similarity(this, v2))
+            .score_by(|this| TMetric::similarity(this, v2))
     }
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {
