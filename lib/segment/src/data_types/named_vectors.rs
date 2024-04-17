@@ -3,15 +3,14 @@ use std::collections::HashMap;
 
 use sparse::common::sparse_vector::SparseVector;
 
-use crate::common::operation_error::OperationError;
-use crate::spaces::metric::Metric;
-use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
-use crate::types::{Distance, VectorDataConfig, VectorStorageDatatype};
-
 use super::tiny_map;
 use super::vectors::{
     DenseVector, MultiDenseVector, Vector, VectorElementType, VectorElementTypeByte, VectorRef,
 };
+use crate::common::operation_error::OperationError;
+use crate::spaces::metric::Metric;
+use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
+use crate::types::{Distance, VectorDataConfig, VectorStorageDatatype};
 
 type CowKey<'a> = Cow<'a, str>;
 
