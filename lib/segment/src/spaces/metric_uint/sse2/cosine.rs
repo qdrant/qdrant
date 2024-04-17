@@ -125,7 +125,7 @@ mod tests {
             let dot = cosine_similarity_bytes(&v1, &v2);
             assert_eq!(dot_simd, dot);
         } else {
-            println!("avx test skipped");
+            println!("sse2 test skipped");
         }
     }
 }
