@@ -181,6 +181,7 @@ def paginate_whole_collection(key, direction, must=None):
                     "must": must,
                     "must_not": [{"has_id": [id_ for id_ in last_value_ids]}],
                 },
+                "with_payload": True
             },
         )
         assert response.ok, response.json()
