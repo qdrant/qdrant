@@ -9155,7 +9155,7 @@
             ]
           },
           "datatype": {
-            "description": "Vector specific configuration to enable multiple vectors per point",
+            "description": "Vector specific configuration to set specific storage element type",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/VectorStorageDatatype"
