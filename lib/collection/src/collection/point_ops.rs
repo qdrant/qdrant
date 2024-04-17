@@ -258,6 +258,9 @@ impl Collection {
             // Needed to return next page offset.
             limit += 1;
         };
+
+        let local_only = shard_selection.is_shard_id();
+
         let retrieved_points: Vec<_> = {
             let shards_holder = self.shards_holder.read().await;
             let target_shards = shards_holder.select_shards(shard_selection)?;
@@ -271,7 +274,7 @@ impl Collection {
                         &with_vector,
                         request.filter.as_ref(),
                         read_consistency,
-                        shard_selection.is_shard_id(),
+                        local_only,
                         order_by.as_ref(),
                     )
                     .and_then(move |mut records| async move {
@@ -302,8 +305,18 @@ impl Collection {
                     // Extract and remove order value from payload
                     .map(|records| {
                         records.into_iter().map(|mut record| {
-                            let value =
-                                order_by.remove_order_value_from_payload(record.payload.as_mut());
+                            let value;
+                            if local_only {
+                                value =
+                                    order_by.get_order_value_from_payload(record.payload.as_ref());
+                            } else {
+                                value = order_by
+                                    .remove_order_value_from_payload(record.payload.as_mut());
+                                if !with_payload_interface.is_required() {
+                                    // Use None instead of empty hashmap
+                                    record.payload = None;
+                                }
+                            };
                             (value, record)
                         })
                     })
