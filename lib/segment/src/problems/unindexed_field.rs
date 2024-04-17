@@ -83,7 +83,7 @@ impl Issue for UnindexedField {
         {
             Ok(uri) => uri,
             Err(e) => {
-                log::warn!("Failed to build uri: {}", e);
+                log::warn!("Failed to build uri: {e}");
                 return Solution::None;
             }
         };
