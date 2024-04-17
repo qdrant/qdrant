@@ -236,23 +236,73 @@ impl Segment {
         Ok(new_index)
     }
 
-    /// Operation wrapped, which handles previous and new errors in the segment,
-    /// automatically updates versions and skips operations if version is too old
+    /// Operation wrapped, which handles previous and new errors in the segment, automatically
+    /// updates versions and skips operations if the segment version is too old
     ///
     /// # Arguments
     ///
     /// * `op_num` - sequential operation of the current operation
-    /// * `op_point_offset` - if operation is point-related, specify this point offset.
-    ///     If point offset is specified, handler will use point version for comparison.
-    ///     Otherwise, it will use global storage version
     /// * `op` - operation to be wrapped. Should return `OperationResult` of bool (which is returned outside)
     ///     and optionally new offset of the changed point.
     ///
     /// # Result
     ///
     /// Propagates `OperationResult` of bool (which is returned in the `op` closure)
+    fn handle_segment_version_and_failure<F>(
+        &mut self,
+        op_num: SeqNumberType,
+        operation: F,
+    ) -> OperationResult<bool>
+    where
+        F: FnOnce(&mut Segment) -> OperationResult<(bool, Option<PointOffsetType>)>,
+    {
+        if let Some(SegmentFailedState {
+            version: failed_version,
+            point_id: _failed_point_id,
+            error,
+        }) = &self.error_status
+        {
+            // Failed operations should not be skipped,
+            // fail if newer operation is attempted before proper recovery
+            if *failed_version < op_num {
+                return Err(OperationError::service_error(format!(
+                    "Not recovered from previous error: {error}"
+                )));
+            } // else: Re-try operation
+        }
+
+        let res = self.handle_segment_version(op_num, operation);
+
+        if let Some(error) = get_service_error(&res) {
+            // ToDo: Recover previous segment state
+            log::error!(
+                "Segment {:?} operation error: {error}",
+                self.current_path.as_path(),
+            );
+            self.error_status = Some(SegmentFailedState {
+                version: op_num,
+                point_id: None,
+                error,
+            });
+        }
+        res
+    }
+
+    /// Operation wrapped, which handles previous and new errors in the segment, automatically
+    /// updates versions and skips operations if the point version is too old
     ///
-    fn handle_version_and_failure<F>(
+    /// # Arguments
+    ///
+    /// * `op_num` - sequential operation of the current operation
+    /// * `op_point_offset` - If point offset is specified, handler will use point version for comparison.
+    ///     Otherwise, it will be applied without version checks.
+    /// * `op` - operation to be wrapped. Should return `OperationResult` of bool (which is returned outside)
+    ///     and optionally new offset of the changed point.
+    ///
+    /// # Result
+    ///
+    /// Propagates `OperationResult` of bool (which is returned in the `op` closure)
+    fn handle_point_version_and_failure<F>(
         &mut self,
         op_num: SeqNumberType,
         op_point_offset: Option<PointOffsetType>,
@@ -276,7 +326,7 @@ impl Segment {
             } // else: Re-try operation
         }
 
-        let res = self.handle_version(op_num, op_point_offset, operation);
+        let res = self.handle_point_version(op_num, op_point_offset, operation);
 
         match get_service_error(&res) {
             None => {
@@ -298,9 +348,8 @@ impl Segment {
             Some(error) => {
                 // ToDo: Recover previous segment state
                 log::error!(
-                    "Segment {:?} operation error: {}",
+                    "Segment {:?} operation error: {error}",
                     self.current_path.as_path(),
-                    error
                 );
                 let point_id = op_point_offset
                     .and_then(|point_offset| self.id_tracker.borrow().external_id(point_offset));
@@ -314,10 +363,41 @@ impl Segment {
         res
     }
 
-    /// Manage segment version checking
+    /// Manage segment version checking, for segment level operations
+    ///
     /// If current version if higher than operation version - do not perform the operation
     /// Update current version if operation successfully executed
-    fn handle_version<F>(
+    fn handle_segment_version<F>(
+        &mut self,
+        op_num: SeqNumberType,
+        operation: F,
+    ) -> OperationResult<bool>
+    where
+        F: FnOnce(&mut Segment) -> OperationResult<(bool, Option<PointOffsetType>)>,
+    {
+        // Global version to check if operation has already been applied, then skip without execution
+        if self.version.unwrap_or(0) > op_num {
+            return Ok(false);
+        }
+
+        let (applied, point_id) = operation(self)?;
+
+        self.version = Some(max(op_num, self.version.unwrap_or(0)));
+
+        if let Some(point_id) = point_id {
+            self.id_tracker
+                .borrow_mut()
+                .set_internal_version(point_id, op_num)?;
+        }
+
+        Ok(applied)
+    }
+
+    /// Manage point version checking inside this segment, for point level operations
+    ///
+    /// If current version if higher than operation version - do not perform the operation
+    /// Update current version if operation successfully executed
+    fn handle_point_version<F>(
         &mut self,
         op_num: SeqNumberType,
         op_point_offset: Option<PointOffsetType>,
@@ -326,24 +406,15 @@ impl Segment {
     where
         F: FnOnce(&mut Segment) -> OperationResult<(bool, Option<PointOffsetType>)>,
     {
-        match op_point_offset {
-            None => {
-                // Not a point operation *or* point does not exist.
-                // Use global version to check if operation has been already applied.
-                if self.version.unwrap_or(0) > op_num {
-                    return Ok(false); // Skip without execution
-                }
-            }
-            Some(point_offset) => {
-                // Check if point not exists or have lower version
-                if self
-                    .id_tracker
-                    .borrow()
-                    .internal_version(point_offset)
-                    .map_or(false, |current_version| current_version > op_num)
-                {
-                    return Ok(false);
-                }
+        // Check if point not exists or have lower version
+        if let Some(point_offset) = op_point_offset {
+            if self
+                .id_tracker
+                .borrow()
+                .internal_version(point_offset)
+                .map_or(false, |current_version| current_version > op_num)
+            {
+                return Ok(false);
             }
         }
 
@@ -987,7 +1058,7 @@ impl SegmentEntry for Segment {
         check_named_vectors(&vectors, &self.segment_config)?;
         vectors.preprocess(|name| self.segment_config.distance(name).unwrap());
         let stored_internal_point = self.id_tracker.borrow().internal_id(point_id);
-        self.handle_version_and_failure(op_num, stored_internal_point, |segment| {
+        self.handle_point_version_and_failure(op_num, stored_internal_point, |segment| {
             if let Some(existing_internal_id) = stored_internal_point {
                 segment.replace_all_vectors(existing_internal_id, vectors)?;
                 Ok((true, Some(existing_internal_id)))
@@ -1008,7 +1079,7 @@ impl SegmentEntry for Segment {
             // Point does already not exist anymore
             None => Ok(false),
             Some(internal_id) => {
-                self.handle_version_and_failure(op_num, Some(internal_id), |segment| {
+                self.handle_point_version_and_failure(op_num, Some(internal_id), |segment| {
                     // Mark point as deleted, drop mapping
                     segment.payload_index.borrow_mut().drop(internal_id)?;
                     segment.id_tracker.borrow_mut().drop(point_id)?;
@@ -1045,7 +1116,7 @@ impl SegmentEntry for Segment {
                 missed_point_id: point_id,
             }),
             Some(internal_id) => {
-                self.handle_version_and_failure(op_num, Some(internal_id), |segment| {
+                self.handle_point_version_and_failure(op_num, Some(internal_id), |segment| {
                     segment.update_vectors(internal_id, vectors)?;
                     Ok((true, Some(internal_id)))
                 })
@@ -1066,7 +1137,7 @@ impl SegmentEntry for Segment {
                 missed_point_id: point_id,
             }),
             Some(internal_id) => {
-                self.handle_version_and_failure(op_num, Some(internal_id), |segment| {
+                self.handle_point_version_and_failure(op_num, Some(internal_id), |segment| {
                     let vector_data = segment.vector_data.get(vector_name).ok_or(
                         OperationError::VectorNameNotExists {
                             received_name: vector_name.to_string(),
@@ -1087,7 +1158,7 @@ impl SegmentEntry for Segment {
         full_payload: &Payload,
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
-        self.handle_version_and_failure(op_num, internal_id, |segment| match internal_id {
+        self.handle_point_version_and_failure(op_num, internal_id, |segment| match internal_id {
             Some(internal_id) => {
                 segment
                     .payload_index
@@ -1109,7 +1180,7 @@ impl SegmentEntry for Segment {
         key: &Option<JsonPath>,
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
-        self.handle_version_and_failure(op_num, internal_id, |segment| match internal_id {
+        self.handle_point_version_and_failure(op_num, internal_id, |segment| match internal_id {
             Some(internal_id) => {
                 segment
                     .payload_index
@@ -1130,7 +1201,7 @@ impl SegmentEntry for Segment {
         key: PayloadKeyTypeRef,
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
-        self.handle_version_and_failure(op_num, internal_id, |segment| match internal_id {
+        self.handle_point_version_and_failure(op_num, internal_id, |segment| match internal_id {
             Some(internal_id) => {
                 segment
                     .payload_index
@@ -1150,7 +1221,7 @@ impl SegmentEntry for Segment {
         point_id: PointIdType,
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
-        self.handle_version_and_failure(op_num, internal_id, |segment| match internal_id {
+        self.handle_point_version_and_failure(op_num, internal_id, |segment| match internal_id {
             Some(internal_id) => {
                 segment.payload_index.borrow_mut().drop(internal_id)?;
                 Ok((true, Some(internal_id)))
@@ -1483,7 +1554,7 @@ impl SegmentEntry for Segment {
     }
 
     fn delete_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {
-        self.handle_version_and_failure(op_num, None, |segment| {
+        self.handle_segment_version_and_failure(op_num, |segment| {
             segment.payload_index.borrow_mut().drop_index(key)?;
             Ok((true, None))
         })
@@ -1495,7 +1566,7 @@ impl SegmentEntry for Segment {
         key: PayloadKeyTypeRef,
         field_type: Option<&PayloadFieldSchema>,
     ) -> OperationResult<bool> {
-        self.handle_version_and_failure(op_num, None, |segment| match field_type {
+        self.handle_segment_version_and_failure(op_num, |segment| match field_type {
             Some(schema) => {
                 segment
                     .payload_index
