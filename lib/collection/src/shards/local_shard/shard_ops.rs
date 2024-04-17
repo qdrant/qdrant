@@ -114,9 +114,7 @@ impl LocalShard {
     ) -> CollectionResult<Vec<Record>> {
         let segments = self.segments();
 
-        let (non_appendable, appendable) = segments
-            .read()
-            .collect_non_appendable_and_appendable_segments();
+        let (non_appendable, appendable) = segments.read().split_segments();
 
         let read_filtered = |segment: LockedSegment| {
             let filter = filter.cloned();
@@ -161,9 +159,7 @@ impl LocalShard {
     ) -> CollectionResult<Vec<Record>> {
         let segments = self.segments();
 
-        let (non_appendable, appendable) = segments
-            .read()
-            .collect_non_appendable_and_appendable_segments();
+        let (non_appendable, appendable) = segments.read().split_segments();
 
         let read_ordered_filtered = |segment: LockedSegment| {
             let filter = filter.cloned();
