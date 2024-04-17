@@ -109,14 +109,25 @@ impl OrderBy {
         new_payload
     }
 
-    pub fn get_order_value_from_payload(&self, payload: Option<&Payload>) -> OrderingValue {
-        payload
-            .and_then(|payload| payload.0.get(INTERNAL_KEY_OF_ORDER_BY_VALUE))
-            .and_then(|v| OrderingValue::try_from(v.clone()).ok())
+    fn json_value_to_ordering_value(&self, value: Option<serde_json::Value>) -> OrderingValue {
+        value
+            .and_then(|v| OrderingValue::try_from(v).ok())
             .unwrap_or_else(|| match self.direction() {
                 Direction::Asc => OrderingValue::MAX,
                 Direction::Desc => OrderingValue::MIN,
             })
+    }
+
+    pub fn get_order_value_from_payload(&self, payload: Option<&Payload>) -> OrderingValue {
+        self.json_value_to_ordering_value(
+            payload.and_then(|payload| payload.0.get(INTERNAL_KEY_OF_ORDER_BY_VALUE).cloned()),
+        )
+    }
+
+    pub fn remove_order_value_from_payload(&self, payload: Option<&mut Payload>) -> OrderingValue {
+        self.json_value_to_ordering_value(
+            payload.and_then(|payload| payload.0.remove(INTERNAL_KEY_OF_ORDER_BY_VALUE)),
+        )
     }
 }
 

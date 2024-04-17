@@ -1,9 +1,8 @@
+import requests
+
 from .assertions import assert_http_ok
 from .fixtures import create_collection
-from .utils import start_cluster, every_test
-
-import pytest
-import requests
+from .utils import every_test, start_cluster
 
 COLL_NAME = "test_collection"
 
@@ -22,7 +21,9 @@ def test_order_by_from_remote_shard(tmp_path, every_test):
 
     res = requests.put(
         f"{uri}/collections/{COLL_NAME}/points",
-        params={"wait": "true", },
+        params={
+            "wait": "true",
+        },
         json={
             "points": [
                 {
@@ -42,7 +43,9 @@ def test_order_by_from_remote_shard(tmp_path, every_test):
 
     requests.put(
         f"{uri}/collections/{COLL_NAME}/points",
-        params={"wait": "true", },
+        params={
+            "wait": "true",
+        },
         json={
             "batch": {
                 "ids": [11, 12, 13, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
@@ -134,12 +137,27 @@ def test_order_by_from_remote_shard(tmp_path, every_test):
     res = requests.post(
         f"{uri}/collections/{COLL_NAME}/points/scroll", json={"limit": 10, "order_by": "index"}
     )
-    
-    res.raise_for_status()
-    
-    for point in res.json()['result']["points"]:
+
+    assert_http_ok(res)
+
+    for point in res.json()["result"]["points"]:
         assert point["payload"] is not None
 
-    ids = [point["payload"]["index"] for point in res.json()['result']["points"]]
-    
+    values = [point["payload"]["index"] for point in res.json()["result"]["points"]]
+
+    assert values == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+    # It should also work when with_payload is False
+    res = requests.post(
+        f"{uri}/collections/{COLL_NAME}/points/scroll",
+        json={"limit": 10, "order_by": "index", "with_payload": False},
+    )
+
+    assert_http_ok(res)
+
+    ids = [point["id"] for point in res.json()["result"]["points"]]
+
     assert ids == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+    for point in res.json()["result"]["points"]:
+        assert point["payload"] is None

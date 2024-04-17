@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use futures::stream::FuturesUnordered;
@@ -217,12 +216,10 @@ impl Collection {
         let mut limit = request
             .limit
             .unwrap_or_else(|| default_request.limit.unwrap());
-        let original_with_payload_interface = request
+        let with_payload_interface = request
             .with_payload
             .clone()
             .unwrap_or_else(|| default_request.with_payload.clone().unwrap());
-
-        let mut with_payload_interface = original_with_payload_interface.clone();
         let with_vector = request.with_vector;
 
         let order_by = request.order_by.map(OrderBy::from);
@@ -248,11 +245,6 @@ impl Collection {
             if id_offset.is_some() {
                 return Err(CollectionError::bad_input("Cannot use an `offset` when using `order_by`. The alternative for paging is to use `order_by.start_from` and a filter to exclude the IDs that you've already seen for the `order_by.start_from` value".to_string()));
             }
-
-            // With order_by, we fetch the payloads here, after sorting, because of the "____ordered_with____" payload hack
-            // LocalShard::scroll_by already does not include the requested payload for order_by,
-            // but we specify it here to be more explicit
-            with_payload_interface = WithPayloadInterface::Bool(false);
         };
 
         if limit == 0 {
@@ -309,12 +301,22 @@ impl Collection {
                 .map(api::rest::Record::from)
                 .collect_vec(),
             Some(order_by) => {
-                let mut ordered_records = retrieved_iter
+                retrieved_iter
                     // Extract and remove order value from payload
                     .map(|records| {
-                        records.into_iter().map(|record| {
-                            let value =
-                                order_by.get_order_value_from_payload(record.payload.as_ref());
+                        records.into_iter().map(|mut record| {
+                            let value;
+                            if local_only {
+                                value =
+                                    order_by.get_order_value_from_payload(record.payload.as_ref());
+                            } else {
+                                value = order_by
+                                    .remove_order_value_from_payload(record.payload.as_mut());
+                                if !with_payload_interface.is_required() {
+                                    // Use None instead of empty hashmap
+                                    record.payload = None;
+                                }
+                            };
                             (value, record)
                         })
                     })
@@ -325,45 +327,7 @@ impl Collection {
                     })
                     .map(|(_, record)| api::rest::Record::from(record))
                     .take(limit)
-                    .collect_vec();
-
-                // Handle `with_payload` parameter
-                if local_only {
-                    ordered_records
-                } else if !original_with_payload_interface.is_required() {
-                    ordered_records.iter_mut().for_each(|record| {
-                        record.payload = None;
-                    });
-
-                    ordered_records
-                } else {
-                    // Request payload for top results
-                    let ids = ordered_records.iter().map(|record| record.id).collect();
-                    let request = PointRequestInternal {
-                        ids,
-                        with_payload: Some(original_with_payload_interface),
-                        with_vector: false.into(),
-                    };
-
-                    let mut res: HashMap<_, _> = self
-                        .retrieve(request, read_consistency, shard_selection)
-                        .await?
-                        .into_iter()
-                        .map(|rec| (rec.id, rec))
-                        .collect();
-
-                    ordered_records.iter_mut().for_each(|rec| {
-                        std::mem::swap(
-                            &mut rec.payload,
-                            &mut res
-                                .remove(&rec.id)
-                                .map(|rec| rec.payload)
-                                .unwrap_or_default(),
-                        );
-                    });
-
-                    ordered_records
-                }
+                    .collect_vec()
             }
         };
 
