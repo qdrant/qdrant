@@ -3,14 +3,15 @@ use std::collections::HashMap;
 
 use sparse::common::sparse_vector::SparseVector;
 
+use crate::common::operation_error::OperationError;
+use crate::spaces::metric::Metric;
+use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
+use crate::types::{Distance, VectorDataConfig, VectorStorageDatatype};
+
 use super::tiny_map;
 use super::vectors::{
     DenseVector, MultiDenseVector, Vector, VectorElementType, VectorElementTypeByte, VectorRef,
 };
-use crate::common::operation_error::OperationError;
-use crate::spaces::metric::Metric;
-use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
-use crate::types::{Distance, SegmentConfig, VectorDataConfig, VectorStorageDatatype};
 
 type CowKey<'a> = Cow<'a, str>;
 
@@ -216,11 +217,11 @@ impl<'a> NamedVectors<'a> {
         self.map.get(key).map(|v| v.as_vec_ref())
     }
 
-    pub fn preprocess(&mut self, segment_config: &SegmentConfig) {
+    pub fn preprocess<'b>(&'b mut self, get_vector_data: impl Fn(&str) -> &'b VectorDataConfig) {
         for (name, vector) in self.map.iter_mut() {
             match vector {
                 CowVector::Dense(v) => {
-                    let config = segment_config.vector_data.get(name.as_ref()).unwrap();
+                    let config = get_vector_data(name.as_ref());
                     let preprocessed_vector = Self::preprocess_dense_vector(v.to_vec(), config);
                     *vector = CowVector::Dense(Cow::Owned(preprocessed_vector))
                 }
@@ -229,7 +230,7 @@ impl<'a> NamedVectors<'a> {
                     v.to_mut().sort_by_indices();
                 }
                 CowVector::MultiDense(v) => {
-                    let config = segment_config.vector_data.get(name.as_ref()).unwrap();
+                    let config = get_vector_data(name.as_ref());
                     for dense_vector in v.to_mut().multi_vectors_mut() {
                         let preprocessed_vector =
                             Self::preprocess_dense_vector(dense_vector.to_vec(), config);
