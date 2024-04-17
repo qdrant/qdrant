@@ -29,7 +29,11 @@ fn hnsw_benchmark(c: &mut Criterion) {
     let mut graph_layers_builder =
         GraphLayersBuilder::new(NUM_VECTORS, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC);
     for idx in 0..(NUM_VECTORS as PointOffsetType) {
-        let added_vector = vector_holder.vectors.get(idx).to_vec();
+        let added_vector = vector_holder.vectors.get(idx);
+        #[cfg(not(feature = "f16"))]
+        let added_vector = added_vector.to_vec();
+        #[cfg(feature = "f16")]
+        let added_vector = half::slice::HalfFloatSliceExt::to_f32_vec(added_vector);
         let raw_scorer = vector_holder.get_raw_scorer(added_vector).unwrap();
         let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let level = graph_layers_builder.get_random_layer(&mut rng);

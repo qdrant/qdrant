@@ -10,5 +10,8 @@ pub mod simple_avx;
 
 pub mod metric_uint;
 
+#[cfg(feature = "f16")]
+mod metric_f16;
+
 #[cfg(target_arch = "aarch64")]
 pub mod simple_neon;

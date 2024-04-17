@@ -13,8 +13,12 @@ use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::spaces::metric::Metric;
+use crate::vector_storage::VectorStorageElementType;
 
-pub(crate) fn create_graph_layer_builder_fixture<TMetric: Metric<VectorElementType>, R>(
+pub(crate) fn create_graph_layer_builder_fixture<
+    TMetric: Metric<VectorStorageElementType> + Metric<VectorElementType>,
+    R,
+>(
     num_vectors: usize,
     m: usize,
     dim: usize,
@@ -40,8 +44,12 @@ where
 
     for idx in 0..(num_vectors as PointOffsetType) {
         let fake_filter_context = FakeFilterContext {};
-        let added_vector = vector_holder.vectors.get(idx).to_vec();
-        let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone()).unwrap();
+        let added_vector = vector_holder.vectors.get(idx);
+        #[cfg(not(feature = "f16"))]
+        let added_vector = added_vector.to_vec();
+        #[cfg(feature = "f16")]
+        let added_vector = half::slice::HalfFloatSliceExt::to_f32_vec(added_vector);
+        let raw_scorer = vector_holder.get_raw_scorer(added_vector).unwrap();
         let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let level = graph_layers_builder.get_random_layer(rng);
         graph_layers_builder.set_levels(idx, level);
@@ -50,7 +58,10 @@ where
     (vector_holder, graph_layers_builder)
 }
 
-pub(crate) fn create_graph_layer_fixture<TMetric: Metric<VectorElementType>, R>(
+pub(crate) fn create_graph_layer_fixture<
+    TMetric: Metric<VectorStorageElementType> + Metric<VectorElementType>,
+    R,
+>(
     num_vectors: usize,
     m: usize,
     dim: usize,

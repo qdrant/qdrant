@@ -13,6 +13,7 @@ use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::point_scorer::FilteredScorer;
 use segment::spaces::metric::Metric;
 use segment::spaces::simple::{CosineMetric, DotProductMetric};
+use segment::vector_storage::_VectorStorageElementType as VectorStorageElementType;
 
 const NUM_VECTORS: usize = 5_000;
 const DIM: usize = 16;
@@ -22,7 +23,7 @@ const EF_CONSTRUCT: usize = 64;
 const EF: usize = 64;
 const USE_HEURISTIC: bool = true;
 
-fn build_index<TMetric: Metric<VectorElementType>>(
+fn build_index<TMetric: Metric<VectorStorageElementType> + Metric<VectorElementType>>(
     num_vectors: usize,
 ) -> (TestRawScorerProducer<TMetric>, GraphLayers<GraphLinksRam>) {
     let mut rng = thread_rng();
@@ -32,7 +33,11 @@ fn build_index<TMetric: Metric<VectorElementType>>(
         GraphLayersBuilder::new(num_vectors, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC);
     let fake_filter_context = FakeFilterContext {};
     for idx in 0..(num_vectors as PointOffsetType) {
-        let added_vector = vector_holder.vectors.get(idx).to_vec();
+        let added_vector = vector_holder.vectors.get(idx);
+        #[cfg(not(feature = "f16"))]
+        let added_vector = added_vector.to_vec();
+        #[cfg(feature = "f16")]
+        let added_vector = half::slice::HalfFloatSliceExt::to_f32_vec(added_vector);
         let raw_scorer = vector_holder.get_raw_scorer(added_vector).unwrap();
         let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let level = graph_layers_builder.get_random_layer(&mut rng);

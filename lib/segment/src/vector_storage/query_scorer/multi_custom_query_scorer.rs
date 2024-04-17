@@ -7,11 +7,11 @@ use crate::data_types::vectors::{DenseVector, MultiDenseVector, VectorElementTyp
 use crate::spaces::metric::Metric;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
-use crate::vector_storage::MultiVectorStorage;
+use crate::vector_storage::{MultiVectorStorage, VectorStorageElementType};
 
 pub struct MultiCustomQueryScorer<
     'a,
-    TMetric: Metric<VectorElementType>,
+    TMetric: Metric<VectorStorageElementType>,
     TVectorStorage: MultiVectorStorage,
     TQuery: Query<MultiDenseVector>,
 > {
@@ -22,7 +22,7 @@ pub struct MultiCustomQueryScorer<
 
 impl<
         'a,
-        TMetric: Metric<VectorElementType>,
+        TMetric: Metric<VectorStorageElementType> + Metric<VectorElementType>,
         TVectorStorage: MultiVectorStorage,
         TQuery: Query<MultiDenseVector> + TransformInto<TQuery, MultiDenseVector, MultiDenseVector>,
     > MultiCustomQueryScorer<'a, TMetric, TVectorStorage, TQuery>
@@ -49,7 +49,7 @@ impl<
 
 impl<
         'a,
-        TMetric: Metric<VectorElementType>,
+        TMetric: Metric<VectorStorageElementType> + Metric<VectorElementType>,
         TVectorStorage: MultiVectorStorage,
         TQuery: Query<MultiDenseVector>,
     > QueryScorer<MultiDenseVector>

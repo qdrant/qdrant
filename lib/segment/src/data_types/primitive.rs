@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 
+#[cfg(feature = "f16")]
+use half::f16;
 use serde::{Deserialize, Serialize};
 
 use crate::common::operation_error::OperationResult;
@@ -21,6 +23,23 @@ impl PrimitiveVectorElement for VectorElementType {
 
     fn vector_to_cow(vector: &[Self]) -> CowVector {
         vector.into()
+    }
+}
+
+#[cfg(feature = "f16")]
+impl PrimitiveVectorElement for f16 {
+    fn from_vector_ref(vector: VectorRef) -> OperationResult<Cow<[Self]>> {
+        use half::vec::HalfFloatVecExt;
+
+        let vector_ref: &[VectorElementType] = vector.try_into()?;
+        let f16_vector = Vec::from_f32_slice(vector_ref);
+        Ok(Cow::from(f16_vector))
+    }
+
+    fn vector_to_cow(vector: &[Self]) -> CowVector {
+        use half::slice::HalfFloatSliceExt;
+
+        vector.to_f32_vec().into()
     }
 }
 

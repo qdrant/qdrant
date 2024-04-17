@@ -24,8 +24,9 @@ use validator::{Validate, ValidationError, ValidationErrors};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::{self, MultiValue};
 use crate::data_types::integer_index::IntegerIndexParams;
+use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::text_index::TextIndexParams;
-use crate::data_types::vectors::{DenseVector, VectorElementType, VectorStruct};
+use crate::data_types::vectors::{DenseVector, TypedDenseVector, VectorElementType, VectorStruct};
 use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use crate::json_path::{JsonPath, JsonPathInterface};
 use crate::spaces::metric::{Metric, MetricPostProcessing};
@@ -166,7 +167,16 @@ pub enum Distance {
 }
 
 impl Distance {
-    pub fn preprocess_vector(&self, vector: DenseVector) -> DenseVector {
+    pub fn preprocess_vector<T: PrimitiveVectorElement>(
+        &self,
+        vector: DenseVector,
+    ) -> TypedDenseVector<T>
+    where
+        CosineMetric: Metric<T>,
+        EuclidMetric: Metric<T>,
+        DotProductMetric: Metric<T>,
+        ManhattanMetric: Metric<T>,
+    {
         match self {
             Distance::Cosine => CosineMetric::preprocess(vector),
             Distance::Euclid => EuclidMetric::preprocess(vector),
@@ -202,7 +212,13 @@ impl Distance {
     /// Calculates distance between two vectors
     ///
     /// Warn: prefer compile-time generics with `Metric` trait
-    pub fn similarity(&self, v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
+    pub fn similarity<T: PrimitiveVectorElement>(&self, v1: &[T], v2: &[T]) -> ScoreType
+    where
+        CosineMetric: Metric<T>,
+        EuclidMetric: Metric<T>,
+        DotProductMetric: Metric<T>,
+        ManhattanMetric: Metric<T>,
+    {
         match self {
             Distance::Cosine => CosineMetric::similarity(v1, v2),
             Distance::Euclid => EuclidMetric::similarity(v1, v2),

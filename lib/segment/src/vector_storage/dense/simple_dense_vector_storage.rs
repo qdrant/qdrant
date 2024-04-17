@@ -15,12 +15,14 @@ use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
-use crate::data_types::vectors::{VectorElementType, VectorRef};
+use crate::data_types::vectors::VectorRef;
 use crate::types::Distance;
 use crate::vector_storage::bitvec::bitvec_set_deleted;
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::common::StoredRecord;
-use crate::vector_storage::{DenseVectorStorage, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{
+    DenseVectorStorage, VectorStorage, VectorStorageElementType, VectorStorageEnum,
+};
 
 type StoredDenseVector<T> = StoredRecord<Vec<T>>;
 
@@ -92,7 +94,7 @@ pub fn open_simple_dense_vector_storage(
     distance: Distance,
     stopped: &AtomicBool,
 ) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
-    let storage = open_simple_dense_vector_storage_impl::<VectorElementType>(
+    let storage = open_simple_dense_vector_storage_impl::<VectorStorageElementType>(
         database,
         database_column_name,
         dim,
@@ -146,8 +148,10 @@ impl<T: PrimitiveVectorElement> SimpleDenseVectorStorage<T> {
     }
 }
 
-impl DenseVectorStorage<VectorElementType> for SimpleDenseVectorStorage<VectorElementType> {
-    fn get_dense(&self, key: PointOffsetType) -> &[VectorElementType] {
+impl DenseVectorStorage<VectorStorageElementType>
+    for SimpleDenseVectorStorage<VectorStorageElementType>
+{
+    fn get_dense(&self, key: PointOffsetType) -> &[VectorStorageElementType] {
         self.vectors.get(key)
     }
 }

@@ -357,7 +357,11 @@ mod tests {
         let linking_idx: PointOffsetType = 7;
 
         let fake_filter_context = FakeFilterContext {};
-        let added_vector = vector_holder.vectors.get(linking_idx).to_vec();
+        let added_vector = vector_holder.vectors.get(linking_idx);
+        #[cfg(not(feature = "f16"))]
+        let added_vector = added_vector.to_vec();
+        #[cfg(feature = "f16")]
+        let added_vector = half::slice::HalfFloatSliceExt::to_f32_vec(added_vector);
         let raw_scorer = vector_holder.get_raw_scorer(added_vector).unwrap();
         let mut scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
 

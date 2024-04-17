@@ -10,14 +10,15 @@ use rand::Rng;
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
+use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{DenseVector, VectorElementType, VectorRef};
 use crate::payload_storage::FilterContext;
 use crate::spaces::metric::Metric;
 use crate::types::Distance;
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::{
-    raw_scorer_impl, DenseVectorStorage, RawScorer, VectorStorage, VectorStorageEnum,
-    DEFAULT_STOPPED,
+    raw_scorer_impl, DenseVectorStorage, RawScorer, VectorStorage, VectorStorageElementType,
+    VectorStorageEnum, DEFAULT_STOPPED,
 };
 
 pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> DenseVector {
@@ -32,22 +33,22 @@ impl FilterContext for FakeFilterContext {
     }
 }
 
-pub struct TestRawScorerProducer<TMetric: Metric<VectorElementType>> {
-    pub vectors: ChunkedVectors<VectorElementType>,
+pub struct TestRawScorerProducer<TMetric: Metric<VectorStorageElementType>> {
+    pub vectors: ChunkedVectors<VectorStorageElementType>,
     pub deleted_points: BitVec,
     pub deleted_vectors: BitVec,
     pub metric: PhantomData<TMetric>,
 }
 
-impl<TMetric: Metric<VectorElementType>> DenseVectorStorage<VectorElementType>
+impl<TMetric: Metric<VectorStorageElementType>> DenseVectorStorage<VectorStorageElementType>
     for TestRawScorerProducer<TMetric>
 {
-    fn get_dense(&self, key: PointOffsetType) -> &[VectorElementType] {
+    fn get_dense(&self, key: PointOffsetType) -> &[VectorStorageElementType] {
         self.vectors.get(key)
     }
 }
 
-impl<TMetric: Metric<VectorElementType>> VectorStorage for TestRawScorerProducer<TMetric> {
+impl<TMetric: Metric<VectorStorageElementType>> VectorStorage for TestRawScorerProducer<TMetric> {
     fn vector_dim(&self) -> usize {
         self.vectors.get(0).len()
     }
@@ -65,11 +66,13 @@ impl<TMetric: Metric<VectorElementType>> VectorStorage for TestRawScorerProducer
     }
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {
-        self.get_dense(key).into()
+        let vector = self.get_dense(key);
+        PrimitiveVectorElement::vector_to_cow(vector)
     }
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
-        self.vectors.insert(key, vector.try_into()?)?;
+        let vector = PrimitiveVectorElement::from_vector_ref(vector)?;
+        self.vectors.insert(key, &vector)?;
         Ok(())
     }
 
@@ -109,7 +112,7 @@ impl<TMetric: Metric<VectorElementType>> VectorStorage for TestRawScorerProducer
 
 impl<TMetric> TestRawScorerProducer<TMetric>
 where
-    TMetric: Metric<VectorElementType>,
+    TMetric: Metric<VectorStorageElementType>,
 {
     pub fn new<R>(dim: usize, num_vectors: usize, rng: &mut R) -> Self
     where
@@ -129,7 +132,10 @@ where
         }
     }
 
-    pub fn get_raw_scorer(&self, query: DenseVector) -> OperationResult<Box<dyn RawScorer + '_>> {
+    pub fn get_raw_scorer(&self, query: DenseVector) -> OperationResult<Box<dyn RawScorer + '_>>
+    where
+        TMetric: Metric<VectorElementType>,
+    {
         let query = TMetric::preprocess(query).into();
         raw_scorer_impl(
             query,

@@ -12,7 +12,9 @@ use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
-use crate::data_types::vectors::{MultiDenseVector, VectorElementType, VectorRef};
+#[cfg(not(feature = "f16"))]
+use crate::data_types::vectors::VectorElementType;
+use crate::data_types::vectors::{MultiDenseVector, VectorRef};
 use crate::types::{Distance, MultiVectorConfig};
 use crate::vector_storage::dense::appendable_mmap_dense_vector_storage::AppendableMmapDenseVectorStorage;
 use crate::vector_storage::simple_multi_dense_vector_storage::SimpleMultiDenseVectorStorage;
@@ -111,10 +113,18 @@ pub trait MultiVectorStorage: VectorStorage {
     fn multi_vector_config(&self) -> &MultiVectorConfig;
 }
 
+#[cfg(not(feature = "f16"))]
+pub(crate) type VectorStorageElementType = VectorElementType;
+#[cfg(feature = "f16")]
+pub(crate) type VectorStorageElementType = half::f16;
+// for benchmarks
+#[doc(hidden)]
+pub type _VectorStorageElementType = VectorStorageElementType;
+
 pub enum VectorStorageEnum {
-    DenseSimple(SimpleDenseVectorStorage<VectorElementType>),
-    DenseMemmap(Box<MemmapDenseVectorStorage<VectorElementType>>),
-    DenseAppendableMemmap(Box<AppendableMmapDenseVectorStorage<VectorElementType>>),
+    DenseSimple(SimpleDenseVectorStorage<VectorStorageElementType>),
+    DenseMemmap(Box<MemmapDenseVectorStorage<VectorStorageElementType>>),
+    DenseAppendableMemmap(Box<AppendableMmapDenseVectorStorage<VectorStorageElementType>>),
     SparseSimple(SimpleSparseVectorStorage),
     MultiDenseSimple(SimpleMultiDenseVectorStorage),
 }

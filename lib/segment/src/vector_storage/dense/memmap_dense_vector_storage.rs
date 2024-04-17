@@ -14,11 +14,13 @@ use crate::common::operation_error::{check_process_stopped, OperationResult};
 use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
-use crate::data_types::vectors::{VectorElementType, VectorRef};
+use crate::data_types::vectors::VectorRef;
 use crate::types::Distance;
 use crate::vector_storage::common::get_async_scorer;
 use crate::vector_storage::dense::mmap_dense_vectors::MmapDenseVectors;
-use crate::vector_storage::{DenseVectorStorage, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{
+    DenseVectorStorage, VectorStorage, VectorStorageElementType, VectorStorageEnum,
+};
 
 const VECTORS_PATH: &str = "matrix.dat";
 const DELETED_PATH: &str = "deleted.dat";
@@ -87,8 +89,10 @@ impl<T: PrimitiveVectorElement> MemmapDenseVectorStorage<T> {
     }
 }
 
-impl DenseVectorStorage<VectorElementType> for MemmapDenseVectorStorage<VectorElementType> {
-    fn get_dense(&self, key: PointOffsetType) -> &[VectorElementType] {
+impl DenseVectorStorage<VectorStorageElementType>
+    for MemmapDenseVectorStorage<VectorStorageElementType>
+{
+    fn get_dense(&self, key: PointOffsetType) -> &[VectorStorageElementType] {
         self.mmap_store.as_ref().unwrap().get_vector(key)
     }
 }
@@ -222,7 +226,7 @@ mod tests {
 
     use super::*;
     use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
-    use crate::data_types::vectors::{DenseVector, QueryVector};
+    use crate::data_types::vectors::{DenseVector, QueryVector, VectorElementType};
     use crate::fixtures::payload_context_fixture::FixtureIdTracker;
     use crate::id_tracker::IdTracker;
     use crate::types::{PointIdType, QuantizationConfig, ScalarQuantizationConfig};

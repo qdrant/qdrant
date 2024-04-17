@@ -20,7 +20,9 @@ use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::quantized::quantized_mmap_storage::{
     QuantizedMmapStorage, QuantizedMmapStorageBuilder,
 };
-use crate::vector_storage::{DenseVectorStorage, RawScorer, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{
+    DenseVectorStorage, RawScorer, VectorStorage, VectorStorageElementType, VectorStorageEnum,
+};
 
 pub const QUANTIZED_CONFIG_PATH: &str = "quantized.config.json";
 pub const QUANTIZED_DATA_PATH: &str = "quantized.data";
@@ -121,7 +123,7 @@ impl QuantizedVectors {
         }
     }
 
-    fn create_impl<TVectorStorage: DenseVectorStorage<VectorElementType> + Send + Sync>(
+    fn create_impl<TVectorStorage: DenseVectorStorage<VectorStorageElementType> + Send + Sync>(
         vector_storage: &TVectorStorage,
         quantization_config: &QuantizationConfig,
         path: &Path,
@@ -130,6 +132,13 @@ impl QuantizedVectors {
     ) -> OperationResult<Self> {
         let count = vector_storage.total_vector_count();
         let vectors = (0..count as PointOffsetType).map(|i| vector_storage.get_dense(i));
+        // TODO: Avoid cloning here by supporting f16 in quantization.
+        #[cfg(feature = "f16")]
+        let vectors: Vec<_> = vectors
+            .map(half::slice::HalfFloatSliceExt::to_f32_vec)
+            .collect();
+        #[cfg(feature = "f16")]
+        let vectors = vectors.iter().map(Vec::as_slice);
         let on_disk_vector_storage = vector_storage.is_on_disk();
         let distance = vector_storage.distance();
         let dim = vector_storage.vector_dim();

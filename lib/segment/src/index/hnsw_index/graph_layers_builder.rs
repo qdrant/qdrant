@@ -478,6 +478,8 @@ impl GraphLayersBuilder {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "f16")]
+    use half::slice::HalfFloatSliceExt;
     use itertools::Itertools;
     use rand::prelude::StdRng;
     use rand::seq::SliceRandom;
@@ -492,11 +494,15 @@ mod tests {
     use crate::index::hnsw_index::tests::create_graph_layer_fixture;
     use crate::spaces::metric::Metric;
     use crate::spaces::simple::{CosineMetric, EuclidMetric};
+    use crate::vector_storage::VectorStorageElementType;
 
     const M: usize = 8;
 
     #[cfg(not(windows))]
-    fn parallel_graph_build<TMetric: Metric<VectorElementType> + Sync + Send, R>(
+    fn parallel_graph_build<
+        TMetric: Metric<VectorStorageElementType> + Metric<VectorElementType> + Sync + Send,
+        R,
+    >(
         num_vectors: usize,
         dim: usize,
         use_heuristic: bool,
@@ -535,7 +541,11 @@ mod tests {
                 .into_par_iter()
                 .for_each(|idx| {
                     let fake_filter_context = FakeFilterContext {};
-                    let added_vector = vector_holder.vectors.get(idx).to_vec();
+                    let added_vector = vector_holder.vectors.get(idx);
+                    #[cfg(not(feature = "f16"))]
+                    let added_vector = added_vector.to_vec();
+                    #[cfg(feature = "f16")]
+                    let added_vector = added_vector.to_f32_vec();
                     let raw_scorer = vector_holder.get_raw_scorer(added_vector).unwrap();
                     let scorer =
                         FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
@@ -546,7 +556,10 @@ mod tests {
         (vector_holder, graph_layers)
     }
 
-    fn create_graph_layer<TMetric: Metric<VectorElementType>, R>(
+    fn create_graph_layer<
+        TMetric: Metric<VectorStorageElementType> + Metric<VectorElementType>,
+        R,
+    >(
         num_vectors: usize,
         dim: usize,
         use_heuristic: bool,
@@ -577,8 +590,12 @@ mod tests {
 
         for idx in 0..(num_vectors as PointOffsetType) {
             let fake_filter_context = FakeFilterContext {};
-            let added_vector = vector_holder.vectors.get(idx).to_vec();
-            let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone()).unwrap();
+            let added_vector = vector_holder.vectors.get(idx);
+            #[cfg(not(feature = "f16"))]
+            let added_vector = added_vector.to_vec();
+            #[cfg(feature = "f16")]
+            let added_vector = added_vector.to_f32_vec();
+            let raw_scorer = vector_holder.get_raw_scorer(added_vector).unwrap();
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
             graph_layers.link_new_point(idx, scorer);
         }
@@ -754,7 +771,11 @@ mod tests {
             GraphLayersBuilder::new(NUM_VECTORS, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC);
         let fake_filter_context = FakeFilterContext {};
         for idx in 0..(NUM_VECTORS as PointOffsetType) {
-            let added_vector = vector_holder.vectors.get(idx).to_vec();
+            let added_vector = vector_holder.vectors.get(idx);
+            #[cfg(not(feature = "f16"))]
+            let added_vector = added_vector.to_vec();
+            #[cfg(feature = "f16")]
+            let added_vector = half::slice::HalfFloatSliceExt::to_f32_vec(added_vector);
             let raw_scorer = vector_holder.get_raw_scorer(added_vector).unwrap();
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
             let level = graph_layers_builder.get_random_layer(&mut rng);

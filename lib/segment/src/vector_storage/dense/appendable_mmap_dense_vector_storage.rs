@@ -12,11 +12,13 @@ use crate::common::operation_error::{check_process_stopped, OperationResult};
 use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
-use crate::data_types::vectors::{VectorElementType, VectorRef};
+use crate::data_types::vectors::VectorRef;
 use crate::types::Distance;
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
 use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
-use crate::vector_storage::{DenseVectorStorage, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{
+    DenseVectorStorage, VectorStorage, VectorStorageElementType, VectorStorageEnum,
+};
 
 const VECTORS_DIR_PATH: &str = "vectors";
 const DELETED_DIR_PATH: &str = "deleted";
@@ -39,7 +41,7 @@ pub fn open_appendable_memmap_vector_storage(
     let vectors_path = path.join(VECTORS_DIR_PATH);
     let deleted_path = path.join(DELETED_DIR_PATH);
 
-    let vectors: ChunkedMmapVectors<VectorElementType> =
+    let vectors: ChunkedMmapVectors<VectorStorageElementType> =
         ChunkedMmapVectors::open(&vectors_path, dim)?;
 
     let num_vectors = vectors.len();
@@ -88,8 +90,10 @@ impl<T: PrimitiveVectorElement + 'static> AppendableMmapDenseVectorStorage<T> {
     }
 }
 
-impl DenseVectorStorage<VectorElementType> for AppendableMmapDenseVectorStorage<VectorElementType> {
-    fn get_dense(&self, key: PointOffsetType) -> &[VectorElementType] {
+impl DenseVectorStorage<VectorStorageElementType>
+    for AppendableMmapDenseVectorStorage<VectorStorageElementType>
+{
+    fn get_dense(&self, key: PointOffsetType) -> &[VectorStorageElementType] {
         self.vectors.get(key)
     }
 }
