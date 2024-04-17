@@ -6,7 +6,6 @@ use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
 
-use itertools::Itertools;
 use parking_lot::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use rand::seq::SliceRandom;
 use rand::{thread_rng, Rng};
@@ -935,7 +934,7 @@ impl<'s> SegmentHolder {
         let segments = self
             .iter()
             .map(|(&segment_id, locked_segment)| (segment_id, locked_segment.get()))
-            .collect_vec();
+            .collect::<Vec<_>>();
         let locked_segments = BTreeMap::from_iter(
             segments
                 .iter()
