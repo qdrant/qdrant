@@ -249,8 +249,10 @@ impl Collection {
                 return Err(CollectionError::bad_input("Cannot use an `offset` when using `order_by`. The alternative for paging is to use `order_by.start_from` and a filter to exclude the IDs that you've already seen for the `order_by.start_from` value".to_string()));
             }
 
-            // Always request the payload when using order_by
-            with_payload_interface = WithPayloadInterface::Bool(true);
+            // With order_by, we fetch the payloads here, after sorting, because of the "____ordered_with____" payload hack
+            // LocalShard::scroll_by already does not include the requested payload for order_by,
+            // but we specify it here to be more explicit
+            with_payload_interface = WithPayloadInterface::Bool(false);
         };
 
         if limit == 0 {
