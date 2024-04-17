@@ -30,8 +30,9 @@ impl<
         query: TypedDenseVector<VectorElementType>,
         vector_storage: &'a TVectorStorage,
     ) -> Self {
+        let preprocessed_vector = TMetric::preprocess(query);
         Self {
-            query: TMetric::preprocess(query),
+            query: TElement::from_dense_vector(&preprocessed_vector).to_vec(),
             vector_storage,
             metric: PhantomData,
         }

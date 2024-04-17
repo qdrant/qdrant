@@ -1,6 +1,6 @@
 use common::types::ScoreType;
 
-use crate::data_types::vectors::{DenseVector, TypedDenseVector, VectorElementTypeByte};
+use crate::data_types::vectors::{DenseVector, VectorElementTypeByte};
 use crate::spaces::metric::Metric;
 #[cfg(target_arch = "x86_64")]
 use crate::spaces::metric_uint::avx2::euclid::avx_euclid_similarity_bytes;
@@ -50,11 +50,8 @@ impl Metric<VectorElementTypeByte> for EuclidMetric {
         euclid_similarity_bytes(v1, v2)
     }
 
-    fn preprocess(vector: DenseVector) -> TypedDenseVector<VectorElementTypeByte> {
+    fn preprocess(vector: DenseVector) -> DenseVector {
         vector
-            .into_iter()
-            .map(|x| x as VectorElementTypeByte)
-            .collect()
     }
 }
 
@@ -74,12 +71,15 @@ pub fn euclid_similarity_bytes(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data_types::primitive::PrimitiveVectorElement;
+    use crate::data_types::vectors::{TypedDenseVector, VectorElementType};
 
     #[test]
     fn test_conversion_to_bytes() {
         let dense_vector = DenseVector::from(vec![-10.0, 1.0, 2.0, 3.0, 255., 300.]);
-        let typed_dense_vector: TypedDenseVector<VectorElementTypeByte> =
-            EuclidMetric::preprocess(dense_vector);
+        let preprocessed_vector =
+            <EuclidMetric as Metric<VectorElementType>>::preprocess(dense_vector);
+        let typed_dense_vector = VectorElementTypeByte::from_dense_vector(&preprocessed_vector);
         let expected: TypedDenseVector<VectorElementTypeByte> = vec![0, 1, 2, 3, 255, 255];
         assert_eq!(typed_dense_vector, expected);
     }

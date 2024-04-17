@@ -35,7 +35,10 @@ impl<
 {
     pub fn new(query: TInputQuery, vector_storage: &'a TVectorStorage) -> Self {
         let query = query
-            .transform(|vector| Ok(TMetric::preprocess(vector)))
+            .transform(|vector| {
+                let preprocessed_vector = TMetric::preprocess(vector);
+                Ok(TElement::from_dense_vector(&preprocessed_vector).to_vec())
+            })
             .unwrap();
 
         Self {

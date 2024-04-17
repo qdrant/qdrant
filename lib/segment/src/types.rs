@@ -25,7 +25,7 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::{self, MultiValue};
 use crate::data_types::integer_index::IntegerIndexParams;
 use crate::data_types::text_index::TextIndexParams;
-use crate::data_types::vectors::{DenseVector, VectorElementType, VectorStruct};
+use crate::data_types::vectors::{VectorElementType, VectorStruct};
 use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use crate::json_path::{JsonPath, JsonPathInterface};
 use crate::spaces::metric::{Metric, MetricPostProcessing};
@@ -166,15 +166,6 @@ pub enum Distance {
 }
 
 impl Distance {
-    pub fn preprocess_vector(&self, vector: DenseVector) -> DenseVector {
-        match self {
-            Distance::Cosine => CosineMetric::preprocess(vector),
-            Distance::Euclid => EuclidMetric::preprocess(vector),
-            Distance::Dot => DotProductMetric::preprocess(vector),
-            Distance::Manhattan => ManhattanMetric::preprocess(vector),
-        }
-    }
-
     pub fn postprocess_score(&self, score: ScoreType) -> ScoreType {
         match self {
             Distance::Cosine => CosineMetric::postprocess(score),

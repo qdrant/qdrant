@@ -246,7 +246,7 @@ mod tests {
 
     #[test]
     fn test_cosine_preprocessing() {
-        let res: DenseVector = CosineMetric::preprocess(vec![0.0, 0.0, 0.0, 0.0]);
+        let res = <CosineMetric as Metric<VectorElementType>>::preprocess(vec![0.0, 0.0, 0.0, 0.0]);
         assert_eq!(res, vec![0.0, 0.0, 0.0, 0.0]);
     }
 
@@ -264,8 +264,9 @@ mod tests {
             let vector: Vec<_> = (0..DIM).map(|_| rng.gen_range(range.clone())).collect();
 
             // Preprocess and re-preprocess
-            let preprocess1 = CosineMetric::preprocess(vector);
-            let preprocess2: DenseVector = CosineMetric::preprocess(preprocess1.clone());
+            let preprocess1 = <CosineMetric as Metric<VectorElementType>>::preprocess(vector);
+            let preprocess2: DenseVector =
+                <CosineMetric as Metric<VectorElementType>>::preprocess(preprocess1.clone());
 
             // All following preprocess attempts must be the same
             assert_eq!(

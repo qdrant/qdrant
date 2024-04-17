@@ -7,7 +7,8 @@ use rand::prelude::StdRng;
 use rand::SeedableRng;
 use segment::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use segment::data_types::vectors::{
-    only_default_vector, MultiDenseVector, QueryVector, VectorRef, DEFAULT_VECTOR_NAME,
+    only_default_vector, MultiDenseVector, QueryVector, VectorElementType, VectorRef,
+    DEFAULT_VECTOR_NAME,
 };
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::index_fixtures::random_vector;
@@ -16,6 +17,8 @@ use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::hnsw::HNSWIndex;
 use segment::index::VectorIndex;
 use segment::segment_constructor::build_segment;
+use segment::spaces::metric::Metric;
+use segment::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use segment::types::{
     Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, MultiVectorConfig, Payload,
     PayloadSchemaType, SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageType,
@@ -78,8 +81,21 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
     for n in 0..num_vectors {
         let idx = n.into();
         let vector = random_vector(&mut rnd, dim);
-        let vector_multi =
-            MultiDenseVector::new(distance.preprocess_vector(vector.clone()), vector.len());
+        let preprocessed_vector = match distance {
+            Distance::Cosine => {
+                <CosineMetric as Metric<VectorElementType>>::preprocess(vector.clone())
+            }
+            Distance::Euclid => {
+                <EuclidMetric as Metric<VectorElementType>>::preprocess(vector.clone())
+            }
+            Distance::Dot => {
+                <DotProductMetric as Metric<VectorElementType>>::preprocess(vector.clone())
+            }
+            Distance::Manhattan => {
+                <ManhattanMetric as Metric<VectorElementType>>::preprocess(vector.clone())
+            }
+        };
+        let vector_multi = MultiDenseVector::new(preprocessed_vector, vector.len());
 
         let int_payload = random_int_payload(&mut rnd, num_payload_values..=num_payload_values);
         let payload: Payload = json!({int_key:int_payload,}).into();

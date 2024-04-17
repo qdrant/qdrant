@@ -1052,7 +1052,7 @@ impl SegmentEntry for Segment {
     ) -> OperationResult<bool> {
         debug_assert!(self.is_appendable());
         check_named_vectors(&vectors, &self.segment_config)?;
-        vectors.preprocess(|name| self.segment_config.distance(name).unwrap());
+        vectors.preprocess(&self.segment_config);
         let stored_internal_point = self.id_tracker.borrow().internal_id(point_id);
         self.handle_point_version_and_failure(op_num, stored_internal_point, |segment| {
             if let Some(existing_internal_id) = stored_internal_point {
@@ -1105,7 +1105,7 @@ impl SegmentEntry for Segment {
         mut vectors: NamedVectors,
     ) -> OperationResult<bool> {
         check_named_vectors(&vectors, &self.segment_config)?;
-        vectors.preprocess(|name| self.segment_config.distance(name).unwrap());
+        vectors.preprocess(&self.segment_config);
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         match internal_id {
             None => Err(OperationError::PointIdError {

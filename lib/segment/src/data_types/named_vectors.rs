@@ -4,9 +4,13 @@ use std::collections::HashMap;
 use sparse::common::sparse_vector::SparseVector;
 
 use super::tiny_map;
-use super::vectors::{DenseVector, MultiDenseVector, Vector, VectorElementType, VectorRef};
+use super::vectors::{
+    DenseVector, MultiDenseVector, Vector, VectorElementType, VectorElementTypeByte, VectorRef,
+};
 use crate::common::operation_error::OperationError;
-use crate::types::Distance;
+use crate::spaces::metric::Metric;
+use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
+use crate::types::{Distance, SegmentConfig, VectorDataConfig, VectorStorageDatatype};
 
 type CowKey<'a> = Cow<'a, str>;
 
@@ -212,15 +216,12 @@ impl<'a> NamedVectors<'a> {
         self.map.get(key).map(|v| v.as_vec_ref())
     }
 
-    pub fn preprocess<F>(&mut self, distance_map: F)
-    where
-        F: Fn(&str) -> Distance,
-    {
+    pub fn preprocess(&mut self, segment_config: &SegmentConfig) {
         for (name, vector) in self.map.iter_mut() {
-            let distance = distance_map(name);
+            let config = segment_config.vector_data.get(name.as_ref()).unwrap();
             match vector {
                 CowVector::Dense(v) => {
-                    let preprocessed_vector = distance.preprocess_vector(v.to_vec());
+                    let preprocessed_vector = Self::preprocess_dense_vector(v.to_vec(), config);
                     *vector = CowVector::Dense(Cow::Owned(preprocessed_vector))
                 }
                 CowVector::Sparse(v) => {
@@ -229,12 +230,49 @@ impl<'a> NamedVectors<'a> {
                 }
                 CowVector::MultiDense(v) => {
                     for dense_vector in v.to_mut().multi_vectors_mut() {
-                        let preprocessed_vector = distance.preprocess_vector(dense_vector.to_vec());
+                        let preprocessed_vector =
+                            Self::preprocess_dense_vector(dense_vector.to_vec(), config);
                         // replace dense vector with preprocessed vector
                         dense_vector.copy_from_slice(&preprocessed_vector);
                     }
                 }
             }
+        }
+    }
+
+    fn preprocess_dense_vector(
+        dense_vector: DenseVector,
+        config: &VectorDataConfig,
+    ) -> DenseVector {
+        match config.datatype {
+            Some(VectorStorageDatatype::Float) | None => match config.distance {
+                Distance::Cosine => {
+                    <CosineMetric as Metric<VectorElementType>>::preprocess(dense_vector)
+                }
+                Distance::Euclid => {
+                    <EuclidMetric as Metric<VectorElementType>>::preprocess(dense_vector)
+                }
+                Distance::Dot => {
+                    <DotProductMetric as Metric<VectorElementType>>::preprocess(dense_vector)
+                }
+                Distance::Manhattan => {
+                    <ManhattanMetric as Metric<VectorElementType>>::preprocess(dense_vector)
+                }
+            },
+            Some(VectorStorageDatatype::Uint8) => match config.distance {
+                Distance::Cosine => {
+                    <CosineMetric as Metric<VectorElementTypeByte>>::preprocess(dense_vector)
+                }
+                Distance::Euclid => {
+                    <EuclidMetric as Metric<VectorElementTypeByte>>::preprocess(dense_vector)
+                }
+                Distance::Dot => {
+                    <DotProductMetric as Metric<VectorElementTypeByte>>::preprocess(dense_vector)
+                }
+                Distance::Manhattan => {
+                    <ManhattanMetric as Metric<VectorElementTypeByte>>::preprocess(dense_vector)
+                }
+            },
         }
     }
 }
