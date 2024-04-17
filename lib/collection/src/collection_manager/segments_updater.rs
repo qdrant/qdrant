@@ -300,10 +300,11 @@ fn upsert_with_payload(
     point_id: PointIdType,
     vectors: NamedVectors,
     payload: Option<&Payload>,
+    force: bool,
 ) -> OperationResult<bool> {
-    let mut res = segment.upsert_point(op_num, point_id, vectors, false)?;
+    let mut res = segment.upsert_point(op_num, point_id, vectors, force)?;
     if let Some(full_payload) = payload {
-        res &= segment.set_full_payload(op_num, point_id, full_payload, false)?;
+        res &= segment.set_full_payload(op_num, point_id, full_payload, force)?;
     }
     Ok(res)
 }
@@ -414,6 +415,7 @@ where
                 id,
                 point.get_vectors(),
                 point.payload.as_ref(),
+                false,
             )
         },
         |_| false,
@@ -442,6 +444,7 @@ where
                 point_id,
                 point.get_vectors(),
                 point.payload.as_ref(),
+                force,
             )? as usize;
         }
         RwLockWriteGuard::unlock_fair(write_segment);
