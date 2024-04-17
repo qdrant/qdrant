@@ -157,6 +157,9 @@ pub struct SegmentHolder {
 pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
 
 impl<'s> SegmentHolder {
+    /// Iterate over all segments with their IDs
+    ///
+    /// Appendable first, then non-appendable.
     pub fn iter(&'s self) -> impl Iterator<Item = (&SegmentId, &LockedSegment)> + 's {
         self.appendable_segments
             .iter()
@@ -268,9 +271,8 @@ impl<'s> SegmentHolder {
             .cloned()
     }
 
-    pub fn collect_non_appendable_and_appendable_segments(
-        &self,
-    ) -> (Vec<LockedSegment>, Vec<LockedSegment>) {
+    /// Get two separate lists for non-appendable and appendable locked segments
+    pub fn split_segments(&self) -> (Vec<LockedSegment>, Vec<LockedSegment>) {
         (
             self.non_appendable_segments.values().cloned().collect(),
             self.appendable_segments.values().cloned().collect(),
