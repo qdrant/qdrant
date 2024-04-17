@@ -2547,6 +2547,10 @@ mod tests {
     ///
     /// Apply if the point version is equal or higher. Always apply if the point does not exist
     /// yet.
+    ///
+    /// Before <https://github.com/qdrant/qdrant/pull/4060> this function would reject operations
+    /// on non-existent points if the operation ID was lower than the current segment version. That
+    /// should not happen, and this test asserts correct behavior.
     #[test]
     fn test_handle_point_version() {
         // Create base segment with a single point

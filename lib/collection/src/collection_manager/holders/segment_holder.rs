@@ -1075,6 +1075,11 @@ mod tests {
     /// More specifically, this tests the move is still applied correctly even if segments already
     /// have a newer version. That very situation can happen when replaying the WAL after a crash
     /// where only some of the segments have been flushed properly.
+    ///
+    /// Before <https://github.com/qdrant/qdrant/pull/4060> the copy and delete operation to move a
+    /// point to another segment may only be partially executed if an operation ID was given that
+    /// is older than the current segment version. It resulted in missing points. This test asserts
+    /// this cannot happen anymore.
     #[rstest::rstest]
     #[case::segments_older(false, false)]
     #[case::non_appendable_newer_appendable_older(true, false)]
