@@ -74,14 +74,14 @@ pub fn open_memmap_vector_storage_with_async_io(
     distance: Distance,
     with_async_io: bool,
 ) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
-    let storage = open_memmap_vector_storage_with_async_io_impl::<VectorElementTypeByte>(
+    let storage = open_memmap_vector_storage_with_async_io_impl::<VectorElementType>(
         path,
         dim,
         distance,
         with_async_io,
     )?;
     Ok(Arc::new(AtomicRefCell::new(
-        VectorStorageEnum::DenseMemmapByte(storage),
+        VectorStorageEnum::DenseMemmap(storage),
     )))
 }
 
