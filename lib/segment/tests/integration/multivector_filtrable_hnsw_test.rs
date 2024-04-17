@@ -150,10 +150,10 @@ fn test_multi_filterable_hnsw(
 
         let named_vectors = only_default_multi_vector(&multi_vec);
         segment
-            .upsert_point(n as SeqNumberType, idx, named_vectors)
+            .upsert_point(n as SeqNumberType, idx, named_vectors, false)
             .unwrap();
         segment
-            .set_full_payload(n as SeqNumberType, idx, &payload)
+            .set_full_payload(n as SeqNumberType, idx, &payload, false)
             .unwrap();
     }
 

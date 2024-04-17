@@ -58,7 +58,7 @@ fn test_graph_connectivity() {
         let vector = random_vector(&mut rnd, dim);
 
         segment
-            .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector))
+            .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector), false)
             .unwrap();
     }
 

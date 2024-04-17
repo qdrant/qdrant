@@ -31,7 +31,7 @@ fn test_building_new_segment() {
 
     // Include overlapping with segment1 to check the
     segment2
-        .upsert_point(100, 3.into(), only_default_vector(&[0., 0., 0., 0.]))
+        .upsert_point(100, 3.into(), only_default_vector(&[0., 0., 0., 0.]), false)
         .unwrap();
 
     builder.update_from(&segment1, &stopped).unwrap();
@@ -148,13 +148,13 @@ fn test_building_cancellation() {
 
     for idx in 0..2000 {
         baseline_segment
-            .upsert_point(1, idx.into(), only_default_vector(&[0., 0., 0., 0.]))
+            .upsert_point(1, idx.into(), only_default_vector(&[0., 0., 0., 0.]), false)
             .unwrap();
         segment
-            .upsert_point(1, idx.into(), only_default_vector(&[0., 0., 0., 0.]))
+            .upsert_point(1, idx.into(), only_default_vector(&[0., 0., 0., 0.]), false)
             .unwrap();
         segment_2
-            .upsert_point(1, idx.into(), only_default_vector(&[0., 0., 0., 0.]))
+            .upsert_point(1, idx.into(), only_default_vector(&[0., 0., 0., 0.]), false)
             .unwrap();
     }
 

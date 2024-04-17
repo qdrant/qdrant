@@ -84,10 +84,10 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
         let payload: Payload = json!({int_key:int_payload,}).into();
 
         segment
-            .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector))
+            .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector), false)
             .unwrap();
         segment
-            .set_full_payload(n as SeqNumberType, idx, &payload)
+            .set_full_payload(n as SeqNumberType, idx, &payload, false)
             .unwrap();
 
         let internal_id = segment.id_tracker.borrow().internal_id(idx).unwrap();

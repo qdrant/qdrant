@@ -654,6 +654,7 @@ mod tests {
             locked_holder.deref(),
             opnum.next().unwrap(),
             insert_point_ops,
+            false,
         )
         .unwrap();
 
@@ -723,6 +724,7 @@ mod tests {
             locked_holder.deref(),
             opnum.next().unwrap(),
             insert_point_ops,
+            false,
         )
         .unwrap();
     }

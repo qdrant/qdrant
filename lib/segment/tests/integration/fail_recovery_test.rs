@@ -15,10 +15,10 @@ fn test_insert_fail_recovery() {
     let mut segment = empty_segment(dir.path());
 
     segment
-        .upsert_point(1, 1.into(), only_default_vector(&vec1))
+        .upsert_point(1, 1.into(), only_default_vector(&vec1), false)
         .unwrap();
     segment
-        .upsert_point(1, 2.into(), only_default_vector(&vec1))
+        .upsert_point(1, 2.into(), only_default_vector(&vec1), false)
         .unwrap();
 
     segment.error_status = Some(SegmentFailedState {

@@ -631,7 +631,7 @@ fn sparse_vector_index_persistence_test() {
         named_vector.insert(SPARSE_VECTOR_NAME.to_owned(), vector);
         let idx = n.into();
         segment
-            .upsert_point(n as SeqNumberType, idx, named_vector)
+            .upsert_point(n as SeqNumberType, idx, named_vector, false)
             .unwrap();
     }
     segment.flush(true).unwrap();
@@ -900,7 +900,7 @@ fn sparse_vector_test_large_index() {
     named_vector.insert(SPARSE_VECTOR_NAME.to_owned(), vector);
     let idx = 0.into();
     segment
-        .upsert_point(0 as SeqNumberType, idx, named_vector)
+        .upsert_point(0 as SeqNumberType, idx, named_vector, false)
         .unwrap();
 
     let borrowed_vector_index = segment.vector_data[SPARSE_VECTOR_NAME]

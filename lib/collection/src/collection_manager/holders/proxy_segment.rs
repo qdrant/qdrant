@@ -901,13 +901,13 @@ mod tests {
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
         proxy_segment
-            .upsert_point(100, 4.into(), only_default_vector(&vec4))
+            .upsert_point(100, 4.into(), only_default_vector(&vec4), false)
             .unwrap();
         let vec6 = vec![1.0, 1.0, 0.5, 1.0];
         proxy_segment
-            .upsert_point(101, 6.into(), only_default_vector(&vec6))
+            .upsert_point(101, 6.into(), only_default_vector(&vec6), false)
             .unwrap();
-        proxy_segment.delete_point(102, 1.into()).unwrap();
+        proxy_segment.delete_point(102, 1.into(), false).unwrap();
 
         let query_vector = [1.0, 1.0, 1.0, 1.0].into();
         let search_result = proxy_segment

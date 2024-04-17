@@ -91,7 +91,7 @@ fn hnsw_discover_precision() {
         let vector = random_vector(&mut rnd, dim);
 
         segment
-            .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector))
+            .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector), false)
             .unwrap();
     }
 
@@ -207,10 +207,10 @@ fn filtered_hnsw_discover_precision() {
         let payload: Payload = json!({keyword_key:keyword_payload,}).into();
 
         segment
-            .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector))
+            .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector), false)
             .unwrap();
         segment
-            .set_full_payload(n as SeqNumberType, idx, &payload)
+            .set_full_payload(n as SeqNumberType, idx, &payload, false)
             .unwrap();
     }
 

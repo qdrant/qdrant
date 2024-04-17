@@ -83,7 +83,7 @@ fn hnsw_quantized_search_test(
         let idx = n.into();
         let vector = random_vector(&mut rnd, dim);
         segment
-            .upsert_point(op_num, idx, only_default_vector(&vector))
+            .upsert_point(op_num, idx, only_default_vector(&vector), false)
             .unwrap();
         op_num += 1;
     }
@@ -100,7 +100,9 @@ fn hnsw_quantized_search_test(
             }
         )
         .into();
-        segment.set_full_payload(op_num, idx, &payload).unwrap();
+        segment
+            .set_full_payload(op_num, idx, &payload, false)
+            .unwrap();
         op_num += 1;
     }
 
@@ -175,7 +177,7 @@ fn hnsw_quantized_search_test(
     for n in 0..num_vectors {
         let idx = n.into();
         segment
-            .upsert_point(op_num, idx, only_default_vector(&zero_vector))
+            .upsert_point(op_num, idx, only_default_vector(&zero_vector), false)
             .unwrap();
         op_num += 1;
     }

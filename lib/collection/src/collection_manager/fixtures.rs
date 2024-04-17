@@ -84,7 +84,9 @@ pub fn random_multi_vec_segment(
         let random_keyword = format!("keyword_{}", rnd.gen_range(1..10));
         let payload: Payload =
             json!({ payload_key: vec![payload_value], keyword_key: random_keyword}).into();
-        segment.upsert_point(opnum, point_id, vectors).unwrap();
+        segment
+            .upsert_point(opnum, point_id, vectors, false)
+            .unwrap();
         segment
             .set_payload(opnum, point_id, &payload, &None)
             .unwrap();
@@ -103,7 +105,7 @@ pub fn random_segment(path: &Path, opnum: SeqNumberType, num_vectors: u64, dim: 
         let payload_value = rnd.gen_range(1..1_000);
         let payload: Payload = json!({ payload_key: vec![payload_value] }).into();
         segment
-            .upsert_point(opnum, point_id, only_default_vector(&random_vector))
+            .upsert_point(opnum, point_id, only_default_vector(&random_vector), false)
             .unwrap();
         segment
             .set_payload(opnum, point_id, &payload, &None)
@@ -122,19 +124,19 @@ pub fn build_segment_1(path: &Path) -> Segment {
     let vec5 = vec![1.0, 0.0, 0.0, 0.0];
 
     segment1
-        .upsert_point(1, 1.into(), only_default_vector(&vec1))
+        .upsert_point(1, 1.into(), only_default_vector(&vec1), false)
         .unwrap();
     segment1
-        .upsert_point(2, 2.into(), only_default_vector(&vec2))
+        .upsert_point(2, 2.into(), only_default_vector(&vec2), false)
         .unwrap();
     segment1
-        .upsert_point(3, 3.into(), only_default_vector(&vec3))
+        .upsert_point(3, 3.into(), only_default_vector(&vec3), false)
         .unwrap();
     segment1
-        .upsert_point(4, 4.into(), only_default_vector(&vec4))
+        .upsert_point(4, 4.into(), only_default_vector(&vec4), false)
         .unwrap();
     segment1
-        .upsert_point(5, 5.into(), only_default_vector(&vec5))
+        .upsert_point(5, 5.into(), only_default_vector(&vec5), false)
         .unwrap();
 
     let payload_key = "color";
@@ -176,26 +178,26 @@ pub fn build_segment_2(path: &Path) -> Segment {
     let vec15 = vec![1.0, 1.0, 0.0, 0.0];
 
     segment2
-        .upsert_point(7, 4.into(), only_default_vector(&vec4))
+        .upsert_point(7, 4.into(), only_default_vector(&vec4), false)
         .unwrap();
     segment2
-        .upsert_point(8, 5.into(), only_default_vector(&vec5))
+        .upsert_point(8, 5.into(), only_default_vector(&vec5), false)
         .unwrap();
 
     segment2
-        .upsert_point(11, 11.into(), only_default_vector(&vec11))
+        .upsert_point(11, 11.into(), only_default_vector(&vec11), false)
         .unwrap();
     segment2
-        .upsert_point(12, 12.into(), only_default_vector(&vec12))
+        .upsert_point(12, 12.into(), only_default_vector(&vec12), false)
         .unwrap();
     segment2
-        .upsert_point(13, 13.into(), only_default_vector(&vec13))
+        .upsert_point(13, 13.into(), only_default_vector(&vec13), false)
         .unwrap();
     segment2
-        .upsert_point(14, 14.into(), only_default_vector(&vec14))
+        .upsert_point(14, 14.into(), only_default_vector(&vec14), false)
         .unwrap();
     segment2
-        .upsert_point(15, 15.into(), only_default_vector(&vec15))
+        .upsert_point(15, 15.into(), only_default_vector(&vec15), false)
         .unwrap();
 
     segment2

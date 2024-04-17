@@ -156,10 +156,10 @@ fn sparse_index_discover_test() {
 
         let idx = n.into();
         sparse_segment
-            .upsert_point(n as SeqNumberType, idx, sparse_vector)
+            .upsert_point(n as SeqNumberType, idx, sparse_vector, false)
             .unwrap();
         dense_segment
-            .upsert_point(n as SeqNumberType, idx, dense_vector)
+            .upsert_point(n as SeqNumberType, idx, dense_vector, false)
             .unwrap();
     }
 

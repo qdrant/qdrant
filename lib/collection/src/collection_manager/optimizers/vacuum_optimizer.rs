@@ -252,7 +252,11 @@ mod tests {
             .collect_vec();
 
         for &point_id in &segment_points_to_delete {
-            segment.get().write().delete_point(101, point_id).unwrap();
+            segment
+                .get()
+                .write()
+                .delete_point(101, point_id, false)
+                .unwrap();
         }
 
         let segment_points_to_assign1 = segment
@@ -528,7 +532,7 @@ mod tests {
                 .filter_map(|(i, point_id)| (i % 10 == 3).then_some(point_id))
                 .collect_vec();
             for &point_id in &segment_points_to_delete {
-                segment.delete_point(201, point_id).unwrap();
+                segment.delete_point(201, point_id, false).unwrap();
             }
 
             // Delete 25% of vectors named vector1

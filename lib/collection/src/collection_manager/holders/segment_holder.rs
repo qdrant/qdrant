@@ -1058,6 +1058,7 @@ mod tests {
                     Ok(true)
                 },
                 |_| update_nonappendable,
+                false,
             )
             .unwrap();
 

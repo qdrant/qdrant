@@ -80,16 +80,16 @@ fn build_test_segments(path_struct: &Path, path_plain: &Path) -> (Segment, Segme
         let payload: Payload = generate_diverse_payload(&mut rnd);
 
         plain_segment
-            .upsert_point(opnum, idx, only_default_vector(&vector))
+            .upsert_point(opnum, idx, only_default_vector(&vector), false)
             .unwrap();
         struct_segment
-            .upsert_point(opnum, idx, only_default_vector(&vector))
+            .upsert_point(opnum, idx, only_default_vector(&vector), false)
             .unwrap();
         plain_segment
-            .set_full_payload(opnum, idx, &payload)
+            .set_full_payload(opnum, idx, &payload, false)
             .unwrap();
         struct_segment
-            .set_full_payload(opnum, idx, &payload)
+            .set_full_payload(opnum, idx, &payload, false)
             .unwrap();
 
         opnum += 1;
@@ -156,10 +156,10 @@ fn build_test_segments(path_struct: &Path, path_plain: &Path) -> (Segment, Segme
         opnum += 1;
         let idx_to_remove = rnd.gen_range(0..num_points);
         plain_segment
-            .delete_point(opnum, idx_to_remove.into())
+            .delete_point(opnum, idx_to_remove.into(), false)
             .unwrap();
         struct_segment
-            .delete_point(opnum, idx_to_remove.into())
+            .delete_point(opnum, idx_to_remove.into(), false)
             .unwrap();
     }
 
@@ -234,16 +234,16 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
         let payload: Payload = generate_diverse_nested_payload(&mut rnd);
 
         plain_segment
-            .upsert_point(opnum, idx, only_default_vector(&vector))
+            .upsert_point(opnum, idx, only_default_vector(&vector), false)
             .unwrap();
         struct_segment
-            .upsert_point(opnum, idx, only_default_vector(&vector))
+            .upsert_point(opnum, idx, only_default_vector(&vector), false)
             .unwrap();
         plain_segment
-            .set_full_payload(opnum, idx, &payload)
+            .set_full_payload(opnum, idx, &payload, false)
             .unwrap();
         struct_segment
-            .set_full_payload(opnum, idx, &payload)
+            .set_full_payload(opnum, idx, &payload, false)
             .unwrap();
 
         opnum += 1;
@@ -264,10 +264,10 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
         opnum += 1;
         let idx_to_remove = rnd.gen_range(0..num_points);
         plain_segment
-            .delete_point(opnum, idx_to_remove.into())
+            .delete_point(opnum, idx_to_remove.into(), false)
             .unwrap();
         struct_segment
-            .delete_point(opnum, idx_to_remove.into())
+            .delete_point(opnum, idx_to_remove.into(), false)
             .unwrap();
     }
 

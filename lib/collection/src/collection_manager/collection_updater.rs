@@ -124,7 +124,7 @@ mod tests {
         ];
 
         let (num_deleted, num_new, num_updated) =
-            sync_points(&segments.read(), 100, Some(10.into()), None, &points).unwrap();
+            sync_points(&segments.read(), 100, Some(10.into()), None, &points, false).unwrap();
 
         assert_eq!(num_deleted, 1); // delete point 15
         assert_eq!(num_new, 1); // insert point 500
@@ -150,7 +150,7 @@ mod tests {
             },
         ];
 
-        let res = upsert_points(&segments.read(), 100, &points);
+        let res = upsert_points(&segments.read(), 100, &points, false);
         assert!(matches!(res, Ok(1)));
 
         let records = SegmentsSearcher::retrieve(
@@ -182,6 +182,7 @@ mod tests {
             PointOperations::DeletePoints {
                 ids: vec![500.into()],
             },
+            false,
         )
         .unwrap();
 

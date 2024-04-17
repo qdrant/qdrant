@@ -33,6 +33,7 @@ fn test_rebuild_with_removed_vectors() {
                     ("vector1".to_string(), vec![i as f32, 0., 0., 0.]),
                     ("vector2".to_string(), vec![0., i as f32, 0., 0., 0., 0.]),
                 ]),
+                false,
             )
             .unwrap();
     }
@@ -48,7 +49,7 @@ fn test_rebuild_with_removed_vectors() {
         };
 
         segment2
-            .upsert_point(1, (NUM_VECTORS_1 + i).into(), vectors)
+            .upsert_point(1, (NUM_VECTORS_1 + i).into(), vectors, false)
             .unwrap();
     }
 
@@ -68,7 +69,7 @@ fn test_rebuild_with_removed_vectors() {
         }
         if i % 2 == 0 {
             segment2
-                .delete_point(2, (NUM_VECTORS_1 + i).into())
+                .delete_point(2, (NUM_VECTORS_1 + i).into(), false)
                 .unwrap();
         }
     }

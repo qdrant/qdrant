@@ -25,19 +25,19 @@ pub fn build_segment_1(path: &Path) -> Segment {
     let vec5 = vec![1.0, 0.0, 0.0, 0.0];
 
     segment1
-        .upsert_point(1, 1.into(), only_default_vector(&vec1))
+        .upsert_point(1, 1.into(), only_default_vector(&vec1), false)
         .unwrap();
     segment1
-        .upsert_point(2, 2.into(), only_default_vector(&vec2))
+        .upsert_point(2, 2.into(), only_default_vector(&vec2), false)
         .unwrap();
     segment1
-        .upsert_point(3, 3.into(), only_default_vector(&vec3))
+        .upsert_point(3, 3.into(), only_default_vector(&vec3), false)
         .unwrap();
     segment1
-        .upsert_point(4, 4.into(), only_default_vector(&vec4))
+        .upsert_point(4, 4.into(), only_default_vector(&vec4), false)
         .unwrap();
     segment1
-        .upsert_point(5, 5.into(), only_default_vector(&vec5))
+        .upsert_point(5, 5.into(), only_default_vector(&vec5), false)
         .unwrap();
 
     let payload_key = "color";
@@ -76,19 +76,19 @@ pub fn build_segment_2(path: &Path) -> Segment {
     let vec5 = vec![-1.0, 0.0, 0.0, 0.0];
 
     segment2
-        .upsert_point(11, 11.into(), only_default_vector(&vec1))
+        .upsert_point(11, 11.into(), only_default_vector(&vec1), false)
         .unwrap();
     segment2
-        .upsert_point(12, 12.into(), only_default_vector(&vec2))
+        .upsert_point(12, 12.into(), only_default_vector(&vec2), false)
         .unwrap();
     segment2
-        .upsert_point(13, 13.into(), only_default_vector(&vec3))
+        .upsert_point(13, 13.into(), only_default_vector(&vec3), false)
         .unwrap();
     segment2
-        .upsert_point(14, 14.into(), only_default_vector(&vec4))
+        .upsert_point(14, 14.into(), only_default_vector(&vec4), false)
         .unwrap();
     segment2
-        .upsert_point(15, 15.into(), only_default_vector(&vec5))
+        .upsert_point(15, 15.into(), only_default_vector(&vec5), false)
         .unwrap();
 
     let payload_key = "color";
@@ -198,19 +198,19 @@ pub fn build_segment_3(path: &Path) -> Segment {
     ];
 
     segment3
-        .upsert_point(1, 1.into(), collect_points_data(&vec1))
+        .upsert_point(1, 1.into(), collect_points_data(&vec1), false)
         .unwrap();
     segment3
-        .upsert_point(2, 2.into(), collect_points_data(&vec2))
+        .upsert_point(2, 2.into(), collect_points_data(&vec2), false)
         .unwrap();
     segment3
-        .upsert_point(3, 3.into(), collect_points_data(&vec3))
+        .upsert_point(3, 3.into(), collect_points_data(&vec3), false)
         .unwrap();
     segment3
-        .upsert_point(4, 4.into(), collect_points_data(&vec4))
+        .upsert_point(4, 4.into(), collect_points_data(&vec4), false)
         .unwrap();
     segment3
-        .upsert_point(5, 5.into(), collect_points_data(&vec5))
+        .upsert_point(5, 5.into(), collect_points_data(&vec5), false)
         .unwrap();
 
     let payload_key = "color";

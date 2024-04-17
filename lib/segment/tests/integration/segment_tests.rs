@@ -141,6 +141,7 @@ fn test_missed_vector_name() {
                 ("vector2".to_owned(), vec![10.]),
                 ("vector3".to_owned(), vec![5., 6., 7., 8.]),
             ]),
+            false,
         )
         .unwrap();
     assert!(exists, "this partial vector should overwrite existing");
@@ -153,6 +154,7 @@ fn test_missed_vector_name() {
                 ("vector2".to_owned(), vec![10.]),
                 ("vector3".to_owned(), vec![5., 6., 7., 8.]),
             ]),
+            false,
         )
         .unwrap();
     assert!(!exists, "this partial vector should not existing");
@@ -172,6 +174,7 @@ fn test_vector_name_not_exists() {
             ("vector3".to_owned(), vec![5., 6., 7., 8.]),
             ("vector4".to_owned(), vec![5., 6., 7., 8.]),
         ]),
+        false,
     );
 
     if let Err(OperationError::VectorNameNotExists { received_name }) = result {
@@ -187,8 +190,8 @@ fn ordered_deletion_test() {
 
     let path = {
         let mut segment = build_segment_1(dir.path());
-        segment.delete_point(6, 5.into()).unwrap();
-        segment.delete_point(6, 4.into()).unwrap();
+        segment.delete_point(6, 5.into(), false).unwrap();
+        segment.delete_point(6, 4.into(), false).unwrap();
         segment.flush(true).unwrap();
         segment.current_path.clone()
     };
@@ -219,8 +222,8 @@ fn skip_deleted_segment() {
 
     let path = {
         let mut segment = build_segment_1(dir.path());
-        segment.delete_point(6, 5.into()).unwrap();
-        segment.delete_point(6, 4.into()).unwrap();
+        segment.delete_point(6, 5.into(), false).unwrap();
+        segment.delete_point(6, 4.into(), false).unwrap();
         segment.flush(true).unwrap();
         segment.current_path.clone()
     };
@@ -249,7 +252,7 @@ fn test_update_named_vector() {
     for (i, vec) in vectors.iter().enumerate() {
         let i = i as u64;
         segment
-            .upsert_point(i, i.into(), only_default_vector(vec))
+            .upsert_point(i, i.into(), only_default_vector(vec), false)
             .unwrap();
     }
 

@@ -78,7 +78,7 @@ fn test_update_proxy_segments() {
                 payload: None,
             },
         ];
-        upsert_points(&segments.read(), 1000 + i, &points).unwrap();
+        upsert_points(&segments.read(), 1000 + i, &points, false).unwrap();
     }
 
     let all_ids = segments
@@ -123,7 +123,7 @@ fn test_move_points_to_copy_on_write() {
         },
     ];
 
-    upsert_points(&segments.read(), 1001, &points).unwrap();
+    upsert_points(&segments.read(), 1001, &points, false).unwrap();
 
     let points = vec![
         PointStruct {
@@ -138,7 +138,7 @@ fn test_move_points_to_copy_on_write() {
         },
     ];
 
-    upsert_points(&segments.read(), 1002, &points).unwrap();
+    upsert_points(&segments.read(), 1002, &points, false).unwrap();
 
     let segments_write = segments.write();
 

@@ -1838,13 +1838,13 @@ mod tests {
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
         segment
-            .upsert_point(100, 4.into(), only_default_vector(&vec4))
+            .upsert_point(100, 4.into(), only_default_vector(&vec4), false)
             .unwrap();
         let vec6 = vec![1.0, 1.0, 0.5, 1.0];
         segment
-            .upsert_point(101, 6.into(), only_default_vector(&vec6))
+            .upsert_point(101, 6.into(), only_default_vector(&vec6), false)
             .unwrap();
-        segment.delete_point(102, 1.into()).unwrap();
+        segment.delete_point(102, 1.into(), false).unwrap();
 
         let query_vector = [1.0, 1.0, 1.0, 1.0].into();
         let search_result = segment
@@ -1911,12 +1911,14 @@ mod tests {
 
         let mut segment = build_segment(dir.path(), &config, true).unwrap();
         segment
-            .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]))
+            .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]), false)
             .unwrap();
 
         let payload: Payload = serde_json::from_str(data).unwrap();
 
-        segment.set_full_payload(0, 0.into(), &payload).unwrap();
+        segment
+            .set_full_payload(0, 0.into(), &payload, false)
+            .unwrap();
 
         let filter_valid_str = r#"
         {
@@ -2003,11 +2005,11 @@ mod tests {
         let mut segment = build_segment(segment_base_dir.path(), &config, true).unwrap();
 
         segment
-            .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]))
+            .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]), false)
             .unwrap();
 
         segment
-            .set_full_payload(1, 0.into(), &serde_json::from_str(data).unwrap())
+            .set_full_payload(1, 0.into(), &serde_json::from_str(data).unwrap(), false)
             .unwrap();
 
         let snapshot_dir = Builder::new().prefix("snapshot_dir").tempdir().unwrap();
@@ -2098,11 +2100,13 @@ mod tests {
 
         let mut segment = build_segment(segment_base_dir.path(), &config, true).unwrap();
         segment
-            .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]))
+            .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]), false)
             .unwrap();
 
         let payload: Payload = serde_json::from_str(data).unwrap();
-        segment.set_full_payload(0, 0.into(), &payload).unwrap();
+        segment
+            .set_full_payload(0, 0.into(), &payload, false)
+            .unwrap();
         segment.flush(false).unwrap();
 
         // call flush second time to check that background flush finished successful
@@ -2132,11 +2136,11 @@ mod tests {
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
         segment
-            .upsert_point(100, 4.into(), only_default_vector(&vec4))
+            .upsert_point(100, 4.into(), only_default_vector(&vec4), false)
             .unwrap();
         let vec6 = vec![1.0, 1.0, 0.5, 1.0];
         segment
-            .upsert_point(101, 6.into(), only_default_vector(&vec6))
+            .upsert_point(101, 6.into(), only_default_vector(&vec6), false)
             .unwrap();
 
         // first pass on consistent data
@@ -2226,23 +2230,23 @@ mod tests {
 
         // Insert point ID 4 and 6, assert counts
         segment
-            .upsert_point(100, 4.into(), only_default_vector(&[0.4]))
+            .upsert_point(100, 4.into(), only_default_vector(&[0.4]), false)
             .unwrap();
         segment
-            .upsert_point(101, 6.into(), only_default_vector(&[0.6]))
+            .upsert_point(101, 6.into(), only_default_vector(&[0.6]), false)
             .unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 2);
         assert_eq!(segment_info.num_vectors, 2);
 
         // Delete nonexistent point, counts should remain the same
-        segment.delete_point(102, 1.into()).unwrap();
+        segment.delete_point(102, 1.into(), false).unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 2);
         assert_eq!(segment_info.num_vectors, 2);
 
         // Delete point 4, counts should decrease by 1
-        segment.delete_point(103, 4.into()).unwrap();
+        segment.delete_point(103, 4.into(), false).unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 1);
         assert_eq!(segment_info.num_vectors, 2); // We don't propagate deletes to vectors at this time
@@ -2296,6 +2300,7 @@ mod tests {
                 100,
                 4.into(),
                 NamedVectors::from([("a".into(), vec![0.4]), ("b".into(), vec![0.5])]),
+                false,
             )
             .unwrap();
         segment
@@ -2303,16 +2308,23 @@ mod tests {
                 101,
                 6.into(),
                 NamedVectors::from([("a".into(), vec![0.6]), ("b".into(), vec![0.7])]),
+                false,
             )
             .unwrap();
         segment
-            .upsert_point(102, 8.into(), NamedVectors::from([("a".into(), vec![0.0])]))
+            .upsert_point(
+                102,
+                8.into(),
+                NamedVectors::from([("a".into(), vec![0.0])]),
+                false,
+            )
             .unwrap();
         segment
             .upsert_point(
                 103,
                 10.into(),
                 NamedVectors::from([("b".into(), vec![1.0])]),
+                false,
             )
             .unwrap();
         let segment_info = segment.info();
@@ -2320,13 +2332,13 @@ mod tests {
         assert_eq!(segment_info.num_vectors, 6);
 
         // Delete nonexistent point, counts should remain the same
-        segment.delete_point(104, 1.into()).unwrap();
+        segment.delete_point(104, 1.into(), false).unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 4);
         assert_eq!(segment_info.num_vectors, 6);
 
         // Delete point 4, counts should decrease by 1
-        segment.delete_point(105, 4.into()).unwrap();
+        segment.delete_point(105, 4.into(), false).unwrap();
         let segment_info = segment.info();
         assert_eq!(segment_info.num_points, 3);
         assert_eq!(segment_info.num_vectors, 6); // We don't propagate deletes to vectors at this time
@@ -2408,6 +2420,7 @@ mod tests {
                     ("a".into(), vec![0.1, 0.2, 0.3, 0.4]),
                     ("b".into(), vec![1.0, 0.9]),
                 ]),
+                false,
             )
             .unwrap();
         let internal_id = segment.lookup_internal_id(point_id).unwrap();
@@ -2497,7 +2510,7 @@ mod tests {
         for vectors in wrong_vectors_multi {
             check_named_vectors(&vectors, &config).err().unwrap();
             segment
-                .upsert_point(101, point_id, vectors.clone())
+                .upsert_point(101, point_id, vectors.clone(), false)
                 .err()
                 .unwrap();
             segment
