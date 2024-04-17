@@ -1,4 +1,4 @@
-use std::cmp::max;
+use std::cmp;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -247,7 +247,7 @@ impl ProxySegment {
 
 impl SegmentEntry for ProxySegment {
     fn version(&self) -> SeqNumberType {
-        max(
+        cmp::max(
             self.wrapped_segment.get().read().version(),
             self.write_segment.get().read().version(),
         )
@@ -703,27 +703,22 @@ impl SegmentEntry for ProxySegment {
         let deleted_indexes_guard = self.deleted_indexes.read();
         let created_indexes_guard = self.created_indexes.read();
 
-        if deleted_points_guard.is_empty()
+        let wrapped_version = self.wrapped_segment.get().read().flush(sync)?;
+        let write_segment_version = self.write_segment.get().read().flush(sync)?;
+
+        let is_all_empty = deleted_points_guard.is_empty()
             && deleted_indexes_guard.is_empty()
-            && created_indexes_guard.is_empty()
-        {
-            // Proxy changes are empty, therefore it is safe to flush write segment
-            // This workaround only makes sense in a context of batch update of new points:
-            //  - initial upload
-            //  - incremental updates
-            let wrapped_version = self.wrapped_segment.get().read().flush(sync)?;
-            let write_segment_version = self.write_segment.get().read().flush(sync)?;
-            let flushed_version = max(wrapped_version, write_segment_version);
-            *self.last_flushed_version.write() = Some(flushed_version);
-            Ok(flushed_version)
+            && created_indexes_guard.is_empty();
+
+        let flushed_version = if is_all_empty {
+            cmp::max(write_segment_version, wrapped_version)
         } else {
-            let _write_segment_version = self.write_segment.get().read().flush(sync)?;
-            // If intermediate state is not empty - that is possible that some changes are not persisted
-            Ok(self
-                .last_flushed_version
-                .read()
-                .unwrap_or_else(|| self.wrapped_segment.get().read().version()))
-        }
+            cmp::min(write_segment_version, wrapped_version)
+        };
+
+        let _ = self.last_flushed_version.write().insert(flushed_version);
+
+        Ok(flushed_version)
     }
 
     fn drop_data(self) -> OperationResult<()> {
