@@ -4,7 +4,7 @@ use std::time::Instant;
 use chrono::{NaiveDateTime, Timelike};
 use segment::data_types::integer_index::IntegerIndexType;
 use segment::data_types::text_index::TextIndexType;
-use segment::data_types::vectors::DenseVector;
+use segment::data_types::vectors::{DenseVector, MultiDenseVector, NamedMultiDenseVector};
 use segment::json_path::JsonPath;
 use segment::types::{default_quantization_ignore_value, DateTimePayloadType, FloatPayloadType};
 use tonic::Status;
@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use super::qdrant::{
     start_from, BinaryQuantization, CompressionRatio, DatetimeRange, Direction, GeoLineString,
-    GroupId, OrderBy, Range, SparseIndices, StartFrom,
+    GroupId, MaxSim, MultiVectorConfig, OrderBy, Range, SparseIndices, StartFrom,
 };
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
@@ -480,16 +480,22 @@ impl From<segment::data_types::vectors::Vector> for Vector {
             segment::data_types::vectors::Vector::Dense(vector) => Self {
                 data: vector,
                 indices: None,
+                tokens_count: None,
             },
             segment::data_types::vectors::Vector::Sparse(vector) => Self {
                 data: vector.values,
                 indices: Some(SparseIndices {
                     data: vector.indices,
                 }),
+                tokens_count: None,
             },
-            segment::data_types::vectors::Vector::MultiDense(_vector) => {
-                // TODO(colbert)
-                unimplemented!("MultiDenseVector is not supported")
+            segment::data_types::vectors::Vector::MultiDense(vector) => {
+                let tokens_count = vector.multi_vectors().count() as u32;
+                Self {
+                    data: vector.inner_vector,
+                    indices: None,
+                    tokens_count: Some(tokens_count),
+                }
             }
         }
     }
@@ -499,17 +505,28 @@ impl TryFrom<Vector> for segment::data_types::vectors::Vector {
     type Error = Status;
 
     fn try_from(vector: Vector) -> Result<Self, Self::Error> {
-        Ok(match vector.indices {
-            None => segment::data_types::vectors::Vector::Dense(vector.data),
-            Some(indices) => segment::data_types::vectors::Vector::Sparse(
+        // sparse vector
+        if let Some(indices) = vector.indices {
+            return Ok(segment::data_types::vectors::Vector::Sparse(
                 sparse::common::sparse_vector::SparseVector::new(indices.data, vector.data)
                     .map_err(|_| {
                         Status::invalid_argument(
                             "Sparse indices does not match sparse vector conditions",
                         )
                     })?,
-            ),
-        })
+            ));
+        }
+
+        // multivector
+        if let Some(tokens_count) = vector.tokens_count {
+            // TODO prevent division by zero
+            let dim = vector.data.len() / tokens_count as usize;
+            let multi = MultiDenseVector::new(vector.data, dim);
+            return Ok(segment::data_types::vectors::Vector::MultiDense(multi));
+        }
+
+        // dense vector
+        Ok(segment::data_types::vectors::Vector::Dense(vector.data))
     }
 }
 
@@ -599,6 +616,11 @@ impl TryFrom<Vectors> for segment::data_types::vectors::VectorStruct {
         match vectors.vectors_options {
             Some(vectors_options) => Ok(match vectors_options {
                 VectorsOptions::Vector(vector) => {
+                    if vector.tokens_count.is_some() {
+                        return Err(Status::invalid_argument(
+                            "Multivector must be named".to_string(),
+                        ));
+                    }
                     segment::data_types::vectors::VectorStruct::Single(vector.data)
                 }
                 VectorsOptions::Vectors(vectors) => {
@@ -791,6 +813,47 @@ impl TryFrom<QuantizationConfig> for segment::types::QuantizationConfig {
                 segment::types::QuantizationConfig::Binary(config.try_into()?),
             ),
         }
+    }
+}
+
+impl From<segment::types::MultiVectorConfig> for MultiVectorConfig {
+    fn from(value: segment::types::MultiVectorConfig) -> Self {
+        match value {
+            segment::types::MultiVectorConfig::MaxSim(max_sim) => Self {
+                multivector: Some(super::qdrant::multi_vector_config::Multivector::MaxSim(
+                    max_sim.into(),
+                )),
+            },
+        }
+    }
+}
+
+impl TryFrom<MultiVectorConfig> for segment::types::MultiVectorConfig {
+    type Error = Status;
+
+    fn try_from(value: MultiVectorConfig) -> Result<Self, Self::Error> {
+        let value = value
+            .multivector
+            .ok_or_else(|| Status::invalid_argument("Unable to convert multivector config"))?;
+        match value {
+            super::qdrant::multi_vector_config::Multivector::MaxSim(config) => Ok(
+                segment::types::MultiVectorConfig::MaxSim(config.try_into()?),
+            ),
+        }
+    }
+}
+
+impl From<segment::types::MaxSimConfig> for MaxSim {
+    fn from(_value: segment::types::MaxSimConfig) -> Self {
+        Self {}
+    }
+}
+
+impl TryFrom<MaxSim> for segment::types::MaxSimConfig {
+    type Error = Status;
+
+    fn try_from(_value: MaxSim) -> Result<Self, Self::Error> {
+        Ok(segment::types::MaxSimConfig {})
     }
 }
 
@@ -1427,28 +1490,42 @@ pub fn into_named_vector_struct(
     vector_name: Option<String>,
     vector: DenseVector,
     indices: Option<SparseIndices>,
+    tokens_count: Option<u32>,
 ) -> Result<segment::data_types::vectors::NamedVectorStruct, Status> {
     use segment::data_types::vectors::{NamedSparseVector, NamedVector, NamedVectorStruct};
     use sparse::common::sparse_vector::SparseVector;
-    Ok(match indices {
-        Some(indices) => NamedVectorStruct::Sparse(NamedSparseVector {
+    // sparse vectors
+    if let Some(indices) = indices {
+        return Ok(NamedVectorStruct::Sparse(NamedSparseVector {
             name: vector_name
                 .ok_or_else(|| Status::invalid_argument("Sparse vector must have a name"))?,
             vector: SparseVector::new(indices.data, vector).map_err(|_| {
                 Status::invalid_argument("Sparse indices does not match sparse vector conditions")
             })?,
-        }),
-        None => {
-            if let Some(vector_name) = vector_name {
-                NamedVectorStruct::Dense(NamedVector {
-                    name: vector_name,
-                    vector,
-                })
-            } else {
-                NamedVectorStruct::Default(vector)
-            }
-        }
-    })
+        }));
+    }
+
+    // multivector
+    if let Some(tokens_count) = tokens_count {
+        // TODO(colbert) division by zero
+        let dim = vector.len() / tokens_count as usize;
+        let multi_vector = MultiDenseVector::new(vector, dim);
+        return Ok(NamedVectorStruct::MultiDense(NamedMultiDenseVector {
+            name: vector_name
+                .ok_or_else(|| Status::invalid_argument("Multivector must have a name"))?,
+            vector: multi_vector,
+        }));
+    }
+
+    // dense
+    if let Some(vector_name) = vector_name {
+        Ok(NamedVectorStruct::Dense(NamedVector {
+            name: vector_name,
+            vector,
+        }))
+    } else {
+        Ok(NamedVectorStruct::Default(vector))
+    }
 }
 
 impl From<PointsOperationResponseInternal> for PointsOperationResponse {

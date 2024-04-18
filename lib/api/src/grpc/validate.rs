@@ -1,7 +1,9 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-use common::validation::{validate_range_generic, validate_shard_different_peers};
+use common::validation::{
+    validate_multi_vector_len, validate_range_generic, validate_shard_different_peers,
+};
 use validator::{Validate, ValidationError, ValidationErrors};
 
 use super::qdrant as grpc;
@@ -70,7 +72,19 @@ impl Validate for grpc::vectors_config::Config {
     fn validate(&self) -> Result<(), ValidationErrors> {
         use grpc::vectors_config::Config;
         match self {
-            Config::Params(params) => params.validate(),
+            Config::Params(params) => {
+                if params.multivector_config.is_some() {
+                    let mut err = ValidationErrors::new();
+                    err.add(
+                        "multivector_config",
+                        ValidationError::new(
+                            "Multivector configuration is not supported for anonymous vectors",
+                        ),
+                    );
+                    return Err(err);
+                }
+                params.validate()
+            }
             Config::ParamsMap(params_map) => params_map.validate(),
         }
     }
@@ -222,11 +236,20 @@ impl Validate for grpc::FieldCondition {
 
 impl Validate for grpc::Vector {
     fn validate(&self) -> Result<(), ValidationErrors> {
+        // sparse vector
         if let Some(indices) = &self.indices {
-            sparse::common::sparse_vector::validate_sparse_vector_impl(&indices.data, &self.data)
-        } else {
-            Ok(())
+            return sparse::common::sparse_vector::validate_sparse_vector_impl(
+                &indices.data,
+                &self.data,
+            );
         }
+
+        // multivector
+        if let Some(tokens_count) = self.tokens_count {
+            return validate_multi_vector_len(tokens_count, &self.data);
+        }
+
+        Ok(())
     }
 }
 

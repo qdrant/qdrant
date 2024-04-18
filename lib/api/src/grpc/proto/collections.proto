@@ -15,6 +15,7 @@ message VectorParams {
   optional QuantizationConfig quantization_config = 4; // Configuration of vector quantization config. If omitted - the collection configuration will be used
   optional bool on_disk = 5; // If true - serve vectors from disk. If set to false, the vectors will be loaded in RAM.
   optional Datatype datatype = 6; // Data type of the vectors
+  optional MultiVectorConfig multivector_config = 7; // Configuration of multi-vector search
 }
 
 message VectorParamsDiff {
@@ -286,6 +287,16 @@ message QuantizationConfigDiff {
 enum ShardingMethod {
   Auto = 0; // Auto-sharding based on record ids
   Custom = 1; // Shard by user-defined key
+}
+
+message MaxSim {
+
+}
+
+message MultiVectorConfig {
+    oneof multivector {
+        MaxSim max_sim = 1;
+    }
 }
 
 message CreateCollection {

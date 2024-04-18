@@ -1,14 +1,13 @@
 use super::schema::{BatchVectorStruct, ScoredPoint, Vector, VectorStruct};
-use crate::rest::{DenseVector, NamedVectorStruct};
+use crate::rest::{DenseVector, MultiDenseVector, NamedVectorStruct};
 
 impl From<segment::data_types::vectors::Vector> for Vector {
     fn from(value: segment::data_types::vectors::Vector) -> Self {
         match value {
             segment::data_types::vectors::Vector::Dense(vector) => Vector::Dense(vector),
             segment::data_types::vectors::Vector::Sparse(vector) => Vector::Sparse(vector),
-            segment::data_types::vectors::Vector::MultiDense(_vector) => {
-                // TODO(colbert)
-                unimplemented!()
+            segment::data_types::vectors::Vector::MultiDense(vector) => {
+                Vector::MultiDense(vector.into())
             }
         }
     }
@@ -19,6 +18,9 @@ impl From<Vector> for segment::data_types::vectors::Vector {
         match value {
             Vector::Dense(vector) => segment::data_types::vectors::Vector::Dense(vector),
             Vector::Sparse(vector) => segment::data_types::vectors::Vector::Sparse(vector),
+            Vector::MultiDense(vector) => {
+                segment::data_types::vectors::Vector::MultiDense(vector.into())
+            }
         }
     }
 }
@@ -156,5 +158,23 @@ impl From<DenseVector> for NamedVectorStruct {
 impl From<segment::data_types::vectors::NamedVector> for NamedVectorStruct {
     fn from(v: segment::data_types::vectors::NamedVector) -> Self {
         NamedVectorStruct::Dense(v)
+    }
+}
+
+impl From<MultiDenseVector> for segment::data_types::vectors::MultiDenseVector {
+    fn from(v: MultiDenseVector) -> Self {
+        segment::data_types::vectors::MultiDenseVector {
+            inner_vector: v.inner_vector,
+            dim: v.dim,
+        }
+    }
+}
+
+impl From<segment::data_types::vectors::MultiDenseVector> for MultiDenseVector {
+    fn from(v: segment::data_types::vectors::MultiDenseVector) -> Self {
+        MultiDenseVector {
+            inner_vector: v.inner_vector,
+            dim: v.dim,
+        }
     }
 }

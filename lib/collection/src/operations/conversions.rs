@@ -552,6 +552,10 @@ impl TryFrom<api::grpc::qdrant::VectorParams> for VectorParams {
                 .transpose()?,
             on_disk: vector_params.on_disk,
             datatype: convert_datatype_from_proto(vector_params.datatype)?,
+            multivector_config: vector_params
+                .multivector_config
+                .map(TryInto::try_into)
+                .transpose()?,
         })
     }
 }
@@ -792,7 +796,7 @@ impl TryFrom<api::grpc::qdrant::PointStruct> for PointStruct {
 
         let vector_struct: VectorStruct = match vectors {
             None => return Err(Status::invalid_argument("Expected some vectors")),
-            Some(vectors) => vectors.try_into()?,
+            Some(vectors) => VectorStruct::try_from(vectors)?,
         };
 
         Ok(Self {
@@ -988,6 +992,7 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for CoreSearchRequest {
             timeout: _,
             shard_key_selector: _,
             sparse_indices,
+            tokens_count,
         } = value;
 
         if let Some(sparse_indices) = &sparse_indices {
@@ -996,8 +1001,12 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for CoreSearchRequest {
             })?;
         }
 
-        let vector_struct =
-            api::grpc::conversions::into_named_vector_struct(vector_name, vector, sparse_indices)?;
+        let vector_struct = api::grpc::conversions::into_named_vector_struct(
+            vector_name,
+            vector,
+            sparse_indices,
+            tokens_count,
+        )?;
 
         Ok(Self {
             query: QueryEnum::Nearest(vector_struct),
@@ -1049,6 +1058,7 @@ impl<'a> From<CollectionSearchRequest<'a>> for api::grpc::qdrant::SearchPoints {
             timeout: None,
             shard_key_selector: None,
             sparse_indices,
+            tokens_count: None, // TODO(colbert) check this usage
         }
     }
 }
@@ -1193,6 +1203,7 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
                             value.vector_name,
                             vector.data,
                             vector.indices.clone(),
+                            vector.tokens_count,
                         )?)
                     }
                     api::grpc::qdrant::query_enum::Query::RecommendBestScore(query) => {
@@ -1275,6 +1286,7 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for SearchRequestInternal {
                 value.vector_name,
                 value.vector,
                 value.sparse_indices,
+                value.tokens_count,
             )?
             .into(),
             filter: value.filter.map(|f| f.try_into()).transpose()?,
@@ -1312,6 +1324,7 @@ impl TryFrom<api::grpc::qdrant::SearchPointGroups> for SearchGroupsRequestIntern
             timeout: None,
             shard_key_selector: None,
             sparse_indices: value.sparse_indices,
+            tokens_count: value.tokens_count,
         };
 
         if let Some(sparse_indices) = &search_points.sparse_indices {
@@ -1634,6 +1647,7 @@ impl From<VectorParams> for api::grpc::qdrant::VectorParams {
             datatype: value
                 .datatype
                 .map(|dt| api::grpc::qdrant::Datatype::from(dt).into()),
+            multivector_config: value.multivector_config.map(Into::into),
         }
     }
 }

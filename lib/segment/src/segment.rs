@@ -1023,6 +1023,7 @@ impl SegmentEntry for Segment {
         is_stopped: &AtomicBool,
         search_optimized_threshold_kb: usize,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
+        // TODO place to expand Dense vectors targeting MultiDense indexes transparently without `tokens_count` but I do not like this option
         check_query_vectors(vector_name, query_vectors, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
         let internal_results = vector_data.vector_index.borrow().search(

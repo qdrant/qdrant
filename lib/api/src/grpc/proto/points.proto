@@ -47,8 +47,9 @@ message SparseIndices {
 }
 
 message Vector {
-  repeated float data = 1;
-  optional SparseIndices indices = 2;
+  repeated float data = 1; // Vector data (flatten for multi-dimensional vectors)
+  optional SparseIndices indices = 2; // Sparse indices for sparse vectors
+  optional uint32 tokens_count = 3; // Number of tokens in the vector
 }
 
 // ---------------------------------------------
@@ -267,6 +268,7 @@ message SearchPoints {
   optional uint64 timeout = 13; // If set, overrides global timeout setting for this request. Unit is seconds.
   optional ShardKeySelector shard_key_selector = 14; // Specify in which shards to look for the points, if not specified - look in all shards
   optional SparseIndices sparse_indices = 15;
+  optional uint32 tokens_count = 16;
 }
 
 message SearchBatchPoints {
@@ -300,6 +302,7 @@ message SearchPointGroups {
   optional uint64 timeout = 14; // If set, overrides global timeout setting for this request. Unit is seconds.
   optional ShardKeySelector shard_key_selector = 15; // Specify in which shards to look for the points, if not specified - look in all shards
   optional SparseIndices sparse_indices = 16;
+  optional uint32 tokens_count = 17;
 }
 
 enum Direction {

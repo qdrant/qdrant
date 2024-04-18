@@ -42,7 +42,9 @@
     - [ListCollectionsRequest](#qdrant-ListCollectionsRequest)
     - [ListCollectionsResponse](#qdrant-ListCollectionsResponse)
     - [LocalShardInfo](#qdrant-LocalShardInfo)
+    - [MaxSim](#qdrant-MaxSim)
     - [MoveShard](#qdrant-MoveShard)
+    - [MultiVectorConfig](#qdrant-MultiVectorConfig)
     - [OptimizerStatus](#qdrant-OptimizerStatus)
     - [OptimizersConfigDiff](#qdrant-OptimizersConfigDiff)
     - [PayloadIndexParams](#qdrant-PayloadIndexParams)
@@ -880,6 +882,16 @@
 
 
 
+<a name="qdrant-MaxSim"></a>
+
+### MaxSim
+
+
+
+
+
+
+
 <a name="qdrant-MoveShard"></a>
 
 ### MoveShard
@@ -892,6 +904,21 @@
 | from_peer_id | [uint64](#uint64) |  |  |
 | to_peer_id | [uint64](#uint64) |  |  |
 | method | [ShardTransferMethod](#qdrant-ShardTransferMethod) | optional |  |
+
+
+
+
+
+
+<a name="qdrant-MultiVectorConfig"></a>
+
+### MultiVectorConfig
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| max_sim | [MaxSim](#qdrant-MaxSim) |  |  |
 
 
 
@@ -1311,6 +1338,7 @@ Note: 1kB = 1 vector of size 256. |
 | quantization_config | [QuantizationConfig](#qdrant-QuantizationConfig) | optional | Configuration of vector quantization config. If omitted - the collection configuration will be used |
 | on_disk | [bool](#bool) | optional | If true - serve vectors from disk. If set to false, the vectors will be loaded in RAM. |
 | datatype | [Datatype](#qdrant-Datatype) | optional | Data type of the vectors |
+| multivector_config | [MultiVectorConfig](#qdrant-MultiVectorConfig) | optional | Configuration of multi-vector search |
 
 
 
@@ -3223,6 +3251,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | timeout | [uint64](#uint64) | optional | If set, overrides global timeout setting for this request. Unit is seconds. |
 | shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Specify in which shards to look for the points, if not specified - look in all shards |
 | sparse_indices | [SparseIndices](#qdrant-SparseIndices) | optional |  |
+| tokens_count | [uint32](#uint32) | optional |  |
 
 
 
@@ -3251,6 +3280,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | timeout | [uint64](#uint64) | optional | If set, overrides global timeout setting for this request. Unit is seconds. |
 | shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Specify in which shards to look for the points, if not specified - look in all shards |
 | sparse_indices | [SparseIndices](#qdrant-SparseIndices) | optional |  |
+| tokens_count | [uint32](#uint32) | optional |  |
 
 
 
@@ -3489,8 +3519,9 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| data | [float](#float) | repeated |  |
-| indices | [SparseIndices](#qdrant-SparseIndices) | optional |  |
+| data | [float](#float) | repeated | Vector data (flatten for multi-dimensional vectors) |
+| indices | [SparseIndices](#qdrant-SparseIndices) | optional | Sparse indices for sparse vectors |
+| tokens_count | [uint32](#uint32) | optional | Number of tokens in the vector |
 
 
 

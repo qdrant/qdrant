@@ -21,7 +21,7 @@ use collection::operations::conversions::{
 };
 use collection::operations::payload_ops::DeletePayload;
 use collection::operations::point_ops::{
-    self, PointInsertOperations, PointOperations, PointSyncOperation, PointsList,
+    self, PointInsertOperations, PointOperations, PointStruct, PointSyncOperation, PointsList,
 };
 use collection::operations::shard_key_selector::ShardKeySelector;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
@@ -109,7 +109,7 @@ pub async fn upsert(
     } = upsert_points;
     let points = points
         .into_iter()
-        .map(|point| point.try_into())
+        .map(PointStruct::try_from)
         .collect::<Result<_, _>>()?;
     let operation = PointInsertOperations::PointsList(PointsList {
         points,
@@ -960,10 +960,15 @@ pub async fn search(
         timeout,
         shard_key_selector,
         sparse_indices,
+        tokens_count,
     } = search_points;
 
-    let vector_struct =
-        api::grpc::conversions::into_named_vector_struct(vector_name, vector, sparse_indices)?;
+    let vector_struct = api::grpc::conversions::into_named_vector_struct(
+        vector_name,
+        vector,
+        sparse_indices,
+        tokens_count,
+    )?;
 
     let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
 

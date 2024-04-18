@@ -409,7 +409,6 @@ where
         },
         |_| false,
     )?;
-
     let mut res = updated_points.len();
     // Insert new points, which was not updated or existed
     let new_point_ids = ids

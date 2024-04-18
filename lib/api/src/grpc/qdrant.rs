@@ -24,6 +24,9 @@ pub struct VectorParams {
     /// Data type of the vectors
     #[prost(enumeration = "Datatype", optional, tag = "6")]
     pub datatype: ::core::option::Option<i32>,
+    /// Configuration of multi-vector search
+    #[prost(message, optional, tag = "7")]
+    pub multivector_config: ::core::option::Option<MultiVectorConfig>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -423,6 +426,27 @@ pub mod quantization_config_diff {
         Disabled(super::Disabled),
         #[prost(message, tag = "4")]
         Binary(super::BinaryQuantization),
+    }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MaxSim {}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MultiVectorConfig {
+    #[prost(oneof = "multi_vector_config::Multivector", tags = "1")]
+    pub multivector: ::core::option::Option<multi_vector_config::Multivector>,
+}
+/// Nested message and enum types in `MultiVectorConfig`.
+pub mod multi_vector_config {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Multivector {
+        #[prost(message, tag = "1")]
+        MaxSim(super::MaxSim),
     }
 }
 #[derive(validator::Validate)]
@@ -3639,10 +3663,15 @@ pub struct SparseIndices {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Vector {
+    /// Vector data (flatten for multi-dimensional vectors)
     #[prost(float, repeated, tag = "1")]
     pub data: ::prost::alloc::vec::Vec<f32>,
+    /// Sparse indices for sparse vectors
     #[prost(message, optional, tag = "2")]
     pub indices: ::core::option::Option<SparseIndices>,
+    /// Number of tokens in the vector
+    #[prost(uint32, optional, tag = "3")]
+    pub tokens_count: ::core::option::Option<u32>,
 }
 /// ---------------------------------------------
 /// ----------------- ShardKeySelector ----------
@@ -4102,6 +4131,8 @@ pub struct SearchPoints {
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
     #[prost(message, optional, tag = "15")]
     pub sparse_indices: ::core::option::Option<SparseIndices>,
+    #[prost(uint32, optional, tag = "16")]
+    pub tokens_count: ::core::option::Option<u32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -4196,6 +4227,8 @@ pub struct SearchPointGroups {
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
     #[prost(message, optional, tag = "16")]
     pub sparse_indices: ::core::option::Option<SparseIndices>,
+    #[prost(uint32, optional, tag = "17")]
+    pub tokens_count: ::core::option::Option<u32>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

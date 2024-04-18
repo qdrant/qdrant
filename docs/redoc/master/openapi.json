@@ -5489,6 +5489,16 @@
                 "nullable": true
               }
             ]
+          },
+          "multivector_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MultiVectorConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -5664,6 +5674,25 @@
           "float32",
           "uint8"
         ]
+      },
+      "MultiVectorConfig": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "MaxSim"
+            ],
+            "properties": {
+              "MaxSim": {
+                "$ref": "#/components/schemas/MaxSimConfig"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "MaxSimConfig": {
+        "type": "object"
       },
       "ShardingMethod": {
         "type": "string",
@@ -6205,6 +6234,9 @@
           },
           {
             "$ref": "#/components/schemas/SparseVector"
+          },
+          {
+            "$ref": "#/components/schemas/MultiDenseVector"
           }
         ]
       },
@@ -6232,6 +6264,27 @@
               "type": "number",
               "format": "float"
             }
+          }
+        }
+      },
+      "MultiDenseVector": {
+        "type": "object",
+        "required": [
+          "dim",
+          "inner_vector"
+        ],
+        "properties": {
+          "inner_vector": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "float"
+            }
+          },
+          "dim": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
           }
         }
       },
@@ -9253,25 +9306,6 @@
             }
           }
         ]
-      },
-      "MultiVectorConfig": {
-        "oneOf": [
-          {
-            "type": "object",
-            "required": [
-              "MaxSim"
-            ],
-            "properties": {
-              "MaxSim": {
-                "$ref": "#/components/schemas/MaxSimConfig"
-              }
-            },
-            "additionalProperties": false
-          }
-        ]
-      },
-      "MaxSimConfig": {
-        "type": "object"
       },
       "VectorStorageDatatype": {
         "description": "Storage types for vectors",

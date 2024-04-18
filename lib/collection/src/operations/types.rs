@@ -24,8 +24,9 @@ use segment::data_types::vectors::{
 };
 use segment::json_path::{JsonPath, JsonPathInterface};
 use segment::types::{
-    Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, QuantizationConfig,
-    SearchParams, SeqNumberType, ShardKey, VectorStorageDatatype, WithPayloadInterface, WithVector,
+    Distance, Filter, MultiVectorConfig, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType,
+    QuantizationConfig, SearchParams, SeqNumberType, ShardKey, VectorStorageDatatype,
+    WithPayloadInterface, WithVector,
 };
 use segment::vector_storage::query::context_query::ContextQuery;
 use segment::vector_storage::query::discovery_query::DiscoveryQuery;
@@ -1344,6 +1345,9 @@ pub struct VectorParams {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub datatype: Option<Datatype>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub multivector_config: Option<MultiVectorConfig>,
 }
 
 /// Validate the value is in `[1, 65536]` or `None`.

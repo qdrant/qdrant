@@ -11,6 +11,13 @@ pub type DenseVector = Vec<segment::data_types::vectors::VectorElementType>;
 pub enum Vector {
     Dense(DenseVector),
     Sparse(sparse::common::sparse_vector::SparseVector),
+    MultiDense(MultiDenseVector),
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, JsonSchema)]
+pub struct MultiDenseVector {
+    pub inner_vector: segment::data_types::vectors::DenseVector,
+    pub dim: usize,
 }
 
 /// Full vector data per point separator with single and multiple vector modes
@@ -29,6 +36,7 @@ impl VectorStruct {
             VectorStruct::Multi(vectors) => vectors.values().all(|v| match v {
                 Vector::Dense(vector) => vector.is_empty(),
                 Vector::Sparse(vector) => vector.indices.is_empty(),
+                Vector::MultiDense(vector) => vector.inner_vector.is_empty(),
             }),
         }
     }

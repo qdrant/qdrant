@@ -1,7 +1,7 @@
 use validator::Validate;
 
 use super::schema::{BatchVectorStruct, Vector, VectorStruct};
-use crate::rest::NamedVectorStruct;
+use crate::rest::{MultiDenseVector, NamedVectorStruct};
 
 impl Validate for VectorStruct {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
@@ -28,6 +28,7 @@ impl Validate for Vector {
         match self {
             Vector::Dense(_) => Ok(()),
             Vector::Sparse(v) => v.validate(),
+            Vector::MultiDense(v) => v.validate(),
         }
     }
 }
@@ -39,5 +40,11 @@ impl Validate for NamedVectorStruct {
             NamedVectorStruct::Dense(_) => Ok(()),
             NamedVectorStruct::Sparse(v) => v.validate(),
         }
+    }
+}
+
+impl Validate for MultiDenseVector {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        common::validation::validate_multi_vector_len(self.dim as u32, &self.inner_vector)
     }
 }

@@ -142,6 +142,23 @@ pub fn validate_sha256_hash_option(value: &Option<impl AsRef<str>>) -> Result<()
         .unwrap_or(Ok(()))
 }
 
+pub fn validate_multi_vector_len(
+    tokens_count: u32,
+    flatten_dense_vector: &[f32],
+) -> Result<(), ValidationErrors> {
+    let dense_vector_len = flatten_dense_vector.len();
+    if dense_vector_len % tokens_count as usize != 0 {
+        let mut errors = ValidationErrors::default();
+        let mut err = ValidationError::new("invalid dense vector length for token count");
+        err.add_param(Cow::from("len"), &dense_vector_len);
+        err.add_param(Cow::from("tokens_count"), &tokens_count);
+        errors.add("data", err);
+        Err(errors)
+    } else {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
