@@ -6,7 +6,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use anyhow::{anyhow, Context};
+use anyhow::Context as _;
 use chrono::Utc;
 use collection::collection_state;
 use collection::common::is_ready::IsReady;
@@ -279,11 +279,10 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             .map_err(raft_error_other)
     }
 
-    /// Process the consensus operation, which are already committed.
-    /// If return Error - consensus should be stopped with error.
-    /// Return `true` if consensus should be stopped (peer removed)
-    /// Return `false` if everything is ok.
-    pub fn apply_entries<T: Storage>(&self, raw_node: &mut RawNode<T>) -> anyhow::Result<bool> {
+    pub fn apply_conf_change_entries<T: Storage>(
+        &self,
+        node: &mut RawNode<T>,
+    ) -> anyhow::Result<bool> {
         use raft::eraftpb::EntryType;
 
         self.persistent
@@ -292,68 +291,115 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             .context("Failed to save new state of applied entries queue")?;
 
         loop {
-            let unapplied_index = self.persistent.read().current_unapplied_entry();
-            let entry_index = match unapplied_index {
+            let entry_index = match self.persistent.read().current_unapplied_entry() {
                 Some(index) => index,
                 None => break,
             };
+
             log::debug!("Applying committed entry with index {entry_index}");
+
             let entry = self
                 .wal
                 .lock()
                 .entry(entry_index)
                 .context(format!("Failed to get entry at index {entry_index}"))?;
-            let stop_consensus: bool = if entry.data.is_empty() {
-                // Empty entry, when the peer becomes Leader it will send an empty entry.
-                false
-            } else {
-                match entry.get_entry_type() {
-                    EntryType::EntryNormal => {
-                        let operation_result = self.apply_normal_entry(&entry);
-                        match operation_result {
-                            Ok(result) => {
-                                log::debug!(
-                                    "Successfully applied consensus operation entry. Index: {}. Result: {result}",
-                                    entry.index);
-                                false
-                            }
-                            Err(err @ StorageError::ServiceError { .. }) => {
-                                // This is a service error - stop consensus. Peer can be restarted when the problem is fixed.
-                                return Err(err)
-                                    .context("Failed to apply collection meta operation entry");
-                            }
-                            Err(err) => {
-                                log::warn!("Failed to apply collection meta operation entry with user error: {err}");
-                                // This is a user error so we can safely consider it applied but with error as it was incorrect.
-                                false
-                            }
-                        }
-                    }
-                    EntryType::EntryConfChangeV2 => {
-                        let stop_consensus = self
-                            .apply_conf_change_entry(&entry, raw_node)
-                            .context("Failed to apply configuration change entry")?;
-                        log::debug!(
-                            "Successfully applied configuration change entry. Index: {}. Stop consensus: {}",
-                            entry.index,
-                            stop_consensus
-                        );
-                        stop_consensus
-                    }
-                    ty => {
-                        return Err(anyhow!("Unexpected entry type: {:?}", ty));
-                    }
-                }
-            };
-            if stop_consensus {
-                return Ok(stop_consensus);
+
+            if entry.data.is_empty() {
+                continue;
             }
+
+            match entry.get_entry_type() {
+                EntryType::EntryConfChangeV2 => (),
+                EntryType::EntryNormal => break,
+                _ => todo!(),
+            }
+
+            let stop_consensus = self
+                .apply_conf_change_entry(&entry, node)
+                .context("Failed to apply configuration change entry")?;
+
+            log::debug!(
+                "Successfully applied configuration change entry. Index: {}. Stop consensus: {}",
+                entry.index,
+                stop_consensus
+            );
+
+            self.persistent
+                .write()
+                .entry_applied()
+                .context("Failed to save new state of applied entries queue")?;
+
+            if stop_consensus {
+                return Ok(true);
+            }
+        }
+
+        if let Some(last_applied_entry) = self.persistent.write().last_applied_entry() {
+            node.advance_apply_to(last_applied_entry);
+        }
+
+        Ok(false)
+    }
+
+    pub fn apply_normal_entries(&self) -> anyhow::Result<()> {
+        use raft::eraftpb::EntryType;
+
+        self.persistent
+            .write()
+            .save_if_dirty()
+            .context("Failed to save new state of applied entries queue")?;
+
+        loop {
+            let entry_index = match self.persistent.read().current_unapplied_entry() {
+                Some(index) => index,
+                None => break,
+            };
+
+            log::debug!("Applying committed entry with index {entry_index}");
+
+            let entry = self
+                .wal
+                .lock()
+                .entry(entry_index)
+                .context(format!("Failed to get entry at index {entry_index}"))?;
+
+            if entry.data.is_empty() {
+                continue;
+            }
+
+            match entry.get_entry_type() {
+                EntryType::EntryNormal => (),
+                EntryType::EntryConfChangeV2 => break,
+                _ => todo!(),
+            }
+
+            match self.apply_normal_entry(&entry) {
+                Ok(result) => {
+                    log::debug!(
+                        "Successfully applied consensus operation entry. Index: {}. Result: {result}",
+                        entry.index,
+                    );
+                }
+
+                Err(err @ StorageError::ServiceError { .. }) => {
+                    // This is a service error - stop consensus. Peer can be restarted when the problem is fixed.
+                    return Err(err).context("Failed to apply collection meta operation entry");
+                }
+
+                Err(err) => {
+                    log::warn!(
+                        "Failed to apply collection meta operation entry with user error: {err}"
+                    );
+                }
+            }
+
             self.persistent
                 .write()
                 .entry_applied()
                 .context("Failed to save new state of applied entries queue")?;
         }
-        Ok(false) // do not stop consensus
+
+        Ok(())
     }
 
     /// Process the consensus operation, which are already committed.

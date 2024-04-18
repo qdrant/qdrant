@@ -57,6 +57,7 @@ pub struct Consensus {
     /// Uri to some other known peer, used to join the consensus
     /// ToDo: Make if many
     config: ConsensusConfig,
+    apply: ApplyEntriesWorkerHandle,
     broker: RaftMessageBroker,
 }
 
@@ -245,7 +246,17 @@ impl Consensus {
 
         // Before consensus has started apply any unapplied committed entries
         // They might have not been applied due to unplanned Qdrant shutdown
-        let _stop_consensus = state_ref.apply_entries(&mut node)?;
+        while state_ref
+            .persistent
+            .write()
+            .current_unapplied_entry()
+            .is_some()
+        {
+            state_ref.apply_normal_entries()?;
+            state_ref.apply_conf_change_entries(&mut node)?;
+        }
+
+        let apply = ApplyEntriesWorker::spawn(state_ref.clone());
 
         let broker = RaftMessageBroker::new(
             runtime.clone(),
@@ -261,6 +272,7 @@ impl Consensus {
             receiver,
             runtime,
             config,
+            apply,
             broker,
         };
 
@@ -468,6 +480,11 @@ impl Consensus {
 
                 previous_tick += tick_period;
                 elapsed -= tick_period;
+            }
+
+            let state = self.node.store().clone();
+            if state.apply_conf_change_entries(&mut self.node)? {
+                return Ok(());
             }
 
             if self.node.has_ready() {
@@ -801,15 +818,19 @@ impl Consensus {
             self.send_messages(ready.take_persisted_messages());
         }
         // Should be done after Hard State is saved, so that `applied` index is never bigger than `commit`.
-        let stop_consensus =
-            handle_committed_entries(ready.take_committed_entries(), &store, &mut self.node)
-                .map_err(|err| anyhow!("Failed to handle committed entries: {}", err))?;
+        let stop_consensus = handle_committed_entries(
+            ready.take_committed_entries(),
+            &store,
+            &mut self.node,
+            &self.apply,
+        )
+        .map_err(|err| anyhow!("Failed to handle committed entries: {}", err))?;
         if stop_consensus {
             return Ok((None, None));
         }
 
         // Advance the Raft.
-        let light_rd = self.node.advance(ready);
+        let light_rd = self.node.advance_append(ready);
         Ok((Some(light_rd), role_change))
     }
 
@@ -830,11 +851,13 @@ impl Consensus {
         }
         self.send_messages(light_rd.take_messages());
         // Apply all committed entries.
-        let stop_consensus =
-            handle_committed_entries(light_rd.take_committed_entries(), &store, &mut self.node)
-                .map_err(|err| anyhow!("Failed to apply committed entries: {}", err))?;
-        // Advance the apply index.
-        self.node.advance_apply();
+        let stop_consensus = handle_committed_entries(
+            light_rd.take_committed_entries(),
+            &store,
+            &mut self.node,
+            &self.apply,
+        )
+        .map_err(|err| anyhow!("Failed to apply committed entries: {}", err))?;
         Ok(stop_consensus)
     }
 
@@ -868,13 +891,63 @@ fn handle_committed_entries(
     entries: Vec<Entry>,
     state: &ConsensusStateRef,
     raw_node: &mut RawNode<ConsensusStateRef>,
+    handle: &ApplyEntriesWorkerHandle,
 ) -> anyhow::Result<bool> {
     let mut stop_consensus = false;
+
     if let (Some(first), Some(last)) = (entries.first(), entries.last()) {
         state.set_unapplied_entries(first.index, last.index)?;
-        stop_consensus = state.apply_entries(raw_node)?;
+        stop_consensus = state.apply_conf_change_entries(raw_node)?;
+        handle.signal()?;
     }
+
     Ok(stop_consensus)
+}
+
+struct ApplyEntriesWorker {
+    state: ConsensusStateRef,
+    signal: mpsc::Receiver<()>,
+}
+
+impl ApplyEntriesWorker {
+    pub fn spawn(state: ConsensusStateRef) -> ApplyEntriesWorkerHandle {
+        let (signal_tx, signal_rx) = mpsc::sync_channel(1);
+
+        let worker = Self {
+            state,
+            signal: signal_rx,
+        };
+
+        let handle = ApplyEntriesWorkerHandle {
+            handle: thread::spawn(move || worker.exec()),
+            signal: signal_tx,
+        };
+
+        handle
+    }
+
+    fn exec(self) -> anyhow::Result<()> {
+        while let Ok(()) = self.signal.recv() {
+            self.state.apply_normal_entries()?;
+        }
+
+        Ok(())
+    }
+}
+
+struct ApplyEntriesWorkerHandle {
+    handle: thread::JoinHandle<anyhow::Result<()>>,
+    signal: mpsc::SyncSender<()>,
+}
+
+impl ApplyEntriesWorkerHandle {
+    pub fn signal(&self) -> anyhow::Result<()> {
+        if let Err(mpsc::TrySendError::Disconnected(_)) = self.signal.try_send(()) {
+            Err(anyhow::format_err!("ApplyEntriesWorker exploded!?"))
+        } else {
+            Ok(())
+        }
+    }
 }
 
 struct RaftMessageBroker {
