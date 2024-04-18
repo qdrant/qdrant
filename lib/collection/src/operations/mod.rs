@@ -13,6 +13,7 @@ pub mod snapshot_ops;
 pub mod types;
 pub mod validation;
 pub mod vector_ops;
+pub mod vector_params_builder;
 
 use std::collections::HashMap;
 

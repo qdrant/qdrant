@@ -210,7 +210,6 @@ impl SegmentOptimizer for VacuumOptimizer {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
-    use std::num::NonZeroU64;
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
 
@@ -227,7 +226,8 @@ mod tests {
     use crate::collection_manager::fixtures::{random_multi_vec_segment, random_segment};
     use crate::collection_manager::holders::segment_holder::SegmentHolder;
     use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer;
-    use crate::operations::types::{VectorParams, VectorsConfig};
+    use crate::operations::types::VectorsConfig;
+    use crate::operations::vector_params_builder::VectorParamsBuilder;
 
     #[test]
     fn test_vacuum_conditions() {
@@ -300,13 +300,7 @@ mod tests {
             dir.path().to_owned(),
             temp_dir.path().to_owned(),
             CollectionParams {
-                vectors: VectorsConfig::Single(VectorParams {
-                    size: NonZeroU64::new(4).unwrap(),
-                    distance: Distance::Dot,
-                    hnsw_config: None,
-                    quantization_config: None,
-                    on_disk: None,
-                }),
+                vectors: VectorsConfig::Single(VectorParamsBuilder::new(4, Distance::Dot).build()),
                 ..CollectionParams::empty()
             },
             Default::default(),
@@ -398,23 +392,11 @@ mod tests {
             vectors: VectorsConfig::Multi(BTreeMap::from([
                 (
                     "vector1".into(),
-                    VectorParams {
-                        size: vector1_dim.try_into().unwrap(),
-                        distance: Distance::Dot,
-                        hnsw_config: None,
-                        quantization_config: None,
-                        on_disk: None,
-                    },
+                    VectorParamsBuilder::new(vector1_dim, Distance::Dot).build(),
                 ),
                 (
                     "vector2".into(),
-                    VectorParams {
-                        size: vector2_dim.try_into().unwrap(),
-                        distance: Distance::Dot,
-                        hnsw_config: None,
-                        quantization_config: None,
-                        on_disk: None,
-                    },
+                    VectorParamsBuilder::new(vector2_dim, Distance::Dot).build(),
                 ),
             ])),
             ..CollectionParams::empty()

@@ -258,7 +258,7 @@ impl<'a> NamedVectors<'a> {
         config: &VectorDataConfig,
     ) -> DenseVector {
         match config.datatype {
-            Some(VectorStorageDatatype::Float) | None => match config.distance {
+            Some(VectorStorageDatatype::Float32) | None => match config.distance {
                 Distance::Cosine => {
                     <CosineMetric as Metric<VectorElementType>>::preprocess(dense_vector)
                 }

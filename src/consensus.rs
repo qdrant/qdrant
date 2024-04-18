@@ -1144,11 +1144,10 @@ fn is_heartbeat(message: &RaftMessage) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroU64;
     use std::sync::Arc;
     use std::thread;
 
-    use collection::operations::types::VectorParams;
+    use collection::operations::vector_params_builder::VectorParamsBuilder;
     use collection::shards::channel_service::ChannelService;
     use common::cpu::CpuBudget;
     use segment::types::Distance;
@@ -1251,14 +1250,9 @@ mod tests {
                     CollectionMetaOperations::CreateCollection(CreateCollectionOperation::new(
                         "test".to_string(),
                         CreateCollection {
-                            vectors: VectorParams {
-                                size: NonZeroU64::new(10).unwrap(),
-                                distance: Distance::Cosine,
-                                hnsw_config: None,
-                                quantization_config: None,
-                                on_disk: None,
-                            }
-                            .into(),
+                            vectors: VectorParamsBuilder::new(10, Distance::Cosine)
+                                .build()
+                                .into(),
                             sparse_vectors: None,
                             hnsw_config: None,
                             wal_config: None,

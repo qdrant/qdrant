@@ -291,7 +291,6 @@ impl SegmentOptimizer for IndexingOptimizer {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
-    use std::num::NonZeroU64;
     use std::ops::Deref;
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
@@ -318,6 +317,7 @@ mod tests {
     };
     use crate::operations::point_ops::{Batch, PointOperations};
     use crate::operations::types::{VectorParams, VectorsConfig};
+    use crate::operations::vector_params_builder::VectorParamsBuilder;
     use crate::operations::{CreateIndex, FieldIndexOperations};
 
     fn init() {
@@ -353,13 +353,7 @@ mod tests {
             .map(|(name, params)| {
                 (
                     name.to_string(),
-                    VectorParams {
-                        size: NonZeroU64::new(params.size as u64).unwrap(),
-                        distance: params.distance,
-                        hnsw_config: None,
-                        quantization_config: None,
-                        on_disk: None,
-                    },
+                    VectorParamsBuilder::new(params.size as u64, params.distance).build(),
                 )
             })
             .collect();
@@ -475,16 +469,13 @@ mod tests {
             segments_dir.path().to_owned(),
             segments_temp_dir.path().to_owned(),
             CollectionParams {
-                vectors: VectorsConfig::Single(VectorParams {
-                    size: NonZeroU64::new(
+                vectors: VectorsConfig::Single(
+                    VectorParamsBuilder::new(
                         segment_config.vector_data[DEFAULT_VECTOR_NAME].size as u64,
+                        segment_config.vector_data[DEFAULT_VECTOR_NAME].distance,
                     )
-                    .unwrap(),
-                    distance: segment_config.vector_data[DEFAULT_VECTOR_NAME].distance,
-                    hnsw_config: None,
-                    quantization_config: None,
-                    on_disk: None,
-                }),
+                    .build(),
+                ),
                 ..CollectionParams::empty()
             },
             Default::default(),
@@ -771,16 +762,13 @@ mod tests {
             segments_dir.path().to_owned(),
             segments_temp_dir.path().to_owned(),
             CollectionParams {
-                vectors: VectorsConfig::Single(VectorParams {
-                    size: NonZeroU64::new(
+                vectors: VectorsConfig::Single(
+                    VectorParamsBuilder::new(
                         segment_config.vector_data[DEFAULT_VECTOR_NAME].size as u64,
+                        segment_config.vector_data[DEFAULT_VECTOR_NAME].distance,
                     )
-                    .unwrap(),
-                    distance: segment_config.vector_data[DEFAULT_VECTOR_NAME].distance,
-                    hnsw_config: None,
-                    quantization_config: None,
-                    on_disk: None,
-                }),
+                    .build(),
+                ),
                 ..CollectionParams::empty()
             },
             Default::default(),
@@ -849,13 +837,9 @@ mod tests {
             indexing_threshold: usize::MAX,
         };
         let mut collection_params = CollectionParams {
-            vectors: VectorsConfig::Single(VectorParams {
-                size: dim.try_into().unwrap(),
-                distance: Distance::Dot,
-                hnsw_config: None,
-                quantization_config: None,
-                on_disk: Some(false),
-            }),
+            vectors: VectorsConfig::Single(
+                VectorParamsBuilder::new(dim as u64, Distance::Dot).build(),
+            ),
             ..CollectionParams::empty()
         };
 

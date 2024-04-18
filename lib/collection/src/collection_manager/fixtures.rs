@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::num::NonZeroU64;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -27,7 +26,8 @@ use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
 };
 use crate::config::CollectionParams;
-use crate::operations::types::{VectorParams, VectorsConfig};
+use crate::operations::types::VectorsConfig;
+use crate::operations::vector_params_builder::VectorParamsBuilder;
 
 pub fn empty_segment(path: &Path) -> Segment {
     build_simple_segment(path, 4, Distance::Dot).unwrap()
@@ -228,13 +228,9 @@ pub(crate) fn get_merge_optimizer(
         segment_path.to_owned(),
         collection_temp_dir.to_owned(),
         CollectionParams {
-            vectors: VectorsConfig::Single(VectorParams {
-                size: NonZeroU64::new(dim as u64).unwrap(),
-                distance: Distance::Dot,
-                hnsw_config: None,
-                quantization_config: None,
-                on_disk: None,
-            }),
+            vectors: VectorsConfig::Single(
+                VectorParamsBuilder::new(dim as u64, Distance::Dot).build(),
+            ),
             ..CollectionParams::empty()
         },
         Default::default(),
@@ -257,13 +253,9 @@ pub(crate) fn get_indexing_optimizer(
         segment_path.to_owned(),
         collection_temp_dir.to_owned(),
         CollectionParams {
-            vectors: VectorsConfig::Single(VectorParams {
-                size: NonZeroU64::new(dim as u64).unwrap(),
-                distance: Distance::Dot,
-                hnsw_config: None,
-                quantization_config: None,
-                on_disk: None,
-            }),
+            vectors: VectorsConfig::Single(
+                VectorParamsBuilder::new(dim as u64, Distance::Dot).build(),
+            ),
             ..CollectionParams::empty()
         },
         Default::default(),

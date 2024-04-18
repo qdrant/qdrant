@@ -21,6 +21,9 @@ pub struct VectorParams {
     /// If true - serve vectors from disk. If set to false, the vectors will be loaded in RAM.
     #[prost(bool, optional, tag = "5")]
     pub on_disk: ::core::option::Option<bool>,
+    /// Data type of the vectors
+    #[prost(enumeration = "Datatype", optional, tag = "6")]
+    pub datatype: ::core::option::Option<i32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -1074,6 +1077,36 @@ pub struct CreateShardKeyResponse {
 pub struct DeleteShardKeyResponse {
     #[prost(bool, tag = "1")]
     pub result: bool,
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum Datatype {
+    Default = 0,
+    Float32 = 1,
+    Uint8 = 2,
+}
+impl Datatype {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Datatype::Default => "Default",
+            Datatype::Float32 => "Float32",
+            Datatype::Uint8 => "Uint8",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "Default" => Some(Self::Default),
+            "Float32" => Some(Self::Float32),
+            "Uint8" => Some(Self::Uint8),
+            _ => None,
+        }
+    }
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]

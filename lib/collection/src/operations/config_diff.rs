@@ -328,25 +328,16 @@ impl Validate for QuantizationConfigDiff {
 
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroU64;
-
     use segment::types::{Distance, HnswConfig};
 
     use super::*;
-    use crate::operations::types::VectorParams;
+    use crate::operations::vector_params_builder::VectorParamsBuilder;
     use crate::optimizers_builder::OptimizersConfig;
 
     #[test]
     fn test_update_collection_params() {
         let params = CollectionParams {
-            vectors: VectorParams {
-                size: NonZeroU64::new(128).unwrap(),
-                distance: Distance::Cosine,
-                hnsw_config: None,
-                quantization_config: None,
-                on_disk: None,
-            }
-            .into(),
+            vectors: VectorParamsBuilder::new(128, Distance::Dot).build().into(),
             ..CollectionParams::empty()
         };
 

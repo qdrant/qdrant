@@ -1293,6 +1293,16 @@ impl Record {
     }
 }
 
+#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum Datatype {
+    /// Single-precision floating point
+    #[default]
+    Float32,
+    /// Unsigned 8-bit integer
+    Uint8,
+}
+
 /// Params of single vector data storage
 #[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -1318,6 +1328,9 @@ pub struct VectorParams {
     /// Default: false
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_disk: Option<bool>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub datatype: Option<Datatype>,
 }
 
 /// Validate the value is in `[1, 65536]` or `None`.

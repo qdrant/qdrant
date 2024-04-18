@@ -729,10 +729,11 @@ pub enum VectorStorageType {
 
 /// Storage types for vectors
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone)]
+#[serde(rename_all = "snake_case")]
 pub enum VectorStorageDatatype {
-    /// Single-precsion floating point
+    /// Single-precision floating point
     #[default]
-    Float,
+    Float32,
     /// Unsigned 8-bit integer
     Uint8,
 }

@@ -280,7 +280,8 @@ mod tests {
     use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
     use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer;
     use crate::operations::config_diff::HnswConfigDiff;
-    use crate::operations::types::{VectorParams, VectorsConfig};
+    use crate::operations::types::VectorsConfig;
+    use crate::operations::vector_params_builder::VectorParamsBuilder;
 
     /// This test the config mismatch optimizer for a changed HNSW config
     ///
@@ -306,13 +307,9 @@ mod tests {
             indexing_threshold: 10,
         };
         let collection_params = CollectionParams {
-            vectors: VectorsConfig::Single(VectorParams {
-                size: dim.try_into().unwrap(),
-                distance: Distance::Dot,
-                hnsw_config: None,
-                quantization_config: None,
-                on_disk: None,
-            }),
+            vectors: VectorsConfig::Single(
+                VectorParamsBuilder::new(dim as u64, Distance::Dot).build(),
+            ),
             ..CollectionParams::empty()
         };
 
@@ -453,23 +450,13 @@ mod tests {
             vectors: VectorsConfig::Multi(BTreeMap::from([
                 (
                     "vector1".into(),
-                    VectorParams {
-                        size: vector1_dim.try_into().unwrap(),
-                        distance: Distance::Dot,
-                        hnsw_config: Some(hnsw_config_vector1),
-                        quantization_config: None,
-                        on_disk: None,
-                    },
+                    VectorParamsBuilder::new(vector1_dim as u64, Distance::Dot)
+                        .with_hnsw_config(hnsw_config_vector1)
+                        .build(),
                 ),
                 (
                     "vector2".into(),
-                    VectorParams {
-                        size: vector2_dim.try_into().unwrap(),
-                        distance: Distance::Dot,
-                        hnsw_config: None,
-                        quantization_config: None,
-                        on_disk: None,
-                    },
+                    VectorParamsBuilder::new(vector2_dim as u64, Distance::Dot).build(),
                 ),
             ])),
             ..CollectionParams::empty()
@@ -633,23 +620,13 @@ mod tests {
             vectors: VectorsConfig::Multi(BTreeMap::from([
                 (
                     "vector1".into(),
-                    VectorParams {
-                        size: vector1_dim.try_into().unwrap(),
-                        distance: Distance::Dot,
-                        hnsw_config: None,
-                        quantization_config: Some(quantization_config_vector1.clone()),
-                        on_disk: None,
-                    },
+                    VectorParamsBuilder::new(vector1_dim as u64, Distance::Dot)
+                        .with_quantization_config(quantization_config_vector1.clone())
+                        .build(),
                 ),
                 (
                     "vector2".into(),
-                    VectorParams {
-                        size: vector2_dim.try_into().unwrap(),
-                        distance: Distance::Dot,
-                        hnsw_config: None,
-                        quantization_config: None,
-                        on_disk: None,
-                    },
+                    VectorParamsBuilder::new(vector2_dim as u64, Distance::Dot).build(),
                 ),
             ])),
             ..CollectionParams::empty()
