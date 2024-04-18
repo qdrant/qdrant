@@ -25,7 +25,7 @@ use segment::data_types::vectors::{
 use segment::json_path::{JsonPath, JsonPathInterface};
 use segment::types::{
     Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, QuantizationConfig,
-    SearchParams, SeqNumberType, ShardKey, WithPayloadInterface, WithVector,
+    SearchParams, SeqNumberType, ShardKey, VectorStorageDatatype, WithPayloadInterface, WithVector,
 };
 use segment::vector_storage::query::context_query::ContextQuery;
 use segment::vector_storage::query::discovery_query::DiscoveryQuery;
@@ -1303,6 +1303,15 @@ pub enum Datatype {
     #[default]
     Float32,
     Uint8,
+}
+
+impl From<Datatype> for VectorStorageDatatype {
+    fn from(value: Datatype) -> Self {
+        match value {
+            Datatype::Float32 => VectorStorageDatatype::Float32,
+            Datatype::Uint8 => VectorStorageDatatype::Uint8,
+        }
+    }
 }
 
 /// Params of single vector data storage

@@ -12,7 +12,7 @@ use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::types::{
     Distance, HnswConfig, Indexes, PayloadStorageType, QuantizationConfig, SparseVectorDataConfig,
-    VectorDataConfig, VectorStorageType,
+    VectorDataConfig, VectorStorageDatatype, VectorStorageType,
 };
 use serde::{Deserialize, Serialize};
 use validator::Validate;
@@ -350,7 +350,7 @@ impl CollectionParams {
                         // TODO(colbert) add `multivec` to `VectorParams`
                         multi_vec_config: None,
                         // TODO(byte_storage)
-                        datatype: None,
+                        datatype: params.datatype.map(VectorStorageDatatype::from),
                     },
                 )
             })
