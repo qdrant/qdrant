@@ -68,10 +68,10 @@ def test_init_collection_from(tmp_path: pathlib.Path):
         peer_api_uris=peer_api_uris
     )
 
-    wait_collection_vectors_count(
+    wait_collection_points_count(
         peer_api_uris[0],
         "test_collection_2",
-        NUM_POINTS * 2  # 1 dense + 1 sparse per point
+        NUM_POINTS
     )
 
     collection_info = get_collection_info(peer_api_uris[0], "test_collection_2")

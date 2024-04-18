@@ -201,7 +201,7 @@ def test_disable_indexing(on_disk_vectors):
             )
             assert response.ok
 
-            assert response.json()['result']['vectors_count'] == amount_of_vectors
+            assert response.json()['result']['points_count'] == amount_of_vectors
             assert response.json()['result']['indexed_vectors_count'] > 0
 
             # Get info unindexed
@@ -211,7 +211,7 @@ def test_disable_indexing(on_disk_vectors):
                 path_params={'collection_name': unindexed_name},
             )
             assert response.ok
-            assert response.json()['result']['vectors_count'] == amount_of_vectors
+            assert response.json()['result']['points_count'] == amount_of_vectors
             assert response.json()['result']['indexed_vectors_count'] == 0
             break
         except AssertionError:

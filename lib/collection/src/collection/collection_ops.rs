@@ -279,6 +279,10 @@ impl Collection {
             }
         }
 
+        // Do not display vectors count, as it is an approximate number
+        // and many users are confused by its behavior
+        info.vectors_count = None;
+
         Ok(info)
     }
 
