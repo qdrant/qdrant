@@ -331,7 +331,6 @@ fn test_byte_storage_binary_quantization_hnsw(
                         rescore: Some(true),
                         ..Default::default()
                     }),
-                    exact: true,
                     ..Default::default()
                 }),
                 &stopped,
@@ -350,6 +349,7 @@ fn test_byte_storage_binary_quantization_hnsw(
                         ignore: true,
                         ..Default::default()
                     }),
+                    exact: true,
                     ..Default::default()
                 }),
                 &stopped,
