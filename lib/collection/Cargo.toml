@@ -29,7 +29,7 @@ serde = { workspace = true }
 serde_cbor = { workspace = true }
 serde_json = { workspace = true }
 rmp-serde = "~1.1"
-wal = { git = "https://github.com/qdrant/wal.git", rev = "fad0e7c48be58d8e7db4cc739acd9b1cf6735de0" }
+wal = { workspace = true }
 ordered-float = "4.2"
 hashring = "0.3.3"
 tinyvec = { version = "1.6.0", features = ["alloc"] }
