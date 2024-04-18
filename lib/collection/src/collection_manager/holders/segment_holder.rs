@@ -4,7 +4,7 @@ use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
 use std::thread::sleep;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use parking_lot::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use rand::seq::SliceRandom;
@@ -57,18 +57,19 @@ fn try_unwrap_with_timeout<T>(
     spin: Duration,
     timeout: Duration,
 ) -> Result<T, Arc<T>> {
-    if timeout.is_zero() {
-        return Err(arc);
-    }
+    let start = Instant::now();
 
     loop {
-        match Arc::try_unwrap(arc) {
-            inner @ Ok(_) => return inner,
-            Err(inner) => {
-                arc = inner;
-                sleep(spin);
-            }
+        arc = match Arc::try_unwrap(arc) {
+            Ok(unwrapped) => return Ok(unwrapped),
+            Err(arc) => arc,
+        };
+
+        if start.elapsed() >= timeout {
+            return Err(arc);
         }
+
+        sleep(spin);
     }
 }
 
