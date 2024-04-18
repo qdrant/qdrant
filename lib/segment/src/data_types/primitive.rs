@@ -4,7 +4,9 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte};
-use crate::types::QuantizationConfig;
+use crate::spaces::metric::Metric;
+use crate::spaces::simple::CosineMetric;
+use crate::types::{Distance, QuantizationConfig};
 
 pub trait PrimitiveVectorElement:
     Copy + Clone + Default + Serialize + for<'a> Deserialize<'a>
@@ -15,6 +17,7 @@ pub trait PrimitiveVectorElement:
 
     fn quantization_preprocess<'a>(
         quantization_config: &QuantizationConfig,
+        distance: Distance,
         vector: &'a [Self],
     ) -> Cow<'a, [f32]>;
 }
@@ -30,6 +33,7 @@ impl PrimitiveVectorElement for VectorElementType {
 
     fn quantization_preprocess<'a>(
         _quantization_config: &QuantizationConfig,
+        _distance: Distance,
         vector: &'a [Self],
     ) -> Cow<'a, [f32]> {
         Cow::Borrowed(vector)
@@ -47,17 +51,23 @@ impl PrimitiveVectorElement for VectorElementTypeByte {
 
     fn quantization_preprocess<'a>(
         quantization_config: &QuantizationConfig,
+        distance: Distance,
         vector: &'a [Self],
     ) -> Cow<'a, [f32]> {
-        if let QuantizationConfig::Binary(_) = quantization_config {
-            Cow::from(
-                vector
-                    .iter()
-                    .map(|&x| (x as VectorElementType) - 127.0)
-                    .collect_vec(),
-            )
+        let vector = if let QuantizationConfig::Binary(_) = quantization_config {
+            vector
+                .iter()
+                .map(|&x| (x as VectorElementType) - 127.0)
+                .collect_vec()
         } else {
-            Cow::from(vector.iter().map(|&x| x as VectorElementType).collect_vec())
+            vector.iter().map(|&x| x as VectorElementType).collect_vec()
+        };
+        if Distance::Cosine == distance {
+            Cow::from(<CosineMetric as Metric<VectorElementType>>::preprocess(
+                vector,
+            ))
+        } else {
+            Cow::from(vector)
         }
     }
 }

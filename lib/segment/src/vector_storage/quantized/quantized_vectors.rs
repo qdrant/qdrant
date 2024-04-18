@@ -143,14 +143,15 @@ impl QuantizedVectors {
     ) -> OperationResult<Self> {
         let dim = vector_storage.vector_dim();
         let count = vector_storage.total_vector_count();
+        let distance = vector_storage.distance();
         let vectors = (0..count as PointOffsetType).map(|i| {
             PrimitiveVectorElement::quantization_preprocess(
                 quantization_config,
+                distance,
                 vector_storage.get_dense(i),
             )
         });
         let on_disk_vector_storage = vector_storage.is_on_disk();
-        let distance = vector_storage.distance();
 
         let vector_parameters = Self::construct_vector_parameters(distance, dim, count);
 
