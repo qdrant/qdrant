@@ -99,7 +99,7 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     Distance::Dot,
     128, // dim
     32, // ef
-    10, // max_failures out of 100
+    10., // min_acc out of 100
 )]
 #[case::discovery_binary_dot(
     QueryVariant::Discovery,
@@ -107,7 +107,7 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     Distance::Dot,
     128, // dim
     128, // ef
-    99, // max_failures out of 100
+    1., // min_acc out of 100
 )]
 #[case::recommend_binary_dot(
     QueryVariant::RecommendBestScore,
@@ -115,7 +115,7 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     Distance::Dot,
     128, // dim
     64, // ef
-    99, // max_failures out of 100
+    3., // min_acc out of 100
 )]
 #[case::nearest_binary_cosine(
     QueryVariant::Nearest,
@@ -123,7 +123,7 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     Distance::Cosine,
     128, // dim
     32, // ef
-    60, // max_failures out of 100
+    25., // min_acc out of 100
 )]
 #[case::discovery_binary_cosine(
     QueryVariant::Discovery,
@@ -131,7 +131,7 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     Distance::Cosine,
     128, // dim
     128, // ef
-    99, // max_failures out of 100
+    20., // min_acc out of 100
 )]
 #[case::recommend_binary_cosine(
     QueryVariant::RecommendBestScore,
@@ -139,7 +139,7 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     Distance::Cosine,
     128, // dim
     64, // ef
-    99, // max_failures out of 100
+    20., // min_acc out of 100
 )]
 #[case::nearest_scalar_dot(
     QueryVariant::Nearest,
@@ -147,7 +147,7 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     Distance::Dot,
     32, // dim
     32, // ef
-    10, // max_failures out of 100
+    5., // min_acc out of 100
 )]
 #[case::nearest_scalar_cosine(
     QueryVariant::Nearest,
@@ -155,7 +155,7 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     Distance::Cosine,
     32, // dim
     32, // ef
-    10, // max_failures out of 100
+    20., // min_acc out of 100
 )]
 #[case::nearest_pq_dot(
     QueryVariant::Nearest,
@@ -163,7 +163,7 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     Distance::Dot,
     16, // dim
     32, // ef
-    10, // max_failures out of 100
+    10., // min_acc out of 100
 )]
 fn test_byte_storage_binary_quantization_hnsw(
     #[case] query_variant: QueryVariant,
@@ -171,7 +171,7 @@ fn test_byte_storage_binary_quantization_hnsw(
     #[case] distance: Distance,
     #[case] dim: usize,
     #[case] ef: usize,
-    #[case] max_failures: usize, // out of 100
+    #[case] min_acc: f64, // out of 100
 ) {
     let stopped = AtomicBool::new(false);
 
@@ -298,7 +298,7 @@ fn test_byte_storage_binary_quantization_hnsw(
     hnsw_index_byte.build_index(permit, &stopped).unwrap();
 
     let top = 5;
-    let mut hits = 0;
+    let mut sames = 0;
     let attempts = 100;
     for _ in 0..attempts {
         let query = random_query(&query_variant, &mut rnd, dim);
@@ -328,7 +328,6 @@ fn test_byte_storage_binary_quantization_hnsw(
                     hnsw_ef: Some(ef),
                     quantization: Some(QuantizationSearchParams {
                         oversampling: Some(2.0),
-                        rescore: Some(true),
                         ..Default::default()
                     }),
                     ..Default::default()
@@ -357,14 +356,9 @@ fn test_byte_storage_binary_quantization_hnsw(
             )
             .unwrap();
 
-        let sames_count = sames_count(&plain_result_byte, &index_result_byte);
-        if sames_count > 0 {
-            hits += 1;
-        }
+        sames += sames_count(&plain_result_byte, &index_result_byte);
     }
-    assert!(
-        attempts - hits <= max_failures,
-        "hits: {hits} of {attempts}"
-    );
-    eprintln!("hits = {hits:#?} out of {attempts}");
+    let acc = 100.0 * sames as f64 / (attempts * top) as f64;
+    println!("sames = {sames}, attempts = {attempts}, top = {top}, acc = {acc}");
+    assert!(acc > min_acc);
 }
