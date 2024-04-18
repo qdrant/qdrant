@@ -1518,4 +1518,113 @@ mod tests {
         assert_eq!(segment_info.num_points, 3);
         assert_eq!(segment_info.num_vectors, 4);
     }
+
+    #[test]
+    fn test_proxy_segment_flush() {
+        let tmp_dir = tempfile::Builder::new()
+            .prefix("segment_dir")
+            .tempdir()
+            .unwrap();
+
+        let locked_wrapped_segment = LockedSegment::new(build_segment_1(tmp_dir.path()));
+        let locked_write_segment = LockedSegment::new(empty_segment(tmp_dir.path()));
+
+        let mut proxy_segment = ProxySegment::new(
+            locked_wrapped_segment.clone(),
+            locked_write_segment.clone(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+        );
+
+        // Unwrapped `LockedSegment`s for convenient access
+        let LockedSegment::Original(wrapped_segment) = locked_wrapped_segment.clone() else {
+            unreachable!();
+        };
+
+        let LockedSegment::Original(write_segment) = locked_write_segment.clone() else {
+            unreachable!()
+        };
+
+        // - `wrapped_segment` has unflushed data
+        // - `write_segment` has no data
+        // - `proxy_segment` has no in-memory data
+        // - flush `proxy_segment`, ensure:
+        //   - `wrapped_segment` is flushed
+        //   - `ProxySegment::flush` returns `wrapped_segment`'s persisted version
+
+        let flushed_version = proxy_segment.flush(true).unwrap();
+        let wrapped_segment_persisted_version = *wrapped_segment.read().persisted_version.lock();
+        assert_eq!(Some(flushed_version), wrapped_segment_persisted_version);
+
+        // - `wrapped_segment` has unflushed data
+        // - `write_segment` has unflushed data
+        // - `proxy_segment` has no in-memory data
+        // - flush `proxy_segment`, ensure:
+        //   - `wrapped_segment` is flushed
+        //   - `write_segment` is flushed
+        //   - `ProxySegment::flush` returns `write_segment`'s persisted version
+
+        let current_version = proxy_segment.version();
+
+        wrapped_segment
+            .write()
+            .upsert_point(
+                current_version + 1,
+                42.into(),
+                only_default_vector(&[4.0, 2.0, 0.0, 0.0]),
+            )
+            .unwrap();
+
+        proxy_segment
+            .upsert_point(
+                current_version + 2,
+                69.into(),
+                only_default_vector(&[6.0, 9.0, 0.0, 0.0]),
+            )
+            .unwrap();
+
+        let flushed_version = proxy_segment.flush(true).unwrap();
+        let wrapped_segment_persisted_version = *wrapped_segment.read().persisted_version.lock();
+        let write_segment_persisted_version = *write_segment.read().persisted_version.lock();
+
+        assert_eq!(wrapped_segment_persisted_version, Some(current_version + 1));
+        assert_eq!(write_segment_persisted_version, Some(current_version + 2));
+        assert_eq!(Some(flushed_version), write_segment_persisted_version);
+
+        // - `wrapped_segment` has unflushed data
+        // - `write_segment` has unflushed data
+        // - `proxy_segment` has in-memory data
+        // - flush `proxy_segment`, ensure:
+        //   - `wrapped_segment` is flushed
+        //   - `write_segment` is flushed
+        //   - `ProxySegment::flush` returns `wrapped_segment`'s persisted version
+
+        let current_version = proxy_segment.version();
+
+        wrapped_segment
+            .write()
+            .upsert_point(
+                current_version + 1,
+                666.into(),
+                only_default_vector(&[6.0, 6.0, 6.0, 0.0]),
+            )
+            .unwrap();
+
+        proxy_segment
+            .upsert_point(
+                current_version + 2,
+                42.into(),
+                only_default_vector(&[0.0, 0.0, 4.0, 2.0]),
+            )
+            .unwrap();
+
+        let flushed_version = proxy_segment.flush(true).unwrap();
+        let wrapped_segment_persisted_version = *wrapped_segment.read().persisted_version.lock();
+        let write_segment_persisted_version = *write_segment.read().persisted_version.lock();
+
+        assert_eq!(wrapped_segment_persisted_version, Some(current_version + 1));
+        assert_eq!(write_segment_persisted_version, Some(current_version + 2));
+        assert_eq!(Some(flushed_version), wrapped_segment_persisted_version);
+    }
 }
