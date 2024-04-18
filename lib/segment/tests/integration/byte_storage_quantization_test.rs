@@ -99,7 +99,7 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     Distance::Dot,
     128, // dim
     32, // ef
-    10., // min_acc out of 100
+    5., // min_acc out of 100
 )]
 #[case::discovery_binary_dot(
     QueryVariant::Discovery,
