@@ -1,14 +1,11 @@
-#[cfg(not(target_os = "windows"))]
-mod prof;
-
-use std::num::NonZeroU64;
 use std::sync::Arc;
 
 use collection::config::{CollectionConfig, CollectionParams, WalConfig};
 use collection::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStruct,
 };
-use collection::operations::types::{CoreSearchRequestBatch, SearchRequestInternal, VectorParams};
+use collection::operations::types::{CoreSearchRequestBatch, SearchRequestInternal};
+use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::operations::CollectionUpdateOperations;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::local_shard::LocalShard;
@@ -23,6 +20,9 @@ use serde_json::Map;
 use tempfile::Builder;
 use tokio::runtime::Runtime;
 use tokio::sync::RwLock;
+
+#[cfg(not(target_os = "windows"))]
+mod prof;
 
 fn create_rnd_batch() -> CollectionUpdateOperations {
     let mut rng = thread_rng();
@@ -60,14 +60,7 @@ fn batch_search_bench(c: &mut Criterion) {
     };
 
     let collection_params = CollectionParams {
-        vectors: VectorParams {
-            size: NonZeroU64::new(100).unwrap(),
-            distance: Distance::Dot,
-            hnsw_config: None,
-            quantization_config: None,
-            on_disk: None,
-        }
-        .into(),
+        vectors: VectorParamsBuilder::new(100, Distance::Dot).build().into(),
         ..CollectionParams::empty()
     };
 

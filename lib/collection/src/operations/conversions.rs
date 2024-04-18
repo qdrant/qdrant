@@ -29,10 +29,10 @@ use tonic::Status;
 
 use super::consistency_params::ReadConsistency;
 use super::types::{
-    BaseGroupRequest, ContextExamplePair, CoreSearchRequest, DiscoverRequestInternal, GroupsResult,
-    OrderByInterface, PointGroup, QueryEnum, RecommendExample, RecommendGroupsRequestInternal,
-    RecommendStrategy, SearchGroupsRequestInternal, SparseIndexParams, SparseVectorParams,
-    VectorParamsDiff, VectorsConfigDiff,
+    BaseGroupRequest, ContextExamplePair, CoreSearchRequest, Datatype, DiscoverRequestInternal,
+    GroupsResult, OrderByInterface, PointGroup, QueryEnum, RecommendExample,
+    RecommendGroupsRequestInternal, RecommendStrategy, SearchGroupsRequestInternal,
+    SparseIndexParams, SparseVectorParams, VectorParamsDiff, VectorsConfigDiff,
 };
 use crate::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
@@ -551,7 +551,28 @@ impl TryFrom<api::grpc::qdrant::VectorParams> for VectorParams {
                 .map(grpc_to_segment_quantization_config)
                 .transpose()?,
             on_disk: vector_params.on_disk,
+            datatype: convert_datatype_from_proto(vector_params.datatype)?,
         })
+    }
+}
+
+fn convert_datatype_from_proto(datatype: Option<i32>) -> Result<Option<Datatype>, Status> {
+    if let Some(datatype_int) = datatype {
+        let grpc_datatype = api::grpc::qdrant::Datatype::from_i32(datatype_int);
+        if let Some(grpc_datatype) = grpc_datatype {
+            match grpc_datatype {
+                api::grpc::qdrant::Datatype::Uint8 => Ok(Some(Datatype::Uint8)),
+                api::grpc::qdrant::Datatype::Float32 => Ok(Some(Datatype::Float32)),
+                api::grpc::qdrant::Datatype::Default => Ok(None),
+            }
+        } else {
+            Err(Status::invalid_argument(format!(
+                "Cannot convert datatype: {}",
+                datatype_int
+            )))
+        }
+    } else {
+        Ok(None)
     }
 }
 
@@ -1610,6 +1631,18 @@ impl From<VectorParams> for api::grpc::qdrant::VectorParams {
             hnsw_config: value.hnsw_config.map(Into::into),
             quantization_config: value.quantization_config.map(Into::into),
             on_disk: value.on_disk,
+            datatype: value
+                .datatype
+                .map(|dt| api::grpc::qdrant::Datatype::from(dt).into()),
+        }
+    }
+}
+
+impl From<Datatype> for api::grpc::qdrant::Datatype {
+    fn from(value: Datatype) -> Self {
+        match value {
+            Datatype::Float32 => api::grpc::qdrant::Datatype::Float32,
+            Datatype::Uint8 => api::grpc::qdrant::Datatype::Uint8,
         }
     }
 }

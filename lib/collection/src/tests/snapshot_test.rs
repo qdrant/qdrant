@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::num::{NonZeroU32, NonZeroU64};
+use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use common::cpu::CpuBudget;
@@ -9,7 +9,8 @@ use tempfile::Builder;
 use crate::collection::{Collection, RequestShardTransfer};
 use crate::config::{CollectionConfig, CollectionParams, WalConfig};
 use crate::operations::shared_storage_config::SharedStorageConfig;
-use crate::operations::types::{NodeType, VectorParams, VectorsConfig};
+use crate::operations::types::{NodeType, VectorsConfig};
+use crate::operations::vector_params_builder::VectorParamsBuilder;
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::collection_shard_distribution::CollectionShardDistribution;
@@ -49,13 +50,7 @@ async fn _test_snapshot_collection(node_type: NodeType) {
     };
 
     let collection_params = CollectionParams {
-        vectors: VectorsConfig::Single(VectorParams {
-            size: NonZeroU64::new(4).unwrap(),
-            distance: Distance::Dot,
-            hnsw_config: None,
-            quantization_config: None,
-            on_disk: None,
-        }),
+        vectors: VectorsConfig::Single(VectorParamsBuilder::new(4, Distance::Dot).build()),
         shard_number: NonZeroU32::new(4).unwrap(),
         replication_factor: NonZeroU32::new(3).unwrap(),
         write_consistency_factor: NonZeroU32::new(2).unwrap(),

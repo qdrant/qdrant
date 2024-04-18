@@ -77,6 +77,7 @@
   
     - [CollectionStatus](#qdrant-CollectionStatus)
     - [CompressionRatio](#qdrant-CompressionRatio)
+    - [Datatype](#qdrant-Datatype)
     - [Distance](#qdrant-Distance)
     - [PayloadSchemaType](#qdrant-PayloadSchemaType)
     - [QuantizationType](#qdrant-QuantizationType)
@@ -1309,6 +1310,7 @@ Note: 1kB = 1 vector of size 256. |
 | hnsw_config | [HnswConfigDiff](#qdrant-HnswConfigDiff) | optional | Configuration of vector HNSW graph. If omitted - the collection configuration will be used |
 | quantization_config | [QuantizationConfig](#qdrant-QuantizationConfig) | optional | Configuration of vector quantization config. If omitted - the collection configuration will be used |
 | on_disk | [bool](#bool) | optional | If true - serve vectors from disk. If set to false, the vectors will be loaded in RAM. |
+| datatype | [Datatype](#qdrant-Datatype) | optional | Data type of the vectors |
 
 
 
@@ -1471,6 +1473,19 @@ Note: 1kB = 1 vector of size 256. |
 | x16 | 2 |  |
 | x32 | 3 |  |
 | x64 | 4 |  |
+
+
+
+<a name="qdrant-Datatype"></a>
+
+### Datatype
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| Default | 0 |  |
+| Float32 | 1 |  |
+| Uint8 | 2 |  |
 
 
 
