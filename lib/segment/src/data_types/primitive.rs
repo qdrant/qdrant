@@ -42,7 +42,7 @@ impl PrimitiveVectorElement for VectorElementType {
     }
 
     fn datatype() -> VectorStorageDatatype {
-        VectorStorageDatatype::Float
+        VectorStorageDatatype::Float32
     }
 }
 

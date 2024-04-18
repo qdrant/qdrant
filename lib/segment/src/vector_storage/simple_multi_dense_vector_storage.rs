@@ -146,7 +146,7 @@ impl VectorStorage for SimpleMultiDenseVectorStorage {
     }
 
     fn datatype(&self) -> VectorStorageDatatype {
-        VectorStorageDatatype::Float
+        VectorStorageDatatype::Float32
     }
 
     fn is_on_disk(&self) -> bool {

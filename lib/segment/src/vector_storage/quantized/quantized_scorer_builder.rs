@@ -57,7 +57,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
 
     pub fn build(self) -> OperationResult<Box<dyn RawScorer + 'a>> {
         match self.datatype {
-            VectorStorageDatatype::Float => match self.distance {
+            VectorStorageDatatype::Float32 => match self.distance {
                 Distance::Cosine => self.build_with_metric::<VectorElementType, CosineMetric>(),
                 Distance::Euclid => self.build_with_metric::<VectorElementType, EuclidMetric>(),
                 Distance::Dot => self.build_with_metric::<VectorElementType, DotProductMetric>(),
