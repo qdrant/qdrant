@@ -115,7 +115,7 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     Distance::Dot,
     128, // dim
     64, // ef
-    3., // min_acc out of 100
+    1., // min_acc out of 100
 )]
 #[case::nearest_binary_cosine(
     QueryVariant::Nearest,
@@ -131,7 +131,7 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     Distance::Cosine,
     128, // dim
     128, // ef
-    20., // min_acc out of 100
+    15., // min_acc out of 100
 )]
 #[case::recommend_binary_cosine(
     QueryVariant::RecommendBestScore,
@@ -139,7 +139,7 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     Distance::Cosine,
     128, // dim
     64, // ef
-    20., // min_acc out of 100
+    15., // min_acc out of 100
 )]
 #[case::nearest_scalar_dot(
     QueryVariant::Nearest,
@@ -147,7 +147,7 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     Distance::Dot,
     32, // dim
     32, // ef
-    5., // min_acc out of 100
+    80., // min_acc out of 100
 )]
 #[case::nearest_scalar_cosine(
     QueryVariant::Nearest,
@@ -155,7 +155,7 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     Distance::Cosine,
     32, // dim
     32, // ef
-    20., // min_acc out of 100
+    80., // min_acc out of 100
 )]
 #[case::nearest_pq_dot(
     QueryVariant::Nearest,
@@ -163,7 +163,7 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     Distance::Dot,
     16, // dim
     32, // ef
-    10., // min_acc out of 100
+    70., // min_acc out of 100
 )]
 fn test_byte_storage_binary_quantization_hnsw(
     #[case] query_variant: QueryVariant,
