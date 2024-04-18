@@ -564,8 +564,26 @@ impl<'s> SegmentHolder {
             ids,
             update_nonappendable,
             |point_id, _idx, write_segment, &update_nonappendable| {
+                let segment_id = write_segment.id();
+
+                let _span = tracing::info_span!(
+                    "upsert_points/update",
+                    operation = op_num,
+                    point.id = %point_id,
+                    point.version = tracing::field::Empty,
+                    segment.id = segment_id,
+                    tracing.target = "upsert_points",
+                )
+                .entered();
+
                 if let Some(point_version) = write_segment.point_version(point_id) {
                     if point_version >= op_num {
+                        tracing::info!(
+                            tracing.target = "upsert_points",
+                            "point {point_id} version {point_version} \
+                             is newer than operation {op_num}"
+                        );
+
                         applied_points.insert(point_id);
                         return Ok(false);
                     }
@@ -574,9 +592,21 @@ impl<'s> SegmentHolder {
                 let is_applied = if update_nonappendable || write_segment.is_appendable() {
                     point_operation(point_id, write_segment)?
                 } else {
+                    drop(_span);
+
                     self.aloha_random_write(
                         &appendable_segments,
                         |_appendable_idx, appendable_write_segment| {
+                            let _span = tracing::info_span!(
+                                "upsert_points/move",
+                                operation = op_num,
+                                point.id = %point_id,
+                                segment.id = segment_id,
+                                appendable.id = appendable_write_segment.id(),
+                                tracing.target = "upsert_points",
+                            )
+                            .entered();
+
                             let all_vectors = write_segment.all_vectors(point_id)?;
                             let payload = write_segment.payload(point_id)?;
 
@@ -694,6 +724,8 @@ impl<'s> SegmentHolder {
         let mut min_unsaved_version: SeqNumberType = SeqNumberType::MAX;
         let mut has_unsaved = false;
 
+        let _span = tracing::info_span!("flush_all", tracing.target = "flush").entered();
+
         // Flush and release each segment
         for read_segment in segment_reads {
             let segment_version = read_segment.version();
@@ -711,8 +743,18 @@ impl<'s> SegmentHolder {
         }
 
         if has_unsaved {
+            tracing::info!(
+                tracing.target = "flush",
+                "all segments flushed: {min_unsaved_version}",
+            );
+
             Ok(min_unsaved_version)
         } else {
+            tracing::info!(
+                tracing.target = "flush",
+                "all segments flushed: {max_persisted_version}",
+            );
+
             Ok(max_persisted_version)
         }
     }

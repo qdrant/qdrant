@@ -508,6 +508,16 @@ pub trait SegmentOptimizer {
             .filter_map(|x| x.cloned())
             .collect();
 
+        let segment_ids: Vec<_> = optimizing_segments
+            .iter()
+            .map(|segment| segment.get().read().id())
+            .collect();
+
+        let _span = tracing::info_span!("optimize", ?segment_ids, tracing.target = "optimization",)
+            .entered();
+
+        tracing::info!(tracing.target = "optimization", "optimization started...",);
+
         // Check if all segments are not under other optimization or some ids are missing
         let all_segments_ok = optimizing_segments.len() == ids.len()
             && optimizing_segments
@@ -516,12 +526,20 @@ pub trait SegmentOptimizer {
 
         if !all_segments_ok {
             // Cancel the optimization
+            tracing::warn!(tracing.target = "optimization", "optimization canceled",);
+
             return Ok(false);
         }
 
         check_process_stopped(stopped)?;
 
         let tmp_segment = self.temp_segment(false)?;
+
+        tracing::info!(
+            tracing.target = "optimization",
+            "created temporary segment {}",
+            tmp_segment.get().read().id(),
+        );
 
         let proxy_deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
         let proxy_deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
@@ -558,6 +576,7 @@ pub trait SegmentOptimizer {
         let proxy_ids: Vec<_> = {
             // Exclusive lock for the segments operations.
             let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
+
             let mut proxy_ids = Vec::new();
             for (mut proxy, idx) in proxies.into_iter().zip(ids.iter().cloned()) {
                 // replicate_field_indexes for the second time,
@@ -568,6 +587,12 @@ pub trait SegmentOptimizer {
                 proxy.replicate_field_indexes(op_num)?; // Slow only in case the index is change in the gap between two calls
                 proxy_ids.push(write_segments.swap_new(proxy, &[idx]).0);
             }
+
+            tracing::info!(
+                tracing.target = "optimization",
+                "swapped proxified segments",
+            );
+
             proxy_ids
         };
 
@@ -590,9 +615,21 @@ pub trait SegmentOptimizer {
                 if matches!(error, CollectionError::Cancelled { .. }) {
                     self.handle_cancellation(&segments, &proxy_ids, &tmp_segment);
                 }
+
+                tracing::error!(
+                    tracing.target = "optimization",
+                    "optimization failed: {error}",
+                );
+
                 return Err(error);
             }
         };
+
+        tracing::info!(
+            tracing.target = "optimization",
+            "created optimized segment {}",
+            optimized_segment.id()
+        );
 
         // Avoid unnecessary point removing in the critical section:
         // - save already removed points while avoiding long read locks
@@ -646,6 +683,11 @@ pub trait SegmentOptimizer {
                 "swapped different number of proxies on unwrap, missing or incorrect segment IDs?"
             );
 
+            tracing::info!(
+                tracing.target = "optimization",
+                "swapped proxies and optimized segment",
+            );
+
             let has_appendable_segments = write_segments_guard.has_appendable_segment();
 
             // Release reference counter of the optimized segments
@@ -654,6 +696,11 @@ pub trait SegmentOptimizer {
             // Append a temp segment to collection if it is not empty or there is no other appendable segment
             if tmp_segment.get().read().available_point_count() > 0 || !has_appendable_segments {
                 write_segments_guard.add_new_locked(tmp_segment);
+
+                tracing::info!(
+                    tracing.target = "optimization",
+                    "persisted temporary segment",
+                );
 
                 // unlock collection for search and updates
                 drop(write_segments_guard);
@@ -665,6 +712,11 @@ pub trait SegmentOptimizer {
                     proxy.drop_data()?;
                 }
             } else {
+                tracing::info!(
+                    tracing.target = "optimization",
+                    "discarding temporary segment",
+                );
+
                 // unlock collection for search and updates
                 drop(write_segments_guard);
                 // After the collection is unlocked - we can remove data as slow as we want.
@@ -673,8 +725,14 @@ pub trait SegmentOptimizer {
                 for proxy in proxies {
                     proxy.drop_data()?;
                 }
+
                 tmp_segment.drop_data()?;
             }
+
+            tracing::info!(
+                tracing.target = "optimization",
+                "optimization successfully finished",
+            );
         }
         timer.set_success(true);
         Ok(true)

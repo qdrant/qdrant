@@ -13,6 +13,7 @@ multiling-chinese = ["charabia/chinese"]
 multiling-japanese = ["charabia/japanese"]
 multiling-korean = ["charabia/korean"]
 testing = ["common/testing", "sparse/testing"]
+tracing = []
 
 [build-dependencies]
 cc = "1.0"
@@ -86,7 +87,7 @@ issues = { path = "../common/issues" }
 memory = { path = "../common/memory" }
 sparse = { path = "../sparse" }
 
-tracing = { workspace = true, optional = true }
+tracing = { workspace = true }
 fs4 = "0.8.4"
 macro_rules_attribute = "0.2.0"
 generic-tests = { workspace = true }

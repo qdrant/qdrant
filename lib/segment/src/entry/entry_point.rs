@@ -220,4 +220,50 @@ pub trait SegmentEntry {
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> SegmentTelemetry;
 
     fn fill_query_context(&self, query_context: &mut QueryContext);
+
+    /// Returns a human-readable, persistent identifier of a segment. Useful for logging/debugging.
+    ///
+    /// The identifier has the following formats:
+    /// - for proxy segments: `<wrapped-segment-path>/<write-segment-path>`
+    /// - for appendable regular segments: `<segment-path>:rw`
+    /// - for non-appendable regular segments: `<segment-path>:ro`
+    fn id(&self) -> String {
+        if self.is_proxy() {
+            format!(
+                "{}/{}",
+                self.data_path()
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy(),
+                self.tmp_path()
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy(),
+            )
+        } else {
+            format!(
+                "{}:{}",
+                self.data_path()
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy(),
+                if self.is_appendable() { "rw" } else { "ro" },
+            )
+        }
+    }
+
+    /// Returns `true` if this segment is a `ProxySegment`. Otherwise returns `false`.
+    ///
+    /// This default impl is overridden by `ProxySegment`.
+    fn is_proxy(&self) -> bool {
+        false
+    }
+
+    /// Returns path to the inner `write_segment`, if this segment is a `ProxySegment`.
+    /// Otherwise, returns empty [`PathBuf`].
+    ///
+    /// This default impl is overridden by `ProxySegment`.
+    fn tmp_path(&self) -> PathBuf {
+        PathBuf::new()
+    }
 }

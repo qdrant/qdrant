@@ -335,6 +335,12 @@ impl Segment {
     {
         // Global version to check if operation has already been applied, then skip without execution
         if self.version.unwrap_or(0) > op_num {
+            tracing::info!(
+                tracing.target = "upsert_points",
+                "segment version {} is newer than operation version {op_num}",
+                self.version.unwrap_or(0),
+            );
+
             return Ok(false);
         }
 
@@ -364,6 +370,15 @@ impl Segment {
                 .internal_version(point_offset)
                 .map_or(false, |current_version| current_version > op_num)
             {
+                tracing::info!(
+                    tracing.target = "upsert_points",
+                    "point version {} is newer than operation version {op_num}",
+                    self.id_tracker
+                        .borrow()
+                        .internal_version(point_offset)
+                        .unwrap_or(0),
+                );
+
                 return Ok(false);
             }
         }
@@ -1147,9 +1162,21 @@ impl SegmentEntry for Segment {
         self.handle_point_version_and_failure(op_num, stored_internal_point, |segment| {
             if let Some(existing_internal_id) = stored_internal_point {
                 segment.replace_all_vectors(existing_internal_id, vectors)?;
+
+                tracing::info!(
+                    tracing.target = "upsert_points",
+                    "operation {op_num} updated point {point_id}"
+                );
+
                 Ok((true, Some(existing_internal_id)))
             } else {
                 let new_index = segment.insert_new_vectors(point_id, vectors)?;
+
+                tracing::info!(
+                    tracing.target = "upsert_points",
+                    "operation {op_num} inserted point {point_id}"
+                );
+
                 Ok((false, Some(new_index)))
             }
         })
@@ -1537,6 +1564,11 @@ impl SegmentEntry for Segment {
         let id_tracker_versions_flusher = self.id_tracker.borrow().versions_flusher();
         let persisted_version = self.persisted_version.clone();
 
+        let segment_id = self.id();
+        let _span =
+            tracing::info_span!("flush", segment.id = segment_id, tracing.target = "flush",)
+                .entered();
+
         // Flush order is important:
         //
         // 1. Flush id mapping. So during recovery the point will be recovered er in proper segment.
@@ -1611,6 +1643,12 @@ impl SegmentEntry for Segment {
             })?;
             *persisted_version.lock() = state.version;
 
+            tracing::info!(
+                tracing.target = "flush",
+                "flushed segment: {}",
+                state.version.unwrap_or(0),
+            );
+
             debug_assert!(state.version.is_some());
             Ok(state.version.unwrap_or(0))
         };
@@ -1618,10 +1656,21 @@ impl SegmentEntry for Segment {
         if sync {
             flush_op()
         } else {
+            tracing::info!(
+                tracing.target = "flush",
+                "background flush: {}",
+                current_persisted_version.unwrap_or(0),
+            );
+
+            let span = tracing::info_span!("background");
+
             *background_flush_lock = Some(
                 thread::Builder::new()
                     .name("background_flush".to_string())
-                    .spawn(flush_op)
+                    .spawn(move || {
+                        let _span = span.entered();
+                        flush_op()
+                    })
                     .unwrap(),
             );
             Ok(current_persisted_version.unwrap_or(0))
