@@ -132,13 +132,6 @@ impl Collection {
 
         let instant = Instant::now();
 
-        // Keep copy of filters for possible slow request post-processing
-        let filters = request
-            .searches
-            .iter()
-            .map(|req| req.filter.clone()) // TODO: check if we can avoid cloning
-            .collect::<Vec<_>>();
-
         // query all shards concurrently
         let all_searches_res = {
             let shard_holder = self.shards_holder.read().await;
@@ -168,8 +161,18 @@ impl Collection {
         };
 
         let result = self
-            .merge_from_shards(all_searches_res, request, !shard_selection.is_shard_id())
+            .merge_from_shards(
+                all_searches_res,
+                Arc::clone(&request),
+                !shard_selection.is_shard_id(),
+            )
             .await;
+
+        let filters = request
+            .searches
+            .iter()
+            .map(|req| req.filter.as_ref())
+            .collect::<Vec<_>>();
 
         self.post_process_if_slow_request(instant.elapsed(), filters);
 
@@ -283,7 +286,7 @@ impl Collection {
         Ok(top_results)
     }
 
-    fn post_process_if_slow_request(&self, duration: Duration, filters: Vec<Option<Filter>>) {
+    fn post_process_if_slow_request(&self, duration: Duration, filters: Vec<Option<&Filter>>) {
         if duration > segment::problems::UnindexedField::SLOW_SEARCH_THRESHOLD {
             let Some(payload_schema) = self.payload_index_schema.try_read() else {
                 // Don't wait for read lock
@@ -298,7 +301,7 @@ impl Collection {
 
             for filter in filters {
                 segment::problems::UnindexedField::submit_possible_suspects(
-                    &filter,
+                    filter,
                     &payload_schema.schema,
                     self.id.clone(),
                 )

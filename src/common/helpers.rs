@@ -1,20 +1,14 @@
 use std::cmp::max;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Duration;
 use std::{fs, io};
 
-use itertools::Itertools;
 use schemars::JsonSchema;
-use segment::types::Filter;
 use serde::{Deserialize, Serialize};
-use storage::dispatcher::Dispatcher;
-use storage::rbac::Access;
 use tokio::runtime;
 use tokio::runtime::Runtime;
 use tonic::transport::{Certificate, ClientTlsConfig, Identity, ServerTlsConfig};
 use validator::Validate;
 
-use super::collections::do_get_collection;
 use crate::settings::{Settings, TlsConfig};
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
