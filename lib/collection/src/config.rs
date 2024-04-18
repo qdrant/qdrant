@@ -349,7 +349,6 @@ impl CollectionParams {
                         },
                         // TODO(colbert) add `multivec` to `VectorParams`
                         multi_vec_config: None,
-                        // TODO(byte_storage)
                         datatype: params.datatype.map(VectorStorageDatatype::from),
                     },
                 )

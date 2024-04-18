@@ -337,7 +337,7 @@ mod tests {
     #[test]
     fn test_update_collection_params() {
         let params = CollectionParams {
-            vectors: VectorParamsBuilder::new(128, Distance::Dot).build().into(),
+            vectors: VectorParamsBuilder::new(128, Distance::Cosine).build().into(),
             ..CollectionParams::empty()
         };
 

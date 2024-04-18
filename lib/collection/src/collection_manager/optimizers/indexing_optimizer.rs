@@ -838,7 +838,9 @@ mod tests {
         };
         let mut collection_params = CollectionParams {
             vectors: VectorsConfig::Single(
-                VectorParamsBuilder::new(dim as u64, Distance::Dot).build(),
+                VectorParamsBuilder::new(dim as u64, Distance::Dot)
+                    .with_on_disk(false)
+                    .build(),
             ),
             ..CollectionParams::empty()
         };
