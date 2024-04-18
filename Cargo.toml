@@ -61,7 +61,7 @@ clap = { version = "4.5.4", features = ["derive"] }
 serde_cbor = { workspace = true }
 uuid = { workspace = true }
 sys-info = "0.9.1"
-wal = { git = "https://github.com/qdrant/wal.git", rev = "fad0e7c48be58d8e7db4cc739acd9b1cf6735de0" }
+wal = { workspace = true }
 
 config = "~0.14.0"
 
@@ -141,6 +141,7 @@ tonic-reflection = "0.9.2"
 tracing = { version = "0.1", features = ["async-await"] }
 uuid = { version = "1.8", features = ["v4", "serde"] }
 validator = { version = "0.16.1", features = ["derive"] }
+wal = { git = "https://github.com/qdrant/wal.git", rev = "a7870900f29811a24e20882887d60e6a2febf945" }
 
 [[bin]]
 name = "schema_generator"
