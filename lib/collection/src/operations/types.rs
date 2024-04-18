@@ -1295,11 +1295,13 @@ impl Record {
 
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone, Hash)]
 #[serde(rename_all = "snake_case")]
+/// Defines which datatype should be used to represent vectors in the storage.
+/// Choosing different datatypes allows to optimize memory usage and performance vs accuracy.
+/// - For `float32` datatype - vectors are stored as single-precision floating point numbers, 4bytes.
+/// - For `uint8` datatype - vectors are stored as unsigned 8-bit integers, 1byte. It expects vector elements to be in range `[0, 255]`.
 pub enum Datatype {
-    /// Single-precision floating point
     #[default]
     Float32,
-    /// Unsigned 8-bit integer
     Uint8,
 }
 
