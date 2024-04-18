@@ -2,12 +2,19 @@ syntax = "proto3";
 package qdrant;
 option csharp_namespace = "Qdrant.Client.Grpc";
 
+enum Datatype {
+  Default = 0;
+  Float32 = 1;
+  Uint8 = 2;
+}
+
 message VectorParams {
   uint64 size = 1; // Size of the vectors
   Distance distance = 2; // Distance function used for comparing vectors
   optional HnswConfigDiff hnsw_config = 3; // Configuration of vector HNSW graph. If omitted - the collection configuration will be used
   optional QuantizationConfig quantization_config = 4; // Configuration of vector quantization config. If omitted - the collection configuration will be used
   optional bool on_disk = 5; // If true - serve vectors from disk. If set to false, the vectors will be loaded in RAM.
+  optional Datatype datatype = 6; // Data type of the vectors
 }
 
 message VectorParamsDiff {

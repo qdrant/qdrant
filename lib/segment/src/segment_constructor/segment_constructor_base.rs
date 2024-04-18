@@ -142,7 +142,7 @@ fn create_segment(
                     )?
                 } else {
                     match storage_element_type {
-                        VectorStorageDatatype::Float => open_simple_dense_vector_storage(
+                        VectorStorageDatatype::Float32 => open_simple_dense_vector_storage(
                             database.clone(),
                             &db_column_name,
                             vector_config.size,
@@ -161,7 +161,7 @@ fn create_segment(
             }
             // Mmap on disk, not appendable
             VectorStorageType::Mmap => match storage_element_type {
-                VectorStorageDatatype::Float => open_memmap_vector_storage(
+                VectorStorageDatatype::Float32 => open_memmap_vector_storage(
                     &vector_storage_path,
                     vector_config.size,
                     vector_config.distance,
@@ -174,7 +174,7 @@ fn create_segment(
             },
             // Chunked mmap on disk, appendable
             VectorStorageType::ChunkedMmap => match storage_element_type {
-                VectorStorageDatatype::Float => open_appendable_memmap_vector_storage(
+                VectorStorageDatatype::Float32 => open_appendable_memmap_vector_storage(
                     &vector_storage_path,
                     vector_config.size,
                     vector_config.distance,

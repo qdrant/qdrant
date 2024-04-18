@@ -1,12 +1,13 @@
 #![allow(deprecated)]
 
-use std::num::{NonZeroU32, NonZeroU64};
+use std::num::NonZeroU32;
 use std::path::Path;
 use std::sync::Arc;
 
 use collection::collection::{Collection, RequestShardTransfer};
 use collection::config::{CollectionConfig, CollectionParams, WalConfig};
-use collection::operations::types::{CollectionError, VectorParams};
+use collection::operations::types::CollectionError;
+use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
@@ -42,14 +43,7 @@ pub async fn simple_collection_fixture(collection_path: &Path, shard_number: u32
     };
 
     let collection_params = CollectionParams {
-        vectors: VectorParams {
-            size: NonZeroU64::new(4).unwrap(),
-            distance: Distance::Dot,
-            hnsw_config: None,
-            quantization_config: None,
-            on_disk: None,
-        }
-        .into(),
+        vectors: VectorParamsBuilder::new(4, Distance::Dot).build().into(),
         shard_number: NonZeroU32::new(shard_number).expect("Shard number can not be zero"),
         ..CollectionParams::empty()
     };

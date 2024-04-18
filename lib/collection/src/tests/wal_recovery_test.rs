@@ -1,4 +1,3 @@
-use std::num::NonZeroU64;
 use std::sync::Arc;
 
 use common::cpu::CpuBudget;
@@ -10,7 +9,8 @@ use tokio::sync::RwLock;
 
 use crate::config::{CollectionConfig, CollectionParams, WalConfig};
 use crate::operations::point_ops::{PointOperations, PointStruct};
-use crate::operations::types::{VectorParams, VectorsConfig};
+use crate::operations::types::VectorsConfig;
+use crate::operations::vector_params_builder::VectorParamsBuilder;
 use crate::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
@@ -23,13 +23,7 @@ fn create_collection_config() -> CollectionConfig {
     };
 
     let collection_params = CollectionParams {
-        vectors: VectorsConfig::Single(VectorParams {
-            size: NonZeroU64::new(4).unwrap(),
-            distance: Distance::Dot,
-            hnsw_config: None,
-            quantization_config: None,
-            on_disk: None,
-        }),
+        vectors: VectorsConfig::Single(VectorParamsBuilder::new(4, Distance::Dot).build()),
         ..CollectionParams::empty()
     };
 

@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::num::{NonZeroU32, NonZeroU64};
+use std::num::NonZeroU32;
 use std::path::Path;
 
 use collection::collection::Collection;
@@ -10,8 +10,9 @@ use collection::operations::point_ops::{
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     CollectionError, PointRequestInternal, RecommendRequestInternal, SearchRequestInternal,
-    VectorParams, VectorsConfig,
+    VectorsConfig,
 };
+use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::operations::CollectionUpdateOperations;
 use collection::recommendations::recommend_by;
 use segment::data_types::named_vectors::NamedVectors;
@@ -37,20 +38,8 @@ pub async fn multi_vec_collection_fixture(collection_path: &Path, shard_number: 
         wal_segments_ahead: 0,
     };
 
-    let vector_params1 = VectorParams {
-        size: NonZeroU64::new(4).unwrap(),
-        distance: Distance::Dot,
-        hnsw_config: None,
-        quantization_config: None,
-        on_disk: None,
-    };
-    let vector_params2 = VectorParams {
-        size: NonZeroU64::new(4).unwrap(),
-        distance: Distance::Dot,
-        hnsw_config: None,
-        quantization_config: None,
-        on_disk: None,
-    };
+    let vector_params1 = VectorParamsBuilder::new(4, Distance::Dot).build();
+    let vector_params2 = VectorParamsBuilder::new(4, Distance::Dot).build();
 
     let mut vectors_config = BTreeMap::new();
 

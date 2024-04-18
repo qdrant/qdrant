@@ -1,7 +1,7 @@
-use std::num::{NonZeroU64, NonZeroUsize};
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 
-use collection::operations::types::VectorParams;
+use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::channel_service::ChannelService;
 use common::cpu::CpuBudget;
@@ -97,14 +97,9 @@ fn test_alias_operation() {
                 CollectionMetaOperations::CreateCollection(CreateCollectionOperation::new(
                     "test".to_string(),
                     CreateCollection {
-                        vectors: VectorParams {
-                            size: NonZeroU64::new(10).unwrap(),
-                            distance: Distance::Cosine,
-                            hnsw_config: None,
-                            quantization_config: None,
-                            on_disk: None,
-                        }
-                        .into(),
+                        vectors: VectorParamsBuilder::new(10, Distance::Cosine)
+                            .build()
+                            .into(),
                         sparse_vectors: None,
                         hnsw_config: None,
                         wal_config: None,
