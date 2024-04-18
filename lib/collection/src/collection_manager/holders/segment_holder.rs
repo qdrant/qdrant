@@ -58,17 +58,18 @@ fn try_unwrap_with_timeout<T>(
     timeout: Duration,
 ) -> Result<T, Arc<T>> {
     let start = Instant::now();
+
     loop {
-        match Arc::try_unwrap(arc) {
-            Ok(inner) => return Ok(inner),
-            Err(inner) => {
-                arc = inner;
-                if start.elapsed() >= timeout {
-                    return Err(arc);
-                }
-                sleep(spin);
-            }
+        arc = match Arc::try_unwrap(arc) {
+            Ok(unwrapped) => return Ok(unwrapped),
+            Err(arc) => arc,
+        };
+
+        if start.elapsed() >= timeout {
+            return Err(arc);
         }
+
+        sleep(spin);
     }
 }
 
