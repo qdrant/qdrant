@@ -305,6 +305,11 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 .context(format!("Failed to get entry at index {entry_index}"))?;
 
             if entry.data.is_empty() {
+                self.persistent
+                    .write()
+                    .entry_applied()
+                    .context("Failed to save new state of applied entries queue")?;
+
                 continue;
             }
 
@@ -364,6 +369,11 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 .context(format!("Failed to get entry at index {entry_index}"))?;
 
             if entry.data.is_empty() {
+                self.persistent
+                    .write()
+                    .entry_applied()
+                    .context("Failed to save new state of applied entries queue")?;
+
                 continue;
             }
 

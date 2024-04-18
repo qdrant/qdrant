@@ -482,9 +482,15 @@ impl Consensus {
                 elapsed -= tick_period;
             }
 
-            let state = self.node.store().clone();
-            if state.apply_conf_change_entries(&mut self.node)? {
+            if self
+                .node
+                .store()
+                .clone()
+                .apply_conf_change_entries(&mut self.node)?
+            {
                 return Ok(());
+            } else {
+                self.apply.signal()?;
             }
 
             if self.node.has_ready() {
