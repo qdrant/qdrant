@@ -1548,7 +1548,7 @@ mod tests {
 
         // - `wrapped_segment` has unflushed data
         // - `write_segment` has no data
-        // - `proxy_segment` has no data
+        // - `proxy_segment` has no in-memory data
         // - flush `proxy_segment`, ensure:
         //   - `wrapped_segment` is flushed
         //   - `ProxySegment::flush` returns `wrapped_segment`'s persisted version
@@ -1559,7 +1559,7 @@ mod tests {
 
         // - `wrapped_segment` has unflushed data
         // - `write_segment` has unflushed data
-        // - `proxy_segment` has no data
+        // - `proxy_segment` has no in-memory data
         // - flush `proxy_segment`, ensure:
         //   - `wrapped_segment` is flushed
         //   - `write_segment` is flushed
@@ -1594,7 +1594,7 @@ mod tests {
 
         // - `wrapped_segment` has unflushed data
         // - `write_segment` has unflushed data
-        // - `proxy_segment` has unflushed data
+        // - `proxy_segment` has in-memory data
         // - flush `proxy_segment`, ensure:
         //   - `wrapped_segment` is flushed
         //   - `write_segment` is flushed
