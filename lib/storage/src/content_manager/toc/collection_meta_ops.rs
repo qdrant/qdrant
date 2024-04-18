@@ -183,7 +183,7 @@ impl TableOfContent {
             // Solve all issues related to this collection
             issues::solve_by_filter(|code| {
                 code.split('/')
-                    .next()
+                    .nth(1)
                     .map_or(false, |coll_name| coll_name == collection_name)
             });
 

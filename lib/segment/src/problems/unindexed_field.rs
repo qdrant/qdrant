@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use http::{HeaderMap, Method, Uri};
@@ -13,17 +14,30 @@ use crate::types::{
     PayloadKeyType, PayloadSchemaParams, PayloadSchemaType,
 };
 
+#[derive(Debug)]
 pub struct UnindexedField {
     field_name: JsonPathV2,
-    field_schemas: Vec<PayloadFieldSchema>,
+    field_schemas: HashSet<PayloadFieldSchema>,
     collection_name: String,
+    endpoint: Uri,
 }
 
 impl UnindexedField {
-    pub const SLOW_SEARCH_THRESHOLD: Duration = Duration::from_millis(300);
+    pub fn slow_search_threshold() -> Duration {
+        static SLOW_SEARCH_THRESHOLD: OnceLock<Duration> = OnceLock::new();
+
+        *SLOW_SEARCH_THRESHOLD.get_or_init(|| {
+            Duration::from_millis(
+                std::env::var("QDRANT_SLOW_SEARCH_THRESHOLD")
+                    .ok()
+                    .and_then(|var| var.parse::<u64>().ok())
+                    .unwrap_or(300),
+            )
+        })
+    }
 
     pub fn get_code(collection_name: &str, field_name: &JsonPathV2) -> CodeType {
-        format!("{collection_name}/UNINDEXED_FIELD/{field_name}")
+        format!("/{collection_name}/UNINDEXED_FIELD/{field_name}")
     }
 
     /// Try to form an issue from a field condition and a collection name
@@ -33,21 +47,34 @@ impl UnindexedField {
     /// Will fail if the field condition cannot be used for inferring an appropriate schema.
     /// For example, when there is no index that can be built to improve performance.
     pub fn try_new(
-        condition: FieldCondition,
+        field_name: JsonPathV2,
+        field_schemas: HashSet<PayloadFieldSchema>,
         collection_name: String,
     ) -> Result<Self, OperationError> {
-        let field_schemas = infer_schema_from_field_condition(&condition);
-
         if field_schemas.is_empty() {
-            return Err(OperationError::TypeInferenceError {
-                field_name: condition.key,
+            return Err(OperationError::ValidationError {
+                description: "Cannot create issue which won't have a solution".to_string(),
             });
         }
 
+        let endpoint = match Uri::builder()
+            .path_and_query(format!("/collections/{}/index", collection_name).as_str())
+            .build()
+        {
+            Ok(uri) => uri,
+            Err(e) => {
+                log::trace!("Failed to build uri: {e}");
+                return Err(OperationError::ValidationError {
+                    description: "Bad collection name".to_string(),
+                });
+            }
+        };
+
         Ok(Self {
-            field_name: condition.key,
+            field_name,
             field_schemas,
             collection_name,
+            endpoint,
         })
     }
 
@@ -58,6 +85,9 @@ impl UnindexedField {
     ) {
         let unindexed_issues =
             Extractor::new(filter, payload_schema, collection_name).into_issues();
+
+        log::trace!("Found unindexed issues: {unindexed_issues:#?}");
+
         for issue in unindexed_issues {
             issue.submit();
         }
@@ -77,17 +107,6 @@ impl Issue for UnindexedField {
     }
 
     fn solution(&self) -> Solution {
-        let uri = match Uri::builder()
-            .path_and_query(format!("/collections/{}/index", self.collection_name).as_str())
-            .build()
-        {
-            Ok(uri) => uri,
-            Err(e) => {
-                log::warn!("Failed to build uri: {e}");
-                return Solution::None;
-            }
-        };
-
         let mut solutions = self.field_schemas.iter().cloned().map(|field_schema| {
             let request_body = serde_json::json!({
                 "field_name": self.field_name,
@@ -104,7 +123,7 @@ impl Issue for UnindexedField {
                 ),
                 action: Action {
                     method: Method::PUT,
-                    uri: uri.clone(),
+                    uri: self.endpoint.clone(),
                     headers: HeaderMap::new(),
                     body: Some(request_body),
                 },
@@ -112,7 +131,9 @@ impl Issue for UnindexedField {
         }).collect_vec();
 
         match solutions.len() {
-            0 => Solution::None,
+            0 => unreachable!(
+                "Cannot create a solution without a field schema, protected by try_new()"
+            ),
             1 => Solution::Immediate(solutions.pop().unwrap()),
             _ => Solution::ImmediateChoice(solutions),
         }
@@ -220,14 +241,10 @@ impl<'a> Extractor<'a> {
     fn into_issues(self) -> Vec<UnindexedField> {
         self.unindexed_schema
             .into_iter()
-            .map(|(key, mut field_schemas)| {
-                field_schemas.dedup();
+            .filter_map(|(key, field_schemas)| {
+                let field_schemas = HashSet::from_iter(field_schemas);
 
-                UnindexedField {
-                    field_name: key,
-                    field_schemas,
-                    collection_name: self.collection_name.clone(),
-                }
+                UnindexedField::try_new(key, field_schemas, self.collection_name.clone()).ok()
             })
             .collect()
     }
@@ -277,10 +294,9 @@ impl<'a> Extractor<'a> {
                 }
 
                 if needs_index {
-                    self.unindexed_schema
-                        .entry(full_key)
-                        .and_modify(|entry| entry.extend(inferred))
-                        .or_default();
+                    let entry = self.unindexed_schema.entry(full_key).or_default();
+
+                    entry.extend(inferred);
                 }
             }
             Condition::Filter(filter) => {

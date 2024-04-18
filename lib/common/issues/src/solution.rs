@@ -14,9 +14,6 @@ pub enum Solution {
 
     /// A solution that requires manual intervention
     Refactor(String),
-
-    /// Failed to generate solution
-    None,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Clone)]

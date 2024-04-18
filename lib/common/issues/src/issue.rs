@@ -68,6 +68,6 @@ impl Issue for DummyIssue {
     }
 
     fn solution(&self) -> Solution {
-        Solution::None
+        Solution::Refactor("".to_string())
     }
 }

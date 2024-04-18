@@ -287,7 +287,7 @@ impl Collection {
     }
 
     fn post_process_if_slow_request(&self, duration: Duration, filters: Vec<Option<&Filter>>) {
-        if duration > segment::problems::UnindexedField::SLOW_SEARCH_THRESHOLD {
+        if duration > segment::problems::UnindexedField::slow_search_threshold() {
             let Some(payload_schema) = self.payload_index_schema.try_read() else {
                 // Don't wait for read lock
                 return;
