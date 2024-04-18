@@ -13,7 +13,7 @@ use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::{DenseVector, VectorElementType, VectorRef};
 use crate::payload_storage::FilterContext;
 use crate::spaces::metric::Metric;
-use crate::types::Distance;
+use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::{
     raw_scorer_impl, DenseVectorStorage, RawScorer, VectorStorage, VectorStorageEnum,
@@ -54,6 +54,10 @@ impl<TMetric: Metric<VectorElementType>> VectorStorage for TestRawScorerProducer
 
     fn distance(&self) -> Distance {
         TMetric::distance()
+    }
+
+    fn datatype(&self) -> VectorStorageDatatype {
+        VectorStorageDatatype::Float
     }
 
     fn is_on_disk(&self) -> bool {

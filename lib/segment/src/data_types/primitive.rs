@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte};
 use crate::spaces::metric::Metric;
-use crate::spaces::simple::CosineMetric;
-use crate::types::{Distance, QuantizationConfig};
+use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
+use crate::types::{Distance, QuantizationConfig, VectorStorageDatatype};
 
 pub trait PrimitiveVectorElement:
     Copy + Clone + Default + Serialize + for<'a> Deserialize<'a>
@@ -20,6 +20,8 @@ pub trait PrimitiveVectorElement:
         distance: Distance,
         vector: &'a [Self],
     ) -> Cow<'a, [f32]>;
+
+    fn datatype() -> VectorStorageDatatype;
 }
 
 impl PrimitiveVectorElement for VectorElementType {
@@ -38,6 +40,10 @@ impl PrimitiveVectorElement for VectorElementType {
     ) -> Cow<'a, [f32]> {
         Cow::Borrowed(vector)
     }
+
+    fn datatype() -> VectorStorageDatatype {
+        VectorStorageDatatype::Float
+    }
 }
 
 impl PrimitiveVectorElement for VectorElementTypeByte {
@@ -54,20 +60,30 @@ impl PrimitiveVectorElement for VectorElementTypeByte {
         distance: Distance,
         vector: &'a [Self],
     ) -> Cow<'a, [f32]> {
-        let vector = if let QuantizationConfig::Binary(_) = quantization_config {
-            vector
-                .iter()
-                .map(|&x| (x as VectorElementType) - 127.0)
-                .collect_vec()
+        if let QuantizationConfig::Binary(_) = quantization_config {
+            Cow::from(
+                vector
+                    .iter()
+                    .map(|&x| (x as VectorElementType) - 127.0)
+                    .collect_vec(),
+            )
         } else {
-            vector.iter().map(|&x| x as VectorElementType).collect_vec()
-        };
-        if Distance::Cosine == distance {
-            Cow::from(<CosineMetric as Metric<VectorElementType>>::preprocess(
-                vector,
-            ))
-        } else {
-            Cow::from(vector)
+            let vector = vector.iter().map(|&x| x as VectorElementType).collect_vec();
+            let preprocessed_vector = match distance {
+                Distance::Cosine => <CosineMetric as Metric<VectorElementType>>::preprocess(vector),
+                Distance::Euclid => <EuclidMetric as Metric<VectorElementType>>::preprocess(vector),
+                Distance::Dot => {
+                    <DotProductMetric as Metric<VectorElementType>>::preprocess(vector)
+                }
+                Distance::Manhattan => {
+                    <ManhattanMetric as Metric<VectorElementType>>::preprocess(vector)
+                }
+            };
+            Cow::from(preprocessed_vector)
         }
+    }
+
+    fn datatype() -> VectorStorageDatatype {
+        VectorStorageDatatype::Uint8
     }
 }

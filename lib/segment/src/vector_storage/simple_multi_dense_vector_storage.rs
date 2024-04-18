@@ -13,7 +13,7 @@ use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::{MultiDenseVector, VectorRef};
-use crate::types::{Distance, MultiVectorConfig};
+use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::bitvec::bitvec_set_deleted;
 use crate::vector_storage::common::StoredRecord;
 use crate::vector_storage::{MultiVectorStorage, VectorStorage, VectorStorageEnum};
@@ -143,6 +143,10 @@ impl VectorStorage for SimpleMultiDenseVectorStorage {
 
     fn distance(&self) -> Distance {
         self.distance
+    }
+
+    fn datatype(&self) -> VectorStorageDatatype {
+        VectorStorageDatatype::Float
     }
 
     fn is_on_disk(&self) -> bool {

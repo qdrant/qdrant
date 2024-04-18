@@ -15,7 +15,7 @@ use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::VectorRef;
-use crate::types::Distance;
+use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::bitvec::bitvec_set_deleted;
 use crate::vector_storage::common::StoredRecord;
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
@@ -161,6 +161,10 @@ impl VectorStorage for SimpleSparseVectorStorage {
 
     fn distance(&self) -> Distance {
         SPARSE_VECTOR_DISTANCE
+    }
+
+    fn datatype(&self) -> VectorStorageDatatype {
+        VectorStorageDatatype::Float
     }
 
     fn is_on_disk(&self) -> bool {
