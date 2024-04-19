@@ -319,7 +319,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             if entry.data.is_empty() {
                 self.persistent
                     .write()
-                    .entry_applied()
+                    .entry_applied(false)
                     .context("Failed to save new state of applied entries queue")?;
 
                 continue;
@@ -337,7 +337,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
             self.persistent
                 .write()
-                .entry_applied()
+                .entry_applied(true)
                 .context("Failed to save new state of applied entries queue")?;
 
             if stop_consensus {
@@ -382,18 +382,20 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             if entry.data.is_empty() {
                 self.persistent
                     .write()
-                    .entry_applied()
+                    .entry_applied(false)
                     .context("Failed to save new state of applied entries queue")?;
 
                 continue;
             }
 
-            match self.apply_normal_entry(&entry) {
+            let sync = match self.apply_normal_entry(&entry) {
                 Ok(result) => {
                     log::debug!(
                         "Successfully applied consensus operation entry. Index: {}. Result: {result}",
                         entry.index,
                     );
+
+                    true
                 }
 
                 Err(err @ StorageError::ServiceError { .. }) => {
@@ -405,12 +407,14 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                     log::warn!(
                         "Failed to apply collection meta operation entry with user error: {err}"
                     );
+
+                    false
                 }
-            }
+            };
 
             self.persistent
                 .write()
-                .entry_applied()
+                .entry_applied(sync)
                 .context("Failed to save new state of applied entries queue")?;
         }
 

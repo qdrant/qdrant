@@ -120,9 +120,14 @@ impl Persistent {
         self.apply_progress_queue.current()
     }
 
-    pub fn entry_applied(&mut self) -> Result<(), StorageError> {
+    pub fn entry_applied(&mut self, sync: bool) -> Result<(), StorageError> {
         self.apply_progress_queue.applied();
-        self.save()
+
+        if sync {
+            self.save()?;
+        }
+
+        Ok(())
     }
 
     pub fn set_unapplied_entries(
