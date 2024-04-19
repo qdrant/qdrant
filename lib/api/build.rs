@@ -181,6 +181,7 @@ fn configure_validation(builder: Builder) -> Builder {
         // Service: points.proto
         .validates(&[
             ("UpsertPoints.collection_name", "length(min = 1, max = 255)"),
+            ("UpsertPoints.points", ""),
             ("DeletePoints.collection_name", "length(min = 1, max = 255)"),
             ("UpdatePointVectors.collection_name", "length(min = 1, max = 255)"),
             ("UpdatePointVectors.vectors", "custom(function = \"crate::grpc::validate::validate_named_vectors_not_empty\", message = \"must specify vectors to update\")"),
@@ -251,6 +252,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("Filter.must_not", ""),
             ("NestedCondition.filter", ""),
             ("Condition.condition_one_of", ""),
+            ("PointStruct.vectors", ""),
             ("Vectors.vectors_options", ""),
             ("NamedVectors.vectors", ""),
             ("RecoQuery.positives", ""),
