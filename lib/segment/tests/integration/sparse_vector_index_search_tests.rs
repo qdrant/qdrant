@@ -123,7 +123,12 @@ fn compare_sparse_vectors_search_with_without_filter(full_scan_threshold: usize)
                 .filter(|s| s.score != 0.0)
                 .zip(no_filter_result.iter().filter(|s| s.score != 0.0))
             {
-                assert_eq!(filter_result, no_filter_result);
+                if filter_result.idx != no_filter_result.idx {
+                    // we do not break ties when identical scores
+                    assert_eq!(filter_result.score, no_filter_result.score);
+                } else {
+                    assert_eq!(filter_result, no_filter_result);
+                }
             }
         }
     }
