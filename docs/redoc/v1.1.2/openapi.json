@@ -1155,7 +1155,7 @@
           {
             "name": "collection_name",
             "in": "path",
-            "description": "Name of the collection on which to to apply the cluster update operation",
+            "description": "Name of the collection on which to apply the cluster update operation",
             "required": true,
             "schema": {
               "type": "string"
