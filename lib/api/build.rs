@@ -5,6 +5,8 @@ use std::{env, str};
 use common::defaults;
 use tonic_build::Builder;
 
+const GRPC_OUTPUT_FILE: &str = "src/grpc/qdrant.rs";
+
 fn main() -> std::io::Result<()> {
     // Ensure Qdrant version is configured correctly
     assert_eq!(
@@ -22,6 +24,9 @@ fn main() -> std::io::Result<()> {
         // `Validation` for all these types and seems to be the best approach. The line below
         // configures all attributes.
         .configure_validation()
+        // Similar thing but for `derive_build` attributes. This is needed by the new rust-client
+        // to allow a builder pattern style API.
+        .configure_derive_builder()
         .file_descriptor_set_path(build_out_dir.join("qdrant_descriptor.bin"))
         .out_dir("src/grpc/") // saves generated structures at this location
         .compile(
@@ -30,7 +35,11 @@ fn main() -> std::io::Result<()> {
         )?;
 
     // Append trait extension imports to generated gRPC output
-    append_to_file("src/grpc/qdrant.rs", "use super::validate::ValidateExt;");
+    append_to_file(GRPC_OUTPUT_FILE, "use super::validate::ValidateExt;");
+
+    // Append macro definition and calls required for builder implementations.
+    append_file_to_file(GRPC_OUTPUT_FILE, "./grpc_macros.rs");
+    add_builder_macro_impls(GRPC_OUTPUT_FILE, builder_derive_options());
 
     // Fetch git commit ID and pass it to the compiler
     let git_commit_id =
@@ -53,6 +62,9 @@ fn main() -> std::io::Result<()> {
     Ok(())
 }
 
+/// Derive options for structs. (Path, build attributes, 'from' macro generation enabled)
+type BuildDeriveOptions = (&'static str, &'static str, bool);
+
 /// Extension to [`Builder`] to configure validation attributes.
 trait BuilderExt {
     fn configure_validation(self) -> Self;
@@ -61,6 +73,12 @@ trait BuilderExt {
     fn derive_validates(self, paths: &[&str]) -> Self;
     fn field_validate(self, path: &str, constraint: &str) -> Self;
     fn field_validates(self, paths: &[(&str, &str)]) -> Self;
+
+    fn configure_derive_builder(self) -> Self;
+    fn derive_builders(self, paths: &[(&str, &str)], derive_options: &[BuildDeriveOptions])
+        -> Self;
+    fn derive_builder(self, path: &str, derive_options: Option<&str>) -> Self;
+    fn field_build_attributes(self, paths: &[(&str, &str)]) -> Self;
 }
 
 impl BuilderExt for Builder {
@@ -70,14 +88,7 @@ impl BuilderExt for Builder {
 
     fn validates(self, fields: &[(&str, &str)], extra_derives: &[&str]) -> Self {
         // Build list of structs to derive validation on, guess these from list of fields
-        let mut derives = fields
-            .iter()
-            .map(|(field, _)| field.split_once('.').unwrap().0)
-            .collect::<Vec<&str>>();
-        derives.extend(extra_derives);
-        derives.sort_unstable();
-        derives.dedup();
-
+        let derives = unique_structs_from_paths(fields.iter().map(|i| i.0), extra_derives);
         self.derive_validates(&derives).field_validates(fields)
     }
 
@@ -102,6 +113,91 @@ impl BuilderExt for Builder {
             c.field_validate(path, constraint)
         })
     }
+
+    fn configure_derive_builder(self) -> Self {
+        configure_builder(self)
+    }
+
+    fn derive_builders(
+        self,
+        paths: &[(&str, &str)],
+        derive_options: &[BuildDeriveOptions],
+    ) -> Self {
+        let structs = unique_structs_from_paths(paths.iter().map(|i| i.0), &[]);
+
+        let derives = structs.into_iter().fold(self, |c, path| {
+            let derive_options = derive_options.iter().find(|i| i.0 == path).map(|i| i.1);
+            c.derive_builder(path, derive_options)
+        });
+
+        derives.field_build_attributes(paths)
+    }
+
+    fn derive_builder(self, path: &str, derive_options: Option<&str>) -> Self {
+        let builder = self.type_attribute(path, "#[derive(derive_builder::Builder)]");
+
+        if let Some(derive_options) = derive_options {
+            builder.type_attribute(path, format!("#[builder({derive_options})]"))
+        } else {
+            builder
+        }
+    }
+
+    fn field_build_attributes(self, paths: &[(&str, &str)]) -> Self {
+        paths.iter().fold(self, |c, (path, attribute)| {
+            c.field_attribute(path, format!("#[builder({attribute})]"))
+        })
+    }
+}
+
+fn configure_builder(builder: Builder) -> Builder {
+    const DEFAULT_OPTION: &str = "default, setter(strip_option)";
+    const DEFAULT_OPTION_INTO: &str = "default, setter(into, strip_option)";
+    const DEFAULT: &str = "default";
+
+    builder.derive_builders(
+        &[
+            // VectorParams
+            ("VectorParams.size", DEFAULT),
+            ("VectorParams.distance", DEFAULT),
+            ("VectorParams.hnsw_config", DEFAULT_OPTION_INTO),
+            ("VectorParams.quantization_config", DEFAULT_OPTION_INTO),
+            ("VectorParams.on_disk", DEFAULT),
+            ("VectorParams.datatype", DEFAULT),
+            // HnswConfigDiff
+            ("HnswConfigDiff.m", DEFAULT_OPTION),
+            ("HnswConfigDiff.ef_construct", DEFAULT_OPTION),
+            ("HnswConfigDiff.full_scan_threshold", DEFAULT_OPTION),
+            ("HnswConfigDiff.max_indexing_threads", DEFAULT_OPTION),
+            ("HnswConfigDiff.on_disk", DEFAULT_OPTION),
+            ("HnswConfigDiff.payload_m", DEFAULT_OPTION),
+        ],
+        builder_derive_options(),
+    )
+}
+
+/// Builder configurations for grpc structs.
+fn builder_derive_options() -> &'static [BuildDeriveOptions] {
+    const DEFAULT_BUILDER_DERIVE_OPTIONS: &str =
+        "build_fn(private, error = \"std::convert::Infallible\", name = \"build_inner\")";
+
+    &[
+        ("VectorParams", DEFAULT_BUILDER_DERIVE_OPTIONS, true),
+        ("HnswConfigDiff", DEFAULT_BUILDER_DERIVE_OPTIONS, true),
+    ]
+}
+
+/// Generates all necessary macro calls for builders who should have them.
+fn add_builder_macro_impls(file: &str, derive_options: &[BuildDeriveOptions]) {
+    let to_append = derive_options
+        .iter()
+        .filter_map(|i| i.2.then_some(i.0))
+        .map(|i| format!("builder_type_conversions!({i}, {i}Builder);\n"))
+        .fold(String::new(), |mut s, line| {
+            s.push_str(&line);
+            s
+        });
+    append_to_file(file, &to_append);
 }
 
 /// Configure additional attributes required for validation on generated gRPC types.
@@ -319,6 +415,21 @@ fn configure_validation(builder: Builder) -> Builder {
         ])
 }
 
+/// Returns a list of all unique structs that appear in a list of paths.
+fn unique_structs_from_paths<'a, I>(paths: I, extra: &[&'a str]) -> Vec<&'a str>
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    let mut derives = paths
+        .into_iter()
+        .map(|field| field.split_once('.').unwrap().0)
+        .collect::<Vec<&str>>();
+    derives.extend(extra);
+    derives.sort_unstable();
+    derives.dedup();
+    derives
+}
+
 fn append_to_file(path: &str, line: &str) {
     use std::fs::OpenOptions;
     use std::io::prelude::*;
@@ -327,4 +438,9 @@ fn append_to_file(path: &str, line: &str) {
         "{line}",
     )
     .unwrap()
+}
+
+fn append_file_to_file(output: &str, input: &str) {
+    let src = std::fs::read_to_string(input).unwrap();
+    append_to_file(output, &src);
 }
