@@ -2,7 +2,7 @@ use std::cmp::{max, min, Ordering};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 
-use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
+use common::top_k::TopK;
 use common::types::{PointOffsetType, ScoredPointOffset};
 
 use crate::common::scores_memory_pool::PooledScoresHandle;
@@ -26,7 +26,7 @@ pub struct SearchContext<'a, 'b> {
     query: SparseVector,
     top: usize,
     is_stopped: &'a AtomicBool,
-    result_queue: FixedLengthPriorityQueue<ScoredPointOffset>, // keep the largest elements and peek smallest
+    top_results: TopK,
     min_record_id: Option<PointOffsetType>, // min_record_id ids across all posting lists
     max_record_id: PointOffsetType,         // max_record_id ids across all posting lists
     pooled: PooledScoresHandle<'b>,         // handle to pooled scores
@@ -70,7 +70,7 @@ impl<'a, 'b> SearchContext<'a, 'b> {
                 }
             }
         }
-        let result_queue = FixedLengthPriorityQueue::new(top);
+        let top_results = TopK::new(top);
         // Query vectors with negative values can NOT use the pruning mechanism which relies on the pre-computed `max_next_weight`.
         // The max contribution per posting list that we calculate is not made to compute the max value of two negative numbers.
         // This is a limitation of the current pruning implementation.
@@ -81,7 +81,7 @@ impl<'a, 'b> SearchContext<'a, 'b> {
             query,
             top,
             is_stopped,
-            result_queue,
+            top_results,
             min_record_id,
             max_record_id,
             pooled,
@@ -117,13 +117,13 @@ impl<'a, 'b> SearchContext<'a, 'b> {
             }
             // reconstruct sparse vector and score against query
             let sparse_vector = SparseVector { indices, values };
-            self.result_queue.push(ScoredPointOffset {
+            self.top_results.push(ScoredPointOffset {
                 score: sparse_vector.score(&self.query).unwrap_or(0.0),
                 idx: id,
             });
         }
-        let queue = std::mem::take(&mut self.result_queue);
-        queue.into_vec()
+        let top = std::mem::take(&mut self.top_results);
+        top.into_vec()
     }
 
     /// Advance posting lists iterators in a batch fashion.
@@ -171,14 +171,9 @@ impl<'a, 'b> SearchContext<'a, 'b> {
             };
         }
 
-        // publish only the non-zero scores above the current min
-        let min_score_to_beat = if self.result_queue.len() == self.top {
-            self.result_queue.top().map(|e| e.score)
-        } else {
-            None
-        };
         for (local_index, &score) in self.pooled.scores.iter().enumerate() {
-            if score != 0.0 && Some(score) > min_score_to_beat {
+            // publish only the non-zero scores above the current min to beat
+            if score != 0.0 && score > self.top_results.threshold() {
                 let real_id = batch_start_id + local_index as PointOffsetType;
                 // do not score if filter condition is not satisfied
                 if !filter_condition(real_id) {
@@ -188,7 +183,7 @@ impl<'a, 'b> SearchContext<'a, 'b> {
                     score,
                     idx: real_id,
                 };
-                self.result_queue.push(score_point_offset);
+                self.top_results.push(score_point_offset);
             }
         }
     }
@@ -203,7 +198,7 @@ impl<'a, 'b> SearchContext<'a, 'b> {
                 continue;
             }
             let score = element.weight * posting.query_weight;
-            self.result_queue.push(ScoredPointOffset {
+            self.top_results.push(ScoredPointOffset {
                 score,
                 idx: element.record_id,
             });
@@ -307,9 +302,9 @@ impl<'a, 'b> SearchContext<'a, 'b> {
             }
 
             // we potentially have enough results to prune low performing posting lists
-            if self.use_pruning && self.result_queue.len() == self.top {
+            if self.use_pruning && self.top_results.len() >= self.top {
                 // current min score
-                let new_min_score = self.result_queue.top().unwrap().score;
+                let new_min_score = self.top_results.threshold();
                 if new_min_score == best_min_score {
                     // no improvement in lowest best score since last pruning - skip pruning
                     continue;
@@ -328,7 +323,7 @@ impl<'a, 'b> SearchContext<'a, 'b> {
             }
         }
         // posting iterators exhausted, return result queue
-        let queue = std::mem::take(&mut self.result_queue);
+        let queue = std::mem::take(&mut self.top_results);
         queue.into_vec()
     }
 
