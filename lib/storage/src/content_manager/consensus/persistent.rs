@@ -130,7 +130,7 @@ impl Persistent {
         first_index: EntryId,
         last_index: EntryId,
     ) -> Result<(), StorageError> {
-        self.apply_progress_queue = EntryApplyProgressQueue::new(first_index, last_index);
+        self.apply_progress_queue.set(first_index, last_index);
         self.save()
     }
 

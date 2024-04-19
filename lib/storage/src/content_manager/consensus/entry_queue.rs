@@ -41,6 +41,15 @@ impl EntryApplyProgressQueue {
         }
     }
 
+    pub fn set(&mut self, first_index: EntryId, last_index: EntryId) {
+        let first_index = match self.0 {
+            Some((first_index, _)) => first_index,
+            None => first_index,
+        };
+
+        self.0 = Some((first_index, last_index));
+    }
+
     pub fn set_from_snapshot(&mut self, snapshot_at_commit: EntryId) {
         self.0 = Some((snapshot_at_commit + 1, snapshot_at_commit))
     }
