@@ -904,8 +904,12 @@ fn handle_committed_entries(
 
     if let (Some(first), Some(last)) = (entries.first(), entries.last()) {
         state.set_unapplied_entries(first.index, last.index)?;
+
         stop_consensus = state.apply_conf_change_entries(raw_node)?;
-        handle.signal()?;
+
+        if !stop_consensus {
+            handle.signal()?
+        }
     }
 
     Ok(stop_consensus)
