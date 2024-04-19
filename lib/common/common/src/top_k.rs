@@ -148,4 +148,39 @@ mod test {
         assert_eq!(res[1].score, 5.0);
         assert_eq!(res[2].score, 4.0);
     }
+
+    #[test]
+    fn test_top_same_scores() {
+        let mut top_k = TopK::new(3);
+        top_k.push(ScoredPointOffset { score: 1.0, idx: 1 });
+        assert_eq!(top_k.threshold(), ScoreType::MIN);
+        assert_eq!(top_k.len(), 1);
+
+        top_k.push(ScoredPointOffset { score: 1.0, idx: 4 });
+        assert_eq!(top_k.threshold(), ScoreType::MIN);
+        assert_eq!(top_k.len(), 2);
+
+        top_k.push(ScoredPointOffset { score: 2.0, idx: 2 });
+        assert_eq!(top_k.threshold(), ScoreType::MIN);
+        assert_eq!(top_k.len(), 3);
+
+        top_k.push(ScoredPointOffset { score: 1.0, idx: 5 });
+        assert_eq!(top_k.threshold(), ScoreType::MIN);
+        assert_eq!(top_k.len(), 4);
+
+        top_k.push(ScoredPointOffset { score: 1.0, idx: 3 });
+        assert_eq!(top_k.threshold(), ScoreType::MIN);
+        assert_eq!(top_k.len(), 5);
+
+        top_k.push(ScoredPointOffset { score: 1.0, idx: 6 });
+        assert_eq!(top_k.threshold(), 1.0);
+        assert_eq!(top_k.len(), 3);
+        assert_eq!(top_k.elements.capacity(), 6);
+
+        let res = top_k.into_vec();
+        assert_eq!(res.len(), 3);
+        assert_eq!(res[0], ScoredPointOffset { score: 2.0, idx: 2 });
+        assert_eq!(res[1], ScoredPointOffset { score: 1.0, idx: 1 });
+        assert_eq!(res[2], ScoredPointOffset { score: 1.0, idx: 4 });
+    }
 }
