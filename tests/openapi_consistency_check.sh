@@ -41,9 +41,7 @@ EXPECTED_NUMBER_OF_APIS=50
 if [ "$NUMBER_OF_APIS" -ne "$EXPECTED_NUMBER_OF_APIS" ]; then
     echo "ERROR: It looks like the total number of APIs has changed."
     echo "ERROR: Expected: $EXPECTED_NUMBER_OF_APIS, got: $NUMBER_OF_APIS"
-    echo "ERROR: Please verify that all new APIs are correctly represented in read-only mode configuration"
-    echo "ERROR: See: 'READ_ONLY_POST_PATTERNS' and 'READ_ONLY_RPC_PATHS'"
-    echo "ERROR: Also, verify that all new APIs are correctly whitelisted (or not) for the metrics endpoint"
+    echo "ERROR: Verify that all new APIs are correctly whitelisted (or not) for the metrics endpoint"
     echo "ERROR: See: 'REST_ENDPOINT_WHITELIST' and 'GRPC_ENDPOINT_WHITELIST'"
     echo "ERROR: once consistency is restored, please update EXPECTED_NUMBER_OF_APIS in this script"
     exit 1
