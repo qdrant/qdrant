@@ -482,12 +482,13 @@ impl Consensus {
                 elapsed -= tick_period;
             }
 
-            if self
+            let stop_consensus = self
                 .node
                 .store()
                 .clone()
-                .apply_conf_change_entries(&mut self.node)?
-            {
+                .apply_conf_change_entries(&mut self.node)?;
+
+            if stop_consensus {
                 return Ok(());
             } else {
                 self.apply.signal()?;

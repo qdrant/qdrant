@@ -285,24 +285,36 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     ) -> anyhow::Result<bool> {
         use raft::eraftpb::EntryType;
 
-        self.persistent
-            .write()
-            .save_if_dirty()
-            .context("Failed to save new state of applied entries queue")?;
+        if self
+            .persistent
+            .read()
+            .dirty
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            self.persistent
+                .write()
+                .save_if_dirty()
+                .context("Failed to save new state of applied entries queue")?;
+        }
 
         loop {
-            let entry_index = match self.persistent.read().current_unapplied_entry() {
-                Some(index) => index,
-                None => break,
+            let Some(entry_index) = self.persistent.read().current_unapplied_entry() else {
+                break;
             };
 
-            log::debug!("Applying committed entry with index {entry_index}");
+            log::debug!("Applying committed conf change entry with index {entry_index}");
 
             let entry = self
                 .wal
                 .lock()
                 .entry(entry_index)
-                .context(format!("Failed to get entry at index {entry_index}"))?;
+                .with_context(|| format!("Failed to get entry at index {entry_index}"))?;
+
+            match entry.get_entry_type() {
+                EntryType::EntryConfChangeV2 => (),
+                EntryType::EntryNormal => break,
+                _ => todo!(),
+            }
 
             if entry.data.is_empty() {
                 self.persistent
@@ -311,12 +323,6 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                     .context("Failed to save new state of applied entries queue")?;
 
                 continue;
-            }
-
-            match entry.get_entry_type() {
-                EntryType::EntryConfChangeV2 => (),
-                EntryType::EntryNormal => break,
-                _ => todo!(),
             }
 
             let stop_consensus = self
@@ -339,7 +345,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             }
         }
 
-        if let Some(last_applied_entry) = self.persistent.write().last_applied_entry() {
+        if let Some(last_applied_entry) = self.persistent.read().last_applied_entry() {
             node.advance_apply_to(last_applied_entry);
         }
 
@@ -355,9 +361,8 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             .context("Failed to save new state of applied entries queue")?;
 
         loop {
-            let entry_index = match self.persistent.read().current_unapplied_entry() {
-                Some(index) => index,
-                None => break,
+            let Some(entry_index) = self.persistent.read().current_unapplied_entry() else {
+                break;
             };
 
             log::debug!("Applying committed entry with index {entry_index}");
@@ -366,7 +371,13 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 .wal
                 .lock()
                 .entry(entry_index)
-                .context(format!("Failed to get entry at index {entry_index}"))?;
+                .with_context(|| format!("Failed to get entry at index {entry_index}"))?;
+
+            match entry.get_entry_type() {
+                EntryType::EntryNormal => (),
+                EntryType::EntryConfChangeV2 => break,
+                _ => todo!(),
+            }
 
             if entry.data.is_empty() {
                 self.persistent
@@ -375,12 +386,6 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                     .context("Failed to save new state of applied entries queue")?;
 
                 continue;
-            }
-
-            match entry.get_entry_type() {
-                EntryType::EntryNormal => (),
-                EntryType::EntryConfChangeV2 => break,
-                _ => todo!(),
             }
 
             match self.apply_normal_entry(&entry) {
