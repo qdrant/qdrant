@@ -2,6 +2,7 @@
 
 pub mod batch_search_test;
 mod byte_storage_hnsw_test;
+pub mod byte_storage_quantization_test;
 pub mod disbalanced_vectors_test;
 pub mod exact_search_test;
 pub mod fail_recovery_test;

@@ -15,7 +15,7 @@ use crate::types::Distance;
 
 impl Metric<VectorElementTypeByte> for DotProductMetric {
     fn distance() -> Distance {
-        Distance::Cosine
+        Distance::Dot
     }
 
     fn similarity(v1: &[VectorElementTypeByte], v2: &[VectorElementTypeByte]) -> ScoreType {

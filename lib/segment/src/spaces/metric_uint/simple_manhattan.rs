@@ -15,7 +15,7 @@ use crate::types::Distance;
 
 impl Metric<VectorElementTypeByte> for ManhattanMetric {
     fn distance() -> Distance {
-        Distance::Cosine
+        Distance::Manhattan
     }
 
     fn similarity(v1: &[VectorElementTypeByte], v2: &[VectorElementTypeByte]) -> ScoreType {

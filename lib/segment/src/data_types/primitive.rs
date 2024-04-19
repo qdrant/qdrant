@@ -4,7 +4,9 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte};
-use crate::types::QuantizationConfig;
+use crate::spaces::metric::Metric;
+use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
+use crate::types::{Distance, QuantizationConfig, VectorStorageDatatype};
 
 pub trait PrimitiveVectorElement:
     Copy + Clone + Default + Serialize + for<'a> Deserialize<'a>
@@ -15,8 +17,11 @@ pub trait PrimitiveVectorElement:
 
     fn quantization_preprocess<'a>(
         quantization_config: &QuantizationConfig,
+        distance: Distance,
         vector: &'a [Self],
     ) -> Cow<'a, [f32]>;
+
+    fn datatype() -> VectorStorageDatatype;
 }
 
 impl PrimitiveVectorElement for VectorElementType {
@@ -30,9 +35,14 @@ impl PrimitiveVectorElement for VectorElementType {
 
     fn quantization_preprocess<'a>(
         _quantization_config: &QuantizationConfig,
+        _distance: Distance,
         vector: &'a [Self],
     ) -> Cow<'a, [f32]> {
         Cow::Borrowed(vector)
+    }
+
+    fn datatype() -> VectorStorageDatatype {
+        VectorStorageDatatype::Float32
     }
 }
 
@@ -47,6 +57,7 @@ impl PrimitiveVectorElement for VectorElementTypeByte {
 
     fn quantization_preprocess<'a>(
         quantization_config: &QuantizationConfig,
+        distance: Distance,
         vector: &'a [Self],
     ) -> Cow<'a, [f32]> {
         if let QuantizationConfig::Binary(_) = quantization_config {
@@ -57,7 +68,22 @@ impl PrimitiveVectorElement for VectorElementTypeByte {
                     .collect_vec(),
             )
         } else {
-            Cow::from(vector.iter().map(|&x| x as VectorElementType).collect_vec())
+            let vector = vector.iter().map(|&x| x as VectorElementType).collect_vec();
+            let preprocessed_vector = match distance {
+                Distance::Cosine => <CosineMetric as Metric<VectorElementType>>::preprocess(vector),
+                Distance::Euclid => <EuclidMetric as Metric<VectorElementType>>::preprocess(vector),
+                Distance::Dot => {
+                    <DotProductMetric as Metric<VectorElementType>>::preprocess(vector)
+                }
+                Distance::Manhattan => {
+                    <ManhattanMetric as Metric<VectorElementType>>::preprocess(vector)
+                }
+            };
+            Cow::from(preprocessed_vector)
         }
+    }
+
+    fn datatype() -> VectorStorageDatatype {
+        VectorStorageDatatype::Uint8
     }
 }
