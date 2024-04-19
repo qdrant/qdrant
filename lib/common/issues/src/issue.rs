@@ -10,9 +10,20 @@ use crate::solution::Solution;
 pub type CodeType = String;
 
 pub trait Issue {
+    /// Returns the issue code, which should have the following format:
+    /// ```text
+    /// {collection_name}/{issue_id}/{metadata}
+    /// ```
     fn code(&self) -> CodeType;
     fn description(&self) -> String;
     fn solution(&self) -> Solution;
+
+    fn submit(self) -> bool
+    where
+        Self: std::marker::Sized,
+    {
+        crate::dashboard::submit(self)
+    }
 }
 
 /// An issue that can be identified by its code
@@ -57,6 +68,6 @@ impl Issue for DummyIssue {
     }
 
     fn solution(&self) -> Solution {
-        Solution::None
+        Solution::Refactor("".to_string())
     }
 }
