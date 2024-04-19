@@ -15,7 +15,7 @@ use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
     MultiDenseVector, VectorElementType, VectorElementTypeByte, VectorRef,
 };
-use crate::types::{Distance, MultiVectorConfig};
+use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::dense::appendable_mmap_dense_vector_storage::AppendableMmapDenseVectorStorage;
 use crate::vector_storage::simple_multi_dense_vector_storage::SimpleMultiDenseVectorStorage;
 use crate::vector_storage::simple_sparse_vector_storage::SimpleSparseVectorStorage;
@@ -27,6 +27,8 @@ pub trait VectorStorage {
     fn vector_dim(&self) -> usize;
 
     fn distance(&self) -> Distance;
+
+    fn datatype(&self) -> VectorStorageDatatype;
 
     fn is_on_disk(&self) -> bool;
 
@@ -148,6 +150,19 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableMemmapByte(v) => v.distance(),
             VectorStorageEnum::SparseSimple(v) => v.distance(),
             VectorStorageEnum::MultiDenseSimple(v) => v.distance(),
+        }
+    }
+
+    fn datatype(&self) -> VectorStorageDatatype {
+        match self {
+            VectorStorageEnum::DenseSimple(v) => v.datatype(),
+            VectorStorageEnum::DenseSimpleByte(v) => v.datatype(),
+            VectorStorageEnum::DenseMemmap(v) => v.datatype(),
+            VectorStorageEnum::DenseMemmapByte(v) => v.datatype(),
+            VectorStorageEnum::DenseAppendableMemmap(v) => v.datatype(),
+            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.datatype(),
+            VectorStorageEnum::SparseSimple(v) => v.datatype(),
+            VectorStorageEnum::MultiDenseSimple(v) => v.datatype(),
         }
     }
 

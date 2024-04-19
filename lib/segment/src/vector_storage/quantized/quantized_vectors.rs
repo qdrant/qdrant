@@ -16,6 +16,7 @@ use crate::data_types::vectors::{QueryVector, VectorElementType};
 use crate::types::{
     BinaryQuantization, BinaryQuantizationConfig, CompressionRatio, Distance, ProductQuantization,
     ProductQuantizationConfig, QuantizationConfig, ScalarQuantization, ScalarQuantizationConfig,
+    VectorStorageDatatype,
 };
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::quantized::quantized_mmap_storage::{
@@ -47,6 +48,7 @@ pub struct QuantizedVectors {
     config: QuantizedVectorsConfig,
     path: PathBuf,
     distance: Distance,
+    datatype: VectorStorageDatatype,
 }
 
 impl QuantizedVectors {
@@ -66,11 +68,13 @@ impl QuantizedVectors {
     ) -> OperationResult<Box<dyn RawScorer + 'a>> {
         QuantizedScorerBuilder::new(
             &self.storage_impl,
+            &self.config.quantization_config,
             query,
             point_deleted,
             vec_deleted,
             is_stopped,
             &self.distance,
+            self.datatype,
         )
         .build()
     }
@@ -143,14 +147,16 @@ impl QuantizedVectors {
     ) -> OperationResult<Self> {
         let dim = vector_storage.vector_dim();
         let count = vector_storage.total_vector_count();
+        let distance = vector_storage.distance();
+        let datatype = vector_storage.datatype();
         let vectors = (0..count as PointOffsetType).map(|i| {
             PrimitiveVectorElement::quantization_preprocess(
                 quantization_config,
+                distance,
                 vector_storage.get_dense(i),
             )
         });
         let on_disk_vector_storage = vector_storage.is_on_disk();
-        let distance = vector_storage.distance();
 
         let vector_parameters = Self::construct_vector_parameters(distance, dim, count);
 
@@ -198,6 +204,7 @@ impl QuantizedVectors {
             config: quantized_vectors_config,
             path: path.to_path_buf(),
             distance,
+            datatype,
         };
 
         quantized_vectors.save_to(path)?;
@@ -212,6 +219,7 @@ impl QuantizedVectors {
     pub fn load(vector_storage: &VectorStorageEnum, path: &Path) -> OperationResult<Self> {
         let on_disk_vector_storage = vector_storage.is_on_disk();
         let distance = vector_storage.distance();
+        let datatype = vector_storage.datatype();
 
         let data_path = path.join(QUANTIZED_DATA_PATH);
         let meta_path = path.join(QUANTIZED_META_PATH);
@@ -276,6 +284,7 @@ impl QuantizedVectors {
             config,
             path: path.to_path_buf(),
             distance,
+            datatype,
         })
     }
 
