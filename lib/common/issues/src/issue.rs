@@ -20,7 +20,7 @@ pub trait Issue {
 
     fn submit(self) -> bool
     where
-        Self: std::marker::Sized,
+        Self: std::marker::Sized + 'static,
     {
         crate::dashboard::submit(self)
     }

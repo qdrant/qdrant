@@ -1,3 +1,5 @@
+use std::any::TypeId;
+use std::collections::HashSet;
 use std::sync::{Arc, OnceLock};
 
 use dashmap::DashMap;
@@ -7,22 +9,32 @@ use crate::issue::{CodeType, Issue, IssueRecord};
 #[derive(Default)]
 struct Dashboard {
     pub issues: DashMap<CodeType, IssueRecord>,
+    inverted_index: DashMap<TypeId, HashSet<CodeType>>,
 }
 
 impl Dashboard {
     /// Activates an issue, returning true if the issue was not active before
-    fn add_issue(&self, issue: impl Issue) -> bool {
+    fn add_issue<I: Issue + 'static>(&self, issue: I) -> bool {
         let code = issue.code();
         if self.issues.contains_key(&code) {
             return false;
         }
         let issue = IssueRecord::from(issue);
+        self.inverted_index
+            .entry(TypeId::of::<I>())
+            .or_default()
+            .insert(code.clone());
         self.issues.insert(code, issue).is_none()
     }
 
     /// Deactivates an issue by its code, returning true if the issue was active before
     fn remove_issue<S: AsRef<str>>(&self, code: S) -> bool {
         if self.issues.contains_key(code.as_ref()) {
+            self.inverted_index
+                .entry(TypeId::of::<IssueRecord>())
+                .and_modify(|codes| {
+                    codes.remove(code.as_ref());
+                });
             return self.issues.remove(code.as_ref()).is_some();
         }
         false
@@ -31,6 +43,14 @@ impl Dashboard {
     /// Returns all issues in the dashboard. This operation clones every issue, so it is more expensive.
     fn get_all_issues(&self) -> Vec<IssueRecord> {
         self.issues.iter().map(|kv| kv.value().clone()).collect()
+    }
+
+    fn get_codes<I: 'static>(&self) -> HashSet<CodeType> {
+        let type_id = TypeId::of::<I>();
+        if let Some(codes) = self.inverted_index.get(&type_id) {
+            return codes.clone();
+        }
+        Default::default()
     }
 }
 
@@ -42,7 +62,7 @@ fn dashboard() -> Arc<Dashboard> {
 }
 
 /// Submits an issue to the dashboard, returning true if the issue code was not active before
-pub fn submit(issue: impl Issue) -> bool {
+pub fn submit(issue: impl Issue + 'static) -> bool {
     dashboard().add_issue(issue)
 }
 
@@ -61,8 +81,13 @@ pub fn clear() {
 }
 
 /// Solves all issues that match the given predicate
-pub fn solve_by_filter<F: Fn(&CodeType) -> bool>(filter: F) {
-    dashboard().issues.retain(|key, _value| !filter(key))
+pub fn solve_by_filter<I: Issue + 'static, F: Fn(&CodeType) -> bool>(filter: F) {
+    let codes = dashboard().get_codes::<I>();
+    for code in codes {
+        if filter(&code) {
+            solve(code);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -129,8 +154,8 @@ mod tests {
         submit(DummyIssue::new("issue2"));
         submit(DummyIssue::new("issue3"));
 
-        // Solve all issues that contain "my_collection", for example, when deleting a collection
-        solve_by_filter(|code| code.contains("my_collection"));
+        // Solve all dummy issues that contain "my_collection"
+        solve_by_filter::<DummyIssue, _>(|code| code.contains("my_collection"));
         assert_eq!(all_issues().len(), 3);
         assert!(solve("issue2"));
     }
