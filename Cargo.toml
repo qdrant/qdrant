@@ -15,6 +15,7 @@ default-run = "qdrant"
 
 [features]
 default = ["web", "parking_lot"]
+f16 = ["segment/f16"]
 web = ["actix-web"]
 multiling-chinese = ["segment/multiling-chinese"]
 multiling-japanese = ["segment/multiling-japanese"]
@@ -122,6 +123,8 @@ chrono = { version = "0.4.38", features = ["serde"] }
 fnv = "1.0"
 futures = "0.3.30"
 futures-util = "0.3.30"
+half = { version = "2", features = ["std", "serde", "rand_distr", "num-traits"] }
+num-traits = "0.2"
 indexmap = { version = "2", features = ["serde"] }
 parking_lot = { version = "0.12.1", features = ["deadlock_detection", "serde"] }
 prost = "0.11.9"
