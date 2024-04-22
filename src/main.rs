@@ -60,7 +60,7 @@ static GLOBAL: Jemalloc = Jemalloc;
 
 const FULL_ACCESS: Access = Access::full("For main");
 
-/// Qdrant (read: quadrant ) is a vector similarity search engine.
+/// Qdrant (read: quadrant) is a vector similarity search engine.
 /// It provides a production-ready service with a convenient API to store, search, and manage points - vectors with an additional payload.
 ///
 /// This CLI starts a Qdrant peer/server.
