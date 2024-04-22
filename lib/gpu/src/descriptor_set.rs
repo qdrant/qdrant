@@ -94,8 +94,8 @@ impl DescriptorSet {
 
     fn create_vk_descriptor_pool(
         device: &Arc<Device>,
-        uniform_buffers: &Vec<(usize, Arc<Buffer>)>,
-        storage_buffers: &Vec<(usize, Arc<Buffer>)>,
+        uniform_buffers: &[(usize, Arc<Buffer>)],
+        storage_buffers: &[(usize, Arc<Buffer>)],
     ) -> vk::DescriptorPool {
         let mut vk_descriptor_pool_sizes = Vec::new();
         if !uniform_buffers.is_empty() {

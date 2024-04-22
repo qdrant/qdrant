@@ -99,7 +99,7 @@ impl GpuBuilderContext {
         let staging_buffer = Arc::new(gpu::Buffer::new(
             self.device.clone(),
             gpu::BufferType::CpuToGpu,
-            entries.len() * std::mem::size_of::<PointOffsetType>(),
+            std::mem::size_of_val(entries),
         ));
         staging_buffer.upload_slice(entries, 0);
         gpu_context.copy_gpu_buffer(
@@ -107,7 +107,7 @@ impl GpuBuilderContext {
             self.requests_buffer.clone(),
             0,
             0,
-            entries.len() * std::mem::size_of::<PointOffsetType>(),
+            std::mem::size_of_val(entries),
         );
         gpu_context.run();
         gpu_context.wait_finish();
@@ -119,7 +119,7 @@ impl GpuBuilderContext {
         update_entry_points: &[PointOffsetType],
         link_points: &[PointOffsetType],
     ) {
-        if link_points.len() > 0 {
+        if !link_points.is_empty() {
             self.generation += 1;
             self.link_points_staging_buffer.upload(&self.generation, 0);
             self.link_points_staging_buffer
@@ -129,7 +129,7 @@ impl GpuBuilderContext {
                 self.link_points_buffer.clone(),
                 std::mem::size_of::<u32>(),
                 0,
-                link_points.len() * std::mem::size_of::<PointOffsetType>(),
+                std::mem::size_of_val(link_points),
             );
             gpu_context.copy_gpu_buffer(
                 self.link_points_staging_buffer.clone(),
@@ -139,7 +139,7 @@ impl GpuBuilderContext {
                 std::mem::size_of::<u32>(),
             );
         }
-        if update_entry_points.len() > 0 {
+        if !update_entry_points.is_empty() {
             self.update_entry_points_staging_buffer
                 .upload_slice(update_entry_points, 0);
             gpu_context.copy_gpu_buffer(
@@ -147,7 +147,7 @@ impl GpuBuilderContext {
                 self.update_entry_points_buffer.clone(),
                 0,
                 0,
-                update_entry_points.len() * std::mem::size_of::<PointOffsetType>(),
+                std::mem::size_of_val(update_entry_points),
             );
         }
         gpu_context.run();

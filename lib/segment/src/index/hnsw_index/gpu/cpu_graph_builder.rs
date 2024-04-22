@@ -68,8 +68,8 @@ where
             .map(|_| graph_layers_builder.get_random_layer(rng))
             .collect();
 
-        for idx in 0..num_vectors {
-            graph_layers_builder.set_levels(idx as PointOffsetType, point_levels[idx]);
+        for (idx, &point_level) in point_levels.iter().enumerate() {
+            graph_layers_builder.set_levels(idx as PointOffsetType, point_level);
         }
 
         let mut requests = vec![];
@@ -109,11 +109,11 @@ where
 
     pub fn update_entry(
         &self,
-        scorer: &Box<dyn RawScorer + 'a>,
+        scorer: &(dyn RawScorer + 'a),
         level: usize,
         point_id: PointOffsetType,
     ) {
-        let entry_point = self.entries.lock()[point_id as usize].clone().unwrap();
+        let entry_point = self.entries.lock()[point_id as usize].unwrap();
         let scored_entry = ScoredPointOffset {
             idx: entry_point,
             score: self.score(scorer, point_id, entry_point),
@@ -124,12 +124,12 @@ where
 
     fn link_point(
         &self,
-        scorer: &Box<dyn RawScorer + 'a>,
+        scorer: &(dyn RawScorer + 'a),
         level: usize,
         point_id: PointOffsetType,
         level_m: usize,
     ) {
-        let entry_point = self.entries.lock()[point_id as usize].clone().unwrap();
+        let entry_point = self.entries.lock()[point_id as usize].unwrap();
         let response = self.link(scorer, level, point_id, level_m, entry_point);
         self.apply_link_response(&response);
     }
@@ -139,7 +139,7 @@ where
         let timer = std::time::Instant::now();
         pool.install(|| {
             ids.into_par_iter().for_each(|idx| {
-                let entry = self.entries.lock()[idx as usize].clone();
+                let entry = self.entries.lock()[idx as usize];
                 let start_entry = match entry {
                     Some(entry) => entry,
                     None => return,
@@ -151,13 +151,13 @@ where
                 let top_level = self.point_levels[start_entry as usize];
                 let target_level = self.point_levels[idx as usize];
                 for level in crate::common::utils::rev_range(top_level, target_level) {
-                    self.update_entry(&scorer, level, idx);
+                    self.update_entry(scorer.as_ref(), level, idx);
                 }
 
                 // minimal common level for entry points
                 let linking_level = std::cmp::min(target_level, top_level);
                 for level in (0..=linking_level).rev() {
-                    self.link_point(&scorer, level, idx, self.get_m(level));
+                    self.link_point(scorer.as_ref(), level, idx, self.get_m(level));
                 }
             })
         });
@@ -177,8 +177,8 @@ where
             .map(|point_id| {
                 let fabric = &self.scorer_fabric;
                 let scorer = fabric();
-                let entry_point = self.entries.lock()[point_id as usize].clone().unwrap();
-                self.link(&scorer, level, point_id, level_m, entry_point)
+                let entry_point = self.entries.lock()[point_id as usize].unwrap();
+                self.link(scorer.as_ref(), level, point_id, level_m, entry_point)
             })
             .collect::<Vec<_>>();
         responses.sort_unstable_by(|a, b| a.id.cmp(&b.id));
@@ -217,7 +217,7 @@ where
         let mut actions = VecDeque::new();
         for idx in 0..self.num_vectors() as PointOffsetType {
             end_idx += 1;
-            if let Some(entry_point) = self.entries.lock()[idx as usize].clone() {
+            if let Some(entry_point) = self.entries.lock()[idx as usize] {
                 let entry_level = self.get_point_level(entry_point);
                 let point_level = self.get_point_level(idx as PointOffsetType);
                 if level > entry_level && level > point_level {
@@ -247,7 +247,7 @@ where
                     PointAction::UpdateEntry(idx) => {
                         let fabric = &self.scorer_fabric;
                         let scorer = fabric();
-                        self.update_entry(&scorer, level, idx)
+                        self.update_entry(scorer.as_ref(), level, idx)
                     }
                 }
 
@@ -272,7 +272,7 @@ where
 
     fn link(
         &self,
-        scorer: &Box<dyn RawScorer + 'a>,
+        scorer: &(dyn RawScorer + 'a),
         level: usize,
         point_id: PointOffsetType,
         level_m: usize,
@@ -336,12 +336,11 @@ where
 
     fn select_with_heuristic(
         &self,
-        scorer: &Box<dyn RawScorer + 'a>,
+        scorer: &(dyn RawScorer + 'a),
         candidates: FixedLengthPriorityQueue<ScoredPointOffset>,
         m: usize,
     ) -> Vec<PointOffsetType> {
-        let mut result_list = vec![];
-        result_list.reserve(m);
+        let mut result_list = Vec::with_capacity(m);
         for current_closest in candidates.into_vec() {
             if result_list.len() >= m {
                 break;
@@ -365,7 +364,7 @@ where
 
     fn search(
         &self,
-        scorer: &Box<dyn RawScorer + 'a>,
+        scorer: &(dyn RawScorer + 'a),
         level: usize,
         id: PointOffsetType,
         level_entry: ScoredPointOffset,
@@ -429,7 +428,7 @@ where
 
     fn search_entry(
         &self,
-        scorer: &Box<dyn RawScorer + 'a>,
+        scorer: &(dyn RawScorer + 'a),
         level: usize,
         id: PointOffsetType,
         mut entry: ScoredPointOffset,
@@ -466,7 +465,7 @@ where
 
     fn score(
         &self,
-        scorer: &Box<dyn RawScorer + 'a>,
+        scorer: &(dyn RawScorer + 'a),
         a: PointOffsetType,
         b: PointOffsetType,
     ) -> ScoreType {

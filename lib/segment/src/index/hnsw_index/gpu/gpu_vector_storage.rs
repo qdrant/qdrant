@@ -81,7 +81,7 @@ impl GpuVectorStorage {
         upload_context.run();
         upload_context.wait_finish();
 
-        for storage_index in 0..STORAGES_COUNT {
+        for (storage_index, vector_buffer) in vectors_buffer.iter().enumerate() {
             let mut gpu_offset = 0;
             let mut upload_size = 0;
             let mut upload_points = 0;
@@ -104,7 +104,7 @@ impl GpuVectorStorage {
                 if upload_points == upload_points_count {
                     upload_context.copy_gpu_buffer(
                         staging_buffer.clone(),
-                        vectors_buffer[storage_index].clone(),
+                        vector_buffer.clone(),
                         0,
                         gpu_offset,
                         upload_size,
@@ -159,9 +159,9 @@ impl GpuVectorStorage {
 
         let mut descriptor_set_builder = gpu::DescriptorSet::builder(descriptor_set_layout.clone())
             .add_uniform_buffer(0, params_buffer.clone());
-        for i in 0..STORAGES_COUNT {
+        for (i, vector_buffer) in vectors_buffer.iter().enumerate() {
             descriptor_set_builder =
-                descriptor_set_builder.add_storage_buffer(i + 1, vectors_buffer[i].clone());
+                descriptor_set_builder.add_storage_buffer(i + 1, vector_buffer.clone());
         }
 
         let descriptor_set = descriptor_set_builder.build();

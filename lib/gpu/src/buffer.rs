@@ -160,11 +160,7 @@ impl Buffer {
             let slice: &mut [u8] =
                 std::slice::from_raw_parts_mut(mapped_ptr.cast().as_ptr(), self.size);
             let ptr = slice.as_mut_ptr().add(offset);
-            std::ptr::copy(
-                (data.as_ptr() as *const T) as *const u8,
-                ptr,
-                std::mem::size_of_val(data),
-            );
+            std::ptr::copy(data.as_ptr() as *const u8, ptr, std::mem::size_of_val(data));
         }
     }
 

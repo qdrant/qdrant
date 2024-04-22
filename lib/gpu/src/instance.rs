@@ -63,8 +63,7 @@ impl Instance {
                 .map(|raw_name| raw_name.as_ptr())
                 .collect();
 
-            let debug_utils_create_info = debug_messenger
-                .map(|debug_messenger| Self::debug_messenger_create_info(debug_messenger));
+            let debug_utils_create_info = debug_messenger.map(Self::debug_messenger_create_info);
             let create_info_p_next = if let Some(debug_utils_create_info) = &debug_utils_create_info
             {
                 debug_utils_create_info as *const vk::DebugUtilsMessengerCreateInfoEXT

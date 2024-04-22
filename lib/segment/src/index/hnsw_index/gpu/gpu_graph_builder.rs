@@ -156,7 +156,7 @@ impl GpuGraphBuilder {
         let mut update_entry_buffer = vec![];
         let mut links_buffer = vec![];
         for idx in start_idx..self.num_vectors() as PointOffsetType {
-            if let Some(entry_point) = entries[idx as usize].clone() {
+            if let Some(entry_point) = entries[idx as usize] {
                 let entry_level = self.get_point_level(entry_point);
                 let point_level = self.get_point_level(idx as PointOffsetType);
                 if level > entry_level && level > point_level {
@@ -210,7 +210,7 @@ impl GpuGraphBuilder {
         println!(
             "Visited {:?}, point id = {:?}, time = {:?}",
             visited,
-            link_points.get(0).cloned().unwrap_or_default(),
+            link_points.first().cloned().unwrap_or_default(),
             self.timer.map(|t| t.elapsed()).unwrap_or_default()
         );
         self.timer = Some(std::time::Instant::now());
@@ -223,15 +223,15 @@ impl GpuGraphBuilder {
 
         debug_assert!(update_entry_points.len() <= self.gpu_threads);
         debug_assert!(link_points.len() <= self.gpu_threads);
-        if update_entry_points.len() == 0 && link_points.len() == 0 {
+        if update_entry_points.is_empty() && link_points.is_empty() {
             return;
         }
 
-        if link_points.len() > 0 {
+        if !link_points.is_empty() {
             self.gpu_search_context.clear(&mut self.gpu_context);
         }
 
-        if update_entry_points.len() > 0 {
+        if !update_entry_points.is_empty() {
             self.gpu_context.bind_pipeline(
                 self.update_entry_pipeline.clone(),
                 &[
@@ -244,7 +244,7 @@ impl GpuGraphBuilder {
             self.gpu_context.dispatch(update_entry_points.len(), 1, 1);
         }
 
-        if link_points.len() > 0 {
+        if !link_points.is_empty() {
             self.gpu_context.bind_pipeline(
                 self.link_pipeline.clone(),
                 &[

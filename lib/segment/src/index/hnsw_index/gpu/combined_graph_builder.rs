@@ -28,6 +28,7 @@ impl<'a, TFabric> CombinedGraphBuilder<'a, TFabric>
 where
     TFabric: Fn() -> Box<dyn RawScorer + 'a> + Send + Sync + 'a,
 {
+    #[allow(clippy::too_many_arguments)]
     pub fn new<R>(
         num_vectors: usize,
         m: usize,
