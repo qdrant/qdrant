@@ -5,6 +5,8 @@ use std::sync::atomic::AtomicBool;
 
 use bitvec::prelude::{BitSlice, BitVec};
 use common::types::PointOffsetType;
+#[cfg(not(feature = "f16"))]
+use num_traits::ConstOne;
 use rand::Rng;
 
 use crate::common::operation_error::OperationResult;
@@ -21,7 +23,8 @@ use crate::vector_storage::{
 };
 
 pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> DenseVector {
-    (0..size).map(|_| rnd_gen.gen_range(-1.0..1.0)).collect()
+    let one = VectorElementType::ONE;
+    (0..size).map(|_| rnd_gen.gen_range(-one..one)).collect()
 }
 
 pub struct FakeFilterContext {}

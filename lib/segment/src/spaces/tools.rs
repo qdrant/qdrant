@@ -1,6 +1,9 @@
 use std::cmp::Reverse;
 
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
+use num_traits::real::Real;
+
+use crate::data_types::vectors::VectorElementType;
 
 /// Check if the length is zero or normalized enough.
 ///
@@ -11,8 +14,10 @@ use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 /// When checking normalized, we use 1.0e-6 as threshold. It should be big enough to make
 /// renormalizing stable, while small enough to not affect regular normalizations.
 #[inline]
-pub fn is_length_zero_or_normalized(length: f32) -> bool {
-    length < f32::EPSILON || (length - 1.0).abs() <= 1.0e-6
+pub fn is_length_zero_or_normalized(length: VectorElementType) -> bool {
+    let one = VectorElementType::ONE;
+    let vanishingly_small = VectorElementType::from_f32(1.0e-6);
+    length < VectorElementType::EPSILON || (length - one).abs() <= vanishingly_small
 }
 
 pub fn peek_top_smallest_iterable<I, E: Ord>(elements: I, top: usize) -> Vec<E>

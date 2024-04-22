@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::slice::ChunksExactMut;
 
+#[cfg(feature = "f16")]
+use half::f16;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use sparse::common::sparse_vector::SparseVector;
@@ -162,8 +164,13 @@ impl<'a> From<&'a Vector> for VectorRef<'a> {
     }
 }
 
-/// Type of vector element.
+/// A single cell of a vector.
+#[cfg(not(feature = "f16"))]
 pub type VectorElementType = f32;
+
+/// A single cell of a vector.
+#[cfg(feature = "f16")]
+pub type VectorElementType = f16;
 
 pub type VectorElementTypeByte = u8;
 
@@ -191,8 +198,9 @@ impl MultiDenseVector {
 
     /// MultiDenseVector cannot be empty, so we use a placeholder vector instead
     pub fn placeholder(dim: usize) -> Self {
+        let one = VectorElementType::ONE;
         Self {
-            inner_vector: vec![1.0; dim],
+            inner_vector: vec![one; dim],
             dim,
         }
     }
@@ -380,7 +388,7 @@ impl VectorStruct {
 }
 
 /// Dense vector data with name
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub struct NamedVector {
     /// Name of vector data
@@ -584,6 +592,8 @@ impl From<MultiDenseVector> for QueryVector {
 
 #[cfg(test)]
 mod tests {
+    use itertools::Itertools;
+
     use super::*;
 
     #[test]
@@ -673,27 +683,83 @@ mod tests {
         assert_eq!(
             a,
             VectorStruct::Multi(HashMap::from([
-                ("a".into(), vec![0.8, 0.6, 0.2, 0.1].into()),
+                (
+                    "a".into(),
+                    vec![0.8, 0.6, 0.2, 0.1]
+                        .into_iter()
+                        .map(VectorElementType::from_f32)
+                        .collect_vec()
+                        .into()
+                ),
                 ("b".into(), vec![0.1, 0.9, 0.8, 0.2].into()),
             ])),
         );
 
         // Overlapping multi into multi
         let mut a = VectorStruct::Multi(HashMap::from([
-            ("a".into(), vec![0.3, 0.2, 0.7, 0.5].into()),
-            ("b".into(), vec![0.6, 0.3, 0.8, 0.3].into()),
+            (
+                "a".into(),
+                vec![0.3, 0.2, 0.7, 0.5]
+                    .into_iter()
+                    .map(VectorElementType::from_f32)
+                    .collect_vec()
+                    .into(),
+            ),
+            (
+                "b".into(),
+                vec![0.6, 0.3, 0.8, 0.3]
+                    .into_iter()
+                    .map(VectorElementType::from_f32)
+                    .collect_vec()
+                    .into(),
+            ),
         ]));
         let b = VectorStruct::Multi(HashMap::from([
-            ("b".into(), vec![0.8, 0.2, 0.4, 0.9].into()),
-            ("c".into(), vec![0.4, 0.8, 0.9, 0.6].into()),
+            (
+                "b".into(),
+                vec![0.8, 0.2, 0.4, 0.9]
+                    .into_iter()
+                    .map(VectorElementType::from_f32)
+                    .collect_vec()
+                    .into(),
+            ),
+            (
+                "c".into(),
+                vec![0.4, 0.8, 0.9, 0.6]
+                    .into_iter()
+                    .map(VectorElementType::from_f32)
+                    .collect_vec()
+                    .into(),
+            ),
         ]));
         a.merge(b);
         assert_eq!(
             a,
             VectorStruct::Multi(HashMap::from([
-                ("a".into(), vec![0.3, 0.2, 0.7, 0.5].into()),
-                ("b".into(), vec![0.8, 0.2, 0.4, 0.9].into()),
-                ("c".into(), vec![0.4, 0.8, 0.9, 0.6].into()),
+                (
+                    "a".into(),
+                    vec![0.3, 0.2, 0.7, 0.5]
+                        .into_iter()
+                        .map(VectorElementType::from_f32)
+                        .collect_vec()
+                        .into()
+                ),
+                (
+                    "b".into(),
+                    vec![0.8, 0.2, 0.4, 0.9]
+                        .into_iter()
+                        .map(VectorElementType::from_f32)
+                        .collect_vec()
+                        .into()
+                ),
+                (
+                    "c".into(),
+                    vec![0.4, 0.8, 0.9, 0.6]
+                        .into_iter()
+                        .map(VectorElementType::from_f32)
+                        .collect_vec()
+                        .into()
+                ),
             ])),
         );
     }

@@ -3,6 +3,7 @@ use std::ops::{Range, RangeInclusive};
 use fnv::FnvBuildHasher;
 use indexmap::IndexSet;
 use itertools::Itertools;
+use num_traits::Float;
 use rand::distributions::{Alphanumeric, DistString};
 use rand::seq::SliceRandom;
 use rand::Rng;
@@ -122,10 +123,12 @@ pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> DenseVect
 }
 
 pub fn random_dense_byte_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> DenseVector {
+    let zero = VectorElementType::ONE;
+    let byte_max: VectorElementType = VectorElementType::from_f32(255.0);
     (0..size)
         .map(|_| {
             rnd_gen
-                .gen_range::<VectorElementType, _>(0.0..=255.0)
+                .gen_range::<VectorElementType, _>(zero..=byte_max)
                 .round()
         })
         .collect()

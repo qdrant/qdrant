@@ -9,6 +9,7 @@ license = "Apache-2.0"
 edition = "2021"
 
 [features]
+f16 = ["half"]
 multiling-chinese = ["charabia/chinese"]
 multiling-japanese = ["charabia/japanese"]
 multiling-korean = ["charabia/korean"]
@@ -26,6 +27,8 @@ pprof = { version = "0.12", features = ["flamegraph", "prost-codec"] }
 
 [dependencies]
 bitpacking = "0.9.2"
+half = { workspace = true, optional = true }
+num-traits = { workspace = true }
 tempfile = "3.10.1"
 parking_lot = { workspace = true }
 rayon = "1.10.0"
@@ -46,7 +49,6 @@ schemars = { workspace = true }
 log = "0.4"
 geo = "0.28.0"
 geohash = "0.13.1"
-num-traits = "0.2.18"
 num-derive = "0.4.2"
 num-cmp = "0.1.0"
 rand = "0.8"

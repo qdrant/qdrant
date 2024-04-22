@@ -26,7 +26,9 @@ use crate::common::version::{StorageVersion, VERSION_FILE};
 use crate::common::{check_named_vectors, check_query_vectors, check_stopped, check_vector_name};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{Direction, OrderBy, OrderingValue};
-use crate::data_types::vectors::{MultiDenseVector, QueryVector, Vector, VectorRef};
+use crate::data_types::vectors::{
+    MultiDenseVector, QueryVector, Vector, VectorElementType, VectorRef,
+};
 use crate::entry::entry_point::SegmentEntry;
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::numeric_index::StreamRange;
@@ -218,7 +220,7 @@ impl Segment {
                         | VectorStorageEnum::DenseMemmapByte(_)
                         | VectorStorageEnum::DenseAppendableMemmap(_)
                         | VectorStorageEnum::DenseAppendableMemmapByte(_) => {
-                            Vector::from(vec![1.0; dim])
+                            Vector::from(vec![VectorElementType::from_f32(1.0); dim])
                         }
                         VectorStorageEnum::SparseSimple(_) => Vector::from(SparseVector::default()),
                         VectorStorageEnum::MultiDenseSimple(_) => {
@@ -1853,17 +1855,27 @@ mod tests {
         };
         let mut segment = build_segment(dir.path(), &config, true).unwrap();
 
-        let vec4 = vec![1.1, 1.0, 0.0, 1.0];
+        let vec4 = vec![1.1, 1.0, 0.0, 1.0]
+            .into_iter()
+            .map(VectorElementType::from_f32)
+            .collect::<Vec<_>>();
         segment
             .upsert_point(100, 4.into(), only_default_vector(&vec4))
             .unwrap();
-        let vec6 = vec![1.0, 1.0, 0.5, 1.0];
+        let vec6 = vec![1.0, 1.0, 0.5, 1.0]
+            .into_iter()
+            .map(VectorElementType::from_f32)
+            .collect::<Vec<_>>();
         segment
             .upsert_point(101, 6.into(), only_default_vector(&vec6))
             .unwrap();
         segment.delete_point(102, 1.into()).unwrap();
 
-        let query_vector = [1.0, 1.0, 1.0, 1.0].into();
+        let query_vector = [1.0, 1.0, 1.0, 1.0]
+            .into_iter()
+            .map(VectorElementType::from_f32)
+            .collect::<Vec<_>>()
+            .into();
         let search_result = segment
             .search(
                 DEFAULT_VECTOR_NAME,

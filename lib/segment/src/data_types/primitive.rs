@@ -19,7 +19,7 @@ pub trait PrimitiveVectorElement:
         quantization_config: &QuantizationConfig,
         distance: Distance,
         vector: &'a [Self],
-    ) -> Cow<'a, [f32]>;
+    ) -> Cow<'a, [VectorElementType]>;
 
     fn datatype() -> VectorStorageDatatype;
 }
@@ -37,7 +37,7 @@ impl PrimitiveVectorElement for VectorElementType {
         _quantization_config: &QuantizationConfig,
         _distance: Distance,
         vector: &'a [Self],
-    ) -> Cow<'a, [f32]> {
+    ) -> Cow<'a, [VectorElementType]> {
         Cow::Borrowed(vector)
     }
 
@@ -48,27 +48,36 @@ impl PrimitiveVectorElement for VectorElementType {
 
 impl PrimitiveVectorElement for VectorElementTypeByte {
     fn slice_from_float_cow(vector: Cow<[VectorElementType]>) -> Cow<[Self]> {
-        Cow::Owned(vector.iter().map(|&x| x as u8).collect())
+        Cow::Owned(vector.iter().map(|&x| x.to_f32() as u8).collect())
     }
 
     fn slice_to_float_cow(vector: Cow<[Self]>) -> Cow<[VectorElementType]> {
-        Cow::Owned(vector.iter().map(|&x| x as VectorElementType).collect_vec())
+        Cow::Owned(
+            vector
+                .iter()
+                .map(|&x| VectorElementType::from(x))
+                .collect_vec(),
+        )
     }
 
     fn quantization_preprocess<'a>(
         quantization_config: &QuantizationConfig,
         distance: Distance,
         vector: &'a [Self],
-    ) -> Cow<'a, [f32]> {
+    ) -> Cow<'a, [VectorElementType]> {
+        let pivot = VectorElementType::from_f32(127.0);
         if let QuantizationConfig::Binary(_) = quantization_config {
             Cow::from(
                 vector
                     .iter()
-                    .map(|&x| (x as VectorElementType) - 127.0)
+                    .map(|&x| VectorElementType::from_f32(x as f32) - pivot)
                     .collect_vec(),
             )
         } else {
-            let vector = vector.iter().map(|&x| x as VectorElementType).collect_vec();
+            let vector = vector
+                .iter()
+                .map(|&x| VectorElementType::from(x))
+                .collect_vec();
             let preprocessed_vector = match distance {
                 Distance::Cosine => <CosineMetric as Metric<VectorElementType>>::preprocess(vector),
                 Distance::Euclid => <EuclidMetric as Metric<VectorElementType>>::preprocess(vector),

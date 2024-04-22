@@ -1,3 +1,5 @@
+#![cfg(not(feature = "f16"))]
+
 #[cfg(target_feature = "neon")]
 use std::arch::aarch64::*;
 
