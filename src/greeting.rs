@@ -62,7 +62,7 @@ fn is_localhost_ip(host: &str) -> bool {
 /// Prints welcome message
 #[rustfmt::skip]
 pub fn welcome(settings: &Settings) {
-    if !stdout().is_terminal()  {
+    if !stdout().is_terminal() {
         colored::control::set_override(false);
     }
 
