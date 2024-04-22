@@ -5123,7 +5123,7 @@
       "name": "Apache 2.0",
       "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
     },
-    "version": "master"
+    "version": "v1.9.x"
   },
   "externalDocs": {
     "description": "Find out more about Qdrant applications and demo",
