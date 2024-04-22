@@ -5480,9 +5480,9 @@ dependencies = [
 
 [[package]]
 name = "thread-priority"
-version = "0.16.0"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a617e9eeeb20448b01a8e2427fb80dfbc9c49d79a1de3b11f25731edbf547e3c"
+checksum = "599e8e829c2314b750ecade9309ecc6cf9a48c2e62fe25680b6c1d2172463ca3"
 dependencies = [
  "bitflags 2.4.1",
  "cfg-if",
@@ -6154,7 +6154,7 @@ dependencies = [
  "memmap2 0.9.4",
  "rand 0.8.5",
  "rand_distr",
- "rustix 0.37.27",
+ "rustix 0.38.31",
  "serde",
 ]
 
