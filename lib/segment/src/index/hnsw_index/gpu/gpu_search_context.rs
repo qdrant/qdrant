@@ -230,12 +230,14 @@ mod tests {
 
     use atomic_refcell::AtomicRefCell;
     use bitvec::vec::BitVec;
+    use common::types::{PointOffsetType, ScoredPointOffset};
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
     use tempfile::TempDir;
 
     use super::*;
     use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
+    use crate::data_types::vectors::{DenseVector, VectorElementType};
     use crate::fixtures::index_fixtures::random_vector;
     use crate::index::hnsw_index::gpu::gpu_links::GpuLinks;
     use crate::index::hnsw_index::gpu::gpu_vector_storage::GpuVectorStorage;
@@ -244,11 +246,9 @@ mod tests {
     use crate::index::hnsw_index::point_scorer::FilteredScorer;
     use crate::spaces::metric::Metric;
     use crate::spaces::simple::CosineMetric;
-    use crate::types::{Distance, PointOffsetType};
-    use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
-    use crate::vector_storage::{
-        new_raw_scorer, ScoredPointOffset, VectorStorage, VectorStorageEnum,
-    };
+    use crate::types::Distance;
+    use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
+    use crate::vector_storage::{new_raw_scorer, VectorStorage, VectorStorageEnum};
 
     struct TestData {
         _points: Vec<Vec<f32>>,
@@ -274,17 +274,26 @@ mod tests {
         candidates_capacity: usize,
     ) -> TestData {
         let points = (0..points_count)
-            .map(|_| CosineMetric::preprocess(&random_vector(rnd, dim)).unwrap())
+            .map(|_| {
+                <CosineMetric as Metric<VectorElementType>>::preprocess(random_vector(rnd, dim))
+            })
             .collect::<Vec<_>>();
 
         let dir = tempfile::Builder::new().prefix("db_dir").tempdir().unwrap();
         let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-        let storage = open_simple_vector_storage(db, DB_VECTOR_CF, dim, Distance::Cosine).unwrap();
+        let storage = open_simple_dense_vector_storage(
+            db,
+            DB_VECTOR_CF,
+            dim,
+            Distance::Cosine,
+            &false.into(),
+        )
+        .unwrap();
         {
             let mut borrowed_storage = storage.as_ref().borrow_mut();
             points.iter().enumerate().for_each(|(i, vec)| {
                 borrowed_storage
-                    .insert_vector(i as PointOffsetType, vec.as_slice())
+                    .insert_vector(i as PointOffsetType, vec.as_slice().into())
                     .unwrap();
             });
         }
@@ -307,8 +316,13 @@ mod tests {
 
         for idx in 0..points_count - search_count {
             let borrowed_storage = storage.borrow();
-            let vector = borrowed_storage.get_vector(idx as PointOffsetType).to_vec();
-            let raw_scorer = new_raw_scorer(vector, &borrowed_storage, &deleted_vec);
+            let vector: DenseVector = borrowed_storage
+                .get_vector(idx as PointOffsetType)
+                .to_owned()
+                .try_into()
+                .unwrap();
+            let raw_scorer =
+                new_raw_scorer(vector.into(), &borrowed_storage, &deleted_vec).unwrap();
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
             graph_layers.link_new_point(idx as PointOffsetType, scorer);
         }
@@ -391,8 +405,12 @@ mod tests {
         let mut search_results: Vec<Vec<ScoredPointOffset>> = vec![];
         for idx in points_count - search_count..points_count {
             let borrowed_storage = storage.borrow();
-            let vector = borrowed_storage.get_vector(idx as PointOffsetType).to_vec();
-            let raw_scorer = new_raw_scorer(vector, &borrowed_storage, &deleted_vec);
+            let vector = borrowed_storage
+                .get_vector(idx as PointOffsetType)
+                .to_owned();
+            let vector: DenseVector = vector.try_into().unwrap();
+            let raw_scorer =
+                new_raw_scorer(vector.into(), &borrowed_storage, &deleted_vec).unwrap();
             let mut scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
 
             let entry_point = match graph_layers
@@ -699,8 +717,12 @@ mod tests {
         let mut heuristic_results: Vec<Vec<PointOffsetType>> = vec![];
         for idx in points_count - search_count..points_count {
             let borrowed_storage = storage.borrow();
-            let vector = borrowed_storage.get_vector(idx as PointOffsetType).to_vec();
-            let raw_scorer = new_raw_scorer(vector, &borrowed_storage, &deleted_vec);
+            let vector = borrowed_storage
+                .get_vector(idx as PointOffsetType)
+                .to_owned();
+            let vector: DenseVector = vector.try_into().unwrap();
+            let raw_scorer =
+                new_raw_scorer(vector.into(), &borrowed_storage, &deleted_vec).unwrap();
             let mut scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
 
             let entry_point = match graph_layers

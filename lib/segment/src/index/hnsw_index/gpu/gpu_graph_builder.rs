@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
+use common::types::PointOffsetType;
+
 use super::gpu_builder_context::GpuBuilderContext;
 use super::gpu_links::GpuLinks;
 use super::gpu_search_context::GpuSearchContext;
 use super::gpu_vector_storage::GpuVectorStorage;
-use crate::types::PointOffsetType;
 use crate::vector_storage::VectorStorageEnum;
 
 pub const CANDIDATES_CAPACITY_DIV: usize = 8;

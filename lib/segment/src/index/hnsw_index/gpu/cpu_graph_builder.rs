@@ -1,6 +1,7 @@
 use std::collections::{BinaryHeap, VecDeque};
 
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
+use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use num_traits::float::FloatCore;
 use parking_lot::Mutex;
 use rand::Rng;
@@ -9,8 +10,7 @@ use rayon::ThreadPool;
 
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::visited_pool::VisitedPool;
-use crate::types::{PointOffsetType, ScoreType};
-use crate::vector_storage::{RawScorer, ScoredPointOffset};
+use crate::vector_storage::RawScorer;
 
 pub struct CpuGraphBuilder<'a, TFabric>
 where
@@ -198,8 +198,6 @@ where
                 point_ids.remove(index);
             }
         }
-        self.visited_pool.return_back(visited);
-
         point_ids
     }
 
@@ -412,8 +410,6 @@ where
                 );
             }
         });
-
-        self.visited_pool.return_back(visited_list);
         nearest
     }
 

@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
-use crate::entry::entry_point::OperationResult;
-use crate::types::PointOffsetType;
+use common::types::PointOffsetType;
+
+use crate::common::operation_error::OperationResult;
 
 #[repr(C)]
 struct GpuLinksParamsBuffer {
@@ -191,7 +192,6 @@ mod tests {
     use rand::{Rng, SeedableRng};
 
     use super::*;
-    use crate::types::PointOffsetType;
 
     fn generate_random_links(m: usize, points_count: usize) -> Vec<Vec<PointOffsetType>> {
         let mut rnd = StdRng::seed_from_u64(42);

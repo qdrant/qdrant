@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::entry::entry_point::{OperationError, OperationResult};
+use crate::common::operation_error::{OperationError, OperationResult};
 
 #[repr(C)]
 struct GpuVisitedFlagsParamsBuffer {
@@ -101,12 +101,4 @@ impl GpuVisitedFlags {
             self.params_buffer.size,
         );
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_gpu_visited_flags() {}
 }

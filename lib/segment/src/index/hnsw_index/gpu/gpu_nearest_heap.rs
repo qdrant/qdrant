@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::entry::entry_point::{OperationError, OperationResult};
+use crate::common::operation_error::{OperationError, OperationResult};
 
 #[repr(C)]
 struct GpuNearestHeapParamsBuffer {
@@ -93,13 +93,12 @@ impl GpuNearestHeap {
 #[cfg(test)]
 mod tests {
     use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
+    use common::types::{PointOffsetType, ScoredPointOffset};
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
 
     use super::*;
     use crate::index::hnsw_index::gpu::gpu_links::GpuLinks;
-    use crate::types::PointOffsetType;
-    use crate::vector_storage::ScoredPointOffset;
 
     #[test]
     fn test_gpu_nearest_heap() {

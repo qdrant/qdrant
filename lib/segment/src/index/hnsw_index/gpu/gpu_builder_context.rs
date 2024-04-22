@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::types::PointOffsetType;
+use common::types::PointOffsetType;
 
 #[repr(C)]
 struct GpuBuilderContextParamsBuffer {
@@ -174,8 +174,8 @@ mod tests {
     use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
     use crate::index::hnsw_index::point_scorer::FilteredScorer;
     use crate::spaces::simple::CosineMetric;
-    use crate::types::{Distance, PointOffsetType};
-    use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
+    use crate::types::Distance;
+    use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
     use crate::vector_storage::VectorStorage;
 
     #[test]
@@ -209,7 +209,7 @@ mod tests {
         for idx in 0..(num_vectors as PointOffsetType) {
             let fake_filter_context = FakeFilterContext {};
             let added_vector = vector_holder.vectors.get(idx).to_vec();
-            let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone());
+            let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone()).unwrap();
 
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
             graph_layers_builder.set_levels(idx, point_levels[idx as usize]);
@@ -224,12 +224,14 @@ mod tests {
         // init vector storage
         let dir = tempfile::Builder::new().prefix("db_dir").tempdir().unwrap();
         let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-        let storage = open_simple_vector_storage(db, DB_VECTOR_CF, dim, Distance::Dot).unwrap();
+        let storage =
+            open_simple_dense_vector_storage(db, DB_VECTOR_CF, dim, Distance::Dot, &false.into())
+                .unwrap();
         {
             let mut borrowed_storage = storage.borrow_mut();
             for idx in 0..(num_vectors as PointOffsetType) {
                 borrowed_storage
-                    .insert_vector(idx, vector_holder.vectors.get(idx))
+                    .insert_vector(idx, vector_holder.vectors.get(idx).into())
                     .unwrap();
             }
         }

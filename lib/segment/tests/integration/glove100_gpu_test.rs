@@ -1,19 +1,22 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
+use atomic_refcell::AtomicRefCell;
+use common::cpu::CpuPermit;
 use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
 use segment::index::hnsw_index::gpu::set_gpu_indexing;
 use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::hnsw::HNSWIndex;
+use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::VectorIndex;
 use segment::segment_constructor::build_segment;
 use segment::types::{
     HnswConfig, Indexes, SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageType,
 };
-use segment::vector_storage::ScoredPointOffset;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
@@ -62,9 +65,12 @@ fn test_filterable_hnsw() {
                 storage_type: VectorStorageType::Memory,
                 index: Indexes::Plain {},
                 quantization_config: None,
+                multi_vec_config: None,
+                datatype: None,
             },
         )]),
         payload_storage_type: Default::default(),
+        sparse_vector_data: Default::default(),
     };
 
     let mut segment = build_segment(dir.path(), &config, true).unwrap();
@@ -92,6 +98,7 @@ fn test_filterable_hnsw() {
         segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_storage
             .clone(),
+        Arc::new(AtomicRefCell::new(None)),
         segment.payload_index.clone(),
         hnsw_config,
     )
@@ -99,6 +106,8 @@ fn test_filterable_hnsw() {
 
     println!("Start indexing");
     let timer = std::time::Instant::now();
-    hnsw_index.build_index(&stopped).unwrap();
+    let permit_cpu_count = num_rayon_threads(8);
+    let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
+    hnsw_index.build_index(permit, &stopped).unwrap();
     println!("Index finished in : {:?}", timer.elapsed());
 }

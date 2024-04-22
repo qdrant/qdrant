@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
-use crate::entry::entry_point::OperationResult;
-use crate::types::PointOffsetType;
+use common::types::PointOffsetType;
+
+use crate::common::operation_error::OperationResult;
+use crate::data_types::vectors::DenseVector;
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 pub const ALIGNMENT: usize = 32 * 4;
@@ -90,7 +92,8 @@ impl GpuVectorStorage {
                 }
 
                 let vector = vector_storage.get_vector(point_id as PointOffsetType);
-                extended_vector[..vector.len()].copy_from_slice(vector);
+                let vector: DenseVector = vector.try_into().unwrap();
+                extended_vector[..vector.len()].copy_from_slice(&vector);
                 staging_buffer.upload_slice(
                     &extended_vector,
                     upload_points * capacity * std::mem::size_of::<f32>(),
@@ -193,8 +196,8 @@ mod tests {
     use crate::fixtures::index_fixtures::random_vector;
     use crate::spaces::metric::Metric;
     use crate::spaces::simple::DotProductMetric;
-    use crate::types::{Distance, PointOffsetType};
-    use crate::vector_storage::simple_vector_storage::open_simple_vector_storage;
+    use crate::types::Distance;
+    use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
 
     #[test]
     fn test_gpu_vector_storage_scoring() {
@@ -210,12 +213,14 @@ mod tests {
 
         let dir = tempfile::Builder::new().prefix("db_dir").tempdir().unwrap();
         let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-        let storage = open_simple_vector_storage(db, DB_VECTOR_CF, dim, Distance::Dot).unwrap();
+        let storage =
+            open_simple_dense_vector_storage(db, DB_VECTOR_CF, dim, Distance::Dot, &false.into())
+                .unwrap();
         {
             let mut borrowed_storage = storage.borrow_mut();
             points.iter().enumerate().for_each(|(i, vec)| {
                 borrowed_storage
-                    .insert_vector(i as PointOffsetType, vec)
+                    .insert_vector(i as PointOffsetType, vec.into())
                     .unwrap();
             });
         }
