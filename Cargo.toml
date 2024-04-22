@@ -78,7 +78,7 @@ tower-layer = "0.3.2"
 tar = "0.4.40"
 reqwest = { workspace = true }
 # rustls minor version must be synced with actix-web
-rustls = "0.22.3"
+rustls = "0.22.4"
 rustls-pki-types = "1.4.1"
 rustls-pemfile = "2.1.2"
 prometheus = { version = "0.13.3", default-features = false }
