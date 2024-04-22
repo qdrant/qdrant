@@ -28,7 +28,7 @@ thiserror = "1.0"
 serde = { workspace = true }
 serde_cbor = { workspace = true }
 serde_json = { workspace = true }
-rmp-serde = "~1.1"
+rmp-serde = "~1.2"
 wal = { workspace = true }
 ordered-float = "4.2"
 hashring = "0.3.3"
