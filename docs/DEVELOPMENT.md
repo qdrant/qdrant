@@ -62,7 +62,7 @@ To run Qdrant on local development environment you need to install below:
 - Install `protoc` from source
     ```shell
     PROTOC_VERSION=22.2
-    PKG_NAME=$(uname -s | awk '{print ($1 == "Darwin") ? "osx-universal_binary" : (($1 == "Linux") ? "linux-x86_64" : "")}')
+    PKG_NAME=$(uname -sm | awk '{print ($1 == "Darwin") ? "osx-universal_binary" : (($1 == "Linux") ? (($2 == "aarch64") ? "linux-aarch_64" : "linux-x86_64") : "")}')
 
     # curl `proto` source file
     curl -LO https://github.com/protocolbuffers/protobuf/releases//download/v$PROTOC_VERSION/protoc-$PROTOC_VERSION-$PKG_NAME.zip
