@@ -10,10 +10,8 @@ use crate::solution::Solution;
 pub type CodeType = String;
 
 pub trait Issue {
-    /// Returns the issue code, which should have the following format:
-    /// ```text
-    /// {collection_name}/{issue_id}/{metadata}
-    /// ```
+    /// Returns the issue code, which will be used as a unique identifier. Must start with an issue type identifier.
+    /// E.g. `TOO_MANY_COLLECTIONS`, `UNININDEXED_FIELD/coll_name/field_name`, etc.
     fn code(&self) -> CodeType;
     fn description(&self) -> String;
     fn solution(&self) -> Solution;
