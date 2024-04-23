@@ -18,4 +18,4 @@ log = "0.4.20"
 schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-serial_test = { version = "3.0.0", default-features = false }
+serial_test = { version = "3.1.0", default-features = false }
