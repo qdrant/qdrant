@@ -79,23 +79,13 @@ mod tests {
     use super::*;
     use crate::issue::DummyIssue;
 
-    struct DummySubscriber<E> {
-        _phantom: std::marker::PhantomData<E>,
-    }
+    struct DummySubscriber;
 
     struct DummyEvent {
         pub collection_id: String,
     }
 
-    impl<E> DummySubscriber<E> {
-        pub fn new() -> Self {
-            Self {
-                _phantom: std::marker::PhantomData,
-            }
-        }
-    }
-
-    impl Subscriber<DummyEvent> for DummySubscriber<DummyEvent> {
+    impl Subscriber<DummyEvent> for DummySubscriber {
         fn notify(&self, event: Arc<DummyEvent>) {
             let issue = DummyIssue::new(event.collection_id.clone());
             crate::submit(issue);
@@ -106,7 +96,7 @@ mod tests {
         collection_id: String,
     }
 
-    impl Subscriber<CollectionDeletedEvent> for DummySubscriber<CollectionDeletedEvent> {
+    impl Subscriber<CollectionDeletedEvent> for DummySubscriber {
         fn notify(&self, event: Arc<CollectionDeletedEvent>) {
             crate::solve_by_filter::<DummyIssue, _>(|code| code == &event.collection_id);
         }
@@ -116,8 +106,8 @@ mod tests {
     fn test_basic_use() {
         let mut broker = EventBroker::new();
 
-        broker.add_subscriber(Box::new(DummySubscriber::<DummyEvent>::new()));
-        broker.add_subscriber(Box::new(DummySubscriber::<CollectionDeletedEvent>::new()));
+        broker.add_subscriber::<DummyEvent>(Box::new(DummySubscriber));
+        broker.add_subscriber::<CollectionDeletedEvent>(Box::new(DummySubscriber));
 
         broker.notify(DummyEvent {
             collection_id: "dummy".to_string(),
