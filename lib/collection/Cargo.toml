@@ -62,7 +62,7 @@ itertools = "0.12"
 indicatif = "0.17.8"
 chrono = { workspace = true }
 schemars = { workspace = true }
-tar = "0.4.40"
+tar = { workspace = true }
 fs_extra = "1.3.0"
 semver = { workspace = true }
 tempfile = "3.10.1"

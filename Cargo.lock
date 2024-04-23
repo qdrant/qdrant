@@ -4096,7 +4096,6 @@ dependencies = [
  "slog-stdlog",
  "storage",
  "sys-info",
- "tar",
  "tempfile",
  "thiserror",
  "tikv-jemallocator",
