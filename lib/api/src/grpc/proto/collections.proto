@@ -322,6 +322,7 @@ message CreateCollection {
   optional QuantizationConfig quantization_config = 14; // Quantization configuration of vector
   optional ShardingMethod sharding_method = 15; // Sharding method
   optional SparseVectorConfig sparse_vectors_config = 16; // Configuration for sparse vectors
+  optional string comment = 17; // Properties/metadata of the collection
 }
 
 message UpdateCollection {
@@ -333,6 +334,7 @@ message UpdateCollection {
   optional VectorsConfigDiff vectors_config = 6; // New vector parameters
   optional QuantizationConfigDiff quantization_config = 7; // Quantization configuration of vector
   optional SparseVectorConfig sparse_vectors_config = 8; // New sparse vector parameters
+  optional string comment = 9; // New comments for the collection
 }
 
 message DeleteCollection {
@@ -417,6 +419,7 @@ message CollectionInfo {
   map<string, PayloadSchemaInfo> payload_schema = 8; // Collection data types
   optional uint64 points_count = 9; // Approximate number of points in the collection
   optional uint64 indexed_vectors_count = 10; // Approximate number of indexed vectors in the collection.
+  optional string comment = 11; // properties or metadata of the collection.
 }
 
 message ChangeAliases {

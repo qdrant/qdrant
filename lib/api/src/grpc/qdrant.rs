@@ -495,6 +495,9 @@ pub struct CreateCollection {
     /// Configuration for sparse vectors
     #[prost(message, optional, tag = "16")]
     pub sparse_vectors_config: ::core::option::Option<SparseVectorConfig>,
+    /// Properties/metadata of the collection
+    #[prost(string, optional, tag = "17")]
+    pub comment: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -532,6 +535,9 @@ pub struct UpdateCollection {
     /// New sparse vector parameters
     #[prost(message, optional, tag = "8")]
     pub sparse_vectors_config: ::core::option::Option<SparseVectorConfig>,
+    /// New comments for the collection
+    #[prost(string, optional, tag = "9")]
+    pub comment: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -725,6 +731,9 @@ pub struct CollectionInfo {
     /// Approximate number of indexed vectors in the collection.
     #[prost(uint64, optional, tag = "10")]
     pub indexed_vectors_count: ::core::option::Option<u64>,
+    /// properties or metadata of the collection.
+    #[prost(string, optional, tag = "11")]
+    pub comment: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

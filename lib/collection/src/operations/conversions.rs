@@ -335,6 +335,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
             segments_count,
             config,
             payload_schema,
+            comment,
         } = value;
 
         api::grpc::qdrant::CollectionInfo {
@@ -437,6 +438,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                 .into_iter()
                 .map(|(k, v)| (k.to_string(), v.into()))
                 .collect(),
+            comment: Some(comment),
         }
     }
 }
@@ -799,6 +801,7 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
                     .into_iter()
                     .map(|(k, v)| Ok::<_, Status>((json_path_from_proto(&k)?, v.try_into()?)))
                     .try_collect()?,
+                comment: collection_info_response.comment.unwrap_or_default(),
             }),
         }
     }

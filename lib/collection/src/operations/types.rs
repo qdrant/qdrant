@@ -127,6 +127,8 @@ pub struct CollectionInfo {
     pub config: CollectionConfig,
     /// Types of stored payload
     pub payload_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
+    /// Properties or metadata of the collection
+    pub comment: String,
 }
 
 impl CollectionInfo {
@@ -140,6 +142,7 @@ impl CollectionInfo {
             segments_count: 0,
             config: collection_config,
             payload_schema: HashMap::new(),
+            comment: String::new(),
         }
     }
 }
@@ -155,6 +158,7 @@ impl From<CollectionInfoInternal> for CollectionInfo {
             segments_count: info.segments_count,
             config: info.config,
             payload_schema: info.payload_schema,
+            comment: info.comment,
         }
     }
 }
@@ -185,6 +189,8 @@ pub struct CollectionInfoInternal {
     pub config: CollectionConfig,
     /// Types of stored payload
     pub payload_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
+    /// Properties or metadata of the collection
+    pub comment: String,
 }
 
 /// Current clustering distribution for the collection
