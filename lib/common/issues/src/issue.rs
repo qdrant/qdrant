@@ -4,18 +4,31 @@ use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::Serialize;
 
+use crate::dashboard::Code;
 use crate::solution::Solution;
 
-/// Type of the issue code
-pub type CodeType = String;
-
 pub trait Issue {
-    /// Returns the issue code, which will be used as a unique identifier. Must start with an issue type identifier.
-    /// E.g. `TOO_MANY_COLLECTIONS`, `UNININDEXED_FIELD/coll_name/field_name`, etc.
-    fn code(&self) -> CodeType;
+    /// Differentiates issues of the same type
+    fn distinctive(&self) -> &str;
+
+    /// The codename for all issues of this type
+    fn name() -> &'static str;
+
+    /// A human-readable description of the issue
     fn description(&self) -> String;
+
+    /// Actionable solution to the issue
     fn solution(&self) -> Solution;
 
+    /// Internal code for the issue
+    fn code(&self) -> Code
+    where
+        Self: std::marker::Sized + 'static,
+    {
+        Code::new::<Self>(self.distinctive())
+    }
+
+    /// Submits the issue to the dashboard singleton
     fn submit(self) -> bool
     where
         Self: std::marker::Sized + 'static,
@@ -27,7 +40,7 @@ pub trait Issue {
 /// An issue that can be identified by its code
 #[derive(Debug, Serialize, JsonSchema, Clone)]
 pub struct IssueRecord {
-    pub code: CodeType,
+    pub id: String,
     pub description: String,
     pub solution: Solution,
     pub timestamp: DateTime<Utc>,
@@ -35,8 +48,9 @@ pub struct IssueRecord {
 
 impl<I: Issue> From<I> for IssueRecord {
     fn from(val: I) -> Self {
+        let id = format!("{}/{}", I::name(), val.distinctive());
         Self {
-            code: val.code(),
+            id,
             description: val.description(),
             solution: val.solution(),
             timestamp: Utc::now(),
@@ -46,19 +60,25 @@ impl<I: Issue> From<I> for IssueRecord {
 
 #[derive(Clone)]
 pub(crate) struct DummyIssue {
-    pub code: String,
+    pub distinctive: String,
 }
 
 impl DummyIssue {
     #[cfg(test)]
-    pub fn new(code: impl Into<String>) -> Self {
-        Self { code: code.into() }
+    pub fn new(distinctive: impl Into<String>) -> Self {
+        Self {
+            distinctive: distinctive.into(),
+        }
     }
 }
 
 impl Issue for DummyIssue {
-    fn code(&self) -> CodeType {
-        self.code.clone()
+    fn distinctive(&self) -> &str {
+        &self.distinctive
+    }
+
+    fn name() -> &'static str {
+        "DUMMY"
     }
 
     fn description(&self) -> String {
@@ -67,5 +87,19 @@ impl Issue for DummyIssue {
 
     fn solution(&self) -> Solution {
         Solution::Refactor("".to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_issue_record() {
+        let issue = DummyIssue::new("test");
+
+        let record = IssueRecord::from(issue);
+
+        assert_eq!(record.id, "DUMMY/test");
     }
 }

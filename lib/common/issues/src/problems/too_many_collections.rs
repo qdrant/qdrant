@@ -1,11 +1,15 @@
-use crate::issue::{CodeType, Issue};
+use crate::issue::Issue;
 use crate::solution::Solution;
 
 pub struct TooManyCollections;
 
 impl Issue for TooManyCollections {
-    fn code(&self) -> CodeType {
-        "/TOO_MANY_COLLECTIONS".to_string()
+    fn distinctive(&self) -> &str {
+        "" // Only one issue for the whole instance
+    }
+
+    fn name() -> &'static str {
+        "TOO_MANY_COLLECTIONS"
     }
 
     fn description(&self) -> String {

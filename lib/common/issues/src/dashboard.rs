@@ -4,12 +4,32 @@ use std::sync::{Arc, OnceLock};
 
 use dashmap::DashMap;
 
-use crate::issue::{CodeType, Issue, IssueRecord};
+use crate::issue::{Issue, IssueRecord};
+
+#[derive(Hash, Eq, PartialEq, Clone)]
+pub struct Code {
+    pub issue_type: TypeId,
+    pub distinctive: String,
+}
+
+impl Code {
+    pub fn new<T: 'static>(distinctive: impl Into<String>) -> Self {
+        Self {
+            issue_type: TypeId::of::<T>(),
+            distinctive: distinctive.into(),
+        }
+    }
+}
+
+impl AsRef<Code> for Code {
+    fn as_ref(&self) -> &Code {
+        self
+    }
+}
 
 #[derive(Default)]
 struct Dashboard {
-    pub issues: DashMap<CodeType, IssueRecord>,
-    inverted_index: DashMap<TypeId, HashSet<CodeType>>,
+    pub issues: DashMap<Code, IssueRecord>,
 }
 
 impl Dashboard {
@@ -20,21 +40,12 @@ impl Dashboard {
             return false;
         }
         let issue = IssueRecord::from(issue);
-        self.inverted_index
-            .entry(TypeId::of::<I>())
-            .or_default()
-            .insert(code.clone());
         self.issues.insert(code, issue).is_none()
     }
 
     /// Deactivates an issue by its code, returning true if the issue was active before
-    fn remove_issue<S: AsRef<str>>(&self, code: S) -> bool {
+    fn remove_issue<S: AsRef<Code>>(&self, code: S) -> bool {
         if self.issues.contains_key(code.as_ref()) {
-            self.inverted_index
-                .entry(TypeId::of::<IssueRecord>())
-                .and_modify(|codes| {
-                    codes.remove(code.as_ref());
-                });
             return self.issues.remove(code.as_ref()).is_some();
         }
         false
@@ -45,12 +56,13 @@ impl Dashboard {
         self.issues.iter().map(|kv| kv.value().clone()).collect()
     }
 
-    fn get_codes<I: 'static>(&self) -> HashSet<CodeType> {
+    fn get_codes<I: 'static>(&self) -> HashSet<Code> {
         let type_id = TypeId::of::<I>();
-        if let Some(codes) = self.inverted_index.get(&type_id) {
-            return codes.clone();
-        }
-        Default::default()
+        self.issues
+            .iter()
+            .filter(|kv| kv.key().issue_type == type_id)
+            .map(|kv| kv.key().clone())
+            .collect()
     }
 }
 
@@ -67,7 +79,7 @@ pub fn submit(issue: impl Issue + 'static) -> bool {
 }
 
 /// Solves an issue by its code, returning true if the issue code was active before
-pub fn solve<S: AsRef<str>>(code: S) -> bool {
+pub fn solve<C: AsRef<Code>>(code: C) -> bool {
     dashboard().remove_issue(code)
 }
 
@@ -80,8 +92,8 @@ pub fn clear() {
     dashboard().issues.clear();
 }
 
-/// Solves all issues that match the given predicate
-pub fn solve_by_filter<I: Issue + 'static, F: Fn(&CodeType) -> bool>(filter: F) {
+/// Solves all issues of the given type that match the given predicate
+pub fn solve_by_filter<I: Issue + 'static, F: Fn(&Code) -> bool>(filter: F) {
     let codes = dashboard().get_codes::<I>();
     for code in codes {
         if filter(&code) {
@@ -101,12 +113,12 @@ mod tests {
     fn test_dashboard() {
         let dashboard = Dashboard::default();
         let issue = DummyIssue {
-            code: "test".to_string(),
+            distinctive: "test".to_string(),
         };
         assert!(dashboard.add_issue(issue.clone()));
         assert!(!dashboard.add_issue(issue.clone()));
-        assert!(dashboard.remove_issue("test"));
-        assert!(!dashboard.remove_issue("test"));
+        assert!(dashboard.remove_issue(issue.code()));
+        assert!(!dashboard.remove_issue(issue.code()));
     }
 
     #[test]
@@ -130,12 +142,12 @@ mod tests {
         handle2.join()?;
 
         assert_eq!(all_issues().len(), 6);
-        assert!(solve("issue1"));
-        assert!(solve("issue2"));
-        assert!(solve("issue3"));
-        assert!(solve("issue4"));
-        assert!(solve("issue5"));
-        assert!(solve("issue6"));
+        assert!(solve(DummyIssue::new("issue1").code()));
+        assert!(solve(DummyIssue::new("issue2").code()));
+        assert!(solve(DummyIssue::new("issue3").code()));
+        assert!(solve(DummyIssue::new("issue4").code()));
+        assert!(solve(DummyIssue::new("issue5").code()));
+        assert!(solve(DummyIssue::new("issue6").code()));
 
         clear();
         Ok(())
@@ -146,17 +158,17 @@ mod tests {
     fn test_solve_by_filter() {
         crate::clear();
 
-        submit(DummyIssue::new("DUMMY:my_collection:issue1"));
-        submit(DummyIssue::new("DUMMY:my_collection:issue2"));
-        submit(DummyIssue::new("DUMMY:my_collection:issue3"));
-        submit(DummyIssue::new("DUMMY_2:issue2"));
-        submit(DummyIssue::new("DUMMY_2:issue2"));
+        submit(DummyIssue::new("my_collection:issue1"));
+        submit(DummyIssue::new("my_collection:issue2"));
+        submit(DummyIssue::new("my_collection:issue3"));
+        submit(DummyIssue::new("my_other_collection:issue2"));
+        submit(DummyIssue::new("my_other_collection:issue2"));
         submit(DummyIssue::new("issue2"));
         submit(DummyIssue::new("issue3"));
 
         // Solve all dummy issues that contain "my_collection"
-        solve_by_filter::<DummyIssue, _>(|code| code.contains("my_collection"));
+        solve_by_filter::<DummyIssue, _>(|code| code.distinctive.contains("my_collection"));
         assert_eq!(all_issues().len(), 3);
-        assert!(solve("issue2"));
+        assert!(solve(Code::new::<DummyIssue>("issue2")));
     }
 }

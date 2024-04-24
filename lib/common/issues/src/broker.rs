@@ -98,7 +98,7 @@ mod tests {
 
     impl Subscriber<CollectionDeletedEvent> for DummySubscriber {
         fn notify(&self, event: Arc<CollectionDeletedEvent>) {
-            crate::solve_by_filter::<DummyIssue, _>(|code| code == &event.collection_id);
+            crate::solve_by_filter::<DummyIssue, _>(|code| code.distinctive == event.collection_id);
         }
     }
 
@@ -115,7 +115,7 @@ mod tests {
 
         assert!(crate::all_issues()
             .iter()
-            .any(|issue| issue.code == "dummy"));
+            .any(|issue| issue.id == "DUMMY/dummy"));
 
         broker.notify(CollectionDeletedEvent {
             collection_id: "dummy".to_string(),
@@ -124,7 +124,7 @@ mod tests {
         assert!(
             crate::all_issues()
                 .iter()
-                .all(|issue| issue.code != "dummy"),
+                .all(|issue| issue.id != "DUMMY/dummy"),
             "{:?}",
             crate::all_issues()
         );
