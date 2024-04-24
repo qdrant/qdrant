@@ -1380,11 +1380,76 @@ impl From<Vec<IntPayloadType>> for MatchExcept {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(untagged)]
 pub enum RangeInterface {
     Float(Range<FloatPayloadType>),
     DateTime(Range<DateTimePayloadType>),
+}
+
+impl<'de> Deserialize<'de> for RangeInterface {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum RangeVariants {
+            Float(Range<FloatPayloadType>),
+            DateTime(Range<String>),
+        }
+
+        match RangeVariants::deserialize(deserializer)? {
+            RangeVariants::Float(range) => Ok(RangeInterface::Float(range)),
+            RangeVariants::DateTime(range) => {
+                let lt = range
+                    .lt
+                    .map(|s| {
+                        DateTimePayloadType::from_str(&s).map_err(|_| {
+                            serde::de::Error::custom(format!(
+                                "'{s}' is not in a supported date/time format, please use RFC 3339"
+                            ))
+                        })
+                    })
+                    .transpose()?;
+
+                let gt = range
+                    .gt
+                    .map(|s| {
+                        DateTimePayloadType::from_str(&s).map_err(|_| {
+                            serde::de::Error::custom(format!(
+                                "'{s}' is not in a supported date/time format, please use RFC 3339"
+                            ))
+                        })
+                    })
+                    .transpose()?;
+
+                let gte = range
+                    .gte
+                    .map(|s| {
+                        DateTimePayloadType::from_str(&s).map_err(|_| {
+                            serde::de::Error::custom(format!(
+                                "'{s}' is not in a supported date/time format, please use RFC 3339"
+                            ))
+                        })
+                    })
+                    .transpose()?;
+
+                let lte = range
+                    .lte
+                    .map(|s| {
+                        DateTimePayloadType::from_str(&s).map_err(|_| {
+                            serde::de::Error::custom(format!(
+                                "'{s}' is not in a supported date/time format, please use RFC 3339"
+                            ))
+                        })
+                    })
+                    .transpose()?;
+
+                Ok(RangeInterface::DateTime(Range { lt, gt, gte, lte }))
+            }
+        }
+    }
 }
 
 /// Range filter request
@@ -1859,7 +1924,7 @@ impl NestedCondition {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
+#[derive(Debug, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(untagged)]
 #[allow(clippy::large_enum_variant)]
 pub enum Condition {
@@ -1875,6 +1940,50 @@ pub enum Condition {
     Nested(NestedCondition),
     /// Nested filter
     Filter(Filter),
+}
+
+impl<'de> serde::Deserialize<'de> for Condition {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        match value {
+            serde_json::Value::Object(map) => {
+                if map.contains_key("key") {
+                    FieldCondition::deserialize(serde_json::Value::Object(map))
+                        .map(Condition::Field)
+                        .map_err(serde::de::Error::custom)
+                } else if map.contains_key("is_empty") {
+                    IsEmptyCondition::deserialize(serde_json::Value::Object(map))
+                        .map(Condition::IsEmpty)
+                        .map_err(serde::de::Error::custom)
+                } else if map.contains_key("is_null") {
+                    IsNullCondition::deserialize(serde_json::Value::Object(map))
+                        .map(Condition::IsNull)
+                        .map_err(serde::de::Error::custom)
+                } else if map.contains_key("has_id") {
+                    HasIdCondition::deserialize(serde_json::Value::Object(map))
+                        .map(Condition::HasId)
+                        .map_err(serde::de::Error::custom)
+                } else if map.contains_key("nested") {
+                    NestedCondition::deserialize(serde_json::Value::Object(map))
+                        .map(Condition::Nested)
+                        .map_err(serde::de::Error::custom)
+                } else if map.contains_key("should")
+                    || map.contains_key("must")
+                    || map.contains_key("must_not")
+                {
+                    Filter::deserialize(serde_json::Value::Object(map))
+                        .map(Condition::Filter)
+                        .map_err(serde::de::Error::custom)
+                } else {
+                    Err(serde::de::Error::custom("Invalid Condition format"))
+                }
+            }
+            _ => Err(serde::de::Error::custom("Invalid Condition format")),
+        }
+    }
 }
 
 impl Condition {
