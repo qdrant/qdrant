@@ -1,12 +1,14 @@
 use std::collections::HashMap;
 use std::slice::ChunksExactMut;
 
+use itertools::Itertools;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use sparse::common::sparse_vector::SparseVector;
 use validator::Validate;
 
 use super::named_vectors::NamedVectors;
+use super::primitive::PrimitiveVectorElement;
 use crate::common::operation_error::OperationError;
 use crate::common::utils::transpose_map_into_named_vector;
 use crate::vector_storage::query::context_query::ContextQuery;
@@ -176,13 +178,15 @@ pub type DenseVector = TypedDenseVector<VectorElementType>;
 
 /// Type for multi dense vector
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-pub struct MultiDenseVector {
-    pub inner_vector: DenseVector, // vectors are flattened into a single vector
-    pub dim: usize,                // dimension of each vector
+pub struct TypedMultiDenseVector<T> {
+    pub inner_vector: TypedDenseVector<T>, // vectors are flattened into a single vector
+    pub dim: usize,                        // dimension of each vector
 }
 
-impl MultiDenseVector {
-    pub fn new(flattened_vectors: DenseVector, dim: usize) -> Self {
+pub type MultiDenseVector = TypedMultiDenseVector<VectorElementType>;
+
+impl<T: PrimitiveVectorElement> TypedMultiDenseVector<T> {
+    pub fn new(flattened_vectors: TypedDenseVector<T>, dim: usize) -> Self {
         Self {
             inner_vector: flattened_vectors,
             dim,
@@ -192,17 +196,17 @@ impl MultiDenseVector {
     /// MultiDenseVector cannot be empty, so we use a placeholder vector instead
     pub fn placeholder(dim: usize) -> Self {
         Self {
-            inner_vector: vec![1.0; dim],
+            inner_vector: vec![Default::default(); dim],
             dim,
         }
     }
 
     /// Slices the multi vector into the underlying individual vectors
-    pub fn multi_vectors(&self) -> impl Iterator<Item = &[VectorElementType]> {
+    pub fn multi_vectors(&self) -> impl Iterator<Item = &[T]> {
         self.inner_vector.chunks_exact(self.dim)
     }
 
-    pub fn multi_vectors_mut(&mut self) -> ChunksExactMut<'_, VectorElementType> {
+    pub fn multi_vectors_mut(&mut self) -> ChunksExactMut<'_, T> {
         self.inner_vector.chunks_exact_mut(self.dim)
     }
 
@@ -211,10 +215,10 @@ impl MultiDenseVector {
     }
 }
 
-impl TryFrom<Vec<DenseVector>> for MultiDenseVector {
+impl<T: PrimitiveVectorElement> TryFrom<Vec<TypedDenseVector<T>>> for TypedMultiDenseVector<T> {
     type Error = OperationError;
 
-    fn try_from(value: Vec<DenseVector>) -> Result<Self, Self::Error> {
+    fn try_from(value: Vec<TypedDenseVector<T>>) -> Result<Self, Self::Error> {
         if value.is_empty() {
             return Err(OperationError::ValidationError {
                 description: "MultiDenseVector cannot be empty".to_string(),
@@ -228,8 +232,8 @@ impl TryFrom<Vec<DenseVector>> for MultiDenseVector {
                 received_dim: bad_vec.len(),
             })
         } else {
-            let inner_vector = value.into_iter().flatten().collect();
-            let multi_dense = MultiDenseVector { inner_vector, dim };
+            let inner_vector = value.into_iter().flatten().collect_vec();
+            let multi_dense = TypedMultiDenseVector { inner_vector, dim };
             Ok(multi_dense)
         }
     }

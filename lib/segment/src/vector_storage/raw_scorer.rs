@@ -414,7 +414,7 @@ where
     }))
 }
 
-pub fn raw_multi_scorer_impl<'a, TVectorStorage: MultiVectorStorage>(
+pub fn raw_multi_scorer_impl<'a, TVectorStorage: MultiVectorStorage<VectorElementType>>(
     query: QueryVector,
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,
@@ -451,7 +451,7 @@ pub fn raw_multi_scorer_impl<'a, TVectorStorage: MultiVectorStorage>(
 fn new_multi_scorer_with_metric<
     'a,
     TMetric: Metric<VectorElementType> + 'a,
-    TVectorStorage: MultiVectorStorage,
+    TVectorStorage: MultiVectorStorage<VectorElementType>,
 >(
     query: QueryVector,
     vector_storage: &'a TVectorStorage,

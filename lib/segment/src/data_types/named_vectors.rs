@@ -89,6 +89,15 @@ impl<'a> From<MultiDenseVector> for CowVector<'a> {
     }
 }
 
+impl<'a> From<Cow<'a, MultiDenseVector>> for CowVector<'a> {
+    fn from(v: Cow<'a, MultiDenseVector>) -> Self {
+        match v {
+            Cow::Borrowed(v) => CowVector::MultiDense(Cow::Borrowed(v)),
+            Cow::Owned(v) => CowVector::MultiDense(Cow::Owned(v)),
+        }
+    }
+}
+
 impl<'a> From<&'a SparseVector> for CowVector<'a> {
     fn from(v: &'a SparseVector) -> Self {
         CowVector::Sparse(Cow::Borrowed(v))
