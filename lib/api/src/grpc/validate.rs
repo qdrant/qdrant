@@ -445,6 +445,19 @@ mod tests {
     }
 
     #[test]
+    fn test_comment_field() {
+        let valid_request = CreateCollection {
+            collection_name: "test_collection".into(),
+            comment: "main_column: column a",
+            ..Default::default()
+        };
+        assert!(
+            valid_request.validate().is_ok(),
+            "Request with valid comment should pass validation"
+        );
+    }
+
+    #[test]
     fn test_bad_index_request() {
         let bad_request = CreateFieldIndexCollection {
             collection_name: "".into(),

@@ -584,6 +584,7 @@
 | quantization_config | [QuantizationConfig](#qdrant-QuantizationConfig) | optional | Quantization configuration of vector |
 | sharding_method | [ShardingMethod](#qdrant-ShardingMethod) | optional | Sharding method |
 | sparse_vectors_config | [SparseVectorConfig](#qdrant-SparseVectorConfig) | optional | Configuration for sparse vectors |
+| comment | [string](#string) | optional | Properties/metadata of the collection |
 
 
 
