@@ -161,7 +161,7 @@ jobs:
         run: ./tests/openapi_consistency_check.sh
 
 
-  test-low-ram:
+  test-low-resources:
     runs-on: ubuntu-latest
 
     steps:
@@ -195,6 +195,10 @@ jobs:
         working-directory: ./tests/low-ram
         shell: bash
         run: ./low-ram.sh
+      - name: Run low Disk test
+        working-directory: ./tests/low-disk
+        shell: bash
+        run: ./low-disk.sh
 
   test-snapshot-operations:
     runs-on: ubuntu-latest
