@@ -1973,6 +1973,7 @@ impl<'de> serde::Deserialize<'de> for Condition {
                 } else if map.contains_key("should")
                     || map.contains_key("must")
                     || map.contains_key("must_not")
+                    || map.contains_key("min_should")
                 {
                     Filter::deserialize(serde_json::Value::Object(map))
                         .map(Condition::Filter)
