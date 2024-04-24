@@ -3,6 +3,7 @@ use std::sync::OnceLock;
 use std::time::Duration;
 
 use http::{HeaderMap, Method, Uri};
+
 use issues::{Action, CodeType, ImmediateSolution, Issue, Solution};
 use itertools::Itertools;
 
@@ -37,7 +38,11 @@ impl UnindexedField {
     }
 
     pub fn get_code(collection_name: &str, field_name: &JsonPathV2) -> CodeType {
-        format!("/{collection_name}/UNINDEXED_FIELD/{field_name}")
+        format!("UNINDEXED_FIELD/{collection_name}/{field_name}")
+    }
+
+    pub fn get_collection_name_from_code(code: &CodeType) -> String {
+        code.split('/').nth(1).map(|s| s.to_string()).unwrap() // Code format is always the same
     }
 
     /// Try to form an issue from a field condition and a collection name

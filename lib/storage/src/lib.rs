@@ -15,6 +15,7 @@ pub mod dispatcher;
 pub mod issues_subscribers;
 pub mod rbac;
 pub mod types;
+pub mod issues_subscribers;
 
 pub mod serialize_peer_addresses {
     use std::collections::HashMap;

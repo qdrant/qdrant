@@ -5,7 +5,7 @@ mod actix;
 mod common;
 mod consensus;
 mod greeting;
-mod issues_setup;
+mod issues;
 mod migrations;
 mod settings;
 mod snapshots;
@@ -396,7 +396,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     // Setup subscribers to listen for issue-able events
-    issues_setup::setup_subscribers(dispatcher_arc.clone());
+    issues::setup_subscribers(dispatcher_arc.clone());
 
     // Helper to better log start errors
     let log_err_if_any = |server_name, result| match result {

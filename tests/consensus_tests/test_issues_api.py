@@ -62,7 +62,7 @@ def search_with_city_filter(uri):
 def test_unindexed_field_is_gone_when_deleting_collection(setup_with_big_collection):
     uri = setup_with_big_collection
 
-    expected_issue_code = "/test_collection/UNINDEXED_FIELD/city"
+    expected_issue_code = "UNINDEXED_FIELD/test_collection/city"
     issues = get_issues(uri)
     assert expected_issue_code not in [issue["code"] for issue in issues]
 
@@ -84,7 +84,7 @@ def test_unindexed_field_is_gone_when_deleting_collection(setup_with_big_collect
 def test_unindexed_field_is_gone_when_indexing(setup_with_big_collection):
     uri = setup_with_big_collection
 
-    expected_issue_code = "/test_collection/UNINDEXED_FIELD/city"
+    expected_issue_code = "UNINDEXED_FIELD/test_collection/city"
 
     issues = get_issues(uri)
     assert expected_issue_code not in [issue["code"] for issue in issues]

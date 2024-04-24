@@ -11,6 +11,7 @@ use segment::types::{
 use tokio::time::Instant;
 
 use super::Collection;
+use crate::events::SlowQueryEvent;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::query_enum::QueryEnum;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
@@ -289,24 +290,12 @@ impl Collection {
 
     fn post_process_if_slow_request(&self, duration: Duration, filters: Vec<Option<&Filter>>) {
         if duration > segment::problems::UnindexedField::slow_search_threshold() {
-            let Some(payload_schema) = self.payload_index_schema.try_read() else {
-                // Don't wait for read lock
-                return;
-            };
+            let filters = filters.into_iter().flatten().cloned().collect::<Vec<_>>();
 
-            let filters = filters.into_iter().flatten().collect::<Vec<_>>();
-
-            if filters.is_empty() {
-                return;
-            }
-
-            for filter in filters {
-                segment::problems::UnindexedField::submit_possible_suspects(
-                    filter,
-                    &payload_schema.schema,
-                    self.id.clone(),
-                )
-            }
+            issues::notify(SlowQueryEvent {
+                collection_id: self.id.clone(),
+                filters,
+            });
         }
     }
 }
