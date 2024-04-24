@@ -17,7 +17,7 @@ declare OOD_CONTAINER_NAME=qdrant-ood
 docker rm -f ${OOD_CONTAINER_NAME} || true
 
 declare container && container=$(
-    docker run --rm -d \
+    docker run -d \
       --mount type=tmpfs,target=/qdrant/storage,tmpfs-size=10240000 \
       -p 127.0.0.1:6333:6333 \
       -p 127.0.0.1:6334:6334 \
@@ -26,6 +26,7 @@ declare container && container=$(
 )
 
 function cleanup {
+    docker logs $container -n 20 || true
     docker stop $container || true
 }
 
