@@ -131,7 +131,8 @@ impl QuantizedVectors {
                 Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
             }
             VectorStorageEnum::SparseSimple(_) => Err(OperationError::WrongSparse),
-            VectorStorageEnum::MultiDenseSimple(_v) => Err(OperationError::WrongMulti),
+            VectorStorageEnum::MultiDenseSimple(_) => Err(OperationError::WrongMulti),
+            VectorStorageEnum::MultiDenseAppendableMemmap(_) => Err(OperationError::WrongMulti),
         }
     }
 
