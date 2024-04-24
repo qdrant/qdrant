@@ -2373,6 +2373,35 @@ mod tests {
     }
 
     #[test]
+    fn test_geo_boundingbox_antimeridian_check_point() {
+        // Use the bounding box for USA: (74.071028, 167), (18.7763, -66.885417)
+        let bounding_box = GeoBoundingBox {
+            top_left: GeoPoint {
+                lat: 74.071028,
+                lon: 167.0,
+            },
+            bottom_right: GeoPoint {
+                lat: 18.7763,
+                lon: -66.885417,
+            },
+        };
+
+        // Test NYC, which is inside the bounding box
+        let inside_result = bounding_box.check_point(&GeoPoint {
+            lat: 40.75798,
+            lon: -73.991516,
+        });
+        assert!(inside_result);
+
+        // Test Berlin, which is outside the bounding box
+        let outside_result = bounding_box.check_point(&GeoPoint {
+            lat: 52.52437,
+            lon: 13.41053,
+        });
+        assert!(!outside_result);
+    }
+
+    #[test]
     fn test_geo_polygon_check_point() {
         let test_cases = [
             // Create a GeoPolygon with a square shape
