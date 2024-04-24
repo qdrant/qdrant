@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
+use super::vectors::TypedMultiDenseVector;
 use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
@@ -22,6 +23,14 @@ pub trait PrimitiveVectorElement:
     ) -> Cow<'a, [f32]>;
 
     fn datatype() -> VectorStorageDatatype;
+
+    fn from_float_multivector(
+        multivector: Cow<TypedMultiDenseVector<VectorElementType>>,
+    ) -> Cow<TypedMultiDenseVector<Self>>;
+
+    fn into_float_multivector(
+        multivector: Cow<TypedMultiDenseVector<Self>>,
+    ) -> Cow<TypedMultiDenseVector<VectorElementType>>;
 }
 
 impl PrimitiveVectorElement for VectorElementType {
@@ -43,6 +52,18 @@ impl PrimitiveVectorElement for VectorElementType {
 
     fn datatype() -> VectorStorageDatatype {
         VectorStorageDatatype::Float32
+    }
+
+    fn from_float_multivector(
+        multivector: Cow<TypedMultiDenseVector<VectorElementType>>,
+    ) -> Cow<TypedMultiDenseVector<Self>> {
+        multivector
+    }
+
+    fn into_float_multivector(
+        multivector: Cow<TypedMultiDenseVector<Self>>,
+    ) -> Cow<TypedMultiDenseVector<VectorElementType>> {
+        multivector
     }
 }
 
@@ -85,5 +106,31 @@ impl PrimitiveVectorElement for VectorElementTypeByte {
 
     fn datatype() -> VectorStorageDatatype {
         VectorStorageDatatype::Uint8
+    }
+
+    fn from_float_multivector(
+        multivector: Cow<TypedMultiDenseVector<VectorElementType>>,
+    ) -> Cow<TypedMultiDenseVector<Self>> {
+        Cow::Owned(TypedMultiDenseVector::new(
+            multivector
+                .inner_vector
+                .iter()
+                .map(|&x| x as Self)
+                .collect_vec(),
+            multivector.dim,
+        ))
+    }
+
+    fn into_float_multivector(
+        multivector: Cow<TypedMultiDenseVector<Self>>,
+    ) -> Cow<TypedMultiDenseVector<VectorElementType>> {
+        Cow::Owned(TypedMultiDenseVector::new(
+            multivector
+                .inner_vector
+                .iter()
+                .map(|&x| x as VectorElementType)
+                .collect_vec(),
+            multivector.dim,
+        ))
     }
 }

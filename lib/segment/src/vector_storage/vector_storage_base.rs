@@ -13,7 +13,7 @@ use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
-    MultiDenseVector, VectorElementType, VectorElementTypeByte, VectorRef,
+    TypedMultiDenseVector, VectorElementType, VectorElementTypeByte, VectorRef,
 };
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::dense::appendable_mmap_dense_vector_storage::AppendableMmapDenseVectorStorage;
@@ -110,8 +110,8 @@ pub trait SparseVectorStorage: VectorStorage {
     fn get_sparse(&self, key: PointOffsetType) -> OperationResult<SparseVector>;
 }
 
-pub trait MultiVectorStorage: VectorStorage {
-    fn get_multi(&self, key: PointOffsetType) -> &MultiDenseVector;
+pub trait MultiVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
+    fn get_multi(&self, key: PointOffsetType) -> &TypedMultiDenseVector<T>;
     fn multi_vector_config(&self) -> &MultiVectorConfig;
 }
 
@@ -123,7 +123,7 @@ pub enum VectorStorageEnum {
     DenseAppendableMemmap(Box<AppendableMmapDenseVectorStorage<VectorElementType>>),
     DenseAppendableMemmapByte(Box<AppendableMmapDenseVectorStorage<VectorElementTypeByte>>),
     SparseSimple(SimpleSparseVectorStorage),
-    MultiDenseSimple(SimpleMultiDenseVectorStorage),
+    MultiDenseSimple(SimpleMultiDenseVectorStorage<VectorElementType>),
 }
 
 impl VectorStorage for VectorStorageEnum {
