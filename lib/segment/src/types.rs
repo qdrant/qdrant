@@ -1499,10 +1499,16 @@ pub struct GeoBoundingBox {
 
 impl GeoBoundingBox {
     pub fn check_point(&self, point: &GeoPoint) -> bool {
-        (self.top_left.lon < point.lon)
-            && (point.lon < self.bottom_right.lon)
-            && (self.bottom_right.lat < point.lat)
-            && (point.lat < self.top_left.lat)
+        let longitude_check = if self.top_left.lon > self.bottom_right.lon {
+            // Handle antimeridian crossing
+            point.lon > self.top_left.lon || point.lon < self.bottom_right.lon
+        } else {
+            self.top_left.lon < point.lon && point.lon < self.bottom_right.lon
+        };
+
+        let latitude_check = self.bottom_right.lat < point.lat && point.lat < self.top_left.lat;
+
+        longitude_check && latitude_check
     }
 }
 
