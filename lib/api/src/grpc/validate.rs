@@ -467,7 +467,7 @@ mod tests {
     fn test_comment_field() {
         let valid_request = CreateCollection {
             collection_name: "test_collection".into(),
-            comment: "main_column: column a",
+            comment: Some("main_column: column a".into()),
             ..Default::default()
         };
         assert!(

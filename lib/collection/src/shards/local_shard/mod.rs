@@ -951,7 +951,7 @@ impl LocalShard {
             segments_count,
             config: collection_config,
             payload_schema: schema,
-            comment: comment,
+            comment,
         }
     }
 
