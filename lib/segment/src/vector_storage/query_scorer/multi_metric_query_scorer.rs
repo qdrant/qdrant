@@ -11,15 +11,18 @@ use crate::vector_storage::MultiVectorStorage;
 pub struct MultiMetricQueryScorer<
     'a,
     TMetric: Metric<VectorElementType>,
-    TVectorStorage: MultiVectorStorage,
+    TVectorStorage: MultiVectorStorage<VectorElementType>,
 > {
     vector_storage: &'a TVectorStorage,
     query: MultiDenseVector,
     metric: PhantomData<TMetric>,
 }
 
-impl<'a, TMetric: Metric<VectorElementType>, TVectorStorage: MultiVectorStorage>
-    MultiMetricQueryScorer<'a, TMetric, TVectorStorage>
+impl<
+        'a,
+        TMetric: Metric<VectorElementType>,
+        TVectorStorage: MultiVectorStorage<VectorElementType>,
+    > MultiMetricQueryScorer<'a, TMetric, TVectorStorage>
 {
     pub fn new(query: MultiDenseVector, vector_storage: &'a TVectorStorage) -> Self {
         let slices = query.multi_vectors();
@@ -47,8 +50,11 @@ impl<'a, TMetric: Metric<VectorElementType>, TVectorStorage: MultiVectorStorage>
     }
 }
 
-impl<'a, TMetric: Metric<VectorElementType>, TVectorStorage: MultiVectorStorage>
-    QueryScorer<MultiDenseVector> for MultiMetricQueryScorer<'a, TMetric, TVectorStorage>
+impl<
+        'a,
+        TMetric: Metric<VectorElementType>,
+        TVectorStorage: MultiVectorStorage<VectorElementType>,
+    > QueryScorer<MultiDenseVector> for MultiMetricQueryScorer<'a, TMetric, TVectorStorage>
 {
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {

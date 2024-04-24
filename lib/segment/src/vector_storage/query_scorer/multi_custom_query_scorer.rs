@@ -12,7 +12,7 @@ use crate::vector_storage::MultiVectorStorage;
 pub struct MultiCustomQueryScorer<
     'a,
     TMetric: Metric<VectorElementType>,
-    TVectorStorage: MultiVectorStorage,
+    TVectorStorage: MultiVectorStorage<VectorElementType>,
     TQuery: Query<MultiDenseVector>,
 > {
     vector_storage: &'a TVectorStorage,
@@ -23,7 +23,7 @@ pub struct MultiCustomQueryScorer<
 impl<
         'a,
         TMetric: Metric<VectorElementType>,
-        TVectorStorage: MultiVectorStorage,
+        TVectorStorage: MultiVectorStorage<VectorElementType>,
         TQuery: Query<MultiDenseVector> + TransformInto<TQuery, MultiDenseVector, MultiDenseVector>,
     > MultiCustomQueryScorer<'a, TMetric, TVectorStorage, TQuery>
 {
@@ -50,7 +50,7 @@ impl<
 impl<
         'a,
         TMetric: Metric<VectorElementType>,
-        TVectorStorage: MultiVectorStorage,
+        TVectorStorage: MultiVectorStorage<VectorElementType>,
         TQuery: Query<MultiDenseVector>,
     > QueryScorer<MultiDenseVector>
     for MultiCustomQueryScorer<'a, TMetric, TVectorStorage, TQuery>
