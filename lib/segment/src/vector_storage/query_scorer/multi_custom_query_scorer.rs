@@ -1,9 +1,13 @@
+use std::borrow::Cow;
 use std::marker::PhantomData;
 
 use common::types::{PointOffsetType, ScoreType};
 
 use super::score_multi;
-use crate::data_types::vectors::{DenseVector, MultiDenseVector, VectorElementType};
+use crate::data_types::primitive::PrimitiveVectorElement;
+use crate::data_types::vectors::{
+    DenseVector, MultiDenseVector, TypedMultiDenseVector, TypedMultiDenseVectorRef,
+};
 use crate::spaces::metric::Metric;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
@@ -11,23 +15,30 @@ use crate::vector_storage::MultiVectorStorage;
 
 pub struct MultiCustomQueryScorer<
     'a,
-    TMetric: Metric<VectorElementType>,
-    TVectorStorage: MultiVectorStorage<VectorElementType>,
-    TQuery: Query<MultiDenseVector>,
+    TElement: PrimitiveVectorElement,
+    TMetric: Metric<TElement>,
+    TVectorStorage: MultiVectorStorage<TElement>,
+    TQuery: Query<TypedMultiDenseVector<TElement>>,
+    TInputQuery: Query<MultiDenseVector>,
 > {
     vector_storage: &'a TVectorStorage,
     query: TQuery,
+    input_query: PhantomData<TInputQuery>,
     metric: PhantomData<TMetric>,
+    element: PhantomData<TElement>,
 }
 
 impl<
         'a,
-        TMetric: Metric<VectorElementType>,
-        TVectorStorage: MultiVectorStorage<VectorElementType>,
-        TQuery: Query<MultiDenseVector> + TransformInto<TQuery, MultiDenseVector, MultiDenseVector>,
-    > MultiCustomQueryScorer<'a, TMetric, TVectorStorage, TQuery>
+        TElement: PrimitiveVectorElement,
+        TMetric: Metric<TElement>,
+        TVectorStorage: MultiVectorStorage<TElement>,
+        TQuery: Query<TypedMultiDenseVector<TElement>>,
+        TInputQuery: Query<MultiDenseVector>
+            + TransformInto<TQuery, MultiDenseVector, TypedMultiDenseVector<TElement>>,
+    > MultiCustomQueryScorer<'a, TElement, TMetric, TVectorStorage, TQuery, TInputQuery>
 {
-    pub fn new(query: TQuery, vector_storage: &'a TVectorStorage) -> Self {
+    pub fn new(query: TInputQuery, vector_storage: &'a TVectorStorage) -> Self {
         let query = query
             .transform(|vector| {
                 let slices = vector.multi_vectors();
@@ -35,36 +46,53 @@ impl<
                     .into_iter()
                     .flat_map(|slice| TMetric::preprocess(slice.to_vec()))
                     .collect();
-                Ok(MultiDenseVector::new(preprocessed, vector.dim))
+                let preprocessed = MultiDenseVector::new(preprocessed, vector.dim);
+                let converted =
+                    TElement::from_float_multivector(Cow::Owned(preprocessed)).into_owned();
+                Ok(converted)
             })
             .unwrap();
 
         Self {
             query,
             vector_storage,
+            input_query: PhantomData,
             metric: PhantomData,
+            element: PhantomData,
         }
     }
 }
 
 impl<
         'a,
-        TMetric: Metric<VectorElementType>,
-        TVectorStorage: MultiVectorStorage<VectorElementType>,
-        TQuery: Query<MultiDenseVector>,
-    > QueryScorer<MultiDenseVector>
-    for MultiCustomQueryScorer<'a, TMetric, TVectorStorage, TQuery>
+        TElement: PrimitiveVectorElement,
+        TMetric: Metric<TElement>,
+        TVectorStorage: MultiVectorStorage<TElement>,
+        TQuery: Query<TypedMultiDenseVector<TElement>>,
+        TInputQuery: Query<MultiDenseVector>,
+    > QueryScorer<TypedMultiDenseVector<TElement>>
+    for MultiCustomQueryScorer<'a, TElement, TMetric, TVectorStorage, TQuery, TInputQuery>
 {
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         let stored = self.vector_storage.get_multi(idx);
-        self.score(stored)
+        self.query.score_by(|example| {
+            score_multi::<TElement, TMetric>(
+                self.vector_storage.multi_vector_config(),
+                TypedMultiDenseVectorRef::from(example),
+                stored.clone(),
+            )
+        })
     }
 
     #[inline]
-    fn score(&self, against: &MultiDenseVector) -> ScoreType {
+    fn score(&self, against: &TypedMultiDenseVector<TElement>) -> ScoreType {
         self.query.score_by(|example| {
-            score_multi::<TMetric>(self.vector_storage.multi_vector_config(), example, against)
+            score_multi::<TElement, TMetric>(
+                self.vector_storage.multi_vector_config(),
+                TypedMultiDenseVectorRef::from(example),
+                TypedMultiDenseVectorRef::from(against),
+            )
         })
     }
 
