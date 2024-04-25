@@ -1,7 +1,8 @@
 use common::types::{PointOffsetType, ScoreType};
 use ordered_float::OrderedFloat;
 
-use crate::data_types::vectors::{MultiDenseVector, VectorElementType};
+use crate::data_types::primitive::PrimitiveVectorElement;
+use crate::data_types::vectors::TypedMultiDenseVectorRef;
 use crate::spaces::metric::Metric;
 use crate::types::MultiVectorConfig;
 
@@ -21,9 +22,9 @@ pub trait QueryScorer<TVector: ?Sized> {
 
 /// Colbert MaxSim metric, metric for multi-dense vectors
 /// https://arxiv.org/pdf/2112.01488.pdf, figure 1
-pub fn score_max_similarity<TMetric: Metric<VectorElementType>>(
-    multi_dense_a: &MultiDenseVector,
-    multi_dense_b: &MultiDenseVector,
+pub fn score_max_similarity<T: PrimitiveVectorElement, TMetric: Metric<T>>(
+    multi_dense_a: TypedMultiDenseVectorRef<T>,
+    multi_dense_b: TypedMultiDenseVectorRef<T>,
 ) -> ScoreType {
     // TODO(colbert) add user input validation
     debug_assert!(!multi_dense_a.is_empty());
@@ -44,14 +45,14 @@ pub fn score_max_similarity<TMetric: Metric<VectorElementType>>(
     sum
 }
 
-fn score_multi<TMetric: Metric<VectorElementType>>(
+fn score_multi<T: PrimitiveVectorElement, TMetric: Metric<T>>(
     multi_vector_config: &MultiVectorConfig,
-    multi_dense_a: &MultiDenseVector,
-    multi_dense_b: &MultiDenseVector,
+    multi_dense_a: TypedMultiDenseVectorRef<T>,
+    multi_dense_b: TypedMultiDenseVectorRef<T>,
 ) -> ScoreType {
     match multi_vector_config {
         MultiVectorConfig::MaxSim(_) => {
-            score_max_similarity::<TMetric>(multi_dense_a, multi_dense_b)
+            score_max_similarity::<T, TMetric>(multi_dense_a, multi_dense_b)
         }
     }
 }
