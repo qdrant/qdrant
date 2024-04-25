@@ -501,7 +501,6 @@ impl Consensus {
         let mut updates = 0;
         let mut timeout_at = previous_tick + tick_period;
 
-
         // We need to limit the batch size, as application of one batch should be limited in time.
         const RAFT_BATCH_SIZE: usize = 128;
 
@@ -528,7 +527,6 @@ impl Consensus {
                 Err(_) => break,
             };
 
-
             // Those messages should not be batched, so we interrupt the loop if we see them.
             // Motivation is: if we change the peer, it should be done immediately,
             //  otherwise we loose the update on this new peer
@@ -550,7 +548,10 @@ impl Consensus {
             updates += 1;
             timeout_at = Instant::now() + wait_timeout_for_consecutive_messages;
 
-            if previous_tick.elapsed() >= tick_period || updates >= RAFT_BATCH_SIZE || is_conf_change {
+            if previous_tick.elapsed() >= tick_period
+                || updates >= RAFT_BATCH_SIZE
+                || is_conf_change
+            {
                 break;
             }
         }
