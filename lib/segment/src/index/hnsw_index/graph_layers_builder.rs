@@ -4,8 +4,8 @@ use std::path::Path;
 use std::sync::atomic::AtomicUsize;
 
 use bitvec::prelude::BitVec;
-use common::top_k::TopK;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
+use common::top_k::TopK;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use parking_lot::{Mutex, MutexGuard, RwLock};
 use rand::distributions::Uniform;
@@ -867,7 +867,8 @@ mod tests {
             });
         }
 
-        let res = GraphLayersBuilder::select_candidates_with_heuristic(candidates.into_vec(), m, scorer);
+        let res =
+            GraphLayersBuilder::select_candidates_with_heuristic(candidates.into_vec(), m, scorer);
 
         assert_eq!(&res, &vec![1, 3, 6]);
 
