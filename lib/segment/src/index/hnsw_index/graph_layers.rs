@@ -1,7 +1,6 @@
 use std::cmp::max;
 use std::path::{Path, PathBuf};
 
-use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use io::file_operations::{atomic_save_bin, read_bin, FileStorageError};
 use itertools::Itertools;
@@ -311,6 +310,8 @@ mod tests {
     use crate::index::hnsw_index::tests::create_graph_layer_fixture;
     use crate::spaces::metric::Metric;
     use crate::spaces::simple::{CosineMetric, DotProductMetric};
+
+    use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 
     fn search_in_graph<TGraphLinks: GraphLinks>(
         query: &[VectorElementType],

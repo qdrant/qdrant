@@ -11,7 +11,7 @@ use crate::types::{ScoreType, ScoredPointOffset};
 #[derive(Default)]
 pub struct TopK {
     k: usize,
-    elements: Vec<Reverse<ScoredPointOffset>>,
+    pub elements: Vec<Reverse<ScoredPointOffset>>,
     threshold: ScoreType,
 }
 
@@ -58,15 +58,13 @@ impl TopK {
         }
     }
 
-    pub fn iter(&mut self) -> std::slice::Iter<'_, ScoredPointOffset> {
-        self.update_threshold();
+    pub fn truncate(&mut self) {
         self.elements.sort_unstable();
-        self.elements.iter() // FIXME: Doesn't work
+        self.elements.truncate(self.k);
     }
 
     pub fn into_vec(mut self) -> Vec<ScoredPointOffset> {
-        self.elements.sort_unstable();
-        self.elements.truncate(self.k);
+        self.truncate();
         self.elements.into_iter().map(|Reverse(x)| x).collect()
     }
 }

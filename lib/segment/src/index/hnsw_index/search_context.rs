@@ -1,5 +1,5 @@
 use std::collections::BinaryHeap;
-use std::iter::FromIterator;
+use std::cmp::Reverse;
 
 use common::top_k::TopK;
 use common::types::{ScoreType, ScoredPointOffset};
@@ -16,7 +16,6 @@ impl SearchContext {
     pub fn new(entry_point: ScoredPointOffset, ef: usize) -> Self {
         let mut nearest = TopK::new(ef);
         nearest.push(entry_point);
-        nearest.update_threshold();
 
         SearchContext {
             nearest,
@@ -37,12 +36,16 @@ impl SearchContext {
 
         self.nearest.update_threshold();
 
-        // A bit unsual that HNSW doesn't sort candidates first
         for potential_candidate in potential_candidates {
             if potential_candidate.score >= self.lower_bound() {
                 self.candidates.push(*potential_candidate);
             }
         }
+    }
+
+    pub fn iter_nearest(&mut self) -> impl Iterator<Item = &ScoredPointOffset> {
+        self.nearest.truncate();
+        self.nearest.elements.iter().map(|Reverse(x)| x)
     }
 
     /// Consider point for updating threshold value in future

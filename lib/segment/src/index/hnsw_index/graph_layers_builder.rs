@@ -4,8 +4,6 @@ use std::path::Path;
 use std::sync::atomic::AtomicUsize;
 
 use bitvec::prelude::BitVec;
-use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
-use common::top_k::TopK;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use parking_lot::{Mutex, MutexGuard, RwLock};
 use rand::distributions::Uniform;
@@ -288,14 +286,14 @@ impl GraphLayersBuilder {
 
     /// <https://github.com/nmslib/hnswlib/issues/99>
     fn select_candidates_with_heuristic<F>(
-        candidates: TopK,
+        candidates: Vec<ScoredPointOffset>,
         m: usize,
         score_internal: F,
     ) -> Vec<PointOffsetType>
     where
         F: FnMut(PointOffsetType, PointOffsetType) -> ScoreType,
     {
-        let closest_iter = candidates.into_vec().into_iter();
+        let closest_iter = candidates.into_iter();
         Self::select_candidate_with_heuristic_from_sorted(closest_iter, m, score_internal)
     }
 
@@ -354,7 +352,7 @@ impl GraphLayersBuilder {
                         &mut points_scorer,
                     );
 
-                    if let Some(the_nearest) = search_context.nearest.iter().max() {
+                    if let Some(the_nearest) = search_context.iter_nearest().max() {
                         level_entry = *the_nearest;
                     }
 
@@ -379,7 +377,7 @@ impl GraphLayersBuilder {
                             }
 
                             let selected_nearest = Self::select_candidates_with_heuristic(
-                                search_context.nearest,
+                                search_context.nearest.into_vec(),
                                 level_m,
                                 scorer,
                             );
@@ -420,7 +418,7 @@ impl GraphLayersBuilder {
                             }
                         }
                     } else {
-                        for nearest_point in search_context.nearest.iter() {
+                        for nearest_point in search_context.iter_nearest() {
                             {
                                 let mut links =
                                     self.links_layers[point_id as usize][curr_level].write();
@@ -493,6 +491,9 @@ mod tests {
     use crate::index::hnsw_index::tests::create_graph_layer_fixture;
     use crate::spaces::metric::Metric;
     use crate::spaces::simple::{CosineMetric, EuclidMetric};
+
+    use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
+    use common::top_k::TopK;
 
     const M: usize = 8;
 
