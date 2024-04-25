@@ -179,7 +179,7 @@ def test_shard_snapshot_transfer_cancel_during_updates(tmp_path: pathlib.Path):
     assert_http_ok(r)
 
     # Wait for end of shard transfer
-    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
+    wait_for_collection_shard_transfers_count(peer_api_uris[2], COLLECTION_NAME, 0)
 
     # Cancellation must happen within 3 seconds
     assert (time.time() - cancel_at) <= 3
