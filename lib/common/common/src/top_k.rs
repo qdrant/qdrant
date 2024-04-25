@@ -32,7 +32,7 @@ impl TopK {
 
     /// Returns the minimum score of the top k elements.
     ///
-    /// Updated every 2k elements unless forced
+    /// Updated every 2k elements
     /// Initially set to `ScoreType::MIN`.
     pub fn threshold(&self) -> ScoreType {
         self.threshold

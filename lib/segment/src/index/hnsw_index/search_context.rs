@@ -15,7 +15,6 @@ impl SearchContext {
     pub fn new(entry_point: ScoredPointOffset, ef: usize) -> Self {
         let mut nearest = TopK::new(ef);
         nearest.push(entry_point);
-
         SearchContext {
             nearest,
             candidates: BinaryHeap::from_iter([entry_point]),
@@ -27,7 +26,7 @@ impl SearchContext {
     }
 
     /// Updates search context with new scored point.
-    /// If score is higher than threshold, adds it to list of candidates for further search
+    /// If it is closer than existing - also add it to candidates for further search
     pub fn process_candidate(&mut self, score_point: ScoredPointOffset) {
         let was_added = match self.nearest.push(score_point) {
             None => true,
