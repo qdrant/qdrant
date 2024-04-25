@@ -4,6 +4,7 @@ use std::path::Path;
 use std::sync::atomic::AtomicUsize;
 
 use bitvec::prelude::BitVec;
+use common::top_k::TopK;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use parking_lot::{Mutex, MutexGuard, RwLock};
 use rand::distributions::Uniform;
@@ -286,7 +287,7 @@ impl GraphLayersBuilder {
 
     /// <https://github.com/nmslib/hnswlib/issues/99>
     fn select_candidates_with_heuristic<F>(
-        candidates: Vec<ScoredPointOffset>,
+        candidates: TopK,
         m: usize,
         score_internal: F,
     ) -> Vec<PointOffsetType>
@@ -377,7 +378,7 @@ impl GraphLayersBuilder {
                             }
 
                             let selected_nearest = Self::select_candidates_with_heuristic(
-                                search_context.nearest.into_vec(),
+                                search_context.nearest,
                                 level_m,
                                 scorer,
                             );
@@ -418,7 +419,7 @@ impl GraphLayersBuilder {
                             }
                         }
                     } else {
-                        for nearest_point in search_context.nearest.iter() {
+                        for nearest_point in &search_context.nearest {
                             {
                                 let mut links =
                                     self.links_layers[point_id as usize][curr_level].write();
@@ -867,8 +868,7 @@ mod tests {
             });
         }
 
-        let res =
-            GraphLayersBuilder::select_candidates_with_heuristic(candidates.into_vec(), m, scorer);
+        let res = GraphLayersBuilder::select_candidates_with_heuristic(candidates, m, scorer);
 
         assert_eq!(&res, &vec![1, 3, 6]);
 

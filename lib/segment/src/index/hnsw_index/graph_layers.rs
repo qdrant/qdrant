@@ -1,6 +1,7 @@
 use std::cmp::max;
 use std::path::{Path, PathBuf};
 
+use common::top_k::TopK;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use io::file_operations::{atomic_save_bin, read_bin, FileStorageError};
 use itertools::Itertools;
@@ -95,13 +96,13 @@ pub trait GraphLayersBase {
         level: usize,
         ef: usize,
         points_scorer: &mut FilteredScorer,
-    ) -> Vec<ScoredPointOffset> {
+    ) -> TopK {
         let mut visited_list = self.get_visited_list_from_pool();
         visited_list.check_and_update_visited(level_entry.idx);
         let mut search_context = SearchContext::new(level_entry, ef);
 
         self._search_on_level(&mut search_context, level, &mut visited_list, points_scorer);
-        search_context.nearest.into_vec()
+        search_context.nearest
     }
 
     /// Greedy searches for entry point of level `target_level`.
@@ -373,7 +374,7 @@ mod tests {
 
         assert_eq!(nearest_on_level.len(), graph_links[0][0].len() + 1);
 
-        for nearest in nearest_on_level.iter() {
+        for nearest in &nearest_on_level {
             // eprintln!("nearest = {:#?}", nearest);
             assert_eq!(
                 nearest.score,

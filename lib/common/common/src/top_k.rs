@@ -45,31 +45,55 @@ impl TopK {
             self.elements.push(element);
             // eject half the elements if full
             if self.elements.len() == self.k * 2 {
-                let position_to_sort = self.k.min(self.elements.len());
                 let (_, median_el, _) = self
                     .elements
-                    .select_nth_unstable_by(position_to_sort - 1, |a, b| b.cmp(a));
+                    .select_nth_unstable_by(self.k - 1, |a, b| b.cmp(a));
                 self.threshold = median_el.score;
-                return Some(self.elements.split_off(position_to_sort));
+                return Some(self.elements.split_off(self.k));
             }
             return None;
         }
         None
     }
 
-    fn truncate(&mut self) {
-        self.elements.sort_unstable();
-        self.elements.truncate(self.k);
+    pub fn iter(&self) -> TopKIter<'_> {
+        TopKIter {
+            iter: self.elements.iter(),
+        }
     }
 
-    pub fn iter(&mut self) -> impl Iterator<Item = &ScoredPointOffset> {
-        self.truncate();
-        self.elements.iter()
+    pub fn into_vec(self) -> Vec<ScoredPointOffset> {
+        self.into_iter().collect()
     }
+}
 
-    pub fn into_vec(mut self) -> Vec<ScoredPointOffset> {
-        self.truncate();
-        self.elements
+impl<'a> IntoIterator for &'a TopK {
+    type Item = &'a ScoredPointOffset;
+    type IntoIter = TopKIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl IntoIterator for TopK {
+    type Item = ScoredPointOffset;
+    type IntoIter = std::vec::IntoIter<ScoredPointOffset>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.elements.into_iter()
+    }
+}
+
+pub struct TopKIter<'a> {
+    iter: std::slice::Iter<'a, ScoredPointOffset>,
+}
+
+impl<'a> Iterator for TopKIter<'a> {
+    type Item = &'a ScoredPointOffset;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
     }
 }
 
