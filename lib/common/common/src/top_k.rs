@@ -38,25 +38,23 @@ impl TopK {
         self.threshold
     }
 
-    // Force updates the threshold
-    pub fn update_threshold(&mut self) {
-        let position_to_sort = self.k.min(self.elements.len());
-        // Descending order:
-        let (_, sorted_el, _) = self
-            .elements
-            .select_nth_unstable_by(position_to_sort - 1, |a, b| b.cmp(a));
-        self.threshold = sorted_el.score;
-        self.elements.truncate(position_to_sort);
-    }
-
-    pub fn push(&mut self, element: ScoredPointOffset) {
+    // Push an element to the top k.
+    // Sometimes it ejects (returns) pushed elements.
+    pub fn push(&mut self, element: ScoredPointOffset) -> Option<Vec<ScoredPointOffset>> {
         if element.score > self.threshold {
             self.elements.push(element);
-            // check if full
+            // eject half the elements if full
             if self.elements.len() == self.k * 2 {
-                self.update_threshold();
+                let position_to_sort = self.k.min(self.elements.len());
+                let (_, median_el, _) = self
+                    .elements
+                    .select_nth_unstable_by(position_to_sort - 1, |a, b| b.cmp(a));
+                self.threshold = median_el.score;
+                return Some(self.elements.split_off(position_to_sort));
             }
+            return None;
         }
+        None
     }
 
     fn truncate(&mut self) {
@@ -71,7 +69,7 @@ impl TopK {
 
     pub fn into_vec(mut self) -> Vec<ScoredPointOffset> {
         self.truncate();
-        self.elements.into_iter().collect()
+        self.elements
     }
 }
 

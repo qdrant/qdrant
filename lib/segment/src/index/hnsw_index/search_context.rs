@@ -26,23 +26,17 @@ impl SearchContext {
         self.nearest.threshold()
     }
 
-    /// Lazily use the candidate score to update the lower bound
+    /// Updates search context with new scored point.
+    /// If score is higher than threshold, adds it to list of candidates for further search
     pub fn process_candidate(&mut self, score_point: ScoredPointOffset) {
-        self.nearest.push(score_point);
-    }
-
-    /// Update candidates for next rounds with new candidates if they score higher than the latest lower bound
-    pub fn update_candidates(&mut self, potential_candidates: &[ScoredPointOffset]) {
-        if potential_candidates.is_empty() {
-            return;
-        }
-
-        self.nearest.update_threshold();
-
-        for candidate in potential_candidates {
-            if candidate.score >= self.lower_bound() {
-                self.candidates.push(*candidate);
-            }
+        let was_added = match self.nearest.push(score_point) {
+            None => true,
+            Some(removed) => removed
+                .iter()
+                .any(|removed_point| removed_point.idx == score_point.idx),
+        };
+        if was_added {
+            self.candidates.push(score_point);
         }
     }
 }

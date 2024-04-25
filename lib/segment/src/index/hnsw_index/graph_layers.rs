@@ -86,7 +86,6 @@ pub trait GraphLayersBase {
                 searcher.process_candidate(score_point);
                 visited_list.check_and_update_visited(score_point.idx);
             });
-            searcher.update_candidates(scores);
         }
     }
 
