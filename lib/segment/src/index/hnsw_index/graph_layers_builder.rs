@@ -477,6 +477,8 @@ impl GraphLayersBuilder {
 
 #[cfg(test)]
 mod tests {
+    use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
+    use common::top_k::TopK;
     use itertools::Itertools;
     use rand::prelude::StdRng;
     use rand::seq::SliceRandom;
@@ -491,9 +493,6 @@ mod tests {
     use crate::index::hnsw_index::tests::create_graph_layer_fixture;
     use crate::spaces::metric::Metric;
     use crate::spaces::simple::{CosineMetric, EuclidMetric};
-
-    use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
-    use common::top_k::TopK;
 
     const M: usize = 8;
 

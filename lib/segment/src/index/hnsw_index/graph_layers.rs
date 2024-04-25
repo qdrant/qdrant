@@ -296,6 +296,7 @@ mod tests {
     use std::fs::File;
     use std::io::Write;
 
+    use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
     use itertools::Itertools;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
@@ -310,8 +311,6 @@ mod tests {
     use crate::index::hnsw_index::tests::create_graph_layer_fixture;
     use crate::spaces::metric::Metric;
     use crate::spaces::simple::{CosineMetric, DotProductMetric};
-
-    use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 
     fn search_in_graph<TGraphLinks: GraphLinks>(
         query: &[VectorElementType],

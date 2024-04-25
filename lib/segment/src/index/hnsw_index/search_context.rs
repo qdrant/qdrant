@@ -1,5 +1,5 @@
-use std::collections::BinaryHeap;
 use std::cmp::Reverse;
+use std::collections::BinaryHeap;
 
 use common::top_k::TopK;
 use common::types::{ScoreType, ScoredPointOffset};
