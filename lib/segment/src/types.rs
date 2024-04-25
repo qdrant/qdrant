@@ -738,7 +738,8 @@ pub enum VectorStorageDatatype {
     Uint8,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone, Hash)]
+#[serde(untagged, rename_all = "snake_case")]
 pub enum MultiVectorConfig {
     MaxSim(MaxSimConfig),
 }
@@ -749,7 +750,7 @@ impl Default for MultiVectorConfig {
     }
 }
 
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone)]
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone, Hash)]
 pub struct MaxSimConfig {}
 
 impl VectorStorageType {

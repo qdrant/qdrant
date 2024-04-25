@@ -197,11 +197,23 @@ pub type MultiDenseVector = TypedMultiDenseVector<VectorElementType>;
 
 impl<T: PrimitiveVectorElement> TypedMultiDenseVector<T> {
     pub fn new(flattened_vectors: TypedDenseVector<T>, dim: usize) -> Self {
-        assert!(flattened_vectors.len() % dim == 0, "Invalid vector length");
+        assert_eq!(flattened_vectors.len() % dim, 0, "Invalid vector length");
         Self {
             inner_vector: flattened_vectors,
             dim,
         }
+    }
+
+    /// To be used when the input vectors are already validated to avoid double validation
+    pub fn new_validated(vectors: Vec<Vec<T>>) -> Self {
+        assert!(!vectors.is_empty(), "MultiDenseVector cannot be empty");
+        assert!(
+            vectors.iter().all(|v| !v.is_empty()),
+            "Multi individual vectors cannot be empty"
+        );
+        let dim = vectors[0].len();
+        let inner_vector = vectors.into_iter().flatten().collect();
+        Self { inner_vector, dim }
     }
 
     /// MultiDenseVector cannot be empty, so we use a placeholder vector instead
@@ -219,6 +231,15 @@ impl<T: PrimitiveVectorElement> TypedMultiDenseVector<T> {
 
     pub fn multi_vectors_mut(&mut self) -> ChunksExactMut<'_, T> {
         self.inner_vector.chunks_exact_mut(self.dim)
+    }
+
+    /// Consumes the multi vector and returns the underlying individual vectors
+    pub fn into_multi_vectors(self) -> Vec<Vec<T>> {
+        let mut chunks = vec![];
+        for chunk in self.inner_vector.into_iter().chunks(self.dim).into_iter() {
+            chunks.push(chunk.collect());
+        }
+        chunks
     }
 
     pub fn is_empty(&self) -> bool {

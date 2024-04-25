@@ -5537,6 +5537,16 @@
                 "nullable": true
               }
             ]
+          },
+          "multi_vec_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MultiVectorConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -5712,6 +5722,16 @@
           "float32",
           "uint8"
         ]
+      },
+      "MultiVectorConfig": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/MaxSimConfig"
+          }
+        ]
+      },
+      "MaxSimConfig": {
+        "type": "object"
       },
       "ShardingMethod": {
         "type": "string",
@@ -6272,6 +6292,16 @@
           },
           {
             "$ref": "#/components/schemas/SparseVector"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "float"
+              }
+            }
           }
         ]
       },
@@ -9320,25 +9350,6 @@
             }
           }
         ]
-      },
-      "MultiVectorConfig": {
-        "oneOf": [
-          {
-            "type": "object",
-            "required": [
-              "MaxSim"
-            ],
-            "properties": {
-              "MaxSim": {
-                "$ref": "#/components/schemas/MaxSimConfig"
-              }
-            },
-            "additionalProperties": false
-          }
-        ]
-      },
-      "MaxSimConfig": {
-        "type": "object"
       },
       "VectorStorageDatatype": {
         "description": "Storage types for vectors",
