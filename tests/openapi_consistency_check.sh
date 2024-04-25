@@ -36,7 +36,7 @@ fi
 rm -f ./docs/redoc/master/.diff.openapi.json
 
 NUMBER_OF_APIS=$(cat ./docs/redoc/master/openapi.json | jq '.paths | length')
-EXPECTED_NUMBER_OF_APIS=50
+EXPECTED_NUMBER_OF_APIS=51
 
 if [ "$NUMBER_OF_APIS" -ne "$EXPECTED_NUMBER_OF_APIS" ]; then
     echo "ERROR: It looks like the total number of APIs has changed."
