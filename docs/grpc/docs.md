@@ -468,6 +468,7 @@
 | payload_schema | [CollectionInfo.PayloadSchemaEntry](#qdrant-CollectionInfo-PayloadSchemaEntry) | repeated | Collection data types |
 | points_count | [uint64](#uint64) | optional | Approximate number of points in the collection |
 | indexed_vectors_count | [uint64](#uint64) | optional | Approximate number of indexed vectors in the collection. |
+| comment | [string](#string) | optional | properties or metadata of the collection. |
 
 
 
@@ -584,7 +585,7 @@
 | quantization_config | [QuantizationConfig](#qdrant-QuantizationConfig) | optional | Quantization configuration of vector |
 | sharding_method | [ShardingMethod](#qdrant-ShardingMethod) | optional | Sharding method |
 | sparse_vectors_config | [SparseVectorConfig](#qdrant-SparseVectorConfig) | optional | Configuration for sparse vectors |
-| comment | [string](#string) | optional | Properties/metadata of the collection |
+| comment | [string](#string) | optional | Properties or metadata of the collection |
 
 
 
@@ -1254,6 +1255,7 @@ Note: 1kB = 1 vector of size 256. |
 | vectors_config | [VectorsConfigDiff](#qdrant-VectorsConfigDiff) | optional | New vector parameters |
 | quantization_config | [QuantizationConfigDiff](#qdrant-QuantizationConfigDiff) | optional | Quantization configuration of vector |
 | sparse_vectors_config | [SparseVectorConfig](#qdrant-SparseVectorConfig) | optional | New sparse vector parameters |
+| comment | [string](#string) | optional | New comments for the collection |
 
 
 
