@@ -1,5 +1,3 @@
-use std::cmp::Reverse;
-
 use ordered_float::Float;
 
 use crate::types::{ScoreType, ScoredPointOffset};
@@ -11,7 +9,7 @@ use crate::types::{ScoreType, ScoredPointOffset};
 #[derive(Default)]
 pub struct TopK {
     k: usize,
-    elements: Vec<Reverse<ScoredPointOffset>>,
+    elements: Vec<ScoredPointOffset>,
     threshold: ScoreType,
 }
 
@@ -43,14 +41,17 @@ impl TopK {
     // Force updates the threshold
     pub fn update_threshold(&mut self) {
         let position_to_sort = self.k.min(self.elements.len());
-        let (_, sorted_el, _) = self.elements.select_nth_unstable(position_to_sort - 1);
-        self.threshold = sorted_el.0.score;
+        // Descending order:
+        let (_, sorted_el, _) = self
+            .elements
+            .select_nth_unstable_by(position_to_sort - 1, |a, b| b.cmp(a));
+        self.threshold = sorted_el.score;
         self.elements.truncate(position_to_sort);
     }
 
     pub fn push(&mut self, element: ScoredPointOffset) {
         if element.score > self.threshold {
-            self.elements.push(Reverse(element));
+            self.elements.push(element);
             // check if full
             if self.elements.len() == self.k * 2 {
                 self.update_threshold();
@@ -65,12 +66,12 @@ impl TopK {
 
     pub fn iter(&mut self) -> impl Iterator<Item = &ScoredPointOffset> {
         self.truncate();
-        self.elements.iter().map(|Reverse(x)| x)
+        self.elements.iter()
     }
 
     pub fn into_vec(mut self) -> Vec<ScoredPointOffset> {
         self.truncate();
-        self.elements.into_iter().map(|Reverse(x)| x).collect()
+        self.elements.into_iter().collect()
     }
 }
 
