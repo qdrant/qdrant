@@ -71,14 +71,14 @@ def test_unindexed_field_is_gone_when_deleting_collection(setup_with_big_collect
     issues = get_issues(uri)
 
     # check the issue is now active
-    assert expected_issue_code in [issue["code"] for issue in issues]
+    assert expected_issue_code in [issue["id"] for issue in issues]
 
     # delete collection
     drop_collection(uri, COLL_NAME)
 
     # check the issue is not active anymore
     issues = get_issues(uri)
-    assert expected_issue_code not in [issue["code"] for issue in issues]
+    assert expected_issue_code not in [issue["id"] for issue in issues]
 
 
 def test_unindexed_field_is_gone_when_indexing(setup_with_big_collection):
@@ -87,7 +87,7 @@ def test_unindexed_field_is_gone_when_indexing(setup_with_big_collection):
     expected_issue_code = "UNINDEXED_FIELD/test_collection/city"
 
     issues = get_issues(uri)
-    assert expected_issue_code not in [issue["code"] for issue in issues]
+    assert expected_issue_code not in [issue["id"] for issue in issues]
 
     search_with_city_filter(uri)
 
@@ -97,7 +97,7 @@ def test_unindexed_field_is_gone_when_indexing(setup_with_big_collection):
     # breakpoint()
     issue_present = False
     for issue in issues:
-        if issue["code"] == expected_issue_code:
+        if issue["id"] == expected_issue_code:
             issue_present = True
             solution = issue["solution"]["immediate"]["action"]
             timestamp = issue["timestamp"]
@@ -112,7 +112,7 @@ def test_unindexed_field_is_gone_when_indexing(setup_with_big_collection):
     # check the timestamp has not changed
     issue_present = False
     for issue in issues:
-        if issue["code"] == expected_issue_code:
+        if issue["id"] == expected_issue_code:
             issue_present = True
             assert timestamp == issue["timestamp"]
             break
@@ -128,11 +128,11 @@ def test_unindexed_field_is_gone_when_indexing(setup_with_big_collection):
 
     # check the issue is not active anymore
     issues = get_issues(uri)
-    assert expected_issue_code not in [issue["code"] for issue in issues]
+    assert expected_issue_code not in [issue["id"] for issue in issues]
 
     # search again
     search_with_city_filter(uri)
 
     # check the issue is not triggered again
     issues = get_issues(uri)
-    assert expected_issue_code not in [issue["code"] for issue in issues]
+    assert expected_issue_code not in [issue["id"] for issue in issues]

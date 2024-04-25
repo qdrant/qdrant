@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use collection::events::{CollectionDeletedEvent, IndexCreatedEvent, SlowQueryEvent};
-use issues::broker::Subscriber;
+use issues::{broker::Subscriber, Code};
 use segment::problems::UnindexedField;
 
 use crate::{
@@ -60,16 +60,15 @@ impl Subscriber<SlowQueryEvent> for UnindexedFieldSubscriber {
 impl Subscriber<CollectionDeletedEvent> for UnindexedFieldSubscriber {
     fn notify(&self, event: Arc<CollectionDeletedEvent>) {
         issues::solve_by_filter::<UnindexedField, _>(|code| {
-            UnindexedField::get_collection_name_from_code(code) == event.collection_id
+            UnindexedField::get_collection_name(code) == event.collection_id
         });
     }
 }
 
 impl Subscriber<IndexCreatedEvent> for UnindexedFieldSubscriber {
     fn notify(&self, event: Arc<IndexCreatedEvent>) {
-        issues::solve(UnindexedField::get_code(
-            &event.collection_id,
-            &event.field_name,
+        issues::solve(Code::new::<UnindexedField>(
+            UnindexedField::get_distinctive(&event.collection_id, &event.field_name),
         ));
     }
 }

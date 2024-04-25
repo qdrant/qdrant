@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use http::{HeaderMap, Method, Uri};
 
-use issues::{Action, CodeType, ImmediateSolution, Issue, Solution};
+use issues::{Action, Code, ImmediateSolution, Issue, Solution};
 use itertools::Itertools;
 
 use crate::common::operation_error::OperationError;
@@ -21,6 +21,7 @@ pub struct UnindexedField {
     field_schemas: HashSet<PayloadFieldSchema>,
     collection_name: String,
     endpoint: Uri,
+    distinctive: String,
 }
 
 impl UnindexedField {
@@ -37,12 +38,12 @@ impl UnindexedField {
         })
     }
 
-    pub fn get_code(collection_name: &str, field_name: &JsonPathV2) -> CodeType {
-        format!("UNINDEXED_FIELD/{collection_name}/{field_name}")
+    pub fn get_distinctive(collection_name: &str, field_name: &JsonPathV2) -> String {
+        format!("{collection_name}/{field_name}")
     }
 
-    pub fn get_collection_name_from_code(code: &CodeType) -> String {
-        code.split('/').nth(1).map(|s| s.to_string()).unwrap() // Code format is always the same
+    pub fn get_collection_name(code: &Code) -> &str {
+        code.distinctive.split('/').next().unwrap() // Code format is always the same
     }
 
     /// Try to form an issue from a field condition and a collection name
@@ -75,11 +76,14 @@ impl UnindexedField {
             }
         };
 
+        let distinctive = Self::get_distinctive(&collection_name, &field_name);
+
         Ok(Self {
             field_name,
             field_schemas,
             collection_name,
             endpoint,
+            distinctive,
         })
     }
 
@@ -100,8 +104,12 @@ impl UnindexedField {
 }
 
 impl Issue for UnindexedField {
-    fn code(&self) -> CodeType {
-        Self::get_code(&self.collection_name, &self.field_name)
+    fn distinctive(&self) -> &str {
+        &self.distinctive
+    }
+
+    fn name() -> &'static str {
+        "UNINDEXED_FIELD"
     }
 
     fn description(&self) -> String {
@@ -299,9 +307,10 @@ impl<'a> Extractor<'a> {
                 }
 
                 if needs_index {
-                    let entry = self.unindexed_schema.entry(full_key).or_default();
-
-                    entry.extend(inferred);
+                    self.unindexed_schema
+                        .entry(full_key)
+                        .or_default()
+                        .extend(inferred);
                 }
             }
             Condition::Filter(filter) => {
