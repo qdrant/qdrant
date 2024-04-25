@@ -38,18 +38,22 @@ impl TopK {
         self.threshold
     }
 
+    pub fn prune_elements(&mut self) -> Vec<ScoredPointOffset> {
+        let (_, median_el, _) = self
+            .elements
+            .select_nth_unstable_by(self.k - 1, |a, b| b.cmp(a));
+        self.threshold = median_el.score;
+        self.elements.split_off(self.k)
+    }
+
     // Push an element to the top k.
-    // Sometimes it ejects (returns) pushed elements.
+    // It ejects (returns) low scoring elements when full
     pub fn push(&mut self, element: ScoredPointOffset) -> Option<Vec<ScoredPointOffset>> {
         if element.score > self.threshold {
             self.elements.push(element);
-            // eject half the elements if full
+            // prune half the elements if full
             if self.elements.len() == self.k * 2 {
-                let (_, median_el, _) = self
-                    .elements
-                    .select_nth_unstable_by(self.k - 1, |a, b| b.cmp(a));
-                self.threshold = median_el.score;
-                return Some(self.elements.split_off(self.k));
+                return Some(self.prune_elements());
             }
             return None;
         }
@@ -62,8 +66,9 @@ impl TopK {
         }
     }
 
-    pub fn into_vec(self) -> Vec<ScoredPointOffset> {
-        self.into_iter().collect()
+    pub fn into_vec(mut self) -> Vec<ScoredPointOffset> {
+        self.prune_elements();
+        self.elements
     }
 }
 
@@ -80,7 +85,8 @@ impl IntoIterator for TopK {
     type Item = ScoredPointOffset;
     type IntoIter = std::vec::IntoIter<ScoredPointOffset>;
 
-    fn into_iter(self) -> Self::IntoIter {
+    fn into_iter(mut self) -> Self::IntoIter {
+        self.prune_elements();
         self.elements.into_iter()
     }
 }
