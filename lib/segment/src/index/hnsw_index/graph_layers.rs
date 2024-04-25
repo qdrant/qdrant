@@ -87,6 +87,7 @@ pub trait GraphLayersBase {
                 searcher.process_candidate(score_point);
                 visited_list.check_and_update_visited(score_point.idx);
             });
+            searcher.update_candidates(scores);
         }
     }
 
@@ -96,13 +97,13 @@ pub trait GraphLayersBase {
         level: usize,
         ef: usize,
         points_scorer: &mut FilteredScorer,
-    ) -> FixedLengthPriorityQueue<ScoredPointOffset> {
+    ) -> Vec<ScoredPointOffset> {
         let mut visited_list = self.get_visited_list_from_pool();
         visited_list.check_and_update_visited(level_entry.idx);
         let mut search_context = SearchContext::new(level_entry, ef);
 
         self._search_on_level(&mut search_context, level, &mut visited_list, points_scorer);
-        search_context.nearest
+        search_context.nearest.into_vec()
     }
 
     /// Greedy searches for entry point of level `target_level`.
@@ -373,7 +374,7 @@ mod tests {
 
         assert_eq!(nearest_on_level.len(), graph_links[0][0].len() + 1);
 
-        for nearest in &nearest_on_level {
+        for nearest in nearest_on_level.iter() {
             // eprintln!("nearest = {:#?}", nearest);
             assert_eq!(
                 nearest.score,

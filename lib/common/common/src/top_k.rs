@@ -34,10 +34,18 @@ impl TopK {
 
     /// Returns the minimum score of the top k elements.
     ///
-    /// Updated every 2k elements.
+    /// Updated every 2k elements unless forced
     /// Initially set to `ScoreType::MIN`.
     pub fn threshold(&self) -> ScoreType {
         self.threshold
+    }
+
+    // Force updates the threshold
+    pub fn update_threshold(&mut self) {
+        let position_to_sort = self.k.min(self.elements.len());
+        let (_, sorted_el, _) = self.elements.select_nth_unstable(position_to_sort - 1);
+        self.threshold = sorted_el.0.score;
+        self.elements.truncate(position_to_sort);
     }
 
     pub fn push(&mut self, element: ScoredPointOffset) {
@@ -45,11 +53,15 @@ impl TopK {
             self.elements.push(Reverse(element));
             // check if full
             if self.elements.len() == self.k * 2 {
-                let (_, median_el, _) = self.elements.select_nth_unstable(self.k - 1);
-                self.threshold = median_el.0.score;
-                self.elements.truncate(self.k);
+                self.update_threshold();
             }
         }
+    }
+
+    pub fn iter(&mut self) -> std::slice::Iter<'_, ScoredPointOffset> {
+        self.update_threshold();
+        self.elements.sort_unstable();
+        self.elements.iter() // FIXME: Doesn't work
     }
 
     pub fn into_vec(mut self) -> Vec<ScoredPointOffset> {

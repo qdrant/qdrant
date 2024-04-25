@@ -4,6 +4,7 @@ use std::path::Path;
 use std::sync::atomic::AtomicUsize;
 
 use bitvec::prelude::BitVec;
+use common::top_k::TopK;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use parking_lot::{Mutex, MutexGuard, RwLock};
@@ -287,14 +288,14 @@ impl GraphLayersBuilder {
 
     /// <https://github.com/nmslib/hnswlib/issues/99>
     fn select_candidates_with_heuristic<F>(
-        candidates: FixedLengthPriorityQueue<ScoredPointOffset>,
+        candidates: TopK,
         m: usize,
         score_internal: F,
     ) -> Vec<PointOffsetType>
     where
         F: FnMut(PointOffsetType, PointOffsetType) -> ScoreType,
     {
-        let closest_iter = candidates.into_iter();
+        let closest_iter = candidates.into_vec().into_iter();
         Self::select_candidate_with_heuristic_from_sorted(closest_iter, m, score_internal)
     }
 
@@ -419,7 +420,7 @@ impl GraphLayersBuilder {
                             }
                         }
                     } else {
-                        for nearest_point in &search_context.nearest {
+                        for nearest_point in search_context.nearest.iter() {
                             {
                                 let mut links =
                                     self.links_layers[point_id as usize][curr_level].write();
@@ -858,7 +859,7 @@ mod tests {
 
         let mut insert_ids = (1..points.len() as PointOffsetType).collect_vec();
 
-        let mut candidates = FixedLengthPriorityQueue::new(insert_ids.len());
+        let mut candidates = TopK::new(insert_ids.len());
         for &id in &insert_ids {
             candidates.push(ScoredPointOffset {
                 idx: id,
@@ -866,7 +867,7 @@ mod tests {
             });
         }
 
-        let res = GraphLayersBuilder::select_candidates_with_heuristic(candidates, m, scorer);
+        let res = GraphLayersBuilder::select_candidates_with_heuristic(candidates.into_vec(), m, scorer);
 
         assert_eq!(&res, &vec![1, 3, 6]);
 

@@ -1,22 +1,23 @@
 use std::collections::BinaryHeap;
 use std::iter::FromIterator;
 
-use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
+use common::top_k::TopK;
 use common::types::{ScoreType, ScoredPointOffset};
-use num_traits::float::FloatCore;
 
 /// Structure that holds context of the search
 pub struct SearchContext {
     /// Overall nearest points found so far
-    pub nearest: FixedLengthPriorityQueue<ScoredPointOffset>,
+    pub nearest: TopK,
     /// Current candidates to process
     pub candidates: BinaryHeap<ScoredPointOffset>,
 }
 
 impl SearchContext {
     pub fn new(entry_point: ScoredPointOffset, ef: usize) -> Self {
-        let mut nearest = FixedLengthPriorityQueue::new(ef);
+        let mut nearest = TopK::new(ef);
         nearest.push(entry_point);
+        nearest.update_threshold();
+
         SearchContext {
             nearest,
             candidates: BinaryHeap::from_iter([entry_point]),
@@ -24,21 +25,28 @@ impl SearchContext {
     }
 
     pub fn lower_bound(&self) -> ScoreType {
-        match self.nearest.top() {
-            None => ScoreType::min_value(),
-            Some(worst_of_the_best) => worst_of_the_best.score,
+        self.nearest.threshold()
+    }
+
+    /// Force updates the threshold based on new candidates collected so far
+    /// Then uses the new candidates for next rounds if they score higher than the new threshold
+    pub fn update_candidates(&mut self, potential_candidates: &[ScoredPointOffset]) {
+        if potential_candidates.is_empty() {
+            return;
+        }
+
+        self.nearest.update_threshold();
+
+        // A bit unsual that HNSW doesn't sort candidates first
+        for potential_candidate in potential_candidates {
+            if potential_candidate.score >= self.lower_bound() {
+                self.candidates.push(*potential_candidate);
+            }
         }
     }
 
-    /// Updates search context with new scored point.
-    /// If it is closer than existing - also add it to candidates for further search
+    /// Consider point for updating threshold value in future
     pub fn process_candidate(&mut self, score_point: ScoredPointOffset) {
-        let was_added = match self.nearest.push(score_point) {
-            None => true,
-            Some(removed) => removed.idx != score_point.idx,
-        };
-        if was_added {
-            self.candidates.push(score_point);
-        }
+        self.nearest.push(score_point);
     }
 }
