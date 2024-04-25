@@ -453,6 +453,9 @@ impl Consensus {
         let mut previous_tick = Instant::now();
 
         loop {
+            // Apply in-memory changes to the Raft State Machine
+            // If updates = None, we need to skip this step due to timing limits
+            // If updates = Some(0), means we didn't receive any updates explicitly
             let updates = self.advance_node(previous_tick, tick_period)?;
 
             let mut elapsed = previous_tick.elapsed();
@@ -465,12 +468,15 @@ impl Consensus {
             }
 
             if self.node.has_ready() {
+                // Persist AND apply changes, which were committed in the Raft State Machine
                 let stop_consensus = self.on_ready()?;
 
                 if stop_consensus {
                     return Ok(());
                 }
             } else if updates == Some(0) {
+                // Assume consensus is up-to-date, we can sync local state
+                // Which involves resoling inconsistencies and trying to recover data marked as dead
                 self.try_sync_local_state()?;
             }
         }
@@ -495,12 +501,37 @@ impl Consensus {
         let mut updates = 0;
         let mut timeout_at = previous_tick + tick_period;
 
+
+        // We need to limit the batch size, as application of one batch should be limited in time.
+        const RAFT_BATCH_SIZE: usize = 128;
+
+        let wait_timeout_for_consecutive_messages = tick_period / 10;
+
+        // This loop batches incoming messages, so we would need to "apply" them only once.
+        // The "Apply" step is expensive, so it is done for performance reasons.
+
+        // But on the other hand, we still want to react to rare
+        // individual messages as fast as possible.
+        // To fulfill both requirements, we are going the following way:
+        //   1. Wait for the first message for full tick period.
+        //   2. If the message is received, wait for the next message only for 1/10 of the tick period.
         loop {
+            // This queue have 2 types of events:
+            // - Messages from the leader, like pings, requests to add logs, acks, etc.
+            // - Messages from users, like requests to start shard transfers, etc.
+            //
+            // Timeout defines how long can we wait for the next message.
+            // Since this thread is sync, we can't wait indefinitely.
+            // Timeout is set up to be about the time of tick.
             let message = match self.recv_update(timeout_at) {
                 Ok(message) => message,
                 Err(_) => break,
             };
 
+
+            // Those messages should not be batched, so we interrupt the loop if we see them.
+            // Motivation is: if we change the peer, it should be done immediately,
+            //  otherwise we loose the update on this new peer
             let is_conf_change = matches!(
                 message,
                 Message::FromClient(
@@ -508,15 +539,18 @@ impl Consensus {
                 ),
             );
 
+            // We put the message in Raft State Machine
+            // This update will hold update in memory, but will not be persisted yet.
+            // E.g. if it is a ping, we don't need to persist anything ofr it.
             if let Err(err) = self.advance_node_impl(message) {
                 log::warn!("{err}");
                 continue;
             }
 
             updates += 1;
-            timeout_at = Instant::now() + tick_period / 10;
+            timeout_at = Instant::now() + wait_timeout_for_consecutive_messages;
 
-            if previous_tick.elapsed() >= tick_period || updates >= 128 || is_conf_change {
+            if previous_tick.elapsed() >= tick_period || updates >= RAFT_BATCH_SIZE || is_conf_change {
                 break;
             }
         }
