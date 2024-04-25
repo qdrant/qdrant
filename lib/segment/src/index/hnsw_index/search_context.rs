@@ -1,4 +1,3 @@
-use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
 use common::top_k::TopK;
@@ -40,16 +39,10 @@ impl SearchContext {
 
         self.nearest.update_threshold();
 
-        for potential_candidate in potential_candidates {
-            if potential_candidate.score >= self.lower_bound() {
-                self.candidates.push(*potential_candidate);
+        for candidate in potential_candidates {
+            if candidate.score >= self.lower_bound() {
+                self.candidates.push(*candidate);
             }
         }
-    }
-
-    // Returns iterator over the nearest points found so far
-    pub fn iter_nearest(&mut self) -> impl Iterator<Item = &ScoredPointOffset> {
-        self.nearest.truncate();
-        self.nearest.elements.iter().map(|Reverse(x)| x)
     }
 }

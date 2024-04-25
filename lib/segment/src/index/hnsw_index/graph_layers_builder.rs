@@ -352,7 +352,7 @@ impl GraphLayersBuilder {
                         &mut points_scorer,
                     );
 
-                    if let Some(the_nearest) = search_context.iter_nearest().max() {
+                    if let Some(the_nearest) = search_context.nearest.iter().max() {
                         level_entry = *the_nearest;
                     }
 
@@ -418,7 +418,7 @@ impl GraphLayersBuilder {
                             }
                         }
                     } else {
-                        for nearest_point in search_context.iter_nearest() {
+                        for nearest_point in search_context.nearest.iter() {
                             {
                                 let mut links =
                                     self.links_layers[point_id as usize][curr_level].write();
