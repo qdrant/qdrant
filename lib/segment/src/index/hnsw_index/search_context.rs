@@ -27,8 +27,12 @@ impl SearchContext {
         self.nearest.threshold()
     }
 
-    /// Force updates the threshold based on new candidates collected so far
-    /// Then uses the new candidates for next rounds if they score higher than the new threshold
+    /// Lazily use the candidate score to update the lower bound
+    pub fn process_candidate(&mut self, score_point: ScoredPointOffset) {
+        self.nearest.push(score_point);
+    }
+
+    /// Update candidates for next rounds with new candidates if they score higher than the latest lower bound
     pub fn update_candidates(&mut self, potential_candidates: &[ScoredPointOffset]) {
         if potential_candidates.is_empty() {
             return;
@@ -43,13 +47,9 @@ impl SearchContext {
         }
     }
 
+    // Returns iterator over the nearest points found so far
     pub fn iter_nearest(&mut self) -> impl Iterator<Item = &ScoredPointOffset> {
         self.nearest.truncate();
         self.nearest.elements.iter().map(|Reverse(x)| x)
-    }
-
-    /// Consider point for updating threshold value in future
-    pub fn process_candidate(&mut self, score_point: ScoredPointOffset) {
-        self.nearest.push(score_point);
     }
 }
