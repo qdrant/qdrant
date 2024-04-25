@@ -495,7 +495,7 @@ pub struct CreateCollection {
     /// Configuration for sparse vectors
     #[prost(message, optional, tag = "16")]
     pub sparse_vectors_config: ::core::option::Option<SparseVectorConfig>,
-    /// Properties/metadata of the collection
+    /// Properties or metadata of the collection
     #[prost(string, optional, tag = "17")]
     pub comment: ::core::option::Option<::prost::alloc::string::String>,
 }

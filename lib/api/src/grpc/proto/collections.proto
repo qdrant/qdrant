@@ -322,7 +322,7 @@ message CreateCollection {
   optional QuantizationConfig quantization_config = 14; // Quantization configuration of vector
   optional ShardingMethod sharding_method = 15; // Sharding method
   optional SparseVectorConfig sparse_vectors_config = 16; // Configuration for sparse vectors
-  optional string comment = 17; // Properties/metadata of the collection
+  optional string comment = 17; // Properties or metadata of the collection
 }
 
 message UpdateCollection {

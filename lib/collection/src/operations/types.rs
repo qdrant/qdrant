@@ -128,7 +128,8 @@ pub struct CollectionInfo {
     /// Types of stored payload
     pub payload_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
     /// Properties or metadata of the collection
-    pub comment: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
 }
 
 impl CollectionInfo {
@@ -142,7 +143,7 @@ impl CollectionInfo {
             segments_count: 0,
             config: collection_config,
             payload_schema: HashMap::new(),
-            comment: String::new(),
+            comment: Some(String::new()),
         }
     }
 }
@@ -158,7 +159,7 @@ impl From<CollectionInfoInternal> for CollectionInfo {
             segments_count: info.segments_count,
             config: info.config,
             payload_schema: info.payload_schema,
-            comment: info.comment,
+            comment: Some(info.comment),
         }
     }
 }
