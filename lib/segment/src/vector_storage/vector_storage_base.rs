@@ -13,7 +13,7 @@ use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
-    TypedMultiDenseVector, VectorElementType, VectorElementTypeByte, VectorRef,
+    TypedMultiDenseVectorRef, VectorElementType, VectorElementTypeByte, VectorRef,
 };
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::dense::appendable_mmap_dense_vector_storage::AppendableMmapDenseVectorStorage;
@@ -111,7 +111,7 @@ pub trait SparseVectorStorage: VectorStorage {
 }
 
 pub trait MultiVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
-    fn get_multi(&self, key: PointOffsetType) -> &TypedMultiDenseVector<T>;
+    fn get_multi(&self, key: PointOffsetType) -> TypedMultiDenseVectorRef<T>;
     fn multi_vector_config(&self) -> &MultiVectorConfig;
 }
 

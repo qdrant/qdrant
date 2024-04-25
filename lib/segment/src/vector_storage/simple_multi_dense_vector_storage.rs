@@ -15,7 +15,7 @@ use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
-    MultiDenseVector, TypedMultiDenseVector, VectorElementType, VectorRef,
+    MultiDenseVector, TypedMultiDenseVector, TypedMultiDenseVectorRef, VectorElementType, VectorRef,
 };
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::bitvec::bitvec_set_deleted;
@@ -131,8 +131,8 @@ impl<T: PrimitiveVectorElement> SimpleMultiDenseVectorStorage<T> {
 }
 
 impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for SimpleMultiDenseVectorStorage<T> {
-    fn get_multi(&self, key: PointOffsetType) -> &TypedMultiDenseVector<T> {
-        self.vectors.get(key as usize).expect("vector not found")
+    fn get_multi(&self, key: PointOffsetType) -> TypedMultiDenseVectorRef<T> {
+        TypedMultiDenseVectorRef::from(self.vectors.get(key as usize).expect("vector not found"))
     }
 
     fn multi_vector_config(&self) -> &MultiVectorConfig {
