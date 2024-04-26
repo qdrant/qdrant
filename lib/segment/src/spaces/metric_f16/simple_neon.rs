@@ -7,6 +7,7 @@ use half::f16;
 #[cfg(target_feature = "neon")]
 use crate::data_types::vectors::VectorElementTypeHalf;
 
+#[cfg(target_feature = "neon")]
 global_asm!(include_str!("arm.s"));
 
 extern "C" {
