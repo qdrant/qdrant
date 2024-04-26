@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use std::ops::Bound;
-use std::ops::Bound::{Excluded, Unbounded};
 use std::sync::Arc;
 
 use common::types::PointOffsetType;
@@ -132,7 +131,7 @@ impl<T: Encodable + Numericable> NumericKeySortedVec<T> {
         end_bound: Bound<NumericIndexKey<T>>,
     ) -> NumericKeySortedVecIterator<'_, T> {
         let start_index = self.find_start_index(start_bound);
-        let end_index = self.find_end_index(end_bound);
+        let end_index = self.find_end_index(start_index, end_bound);
         NumericKeySortedVecIterator {
             set: self,
             start_index,
@@ -151,13 +150,19 @@ impl<T: Encodable + Numericable> NumericKeySortedVec<T> {
         }
     }
 
-    fn find_end_index(&self, bound: Bound<NumericIndexKey<T>>) -> usize {
+    /// Find the end index of the range.
+    ///
+    /// Scans only starting from `start` to avoid repeated work.
+    fn find_end_index(&self, start: usize, bound: Bound<NumericIndexKey<T>>) -> usize {
         match bound {
-            Bound::Included(bound) => match self.data.binary_search(&bound) {
-                Ok(idx) => idx + 1,
-                Err(idx) => idx,
+            Bound::Included(bound) => match self.data[start..].binary_search(&bound) {
+                Ok(idx) => idx + 1 + start,
+                Err(idx) => idx + start,
             },
-            Bound::Excluded(bound) => self.data.binary_search(&bound).unwrap_or_else(|idx| idx),
+            Bound::Excluded(bound) => {
+                let end_bound = self.data[start..].binary_search(&bound);
+                end_bound.unwrap_or_else(|idx| idx) + start
+            }
             Bound::Unbounded => self.data.len(),
         }
     }
@@ -309,7 +314,7 @@ impl<T: Encodable + Numericable + Default> ImmutableNumericIndex<T> {
         point: &Point<T>,
     ) -> Option<Point<T>> {
         let key: NumericIndexKey<T> = point.clone().into();
-        map.values_range(Unbounded, Excluded(key))
+        map.values_range(Bound::Unbounded, Bound::Excluded(key))
             .next_back()
             .map(|key| key.into())
     }
@@ -319,7 +324,7 @@ impl<T: Encodable + Numericable + Default> ImmutableNumericIndex<T> {
         point: &Point<T>,
     ) -> Option<Point<T>> {
         let key: NumericIndexKey<T> = point.clone().into();
-        map.values_range(Excluded(key), Unbounded)
+        map.values_range(Bound::Excluded(key), Bound::Unbounded)
             .next()
             .map(|key| key.into())
     }
