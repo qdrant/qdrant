@@ -28,7 +28,7 @@ jobs:
               docker volume rm "$buildx_volumes"
             fi
 
-            branch=${GITHUB_REF_NAME##*/}
+            branch=${GITHUB_REF_NAME//\//-} # replace all / with -
             echo "Building branch $branch"
 
             # Create build container
