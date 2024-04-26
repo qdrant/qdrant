@@ -1138,22 +1138,20 @@ impl TryFrom<PayloadIndexInfo> for PayloadFieldSchema {
     type Error = String;
 
     fn try_from(index_info: PayloadIndexInfo) -> Result<Self, Self::Error> {
-        debug_assert!(match index_info.params {
-            None | Some(PayloadSchemaParams::Text(_)) | Some(PayloadSchemaParams::Integer(_)) =>
-                true,
-            // If this needs more match arms, it means we have to update the match statement below
-        });
-        match (index_info.data_type, index_info.params) {
-            (PayloadSchemaType::Text, Some(PayloadSchemaParams::Text(params))) => Ok(
+        let Some(params) = index_info.params else {
+            return Ok(PayloadFieldSchema::FieldType(index_info.data_type));
+        };
+
+        match (index_info.data_type, params) {
+            (PayloadSchemaType::Text, PayloadSchemaParams::Text(params)) => Ok(
                 PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(params)),
             ),
-            (PayloadSchemaType::Integer, Some(PayloadSchemaParams::Integer(params))) => Ok(
+            (PayloadSchemaType::Integer, PayloadSchemaParams::Integer(params)) => Ok(
                 PayloadFieldSchema::FieldParams(PayloadSchemaParams::Integer(params)),
             ),
-            (data_type, Some(_)) => Err(format!(
-                "Payload field with type {data_type:?} has unexpected params"
-            )),
-            (data_type, None) => Ok(PayloadFieldSchema::FieldType(data_type)),
+            (data_type, PayloadSchemaParams::Integer(_) | PayloadSchemaParams::Text(_)) => Err(
+                format!("Payload field with type {data_type:?} has unexpected params"),
+            ),
         }
     }
 }
