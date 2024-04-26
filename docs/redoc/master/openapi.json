@@ -5338,6 +5338,11 @@
             "additionalProperties": {
               "$ref": "#/components/schemas/PayloadIndexInfo"
             }
+          },
+          "comment": {
+            "description": "Properties or metadata of the collection",
+            "type": "string",
+            "nullable": true
           }
         }
       },
