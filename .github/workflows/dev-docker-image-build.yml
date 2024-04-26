@@ -2,10 +2,6 @@ name: Build and push a branch image to ghcr
 
 on:
   workflow_dispatch:
-    inputs:
-      branch:
-          description: "Branch of Qdrant repo to checkout (<commit-id>, <branch-name>)"
-          default: dev
   push:
     branches:
       - dev
@@ -16,7 +12,7 @@ jobs:
     steps:
         - uses: actions/checkout@v4
           with:
-            ref: ${{ github.event.inputs.branch }}
+            ref: ${{ github.ref.name }}
         - name: Build the Docker image
           run: |
             buildx_containers=$(docker container ls -qf "name=buildx_buildkit")
@@ -32,6 +28,9 @@ jobs:
               docker volume rm "$buildx_volumes"
             fi
 
+            branch=${GITHUB_REF_NAME##*/}
+            echo "Building branch $branch"
+
             # Create build container
             docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
             docker buildx create --use
@@ -39,7 +38,6 @@ jobs:
             # Authenticate on registries
             docker login https://ghcr.io -u qdrant --password ${{ secrets.GITHUB_TOKEN }}
 
-            branch=$(echo ${{ github.event.inputs.branch }} | tr '/' '-')
             # Build regular image for Github Registry
             GITHUB_TAG="-t ghcr.io/qdrant/qdrant:$branch-${{ github.sha }} -t ghcr.io/qdrant/qdrant:$branch"
 
