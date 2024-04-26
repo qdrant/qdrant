@@ -46,7 +46,7 @@ impl EventBroker {
     }
 
     /// Notify all subscribers of the event. Spawns one tokio task per subscriber, so that it can be completed in the background.
-    pub fn notify_async<E: Send + Sync + 'static>(&self, event: E) {
+    pub fn publish_async<E: Send + Sync + 'static>(&self, event: E) {
         if let Some(subscribers) = self.subscriptions.get::<E>() {
             let event = Arc::new(event);
             for sub in subscribers {
@@ -58,7 +58,7 @@ impl EventBroker {
     }
 
     /// Notify all subscribers of the event. This method will block until all subscribers have handled the event.
-    pub fn notify<E: 'static>(&self, event: E) {
+    pub fn publish<E: 'static>(&self, event: E) {
         if let Some(subscribers) = self.subscriptions.get::<E>() {
             let event = Arc::new(event);
             for sub in subscribers {
@@ -109,7 +109,7 @@ mod tests {
         broker.add_subscriber::<DummyEvent>(Box::new(DummySubscriber));
         broker.add_subscriber::<CollectionDeletedEvent>(Box::new(DummySubscriber));
 
-        broker.notify(DummyEvent {
+        broker.publish(DummyEvent {
             collection_id: "dummy".to_string(),
         });
 
@@ -117,7 +117,7 @@ mod tests {
             .iter()
             .any(|issue| issue.id == "DUMMY/dummy"));
 
-        broker.notify(CollectionDeletedEvent {
+        broker.publish(CollectionDeletedEvent {
             collection_id: "dummy".to_string(),
         });
 
