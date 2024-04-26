@@ -47,6 +47,7 @@ message VectorsConfigDiff {
 
 message SparseVectorParams {
   optional SparseIndexConfig index = 1; // Configuration of sparse index
+  optional bool idf = 2; // If true - use Inverse Document Frequency for sparse vectors scoring
 }
 
 message SparseVectorConfig {

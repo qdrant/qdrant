@@ -15,6 +15,7 @@ use segment::types::{
     Filter, Indexes, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SeqNumberType,
     WithPayload, WithPayloadInterface, WithVector,
 };
+use tinyvec::TinyVec;
 use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
 
@@ -22,8 +23,10 @@ use super::holders::segment_holder::LockedSegmentHolder;
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
 use crate::collection_manager::probabilistic_segment_search_sampling::find_search_sampling_over_point_distribution;
 use crate::collection_manager::search_result_aggregator::BatchResultAggregator;
+use crate::config::CollectionConfig;
 use crate::operations::query_enum::QueryEnum;
 use crate::operations::types::{CollectionResult, CoreSearchRequestBatch, Record};
+use crate::optimizers_builder::DEFAULT_INDEXING_THRESHOLD_KB;
 
 type BatchOffset = usize;
 type SegmentOffset = usize;
@@ -149,15 +152,46 @@ impl SegmentsSearcher {
         (result_aggregator, searches_to_rerun)
     }
 
-    pub async fn search(
+    pub async fn prepare_query_context(
         segments: LockedSegmentHolder,
-        batch_request: Arc<CoreSearchRequestBatch>,
-        runtime_handle: &Handle,
-        sampling_enabled: bool,
-        is_stopped: Arc<AtomicBool>,
-        mut query_context: QueryContext,
-    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        // ToDo: accumulate IDF here
+        batch_request: &CoreSearchRequestBatch,
+        collection_config: &CollectionConfig,
+    ) -> CollectionResult<Option<QueryContext>> {
+        let indexing_threshold_kb = collection_config
+            .optimizer_config
+            .indexing_threshold
+            .unwrap_or(DEFAULT_INDEXING_THRESHOLD_KB);
+        let full_scan_threshold_kb = collection_config.hnsw_config.full_scan_threshold;
+
+        const DEFAULT_CAPACITY: usize = 3;
+        let mut idf_vectors: TinyVec<[&str; DEFAULT_CAPACITY]> = Default::default();
+
+        // check vector names existing
+        for req in &batch_request.searches {
+            let vector_name = req.query.get_vector_name();
+            collection_config.params.get_distance(vector_name)?;
+            if let Some(sparse_vector_params) = collection_config
+                .params
+                .get_sparse_vector_params_opt(vector_name)
+            {
+                if sparse_vector_params.idf.unwrap_or_default()
+                    || !idf_vectors.contains(&vector_name)
+                {
+                    idf_vectors.push(vector_name);
+                }
+            }
+        }
+
+        let mut query_context =
+            QueryContext::new(indexing_threshold_kb.max(full_scan_threshold_kb));
+
+        for search_request in &batch_request.searches {
+            search_request
+                .query
+                .iterate_sparse(|vector_name, sparse_vector| {
+                    query_context.init_idf(vector_name, &sparse_vector.indices);
+                })
+        }
 
         // Do blocking calls in a blocking task: `segment.get().read()` calls might block async runtime
         let task = {
@@ -175,15 +209,23 @@ impl SegmentsSearcher {
                     let segment = locked_segment.get();
                     let segment_guard = segment.read();
                     query_context.add_available_point_count(segment_guard.available_point_count());
+                    // ToDo: update idf stats
                 }
                 Some(query_context)
             })
         };
 
-        let Some(query_context) = task.await? else {
-            return Ok(Vec::new());
-        };
+        Ok(task.await?)
+    }
 
+    pub async fn search(
+        segments: LockedSegmentHolder,
+        batch_request: Arc<CoreSearchRequestBatch>,
+        runtime_handle: &Handle,
+        sampling_enabled: bool,
+        is_stopped: Arc<AtomicBool>,
+        query_context: QueryContext,
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let query_context_acr = Arc::new(query_context);
 
         // Using block to ensure `segments` variable is dropped in the end of it

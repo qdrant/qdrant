@@ -112,6 +112,9 @@ pub struct SparseVectorParams {
     /// Configuration of sparse index
     #[prost(message, optional, tag = "1")]
     pub index: ::core::option::Option<SparseIndexConfig>,
+    /// If true - use Inverse Document Frequency for sparse vectors scoring
+    #[prost(bool, optional, tag = "2")]
+    pub idf: ::core::option::Option<bool>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

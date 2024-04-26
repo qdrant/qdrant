@@ -1334,12 +1334,18 @@ pub struct SparseVectorParams {
     /// Custom params for index. If none - values from collection configuration are used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub index: Option<SparseIndexParams>,
+
+    /// If true, include inverse document frequency in the scoring of sparse vectors.
+    /// Default: false
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idf: Option<bool>,
 }
 
 impl Anonymize for SparseVectorParams {
     fn anonymize(&self) -> Self {
         Self {
             index: self.index.anonymize(),
+            idf: self.idf,
         }
     }
 }

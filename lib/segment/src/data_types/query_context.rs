@@ -38,4 +38,18 @@ impl QueryContext {
     pub fn add_available_point_count(&mut self, count: usize) {
         self.available_point_count += count;
     }
+
+    pub fn init_idf(&mut self, vector_name: &str, indices: &[DimId]) {
+        // ToDo: Would be nice to have an implementation of `entry` for `TinyMap`.
+        let idf = if let Some(idf) = self.idf.get_mut(vector_name) {
+            idf
+        } else {
+            self.idf.insert(vector_name.to_string(), HashMap::default());
+            self.idf.get_mut(vector_name).unwrap()
+        };
+
+        for index in indices {
+            idf.insert(*index, 0);
+        }
+    }
 }

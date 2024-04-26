@@ -601,6 +601,7 @@ impl From<api::grpc::qdrant::SparseVectorParams> for SparseVectorParams {
                     full_scan_threshold: index_config.full_scan_threshold.map(|v| v as usize),
                     on_disk: index_config.on_disk,
                 }),
+            idf: sparse_vector_params.idf,
         }
     }
 }
@@ -614,6 +615,7 @@ impl From<SparseVectorParams> for api::grpc::qdrant::SparseVectorParams {
                     on_disk: index_config.on_disk,
                 }
             }),
+            idf: sparse_vector_params.idf,
         }
     }
 }

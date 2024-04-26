@@ -5,7 +5,6 @@ use async_trait::async_trait;
 use futures::future::try_join_all;
 use itertools::Itertools;
 use segment::data_types::order_by::{Direction, OrderBy};
-use segment::data_types::query_context::QueryContext;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
@@ -21,7 +20,6 @@ use crate::operations::types::{
     CountRequestInternal, CountResult, PointRequestInternal, Record, UpdateResult, UpdateStatus,
 };
 use crate::operations::OperationWithClockTag;
-use crate::optimizers_builder::DEFAULT_INDEXING_THRESHOLD_KB;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
 use crate::update_handler::{OperationData, UpdateSignal};
@@ -33,26 +31,25 @@ impl LocalShard {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        let (collection_params, indexing_threshold_kb, full_scan_threshold_kb) = {
+        let (query_context, collection_params) = {
             let collection_config = self.collection_config.read().await;
-            (
-                collection_config.params.clone(),
-                collection_config
-                    .optimizer_config
-                    .indexing_threshold
-                    .unwrap_or(DEFAULT_INDEXING_THRESHOLD_KB),
-                collection_config.hnsw_config.full_scan_threshold,
+
+            let query_context_opt = SegmentsSearcher::prepare_query_context(
+                self.segments.clone(),
+                &core_request,
+                &collection_config,
             )
+            .await?;
+
+            let Some(query_context) = query_context_opt else {
+                // No segments to search
+                return Ok(vec![]);
+            };
+
+            (query_context, collection_config.params.clone())
         };
 
-        // check vector names existing
-        for req in &core_request.searches {
-            collection_params.get_distance(req.query.get_vector_name())?;
-        }
-
         let is_stopped = StoppingGuard::new();
-
-        let query_context = QueryContext::new(indexing_threshold_kb.max(full_scan_threshold_kb));
 
         let search_request = SegmentsSearcher::search(
             Arc::clone(&self.segments),
