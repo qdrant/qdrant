@@ -66,6 +66,7 @@ const WAL_LOAD_REPORT_EVERY: Duration = Duration::from_secs(60);
 ///
 /// Holds all object, required for collection functioning
 pub struct LocalShard {
+    pub(super) collection_id: CollectionId,
     pub(super) segments: LockedSegmentHolder,
     pub(super) collection_config: Arc<TokioRwLock<CollectionConfig>>,
     pub(super) shared_storage_config: Arc<SharedStorageConfig>,
@@ -125,6 +126,7 @@ impl LocalShard {
 
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
+        collection_id: CollectionId,
         segment_holder: SegmentHolder,
         collection_config: Arc<TokioRwLock<CollectionConfig>>,
         shared_storage_config: Arc<SharedStorageConfig>,
@@ -163,6 +165,7 @@ impl LocalShard {
         drop(config); // release `shared_config` from borrow checker
 
         Self {
+            collection_id,
             segments: segment_holder,
             collection_config,
             shared_storage_config,
@@ -294,6 +297,7 @@ impl LocalShard {
         let clocks = LocalShardClocks::load(shard_path)?;
 
         let local_shard = LocalShard::new(
+            collection_id.clone(),
             segment_holder,
             collection_config,
             shared_storage_config,
@@ -306,7 +310,7 @@ impl LocalShard {
         )
         .await;
 
-        local_shard.load_from_wal(collection_id).await?;
+        local_shard.load_from_wal().await?;
 
         let available_memory_bytes = Mem::new().available_memory_bytes() as usize;
         let vectors_size_bytes = local_shard.estimate_vector_data_size().await;
@@ -454,6 +458,7 @@ impl LocalShard {
         drop(config); // release `shared_config` from borrow checker
 
         let collection = LocalShard::new(
+            collection_id,
             segment_holder,
             collection_config,
             shared_storage_config,
@@ -480,7 +485,7 @@ impl LocalShard {
     }
 
     /// Loads latest collection operations from WAL
-    pub async fn load_from_wal(&self, collection_id: CollectionId) -> CollectionResult<()> {
+    pub async fn load_from_wal(&self) -> CollectionResult<()> {
         let mut newest_clocks = self.wal.newest_clocks.lock().await;
         let wal = self.wal.wal.lock();
         let bar = ProgressBar::new(wal.len(false));
@@ -489,6 +494,8 @@ impl LocalShard {
             .template("{msg} [{elapsed_precise}] {wide_bar} {pos}/{len} (eta:{eta})")
             .expect("Failed to create progress style");
         bar.set_style(progress_style);
+
+        let collection_id = &self.collection_id;
 
         bar.set_message(format!("Recovering collection {collection_id}"));
         let segments = self.segments();
