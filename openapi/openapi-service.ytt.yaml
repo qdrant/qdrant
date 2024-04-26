@@ -137,3 +137,19 @@ paths:
         "4XX":
           description: error
 
+  /issues:
+    get:
+      summary: Get issues
+      description: Get a report of performance issues and configuration suggestions
+      operationId: get_issues
+      tags:
+        - beta
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+        "4XX":
+          description: error
