@@ -180,6 +180,7 @@ opt-level = 0
 [profile.bench]
 lto = false
 debug = true
+codegen-units = 256 # restore default value for faster compilation
 
 # Profile for performance testing, which is faster to build than release.
 [profile.perf]
