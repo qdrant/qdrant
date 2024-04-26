@@ -16,8 +16,8 @@ use collection::operations::CollectionUpdateOperations;
 use segment::types::{Condition, ExtendedPointId, FieldCondition, Filter, Match, Payload};
 
 use super::{
-    incompatible_with_payload_constraint, Access, AccessRequirements, CollectionAccessList,
-    CollectionAccessView, CollectionPass, PayloadConstraint,
+    Access, AccessRequirements, CollectionAccessList, CollectionAccessView,
+    CollectionPass, incompatible_with_payload_constraint, PayloadConstraint,
 };
 use crate::content_manager::collection_meta_ops::CollectionMetaOperations;
 use crate::content_manager::errors::StorageError;
@@ -531,7 +531,7 @@ mod tests_ops {
         PointOperationsDiscriminants, PointStruct, PointSyncOperation,
     };
     use collection::operations::types::{
-        OrderByInterface, QueryEnum, RecommendStrategy, SearchRequestInternal, UsingVector,
+        OrderByInterface, RecommendStrategy, SearchRequestInternal, UsingVector,
     };
     use collection::operations::vector_ops::{
         PointVectors, UpdateVectorsOp, VectorOperationsDiscriminants,
@@ -543,6 +543,7 @@ mod tests_ops {
     use segment::data_types::vectors::NamedVectorStruct;
     use segment::types::{PointIdType, SearchParams, WithPayloadInterface, WithVector};
     use strum::IntoEnumIterator as _;
+    use collection::operations::query_enum::QueryEnum;
 
     use super::*;
     use crate::rbac::{AccessCollectionBuilder, GlobalAccessMode};

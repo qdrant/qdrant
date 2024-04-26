@@ -14,6 +14,7 @@ pub mod types;
 pub mod validation;
 pub mod vector_ops;
 pub mod vector_params_builder;
+pub mod query_enum;
 
 use std::collections::HashMap;
 

@@ -5,10 +5,10 @@ use api::grpc::conversions::{json_path_from_proto, proto_to_payloads};
 use api::grpc::qdrant::payload_index_params::IndexParams;
 use api::grpc::qdrant::points_update_operation::{ClearPayload, Operation, PointStructList};
 use api::grpc::qdrant::{
-    points_update_operation, BatchResult, ClearPayloadPoints, CoreSearchPoints, CountPoints,
-    CountResponse, CreateFieldIndexCollection, DeleteFieldIndexCollection, DeletePayloadPoints,
-    DeletePointVectors, DeletePoints, DiscoverBatchResponse, DiscoverPoints, DiscoverResponse,
-    FieldType, GetPoints, GetResponse, PayloadIndexParams, PointsOperationResponseInternal,
+    BatchResult, ClearPayloadPoints, CoreSearchPoints, CountPoints, CountResponse,
+    CreateFieldIndexCollection, DeleteFieldIndexCollection, DeletePayloadPoints, DeletePoints,
+    DeletePointVectors, DiscoverBatchResponse, DiscoverPoints, DiscoverResponse, FieldType,
+    GetPoints, GetResponse, PayloadIndexParams, points_update_operation, PointsOperationResponseInternal,
     PointsSelector, ReadConsistency as ReadConsistencyGrpc, RecommendBatchResponse,
     RecommendGroupsResponse, RecommendPointGroups, RecommendPoints, RecommendResponse,
     ScrollPoints, ScrollResponse, SearchBatchResponse, SearchGroupsResponse, SearchPointGroups,
@@ -21,13 +21,13 @@ use collection::operations::conversions::{
 };
 use collection::operations::payload_ops::DeletePayload;
 use collection::operations::point_ops::{
-    self, PointInsertOperations, PointOperations, PointSyncOperation, PointsList,
+    self, PointInsertOperations, PointOperations, PointsList, PointSyncOperation,
 };
 use collection::operations::shard_key_selector::ShardKeySelector;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
-    default_exact_count, CoreSearchRequest, CoreSearchRequestBatch, OrderByInterface,
-    PointRequestInternal, QueryEnum, RecommendExample, Record, ScrollRequestInternal,
+    CoreSearchRequest, CoreSearchRequestBatch, default_exact_count, OrderByInterface,
+    PointRequestInternal, RecommendExample, Record, ScrollRequestInternal,
 };
 use collection::operations::vector_ops::{DeleteVectors, PointVectors, UpdateVectors};
 use collection::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
@@ -42,12 +42,13 @@ use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::Access;
 use tonic::{Response, Status};
+use collection::operations::query_enum::QueryEnum;
 
 use crate::common::points::{
-    do_clear_payload, do_core_search_points, do_count_points, do_create_index,
-    do_create_index_internal, do_delete_index, do_delete_index_internal, do_delete_payload,
-    do_delete_points, do_delete_vectors, do_get_points, do_overwrite_payload, do_scroll_points,
-    do_search_batch_points, do_set_payload, do_update_vectors, do_upsert_points, CreateFieldIndex,
+    CreateFieldIndex, do_clear_payload, do_core_search_points, do_count_points,
+    do_create_index, do_create_index_internal, do_delete_index, do_delete_index_internal,
+    do_delete_payload, do_delete_points, do_delete_vectors, do_get_points, do_overwrite_payload,
+    do_scroll_points, do_search_batch_points, do_set_payload, do_update_vectors, do_upsert_points,
 };
 
 fn extract_points_selector(

@@ -6,3 +6,4 @@ pub mod primitive;
 pub mod text_index;
 pub mod tiny_map;
 pub mod vectors;
+pub mod query_context;

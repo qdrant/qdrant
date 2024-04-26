@@ -22,6 +22,15 @@ pub enum Vector {
     MultiDense(MultiDenseVector),
 }
 
+impl Vector {
+    pub fn is_sparse(&self) -> bool {
+        match self {
+            Vector::Sparse(_) => true,
+            Vector::Dense(_) | Vector::MultiDense(_) => false,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum VectorRef<'a> {
     Dense(&'a [VectorElementType]),
@@ -559,6 +568,12 @@ impl<T> Named for NamedQuery<T> {
 impl<T: Validate> Validate for NamedQuery<T> {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
         self.query.validate()
+    }
+}
+
+impl NamedQuery<RecoQuery<Vector>> {
+    pub fn new(query: RecoQuery<Vector>, using: Option<String>) -> Self {
+        NamedQuery { query, using }
     }
 }
 

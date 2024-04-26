@@ -16,12 +16,14 @@ use segment::types::{
 };
 use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
+use segment::data_types::query_context::QueryContext;
 
 use super::holders::segment_holder::LockedSegmentHolder;
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
 use crate::collection_manager::probabilistic_segment_search_sampling::find_search_sampling_over_point_distribution;
 use crate::collection_manager::search_result_aggregator::BatchResultAggregator;
-use crate::operations::types::{CollectionResult, CoreSearchRequestBatch, QueryEnum, Record};
+use crate::operations::query_enum::QueryEnum;
+use crate::operations::types::{CollectionResult, CoreSearchRequestBatch, Record};
 
 type BatchOffset = usize;
 type SegmentOffset = usize;
@@ -153,8 +155,14 @@ impl SegmentsSearcher {
         runtime_handle: &Handle,
         sampling_enabled: bool,
         is_stopped: Arc<AtomicBool>,
-        search_optimized_threshold_kb: usize,
+        query_context: QueryContext,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+
+        // ToDo: accumulate IDF here
+
+        // ToDo: remove this
+        let search_optimized_threshold_kb = query_context.get_search_optimized_threshold_kb();
+
         // Do blocking calls in a blocking task: `segment.get().read()` calls might block async runtime
         let task = {
             let segments = segments.clone();
@@ -635,7 +643,7 @@ mod tests {
             &Handle::current(),
             true,
             Arc::new(AtomicBool::new(false)),
-            DEFAULT_INDEXING_THRESHOLD_KB,
+            QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB),
         )
         .await
         .unwrap()
@@ -701,7 +709,7 @@ mod tests {
                 &Handle::current(),
                 false,
                 Arc::new(false.into()),
-                DEFAULT_INDEXING_THRESHOLD_KB,
+                QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB),
             )
             .await
             .unwrap();
@@ -714,7 +722,7 @@ mod tests {
                 &Handle::current(),
                 true,
                 Arc::new(false.into()),
-                DEFAULT_INDEXING_THRESHOLD_KB,
+                QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB),
             )
             .await
             .unwrap();

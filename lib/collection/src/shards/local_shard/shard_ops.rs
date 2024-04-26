@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use futures::future::try_join_all;
 use itertools::Itertools;
 use segment::data_types::order_by::{Direction, OrderBy};
+use segment::data_types::query_context::QueryContext;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
@@ -16,10 +17,11 @@ use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::common::stopping_guard::StoppingGuard;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
-    CountRequestInternal, CountResult, PointRequestInternal, QueryEnum, Record, UpdateResult,
+    CountRequestInternal, CountResult, PointRequestInternal, Record, UpdateResult,
     UpdateStatus,
 };
 use crate::operations::OperationWithClockTag;
+use crate::operations::query_enum::QueryEnum;
 use crate::optimizers_builder::DEFAULT_INDEXING_THRESHOLD_KB;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
@@ -51,13 +53,15 @@ impl LocalShard {
 
         let is_stopped = StoppingGuard::new();
 
+        let query_context = QueryContext::new(indexing_threshold_kb.max(full_scan_threshold_kb));
+
         let search_request = SegmentsSearcher::search(
             Arc::clone(&self.segments),
             Arc::clone(&core_request),
             search_runtime_handle,
             true,
             is_stopped.get_is_stopped(),
-            indexing_threshold_kb.max(full_scan_threshold_kb),
+            query_context,
         );
 
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);

@@ -11,14 +11,15 @@ use tokio::sync::RwLockReadGuard;
 use crate::collection::Collection;
 use crate::common::batching::batch_requests;
 use crate::common::fetch_vectors::{
-    convert_to_vectors, resolve_referenced_vectors_batch, ReferencedVectors,
+    convert_to_vectors, ReferencedVectors, resolve_referenced_vectors_batch,
 };
 use crate::common::retrieve_request_trait::RetrieveRequest;
 use crate::operations::consistency_params::ReadConsistency;
+use crate::operations::query_enum::QueryEnum;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
     CollectionError, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch,
-    DiscoverRequestInternal, QueryEnum,
+    DiscoverRequestInternal,
 };
 
 fn discovery_into_core_search(

@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use itertools::Itertools;
 use segment::data_types::vectors::{
-    DenseVector, NamedQuery, NamedVectorStruct, Vector, VectorElementType, VectorRef,
-    DEFAULT_VECTOR_NAME,
+    DEFAULT_VECTOR_NAME, DenseVector, NamedQuery, NamedVectorStruct, Vector, VectorElementType,
+    VectorRef,
 };
 use segment::types::{
     Condition, ExtendedPointId, Filter, HasIdCondition, PointIdType, ScoredPoint,
@@ -16,14 +16,15 @@ use tokio::sync::RwLockReadGuard;
 use crate::collection::Collection;
 use crate::common::batching::batch_requests;
 use crate::common::fetch_vectors::{
-    convert_to_vectors, convert_to_vectors_owned, resolve_referenced_vectors_batch,
-    ReferencedVectors,
+    convert_to_vectors, convert_to_vectors_owned, ReferencedVectors,
+    resolve_referenced_vectors_batch,
 };
 use crate::common::retrieve_request_trait::RetrieveRequest;
 use crate::operations::consistency_params::ReadConsistency;
+use crate::operations::query_enum::QueryEnum;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
-    CollectionError, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch, QueryEnum,
+    CollectionError, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch,
     RecommendRequestInternal, RecommendStrategy, UsingVector,
 };
 
