@@ -534,6 +534,7 @@ ACTION_ACCESS = {
     "post_locks": EndpointAccess(False, False, True, "POST /locks"),
     "get_locks": EndpointAccess(True, False, True, "GET /locks", coll_r=False),
     "get_issues": EndpointAccess(False, False, True, "GET /issues"),
+    "clear_issues": EndpointAccess(False, False, True, "POST /issues/clear"),
 }
 
 
@@ -1739,3 +1740,6 @@ def test_get_locks():
 
 def test_get_issues():
     check_access("get_issues")
+
+def test_clear_issues():
+    check_access("clear_issues")

@@ -1,5 +1,5 @@
 use actix_web::rt::time::Instant;
-use actix_web::{get, web, Responder};
+use actix_web::{get, post, web, Responder};
 use collection::operations::types::IssuesReport;
 use storage::rbac::AccessRequirements;
 
@@ -17,7 +17,20 @@ async fn get_issues(ActixAccess(access): ActixAccess) -> impl Responder {
     process_response(response, timing)
 }
 
+#[post("/issues/clear")]
+async fn clear_issues(ActixAccess(access): ActixAccess) -> impl Responder {
+    let timing = Instant::now();
+    let response = access
+        .check_global_access(AccessRequirements::new().manage())
+        .map(|_| {
+            issues::clear();
+            true
+        });
+    process_response(response, timing)
+}
+
 // Configure services
 pub fn config_issues_api(cfg: &mut web::ServiceConfig) {
     cfg.service(get_issues);
+    cfg.service(clear_issues);
 }

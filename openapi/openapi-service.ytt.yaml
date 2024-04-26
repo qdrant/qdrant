@@ -153,3 +153,20 @@ paths:
                 type: object
         "4XX":
           description: error
+
+  /issues/clear:
+    post:
+      summary: Clear issues
+      description: Removes all issues reported so far
+      operationId: clear_issues
+      tags:
+        - beta
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: boolean
+        "4XX":
+          description: error
