@@ -75,6 +75,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     self.build_with_metric::<VectorElementTypeByte, ManhattanMetric>()
                 }
             },
+            VectorStorageDatatype::Float16 => todo!(),
         }
     }
 

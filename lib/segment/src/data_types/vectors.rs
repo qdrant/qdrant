@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::slice::ChunksExactMut;
 
+use half::f16;
 use itertools::Itertools;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -166,6 +167,8 @@ impl<'a> From<&'a Vector> for VectorRef<'a> {
 
 /// Type of vector element.
 pub type VectorElementType = f32;
+
+pub type VectorElementTypeHalf = f16;
 
 pub type VectorElementTypeByte = u8;
 

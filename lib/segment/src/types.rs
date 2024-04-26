@@ -734,6 +734,8 @@ pub enum VectorStorageDatatype {
     // Single-precision floating point
     #[default]
     Float32,
+    // Half-precision floating point
+    Float16,
     // Unsigned 8-bit integer
     Uint8,
 }

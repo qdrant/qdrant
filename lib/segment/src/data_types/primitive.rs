@@ -1,10 +1,11 @@
 use std::borrow::Cow;
 
+use half::f16;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 use super::vectors::TypedMultiDenseVector;
-use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte};
+use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte, VectorElementTypeHalf};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::{Distance, QuantizationConfig, VectorStorageDatatype};
@@ -64,6 +65,35 @@ impl PrimitiveVectorElement for VectorElementType {
         multivector: Cow<TypedMultiDenseVector<Self>>,
     ) -> Cow<TypedMultiDenseVector<VectorElementType>> {
         multivector
+    }
+}
+
+impl PrimitiveVectorElement for VectorElementTypeHalf {
+    fn slice_from_float_cow(vector: Cow<[VectorElementType]>) -> Cow<[Self]> {
+        Cow::Owned(vector.iter().map(|&x| f16::from_f32(x)).collect())
+    }
+
+    fn slice_to_float_cow(vector: Cow<[Self]>) -> Cow<[VectorElementType]> {
+        Cow::Owned(vector.iter().map(|&x| f16::to_f32(x)).collect_vec())
+    }
+
+    fn quantization_preprocess<'a>(
+        quantization_config: &QuantizationConfig,
+        distance: Distance,
+        vector: &'a [Self],
+    ) -> Cow<'a, [f32]> {
+        let v = vector.iter().map(|&x| f16::to_f32(x)).collect_vec();
+        let preprocessed_vector = match distance {
+            Distance::Cosine => <CosineMetric as Metric<VectorElementType>>::preprocess(v),
+            Distance::Euclid => <EuclidMetric as Metric<VectorElementType>>::preprocess(v),
+            Distance::Dot => <DotProductMetric as Metric<VectorElementType>>::preprocess(v),
+            Distance::Manhattan => <ManhattanMetric as Metric<VectorElementType>>::preprocess(v),
+        };
+        Cow::from(preprocessed_vector)
+    }
+
+    fn datatype() -> VectorStorageDatatype {
+        VectorStorageDatatype::Float16
     }
 }
 

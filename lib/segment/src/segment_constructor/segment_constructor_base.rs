@@ -156,6 +156,7 @@ fn create_segment(
                             vector_config.distance,
                             stopped,
                         )?,
+                        VectorStorageDatatype::Float16 => todo!(),
                     }
                 }
             }
@@ -171,6 +172,7 @@ fn create_segment(
                     vector_config.size,
                     vector_config.distance,
                 )?,
+                VectorStorageDatatype::Float16 => todo!(),
             },
             // Chunked mmap on disk, appendable
             VectorStorageType::ChunkedMmap => match storage_element_type {
@@ -186,6 +188,7 @@ fn create_segment(
                     vector_config.distance,
                     stopped,
                 )?,
+                VectorStorageDatatype::Float16 => todo!(),
             },
         };
 
