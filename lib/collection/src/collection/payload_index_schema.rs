@@ -83,9 +83,4 @@ impl Collection {
 
         Ok(result)
     }
-
-    /// Get a copy of the collection's current payload index schema
-    pub fn payload_index_schema(&self) -> PayloadIndexSchema {
-        self.payload_index_schema.read().clone()
-    }
 }

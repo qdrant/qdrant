@@ -3,7 +3,6 @@ use std::sync::OnceLock;
 use std::time::Duration;
 
 use http::{HeaderMap, Method, Uri};
-
 use issues::{Action, Code, ImmediateSolution, Issue, Solution};
 use itertools::Itertools;
 

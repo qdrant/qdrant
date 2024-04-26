@@ -20,4 +20,3 @@ pub mod wal_delta;
 pub mod events;
 #[cfg(test)]
 mod tests;
-pub mod events;

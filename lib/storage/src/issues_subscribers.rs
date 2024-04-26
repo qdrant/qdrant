@@ -1,14 +1,15 @@
 use std::sync::Arc;
 
 use collection::events::{CollectionDeletedEvent, IndexCreatedEvent, SlowQueryEvent};
-use issues::{broker::Subscriber, Code};
+use collection::operations::shard_selector_internal::ShardSelectorInternal;
+use issues::broker::Subscriber;
+use issues::Code;
 use segment::problems::UnindexedField;
+use segment::types::PayloadFieldSchema;
 
-use crate::{
-    content_manager::toc::TableOfContent,
-    dispatcher::Dispatcher,
-    rbac::{Access, AccessRequirements},
-};
+use crate::content_manager::toc::TableOfContent;
+use crate::dispatcher::Dispatcher;
+use crate::rbac::{Access, AccessRequirements};
 
 #[derive(Clone)]
 pub struct UnindexedFieldSubscriber {
@@ -44,12 +45,26 @@ impl Subscriber<SlowQueryEvent> for UnindexedFieldSubscriber {
                 return;
             };
 
-            let payload_schema = collection.payload_index_schema();
+            let Ok(collection_info) = collection.info(&ShardSelectorInternal::All).await else {
+                // Don't keep processing
+                return;
+            };
+
+            // Extract payload schema from collection info
+            let payload_schema = collection_info
+                .payload_schema
+                .into_iter()
+                .filter_map(|(field_name, schema)| {
+                    PayloadFieldSchema::try_from(schema)
+                        .ok()
+                        .map(|schema| (field_name, schema))
+                })
+                .collect();
 
             for filter in &event.filters {
                 segment::problems::UnindexedField::submit_possible_suspects(
                     filter,
-                    &payload_schema.schema,
+                    &payload_schema,
                     event.collection_id.clone(),
                 )
             }

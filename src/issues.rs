@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use collection::events::{CollectionDeletedEvent, IndexCreatedEvent, SlowQueryEvent};
-use storage::{dispatcher::Dispatcher, issues_subscribers::UnindexedFieldSubscriber};
+use storage::dispatcher::Dispatcher;
+use storage::issues_subscribers::UnindexedFieldSubscriber;
 
 pub fn setup_subscribers(dispatcher: Arc<Dispatcher>) {
     let unindexed_subscriber = UnindexedFieldSubscriber::new(dispatcher);
