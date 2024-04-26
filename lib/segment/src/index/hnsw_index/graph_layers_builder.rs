@@ -421,7 +421,7 @@ impl GraphLayersBuilder {
                         }
                     } else {
                         search_context.nearest.prune_elements();
-                        for nearest_point in &search_context.nearest {
+                        for nearest_point in search_context.nearest.iter() {
                             {
                                 let mut links =
                                     self.links_layers[point_id as usize][curr_level].write();

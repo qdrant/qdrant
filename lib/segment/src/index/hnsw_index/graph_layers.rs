@@ -374,7 +374,7 @@ mod tests {
 
         assert_eq!(nearest_on_level.len(), graph_links[0][0].len() + 1);
 
-        for nearest in &nearest_on_level {
+        for nearest in nearest_on_level.iter() {
             // eprintln!("nearest = {:#?}", nearest);
             assert_eq!(
                 nearest.score,

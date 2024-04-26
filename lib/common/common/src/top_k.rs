@@ -1,3 +1,5 @@
+use core::slice::Iter;
+
 use ordered_float::Float;
 
 use crate::types::{ScoreType, ScoredPointOffset};
@@ -38,46 +40,43 @@ impl TopK {
         self.threshold
     }
 
-    pub fn prune_elements(&mut self) -> Vec<ScoredPointOffset> {
-        let (_, median_el, _) = self
+    pub fn prune_elements(&mut self) {
+        let position_to_sort = self.k.min(self.elements.len());
+        let (_, sorted_el, _) = self
             .elements
-            .select_nth_unstable_by(self.k - 1, |a, b| b.cmp(a));
-        self.threshold = median_el.score;
-        self.elements.split_off(self.k)
+            .select_nth_unstable_by(position_to_sort - 1, |a, b| b.cmp(a));
+        self.threshold = sorted_el.score;
+        self.elements.truncate(position_to_sort);
     }
 
     // Push an element to the top k.
     // It ejects (returns) low scoring elements when full
-    pub fn push(&mut self, element: ScoredPointOffset) -> Option<Vec<ScoredPointOffset>> {
+    pub fn push(&mut self, element: ScoredPointOffset) -> bool {
         if element.score > self.threshold {
             self.elements.push(element);
             // prune half the elements if full
             if self.elements.len() == self.k * 2 {
-                return Some(self.prune_elements());
+                self.prune_elements();
             }
-            return None;
+
+            // Check if it was accepted:
+            return element.score > self.threshold;
         }
-        None
+        false
     }
 
-    pub fn iter(&self) -> TopKIter<'_> {
-        TopKIter {
-            iter: self.elements.iter(),
-        }
+    pub fn iter(&self) -> Iter<'_, ScoredPointOffset> {
+        self.elements.iter()
+    }
+
+    fn sort_elements(&mut self) {
+        self.elements.sort_unstable_by(|a, b| b.cmp(a));
+        self.elements.truncate(self.k.min(self.elements.len()));
     }
 
     pub fn into_vec(mut self) -> Vec<ScoredPointOffset> {
-        self.prune_elements();
+        self.sort_elements();
         self.elements
-    }
-}
-
-impl<'a> IntoIterator for &'a TopK {
-    type Item = &'a ScoredPointOffset;
-    type IntoIter = TopKIter<'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter()
     }
 }
 
@@ -86,20 +85,8 @@ impl IntoIterator for TopK {
     type IntoIter = std::vec::IntoIter<ScoredPointOffset>;
 
     fn into_iter(mut self) -> Self::IntoIter {
-        self.prune_elements();
+        self.sort_elements();
         self.elements.into_iter()
-    }
-}
-
-pub struct TopKIter<'a> {
-    iter: std::slice::Iter<'a, ScoredPointOffset>,
-}
-
-impl<'a> Iterator for TopKIter<'a> {
-    type Item = &'a ScoredPointOffset;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
     }
 }
 
