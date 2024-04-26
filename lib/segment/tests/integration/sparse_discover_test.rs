@@ -8,6 +8,7 @@ use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use segment::data_types::named_vectors::NamedVectors;
+use segment::data_types::query_context::QueryContext;
 use segment::data_types::vectors::{QueryVector, VectorElementType};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::random_vector;
@@ -189,13 +190,27 @@ fn sparse_index_discover_test() {
         let (sparse_query, dense_query) = random_discovery_query(&mut rnd, dim);
 
         let sparse_discovery_result = sparse_index
-            .search(&[&sparse_query], None, top, None, &false.into(), usize::MAX)
+            .search(
+                &[&sparse_query],
+                None,
+                top,
+                None,
+                &false.into(),
+                &QueryContext::new(usize::MAX),
+            )
             .unwrap();
 
         let dense_discovery_result = dense_segment.vector_data[SPARSE_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(&[&dense_query], None, top, None, &false.into(), usize::MAX)
+            .search(
+                &[&dense_query],
+                None,
+                top,
+                None,
+                &false.into(),
+                &QueryContext::new(usize::MAX),
+            )
             .unwrap();
 
         // check id only because scores can be epsilon-size different
@@ -213,13 +228,27 @@ fn sparse_index_discover_test() {
         // do regular nearest search
         let (sparse_query, dense_query) = random_nearest_query(&mut rnd, dim);
         let sparse_search_result = sparse_index
-            .search(&[&sparse_query], None, top, None, &false.into(), usize::MAX)
+            .search(
+                &[&sparse_query],
+                None,
+                top,
+                None,
+                &false.into(),
+                &QueryContext::new(usize::MAX),
+            )
             .unwrap();
 
         let dense_search_result = dense_segment.vector_data[SPARSE_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(&[&dense_query], None, top, None, &false.into(), usize::MAX)
+            .search(
+                &[&dense_query],
+                None,
+                top,
+                None,
+                &false.into(),
+                &QueryContext::new(usize::MAX),
+            )
             .unwrap();
 
         // check that nearest search uses sparse index

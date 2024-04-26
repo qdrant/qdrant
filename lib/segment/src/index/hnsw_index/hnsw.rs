@@ -23,6 +23,7 @@ use crate::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
 use crate::common::BYTES_IN_KB;
+use crate::data_types::query_context::QueryContext;
 use crate::data_types::vectors::{QueryVector, Vector, VectorRef};
 use crate::id_tracker::{IdTracker, IdTrackerSS};
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
@@ -514,7 +515,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         top: usize,
         params: Option<&SearchParams>,
         is_stopped: &AtomicBool,
-        _search_optimized_threshold_kb: usize,
+        _query_context: &QueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         let exact = params.map(|params| params.exact).unwrap_or(false);
         match filter {

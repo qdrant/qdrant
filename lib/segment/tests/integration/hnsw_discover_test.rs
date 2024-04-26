@@ -6,6 +6,7 @@ use common::cpu::CpuPermit;
 use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
+use segment::data_types::query_context::QueryContext;
 use segment::data_types::vectors::{only_default_vector, QueryVector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::random_vector;
@@ -140,14 +141,21 @@ fn hnsw_discover_precision() {
                     ..Default::default()
                 }),
                 &false.into(),
-                usize::MAX,
+                &QueryContext::new(usize::MAX),
             )
             .unwrap();
 
         let plain_discovery_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(&[&query], None, top, None, &false.into(), usize::MAX)
+            .search(
+                &[&query],
+                None,
+                top,
+                None,
+                &false.into(),
+                &QueryContext::new(usize::MAX),
+            )
             .unwrap();
 
         if plain_discovery_result == index_discovery_result {
@@ -272,7 +280,7 @@ fn filtered_hnsw_discover_precision() {
                     ..Default::default()
                 }),
                 &false.into(),
-                usize::MAX,
+                &QueryContext::new(usize::MAX),
             )
             .unwrap();
 
@@ -285,7 +293,7 @@ fn filtered_hnsw_discover_precision() {
                 top,
                 None,
                 &false.into(),
-                usize::MAX,
+                &QueryContext::new(usize::MAX),
             )
             .unwrap();
 

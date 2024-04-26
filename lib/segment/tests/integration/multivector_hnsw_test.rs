@@ -6,6 +6,7 @@ use common::cpu::CpuPermit;
 use rand::prelude::StdRng;
 use rand::SeedableRng;
 use segment::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
+use segment::data_types::query_context::QueryContext;
 use segment::data_types::vectors::{
     only_default_vector, MultiDenseVector, QueryVector, VectorElementType, VectorRef,
     DEFAULT_VECTOR_NAME,
@@ -179,7 +180,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
                 10,
                 None,
                 &false.into(),
-                usize::MAX,
+                &QueryContext::new(usize::MAX),
             )
             .unwrap();
 
@@ -190,7 +191,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
                 10,
                 None,
                 &false.into(),
-                usize::MAX,
+                &QueryContext::new(usize::MAX),
             )
             .unwrap();
 

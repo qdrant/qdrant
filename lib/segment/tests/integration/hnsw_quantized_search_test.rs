@@ -8,6 +8,7 @@ use common::cpu::CpuPermit;
 use common::types::{ScoreType, ScoredPointOffset};
 use rand::rngs::StdRng;
 use rand::SeedableRng;
+use segment::data_types::query_context::QueryContext;
 use segment::data_types::vectors::{only_default_vector, QueryVector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_vector, STR_KEY};
@@ -198,7 +199,14 @@ fn check_matches(
             segment.vector_data[DEFAULT_VECTOR_NAME]
                 .vector_index
                 .borrow()
-                .search(&[&query], filter, top, None, &false.into(), usize::MAX)
+                .search(
+                    &[&query],
+                    filter,
+                    top,
+                    None,
+                    &false.into(),
+                    &QueryContext::new(usize::MAX),
+                )
                 .unwrap()
         })
         .collect::<Vec<_>>();
@@ -216,7 +224,7 @@ fn check_matches(
                     ..Default::default()
                 }),
                 &false.into(),
-                usize::MAX,
+                &QueryContext::new(usize::MAX),
             )
             .unwrap();
         sames += sames_count(&index_result, plain_result);
@@ -250,7 +258,7 @@ fn check_oversampling(
                     ..Default::default()
                 }),
                 &false.into(),
-                usize::MAX,
+                &QueryContext::new(usize::MAX),
             )
             .unwrap();
         let best_1 = oversampling_1_result[0][0];
@@ -271,7 +279,7 @@ fn check_oversampling(
                     ..Default::default()
                 }),
                 &false.into(),
-                usize::MAX,
+                &QueryContext::new(usize::MAX),
             )
             .unwrap();
         let best_2 = oversampling_2_result[0][0];
@@ -309,7 +317,7 @@ fn check_rescoring(
                     ..Default::default()
                 }),
                 &false.into(),
-                usize::MAX,
+                &QueryContext::new(usize::MAX),
             )
             .unwrap();
         for result in &index_result[0] {

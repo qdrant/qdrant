@@ -5,6 +5,7 @@ use std::sync::Arc;
 use common::cpu::CpuPermit;
 use rand::prelude::StdRng;
 use rand::SeedableRng;
+use segment::data_types::query_context::QueryContext;
 use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::index_fixtures::random_vector;
@@ -119,7 +120,7 @@ fn test_batch_and_single_request_equivalency() {
                 10,
                 None,
                 &false.into(),
-                10_000,
+                &QueryContext::new(usize::MAX),
             )
             .unwrap();
 
@@ -181,7 +182,7 @@ fn test_batch_and_single_request_equivalency() {
                 10,
                 None,
                 &false.into(),
-                usize::MAX,
+                &QueryContext::new(usize::MAX),
             )
             .unwrap();
 
@@ -192,7 +193,7 @@ fn test_batch_and_single_request_equivalency() {
                 10,
                 None,
                 &false.into(),
-                usize::MAX,
+                &QueryContext::new(usize::MAX),
             )
             .unwrap();
 
@@ -203,7 +204,7 @@ fn test_batch_and_single_request_equivalency() {
                 10,
                 None,
                 &false.into(),
-                usize::MAX,
+                &QueryContext::new(usize::MAX),
             )
             .unwrap();
 

@@ -9,6 +9,7 @@ use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::common::operation_error::{OperationResult, SegmentFailedState};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::order_by::OrderingValue;
+use segment::data_types::query_context::QueryContext;
 use segment::data_types::vectors::{QueryVector, Vector};
 use segment::entry::entry_point::SegmentEntry;
 use segment::index::field_index::CardinalityEstimation;
@@ -238,7 +239,7 @@ impl ProxySegment {
             top,
             params,
             &false.into(),
-            usize::MAX,
+            &QueryContext::new(usize::MAX),
         )?;
 
         Ok(result.into_iter().next().unwrap())
@@ -272,7 +273,7 @@ impl SegmentEntry for ProxySegment {
         top: usize,
         params: Option<&SearchParams>,
         is_stopped: &AtomicBool,
-        search_optimized_threshold_kb: usize,
+        query_context: &QueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         let deleted_points = self.deleted_points.read();
 
@@ -296,7 +297,7 @@ impl SegmentEntry for ProxySegment {
                 top,
                 params,
                 is_stopped,
-                search_optimized_threshold_kb,
+                query_context,
             )?
         } else {
             self.wrapped_segment.get().read().search_batch(
@@ -308,7 +309,7 @@ impl SegmentEntry for ProxySegment {
                 top,
                 params,
                 is_stopped,
-                search_optimized_threshold_kb,
+                query_context,
             )?
         };
         let mut write_results = self.write_segment.get().read().search_batch(
@@ -320,7 +321,7 @@ impl SegmentEntry for ProxySegment {
             top,
             params,
             is_stopped,
-            search_optimized_threshold_kb,
+            query_context,
         )?;
         for (index, write_result) in write_results.iter_mut().enumerate() {
             wrapped_results[index].append(write_result)
@@ -992,7 +993,7 @@ mod tests {
                 10,
                 None,
                 &false.into(),
-                10_000,
+                &QueryContext::new(usize::MAX),
             )
             .unwrap();
 
@@ -1047,7 +1048,7 @@ mod tests {
                 10,
                 None,
                 &false.into(),
-                10_000,
+                &QueryContext::new(usize::MAX),
             )
             .unwrap();
 
@@ -1112,7 +1113,7 @@ mod tests {
                 10,
                 None,
                 &false.into(),
-                10_000,
+                &QueryContext::new(usize::MAX),
             )
             .unwrap();
 

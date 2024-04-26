@@ -7,6 +7,7 @@ use common::types::TelemetryDetail;
 use crate::common::operation_error::{OperationResult, SegmentFailedState};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{OrderBy, OrderingValue};
+use crate::data_types::query_context::QueryContext;
 use crate::data_types::vectors::{QueryVector, Vector};
 use crate::index::field_index::CardinalityEstimation;
 use crate::json_path::JsonPath;
@@ -39,7 +40,7 @@ pub trait SegmentEntry {
         top: usize,
         params: Option<&SearchParams>,
         is_stopped: &AtomicBool,
-        search_optimized_threshold_kb: usize,
+        query_context: &QueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>>;
 
     fn upsert_point(

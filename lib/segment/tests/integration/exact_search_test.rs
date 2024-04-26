@@ -6,6 +6,7 @@ use common::cpu::CpuPermit;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 use rand::{thread_rng, Rng};
+use segment::data_types::query_context::QueryContext;
 use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_int_payload, random_vector};
@@ -164,13 +165,20 @@ fn exact_search_test() {
                     ..Default::default()
                 }),
                 &false.into(),
-                usize::MAX,
+                &QueryContext::new(usize::MAX),
             )
             .unwrap();
         let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(&[&query], None, top, None, &false.into(), usize::MAX)
+            .search(
+                &[&query],
+                None,
+                top,
+                None,
+                &false.into(),
+                &QueryContext::new(usize::MAX),
+            )
             .unwrap();
 
         assert_eq!(
@@ -204,7 +212,7 @@ fn exact_search_test() {
                     ..Default::default()
                 }),
                 &false.into(),
-                usize::MAX,
+                &QueryContext::new(usize::MAX),
             )
             .unwrap();
         let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
@@ -216,7 +224,7 @@ fn exact_search_test() {
                 top,
                 None,
                 &false.into(),
-                usize::MAX,
+                &QueryContext::new(usize::MAX),
             )
             .unwrap();
 

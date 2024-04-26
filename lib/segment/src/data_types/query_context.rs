@@ -34,4 +34,8 @@ impl QueryContext {
     pub fn get_search_optimized_threshold_kb(&self) -> usize {
         self.search_optimized_threshold_kb
     }
+
+    pub fn add_available_point_count(&mut self, count: usize) {
+        self.available_point_count += count;
+    }
 }
