@@ -92,6 +92,32 @@ impl PrimitiveVectorElement for VectorElementTypeHalf {
         Cow::from(preprocessed_vector)
     }
 
+    fn from_float_multivector(
+        multivector: Cow<TypedMultiDenseVector<VectorElementType>>,
+    ) -> Cow<TypedMultiDenseVector<Self>> {
+        Cow::Owned(TypedMultiDenseVector::new(
+            multivector
+                .inner_vector
+                .iter()
+                .map(|&x| f16::from_f32(x))
+                .collect_vec(),
+            multivector.dim,
+        ))
+    }
+
+    fn into_float_multivector(
+        multivector: Cow<TypedMultiDenseVector<Self>>,
+    ) -> Cow<TypedMultiDenseVector<VectorElementType>> {
+        Cow::Owned(TypedMultiDenseVector::new(
+            multivector
+                .inner_vector
+                .iter()
+                .map(|&x| f16::to_f32(x))
+                .collect_vec(),
+            multivector.dim,
+        ))
+    }
+
     fn datatype() -> VectorStorageDatatype {
         VectorStorageDatatype::Float16
     }
