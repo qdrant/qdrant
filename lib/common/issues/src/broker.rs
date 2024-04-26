@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock, RwLock};
 
 use crate::typemap::TypeMap;
 
@@ -57,6 +57,27 @@ impl EventBroker {
 impl Default for EventBroker {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+fn broker() -> Arc<RwLock<EventBroker>> {
+    static BROKER: OnceLock<Arc<RwLock<EventBroker>>> = OnceLock::new();
+    BROKER
+        .get_or_init(|| Arc::new(RwLock::new(EventBroker::default())))
+        .clone()
+}
+
+pub fn publish<E: 'static>(event: E) {
+    // This will only read if the lock is not poisoned
+    if let Ok(guard) = broker().read() {
+        guard.publish(event)
+    }
+}
+
+pub fn add_subscriber<E: 'static>(subscriber: Box<dyn Subscriber<E> + Send + Sync>) {
+    // This will only write if the lock is not poisoned
+    if let Ok(mut guard) = broker().write() {
+        guard.add_subscriber(subscriber);
     }
 }
 
