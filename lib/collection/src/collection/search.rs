@@ -292,7 +292,7 @@ impl Collection {
         if duration > segment::problems::UnindexedField::slow_search_threshold() {
             let filters = filters.into_iter().flatten().cloned().collect::<Vec<_>>();
 
-            issues::notify(SlowQueryEvent {
+            issues::publish(SlowQueryEvent {
                 collection_id: self.id.clone(),
                 filters,
             });

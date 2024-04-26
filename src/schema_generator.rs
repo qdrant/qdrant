@@ -29,7 +29,6 @@ use crate::common::telemetry::TelemetryData;
 
 mod actix;
 mod common;
-mod issues;
 mod settings;
 
 #[derive(Serialize, JsonSchema)]

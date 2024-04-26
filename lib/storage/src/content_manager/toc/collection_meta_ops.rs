@@ -181,7 +181,7 @@ impl TableOfContent {
             tokio::fs::rename(path, &deleted_path).await?;
 
             // Solve all issues related to this collection
-            issues::notify(CollectionDeletedEvent {
+            issues::publish(CollectionDeletedEvent {
                 collection_id: collection_name.to_string(),
             });
 
@@ -522,7 +522,7 @@ impl TableOfContent {
             .await?;
 
         // We can solve issues related to this missing index
-        issues::notify(IndexCreatedEvent {
+        issues::publish(IndexCreatedEvent {
             collection_id: operation.collection_name,
             field_name: operation.field_name,
         });
