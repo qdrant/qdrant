@@ -17,26 +17,26 @@ use common::types::ScoreType;
 use itertools::Itertools;
 use segment::data_types::order_by::{OrderBy, StartFrom};
 use segment::data_types::vectors::{
-    BatchVectorStruct, DEFAULT_VECTOR_NAME, Named, NamedQuery, NamedVectorStruct, Vector,
-    VectorStruct,
+    BatchVectorStruct, Named, NamedQuery, NamedVectorStruct, Vector, VectorStruct,
+    DEFAULT_VECTOR_NAME,
 };
 use segment::types::{DateTimeWrapper, Distance, QuantizationConfig, ScoredPoint};
 use segment::vector_storage::query::context_query::{ContextPair, ContextQuery};
 use segment::vector_storage::query::discovery_query::DiscoveryQuery;
 use segment::vector_storage::query::reco_query::RecoQuery;
-use sparse::common::sparse_vector::{SparseVector, validate_sparse_vector_impl};
+use sparse::common::sparse_vector::{validate_sparse_vector_impl, SparseVector};
 use tonic::Status;
 
 use super::consistency_params::ReadConsistency;
 use super::types::{
     BaseGroupRequest, ContextExamplePair, CoreSearchRequest, Datatype, DiscoverRequestInternal,
-    GroupsResult, OrderByInterface, PointGroup, RecommendExample,
-    RecommendGroupsRequestInternal, RecommendStrategy, SearchGroupsRequestInternal,
-    SparseIndexParams, SparseVectorParams, VectorParamsDiff, VectorsConfigDiff,
+    GroupsResult, OrderByInterface, PointGroup, RecommendExample, RecommendGroupsRequestInternal,
+    RecommendStrategy, SearchGroupsRequestInternal, SparseIndexParams, SparseVectorParams,
+    VectorParamsDiff, VectorsConfigDiff,
 };
 use crate::config::{
-    CollectionConfig, CollectionParams, default_replication_factor,
-    default_write_consistency_factor, ShardingMethod, WalConfig,
+    default_replication_factor, default_write_consistency_factor, CollectionConfig,
+    CollectionParams, ShardingMethod, WalConfig,
 };
 use crate::lookup::types::WithLookupInterface;
 use crate::lookup::WithLookup;
@@ -52,7 +52,7 @@ use crate::operations::config_diff::{
 };
 use crate::operations::point_ops::PointsSelector::PointIdsSelector;
 use crate::operations::point_ops::{
-    Batch, FilterSelector, PointIdsList, PointsSelector, PointStruct, WriteOrdering,
+    Batch, FilterSelector, PointIdsList, PointStruct, PointsSelector, WriteOrdering,
 };
 use crate::operations::query_enum::QueryEnum;
 use crate::operations::shard_key_selector::ShardKeySelector;

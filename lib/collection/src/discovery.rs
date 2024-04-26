@@ -11,7 +11,7 @@ use tokio::sync::RwLockReadGuard;
 use crate::collection::Collection;
 use crate::common::batching::batch_requests;
 use crate::common::fetch_vectors::{
-    convert_to_vectors, ReferencedVectors, resolve_referenced_vectors_batch,
+    convert_to_vectors, resolve_referenced_vectors_batch, ReferencedVectors,
 };
 use crate::common::retrieve_request_trait::RetrieveRequest;
 use crate::operations::consistency_params::ReadConsistency;

@@ -6,6 +6,7 @@ pub mod conversions_rest;
 pub mod operation_effect;
 pub mod payload_ops;
 pub mod point_ops;
+pub mod query_enum;
 pub mod shard_key_selector;
 pub mod shard_selector_internal;
 pub mod shared_storage_config;
@@ -14,7 +15,6 @@ pub mod types;
 pub mod validation;
 pub mod vector_ops;
 pub mod vector_params_builder;
-pub mod query_enum;
 
 use std::collections::HashMap;
 

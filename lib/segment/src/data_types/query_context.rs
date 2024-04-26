@@ -1,8 +1,7 @@
 use ahash::HashMap;
 use sparse::common::types::DimId;
+
 use crate::data_types::tiny_map;
-
-
 
 pub struct QueryContext {
     /// Total amount of available points in the segment.
@@ -16,7 +15,7 @@ pub struct QueryContext {
     /// collected over all segments.
     /// Required for processing sparse vector search with `idf-dot` similarity.
     #[allow(dead_code)]
-    idf: tiny_map::TinyMap<String, HashMap<DimId, usize>>
+    idf: tiny_map::TinyMap<String, HashMap<DimId, usize>>,
 }
 
 impl QueryContext {
@@ -24,7 +23,7 @@ impl QueryContext {
         Self {
             available_point_count: 0,
             search_optimized_threshold_kb,
-            idf: tiny_map::TinyMap::new()
+            idf: tiny_map::TinyMap::new(),
         }
     }
 

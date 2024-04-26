@@ -22,7 +22,7 @@ impl QueryEnum {
                 }
                 NamedVectorStruct::Default(_)
                 | NamedVectorStruct::Dense(_)
-                | NamedVectorStruct::MultiDense(_) => {},
+                | NamedVectorStruct::MultiDense(_) => {}
             },
             QueryEnum::RecommendBestScore(reco_query) => {
                 let name = reco_query.get_name();
@@ -50,7 +50,7 @@ impl QueryEnum {
                         Vector::Dense(_) | Vector::MultiDense(_) => {}
                     }
                 }
-            },
+            }
         }
     }
 }

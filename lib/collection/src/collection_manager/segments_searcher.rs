@@ -9,6 +9,7 @@ use ordered_float::Float;
 use parking_lot::RwLock;
 use segment::common::operation_error::OperationError;
 use segment::data_types::named_vectors::NamedVectors;
+use segment::data_types::query_context::QueryContext;
 use segment::data_types::vectors::{QueryVector, VectorStruct};
 use segment::types::{
     Filter, Indexes, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SeqNumberType,
@@ -16,7 +17,6 @@ use segment::types::{
 };
 use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
-use segment::data_types::query_context::QueryContext;
 
 use super::holders::segment_holder::LockedSegmentHolder;
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
@@ -157,7 +157,6 @@ impl SegmentsSearcher {
         is_stopped: Arc<AtomicBool>,
         query_context: QueryContext,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-
         // ToDo: accumulate IDF here
 
         // ToDo: remove this
