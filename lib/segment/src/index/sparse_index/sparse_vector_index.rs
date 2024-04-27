@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -10,6 +10,7 @@ use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use itertools::Itertools;
 use sparse::common::scores_memory_pool::ScoresMemoryPool;
 use sparse::common::sparse_vector::SparseVector;
+use sparse::common::types::DimId;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
 use sparse::index::inverted_index::InvertedIndex;
@@ -355,6 +356,19 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                     ScopeDurationMeasurer::new(&self.searches_telemetry.unfiltered_plain)
                 };
                 self.search_scored(query_vector, filter, top, is_stopped, prefiltered_points)
+            }
+        }
+    }
+
+    // Update statistics for idf-dot similarity
+    pub fn fill_idf_statistics(&self, idf: &mut HashMap<DimId, usize>) {
+        for (dim_id, count) in idf.iter_mut() {
+            if let Some(remapped_dim_id) = self.indices_tracker.remap_index(*dim_id) {
+                if let Some(posting_list_len) =
+                    self.inverted_index.posting_list_len(&remapped_dim_id)
+                {
+                    *count = posting_list_len
+                }
             }
         }
     }

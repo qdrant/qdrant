@@ -208,8 +208,7 @@ impl SegmentsSearcher {
                 for locked_segment in segments {
                     let segment = locked_segment.get();
                     let segment_guard = segment.read();
-                    query_context.add_available_point_count(segment_guard.available_point_count());
-                    // ToDo: update idf stats
+                    segment_guard.fill_query_context(&mut query_context);
                 }
                 Some(query_context)
             })

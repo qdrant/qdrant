@@ -1784,15 +1784,15 @@ impl SegmentEntry for Segment {
     fn fill_query_context(&self, query_context: &mut QueryContext) {
         query_context.add_available_point_count(self.available_point_count());
 
-        for (vector_name, _idf) in query_context.get_mut_idf().iter_mut() {
+        for (vector_name, idf) in query_context.get_mut_idf().iter_mut() {
             if let Some(vector_data) = self.vector_data.get(vector_name) {
                 let vector_index = vector_data.vector_index.borrow();
                 match vector_index.deref() {
-                    VectorIndexEnum::SparseRam(_sparse_index) => {
-                        unimplemented!()
+                    VectorIndexEnum::SparseRam(sparse_index) => {
+                        sparse_index.fill_idf_statistics(idf);
                     }
-                    VectorIndexEnum::SparseMmap(_sparse_index) => {
-                        unimplemented!()
+                    VectorIndexEnum::SparseMmap(sparse_index) => {
+                        sparse_index.fill_idf_statistics(idf);
                     }
                     VectorIndexEnum::Plain(_)
                     | VectorIndexEnum::HnswRam(_)

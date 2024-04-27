@@ -1,4 +1,5 @@
-use ahash::HashMap;
+use std::collections::HashMap;
+
 use sparse::common::types::DimId;
 
 use crate::data_types::tiny_map;
