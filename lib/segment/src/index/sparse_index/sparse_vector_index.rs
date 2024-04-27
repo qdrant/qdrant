@@ -20,8 +20,8 @@ use super::indices_tracker::IndicesTracker;
 use super::sparse_index_config::SparseIndexType;
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::operation_time_statistics::ScopeDurationMeasurer;
-use crate::data_types::query_context::QueryContext;
-use crate::data_types::vectors::{QueryVector, VectorRef};
+use crate::data_types::query_context::VectorQueryContext;
+use crate::data_types::vectors::{QueryVector, Vector, VectorRef};
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::CardinalityEstimation;
 use crate::index::query_estimator::adjust_to_available_vectors;
@@ -31,6 +31,7 @@ use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams, DEFAULT_SPARSE_FULL_SCAN_THRESHOLD};
+use crate::vector_storage::query::TransformInto;
 use crate::vector_storage::{
     check_deleted_condition, new_stoppable_raw_scorer, VectorStorage, VectorStorageEnum,
 };
@@ -382,14 +383,32 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         top: usize,
         _params: Option<&SearchParams>,
         is_stopped: &AtomicBool,
-        _query_context: &QueryContext,
+        query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         let mut results = Vec::with_capacity(vectors.len());
         let mut prefiltered_points = None;
         for vector in vectors {
             check_process_stopped(is_stopped)?;
-            let search_results =
-                self.search_query(vector, filter, top, is_stopped, &mut prefiltered_points)?;
+
+            let search_results = if query_context.require_idf() {
+                let vector = (*vector).clone().transform(|mut vector| {
+                    match &mut vector {
+                        Vector::Dense(_) | Vector::MultiDense(_) => {
+                            return Err(OperationError::WrongSparse);
+                        }
+                        Vector::Sparse(sparse) => {
+                            query_context.remap_idf_weights(&sparse.indices, &mut sparse.values)
+                        }
+                    }
+
+                    Ok(vector)
+                })?;
+
+                self.search_query(&vector, filter, top, is_stopped, &mut prefiltered_points)?
+            } else {
+                self.search_query(vector, filter, top, is_stopped, &mut prefiltered_points)?
+            };
+
             results.push(search_results);
         }
         Ok(results)

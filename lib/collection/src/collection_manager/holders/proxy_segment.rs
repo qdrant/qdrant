@@ -239,7 +239,7 @@ impl ProxySegment {
             top,
             params,
             &false.into(),
-            &QueryContext::new(usize::MAX),
+            &Default::default(),
         )?;
 
         Ok(result.into_iter().next().unwrap())
@@ -1001,7 +1001,7 @@ mod tests {
                 10,
                 None,
                 &false.into(),
-                &QueryContext::new(usize::MAX),
+                &Default::default(),
             )
             .unwrap();
 
@@ -1056,7 +1056,7 @@ mod tests {
                 10,
                 None,
                 &false.into(),
-                &QueryContext::new(usize::MAX),
+                &Default::default(),
             )
             .unwrap();
 
@@ -1121,7 +1121,7 @@ mod tests {
                 10,
                 None,
                 &false.into(),
-                &QueryContext::new(usize::MAX),
+                &Default::default(),
             )
             .unwrap();
 

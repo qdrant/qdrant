@@ -292,7 +292,7 @@ impl SegmentsSearcher {
             let secondary_searches: Vec<_> = {
                 let mut res = vec![];
                 for (segment_id, batch_ids) in searches_to_rerun.iter() {
-                    let query_context_acr_segment = query_context_acr.clone();
+                    let query_context_arc_segment = query_context_acr.clone();
                     let segment = locked_segments[*segment_id].clone();
                     let partial_batch_request = Arc::new(CoreSearchRequestBatch {
                         searches: batch_ids
@@ -307,7 +307,7 @@ impl SegmentsSearcher {
                             partial_batch_request,
                             false,
                             &is_stopped_clone,
-                            query_context_acr_segment,
+                            query_context_arc_segment,
                         )
                     }))
                 }

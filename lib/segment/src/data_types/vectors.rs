@@ -9,11 +9,12 @@ use validator::Validate;
 
 use super::named_vectors::NamedVectors;
 use super::primitive::PrimitiveVectorElement;
-use crate::common::operation_error::OperationError;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::transpose_map_into_named_vector;
 use crate::vector_storage::query::context_query::ContextQuery;
 use crate::vector_storage::query::discovery_query::DiscoveryQuery;
 use crate::vector_storage::query::reco_query::RecoQuery;
+use crate::vector_storage::query::TransformInto;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Vector {
@@ -583,6 +584,20 @@ pub enum QueryVector {
     Recommend(RecoQuery<Vector>),
     Discovery(DiscoveryQuery<Vector>),
     Context(ContextQuery<Vector>),
+}
+
+impl TransformInto<QueryVector, Vector, Vector> for QueryVector {
+    fn transform<F>(self, mut f: F) -> OperationResult<QueryVector>
+    where
+        F: FnMut(Vector) -> OperationResult<Vector>,
+    {
+        match self {
+            QueryVector::Nearest(v) => f(v).map(QueryVector::Nearest),
+            QueryVector::Recommend(v) => Ok(QueryVector::Recommend(v.transform(&mut f)?)),
+            QueryVector::Discovery(v) => Ok(QueryVector::Discovery(v.transform(&mut f)?)),
+            QueryVector::Context(v) => Ok(QueryVector::Context(v.transform(&mut f)?)),
+        }
+    }
 }
 
 impl From<DenseVector> for QueryVector {

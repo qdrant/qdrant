@@ -992,7 +992,7 @@ impl Segment {
             top,
             params,
             &false.into(),
-            &QueryContext::new(usize::MAX),
+            &Default::default(),
         )?;
 
         Ok(result.into_iter().next().unwrap())
@@ -1027,13 +1027,14 @@ impl SegmentEntry for Segment {
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         check_query_vectors(vector_name, query_vectors, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
+        let vector_query_context = query_context.get_vector_context(vector_name);
         let internal_results = vector_data.vector_index.borrow().search(
             query_vectors,
             filter,
             top,
             params,
             is_stopped,
-            query_context,
+            &vector_query_context,
         )?;
 
         check_stopped(is_stopped)?;
@@ -1910,7 +1911,7 @@ mod tests {
                 10,
                 None,
                 &false.into(),
-                &QueryContext::new(usize::MAX),
+                &Default::default(),
             )
             .unwrap();
         eprintln!("search_batch_result = {search_batch_result:#?}");
@@ -2537,7 +2538,7 @@ mod tests {
                     1,
                     None,
                     &false.into(),
-                    &QueryContext::new(usize::MAX),
+                    &Default::default(),
                 )
                 .err()
                 .unwrap();

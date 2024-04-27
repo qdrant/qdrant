@@ -8,7 +8,6 @@ use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::query_context::QueryContext;
 use segment::data_types::vectors::{QueryVector, VectorElementType};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::random_vector;
@@ -196,7 +195,7 @@ fn sparse_index_discover_test() {
                 top,
                 None,
                 &false.into(),
-                &QueryContext::new(usize::MAX),
+                &Default::default(),
             )
             .unwrap();
 
@@ -209,7 +208,7 @@ fn sparse_index_discover_test() {
                 top,
                 None,
                 &false.into(),
-                &QueryContext::new(usize::MAX),
+                &Default::default(),
             )
             .unwrap();
 
@@ -234,7 +233,7 @@ fn sparse_index_discover_test() {
                 top,
                 None,
                 &false.into(),
-                &QueryContext::new(usize::MAX),
+                &Default::default(),
             )
             .unwrap();
 
@@ -247,7 +246,7 @@ fn sparse_index_discover_test() {
                 top,
                 None,
                 &false.into(),
-                &QueryContext::new(usize::MAX),
+                &Default::default(),
             )
             .unwrap();
 

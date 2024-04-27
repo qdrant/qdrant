@@ -9,7 +9,6 @@ use common::cpu::CpuPermit;
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::prelude::StdRng;
 use rand::SeedableRng;
-use segment::data_types::query_context::QueryContext;
 use segment::data_types::vectors::{only_default_multi_vector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::random_multi_vector;
@@ -103,7 +102,7 @@ fn multi_vector_search_benchmark(c: &mut Criterion) {
                     TOP,
                     None,
                     &stopped,
-                    &QueryContext::new(usize::MAX),
+                    &Default::default(),
                 )
                 .unwrap();
             assert_eq!(results[0].len(), TOP);

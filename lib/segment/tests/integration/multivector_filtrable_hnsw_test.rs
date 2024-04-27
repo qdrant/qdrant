@@ -8,7 +8,6 @@ use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use rstest::rstest;
-use segment::data_types::query_context::QueryContext;
 use segment::data_types::vectors::{only_default_multi_vector, QueryVector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_int_payload, random_multi_vector};
@@ -229,7 +228,7 @@ fn test_multi_filterable_hnsw(
                     ..Default::default()
                 }),
                 &false.into(),
-                &QueryContext::new(usize::MAX),
+                &Default::default(),
             )
             .unwrap();
 
@@ -252,7 +251,7 @@ fn test_multi_filterable_hnsw(
                 top,
                 None,
                 &false.into(),
-                &QueryContext::new(usize::MAX),
+                &Default::default(),
             )
             .unwrap();
 

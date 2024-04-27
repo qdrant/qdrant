@@ -9,7 +9,6 @@ use rand::rngs::StdRng;
 use rand::SeedableRng;
 use segment::common::operation_error::OperationResult;
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::query_context::QueryContext;
 use segment::data_types::vectors::{QueryVector, Vector};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::STR_KEY;
@@ -95,7 +94,7 @@ fn compare_sparse_vectors_search_with_without_filter(full_scan_threshold: usize)
                 top,
                 None,
                 &stopped,
-                &QueryContext::new(usize::MAX),
+                &Default::default(),
             )
             .unwrap();
 
@@ -107,7 +106,7 @@ fn compare_sparse_vectors_search_with_without_filter(full_scan_threshold: usize)
                 top,
                 None,
                 &stopped,
-                &QueryContext::new(usize::MAX),
+                &Default::default(),
             )
             .unwrap();
 
@@ -193,7 +192,7 @@ fn check_index_storage_consistency<T: InvertedIndex>(sparse_vector_index: &Spars
                 top,
                 None,
                 &false.into(),
-                &QueryContext::new(usize::MAX),
+                &Default::default(),
             )
             .unwrap();
         assert!(results[0].iter().any(|s| s.idx == id));
@@ -333,7 +332,7 @@ fn sparse_vector_index_ram_deleted_points_search() {
             top,
             None,
             &stopped,
-            &QueryContext::new(usize::MAX),
+            &Default::default(),
         )
         .unwrap();
 
@@ -393,7 +392,7 @@ fn sparse_vector_index_ram_deleted_points_search() {
             top,
             None,
             &stopped,
-            &QueryContext::new(usize::MAX),
+            &Default::default(),
         )
         .unwrap();
     assert_ne!(before_deletion_results, after_deletion_results);
@@ -436,7 +435,7 @@ fn sparse_vector_index_ram_filtered_search() {
             10,
             None,
             &stopped,
-            &QueryContext::new(usize::MAX),
+            &Default::default(),
         )
         .unwrap();
     assert_eq!(before_result.len(), 1);
@@ -491,7 +490,7 @@ fn sparse_vector_index_ram_filtered_search() {
             half_indexed_count * 2, // original top
             None,
             &stopped,
-            &QueryContext::new(usize::MAX),
+            &Default::default(),
         )
         .unwrap();
     assert_eq!(after_result.len(), 1);
@@ -533,7 +532,7 @@ fn sparse_vector_index_plain_search() {
             10,
             None,
             &stopped,
-            &QueryContext::new(usize::MAX),
+            &Default::default(),
         )
         .unwrap();
 
@@ -562,7 +561,7 @@ fn sparse_vector_index_plain_search() {
             NUM_VECTORS,
             None,
             &stopped,
-            &QueryContext::new(usize::MAX),
+            &Default::default(),
         )
         .unwrap();
 
@@ -630,7 +629,7 @@ fn handling_empty_sparse_vectors() {
             10,
             None,
             &stopped,
-            &QueryContext::new(usize::MAX),
+            &Default::default(),
         )
         .unwrap();
     assert_eq!(results.len(), 1);
@@ -765,7 +764,7 @@ fn sparse_vector_index_persistence_test() {
             top,
             None,
             &stopped,
-            &QueryContext::new(usize::MAX),
+            &Default::default(),
         )
         .unwrap();
     assert_eq!(search_after_reload_result[0].len(), top);
@@ -833,7 +832,7 @@ fn sparse_vector_index_persistence_test() {
             top,
             None,
             &stopped,
-            &QueryContext::new(usize::MAX),
+            &Default::default(),
         )
         .unwrap();
     assert_eq!(search_after_reload_result[0].len(), top);

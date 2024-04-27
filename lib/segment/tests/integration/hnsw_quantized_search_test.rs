@@ -8,7 +8,6 @@ use common::cpu::CpuPermit;
 use common::types::{ScoreType, ScoredPointOffset};
 use rand::rngs::StdRng;
 use rand::SeedableRng;
-use segment::data_types::query_context::QueryContext;
 use segment::data_types::vectors::{only_default_vector, QueryVector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_vector, STR_KEY};
@@ -205,7 +204,7 @@ fn check_matches(
                     top,
                     None,
                     &false.into(),
-                    &QueryContext::new(usize::MAX),
+                    &Default::default(),
                 )
                 .unwrap()
         })
@@ -224,7 +223,7 @@ fn check_matches(
                     ..Default::default()
                 }),
                 &false.into(),
-                &QueryContext::new(usize::MAX),
+                &Default::default(),
             )
             .unwrap();
         sames += sames_count(&index_result, plain_result);
@@ -258,7 +257,7 @@ fn check_oversampling(
                     ..Default::default()
                 }),
                 &false.into(),
-                &QueryContext::new(usize::MAX),
+                &Default::default(),
             )
             .unwrap();
         let best_1 = oversampling_1_result[0][0];
@@ -279,7 +278,7 @@ fn check_oversampling(
                     ..Default::default()
                 }),
                 &false.into(),
-                &QueryContext::new(usize::MAX),
+                &Default::default(),
             )
             .unwrap();
         let best_2 = oversampling_2_result[0][0];
@@ -317,7 +316,7 @@ fn check_rescoring(
                     ..Default::default()
                 }),
                 &false.into(),
-                &QueryContext::new(usize::MAX),
+                &Default::default(),
             )
             .unwrap();
         for result in &index_result[0] {

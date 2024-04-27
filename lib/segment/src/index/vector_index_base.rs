@@ -1,21 +1,22 @@
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use common::cpu::CpuPermit;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use sparse::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 
+use crate::common::operation_error::OperationResult;
+use crate::data_types::query_context::VectorQueryContext;
+use crate::data_types::vectors::{QueryVector, VectorRef};
+use crate::telemetry::VectorIndexSearchesTelemetry;
+use crate::types::{Filter, SearchParams};
+
 use super::hnsw_index::graph_links::{GraphLinksMmap, GraphLinksRam};
 use super::hnsw_index::hnsw::HNSWIndex;
 use super::plain_payload_index::PlainIndex;
 use super::sparse_index::sparse_vector_index::SparseVectorIndex;
-use crate::common::operation_error::OperationResult;
-use crate::data_types::query_context::QueryContext;
-use crate::data_types::vectors::{QueryVector, VectorRef};
-use crate::telemetry::VectorIndexSearchesTelemetry;
-use crate::types::{Filter, SearchParams};
 
 /// Trait for vector searching
 pub trait VectorIndex {
@@ -27,7 +28,7 @@ pub trait VectorIndex {
         top: usize,
         params: Option<&SearchParams>,
         is_stopped: &AtomicBool,
-        query_context: &QueryContext,
+        query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>>;
 
     /// Force internal index rebuild.
@@ -72,7 +73,7 @@ impl VectorIndex for VectorIndexEnum {
         top: usize,
         params: Option<&SearchParams>,
         is_stopped: &AtomicBool,
-        query_context: &QueryContext,
+        query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         match self {
             VectorIndexEnum::Plain(index) => {

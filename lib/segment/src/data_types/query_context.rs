@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use sparse::common::types::DimId;
+use sparse::common::types::{DimId, DimWeight};
 
 use crate::data_types::tiny_map;
 
@@ -58,5 +58,77 @@ impl QueryContext {
 
     pub fn get_mut_idf(&mut self) -> &mut tiny_map::TinyMap<String, HashMap<DimId, usize>> {
         &mut self.idf
+    }
+
+    pub fn get_vector_context(&self, vector_name: &str) -> VectorQueryContext {
+        VectorQueryContext {
+            available_point_count: self.available_point_count,
+            search_optimized_threshold_kb: self.search_optimized_threshold_kb,
+            idf: self.idf.get(vector_name),
+        }
+    }
+}
+
+impl Default for QueryContext {
+    fn default() -> Self {
+        Self::new(usize::MAX) // Search optimized threshold won't affect the search.
+    }
+}
+
+/// Query context related to a specific vector
+pub struct VectorQueryContext<'a> {
+    /// Total amount of available points in the segment.
+    available_point_count: usize,
+
+    /// Parameter, which defines how big a plain segment can be to be considered
+    /// small enough to be searched with `indexed_only` option.
+    search_optimized_threshold_kb: usize,
+
+    idf: Option<&'a HashMap<DimId, usize>>,
+}
+
+impl VectorQueryContext<'_> {
+    pub fn get_available_point_count(&self) -> usize {
+        self.available_point_count
+    }
+
+    pub fn get_search_optimized_threshold_kb(&self) -> usize {
+        self.search_optimized_threshold_kb
+    }
+
+    /// Compute advanced formula for Inverse Document Frequency (IDF) according to wikipedia.
+    /// This should account for corner cases when `df` and `n` are small or zero.
+    #[inline]
+    fn fancy_idf(n: DimWeight, df: DimWeight) -> DimWeight {
+        ((n - df + 0.5) / (df + 0.5) + 1.).ln()
+    }
+
+    pub fn remap_idf_weights(&self, indices: &[DimId], weights: &mut [DimWeight]) {
+        // Number of documents
+        let n = self.available_point_count as DimWeight;
+        for (weight, index) in weights.iter_mut().zip(indices) {
+            // Document frequency
+            let df = self
+                .idf
+                .and_then(|idf| idf.get(index))
+                .copied()
+                .unwrap_or(0);
+
+            *weight *= Self::fancy_idf(n, df as DimWeight);
+        }
+    }
+
+    pub fn require_idf(&self) -> bool {
+        self.idf.is_some()
+    }
+}
+
+impl Default for VectorQueryContext<'_> {
+    fn default() -> Self {
+        VectorQueryContext {
+            available_point_count: 0,
+            search_optimized_threshold_kb: usize::MAX,
+            idf: None,
+        }
     }
 }

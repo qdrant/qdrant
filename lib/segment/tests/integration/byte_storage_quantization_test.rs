@@ -9,7 +9,6 @@ use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use rstest::rstest;
-use segment::data_types::query_context::QueryContext;
 use segment::data_types::vectors::{only_default_vector, QueryVector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_dense_byte_vector, random_int_payload};
@@ -334,7 +333,7 @@ fn test_byte_storage_binary_quantization_hnsw(
                     ..Default::default()
                 }),
                 &stopped,
-                &QueryContext::new(usize::MAX),
+                &Default::default(),
             )
             .unwrap();
 
@@ -353,7 +352,7 @@ fn test_byte_storage_binary_quantization_hnsw(
                     ..Default::default()
                 }),
                 &stopped,
-                &QueryContext::new(usize::MAX),
+                &Default::default(),
             )
             .unwrap();
 

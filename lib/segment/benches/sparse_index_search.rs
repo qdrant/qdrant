@@ -9,7 +9,6 @@ use common::types::PointOffsetType;
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::rngs::StdRng;
 use rand::SeedableRng;
-use segment::data_types::query_context::QueryContext;
 use segment::fixtures::sparse_fixtures::fixture_sparse_index_ram;
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
@@ -98,7 +97,7 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
                     TOP,
                     None,
                     &stopped,
-                    &QueryContext::new(usize::MAX),
+                    &Default::default(),
                 )
                 .unwrap();
 
@@ -116,7 +115,7 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
                     TOP,
                     None,
                     &stopped,
-                    &QueryContext::new(usize::MAX),
+                    &Default::default(),
                 )
                 .unwrap();
 
@@ -167,7 +166,7 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
                     TOP,
                     None,
                     &stopped,
-                    &QueryContext::new(usize::MAX),
+                    &Default::default(),
                 )
                 .unwrap();
 

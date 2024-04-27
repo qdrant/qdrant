@@ -1,27 +1,28 @@
 use std::collections::HashMap;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
-use common::cpu::CpuPermit;
-use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use parking_lot::Mutex;
 use schemars::_serde_json::Value;
 
+use common::cpu::CpuPermit;
+use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
+
+use crate::common::{BYTES_IN_KB, Flusher};
 use crate::common::operation_error::OperationResult;
 use crate::common::operation_time_statistics::{
-    OperationDurationStatistics, OperationDurationsAggregator, ScopeDurationMeasurer,
+    OperationDurationsAggregator, OperationDurationStatistics, ScopeDurationMeasurer,
 };
-use crate::common::{Flusher, BYTES_IN_KB};
-use crate::data_types::query_context::QueryContext;
+use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorRef};
 use crate::id_tracker::IdTrackerSS;
+use crate::index::{PayloadIndex, VectorIndex};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::PayloadConfig;
 use crate::index::struct_payload_index::StructPayloadIndex;
-use crate::index::{PayloadIndex, VectorIndex};
 use crate::json_path::JsonPath;
 use crate::payload_storage::{ConditionCheckerSS, FilterContext};
 use crate::telemetry::VectorIndexSearchesTelemetry;
@@ -256,7 +257,7 @@ impl VectorIndex for PlainIndex {
         top: usize,
         params: Option<&SearchParams>,
         is_stopped: &AtomicBool,
-        query_context: &QueryContext,
+        query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         let is_indexed_only = params.map(|p| p.indexed_only).unwrap_or(false);
         if is_indexed_only
