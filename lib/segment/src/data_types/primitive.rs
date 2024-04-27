@@ -78,7 +78,7 @@ impl PrimitiveVectorElement for VectorElementTypeHalf {
     }
 
     fn quantization_preprocess<'a>(
-        quantization_config: &QuantizationConfig,
+        _quantization_config: &QuantizationConfig,
         distance: Distance,
         vector: &'a [Self],
     ) -> Cow<'a, [f32]> {

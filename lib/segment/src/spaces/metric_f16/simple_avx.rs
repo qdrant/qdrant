@@ -2,7 +2,6 @@ use std::arch::x86_64::*;
 
 use common::types::ScoreType;
 use half::f16;
-use num_traits::Float;
 
 use crate::data_types::vectors::VectorElementTypeHalf;
 
