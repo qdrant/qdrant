@@ -9278,6 +9278,7 @@
         "type": "string",
         "enum": [
           "float32",
+          "float16",
           "uint8"
         ]
       },
