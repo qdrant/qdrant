@@ -39,6 +39,8 @@ impl QueryContext {
         self.available_point_count += count;
     }
 
+    /// Fill indices of sparse vectors, which are required for `idf-dot` similarity
+    /// with zeros, so the statistics can be collected.
     pub fn init_idf(&mut self, vector_name: &str, indices: &[DimId]) {
         // ToDo: Would be nice to have an implementation of `entry` for `TinyMap`.
         let idf = if let Some(idf) = self.idf.get_mut(vector_name) {
@@ -51,5 +53,9 @@ impl QueryContext {
         for index in indices {
             idf.insert(*index, 0);
         }
+    }
+
+    pub fn get_mut_idf(&mut self) -> &mut tiny_map::TinyMap<String, HashMap<DimId, usize>> {
+        &mut self.idf
     }
 }

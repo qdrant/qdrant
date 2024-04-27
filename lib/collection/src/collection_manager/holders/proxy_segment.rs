@@ -855,6 +855,14 @@ impl SegmentEntry for ProxySegment {
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> SegmentTelemetry {
         self.wrapped_segment.get().read().get_telemetry_data(detail)
     }
+
+    fn fill_query_context(&self, query_context: &mut QueryContext) {
+        // Information from temporary segment is not too important for query context
+        self.wrapped_segment
+            .get()
+            .read()
+            .fill_query_context(query_context)
+    }
 }
 
 #[cfg(test)]

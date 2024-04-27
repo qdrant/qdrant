@@ -1,6 +1,7 @@
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -1777,6 +1778,27 @@ impl SegmentEntry for Segment {
             config: self.config().clone(),
             vector_index_searches,
             payload_field_indices: self.payload_index.borrow().get_telemetry_data(),
+        }
+    }
+
+    fn fill_query_context(&self, query_context: &mut QueryContext) {
+        query_context.add_available_point_count(self.available_point_count());
+
+        for (vector_name, _idf) in query_context.get_mut_idf().iter_mut() {
+            if let Some(vector_data) = self.vector_data.get(vector_name) {
+                let vector_index = vector_data.vector_index.borrow();
+                match vector_index.deref() {
+                    VectorIndexEnum::SparseRam(_sparse_index) => {
+                        unimplemented!()
+                    }
+                    VectorIndexEnum::SparseMmap(_sparse_index) => {
+                        unimplemented!()
+                    }
+                    VectorIndexEnum::Plain(_)
+                    | VectorIndexEnum::HnswRam(_)
+                    | VectorIndexEnum::HnswMmap(_) => {}
+                }
+            }
         }
     }
 }

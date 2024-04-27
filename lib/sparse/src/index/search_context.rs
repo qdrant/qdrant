@@ -6,7 +6,7 @@ use common::top_k::TopK;
 use common::types::{PointOffsetType, ScoredPointOffset};
 
 use crate::common::scores_memory_pool::PooledScoresHandle;
-use crate::common::sparse_vector::SparseVector;
+use crate::common::sparse_vector::RemappedSparseVector;
 use crate::common::types::{DimId, DimWeight};
 use crate::index::inverted_index::InvertedIndex;
 use crate::index::posting_list::PostingListIterator;
@@ -23,7 +23,7 @@ const ADVANCE_BATCH_SIZE: usize = 10_000;
 
 pub struct SearchContext<'a, 'b> {
     postings_iterators: Vec<IndexedPostingListIterator<'a>>,
-    query: SparseVector,
+    query: RemappedSparseVector,
     top: usize,
     is_stopped: &'a AtomicBool,
     top_results: TopK,
@@ -35,7 +35,7 @@ pub struct SearchContext<'a, 'b> {
 
 impl<'a, 'b> SearchContext<'a, 'b> {
     pub fn new(
-        query: SparseVector,
+        query: RemappedSparseVector,
         top: usize,
         inverted_index: &'a impl InvertedIndex,
         pooled: PooledScoresHandle<'b>,
@@ -116,7 +116,7 @@ impl<'a, 'b> SearchContext<'a, 'b> {
                 }
             }
             // reconstruct sparse vector and score against query
-            let sparse_vector = SparseVector { indices, values };
+            let sparse_vector = RemappedSparseVector { indices, values };
             self.top_results.push(ScoredPointOffset {
                 score: sparse_vector.score(&self.query).unwrap_or(0.0),
                 idx: id,
@@ -400,6 +400,7 @@ mod tests {
 
     use super::*;
     use crate::common::scores_memory_pool::ScoresMemoryPool;
+    use crate::common::sparse_vector::SparseVector;
     use crate::common::sparse_vector_fixture::random_sparse_vector;
     use crate::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
     use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
@@ -418,7 +419,7 @@ mod tests {
         let is_stopped = AtomicBool::new(false);
         let index = InvertedIndexRam::empty();
         let mut search_context = SearchContext::new(
-            SparseVector::default(), // empty query vector
+            RemappedSparseVector::default(), // empty query vector
             10,
             &index,
             get_pooled_scores(),
@@ -435,7 +436,7 @@ mod tests {
     fn _search_test(inverted_index: &impl InvertedIndex) {
         let is_stopped = AtomicBool::new(false);
         let mut search_context = SearchContext::new(
-            SparseVector {
+            RemappedSparseVector {
                 indices: vec![1, 2, 3],
                 values: vec![1.0, 1.0, 1.0],
             },
@@ -495,7 +496,7 @@ mod tests {
         let mut inverted_index_ram = builder.build();
 
         let mut search_context = SearchContext::new(
-            SparseVector {
+            RemappedSparseVector {
                 indices: vec![1, 2, 3],
                 values: vec![1.0, 1.0, 1.0],
             },
@@ -526,13 +527,13 @@ mod tests {
         // update index with new point
         inverted_index_ram.upsert(
             4,
-            SparseVector {
+            RemappedSparseVector {
                 indices: vec![1, 2, 3],
                 values: vec![40.0, 40.0, 40.0],
             },
         );
         let mut search_context = SearchContext::new(
-            SparseVector {
+            RemappedSparseVector {
                 indices: vec![1, 2, 3],
                 values: vec![1.0, 1.0, 1.0],
             },
@@ -568,7 +569,7 @@ mod tests {
     fn _search_with_hot_key_test(inverted_index: &impl InvertedIndex) {
         let is_stopped = AtomicBool::new(false);
         let mut search_context = SearchContext::new(
-            SparseVector {
+            RemappedSparseVector {
                 indices: vec![1, 2, 3],
                 values: vec![1.0, 1.0, 1.0],
             },
@@ -597,7 +598,7 @@ mod tests {
         );
 
         let mut search_context = SearchContext::new(
-            SparseVector {
+            RemappedSparseVector {
                 indices: vec![1, 2, 3],
                 values: vec![1.0, 1.0, 1.0],
             },
@@ -664,7 +665,7 @@ mod tests {
 
         let is_stopped = AtomicBool::new(false);
         let mut search_context = SearchContext::new(
-            SparseVector {
+            RemappedSparseVector {
                 indices: vec![1, 2, 3],
                 values: vec![1.0, 1.0, 1.0],
             },
@@ -698,7 +699,7 @@ mod tests {
 
         let is_stopped = AtomicBool::new(false);
         let mut search_context = SearchContext::new(
-            SparseVector {
+            RemappedSparseVector {
                 indices: vec![1, 2, 3],
                 values: vec![1.0, 1.0, 1.0],
             },
@@ -733,7 +734,7 @@ mod tests {
 
         let is_stopped = AtomicBool::new(false);
         let mut search_context = SearchContext::new(
-            SparseVector {
+            RemappedSparseVector {
                 indices: vec![1, 2, 3],
                 values: vec![1.0, 1.0, 1.0],
             },
@@ -766,7 +767,9 @@ mod tests {
         let mut inverted_index_ram = InvertedIndexRam::empty();
 
         for i in 1..=num_vectors {
-            let vector = random_sparse_vector(rnd_gen, max_sparse_dimension);
+            let SparseVector { indices, values } =
+                random_sparse_vector(rnd_gen, max_sparse_dimension);
+            let vector = RemappedSparseVector::new(indices, values).unwrap();
             inverted_index_ram.upsert(i, vector);
         }
         inverted_index_ram
@@ -782,7 +785,7 @@ mod tests {
         let inverted_index_ram = builder.build();
 
         let mut search_context = SearchContext::new(
-            SparseVector {
+            RemappedSparseVector {
                 indices: vec![1, 2, 3],
                 values: vec![1.0, 1.0, 1.0],
             },
@@ -819,7 +822,7 @@ mod tests {
         let inverted_index_ram = builder.build();
 
         let mut search_context = SearchContext::new(
-            SparseVector {
+            RemappedSparseVector {
                 indices: vec![1, 2, 3],
                 values: vec![1.0, 1.0, 1.0],
             },
@@ -860,7 +863,7 @@ mod tests {
 
         // query vector has a gap for dimension 2
         let mut search_context = SearchContext::new(
-            SparseVector {
+            RemappedSparseVector {
                 indices: vec![1, 3],
                 values: vec![1.0, 1.0],
             },
