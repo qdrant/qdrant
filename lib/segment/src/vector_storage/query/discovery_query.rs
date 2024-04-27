@@ -1,15 +1,13 @@
 use std::iter;
 
-use itertools::Itertools;
-
 use common::math::scaled_fast_sigmoid;
 use common::types::ScoreType;
+use itertools::Itertools;
 
+use super::context_query::ContextPair;
+use super::{Query, TransformInto};
 use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::{QueryVector, Vector};
-
-use super::{Query, TransformInto};
-use super::context_query::ContextPair;
 
 type RankType = i32;
 
@@ -86,11 +84,10 @@ impl From<DiscoveryQuery<Vector>> for QueryVector {
 mod test {
     use std::cmp::Ordering;
 
+    use common::types::ScoreType;
     use itertools::Itertools;
     use proptest::prelude::*;
     use rstest::rstest;
-
-    use common::types::ScoreType;
 
     use super::*;
 
