@@ -318,7 +318,9 @@ impl CollectionParams {
             let sparse_vector_params = self.get_sparse_vector_params_mut(vector_name)?;
             let SparseVectorParams { index, idf } = update_params.clone();
 
-            sparse_vector_params.idf = idf;
+            if let Some(idf) = idf {
+                sparse_vector_params.idf = Some(idf);
+            }
 
             if let Some(index) = index {
                 if let Some(existing_index) = &mut sparse_vector_params.index {
