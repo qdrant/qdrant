@@ -316,10 +316,10 @@ impl CollectionParams {
     ) -> CollectionResult<()> {
         for (vector_name, update_params) in update_vectors.0.iter() {
             let sparse_vector_params = self.get_sparse_vector_params_mut(vector_name)?;
-            let SparseVectorParams { index, idf } = update_params.clone();
+            let SparseVectorParams { index, modifier } = update_params.clone();
 
-            if let Some(idf) = idf {
-                sparse_vector_params.idf = Some(idf);
+            if let Some(modifier) = modifier {
+                sparse_vector_params.modifier = Some(modifier);
             }
 
             if let Some(index) = index {

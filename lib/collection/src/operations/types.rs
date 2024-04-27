@@ -1327,6 +1327,17 @@ impl Anonymize for VectorParams {
     }
 }
 
+/// If used, include weight modification, which will be applied to sparse vectors in query time:
+/// None - no modification (default)
+/// Idf - inverse document frequency, based on statistics of the collection
+#[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Modifier {
+    #[default]
+    None,
+    Idf,
+}
+
 /// Params of single sparse vector data storage
 #[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -1335,17 +1346,17 @@ pub struct SparseVectorParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub index: Option<SparseIndexParams>,
 
-    /// If true, include inverse document frequency in the scoring of sparse vectors.
-    /// Default: false
+    /// Configures addition value modifications for sparse vectors.
+    /// Default: none
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub idf: Option<bool>,
+    pub modifier: Option<Modifier>,
 }
 
 impl Anonymize for SparseVectorParams {
     fn anonymize(&self) -> Self {
         Self {
             index: self.index.anonymize(),
-            idf: self.idf,
+            modifier: self.modifier.clone(),
         }
     }
 }

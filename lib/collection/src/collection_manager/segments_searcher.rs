@@ -25,7 +25,7 @@ use crate::collection_manager::probabilistic_segment_search_sampling::find_searc
 use crate::collection_manager::search_result_aggregator::BatchResultAggregator;
 use crate::config::CollectionConfig;
 use crate::operations::query_enum::QueryEnum;
-use crate::operations::types::{CollectionResult, CoreSearchRequestBatch, Record};
+use crate::operations::types::{CollectionResult, CoreSearchRequestBatch, Modifier, Record};
 use crate::optimizers_builder::DEFAULT_INDEXING_THRESHOLD_KB;
 
 type BatchOffset = usize;
@@ -174,7 +174,7 @@ impl SegmentsSearcher {
                 .params
                 .get_sparse_vector_params_opt(vector_name)
             {
-                if sparse_vector_params.idf.unwrap_or_default()
+                if sparse_vector_params.modifier == Some(Modifier::Idf)
                     || !idf_vectors.contains(&vector_name)
                 {
                     idf_vectors.push(vector_name);
