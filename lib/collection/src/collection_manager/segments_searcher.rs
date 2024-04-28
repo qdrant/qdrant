@@ -175,7 +175,7 @@ impl SegmentsSearcher {
                 .get_sparse_vector_params_opt(vector_name)
             {
                 if sparse_vector_params.modifier == Some(Modifier::Idf)
-                    || !idf_vectors.contains(&vector_name)
+                    && !idf_vectors.contains(&vector_name)
                 {
                     idf_vectors.push(vector_name);
                 }
@@ -189,7 +189,9 @@ impl SegmentsSearcher {
             search_request
                 .query
                 .iterate_sparse(|vector_name, sparse_vector| {
-                    query_context.init_idf(vector_name, &sparse_vector.indices);
+                    if idf_vectors.contains(&vector_name) {
+                        query_context.init_idf(vector_name, &sparse_vector.indices);
+                    }
                 })
         }
 
