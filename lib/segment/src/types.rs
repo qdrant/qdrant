@@ -1138,14 +1138,20 @@ impl TryFrom<PayloadIndexInfo> for PayloadFieldSchema {
     type Error = String;
 
     fn try_from(index_info: PayloadIndexInfo) -> Result<Self, Self::Error> {
-        match (index_info.data_type, index_info.params) {
-            (PayloadSchemaType::Text, Some(PayloadSchemaParams::Text(params))) => Ok(
+        let Some(params) = index_info.params else {
+            return Ok(PayloadFieldSchema::FieldType(index_info.data_type));
+        };
+
+        match (index_info.data_type, params) {
+            (PayloadSchemaType::Text, PayloadSchemaParams::Text(params)) => Ok(
                 PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(params)),
             ),
-            (data_type, Some(_)) => Err(format!(
-                "Payload field with type {data_type:?} has unexpected params"
-            )),
-            (data_type, None) => Ok(PayloadFieldSchema::FieldType(data_type)),
+            (PayloadSchemaType::Integer, PayloadSchemaParams::Integer(params)) => Ok(
+                PayloadFieldSchema::FieldParams(PayloadSchemaParams::Integer(params)),
+            ),
+            (data_type, PayloadSchemaParams::Integer(_) | PayloadSchemaParams::Text(_)) => Err(
+                format!("Payload field with type {data_type:?} has unexpected params"),
+            ),
         }
     }
 }
