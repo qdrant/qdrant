@@ -15,7 +15,7 @@ def setup(tmp_path_factory: pytest.TempPathFactory):
 
     tmp_path = tmp_path_factory.mktemp("qdrant")
 
-    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(
+    peer_api_uris, _peer_dirs, _bootstrap_uri = start_cluster(
         tmp_path=tmp_path, num_peers=1, extra_env=extra_env
     )
 
@@ -94,7 +94,6 @@ def test_unindexed_field_is_gone_when_indexing(setup_with_big_collection):
     issues = get_issues(uri)
 
     # check the issue is now active
-    # breakpoint()
     issue_present = False
     for issue in issues:
         if issue["id"] == expected_issue_code:
