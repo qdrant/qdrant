@@ -390,7 +390,7 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         for vector in vectors {
             check_process_stopped(is_stopped)?;
 
-            let search_results = if query_context.require_idf() {
+            let search_results = if query_context.is_require_idf() {
                 let vector = (*vector).clone().transform(|mut vector| {
                     match &mut vector {
                         Vector::Dense(_) | Vector::MultiDense(_) => {

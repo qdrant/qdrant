@@ -10,7 +10,7 @@ collection_name = 'test_sparse_idf'
 def setup():
     idf_collection_setup(collection_name=collection_name)
     yield
-    # drop_collection(collection_name=collection_name)
+    drop_collection(collection_name=collection_name)
 
 
 # Sentences from public domain sci-fi books

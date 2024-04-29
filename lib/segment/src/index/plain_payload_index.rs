@@ -261,8 +261,8 @@ impl VectorIndex for PlainIndex {
         let is_indexed_only = params.map(|p| p.indexed_only).unwrap_or(false);
         if is_indexed_only
             && !self.is_small_enough_for_unindexed_search(
-                query_context.get_search_optimized_threshold_kb(),
-                filter,
+            query_context.search_optimized_threshold_kb(),
+            filter,
             )
         {
             return Ok(vec![vec![]; vectors.len()]);

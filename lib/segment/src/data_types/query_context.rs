@@ -28,11 +28,11 @@ impl QueryContext {
         }
     }
 
-    pub fn get_available_point_count(&self) -> usize {
+    pub fn available_point_count(&self) -> usize {
         self.available_point_count
     }
 
-    pub fn get_search_optimized_threshold_kb(&self) -> usize {
+    pub fn search_optimized_threshold_kb(&self) -> usize {
         self.search_optimized_threshold_kb
     }
 
@@ -56,7 +56,7 @@ impl QueryContext {
         }
     }
 
-    pub fn get_mut_idf(&mut self) -> &mut tiny_map::TinyMap<String, HashMap<DimId, usize>> {
+    pub fn mut_idf(&mut self) -> &mut tiny_map::TinyMap<String, HashMap<DimId, usize>> {
         &mut self.idf
     }
 
@@ -88,11 +88,11 @@ pub struct VectorQueryContext<'a> {
 }
 
 impl VectorQueryContext<'_> {
-    pub fn get_available_point_count(&self) -> usize {
+    pub fn available_point_count(&self) -> usize {
         self.available_point_count
     }
 
-    pub fn get_search_optimized_threshold_kb(&self) -> usize {
+    pub fn search_optimized_threshold_kb(&self) -> usize {
         self.search_optimized_threshold_kb
     }
 
@@ -118,7 +118,7 @@ impl VectorQueryContext<'_> {
         }
     }
 
-    pub fn require_idf(&self) -> bool {
+    pub fn is_require_idf(&self) -> bool {
         self.idf.is_some()
     }
 }

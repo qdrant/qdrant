@@ -245,7 +245,7 @@ impl SegmentsSearcher {
             // - segments are not empty
             let use_sampling = sampling_enabled
                 && segments_lock.len() > 1
-                && query_context_acr.get_available_point_count() > 0;
+                && query_context_acr.available_point_count() > 0;
 
             segments
                 .map(|segment| {
@@ -575,7 +575,7 @@ fn execute_batch_search(
             search_params.top,
             ef_limit,
             segment_points,
-            query_context.get_available_point_count(),
+            query_context.available_point_count(),
         )
     } else {
         search_params.top
