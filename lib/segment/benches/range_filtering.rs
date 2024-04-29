@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use common::types::PointOffsetType;
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use segment::fixtures::payload_context_fixture::FixtureIdTracker;
@@ -86,19 +86,25 @@ fn range_filtering(c: &mut Criterion) {
     let mut query_count = 0;
 
     group.bench_function("float-mutable-index", |b| {
-        b.iter(|| {
-            let filter = random_range_filter(&mut rng, FLT_KEY);
-            result_size += index.query_points(&filter).len();
-            query_count += 1;
-        })
+        b.iter_batched(
+            || random_range_filter(&mut rng, FLT_KEY),
+            |filter| {
+                result_size += index.query_points(&filter).len();
+                query_count += 1;
+            },
+            BatchSize::SmallInput,
+        )
     });
 
     group.bench_function("integer-mutable-index", |b| {
-        b.iter(|| {
-            let filter = random_range_filter(&mut rng, INT_KEY);
-            result_size += index.query_points(&filter).len();
-            query_count += 1;
-        })
+        b.iter_batched(
+            || random_range_filter(&mut rng, INT_KEY),
+            |filter| {
+                result_size += index.query_points(&filter).len();
+                query_count += 1;
+            },
+            BatchSize::SmallInput,
+        )
     });
 
     // flush data
@@ -109,19 +115,25 @@ fn range_filtering(c: &mut Criterion) {
     let index = StructPayloadIndex::open(payload_storage, id_tracker, dir.path(), false).unwrap();
 
     group.bench_function("float-immutable-index", |b| {
-        b.iter(|| {
-            let filter = random_range_filter(&mut rng, FLT_KEY);
-            result_size += index.query_points(&filter).len();
-            query_count += 1;
-        })
+        b.iter_batched(
+            || random_range_filter(&mut rng, FLT_KEY),
+            |filter| {
+                result_size += index.query_points(&filter).len();
+                query_count += 1;
+            },
+            BatchSize::SmallInput,
+        )
     });
 
     group.bench_function("integer-immutable-index", |b| {
-        b.iter(|| {
-            let filter = random_range_filter(&mut rng, INT_KEY);
-            result_size += index.query_points(&filter).len();
-            query_count += 1;
-        })
+        b.iter_batched(
+            || random_range_filter(&mut rng, INT_KEY),
+            |filter| {
+                result_size += index.query_points(&filter).len();
+                query_count += 1;
+            },
+            BatchSize::SmallInput,
+        )
     });
 
     group.finish();
