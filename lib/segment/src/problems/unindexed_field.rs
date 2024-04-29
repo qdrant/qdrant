@@ -1,3 +1,4 @@
+use std::any::TypeId;
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -20,7 +21,7 @@ pub struct UnindexedField {
     field_schemas: HashSet<PayloadFieldSchema>,
     collection_name: String,
     endpoint: Uri,
-    distinctive: String,
+    instance_id: String,
 }
 
 impl UnindexedField {
@@ -42,7 +43,8 @@ impl UnindexedField {
     }
 
     pub fn get_collection_name(code: &Code) -> &str {
-        code.distinctive.split('/').next().unwrap() // Code format is always the same
+        debug_assert!(code.issue_type == TypeId::of::<Self>());
+        code.instance_id.split('/').next().unwrap() // Code format is always the same
     }
 
     /// Try to form an issue from a field condition and a collection name
@@ -82,7 +84,7 @@ impl UnindexedField {
             field_schemas,
             collection_name,
             endpoint,
-            distinctive,
+            instance_id: distinctive,
         })
     }
 
@@ -103,8 +105,8 @@ impl UnindexedField {
 }
 
 impl Issue for UnindexedField {
-    fn distinctive(&self) -> &str {
-        &self.distinctive
+    fn instance_id(&self) -> &str {
+        &self.instance_id
     }
 
     fn name() -> &'static str {
