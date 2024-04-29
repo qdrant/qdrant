@@ -11,6 +11,12 @@ use crate::operations::snapshot_ops::{
 };
 use crate::operations::types::CollectionResult;
 
+#[derive(Clone, Deserialize, Debug, Default)]
+pub struct SnapShotsConfig {
+    pub snapshots_storage: SnapshotsStorageConfig,
+    pub s3_config: Option<S3Config>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub enum SnapshotsStorageConfig {
     #[default]
@@ -55,11 +61,14 @@ pub enum SnapshotStorageManager {
 }
 
 impl SnapshotStorageManager {
-    pub fn new(s3_config: Option<S3Config>) -> Self {
-        if let Some(s3_config) = s3_config {
-            SnapshotStorageManager::S3(SnapshotStorageS3 { s3_config })
-        } else {
-            SnapshotStorageManager::LocalFS(SnapshotStorageLocalFS)
+    pub fn new(snapshots_config: SnapShotsConfig) -> Self {
+        match snapshots_config.snapshots_storage {
+            SnapshotsStorageConfig::Local => {
+                SnapshotStorageManager::LocalFS(SnapshotStorageLocalFS)
+            }
+            SnapshotsStorageConfig::S3 => SnapshotStorageManager::S3(SnapshotStorageS3 {
+                s3_config: snapshots_config.s3_config.unwrap(),
+            }),
         }
     }
 

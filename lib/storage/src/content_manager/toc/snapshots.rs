@@ -14,7 +14,7 @@ use crate::rbac::CollectionPass;
 
 impl TableOfContent {
     pub fn get_snapshots_storage_manager(&self) -> SnapshotStorageManager {
-        SnapshotStorageManager::new(self.storage_config.s3_config.clone())
+        SnapshotStorageManager::new(self.storage_config.snapshots_config.clone())
     }
 
     pub fn snapshots_path(&self) -> &str {

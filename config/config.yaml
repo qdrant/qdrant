@@ -7,6 +7,9 @@ storage:
   # Where to store snapshots
   snapshots_path: ./snapshots
 
+  # "local" or "s3" - where to store snapshots
+  snapshots_storage: "local"
+
   # Where to store temporary files
   # If null, temporary snapshot are stored in: storage/snapshots_temp/
   temp_path: null

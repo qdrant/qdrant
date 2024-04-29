@@ -849,7 +849,7 @@ impl ShardReplicaSet {
     }
 
     pub(crate) fn get_snapshots_storage_manager(&self) -> SnapshotStorageManager {
-        SnapshotStorageManager::new(self.shared_storage_config.s3_config.clone())
+        SnapshotStorageManager::new(self.shared_storage_config.snapshots_config.clone())
     }
 }
 
