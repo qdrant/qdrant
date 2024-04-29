@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use tokio::task;
-
 use crate::typemap::TypeMap;
 
 pub trait Subscriber<E> {
@@ -45,19 +43,7 @@ impl EventBroker {
         self.subscriptions.push(subscriber);
     }
 
-    /// Notify all subscribers of the event. Spawns one tokio task per subscriber, so that it can be completed in the background.
-    pub fn publish_async<E: Send + Sync + 'static>(&self, event: E) {
-        if let Some(subscribers) = self.subscriptions.get::<E>() {
-            let event = Arc::new(event);
-            for sub in subscribers {
-                let event = event.clone();
-                let sub = sub.clone();
-                task::spawn(async move { sub.notify(event) });
-            }
-        }
-    }
-
-    /// Notify all subscribers of the event. This method will block until all subscribers have handled the event.
+    /// Notify all subscribers of the event. This method will block until all subscribers have handled the event, subscribers can choose if they want to handle the event in the background (non-blocking).
     pub fn publish<E: 'static>(&self, event: E) {
         if let Some(subscribers) = self.subscriptions.get::<E>() {
             let event = Arc::new(event);
