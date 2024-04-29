@@ -152,7 +152,8 @@ impl<T: Encodable + Numericable> NumericKeySortedVec<T> {
 
     fn find_end_index(&self, start: usize, bound: Bound<NumericIndexKey<T>>) -> usize {
         if start >= self.data.len() {
-            return self.data.len();
+            // the range `end` should never be less than `start`
+            return start;
         }
         match bound {
             Bound::Included(bound) => match self.data[start..].binary_search(&bound) {
