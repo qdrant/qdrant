@@ -91,7 +91,14 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
     group.bench_function("mmap-inverted-index-search", |b| {
         b.iter(|| {
             let results = sparse_vector_index_mmap
-                .search(&[&query_vector], None, TOP, None, &stopped, usize::MAX)
+                .search(
+                    &[&query_vector],
+                    None,
+                    TOP,
+                    None,
+                    &stopped,
+                    &Default::default(),
+                )
                 .unwrap();
 
             assert_eq!(results[0].len(), TOP);
@@ -102,7 +109,14 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
     group.bench_function("inverted-index-search", |b| {
         b.iter(|| {
             let results = sparse_vector_index
-                .search(&[&query_vector], None, TOP, None, &stopped, usize::MAX)
+                .search(
+                    &[&query_vector],
+                    None,
+                    TOP,
+                    None,
+                    &stopped,
+                    &Default::default(),
+                )
                 .unwrap();
 
             assert_eq!(results[0].len(), TOP);
@@ -152,7 +166,7 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
                     TOP,
                     None,
                     &stopped,
-                    usize::MAX,
+                    &Default::default(),
                 )
                 .unwrap();
 

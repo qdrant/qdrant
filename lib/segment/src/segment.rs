@@ -1,6 +1,7 @@
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -26,6 +27,7 @@ use crate::common::version::{StorageVersion, VERSION_FILE};
 use crate::common::{check_named_vectors, check_query_vectors, check_stopped, check_vector_name};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{Direction, OrderBy, OrderingValue};
+use crate::data_types::query_context::QueryContext;
 use crate::data_types::vectors::{MultiDenseVector, QueryVector, Vector, VectorRef};
 use crate::entry::entry_point::SegmentEntry;
 use crate::id_tracker::IdTrackerSS;
@@ -990,7 +992,7 @@ impl Segment {
             top,
             params,
             &false.into(),
-            usize::MAX,
+            &Default::default(),
         )?;
 
         Ok(result.into_iter().next().unwrap())
@@ -1021,17 +1023,18 @@ impl SegmentEntry for Segment {
         top: usize,
         params: Option<&SearchParams>,
         is_stopped: &AtomicBool,
-        search_optimized_threshold_kb: usize,
+        query_context: &QueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         check_query_vectors(vector_name, query_vectors, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
+        let vector_query_context = query_context.get_vector_context(vector_name);
         let internal_results = vector_data.vector_index.borrow().search(
             query_vectors,
             filter,
             top,
             params,
             is_stopped,
-            search_optimized_threshold_kb,
+            &vector_query_context,
         )?;
 
         check_stopped(is_stopped)?;
@@ -1778,6 +1781,27 @@ impl SegmentEntry for Segment {
             payload_field_indices: self.payload_index.borrow().get_telemetry_data(),
         }
     }
+
+    fn fill_query_context(&self, query_context: &mut QueryContext) {
+        query_context.add_available_point_count(self.available_point_count());
+
+        for (vector_name, idf) in query_context.mut_idf().iter_mut() {
+            if let Some(vector_data) = self.vector_data.get(vector_name) {
+                let vector_index = vector_data.vector_index.borrow();
+                match vector_index.deref() {
+                    VectorIndexEnum::SparseRam(sparse_index) => {
+                        sparse_index.fill_idf_statistics(idf);
+                    }
+                    VectorIndexEnum::SparseMmap(sparse_index) => {
+                        sparse_index.fill_idf_statistics(idf);
+                    }
+                    VectorIndexEnum::Plain(_)
+                    | VectorIndexEnum::HnswRam(_)
+                    | VectorIndexEnum::HnswMmap(_) => {}
+                }
+            }
+        }
+    }
 }
 
 impl Drop for Segment {
@@ -1887,7 +1911,7 @@ mod tests {
                 10,
                 None,
                 &false.into(),
-                10_000,
+                &Default::default(),
             )
             .unwrap();
         eprintln!("search_batch_result = {search_batch_result:#?}");
@@ -2514,7 +2538,7 @@ mod tests {
                     1,
                     None,
                     &false.into(),
-                    10_000,
+                    &Default::default(),
                 )
                 .err()
                 .unwrap();

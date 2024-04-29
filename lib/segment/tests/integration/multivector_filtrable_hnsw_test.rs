@@ -228,7 +228,7 @@ fn test_multi_filterable_hnsw(
                     ..Default::default()
                 }),
                 &false.into(),
-                usize::MAX,
+                &Default::default(),
             )
             .unwrap();
 
@@ -251,7 +251,7 @@ fn test_multi_filterable_hnsw(
                 top,
                 None,
                 &false.into(),
-                usize::MAX,
+                &Default::default(),
             )
             .unwrap();
 

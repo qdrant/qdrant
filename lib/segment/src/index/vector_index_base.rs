@@ -12,6 +12,7 @@ use super::hnsw_index::hnsw::HNSWIndex;
 use super::plain_payload_index::PlainIndex;
 use super::sparse_index::sparse_vector_index::SparseVectorIndex;
 use crate::common::operation_error::OperationResult;
+use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorRef};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
@@ -26,7 +27,7 @@ pub trait VectorIndex {
         top: usize,
         params: Option<&SearchParams>,
         is_stopped: &AtomicBool,
-        search_optimized_threshold_kb: usize,
+        query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>>;
 
     /// Force internal index rebuild.
@@ -71,23 +72,23 @@ impl VectorIndex for VectorIndexEnum {
         top: usize,
         params: Option<&SearchParams>,
         is_stopped: &AtomicBool,
-        opt_threshold_kb: usize,
+        query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         match self {
             VectorIndexEnum::Plain(index) => {
-                index.search(vectors, filter, top, params, is_stopped, opt_threshold_kb)
+                index.search(vectors, filter, top, params, is_stopped, query_context)
             }
             VectorIndexEnum::HnswRam(index) => {
-                index.search(vectors, filter, top, params, is_stopped, opt_threshold_kb)
+                index.search(vectors, filter, top, params, is_stopped, query_context)
             }
             VectorIndexEnum::HnswMmap(index) => {
-                index.search(vectors, filter, top, params, is_stopped, opt_threshold_kb)
+                index.search(vectors, filter, top, params, is_stopped, query_context)
             }
             VectorIndexEnum::SparseRam(index) => {
-                index.search(vectors, filter, top, params, is_stopped, opt_threshold_kb)
+                index.search(vectors, filter, top, params, is_stopped, query_context)
             }
             VectorIndexEnum::SparseMmap(index) => {
-                index.search(vectors, filter, top, params, is_stopped, opt_threshold_kb)
+                index.search(vectors, filter, top, params, is_stopped, query_context)
             }
         }
     }

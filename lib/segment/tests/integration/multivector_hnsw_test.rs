@@ -179,7 +179,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
                 10,
                 None,
                 &false.into(),
-                usize::MAX,
+                &Default::default(),
             )
             .unwrap();
 
@@ -190,7 +190,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
                 10,
                 None,
                 &false.into(),
-                usize::MAX,
+                &Default::default(),
             )
             .unwrap();
 

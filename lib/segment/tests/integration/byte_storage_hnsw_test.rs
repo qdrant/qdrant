@@ -255,7 +255,7 @@ fn test_byte_storage_hnsw(
                     ..Default::default()
                 }),
                 &false.into(),
-                usize::MAX,
+                &Default::default(),
             )
             .unwrap();
 
@@ -277,7 +277,7 @@ fn test_byte_storage_hnsw(
                 top,
                 None,
                 &false.into(),
-                usize::MAX,
+                &Default::default(),
             )
             .unwrap();
         let plain_result_byte = segment_byte.vector_data[DEFAULT_VECTOR_NAME]
@@ -289,7 +289,7 @@ fn test_byte_storage_hnsw(
                 top,
                 None,
                 &false.into(),
-                usize::MAX,
+                &Default::default(),
             )
             .unwrap();
         compare_search_result(&plain_result_float, &plain_result_byte);

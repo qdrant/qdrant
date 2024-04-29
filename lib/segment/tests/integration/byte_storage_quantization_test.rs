@@ -333,7 +333,7 @@ fn test_byte_storage_binary_quantization_hnsw(
                     ..Default::default()
                 }),
                 &stopped,
-                usize::MAX,
+                &Default::default(),
             )
             .unwrap();
 
@@ -352,7 +352,7 @@ fn test_byte_storage_binary_quantization_hnsw(
                     ..Default::default()
                 }),
                 &stopped,
-                usize::MAX,
+                &Default::default(),
             )
             .unwrap();
 

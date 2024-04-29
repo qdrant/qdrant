@@ -530,8 +530,9 @@ mod tests_ops {
         Batch, PointInsertOperationsInternal, PointInsertOperationsInternalDiscriminants,
         PointOperationsDiscriminants, PointStruct, PointSyncOperation,
     };
+    use collection::operations::query_enum::QueryEnum;
     use collection::operations::types::{
-        OrderByInterface, QueryEnum, RecommendStrategy, SearchRequestInternal, UsingVector,
+        OrderByInterface, RecommendStrategy, SearchRequestInternal, UsingVector,
     };
     use collection::operations::vector_ops::{
         PointVectors, UpdateVectorsOp, VectorOperationsDiscriminants,

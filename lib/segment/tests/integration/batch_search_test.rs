@@ -119,7 +119,7 @@ fn test_batch_and_single_request_equivalency() {
                 10,
                 None,
                 &false.into(),
-                10_000,
+                &Default::default(),
             )
             .unwrap();
 
@@ -181,7 +181,7 @@ fn test_batch_and_single_request_equivalency() {
                 10,
                 None,
                 &false.into(),
-                usize::MAX,
+                &Default::default(),
             )
             .unwrap();
 
@@ -192,7 +192,7 @@ fn test_batch_and_single_request_equivalency() {
                 10,
                 None,
                 &false.into(),
-                usize::MAX,
+                &Default::default(),
             )
             .unwrap();
 
@@ -203,7 +203,7 @@ fn test_batch_and_single_request_equivalency() {
                 10,
                 None,
                 &false.into(),
-                usize::MAX,
+                &Default::default(),
             )
             .unwrap();
 

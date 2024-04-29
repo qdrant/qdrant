@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use common::types::PointOffsetType;
 
 use super::inverted_index_mmap::InvertedIndexMmap;
-use crate::common::sparse_vector::SparseVector;
+use crate::common::sparse_vector::RemappedSparseVector;
 use crate::common::types::DimId;
 use crate::index::inverted_index::InvertedIndex;
 use crate::index::posting_list::{PostingElement, PostingList, PostingListIterator};
@@ -53,6 +53,14 @@ impl InvertedIndex for InvertedIndexRam {
             .map(|posting_list| PostingListIterator::new(&posting_list.elements))
     }
 
+    fn len(&self) -> usize {
+        self.postings.len()
+    }
+
+    fn posting_list_len(&self, id: &DimId) -> Option<usize> {
+        self.get(id).map(|posting_list| posting_list.elements.len())
+    }
+
     fn files(path: &Path) -> Vec<PathBuf> {
         [
             InvertedIndexMmap::index_file_path(path),
@@ -63,7 +71,7 @@ impl InvertedIndex for InvertedIndexRam {
         .collect()
     }
 
-    fn upsert(&mut self, id: PointOffsetType, vector: SparseVector) {
+    fn upsert(&mut self, id: PointOffsetType, vector: RemappedSparseVector) {
         self.upsert(id, vector);
     }
 
@@ -101,7 +109,7 @@ impl InvertedIndexRam {
     }
 
     /// Upsert a vector into the inverted index.
-    pub fn upsert(&mut self, id: PointOffsetType, vector: SparseVector) {
+    pub fn upsert(&mut self, id: PointOffsetType, vector: RemappedSparseVector) {
         for (dim_id, weight) in vector.indices.into_iter().zip(vector.values.into_iter()) {
             let dim_id = dim_id as usize;
             match self.postings.get_mut(dim_id) {
@@ -143,7 +151,7 @@ mod tests {
 
         inverted_index_ram.upsert(
             4,
-            SparseVector::new(vec![1, 2, 3], vec![40.0, 40.0, 40.0]).unwrap(),
+            RemappedSparseVector::new(vec![1, 2, 3], vec![40.0, 40.0, 40.0]).unwrap(),
         );
         for i in 1..4 {
             let posting_list = inverted_index_ram.get(&i).unwrap();
@@ -171,7 +179,7 @@ mod tests {
 
         inverted_index_ram.upsert(
             4,
-            SparseVector::new(vec![1, 2, 30], vec![40.0, 40.0, 40.0]).unwrap(),
+            RemappedSparseVector::new(vec![1, 2, 30], vec![40.0, 40.0, 40.0]).unwrap(),
         );
 
         // new dimension resized postings
@@ -199,9 +207,9 @@ mod tests {
 
     #[test]
     fn test_upsert_insert_equivalence() {
-        let first_vec: SparseVector = [(1, 10.0), (2, 10.0), (3, 10.0)].into();
-        let second_vec: SparseVector = [(1, 20.0), (2, 20.0), (3, 20.0)].into();
-        let third_vec: SparseVector = [(1, 30.0), (2, 30.0), (3, 30.0)].into();
+        let first_vec: RemappedSparseVector = [(1, 10.0), (2, 10.0), (3, 10.0)].into();
+        let second_vec: RemappedSparseVector = [(1, 20.0), (2, 20.0), (3, 20.0)].into();
+        let third_vec: RemappedSparseVector = [(1, 30.0), (2, 30.0), (3, 30.0)].into();
 
         let mut builder = InvertedIndexBuilder::new();
         builder.add(1, first_vec.clone());

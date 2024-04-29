@@ -14,13 +14,12 @@ use tokio::sync::oneshot;
 use crate::collection_manager::holders::segment_holder::LockedSegment;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::common::stopping_guard::StoppingGuard;
+use crate::operations::query_enum::QueryEnum;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
-    CountRequestInternal, CountResult, PointRequestInternal, QueryEnum, Record, UpdateResult,
-    UpdateStatus,
+    CountRequestInternal, CountResult, PointRequestInternal, Record, UpdateResult, UpdateStatus,
 };
 use crate::operations::OperationWithClockTag;
-use crate::optimizers_builder::DEFAULT_INDEXING_THRESHOLD_KB;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
 use crate::update_handler::{OperationData, UpdateSignal};
@@ -32,22 +31,23 @@ impl LocalShard {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        let (collection_params, indexing_threshold_kb, full_scan_threshold_kb) = {
+        let (query_context, collection_params) = {
             let collection_config = self.collection_config.read().await;
-            (
-                collection_config.params.clone(),
-                collection_config
-                    .optimizer_config
-                    .indexing_threshold
-                    .unwrap_or(DEFAULT_INDEXING_THRESHOLD_KB),
-                collection_config.hnsw_config.full_scan_threshold,
-            )
-        };
 
-        // check vector names existing
-        for req in &core_request.searches {
-            collection_params.get_distance(req.query.get_vector_name())?;
-        }
+            let query_context_opt = SegmentsSearcher::prepare_query_context(
+                self.segments.clone(),
+                &core_request,
+                &collection_config,
+            )
+            .await?;
+
+            let Some(query_context) = query_context_opt else {
+                // No segments to search
+                return Ok(vec![]);
+            };
+
+            (query_context, collection_config.params.clone())
+        };
 
         let is_stopped = StoppingGuard::new();
 
@@ -57,7 +57,7 @@ impl LocalShard {
             search_runtime_handle,
             true,
             is_stopped.get_is_stopped(),
-            indexing_threshold_kb.max(full_scan_threshold_kb),
+            query_context,
         );
 
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);

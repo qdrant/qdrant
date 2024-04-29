@@ -45,8 +45,14 @@ message VectorsConfigDiff {
   }
 }
 
+enum Modifier {
+    None = 0;
+    Idf = 1; // Apply Inverse Document Frequency
+}
+
 message SparseVectorParams {
   optional SparseIndexConfig index = 1; // Configuration of sparse index
+  optional Modifier modifier = 2; // If set - apply modifier to the vector values
 }
 
 message SparseVectorConfig {
