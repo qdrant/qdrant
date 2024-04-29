@@ -4,12 +4,11 @@ use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::Serialize;
 
-use crate::dashboard::Code;
 use crate::solution::Solution;
 
 pub trait Issue {
-    /// Differentiates issues of the same type
-    fn distinctive(&self) -> &str;
+    /// Differentiates issues of the same type. This can hold any information that makes the issue unique and filterable.
+    fn instance_id(&self) -> &str;
 
     /// The codename for all issues of this type
     fn name() -> &'static str;
@@ -19,14 +18,6 @@ pub trait Issue {
 
     /// Actionable solution to the issue
     fn solution(&self) -> Solution;
-
-    /// Internal code for the issue
-    fn code(&self) -> Code
-    where
-        Self: std::marker::Sized + 'static,
-    {
-        Code::new::<Self>(self.distinctive())
-    }
 
     /// Submits the issue to the dashboard singleton
     fn submit(self) -> bool
@@ -48,7 +39,7 @@ pub struct IssueRecord {
 
 impl<I: Issue> From<I> for IssueRecord {
     fn from(val: I) -> Self {
-        let id = format!("{}/{}", I::name(), val.distinctive());
+        let id = format!("{}/{}", I::name(), val.instance_id());
         Self {
             id,
             description: val.description(),
@@ -73,7 +64,7 @@ impl DummyIssue {
 }
 
 impl Issue for DummyIssue {
-    fn distinctive(&self) -> &str {
+    fn instance_id(&self) -> &str {
         &self.distinctive
     }
 

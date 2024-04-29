@@ -4,8 +4,8 @@ use crate::solution::Solution;
 pub struct TooManyCollections;
 
 impl Issue for TooManyCollections {
-    fn distinctive(&self) -> &str {
-        "" // Only one issue for the whole instance
+    fn instance_id(&self) -> &str {
+        "" // Only one issue for the whole app
     }
 
     fn name() -> &'static str {

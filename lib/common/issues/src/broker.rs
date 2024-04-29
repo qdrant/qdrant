@@ -84,7 +84,7 @@ mod tests {
 
     impl Subscriber<CollectionDeletedEvent> for DummySubscriber {
         fn notify(&self, event: Arc<CollectionDeletedEvent>) {
-            crate::solve_by_filter::<DummyIssue, _>(|code| code.distinctive == event.collection_id);
+            crate::solve_by_filter::<DummyIssue, _>(|code| code.instance_id == event.collection_id);
         }
     }
 

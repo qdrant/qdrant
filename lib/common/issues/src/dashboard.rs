@@ -9,15 +9,23 @@ use crate::issue::{Issue, IssueRecord};
 #[derive(Hash, Eq, PartialEq, Clone)]
 pub struct Code {
     pub issue_type: TypeId,
-    pub distinctive: String,
+    pub instance_id: String,
 }
 
 impl Code {
-    pub fn new<T: 'static>(distinctive: impl Into<String>) -> Self {
+    pub fn new<T: 'static>(instance_id: impl Into<String>) -> Self {
         Self {
             issue_type: TypeId::of::<T>(),
-            distinctive: distinctive.into(),
+            instance_id: instance_id.into(),
         }
+    }
+
+    /// Internal code for the issue
+    fn from_issue<I: Issue + 'static>(issue: &I) -> Self
+    where
+        Self: std::marker::Sized + 'static,
+    {
+        Code::new::<I>(issue.instance_id())
     }
 }
 
@@ -35,7 +43,7 @@ struct Dashboard {
 impl Dashboard {
     /// Activates an issue, returning true if the issue was not active before
     fn add_issue<I: Issue + 'static>(&self, issue: I) -> bool {
-        let code = issue.code();
+        let code = Code::from_issue(&issue);
         if self.issues.contains_key(&code) {
             return false;
         }
@@ -117,8 +125,8 @@ mod tests {
         };
         assert!(dashboard.add_issue(issue.clone()));
         assert!(!dashboard.add_issue(issue.clone()));
-        assert!(dashboard.remove_issue(issue.code()));
-        assert!(!dashboard.remove_issue(issue.code()));
+        assert!(dashboard.remove_issue(Code::from_issue(&issue)));
+        assert!(!dashboard.remove_issue(Code::from_issue(&issue)));
     }
 
     #[test]
@@ -142,12 +150,12 @@ mod tests {
         handle2.join()?;
 
         assert_eq!(all_issues().len(), 6);
-        assert!(solve(DummyIssue::new("issue1").code()));
-        assert!(solve(DummyIssue::new("issue2").code()));
-        assert!(solve(DummyIssue::new("issue3").code()));
-        assert!(solve(DummyIssue::new("issue4").code()));
-        assert!(solve(DummyIssue::new("issue5").code()));
-        assert!(solve(DummyIssue::new("issue6").code()));
+        assert!(solve(Code::new::<DummyIssue>("issue1")));
+        assert!(solve(Code::new::<DummyIssue>("issue2")));
+        assert!(solve(Code::new::<DummyIssue>("issue3")));
+        assert!(solve(Code::new::<DummyIssue>("issue4")));
+        assert!(solve(Code::new::<DummyIssue>("issue5")));
+        assert!(solve(Code::new::<DummyIssue>("issue6")));
 
         clear();
         Ok(())
@@ -167,7 +175,7 @@ mod tests {
         submit(DummyIssue::new("issue3"));
 
         // Solve all dummy issues that contain "my_collection"
-        solve_by_filter::<DummyIssue, _>(|code| code.distinctive.contains("my_collection"));
+        solve_by_filter::<DummyIssue, _>(|code| code.instance_id.contains("my_collection"));
         assert_eq!(all_issues().len(), 3);
         assert!(solve(Code::new::<DummyIssue>("issue2")));
     }
