@@ -21,7 +21,7 @@ impl Code {
     }
 
     /// Internal code for the issue
-    fn from_issue<I: Issue + 'static>(issue: &I) -> Self
+    fn of<I: Issue + 'static>(issue: &I) -> Self
     where
         Self: std::marker::Sized + 'static,
     {
@@ -43,7 +43,7 @@ struct Dashboard {
 impl Dashboard {
     /// Activates an issue, returning true if the issue was not active before
     fn add_issue<I: Issue + 'static>(&self, issue: I) -> bool {
-        let code = Code::from_issue(&issue);
+        let code = Code::of(&issue);
         if self.issues.contains_key(&code) {
             return false;
         }
@@ -125,8 +125,8 @@ mod tests {
         };
         assert!(dashboard.add_issue(issue.clone()));
         assert!(!dashboard.add_issue(issue.clone()));
-        assert!(dashboard.remove_issue(Code::from_issue(&issue)));
-        assert!(!dashboard.remove_issue(Code::from_issue(&issue)));
+        assert!(dashboard.remove_issue(Code::of(&issue)));
+        assert!(!dashboard.remove_issue(Code::of(&issue)));
     }
 
     #[test]
