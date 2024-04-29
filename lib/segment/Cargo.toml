@@ -135,3 +135,7 @@ harness = false
 [[bench]]
 name = "metrics"
 harness = false
+
+[[bench]]
+name = "range_filtering"
+harness = false
