@@ -38,7 +38,7 @@ impl UnindexedField {
         })
     }
 
-    pub fn get_distinctive(collection_name: &str, field_name: &JsonPathV2) -> String {
+    pub fn get_instance_id(collection_name: &str, field_name: &JsonPathV2) -> String {
         format!("{collection_name}/{field_name}")
     }
 
@@ -77,14 +77,14 @@ impl UnindexedField {
             }
         };
 
-        let distinctive = Self::get_distinctive(&collection_name, &field_name);
+        let instance_id = Self::get_instance_id(&collection_name, &field_name);
 
         Ok(Self {
             field_name,
             field_schemas,
             collection_name,
             endpoint,
-            instance_id: distinctive,
+            instance_id,
         })
     }
 

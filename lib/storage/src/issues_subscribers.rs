@@ -83,7 +83,7 @@ impl Subscriber<CollectionDeletedEvent> for UnindexedFieldSubscriber {
 impl Subscriber<IndexCreatedEvent> for UnindexedFieldSubscriber {
     fn notify(&self, event: Arc<IndexCreatedEvent>) {
         issues::solve(Code::new::<UnindexedField>(
-            UnindexedField::get_distinctive(&event.collection_id, &event.field_name),
+            UnindexedField::get_instance_id(&event.collection_id, &event.field_name),
         ));
     }
 }
