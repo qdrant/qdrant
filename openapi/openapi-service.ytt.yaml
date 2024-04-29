@@ -153,9 +153,7 @@ paths:
                 type: object
         "4XX":
           description: error
-
-  /issues/clear:
-    post:
+    delete:
       summary: Clear issues
       description: Removes all issues reported so far
       operationId: clear_issues
