@@ -1,32 +1,28 @@
-use actix_web::rt::time::Instant;
-use actix_web::{get, post, web, Responder};
+use actix_web::{delete, get, web, Responder};
 use collection::operations::types::IssuesReport;
 use storage::rbac::AccessRequirements;
 
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers::process_response;
 
 #[get("/issues")]
 async fn get_issues(ActixAccess(access): ActixAccess) -> impl Responder {
-    let timing = Instant::now();
-    let response = access
-        .check_global_access(AccessRequirements::new().manage())
-        .map(|_| IssuesReport {
+    crate::actix::helpers::time(async move {
+        access.check_global_access(AccessRequirements::new().manage())?;
+        Ok(IssuesReport {
             issues: issues::all_issues(),
-        });
-    process_response(response, timing)
+        })
+    })
+    .await
 }
 
-#[post("/issues/clear")]
+#[delete("/issues")]
 async fn clear_issues(ActixAccess(access): ActixAccess) -> impl Responder {
-    let timing = Instant::now();
-    let response = access
-        .check_global_access(AccessRequirements::new().manage())
-        .map(|_| {
-            issues::clear();
-            true
-        });
-    process_response(response, timing)
+    crate::actix::helpers::time(async move {
+        access.check_global_access(AccessRequirements::new().manage())?;
+        issues::clear();
+        Ok(true)
+    })
+    .await
 }
 
 // Configure services
