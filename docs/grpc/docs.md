@@ -79,6 +79,7 @@
     - [CompressionRatio](#qdrant-CompressionRatio)
     - [Datatype](#qdrant-Datatype)
     - [Distance](#qdrant-Distance)
+    - [Modifier](#qdrant-Modifier)
     - [PayloadSchemaType](#qdrant-PayloadSchemaType)
     - [QuantizationType](#qdrant-QuantizationType)
     - [ReplicaState](#qdrant-ReplicaState)
@@ -1213,6 +1214,7 @@ Note: 1kB = 1 vector of size 256. |
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | index | [SparseIndexConfig](#qdrant-SparseIndexConfig) | optional | Configuration of sparse index |
+| modifier | [Modifier](#qdrant-Modifier) | optional | If set - apply modifier to the vector values |
 
 
 
@@ -1501,6 +1503,18 @@ Note: 1kB = 1 vector of size 256. |
 | Euclid | 2 |  |
 | Dot | 3 |  |
 | Manhattan | 4 |  |
+
+
+
+<a name="qdrant-Modifier"></a>
+
+### Modifier
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| None | 0 |  |
+| Idf | 1 | Apply Inverse Document Frequency |
 
 
 

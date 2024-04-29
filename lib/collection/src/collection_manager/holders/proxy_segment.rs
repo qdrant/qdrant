@@ -9,6 +9,7 @@ use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::common::operation_error::{OperationResult, SegmentFailedState};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::order_by::OrderingValue;
+use segment::data_types::query_context::QueryContext;
 use segment::data_types::vectors::{QueryVector, Vector};
 use segment::entry::entry_point::SegmentEntry;
 use segment::index::field_index::CardinalityEstimation;
@@ -238,7 +239,7 @@ impl ProxySegment {
             top,
             params,
             &false.into(),
-            usize::MAX,
+            &Default::default(),
         )?;
 
         Ok(result.into_iter().next().unwrap())
@@ -272,7 +273,7 @@ impl SegmentEntry for ProxySegment {
         top: usize,
         params: Option<&SearchParams>,
         is_stopped: &AtomicBool,
-        search_optimized_threshold_kb: usize,
+        query_context: &QueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         let deleted_points = self.deleted_points.read();
 
@@ -296,7 +297,7 @@ impl SegmentEntry for ProxySegment {
                 top,
                 params,
                 is_stopped,
-                search_optimized_threshold_kb,
+                query_context,
             )?
         } else {
             self.wrapped_segment.get().read().search_batch(
@@ -308,7 +309,7 @@ impl SegmentEntry for ProxySegment {
                 top,
                 params,
                 is_stopped,
-                search_optimized_threshold_kb,
+                query_context,
             )?
         };
         let mut write_results = self.write_segment.get().read().search_batch(
@@ -320,7 +321,7 @@ impl SegmentEntry for ProxySegment {
             top,
             params,
             is_stopped,
-            search_optimized_threshold_kb,
+            query_context,
         )?;
         for (index, write_result) in write_results.iter_mut().enumerate() {
             wrapped_results[index].append(write_result)
@@ -854,6 +855,14 @@ impl SegmentEntry for ProxySegment {
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> SegmentTelemetry {
         self.wrapped_segment.get().read().get_telemetry_data(detail)
     }
+
+    fn fill_query_context(&self, query_context: &mut QueryContext) {
+        // Information from temporary segment is not too important for query context
+        self.wrapped_segment
+            .get()
+            .read()
+            .fill_query_context(query_context)
+    }
 }
 
 #[cfg(test)]
@@ -992,7 +1001,7 @@ mod tests {
                 10,
                 None,
                 &false.into(),
-                10_000,
+                &Default::default(),
             )
             .unwrap();
 
@@ -1047,7 +1056,7 @@ mod tests {
                 10,
                 None,
                 &false.into(),
-                10_000,
+                &Default::default(),
             )
             .unwrap();
 
@@ -1112,7 +1121,7 @@ mod tests {
                 10,
                 None,
                 &false.into(),
-                10_000,
+                &Default::default(),
             )
             .unwrap();
 

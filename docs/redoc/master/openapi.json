@@ -5711,6 +5711,17 @@
                 "nullable": true
               }
             ]
+          },
+          "modifier": {
+            "description": "Configures addition value modifications for sparse vectors. Default: none",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Modifier"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -5731,6 +5742,14 @@
             "nullable": true
           }
         }
+      },
+      "Modifier": {
+        "description": "If used, include weight modification, which will be applied to sparse vectors at query time: None - no modification (default) Idf - inverse document frequency, based on statistics of the collection",
+        "type": "string",
+        "enum": [
+          "none",
+          "idf"
+        ]
       },
       "HnswConfig": {
         "description": "Config of HNSW index",

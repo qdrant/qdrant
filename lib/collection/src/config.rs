@@ -245,6 +245,12 @@ impl CollectionParams {
             })
     }
 
+    pub fn get_sparse_vector_params_opt(&self, vector_name: &str) -> Option<&SparseVectorParams> {
+        self.sparse_vectors
+            .as_ref()
+            .and_then(|sparse_vectors| sparse_vectors.get(vector_name))
+    }
+
     pub fn get_sparse_vector_params_mut(
         &mut self,
         vector_name: &str,
@@ -310,7 +316,11 @@ impl CollectionParams {
     ) -> CollectionResult<()> {
         for (vector_name, update_params) in update_vectors.0.iter() {
             let sparse_vector_params = self.get_sparse_vector_params_mut(vector_name)?;
-            let SparseVectorParams { index } = update_params.clone();
+            let SparseVectorParams { index, modifier } = update_params.clone();
+
+            if let Some(modifier) = modifier {
+                sparse_vector_params.modifier = Some(modifier);
+            }
 
             if let Some(index) = index {
                 if let Some(existing_index) = &mut sparse_vector_params.index {

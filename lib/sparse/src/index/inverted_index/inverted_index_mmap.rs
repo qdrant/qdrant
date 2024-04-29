@@ -12,8 +12,8 @@ use memory::mmap_ops::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::common::sparse_vector::SparseVector;
-use crate::common::types::DimId;
+use crate::common::sparse_vector::RemappedSparseVector;
+use crate::common::types::{DimId, DimOffset};
 use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use crate::index::inverted_index::InvertedIndex;
 use crate::index::posting_list::{PostingElement, PostingListIterator};
@@ -55,6 +55,14 @@ impl InvertedIndex for InvertedIndexMmap {
         self.get(id).map(PostingListIterator::new)
     }
 
+    fn len(&self) -> usize {
+        self.file_header.posting_count
+    }
+
+    fn posting_list_len(&self, id: &DimOffset) -> Option<usize> {
+        self.get(id).map(|posting_list| posting_list.len())
+    }
+
     fn files(path: &Path) -> Vec<PathBuf> {
         vec![
             Self::index_file_path(path),
@@ -62,7 +70,7 @@ impl InvertedIndex for InvertedIndexMmap {
         ]
     }
 
-    fn upsert(&mut self, _id: PointOffsetType, _vector: SparseVector) {
+    fn upsert(&mut self, _id: PointOffsetType, _vector: RemappedSparseVector) {
         panic!("Cannot upsert into a read-only Mmap inverted index")
     }
 
