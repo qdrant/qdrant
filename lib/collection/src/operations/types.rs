@@ -1327,7 +1327,7 @@ impl Anonymize for VectorParams {
     }
 }
 
-/// If used, include weight modification, which will be applied to sparse vectors in query time:
+/// If used, include weight modification, which will be applied to sparse vectors at query time:
 /// None - no modification (default)
 /// Idf - inverse document frequency, based on statistics of the collection
 #[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Default)]
