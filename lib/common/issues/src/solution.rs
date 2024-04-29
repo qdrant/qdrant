@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Clone)]
+#[serde(rename_all = "snake_case")]
 pub enum Solution {
     /// A solution that can be applied immediately
     Immediate(ImmediateSolution),
@@ -13,9 +14,6 @@ pub enum Solution {
 
     /// A solution that requires manual intervention
     Refactor(String),
-
-    /// Failed to generate solution
-    None,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Clone)]
