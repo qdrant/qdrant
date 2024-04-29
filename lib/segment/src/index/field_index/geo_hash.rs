@@ -583,6 +583,51 @@ mod tests {
     }
 
     #[test]
+    fn rectangle_hashes_crossing_antimeridian() {
+        // conversion to lon/lat http://geohash.co/
+        // "ztnv2hjxn03k"
+        let top_left = GeoPoint {
+            lat: 74.071028,
+            lon: 167.0,
+        };
+
+        // "dr5ru7c02wnv"
+        let bottom_right = GeoPoint {
+            lat: 40.75798,
+            lon: -73.991516,
+        };
+
+        let crossing_usa_rectangle = GeoBoundingBox {
+            top_left,
+            bottom_right,
+        };
+
+        let usa_hashes_result = rectangle_hashes(&crossing_usa_rectangle, 200);
+        let usa_hashes = usa_hashes_result.unwrap();
+        assert_eq!(usa_hashes.len(), 84);
+        assert!(usa_hashes.iter().all(|h| h.len() == 2)); // low geohash precision
+
+        let mut usa_hashes_result = rectangle_hashes(&crossing_usa_rectangle, 10);
+        usa_hashes_result.as_mut().unwrap().sort_unstable();
+        let mut expected = vec!["8", "9", "b", "c", "d", "f", "x", "z"];
+        expected.sort_unstable();
+
+        assert_eq!(usa_hashes_result.unwrap(), expected);
+
+        // Graphical proof using https://www.movable-type.co.uk/scripts/geohash.html
+
+        // n p 0 1 4 5
+        // y z b c f g
+        // w x 8 9 d e
+        // q r 2 3 6 7
+
+        // - - - - - -
+        // | z b c f |
+        // | x 8 9 d |
+        // - - - - - -
+    }
+
+    #[test]
     fn polygon_hashes_nyc() {
         // conversion to lon/lat http://geohash.co/
         // "dr5ruj4477kd"

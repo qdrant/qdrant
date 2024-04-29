@@ -1499,10 +1499,16 @@ pub struct GeoBoundingBox {
 
 impl GeoBoundingBox {
     pub fn check_point(&self, point: &GeoPoint) -> bool {
-        (self.top_left.lon < point.lon)
-            && (point.lon < self.bottom_right.lon)
-            && (self.bottom_right.lat < point.lat)
-            && (point.lat < self.top_left.lat)
+        let longitude_check = if self.top_left.lon > self.bottom_right.lon {
+            // Handle antimeridian crossing
+            point.lon > self.top_left.lon || point.lon < self.bottom_right.lon
+        } else {
+            self.top_left.lon < point.lon && point.lon < self.bottom_right.lon
+        };
+
+        let latitude_check = self.bottom_right.lat < point.lat && point.lat < self.top_left.lat;
+
+        longitude_check && latitude_check
     }
 }
 
@@ -2363,6 +2369,35 @@ mod tests {
 
         // haversine distance between (0, 0) and (0.5, 0.5) is 235866.91169814655
         let outside_result = bounding_box.check_point(&GeoPoint { lon: 1.5, lat: 1.5 });
+        assert!(!outside_result);
+    }
+
+    #[test]
+    fn test_geo_boundingbox_antimeridian_check_point() {
+        // Use the bounding box for USA: (74.071028, 167), (18.7763, -66.885417)
+        let bounding_box = GeoBoundingBox {
+            top_left: GeoPoint {
+                lat: 74.071028,
+                lon: 167.0,
+            },
+            bottom_right: GeoPoint {
+                lat: 18.7763,
+                lon: -66.885417,
+            },
+        };
+
+        // Test NYC, which is inside the bounding box
+        let inside_result = bounding_box.check_point(&GeoPoint {
+            lat: 40.75798,
+            lon: -73.991516,
+        });
+        assert!(inside_result);
+
+        // Test Berlin, which is outside the bounding box
+        let outside_result = bounding_box.check_point(&GeoPoint {
+            lat: 52.52437,
+            lon: 13.41053,
+        });
         assert!(!outside_result);
     }
 
