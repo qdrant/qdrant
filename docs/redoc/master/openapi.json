@@ -6455,20 +6455,15 @@
             "default": null,
             "anyOf": [
               {
-                "anyOf": [
-                  {
-                    "$ref": "#/components/schemas/Condition"
-                  },
-                  {
-                    "nullable": true
-                  }
-                ]
+                "$ref": "#/components/schemas/Condition"
               },
               {
                 "type": "array",
                 "items": {
                   "$ref": "#/components/schemas/Condition"
-                },
+                }
+              },
+              {
                 "nullable": true
               }
             ]
@@ -6489,20 +6484,15 @@
             "default": null,
             "anyOf": [
               {
-                "anyOf": [
-                  {
-                    "$ref": "#/components/schemas/Condition"
-                  },
-                  {
-                    "nullable": true
-                  }
-                ]
+                "$ref": "#/components/schemas/Condition"
               },
               {
                 "type": "array",
                 "items": {
                   "$ref": "#/components/schemas/Condition"
-                },
+                }
+              },
+              {
                 "nullable": true
               }
             ]
@@ -6512,20 +6502,15 @@
             "default": null,
             "anyOf": [
               {
-                "anyOf": [
-                  {
-                    "$ref": "#/components/schemas/Condition"
-                  },
-                  {
-                    "nullable": true
-                  }
-                ]
+                "$ref": "#/components/schemas/Condition"
               },
               {
                 "type": "array",
                 "items": {
                   "$ref": "#/components/schemas/Condition"
-                },
+                }
+              },
+              {
                 "nullable": true
               }
             ]

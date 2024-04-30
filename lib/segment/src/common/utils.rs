@@ -515,8 +515,9 @@ where
     #[derive(JsonSchema)]
     #[serde(untagged)]
     enum OneOrMany<T> {
-        _One(Option<T>),
-        _Many(Option<Vec<T>>),
+        _One(T),
+        _Many(Vec<T>),
+        _None(()),
     }
 
     let schema: SchemaObject = <OneOrMany<T>>::json_schema(gen).into();
