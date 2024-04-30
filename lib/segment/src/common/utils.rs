@@ -526,12 +526,9 @@ where
 
 #[cfg(test)]
 #[generic_tests::define]
-mod tests {
+mod jsonpath_tests {
     use std::any::TypeId;
     use std::str::FromStr;
-
-    use schemars::JsonSchema;
-    use serde::Deserialize;
 
     use super::*;
     use crate::json_path::{path, JsonPathInterface, JsonPathString, JsonPathV2};
@@ -1268,6 +1265,14 @@ mod tests {
 
     #[instantiate_tests(<JsonPathV2>)]
     mod v2 {}
+}
+
+#[cfg(test)]
+mod tests {
+    use schemars::{schema_for, JsonSchema};
+    use serde::Deserialize;
+
+    use crate::common::utils::{deserialize_one_or_many, schema_one_or_many_opt};
 
     #[test]
     fn test_deserialize_one_or_many() {
@@ -1321,19 +1326,31 @@ mod tests {
             _field: Vec<String>,
         }
 
-        let schema = schemars::schema_for!(Test);
-        let json = serde_json::to_value(&schema).unwrap();
+        let mut field_schema = schemars::schema_for!(Test)
+            .schema
+            .object
+            .unwrap()
+            .properties
+            .remove("_field")
+            .unwrap()
+            .into_object();
 
-        let types = json
-            .get("properties")
-            .and_then(|x| x.get("_field"))
-            .and_then(|x| x.get("anyOf"))
-            .and_then(|x| x.as_array())
-            .unwrap();
+        assert!(field_schema.subschemas.is_some());
 
+        let any_of = field_schema.subschemas().any_of.clone().unwrap();
+
+        assert_eq!(any_of.len(), 3);
         assert_eq!(
-            serde_json::to_string(types).unwrap(),
-            "[{\"type\":[\"string\",\"null\"]},{\"items\":{\"type\":\"string\"},\"type\":[\"array\",\"null\"]}]",
+            any_of[0].clone().into_object().instance_type,
+            schema_for!(String).schema.instance_type
+        );
+        assert_eq!(
+            any_of[1].clone().into_object().array,
+            schema_for!(Vec<String>).schema.array
+        );
+        assert_eq!(
+            any_of[2].clone().into_object().instance_type,
+            schema_for!(()).schema.instance_type
         );
     }
 }

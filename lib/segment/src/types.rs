@@ -22,12 +22,7 @@ use uuid::Uuid;
 use validator::{Validate, ValidationError, ValidationErrors};
 
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::common::utils;
-use crate::common::utils::{
-    self, check_exclude_pattern, check_include_pattern, deserialize_one_or_many_opt,
-    filter_json_values, get_value_from_json_map, get_value_from_json_map_opt,
-    schema_one_or_many_opt, MultiValue,
-};
+use crate::common::utils::{self, deserialize_one_or_many_opt, schema_one_or_many_opt, MultiValue};
 use crate::data_types::integer_index::IntegerIndexParams;
 use crate::data_types::text_index::TextIndexParams;
 use crate::data_types::vectors::{VectorElementType, VectorStruct};
@@ -2812,8 +2807,8 @@ mod tests {
             panic!("Condition::Nested expected but got {:?}", first_must)
         };
 
-        assert_eq!(nested_condition.raw_key(), "country.cities");
-        assert_eq!(nested_condition.array_key(), "country.cities[]");
+        assert_eq!(nested_condition.raw_key().to_string(), "country.cities");
+        assert_eq!(nested_condition.array_key().to_string(), "country.cities[]");
 
         let nested_must = nested_condition.filter().must.as_ref().unwrap();
         assert_eq!(nested_must.len(), 1);
@@ -2823,7 +2818,7 @@ mod tests {
             panic!("Condition::Field expected, got {:?}", must)
         };
 
-        assert_eq!(c.key, "population");
+        assert_eq!(c.key.to_string(), "population");
         assert!(c.range.is_some());
     }
 
