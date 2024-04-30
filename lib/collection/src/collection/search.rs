@@ -147,7 +147,7 @@ impl Collection {
                         }
                         for batch in &mut records {
                             for point in batch {
-                                point.shard_key = shard_key.clone();
+                                point.shard_key.clone_from(&shard_key);
                             }
                         }
                         Ok(records)

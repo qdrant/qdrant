@@ -70,7 +70,7 @@ impl JsonPathInterface for JsonPathV2 {
             rest: Vec::new(),
         };
         for (key, value) in json_map.iter() {
-            path.first_key = key.clone();
+            path.first_key.clone_from(key);
             if filter(&path, value) {
                 let value = run_filter(&mut path, value, &filter);
                 new_map.insert(key.clone(), value);

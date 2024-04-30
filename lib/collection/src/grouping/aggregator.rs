@@ -313,7 +313,7 @@ mod unit_tests {
                     "case {case_idx}"
                 );
             } else {
-                assert!(aggregator.groups.get(key).is_none(), "case {case_idx}");
+                assert!(!aggregator.groups.contains_key(key), "case {case_idx}");
             }
         });
 
