@@ -96,8 +96,6 @@ pub trait ValueIndexer<T> {
 
 /// Common interface for all possible types of field indexes
 /// Enables polymorphism on field indexes
-/// TODO: Rename with major release
-#[allow(clippy::enum_variant_names)]
 pub enum FieldIndex {
     IntIndex(NumericIndex<IntPayloadType>),
     DatetimeIndex(NumericIndex<IntPayloadType>),
