@@ -136,7 +136,7 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
     }
 
     pub fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
-        self.deleted[key as usize]
+        self.deleted.get(key as usize).map(|b| *b).unwrap_or(false)
     }
 
     /// Get [`BitSlice`] representation for deleted vectors with deletion flags
