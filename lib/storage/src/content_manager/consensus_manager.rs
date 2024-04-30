@@ -380,8 +380,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 ConfChangeType::AddNode => {
                     debug_assert!(
                         self.peer_address_by_id()
-                            .get(&single_change.node_id)
-                            .is_some(),
+                            .contains_key(&single_change.node_id),
                         "Peer should be already known"
                     )
                 }

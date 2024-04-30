@@ -22,8 +22,8 @@ impl Group {
     pub(super) fn hydrate_from(&mut self, map: &HashMap<PointIdType, ScoredPoint>) {
         self.hits.iter_mut().for_each(|hit| {
             if let Some(point) = map.get(&hit.id) {
-                hit.payload = point.payload.clone();
-                hit.vector = point.vector.clone();
+                hit.payload.clone_from(&point.payload);
+                hit.vector.clone_from(&point.vector);
             }
         });
     }
