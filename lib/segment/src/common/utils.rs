@@ -488,10 +488,10 @@ impl<'de, T: Serialize + Deserialize<'de>> MaybeOneOrMany<T> {
         use serde_untagged::UntaggedEnumVisitor;
 
         UntaggedEnumVisitor::new()
-            .seq(|x| x.deserialize())
-            .map(|x| x.deserialize().map(|x| vec![x]))
+            .unit(|| Ok(None))
+            .seq(|x| x.deserialize().map(Some))
+            .map(|x| x.deserialize().map(|x| vec![x]).map(Some))
             .deserialize(deserializer)
-            .map(|x| x.into())
     }
 }
 
@@ -1282,6 +1282,17 @@ mod tests {
         struct Inner {
             key: String,
         }
+
+        let res = serde_json::from_str::<Test>(
+            r#"
+            {
+                "data": null
+            }
+            "#,
+        )
+        .unwrap();
+
+        assert!(res.data.is_none());
 
         let res = serde_json::from_str::<Test>(
             r#"
