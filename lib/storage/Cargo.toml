@@ -33,6 +33,7 @@ strum = { workspace = true }
 tar = { workspace = true }
 chrono = { workspace = true }
 validator = { workspace = true }
+async-recursion = "1.1"
 
 # Consensus related
 atomicwrites = { version = "0.4.3" }
