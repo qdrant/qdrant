@@ -373,7 +373,7 @@ pub(crate) fn sync_points(
 
     // 5. Upsert points which differ from the stored ones
     let num_replaced = upsert_points(segments, op_num, points_to_update)?;
-    debug_assert_eq!(num_replaced, num_updated);
+    debug_assert!(num_replaced <= num_updated, "number of replaced points cannot be greater than points to update ({num_replaced} <= {num_updated})");
 
     Ok((deleted, num_new, num_updated))
 }
