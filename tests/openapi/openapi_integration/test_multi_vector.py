@@ -5,7 +5,6 @@ import os
 from .helpers.collection_setup import drop_collection
 from .helpers.helpers import request_with_validation
 
-
 QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost:6333")
 
 collection_name = 'test_multi_vector_persistence'
@@ -16,6 +15,7 @@ def setup():
     multivector_collection_setup(collection_name=collection_name)
     yield
     drop_collection(collection_name=collection_name)
+
 
 def multivector_collection_setup(collection_name='test_collection'):
     response = request_with_validation(
@@ -110,10 +110,9 @@ def test_multi_vector_persisted():
     assert point['id'] == 2
     assert point['vector']['my-multivec'] == [[0.19, 0.81, 0.75, 0.11]]
 
-# TODO add test for failing search with multi vector
 
 def test_multi_vector_validation():
-    # use dense vector
+    # fails because uses dense vector
     response = request_with_validation(
         api='/collections/{collection_name}/points',
         method="PUT",
@@ -133,7 +132,7 @@ def test_multi_vector_validation():
     assert not response.ok
     assert 'Wrong input: Conversion between multi and regular vectors failed' in response.json()["status"]["error"]
 
-    # empty multi vector
+    # fails because it uses and empty multi vector
     response = request_with_validation(
         api='/collections/{collection_name}/points',
         method="PUT",
@@ -153,7 +152,7 @@ def test_multi_vector_validation():
     assert not response.ok
     assert 'Wrong input: Vector inserting error: expected dim: 4, got 0' in response.json()["status"]["error"]
 
-    # empty inner vector
+    # fails because it uses an empty inner vector
     response = request_with_validation(
         api='/collections/{collection_name}/points',
         method="PUT",
@@ -171,9 +170,10 @@ def test_multi_vector_validation():
         }
     )
     assert not response.ok
-    assert 'Validation error in JSON body: [points[0].vector.?.data: all vectors must be non-empty]' in response.json()["status"]["error"]
+    assert 'Validation error in JSON body: [points[0].vector.?.data: all vectors must be non-empty]' in \
+           response.json()["status"]["error"]
 
-    # one inner vector
+    # fails because it uses one inner vector
     response = request_with_validation(
         api='/collections/{collection_name}/points',
         method="PUT",
@@ -194,6 +194,23 @@ def test_multi_vector_validation():
         }
     )
     assert not response.ok
-    assert 'Validation error in JSON body: [points[0].vector.?.data: all vectors must be non-empty]' in response.json()["status"]["error"]
+    assert 'Validation error in JSON body: [points[0].vector.?.data: all vectors must be non-empty]' in \
+           response.json()["status"]["error"]
 
 
+def test_search_legacy_api():
+    # uses raw requests to avoid schema validation error
+    response = requests.post(
+        f"http://{QDRANT_HOST}/collections/{collection_name}/points/search",
+        json={
+            "vector": {
+                "my-multivec": [
+                    [0.05, 0.61, 0.76, 0.74],
+                ]
+            },
+            "limit": 3
+        }
+    )
+    assert not response.ok
+    assert 'Format error in JSON body: data did not match any variant of untagged enum NamedVectorStruct' in \
+           response.json()["status"]["error"]
