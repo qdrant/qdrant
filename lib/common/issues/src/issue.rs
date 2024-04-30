@@ -49,6 +49,7 @@ impl<I: Issue> From<I> for IssueRecord {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Clone)]
 pub(crate) struct DummyIssue {
     pub distinctive: String,

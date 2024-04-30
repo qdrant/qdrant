@@ -199,7 +199,7 @@ fn check_matches(
                 .vector_index
                 .borrow()
                 .search(
-                    &[&query],
+                    &[query],
                     filter,
                     top,
                     None,
@@ -265,7 +265,7 @@ fn check_oversampling(
 
         let oversampling_2_result = hnsw_index
             .search(
-                &[&query],
+                &[query],
                 None,
                 top,
                 Some(&SearchParams {
