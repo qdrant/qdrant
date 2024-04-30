@@ -14,7 +14,7 @@ rust-version = "1.77"
 default-run = "qdrant"
 
 [features]
-default = ["web", "parking_lot"]
+default = ["web", "parking_lot", "issues"]
 web = ["actix-web"]
 multiling-chinese = ["segment/multiling-chinese"]
 multiling-japanese = ["segment/multiling-japanese"]
@@ -33,6 +33,7 @@ tracing-tracy = ["tracing", "dep:tracing-tracy"]
 tokio-tracing = ["tokio/tracing"]
 stacktrace = ["rstack-self"]
 chaos-testing = []
+issues = []
 
 [dev-dependencies]
 serde_urlencoded = "0.7"
