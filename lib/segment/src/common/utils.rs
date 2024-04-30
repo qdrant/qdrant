@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::ops::Bound;
 
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use smallvec::{smallvec, SmallVec};
 
@@ -467,61 +469,55 @@ pub fn transpose_map_into_named_vector<TVector: Into<Vector>>(
     result
 }
 
-/// Deserialize JSON single value or array into Vec
+/// Deserializer helper for `Option<Vec<T>>` that allows deserializing both single and an array of values.
 ///
-/// E.g
-/// {
-///   "key": [
-///       { "inner": "value" }
-///   ]
-/// }
-///
-/// {
-///   "key": {
-///       "inner": "value"
-///   }
-/// }
-pub fn deserialize_one_or_many<'de, T, D>(deserializer: D) -> Result<Vec<T>, D::Error>
-where
-    T: serde::Deserialize<'de>,
-    D: serde::Deserializer<'de>,
-{
-    use serde_untagged::UntaggedEnumVisitor;
+/// Use via `#[serde(with = "MaybeOneOrMany")]` and `#[schemars(with="MaybeOneOrMany<T>")]` field attributes
+pub struct MaybeOneOrMany<T>(pub Option<Vec<T>>);
 
-    UntaggedEnumVisitor::new()
-        .seq(|x| x.deserialize())
-        .map(|x| x.deserialize().map(|x| vec![x]))
-        .deserialize(deserializer)
+impl<'de, T: Serialize + Deserialize<'de>> MaybeOneOrMany<T> {
+    pub fn serialize<S>(value: &Option<Vec<T>>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        value.serialize(serializer)
+    }
+    pub fn deserialize<D>(deserializer: D) -> Result<Option<Vec<T>>, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde_untagged::UntaggedEnumVisitor;
+
+        UntaggedEnumVisitor::new()
+            .seq(|x| x.deserialize())
+            .map(|x| x.deserialize().map(|x| vec![x]))
+            .deserialize(deserializer)
+            .map(|x| x.into())
+    }
 }
 
-pub fn deserialize_one_or_many_opt<'de, T, D>(deserializer: D) -> Result<Option<Vec<T>>, D::Error>
-where
-    T: serde::Deserialize<'de>,
-    D: serde::Deserializer<'de>,
-{
-    deserialize_one_or_many(deserializer).map(|x| x.into())
-}
+impl<T: JsonSchema> JsonSchema for MaybeOneOrMany<T> {
+    fn json_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        use schemars::schema::SchemaObject;
 
-/// Generates the JSON schema for a single or collection of instances of a give type `T`
-pub fn schema_one_or_many_opt<T>(
-    gen: &mut schemars::gen::SchemaGenerator,
-) -> schemars::schema::Schema
-where
-    T: schemars::JsonSchema,
-{
-    use schemars::schema::SchemaObject;
-    use schemars::JsonSchema;
+        #[derive(JsonSchema)]
+        #[serde(untagged)]
+        enum OneOrMany<T> {
+            _One(T),
+            _Many(Vec<T>),
+            _None(()),
+        }
 
-    #[derive(JsonSchema)]
-    #[serde(untagged)]
-    enum OneOrMany<T> {
-        _One(T),
-        _Many(Vec<T>),
-        _None(()),
+        let schema: SchemaObject = <OneOrMany<T>>::json_schema(gen).into();
+        schema.into()
     }
 
-    let schema: SchemaObject = <OneOrMany<T>>::json_schema(gen).into();
-    schema.into()
+    fn schema_name() -> String {
+        <Vec<T>>::schema_name()
+    }
+
+    fn is_referenceable() -> bool {
+        false
+    }
 }
 
 #[cfg(test)]
@@ -1270,19 +1266,19 @@ mod jsonpath_tests {
 #[cfg(test)]
 mod tests {
     use schemars::{schema_for, JsonSchema};
-    use serde::Deserialize;
+    use serde::{Deserialize, Serialize};
 
-    use crate::common::utils::{deserialize_one_or_many, schema_one_or_many_opt};
+    use crate::common::utils::MaybeOneOrMany;
 
     #[test]
     fn test_deserialize_one_or_many() {
-        #[derive(Deserialize)]
+        #[derive(Serialize, Deserialize)]
         struct Test {
-            #[serde(deserialize_with = "deserialize_one_or_many")]
-            data: Vec<Inner>,
+            #[serde(with = "MaybeOneOrMany")]
+            data: Option<Vec<Inner>>,
         }
 
-        #[derive(Deserialize)]
+        #[derive(Serialize, Deserialize)]
         struct Inner {
             key: String,
         }
@@ -1298,8 +1294,8 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(res.data.len(), 1);
-        assert_eq!(res.data[0].key, "value".to_string());
+        assert_eq!(res.data.as_ref().unwrap().len(), 1);
+        assert_eq!(res.data.as_ref().unwrap()[0].key, "value".to_string());
 
         let res = serde_json::from_str::<Test>(
             r#"
@@ -1314,26 +1310,26 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(res.data.len(), 1);
-        assert_eq!(res.data[0].key, "value".to_string());
+        assert_eq!(res.data.as_ref().unwrap().len(), 1);
+        assert_eq!(res.data.as_ref().unwrap()[0].key, "value".to_string());
     }
 
     #[test]
     fn test_schema_one_or_many() {
         #[derive(JsonSchema)]
         struct Test {
-            #[schemars(schema_with = "schema_one_or_many_opt::<String>")]
-            _field: Vec<String>,
+            #[schemars(with = "MaybeOneOrMany<String>")]
+            _field: Option<Vec<String>>,
         }
 
-        let mut field_schema = schemars::schema_for!(Test)
+        let mut field_schema = dbg!(schemars::schema_for!(Test)
             .schema
             .object
             .unwrap()
             .properties
             .remove("_field")
             .unwrap()
-            .into_object();
+            .into_object());
 
         assert!(field_schema.subschemas.is_some());
 

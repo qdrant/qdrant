@@ -22,7 +22,7 @@ use uuid::Uuid;
 use validator::{Validate, ValidationError, ValidationErrors};
 
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::common::utils::{self, deserialize_one_or_many_opt, schema_one_or_many_opt, MultiValue};
+use crate::common::utils::{self, MaybeOneOrMany, MultiValue};
 use crate::data_types::integer_index::IntegerIndexParams;
 use crate::data_types::text_index::TextIndexParams;
 use crate::data_types::vectors::{VectorElementType, VectorStruct};
@@ -2108,22 +2108,22 @@ impl MinShould {
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub struct Filter {
     /// At least one of those conditions should match
-    #[serde(default, deserialize_with = "deserialize_one_or_many_opt")]
     #[validate]
-    #[schemars(schema_with = "schema_one_or_many_opt::<Condition>")]
+    #[serde(default, with = "MaybeOneOrMany")]
+    #[schemars(with = "MaybeOneOrMany<Condition>")]
     pub should: Option<Vec<Condition>>,
     /// At least minimum amount of given conditions should match
     #[validate]
     pub min_should: Option<MinShould>,
     /// All conditions must match
-    #[serde(default, deserialize_with = "deserialize_one_or_many_opt")]
     #[validate]
-    #[schemars(schema_with = "schema_one_or_many_opt::<Condition>")]
+    #[serde(default, with = "MaybeOneOrMany")]
+    #[schemars(with = "MaybeOneOrMany<Condition>")]
     pub must: Option<Vec<Condition>>,
     /// All conditions must NOT match
-    #[serde(default, deserialize_with = "deserialize_one_or_many_opt")]
     #[validate]
-    #[schemars(schema_with = "schema_one_or_many_opt::<Condition>")]
+    #[serde(default, with = "MaybeOneOrMany")]
+    #[schemars(with = "MaybeOneOrMany<Condition>")]
     pub must_not: Option<Vec<Condition>>,
 }
 
