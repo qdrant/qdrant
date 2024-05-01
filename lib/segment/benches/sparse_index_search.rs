@@ -140,6 +140,7 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
                     TOP,
                     &stopped,
                     &mut prefiltered_points,
+                    &Default::default(),
                 )
                 .unwrap();
 
@@ -185,6 +186,7 @@ fn sparse_vector_index_search_benchmark(c: &mut Criterion) {
                     TOP,
                     &stopped,
                     &mut prefiltered_points,
+                    &Default::default(),
                 )
                 .unwrap();
 

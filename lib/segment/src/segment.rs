@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
 use atomic_refcell::AtomicRefCell;
+use bitvec::prelude::BitVec;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use io::file_operations::{atomic_save_json, read_json};
 use itertools::Either;
@@ -433,6 +434,10 @@ impl Segment {
 
     pub fn get_internal_id(&self, point_id: PointIdType) -> Option<PointOffsetType> {
         self.id_tracker.borrow().internal_id(point_id)
+    }
+
+    pub fn get_deleted_points_bitvec(&self) -> BitVec {
+        BitVec::from(self.id_tracker.borrow().deleted_point_bitslice())
     }
 
     fn lookup_internal_id(&self, point_id: PointIdType) -> OperationResult<PointOffsetType> {
@@ -1035,7 +1040,8 @@ impl SegmentEntry for Segment {
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         check_query_vectors(vector_name, query_vectors, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
-        let vector_query_context = query_context.get_vector_context(vector_name);
+        let segment_query_context = query_context.get_segment_query_context();
+        let vector_query_context = segment_query_context.get_vector_context(vector_name);
         let internal_results = vector_data.vector_index.borrow().search(
             query_vectors,
             filter,

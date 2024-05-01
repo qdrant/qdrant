@@ -57,11 +57,10 @@ impl ProxySegment {
         deleted_indexes: LockedFieldsSet,
     ) -> Self {
         let deleted_mask = match &segment {
-            LockedSegment::Original(_raw_segment) => {
-                // Do not pre-allocate mask, as it is not always needed
-                // Default value is empty mask
-                let deleted_mask = BitVec::new();
-                Some(deleted_mask)
+            LockedSegment::Original(raw_segment) => {
+                let raw_segment_guard = raw_segment.read();
+                let already_deleted = raw_segment_guard.get_deleted_points_bitvec();
+                Some(already_deleted)
             }
             LockedSegment::Proxy(_) => None,
         };

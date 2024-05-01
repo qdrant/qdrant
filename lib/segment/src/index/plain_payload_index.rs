@@ -275,13 +275,16 @@ impl VectorIndex for PlainIndex {
                 let payload_index = self.payload_index.borrow();
                 let vector_storage = self.vector_storage.borrow();
                 let filtered_ids_vec = payload_index.query_points(filter);
+                let deleted_points = query_context
+                    .deleted_points()
+                    .unwrap_or(id_tracker.deleted_point_bitslice());
                 vectors
                     .iter()
                     .map(|&vector| {
                         new_stoppable_raw_scorer(
                             vector.to_owned(),
                             &vector_storage,
-                            id_tracker.deleted_point_bitslice(),
+                            deleted_points,
                             is_stopped,
                         )
                         .map(|scorer| {
@@ -294,13 +297,16 @@ impl VectorIndex for PlainIndex {
                 let _timer = ScopeDurationMeasurer::new(&self.unfiltered_searches_telemetry);
                 let vector_storage = self.vector_storage.borrow();
                 let id_tracker = self.id_tracker.borrow();
+                let deleted_points = query_context
+                    .deleted_points()
+                    .unwrap_or(id_tracker.deleted_point_bitslice());
                 vectors
                     .iter()
                     .map(|&vector| {
                         new_stoppable_raw_scorer(
                             vector.to_owned(),
                             &vector_storage,
-                            id_tracker.deleted_point_bitslice(),
+                            deleted_points,
                             is_stopped,
                         )
                         .map(|scorer| scorer.peek_top_all(top))
