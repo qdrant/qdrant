@@ -1,5 +1,10 @@
 use std::path::Path;
+use std::str::FromStr;
 
+use s3::bucket::Bucket;
+use s3::creds::Credentials;
+use s3::error::S3Error;
+use s3::Region;
 use serde::Deserialize;
 use tempfile::TempPath;
 use tokio::io::AsyncWriteExt;
@@ -9,7 +14,7 @@ use crate::common::sha_256::hash_file;
 use crate::operations::snapshot_ops::{
     get_checksum_path, get_snapshot_description, SnapshotDescription,
 };
-use crate::operations::types::CollectionResult;
+use crate::operations::types::{CollectionError, CollectionResult};
 
 #[derive(Clone, Deserialize, Debug)]
 pub struct S3Config {
@@ -189,16 +194,101 @@ impl SnapshotStorageLocalFS {
     }
 }
 
+impl From<S3Error> for CollectionError {
+    fn from(err: S3Error) -> Self {
+        CollectionError::ServiceError {
+            error: format!("S3 error: {}", err),
+            backtrace: None,
+        }
+    }
+}
+
+fn get_s3_bucket(s3_config: &S3Config) -> CollectionResult<Bucket> {
+    let credentials = match Credentials::new(
+        s3_config.access_key.as_deref(),
+        s3_config.secret_key.as_deref(),
+        None,
+        None,
+        None,
+    ) {
+        Ok(credentials) => credentials,
+        Err(err) => {
+            return Err(CollectionError::ServiceError {
+                error: format!("Failed to create credentials: {}", err),
+                backtrace: None,
+            });
+        }
+    };
+
+    let region: Region = match s3_config.region.as_ref().map(String::as_str) {
+        Some(region_str) => {
+            Region::from_str(region_str).map_err(|err| CollectionError::ServiceError {
+                error: format!("Invalid region string: {}", err),
+                backtrace: None,
+            })?
+        }
+        None => Region::UsEast1,
+    };
+
+    let bucket = Bucket::new(&s3_config.bucket, region, credentials)?;
+    Ok(bucket)
+}
+
 impl SnapshotStorageS3 {
     async fn delete_snapshot(&self, _snapshot_path: &Path) -> CollectionResult<bool> {
-        unimplemented!()
+        let bucket = get_s3_bucket(&self.s3_config)?;
+        let path = _snapshot_path.to_string_lossy().to_string();
+
+        // Send the request to delete the object
+        match bucket.delete_object(&path).await {
+            Ok(_) => {
+                // Also delete the checksum file if it exists
+                let checksum_path = get_checksum_path(&path);
+                if let Err(err) = bucket
+                    .delete_object(checksum_path.to_string_lossy().as_ref())
+                    .await
+                {
+                    log::warn!(
+                        "Failed to delete checksum file for snapshot, ignoring: {}",
+                        err
+                    );
+                }
+                Ok(true)
+            }
+            Err(err) => Err(CollectionError::ServiceError {
+                error: format!("Failed to delete snapshot from S3: {}", err),
+                backtrace: None,
+            }),
+        }
     }
 
     async fn list_snapshots(
         &self,
         _directory: &Path,
     ) -> CollectionResult<Vec<SnapshotDescription>> {
-        unimplemented!()
+        let bucket = get_s3_bucket(&self.s3_config)?;
+        let prefix = _directory.to_string_lossy().to_string();
+
+        // Send the request to list objects
+        match bucket.list(prefix, Some("/".to_string())).await {
+            Ok(response) => {
+                let snapshots = response
+                    .into_iter()
+                    .map(|object| {
+                        let path = object.name;
+                        // Construct the full path from the object name
+                        let full_path = format!("{}/{}", directory.display(), path);
+                        // Parse SnapshotDescription using get_snapshot_description function
+                        get_snapshot_description(Path::new(&full_path)).await
+                    })
+                    .collect::<CollectionResult<Vec<_>>>()?;
+                Ok(snapshots)
+            }
+            Err(err) => Err(CollectionError::ServiceError {
+                error: format!("Failed to list snapshots from S3: {}", err),
+                backtrace: None,
+            }),
+        }
     }
 
     async fn store_file(

@@ -72,6 +72,7 @@ fnv = { workspace = true }
 indexmap = { workspace = true }
 ringbuffer = "0.15.0"
 strum = { workspace = true }
+rust-s3 = "0.33.0"
 
 tracing = { workspace = true, optional = true }
 
