@@ -36,7 +36,6 @@ declare CONTAINER_NAME=qdrant-snapshots-container
 
 docker buildx build --build-arg=PROFILE=ci --load ../../ --tag=$DOCKER_IMAGE_NAME
 
-
 docker run \
     --rm -d \
     -p 6333:6333 -p 6334:6334 \
@@ -101,8 +100,6 @@ curl -L -X PUT "http://$QDRANT_HOST/collections/test_collection/points?wait=true
   --data-raw "$PAYLOAD" | jq
 
 # Make snapshot
-
-echo $(curl -X POST "http://${QDRANT_HOST}/collections/test_collection/snapshots" -H 'Content-Type: application/json' --data-raw '{}')
 
 declare SNAPSHOT_NAME=$(curl -X POST "http://${QDRANT_HOST}/collections/test_collection/snapshots" -H 'Content-Type: application/json' --data-raw '{}' | jq -r '.result.name')
 
