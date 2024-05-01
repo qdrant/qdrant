@@ -159,9 +159,7 @@ impl SnapshotStorageManager {
 
 impl SnapshotStorageLocalFS {
     async fn delete_snapshot(&self, snapshot_path: &Path) -> CollectionResult<bool> {
-        println!("Deleting snapshot: {:?}", snapshot_path);
         let checksum_path = get_checksum_path(snapshot_path);
-        println!("Deleting checksum: {:?}", checksum_path);
         let (delete_snapshot, delete_checksum) = tokio::join!(
             tokio::fs::remove_file(snapshot_path),
             tokio::fs::remove_file(checksum_path),
@@ -178,11 +176,8 @@ impl SnapshotStorageLocalFS {
     }
 
     async fn list_snapshots(&self, directory: &Path) -> CollectionResult<Vec<SnapshotDescription>> {
-        println!("Listing snapshots in directory: {:?}", directory);
         let mut entries = tokio::fs::read_dir(directory).await?;
         let mut snapshots = Vec::new();
-        println!("Entries: {:?}", entries);
-        println!("Snapshots: {:?}", snapshots);
 
         while let Some(entry) = entries.next_entry().await? {
             let path = entry.path();
@@ -200,10 +195,6 @@ impl SnapshotStorageLocalFS {
         source_path: &Path,
         target_path: &Path,
     ) -> CollectionResult<SnapshotDescription> {
-        println!(
-            "Storing snapshot from {:?} to {:?}",
-            source_path, target_path
-        );
         // Steps:
         //
         // 1. Make sure that the target directory exists.
@@ -248,10 +239,6 @@ impl SnapshotStorageLocalFS {
         storage_path: &Path,
         local_path: &Path,
     ) -> CollectionResult<()> {
-        println!(
-            "Getting stored file from {:?} to {:?}",
-            storage_path, local_path
-        );
         if let Some(target_dir) = local_path.parent() {
             if !target_dir.exists() {
                 std::fs::create_dir_all(target_dir)?;
@@ -273,7 +260,6 @@ impl SnapshotStorageS3 {
     }
 
     async fn list_snapshots(&self, directory: &Path) -> CollectionResult<Vec<SnapshotDescription>> {
-        println!("Listing snapshots in directory: {:?}", directory);
         let bucket_name = &self.s3_config.bucket;
         let key = &snapshot_s3_ops::get_key(directory).unwrap();
         snapshot_s3_ops::list_snapshots_in_bucket_with_key(&self.client, bucket_name, key).await

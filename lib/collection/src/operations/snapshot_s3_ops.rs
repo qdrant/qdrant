@@ -159,7 +159,6 @@ pub async fn delete_snapshot(
     bucket_name: &str,
     key: &str,
 ) -> CollectionResult<bool> {
-    println!("Deleting snapshot: {}", key);
     client
         .delete_object()
         .bucket(bucket_name)
