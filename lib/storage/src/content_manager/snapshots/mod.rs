@@ -4,6 +4,7 @@ pub mod recover;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use collection::common::snapshots_manager::SnapshotStorageManager;
 use collection::operations::snapshot_ops::SnapshotDescription;
 use serde::{Deserialize, Serialize};
 use tar::Builder as TarBuilder;
@@ -54,6 +55,13 @@ pub async fn get_full_snapshot_path(
     Ok(absolute_snapshot_path)
 }
 
+pub async fn get_full_s3_snapshot_path(
+    _toc: &TableOfContent,
+    snapshot_name: &str,
+) -> Result<PathBuf, StorageError> {
+    Ok(snapshot_name.into())
+}
+
 pub async fn do_delete_full_snapshot(
     dispatcher: &Dispatcher,
     access: Access,
@@ -62,7 +70,10 @@ pub async fn do_delete_full_snapshot(
     access.check_global_access(AccessRequirements::new().manage())?;
     let toc = dispatcher.toc(&access);
     let snapshot_manager = toc.get_snapshots_storage_manager().await;
-    let snapshot_dir = get_full_snapshot_path(toc, snapshot_name).await?;
+    let snapshot_dir = match snapshot_manager {
+        SnapshotStorageManager::LocalFS(_) => get_full_snapshot_path(toc, snapshot_name).await?,
+        SnapshotStorageManager::S3(_) => get_full_s3_snapshot_path(toc, snapshot_name).await?,
+    };
     log::info!("Deleting full storage snapshot {:?}", snapshot_dir);
     Ok(tokio::spawn(async move {
         Ok(snapshot_manager.delete_snapshot(&snapshot_dir).await?)
@@ -80,8 +91,11 @@ pub async fn do_delete_collection_snapshot(
     let toc = dispatcher.toc(&access);
     let snapshot_name = snapshot_name.to_string();
     let collection = toc.get_collection(&collection_pass).await?;
-    let file_name = collection.get_snapshot_path(&snapshot_name).await?;
     let snapshot_manager = toc.get_snapshots_storage_manager().await;
+    let file_name = match snapshot_manager {
+        SnapshotStorageManager::LocalFS(_) => collection.get_snapshot_path(&snapshot_name).await?,
+        SnapshotStorageManager::S3(_) => collection.get_s3_snapshot_path(&snapshot_name).await?,
+    };
 
     log::info!("Deleting collection snapshot {:?}", file_name);
     Ok(tokio::spawn(async move {

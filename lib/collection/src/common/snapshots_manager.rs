@@ -267,8 +267,10 @@ impl SnapshotStorageLocalFS {
 }
 
 impl SnapshotStorageS3 {
-    async fn delete_snapshot(&self, _snapshot_path: &Path) -> CollectionResult<bool> {
-        unimplemented!()
+    async fn delete_snapshot(&self, snapshot_path: &Path) -> CollectionResult<bool> {
+        let bucket_name = &self.s3_config.bucket;
+        let key = snapshot_s3_ops::get_key(snapshot_path).unwrap();
+        snapshot_s3_ops::delete_snapshot(&self.client, bucket_name, &key).await
     }
 
     async fn list_snapshots(&self, directory: &Path) -> CollectionResult<Vec<SnapshotDescription>> {

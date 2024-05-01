@@ -306,6 +306,10 @@ impl Collection {
         Ok(absolute_snapshot_path)
     }
 
+    pub async fn get_s3_snapshot_path(&self, snapshot_name: &str) -> CollectionResult<PathBuf> {
+        Ok(snapshot_name.into())
+    }
+
     pub async fn list_shard_snapshots(
         &self,
         shard_id: ShardId,
@@ -380,5 +384,12 @@ impl Collection {
             .await
             .get_shard_snapshot_path(&self.snapshots_path, shard_id, snapshot_file_name)
             .await
+    }
+    pub async fn get_shard_s3_snapshot_path(
+        &self,
+        _shard_id: ShardId,
+        snapshot_file_name: impl AsRef<Path>,
+    ) -> CollectionResult<PathBuf> {
+        Ok(snapshot_file_name.as_ref().to_path_buf())
     }
 }

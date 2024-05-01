@@ -156,3 +156,19 @@ pub async fn list_snapshots_in_bucket_with_key(
     let snapshots = futures::future::join_all(snapshot_futures).await;
     Ok(snapshots.into_iter().collect::<Result<_, _>>().unwrap())
 }
+
+pub async fn delete_snapshot(
+    client: &aws_sdk_s3::Client,
+    bucket_name: &str,
+    key: &str,
+) -> CollectionResult<bool> {
+    println!("Deleting snapshot: {}", key);
+    client
+        .delete_object()
+        .bucket(bucket_name)
+        .key(key)
+        .send()
+        .await
+        .unwrap();
+    Ok(true)
+}
