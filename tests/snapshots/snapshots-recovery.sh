@@ -19,7 +19,7 @@ if [ "$STORAGE_METHOD" = "s3" ]; then
     yq eval -i '.storage.snapshots_config.s3_config.region = "us-east-1"' $CONFIG_FILE
     yq eval -i '.storage.snapshots_config.s3_config.access_key = "minioadmin"' $CONFIG_FILE
     yq eval -i '.storage.snapshots_config.s3_config.secret_key = "minioadmin"' $CONFIG_FILE
-    yq eval -i '.storage.snapshots_config.s3_config.endpoint_url = "http://127.0.0.1:9000"' $CONFIG_FILE
+    yq eval -i '.storage.snapshots_config.s3_config.endpoint_url = "http://minio:9000"' $CONFIG_FILE
 else
     echo "Using local storage"
     yq eval -i '.storage.snapshots_config.snapshots_storage = "local"' $CONFIG_FILE

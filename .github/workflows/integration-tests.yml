@@ -250,7 +250,7 @@ jobs:
           AWS_ACCESS_KEY_ID: "minioadmin"
           AWS_SECRET_ACCESS_KEY: "minioadmin"
           AWS_EC2_METADATA_DISABLED: "true"
-        run: aws --endpoint-url http://127.0.0.1:9000/ s3 mb s3://test-bucket
+        run: echo $(aws --endpoint-url http://minio:9000/ s3 mb s3://test-bucket)
 
       - name: Install dependencies
         run: sudo apt-get install clang jq
