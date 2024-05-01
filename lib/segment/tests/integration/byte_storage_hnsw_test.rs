@@ -270,24 +270,12 @@ fn test_byte_storage_hnsw(
         let plain_result_float = segment_float.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(
-                &[&query],
-                filter_query,
-                top,
-                None,
-                &Default::default(),
-            )
+            .search(&[&query], filter_query, top, None, &Default::default())
             .unwrap();
         let plain_result_byte = segment_byte.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(
-                &[&query],
-                filter_query,
-                top,
-                None,
-                &Default::default(),
-            )
+            .search(&[&query], filter_query, top, None, &Default::default())
             .unwrap();
         compare_search_result(&plain_result_float, &plain_result_byte);
 

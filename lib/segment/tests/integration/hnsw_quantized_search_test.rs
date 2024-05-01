@@ -198,13 +198,7 @@ fn check_matches(
             segment.vector_data[DEFAULT_VECTOR_NAME]
                 .vector_index
                 .borrow()
-                .search(
-                    &[query],
-                    filter,
-                    top,
-                    None,
-                    &Default::default(),
-                )
+                .search(&[query], filter, top, None, &Default::default())
                 .unwrap()
         })
         .collect::<Vec<_>>();

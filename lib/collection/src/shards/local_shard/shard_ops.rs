@@ -40,7 +40,7 @@ impl LocalShard {
                 self.segments.clone(),
                 &core_request,
                 &collection_config,
-                &is_stopped_guard
+                &is_stopped_guard,
             )
             .await?;
 

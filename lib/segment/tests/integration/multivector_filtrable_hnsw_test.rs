@@ -244,13 +244,7 @@ fn test_multi_filterable_hnsw(
         let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(
-                &[&query],
-                filter_query,
-                top,
-                None,
-                &Default::default(),
-            )
+            .search(&[&query], filter_query, top, None, &Default::default())
             .unwrap();
 
         if plain_result == index_result {

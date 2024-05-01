@@ -146,13 +146,7 @@ fn hnsw_discover_precision() {
         let plain_discovery_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(
-                &[&query],
-                None,
-                top,
-                None,
-                &Default::default(),
-            )
+            .search(&[&query], None, top, None, &Default::default())
             .unwrap();
 
         if plain_discovery_result == index_discovery_result {
@@ -283,13 +277,7 @@ fn filtered_hnsw_discover_precision() {
         let plain_discovery_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(
-                &[&query],
-                filter_query,
-                top,
-                None,
-                &Default::default(),
-            )
+            .search(&[&query], filter_query, top, None, &Default::default())
             .unwrap();
 
         if plain_discovery_result == index_discovery_result {

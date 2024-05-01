@@ -169,13 +169,7 @@ fn exact_search_test() {
         let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(
-                &[&query],
-                None,
-                top,
-                None,
-                &Default::default(),
-            )
+            .search(&[&query], None, top, None, &Default::default())
             .unwrap();
 
         assert_eq!(
@@ -214,13 +208,7 @@ fn exact_search_test() {
         let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(
-                &[&query],
-                filter_query,
-                top,
-                None,
-                &Default::default(),
-            )
+            .search(&[&query], filter_query, top, None, &Default::default())
             .unwrap();
 
         assert_eq!(
