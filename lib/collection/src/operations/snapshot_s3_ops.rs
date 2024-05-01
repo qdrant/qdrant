@@ -29,7 +29,7 @@ pub async fn multi_part_upload(
     key: &str,
     source_path: &str,
 ) -> CollectionResult<CompleteMultipartUploadOutput> {
-    const CHUNK_SIZE: u64 = 1024 * 1024 * 5;
+    const CHUNK_SIZE: u64 = 1024 * 1024 * 50; // 50MB
     const MAX_CHUNKS: u64 = 10000;
     let multipart_upload_res: CreateMultipartUploadOutput = client
         .create_multipart_upload()
@@ -37,8 +37,8 @@ pub async fn multi_part_upload(
         .key(key)
         .send()
         .await
-        .map_err(|_| {
-            CollectionError::not_found(format!("bucket_name:{}, key:{}", bucket_name, key))
+        .map_err(|e| {
+            CollectionError::s3_error(format!("Failed to create multipart upload. Error: {}", e))
         })?;
 
     let upload_id = multipart_upload_res.upload_id().ok_or_else(|| {
@@ -131,8 +131,8 @@ pub async fn get_snapshot_description(
         .key(&key)
         .send()
         .await
-        .map_err(|_| {
-            CollectionError::not_found(format!("bucket_name:{}, key:{}", &bucket_name, key))
+        .map_err(|e| {
+            CollectionError::s3_error(format!("Failed to create multipart upload. Error: {}", e))
         })?;
     let creation_time = file_meta
         .last_modified
@@ -226,13 +226,13 @@ pub async fn download_snapshot(
             CollectionError::not_found(format!("bucket_name:{}, key:{}", bucket_name, key))
         })?;
 
+    let expected_total_bytes = object.content_length().unwrap_or(0);
     let mut byte_count = 0_usize;
     while let Some(bytes) = object.body.try_next().await.unwrap() {
         let bytes_len = bytes.len();
         file.write_all(&bytes)?;
-        println!("Intermediate write of {bytes_len}");
         byte_count += bytes_len;
-        println!("Downloaded {byte_count} bytes");
+        log::debug!("Downloaded {}/{} bytes", byte_count, expected_total_bytes);
     }
 
     Ok(())

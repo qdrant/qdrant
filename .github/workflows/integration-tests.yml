@@ -196,7 +196,7 @@ jobs:
         shell: bash
         run: ./low-ram.sh
 
-  test-snapshot-operations:
+  test-snapshot-operations-local:
     runs-on: ubuntu-latest
 
     steps:
@@ -226,10 +226,66 @@ jobs:
           load: true
           build-args: |
             PROFILE=ci
+      - name: Install dependencies
+        run: sudo snap install yq
       - name: Run test snapshot operations on different storage filesystems
         working-directory: ./tests/snapshots
         shell: bash
-        run: ./snapshots-recovery.sh
+        run: ./snapshots-recovery.sh local
+
+  test-snapshot-operations-s3-minio:
+    runs-on: ubuntu-latest
+
+    # Setup minio server
+    services:
+      minio:
+        image: wktk/minio-server
+        ports:
+          - 9000:9000
+        env:
+          MINIO_ACCESS_KEY: "minioadmin"
+          MINIO_SECRET_KEY: "minioadmin"
+
+    steps:
+      - name: Setup test bucket
+        env:
+          AWS_ACCESS_KEY_ID: "minioadmin"
+          AWS_SECRET_ACCESS_KEY: "minioadmin"
+          AWS_EC2_METADATA_DISABLED: "true"
+        run: echo $(aws --endpoint-url http://127.0.0.1:9000/ s3 mb s3://test-bucket)
+
+      - name: Install dependencies
+        run: sudo apt-get install clang jq
+      - name: Setup git-lfs
+        run: git lfs install
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@v4
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Docker build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          tags: qdrant-snapshots
+          cache-from: |
+            type=gha,scope=${{ github.ref }}
+            type=gha,scope=${{ github.base_ref }}
+          cache-to: type=gha,mode=max,scope=${{ github.ref }}
+          load: true
+          build-args: |
+            PROFILE=ci
+      - name: Install dependencies
+        run: sudo snap install yq
+      - name: Run test snapshot operations on different storage filesystems
+        working-directory: ./tests/snapshots
+        shell: bash
+        run: ./snapshots-recovery.sh s3
 
   test-shard-snapshot-api:
     runs-on: ubuntu-latest

@@ -2,6 +2,31 @@
 
 set -ex
 
+# Default to local unless specified otherwise
+STORAGE_METHOD=${1:-local}
+
+CONFIG_FILE="../../config/config.yaml"
+
+# Check and set the storage method
+if [ "$STORAGE_METHOD" = "s3" ]; then
+    echo "Using S3 storage"
+    
+    yq eval -i '.storage.snapshots_config += {"s3_config": {}}' $CONFIG_FILE
+
+    # Set to S3 with dynamic or fixed credentials
+    yq eval -i '.storage.snapshots_config.snapshots_storage = "s3"' $CONFIG_FILE
+    yq eval -i '.storage.snapshots_config.s3_config.bucket = "test-bucket"' $CONFIG_FILE
+    yq eval -i '.storage.snapshots_config.s3_config.region = "us-east-1"' $CONFIG_FILE
+    yq eval -i '.storage.snapshots_config.s3_config.access_key = "minioadmin"' $CONFIG_FILE
+    yq eval -i '.storage.snapshots_config.s3_config.secret_key = "minioadmin"' $CONFIG_FILE
+    yq eval -i '.storage.snapshots_config.s3_config.endpoint_url = "http://127.0.0.1:9000"' $CONFIG_FILE
+else
+    echo "Using local storage"
+    yq eval -i '.storage.snapshots_config.snapshots_storage = "local"' $CONFIG_FILE
+fi
+
+cat $CONFIG_FILE
+
 docker volume create snapshots
 docker volume create tempdir
 docker volume create storage
@@ -12,9 +37,8 @@ declare CONTAINER_NAME=qdrant-snapshots-container
 
 docker buildx build --build-arg=PROFILE=ci --load ../../ --tag=$DOCKER_IMAGE_NAME
 
-
 docker run \
-    --rm -d \
+    --rm -d  --network host \
     -p 6333:6333 -p 6334:6334 \
     -v snapshots:/qdrant/snapshots \
     -v tempdir:/qdrant/tempdir \
@@ -77,6 +101,8 @@ curl -L -X PUT "http://$QDRANT_HOST/collections/test_collection/points?wait=true
   --data-raw "$PAYLOAD" | jq
 
 # Make snapshot
+
+echo $(curl -X POST "http://${QDRANT_HOST}/collections/test_collection/snapshots" -H 'Content-Type: application/json' --data-raw '{}')
 
 declare SNAPSHOT_NAME=$(curl -X POST "http://${QDRANT_HOST}/collections/test_collection/snapshots" -H 'Content-Type: application/json' --data-raw '{}' | jq -r '.result.name')
 
