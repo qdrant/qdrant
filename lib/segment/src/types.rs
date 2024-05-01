@@ -24,7 +24,6 @@ use validator::{Validate, ValidationError, ValidationErrors};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::{self, MultiValue};
 use crate::data_types::integer_index::IntegerIndexParams;
-use crate::data_types::internal_has_id::HasIdConditionInternal;
 use crate::data_types::text_index::TextIndexParams;
 use crate::data_types::vectors::{VectorElementType, VectorStruct};
 use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
@@ -1889,9 +1888,6 @@ pub enum Condition {
     Nested(NestedCondition),
     /// Nested filter
     Filter(Filter),
-    /// Internal use only
-    #[serde(skip)]
-    HasIdInternal(HasIdConditionInternal),
 }
 
 impl Condition {
@@ -1906,10 +1902,7 @@ impl Condition {
 impl Validate for Condition {
     fn validate(&self) -> Result<(), ValidationErrors> {
         match self {
-            Condition::HasId(_)
-            | Condition::IsEmpty(_)
-            | Condition::IsNull(_)
-            | Condition::HasIdInternal(_) => Ok(()),
+            Condition::HasId(_) | Condition::IsEmpty(_) | Condition::IsNull(_) => Ok(()),
             Condition::Field(field_condition) => field_condition.validate(),
             Condition::Nested(nested_condition) => nested_condition.validate(),
             Condition::Filter(filter) => filter.validate(),

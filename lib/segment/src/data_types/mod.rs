@@ -1,6 +1,5 @@
 pub mod groups;
 pub mod integer_index;
-pub mod internal_has_id;
 pub mod named_vectors;
 pub mod order_by;
 pub mod primitive;

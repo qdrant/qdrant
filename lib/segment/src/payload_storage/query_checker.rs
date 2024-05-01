@@ -146,7 +146,6 @@ where
                 })
         }
         Condition::Filter(_) => unreachable!(),
-        Condition::HasIdInternal(has_id_internal) => has_id_internal.check_id(point_id),
     };
 
     check_filter(&checker, query)
