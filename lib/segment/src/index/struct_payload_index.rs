@@ -308,6 +308,17 @@ impl StructPayloadIndex {
             Condition::Field(field_condition) => self
                 .estimate_field_condition(field_condition, nested_path)
                 .unwrap_or_else(|| CardinalityEstimation::unknown(self.available_point_count())),
+            Condition::HasIdInternal(has_id_internal) => {
+                let number_of_ids = has_id_internal.number_of_ids();
+                CardinalityEstimation {
+                    // it might be too expensive to use this condition as a primary clause
+                    // So we assume that it can't be one
+                    primary_clauses: vec![],
+                    min: number_of_ids,
+                    exp: number_of_ids,
+                    max: number_of_ids,
+                }
+            }
         }
     }
 

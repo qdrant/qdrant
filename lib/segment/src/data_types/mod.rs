@@ -7,3 +7,4 @@ pub mod query_context;
 pub mod text_index;
 pub mod tiny_map;
 pub mod vectors;
+pub mod internal_has_id;

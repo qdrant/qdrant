@@ -349,6 +349,12 @@ mod tests {
                 exp: TOTAL / 2,
                 max: TOTAL,
             },
+            Condition::HasIdInternal(hash_id_internal) => CardinalityEstimation {
+                primary_clauses: vec![],
+                min: hash_id_internal.number_of_ids(),
+                exp: hash_id_internal.number_of_ids(),
+                max: hash_id_internal.number_of_ids(),
+            },
         }
     }
 

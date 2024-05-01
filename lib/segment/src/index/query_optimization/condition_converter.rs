@@ -122,6 +122,11 @@ pub fn condition_converter<'a>(
             })
         }
         Condition::Filter(_) => unreachable!(),
+        Condition::HasIdInternal(has_id_internal) => {
+            Box::new(move |point_id| {
+                has_id_internal.check_id(point_id)
+            })
+        }
     }
 }
 

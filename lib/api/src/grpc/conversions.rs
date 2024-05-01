@@ -913,6 +913,10 @@ impl From<segment::types::Condition> for Condition {
             segment::types::Condition::Nested(nested) => {
                 ConditionOneOf::Nested(nested.nested.into())
             }
+            segment::types::Condition::HasIdInternal(_) => {
+                debug_assert!(false, "HasIdInternal should not be used in this context");
+                ConditionOneOf::HasId(HasIdCondition { has_id: vec![] })
+            }
         };
 
         Self {
