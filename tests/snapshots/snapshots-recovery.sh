@@ -101,7 +101,7 @@ curl -L -X PUT "http://$QDRANT_HOST/collections/test_collection/points?wait=true
 
 # Make snapshot
 
-echo $(curl -X POST "http://${QDRANT_HOST}/collections/test_collection/snapshots" -H 'Content-Type: application/json' --data-raw '{}' 
+echo $(curl -X POST "http://${QDRANT_HOST}/collections/test_collection/snapshots" -H 'Content-Type: application/json' --data-raw '{}')
 
 declare SNAPSHOT_NAME=$(curl -X POST "http://${QDRANT_HOST}/collections/test_collection/snapshots" -H 'Content-Type: application/json' --data-raw '{}' | jq -r '.result.name')
 
