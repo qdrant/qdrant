@@ -2,6 +2,29 @@
 
 set -ex
 
+# Default to local unless specified otherwise
+STORAGE_METHOD=${1:-local}
+
+CONFIG_FILE="../../config/config.yaml"
+
+# Check and set the storage method
+if [ "$STORAGE_METHOD" = "s3" ]; then
+    echo "Using S3 storage"
+    
+    yq eval -i '.storage.snapshots_config += {"s3_config": {}}' $CONFIG_FILE
+
+    # Set to S3 with dynamic or fixed credentials
+    yq eval -i '.storage.snapshots_config.snapshots_storage = "s3"' $CONFIG_FILE
+    yq eval -i '.storage.snapshots_config.s3_config.bucket = "test-bucket"' $CONFIG_FILE
+    yq eval -i '.storage.snapshots_config.s3_config.region = "us-east-1"' $CONFIG_FILE
+    yq eval -i '.storage.snapshots_config.s3_config.access_key = "minioadmin"' $CONFIG_FILE
+    yq eval -i '.storage.snapshots_config.s3_config.secret_key = "minioadmin"' $CONFIG_FILE
+else
+    echo "Using local storage"
+    yq eval -i '.storage.snapshots_config.snapshots_storage = "local"' $CONFIG_FILE
+fi
+
+
 docker volume create snapshots
 docker volume create tempdir
 docker volume create storage
