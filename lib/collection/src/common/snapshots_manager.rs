@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::str::FromStr;
 
+use chrono::naive::NaiveDateTime;
 use s3::bucket::Bucket;
 use s3::creds::Credentials;
 use s3::error::S3Error;
@@ -12,7 +13,7 @@ use tokio::io::AsyncWriteExt;
 use crate::common::file_utils::move_file;
 use crate::common::sha_256::hash_file;
 use crate::operations::snapshot_ops::{
-    get_checksum_path, get_snapshot_description, SnapshotDescription,
+    get_checksum_path, get_snapshot_description, read_checksum_for_snapshot, SnapshotDescription,
 };
 use crate::operations::types::{CollectionError, CollectionResult};
 
@@ -272,16 +273,32 @@ impl SnapshotStorageS3 {
         // Send the request to list objects
         match bucket.list(prefix, Some("/".to_string())).await {
             Ok(response) => {
-                let snapshots = response
-                    .into_iter()
-                    .map(|object| {
-                        let path = object.name;
-                        // Construct the full path from the object name
-                        let full_path = format!("{}/{}", directory.display(), path);
-                        // Parse SnapshotDescription using get_snapshot_description function
-                        get_snapshot_description(Path::new(&full_path)).await
-                    })
-                    .collect::<CollectionResult<Vec<_>>>()?;
+                let mut snapshots = Vec::new();
+
+                for list_bucket_result in response {
+                    for object in list_bucket_result.contents {
+                        let name = object.key.clone();
+                        let size = object.size;
+                        let creation_time = match NaiveDateTime::parse_from_str(
+                            &object.last_modified,
+                            "%Y-%m-%dT%H:%M:%S%.fZ",
+                        ) {
+                            Ok(dt) => Some(dt),
+                            Err(_) => None, // Handle the case where parsing fails
+                        };
+                        let checksum = read_checksum_for_snapshot(name.clone()).await;
+                        // Construct the SnapshotDescription
+                        let snapshot = SnapshotDescription {
+                            name,
+                            creation_time,
+                            size,
+                            checksum: None,
+                        };
+
+                        snapshots.push(snapshot);
+                    }
+                }
+
                 Ok(snapshots)
             }
             Err(err) => Err(CollectionError::ServiceError {
