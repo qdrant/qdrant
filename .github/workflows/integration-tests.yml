@@ -237,7 +237,7 @@ jobs:
     # Setup minio server
     services:
       minio:
-        image: quay.io/minio/minio
+        image: wktk/minio-server
         ports:
           - 9000:9000
         env:
