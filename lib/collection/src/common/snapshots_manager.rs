@@ -273,7 +273,7 @@ impl SnapshotStorageS3 {
         let bucket_name = self.s3_config.bucket.clone();
         let key = snapshot_s3_ops::get_key(target_path).unwrap();
 
-        snapshot_s3_ops::multi_part_upload(
+        let _ = snapshot_s3_ops::multi_part_upload(
             &self.client,
             &bucket_name,
             &key,

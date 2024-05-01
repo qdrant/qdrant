@@ -9,7 +9,7 @@ use aws_smithy_types::byte_stream::{ByteStream, Length};
 use aws_smithy_types_convert::date_time::DateTimeExt;
 
 use super::snapshot_ops::SnapshotDescription;
-use super::types::CollectionResult;
+use super::types::{CollectionError, CollectionResult};
 
 pub fn get_key(path: &Path) -> Option<String> {
     // Get file name by trimming the path.
@@ -27,7 +27,7 @@ pub async fn multi_part_upload(
     bucket_name: &str,
     key: &str,
     source_path: &str,
-) -> CompleteMultipartUploadOutput {
+) -> CollectionResult<CompleteMultipartUploadOutput> {
     const CHUNK_SIZE: u64 = 1024 * 1024 * 5;
     const MAX_CHUNKS: u64 = 10000;
     let multipart_upload_res: CreateMultipartUploadOutput = client
@@ -36,11 +36,17 @@ pub async fn multi_part_upload(
         .key(key)
         .send()
         .await
-        .unwrap();
-    let upload_id = multipart_upload_res.upload_id().unwrap();
+        .map_err(|_| {
+            CollectionError::not_found(format!("bucket_name:{}, key:{}", bucket_name, key))
+        })?;
+
+    let upload_id = multipart_upload_res.upload_id().ok_or_else(|| {
+        CollectionError::s3_error(format!("Failed to get upload id for key: {}", key))
+    })?;
+
     let file_size = tokio::fs::metadata(source_path)
         .await
-        .expect("it exists I swear")
+        .map_err(|_| CollectionError::not_found(format!("source_path:{}", source_path)))?
         .len();
 
     let mut chunk_count = (file_size / CHUNK_SIZE) + 1;
@@ -70,7 +76,7 @@ pub async fn multi_part_upload(
             .length(Length::Exact(this_chunk))
             .build()
             .await
-            .unwrap();
+            .map_err(|e| CollectionError::s3_error(format!("Failed to read file. Error: {}", e)))?;
         //Chunk index needs to start at 0, but part numbers start at 1.
         let part_number = (chunk_index as i32) + 1;
         let upload_part_res = client
@@ -82,7 +88,9 @@ pub async fn multi_part_upload(
             .part_number(part_number)
             .send()
             .await
-            .unwrap();
+            .map_err(|e| {
+                CollectionError::s3_error(format!("Failed to upload part. Error: {}", e))
+            })?;
         upload_parts.push(
             CompletedPart::builder()
                 .e_tag(upload_part_res.e_tag.unwrap_or_default())
@@ -102,7 +110,9 @@ pub async fn multi_part_upload(
         .upload_id(upload_id)
         .send()
         .await
-        .unwrap()
+        .map_err(|e| {
+            CollectionError::s3_error(format!("Failed to complete multipart upload. Error: {}", e))
+        })
 }
 
 pub async fn get_snapshot_description(
@@ -111,23 +121,33 @@ pub async fn get_snapshot_description(
     key: String,
 ) -> CollectionResult<SnapshotDescription> {
     // if key is "path/to/example.snapshot", the name should be "file.txt"
-    let name = key.split('/').last().unwrap().to_string();
+    let name = key.split('/').last().map(String::from).ok_or_else(|| {
+        "Failed to extract filename from key: Key is empty or malformed".to_string()
+    })?;
     let file_meta = client
         .head_object()
-        .bucket(bucket_name)
+        .bucket(&bucket_name)
         .key(&key)
         .send()
         .await
-        .unwrap();
+        .map_err(|_| {
+            CollectionError::not_found(format!("bucket_name:{}, key:{}", &bucket_name, key))
+        })?;
     let creation_time = file_meta
         .last_modified
-        .map(|t| t.to_chrono_utc().unwrap().naive_utc());
+        .map(|t| {
+            t.to_chrono_utc()
+                .map_err(|_| CollectionError::s3_error("Failed to convert time".to_string()))
+                .map(|datetime| datetime.naive_utc())
+        })
+        .ok_or_else(|| CollectionError::s3_error("Failed to get last modified time".to_string()))?;
+
     let checksum = file_meta.checksum_sha256.clone();
-    let size = file_meta.content_length().unwrap() as u64;
+    let size = file_meta.content_length().unwrap_or(0) as u64;
 
     Ok(SnapshotDescription {
         name,
-        creation_time,
+        creation_time: creation_time.ok(),
         size,
         checksum,
     })
@@ -144,9 +164,16 @@ pub async fn list_snapshots_in_bucket_with_key(
         .prefix(key)
         .send()
         .await
-        .unwrap()
+        .map_err(|_| {
+            CollectionError::not_found(format!("bucket_name:{}, key:{}", bucket_name, key))
+        })?
         .contents
-        .unwrap();
+        .ok_or_else(|| {
+            CollectionError::s3_error(format!(
+                "Failed to list objects in bucket: {} with key {}",
+                bucket_name, key
+            ))
+        })?;
 
     let snapshot_futures: Vec<_> = entries
         .into_iter()
@@ -158,7 +185,8 @@ pub async fn list_snapshots_in_bucket_with_key(
         .collect();
 
     let snapshots = futures::future::join_all(snapshot_futures).await;
-    Ok(snapshots.into_iter().collect::<Result<_, _>>().unwrap())
+    // Ok(snapshots.into_iter().collect::<Result<_, _>>().unwrap())
+    snapshots.into_iter().collect::<Result<_, _>>()
 }
 
 pub async fn delete_snapshot(
@@ -172,7 +200,10 @@ pub async fn delete_snapshot(
         .key(key)
         .send()
         .await
-        .unwrap();
+        .map_err(|_| {
+            CollectionError::not_found(format!("bucket_name:{}, key:{}", bucket_name, key))
+        })?;
+
     Ok(true)
 }
 
@@ -190,7 +221,9 @@ pub async fn download_snapshot(
         .key(key)
         .send()
         .await
-        .unwrap();
+        .map_err(|_| {
+            CollectionError::not_found(format!("bucket_name:{}, key:{}", bucket_name, key))
+        })?;
 
     let mut byte_count = 0_usize;
     while let Some(bytes) = object.body.try_next().await.unwrap() {
