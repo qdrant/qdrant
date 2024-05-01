@@ -7,6 +7,15 @@ storage:
   # Where to store snapshots
   snapshots_path: ./snapshots
 
+  # Select between 'local' and 's3' storage for snapshots
+  snapshots_storage: "local" # "local" - default
+
+  s3_config: 
+    bucket: "s3://hello-world"
+  # region:
+  # access_key:
+  # secret_key
+
   # Where to store temporary files
   # If null, temporary snapshot are stored in: storage/snapshots_temp/
   temp_path: null

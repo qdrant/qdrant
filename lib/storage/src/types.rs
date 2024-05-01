@@ -7,6 +7,7 @@ use collection::common::snapshots_manager::S3Config;
 use collection::config::WalConfig;
 use collection::operations::shared_storage_config::{
     SharedStorageConfig, DEFAULT_IO_SHARD_TRANSFER_LIMIT, DEFAULT_SNAPSHOTS_PATH,
+    DEFAULT_SNAPSHOTS_STORAGE,
 };
 use collection::operations::types::{NodeType, PeerMetadata};
 use collection::optimizers_builder::OptimizersConfig;
@@ -92,6 +93,8 @@ pub struct StorageConfig {
     /// Default method used for transferring shards.
     #[serde(default)]
     pub shard_transfer_method: Option<ShardTransferMethod>,
+    #[serde(default = "default_snapshots_storage_path")]
+    pub snapshots_storage: String,
 }
 
 impl StorageConfig {
@@ -111,6 +114,7 @@ impl StorageConfig {
             self.performance.outgoing_shard_transfers_limit,
             self.snapshots_path.clone(),
             self.s3_config.clone(),
+            self.snapshots_storage.clone(),
         )
     }
 }
@@ -125,6 +129,10 @@ const fn default_on_disk_payload() -> bool {
 
 const fn default_mmap_advice() -> madvise::Advice {
     madvise::Advice::Random
+}
+
+fn default_snapshots_storage_path() -> String {
+    DEFAULT_SNAPSHOTS_STORAGE.to_string()
 }
 
 /// Information of a peer in the cluster

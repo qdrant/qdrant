@@ -22,7 +22,13 @@ use crate::shards::shard_versioning;
 
 impl Collection {
     pub fn get_snapshots_storage_manager(&self) -> SnapshotStorageManager {
-        SnapshotStorageManager::new(self.shared_storage_config.s3_config.clone())
+        match self.shared_storage_config.snapshots_storage.as_str() {
+            "s3" => SnapshotStorageManager::new(self.shared_storage_config.s3_config.clone()),
+            "local" => SnapshotStorageManager::new(None),
+            _ => panic!(
+                "Invalid snapshots storage configuration, valid values are 's3' and 'local'."
+            ),
+        }
     }
 
     pub async fn list_snapshots(&self) -> CollectionResult<Vec<SnapshotDescription>> {
@@ -191,7 +197,7 @@ impl Collection {
         let mut ar = validate_open_snapshot_archive(snapshot_path)?;
         ar.unpack(target_dir)?;
 
-        let config = CollectionConfig::load(target_dir)?;
+        let config: CollectionConfig = CollectionConfig::load(target_dir)?;
         config.validate_and_warn();
         let configured_shards = config.params.shard_number.get();
 
