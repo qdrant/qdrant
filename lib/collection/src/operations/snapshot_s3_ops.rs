@@ -37,8 +37,8 @@ pub async fn multi_part_upload(
         .key(key)
         .send()
         .await
-        .map_err(|_| {
-            CollectionError::not_found(format!("bucket_name:{}, key:{}", bucket_name, key))
+        .map_err(|e| {
+            CollectionError::s3_error(format!("Failed to create multipart upload. Error: {}", e))
         })?;
 
     let upload_id = multipart_upload_res.upload_id().ok_or_else(|| {
@@ -131,8 +131,8 @@ pub async fn get_snapshot_description(
         .key(&key)
         .send()
         .await
-        .map_err(|_| {
-            CollectionError::not_found(format!("bucket_name:{}, key:{}", &bucket_name, key))
+        .map_err(|e| {
+            CollectionError::s3_error(format!("Failed to create multipart upload. Error: {}", e))
         })?;
     let creation_time = file_meta
         .last_modified

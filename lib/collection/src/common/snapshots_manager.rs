@@ -49,6 +49,7 @@ pub struct S3Config {
     pub region: Option<String>,
     pub access_key: Option<String>,
     pub secret_key: Option<String>,
+    pub endpoint_url: Option<String>,
 }
 
 #[allow(dead_code)]
@@ -81,6 +82,9 @@ impl SnapshotStorageManager {
                     }
                     if let Some(region) = &s3_config.region {
                         env::set_var("AWS_REGION", region);
+                    }
+                    if let Some(endpoint_url) = &s3_config.endpoint_url {
+                        env::set_var("AWS_ENDPOINT_URL", endpoint_url);
                     }
                 }
 
