@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use aws_sdk_s3::config::Credentials;
 use serde::Deserialize;
 use tempfile::TempPath;
 use tokio::io::AsyncWriteExt;
@@ -11,8 +12,6 @@ use crate::operations::snapshot_ops::{
 };
 use crate::operations::snapshot_s3_ops;
 use crate::operations::types::CollectionResult;
-
-use aws_sdk_s3::config::Credentials;
 
 #[derive(Clone, Deserialize, Debug, Default)]
 pub struct SnapShotsConfig {

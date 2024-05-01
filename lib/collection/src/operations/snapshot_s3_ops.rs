@@ -1,16 +1,13 @@
 use std::path::Path;
 
-use aws_sdk_s3::{
-    operation::{
-        complete_multipart_upload::CompleteMultipartUploadOutput,
-        create_multipart_upload::CreateMultipartUploadOutput,
-    },
-    types::{CompletedMultipartUpload, CompletedPart},
-};
+use aws_sdk_s3::operation::complete_multipart_upload::CompleteMultipartUploadOutput;
+use aws_sdk_s3::operation::create_multipart_upload::CreateMultipartUploadOutput;
+use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart};
 use aws_smithy_types::byte_stream::{ByteStream, Length};
 use aws_smithy_types_convert::date_time::DateTimeExt;
 
-use super::{snapshot_ops::SnapshotDescription, types::CollectionResult};
+use super::snapshot_ops::SnapshotDescription;
+use super::types::CollectionResult;
 
 pub fn get_key(path: &Path) -> Option<String> {
     let key = path
