@@ -121,7 +121,7 @@ pub async fn get_snapshot_description(path: &Path) -> CollectionResult<SnapshotD
     })
 }
 
-async fn read_checksum_for_snapshot(snapshot_path: impl Into<PathBuf>) -> Option<String> {
+pub async fn read_checksum_for_snapshot(snapshot_path: impl Into<PathBuf>) -> Option<String> {
     let checksum_path = get_checksum_path(snapshot_path);
     tokio::fs::read_to_string(&checksum_path).await.ok()
 }

@@ -8,7 +8,7 @@ use s3::error::S3Error;
 use s3::Region;
 use serde::Deserialize;
 use tempfile::TempPath;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::common::file_utils::move_file;
 use crate::common::sha_256::hash_file;
@@ -284,7 +284,7 @@ impl SnapshotStorageS3 {
                             "%Y-%m-%dT%H:%M:%S%.fZ",
                         ) {
                             Ok(dt) => Some(dt),
-                            Err(_) => None, // Handle the case where parsing fails
+                            Err(_) => None,
                         };
                         let checksum = read_checksum_for_snapshot(name.clone()).await;
                         // Construct the SnapshotDescription
@@ -292,7 +292,7 @@ impl SnapshotStorageS3 {
                             name,
                             creation_time,
                             size,
-                            checksum: None,
+                            checksum,
                         };
 
                         snapshots.push(snapshot);
@@ -313,7 +313,35 @@ impl SnapshotStorageS3 {
         _source_path: &Path,
         _target_path: &Path,
     ) -> CollectionResult<SnapshotDescription> {
-        unimplemented!()
+        let bucket = get_s3_bucket(&self.s3_config)?;
+
+        // 1. Compute the checksum of the source file.
+        let checksum = hash_file(_source_path).await?;
+
+        // 2. Upload the source file to S3.
+        let mut file = tokio::fs::File::open(_source_path).await?;
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer).await?;
+        bucket
+            .put_object(_target_path.to_string_lossy(), buffer.as_slice())
+            .await?;
+
+        // 3. Upload the checksum file to S3.
+        let checksum_path = get_checksum_path(_target_path);
+        let checksum_data = checksum.as_bytes().to_vec();
+        bucket
+            .put_object(&checksum_path.to_string_lossy(), &checksum_data)
+            .await?;
+
+        // 4. Construct the SnapshotDescription.
+        let snapshot = SnapshotDescription {
+            name: _target_path.to_string_lossy().to_string(),
+            size: buffer.len() as u64,
+            creation_time: None,
+            checksum: Some(checksum),
+        };
+
+        Ok(snapshot)
     }
 
     async fn get_stored_file(
@@ -321,6 +349,23 @@ impl SnapshotStorageS3 {
         _storage_path: &Path,
         _local_path: &Path,
     ) -> CollectionResult<()> {
-        unimplemented!()
+        // Create the local directory if it doesn't exist
+        if let Some(target_dir) = _local_path.parent() {
+            if !target_dir.exists() {
+                std::fs::create_dir_all(target_dir)?;
+            }
+        }
+
+        // Download the file from the S3 bucket
+        let bucket = get_s3_bucket(&self.s3_config)?;
+        let object = bucket.get_object(_storage_path.to_string_lossy()).await?;
+
+        // Open a local file to write the downloaded content
+        let mut file = tokio::fs::File::create(_local_path).await?;
+
+        // Write the object content to the local file
+        file.write_all(object.to_vec().as_slice()).await?;
+
+        Ok(())
     }
 }
