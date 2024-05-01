@@ -25,6 +25,7 @@ else
     yq eval -i '.storage.snapshots_config.snapshots_storage = "local"' $CONFIG_FILE
 fi
 
+cat $CONFIG_FILE
 
 docker volume create snapshots
 docker volume create tempdir
@@ -100,6 +101,8 @@ curl -L -X PUT "http://$QDRANT_HOST/collections/test_collection/points?wait=true
   --data-raw "$PAYLOAD" | jq
 
 # Make snapshot
+
+echo $(curl -X POST "http://${QDRANT_HOST}/collections/test_collection/snapshots" -H 'Content-Type: application/json' --data-raw '{}')
 
 declare SNAPSHOT_NAME=$(curl -X POST "http://${QDRANT_HOST}/collections/test_collection/snapshots" -H 'Content-Type: application/json' --data-raw '{}' | jq -r '.result.name')
 
