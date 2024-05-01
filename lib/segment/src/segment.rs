@@ -431,6 +431,10 @@ impl Segment {
         self.version = Some(max(op_num, self.version.unwrap_or(0)));
     }
 
+    pub fn get_internal_id(&self, point_id: PointIdType) -> Option<PointOffsetType> {
+        self.id_tracker.borrow().internal_id(point_id)
+    }
+
     fn lookup_internal_id(&self, point_id: PointIdType) -> OperationResult<PointOffsetType> {
         let internal_id_opt = self.id_tracker.borrow().internal_id(point_id);
         match internal_id_opt {

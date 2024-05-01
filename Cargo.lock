@@ -1054,6 +1054,7 @@ dependencies = [
  "arc-swap",
  "async-trait",
  "atomicwrites",
+ "bitvec",
  "bytes",
  "cancel",
  "chrono",
