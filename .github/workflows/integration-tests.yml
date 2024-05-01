@@ -225,7 +225,7 @@ jobs:
           build-args: |
             PROFILE=ci
       - name: Install dependencies
-        run: sudo apt-get install yq
+        run: snap install yq
       - name: Run test snapshot operations on different storage filesystems
         working-directory: ./tests/snapshots
         shell: bash
@@ -279,7 +279,7 @@ jobs:
           build-args: |
             PROFILE=ci
       - name: Install dependencies
-        run: sudo apt-get install yq
+        run: snap install yq
       - name: Run test snapshot operations on different storage filesystems
         working-directory: ./tests/snapshots
         shell: bash
