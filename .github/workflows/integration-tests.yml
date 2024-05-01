@@ -225,7 +225,7 @@ jobs:
           build-args: |
             PROFILE=ci
       - name: Install dependencies
-        run: snap install yq
+        run: sudo snap install yq
       - name: Run test snapshot operations on different storage filesystems
         working-directory: ./tests/snapshots
         shell: bash
