@@ -115,11 +115,9 @@ impl<'a> SegmentQueryContext<'a> {
         }
     }
 
-    pub fn with_deleted_points(&self, deleted_points: &'a BitSlice) -> Self {
-        SegmentQueryContext {
-            query_context: self.query_context,
-            deleted_points: Some(deleted_points),
-        }
+    pub fn with_deleted_points(mut self, deleted_points: &'a BitSlice) -> Self {
+        self.deleted_points = Some(deleted_points);
+        self
     }
 }
 

@@ -326,22 +326,38 @@ impl SegmentEntry for ProxySegment {
         // That is why we need to pass additional filter for deleted points
         let do_update_filter = !deleted_points.is_empty();
         let mut wrapped_results = if do_update_filter {
-            // ToDo: Come up with better way to pass deleted points into Filter
-            // e.g. implement AtomicRefCell for Serializer.
-            // This copy might slow process down if there will be a lot of deleted points
-            let wrapped_filter =
-                self.add_deleted_points_condition_to_filter(filter, &deleted_points);
+            // If we are wrapping a segment with deleted points,
+            // we can make this hack of replacing deleted_points of the wrapped_segment
+            // with our proxied deleted_points, do avoid additional filter creation
+            if let Some(deleted_points) = self.deleted_mask.as_ref() {
+                let query_context_with_deleted =
+                    query_context.clone().with_deleted_points(deleted_points);
 
-            self.wrapped_segment.get().read().search_batch(
-                vector_name,
-                vectors,
-                with_payload,
-                with_vector,
-                Some(&wrapped_filter),
-                top,
-                params,
-                query_context.clone(),
-            )?
+                self.wrapped_segment.get().read().search_batch(
+                    vector_name,
+                    vectors,
+                    with_payload,
+                    with_vector,
+                    filter,
+                    top,
+                    params,
+                    query_context_with_deleted,
+                )?
+            } else {
+                let wrapped_filter =
+                    self.add_deleted_points_condition_to_filter(filter, &deleted_points);
+
+                self.wrapped_segment.get().read().search_batch(
+                    vector_name,
+                    vectors,
+                    with_payload,
+                    with_vector,
+                    Some(&wrapped_filter),
+                    top,
+                    params,
+                    query_context.clone(),
+                )?
+            }
         } else {
             self.wrapped_segment.get().read().search_batch(
                 vector_name,
