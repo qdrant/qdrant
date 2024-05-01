@@ -307,7 +307,9 @@ impl Collection {
     }
 
     pub async fn get_s3_snapshot_path(&self, snapshot_name: &str) -> CollectionResult<PathBuf> {
-        Ok(snapshot_name.into())
+        let absolute_snapshot_dir = self.snapshots_path.clone();
+        let absolute_snapshot_path = absolute_snapshot_dir.join(snapshot_name);
+        Ok(absolute_snapshot_path)
     }
 
     pub async fn list_shard_snapshots(

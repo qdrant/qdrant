@@ -56,10 +56,12 @@ pub async fn get_full_snapshot_path(
 }
 
 pub async fn get_full_s3_snapshot_path(
-    _toc: &TableOfContent,
+    toc: &TableOfContent,
     snapshot_name: &str,
 ) -> Result<PathBuf, StorageError> {
-    Ok(snapshot_name.into())
+    let absolute_snapshot_dir = PathBuf::from(toc.snapshots_path());
+    let absolute_snapshot_path = absolute_snapshot_dir.join(snapshot_name);
+    Ok(absolute_snapshot_path)
 }
 
 pub async fn do_delete_full_snapshot(
