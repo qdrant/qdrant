@@ -498,7 +498,31 @@ async fn download_shard_snapshot(
         .await?;
     let snapshot_path = collection.get_shard_snapshot_path(shard, &snapshot).await?;
 
-    Ok(NamedFile::open(snapshot_path))
+    let snapshots_storage_manager = collection.get_snapshots_storage_manager().await;
+    match snapshots_storage_manager {
+        SnapshotStorageManager::LocalFS(_) => Ok(NamedFile::open(snapshot_path)),
+        SnapshotStorageManager::S3(_) => {
+            let temp_storage_path = dispatcher
+                .toc(&access)
+                .optional_temp_or_snapshot_temp_path()?;
+            let local_temp_collection_snapshot = temp_storage_path
+                .join(collection.name())
+                .join(shard.to_string())
+                .join(snapshot);
+
+            snapshots_storage_manager
+                .get_stored_file(&snapshot_path, &local_temp_collection_snapshot)
+                .await
+                .map_err(|e| {
+                    StorageError::service_error(format!(
+                        "Failed to download snapshot from S3: {:?}",
+                        e
+                    ))
+                })?;
+
+            Ok(NamedFile::open(local_temp_collection_snapshot))
+        }
+    }
 }
 
 #[delete("/collections/{collection}/shards/{shard}/snapshots/{snapshot}")]
