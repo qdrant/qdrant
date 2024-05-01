@@ -11,15 +11,16 @@ use aws_smithy_types_convert::date_time::DateTimeExt;
 use super::snapshot_ops::SnapshotDescription;
 use super::types::{CollectionError, CollectionResult};
 
-pub fn get_key(path: &Path) -> Option<String> {
+pub fn get_key(path: &Path) -> CollectionResult<String> {
     // Get file name by trimming the path.
     // if the path is ./path/to/file.txt, the key should be path/to/file.txt
-    let key = path
-        .to_str()
-        .expect("path is invalid")
-        .trim_start_matches("./")
-        .to_string();
-    Some(key)
+    let key = path.to_str().ok_or_else(|| {
+        CollectionError::s3_error(format!(
+            "Failed to get key for snapshot: {}",
+            path.display()
+        ))
+    });
+    key.map(|k| k.trim_start_matches("./").to_string())
 }
 
 pub async fn multi_part_upload(
