@@ -9,7 +9,10 @@ use crate::common::sha_256::hash_file;
 use crate::operations::snapshot_ops::{
     get_checksum_path, get_snapshot_description, SnapshotDescription,
 };
+use crate::operations::snapshot_s3_ops;
 use crate::operations::types::CollectionResult;
+
+use aws_sdk_s3::config::Credentials;
 
 #[derive(Clone, Deserialize, Debug, Default)]
 pub struct SnapShotsConfig {
@@ -51,6 +54,7 @@ pub struct S3Config {
 #[allow(dead_code)]
 pub struct SnapshotStorageS3 {
     s3_config: S3Config,
+    client: aws_sdk_s3::Client,
 }
 
 pub struct SnapshotStorageLocalFS;
@@ -61,13 +65,41 @@ pub enum SnapshotStorageManager {
 }
 
 impl SnapshotStorageManager {
-    pub fn new(snapshots_config: SnapShotsConfig) -> Self {
-        match snapshots_config.snapshots_storage {
+    pub async fn new(snapshots_config: SnapShotsConfig) -> Self {
+        match snapshots_config.clone().snapshots_storage {
             SnapshotsStorageConfig::Local => {
                 SnapshotStorageManager::LocalFS(SnapshotStorageLocalFS)
             }
             SnapshotsStorageConfig::S3 => SnapshotStorageManager::S3(SnapshotStorageS3 {
-                s3_config: snapshots_config.s3_config.unwrap(),
+                // TODO: Error handling
+                s3_config: snapshots_config.clone().s3_config.unwrap(),
+                client: aws_sdk_s3::Client::new(
+                    &aws_config::from_env()
+                        .region("us-east-1")
+                        .credentials_provider(Credentials::new(
+                            snapshots_config
+                                .clone()
+                                .s3_config
+                                .as_ref()
+                                .unwrap()
+                                .access_key
+                                .as_deref()
+                                .unwrap(),
+                            snapshots_config
+                                .clone()
+                                .s3_config
+                                .as_ref()
+                                .unwrap()
+                                .secret_key
+                                .as_deref()
+                                .unwrap(),
+                            None,
+                            None,
+                            "",
+                        ))
+                        .load()
+                        .await,
+                ),
             }),
         }
     }
@@ -128,7 +160,9 @@ impl SnapshotStorageManager {
 
 impl SnapshotStorageLocalFS {
     async fn delete_snapshot(&self, snapshot_path: &Path) -> CollectionResult<bool> {
+        println!("Deleting snapshot: {:?}", snapshot_path);
         let checksum_path = get_checksum_path(snapshot_path);
+        println!("Deleting checksum: {:?}", checksum_path);
         let (delete_snapshot, delete_checksum) = tokio::join!(
             tokio::fs::remove_file(snapshot_path),
             tokio::fs::remove_file(checksum_path),
@@ -145,8 +179,11 @@ impl SnapshotStorageLocalFS {
     }
 
     async fn list_snapshots(&self, directory: &Path) -> CollectionResult<Vec<SnapshotDescription>> {
+        println!("Listing snapshots in directory: {:?}", directory);
         let mut entries = tokio::fs::read_dir(directory).await?;
         let mut snapshots = Vec::new();
+        println!("Entries: {:?}", entries);
+        println!("Snapshots: {:?}", snapshots);
 
         while let Some(entry) = entries.next_entry().await? {
             let path = entry.path();
@@ -164,6 +201,10 @@ impl SnapshotStorageLocalFS {
         source_path: &Path,
         target_path: &Path,
     ) -> CollectionResult<SnapshotDescription> {
+        println!(
+            "Storing snapshot from {:?} to {:?}",
+            source_path, target_path
+        );
         // Steps:
         //
         // 1. Make sure that the target directory exists.
@@ -208,6 +249,10 @@ impl SnapshotStorageLocalFS {
         storage_path: &Path,
         local_path: &Path,
     ) -> CollectionResult<()> {
+        println!(
+            "Getting stored file from {:?} to {:?}",
+            storage_path, local_path
+        );
         if let Some(target_dir) = local_path.parent() {
             if !target_dir.exists() {
                 std::fs::create_dir_all(target_dir)?;
@@ -226,19 +271,29 @@ impl SnapshotStorageS3 {
         unimplemented!()
     }
 
-    async fn list_snapshots(
-        &self,
-        _directory: &Path,
-    ) -> CollectionResult<Vec<SnapshotDescription>> {
-        unimplemented!()
+    async fn list_snapshots(&self, directory: &Path) -> CollectionResult<Vec<SnapshotDescription>> {
+        println!("Listing snapshots in directory: {:?}", directory);
+        Ok(vec![])
     }
 
     async fn store_file(
         &self,
-        _source_path: &Path,
-        _target_path: &Path,
+        source_path: &Path,
+        target_path: &Path,
     ) -> CollectionResult<SnapshotDescription> {
-        unimplemented!()
+        let bucket_name = &self.s3_config.bucket;
+        // Get file name by trimming the path.
+        // if the path is ./path/to/file.txt, the key should be path/to/file.txt
+        let key = &snapshot_s3_ops::get_key(target_path).unwrap();
+
+        snapshot_s3_ops::multi_part_upload(
+            &self.client,
+            bucket_name,
+            key,
+            source_path.to_str().unwrap(),
+        )
+        .await;
+        snapshot_s3_ops::get_snapshot_description(&self.client, bucket_name, key).await
     }
 
     async fn get_stored_file(

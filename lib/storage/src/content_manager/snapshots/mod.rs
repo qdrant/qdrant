@@ -61,7 +61,7 @@ pub async fn do_delete_full_snapshot(
 ) -> Result<JoinHandle<Result<bool, StorageError>>, StorageError> {
     access.check_global_access(AccessRequirements::new().manage())?;
     let toc = dispatcher.toc(&access);
-    let snapshot_manager = toc.get_snapshots_storage_manager();
+    let snapshot_manager = toc.get_snapshots_storage_manager().await;
     let snapshot_dir = get_full_snapshot_path(toc, snapshot_name).await?;
     log::info!("Deleting full storage snapshot {:?}", snapshot_dir);
     Ok(tokio::spawn(async move {
@@ -81,7 +81,7 @@ pub async fn do_delete_collection_snapshot(
     let snapshot_name = snapshot_name.to_string();
     let collection = toc.get_collection(&collection_pass).await?;
     let file_name = collection.get_snapshot_path(&snapshot_name).await?;
-    let snapshot_manager = toc.get_snapshots_storage_manager();
+    let snapshot_manager = toc.get_snapshots_storage_manager().await;
 
     log::info!("Deleting collection snapshot {:?}", file_name);
     Ok(tokio::spawn(async move {
@@ -94,7 +94,7 @@ pub async fn do_list_full_snapshots(
     access: Access,
 ) -> Result<Vec<SnapshotDescription>, StorageError> {
     access.check_global_access(AccessRequirements::new())?;
-    let snapshots_manager = toc.get_snapshots_storage_manager();
+    let snapshots_manager = toc.get_snapshots_storage_manager().await;
     let snapshots_path = Path::new(toc.snapshots_path());
     Ok(snapshots_manager.list_snapshots(snapshots_path).await?)
 }
@@ -172,7 +172,7 @@ async fn _do_create_full_snapshot(
     let mut temp_collection_snapshots = vec![];
 
     let temp_storage_path = toc.optional_temp_or_storage_temp_path()?;
-    let snapshot_manager = toc.get_snapshots_storage_manager();
+    let snapshot_manager = toc.get_snapshots_storage_manager().await;
 
     for (collection_name, snapshot_details) in &created_snapshots {
         let snapshot_path = snapshot_dir
