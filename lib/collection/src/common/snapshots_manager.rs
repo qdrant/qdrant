@@ -271,8 +271,6 @@ impl SnapshotStorageS3 {
         target_path: &Path,
     ) -> CollectionResult<SnapshotDescription> {
         let bucket_name = self.s3_config.bucket.clone();
-        // Get file name by trimming the path.
-        // if the path is ./path/to/file.txt, the key should be path/to/file.txt
         let key = snapshot_s3_ops::get_key(target_path).unwrap();
 
         snapshot_s3_ops::multi_part_upload(
@@ -287,9 +285,24 @@ impl SnapshotStorageS3 {
 
     async fn get_stored_file(
         &self,
-        _storage_path: &Path,
-        _local_path: &Path,
+        storage_path: &Path,
+        local_path: &Path,
     ) -> CollectionResult<()> {
-        unimplemented!()
+        if let Some(target_dir) = local_path.parent() {
+            if !target_dir.exists() {
+                std::fs::create_dir_all(target_dir)?;
+            }
+        }
+        if storage_path != local_path {
+            // download snapshot from s3 to local path
+            snapshot_s3_ops::download_snapshot(
+                &self.client,
+                &self.s3_config.bucket,
+                &snapshot_s3_ops::get_key(storage_path).unwrap(),
+                local_path,
+            )
+            .await?;
+        }
+        Ok(())
     }
 }

@@ -1,3 +1,5 @@
+use std::fs::File;
+use std::io::Write;
 use std::path::Path;
 
 use aws_sdk_s3::operation::complete_multipart_upload::CompleteMultipartUploadOutput;
@@ -10,6 +12,8 @@ use super::snapshot_ops::SnapshotDescription;
 use super::types::CollectionResult;
 
 pub fn get_key(path: &Path) -> Option<String> {
+    // Get file name by trimming the path.
+    // if the path is ./path/to/file.txt, the key should be path/to/file.txt
     let key = path
         .to_str()
         .expect("path is invalid")
@@ -106,6 +110,8 @@ pub async fn get_snapshot_description(
     bucket_name: String,
     key: String,
 ) -> CollectionResult<SnapshotDescription> {
+    // if key is "path/to/example.snapshot", the name should be "file.txt"
+    let name = key.split('/').last().unwrap().to_string();
     let file_meta = client
         .head_object()
         .bucket(bucket_name)
@@ -118,8 +124,9 @@ pub async fn get_snapshot_description(
         .map(|t| t.to_chrono_utc().unwrap().naive_utc());
     let checksum = file_meta.checksum_sha256.clone();
     let size = file_meta.content_length().unwrap() as u64;
+
     Ok(SnapshotDescription {
-        name: key,
+        name,
         creation_time,
         size,
         checksum,
@@ -167,4 +174,32 @@ pub async fn delete_snapshot(
         .await
         .unwrap();
     Ok(true)
+}
+
+pub async fn download_snapshot(
+    client: &aws_sdk_s3::Client,
+    bucket_name: &str,
+    key: &str,
+    destination_path: &Path,
+) -> CollectionResult<()> {
+    let mut file = File::create(destination_path)?;
+
+    let mut object = client
+        .get_object()
+        .bucket(bucket_name)
+        .key(key)
+        .send()
+        .await
+        .unwrap();
+
+    let mut byte_count = 0_usize;
+    while let Some(bytes) = object.body.try_next().await.unwrap() {
+        let bytes_len = bytes.len();
+        file.write_all(&bytes)?;
+        println!("Intermediate write of {bytes_len}");
+        byte_count += bytes_len;
+        println!("Downloaded {byte_count} bytes");
+    }
+
+    Ok(())
 }
