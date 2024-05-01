@@ -168,6 +168,7 @@ members = [
 [profile.release]
 lto = "fat"
 codegen-units = 1
+debug = 2
 
 # Inherit from release, because we are not rebuilding often,
 # and we don't want the huge binary sizes from debug builds.
