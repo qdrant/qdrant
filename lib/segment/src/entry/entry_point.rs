@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
 
 use common::types::TelemetryDetail;
 
@@ -39,7 +38,6 @@ pub trait SegmentEntry {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
-        is_stopped: &AtomicBool,
         query_context: &QueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>>;
 

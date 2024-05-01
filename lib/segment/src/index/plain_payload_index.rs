@@ -255,7 +255,6 @@ impl VectorIndex for PlainIndex {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
-        is_stopped: &AtomicBool,
         query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         let is_indexed_only = params.map(|p| p.indexed_only).unwrap_or(false);
@@ -267,6 +266,8 @@ impl VectorIndex for PlainIndex {
         {
             return Ok(vec![vec![]; vectors.len()]);
         }
+
+        let is_stopped = query_context.is_stopped();
 
         match filter {
             Some(filter) => {
@@ -285,7 +286,7 @@ impl VectorIndex for PlainIndex {
                             vector.to_owned(),
                             &vector_storage,
                             deleted_points,
-                            is_stopped,
+                            &is_stopped,
                         )
                         .map(|scorer| {
                             scorer.peek_top_iter(&mut filtered_ids_vec.iter().copied(), top)
@@ -307,7 +308,7 @@ impl VectorIndex for PlainIndex {
                             vector.to_owned(),
                             &vector_storage,
                             deleted_points,
-                            is_stopped,
+                            &is_stopped,
                         )
                         .map(|scorer| scorer.peek_top_all(top))
                     })

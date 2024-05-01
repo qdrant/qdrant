@@ -163,7 +163,6 @@ fn exact_search_test() {
                     exact: true,
                     ..Default::default()
                 }),
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();
@@ -175,7 +174,6 @@ fn exact_search_test() {
                 None,
                 top,
                 None,
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();
@@ -210,7 +208,6 @@ fn exact_search_test() {
                     exact: true,
                     ..Default::default()
                 }),
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();
@@ -222,7 +219,6 @@ fn exact_search_test() {
                 filter_query,
                 top,
                 None,
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();

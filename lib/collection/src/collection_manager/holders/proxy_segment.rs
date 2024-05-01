@@ -1,7 +1,6 @@
 use std::cmp;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use bitvec::prelude::BitVec;
@@ -285,7 +284,6 @@ impl ProxySegment {
             filter,
             top,
             params,
-            &false.into(),
             &Default::default(),
         )?;
 
@@ -319,7 +317,6 @@ impl SegmentEntry for ProxySegment {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
-        is_stopped: &AtomicBool,
         query_context: &QueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         let deleted_points = self.deleted_points.read();
@@ -343,7 +340,6 @@ impl SegmentEntry for ProxySegment {
                 Some(&wrapped_filter),
                 top,
                 params,
-                is_stopped,
                 query_context,
             )?
         } else {
@@ -355,7 +351,6 @@ impl SegmentEntry for ProxySegment {
                 filter,
                 top,
                 params,
-                is_stopped,
                 query_context,
             )?
         };
@@ -367,7 +362,6 @@ impl SegmentEntry for ProxySegment {
             filter,
             top,
             params,
-            is_stopped,
             query_context,
         )?;
         for (index, write_result) in write_results.iter_mut().enumerate() {
@@ -1062,7 +1056,6 @@ mod tests {
                 None,
                 10,
                 None,
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();
@@ -1117,7 +1110,6 @@ mod tests {
                 None,
                 10,
                 None,
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();
@@ -1182,7 +1174,6 @@ mod tests {
                 None,
                 10,
                 None,
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();

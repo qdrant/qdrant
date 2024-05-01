@@ -194,7 +194,6 @@ fn sparse_index_discover_test() {
                 None,
                 top,
                 None,
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();
@@ -207,7 +206,6 @@ fn sparse_index_discover_test() {
                 None,
                 top,
                 None,
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();
@@ -232,7 +230,6 @@ fn sparse_index_discover_test() {
                 None,
                 top,
                 None,
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();
@@ -245,7 +242,6 @@ fn sparse_index_discover_test() {
                 None,
                 top,
                 None,
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();

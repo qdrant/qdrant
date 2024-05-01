@@ -1,4 +1,7 @@
 use std::collections::HashMap;
+use std::ops::Deref;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use bitvec::prelude::BitSlice;
 use sparse::common::types::{DimId, DimWeight};
@@ -13,6 +16,10 @@ pub struct QueryContext {
     /// small enough to be searched with `indexed_only` option.
     search_optimized_threshold_kb: usize,
 
+    /// Defines if the search process was stopped.
+    /// Is changed externally if API times out or cancelled.
+    is_stopped: Arc<AtomicBool>,
+
     /// Statistics of the element frequency,
     /// collected over all segments.
     /// Required for processing sparse vector search with `idf-dot` similarity.
@@ -25,8 +32,18 @@ impl QueryContext {
         Self {
             available_point_count: 0,
             search_optimized_threshold_kb,
+            is_stopped: Arc::new(AtomicBool::new(false)),
             idf: tiny_map::TinyMap::new(),
         }
+    }
+
+    pub fn is_stopped(&self) -> bool {
+        self.is_stopped.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub fn with_is_stopped(mut self, flag: Arc<AtomicBool>) -> Self {
+        self.is_stopped = flag;
+        self
     }
 
     pub fn available_point_count(&self) -> usize {
@@ -92,6 +109,7 @@ impl<'a> SegmentQueryContext<'a> {
         VectorQueryContext {
             available_point_count: query_context.available_point_count,
             search_optimized_threshold_kb: query_context.search_optimized_threshold_kb,
+            is_stopped: Some(&query_context.is_stopped),
             idf: query_context.idf.get(vector_name),
             deleted_points: self.deleted_points,
         }
@@ -114,9 +132,27 @@ pub struct VectorQueryContext<'a> {
     /// small enough to be searched with `indexed_only` option.
     search_optimized_threshold_kb: usize,
 
+    is_stopped: Option<&'a AtomicBool>,
+
     idf: Option<&'a HashMap<DimId, usize>>,
 
     deleted_points: Option<&'a BitSlice>,
+}
+
+pub enum SimpleCow<'a, T> {
+    Borrowed(&'a T),
+    Owned(T),
+}
+
+impl<'a, T> Deref for SimpleCow<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            SimpleCow::Borrowed(value) => value,
+            SimpleCow::Owned(value) => value,
+        }
+    }
 }
 
 impl VectorQueryContext<'_> {
@@ -130,6 +166,12 @@ impl VectorQueryContext<'_> {
 
     pub fn deleted_points(&self) -> Option<&BitSlice> {
         self.deleted_points
+    }
+
+    pub fn is_stopped(&self) -> SimpleCow<'_, AtomicBool> {
+        self.is_stopped
+            .map(SimpleCow::Borrowed)
+            .unwrap_or_else(|| SimpleCow::Owned(AtomicBool::new(false)))
     }
 
     /// Compute advanced formula for Inverse Document Frequency (IDF) according to wikipedia.
@@ -164,6 +206,7 @@ impl Default for VectorQueryContext<'_> {
         VectorQueryContext {
             available_point_count: 0,
             search_optimized_threshold_kb: usize::MAX,
+            is_stopped: None,
             idf: None,
             deleted_points: None,
         }

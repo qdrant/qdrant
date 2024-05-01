@@ -254,7 +254,6 @@ fn test_byte_storage_hnsw(
                     hnsw_ef: Some(ef),
                     ..Default::default()
                 }),
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();
@@ -276,7 +275,6 @@ fn test_byte_storage_hnsw(
                 filter_query,
                 top,
                 None,
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();
@@ -288,7 +286,6 @@ fn test_byte_storage_hnsw(
                 filter_query,
                 top,
                 None,
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();

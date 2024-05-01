@@ -240,7 +240,6 @@ fn _test_filterable_hnsw(
                     hnsw_ef: Some(ef),
                     ..Default::default()
                 }),
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();
@@ -262,7 +261,6 @@ fn _test_filterable_hnsw(
                 filter_query,
                 top,
                 None,
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();

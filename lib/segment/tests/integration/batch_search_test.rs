@@ -118,7 +118,6 @@ fn test_batch_and_single_request_equivalency() {
                 Some(&filter),
                 10,
                 None,
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();
@@ -180,7 +179,6 @@ fn test_batch_and_single_request_equivalency() {
                 Some(&filter),
                 10,
                 None,
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();
@@ -191,7 +189,6 @@ fn test_batch_and_single_request_equivalency() {
                 Some(&filter),
                 10,
                 None,
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();
@@ -202,7 +199,6 @@ fn test_batch_and_single_request_equivalency() {
                 Some(&filter),
                 10,
                 None,
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();

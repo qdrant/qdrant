@@ -3,7 +3,6 @@ use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
@@ -1000,7 +999,6 @@ impl Segment {
             filter,
             top,
             params,
-            &false.into(),
             &Default::default(),
         )?;
 
@@ -1035,7 +1033,6 @@ impl SegmentEntry for Segment {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
-        is_stopped: &AtomicBool,
         query_context: &QueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         check_query_vectors(vector_name, query_vectors, &self.segment_config)?;
@@ -1047,11 +1044,10 @@ impl SegmentEntry for Segment {
             filter,
             top,
             params,
-            is_stopped,
             &vector_query_context,
         )?;
 
-        check_stopped(is_stopped)?;
+        check_stopped(&vector_query_context.is_stopped())?;
 
         let res = internal_results
             .iter()
@@ -1826,6 +1822,8 @@ impl Drop for Segment {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::AtomicBool;
+
     use tempfile::Builder;
 
     use super::*;
@@ -1924,7 +1922,6 @@ mod tests {
                 None,
                 10,
                 None,
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();
@@ -2551,7 +2548,6 @@ mod tests {
                     None,
                     1,
                     None,
-                    &false.into(),
                     &Default::default(),
                 )
                 .err()

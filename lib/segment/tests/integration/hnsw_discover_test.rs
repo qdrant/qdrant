@@ -139,7 +139,6 @@ fn hnsw_discover_precision() {
                     hnsw_ef: Some(ef),
                     ..Default::default()
                 }),
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();
@@ -152,7 +151,6 @@ fn hnsw_discover_precision() {
                 None,
                 top,
                 None,
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();
@@ -278,7 +276,6 @@ fn filtered_hnsw_discover_precision() {
                     hnsw_ef: Some(ef),
                     ..Default::default()
                 }),
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();
@@ -291,7 +288,6 @@ fn filtered_hnsw_discover_precision() {
                 filter_query,
                 top,
                 None,
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();

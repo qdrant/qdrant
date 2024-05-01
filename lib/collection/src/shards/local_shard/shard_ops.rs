@@ -31,6 +31,8 @@ impl LocalShard {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        let is_stopped_guard = StoppingGuard::new();
+
         let (query_context, collection_params) = {
             let collection_config = self.collection_config.read().await;
 
@@ -38,6 +40,7 @@ impl LocalShard {
                 self.segments.clone(),
                 &core_request,
                 &collection_config,
+                &is_stopped_guard
             )
             .await?;
 
@@ -49,14 +52,11 @@ impl LocalShard {
             (query_context, collection_config.params.clone())
         };
 
-        let is_stopped = StoppingGuard::new();
-
         let search_request = SegmentsSearcher::search(
             Arc::clone(&self.segments),
             Arc::clone(&core_request),
             search_runtime_handle,
             true,
-            is_stopped.get_is_stopped(),
             query_context,
         );
 

@@ -261,12 +261,13 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         top: usize,
         params: Option<&SearchParams>,
         custom_entry_points: Option<&[PointOffsetType]>,
-        is_stopped: &AtomicBool,
         vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         let ef = params
             .and_then(|params| params.hnsw_ef)
             .unwrap_or(self.config.ef);
+
+        let is_stopped = vector_query_context.is_stopped();
 
         let id_tracker = self.id_tracker.borrow();
         let payload_index = self.payload_index.borrow();
@@ -283,7 +284,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             quantized_vectors.as_ref(),
             deleted_points,
             params,
-            is_stopped,
+            &is_stopped,
         )?;
         let oversampled_top = Self::get_oversampled_top(quantized_vectors.as_ref(), params, top);
 
@@ -294,7 +295,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             Some(graph) => {
                 let search_result =
                     graph.search(oversampled_top, ef, points_scorer, custom_entry_points);
-                self.postprocess_search_result(search_result, vector, params, top, is_stopped)
+                self.postprocess_search_result(search_result, vector, params, top, &is_stopped)
             }
             None => Ok(Default::default()),
         }
@@ -306,7 +307,6 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
-        is_stopped: &AtomicBool,
         vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         vectors
@@ -317,18 +317,11 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                     filter,
                     top,
                     params,
-                    is_stopped,
                     vector_query_context,
                 ),
-                other => self.search_with_graph(
-                    other,
-                    filter,
-                    top,
-                    params,
-                    None,
-                    is_stopped,
-                    vector_query_context,
-                ),
+                other => {
+                    self.search_with_graph(other, filter, top, params, None, vector_query_context)
+                }
             })
             .collect()
     }
@@ -339,7 +332,6 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         filtered_points: &[PointOffsetType],
         top: usize,
         params: Option<&SearchParams>,
-        is_stopped: &AtomicBool,
         vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         let id_tracker = self.id_tracker.borrow();
@@ -350,20 +342,22 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             .deleted_points()
             .unwrap_or(id_tracker.deleted_point_bitslice());
 
+        let is_stopped = vector_query_context.is_stopped();
+
         let raw_scorer = Self::construct_search_scorer(
             vector,
             &vector_storage,
             quantized_vectors.as_ref(),
             deleted_points,
             params,
-            is_stopped,
+            &is_stopped,
         )?;
         let oversampled_top = Self::get_oversampled_top(quantized_vectors.as_ref(), params, top);
 
         let search_result =
             raw_scorer.peek_top_iter(&mut filtered_points.iter().copied(), oversampled_top);
 
-        self.postprocess_search_result(search_result, vector, params, top, is_stopped)
+        self.postprocess_search_result(search_result, vector, params, top, &is_stopped)
     }
 
     fn search_vectors_plain(
@@ -372,7 +366,6 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         filter: &Filter,
         top: usize,
         params: Option<&SearchParams>,
-        is_stopped: &AtomicBool,
         vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         let payload_index = self.payload_index.borrow();
@@ -381,14 +374,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         vectors
             .iter()
             .map(|vector| {
-                self.search_plain(
-                    vector,
-                    &filtered_points,
-                    top,
-                    params,
-                    is_stopped,
-                    vector_query_context,
-                )
+                self.search_plain(vector, &filtered_points, top, params, vector_query_context)
             })
             .collect()
     }
@@ -399,7 +385,6 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
-        is_stopped: &AtomicBool,
         vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         // Stage 1: Find best entry points using Context search
@@ -414,7 +399,6 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                 DISCOVERY_ENTRY_POINT_COUNT,
                 params,
                 None,
-                is_stopped,
                 vector_query_context,
             )
             .map(|search_result| search_result.iter().map(|x| x.idx).collect())?;
@@ -428,7 +412,6 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             top,
             params,
             Some(&custom_entry_points),
-            is_stopped,
             vector_query_context,
         )
     }
@@ -548,7 +531,6 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
-        is_stopped: &AtomicBool,
         query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         let exact = params.map(|params| params.exact).unwrap_or(false);
@@ -574,6 +556,9 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     let deleted_points = query_context
                         .deleted_points()
                         .unwrap_or(id_tracker.deleted_point_bitslice());
+
+                    let is_stopped = query_context.is_stopped();
+
                     vectors
                         .iter()
                         .map(|&vector| {
@@ -581,7 +566,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                                 vector.to_owned(),
                                 &vector_storage,
                                 deleted_points,
-                                is_stopped,
+                                &is_stopped,
                             )
                             .map(|scorer| scorer.peek_top_all(top))
                         })
@@ -589,14 +574,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 } else {
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.unfiltered_hnsw);
-                    self.search_vectors_with_graph(
-                        vectors,
-                        None,
-                        top,
-                        params,
-                        is_stopped,
-                        query_context,
-                    )
+                    self.search_vectors_with_graph(vectors, None, top, params, query_context)
                 }
             }
             Some(query_filter) => {
@@ -622,7 +600,6 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                         query_filter,
                         top,
                         exact_params.as_ref(),
-                        is_stopped,
                         query_context,
                     );
                 }
@@ -647,7 +624,6 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                         query_filter,
                         top,
                         params,
-                        is_stopped,
                         query_context,
                     );
                 }
@@ -661,7 +637,6 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                         filter,
                         top,
                         params,
-                        is_stopped,
                         query_context,
                     );
                 }
@@ -679,26 +654,12 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     // if cardinality is high enough - use HNSW index
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.large_cardinality);
-                    self.search_vectors_with_graph(
-                        vectors,
-                        filter,
-                        top,
-                        params,
-                        is_stopped,
-                        query_context,
-                    )
+                    self.search_vectors_with_graph(vectors, filter, top, params, query_context)
                 } else {
                     // if cardinality is small - use plain index
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.small_cardinality);
-                    self.search_vectors_plain(
-                        vectors,
-                        query_filter,
-                        top,
-                        params,
-                        is_stopped,
-                        query_context,
-                    )
+                    self.search_vectors_plain(vectors, query_filter, top, params, query_context)
                 }
             }
         }

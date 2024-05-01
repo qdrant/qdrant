@@ -203,7 +203,6 @@ fn check_matches(
                     filter,
                     top,
                     None,
-                    &false.into(),
                     &Default::default(),
                 )
                 .unwrap()
@@ -222,7 +221,6 @@ fn check_matches(
                     hnsw_ef: Some(ef),
                     ..Default::default()
                 }),
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();
@@ -256,7 +254,6 @@ fn check_oversampling(
                     }),
                     ..Default::default()
                 }),
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();
@@ -277,7 +274,6 @@ fn check_oversampling(
                     }),
                     ..Default::default()
                 }),
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();
@@ -315,7 +311,6 @@ fn check_rescoring(
                     }),
                     ..Default::default()
                 }),
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();

@@ -93,7 +93,6 @@ fn compare_sparse_vectors_search_with_without_filter(full_scan_threshold: usize)
                 Some(&filter),
                 top,
                 None,
-                &stopped,
                 &Default::default(),
             )
             .unwrap();
@@ -105,7 +104,6 @@ fn compare_sparse_vectors_search_with_without_filter(full_scan_threshold: usize)
                 None,
                 top,
                 None,
-                &stopped,
                 &Default::default(),
             )
             .unwrap();
@@ -191,7 +189,6 @@ fn check_index_storage_consistency<T: InvertedIndex>(sparse_vector_index: &Spars
                 None,
                 top,
                 None,
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();
@@ -331,7 +328,6 @@ fn sparse_vector_index_ram_deleted_points_search() {
             None,
             top,
             None,
-            &stopped,
             &Default::default(),
         )
         .unwrap();
@@ -391,7 +387,6 @@ fn sparse_vector_index_ram_deleted_points_search() {
             None,
             top,
             None,
-            &stopped,
             &Default::default(),
         )
         .unwrap();
@@ -434,7 +429,6 @@ fn sparse_vector_index_ram_filtered_search() {
             Some(&filter),
             10,
             None,
-            &stopped,
             &Default::default(),
         )
         .unwrap();
@@ -489,7 +483,6 @@ fn sparse_vector_index_ram_filtered_search() {
             Some(&filter),
             half_indexed_count * 2, // original top
             None,
-            &stopped,
             &Default::default(),
         )
         .unwrap();
@@ -531,7 +524,6 @@ fn sparse_vector_index_plain_search() {
             Some(&filter),
             10,
             None,
-            &stopped,
             &Default::default(),
         )
         .unwrap();
@@ -560,7 +552,6 @@ fn sparse_vector_index_plain_search() {
             Some(&filter),
             NUM_VECTORS,
             None,
-            &stopped,
             &Default::default(),
         )
         .unwrap();
@@ -628,7 +619,6 @@ fn handling_empty_sparse_vectors() {
             None,
             10,
             None,
-            &stopped,
             &Default::default(),
         )
         .unwrap();
@@ -763,7 +753,6 @@ fn sparse_vector_index_persistence_test() {
             None,
             top,
             None,
-            &stopped,
             &Default::default(),
         )
         .unwrap();
@@ -831,7 +820,6 @@ fn sparse_vector_index_persistence_test() {
             None,
             top,
             None,
-            &stopped,
             &Default::default(),
         )
         .unwrap();
