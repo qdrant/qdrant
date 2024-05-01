@@ -93,7 +93,7 @@ impl Default for QueryContext {
 }
 
 /// Defines context of the search query on the segment level
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct SegmentQueryContext<'a> {
     query_context: Option<&'a QueryContext>,
     deleted_points: Option<&'a BitSlice>,

@@ -575,6 +575,7 @@ fn execute_batch_search(
     };
 
     let vectors_batch = &vectors_batch.iter().collect_vec();
+    let segment_query_context = query_context.get_segment_query_context();
     let res = read_segment.search_batch(
         search_params.vector_name,
         vectors_batch,
@@ -583,7 +584,7 @@ fn execute_batch_search(
         search_params.filter,
         top,
         search_params.params,
-        query_context,
+        segment_query_context,
     )?;
 
     let further_results = res

@@ -118,7 +118,7 @@ fn test_batch_and_single_request_equivalency() {
                 Some(&filter),
                 10,
                 None,
-                &Default::default(),
+                Default::default(),
             )
             .unwrap();
 

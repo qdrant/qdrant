@@ -27,7 +27,7 @@ use crate::common::version::{StorageVersion, VERSION_FILE};
 use crate::common::{check_named_vectors, check_query_vectors, check_stopped, check_vector_name};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{Direction, OrderBy, OrderingValue};
-use crate::data_types::query_context::QueryContext;
+use crate::data_types::query_context::{QueryContext, SegmentQueryContext};
 use crate::data_types::vectors::{MultiDenseVector, QueryVector, Vector, VectorRef};
 use crate::entry::entry_point::SegmentEntry;
 use crate::id_tracker::IdTrackerSS;
@@ -999,7 +999,7 @@ impl Segment {
             filter,
             top,
             params,
-            &Default::default(),
+            Default::default(),
         )?;
 
         Ok(result.into_iter().next().unwrap())
@@ -1033,12 +1033,11 @@ impl SegmentEntry for Segment {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
-        query_context: &QueryContext,
+        query_context: SegmentQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         check_query_vectors(vector_name, query_vectors, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
-        let segment_query_context = query_context.get_segment_query_context();
-        let vector_query_context = segment_query_context.get_vector_context(vector_name);
+        let vector_query_context = query_context.get_vector_context(vector_name);
         let internal_results = vector_data.vector_index.borrow().search(
             query_vectors,
             filter,
@@ -1922,7 +1921,7 @@ mod tests {
                 None,
                 10,
                 None,
-                &Default::default(),
+                Default::default(),
             )
             .unwrap();
         eprintln!("search_batch_result = {search_batch_result:#?}");
@@ -2548,7 +2547,7 @@ mod tests {
                     None,
                     1,
                     None,
-                    &Default::default(),
+                    Default::default(),
                 )
                 .err()
                 .unwrap();

@@ -9,7 +9,7 @@ use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::common::operation_error::{OperationResult, SegmentFailedState};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::order_by::OrderingValue;
-use segment::data_types::query_context::QueryContext;
+use segment::data_types::query_context::{QueryContext, SegmentQueryContext};
 use segment::data_types::vectors::{QueryVector, Vector};
 use segment::entry::entry_point::SegmentEntry;
 use segment::index::field_index::CardinalityEstimation;
@@ -284,7 +284,7 @@ impl ProxySegment {
             filter,
             top,
             params,
-            &Default::default(),
+            Default::default(),
         )?;
 
         Ok(result.into_iter().next().unwrap())
@@ -317,7 +317,7 @@ impl SegmentEntry for ProxySegment {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
-        query_context: &QueryContext,
+        query_context: SegmentQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         let deleted_points = self.deleted_points.read();
 
@@ -340,7 +340,7 @@ impl SegmentEntry for ProxySegment {
                 Some(&wrapped_filter),
                 top,
                 params,
-                query_context,
+                query_context.clone(),
             )?
         } else {
             self.wrapped_segment.get().read().search_batch(
@@ -351,7 +351,7 @@ impl SegmentEntry for ProxySegment {
                 filter,
                 top,
                 params,
-                query_context,
+                query_context.clone(),
             )?
         };
         let mut write_results = self.write_segment.get().read().search_batch(
@@ -1056,7 +1056,7 @@ mod tests {
                 None,
                 10,
                 None,
-                &Default::default(),
+                Default::default(),
             )
             .unwrap();
 
@@ -1110,7 +1110,7 @@ mod tests {
                 None,
                 10,
                 None,
-                &Default::default(),
+                Default::default(),
             )
             .unwrap();
 
@@ -1174,7 +1174,7 @@ mod tests {
                 None,
                 10,
                 None,
-                &Default::default(),
+                Default::default(),
             )
             .unwrap();
 
