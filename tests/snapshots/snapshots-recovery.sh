@@ -7,10 +7,6 @@ STORAGE_METHOD=${1:-local}
 
 CONFIG_FILE="../../config/config.yaml"
 
-DOCKER_NETWORK_NAME=temp-network
-
-docker network create $DOCKER_NETWORK_NAME
-
 # Check and set the storage method
 if [ "$STORAGE_METHOD" = "s3" ]; then
     echo "Using S3 storage"
@@ -23,17 +19,7 @@ if [ "$STORAGE_METHOD" = "s3" ]; then
     yq eval -i '.storage.snapshots_config.s3_config.region = "us-east-1"' $CONFIG_FILE
     yq eval -i '.storage.snapshots_config.s3_config.access_key = "minioadmin"' $CONFIG_FILE
     yq eval -i '.storage.snapshots_config.s3_config.secret_key = "minioadmin"' $CONFIG_FILE
-    yq eval -i '.storage.snapshots_config.s3_config.endpoint_url = "http://minio:9000"' $CONFIG_FILE
-
-    # Start Minio
-    docker run -d --network $DOCKER_NETWORK_NAME -p 9000:9000 --name minio \
-          -e "MINIO_ACCESS_KEY=minioadmin" \
-          -e "MINIO_SECRET_KEY=minioadmin" \
-          -v /tmp/data:/data \
-          -v /tmp/config:/root/.minio \
-          minio/minio server /data
-    
-    echo $(AWS_ACCESS_KEY_ID="minioadmin" AWS_SECRET_ACCESS_KEY="minioadmin" aws --endpoint-url http://127.0.0.1:9000/ s3 mb s3://test-bucket)
+    yq eval -i '.storage.snapshots_config.s3_config.endpoint_url = "http://127.0.0.1:9000"' $CONFIG_FILE
 else
     echo "Using local storage"
     yq eval -i '.storage.snapshots_config.snapshots_storage = "local"' $CONFIG_FILE
@@ -52,7 +38,7 @@ declare CONTAINER_NAME=qdrant-snapshots-container
 docker buildx build --build-arg=PROFILE=ci --load ../../ --tag=$DOCKER_IMAGE_NAME
 
 docker run \
-    --rm -d --network $DOCKER_NETWORK_NAME \
+    --rm -d  --network host \
     -p 6333:6333 -p 6334:6334 \
     -v snapshots:/qdrant/snapshots \
     -v tempdir:/qdrant/tempdir \
