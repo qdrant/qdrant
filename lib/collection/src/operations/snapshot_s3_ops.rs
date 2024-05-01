@@ -12,13 +12,13 @@ use aws_smithy_types_convert::date_time::DateTimeExt;
 
 use super::{snapshot_ops::SnapshotDescription, types::CollectionResult};
 
-pub fn get_key(path: &Path) -> Result<String, ()> {
+pub fn get_key(path: &Path) -> Option<String> {
     let key = path
         .to_str()
         .expect("path is invalid")
         .trim_start_matches("./")
         .to_string();
-    Ok(key)
+    Some(key)
 }
 
 pub async fn multi_part_upload(
@@ -106,14 +106,13 @@ pub async fn multi_part_upload(
 
 pub async fn get_snapshot_description(
     client: &aws_sdk_s3::Client,
-    bucket_name: &str,
-    key: &str,
+    bucket_name: String,
+    key: String,
 ) -> CollectionResult<SnapshotDescription> {
-    let name = key;
     let file_meta = client
         .head_object()
         .bucket(bucket_name)
-        .key(key)
+        .key(&key)
         .send()
         .await
         .unwrap();
@@ -123,9 +122,37 @@ pub async fn get_snapshot_description(
     let checksum = file_meta.checksum_sha256.clone();
     let size = file_meta.content_length().unwrap() as u64;
     Ok(SnapshotDescription {
-        name: name.to_string(),
+        name: key,
         creation_time,
         size,
         checksum,
     })
+}
+
+pub async fn list_snapshots_in_bucket_with_key(
+    client: &aws_sdk_s3::Client,
+    bucket_name: &str,
+    key: &str,
+) -> CollectionResult<Vec<SnapshotDescription>> {
+    let entries = client
+        .list_objects_v2()
+        .bucket(bucket_name)
+        .prefix(key)
+        .send()
+        .await
+        .unwrap()
+        .contents
+        .unwrap();
+
+    let snapshot_futures: Vec<_> = entries
+        .into_iter()
+        .filter_map(|entry| {
+            entry
+                .key
+                .map(|key| get_snapshot_description(client, bucket_name.to_string(), key.clone()))
+        })
+        .collect();
+
+    let snapshots = futures::future::join_all(snapshot_futures).await;
+    Ok(snapshots.into_iter().collect::<Result<_, _>>().unwrap())
 }

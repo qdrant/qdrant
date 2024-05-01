@@ -273,7 +273,9 @@ impl SnapshotStorageS3 {
 
     async fn list_snapshots(&self, directory: &Path) -> CollectionResult<Vec<SnapshotDescription>> {
         println!("Listing snapshots in directory: {:?}", directory);
-        Ok(vec![])
+        let bucket_name = &self.s3_config.bucket;
+        let key = &snapshot_s3_ops::get_key(directory).unwrap();
+        snapshot_s3_ops::list_snapshots_in_bucket_with_key(&self.client, bucket_name, key).await
     }
 
     async fn store_file(
@@ -281,15 +283,15 @@ impl SnapshotStorageS3 {
         source_path: &Path,
         target_path: &Path,
     ) -> CollectionResult<SnapshotDescription> {
-        let bucket_name = &self.s3_config.bucket;
+        let bucket_name = self.s3_config.bucket.clone();
         // Get file name by trimming the path.
         // if the path is ./path/to/file.txt, the key should be path/to/file.txt
-        let key = &snapshot_s3_ops::get_key(target_path).unwrap();
+        let key = snapshot_s3_ops::get_key(target_path).unwrap();
 
         snapshot_s3_ops::multi_part_upload(
             &self.client,
-            bucket_name,
-            key,
+            &bucket_name,
+            &key,
             source_path.to_str().unwrap(),
         )
         .await;
