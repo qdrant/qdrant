@@ -178,6 +178,11 @@ impl ProxySegment {
             deleted_points_write.insert(point_id);
         }
 
+        eprintln!(
+            "Marking as deteled: point_offset = {:#?}, point_id = {:#?}",
+            point_offset, point_id
+        );
+
         self.set_deleted_offset(point_offset);
 
         Ok(true)
@@ -333,6 +338,11 @@ impl SegmentEntry for ProxySegment {
                 let query_context_with_deleted =
                     query_context.clone().with_deleted_points(deleted_points);
 
+                eprintln!(
+                    "query_context_with_deleted = {:#?}",
+                    query_context_with_deleted
+                );
+
                 self.wrapped_segment.get().read().search_batch(
                     vector_name,
                     vectors,
@@ -405,9 +415,25 @@ impl SegmentEntry for ProxySegment {
         point_id: PointIdType,
     ) -> OperationResult<bool> {
         let mut was_deleted = false;
-        if self.wrapped_segment.get().read().has_point(point_id) {
-            was_deleted = self.deleted_points.write().insert(point_id);
-        }
+
+        let point_offset = match &self.wrapped_segment {
+            LockedSegment::Original(raw_segment) => {
+                let point_offset = raw_segment.read().get_internal_id(point_id);
+                if point_offset.is_some() {
+                    was_deleted = self.deleted_points.write().insert(point_id);
+                }
+                point_offset
+            }
+            LockedSegment::Proxy(proxy) => {
+                if proxy.read().has_point(point_id) {
+                    was_deleted = self.deleted_points.write().insert(point_id);
+                }
+                None
+            }
+        };
+
+        self.set_deleted_offset(point_offset);
+
         let was_deleted_in_writable = self
             .write_segment
             .get()

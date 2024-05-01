@@ -8,6 +8,7 @@ use sparse::common::types::{DimId, DimWeight};
 
 use crate::data_types::tiny_map;
 
+#[derive(Debug)]
 pub struct QueryContext {
     /// Total amount of available points in the segment.
     available_point_count: usize,
@@ -93,7 +94,7 @@ impl Default for QueryContext {
 }
 
 /// Defines context of the search query on the segment level
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct SegmentQueryContext<'a> {
     query_context: Option<&'a QueryContext>,
     deleted_points: Option<&'a BitSlice>,
@@ -101,17 +102,19 @@ pub struct SegmentQueryContext<'a> {
 
 impl<'a> SegmentQueryContext<'a> {
     pub fn get_vector_context(&self, vector_name: &str) -> VectorQueryContext {
-        let query_context = if let Some(query_context) = self.query_context {
-            query_context
+        if let Some(query_context) = self.query_context {
+            VectorQueryContext {
+                available_point_count: query_context.available_point_count,
+                search_optimized_threshold_kb: query_context.search_optimized_threshold_kb,
+                is_stopped: Some(&query_context.is_stopped),
+                idf: query_context.idf.get(vector_name),
+                deleted_points: self.deleted_points,
+            }
         } else {
-            return VectorQueryContext::default();
-        };
-        VectorQueryContext {
-            available_point_count: query_context.available_point_count,
-            search_optimized_threshold_kb: query_context.search_optimized_threshold_kb,
-            is_stopped: Some(&query_context.is_stopped),
-            idf: query_context.idf.get(vector_name),
-            deleted_points: self.deleted_points,
+            VectorQueryContext {
+                deleted_points: self.deleted_points,
+                ..Default::default()
+            }
         }
     }
 
@@ -122,6 +125,7 @@ impl<'a> SegmentQueryContext<'a> {
 }
 
 /// Query context related to a specific vector
+#[derive(Debug)]
 pub struct VectorQueryContext<'a> {
     /// Total amount of available points in the segment.
     available_point_count: usize,
