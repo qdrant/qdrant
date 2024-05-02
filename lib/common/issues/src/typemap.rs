@@ -1,7 +1,7 @@
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 
-pub struct TypeMap(HashMap<TypeId, Box<dyn Any>>);
+pub struct TypeMap(HashMap<TypeId, Box<dyn Any + Send + Sync>>);
 impl TypeMap {
     pub fn new() -> Self {
         Self(HashMap::new())
@@ -11,7 +11,7 @@ impl TypeMap {
         self.0.contains_key(&TypeId::of::<T>())
     }
 
-    pub fn insert<T: 'static>(&mut self, value: T) {
+    pub fn insert<T: 'static + Send + Sync>(&mut self, value: T) {
         self.0.insert(TypeId::of::<T>(), Box::new(value));
     }
 
