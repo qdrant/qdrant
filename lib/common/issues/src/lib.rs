@@ -5,7 +5,7 @@ pub mod problems;
 mod solution;
 pub(crate) mod typemap;
 
-pub use broker::EventBroker;
-pub use dashboard::{all_issues, clear, solve, solve_by_filter, submit};
+pub use broker::{add_subscriber, publish};
+pub use dashboard::{all_issues, clear, solve, solve_by_filter, submit, Code};
 pub use issue::{Issue, IssueRecord};
 pub use solution::{Action, ImmediateSolution, Solution};

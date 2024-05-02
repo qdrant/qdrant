@@ -5263,6 +5263,7 @@ dependencies = [
  "futures",
  "http 0.2.9",
  "io",
+ "issues",
  "itertools 0.12.1",
  "log",
  "memory",
