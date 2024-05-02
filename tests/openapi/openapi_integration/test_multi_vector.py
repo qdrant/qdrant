@@ -192,6 +192,30 @@ def test_multi_vector_validation():
     assert 'Validation error in JSON body: [points[0].vector.?.data: all vectors must be non-empty]' in \
            response.json()["status"]["error"]
 
+    # fails because it uses one inner vector
+    response = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "points": [
+                {
+                    "id": 1,
+                    "vector": {
+                        "my-multivec": [
+                            [0.05, 0.61, 0.76, 0.74],
+                            [0.05, 0.61, 0.76]
+                        ]
+                    }
+                }
+            ]
+        }
+    )
+    assert not response.ok
+    assert 'Validation error in JSON body: [points[0].vector.?.data: all vectors must have the same dimension, found vector with dimension 3' in \
+           response.json()["status"]["error"]
+
 
 def test_search_legacy_api():
     # uses raw requests to avoid schema validation error
