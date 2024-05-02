@@ -278,7 +278,6 @@ async fn get_snapshot(
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let (collection_name, snapshot_name) = path.into_inner();
-    println!("collection_name: {}", collection_name);
     do_get_snapshot(
         dispatcher.toc(&access),
         access,
