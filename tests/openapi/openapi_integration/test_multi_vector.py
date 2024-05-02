@@ -18,12 +18,7 @@ def setup():
 
 
 def multivector_collection_setup(collection_name='test_collection'):
-    response = request_with_validation(
-        api='/collections/{collection_name}',
-        method="DELETE",
-        path_params={'collection_name': collection_name},
-    )
-    assert response.ok
+    drop_collection(collection_name=collection_name)
 
     response = request_with_validation(
         api='/collections/{collection_name}',
