@@ -75,6 +75,10 @@ pub struct SnapshotRecover {
     #[serde(default)]
     #[validate(custom = "common::validation::validate_sha256_hash")]
     pub checksum: Option<String>,
+
+    /// Optional API key used when fetching the snapshot from a remote URL.
+    #[serde(default)]
+    pub api_key: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
@@ -160,6 +164,10 @@ pub struct ShardSnapshotRecover {
     #[validate(custom = "common::validation::validate_sha256_hash")]
     #[serde(default)]
     pub checksum: Option<String>,
+
+    /// Optional API key used when fetching the snapshot from a remote URL.
+    #[serde(default)]
+    pub api_key: Option<String>,
 }
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize, schemars::JsonSchema)]
