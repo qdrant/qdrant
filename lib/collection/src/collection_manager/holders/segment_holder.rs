@@ -573,7 +573,7 @@ impl<'s> SegmentHolder {
                         tracing::info!(
                             internal = true,
                             "point {point_id} version {point_version} \
-                             is newer than operation {op_num}"
+                             is newer than or equal to operation {op_num}"
                         );
 
                         applied_points.insert(point_id);
