@@ -395,7 +395,6 @@ fn main() -> anyhow::Result<()> {
     }
 
     // Setup subscribers to listen for issue-able events
-    #[cfg(feature = "issues")]
     issues_setup::setup_subscribers(dispatcher_arc.clone());
 
     // Helper to better log start errors
