@@ -210,6 +210,7 @@ impl Default for ChannelService {
             id_to_metadata: Default::default(),
             channel_pool: Default::default(),
             current_rest_port: 6333,
+            api_key: None,
         }
     }
 }
