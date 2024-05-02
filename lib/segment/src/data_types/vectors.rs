@@ -197,7 +197,7 @@ pub type MultiDenseVector = TypedMultiDenseVector<VectorElementType>;
 
 impl<T: PrimitiveVectorElement> TypedMultiDenseVector<T> {
     pub fn new(flattened_vectors: TypedDenseVector<T>, dim: usize) -> Self {
-        assert_eq!(flattened_vectors.len() % dim, 0, "Invalid vector length");
+        debug_assert_eq!(flattened_vectors.len() % dim, 0, "Invalid vector length");
         Self {
             inner_vector: flattened_vectors,
             dim,
@@ -206,8 +206,8 @@ impl<T: PrimitiveVectorElement> TypedMultiDenseVector<T> {
 
     /// To be used when the input vectors are already validated to avoid double validation
     pub fn new_validated(vectors: Vec<Vec<T>>) -> Self {
-        assert!(!vectors.is_empty(), "MultiDenseVector cannot be empty");
-        assert!(
+        debug_assert!(!vectors.is_empty(), "MultiDenseVector cannot be empty");
+        debug_assert!(
             vectors.iter().all(|v| !v.is_empty()),
             "Multi individual vectors cannot be empty"
         );
