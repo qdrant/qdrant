@@ -427,26 +427,24 @@ where
         let segment_arc = default_write_segment.get();
         let mut write_segment = segment_arc.write();
         for point_id in new_point_ids {
-            let insert_span_enabled = tracing::span_enabled!(
-                target: "upsert_points/insert",
-                tracing::Level::INFO,
-                internal = true,
-            );
+            let mut segment_id = String::new();
 
-            let segment_id = if insert_span_enabled {
-                write_segment.id()
-            } else {
-                String::new()
-            };
-
-            let _span = tracing::info_span!(
+            let span = tracing::info_span!(
                 "upsert_points/insert",
                 operation = op_num,
                 point.id = %point_id,
                 segment.id = segment_id,
                 internal = true
-            )
-            .entered();
+            );
+
+            if !span.is_disabled() {
+                segment_id = write_segment.id();
+                span.record("segment.id", &segment_id);
+            } else {
+                log::info!("Skipped building segment id...");
+            }
+
+            let _span = span.entered();
 
             let point = points_map[&point_id];
             res += upsert_with_payload(
