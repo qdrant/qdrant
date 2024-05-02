@@ -556,7 +556,23 @@ impl<'s> SegmentHolder {
             ids,
             update_nonappendable,
             |point_id, _idx, write_segment, &update_nonappendable| {
-                let segment_id = write_segment.id();
+                let update_span_enabled = tracing::span_enabled!(
+                    target: "upsert_points/update",
+                    tracing::Level::INFO,
+                    internal = true
+                );
+
+                let move_span_enabled = tracing::span_enabled!(
+                    target: "upsert_points/move",
+                    tracing::Level::INFO,
+                    internal = true
+                );
+
+                let segment_id = if update_span_enabled || move_span_enabled {
+                    write_segment.id()
+                } else {
+                    String::new()
+                };
 
                 let _span = tracing::info_span!(
                     "upsert_points/update",
@@ -589,12 +605,18 @@ impl<'s> SegmentHolder {
                     self.aloha_random_write(
                         &appendable_segments,
                         |_appendable_idx, appendable_write_segment| {
+                            let appendable_segment_id = if move_span_enabled {
+                                appendable_write_segment.id()
+                            } else {
+                                String::new()
+                            };
+
                             let _span = tracing::info_span!(
                                 "upsert_points/move",
                                 operation = op_num,
                                 point.id = %point_id,
                                 segment.id = segment_id,
-                                appendable.id = appendable_write_segment.id(),
+                                appendable.id = appendable_segment_id,
                                 internal = true
                             )
                             .entered();

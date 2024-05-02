@@ -427,11 +427,23 @@ where
         let segment_arc = default_write_segment.get();
         let mut write_segment = segment_arc.write();
         for point_id in new_point_ids {
+            let insert_span_enabled = tracing::span_enabled!(
+                target: "upsert_points/insert",
+                tracing::Level::INFO,
+                internal = true,
+            );
+
+            let segment_id = if insert_span_enabled {
+                write_segment.id()
+            } else {
+                String::new()
+            };
+
             let _span = tracing::info_span!(
                 "upsert_points/insert",
                 operation = op_num,
                 point.id = %point_id,
-                segment.id = write_segment.id(),
+                segment.id = segment_id,
                 internal = true
             )
             .entered();
