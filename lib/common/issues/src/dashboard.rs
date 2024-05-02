@@ -21,7 +21,7 @@ impl Code {
     }
 
     /// Internal code for the issue
-    fn of<I: Issue + 'static>(issue: &I) -> Self
+    pub fn of<I: Issue + 'static>(issue: &I) -> Self
     where
         Self: std::marker::Sized + 'static,
     {

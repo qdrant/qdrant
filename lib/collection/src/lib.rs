@@ -18,5 +18,6 @@ pub mod wal;
 pub mod wal_delta;
 
 pub mod events;
+pub mod problems;
 #[cfg(test)]
 mod tests;

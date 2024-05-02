@@ -5,6 +5,8 @@ use segment::types::{Filter, PayloadFieldSchema};
 
 use crate::shards::CollectionId;
 
+pub struct CollectionCreatedEvent;
+
 pub struct CollectionDeletedEvent {
     pub collection_id: CollectionId,
 }

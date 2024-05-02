@@ -3,6 +3,7 @@ use std::num::NonZeroU32;
 
 use collection::collection::Collection;
 use collection::config::{self, CollectionConfig, CollectionParams, ShardingMethod};
+use collection::events::CollectionCreatedEvent;
 use collection::operations::config_diff::DiffConfig as _;
 use collection::operations::types::{
     check_sparse_compatible, CollectionResult, SparseVectorParams, VectorsConfig,
@@ -233,6 +234,8 @@ impl TableOfContent {
             self.on_peer_created(collection_name.to_string(), self.this_peer_id, shard_id)
                 .await?;
         }
+
+        issues::publish(CollectionCreatedEvent);
 
         if let Some(init_from) = init_from {
             self.run_data_initialization(init_from.collection, collection_name.to_string())

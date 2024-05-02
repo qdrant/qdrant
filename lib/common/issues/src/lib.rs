@@ -1,7 +1,6 @@
 pub mod broker;
 mod dashboard;
 mod issue;
-pub mod problems;
 mod solution;
 pub(crate) mod typemap;
 

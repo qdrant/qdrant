@@ -119,7 +119,7 @@ def test_order_by_int_ascending():
     ids = [x["id"] for x in result["points"]]
     assert [0, 1, 2, 3, 4] == ids
     # Offset is not supported for order_by
-    assert result["next_page_offset"] == None
+    assert result["next_page_offset"] is None
 
 
 def test_order_by_int_descending():
@@ -143,7 +143,7 @@ def test_order_by_int_descending():
     expected_ids = [total_points - (i + 1) for i in range(5)]
     assert expected_ids == ids
     # Offset is not supported for order_by
-    assert result["next_page_offset"] == None
+    assert result["next_page_offset"] is None
 
 
 def paginate_whole_collection(key, direction, must=None):

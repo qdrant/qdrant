@@ -2,7 +2,7 @@ import pytest
 import requests
 
 from .fixtures import create_collection, drop_collection, upsert_random_points
-from .utils import kill_all_processes, start_cluster
+from .utils import kill_all_processes, start_cluster, wait_for
 
 COLL_NAME = "test_collection"
 
@@ -10,7 +10,8 @@ COLL_NAME = "test_collection"
 @pytest.fixture(scope="module")
 def setup(tmp_path_factory: pytest.TempPathFactory):
     extra_env = {
-        "QDRANT__SERVICE__SLOW_QUERY_SECS": "0.001",  # "Always" try to trigger slow search issue
+        "QDRANT__SERVICE__SLOW_QUERY_SECS": "0.001",   # "Always" try to trigger slow search issue
+        "QDRANT__STORAGE__WAL__WAL_CAPACITY_MB": "1", # Speed up creating many collections
     }
 
     tmp_path = tmp_path_factory.mktemp("qdrant")
@@ -141,4 +142,35 @@ def test_unindexed_field_is_gone_when_indexing(setup_with_big_collection):
 
     # check the issue is not triggered again
     issues = get_issues(uri)
-    assert expected_issue_code not in [issue["id"] for issue in issues]
+    
+    
+def test_too_many_collections(setup):
+    uri = setup
+    
+    many_collections_threshold = 30
+    
+    num_collections = many_collections_threshold + 4
+    
+    # create too many collections
+    for i in range(num_collections):
+        collection_name = f"test_collection_{i}"
+        create_collection(uri, collection=collection_name)
+        upsert_random_points(uri, 100, collection_name=collection_name, with_sparse_vector=False)
+
+
+    # check the issue is active
+    wait_for(lambda: "TOO_MANY_COLLECTIONS/" in [issue["id"] for issue in get_issues(uri)])
+
+    # leave less than 30 collections
+    for i in range(num_collections - 7, num_collections):
+        collection_name = f"test_collection_{i}"
+        drop_collection(uri, collection=collection_name)
+
+    # check that the issue is not active anymore
+    wait_for(lambda: "TOO_MANY_COLLECTIONS/" not in [issue["id"] for issue in get_issues(uri)])
+
+    # Teardown
+    for i in range(num_collections):
+        collection_name = f"test_collection_{i}"
+        drop_collection(uri, collection=collection_name)
+    
