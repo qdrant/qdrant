@@ -257,7 +257,7 @@ impl SnapshotStorageS3 {
     async fn list_snapshots(&self, directory: &Path) -> CollectionResult<Vec<SnapshotDescription>> {
         let bucket_name = &self.s3_config.bucket;
         let key = &snapshot_s3_ops::get_key(directory)?;
-        snapshot_s3_ops::list_snapshots_in_bucket_with_key(&self.client, bucket_name, key).await
+        snapshot_s3_ops::list_snapshots(&self.client, bucket_name, key).await
     }
 
     async fn store_file(
