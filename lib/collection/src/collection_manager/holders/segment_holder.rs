@@ -123,7 +123,7 @@ impl Clone for LockedSegment {
     }
 
     fn clone_from(&mut self, source: &Self) {
-        *self = source.clone();
+        self.clone_from(source);
     }
 }
 
