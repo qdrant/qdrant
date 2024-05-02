@@ -205,7 +205,7 @@ impl<T: PrimitiveVectorElement> TypedMultiDenseVector<T> {
     }
 
     /// To be used when the input vectors are already validated to avoid double validation
-    pub fn new_validated(vectors: Vec<Vec<T>>) -> Self {
+    pub fn new_unchecked(vectors: Vec<Vec<T>>) -> Self {
         debug_assert!(!vectors.is_empty(), "MultiDenseVector cannot be empty");
         debug_assert!(
             vectors.iter().all(|v| !v.is_empty()),

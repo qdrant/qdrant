@@ -22,7 +22,7 @@ impl From<Vector> for segment::data_types::vectors::Vector {
                 // the REST vectors have been validated already
                 // we can use an internal constructor
                 segment::data_types::vectors::Vector::MultiDense(
-                    segment::data_types::vectors::MultiDenseVector::new_validated(vector),
+                    segment::data_types::vectors::MultiDenseVector::new_unchecked(vector),
                 )
             }
         }
