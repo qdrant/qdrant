@@ -222,6 +222,7 @@ pub(super) async fn transfer_snapshot(
             shard_id,
             &shard_download_url,
             SnapshotPriority::ShardTransfer,
+            None,
         )
         .await
         .map_err(|err| {

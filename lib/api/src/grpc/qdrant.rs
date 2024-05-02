@@ -11334,6 +11334,9 @@ pub struct RecoverShardSnapshotRequest {
     #[prost(string, optional, tag = "5")]
     #[validate(custom = "common::validation::validate_sha256_hash_option")]
     pub checksum: ::core::option::Option<::prost::alloc::string::String>,
+    /// Optional API key used when fetching the snapshot from a remote URL
+    #[prost(string, optional, tag = "6")]
+    pub api_key: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
