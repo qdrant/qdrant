@@ -4,9 +4,8 @@ use std::{fs, io, result};
 use reqwest::header::{HeaderMap, HeaderValue, InvalidHeaderValue};
 use storage::content_manager::errors::StorageError;
 
-use crate::settings::{Settings, TlsConfig};
-
 use super::auth::HTTP_HEADER_API_KEY;
+use crate::settings::{Settings, TlsConfig};
 
 #[derive(Clone)]
 pub struct HttpClient {
