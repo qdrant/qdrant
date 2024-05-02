@@ -170,13 +170,9 @@ impl Collection {
             )
             .await;
 
-        let filters = request
-            .searches
-            .iter()
-            .map(|req| req.filter.as_ref())
-            .collect::<Vec<_>>();
+        let filters_refs = request.searches.iter().map(|req| req.filter.as_ref());
 
-        self.post_process_if_slow_request(instant.elapsed(), filters);
+        self.post_process_if_slow_request(instant.elapsed(), filters_refs);
 
         result
     }
@@ -288,9 +284,13 @@ impl Collection {
         Ok(top_results)
     }
 
-    fn post_process_if_slow_request(&self, duration: Duration, filters: Vec<Option<&Filter>>) {
+    fn post_process_if_slow_request<'a>(
+        &self,
+        duration: Duration,
+        filters: impl Iterator<Item = Option<&'a Filter>>,
+    ) {
         if duration > segment::problems::UnindexedField::slow_search_threshold() {
-            let filters = filters.into_iter().flatten().cloned().collect::<Vec<_>>();
+            let filters = filters.flatten().cloned().collect::<Vec<_>>();
 
             let schema = self.payload_index_schema.read().schema.clone();
 
