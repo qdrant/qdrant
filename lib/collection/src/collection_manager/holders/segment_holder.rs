@@ -29,6 +29,7 @@ const DROP_DATA_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 
 /// Object, which unifies the access to different types of segments, but still allows to
 /// access the original type of the segment if it is required for more efficient operations.
+#[derive(Clone)]
 pub enum LockedSegment {
     Original(Arc<RwLock<Segment>>),
     Proxy(Arc<RwLock<ProxySegment>>),
@@ -111,15 +112,6 @@ impl LockedSegment {
                     ))),
                 }
             }
-        }
-    }
-}
-
-impl Clone for LockedSegment {
-    fn clone(&self) -> Self {
-        match self {
-            LockedSegment::Original(x) => LockedSegment::Original(x.clone()),
-            LockedSegment::Proxy(x) => LockedSegment::Proxy(x.clone()),
         }
     }
 }
