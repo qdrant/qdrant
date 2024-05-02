@@ -513,10 +513,9 @@ pub trait SegmentOptimizer {
             .map(|segment| segment.get().read().id())
             .collect();
 
-        let _span = tracing::info_span!("optimize", ?segment_ids, tracing.target = "optimization",)
-            .entered();
+        let _span = tracing::info_span!("optimize", ?segment_ids, internal = true).entered();
 
-        tracing::info!(tracing.target = "optimization", "optimization started...",);
+        tracing::info!(internal = true, "optimization started...");
 
         // Check if all segments are not under other optimization or some ids are missing
         let all_segments_ok = optimizing_segments.len() == ids.len()
@@ -526,7 +525,7 @@ pub trait SegmentOptimizer {
 
         if !all_segments_ok {
             // Cancel the optimization
-            tracing::warn!(tracing.target = "optimization", "optimization canceled",);
+            tracing::warn!(internal = true, "optimization canceled");
 
             return Ok(false);
         }
@@ -536,9 +535,9 @@ pub trait SegmentOptimizer {
         let tmp_segment = self.temp_segment(false)?;
 
         tracing::info!(
-            tracing.target = "optimization",
+            internal = true,
             "created temporary segment {}",
-            tmp_segment.get().read().id(),
+            tmp_segment.get().read().id()
         );
 
         let proxy_deleted_points = Arc::new(RwLock::new(HashSet::<PointIdType>::new()));
@@ -588,10 +587,7 @@ pub trait SegmentOptimizer {
                 proxy_ids.push(write_segments.swap_new(proxy, &[idx]).0);
             }
 
-            tracing::info!(
-                tracing.target = "optimization",
-                "swapped proxified segments",
-            );
+            tracing::info!(internal = true, "swapped proxified segments");
 
             proxy_ids
         };
@@ -616,17 +612,14 @@ pub trait SegmentOptimizer {
                     self.handle_cancellation(&segments, &proxy_ids, &tmp_segment);
                 }
 
-                tracing::error!(
-                    tracing.target = "optimization",
-                    "optimization failed: {error}",
-                );
+                tracing::error!(internal = true, "optimization failed: {error}");
 
                 return Err(error);
             }
         };
 
         tracing::info!(
-            tracing.target = "optimization",
+            internal = true,
             "created optimized segment {}",
             optimized_segment.id()
         );
@@ -683,10 +676,7 @@ pub trait SegmentOptimizer {
                 "swapped different number of proxies on unwrap, missing or incorrect segment IDs?"
             );
 
-            tracing::info!(
-                tracing.target = "optimization",
-                "swapped proxies and optimized segment",
-            );
+            tracing::info!(internal = true, "swapped proxies and optimized segment");
 
             let has_appendable_segments = write_segments_guard.has_appendable_segment();
 
@@ -697,10 +687,7 @@ pub trait SegmentOptimizer {
             if tmp_segment.get().read().available_point_count() > 0 || !has_appendable_segments {
                 write_segments_guard.add_new_locked(tmp_segment);
 
-                tracing::info!(
-                    tracing.target = "optimization",
-                    "persisted temporary segment",
-                );
+                tracing::info!(internal = true, "persisted temporary segment");
 
                 // unlock collection for search and updates
                 drop(write_segments_guard);
@@ -712,10 +699,7 @@ pub trait SegmentOptimizer {
                     proxy.drop_data()?;
                 }
             } else {
-                tracing::info!(
-                    tracing.target = "optimization",
-                    "discarding temporary segment",
-                );
+                tracing::info!(internal = true, "discarding temporary segment");
 
                 // unlock collection for search and updates
                 drop(write_segments_guard);
@@ -729,10 +713,7 @@ pub trait SegmentOptimizer {
                 tmp_segment.drop_data()?;
             }
 
-            tracing::info!(
-                tracing.target = "optimization",
-                "optimization successfully finished",
-            );
+            tracing::info!(internal = true, "optimization successfully finished");
         }
         timer.set_success(true);
         Ok(true)

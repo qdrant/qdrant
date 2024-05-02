@@ -572,14 +572,14 @@ impl<'s> SegmentHolder {
                     point.id = %point_id,
                     point.version = tracing::field::Empty,
                     segment.id = segment_id,
-                    tracing.target = "upsert_points",
+                    internal = true
                 )
                 .entered();
 
                 if let Some(point_version) = write_segment.point_version(point_id) {
                     if point_version >= op_num {
                         tracing::info!(
-                            tracing.target = "upsert_points",
+                            internal = true,
                             "point {point_id} version {point_version} \
                              is newer than operation {op_num}"
                         );
@@ -603,7 +603,7 @@ impl<'s> SegmentHolder {
                                 point.id = %point_id,
                                 segment.id = segment_id,
                                 appendable.id = appendable_write_segment.id(),
-                                tracing.target = "upsert_points",
+                                internal = true
                             )
                             .entered();
 
@@ -724,7 +724,7 @@ impl<'s> SegmentHolder {
         let mut min_unsaved_version: SeqNumberType = SeqNumberType::MAX;
         let mut has_unsaved = false;
 
-        let _span = tracing::info_span!("flush_all", tracing.target = "flush").entered();
+        let _span = tracing::info_span!("flush_all", internal = true).entered();
 
         // Flush and release each segment
         for read_segment in segment_reads {
@@ -744,15 +744,15 @@ impl<'s> SegmentHolder {
 
         if has_unsaved {
             tracing::info!(
-                tracing.target = "flush",
-                "all segments flushed: {min_unsaved_version}",
+                internal = true,
+                "all segments flushed: {min_unsaved_version}"
             );
 
             Ok(min_unsaved_version)
         } else {
             tracing::info!(
-                tracing.target = "flush",
-                "all segments flushed: {max_persisted_version}",
+                internal = true,
+                "all segments flushed: {max_persisted_version}"
             );
 
             Ok(max_persisted_version)

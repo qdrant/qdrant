@@ -336,9 +336,9 @@ impl Segment {
         // Global version to check if operation has already been applied, then skip without execution
         if self.version.unwrap_or(0) > op_num {
             tracing::info!(
-                tracing.target = "upsert_points",
+                internal = true,
                 "segment version {} is newer than operation version {op_num}",
-                self.version.unwrap_or(0),
+                self.version.unwrap_or(0)
             );
 
             return Ok(false);
@@ -371,12 +371,12 @@ impl Segment {
                 .map_or(false, |current_version| current_version > op_num)
             {
                 tracing::info!(
-                    tracing.target = "upsert_points",
+                    internal = true,
                     "point version {} is newer than operation version {op_num}",
                     self.id_tracker
                         .borrow()
                         .internal_version(point_offset)
-                        .unwrap_or(0),
+                        .unwrap_or(0)
                 );
 
                 return Ok(false);
@@ -1164,7 +1164,7 @@ impl SegmentEntry for Segment {
                 segment.replace_all_vectors(existing_internal_id, vectors)?;
 
                 tracing::info!(
-                    tracing.target = "upsert_points",
+                    internal = true,
                     "operation {op_num} updated point {point_id}"
                 );
 
@@ -1173,7 +1173,7 @@ impl SegmentEntry for Segment {
                 let new_index = segment.insert_new_vectors(point_id, vectors)?;
 
                 tracing::info!(
-                    tracing.target = "upsert_points",
+                    internal = true,
                     "operation {op_num} inserted point {point_id}"
                 );
 
@@ -1566,8 +1566,7 @@ impl SegmentEntry for Segment {
 
         let segment_id = self.id();
         let _span =
-            tracing::info_span!("flush", segment.id = segment_id, tracing.target = "flush",)
-                .entered();
+            tracing::info_span!("flush", segment.id = segment_id, internal = true).entered();
 
         // Flush order is important:
         //
@@ -1644,9 +1643,9 @@ impl SegmentEntry for Segment {
             *persisted_version.lock() = state.version;
 
             tracing::info!(
-                tracing.target = "flush",
+                internal = true,
                 "flushed segment: {}",
-                state.version.unwrap_or(0),
+                state.version.unwrap_or(0)
             );
 
             debug_assert!(state.version.is_some());
@@ -1657,9 +1656,9 @@ impl SegmentEntry for Segment {
             flush_op()
         } else {
             tracing::info!(
-                tracing.target = "flush",
+                internal = true,
                 "background flush: {}",
-                current_persisted_version.unwrap_or(0),
+                current_persisted_version.unwrap_or(0)
             );
 
             let span = tracing::info_span!("background");

@@ -432,7 +432,7 @@ where
                 operation = op_num,
                 point.id = %point_id,
                 segment.id = write_segment.id(),
-                tracing.target = "upsert_points",
+                internal = true
             )
             .entered();
 

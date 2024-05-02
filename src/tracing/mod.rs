@@ -26,7 +26,7 @@ const DEFAULT_FILTERS: &[(&str, log::LevelFilter)] = &[
     ("rustls", log::LevelFilter::Info),
     ("wal", log::LevelFilter::Warn),
     ("raft", log::LevelFilter::Warn),
-    ("[{tracing.target}]", log::LevelFilter::Off),
+    ("[{internal}]", log::LevelFilter::Off),
 ];
 
 pub fn setup(mut config: config::LoggerConfig) -> anyhow::Result<LoggerHandle> {
