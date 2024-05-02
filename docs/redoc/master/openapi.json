@@ -10226,6 +10226,12 @@
             "default": null,
             "type": "string",
             "nullable": true
+          },
+          "api_key": {
+            "description": "Optional API key used when fetching the snapshot from a remote URL.",
+            "default": null,
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -10900,6 +10906,12 @@
           },
           "checksum": {
             "description": "Optional SHA256 checksum to verify snapshot integrity before recovery.",
+            "default": null,
+            "type": "string",
+            "nullable": true
+          },
+          "api_key": {
+            "description": "Optional API key used when fetching the snapshot from a remote URL.",
             "default": null,
             "type": "string",
             "nullable": true
