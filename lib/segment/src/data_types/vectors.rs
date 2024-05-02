@@ -235,11 +235,12 @@ impl<T: PrimitiveVectorElement> TypedMultiDenseVector<T> {
 
     /// Consumes the multi vector and returns the underlying individual vectors
     pub fn into_multi_vectors(self) -> Vec<Vec<T>> {
-        let mut chunks = vec![];
-        for chunk in self.inner_vector.into_iter().chunks(self.dim).into_iter() {
-            chunks.push(chunk.collect());
-        }
-        chunks
+        self.inner_vector
+            .into_iter()
+            .chunks(self.dim)
+            .into_iter()
+            .map(Iterator::collect)
+            .collect()
     }
 
     pub fn is_empty(&self) -> bool {
