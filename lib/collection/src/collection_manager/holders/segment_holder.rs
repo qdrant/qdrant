@@ -121,10 +121,6 @@ impl Clone for LockedSegment {
             LockedSegment::Proxy(x) => LockedSegment::Proxy(x.clone()),
         }
     }
-
-    fn clone_from(&mut self, source: &Self) {
-        self.clone_from(source);
-    }
 }
 
 impl From<Segment> for LockedSegment {
