@@ -6,7 +6,7 @@ use storage::content_manager::errors::StorageError;
 
 use crate::settings::{Settings, TlsConfig};
 
-const HTTP_HEADER_API_KEY: &str = "Api-key";
+use super::auth::HTTP_HEADER_API_KEY;
 
 #[derive(Clone)]
 pub struct HttpClient {

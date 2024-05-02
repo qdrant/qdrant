@@ -15,6 +15,8 @@ use crate::settings::ServiceConfig;
 pub mod claims;
 pub mod jwt_parser;
 
+pub const HTTP_HEADER_API_KEY: &str = "api-key";
+
 /// The API keys used for auth
 #[derive(Clone)]
 pub struct AuthKeys {
@@ -73,7 +75,7 @@ impl AuthKeys {
         &self,
         get_header: impl Fn(&'a str) -> Option<&'a str>,
     ) -> Result<Access, AuthError> {
-        let Some(key) = get_header("api-key")
+        let Some(key) = get_header(HTTP_HEADER_API_KEY)
             .or_else(|| get_header("authorization").and_then(|v| v.strip_prefix("Bearer ")))
         else {
             return Err(AuthError::Unauthorized(
