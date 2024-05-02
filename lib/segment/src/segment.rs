@@ -997,6 +997,10 @@ impl Segment {
 
         Ok(result.into_iter().next().unwrap())
     }
+
+    pub fn cleanup_versions(&mut self) -> OperationResult<()> {
+        self.id_tracker.borrow_mut().cleanup_versions()
+    }
 }
 
 /// This is a basic implementation of `SegmentEntry`,

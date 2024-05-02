@@ -136,6 +136,11 @@ pub trait IdTracker {
                 }),
         )
     }
+
+    /// Finds inconsistencies between id mapping and versions storage.
+    /// It might happen that point doesn't have version due to un-flushed WAL.
+    /// This method makes those points usable again.
+    fn cleanup_versions(&mut self) -> OperationResult<()>;
 }
 
 pub type IdTrackerSS = dyn IdTracker + Sync + Send;
