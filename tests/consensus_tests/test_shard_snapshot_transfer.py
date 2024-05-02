@@ -106,7 +106,6 @@ def test_shard_snapshot_transfer_with_api_key(tmp_path: pathlib.Path):
 
     # Configure a random API key
     api_key = str(uuid.uuid4())
-    api_key = "test"
     env={
         "QDRANT__SERVICE__API_KEY": api_key,
     }
@@ -117,7 +116,7 @@ def test_shard_snapshot_transfer_with_api_key(tmp_path: pathlib.Path):
     # seed port to reuse the same port for the restarted nodes
     peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, 20000, extra_env=env, headers=headers)
 
-    create_collection(peer_api_uris[0], shard_number=N_SHARDS,replication_factor=N_REPLICA,headers=headers)
+    create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA, headers=headers)
     wait_collection_exists_and_active_on_all_peers(
         collection_name=COLLECTION_NAME,
         peer_api_uris=peer_api_uris,
