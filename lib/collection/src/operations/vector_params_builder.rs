@@ -1,6 +1,6 @@
 use std::num::NonZeroU64;
 
-use segment::types::{Distance, QuantizationConfig};
+use segment::types::{Distance, MultiVectorConfig, QuantizationConfig};
 
 use crate::operations::config_diff::HnswConfigDiff;
 use crate::operations::types::{Datatype, VectorParams};
@@ -19,6 +19,7 @@ impl VectorParamsBuilder {
                 quantization_config: None,
                 on_disk: None,
                 datatype: None,
+                multi_vec_config: None,
             },
         }
     }
@@ -40,6 +41,11 @@ impl VectorParamsBuilder {
 
     pub fn with_datatype(mut self, datatype: Datatype) -> Self {
         self.vector_params.datatype = Some(datatype);
+        self
+    }
+
+    pub fn with_multi_vec_config(mut self, multivector_config: MultiVectorConfig) -> Self {
+        self.vector_params.multi_vec_config = Some(multivector_config);
         self
     }
 
