@@ -74,6 +74,7 @@ ringbuffer = "0.15.0"
 strum = { workspace = true }
 
 tracing = { workspace = true, optional = true }
+fs2 = "0.4.3"
 
 [[bench]]
 name = "hash_ring_bench"

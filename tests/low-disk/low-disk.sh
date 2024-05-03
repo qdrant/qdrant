@@ -10,7 +10,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 #declare DOCKER_IMAGE_NAME=qdrant-recovery
 declare DOCKER_IMAGE_NAME=qdrant/qdrant
 
-#docker buildx build --build-arg=PROFILE=ci --load ../../ --tag=$DOCKER_IMAGE_NAME
+docker buildx build --build-arg=PROFILE=ci --load ../../ --tag=$DOCKER_IMAGE_NAME
 
 declare OOD_CONTAINER_NAME=qdrant-ood
 

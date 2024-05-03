@@ -213,6 +213,47 @@ impl LocalShard {
 
         Ok(records)
     }
+
+    /// Ensures that the `available disk space` >= `WAL buffer + alpha` size.
+    ///
+    /// This function checks the available disk space on the file system where the specified path is located.
+    /// It verifies that there is at least enough free space to meet the WAL buffer size configured for the collection.
+    /// Introducing this check helps prevent service disruptions from unexpected disk space exhaustion.
+    ///
+    /// # Returns
+    /// A result indicating success (`Ok(())`) if there is sufficient disk space,
+    /// or a `CollectionError::service_error` if the disk space is insufficient or cannot be retrieved.
+    ///
+    /// # Errors
+    /// This function returns an error if:
+    /// - The disk space retrieval fails, detailing the failure reason.
+    /// - The available space is less than the configured WAL buffer size, specifying both the available and required space.
+    async fn ensure_sufficient_disk_space(&self) -> CollectionResult<()> {
+        let disk_free_space_bytes = fs2::free_space(self.path.as_path()).map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to get free space for path: {} due to: {}",
+                self.path.as_path().display(),
+                err
+            ))
+        })?;
+
+        let disk_buffer_bytes = self
+            .collection_config
+            .read()
+            .await
+            .wal_config
+            .wal_capacity_mb
+            * 1024
+            * 1024;
+
+        if disk_free_space_bytes < disk_buffer_bytes.try_into().unwrap_or_default() {
+            return Err(CollectionError::service_error(format!(
+                "Insufficient free space for WAL buffer."
+            )));
+        }
+
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -238,6 +279,8 @@ impl ShardOperation for LocalShard {
         } else {
             (None, None)
         };
+
+        self.ensure_sufficient_disk_space().await?;
 
         let operation_id = {
             let update_sender = self.update_sender.load();
