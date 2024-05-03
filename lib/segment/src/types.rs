@@ -739,7 +739,14 @@ pub enum VectorStorageDatatype {
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone, Hash)]
 #[serde(rename_all = "snake_case")]
-pub enum MultiVectorConfig {
+pub struct MultiVectorConfig {
+    /// How to compare multivector points
+    pub comparator: MultiVectorComparator,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum MultiVectorComparator {
     #[default]
     MaxSim,
 }

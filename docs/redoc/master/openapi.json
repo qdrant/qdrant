@@ -5724,6 +5724,17 @@
         ]
       },
       "MultiVectorConfig": {
+        "type": "object",
+        "required": [
+          "comparator"
+        ],
+        "properties": {
+          "comparator": {
+            "$ref": "#/components/schemas/MultiVectorComparator"
+          }
+        }
+      },
+      "MultiVectorComparator": {
         "type": "string",
         "enum": [
           "max_sim"
