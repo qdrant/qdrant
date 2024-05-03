@@ -1564,9 +1564,8 @@ impl SegmentEntry for Segment {
         let id_tracker_versions_flusher = self.id_tracker.borrow().versions_flusher();
         let persisted_version = self.persisted_version.clone();
 
-        let segment_id = self.id();
         let _span =
-            tracing::info_span!("flush", segment.id = segment_id, internal = true).entered();
+            tracing::info_span!("flush", segment.id = %self.id(), internal = true).entered();
 
         // Flush order is important:
         //
@@ -1691,8 +1690,8 @@ impl SegmentEntry for Segment {
         })
     }
 
-    fn data_path(&self) -> PathBuf {
-        self.current_path.clone()
+    fn data_path(&self) -> &Path {
+        &self.current_path
     }
 
     fn delete_field_index(&mut self, op_num: u64, key: PayloadKeyTypeRef) -> OperationResult<bool> {

@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::path::{Path, PathBuf};
 
 use common::types::TelemetryDetail;
@@ -179,7 +180,7 @@ pub trait SegmentEntry {
     fn drop_data(self) -> OperationResult<()>;
 
     /// Path to data, owned by segment
-    fn data_path(&self) -> PathBuf;
+    fn data_path(&self) -> &Path;
 
     /// Delete field index, if exists
     fn delete_field_index(
@@ -227,28 +228,11 @@ pub trait SegmentEntry {
     /// - for proxy segments: `<wrapped-segment-path>/<write-segment-path>`
     /// - for appendable regular segments: `<segment-path>:rw`
     /// - for non-appendable regular segments: `<segment-path>:ro`
-    fn id(&self) -> String {
-        if self.is_proxy() {
-            format!(
-                "{}/{}",
-                self.data_path()
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy(),
-                self.tmp_path()
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy(),
-            )
-        } else {
-            format!(
-                "{}:{}",
-                self.data_path()
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy(),
-                if self.is_appendable() { "rw" } else { "ro" },
-            )
+    fn id(&self) -> SegmentId<'_> {
+        SegmentId {
+            is_appendable: self.is_appendable(),
+            data_path: self.data_path(),
+            tmp_path: self.tmp_path(),
         }
     }
 
@@ -260,10 +244,46 @@ pub trait SegmentEntry {
     }
 
     /// Returns path to the inner `write_segment`, if this segment is a `ProxySegment`.
-    /// Otherwise, returns empty [`PathBuf`].
+    /// Otherwise, returns `None`.
     ///
     /// This default impl is overridden by `ProxySegment`.
-    fn tmp_path(&self) -> PathBuf {
-        PathBuf::new()
+    fn tmp_path(&self) -> Option<&Path> {
+        None
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct SegmentId<'a> {
+    is_appendable: bool,
+    data_path: &'a Path,
+    tmp_path: Option<&'a Path>,
+}
+
+impl<'a> fmt::Display for SegmentId<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(tmp_path) = self.tmp_path {
+            write!(
+                f,
+                "{}/{}",
+                self.data_path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or(""),
+                tmp_path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or(""),
+            )
+        } else {
+            write!(
+                f,
+                "{}:{}",
+                self.data_path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or(""),
+                if self.is_appendable { "rw" } else { "ro" },
+            )
+        }
     }
 }

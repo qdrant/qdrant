@@ -510,7 +510,7 @@ pub trait SegmentOptimizer {
 
         let segment_ids: Vec<_> = optimizing_segments
             .iter()
-            .map(|segment| segment.get().read().id())
+            .map(|segment| segment.get().read().id().to_string())
             .collect();
 
         let _span = tracing::info_span!("optimize", ?segment_ids, internal = true).entered();

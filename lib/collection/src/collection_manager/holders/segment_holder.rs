@@ -556,25 +556,15 @@ impl<'s> SegmentHolder {
             ids,
             update_nonappendable,
             |point_id, _idx, write_segment, &update_nonappendable| {
-                let mut segment_id = String::new();
-
-                let span = tracing::info_span!(
+                let _span = tracing::info_span!(
                     "upsert_points/update",
                     operation = op_num,
                     point.id = %point_id,
                     point.version = tracing::field::Empty,
-                    segment.id = segment_id,
+                    segment.id = %write_segment.id(),
                     internal = true
-                );
-
-                if !span.is_disabled() {
-                    segment_id = write_segment.id();
-                    span.record("segment.id", &segment_id);
-                } else {
-                    log::info!("Skipped building segment id...");
-                }
-
-                let _span = span.entered();
+                )
+                .entered();
 
                 if let Some(point_version) = write_segment.point_version(point_id) {
                     if point_version >= op_num {
@@ -597,31 +587,15 @@ impl<'s> SegmentHolder {
                     self.aloha_random_write(
                         &appendable_segments,
                         |_appendable_idx, appendable_write_segment| {
-                            let mut appendable_segment_id = String::new();
-
-                            let span = tracing::info_span!(
+                            let _span = tracing::info_span!(
                                 "upsert_points/move",
                                 operation = op_num,
                                 point.id = %point_id,
-                                segment.id = segment_id,
-                                appendable.id = appendable_segment_id,
+                                segment.id = %write_segment.id(),
+                                appendable.id = %appendable_write_segment.id(),
                                 internal = true
-                            );
-
-                            if !span.is_disabled() {
-                                if segment_id.is_empty() {
-                                    segment_id = write_segment.id();
-                                }
-
-                                appendable_segment_id = appendable_write_segment.id();
-
-                                span.record("segment.id", &segment_id);
-                                span.record("appendable.id", &appendable_segment_id);
-                            } else {
-                                log::info!("Skipped building segment ids...");
-                            }
-
-                            let _span = span.entered();
+                            )
+                            .entered();
 
                             let all_vectors = write_segment.all_vectors(point_id)?;
                             let payload = write_segment.payload(point_id)?;
