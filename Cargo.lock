@@ -4047,7 +4047,7 @@ dependencies = [
 
 [[package]]
 name = "qdrant"
-version = "1.9.1-dev"
+version = "1.9.2-dev"
 dependencies = [
  "actix-cors",
  "actix-files",
