@@ -6,11 +6,15 @@ use serde::{Deserialize, Serialize};
 /// Type for dense vector
 pub type DenseVector = Vec<segment::data_types::vectors::VectorElementType>;
 
+/// Type for multi dense vector
+pub type MultiDenseVector = Vec<DenseVector>;
+
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize, JsonSchema)]
 #[serde(untagged, rename_all = "snake_case")]
 pub enum Vector {
     Dense(DenseVector),
     Sparse(sparse::common::sparse_vector::SparseVector),
+    MultiDense(MultiDenseVector),
 }
 
 /// Full vector data per point separator with single and multiple vector modes
@@ -29,6 +33,7 @@ impl VectorStruct {
             VectorStruct::Multi(vectors) => vectors.values().all(|v| match v {
                 Vector::Dense(vector) => vector.is_empty(),
                 Vector::Sparse(vector) => vector.indices.is_empty(),
+                Vector::MultiDense(vector) => vector.is_empty(),
             }),
         }
     }
@@ -123,4 +128,5 @@ pub enum NamedVectorStruct {
     Default(segment::data_types::vectors::DenseVector),
     Dense(segment::data_types::vectors::NamedVector),
     Sparse(segment::data_types::vectors::NamedSparseVector),
+    // No support for multi-dense vectors in search
 }
