@@ -119,18 +119,6 @@ pub fn transmute_to_u8<T>(v: &T) -> &[u8] {
 pub fn transmute_from_u8_to_slice<T>(data: &[u8]) -> &[T] {
     debug_assert_eq!(data.len() % size_of::<T>(), 0);
 
-    debug_assert_eq!(
-        data.as_ptr().align_offset(align_of::<T>()),
-        0,
-        "transmuting byte slice {:p} into slice of {}: \
-         required alignment is {} bytes, \
-         byte slice misaligned by {} bytes",
-        data.as_ptr(),
-        std::any::type_name::<T>(),
-        align_of::<T>(),
-        data.as_ptr().align_offset(align_of::<T>()),
-    );
-
     let len = data.len() / size_of::<T>();
     let ptr = data.as_ptr() as *const T;
     unsafe { std::slice::from_raw_parts(ptr, len) }
@@ -138,18 +126,6 @@ pub fn transmute_from_u8_to_slice<T>(data: &[u8]) -> &[T] {
 
 pub fn transmute_from_u8_to_mut_slice<T>(data: &mut [u8]) -> &mut [T] {
     debug_assert_eq!(data.len() % size_of::<T>(), 0);
-
-    debug_assert_eq!(
-        data.as_ptr().align_offset(align_of::<T>()),
-        0,
-        "transmuting byte slice {:p} into mutable slice of {}: \
-         required alignment is {} bytes, \
-         byte slice misaligned by {} bytes",
-        data.as_ptr(),
-        std::any::type_name::<T>(),
-        align_of::<T>(),
-        data.as_ptr().align_offset(align_of::<T>()),
-    );
 
     let len = data.len() / size_of::<T>();
     let ptr = data.as_mut_ptr() as *mut T;
