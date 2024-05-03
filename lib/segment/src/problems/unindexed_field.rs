@@ -6,15 +6,15 @@ use std::time::Duration;
 use http::{HeaderMap, Method, Uri};
 use issues::{Action, Code, ImmediateSolution, Issue, Solution};
 use itertools::Itertools;
+use strum::IntoEnumIterator as _;
 
 use crate::common::operation_error::OperationError;
 use crate::data_types::text_index::{TextIndexParams, TextIndexType, TokenizerType};
 use crate::json_path::{JsonPathInterface, JsonPathV2};
 use crate::types::{
     AnyVariants, Condition, FieldCondition, Filter, Match, MatchValue, PayloadFieldSchema,
-    PayloadKeyType, PayloadSchemaParams, PayloadSchemaType,
+    PayloadKeyType, PayloadSchemaParams, PayloadSchemaType, RangeInterface,
 };
-
 #[derive(Debug)]
 pub struct UnindexedField {
     field_name: JsonPathV2,
@@ -29,11 +29,11 @@ impl UnindexedField {
         static SLOW_SEARCH_THRESHOLD: OnceLock<Duration> = OnceLock::new();
 
         *SLOW_SEARCH_THRESHOLD.get_or_init(|| {
-            Duration::from_millis(
+            Duration::from_secs_f32(
                 std::env::var("QDRANT_SLOW_SEARCH_THRESHOLD")
                     .ok()
-                    .and_then(|var| var.parse::<u64>().ok())
-                    .unwrap_or(300),
+                    .and_then(|var| var.parse::<f32>().ok())
+                    .unwrap_or(0.3),
             )
         })
     }
@@ -154,6 +154,11 @@ impl Issue for UnindexedField {
     }
 }
 
+/// Suggest any index, let user choose depending on their data type
+fn all_indexes() -> impl Iterator<Item = PayloadFieldSchema> {
+    PayloadSchemaType::iter().map(PayloadFieldSchema::FieldType)
+}
+
 fn infer_schema_from_match_value(value: &MatchValue) -> PayloadFieldSchema {
     match &value.value {
         crate::types::ValueVariants::Keyword(_string) => {
@@ -180,11 +185,20 @@ fn infer_schema_from_any_variants(value: &AnyVariants) -> PayloadFieldSchema {
 }
 
 fn infer_schema_from_field_condition(field_condition: &FieldCondition) -> Vec<PayloadFieldSchema> {
-    match field_condition {
-        FieldCondition {
-            r#match: Some(r#match),
-            ..
-        } => vec![match r#match {
+    let FieldCondition {
+        key: _key,
+        r#match,
+        range,
+        geo_bounding_box,
+        geo_radius,
+        geo_polygon,
+        values_count,
+    } = field_condition;
+
+    let mut inferred = Vec::new();
+
+    if let Some(r#match) = r#match {
+        inferred.push(match r#match {
             Match::Value(match_value) => infer_schema_from_match_value(match_value),
             Match::Text(_match_text) => {
                 PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(TextIndexParams {
@@ -197,36 +211,28 @@ fn infer_schema_from_field_condition(field_condition: &FieldCondition) -> Vec<Pa
             }
             Match::Any(match_any) => infer_schema_from_any_variants(&match_any.any),
             Match::Except(match_except) => infer_schema_from_any_variants(&match_except.except),
-        }],
-        FieldCondition {
-            range: Some(_range),
-            ..
-        } => vec![
-            PayloadFieldSchema::FieldType(PayloadSchemaType::Integer),
-            PayloadFieldSchema::FieldType(PayloadSchemaType::Float),
-        ],
-        FieldCondition {
-            geo_bounding_box: Some(_),
-            ..
-        }
-        | FieldCondition {
-            geo_radius: Some(_),
-            ..
-        }
-        | FieldCondition {
-            geo_polygon: Some(_),
-            ..
-        } => vec![PayloadFieldSchema::FieldType(PayloadSchemaType::Geo)],
-        FieldCondition {
-            key: _,
-            r#match: None,
-            range: None,
-            geo_bounding_box: None,
-            geo_radius: None,
-            geo_polygon: None,
-            values_count: _,
-        } => vec![],
+        })
     }
+    if let Some(range_interface) = range {
+        match range_interface {
+            RangeInterface::DateTime(_) => {
+                inferred.push(PayloadFieldSchema::FieldType(PayloadSchemaType::Datetime));
+            }
+            RangeInterface::Float(_) => {
+                inferred.push(PayloadFieldSchema::FieldType(PayloadSchemaType::Float));
+                inferred.push(PayloadFieldSchema::FieldType(PayloadSchemaType::Integer));
+            }
+        }
+    }
+    if geo_bounding_box.is_some() || geo_radius.is_some() || geo_polygon.is_some() {
+        inferred.push(PayloadFieldSchema::FieldType(PayloadSchemaType::Geo));
+    }
+    if values_count.is_some() {
+        // Any index will do, let user choose depending on their data type
+        inferred.extend(all_indexes());
+    }
+
+    inferred
 }
 
 struct Extractor<'a> {
@@ -321,9 +327,25 @@ impl<'a> Extractor<'a> {
                 Some(&JsonPathV2::extend_or_new(nested_prefix, nested.raw_key())),
                 nested.filter(),
             ),
-            // TODO: what to do with these? Any index would suffice
-            Condition::IsEmpty(_) | Condition::IsNull(_) => {}
-
+            // Any index will suffice
+            Condition::IsEmpty(is_empty) => {
+                self.unindexed_schema
+                    .entry(JsonPathV2::extend_or_new(
+                        nested_prefix,
+                        &is_empty.is_empty.key,
+                    ))
+                    .or_default()
+                    .extend(all_indexes());
+            }
+            Condition::IsNull(is_null) => {
+                self.unindexed_schema
+                    .entry(JsonPathV2::extend_or_new(
+                        nested_prefix,
+                        &is_null.is_null.key,
+                    ))
+                    .or_default()
+                    .extend(all_indexes());
+            }
             Condition::HasId(_) => {}
         }
     }

@@ -4906,6 +4906,7 @@ dependencies = [
  "smallvec",
  "smol_str",
  "sparse",
+ "strum",
  "sysinfo",
  "tar",
  "tempfile",

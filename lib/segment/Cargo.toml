@@ -66,6 +66,7 @@ ahash = { version = "0.8.11", features = ["serde"] }
 http = "1.0.0"
 smallvec = "1.13.2"
 is_sorted = "0.1.1"
+strum = { workspace = true }
 
 sysinfo = "0.30"
 charabia = { version = "0.8.8", default-features = false, features = ["greek", "hebrew", "thai"] }

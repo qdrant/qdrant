@@ -14,15 +14,13 @@ impl Subscriber<SlowQueryEvent> for UnindexedFieldSubscriber {
             return;
         }
 
-        tokio::spawn(async move {
-            for filter in &event.filters {
-                segment::problems::UnindexedField::submit_possible_suspects(
-                    filter,
-                    &event.schema,
-                    event.collection_id.clone(),
-                )
-            }
-        });
+        for filter in &event.filters {
+            segment::problems::UnindexedField::submit_possible_suspects(
+                filter,
+                &event.schema,
+                event.collection_id.clone(),
+            )
+        }
     }
 }
 
