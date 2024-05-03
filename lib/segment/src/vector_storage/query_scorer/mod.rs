@@ -51,7 +51,7 @@ fn score_multi<T: PrimitiveVectorElement, TMetric: Metric<T>>(
     multi_dense_b: TypedMultiDenseVectorRef<T>,
 ) -> ScoreType {
     match multi_vector_config {
-        MultiVectorConfig::MaxSim(_) => {
+        MultiVectorConfig::MaxSim => {
             score_max_similarity::<T, TMetric>(multi_dense_a, multi_dense_b)
         }
     }

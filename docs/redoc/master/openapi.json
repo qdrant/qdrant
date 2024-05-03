@@ -5724,14 +5724,10 @@
         ]
       },
       "MultiVectorConfig": {
-        "anyOf": [
-          {
-            "$ref": "#/components/schemas/MaxSimConfig"
-          }
+        "type": "string",
+        "enum": [
+          "max_sim"
         ]
-      },
-      "MaxSimConfig": {
-        "type": "object"
       },
       "ShardingMethod": {
         "type": "string",

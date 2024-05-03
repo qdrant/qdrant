@@ -30,7 +30,6 @@ use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseI
 use crate::json_path::{JsonPath, JsonPathInterface};
 use crate::spaces::metric::MetricPostProcessing;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
-use crate::types::MultiVectorConfig::MaxSim;
 use crate::vector_storage::simple_sparse_vector_storage::SPARSE_VECTOR_DISTANCE;
 
 pub type PayloadKeyType = JsonPath;
@@ -738,20 +737,12 @@ pub enum VectorStorageDatatype {
     Uint8,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone, Hash)]
-#[serde(untagged, rename_all = "snake_case")]
-pub enum MultiVectorConfig {
-    MaxSim(MaxSimConfig),
-}
-
-impl Default for MultiVectorConfig {
-    fn default() -> Self {
-        MaxSim(MaxSimConfig::default())
-    }
-}
-
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone, Hash)]
-pub struct MaxSimConfig {}
+#[serde(rename_all = "snake_case")]
+pub enum MultiVectorConfig {
+    #[default]
+    MaxSim,
+}
 
 impl VectorStorageType {
     /// Whether this storage type is a mmap on disk
