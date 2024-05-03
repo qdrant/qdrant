@@ -297,6 +297,14 @@ impl<'a, T: PrimitiveVectorElement> TypedMultiDenseVectorRef<'a, T> {
     pub fn is_empty(&self) -> bool {
         self.flattened_vectors.is_empty()
     }
+
+    // Cannot use `ToOwned` trait because of `Borrow` implementation for `TypedMultiDenseVector`
+    pub fn to_owned(self) -> TypedMultiDenseVector<T> {
+        TypedMultiDenseVector {
+            flattened_vectors: self.flattened_vectors.to_owned(),
+            dim: self.dim,
+        }
+    }
 }
 
 impl<'a, T: PrimitiveVectorElement> From<&'a TypedMultiDenseVector<T>>
