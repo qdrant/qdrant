@@ -268,11 +268,11 @@ impl<'a> fmt::Display for SegmentId<'a> {
                 self.data_path
                     .file_name()
                     .and_then(|name| name.to_str())
-                    .unwrap_or(""),
+                    .unwrap_or("UNKNOWN"),
                 tmp_path
                     .file_name()
                     .and_then(|name| name.to_str())
-                    .unwrap_or(""),
+                    .unwrap_or("UNKNOWN"),
             )
         } else {
             write!(
@@ -281,7 +281,7 @@ impl<'a> fmt::Display for SegmentId<'a> {
                 self.data_path
                     .file_name()
                     .and_then(|name| name.to_str())
-                    .unwrap_or(""),
+                    .unwrap_or("UNKNOWN"),
                 if self.is_appendable { "rw" } else { "ro" },
             )
         }
