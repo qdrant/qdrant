@@ -15,9 +15,22 @@ memory = { path = "../common/memory" }
 memmap2 = "0.9.4"
 schemars = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 tempfile = "3.10.1"
 ordered-float = "4.2"
 rand = "0.8.5"
 validator = { workspace = true }
 itertools = "0.12.1"
 parking_lot = "0.12.2"
+
+[dev-dependencies]
+criterion = "0.5"
+dataset = { path = "../common/dataset" }
+indicatif = { workspace = true }
+
+[target.'cfg(not(target_os = "windows"))'.dev-dependencies]
+pprof = { workspace = true }
+
+[[bench]]
+name = "search"
+harness = false

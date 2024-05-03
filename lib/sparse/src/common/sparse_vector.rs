@@ -207,6 +207,14 @@ impl SparseVector {
         debug_assert!(result.validate().is_ok());
         result
     }
+
+    /// Create [RemappedSparseVector] from this vector in a naive way. Only suitable for testing.
+    pub fn into_remapped_for_testing_purposes(self) -> RemappedSparseVector {
+        RemappedSparseVector {
+            indices: self.indices,
+            values: self.values,
+        }
+    }
 }
 
 impl TryFrom<Vec<(u32, f32)>> for RemappedSparseVector {

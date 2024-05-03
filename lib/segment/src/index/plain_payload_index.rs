@@ -317,10 +317,11 @@ impl VectorIndex for PlainIndex {
         }
     }
 
-    fn build_index(
+    fn build_index_with_progress(
         &mut self,
         _permit: Arc<CpuPermit>,
         _stopped: &AtomicBool,
+        _tick_progress: impl FnMut(),
     ) -> OperationResult<()> {
         Ok(())
     }

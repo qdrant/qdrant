@@ -1,0 +1,18 @@
+[package]
+name = "dataset"
+version = "0.0.0"
+authors = [
+    "Andrey Vasnetsov <andrey@qdrant.com>",
+    "Qdrant Team <info@qdrant.tech>",
+]
+license = "Apache-2.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+anyhow = "1.0.82"
+async-compression = {version="0.3.13", features=["all", "stream"]}
+flate2 = { version = "1.0.30" }
+indicatif = { workspace = true }
+project-root = "0.2.2"
+reqwest = { workspace = true }

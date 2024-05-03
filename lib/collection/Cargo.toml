@@ -21,7 +21,7 @@ collection = { path = ".", features = ["testing"] }
 common = { path = "../common/common", features = ["testing"] }
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
-pprof = { version = "0.12", features = ["flamegraph", "prost-codec"] }
+pprof = { workspace = true }
 
 [dependencies]
 parking_lot = { workspace = true }
@@ -63,7 +63,7 @@ sparse = { path = "../sparse" }
 api = { path = "../api" }
 
 itertools = "0.12"
-indicatif = "0.17.8"
+indicatif = { workspace = true }
 chrono = { workspace = true }
 schemars = { workspace = true }
 tar = { workspace = true }
