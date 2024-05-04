@@ -178,11 +178,6 @@ impl ProxySegment {
             deleted_points_write.insert(point_id);
         }
 
-        eprintln!(
-            "Marking as deteled: point_offset = {:#?}, point_id = {:#?}",
-            point_offset, point_id
-        );
-
         self.set_deleted_offset(point_offset);
 
         Ok(true)
@@ -337,11 +332,6 @@ impl SegmentEntry for ProxySegment {
             if let Some(deleted_points) = self.deleted_mask.as_ref() {
                 let query_context_with_deleted =
                     query_context.clone().with_deleted_points(deleted_points);
-
-                eprintln!(
-                    "query_context_with_deleted = {:#?}",
-                    query_context_with_deleted
-                );
 
                 self.wrapped_segment.get().read().search_batch(
                     vector_name,
