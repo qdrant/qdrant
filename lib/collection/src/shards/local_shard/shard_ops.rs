@@ -214,7 +214,7 @@ impl LocalShard {
         Ok(records)
     }
 
-    /// Ensures that the `available disk space` >= `WAL buffer + alpha` size.
+    /// Ensures that the `available disk space` is at least >= `wal_capacity_mb`.
     ///
     /// This function checks the available disk space on the file system where the specified path is located.
     /// It verifies that there is at least enough free space to meet the WAL buffer size configured for the collection.
