@@ -229,7 +229,7 @@ impl LocalShard {
     /// - The disk space retrieval fails, detailing the failure reason.
     /// - The available space is less than the configured WAL buffer size, specifying both the available and required space.
     async fn ensure_sufficient_disk_space(&self) -> CollectionResult<()> {
-        let disk_free_space_bytes = fs2::free_space(self.path.as_path()).map_err(|err| {
+        let disk_free_space_bytes = fs2::available_space(self.path.as_path()).map_err(|err| {
             CollectionError::service_error(format!(
                 "Failed to get free space for path: {} due to: {}",
                 self.path.as_path().display(),
