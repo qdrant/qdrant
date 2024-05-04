@@ -43,18 +43,16 @@ while [[ $(curl -sS localhost:6333 -w ''%{http_code}'' -o /dev/null) != 200 ]]; 
     fi
 done
 
-#check that low disk is handled OK during points insertion
-python3 create_items.py low-disk 2000 6333
+# check that low disk is handled OK during points insertion
+# this also does search after each insertion
+python3 create_and_search_items.py low-disk 2000 6333
 
 sleep 5
 
 # Check that there's an OOD log message in service logs.
-# This check is not enough, later it can be extended with:
-# * expect some specific error response in updates
-# * assert that searches still work
 declare OUT_OF_DISK_MSG='No space left on device:'
 
-if ! docker logs "$container" 2>&1 | grep "$OUT_OF_DISK_MSG"; then
+if (! docker logs "$container" 2>&1 | grep "$OUT_OF_DISK_MSG") ; then
     echo "'$OUT_OF_DISK_MSG' log message not found in $container container logs" >&2
     exit 9
 fi

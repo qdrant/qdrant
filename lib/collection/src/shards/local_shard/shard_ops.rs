@@ -248,7 +248,7 @@ impl LocalShard {
 
         if disk_free_space_bytes < disk_buffer_bytes.try_into().unwrap_or_default() {
             return Err(CollectionError::service_error(
-                "Insufficient free space for WAL buffer.".to_string(),
+                "No space left on device: WAL buffer size exceeds available disk space".to_string(),
             ));
         }
 
