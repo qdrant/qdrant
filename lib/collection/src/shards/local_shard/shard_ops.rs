@@ -229,14 +229,21 @@ impl LocalShard {
     /// - The disk space retrieval fails, detailing the failure reason.
     /// - The available space is less than the configured WAL buffer size, specifying both the available and required space.
     async fn ensure_sufficient_disk_space(&self) -> CollectionResult<()> {
-        let disk_free_space_bytes = fs2::available_space(self.path.as_path()).map_err(|err| {
-            CollectionError::service_error(format!(
-                "Failed to get free space for path: {} due to: {}",
-                self.path.as_path().display(),
-                err
-            ))
-        })?;
-
+        // Offload the synchronous I/O operation to a blocking thread
+        let path = self.path.clone();
+        let disk_free_space_bytes: u64 =
+            tokio::task::spawn_blocking(move || fs4::available_space(path.as_path()))
+                .await
+                .map_err(|e| {
+                    CollectionError::service_error(format!("Failed to join async task: {}", e))
+                })?
+                .map_err(|err| {
+                    CollectionError::service_error(format!(
+                        "Failed to get free space for path: {} due to: {}",
+                        self.path.as_path().display(),
+                        err
+                    ))
+                })?;
         let disk_buffer_bytes = self
             .collection_config
             .read()
