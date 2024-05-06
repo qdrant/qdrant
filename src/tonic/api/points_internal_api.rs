@@ -7,9 +7,8 @@ use api::grpc::qdrant::{
     CreateFieldIndexCollectionInternal, DeleteFieldIndexCollectionInternal,
     DeletePayloadPointsInternal, DeletePointsInternal, DeleteVectorsInternal, GetPointsInternal,
     GetResponse, PointsOperationResponseInternal, RecommendPointsInternal, RecommendResponse,
-    ScrollPointsInternal, ScrollResponse, SearchBatchPointsInternal, SearchBatchResponse,
-    SearchPointsInternal, SearchResponse, SetPayloadPointsInternal, SyncPointsInternal,
-    UpdateVectorsInternal, UpsertPointsInternal,
+    ScrollPointsInternal, ScrollResponse, SearchBatchResponse, SetPayloadPointsInternal,
+    SyncPointsInternal, UpdateVectorsInternal, UpsertPointsInternal,
 };
 use storage::content_manager::toc::TableOfContent;
 use storage::rbac::Access;
@@ -284,26 +283,6 @@ impl PointsInternal for PointsInternalService {
             shard_id,
         )
         .await
-    }
-
-    async fn search(
-        &self,
-        _request: Request<SearchPointsInternal>,
-    ) -> Result<Response<SearchResponse>, Status> {
-        return Err(Status::unimplemented(
-            "search API was deprecated and removed, use core_search_batch instead. \
-        Please make sure versions of your cluster is consistent",
-        ));
-    }
-
-    async fn search_batch(
-        &self,
-        _request: Request<SearchBatchPointsInternal>,
-    ) -> Result<Response<SearchBatchResponse>, Status> {
-        return Err(Status::unimplemented(
-            "search_batch API was deprecated and removed, use core_search_batch instead. \
-        Please make sure versions of your cluster is consistent",
-        ));
     }
 
     async fn core_search_batch(

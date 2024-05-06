@@ -8238,53 +8238,6 @@ pub mod points_internal_client {
                 .insert(GrpcMethod::new("qdrant.PointsInternal", "DeleteFieldIndex"));
             self.inner.unary(req, path, codec).await
         }
-        pub async fn search(
-            &mut self,
-            request: impl tonic::IntoRequest<super::SearchPointsInternal>,
-        ) -> std::result::Result<tonic::Response<super::SearchResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/qdrant.PointsInternal/Search",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("qdrant.PointsInternal", "Search"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn search_batch(
-            &mut self,
-            request: impl tonic::IntoRequest<super::SearchBatchPointsInternal>,
-        ) -> std::result::Result<
-            tonic::Response<super::SearchBatchResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/qdrant.PointsInternal/SearchBatch",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("qdrant.PointsInternal", "SearchBatch"));
-            self.inner.unary(req, path, codec).await
-        }
         pub async fn core_search_batch(
             &mut self,
             request: impl tonic::IntoRequest<super::CoreSearchBatchPointsInternal>,
@@ -8484,17 +8437,6 @@ pub mod points_internal_server {
             request: tonic::Request<super::DeleteFieldIndexCollectionInternal>,
         ) -> std::result::Result<
             tonic::Response<super::PointsOperationResponseInternal>,
-            tonic::Status,
-        >;
-        async fn search(
-            &self,
-            request: tonic::Request<super::SearchPointsInternal>,
-        ) -> std::result::Result<tonic::Response<super::SearchResponse>, tonic::Status>;
-        async fn search_batch(
-            &self,
-            request: tonic::Request<super::SearchBatchPointsInternal>,
-        ) -> std::result::Result<
-            tonic::Response<super::SearchBatchResponse>,
             tonic::Status,
         >;
         async fn core_search_batch(
@@ -9103,98 +9045,6 @@ pub mod points_internal_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = DeleteFieldIndexSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/qdrant.PointsInternal/Search" => {
-                    #[allow(non_camel_case_types)]
-                    struct SearchSvc<T: PointsInternal>(pub Arc<T>);
-                    impl<
-                        T: PointsInternal,
-                    > tonic::server::UnaryService<super::SearchPointsInternal>
-                    for SearchSvc<T> {
-                        type Response = super::SearchResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::SearchPointsInternal>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as PointsInternal>::search(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = SearchSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/qdrant.PointsInternal/SearchBatch" => {
-                    #[allow(non_camel_case_types)]
-                    struct SearchBatchSvc<T: PointsInternal>(pub Arc<T>);
-                    impl<
-                        T: PointsInternal,
-                    > tonic::server::UnaryService<super::SearchBatchPointsInternal>
-                    for SearchBatchSvc<T> {
-                        type Response = super::SearchBatchResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::SearchBatchPointsInternal>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as PointsInternal>::search_batch(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = SearchBatchSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
