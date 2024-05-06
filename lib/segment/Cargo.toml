@@ -101,6 +101,10 @@ name = "conditional_search"
 harness = false
 
 [[bench]]
+name = "dynamic_mmap_flags"
+harness = false
+
+[[bench]]
 name = "hnsw_build_asymptotic"
 harness = false
 

@@ -2,12 +2,17 @@
 mod prof;
 
 use std::collections::{BTreeMap, HashMap};
+use std::iter;
+use std::sync::atomic::AtomicBool;
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use rand::rngs::StdRng;
-use rand::SeedableRng;
+use rand::{Rng, SeedableRng};
+use segment::common::operation_error::check_process_stopped;
 use segment::data_types::tiny_map::TinyMap;
 use segment::fixtures::index_fixtures::random_vector;
+use segment::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
+use tempfile::tempdir;
 
 const DIM: usize = 100;
 
