@@ -3,7 +3,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use http::{HeaderMap, Method, Uri};
+use http::header::CONTENT_TYPE;
+use http::{HeaderMap, HeaderValue, Method, Uri};
 use issues::{Action, Code, ImmediateSolution, Issue, Solution};
 use itertools::Itertools;
 use strum::IntoEnumIterator as _;
@@ -30,7 +31,7 @@ impl UnindexedField {
 
         *SLOW_SEARCH_THRESHOLD.get_or_init(|| {
             Duration::from_secs_f32(
-                std::env::var("QDRANT_SLOW_SEARCH_THRESHOLD")
+                std::env::var("QDRANT_SLOW_SEARCH_SECS")
                     .ok()
                     .and_then(|var| var.parse::<f32>().ok())
                     .unwrap_or(0.3),
@@ -44,7 +45,7 @@ impl UnindexedField {
 
     pub fn get_collection_name(code: &Code) -> &str {
         debug_assert!(code.issue_type == TypeId::of::<Self>());
-        code.instance_id.split('/').next().unwrap() // Code format is always the same
+        code.instance_id.split('/').next().unwrap_or("") // Code format is always the same
     }
 
     /// Try to form an issue from a field condition and a collection name
@@ -130,6 +131,10 @@ impl Issue for UnindexedField {
             .unwrap()
             .clone();
 
+            let headers = HeaderMap::from_iter([
+                (CONTENT_TYPE, HeaderValue::from_static("application/json")),
+            ]);
+
             ImmediateSolution {
                 message: format!(
                     "Create an index on field '{}' of schema '{}' in collection '{}'. Check the documentation for more details: https://qdrant.tech/documentation/concepts/indexing/#payload-index",
@@ -138,7 +143,7 @@ impl Issue for UnindexedField {
                 action: Action {
                     method: Method::PUT,
                     uri: self.endpoint.clone(),
-                    headers: HeaderMap::new(),
+                    headers,
                     body: Some(request_body),
                 },
             }

@@ -10,7 +10,7 @@ COLL_NAME = "test_collection"
 @pytest.fixture(scope="module")
 def setup(tmp_path_factory: pytest.TempPathFactory):
     extra_env = {
-        "QDRANT_SLOW_SEARCH_THRESHOLD": "0.001", # "Always" try to trigger slow search issue
+        "QDRANT_SLOW_SEARCH_SECS": "0.001",  # "Always" try to trigger slow search issue
     }
 
     tmp_path = tmp_path_factory.mktemp("qdrant")
@@ -29,7 +29,7 @@ def setup(tmp_path_factory: pytest.TempPathFactory):
 @pytest.fixture
 def setup_with_big_collection(setup):
     uri = setup
-    
+
     create_collection(uri, COLL_NAME)
 
     upsert_random_points(uri, 10000, collection_name=COLL_NAME, with_sparse_vector=False)
@@ -116,6 +116,13 @@ def test_unindexed_field_is_gone_when_indexing(setup_with_big_collection):
             assert timestamp == issue["timestamp"]
             break
     assert issue_present
+
+    assert solution == {
+        "method": "PUT",
+        "uri": f"/collections/{COLL_NAME}/index",
+        "body": {"field_name": "city", "field_schema": "keyword"},
+        "headers": {"content-type": "application/json"},
+    }
 
     # use provided solution to create index
     response = requests.request(
