@@ -14,6 +14,7 @@ fn dynamic_mmap_flag_count(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(42);
     let dir = tempdir().unwrap();
     let random_flags: Vec<bool> = iter::repeat_with(|| rng.gen()).take(FLAG_COUNT).collect();
+    let stopped = AtomicBool::new(false);
 
     // Build dynamic mmap flags with random deletions
     let mut dynamic_flags = DynamicMmapFlags::open(dir.path()).unwrap();
@@ -28,15 +29,27 @@ fn dynamic_mmap_flag_count(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("dynamic-mmap-flag-count");
 
-    group.bench_function("manual-count-loop", |b| {
+    group.bench_function("manual-count-loop-stoppable", |b| {
         b.iter(|| {
             let mut count = 0;
-            let stopped = AtomicBool::new(false);
             for i in 0..FLAG_COUNT {
                 if dynamic_flags.get(i) {
                     count += 1;
                 }
                 check_process_stopped(&stopped).unwrap();
+            }
+            assert_eq!(count, real_count);
+            black_box(count)
+        });
+    });
+
+    group.bench_function("manual-count-loop", |b| {
+        b.iter(|| {
+            let mut count = 0;
+            for i in 0..FLAG_COUNT {
+                if dynamic_flags.get(i) {
+                    count += 1;
+                }
             }
             assert_eq!(count, real_count);
             black_box(count)
