@@ -5538,7 +5538,7 @@
               }
             ]
           },
-          "multi_vec_config": {
+          "multivec_config": {
             "anyOf": [
               {
                 "$ref": "#/components/schemas/MultiVectorConfig"
@@ -5724,14 +5724,21 @@
         ]
       },
       "MultiVectorConfig": {
-        "anyOf": [
-          {
-            "$ref": "#/components/schemas/MaxSimConfig"
+        "type": "object",
+        "required": [
+          "comparator"
+        ],
+        "properties": {
+          "comparator": {
+            "$ref": "#/components/schemas/MultiVectorComparator"
           }
-        ]
+        }
       },
-      "MaxSimConfig": {
-        "type": "object"
+      "MultiVectorComparator": {
+        "type": "string",
+        "enum": [
+          "max_sim"
+        ]
       },
       "ShardingMethod": {
         "type": "string",
@@ -9258,7 +9265,7 @@
               }
             ]
           },
-          "multi_vec_config": {
+          "multivec_config": {
             "description": "Vector specific configuration to enable multiple vectors per point",
             "anyOf": [
               {

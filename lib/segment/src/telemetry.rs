@@ -137,7 +137,7 @@ impl Anonymize for VectorDataConfig {
             storage_type: self.storage_type,
             index: self.index.clone(),
             quantization_config: self.quantization_config.clone(),
-            multi_vec_config: self.multi_vec_config,
+            multivec_config: self.multivec_config,
             datatype: self.datatype,
         }
     }

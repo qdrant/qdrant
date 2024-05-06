@@ -1307,7 +1307,7 @@ pub struct VectorParams {
     pub datatype: Option<Datatype>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub multi_vec_config: Option<MultiVectorConfig>,
+    pub multivec_config: Option<MultiVectorConfig>,
 }
 
 /// Validate the value is in `[1, 65536]` or `None`.

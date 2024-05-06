@@ -46,7 +46,7 @@ fn multi_vector_search_benchmark(c: &mut Criterion) {
                 storage_type: VectorStorageType::Memory,
                 index: Indexes::Plain {},
                 quantization_config: None,
-                multi_vec_config: Some(MultiVectorConfig::default()), // uses multivec config
+                multivec_config: Some(MultiVectorConfig::default()), // uses multivec config
                 datatype: None,
             },
         )]),
