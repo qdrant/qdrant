@@ -10,7 +10,7 @@ use tempfile::tempdir;
 
 const FLAG_COUNT: usize = 50_000_000;
 
-fn dynamic_mmap_delete_count(c: &mut Criterion) {
+fn dynamic_mmap_flag_count(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(42);
     let dir = tempdir().unwrap();
     let random_flags: Vec<bool> = iter::repeat_with(|| rng.gen()).take(FLAG_COUNT).collect();
@@ -26,7 +26,7 @@ fn dynamic_mmap_delete_count(c: &mut Criterion) {
     dynamic_flags.flusher()().unwrap();
     let real_count = random_flags.iter().filter(|&&flag| flag).count();
 
-    let mut group = c.benchmark_group("dynamic-mmap-delete-count");
+    let mut group = c.benchmark_group("dynamic-mmap-flag-count");
 
     group.bench_function("manual-count-loop", |b| {
         b.iter(|| {
@@ -55,7 +55,7 @@ fn dynamic_mmap_delete_count(c: &mut Criterion) {
 criterion_group! {
     name = benches;
     config = Criterion::default();
-    targets = dynamic_mmap_delete_count
+    targets = dynamic_mmap_flag_count
 }
 
 criterion_main!(benches);
