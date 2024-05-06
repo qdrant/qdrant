@@ -72,18 +72,8 @@ pub fn open_appendable_memmap_vector_storage_impl<T: PrimitiveVectorElement>(
 
     let vectors = ChunkedMmapVectors::<T>::open(&vectors_path, dim)?;
 
-    let num_vectors = vectors.len();
-
     let deleted: DynamicMmapFlags = DynamicMmapFlags::open(&deleted_path)?;
-
-    let mut deleted_count = 0;
-
-    for i in 0..num_vectors {
-        if deleted.get(i) {
-            deleted_count += 1;
-        }
-        check_process_stopped(stopped)?;
-    }
+    let deleted_count = deleted.count_flags()?;
 
     Ok(AppendableMmapDenseVectorStorage {
         vectors,

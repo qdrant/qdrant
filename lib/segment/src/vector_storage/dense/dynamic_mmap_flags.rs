@@ -210,6 +210,19 @@ impl DynamicMmapFlags {
         self.flags[key]
     }
 
+    /// Count number of set flags
+    pub fn count_flags(&self) -> OperationResult<usize> {
+        let mut ones = self.flags.count_ones();
+
+        // Subtract flags in extra capacity we don't use
+        // They may have been set before scrinking the bitvec again
+        ones -= (self.status.len..self.flags.len())
+            .filter(|&i| self.get(i))
+            .count();
+
+        Ok(ones)
+    }
+
     /// Set the `true` value of the flag at the given index.
     /// Ignore the call if the index is out of bounds.
     ///
