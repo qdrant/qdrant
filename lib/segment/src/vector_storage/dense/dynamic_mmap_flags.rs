@@ -107,6 +107,10 @@ impl DynamicMmapFlags {
         self.status.len
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.status.len == 0
+    }
+
     pub fn open(directory: &Path) -> OperationResult<Self> {
         fs::create_dir_all(directory)?;
         let status_mmap = ensure_status_file(directory)?;
@@ -208,6 +212,19 @@ impl DynamicMmapFlags {
             return false;
         }
         self.flags[key]
+    }
+
+    /// Count number of set flags
+    pub fn count_flags(&self) -> OperationResult<usize> {
+        let mut ones = self.flags.count_ones();
+
+        // Subtract flags in extra capacity we don't use
+        // They may have been set before shrinking the bitvec again
+        ones -= (self.status.len..self.flags.len())
+            .filter(|&i| self.get(i))
+            .count();
+
+        Ok(ones)
     }
 
     /// Set the `true` value of the flag at the given index.
@@ -315,6 +332,37 @@ mod tests {
                 assert_eq!(dynamic_flags.get(num_flags + i), !*flag);
             }
         }
+    }
+
+    #[test]
+    fn test_bitflags_counting() {
+        let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+        let num_flags = 5003; // Prime number, not byte aligned
+        let mut rng = StdRng::seed_from_u64(42);
+
+        // Create randomized dynamic mmap flags to test counting
+        let mut dynamic_flags = DynamicMmapFlags::open(dir.path()).unwrap();
+        dynamic_flags.set_len(num_flags).unwrap();
+        let random_flags: Vec<bool> = iter::repeat_with(|| rng.gen()).take(num_flags).collect();
+        random_flags
+            .iter()
+            .enumerate()
+            .filter(|(_, flag)| **flag)
+            .for_each(|(i, _)| assert!(!dynamic_flags.set(i, true)));
+        dynamic_flags.flusher()().unwrap();
+
+        // Test count flags method
+        let count = dynamic_flags.count_flags().unwrap();
+
+        // Compare against manually counting every flag
+        let mut manual_count = 0;
+        for i in 0..num_flags {
+            if dynamic_flags.get(i) {
+                manual_count += 1;
+            }
+        }
+
+        assert_eq!(count, manual_count);
     }
 
     #[test]

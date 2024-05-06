@@ -178,13 +178,11 @@ fn create_segment(
                     &vector_storage_path,
                     vector_config.size,
                     vector_config.distance,
-                    stopped,
                 )?,
                 VectorStorageDatatype::Uint8 => open_appendable_memmap_vector_storage_byte(
                     &vector_storage_path,
                     vector_config.size,
                     vector_config.distance,
-                    stopped,
                 )?,
             },
         };
