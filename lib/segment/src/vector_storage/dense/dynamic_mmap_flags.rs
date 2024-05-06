@@ -219,7 +219,7 @@ impl DynamicMmapFlags {
         let mut ones = self.flags.count_ones();
 
         // Subtract flags in extra capacity we don't use
-        // They may have been set before scrinking the bitvec again
+        // They may have been set before shrinking the bitvec again
         ones -= (self.status.len..self.flags.len())
             .filter(|&i| self.get(i))
             .count();
