@@ -107,6 +107,10 @@ impl DynamicMmapFlags {
         self.status.len
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.status.len == 0
+    }
+
     pub fn open(directory: &Path) -> OperationResult<Self> {
         fs::create_dir_all(directory)?;
         let status_mmap = ensure_status_file(directory)?;
