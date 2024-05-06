@@ -24,6 +24,7 @@ service PointsInternal {
   rpc Count (CountPointsInternal) returns (CountResponse) {}
   rpc Recommend (RecommendPointsInternal) returns (RecommendResponse) {}
   rpc Get (GetPointsInternal) returns (GetResponse) {}
+  rpc Query (QueryPointsInternal) returns (QueryResponse) {}
 }
 
 
@@ -197,4 +198,51 @@ message GetPointsInternal {
 message CountPointsInternal {
   CountPoints count_points = 1;
   optional uint32 shard_id = 2;
+}
+
+message PlannedQueryPoints {
+  message VectorRescore { 
+    QueryEnum query = 1;
+    string using = 2;
+  }
+
+  message Rescore {
+    oneof rescore {
+      VectorRescore vector = 1;
+    }
+  }
+
+  message Merge {
+    optional Rescore rescore = 1;
+    uint64 limit = 2;
+  }
+
+  message Source {
+    oneof source {
+      uint64 batch_idx = 1;
+      Prefetch prefetch = 2;
+    }
+  }
+
+  message Prefetch {
+    repeated Source sources = 1;
+    Merge merge = 2;
+  }
+
+  repeated CoreSearchPoints core_searches = 1;
+  Prefetch merge_plan = 2;
+  uint64 limit = 3;
+  uint64 offset = 4;
+  WithPayloadSelector with_payload = 5;
+  WithVectorsSelector with_vectors = 6;
+}
+
+message QueryPointsInternal {
+  PlannedQueryPoints planned_query_points = 1;
+  optional uint32 shard_id = 2;
+}
+
+message QueryResponse {
+  repeated ScoredPoint result = 1;
+  double time = 2; // Time spent to process
 }

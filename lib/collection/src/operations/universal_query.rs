@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use segment::types::{WithPayloadInterface, WithVector};
 
-use super::{query_enum::QueryEnum, types::CoreSearchRequestBatch};
+use super::query_enum::QueryEnum;
+use super::types::CoreSearchRequestBatch;
 
 pub enum Rescore {
     /// Rescore points against a vector
@@ -19,7 +20,7 @@ pub struct Merge {
 
 pub enum Source {
     /// A reference offset into the main search batch
-    Idx(usize),
+    BatchIdx(usize),
 
     /// A nested prefetch
     Prefetch(Prefetch),

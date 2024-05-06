@@ -7878,6 +7878,108 @@ pub struct CountPointsInternal {
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PlannedQueryPoints {
+    #[prost(message, repeated, tag = "1")]
+    pub core_searches: ::prost::alloc::vec::Vec<CoreSearchPoints>,
+    #[prost(message, optional, tag = "2")]
+    pub merge_plan: ::core::option::Option<planned_query_points::Prefetch>,
+    #[prost(uint64, tag = "3")]
+    pub limit: u64,
+    #[prost(uint64, tag = "4")]
+    pub offset: u64,
+    #[prost(message, optional, tag = "5")]
+    pub with_payload: ::core::option::Option<WithPayloadSelector>,
+    #[prost(message, optional, tag = "6")]
+    pub with_vectors: ::core::option::Option<WithVectorsSelector>,
+}
+/// Nested message and enum types in `PlannedQueryPoints`.
+pub mod planned_query_points {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct VectorRescore {
+        #[prost(message, optional, tag = "1")]
+        pub query: ::core::option::Option<super::QueryEnum>,
+        #[prost(string, tag = "2")]
+        pub using: ::prost::alloc::string::String,
+    }
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct Rescore {
+        #[prost(oneof = "rescore::Rescore", tags = "1")]
+        pub rescore: ::core::option::Option<rescore::Rescore>,
+    }
+    /// Nested message and enum types in `Rescore`.
+    pub mod rescore {
+        #[derive(serde::Serialize)]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Oneof)]
+        pub enum Rescore {
+            #[prost(message, tag = "1")]
+            Vector(super::VectorRescore),
+        }
+    }
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct Merge {
+        #[prost(message, optional, tag = "1")]
+        pub rescore: ::core::option::Option<Rescore>,
+        #[prost(uint64, tag = "2")]
+        pub limit: u64,
+    }
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct Source {
+        #[prost(oneof = "source::Source", tags = "1, 2")]
+        pub source: ::core::option::Option<source::Source>,
+    }
+    /// Nested message and enum types in `Source`.
+    pub mod source {
+        #[derive(serde::Serialize)]
+        #[allow(clippy::derive_partial_eq_without_eq)]
+        #[derive(Clone, PartialEq, ::prost::Oneof)]
+        pub enum Source {
+            #[prost(uint64, tag = "1")]
+            BatchIdx(u64),
+            #[prost(message, tag = "2")]
+            Prefetch(super::Prefetch),
+        }
+    }
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct Prefetch {
+        #[prost(message, repeated, tag = "1")]
+        pub sources: ::prost::alloc::vec::Vec<Source>,
+        #[prost(message, optional, tag = "2")]
+        pub merge: ::core::option::Option<Merge>,
+    }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct QueryPointsInternal {
+    #[prost(message, optional, tag = "1")]
+    pub planned_query_points: ::core::option::Option<PlannedQueryPoints>,
+    #[prost(uint32, optional, tag = "2")]
+    pub shard_id: ::core::option::Option<u32>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct QueryResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub result: ::prost::alloc::vec::Vec<ScoredPoint>,
+    /// Time spent to process
+    #[prost(double, tag = "2")]
+    pub time: f64,
+}
 /// Generated client implementations.
 pub mod points_internal_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
@@ -8400,6 +8502,28 @@ pub mod points_internal_client {
             req.extensions_mut().insert(GrpcMethod::new("qdrant.PointsInternal", "Get"));
             self.inner.unary(req, path, codec).await
         }
+        pub async fn query(
+            &mut self,
+            request: impl tonic::IntoRequest<super::QueryPointsInternal>,
+        ) -> std::result::Result<tonic::Response<super::QueryResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.PointsInternal/Query",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.PointsInternal", "Query"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -8523,6 +8647,10 @@ pub mod points_internal_server {
             &self,
             request: tonic::Request<super::GetPointsInternal>,
         ) -> std::result::Result<tonic::Response<super::GetResponse>, tonic::Status>;
+        async fn query(
+            &self,
+            request: tonic::Request<super::QueryPointsInternal>,
+        ) -> std::result::Result<tonic::Response<super::QueryResponse>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct PointsInternalServer<T: PointsInternal> {
@@ -9426,6 +9554,52 @@ pub mod points_internal_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = GetSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.PointsInternal/Query" => {
+                    #[allow(non_camel_case_types)]
+                    struct QuerySvc<T: PointsInternal>(pub Arc<T>);
+                    impl<
+                        T: PointsInternal,
+                    > tonic::server::UnaryService<super::QueryPointsInternal>
+                    for QuerySvc<T> {
+                        type Response = super::QueryResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::QueryPointsInternal>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as PointsInternal>::query(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = QuerySvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
