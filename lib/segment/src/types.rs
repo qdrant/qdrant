@@ -777,7 +777,7 @@ pub struct VectorDataConfig {
     pub quantization_config: Option<QuantizationConfig>,
     /// Vector specific configuration to enable multiple vectors per point
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub multi_vec_config: Option<MultiVectorConfig>,
+    pub multivec_config: Option<MultiVectorConfig>,
     /// Vector specific configuration to set specific storage element type
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub datatype: Option<VectorStorageDatatype>,

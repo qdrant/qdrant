@@ -29,7 +29,7 @@ def multivector_collection_setup(collection_name='test_collection'):
                 "my-multivec": {
                     "size": 4,
                     "distance": "Dot",
-                    "multi_vec_config": {
+                    "multivec_config": {
                         "comparator": "max_sim"
                     }
                 }

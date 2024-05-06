@@ -5538,7 +5538,7 @@
               }
             ]
           },
-          "multi_vec_config": {
+          "multivec_config": {
             "anyOf": [
               {
                 "$ref": "#/components/schemas/MultiVectorConfig"
@@ -9265,7 +9265,7 @@
               }
             ]
           },
-          "multi_vec_config": {
+          "multivec_config": {
             "description": "Vector specific configuration to enable multiple vectors per point",
             "anyOf": [
               {
