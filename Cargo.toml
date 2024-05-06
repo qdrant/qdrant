@@ -80,7 +80,7 @@ reqwest = { workspace = true }
 rustls = "0.22.4"
 rustls-pki-types = "1.5.0"
 rustls-pemfile = "2.1.2"
-prometheus = { version = "0.13.3", default-features = false }
+prometheus = { version = "0.13.4", default-features = false }
 validator = { workspace = true }
 jsonwebtoken = "9.3.0"
 
