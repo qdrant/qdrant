@@ -33,11 +33,9 @@ pub fn open_appendable_memmap_vector_storage(
     path: &Path,
     dim: usize,
     distance: Distance,
-    stopped: &AtomicBool,
 ) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
-    let storage = open_appendable_memmap_vector_storage_impl::<VectorElementType>(
-        path, dim, distance, stopped,
-    )?;
+    let storage =
+        open_appendable_memmap_vector_storage_impl::<VectorElementType>(path, dim, distance)?;
 
     Ok(Arc::new(AtomicRefCell::new(
         VectorStorageEnum::DenseAppendableMemmap(Box::new(storage)),
@@ -48,11 +46,9 @@ pub fn open_appendable_memmap_vector_storage_byte(
     path: &Path,
     dim: usize,
     distance: Distance,
-    stopped: &AtomicBool,
 ) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
-    let storage = open_appendable_memmap_vector_storage_impl::<VectorElementTypeByte>(
-        path, dim, distance, stopped,
-    )?;
+    let storage =
+        open_appendable_memmap_vector_storage_impl::<VectorElementTypeByte>(path, dim, distance)?;
 
     Ok(Arc::new(AtomicRefCell::new(
         VectorStorageEnum::DenseAppendableMemmapByte(Box::new(storage)),
@@ -63,7 +59,6 @@ pub fn open_appendable_memmap_vector_storage_impl<T: PrimitiveVectorElement>(
     path: &Path,
     dim: usize,
     distance: Distance,
-    stopped: &AtomicBool,
 ) -> OperationResult<AppendableMmapDenseVectorStorage<T>> {
     create_dir_all(path)?;
 
