@@ -136,13 +136,17 @@ fn main() -> anyhow::Result<()> {
 
     remove_started_file_indicator();
 
-    let settings = Settings::new(args.config_path)?;
+    let mut settings = Settings::new(args.config_path)?;
 
     let reporting_enabled = !settings.telemetry_disabled && !args.disable_telemetry;
 
     let reporting_id = TelemetryCollector::generate_id();
 
-    tracing::setup(&settings.log_level)?;
+    tracing::setup(
+        settings
+            .logger
+            .with_top_level_directive(settings.log_level.take()),
+    )?;
 
     setup_panic_hook(reporting_enabled, reporting_id.to_string());
 
