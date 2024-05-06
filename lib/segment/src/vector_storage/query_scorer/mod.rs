@@ -4,7 +4,7 @@ use ordered_float::OrderedFloat;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::TypedMultiDenseVectorRef;
 use crate::spaces::metric::Metric;
-use crate::types::MultiVectorConfig;
+use crate::types::{MultiVectorComparator, MultiVectorConfig};
 
 pub mod custom_query_scorer;
 pub mod metric_query_scorer;
@@ -50,8 +50,8 @@ fn score_multi<T: PrimitiveVectorElement, TMetric: Metric<T>>(
     multi_dense_a: TypedMultiDenseVectorRef<T>,
     multi_dense_b: TypedMultiDenseVectorRef<T>,
 ) -> ScoreType {
-    match multi_vector_config {
-        MultiVectorConfig::MaxSim(_) => {
+    match multi_vector_config.comparator {
+        MultiVectorComparator::MaxSim => {
             score_max_similarity::<T, TMetric>(multi_dense_a, multi_dense_b)
         }
     }

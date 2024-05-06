@@ -129,7 +129,7 @@ fn test_multi_filterable_hnsw(
                 storage_type: VectorStorageType::Memory,
                 index: Indexes::Plain {}, // uses plain index for comparison
                 quantization_config: None,
-                multi_vec_config: Some(MultiVectorConfig::default()), // uses multivec config
+                multivec_config: Some(MultiVectorConfig::default()), // uses multivec config
                 datatype: None,
             },
         )]),
