@@ -332,7 +332,6 @@ fn test_byte_storage_binary_quantization_hnsw(
                     }),
                     ..Default::default()
                 }),
-                &stopped,
                 &Default::default(),
             )
             .unwrap();
@@ -351,7 +350,6 @@ fn test_byte_storage_binary_quantization_hnsw(
                     exact: true,
                     ..Default::default()
                 }),
-                &stopped,
                 &Default::default(),
             )
             .unwrap();

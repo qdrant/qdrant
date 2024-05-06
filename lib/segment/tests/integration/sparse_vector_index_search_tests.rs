@@ -93,21 +93,13 @@ fn compare_sparse_vectors_search_with_without_filter(full_scan_threshold: usize)
                 Some(&filter),
                 top,
                 None,
-                &stopped,
                 &Default::default(),
             )
             .unwrap();
 
         // without filter
         let index_results_no_filter = sparse_vector_index
-            .search(
-                &[&query_vector],
-                None,
-                top,
-                None,
-                &stopped,
-                &Default::default(),
-            )
+            .search(&[&query_vector], None, top, None, &Default::default())
             .unwrap();
 
         assert_eq!(index_results_filter.len(), index_results_no_filter.len());
@@ -186,14 +178,7 @@ fn check_index_storage_consistency<T: InvertedIndex>(sparse_vector_index: &Spars
         let top = sparse_vector_index.max_result_count(vector);
         let query_vector: QueryVector = vector.to_owned().into();
         let results = sparse_vector_index
-            .search(
-                &[&query_vector],
-                None,
-                top,
-                None,
-                &false.into(),
-                &Default::default(),
-            )
+            .search(&[&query_vector], None, top, None, &Default::default())
             .unwrap();
         assert!(results[0].iter().any(|s| s.idx == id));
     }
@@ -326,14 +311,7 @@ fn sparse_vector_index_ram_deleted_points_search() {
     // query index
     let query_vector: QueryVector = random_sparse_vector(&mut rnd, MAX_SPARSE_DIM).into();
     let before_deletion_results: Vec<_> = sparse_vector_index
-        .search(
-            &[&query_vector],
-            None,
-            top,
-            None,
-            &stopped,
-            &Default::default(),
-        )
+        .search(&[&query_vector], None, top, None, &Default::default())
         .unwrap();
 
     // pick a point to delete
@@ -386,14 +364,7 @@ fn sparse_vector_index_ram_deleted_points_search() {
 
     // assert that the deleted point is no longer in the index
     let after_deletion_results: Vec<_> = sparse_vector_index
-        .search(
-            &[&query_vector],
-            None,
-            top,
-            None,
-            &stopped,
-            &Default::default(),
-        )
+        .search(&[&query_vector], None, top, None, &Default::default())
         .unwrap();
     assert_ne!(before_deletion_results, after_deletion_results);
     assert!(after_deletion_results
@@ -434,7 +405,6 @@ fn sparse_vector_index_ram_filtered_search() {
             Some(&filter),
             10,
             None,
-            &stopped,
             &Default::default(),
         )
         .unwrap();
@@ -489,7 +459,6 @@ fn sparse_vector_index_ram_filtered_search() {
             Some(&filter),
             half_indexed_count * 2, // original top
             None,
-            &stopped,
             &Default::default(),
         )
         .unwrap();
@@ -531,7 +500,6 @@ fn sparse_vector_index_plain_search() {
             Some(&filter),
             10,
             None,
-            &stopped,
             &Default::default(),
         )
         .unwrap();
@@ -560,7 +528,6 @@ fn sparse_vector_index_plain_search() {
             Some(&filter),
             NUM_VECTORS,
             None,
-            &stopped,
             &Default::default(),
         )
         .unwrap();
@@ -623,14 +590,7 @@ fn handling_empty_sparse_vectors() {
 
     // empty vectors are not searchable (recommend using scroll API to retrieve those)
     let results = sparse_vector_index
-        .search(
-            &[&query_vector],
-            None,
-            10,
-            None,
-            &stopped,
-            &Default::default(),
-        )
+        .search(&[&query_vector], None, 10, None, &Default::default())
         .unwrap();
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].len(), 0);
@@ -758,14 +718,7 @@ fn sparse_vector_index_persistence_test() {
 
     // check that the loaded index performs the same search
     let search_after_reload_result = sparse_vector_index_ram
-        .search(
-            &[&query_vector],
-            None,
-            top,
-            None,
-            &stopped,
-            &Default::default(),
-        )
+        .search(&[&query_vector], None, top, None, &Default::default())
         .unwrap();
     assert_eq!(search_after_reload_result[0].len(), top);
     for (search_1, search_2) in search_result
@@ -826,14 +779,7 @@ fn sparse_vector_index_persistence_test() {
 
     // check that the loaded index performs the same search
     let search_after_reload_result = sparse_vector_index_mmap
-        .search(
-            &[&query_vector],
-            None,
-            top,
-            None,
-            &stopped,
-            &Default::default(),
-        )
+        .search(&[&query_vector], None, top, None, &Default::default())
         .unwrap();
     assert_eq!(search_after_reload_result[0].len(), top);
     for (search_1, search_2) in search_result
