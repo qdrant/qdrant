@@ -4,7 +4,7 @@ use std::time::Instant;
 use chrono::{NaiveDateTime, Timelike};
 use segment::data_types::integer_index::IntegerIndexType;
 use segment::data_types::text_index::TextIndexType;
-use segment::data_types::vectors::DenseVector;
+use segment::data_types::vectors::{DenseVector, MultiDenseVector};
 use segment::json_path::JsonPath;
 use segment::types::{default_quantization_ignore_value, DateTimePayloadType, FloatPayloadType};
 use tonic::Status;
@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use super::qdrant::{
     start_from, BinaryQuantization, CompressionRatio, DatetimeRange, Direction, GeoLineString,
-    GroupId, OrderBy, Range, SparseIndices, StartFrom,
+    GroupId, MultiVectorComparator, MultiVectorConfig, OrderBy, Range, SparseIndices, StartFrom,
 };
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
@@ -480,16 +480,22 @@ impl From<segment::data_types::vectors::Vector> for Vector {
             segment::data_types::vectors::Vector::Dense(vector) => Self {
                 data: vector,
                 indices: None,
+                vector_count: None,
             },
             segment::data_types::vectors::Vector::Sparse(vector) => Self {
                 data: vector.values,
                 indices: Some(SparseIndices {
                     data: vector.indices,
                 }),
+                vector_count: None,
             },
-            segment::data_types::vectors::Vector::MultiDense(_vector) => {
-                // TODO(colbert)
-                unimplemented!("MultiDenseVector is not supported")
+            segment::data_types::vectors::Vector::MultiDense(vector) => {
+                let vector_count = vector.multi_vectors().count() as u32;
+                Self {
+                    data: vector.flattened_vectors,
+                    indices: None,
+                    vector_count: Some(vector_count),
+                }
             }
         }
     }
@@ -499,17 +505,32 @@ impl TryFrom<Vector> for segment::data_types::vectors::Vector {
     type Error = Status;
 
     fn try_from(vector: Vector) -> Result<Self, Self::Error> {
-        Ok(match vector.indices {
-            None => segment::data_types::vectors::Vector::Dense(vector.data),
-            Some(indices) => segment::data_types::vectors::Vector::Sparse(
+        // sparse vector
+        if let Some(indices) = vector.indices {
+            return Ok(segment::data_types::vectors::Vector::Sparse(
                 sparse::common::sparse_vector::SparseVector::new(indices.data, vector.data)
                     .map_err(|_| {
                         Status::invalid_argument(
                             "Sparse indices does not match sparse vector conditions",
                         )
                     })?,
-            ),
-        })
+            ));
+        }
+
+        // multi vector
+        if let Some(vector_count) = vector.vector_count {
+            if vector_count == 0 {
+                return Err(Status::invalid_argument(
+                    "Vector count should be greater than 0",
+                ));
+            }
+            let dim = vector.data.len() / vector_count as usize;
+            let multi = MultiDenseVector::new(vector.data, dim);
+            return Ok(segment::data_types::vectors::Vector::MultiDense(multi));
+        }
+
+        // dense vector
+        Ok(segment::data_types::vectors::Vector::Dense(vector.data))
     }
 }
 
@@ -599,6 +620,16 @@ impl TryFrom<Vectors> for segment::data_types::vectors::VectorStruct {
         match vectors.vectors_options {
             Some(vectors_options) => Ok(match vectors_options {
                 VectorsOptions::Vector(vector) => {
+                    if vector.vector_count.is_some() {
+                        return Err(Status::invalid_argument(
+                            "Multivector must be named".to_string(),
+                        ));
+                    }
+                    if vector.indices.is_some() {
+                        return Err(Status::invalid_argument(
+                            "Sparse vector must be named".to_string(),
+                        ));
+                    }
                     segment::data_types::vectors::VectorStruct::Single(vector.data)
                 }
                 VectorsOptions::Vectors(vectors) => {
@@ -790,6 +821,42 @@ impl TryFrom<QuantizationConfig> for segment::types::QuantizationConfig {
             super::qdrant::quantization_config::Quantization::Binary(config) => Ok(
                 segment::types::QuantizationConfig::Binary(config.try_into()?),
             ),
+        }
+    }
+}
+
+impl From<segment::types::MultiVectorConfig> for MultiVectorConfig {
+    fn from(value: segment::types::MultiVectorConfig) -> Self {
+        Self {
+            comparator: MultiVectorComparator::from(value.comparator) as i32,
+        }
+    }
+}
+
+impl From<segment::types::MultiVectorComparator> for MultiVectorComparator {
+    fn from(value: segment::types::MultiVectorComparator) -> Self {
+        match value {
+            segment::types::MultiVectorComparator::MaxSim => MultiVectorComparator::MaxSim,
+        }
+    }
+}
+
+impl TryFrom<MultiVectorConfig> for segment::types::MultiVectorConfig {
+    type Error = Status;
+
+    fn try_from(value: MultiVectorConfig) -> Result<Self, Self::Error> {
+        let comparator = MultiVectorComparator::from_i32(value.comparator)
+            .ok_or_else(|| Status::invalid_argument("Unknown multi vector comparator"))?;
+        Ok(segment::types::MultiVectorConfig {
+            comparator: segment::types::MultiVectorComparator::from(comparator),
+        })
+    }
+}
+
+impl From<MultiVectorComparator> for segment::types::MultiVectorComparator {
+    fn from(value: MultiVectorComparator) -> Self {
+        match value {
+            MultiVectorComparator::MaxSim => segment::types::MultiVectorComparator::MaxSim,
         }
     }
 }

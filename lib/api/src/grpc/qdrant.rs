@@ -24,6 +24,9 @@ pub struct VectorParams {
     /// Data type of the vectors
     #[prost(enumeration = "Datatype", optional, tag = "6")]
     pub datatype: ::core::option::Option<i32>,
+    /// Configuration for multi-vector search
+    #[prost(message, optional, tag = "7")]
+    pub multivector_config: ::core::option::Option<MultiVectorConfig>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -125,6 +128,14 @@ pub struct SparseVectorConfig {
         ::prost::alloc::string::String,
         SparseVectorParams,
     >,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MultiVectorConfig {
+    /// Comparator for multi-vector search
+    #[prost(enumeration = "MultiVectorComparator", tag = "1")]
+    pub comparator: i32,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -1135,6 +1146,30 @@ impl Modifier {
         match value {
             "None" => Some(Self::None),
             "Idf" => Some(Self::Idf),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum MultiVectorComparator {
+    MaxSim = 0,
+}
+impl MultiVectorComparator {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            MultiVectorComparator::MaxSim => "MaxSim",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "MaxSim" => Some(Self::MaxSim),
             _ => None,
         }
     }
@@ -3670,10 +3705,15 @@ pub struct SparseIndices {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Vector {
+    /// Vector data (flatten for multi-dimensional vectors)
     #[prost(float, repeated, tag = "1")]
     pub data: ::prost::alloc::vec::Vec<f32>,
+    /// Sparse indices for sparse vectors
     #[prost(message, optional, tag = "2")]
     pub indices: ::core::option::Option<SparseIndices>,
+    /// Number of tokens in the vector
+    #[prost(uint32, optional, tag = "3")]
+    pub vector_count: ::core::option::Option<u32>,
 }
 /// ---------------------------------------------
 /// ----------------- ShardKeySelector ----------

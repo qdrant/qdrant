@@ -180,6 +180,23 @@ pub fn validate_multi_vector<T>(multivec: &[Vec<T>]) -> Result<(), ValidationErr
     Ok(())
 }
 
+pub fn validate_multi_vector_len(
+    vector_count: u32,
+    flatten_dense_vector: &[f32],
+) -> Result<(), ValidationErrors> {
+    let dense_vector_len = flatten_dense_vector.len();
+    if dense_vector_len % vector_count as usize != 0 {
+        let mut errors = ValidationErrors::default();
+        let mut err = ValidationError::new("invalid dense vector length for vector count");
+        err.add_param(Cow::from("len"), &dense_vector_len);
+        err.add_param(Cow::from("vector_count"), &vector_count);
+        errors.add("data", err);
+        Err(errors)
+    } else {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
