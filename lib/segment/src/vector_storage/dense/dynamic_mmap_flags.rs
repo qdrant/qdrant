@@ -215,7 +215,7 @@ impl DynamicMmapFlags {
     }
 
     /// Count number of set flags
-    pub fn count_flags(&self) -> OperationResult<usize> {
+    pub fn count_flags(&self) -> usize {
         let mut ones = self.flags.count_ones();
 
         // Subtract flags in extra capacity we don't use
@@ -224,7 +224,7 @@ impl DynamicMmapFlags {
             .filter(|&i| self.get(i))
             .count();
 
-        Ok(ones)
+        ones
     }
 
     /// Set the `true` value of the flag at the given index.
@@ -352,7 +352,7 @@ mod tests {
         dynamic_flags.flusher()().unwrap();
 
         // Test count flags method
-        let count = dynamic_flags.count_flags().unwrap();
+        let count = dynamic_flags.count_flags();
 
         // Compare against manually counting every flag
         let mut manual_count = 0;

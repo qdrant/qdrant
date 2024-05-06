@@ -58,7 +58,7 @@ fn dynamic_mmap_flag_count(c: &mut Criterion) {
 
     group.bench_function("count-ones", |b| {
         b.iter(|| {
-            let count = dynamic_flags.count_flags().unwrap();
+            let count = dynamic_flags.count_flags();
             assert_eq!(count, real_count);
             black_box(count)
         });
