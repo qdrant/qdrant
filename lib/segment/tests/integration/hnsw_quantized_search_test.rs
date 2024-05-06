@@ -198,14 +198,7 @@ fn check_matches(
             segment.vector_data[DEFAULT_VECTOR_NAME]
                 .vector_index
                 .borrow()
-                .search(
-                    &[query],
-                    filter,
-                    top,
-                    None,
-                    &false.into(),
-                    &Default::default(),
-                )
+                .search(&[query], filter, top, None, &Default::default())
                 .unwrap()
         })
         .collect::<Vec<_>>();
@@ -222,7 +215,6 @@ fn check_matches(
                     hnsw_ef: Some(ef),
                     ..Default::default()
                 }),
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();
@@ -256,7 +248,6 @@ fn check_oversampling(
                     }),
                     ..Default::default()
                 }),
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();
@@ -277,7 +268,6 @@ fn check_oversampling(
                     }),
                     ..Default::default()
                 }),
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();
@@ -315,7 +305,6 @@ fn check_rescoring(
                     }),
                     ..Default::default()
                 }),
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();

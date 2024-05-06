@@ -255,7 +255,6 @@ impl VectorIndex for PlainIndex {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
-        is_stopped: &AtomicBool,
         query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         let is_indexed_only = params.map(|p| p.indexed_only).unwrap_or(false);
@@ -268,6 +267,8 @@ impl VectorIndex for PlainIndex {
             return Ok(vec![vec![]; vectors.len()]);
         }
 
+        let is_stopped = query_context.is_stopped();
+
         match filter {
             Some(filter) => {
                 let _timer = ScopeDurationMeasurer::new(&self.filtered_searches_telemetry);
@@ -275,14 +276,17 @@ impl VectorIndex for PlainIndex {
                 let payload_index = self.payload_index.borrow();
                 let vector_storage = self.vector_storage.borrow();
                 let filtered_ids_vec = payload_index.query_points(filter);
+                let deleted_points = query_context
+                    .deleted_points()
+                    .unwrap_or(id_tracker.deleted_point_bitslice());
                 vectors
                     .iter()
                     .map(|&vector| {
                         new_stoppable_raw_scorer(
                             vector.to_owned(),
                             &vector_storage,
-                            id_tracker.deleted_point_bitslice(),
-                            is_stopped,
+                            deleted_points,
+                            &is_stopped,
                         )
                         .map(|scorer| {
                             scorer.peek_top_iter(&mut filtered_ids_vec.iter().copied(), top)
@@ -294,14 +298,17 @@ impl VectorIndex for PlainIndex {
                 let _timer = ScopeDurationMeasurer::new(&self.unfiltered_searches_telemetry);
                 let vector_storage = self.vector_storage.borrow();
                 let id_tracker = self.id_tracker.borrow();
+                let deleted_points = query_context
+                    .deleted_points()
+                    .unwrap_or(id_tracker.deleted_point_bitslice());
                 vectors
                     .iter()
                     .map(|&vector| {
                         new_stoppable_raw_scorer(
                             vector.to_owned(),
                             &vector_storage,
-                            id_tracker.deleted_point_bitslice(),
-                            is_stopped,
+                            deleted_points,
+                            &is_stopped,
                         )
                         .map(|scorer| scorer.peek_top_all(top))
                     })
