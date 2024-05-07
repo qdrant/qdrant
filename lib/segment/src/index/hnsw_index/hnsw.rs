@@ -665,7 +665,12 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         }
     }
 
-    fn build_index(&mut self, permit: Arc<CpuPermit>, stopped: &AtomicBool) -> OperationResult<()> {
+    fn build_index_with_progress(
+        &mut self,
+        permit: Arc<CpuPermit>,
+        stopped: &AtomicBool,
+        _tick_progress: impl FnMut(),
+    ) -> OperationResult<()> {
         // Build main index graph
         let id_tracker = self.id_tracker.borrow();
         let vector_storage = self.vector_storage.borrow();
