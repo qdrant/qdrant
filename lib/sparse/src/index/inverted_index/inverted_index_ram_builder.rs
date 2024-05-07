@@ -52,4 +52,15 @@ impl InvertedIndexBuilder {
             vector_count,
         }
     }
+
+    /// Creates an [InvertedIndexRam] from an iterator of (id, vector) pairs.
+    pub fn build_from_iterator(
+        iter: impl Iterator<Item = (PointOffsetType, RemappedSparseVector)>,
+    ) -> InvertedIndexRam {
+        let mut builder = InvertedIndexBuilder::new();
+        for (id, vector) in iter {
+            builder.add(id, vector);
+        }
+        builder.build()
+    }
 }

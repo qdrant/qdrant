@@ -123,7 +123,9 @@ fnv = "1.0"
 futures = "0.3.30"
 futures-util = "0.3.30"
 indexmap = { version = "2", features = ["serde"] }
+indicatif = "0.17.8"
 parking_lot = { version = "0.12.2", features = ["deadlock_detection", "serde"] }
+pprof = { version = "0.12", features = ["flamegraph", "prost-codec"] }
 prost = "0.11.9"
 prost-wkt-types = "0.4.2"
 reqwest = { version = "0.12.4", default-features = false, features = ["http2", "stream", "rustls-tls", "blocking"] }
