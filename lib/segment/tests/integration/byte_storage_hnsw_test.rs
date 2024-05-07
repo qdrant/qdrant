@@ -14,6 +14,7 @@ use segment::fixtures::payload_fixtures::{random_dense_byte_vector, random_int_p
 use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::hnsw::HNSWIndex;
 use segment::index::{PayloadIndex, VectorIndex};
+use segment::json_path::path;
 use segment::segment_constructor::build_segment;
 use segment::types::{
     Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload, Range, SearchParams,
@@ -25,8 +26,6 @@ use segment::vector_storage::query::reco_query::RecoQuery;
 use segment::vector_storage::VectorStorageEnum;
 use serde_json::json;
 use tempfile::Builder;
-
-use crate::utils::path;
 
 const MAX_EXAMPLE_PAIRS: usize = 4;
 

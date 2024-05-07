@@ -17,6 +17,7 @@ use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::index::sparse_index::sparse_vector_index::SparseVectorIndex;
 use segment::index::{PayloadIndex, VectorIndex, VectorIndexEnum};
+use segment::json_path::path;
 use segment::segment_constructor::{build_segment, load_segment};
 use segment::types::PayloadFieldSchema::FieldType;
 use segment::types::PayloadSchemaType::Keyword;
@@ -33,8 +34,6 @@ use sparse::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::inverted_index::InvertedIndex;
 use tempfile::Builder;
-
-use crate::utils::path;
 
 /// Max dimension of sparse vectors used in tests
 const MAX_SPARSE_DIM: usize = 4096;

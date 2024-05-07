@@ -1,3 +1,5 @@
+#![cfg_attr(not(feature = "testing"), allow(unused_imports))]
+
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ops::Deref;
@@ -205,12 +207,14 @@ where
 }
 
 /// Only used for testing
+#[cfg(feature = "testing")]
 pub struct SimpleConditionChecker {
     payload_storage: Arc<AtomicRefCell<PayloadStorageEnum>>,
     id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     empty_payload: Payload,
 }
 
+#[cfg(feature = "testing")]
 impl SimpleConditionChecker {
     pub fn new(
         payload_storage: Arc<AtomicRefCell<PayloadStorageEnum>>,
@@ -224,6 +228,7 @@ impl SimpleConditionChecker {
     }
 }
 
+#[cfg(feature = "testing")]
 impl ConditionChecker for SimpleConditionChecker {
     fn check(&self, point_id: PointOffsetType, query: &Filter) -> bool {
         let payload_storage_guard = self.payload_storage.borrow();

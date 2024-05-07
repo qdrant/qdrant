@@ -9,6 +9,7 @@ license = "Apache-2.0"
 edition = "2021"
 
 [features]
+testing = []
 tracing = ["dep:tracing", "api/tracing", "segment/tracing"]
 
 [dev-dependencies]
@@ -16,6 +17,8 @@ criterion = "0.5"
 proptest = "1.4.0"
 rstest = "0.19.0"
 approx = "0.5.1"
+collection = { path = ".", features = ["testing"] }
+common = { path = "../common/common", features = ["testing"] }
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
 pprof = { version = "0.12", features = ["flamegraph", "prost-codec"] }

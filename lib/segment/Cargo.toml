@@ -12,6 +12,7 @@ edition = "2021"
 multiling-chinese = ["charabia/chinese"]
 multiling-japanese = ["charabia/japanese"]
 multiling-korean = ["charabia/korean"]
+testing = []
 
 [dev-dependencies]
 criterion = "0.5"
@@ -19,6 +20,7 @@ rmp-serde = "~1.2"
 rand_distr = "0.4.3"
 walkdir = "2.5.0"
 rstest = "0.19.0"
+segment = { path = ".", features = ["testing"] }
 proptest = "1.4.0"
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]

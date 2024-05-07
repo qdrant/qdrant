@@ -21,6 +21,7 @@ use segment::fixtures::payload_fixtures::{
 use segment::index::field_index::{FieldIndex, PrimaryCondition};
 use segment::index::struct_payload_index::StructPayloadIndex;
 use segment::index::PayloadIndex;
+use segment::json_path::path;
 use segment::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use segment::payload_storage::PayloadStorage;
 use segment::segment::Segment;
@@ -36,7 +37,6 @@ use segment::types::{
 use serde_json::json;
 use tempfile::Builder;
 
-use crate::utils::path;
 use crate::utils::scored_point_ties::ScoredPointTies;
 
 const DIM: usize = 5;
