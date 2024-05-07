@@ -71,7 +71,7 @@ pub async fn do_get_full_snapshot(
     snapshot_name: &str,
 ) -> Result<NamedFile, HttpError> {
     access.check_global_access(AccessRequirements::new())?;
-    let snapshots_storage_manager = toc.get_snapshots_storage_manager().await;
+    let snapshots_storage_manager = toc.get_snapshots_storage_manager()?;
     match snapshots_storage_manager {
         SnapshotStorageManager::LocalFS(_) => {
             let snapshot_path = get_full_snapshot_path(toc, snapshot_name).await?;
@@ -150,7 +150,7 @@ pub async fn do_get_snapshot(
     let collection_pass =
         access.check_collection_access(collection_name, AccessRequirements::new().whole())?;
     let collection = toc.get_collection(&collection_pass).await?;
-    let snapshot_storage_manager = collection.get_snapshots_storage_manager().await;
+    let snapshot_storage_manager = collection.get_snapshots_storage_manager()?;
     match snapshot_storage_manager {
         SnapshotStorageManager::LocalFS(_) => {
             let snapshot_path = collection.get_snapshot_path(snapshot_name).await?;
@@ -500,7 +500,7 @@ async fn download_shard_snapshot(
         .await?;
     let snapshot_path = collection.get_shard_snapshot_path(shard, &snapshot).await?;
 
-    let snapshots_storage_manager = collection.get_snapshots_storage_manager().await;
+    let snapshots_storage_manager = collection.get_snapshots_storage_manager()?;
     match snapshots_storage_manager {
         SnapshotStorageManager::LocalFS(_) => Ok(NamedFile::open(snapshot_path)),
         SnapshotStorageManager::S3(_) => {

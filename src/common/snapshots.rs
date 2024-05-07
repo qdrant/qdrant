@@ -66,7 +66,7 @@ pub async fn delete_shard_snapshot(
     let collection_pass = access
         .check_collection_access(&collection_name, AccessRequirements::new().write().whole())?;
     let collection = toc.get_collection(&collection_pass).await?;
-    let snapshot_manager = collection.get_snapshots_storage_manager().await;
+    let snapshot_manager = collection.get_snapshots_storage_manager()?;
     let snapshot_path = match snapshot_manager {
         SnapshotStorageManager::LocalFS(_) => {
             collection

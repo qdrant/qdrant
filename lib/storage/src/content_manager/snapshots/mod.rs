@@ -71,7 +71,7 @@ pub async fn do_delete_full_snapshot(
 ) -> Result<JoinHandle<Result<bool, StorageError>>, StorageError> {
     access.check_global_access(AccessRequirements::new().manage())?;
     let toc = dispatcher.toc(&access);
-    let snapshot_manager = toc.get_snapshots_storage_manager().await;
+    let snapshot_manager = toc.get_snapshots_storage_manager()?;
     let snapshot_dir = match snapshot_manager {
         SnapshotStorageManager::LocalFS(_) => get_full_snapshot_path(toc, snapshot_name).await?,
         SnapshotStorageManager::S3(_) => get_full_s3_snapshot_path(toc, snapshot_name).await?,
@@ -93,7 +93,7 @@ pub async fn do_delete_collection_snapshot(
     let toc = dispatcher.toc(&access);
     let snapshot_name = snapshot_name.to_string();
     let collection = toc.get_collection(&collection_pass).await?;
-    let snapshot_manager = toc.get_snapshots_storage_manager().await;
+    let snapshot_manager = toc.get_snapshots_storage_manager()?;
     let file_name = match snapshot_manager {
         SnapshotStorageManager::LocalFS(_) => collection.get_snapshot_path(&snapshot_name).await?,
         SnapshotStorageManager::S3(_) => collection.get_s3_snapshot_path(&snapshot_name).await?,
@@ -110,7 +110,7 @@ pub async fn do_list_full_snapshots(
     access: Access,
 ) -> Result<Vec<SnapshotDescription>, StorageError> {
     access.check_global_access(AccessRequirements::new())?;
-    let snapshots_manager = toc.get_snapshots_storage_manager().await;
+    let snapshots_manager = toc.get_snapshots_storage_manager()?;
     let snapshots_path = Path::new(toc.snapshots_path());
     Ok(snapshots_manager.list_snapshots(snapshots_path).await?)
 }
@@ -188,7 +188,7 @@ async fn _do_create_full_snapshot(
     let mut temp_collection_snapshots = vec![];
 
     let temp_storage_path = toc.optional_temp_or_storage_temp_path()?;
-    let snapshot_manager = toc.get_snapshots_storage_manager().await;
+    let snapshot_manager = toc.get_snapshots_storage_manager()?;
 
     for (collection_name, snapshot_details) in &created_snapshots {
         let snapshot_path = snapshot_dir

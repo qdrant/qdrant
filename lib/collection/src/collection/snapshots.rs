@@ -21,12 +21,12 @@ use crate::shards::shard_holder::{ShardKeyMapping, SHARD_KEY_MAPPING_FILE};
 use crate::shards::shard_versioning;
 
 impl Collection {
-    pub async fn get_snapshots_storage_manager(&self) -> SnapshotStorageManager {
-        SnapshotStorageManager::new(self.shared_storage_config.snapshots_config.clone()).await
+    pub fn get_snapshots_storage_manager(&self) -> CollectionResult<SnapshotStorageManager> {
+        SnapshotStorageManager::new(self.shared_storage_config.snapshots_config.clone())
     }
 
     pub async fn list_snapshots(&self) -> CollectionResult<Vec<SnapshotDescription>> {
-        let snapshot_manager = self.get_snapshots_storage_manager().await;
+        let snapshot_manager = self.get_snapshots_storage_manager()?;
         snapshot_manager.list_snapshots(&self.snapshots_path).await
     }
 
@@ -166,7 +166,7 @@ impl Collection {
             CollectionError::service_error(format!("failed to create snapshot archive: {err}"))
         })?;
 
-        let snapshot_manager = self.get_snapshots_storage_manager().await;
+        let snapshot_manager = self.get_snapshots_storage_manager()?;
         snapshot_manager
             .store_file(snapshot_temp_arc_file.path(), snapshot_path.as_path())
             .await

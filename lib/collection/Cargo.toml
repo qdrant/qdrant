@@ -76,11 +76,7 @@ strum = { workspace = true }
 
 tracing = { workspace = true, optional = true }
 
-# AWS
-aws-config = { version = "1.1.7", features = ["behavior-version-latest"] }
-aws-sdk-s3 = "1.24.0"
-aws-smithy-types = "1.1.8"
-aws-smithy-types-convert = { version = "0.60.8", features = ["convert-chrono"] }
+object_store = { version = "0.10.0" , features = ["aws"] }
 
 
 [[bench]]

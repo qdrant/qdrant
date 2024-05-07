@@ -1,7 +1,6 @@
-use std::env;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use aws_sdk_s3::Client as S3Client;
+use object_store::aws::AmazonS3Builder;
 use serde::Deserialize;
 use tempfile::TempPath;
 use tokio::io::AsyncWriteExt;
@@ -11,7 +10,6 @@ use crate::common::sha_256::hash_file;
 use crate::operations::snapshot_ops::{
     get_checksum_path, get_snapshot_description, SnapshotDescription,
 };
-use crate::operations::snapshot_s3_ops;
 use crate::operations::types::{CollectionError, CollectionResult};
 
 #[derive(Clone, Deserialize, Debug, Default)]
@@ -55,7 +53,7 @@ pub struct S3Config {
 #[allow(dead_code)]
 pub struct SnapshotStorageS3 {
     s3_config: S3Config,
-    client: S3Client,
+    client: object_store::aws::AmazonS3,
 }
 
 pub struct SnapshotStorageLocalFS;
@@ -66,34 +64,35 @@ pub enum SnapshotStorageManager {
 }
 
 impl SnapshotStorageManager {
-    pub async fn new(snapshots_config: SnapShotsConfig) -> Self {
+    pub fn new(snapshots_config: SnapShotsConfig) -> CollectionResult<Self> {
         match snapshots_config.clone().snapshots_storage {
             SnapshotsStorageConfig::Local => {
-                SnapshotStorageManager::LocalFS(SnapshotStorageLocalFS)
+                Ok(SnapshotStorageManager::LocalFS(SnapshotStorageLocalFS))
             }
             SnapshotsStorageConfig::S3 => {
+                let mut builder = AmazonS3Builder::new();
                 if let Some(s3_config) = &snapshots_config.s3_config {
-                    // Set AWS credentials to environment variables from the config
                     if let Some(access_key) = &s3_config.access_key {
-                        env::set_var("AWS_ACCESS_KEY_ID", access_key);
+                        builder = builder.with_access_key_id(access_key);
                     }
                     if let Some(secret_key) = &s3_config.secret_key {
-                        env::set_var("AWS_SECRET_ACCESS_KEY", secret_key);
+                        builder = builder.with_secret_access_key(secret_key);
                     }
                     if let Some(region) = &s3_config.region {
-                        env::set_var("AWS_REGION", region);
+                        builder = builder.with_region(region);
                     }
                     if let Some(endpoint_url) = &s3_config.endpoint_url {
-                        env::set_var("AWS_ENDPOINT_URL", endpoint_url);
+                        builder = builder.with_endpoint(endpoint_url);
                     }
                 }
+                let client = builder.build().map_err(|e| {
+                    CollectionError::service_error(format!("Failed to create S3 client: {}", e))
+                })?;
 
-                let client = S3Client::new(&aws_config::from_env().load().await);
-
-                SnapshotStorageManager::S3(SnapshotStorageS3 {
+                Ok(SnapshotStorageManager::S3(SnapshotStorageS3 {
                     s3_config: snapshots_config.s3_config.unwrap_or_default(),
                     client,
-                })
+                }))
             }
         }
     }
@@ -248,16 +247,32 @@ impl SnapshotStorageLocalFS {
 }
 
 impl SnapshotStorageS3 {
+    // fn trim_dot_slash(path: &Path) -> CollectionResult<PathBuf> {
+    //     // Get file name by trimming the path.
+    //     // if the path is ./path/to/file.txt, the key should be path/to/file.txt
+    //     let key = path.to_str().ok_or_else(|| {
+    //         CollectionError::s3_error(format!(
+    //             "Failed to get key for snapshot: {}",
+    //             path.display()
+    //         ))
+    //     })?;
+    //     Ok(PathBuf::from(
+    //         key.map(|k| k.trim_start_matches("./").to_string()),
+    //     ))
+    // }
+
     async fn delete_snapshot(&self, snapshot_path: &Path) -> CollectionResult<bool> {
-        let bucket_name = &self.s3_config.bucket;
-        let key = snapshot_s3_ops::get_key(snapshot_path)?;
-        snapshot_s3_ops::delete_snapshot(&self.client, bucket_name, &key).await
+        // let bucket_name = &self.s3_config.bucket;
+        // let key = SnapshotStorageS3::trim_dot_slash(snapshot_path)?;
+        // snapshot_s3_ops::delete_snapshot(&self.client, bucket_name, &key).await
+        unimplemented!("delete_snapshot")
     }
 
     async fn list_snapshots(&self, directory: &Path) -> CollectionResult<Vec<SnapshotDescription>> {
-        let bucket_name = &self.s3_config.bucket;
-        let key = &snapshot_s3_ops::get_key(directory)?;
-        snapshot_s3_ops::list_snapshots(&self.client, bucket_name, key).await
+        // let bucket_name = &self.s3_config.bucket;
+        // let key = &SnapshotStorageS3::trim_dot_slash(directory)?;
+        // snapshot_s3_ops::list_snapshots(&self.client, bucket_name, key).await
+        unimplemented!("list_snapshots")
     }
 
     async fn store_file(
@@ -265,19 +280,20 @@ impl SnapshotStorageS3 {
         source_path: &Path,
         target_path: &Path,
     ) -> CollectionResult<SnapshotDescription> {
-        let bucket_name = self.s3_config.bucket.clone();
-        let key = snapshot_s3_ops::get_key(target_path)?;
+        // let bucket_name = self.s3_config.bucket.clone();
+        // let key = SnapshotStorageS3::trim_dot_slash(target_path)?;
 
-        let _ = snapshot_s3_ops::multi_part_upload(
-            &self.client,
-            &bucket_name,
-            &key,
-            source_path.to_str().ok_or_else(|| {
-                CollectionError::service_error("Failed to convert path to string")
-            })?,
-        )
-        .await;
-        snapshot_s3_ops::get_snapshot_description(&self.client, bucket_name, key).await
+        // let _ = snapshot_s3_ops::multi_part_upload(
+        //     &self.client,
+        //     &bucket_name,
+        //     &key,
+        //     source_path.to_str().ok_or_else(|| {
+        //         CollectionError::service_error("Failed to convert path to string")
+        //     })?,
+        // )
+        // .await;
+        // snapshot_s3_ops::get_snapshot_description(&self.client, bucket_name, key).await
+        unimplemented!("store_file")
     }
 
     async fn get_stored_file(
@@ -285,21 +301,22 @@ impl SnapshotStorageS3 {
         storage_path: &Path,
         local_path: &Path,
     ) -> CollectionResult<()> {
-        if let Some(target_dir) = local_path.parent() {
-            if !target_dir.exists() {
-                std::fs::create_dir_all(target_dir)?;
-            }
-        }
-        if storage_path != local_path {
-            // download snapshot from s3 to local path
-            snapshot_s3_ops::download_snapshot(
-                &self.client,
-                &self.s3_config.bucket,
-                &snapshot_s3_ops::get_key(storage_path)?,
-                local_path,
-            )
-            .await?;
-        }
-        Ok(())
+        // if let Some(target_dir) = local_path.parent() {
+        //     if !target_dir.exists() {
+        //         std::fs::create_dir_all(target_dir)?;
+        //     }
+        // }
+        // if storage_path != local_path {
+        //     // download snapshot from s3 to local path
+        //     snapshot_s3_ops::download_snapshot(
+        //         &self.client,
+        //         &self.s3_config.bucket,
+        //         &SnapshotStorageS3::trim_dot_slash(storage_path)?,
+        //         local_path,
+        //     )
+        //     .await?;
+        // }
+        // Ok(())
+        unimplemented!("get_stored_file")
     }
 }
