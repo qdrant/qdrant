@@ -29,7 +29,7 @@ const DELETED_DIR_PATH: &str = "deleted";
 struct MultivectorMmapOffset {
     offset: PointOffsetType,
     count: PointOffsetType,
-    reserved: PointOffsetType,
+    capacity: PointOffsetType,
 }
 
 pub struct AppendableMmapMultiDenseVectorStorage<T: PrimitiveVectorElement + 'static> {
@@ -46,14 +46,12 @@ pub fn open_appendable_memmap_multi_vector_storage(
     dim: usize,
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
-    stopped: &AtomicBool,
 ) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
     let storage = open_appendable_memmap_multi_vector_storage_impl::<VectorElementType>(
         path,
         dim,
         distance,
         multi_vector_config,
-        stopped,
     )?;
 
     Ok(Arc::new(AtomicRefCell::new(
@@ -66,7 +64,6 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
     dim: usize,
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
-    stopped: &AtomicBool,
 ) -> OperationResult<AppendableMmapMultiDenseVectorStorage<T>> {
     create_dir_all(path)?;
 
@@ -77,18 +74,8 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
     let vectors = ChunkedMmapVectors::open(&vectors_path, dim)?;
     let offsets = ChunkedMmapVectors::open(&offsets_path, 1)?;
 
-    let num_vectors = vectors.len();
-
     let deleted: DynamicMmapFlags = DynamicMmapFlags::open(&deleted_path)?;
-
-    let mut deleted_count = 0;
-
-    for i in 0..num_vectors {
-        if deleted.get(i) {
-            deleted_count += 1;
-        }
-        check_process_stopped(stopped)?;
-    }
+    let deleted_count = deleted.count_flags();
 
     Ok(AppendableMmapMultiDenseVectorStorage {
         vectors,
@@ -124,12 +111,12 @@ impl<T: PrimitiveVectorElement + 'static> AppendableMmapMultiDenseVectorStorage<
 impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for AppendableMmapMultiDenseVectorStorage<T> {
     fn get_multi(&self, key: PointOffsetType) -> TypedMultiDenseVectorRef<T> {
         let mmap_offset = self.offsets.get(key as usize).unwrap().first().unwrap();
-        let inner_vector = self
+        let flattened_vectors = self
             .vectors
             .get_many(mmap_offset.offset, mmap_offset.count as usize)
             .expect("vector not found");
         TypedMultiDenseVectorRef {
-            inner_vector,
+            flattened_vectors,
             dim: self.vectors.dim(),
         }
     }
@@ -164,7 +151,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapMultiDenseVector
         // TODO(colbert) borrow instead of clone
         let multivector = self.get_multi(key);
         let multivector = TypedMultiDenseVector {
-            inner_vector: multivector.inner_vector.to_vec(),
+            flattened_vectors: multivector.flattened_vectors.to_vec(),
             dim: multivector.dim,
         };
         CowVector::MultiDense(T::into_float_multivector(Cow::Owned(multivector)))
@@ -182,10 +169,10 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapMultiDenseVector
             .map(|x| x.first().copied().unwrap_or_default())
             .unwrap_or_default();
 
-        if multi_vector.len() > offset.reserved as usize {
+        if multi_vector.len() > offset.capacity as usize {
             // append vector to the end
             let mut new_key = self.vectors.len();
-            let chunk_left_keys = self.vectors.get_chunk_left_keys(new_key);
+            let chunk_left_keys = self.vectors.get_remaining_chunk_keys(new_key);
             if multi_vector.len() > chunk_left_keys {
                 new_key += chunk_left_keys;
             }
@@ -193,19 +180,19 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapMultiDenseVector
             offset = MultivectorMmapOffset {
                 offset: new_key as PointOffsetType,
                 count: multi_vector.len() as PointOffsetType,
-                reserved: multi_vector.len() as PointOffsetType,
+                capacity: multi_vector.len() as PointOffsetType,
             };
         } else {
             // use existing place to insert vector
             offset.count = multi_vector.len() as PointOffsetType;
         }
 
-        self.offsets.insert(key as usize, &[offset])?;
         self.vectors.insert_many(
             offset.offset,
-            &multi_vector.inner_vector,
+            &multi_vector.flattened_vectors,
             multi_vector.len(),
         )?;
+        self.offsets.insert(key as usize, &[offset])?;
         self.set_deleted(key, false)?;
 
         Ok(())

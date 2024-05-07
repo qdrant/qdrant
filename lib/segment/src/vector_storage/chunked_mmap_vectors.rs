@@ -153,18 +153,16 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
     where
         TKey: num_traits::cast::AsPrimitive<usize>,
     {
-        assert!(vector.len() == self.config.dim, "Vector size mismatch");
-        let is_inserted = self.insert_many(key, vector, 1)?;
-        assert!(is_inserted, "Insertion failed");
-        Ok(())
+        self.insert_many(key, vector, 1)
     }
 
+    #[inline]
     pub fn insert_many<TKey>(
         &mut self,
         start_key: TKey,
         vectors: &[T],
         count: usize,
-    ) -> OperationResult<bool>
+    ) -> OperationResult<()>
     where
         TKey: num_traits::cast::AsPrimitive<usize>,
     {
@@ -180,7 +178,9 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
 
         // check if the vectors fit in the chunk
         if chunk_offset + vectors.len() > self.config.dim * self.config.chunk_size_vectors {
-            return Ok(false);
+            return Err(OperationError::service_error(format!(
+                "Vectors do not fit in the chunk. Chunk idx {chunk_idx}, chunk offset {chunk_offset}, vectors count {count}",
+            )));
         }
 
         // Ensure capacity
@@ -197,11 +197,11 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         if new_len > self.status.len {
             self.status.len = new_len;
         }
-        Ok(true)
+        Ok(())
     }
 
     // returns how many vectors can be inserted starting from key
-    pub fn get_chunk_left_keys<TKey>(&mut self, start_key: TKey) -> usize
+    pub fn get_remaining_chunk_keys<TKey>(&mut self, start_key: TKey) -> usize
     where
         TKey: num_traits::cast::AsPrimitive<usize>,
     {
@@ -224,6 +224,7 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
     }
 
     // returns count flattened vectors starting from key. if chunk boundary is crossed, returns None
+    #[inline]
     pub fn get_many<TKey>(&self, start_key: TKey, count: usize) -> Option<&[T]>
     where
         TKey: num_traits::cast::AsPrimitive<usize>,

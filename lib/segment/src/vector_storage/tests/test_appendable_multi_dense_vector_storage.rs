@@ -248,14 +248,13 @@ fn create_vector_storage(
             4,
             Distance::Dot,
             MultiVectorConfig::default(),
-            &AtomicBool::new(false),
         )
         .unwrap(),
     }
 }
 
 #[rstest]
-fn test_delete_points_in_simple_multi_dense_vector_storage(
+fn test_delete_points_in_multi_dense_vector_storage(
     #[values(
         MultiDenseStorageType::SimpleRamFloat,
         MultiDenseStorageType::AppendableMmapFloat
@@ -264,16 +263,23 @@ fn test_delete_points_in_simple_multi_dense_vector_storage(
 ) {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
-    {
+    let total_vector_count = {
         let storage = create_vector_storage(storage_type, dir.path());
         do_test_delete_points(storage.clone());
+        let count = storage.borrow().total_vector_count();
         storage.borrow().flusher()().unwrap();
-    }
-    let _storage = create_vector_storage(storage_type, dir.path());
+        count
+    };
+    let storage = create_vector_storage(storage_type, dir.path());
+    assert_eq!(
+        storage.borrow().total_vector_count(),
+        total_vector_count,
+        "total vector count must be the same"
+    );
 }
 
 #[rstest]
-fn test_update_from_delete_points_simple_multi_dense_vector_storage(
+fn test_update_from_delete_points_multi_dense_vector_storage(
     #[values(
         MultiDenseStorageType::SimpleRamFloat,
         MultiDenseStorageType::AppendableMmapFloat
@@ -281,10 +287,17 @@ fn test_update_from_delete_points_simple_multi_dense_vector_storage(
     storage_type: MultiDenseStorageType,
 ) {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-    {
+    let total_vector_count = {
         let storage = create_vector_storage(storage_type, dir.path());
         do_test_update_from_delete_points(storage.clone());
+        let count = storage.borrow().total_vector_count();
         storage.borrow().flusher()().unwrap();
-    }
-    let _storage = create_vector_storage(storage_type, dir.path());
+        count
+    };
+    let storage = create_vector_storage(storage_type, dir.path());
+    assert_eq!(
+        storage.borrow().total_vector_count(),
+        total_vector_count,
+        "total vector count must be the same"
+    );
 }
