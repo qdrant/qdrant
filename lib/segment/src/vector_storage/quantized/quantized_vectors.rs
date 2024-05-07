@@ -132,7 +132,9 @@ impl QuantizedVectors {
             }
             VectorStorageEnum::SparseSimple(_) => Err(OperationError::WrongSparse),
             VectorStorageEnum::MultiDenseSimple(_) => Err(OperationError::WrongMulti),
+            VectorStorageEnum::MultiDenseSimpleByte(_) => Err(OperationError::WrongMulti),
             VectorStorageEnum::MultiDenseAppendableMemmap(_) => Err(OperationError::WrongMulti),
+            VectorStorageEnum::MultiDenseAppendableMemmapByte(_) => Err(OperationError::WrongMulti),
         }
     }
 
