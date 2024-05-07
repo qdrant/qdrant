@@ -17,8 +17,6 @@ service PointsInternal {
   rpc ClearPayload (ClearPayloadPointsInternal) returns (PointsOperationResponseInternal) {}
   rpc CreateFieldIndex (CreateFieldIndexCollectionInternal) returns (PointsOperationResponseInternal) {}
   rpc DeleteFieldIndex (DeleteFieldIndexCollectionInternal) returns (PointsOperationResponseInternal) {}
-  rpc Search (SearchPointsInternal) returns (SearchResponse) {}
-  rpc SearchBatch (SearchBatchPointsInternal) returns (SearchBatchResponse) {}
   rpc CoreSearchBatch (CoreSearchBatchPointsInternal) returns (SearchBatchResponse) {}
   rpc Scroll (ScrollPointsInternal) returns (ScrollResponse) {}
   rpc Count (CountPointsInternal) returns (CountResponse) {}
