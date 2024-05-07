@@ -22,27 +22,11 @@ pub struct SnapShotsConfig {
     pub s3_config: Option<S3Config>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Deserialize)]
 pub enum SnapshotsStorageConfig {
     #[default]
     Local,
     S3,
-}
-
-impl<'de> Deserialize<'de> for SnapshotsStorageConfig {
-    fn deserialize<D>(deserializer: D) -> Result<SnapshotsStorageConfig, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let s: String = Deserialize::deserialize(deserializer)?;
-        match s.as_str() {
-            "local" => Ok(SnapshotsStorageConfig::Local),
-            "s3" => Ok(SnapshotsStorageConfig::S3),
-            _ => Err(serde::de::Error::custom(
-                "Invalid snapshots_storage. Use 'local' or 's3'",
-            )),
-        }
-    }
 }
 
 #[derive(Clone, Deserialize, Debug, Default)]
