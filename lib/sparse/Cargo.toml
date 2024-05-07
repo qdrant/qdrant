@@ -8,6 +8,9 @@ authors = [
 license = "Apache-2.0"
 edition = "2021"
 
+[features]
+testing = []
+
 [dependencies]
 common = { path = "../common/common" }
 io = { path = "../common/io" }
@@ -27,6 +30,7 @@ parking_lot = "0.12.2"
 criterion = "0.5"
 dataset = { path = "../common/dataset" }
 indicatif = { workspace = true }
+sparse = { path = ".", features = ["testing"] }
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
 pprof = { workspace = true }

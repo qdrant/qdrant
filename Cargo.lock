@@ -5292,6 +5292,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "sparse",
  "tempfile",
  "validator",
 ]

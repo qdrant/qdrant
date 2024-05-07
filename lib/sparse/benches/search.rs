@@ -44,7 +44,7 @@ fn bench_uniform_random(c: &mut Criterion, name: &str, num_vectors: usize) {
     let index = InvertedIndexBuilder::build_from_iterator((0..num_vectors).map(|idx| {
         (
             idx as PointOffsetType,
-            random_sparse_vector(&mut rnd, MAX_SPARSE_DIM).into_remapped_for_testing_purposes(),
+            random_sparse_vector(&mut rnd, MAX_SPARSE_DIM).into_remapped(),
         )
     }));
 
@@ -65,12 +65,10 @@ pub fn bench_movies(c: &mut Criterion) {
         .map(|_| iter.next().unwrap().unwrap())
         .collect_vec();
 
-    let index = InvertedIndexBuilder::build_from_iterator(iter.enumerate().map(|(idx, vec)| {
-        (
-            idx as PointOffsetType,
-            vec.unwrap().into_remapped_for_testing_purposes(),
-        )
-    }));
+    let index = InvertedIndexBuilder::build_from_iterator(
+        iter.enumerate()
+            .map(|(idx, vec)| (idx as PointOffsetType, vec.unwrap().into_remapped())),
+    );
 
     run_bench(c, "movies", index, query_vectors);
 }
@@ -89,12 +87,7 @@ pub fn run_bench(
     let mut it = query_vectors.iter().cycle();
     group.bench_function("basic", |b| {
         b.iter_batched(
-            || {
-                it.next()
-                    .unwrap()
-                    .clone()
-                    .into_remapped_for_testing_purposes()
-            },
+            || it.next().unwrap().clone().into_remapped(),
             |vec| SearchContext::new(vec, TOP, &index, pool.get(), &stopped).search(&|_| true),
             criterion::BatchSize::SmallInput,
         )
@@ -139,10 +132,7 @@ pub fn run_bench(
     group.bench_function("hottest", |b| {
         b.iter(|| {
             SearchContext::new(
-                it.next()
-                    .unwrap()
-                    .clone()
-                    .into_remapped_for_testing_purposes(),
+                it.next().unwrap().clone().into_remapped(),
                 TOP,
                 &index,
                 pool.get(),
@@ -163,7 +153,7 @@ fn load_csr_index(path: impl AsRef<Path>, ratio: f32) -> io::Result<InvertedInde
     for (row, vec) in bar.wrap_iter(csr.iter().take(count).enumerate()) {
         builder.add(
             row as u32,
-            vec.map(|v| v.into_remapped_for_testing_purposes())
+            vec.map(|v| v.into_remapped())
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?,
         );
     }

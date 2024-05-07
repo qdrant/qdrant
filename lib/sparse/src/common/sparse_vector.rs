@@ -209,7 +209,8 @@ impl SparseVector {
     }
 
     /// Create [RemappedSparseVector] from this vector in a naive way. Only suitable for testing.
-    pub fn into_remapped_for_testing_purposes(self) -> RemappedSparseVector {
+    #[cfg(feature = "testing")]
+    pub fn into_remapped(self) -> RemappedSparseVector {
         RemappedSparseVector {
             indices: self.indices,
             values: self.values,
