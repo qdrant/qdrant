@@ -395,7 +395,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                 if let Some(posting_list_len) =
                     self.inverted_index.posting_list_len(&remapped_dim_id)
                 {
-                    *count = posting_list_len
+                    *count += posting_list_len
                 }
             }
         }
