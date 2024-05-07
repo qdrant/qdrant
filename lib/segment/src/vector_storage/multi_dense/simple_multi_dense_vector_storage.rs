@@ -285,6 +285,13 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for SimpleMultiDenseVector
     fn multi_vector_config(&self) -> &MultiVectorConfig {
         &self.multi_vector_config
     }
+
+    fn iterate_inner_vectors(&self) -> impl Iterator<Item = &[T]> + Clone + Send {
+        (0..self.total_vector_count()).flat_map(|key| {
+            let metadata = &self.vectors_metadata[key];
+            (0..metadata.size).map(|i| self.vectors.get(metadata.start as usize + i))
+        })
+    }
 }
 
 impl<T: PrimitiveVectorElement> VectorStorage for SimpleMultiDenseVectorStorage<T> {

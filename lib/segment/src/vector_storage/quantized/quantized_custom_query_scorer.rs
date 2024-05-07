@@ -78,7 +78,6 @@ where
         }
     }
 
-    #[allow(unused)]
     pub fn new_multi<TOriginalQuery, TInputQuery>(
         raw_query: TInputQuery,
         quantized_storage: &'a TEncodedVectors,
