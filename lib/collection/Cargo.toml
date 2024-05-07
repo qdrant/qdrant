@@ -76,6 +76,7 @@ strum = { workspace = true }
 
 tracing = { workspace = true, optional = true }
 
+# AWS S3 support
 object_store = { version = "0.10.0" , features = ["aws"] }
 
 
