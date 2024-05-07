@@ -3,11 +3,11 @@ use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
 use atomic_refcell::AtomicRefCell;
+use bitvec::prelude::BitVec;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use io::file_operations::{atomic_save_json, read_json};
 use itertools::Either;
@@ -27,7 +27,7 @@ use crate::common::version::{StorageVersion, VERSION_FILE};
 use crate::common::{check_named_vectors, check_query_vectors, check_stopped, check_vector_name};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{Direction, OrderBy, OrderingValue};
-use crate::data_types::query_context::QueryContext;
+use crate::data_types::query_context::{QueryContext, SegmentQueryContext};
 use crate::data_types::vectors::{MultiDenseVector, QueryVector, Vector, VectorRef};
 use crate::entry::entry_point::SegmentEntry;
 use crate::id_tracker::IdTrackerSS;
@@ -429,6 +429,14 @@ impl Segment {
 
     fn bump_segment_version(&mut self, op_num: SeqNumberType) {
         self.version = Some(max(op_num, self.version.unwrap_or(0)));
+    }
+
+    pub fn get_internal_id(&self, point_id: PointIdType) -> Option<PointOffsetType> {
+        self.id_tracker.borrow().internal_id(point_id)
+    }
+
+    pub fn get_deleted_points_bitvec(&self) -> BitVec {
+        BitVec::from(self.id_tracker.borrow().deleted_point_bitslice())
     }
 
     fn lookup_internal_id(&self, point_id: PointIdType) -> OperationResult<PointOffsetType> {
@@ -991,11 +999,14 @@ impl Segment {
             filter,
             top,
             params,
-            &false.into(),
-            &Default::default(),
+            Default::default(),
         )?;
 
         Ok(result.into_iter().next().unwrap())
+    }
+
+    pub fn cleanup_versions(&mut self) -> OperationResult<()> {
+        self.id_tracker.borrow_mut().cleanup_versions()
     }
 }
 
@@ -1022,8 +1033,7 @@ impl SegmentEntry for Segment {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
-        is_stopped: &AtomicBool,
-        query_context: &QueryContext,
+        query_context: SegmentQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         check_query_vectors(vector_name, query_vectors, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
@@ -1033,11 +1043,10 @@ impl SegmentEntry for Segment {
             filter,
             top,
             params,
-            is_stopped,
             &vector_query_context,
         )?;
 
-        check_stopped(is_stopped)?;
+        check_stopped(&vector_query_context.is_stopped())?;
 
         let res = internal_results
             .iter()
@@ -1812,6 +1821,8 @@ impl Drop for Segment {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::AtomicBool;
+
     use tempfile::Builder;
 
     use super::*;
@@ -1868,7 +1879,7 @@ mod tests {
                     storage_type: VectorStorageType::Memory,
                     index: Indexes::Plain {},
                     quantization_config: None,
-                    multi_vec_config: None,
+                    multivec_config: None,
                     datatype: None,
                 },
             )]),
@@ -1910,8 +1921,7 @@ mod tests {
                 None,
                 10,
                 None,
-                &false.into(),
-                &Default::default(),
+                Default::default(),
             )
             .unwrap();
         eprintln!("search_batch_result = {search_batch_result:#?}");
@@ -1943,7 +1953,7 @@ mod tests {
                     storage_type: VectorStorageType::Memory,
                     index: Indexes::Plain {},
                     quantization_config: None,
-                    multi_vec_config: None,
+                    multivec_config: None,
                     datatype: None,
                 },
             )]),
@@ -2035,7 +2045,7 @@ mod tests {
                     storage_type: VectorStorageType::Memory,
                     index: Indexes::Plain {},
                     quantization_config: None,
-                    multi_vec_config: None,
+                    multivec_config: None,
                     datatype: None,
                 },
             )]),
@@ -2132,7 +2142,7 @@ mod tests {
                     storage_type: VectorStorageType::Memory,
                     index: Indexes::Plain {},
                     quantization_config: None,
-                    multi_vec_config: None,
+                    multivec_config: None,
                     datatype: None,
                 },
             )]),
@@ -2166,7 +2176,7 @@ mod tests {
                     storage_type: VectorStorageType::Memory,
                     index: Indexes::Plain {},
                     quantization_config: None,
-                    multi_vec_config: None,
+                    multivec_config: None,
                     datatype: None,
                 },
             )]),
@@ -2261,7 +2271,7 @@ mod tests {
                     storage_type: VectorStorageType::Memory,
                     index: Indexes::Plain {},
                     quantization_config: None,
-                    multi_vec_config: None,
+                    multivec_config: None,
                     datatype: None,
                 },
             )]),
@@ -2316,7 +2326,7 @@ mod tests {
                         storage_type: VectorStorageType::Memory,
                         index: Indexes::Plain {},
                         quantization_config: None,
-                        multi_vec_config: None,
+                        multivec_config: None,
                         datatype: None,
                     },
                 ),
@@ -2328,7 +2338,7 @@ mod tests {
                         storage_type: VectorStorageType::Memory,
                         index: Indexes::Plain {},
                         quantization_config: None,
-                        multi_vec_config: None,
+                        multivec_config: None,
                         datatype: None,
                     },
                 ),
@@ -2426,7 +2436,7 @@ mod tests {
                         storage_type: VectorStorageType::Memory,
                         index: Indexes::Plain {},
                         quantization_config: None,
-                        multi_vec_config: None,
+                        multivec_config: None,
                         datatype: None,
                     },
                 ),
@@ -2438,7 +2448,7 @@ mod tests {
                         storage_type: VectorStorageType::Memory,
                         index: Indexes::Plain {},
                         quantization_config: None,
-                        multi_vec_config: None,
+                        multivec_config: None,
                         datatype: None,
                     },
                 ),
@@ -2537,8 +2547,7 @@ mod tests {
                     None,
                     1,
                     None,
-                    &false.into(),
-                    &Default::default(),
+                    Default::default(),
                 )
                 .err()
                 .unwrap();
@@ -2602,7 +2611,7 @@ mod tests {
                     storage_type: VectorStorageType::Memory,
                     index: Indexes::Plain {},
                     quantization_config: None,
-                    multi_vec_config: None,
+                    multivec_config: None,
                     datatype: None,
                 },
             )]),

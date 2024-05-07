@@ -129,7 +129,7 @@ fn test_multi_filterable_hnsw(
                 storage_type: VectorStorageType::Memory,
                 index: Indexes::Plain {}, // uses plain index for comparison
                 quantization_config: None,
-                multi_vec_config: Some(MultiVectorConfig::default()), // uses multivec config
+                multivec_config: Some(MultiVectorConfig::default()), // uses multivec config
                 datatype: None,
             },
         )]),
@@ -227,7 +227,6 @@ fn test_multi_filterable_hnsw(
                     hnsw_ef: Some(ef),
                     ..Default::default()
                 }),
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();
@@ -245,14 +244,7 @@ fn test_multi_filterable_hnsw(
         let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(
-                &[&query],
-                filter_query,
-                top,
-                None,
-                &false.into(),
-                &Default::default(),
-            )
+            .search(&[&query], filter_query, top, None, &Default::default())
             .unwrap();
 
         if plain_result == index_result {

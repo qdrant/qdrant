@@ -99,6 +99,7 @@ pub async fn recover_shard_snapshot(
     snapshot_priority: SnapshotPriority,
     checksum: Option<String>,
     client: HttpClient,
+    api_key: Option<String>,
 ) -> Result<(), StorageError> {
     let collection_pass = access
         .check_global_access(AccessRequirements::new().manage())?
@@ -128,7 +129,7 @@ pub async fn recover_shard_snapshot(
                         return Err(StorageError::bad_input(description));
                     }
 
-                    let client = client.client()?;
+                    let client = client.client(api_key.as_deref())?;
 
                     let (snapshot_path, snapshot_temp_path) =
                         snapshots::download::download_snapshot(&client, url, download_dir.path())

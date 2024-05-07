@@ -131,7 +131,7 @@ fn create_segment(
             // In memory
             VectorStorageType::Memory => {
                 let db_column_name = get_vector_name_with_prefix(DB_VECTOR_CF, vector_name);
-                if let Some(multi_vec_config) = &vector_config.multi_vec_config {
+                if let Some(multi_vec_config) = &vector_config.multivec_config {
                     open_simple_multi_dense_vector_storage(
                         database.clone(),
                         &db_column_name,
@@ -178,13 +178,11 @@ fn create_segment(
                     &vector_storage_path,
                     vector_config.size,
                     vector_config.distance,
-                    stopped,
                 )?,
                 VectorStorageDatatype::Uint8 => open_appendable_memmap_vector_storage_byte(
                     &vector_storage_path,
                     vector_config.size,
                     vector_config.distance,
-                    stopped,
                 )?,
             },
         };

@@ -50,7 +50,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
                 storage_type: VectorStorageType::Memory,
                 index: Indexes::Plain {},
                 quantization_config: None,
-                multi_vec_config: None,
+                multivec_config: None,
                 datatype: None,
             },
         )]),
@@ -178,7 +178,6 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
                 Some(&filter),
                 10,
                 None,
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();
@@ -189,7 +188,6 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
                 Some(&filter),
                 10,
                 None,
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();

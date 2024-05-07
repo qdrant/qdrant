@@ -20,4 +20,4 @@ semver = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 thiserror = "1.0"
-thread-priority = "1.0"
+thread-priority = "1.1"

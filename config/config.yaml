@@ -202,7 +202,7 @@ service:
   #
   # Uncomment to enable.
   # api_key: your_secret_api_key_here
-   
+
   # Set an api-key for read-only operations.
   # If set, all requests must include a header with the api-key.
   # example header: `api-key: <API-KEY>`

@@ -25,6 +25,7 @@ struct CacheObj {
     value: ScoreType,
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct DistanceCache {
     cache: Vec<Option<CacheObj>>,

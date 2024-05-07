@@ -189,17 +189,32 @@ pub type DenseVector = TypedDenseVector<VectorElementType>;
 /// Type for multi dense vector
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct TypedMultiDenseVector<T> {
-    pub inner_vector: TypedDenseVector<T>, // vectors are flattened into a single vector
-    pub dim: usize,                        // dimension of each vector
+    pub flattened_vectors: TypedDenseVector<T>, // vectors are flattened into a single vector
+    pub dim: usize,                             // dimension of each vector
 }
 
 pub type MultiDenseVector = TypedMultiDenseVector<VectorElementType>;
 
 impl<T: PrimitiveVectorElement> TypedMultiDenseVector<T> {
     pub fn new(flattened_vectors: TypedDenseVector<T>, dim: usize) -> Self {
-        assert!(flattened_vectors.len() % dim == 0, "Invalid vector length");
+        debug_assert_eq!(flattened_vectors.len() % dim, 0, "Invalid vector length");
         Self {
-            inner_vector: flattened_vectors,
+            flattened_vectors,
+            dim,
+        }
+    }
+
+    /// To be used when the input vectors are already validated to avoid double validation
+    pub fn new_unchecked(vectors: Vec<Vec<T>>) -> Self {
+        debug_assert!(!vectors.is_empty(), "MultiDenseVector cannot be empty");
+        debug_assert!(
+            vectors.iter().all(|v| !v.is_empty()),
+            "Multi individual vectors cannot be empty"
+        );
+        let dim = vectors[0].len();
+        let inner_vector = vectors.into_iter().flatten().collect();
+        Self {
+            flattened_vectors: inner_vector,
             dim,
         }
     }
@@ -207,26 +222,36 @@ impl<T: PrimitiveVectorElement> TypedMultiDenseVector<T> {
     /// MultiDenseVector cannot be empty, so we use a placeholder vector instead
     pub fn placeholder(dim: usize) -> Self {
         Self {
-            inner_vector: vec![Default::default(); dim],
+            flattened_vectors: vec![Default::default(); dim],
             dim,
         }
     }
 
     /// Slices the multi vector into the underlying individual vectors
     pub fn multi_vectors(&self) -> impl Iterator<Item = &[T]> {
-        self.inner_vector.chunks_exact(self.dim)
+        self.flattened_vectors.chunks_exact(self.dim)
     }
 
     pub fn multi_vectors_mut(&mut self) -> ChunksExactMut<'_, T> {
-        self.inner_vector.chunks_exact_mut(self.dim)
+        self.flattened_vectors.chunks_exact_mut(self.dim)
+    }
+
+    /// Consumes the multi vector and returns the underlying individual vectors
+    pub fn into_multi_vectors(self) -> Vec<Vec<T>> {
+        self.flattened_vectors
+            .into_iter()
+            .chunks(self.dim)
+            .into_iter()
+            .map(Iterator::collect)
+            .collect()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.inner_vector.is_empty()
+        self.flattened_vectors.is_empty()
     }
 
     pub fn len(&self) -> usize {
-        self.inner_vector.len() / self.dim
+        self.flattened_vectors.len() / self.dim
     }
 }
 
@@ -247,8 +272,11 @@ impl<T: PrimitiveVectorElement> TryFrom<Vec<TypedDenseVector<T>>> for TypedMulti
                 received_dim: bad_vec.len(),
             })
         } else {
-            let inner_vector = value.into_iter().flatten().collect_vec();
-            let multi_dense = TypedMultiDenseVector { inner_vector, dim };
+            let flattened_vectors = value.into_iter().flatten().collect_vec();
+            let multi_dense = TypedMultiDenseVector {
+                flattened_vectors,
+                dim,
+            };
             Ok(multi_dense)
         }
     }
@@ -256,18 +284,26 @@ impl<T: PrimitiveVectorElement> TryFrom<Vec<TypedDenseVector<T>>> for TypedMulti
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TypedMultiDenseVectorRef<'a, T> {
-    pub inner_vector: &'a [T],
+    pub flattened_vectors: &'a [T],
     pub dim: usize,
 }
 
 impl<'a, T: PrimitiveVectorElement> TypedMultiDenseVectorRef<'a, T> {
     /// Slices the multi vector into the underlying individual vectors
     pub fn multi_vectors(&self) -> impl Iterator<Item = &[T]> {
-        self.inner_vector.chunks_exact(self.dim)
+        self.flattened_vectors.chunks_exact(self.dim)
     }
 
     pub fn is_empty(&self) -> bool {
-        self.inner_vector.is_empty()
+        self.flattened_vectors.is_empty()
+    }
+
+    // Cannot use `ToOwned` trait because of `Borrow` implementation for `TypedMultiDenseVector`
+    pub fn to_owned(self) -> TypedMultiDenseVector<T> {
+        TypedMultiDenseVector {
+            flattened_vectors: self.flattened_vectors.to_owned(),
+            dim: self.dim,
+        }
     }
 }
 
@@ -276,7 +312,7 @@ impl<'a, T: PrimitiveVectorElement> From<&'a TypedMultiDenseVector<T>>
 {
     fn from(val: &'a TypedMultiDenseVector<T>) -> Self {
         TypedMultiDenseVectorRef {
-            inner_vector: &val.inner_vector,
+            flattened_vectors: &val.flattened_vectors,
             dim: val.dim,
         }
     }

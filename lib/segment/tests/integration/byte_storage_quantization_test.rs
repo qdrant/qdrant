@@ -196,7 +196,7 @@ fn test_byte_storage_binary_quantization_hnsw(
                 storage_type: VectorStorageType::Memory,
                 index: Indexes::Plain {},
                 quantization_config: None,
-                multi_vec_config: None,
+                multivec_config: None,
                 datatype: Some(VectorStorageDatatype::Uint8),
             },
         )]),
@@ -332,7 +332,6 @@ fn test_byte_storage_binary_quantization_hnsw(
                     }),
                     ..Default::default()
                 }),
-                &stopped,
                 &Default::default(),
             )
             .unwrap();
@@ -351,7 +350,6 @@ fn test_byte_storage_binary_quantization_hnsw(
                     exact: true,
                     ..Default::default()
                 }),
-                &stopped,
                 &Default::default(),
             )
             .unwrap();

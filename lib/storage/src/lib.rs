@@ -12,6 +12,7 @@ use types::ClusterStatus;
 
 pub mod content_manager;
 pub mod dispatcher;
+pub mod issues_subscribers;
 pub mod rbac;
 pub mod types;
 

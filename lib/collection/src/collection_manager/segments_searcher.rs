@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use common::types::ScoreType;
@@ -23,6 +22,7 @@ use super::holders::segment_holder::LockedSegmentHolder;
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
 use crate::collection_manager::probabilistic_segment_search_sampling::find_search_sampling_over_point_distribution;
 use crate::collection_manager::search_result_aggregator::BatchResultAggregator;
+use crate::common::stopping_guard::StoppingGuard;
 use crate::config::CollectionConfig;
 use crate::operations::query_enum::QueryEnum;
 use crate::operations::types::{CollectionResult, CoreSearchRequestBatch, Modifier, Record};
@@ -156,6 +156,7 @@ impl SegmentsSearcher {
         segments: LockedSegmentHolder,
         batch_request: &CoreSearchRequestBatch,
         collection_config: &CollectionConfig,
+        is_stopped_guard: &StoppingGuard,
     ) -> CollectionResult<Option<QueryContext>> {
         let indexing_threshold_kb = collection_config
             .optimizer_config
@@ -183,7 +184,8 @@ impl SegmentsSearcher {
         }
 
         let mut query_context =
-            QueryContext::new(indexing_threshold_kb.max(full_scan_threshold_kb));
+            QueryContext::new(indexing_threshold_kb.max(full_scan_threshold_kb))
+                .with_is_stopped(is_stopped_guard.get_is_stopped());
 
         for search_request in &batch_request.searches {
             search_request
@@ -224,7 +226,6 @@ impl SegmentsSearcher {
         batch_request: Arc<CoreSearchRequestBatch>,
         runtime_handle: &Handle,
         sampling_enabled: bool,
-        is_stopped: Arc<AtomicBool>,
         query_context: QueryContext,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let query_context_acr = Arc::new(query_context);
@@ -252,13 +253,11 @@ impl SegmentsSearcher {
                     let query_context_arc_segment = query_context_acr.clone();
                     let search = runtime_handle.spawn_blocking({
                         let (segment, batch_request) = (segment.clone(), batch_request.clone());
-                        let is_stopped_clone = is_stopped.clone();
                         move || {
                             search_in_segment(
                                 segment,
                                 batch_request,
                                 use_sampling,
-                                &is_stopped_clone,
                                 query_context_arc_segment,
                             )
                         }
@@ -302,13 +301,11 @@ impl SegmentsSearcher {
                             .map(|batch_id| batch_request.searches[*batch_id].clone())
                             .collect(),
                     });
-                    let is_stopped_clone = is_stopped.clone();
                     res.push(runtime_handle.spawn_blocking(move || {
                         search_in_segment(
                             segment,
                             partial_batch_request,
                             false,
-                            &is_stopped_clone,
                             query_context_arc_segment,
                         )
                     }))
@@ -482,7 +479,6 @@ fn search_in_segment(
     segment: LockedSegment,
     request: Arc<CoreSearchRequestBatch>,
     use_sampling: bool,
-    is_stopped: &AtomicBool,
     query_context: Arc<QueryContext>,
 ) -> CollectionResult<(Vec<Vec<ScoredPoint>>, Vec<bool>)> {
     let batch_size = request.searches.len();
@@ -522,7 +518,6 @@ fn search_in_segment(
                     &vectors_batch,
                     &prev_params,
                     use_sampling,
-                    is_stopped,
                     &query_context,
                 )?;
                 further_results.append(&mut further);
@@ -542,7 +537,6 @@ fn search_in_segment(
             &vectors_batch,
             &prev_params,
             use_sampling,
-            is_stopped,
             &query_context,
         )?;
         further_results.append(&mut further);
@@ -557,7 +551,6 @@ fn execute_batch_search(
     vectors_batch: &[QueryVector],
     search_params: &BatchSearchParams,
     use_sampling: bool,
-    is_stopped: &AtomicBool,
     query_context: &QueryContext,
 ) -> CollectionResult<(Vec<Vec<ScoredPoint>>, Vec<bool>)> {
     let locked_segment = segment.get();
@@ -582,6 +575,7 @@ fn execute_batch_search(
     };
 
     let vectors_batch = &vectors_batch.iter().collect_vec();
+    let segment_query_context = query_context.get_segment_query_context();
     let res = read_segment.search_batch(
         search_params.vector_name,
         vectors_batch,
@@ -590,8 +584,7 @@ fn execute_batch_search(
         search_params.filter,
         top,
         search_params.params,
-        is_stopped,
-        query_context,
+        segment_query_context,
     )?;
 
     let further_results = res
@@ -687,7 +680,6 @@ mod tests {
             Arc::new(batch_request),
             &Handle::current(),
             true,
-            Arc::new(AtomicBool::new(false)),
             QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB),
         )
         .await
@@ -753,7 +745,6 @@ mod tests {
                 batch_request.clone(),
                 &Handle::current(),
                 false,
-                Arc::new(false.into()),
                 QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB),
             )
             .await
@@ -766,7 +757,6 @@ mod tests {
                 batch_request,
                 &Handle::current(),
                 true,
-                Arc::new(false.into()),
                 QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB),
             )
             .await

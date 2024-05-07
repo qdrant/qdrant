@@ -26,7 +26,6 @@ pub trait VectorIndex {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
-        is_stopped: &AtomicBool,
         query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>>;
 
@@ -71,24 +70,23 @@ impl VectorIndex for VectorIndexEnum {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
-        is_stopped: &AtomicBool,
         query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         match self {
             VectorIndexEnum::Plain(index) => {
-                index.search(vectors, filter, top, params, is_stopped, query_context)
+                index.search(vectors, filter, top, params, query_context)
             }
             VectorIndexEnum::HnswRam(index) => {
-                index.search(vectors, filter, top, params, is_stopped, query_context)
+                index.search(vectors, filter, top, params, query_context)
             }
             VectorIndexEnum::HnswMmap(index) => {
-                index.search(vectors, filter, top, params, is_stopped, query_context)
+                index.search(vectors, filter, top, params, query_context)
             }
             VectorIndexEnum::SparseRam(index) => {
-                index.search(vectors, filter, top, params, is_stopped, query_context)
+                index.search(vectors, filter, top, params, query_context)
             }
             VectorIndexEnum::SparseMmap(index) => {
-                index.search(vectors, filter, top, params, is_stopped, query_context)
+                index.search(vectors, filter, top, params, query_context)
             }
         }
     }

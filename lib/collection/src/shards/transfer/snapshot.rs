@@ -187,7 +187,7 @@ pub(super) async fn transfer_snapshot(
 
     debug_assert!(
         replica_set.is_queue_proxy().await,
-        "Local shard must be a queue proxy"
+        "Local shard must be a queue proxy",
     );
 
     // Create shard snapshot
@@ -203,7 +203,7 @@ pub(super) async fn transfer_snapshot(
         .map(TempPath::from_path)
         .map_err(|err| {
             CollectionError::service_error(format!(
-                "Failed to determine snapshot path, cannot continue with shard snapshot recovery: {err}"
+                "Failed to determine snapshot path, cannot continue with shard snapshot recovery: {err}",
             ))
         })?;
     let snapshot_checksum_temp_path = TempPath::from_path(get_checksum_path(&snapshot_temp_path));
@@ -222,6 +222,8 @@ pub(super) async fn transfer_snapshot(
             shard_id,
             &shard_download_url,
             SnapshotPriority::ShardTransfer,
+            // Provide API key here so the remote can access our snapshot
+            channel_service.api_key.as_deref(),
         )
         .await
         .map_err(|err| {

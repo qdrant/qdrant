@@ -5537,6 +5537,16 @@
                 "nullable": true
               }
             ]
+          },
+          "multivec_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MultiVectorConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -5711,6 +5721,23 @@
         "enum": [
           "float32",
           "uint8"
+        ]
+      },
+      "MultiVectorConfig": {
+        "type": "object",
+        "required": [
+          "comparator"
+        ],
+        "properties": {
+          "comparator": {
+            "$ref": "#/components/schemas/MultiVectorComparator"
+          }
+        }
+      },
+      "MultiVectorComparator": {
+        "type": "string",
+        "enum": [
+          "max_sim"
         ]
       },
       "ShardingMethod": {
@@ -6272,6 +6299,16 @@
           },
           {
             "$ref": "#/components/schemas/SparseVector"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "float"
+              }
+            }
           }
         ]
       },
@@ -9228,7 +9265,7 @@
               }
             ]
           },
-          "multi_vec_config": {
+          "multivec_config": {
             "description": "Vector specific configuration to enable multiple vectors per point",
             "anyOf": [
               {
@@ -9320,25 +9357,6 @@
             }
           }
         ]
-      },
-      "MultiVectorConfig": {
-        "oneOf": [
-          {
-            "type": "object",
-            "required": [
-              "MaxSim"
-            ],
-            "properties": {
-              "MaxSim": {
-                "$ref": "#/components/schemas/MaxSimConfig"
-              }
-            },
-            "additionalProperties": false
-          }
-        ]
-      },
-      "MaxSimConfig": {
-        "type": "object"
       },
       "VectorStorageDatatype": {
         "description": "Storage types for vectors",
@@ -10226,6 +10244,12 @@
             "default": null,
             "type": "string",
             "nullable": true
+          },
+          "api_key": {
+            "description": "Optional API key used when fetching the snapshot from a remote URL.",
+            "default": null,
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -10900,6 +10924,12 @@
           },
           "checksum": {
             "description": "Optional SHA256 checksum to verify snapshot integrity before recovery.",
+            "default": null,
+            "type": "string",
+            "nullable": true
+          },
+          "api_key": {
+            "description": "Optional API key used when fetching the snapshot from a remote URL.",
             "default": null,
             "type": "string",
             "nullable": true

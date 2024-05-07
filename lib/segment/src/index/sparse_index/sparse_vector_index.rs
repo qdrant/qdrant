@@ -185,16 +185,22 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         query_vector: &QueryVector,
         filter: Option<&Filter>,
         top: usize,
-        is_stopped: &AtomicBool,
         prefiltered_points: &mut Option<Vec<PointOffsetType>>,
+        vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         let vector_storage = self.vector_storage.borrow();
         let id_tracker = self.id_tracker.borrow();
+        let deleted_point_bitslice = vector_query_context
+            .deleted_points()
+            .unwrap_or(id_tracker.deleted_point_bitslice());
+
+        let is_stopped = vector_query_context.is_stopped();
+
         let raw_scorer = new_stoppable_raw_scorer(
             query_vector.clone(),
             &vector_storage,
-            id_tracker.deleted_point_bitslice(),
-            is_stopped,
+            deleted_point_bitslice,
+            &is_stopped,
         )?;
         match filter {
             Some(filter) => {
@@ -218,14 +224,18 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         sparse_vector: &SparseVector,
         filter: &Filter,
         top: usize,
-        is_stopped: &AtomicBool,
         prefiltered_points: &mut Option<Vec<PointOffsetType>>,
+        vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         let vector_storage = self.vector_storage.borrow();
         let id_tracker = self.id_tracker.borrow();
         let payload_index = self.payload_index.borrow();
 
-        let deleted_point_bitslice = id_tracker.deleted_point_bitslice();
+        let is_stopped = vector_query_context.is_stopped();
+
+        let deleted_point_bitslice = vector_query_context
+            .deleted_points()
+            .unwrap_or(id_tracker.deleted_point_bitslice());
         let deleted_vectors = vector_storage.deleted_vector_bitslice();
 
         let ids = match prefiltered_points {
@@ -247,7 +257,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             top,
             &self.inverted_index,
             memory_handle,
-            is_stopped,
+            &is_stopped,
         );
         Ok(search_context.plain_search(&ids))
     }
@@ -258,16 +268,21 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         sparse_vector: &SparseVector,
         filter: Option<&Filter>,
         top: usize,
-        is_stopped: &AtomicBool,
+        vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         let vector_storage = self.vector_storage.borrow();
         let id_tracker = self.id_tracker.borrow();
-        let deleted_point_bitslice = id_tracker.deleted_point_bitslice();
+        let deleted_point_bitslice = vector_query_context
+            .deleted_points()
+            .unwrap_or(id_tracker.deleted_point_bitslice());
         let deleted_vectors = vector_storage.deleted_vector_bitslice();
 
         let not_deleted_condition = |idx: PointOffsetType| -> bool {
             check_deleted_condition(idx, deleted_vectors, deleted_point_bitslice)
         };
+
+        let is_stopped = vector_query_context.is_stopped();
+
         let sparse_vector = self.indices_tracker.remap_vector(sparse_vector.to_owned());
         let memory_handle = self.scores_memory_pool.get();
         let mut search_context = SearchContext::new(
@@ -275,7 +290,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             top,
             &self.inverted_index,
             memory_handle,
-            is_stopped,
+            &is_stopped,
         );
 
         match filter {
@@ -296,8 +311,8 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         vector: &SparseVector,
         filter: Option<&Filter>,
         top: usize,
-        is_stopped: &AtomicBool,
         prefiltered_points: &mut Option<Vec<PointOffsetType>>,
+        vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         if vector.is_empty() {
             return Ok(vec![]);
@@ -316,16 +331,22 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                 if query_cardinality.max < threshold {
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.small_cardinality);
-                    self.search_plain(&vector, filter, top, is_stopped, prefiltered_points)
+                    self.search_plain(
+                        &vector,
+                        filter,
+                        top,
+                        prefiltered_points,
+                        vector_query_context,
+                    )
                 } else {
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.filtered_sparse);
-                    self.search_sparse(&vector, Some(filter), top, is_stopped)
+                    self.search_sparse(&vector, Some(filter), top, vector_query_context)
                 }
             }
             None => {
                 let _timer = ScopeDurationMeasurer::new(&self.searches_telemetry.unfiltered_sparse);
-                self.search_sparse(&vector, filter, top, is_stopped)
+                self.search_sparse(&vector, filter, top, vector_query_context)
             }
         }
     }
@@ -335,8 +356,8 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         query_vector: &QueryVector,
         filter: Option<&Filter>,
         top: usize,
-        is_stopped: &AtomicBool,
         prefiltered_points: &mut Option<Vec<PointOffsetType>>,
+        vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         if top == 0 {
             return Ok(vec![]);
@@ -347,8 +368,8 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                 vector.try_into()?,
                 filter,
                 top,
-                is_stopped,
                 prefiltered_points,
+                vector_query_context,
             ),
             QueryVector::Recommend(_) | QueryVector::Discovery(_) | QueryVector::Context(_) => {
                 let _timer = if filter.is_some() {
@@ -356,7 +377,13 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                 } else {
                     ScopeDurationMeasurer::new(&self.searches_telemetry.unfiltered_plain)
                 };
-                self.search_scored(query_vector, filter, top, is_stopped, prefiltered_points)
+                self.search_scored(
+                    query_vector,
+                    filter,
+                    top,
+                    prefiltered_points,
+                    vector_query_context,
+                )
             }
         }
     }
@@ -382,13 +409,12 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         filter: Option<&Filter>,
         top: usize,
         _params: Option<&SearchParams>,
-        is_stopped: &AtomicBool,
         query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         let mut results = Vec::with_capacity(vectors.len());
         let mut prefiltered_points = None;
         for vector in vectors {
-            check_process_stopped(is_stopped)?;
+            check_process_stopped(&query_context.is_stopped())?;
 
             let search_results = if query_context.is_require_idf() {
                 let vector = (*vector).clone().transform(|mut vector| {
@@ -404,9 +430,9 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
                     Ok(vector)
                 })?;
 
-                self.search_query(&vector, filter, top, is_stopped, &mut prefiltered_points)?
+                self.search_query(&vector, filter, top, &mut prefiltered_points, query_context)?
             } else {
-                self.search_query(vector, filter, top, is_stopped, &mut prefiltered_points)?
+                self.search_query(vector, filter, top, &mut prefiltered_points, query_context)?
             };
 
             results.push(search_results);

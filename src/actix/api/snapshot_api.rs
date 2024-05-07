@@ -229,12 +229,14 @@ async fn upload_snapshot(
         let snapshot_location =
             do_save_uploaded_snapshot(dispatcher.toc(&access), &collection.name, snapshot).await?;
 
-        let http_client = http_client.client()?;
+        // Snapshot is a local file, we do not need an API key for that
+        let http_client = http_client.client(None)?;
 
         let snapshot_recover = SnapshotRecover {
             location: snapshot_location,
             priority: params.priority,
             checksum: None,
+            api_key: None,
         };
 
         do_recover_from_snapshot(
@@ -259,7 +261,7 @@ async fn recover_from_snapshot(
 ) -> impl Responder {
     helpers::time_or_accept_with_handle(params.wait.unwrap_or(true), async move {
         let snapshot_recover = request.into_inner();
-        let http_client = http_client.client()?;
+        let http_client = http_client.client(snapshot_recover.api_key.as_deref())?;
         do_recover_from_snapshot(
             dispatcher.get_ref(),
             &collection.name,
@@ -411,6 +413,7 @@ async fn recover_shard_snapshot(
             request.priority.unwrap_or_default(),
             request.checksum,
             http_client.as_ref().clone(),
+            request.api_key,
         )
         .await?;
 

@@ -155,6 +155,10 @@ impl IdTracker for FixtureIdTracker {
     fn deleted_point_bitslice(&self) -> &BitSlice {
         &self.deleted
     }
+
+    fn cleanup_versions(&mut self) -> OperationResult<()> {
+        Ok(())
+    }
 }
 
 /// Creates in-memory payload storage and fills it with random points

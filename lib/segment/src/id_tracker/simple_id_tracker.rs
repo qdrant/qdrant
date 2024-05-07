@@ -384,6 +384,27 @@ impl IdTracker for SimpleIdTracker {
     fn deleted_point_bitslice(&self) -> &BitSlice {
         &self.deleted
     }
+
+    fn cleanup_versions(&mut self) -> OperationResult<()> {
+        let mut to_remove = Vec::new();
+        for internal_id in self.iter_internal() {
+            if self.internal_version(internal_id).is_none() {
+                if let Some(external_id) = self.external_id(internal_id) {
+                    to_remove.push(external_id);
+                } else {
+                    debug_assert!(false, "internal id {} has no external id", internal_id);
+                }
+            }
+        }
+        for external_id in to_remove {
+            self.drop(external_id)?;
+            #[cfg(debug_assertions)] // Only for dev builds
+            {
+                log::debug!("dropped version for point {} without version", external_id);
+            }
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]

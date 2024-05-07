@@ -1,15 +1,15 @@
 use std::cmp;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use common::types::TelemetryDetail;
+use bitvec::prelude::BitVec;
+use common::types::{PointOffsetType, TelemetryDetail};
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::common::operation_error::{OperationResult, SegmentFailedState};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::order_by::OrderingValue;
-use segment::data_types::query_context::QueryContext;
+use segment::data_types::query_context::{QueryContext, SegmentQueryContext};
 use segment::data_types::vectors::{QueryVector, Vector};
 use segment::entry::entry_point::SegmentEntry;
 use segment::index::field_index::CardinalityEstimation;
@@ -33,7 +33,11 @@ type LockedFieldsMap = Arc<RwLock<HashMap<PayloadKeyType, PayloadFieldSchema>>>;
 pub struct ProxySegment {
     pub write_segment: LockedSegment,
     pub wrapped_segment: LockedSegment,
-    /// Points which should not longer used from wrapped_segment
+    /// Internal mask of deleted points, specific to the wrapped segment
+    /// Present if the wrapped segment is a plain segment
+    /// Used for faster deletion checks
+    deleted_mask: Option<BitVec>,
+    /// Points which should no longer used from wrapped_segment
     /// May contain points which are not in wrapped_segment,
     /// because the set is shared among all proxy segments
     deleted_points: LockedRmSet,
@@ -51,10 +55,19 @@ impl ProxySegment {
         created_indexes: LockedFieldsMap,
         deleted_indexes: LockedFieldsSet,
     ) -> Self {
+        let deleted_mask = match &segment {
+            LockedSegment::Original(raw_segment) => {
+                let raw_segment_guard = raw_segment.read();
+                let already_deleted = raw_segment_guard.get_deleted_points_bitvec();
+                Some(already_deleted)
+            }
+            LockedSegment::Proxy(_) => None,
+        };
         let wrapped_config = segment.get().read().config().clone();
         ProxySegment {
             write_segment,
             wrapped_segment: segment,
+            deleted_mask,
             deleted_points,
             created_indexes,
             deleted_indexes,
@@ -97,8 +110,24 @@ impl ProxySegment {
         Ok(())
     }
 
+    /// Updates the deleted mask with the given point offset
+    /// Ensures that the mask is resized if necessary and returns false
+    /// if either the mask or the point offset is missing (mask is not applicable)
+    fn set_deleted_offset(&mut self, point_offset: Option<PointOffsetType>) -> bool {
+        match (&mut self.deleted_mask, point_offset) {
+            (Some(deleted_mask), Some(point_offset)) => {
+                if deleted_mask.len() <= point_offset as usize {
+                    deleted_mask.resize(point_offset as usize + 1, false);
+                }
+                deleted_mask.set(point_offset as usize, true);
+                true
+            }
+            _ => false,
+        }
+    }
+
     fn move_if_exists(
-        &self,
+        &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
     ) -> OperationResult<bool> {
@@ -108,8 +137,18 @@ impl ProxySegment {
             return Ok(false);
         }
 
-        {
-            let wrapped_segment = self.wrapped_segment.get();
+        let point_offset = {
+            let (wrapped_segment, point_offset): (
+                Arc<RwLock<dyn SegmentEntry>>,
+                Option<PointOffsetType>,
+            ) = match &self.wrapped_segment {
+                LockedSegment::Original(raw_segment) => {
+                    let point_offset = raw_segment.read().get_internal_id(point_id);
+                    (raw_segment.clone(), point_offset)
+                }
+                LockedSegment::Proxy(sub_proxy) => (sub_proxy.clone(), None),
+            };
+
             let wrapped_segment_guard = wrapped_segment.read();
             if !wrapped_segment_guard.has_point(point_id) {
                 // Point is not in wrapped segment
@@ -129,13 +168,17 @@ impl ProxySegment {
                 if !payload.is_empty() {
                     write_segment.set_full_payload(op_num, point_id, &payload)?;
                 }
-            }
+            };
+
+            point_offset
         };
 
         {
             let mut deleted_points_write = RwLockUpgradableReadGuard::upgrade(deleted_points_guard);
             deleted_points_write.insert(point_id);
         }
+
+        self.set_deleted_offset(point_offset);
 
         Ok(true)
     }
@@ -188,6 +231,9 @@ impl ProxySegment {
                     wrapped_segment.delete_point(op_num, *point_id)?;
                 }
                 RwLockUpgradableReadGuard::upgrade(deleted_points).clear();
+                // Note: We do not clear the deleted mask here, as it provides
+                // no performance advantage and does not affect the correctness of search.
+                // Points are still marked as deleted in two places, which is fine
             } else {
                 drop(deleted_points);
             }
@@ -238,8 +284,7 @@ impl ProxySegment {
             filter,
             top,
             params,
-            &false.into(),
-            &Default::default(),
+            Default::default(),
         )?;
 
         Ok(result.into_iter().next().unwrap())
@@ -272,8 +317,7 @@ impl SegmentEntry for ProxySegment {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
-        is_stopped: &AtomicBool,
-        query_context: &QueryContext,
+        query_context: SegmentQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         let deleted_points = self.deleted_points.read();
 
@@ -282,23 +326,38 @@ impl SegmentEntry for ProxySegment {
         // That is why we need to pass additional filter for deleted points
         let do_update_filter = !deleted_points.is_empty();
         let mut wrapped_results = if do_update_filter {
-            // ToDo: Come up with better way to pass deleted points into Filter
-            // e.g. implement AtomicRefCell for Serializer.
-            // This copy might slow process down if there will be a lot of deleted points
-            let wrapped_filter =
-                self.add_deleted_points_condition_to_filter(filter, &deleted_points);
+            // If we are wrapping a segment with deleted points,
+            // we can make this hack of replacing deleted_points of the wrapped_segment
+            // with our proxied deleted_points, do avoid additional filter creation
+            if let Some(deleted_points) = self.deleted_mask.as_ref() {
+                let query_context_with_deleted =
+                    query_context.clone().with_deleted_points(deleted_points);
 
-            self.wrapped_segment.get().read().search_batch(
-                vector_name,
-                vectors,
-                with_payload,
-                with_vector,
-                Some(&wrapped_filter),
-                top,
-                params,
-                is_stopped,
-                query_context,
-            )?
+                self.wrapped_segment.get().read().search_batch(
+                    vector_name,
+                    vectors,
+                    with_payload,
+                    with_vector,
+                    filter,
+                    top,
+                    params,
+                    query_context_with_deleted,
+                )?
+            } else {
+                let wrapped_filter =
+                    self.add_deleted_points_condition_to_filter(filter, &deleted_points);
+
+                self.wrapped_segment.get().read().search_batch(
+                    vector_name,
+                    vectors,
+                    with_payload,
+                    with_vector,
+                    Some(&wrapped_filter),
+                    top,
+                    params,
+                    query_context.clone(),
+                )?
+            }
         } else {
             self.wrapped_segment.get().read().search_batch(
                 vector_name,
@@ -308,8 +367,7 @@ impl SegmentEntry for ProxySegment {
                 filter,
                 top,
                 params,
-                is_stopped,
-                query_context,
+                query_context.clone(),
             )?
         };
         let mut write_results = self.write_segment.get().read().search_batch(
@@ -320,7 +378,6 @@ impl SegmentEntry for ProxySegment {
             filter,
             top,
             params,
-            is_stopped,
             query_context,
         )?;
         for (index, write_result) in write_results.iter_mut().enumerate() {
@@ -348,9 +405,25 @@ impl SegmentEntry for ProxySegment {
         point_id: PointIdType,
     ) -> OperationResult<bool> {
         let mut was_deleted = false;
-        if self.wrapped_segment.get().read().has_point(point_id) {
-            was_deleted = self.deleted_points.write().insert(point_id);
-        }
+
+        let point_offset = match &self.wrapped_segment {
+            LockedSegment::Original(raw_segment) => {
+                let point_offset = raw_segment.read().get_internal_id(point_id);
+                if point_offset.is_some() {
+                    was_deleted = self.deleted_points.write().insert(point_id);
+                }
+                point_offset
+            }
+            LockedSegment::Proxy(proxy) => {
+                if proxy.read().has_point(point_id) {
+                    was_deleted = self.deleted_points.write().insert(point_id);
+                }
+                None
+            }
+        };
+
+        self.set_deleted_offset(point_offset);
+
         let was_deleted_in_writable = self
             .write_segment
             .get()
@@ -801,10 +874,25 @@ impl SegmentEntry for ProxySegment {
                 .get()
                 .read()
                 .read_filtered(None, None, Some(filter));
+        let points_offsets_to_delete = match &self.wrapped_segment {
+            LockedSegment::Original(raw_segment) => {
+                let raw_segment_read = raw_segment.read();
+                points_to_delete
+                    .iter()
+                    .filter_map(|point_id| raw_segment_read.get_internal_id(*point_id))
+                    .collect()
+            }
+            LockedSegment::Proxy(_) => vec![],
+        };
+
         if !points_to_delete.is_empty() {
             deleted_points += points_to_delete.len();
             let mut deleted_points_guard = self.deleted_points.write();
             deleted_points_guard.extend(points_to_delete);
+        }
+
+        for point_offset in points_offsets_to_delete {
+            self.set_deleted_offset(Some(point_offset));
         }
 
         deleted_points += self
@@ -1000,8 +1088,7 @@ mod tests {
                 None,
                 10,
                 None,
-                &false.into(),
-                &Default::default(),
+                Default::default(),
             )
             .unwrap();
 
@@ -1055,8 +1142,7 @@ mod tests {
                 None,
                 10,
                 None,
-                &false.into(),
-                &Default::default(),
+                Default::default(),
             )
             .unwrap();
 
@@ -1120,8 +1206,7 @@ mod tests {
                 None,
                 10,
                 None,
-                &false.into(),
-                &Default::default(),
+                Default::default(),
             )
             .unwrap();
 
@@ -1408,7 +1493,7 @@ mod tests {
                         storage_type: VectorStorageType::Memory,
                         index: Indexes::Plain {},
                         quantization_config: None,
-                        multi_vec_config: None,
+                        multivec_config: None,
                         datatype: None,
                     },
                 ),
@@ -1420,7 +1505,7 @@ mod tests {
                         storage_type: VectorStorageType::Memory,
                         index: Indexes::Plain {},
                         quantization_config: None,
-                        multi_vec_config: None,
+                        multivec_config: None,
                         datatype: None,
                     },
                 ),

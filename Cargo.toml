@@ -1,6 +1,6 @@
 [package]
 name = "qdrant"
-version = "1.9.1-dev"
+version = "1.9.2-dev"
 authors = [
     "Andrey Vasnetsov <andrey@vasnetsov.com>",
     "Qdrant Team <info@qdrant.tech>",
@@ -78,7 +78,7 @@ tower-layer = "0.3.2"
 reqwest = { workspace = true }
 # rustls minor version must be synced with actix-web
 rustls = "0.22.4"
-rustls-pki-types = "1.4.1"
+rustls-pki-types = "1.5.0"
 rustls-pemfile = "2.1.2"
 prometheus = { version = "0.13.3", default-features = false }
 validator = { workspace = true }
@@ -123,11 +123,11 @@ fnv = "1.0"
 futures = "0.3.30"
 futures-util = "0.3.30"
 indexmap = { version = "2", features = ["serde"] }
-parking_lot = { version = "0.12.1", features = ["deadlock_detection", "serde"] }
+parking_lot = { version = "0.12.2", features = ["deadlock_detection", "serde"] }
 prost = "0.11.9"
 prost-wkt-types = "0.4.2"
 reqwest = { version = "0.12.4", default-features = false, features = ["http2", "stream", "rustls-tls", "blocking"] }
-schemars = { version = "0.8.16", features = ["uuid1", "preserve_order", "chrono", "url", "indexmap2"] }
+schemars = { version = "0.8.17", features = ["uuid1", "preserve_order", "chrono", "url", "indexmap2"] }
 semver = { version = "1.0", features = ["serde"] }
 serde = { version = "~1.0", features = ["derive", "rc"] }
 serde_cbor = { version = "0.11.2" }

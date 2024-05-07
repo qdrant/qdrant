@@ -617,7 +617,7 @@ impl ShardReplicaSet {
         }
 
         for (peer_id, state) in replicas {
-            let peer_already_exists = old_peers.get(&peer_id).is_some();
+            let peer_already_exists = old_peers.contains_key(&peer_id);
 
             if peer_already_exists {
                 // do nothing

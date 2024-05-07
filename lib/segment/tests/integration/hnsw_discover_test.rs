@@ -77,7 +77,7 @@ fn hnsw_discover_precision() {
                 storage_type: VectorStorageType::Memory,
                 index: Indexes::Plain {},
                 quantization_config: None,
-                multi_vec_config: None,
+                multivec_config: None,
                 datatype: None,
             },
         )]),
@@ -139,7 +139,6 @@ fn hnsw_discover_precision() {
                     hnsw_ef: Some(ef),
                     ..Default::default()
                 }),
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();
@@ -147,14 +146,7 @@ fn hnsw_discover_precision() {
         let plain_discovery_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(
-                &[&query],
-                None,
-                top,
-                None,
-                &false.into(),
-                &Default::default(),
-            )
+            .search(&[&query], None, top, None, &Default::default())
             .unwrap();
 
         if plain_discovery_result == index_discovery_result {
@@ -197,7 +189,7 @@ fn filtered_hnsw_discover_precision() {
                 storage_type: VectorStorageType::Memory,
                 index: Indexes::Plain {},
                 quantization_config: None,
-                multi_vec_config: None,
+                multivec_config: None,
                 datatype: None,
             },
         )]),
@@ -278,7 +270,6 @@ fn filtered_hnsw_discover_precision() {
                     hnsw_ef: Some(ef),
                     ..Default::default()
                 }),
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();
@@ -286,14 +277,7 @@ fn filtered_hnsw_discover_precision() {
         let plain_discovery_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(
-                &[&query],
-                filter_query,
-                top,
-                None,
-                &false.into(),
-                &Default::default(),
-            )
+            .search(&[&query], filter_query, top, None, &Default::default())
             .unwrap();
 
         if plain_discovery_result == index_discovery_result {

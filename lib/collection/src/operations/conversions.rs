@@ -553,6 +553,7 @@ impl TryFrom<api::grpc::qdrant::VectorParams> for VectorParams {
                 .transpose()?,
             on_disk: vector_params.on_disk,
             datatype: convert_datatype_from_proto(vector_params.datatype)?,
+            multivec_config: None, // TODO(colbert) add multivector config
         })
     }
 }
