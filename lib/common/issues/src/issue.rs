@@ -49,12 +49,13 @@ impl<I: Issue> From<I> for IssueRecord {
     }
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 #[derive(Clone)]
 pub(crate) struct DummyIssue {
     pub distinctive: String,
 }
 
+#[cfg(test)]
 impl DummyIssue {
     #[cfg(test)]
     pub fn new(distinctive: impl Into<String>) -> Self {
@@ -64,6 +65,7 @@ impl DummyIssue {
     }
 }
 
+#[cfg(test)]
 impl Issue for DummyIssue {
     fn instance_id(&self) -> &str {
         &self.distinctive

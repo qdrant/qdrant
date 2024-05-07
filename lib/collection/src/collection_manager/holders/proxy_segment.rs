@@ -265,6 +265,7 @@ impl ProxySegment {
     }
 
     /// This function is a simplified version of `search_batch` intended for testing purposes.
+    #[cfg(feature = "testing")]
     #[allow(clippy::too_many_arguments)]
     pub fn search(
         &self,

@@ -984,6 +984,7 @@ impl Segment {
 
     /// This function is a simplified version of `search_batch` intended for testing purposes.
     #[allow(clippy::too_many_arguments)]
+    #[cfg(feature = "testing")]
     pub fn search(
         &self,
         vector_name: &str,
