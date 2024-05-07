@@ -41,8 +41,8 @@ use crate::vector_storage::dense::memmap_dense_vector_storage::{
 use crate::vector_storage::dense::simple_dense_vector_storage::{
     open_simple_dense_byte_vector_storage, open_simple_dense_vector_storage,
 };
+use crate::vector_storage::multi_dense::simple_multi_dense_vector_storage::open_simple_multi_dense_vector_storage;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-use crate::vector_storage::simple_multi_dense_vector_storage::open_simple_multi_dense_vector_storage;
 use crate::vector_storage::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
 use crate::vector_storage::VectorStorage;
 

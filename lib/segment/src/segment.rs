@@ -223,7 +223,8 @@ impl Segment {
                             Vector::from(vec![1.0; dim])
                         }
                         VectorStorageEnum::SparseSimple(_) => Vector::from(SparseVector::default()),
-                        VectorStorageEnum::MultiDenseSimple(_) => {
+                        VectorStorageEnum::MultiDenseSimple(_)
+                        | VectorStorageEnum::MultiDenseAppendableMemmap(_) => {
                             Vector::from(MultiDenseVector::placeholder(dim))
                         }
                     };

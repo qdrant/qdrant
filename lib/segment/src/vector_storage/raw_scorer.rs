@@ -153,6 +153,9 @@ pub fn new_stoppable_raw_scorer<'a>(
         VectorStorageEnum::MultiDenseSimple(vs) => {
             raw_multi_scorer_impl(query, vs, point_deleted, is_stopped)
         }
+        VectorStorageEnum::MultiDenseAppendableMemmap(vs) => {
+            raw_multi_scorer_impl(query, vs.as_ref(), point_deleted, is_stopped)
+        }
     }
 }
 
