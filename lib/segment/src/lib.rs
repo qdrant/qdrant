@@ -1,5 +1,6 @@
 pub mod common;
 pub mod entry;
+#[cfg(feature = "testing")]
 pub mod fixtures;
 pub mod id_tracker;
 pub mod index;

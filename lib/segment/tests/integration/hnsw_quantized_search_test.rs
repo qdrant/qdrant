@@ -15,6 +15,7 @@ use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::hnsw::HNSWIndex;
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::{VectorIndex, VectorIndexEnum};
+use segment::json_path::path;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
@@ -29,7 +30,6 @@ use serde_json::json;
 use tempfile::Builder;
 
 use crate::fixtures::segment::build_segment_1;
-use crate::utils::path;
 
 fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> usize {
     a[0].iter()

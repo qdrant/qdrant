@@ -13,6 +13,7 @@ use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::hnsw::HNSWIndex;
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::{PayloadIndex, VectorIndex};
+use segment::json_path::path;
 use segment::segment_constructor::build_segment;
 use segment::types::{
     Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload, PayloadSchemaType,
@@ -20,8 +21,6 @@ use segment::types::{
 };
 use serde_json::json;
 use tempfile::Builder;
-
-use crate::utils::path;
 
 #[test]
 fn exact_search_test() {
