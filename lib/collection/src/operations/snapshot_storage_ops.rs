@@ -111,17 +111,22 @@ pub async fn multipart_upload(
     let file = File::open(source_path)?;
     let mut reader = BufReader::new(file);
     let mut buffer = vec![0u8; chunk_size];
+
+    // Note:
+    //  1. write.write() is sync but a worker thread is spawned internally.
+    //  2. write.finish() will wait for all the worker threads to finish.
     while let Ok(bytes_read) = reader.read(&mut buffer) {
         if bytes_read == 0 {
             break;
         }
         let buffer = &buffer[..bytes_read];
-        write.write(buffer);
+        write.write(buffer); // 1. write.write() is sync but a worker thread is spawned internally.
     }
     write
-        .finish()
+        .finish() //  2. write.finish() will wait for all the worker threads to finish.
         .await
         .map_err(|e| CollectionError::service_error(format!("Failed to finish upload: {}", e)))?;
+
     Ok(())
 }
 
