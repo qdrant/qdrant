@@ -14,7 +14,8 @@ use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
-    MultiDenseVector, TypedMultiDenseVector, TypedMultiDenseVectorRef, VectorElementType, VectorRef,
+    MultiDenseVector, TypedMultiDenseVector, TypedMultiDenseVectorRef, VectorElementType,
+    VectorElementTypeByte, VectorRef,
 };
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
@@ -56,6 +57,24 @@ pub fn open_appendable_memmap_multi_vector_storage(
 
     Ok(Arc::new(AtomicRefCell::new(
         VectorStorageEnum::MultiDenseAppendableMemmap(Box::new(storage)),
+    )))
+}
+
+pub fn open_appendable_memmap_multi_vector_storage_byte(
+    path: &Path,
+    dim: usize,
+    distance: Distance,
+    multi_vector_config: MultiVectorConfig,
+) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
+    let storage = open_appendable_memmap_multi_vector_storage_impl::<VectorElementTypeByte>(
+        path,
+        dim,
+        distance,
+        multi_vector_config,
+    )?;
+
+    Ok(Arc::new(AtomicRefCell::new(
+        VectorStorageEnum::MultiDenseAppendableMemmapByte(Box::new(storage)),
     )))
 }
 
