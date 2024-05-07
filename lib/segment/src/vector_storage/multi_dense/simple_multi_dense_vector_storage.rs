@@ -9,7 +9,6 @@ use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
-use super::chunked_vectors::ChunkedVectors;
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
@@ -20,6 +19,7 @@ use crate::data_types::vectors::{
 };
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::bitvec::bitvec_set_deleted;
+use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::common::StoredRecord;
 use crate::vector_storage::{MultiVectorStorage, VectorStorage, VectorStorageEnum};
 

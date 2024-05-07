@@ -101,7 +101,7 @@ impl<T: PrimitiveVectorElement + 'static> AppendableMmapDenseVectorStorage<T> {
 
 impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for AppendableMmapDenseVectorStorage<T> {
     fn get_dense(&self, key: PointOffsetType) -> &[T] {
-        self.vectors.get(key)
+        self.vectors.get(key).expect("mmap vector not found")
     }
 }
 
@@ -127,7 +127,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapDenseVectorStora
     }
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {
-        CowVector::from(T::slice_to_float_cow(self.vectors.get(key).into()))
+        CowVector::from(T::slice_to_float_cow(self.get_dense(key).into()))
     }
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
