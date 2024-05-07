@@ -8,7 +8,6 @@ use actix_web::{delete, get, post, put, web, Responder, Result};
 use actix_web_validator as valid;
 use collection::common::file_utils::move_file;
 use collection::common::sha_256::{hash_file, hashes_equal};
-use collection::common::snapshots_manager::SnapshotStorageManager;
 use collection::operations::snapshot_ops::{
     ShardSnapshotRecover, SnapshotPriority, SnapshotRecover,
 };
@@ -21,7 +20,7 @@ use storage::content_manager::errors::StorageError;
 use storage::content_manager::snapshots::recover::do_recover_from_snapshot;
 use storage::content_manager::snapshots::{
     do_create_full_snapshot, do_delete_collection_snapshot, do_delete_full_snapshot,
-    do_list_full_snapshots, get_full_s3_snapshot_path, get_full_snapshot_path,
+    do_list_full_snapshots,
 };
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
@@ -71,31 +70,14 @@ pub async fn do_get_full_snapshot(
     snapshot_name: &str,
 ) -> Result<NamedFile, HttpError> {
     access.check_global_access(AccessRequirements::new())?;
-    let snapshots_storage_manager = toc.get_snapshots_storage_manager().await;
-    match snapshots_storage_manager {
-        SnapshotStorageManager::LocalFS(_) => {
-            let snapshot_path = get_full_snapshot_path(toc, snapshot_name).await?;
-            Ok(NamedFile::open(snapshot_path)?)
-        }
-        SnapshotStorageManager::S3(_) => {
-            let snapshot_path = get_full_s3_snapshot_path(toc, snapshot_name).await?;
-            let temp_storage_path = toc.optional_temp_or_snapshot_temp_path()?;
-            let local_temp_collection_snapshot = temp_storage_path.join(snapshot_name);
-
-            // `get_stored_file` will download snapshot from s3 to local_temp_collection_snapshot
-            snapshots_storage_manager
-                .get_stored_file(&snapshot_path, &local_temp_collection_snapshot)
-                .await
-                .map_err(|e| {
-                    StorageError::service_error(format!(
-                        "Failed to download snapshot from S3: {:?}",
-                        e
-                    ))
-                })?;
-
-            Ok(NamedFile::open(local_temp_collection_snapshot)?)
-        }
-    }
+    let snapshots_storage_manager = toc.get_snapshots_storage_manager()?;
+    let snapshot_path = snapshots_storage_manager
+        .get_full_snapshot_path(toc.snapshots_path(), snapshot_name)
+        .await?;
+    snapshots_storage_manager
+        .ensure_snapshot_is_local(&snapshot_path)
+        .await?;
+    Ok(NamedFile::open(snapshot_path)?)
 }
 
 pub async fn do_save_uploaded_snapshot(
@@ -149,33 +131,16 @@ pub async fn do_get_snapshot(
 ) -> Result<NamedFile, HttpError> {
     let collection_pass =
         access.check_collection_access(collection_name, AccessRequirements::new().whole())?;
-    let collection = toc.get_collection(&collection_pass).await?;
-    let snapshot_storage_manager = collection.get_snapshots_storage_manager().await;
-    match snapshot_storage_manager {
-        SnapshotStorageManager::LocalFS(_) => {
-            let snapshot_path = collection.get_snapshot_path(snapshot_name).await?;
-            Ok(NamedFile::open(snapshot_path)?)
-        }
-        SnapshotStorageManager::S3(_) => {
-            let snapshot_path = collection.get_s3_snapshot_path(snapshot_name).await?;
-            let temp_storage_path = toc.optional_temp_or_snapshot_temp_path()?;
-            let local_temp_collection_snapshot =
-                temp_storage_path.join(collection_name).join(snapshot_name);
-
-            // `get_stored_file` will download snapshot from s3 to local_temp_collection_snapshot
-            snapshot_storage_manager
-                .get_stored_file(&snapshot_path, &local_temp_collection_snapshot)
-                .await
-                .map_err(|e| {
-                    StorageError::service_error(format!(
-                        "Failed to download snapshot from S3: {:?}",
-                        e
-                    ))
-                })?;
-
-            Ok(NamedFile::open(local_temp_collection_snapshot)?)
-        }
-    }
+    let collection: tokio::sync::RwLockReadGuard<collection::collection::Collection> =
+        toc.get_collection(&collection_pass).await?;
+    let snapshot_storage_manager = collection.get_snapshots_storage_manager()?;
+    let snapshot_path = snapshot_storage_manager
+        .get_snapshot_path(collection.snapshots_path(), snapshot_name)
+        .await?;
+    snapshot_storage_manager
+        .ensure_snapshot_is_local(&snapshot_path)
+        .await?;
+    Ok(NamedFile::open(snapshot_path)?)
 }
 
 #[get("/collections/{name}/snapshots")]
@@ -498,33 +463,19 @@ async fn download_shard_snapshot(
         .toc(&access)
         .get_collection(&collection_pass)
         .await?;
-    let snapshot_path = collection.get_shard_snapshot_path(shard, &snapshot).await?;
-
-    let snapshots_storage_manager = collection.get_snapshots_storage_manager().await;
-    match snapshots_storage_manager {
-        SnapshotStorageManager::LocalFS(_) => Ok(NamedFile::open(snapshot_path)),
-        SnapshotStorageManager::S3(_) => {
-            let temp_storage_path = dispatcher
-                .toc(&access)
-                .optional_temp_or_snapshot_temp_path()?;
-            let local_temp_collection_snapshot = temp_storage_path
-                .join(collection.name())
-                .join(shard.to_string())
-                .join(snapshot);
-
-            snapshots_storage_manager
-                .get_stored_file(&snapshot_path, &local_temp_collection_snapshot)
-                .await
-                .map_err(|e| {
-                    StorageError::service_error(format!(
-                        "Failed to download snapshot from S3: {:?}",
-                        e
-                    ))
-                })?;
-
-            Ok(NamedFile::open(local_temp_collection_snapshot))
-        }
-    }
+    let snapshots_storage_manager = collection.get_snapshots_storage_manager()?;
+    let snapshot_path = snapshots_storage_manager
+        .get_shard_snapshot_path(
+            collection.shards_holder(),
+            shard,
+            collection.snapshots_path(),
+            &snapshot,
+        )
+        .await?;
+    snapshots_storage_manager
+        .ensure_snapshot_is_local(&snapshot_path)
+        .await?;
+    Ok(NamedFile::open(snapshot_path))
 }
 
 #[delete("/collections/{collection}/shards/{shard}/snapshots/{snapshot}")]

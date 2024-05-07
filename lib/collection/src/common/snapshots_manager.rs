@@ -1,7 +1,7 @@
-use std::env;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use aws_sdk_s3::Client as S3Client;
+use object_store::aws::AmazonS3Builder;
 use serde::Deserialize;
 use tempfile::TempPath;
 use tokio::io::AsyncWriteExt;
@@ -11,8 +11,10 @@ use crate::common::sha_256::hash_file;
 use crate::operations::snapshot_ops::{
     get_checksum_path, get_snapshot_description, SnapshotDescription,
 };
-use crate::operations::snapshot_s3_ops;
+use crate::operations::snapshot_storage_ops;
 use crate::operations::types::{CollectionError, CollectionResult};
+use crate::shards::shard::ShardId;
+use crate::shards::shard_holder::LockedShardHolder;
 
 #[derive(Clone, Deserialize, Debug, Default)]
 pub struct SnapShotsConfig {
@@ -20,27 +22,11 @@ pub struct SnapShotsConfig {
     pub s3_config: Option<S3Config>,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Deserialize)]
 pub enum SnapshotsStorageConfig {
     #[default]
     Local,
     S3,
-}
-
-impl<'de> Deserialize<'de> for SnapshotsStorageConfig {
-    fn deserialize<D>(deserializer: D) -> Result<SnapshotsStorageConfig, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let s: String = Deserialize::deserialize(deserializer)?;
-        match s.as_str() {
-            "local" => Ok(SnapshotsStorageConfig::Local),
-            "s3" => Ok(SnapshotsStorageConfig::S3),
-            _ => Err(serde::de::Error::custom(
-                "Invalid snapshots_storage. Use 'local' or 's3'",
-            )),
-        }
-    }
 }
 
 #[derive(Clone, Deserialize, Debug, Default)]
@@ -53,47 +39,54 @@ pub struct S3Config {
 }
 
 #[allow(dead_code)]
-pub struct SnapshotStorageS3 {
-    s3_config: S3Config,
-    client: S3Client,
+pub struct SnapshotStorageCloud {
+    client: Box<dyn object_store::ObjectStore>,
 }
 
 pub struct SnapshotStorageLocalFS;
 
 pub enum SnapshotStorageManager {
     LocalFS(SnapshotStorageLocalFS),
-    S3(SnapshotStorageS3),
+    // Assuming that we can have common operations for all cloud storages
+    S3(SnapshotStorageCloud),
+    // <TODO> : Implement other cloud storage
+    // GCS(SnapshotStorageCloud),
+    // AZURE(SnapshotStorageCloud),
 }
 
 impl SnapshotStorageManager {
-    pub async fn new(snapshots_config: SnapShotsConfig) -> Self {
+    pub fn new(snapshots_config: SnapShotsConfig) -> CollectionResult<Self> {
         match snapshots_config.clone().snapshots_storage {
             SnapshotsStorageConfig::Local => {
-                SnapshotStorageManager::LocalFS(SnapshotStorageLocalFS)
+                Ok(SnapshotStorageManager::LocalFS(SnapshotStorageLocalFS))
             }
             SnapshotsStorageConfig::S3 => {
+                let mut builder = AmazonS3Builder::new();
                 if let Some(s3_config) = &snapshots_config.s3_config {
-                    // Set AWS credentials to environment variables from the config
+                    builder = builder.with_bucket_name(&s3_config.bucket);
+
                     if let Some(access_key) = &s3_config.access_key {
-                        env::set_var("AWS_ACCESS_KEY_ID", access_key);
+                        builder = builder.with_access_key_id(access_key);
                     }
                     if let Some(secret_key) = &s3_config.secret_key {
-                        env::set_var("AWS_SECRET_ACCESS_KEY", secret_key);
+                        builder = builder.with_secret_access_key(secret_key);
                     }
                     if let Some(region) = &s3_config.region {
-                        env::set_var("AWS_REGION", region);
+                        builder = builder.with_region(region);
                     }
                     if let Some(endpoint_url) = &s3_config.endpoint_url {
-                        env::set_var("AWS_ENDPOINT_URL", endpoint_url);
+                        builder = builder.with_endpoint(endpoint_url);
+                        if endpoint_url.starts_with("http://") {
+                            builder = builder.with_allow_http(true);
+                        }
                     }
                 }
+                let client: Box<dyn object_store::ObjectStore> =
+                    Box::new(builder.build().map_err(|e| {
+                        CollectionError::service_error(format!("Failed to create S3 client: {}", e))
+                    })?);
 
-                let client = S3Client::new(&aws_config::from_env().load().await);
-
-                SnapshotStorageManager::S3(SnapshotStorageS3 {
-                    s3_config: snapshots_config.s3_config.unwrap_or_default(),
-                    client,
-                })
+                Ok(SnapshotStorageManager::S3(SnapshotStorageCloud { client }))
             }
         }
     }
@@ -147,6 +140,89 @@ impl SnapshotStorageManager {
             }
             SnapshotStorageManager::S3(storage_impl) => {
                 storage_impl.get_stored_file(storage_path, local_path).await
+            }
+        }
+    }
+
+    pub async fn get_snapshot_path(
+        &self,
+        snapshots_path: &Path,
+        snapshot_name: &str,
+    ) -> CollectionResult<PathBuf> {
+        match self {
+            SnapshotStorageManager::LocalFS(storage_impl) => {
+                storage_impl
+                    .get_snapshot_path(snapshots_path, snapshot_name)
+                    .await
+            }
+            SnapshotStorageManager::S3(storage_impl) => {
+                storage_impl
+                    .get_snapshot_path(snapshots_path, snapshot_name)
+                    .await
+            }
+        }
+    }
+
+    pub async fn get_full_snapshot_path(
+        &self,
+        snapshots_path: &str,
+        snapshot_name: &str,
+    ) -> CollectionResult<PathBuf> {
+        match self {
+            SnapshotStorageManager::LocalFS(storage_impl) => {
+                storage_impl
+                    .get_full_snapshot_path(snapshots_path, snapshot_name)
+                    .await
+            }
+            SnapshotStorageManager::S3(storage_impl) => {
+                storage_impl
+                    .get_full_snapshot_path(snapshots_path, snapshot_name)
+                    .await
+            }
+        }
+    }
+
+    pub async fn get_shard_snapshot_path(
+        &self,
+        shards_holder: Arc<LockedShardHolder>,
+        shard_id: ShardId,
+        snapshots_path: &Path,
+        snapshot_file_name: impl AsRef<Path>,
+    ) -> CollectionResult<PathBuf> {
+        match self {
+            SnapshotStorageManager::LocalFS(storage_impl) => {
+                storage_impl
+                    .get_shard_snapshot_path(
+                        shards_holder,
+                        shard_id,
+                        snapshots_path,
+                        snapshot_file_name,
+                    )
+                    .await
+            }
+            SnapshotStorageManager::S3(storage_impl) => {
+                storage_impl
+                    .get_shard_snapshot_path(
+                        shards_holder,
+                        shard_id,
+                        snapshots_path,
+                        snapshot_file_name,
+                    )
+                    .await
+            }
+        }
+    }
+
+    /// Ensures that a snapshot is available locally.
+    /// If the snapshot is not available locally, it will be downloaded to the local `snapshot_path`.
+    /// If the snapshot is already available locally, the function will return the local path.
+    pub async fn ensure_snapshot_is_local(&self, snapshot_path: &Path) -> CollectionResult<()> {
+        match self {
+            SnapshotStorageManager::LocalFS(storage_impl) => {
+                Ok(storage_impl.ensure_snapshot_is_local(snapshot_path).await?)
+            }
+            SnapshotStorageManager::S3(storage_impl) => {
+                Ok(storage_impl.ensure_snapshot_is_local(snapshot_path).await?)
             }
         }
     }
@@ -245,19 +321,104 @@ impl SnapshotStorageLocalFS {
         }
         Ok(())
     }
+
+    /// Get absolute file path for a full snapshot by name
+    ///
+    /// This enforces the file to be inside the snapshots directory
+    async fn get_full_snapshot_path(
+        &self,
+        snapshots_path: &str,
+        snapshot_name: &str,
+    ) -> CollectionResult<PathBuf> {
+        let absolute_snapshot_dir = Path::new(snapshots_path).canonicalize().map_err(|_| {
+            CollectionError::not_found(format!("Snapshot directory: {snapshots_path}"))
+        })?;
+
+        let absolute_snapshot_path = absolute_snapshot_dir
+            .join(snapshot_name)
+            .canonicalize()
+            .map_err(|_| CollectionError::not_found(format!("Snapshot {snapshot_name}")))?;
+
+        if !absolute_snapshot_path.starts_with(absolute_snapshot_dir) {
+            return Err(CollectionError::not_found(format!(
+                "Snapshot {snapshot_name}"
+            )));
+        }
+
+        if !absolute_snapshot_path.is_file() {
+            return Err(CollectionError::not_found(format!(
+                "Snapshot {snapshot_name}"
+            )));
+        }
+
+        Ok(absolute_snapshot_path)
+    }
+
+    /// Get absolute file path for a collection snapshot by name
+    ///
+    /// This enforces the file to be inside the snapshots directory
+    async fn get_snapshot_path(
+        &self,
+        snapshots_path: &Path,
+        snapshot_name: &str,
+    ) -> CollectionResult<PathBuf> {
+        let absolute_snapshot_dir = snapshots_path.canonicalize().map_err(|_| {
+            CollectionError::not_found(format!("Snapshot directory: {}", snapshots_path.display()))
+        })?;
+
+        let absolute_snapshot_path = absolute_snapshot_dir
+            .join(snapshot_name)
+            .canonicalize()
+            .map_err(|_| CollectionError::not_found(format!("Snapshot {snapshot_name}")))?;
+
+        if !absolute_snapshot_path.starts_with(absolute_snapshot_dir) {
+            return Err(CollectionError::not_found(format!(
+                "Snapshot {snapshot_name}"
+            )));
+        }
+
+        if !absolute_snapshot_path.is_file() {
+            return Err(CollectionError::not_found(format!(
+                "Snapshot {snapshot_name}"
+            )));
+        }
+
+        Ok(absolute_snapshot_path)
+    }
+
+    async fn get_shard_snapshot_path(
+        &self,
+        shards_holder: Arc<LockedShardHolder>,
+        shard_id: ShardId,
+        snapshots_path: &Path,
+        snapshot_file_name: impl AsRef<Path>,
+    ) -> CollectionResult<PathBuf> {
+        shards_holder
+            .read()
+            .await
+            .get_shard_snapshot_path(snapshots_path, shard_id, snapshot_file_name)
+            .await
+    }
+
+    async fn ensure_snapshot_is_local(&self, snapshot_path: &Path) -> CollectionResult<()> {
+        // check if the snapshot is already local
+        if !snapshot_path.exists() {
+            return Err(CollectionError::not_found(format!(
+                "Snapshot {} not found",
+                snapshot_path.display()
+            )));
+        }
+        Ok(())
+    }
 }
 
-impl SnapshotStorageS3 {
+impl SnapshotStorageCloud {
     async fn delete_snapshot(&self, snapshot_path: &Path) -> CollectionResult<bool> {
-        let bucket_name = &self.s3_config.bucket;
-        let key = snapshot_s3_ops::get_key(snapshot_path)?;
-        snapshot_s3_ops::delete_snapshot(&self.client, bucket_name, &key).await
+        snapshot_storage_ops::delete_snapshot(&self.client, snapshot_path).await
     }
 
     async fn list_snapshots(&self, directory: &Path) -> CollectionResult<Vec<SnapshotDescription>> {
-        let bucket_name = &self.s3_config.bucket;
-        let key = &snapshot_s3_ops::get_key(directory)?;
-        snapshot_s3_ops::list_snapshots(&self.client, bucket_name, key).await
+        snapshot_storage_ops::list_snapshot_descriptions(&self.client, directory).await
     }
 
     async fn store_file(
@@ -265,19 +426,8 @@ impl SnapshotStorageS3 {
         source_path: &Path,
         target_path: &Path,
     ) -> CollectionResult<SnapshotDescription> {
-        let bucket_name = self.s3_config.bucket.clone();
-        let key = snapshot_s3_ops::get_key(target_path)?;
-
-        let _ = snapshot_s3_ops::multi_part_upload(
-            &self.client,
-            &bucket_name,
-            &key,
-            source_path.to_str().ok_or_else(|| {
-                CollectionError::service_error("Failed to convert path to string")
-            })?,
-        )
-        .await;
-        snapshot_s3_ops::get_snapshot_description(&self.client, bucket_name, key).await
+        snapshot_storage_ops::multipart_upload(&self.client, source_path, target_path).await?;
+        snapshot_storage_ops::get_snapshot_description(&self.client, target_path).await
     }
 
     async fn get_stored_file(
@@ -291,15 +441,44 @@ impl SnapshotStorageS3 {
             }
         }
         if storage_path != local_path {
-            // download snapshot from s3 to local path
-            snapshot_s3_ops::download_snapshot(
-                &self.client,
-                &self.s3_config.bucket,
-                &snapshot_s3_ops::get_key(storage_path)?,
-                local_path,
-            )
-            .await?;
+            // download snapshot from cloud storage to local path
+            snapshot_storage_ops::download_snapshot(&self.client, storage_path, local_path).await?;
         }
+        Ok(())
+    }
+
+    async fn get_snapshot_path(
+        &self,
+        snapshots_path: &Path,
+        snapshot_name: &str,
+    ) -> CollectionResult<PathBuf> {
+        let absolute_snapshot_dir = snapshots_path;
+        let absolute_snapshot_path = absolute_snapshot_dir.join(snapshot_name);
+        Ok(absolute_snapshot_path)
+    }
+
+    async fn get_full_snapshot_path(
+        &self,
+        snapshots_path: &str,
+        snapshot_name: &str,
+    ) -> CollectionResult<PathBuf> {
+        let absolute_snapshot_dir = PathBuf::from(snapshots_path);
+        let absolute_snapshot_path = absolute_snapshot_dir.join(snapshot_name);
+        Ok(absolute_snapshot_path)
+    }
+
+    async fn get_shard_snapshot_path(
+        &self,
+        _shards_holder: Arc<LockedShardHolder>,
+        _shard_id: u32,
+        _snapshots_path: &Path,
+        snapshot_file_name: impl AsRef<Path>,
+    ) -> CollectionResult<PathBuf> {
+        Ok(snapshot_file_name.as_ref().to_path_buf())
+    }
+
+    async fn ensure_snapshot_is_local(&self, snapshot_path: &Path) -> CollectionResult<()> {
+        snapshot_storage_ops::download_snapshot(&self.client, snapshot_path, snapshot_path).await?;
         Ok(())
     }
 }

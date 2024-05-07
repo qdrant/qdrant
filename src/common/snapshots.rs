@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use collection::collection::Collection;
 use collection::common::sha_256::hash_file;
-use collection::common::snapshots_manager::SnapshotStorageManager;
 use collection::operations::snapshot_ops::{
     ShardSnapshotLocation, SnapshotDescription, SnapshotPriority,
 };
@@ -66,19 +65,16 @@ pub async fn delete_shard_snapshot(
     let collection_pass = access
         .check_collection_access(&collection_name, AccessRequirements::new().write().whole())?;
     let collection = toc.get_collection(&collection_pass).await?;
-    let snapshot_manager = collection.get_snapshots_storage_manager().await;
-    let snapshot_path = match snapshot_manager {
-        SnapshotStorageManager::LocalFS(_) => {
-            collection
-                .get_shard_snapshot_path(shard_id, &snapshot_name)
-                .await?
-        }
-        SnapshotStorageManager::S3(_) => {
-            collection
-                .get_shard_s3_snapshot_path(shard_id, &snapshot_name)
-                .await?
-        }
-    };
+    let snapshot_manager = collection.get_snapshots_storage_manager()?;
+    let snapshot_path = snapshot_manager
+        .get_shard_snapshot_path(
+            collection.shards_holder(),
+            shard_id,
+            collection.snapshots_path(),
+            snapshot_name,
+        )
+        .await?;
+
     check_shard_snapshot_file_exists(&snapshot_path)?;
 
     let _task = tokio::spawn(async move { snapshot_manager.delete_snapshot(&snapshot_path).await });
@@ -138,8 +134,16 @@ pub async fn recover_shard_snapshot(
                     (snapshot_path, snapshot_temp_path)
                 }
 
-                ShardSnapshotLocation::Path(path) => {
-                    let snapshot_path = collection.get_shard_snapshot_path(shard_id, path).await?;
+                ShardSnapshotLocation::Path(snapshot_file_name) => {
+                    let snapshot_storage_manager = collection.get_snapshots_storage_manager()?;
+                    let snapshot_path = snapshot_storage_manager
+                        .get_shard_snapshot_path(
+                            collection.shards_holder(),
+                            shard_id,
+                            collection.snapshots_path(),
+                            snapshot_file_name,
+                        )
+                        .await?;
                     check_shard_snapshot_file_exists(&snapshot_path)?;
                     (snapshot_path, None)
                 }

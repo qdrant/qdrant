@@ -903,8 +903,8 @@ pub enum CollectionError {
     Timeout { description: String },
     #[error("Precondition failed: {description}")]
     PreConditionFailed { description: String },
-    #[error("S3 error: {what}")]
-    S3Error { what: String },
+    #[error("Object Store error: {what}")]
+    ObjectStoreError { what: String },
 }
 
 impl CollectionError {
@@ -940,8 +940,8 @@ impl CollectionError {
         CollectionError::BadShardSelection { description }
     }
 
-    pub fn s3_error(what: impl Into<String>) -> CollectionError {
-        CollectionError::S3Error { what: what.into() }
+    pub fn object_storage_error(what: impl Into<String>) -> CollectionError {
+        CollectionError::ObjectStoreError { what: what.into() }
     }
 
     pub fn forward_proxy_error(peer_id: PeerId, error: impl Into<Self>) -> Self {
@@ -993,7 +993,7 @@ impl CollectionError {
             Self::BadShardSelection { .. } => false,
             Self::InconsistentShardFailure { .. } => false,
             Self::ForwardProxyError { .. } => false,
-            Self::S3Error { .. } => false,
+            Self::ObjectStoreError { .. } => false,
         }
     }
 }

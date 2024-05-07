@@ -127,7 +127,7 @@ impl StorageError {
             CollectionError::PreConditionFailed { .. } => StorageError::PreconditionFailed {
                 description: overriding_description,
             },
-            CollectionError::S3Error { .. } => StorageError::ServiceError {
+            CollectionError::ObjectStoreError { .. } => StorageError::ServiceError {
                 description: overriding_description,
                 backtrace: None,
             },
@@ -175,7 +175,7 @@ impl From<CollectionError> for StorageError {
             CollectionError::PreConditionFailed { .. } => StorageError::PreconditionFailed {
                 description: format!("{err}"),
             },
-            CollectionError::S3Error { .. } => StorageError::ServiceError {
+            CollectionError::ObjectStoreError { .. } => StorageError::ServiceError {
                 description: format!("{err}"),
                 backtrace: None,
             },

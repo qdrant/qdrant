@@ -848,8 +848,8 @@ impl ShardReplicaSet {
         local_shard.update_cutoff(cutoff).await
     }
 
-    pub(crate) async fn get_snapshots_storage_manager(&self) -> SnapshotStorageManager {
-        SnapshotStorageManager::new(self.shared_storage_config.snapshots_config.clone()).await
+    pub(crate) fn get_snapshots_storage_manager(&self) -> CollectionResult<SnapshotStorageManager> {
+        SnapshotStorageManager::new(self.shared_storage_config.snapshots_config.clone())
     }
 }
 
