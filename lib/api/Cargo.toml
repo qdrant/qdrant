@@ -26,6 +26,7 @@ thiserror = "1.0"
 parking_lot = { workspace = true }
 validator = { workspace = true }
 log = "0.4"
+semver = { workspace = true }
 
 common = { path = "../common/common" }
 segment = { path = "../segment" }

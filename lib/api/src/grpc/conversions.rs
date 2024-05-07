@@ -163,7 +163,7 @@ impl From<VersionInfo> for HealthCheckReply {
     fn from(info: VersionInfo) -> Self {
         HealthCheckReply {
             title: info.title,
-            version: info.version,
+            version: info.version.to_string(),
             commit: info.commit,
         }
     }
