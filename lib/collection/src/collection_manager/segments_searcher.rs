@@ -86,7 +86,7 @@ impl SegmentsSearcher {
         // e.g. with 3 segments with the following sampled ranges:
         // s1 - [0.91 -> 0.87]
         // s2 - [0.92 -> 0.86]
-        // s3 - [0.93 -> 0.85]
+        //  - [0.93 -> 0.85]
         // If the top merged scores result range is [0.93 -> 0.86] then we do not know if s1 could have contributed more points at the lower part between [0.87 -> 0.86]
         // In that case, we need to re-run the search without sampling on that segment.
 

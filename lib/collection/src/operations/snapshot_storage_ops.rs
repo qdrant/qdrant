@@ -13,7 +13,7 @@ fn trim_dot_slash(path: &Path) -> CollectionResult<object_store::path::Path> {
     // Get file name by trimming the path.
     // if the path is ./path/to/file.txt, the key should be path/to/file.txt
     let key = path.to_str().ok_or_else(|| {
-        CollectionError::s3_error(format!(
+        CollectionError::object_storage_error(format!(
             "Failed to get key for snapshot: {}",
             path.display()
         ))
@@ -24,10 +24,12 @@ fn trim_dot_slash(path: &Path) -> CollectionResult<object_store::path::Path> {
 fn get_filename(path: &str) -> CollectionResult<String> {
     let path = PathBuf::from(path);
     path.file_name()
-        .ok_or_else(|| CollectionError::s3_error("Failed to get file name".to_string()))
+        .ok_or_else(|| CollectionError::object_storage_error("Failed to get file name".to_string()))
         .and_then(|name| {
             name.to_str()
-                .ok_or_else(|| CollectionError::s3_error("Failed to get file name".to_string()))
+                .ok_or_else(|| {
+                    CollectionError::object_storage_error("Failed to get file name".to_string())
+                })
                 .map(|name| name.to_string())
         })
 }
@@ -42,7 +44,7 @@ pub async fn get_snapshot_description(
         .map_err(|e| CollectionError::service_error(format!("Failed to get head: {}", e)))?;
 
     let name = get_filename(path.to_str().ok_or_else(|| {
-        CollectionError::s3_error(format!(
+        CollectionError::object_storage_error(format!(
             "Failed to get key for snapshot: {}",
             path.display()
         ))
