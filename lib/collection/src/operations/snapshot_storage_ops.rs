@@ -1,16 +1,13 @@
-use std::path::PathBuf;
-use std::{fs::File, path::Path};
-
+use std::fs::File;
 use std::io::{BufReader, Read};
+use std::path::{Path, PathBuf};
 
 use futures::StreamExt;
 use object_store::WriteMultipart;
 use tokio::io::AsyncWriteExt;
 
-use super::{
-    snapshot_ops::SnapshotDescription,
-    types::{CollectionError, CollectionResult},
-};
+use super::snapshot_ops::SnapshotDescription;
+use super::types::{CollectionError, CollectionResult};
 
 fn trim_dot_slash(path: &Path) -> CollectionResult<object_store::path::Path> {
     // Get file name by trimming the path.
