@@ -2,7 +2,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use futures::future::try_join_all;
+use futures::future::{try_join_all, BoxFuture};
+use futures::FutureExt;
 use itertools::Itertools;
 use segment::data_types::order_by::{Direction, OrderBy};
 use segment::types::{
@@ -19,12 +20,78 @@ use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
     CountRequestInternal, CountResult, PointRequestInternal, Record, UpdateResult, UpdateStatus,
 };
+use crate::operations::universal_query::planned_query::{
+    PlannedQuery, PrefetchMerge, PrefetchPlan, PrefetchSource,
+};
 use crate::operations::OperationWithClockTag;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
 use crate::update_handler::{OperationData, UpdateSignal};
 
 impl LocalShard {
+    pub async fn do_planned_query(
+        &self,
+        request: PlannedQuery,
+        search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
+    ) -> CollectionResult<Vec<ScoredPoint>> {
+        let core_results = self
+            .do_search(Arc::clone(&request.batch), search_runtime_handle, timeout)
+            .await?;
+
+        self.recurse_prefetch(&request.merge_plan, &core_results)
+            .await
+
+        // TODO(universal-query): Implement with_vector and with_payload
+    }
+
+    fn recurse_prefetch<'shard, 'query>(
+        &'shard self,
+        prefetch: &'query PrefetchPlan,
+        core_results: &'query Vec<Vec<ScoredPoint>>,
+    ) -> BoxFuture<'query, CollectionResult<Vec<ScoredPoint>>>
+    where
+        'shard: 'query,
+    {
+        async move {
+            let mut sources = Vec::with_capacity(prefetch.sources.len());
+
+            for source in prefetch.sources.iter() {
+                let vec: Vec<ScoredPoint> = match source {
+                    PrefetchSource::BatchIdx(idx) => {
+                        core_results.get(*idx).cloned().unwrap_or_default() // TODO(universal-query): don't clone, by using something like a hashmap instead of a vec
+                    }
+                    PrefetchSource::Prefetch(prefetch) => {
+                        self.recurse_prefetch(prefetch, core_results).await?
+                    }
+                };
+                sources.push(vec);
+            }
+
+            self.merge_prefetches(sources, &prefetch.merge).await
+        }
+        .boxed()
+    }
+
+    async fn merge_prefetches(
+        &self,
+        sources: Vec<Vec<ScoredPoint>>,
+        merge: &PrefetchMerge,
+    ) -> CollectionResult<Vec<ScoredPoint>> {
+        if let Some(_rescore) = merge.rescore.as_ref() {
+            // TODO(universal-query): Implement rescore
+        }
+
+        let top = sources
+            .into_iter()
+            .flatten()
+            .sorted()
+            .take(merge.limit)
+            .collect();
+
+        Ok(top)
+    }
+
     async fn do_search(
         &self,
         core_request: Arc<CoreSearchRequestBatch>,

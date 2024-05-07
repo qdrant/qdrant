@@ -46,6 +46,8 @@ pub trait ShardOperation {
         with_payload: &WithPayload,
         with_vector: &WithVector,
     ) -> CollectionResult<Vec<Record>>;
+
+    // TODO(universal-query): Add `query` operation, which accepts an `Arc<ShardQueryRequest>`
 }
 
 pub type ShardOperationSS = dyn ShardOperation + Send + Sync;

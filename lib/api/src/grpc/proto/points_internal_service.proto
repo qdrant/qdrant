@@ -22,6 +22,7 @@ service PointsInternal {
   rpc Count (CountPointsInternal) returns (CountResponse) {}
   rpc Recommend (RecommendPointsInternal) returns (RecommendResponse) {}
   rpc Get (GetPointsInternal) returns (GetResponse) {}
+  rpc Query (QueryPointsInternal) returns (QueryResponse) {}
 }
 
 
@@ -195,4 +196,40 @@ message GetPointsInternal {
 message CountPointsInternal {
   CountPoints count_points = 1;
   optional uint32 shard_id = 2;
+}
+
+message QueryShardPoints {
+  message Query {
+    oneof score {
+      QueryEnum vector = 1;
+      // TODO(universal-query): Add fusion and order-by
+    }
+  }
+  
+  message Prefetch {
+    Prefetch prefetch = 1;
+    Query query = 2;
+    string using = 3;
+    Filter filter = 4;
+    uint64 limit = 5;
+  }
+
+  Prefetch prefetch = 1;
+  Query query = 2;
+  string using = 3;
+  Filter filter = 4;
+  uint64 limit = 5;
+  uint64 offset = 6;
+  WithPayloadSelector with_payload = 7;
+  WithVectorsSelector with_vectors = 8;
+}
+
+message QueryPointsInternal {
+  QueryShardPoints query_points = 1;
+  optional uint32 shard_id = 2;
+}
+
+message QueryResponse {
+  repeated ScoredPoint result = 1;
+  double time = 2; // Time spent to process
 }
