@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufRead as _, BufReader, Lines};
+use std::mem::size_of;
 use std::path::Path;
 
 use memmap2::Mmap;
@@ -30,6 +31,8 @@ pub struct Csr {
     intptr: Vec<u64>,
 }
 
+const CSR_HEADER_SIZE: usize = size_of::<u64>() * 3;
+
 impl Csr {
     pub fn open(path: impl AsRef<Path>) -> io::Result<Self> {
         Self::from_mmap(open_read_mmap(path.as_ref())?)
@@ -46,11 +49,12 @@ impl Csr {
     }
 
     fn from_mmap(mmap: Mmap) -> io::Result<Self> {
-        let (nrow, ncol, nnz) = transmute_from_u8::<(u64, u64, u64)>(&mmap.as_ref()[..24]);
+        let (nrow, ncol, nnz) =
+            transmute_from_u8::<(u64, u64, u64)>(&mmap.as_ref()[..CSR_HEADER_SIZE]);
         let (nrow, _ncol, nnz) = (*nrow as usize, *ncol as usize, *nnz as usize);
 
         let indptr = Vec::from(transmute_from_u8_to_slice::<u64>(
-            &mmap.as_ref()[24..24 + 8 * (nrow + 1)],
+            &mmap.as_ref()[CSR_HEADER_SIZE..CSR_HEADER_SIZE + size_of::<u64>() * (nrow + 1)],
         ));
         if !indptr.windows(2).all(|w| w[0] <= w[1]) || indptr.last() != Some(&(nnz as u64)) {
             return Err(io::Error::new(
@@ -72,19 +76,19 @@ impl Csr {
         let start = *self.intptr.get_unchecked(row) as usize;
         let end = *self.intptr.get_unchecked(row + 1) as usize;
 
-        let mut pos = 24 + 8 * (self.nrow + 1);
+        let mut pos = CSR_HEADER_SIZE + size_of::<u64>() * (self.nrow + 1);
 
         let indices = transmute_from_u8_to_slice::<u32>(
             self.mmap
                 .as_ref()
-                .get_unchecked(pos + 4 * start..pos + 4 * end),
+                .get_unchecked(pos + size_of::<u32>() * start..pos + size_of::<u32>() * end),
         );
+        pos += size_of::<u32>() * self.nnz;
 
-        pos += 4 * self.nnz;
         let data = transmute_from_u8_to_slice::<f32>(
             self.mmap
                 .as_ref()
-                .get_unchecked(pos + 4 * start..pos + 4 * end),
+                .get_unchecked(pos + size_of::<f32>() * start..pos + size_of::<f32>() * end),
         );
 
         SparseVector::new(indices.to_vec(), data.to_vec())
