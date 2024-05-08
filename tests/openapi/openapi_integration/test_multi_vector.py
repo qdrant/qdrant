@@ -11,13 +11,15 @@ collection_name = 'test_multi_vector_persistence'
 
 
 @pytest.fixture(autouse=True)
-def setup():
-    multivector_collection_setup(collection_name=collection_name)
+def setup(on_disk_vectors):
+    multivector_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
     yield
     drop_collection(collection_name=collection_name)
 
 
-def multivector_collection_setup(collection_name='test_collection'):
+def multivector_collection_setup(
+        collection_name='test_collection',
+        on_disk_vectors=False):
     drop_collection(collection_name=collection_name)
 
     response = request_with_validation(
@@ -29,6 +31,7 @@ def multivector_collection_setup(collection_name='test_collection'):
                 "my-multivec": {
                     "size": 4,
                     "distance": "Dot",
+                    "on_disk": on_disk_vectors,
                     "multivec_config": {
                         "comparator": "max_sim"
                     }
@@ -46,7 +49,7 @@ def multivector_collection_setup(collection_name='test_collection'):
     assert response.ok
 
 
-def test_multi_vector_persisted():
+def test_multi_vector_float_persisted():
     # batch upsert
     response = request_with_validation(
         api='/collections/{collection_name}/points',
@@ -58,19 +61,31 @@ def test_multi_vector_persisted():
                 {
                     "id": 1,
                     "vector": {
-                        "my-multivec": [[0.05, 0.61, 0.76, 0.74]]
+                        "my-multivec": [
+                            [0.05, 0.61, 0.76, 0.74],
+                            [0.05, 0.61, 0.76, 0.74],
+                            [0.05, 0.61, 0.76, 0.74]
+                        ]
                     }
                 },
                 {
                     "id": 2,
                     "vector": {
-                        "my-multivec": [[0.19, 0.81, 0.75, 0.11]]
+                        "my-multivec": [
+                            [0.19, 0.81, 0.75, 0.11],
+                            [0.19, 0.81, 0.75, 0.11],
+                            [0.19, 0.81, 0.75, 0.11]
+                        ]
                     }
                 },
                 {
                     "id": 3,
                     "vector": {
-                        "my-multivec": [[0.36, 0.55, 0.47, 0.94]]
+                        "my-multivec": [
+                            [0.36, 0.55, 0.47, 0.94],
+                            [0.36, 0.55, 0.47, 0.94],
+                            [0.36, 0.55, 0.47, 0.94]
+                        ]
                     }
                 },
             ]
@@ -91,7 +106,7 @@ def test_multi_vector_persisted():
 
     first_point = results[0]
     assert first_point['id'] == 1
-    assert first_point['vector']['my-multivec'] == [[0.05, 0.61, 0.76, 0.74]]
+    assert first_point['vector']['my-multivec'] == [[0.05, 0.61, 0.76, 0.74], [0.05, 0.61, 0.76, 0.74], [0.05, 0.61, 0.76, 0.74]]
 
     # retrieve by id
     response = request_with_validation(
@@ -103,7 +118,26 @@ def test_multi_vector_persisted():
     point = response.json()['result']
 
     assert point['id'] == 2
-    assert point['vector']['my-multivec'] == [[0.19, 0.81, 0.75, 0.11]]
+    assert point['vector']['my-multivec'] == [[0.19, 0.81, 0.75, 0.11], [0.19, 0.81, 0.75, 0.11], [0.19, 0.81, 0.75, 0.11]]
+
+    # delete by id
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/delete',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "points": [2]
+        }
+    )
+    assert response.ok
+
+    # retrieve by id after deletion
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': 2},
+    )
+    assert not response.ok
 
 
 def test_multi_vector_validation():
