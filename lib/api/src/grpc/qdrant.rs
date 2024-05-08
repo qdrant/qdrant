@@ -3705,13 +3705,13 @@ pub struct SparseIndices {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Vector {
-    /// Vector data (flatten for multi-dimensional vectors)
+    /// Vector data (flatten for multi vectors)
     #[prost(float, repeated, tag = "1")]
     pub data: ::prost::alloc::vec::Vec<f32>,
     /// Sparse indices for sparse vectors
     #[prost(message, optional, tag = "2")]
     pub indices: ::core::option::Option<SparseIndices>,
-    /// Number of tokens in the vector
+    /// Number of vectors per multi vector
     #[prost(uint32, optional, tag = "3")]
     pub vector_count: ::core::option::Option<u32>,
 }

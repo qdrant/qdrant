@@ -3532,9 +3532,9 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| data | [float](#float) | repeated | Vector data (flatten for multi-dimensional vectors) |
+| data | [float](#float) | repeated | Vector data (flatten for multi vectors) |
 | indices | [SparseIndices](#qdrant-SparseIndices) | optional | Sparse indices for sparse vectors |
-| vector_count | [uint32](#uint32) | optional | Number of tokens in the vector |
+| vector_count | [uint32](#uint32) | optional | Number of vectors per multi vector |
 
 
 
