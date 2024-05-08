@@ -30,8 +30,8 @@ use serde_json::json;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::sparse_vector_fixture::{random_full_sparse_vector, random_sparse_vector};
 use sparse::common::types::DimId;
+use sparse::index::inverted_index::inverted_index_immutable_ram::InvertedIndexImmutableRam;
 use sparse::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
-use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::inverted_index::InvertedIndex;
 use tempfile::Builder;
 
@@ -550,14 +550,15 @@ fn handling_empty_sparse_vectors() {
     let mut rnd = StdRng::seed_from_u64(42);
 
     let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
-    let mut sparse_vector_index: SparseVectorIndex<InvertedIndexRam> = fixture_open_sparse_index(
-        data_dir.path(),
-        NUM_VECTORS,
-        DEFAULT_SPARSE_FULL_SCAN_THRESHOLD,
-        SparseIndexType::ImmutableRam,
-        &stopped,
-    )
-    .unwrap();
+    let mut sparse_vector_index: SparseVectorIndex<InvertedIndexImmutableRam> =
+        fixture_open_sparse_index(
+            data_dir.path(),
+            NUM_VECTORS,
+            DEFAULT_SPARSE_FULL_SCAN_THRESHOLD,
+            SparseIndexType::ImmutableRam,
+            &stopped,
+        )
+        .unwrap();
     let mut borrowed_storage = sparse_vector_index.vector_storage().borrow_mut();
 
     // add empty points to storage
@@ -679,20 +680,21 @@ fn sparse_vector_index_persistence_test() {
         .prefix("inverted_index_ram")
         .tempdir()
         .unwrap();
-    let mut sparse_vector_index_ram: SparseVectorIndex<InvertedIndexRam> = SparseVectorIndex::open(
-        SparseIndexConfig {
-            full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
-            index_type: SparseIndexType::ImmutableRam,
-        },
-        segment.id_tracker.clone(),
-        segment.vector_data[SPARSE_VECTOR_NAME]
-            .vector_storage
-            .clone(),
-        segment.payload_index.clone(),
-        inverted_index_dir.path(),
-        &stopped,
-    )
-    .unwrap();
+    let mut sparse_vector_index_ram: SparseVectorIndex<InvertedIndexImmutableRam> =
+        SparseVectorIndex::open(
+            SparseIndexConfig {
+                full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
+                index_type: SparseIndexType::ImmutableRam,
+            },
+            segment.id_tracker.clone(),
+            segment.vector_data[SPARSE_VECTOR_NAME]
+                .vector_storage
+                .clone(),
+            segment.payload_index.clone(),
+            inverted_index_dir.path(),
+            &stopped,
+        )
+        .unwrap();
     // call build index to create inverted index files
     sparse_vector_index_ram
         .build_index(permit, &stopped)
@@ -700,20 +702,21 @@ fn sparse_vector_index_persistence_test() {
 
     // reload sparse index from file
     drop(sparse_vector_index_ram);
-    let sparse_vector_index_ram: SparseVectorIndex<InvertedIndexRam> = SparseVectorIndex::open(
-        SparseIndexConfig {
-            full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
-            index_type: SparseIndexType::ImmutableRam,
-        },
-        segment.id_tracker.clone(),
-        segment.vector_data[SPARSE_VECTOR_NAME]
-            .vector_storage
-            .clone(),
-        segment.payload_index.clone(),
-        inverted_index_dir.path(),
-        &stopped,
-    )
-    .unwrap();
+    let sparse_vector_index_ram: SparseVectorIndex<InvertedIndexImmutableRam> =
+        SparseVectorIndex::open(
+            SparseIndexConfig {
+                full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
+                index_type: SparseIndexType::ImmutableRam,
+            },
+            segment.id_tracker.clone(),
+            segment.vector_data[SPARSE_VECTOR_NAME]
+                .vector_storage
+                .clone(),
+            segment.payload_index.clone(),
+            inverted_index_dir.path(),
+            &stopped,
+        )
+        .unwrap();
 
     // check that the loaded index performs the same search
     let search_after_reload_result = sparse_vector_index_ram
@@ -835,41 +838,13 @@ fn sparse_vector_index_files() {
 
     // files for immutable RAM index
     let ram_files = sparse_vector_ram_index.files();
-    // sparse index config + inverted index config + inverted index data + tracker
-    assert_eq!(ram_files.len(), 4);
+    // sparse index config + version + inverted index config + inverted index data + tracker
+    assert_eq!(ram_files.len(), 5);
 
     // files for mmap index
     let mmap_files = sparse_vector_mmap_index.files();
-    // sparse index config + inverted index config + inverted index data + tracker
-    assert_eq!(mmap_files.len(), 4);
-
-    // create mutable RAM sparse vector index
-    let mutable_index_dir = Builder::new().prefix("mmap_index_dir").tempdir().unwrap();
-    let mut sparse_index_config = sparse_vector_ram_index.config();
-    sparse_index_config.index_type = SparseIndexType::MutableRam;
-    let mut sparse_vector_mutable_index: SparseVectorIndex<InvertedIndexRam> =
-        SparseVectorIndex::open(
-            sparse_index_config,
-            sparse_vector_ram_index.id_tracker().clone(),
-            sparse_vector_ram_index.vector_storage().clone(),
-            sparse_vector_ram_index.payload_index().clone(),
-            mutable_index_dir.path(),
-            &stopped,
-        )
-        .unwrap();
-
-    let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
-    sparse_vector_mutable_index
-        .build_index(permit, &stopped)
-        .unwrap();
-    assert_eq!(
-        sparse_vector_mutable_index.indexed_vector_count(),
-        sparse_vector_mmap_index.indexed_vector_count(),
-    );
-
-    // files for mutable index
-    let mutable_index_files = sparse_vector_mutable_index.files();
-    assert_eq!(mutable_index_files.len(), 1); // only the sparse index config file
+    // sparse index config + version + inverted index config + inverted index data + tracker
+    assert_eq!(mmap_files.len(), 5);
 }
 
 #[test]

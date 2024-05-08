@@ -44,7 +44,6 @@ pub struct SparseVectorIndex<TInvertedIndex: InvertedIndex> {
     path: PathBuf,
     inverted_index: TInvertedIndex,
     searches_telemetry: SparseSearchesTelemetry,
-    is_appendable: bool,
     indices_tracker: IndicesTracker,
     scores_memory_pool: ScoresMemoryPool,
 }
@@ -89,10 +88,9 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     ) -> OperationResult<Self> {
         // create directory if it does not exist
         create_dir_all(path)?;
-        let is_appendable = config.index_type == SparseIndexType::MutableRam;
 
         let config_path = SparseIndexConfig::get_config_path(path);
-        let (config, inverted_index, indices_tracker) = if is_appendable {
+        let (config, inverted_index, indices_tracker) = if !config.index_type.is_persisted() {
             // RAM mutable case - build inverted index from scratch and use provided config
             let (inverted_index, indices_tracker) = Self::build_inverted_index(
                 id_tracker.clone(),
@@ -127,7 +125,6 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             path,
             inverted_index,
             searches_telemetry,
-            is_appendable,
             indices_tracker,
             scores_memory_pool,
         })
@@ -490,7 +487,7 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         self.indices_tracker = indices_tracker;
 
         // save inverted index
-        if !self.is_appendable {
+        if self.config.index_type.is_persisted() {
             self.indices_tracker.save(&self.path)?;
             self.inverted_index.save(&self.path)?;
         }
@@ -527,7 +524,7 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
     }
 
     fn update_vector(&mut self, id: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
-        if !self.is_appendable {
+        if self.config.index_type != SparseIndexType::MutableRam {
             return Err(OperationError::service_error(
                 "Cannot update vector in non-appendable index",
             ));

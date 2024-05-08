@@ -1808,6 +1808,9 @@ impl SegmentEntry for Segment {
                     VectorIndexEnum::SparseRam(sparse_index) => {
                         sparse_index.fill_idf_statistics(idf);
                     }
+                    VectorIndexEnum::SparseImmutableRam(sparse_index) => {
+                        sparse_index.fill_idf_statistics(idf);
+                    }
                     VectorIndexEnum::SparseMmap(sparse_index) => {
                         sparse_index.fill_idf_statistics(idf);
                     }

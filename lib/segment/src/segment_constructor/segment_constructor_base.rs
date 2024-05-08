@@ -380,6 +380,24 @@ fn create_segment(
         }
 
         let vector_index = match sparse_vector_config.index.index_type {
+            SparseIndexType::MutableRam => sp(VectorIndexEnum::SparseRam(SparseVectorIndex::open(
+                sparse_vector_config.index,
+                id_tracker.clone(),
+                vector_storage.clone(),
+                payload_index.clone(),
+                &vector_index_path,
+                stopped,
+            )?)),
+            SparseIndexType::ImmutableRam => sp(VectorIndexEnum::SparseImmutableRam(
+                SparseVectorIndex::open(
+                    sparse_vector_config.index,
+                    id_tracker.clone(),
+                    vector_storage.clone(),
+                    payload_index.clone(),
+                    &vector_index_path,
+                    stopped,
+                )?,
+            )),
             SparseIndexType::Mmap => sp(VectorIndexEnum::SparseMmap(SparseVectorIndex::open(
                 sparse_vector_config.index,
                 id_tracker.clone(),
@@ -388,16 +406,6 @@ fn create_segment(
                 &vector_index_path,
                 stopped,
             )?)),
-            SparseIndexType::MutableRam | SparseIndexType::ImmutableRam => {
-                sp(VectorIndexEnum::SparseRam(SparseVectorIndex::open(
-                    sparse_vector_config.index,
-                    id_tracker.clone(),
-                    vector_storage.clone(),
-                    payload_index.clone(),
-                    &vector_index_path,
-                    stopped,
-                )?))
-            }
         };
 
         check_process_stopped(stopped)?;
