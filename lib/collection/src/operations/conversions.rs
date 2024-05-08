@@ -20,7 +20,9 @@ use segment::data_types::vectors::{
     BatchVectorStruct, Named, NamedQuery, NamedVectorStruct, Vector, VectorStruct,
     DEFAULT_VECTOR_NAME,
 };
-use segment::types::{DateTimeWrapper, Distance, QuantizationConfig, ScoredPoint};
+use segment::types::{
+    DateTimeWrapper, Distance, MultiVectorConfig, QuantizationConfig, ScoredPoint,
+};
 use segment::vector_storage::query::context_query::{ContextPair, ContextQuery};
 use segment::vector_storage::query::discovery_query::DiscoveryQuery;
 use segment::vector_storage::query::reco_query::RecoQuery;
@@ -553,7 +555,10 @@ impl TryFrom<api::grpc::qdrant::VectorParams> for VectorParams {
                 .transpose()?,
             on_disk: vector_params.on_disk,
             datatype: convert_datatype_from_proto(vector_params.datatype)?,
-            multivec_config: None, // TODO(colbert) add multivector config
+            multivec_config: vector_params
+                .multivector_config
+                .map(MultiVectorConfig::try_from)
+                .transpose()?,
         })
     }
 }
@@ -1661,6 +1666,9 @@ impl From<VectorParams> for api::grpc::qdrant::VectorParams {
             datatype: value
                 .datatype
                 .map(|dt| api::grpc::qdrant::Datatype::from(dt).into()),
+            multivector_config: value
+                .multivec_config
+                .map(api::grpc::qdrant::MultiVectorConfig::from),
         }
     }
 }

@@ -43,6 +43,7 @@
     - [ListCollectionsResponse](#qdrant-ListCollectionsResponse)
     - [LocalShardInfo](#qdrant-LocalShardInfo)
     - [MoveShard](#qdrant-MoveShard)
+    - [MultiVectorConfig](#qdrant-MultiVectorConfig)
     - [OptimizerStatus](#qdrant-OptimizerStatus)
     - [OptimizersConfigDiff](#qdrant-OptimizersConfigDiff)
     - [PayloadIndexParams](#qdrant-PayloadIndexParams)
@@ -80,6 +81,7 @@
     - [Datatype](#qdrant-Datatype)
     - [Distance](#qdrant-Distance)
     - [Modifier](#qdrant-Modifier)
+    - [MultiVectorComparator](#qdrant-MultiVectorComparator)
     - [PayloadSchemaType](#qdrant-PayloadSchemaType)
     - [QuantizationType](#qdrant-QuantizationType)
     - [ReplicaState](#qdrant-ReplicaState)
@@ -899,6 +901,21 @@
 
 
 
+<a name="qdrant-MultiVectorConfig"></a>
+
+### MultiVectorConfig
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| comparator | [MultiVectorComparator](#qdrant-MultiVectorComparator) |  | Comparator for multi-vector search |
+
+
+
+
+
+
 <a name="qdrant-OptimizerStatus"></a>
 
 ### OptimizerStatus
@@ -1313,6 +1330,7 @@ Note: 1kB = 1 vector of size 256. |
 | quantization_config | [QuantizationConfig](#qdrant-QuantizationConfig) | optional | Configuration of vector quantization config. If omitted - the collection configuration will be used |
 | on_disk | [bool](#bool) | optional | If true - serve vectors from disk. If set to false, the vectors will be loaded in RAM. |
 | datatype | [Datatype](#qdrant-Datatype) | optional | Data type of the vectors |
+| multivector_config | [MultiVectorConfig](#qdrant-MultiVectorConfig) | optional | Configuration for multi-vector search |
 
 
 
@@ -1515,6 +1533,17 @@ Note: 1kB = 1 vector of size 256. |
 | ---- | ------ | ----------- |
 | None | 0 |  |
 | Idf | 1 | Apply Inverse Document Frequency |
+
+
+
+<a name="qdrant-MultiVectorComparator"></a>
+
+### MultiVectorComparator
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| MaxSim | 0 |  |
 
 
 
@@ -3503,8 +3532,9 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| data | [float](#float) | repeated |  |
-| indices | [SparseIndices](#qdrant-SparseIndices) | optional |  |
+| data | [float](#float) | repeated | Vector data (flatten for multi vectors) |
+| indices | [SparseIndices](#qdrant-SparseIndices) | optional | Sparse indices for sparse vectors |
+| vectors_count | [uint32](#uint32) | optional | Number of vectors per multi vector |
 
 
 
