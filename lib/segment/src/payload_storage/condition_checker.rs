@@ -12,7 +12,7 @@ use crate::types::{
 
 /// Threshold representing the point to which iterating through an IndexSet is more efficient than using hashing.
 /// For sets smaller than this threshold iterating outperformes hashing.
-/// <For more information see https://github.com/qdrant/qdrant/pull/3525>
+/// For more information see <https://github.com/qdrant/qdrant/pull/3525>.
 pub const INDEXSET_ITER_THRESHOLD: usize = 13;
 
 pub trait ValueChecker {

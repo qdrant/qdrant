@@ -355,7 +355,7 @@ pub fn validate_geo_polygon_interiors(
 }
 
 /// Validate that the timestamp is within the range specified in the protobuf docs.
-/// https://protobuf.dev/reference/protobuf/google.protobuf/#timestamp
+/// <https://protobuf.dev/reference/protobuf/google.protobuf/#timestamp>
 pub fn validate_timestamp(ts: &Option<prost_wkt_types::Timestamp>) -> Result<(), ValidationError> {
     let Some(ts) = ts else {
         return Ok(());
