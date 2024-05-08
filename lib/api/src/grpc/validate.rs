@@ -235,20 +235,24 @@ impl Validate for grpc::FieldCondition {
 
 impl Validate for grpc::Vector {
     fn validate(&self) -> Result<(), ValidationErrors> {
-        // sparse vector
-        if let Some(indices) = &self.indices {
-            return sparse::common::sparse_vector::validate_sparse_vector_impl(
+        match (&self.indices, self.vector_count) {
+            (Some(_), Some(_)) => {
+                let mut errors = ValidationErrors::new();
+                errors.add(
+                    "indices",
+                    ValidationError::new("`indices` and `vector_count` cannot be both specified"),
+                );
+                Err(errors)
+            }
+            (Some(indices), None) => sparse::common::sparse_vector::validate_sparse_vector_impl(
                 &indices.data,
                 &self.data,
-            );
+            ),
+            (None, Some(vector_count)) => {
+                common::validation::validate_multi_vector_len(vector_count, &self.data)
+            }
+            (None, None) => Ok(()),
         }
-
-        // multivector
-        if let Some(vector_count) = self.vector_count {
-            return common::validation::validate_multi_vector_len(vector_count, &self.data);
-        }
-
-        Ok(())
     }
 }
 
