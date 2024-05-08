@@ -10,7 +10,7 @@ COLL_NAME = "test_collection"
 @pytest.fixture(scope="module")
 def setup(tmp_path_factory: pytest.TempPathFactory):
     extra_env = {
-        "QDRANT_SLOW_SEARCH_SECS": "0.001",  # "Always" try to trigger slow search issue
+        "QDRANT__SERVICE__SLOW_QUERY_SECS": "0.001",  # "Always" try to trigger slow search issue
     }
 
     tmp_path = tmp_path_factory.mktemp("qdrant")

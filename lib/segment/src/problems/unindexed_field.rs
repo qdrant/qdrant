@@ -25,18 +25,14 @@ pub struct UnindexedField {
     instance_id: String,
 }
 
-impl UnindexedField {
-    pub fn slow_search_threshold() -> Duration {
-        static SLOW_SEARCH_THRESHOLD: OnceLock<Duration> = OnceLock::new();
+/// Don't use this directly, use `UnindexedField::slow_query_threshold()` instead
+pub static SLOW_QUERY_THRESHOLD: OnceLock<Duration> = OnceLock::new();
 
-        *SLOW_SEARCH_THRESHOLD.get_or_init(|| {
-            Duration::from_secs_f32(
-                std::env::var("QDRANT_SLOW_SEARCH_SECS")
-                    .ok()
-                    .and_then(|var| var.parse::<f32>().ok())
-                    .unwrap_or(0.3),
-            )
-        })
+impl UnindexedField {
+    const DEFAULT_SLOW_QUERY_SECS: f32 = 1.2;
+
+    pub fn slow_query_threshold() -> Duration {
+        *SLOW_QUERY_THRESHOLD.get_or_init(|| Duration::from_secs_f32(Self::DEFAULT_SLOW_QUERY_SECS))
     }
 
     pub fn get_instance_id(collection_name: &str, field_name: &JsonPathV2) -> String {

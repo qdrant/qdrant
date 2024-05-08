@@ -289,7 +289,7 @@ impl Collection {
         duration: Duration,
         filters: impl Iterator<Item = Option<&'a Filter>>,
     ) {
-        if duration > segment::problems::UnindexedField::slow_search_threshold() {
+        if duration > segment::problems::UnindexedField::slow_query_threshold() {
             let filters = filters.flatten().cloned().collect::<Vec<_>>();
 
             let schema = self.payload_index_schema.read().schema.clone();
