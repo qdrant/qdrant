@@ -235,12 +235,12 @@ impl Validate for grpc::FieldCondition {
 
 impl Validate for grpc::Vector {
     fn validate(&self) -> Result<(), ValidationErrors> {
-        match (&self.indices, self.vector_count) {
+        match (&self.indices, self.vectors_count) {
             (Some(_), Some(_)) => {
                 let mut errors = ValidationErrors::new();
                 errors.add(
                     "indices",
-                    ValidationError::new("`indices` and `vector_count` cannot be both specified"),
+                    ValidationError::new("`indices` and `vectors_count` cannot be both specified"),
                 );
                 Err(errors)
             }
@@ -248,8 +248,8 @@ impl Validate for grpc::Vector {
                 &indices.data,
                 &self.data,
             ),
-            (None, Some(vector_count)) => {
-                common::validation::validate_multi_vector_len(vector_count, &self.data)
+            (None, Some(vectors_count)) => {
+                common::validation::validate_multi_vector_len(vectors_count, &self.data)
             }
             (None, None) => Ok(()),
         }

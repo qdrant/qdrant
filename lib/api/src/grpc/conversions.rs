@@ -480,21 +480,21 @@ impl From<segment::data_types::vectors::Vector> for Vector {
             segment::data_types::vectors::Vector::Dense(vector) => Self {
                 data: vector,
                 indices: None,
-                vector_count: None,
+                vectors_count: None,
             },
             segment::data_types::vectors::Vector::Sparse(vector) => Self {
                 data: vector.values,
                 indices: Some(SparseIndices {
                     data: vector.indices,
                 }),
-                vector_count: None,
+                vectors_count: None,
             },
             segment::data_types::vectors::Vector::MultiDense(vector) => {
                 let vector_count = vector.multi_vectors().count() as u32;
                 Self {
                     data: vector.flattened_vectors,
                     indices: None,
-                    vector_count: Some(vector_count),
+                    vectors_count: Some(vector_count),
                 }
             }
         }
@@ -518,7 +518,7 @@ impl TryFrom<Vector> for segment::data_types::vectors::Vector {
         }
 
         // multi vector
-        if let Some(vector_count) = vector.vector_count {
+        if let Some(vector_count) = vector.vectors_count {
             if vector_count == 0 {
                 return Err(Status::invalid_argument(
                     "Vector count should be greater than 0",
@@ -620,11 +620,6 @@ impl TryFrom<Vectors> for segment::data_types::vectors::VectorStruct {
         match vectors.vectors_options {
             Some(vectors_options) => Ok(match vectors_options {
                 VectorsOptions::Vector(vector) => {
-                    if vector.vector_count.is_some() {
-                        return Err(Status::invalid_argument(
-                            "Multivector must be named".to_string(),
-                        ));
-                    }
                     if vector.indices.is_some() {
                         return Err(Status::invalid_argument(
                             "Sparse vector must be named".to_string(),

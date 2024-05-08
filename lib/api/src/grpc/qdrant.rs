@@ -3713,7 +3713,7 @@ pub struct Vector {
     pub indices: ::core::option::Option<SparseIndices>,
     /// Number of vectors per multi vector
     #[prost(uint32, optional, tag = "3")]
-    pub vector_count: ::core::option::Option<u32>,
+    pub vectors_count: ::core::option::Option<u32>,
 }
 /// ---------------------------------------------
 /// ----------------- ShardKeySelector ----------

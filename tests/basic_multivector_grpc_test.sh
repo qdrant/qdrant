@@ -43,8 +43,8 @@ $docker_grpcurl -d '{
         "vectors": {
           "vectors": {
             "my-multivec": {
-              "data": [0.05, 0.61, 0.76, 0.74],
-              "vector_count": 1
+              "data": [0.05, 0.61, 0.76, 0.74, 0.05, 0.61, 0.76, 0.74],
+              "vectors_count": 2
             }
           }
         }
@@ -63,8 +63,8 @@ $docker_grpcurl -d '{
          "vectors": {
            "vectors": {
              "my-multivec": {
-               "data": [0.19, 0.81, 0.75, 0.11],
-               "vector_count": 1
+               "data": [0.19, 0.81, 0.75, 0.11, 0.19, 0.81, 0.75, 0.11],
+               "vectors_count": 2
              }
            }
          }
@@ -77,8 +77,8 @@ $docker_grpcurl -d '{
         "vectors": {
           "vectors": {
             "my-multivec": {
-               "data": [0.36, 0.55, 0.47, 0.94],
-               "vector_count": 1
+               "data": [0.36, 0.55, 0.47, 0.94, 0.36, 0.55, 0.47, 0.94],
+               "vectors_count": 2
             }
           }
         }
@@ -91,8 +91,8 @@ $docker_grpcurl -d '{
         "vectors": {
           "vectors": {
             "my-multivec": {
-              "data": [0.18, 0.01, 0.85, 0.80],
-              "vector_count": 1
+              "data": [0.18, 0.01, 0.85, 0.80, 0.18, 0.01, 0.85, 0.80],
+              "vectors_count": 2
             }
           }
         }
@@ -105,8 +105,8 @@ $docker_grpcurl -d '{
         "vectors": {
           "vectors": {
             "my-multivec": {
-              "data": [0.24, 0.18, 0.22, 0.44],
-              "vector_count": 1
+              "data": [0.24, 0.18, 0.22, 0.44, 0.24, 0.18, 0.22, 0.44],
+              "vectors_count": 2
             }
           }
         }
@@ -119,8 +119,8 @@ $docker_grpcurl -d '{
         "vectors": {
           "vectors": {
             "my-multivec": {
-              "data": [0.35, 0.08, 0.11, 0.44],
-              "vector_count": 1
+              "data": [0.35, 0.08, 0.11, 0.44, 0.35, 0.08, 0.11, 0.44],
+              "vectors_count": 2
             }
           }
         }
@@ -154,3 +154,92 @@ $docker_grpcurl -d '{
   "with_vectors": {"enable": true},
   "ids": [{ "num": 2 }, { "num": 3 }, { "num": 4 }]
 }' $QDRANT_HOST qdrant.Points/Get
+
+# validate inputs
+set +e
+
+response=$(
+  $docker_grpcurl -d '{
+    "collection_name": "test_multivector_collection",
+    "wait": true,
+    "ordering": null,
+    "points": [
+      {
+        "id": { "num": 5 },
+        "vectors": {
+          "vectors": {
+            "vectors": {
+              "my-multivec": {
+                "data": [0.05, 0.61, 0.76, 0.74, 0.05, 0.61, 0.76, 0.74],
+                "vectors_count": 1
+              }
+            }
+          }
+        }
+      }
+    ]
+  }' $QDRANT_HOST qdrant.Points/Upsert 2>&1
+)
+
+if [[ $response != *"Wrong input: Vector inserting error: expected dim: 4, got 8"* ]]; then
+    echo Unexpected response, expected validation error: "$response"
+    exit 1
+fi
+
+response=$(
+  $docker_grpcurl -d '{
+    "collection_name": "test_multivector_collection",
+    "wait": true,
+    "ordering": null,
+    "points": [
+      {
+        "id": { "num": 5 },
+        "vectors": {
+          "vectors": {
+            "vectors": {
+              "my-multivec": {
+                "data": [0.05, 0.61, 0.76, 0.74, 0.05, 0.61, 0.76],
+                "vectors_count": 2
+              }
+            }
+          }
+        }
+      }
+    ]
+  }' $QDRANT_HOST qdrant.Points/Upsert 2>&1
+)
+
+if [[ $response != *"Validation error: invalid dense vector length for vectors count"* ]]; then
+    echo Unexpected response, expected validation error: "$response"
+    exit 1
+fi
+
+response=$(
+  $docker_grpcurl -d '{
+    "collection_name": "test_multivector_collection",
+    "wait": true,
+    "ordering": null,
+    "points": [
+      {
+        "id": { "num": 5 },
+        "vectors": {
+          "vectors": {
+            "vectors": {
+              "my-multivec": {
+                "data": [0.05, 0.61, 0.76, 0.74, 0.05, 0.61, 0.76, 0.74],
+                "vectors_count": 0
+              }
+            }
+          }
+        }
+      }
+    ]
+  }' $QDRANT_HOST qdrant.Points/Upsert 2>&1
+)
+
+if [[ $response != *"vectors count must be greater than 0"* ]]; then
+    echo Unexpected response, expected validation error: "$response"
+    exit 1
+fi
+
+set -e

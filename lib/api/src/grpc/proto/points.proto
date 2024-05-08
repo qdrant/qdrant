@@ -49,7 +49,7 @@ message SparseIndices {
 message Vector {
   repeated float data = 1; // Vector data (flatten for multi vectors)
   optional SparseIndices indices = 2; // Sparse indices for sparse vectors
-  optional uint32 vector_count = 3; // Number of vectors per multi vector
+  optional uint32 vectors_count = 3; // Number of vectors per multi vector
 }
 
 // ---------------------------------------------

@@ -181,15 +181,25 @@ pub fn validate_multi_vector<T>(multivec: &[Vec<T>]) -> Result<(), ValidationErr
 }
 
 pub fn validate_multi_vector_len(
-    vector_count: u32,
+    vectors_count: u32,
     flatten_dense_vector: &[f32],
 ) -> Result<(), ValidationErrors> {
-    let dense_vector_len = flatten_dense_vector.len();
-    if dense_vector_len % vector_count as usize != 0 {
+    if vectors_count == 0 {
         let mut errors = ValidationErrors::default();
-        let mut err = ValidationError::new("invalid dense vector length for vector count");
-        err.add_param(Cow::from("len"), &dense_vector_len);
-        err.add_param(Cow::from("vector_count"), &vector_count);
+        let mut err = ValidationError::new("invalid_vector_count");
+        err.add_param(
+            Cow::from("vectors_count"),
+            &"vectors count must be greater than 0",
+        );
+        errors.add("data", err);
+        return Err(errors);
+    }
+    let dense_vector_len = flatten_dense_vector.len();
+    if dense_vector_len % vectors_count as usize != 0 {
+        let mut errors = ValidationErrors::default();
+        let mut err = ValidationError::new("invalid dense vector length for vectors count");
+        err.add_param(Cow::from("vector_len"), &dense_vector_len);
+        err.add_param(Cow::from("vectors_count"), &vectors_count);
         errors.add("data", err);
         Err(errors)
     } else {
