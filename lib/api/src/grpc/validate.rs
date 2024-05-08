@@ -70,20 +70,7 @@ impl Validate for grpc::vectors_config::Config {
     fn validate(&self) -> Result<(), ValidationErrors> {
         use grpc::vectors_config::Config;
         match self {
-            Config::Params(params) => {
-                if params.multivector_config.is_some() {
-                    let mut err = ValidationErrors::new();
-                    err.add(
-                        "multivector_config",
-                        ValidationError::new(
-                            "Multivector configuration is not supported for anonymous vectors",
-                        ),
-                    );
-                    return Err(err);
-                }
-
-                params.validate()
-            }
+            Config::Params(params) => params.validate(),
             Config::ParamsMap(params_map) => params_map.validate(),
         }
     }
