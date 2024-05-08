@@ -509,6 +509,13 @@ message MoveShard {
   optional ShardTransferMethod method = 4;
 }
 
+message ReplicateShard {
+  uint32 shard_id = 1; // Local shard id
+  uint64 from_peer_id = 2;
+  uint64 to_peer_id = 3;
+  optional ShardTransferMethod method = 4;
+}
+
 message AbortShardTransfer {
   uint32 shard_id = 1; // Local shard id
   uint64 from_peer_id = 2;
@@ -548,7 +555,7 @@ message UpdateCollectionClusterSetupRequest {
   string collection_name = 1; // Name of the collection
   oneof operation {
     MoveShard move_shard = 2;
-    MoveShard replicate_shard = 3;
+    ReplicateShard replicate_shard = 3;
     AbortShardTransfer abort_transfer = 4;
     Replica drop_replica = 5;
     CreateShardKey create_shard_key = 7;

@@ -130,6 +130,12 @@ impl Validate for grpc::MoveShard {
     }
 }
 
+impl Validate for grpc::ReplicateShard {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        validate_shard_different_peers(self.from_peer_id, self.to_peer_id)
+    }
+}
+
 impl Validate for crate::grpc::qdrant::AbortShardTransfer {
     fn validate(&self) -> Result<(), ValidationErrors> {
         validate_shard_different_peers(self.from_peer_id, self.to_peer_id)

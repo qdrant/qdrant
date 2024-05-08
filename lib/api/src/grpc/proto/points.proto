@@ -468,6 +468,12 @@ message PointsUpdateOperation {
       optional ShardKeySelector shard_key_selector = 3; // Option for custom sharding to specify used shard keys
       optional string key = 4; // Option for indicate property of payload
   }
+  message OverwritePayload {
+      map<string, Value> payload = 1;
+      optional PointsSelector points_selector = 2; // Affected points
+      optional ShardKeySelector shard_key_selector = 3; // Option for custom sharding to specify used shard keys
+      optional string key = 4; // Option for indicate property of payload
+  }
   message DeletePayload {
       repeated string keys = 1;
       optional PointsSelector points_selector = 2; // Affected points
@@ -495,7 +501,7 @@ message PointsUpdateOperation {
     PointStructList upsert = 1;
     PointsSelector delete_deprecated = 2 [deprecated=true];
     SetPayload set_payload = 3;
-    SetPayload overwrite_payload = 4;
+    OverwritePayload overwrite_payload = 4;
     DeletePayload delete_payload = 5;
     PointsSelector clear_payload_deprecated = 6 [deprecated=true];
     UpdateVectors update_vectors = 7;
