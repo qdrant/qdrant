@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -37,16 +37,44 @@ use crate::vector_storage::{
 };
 
 pub struct SparseVectorIndex<TInvertedIndex: InvertedIndex> {
-    pub config: SparseIndexConfig,
-    pub id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
-    pub vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
-    pub payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
+    config: SparseIndexConfig,
+    id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+    vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
+    payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     path: PathBuf,
-    pub inverted_index: TInvertedIndex,
+    inverted_index: TInvertedIndex,
     searches_telemetry: SparseSearchesTelemetry,
     is_appendable: bool,
-    pub indices_tracker: IndicesTracker,
+    indices_tracker: IndicesTracker,
     scores_memory_pool: ScoresMemoryPool,
+}
+
+/// Getters for internals, used for testing.
+#[cfg(feature = "testing")]
+impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
+    pub fn config(&self) -> SparseIndexConfig {
+        self.config
+    }
+
+    pub fn id_tracker(&self) -> &Arc<AtomicRefCell<IdTrackerSS>> {
+        &self.id_tracker
+    }
+
+    pub fn vector_storage(&self) -> &Arc<AtomicRefCell<VectorStorageEnum>> {
+        &self.vector_storage
+    }
+
+    pub fn payload_index(&self) -> &Arc<AtomicRefCell<StructPayloadIndex>> {
+        &self.payload_index
+    }
+
+    pub fn inverted_index(&self) -> &TInvertedIndex {
+        &self.inverted_index
+    }
+
+    pub fn indices_tracker(&self) -> &IndicesTracker {
+        &self.indices_tracker
+    }
 }
 
 impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
@@ -155,8 +183,9 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
 
     /// Returns the maximum number of results that can be returned by the index for a given sparse vector
     /// Warning: the cost of this function grows with the number of dimensions in the query vector
+    #[cfg(feature = "testing")]
     pub fn max_result_count(&self, query_vector: &SparseVector) -> usize {
-        let mut unique_record_ids = HashSet::new();
+        let mut unique_record_ids = std::collections::HashSet::new();
         for dim_id in query_vector.indices.iter() {
             if let Some(dim_id) = self.indices_tracker.remap_index(*dim_id) {
                 if let Some(posting_list) = self.inverted_index.get(&dim_id) {
