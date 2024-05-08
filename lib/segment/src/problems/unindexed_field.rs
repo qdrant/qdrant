@@ -293,61 +293,58 @@ impl<'a> Extractor<'a> {
     }
 
     fn update_from_condition(&mut self, nested_prefix: Option<&JsonPathV2>, condition: &Condition) {
+        let key;
+        let inferred;
+
         match condition {
             Condition::Field(field_condition) => {
-                let full_key = JsonPathV2::extend_or_new(nested_prefix, &field_condition.key);
-
-                let inferred = infer_schema_from_field_condition(field_condition);
-
-                let mut needs_index = false;
-                match self.payload_schema.get(&full_key) {
-                    Some(index_info) => {
-                        let already_indexed =
-                            inferred.iter().any(|inferred| inferred == index_info);
-
-                        if !already_indexed {
-                            needs_index = true;
-                        }
-                    }
-                    None => {
-                        needs_index = true;
-                    }
-                }
-
-                if needs_index {
-                    self.unindexed_schema
-                        .entry(full_key)
-                        .or_default()
-                        .extend(inferred);
-                }
+                key = &field_condition.key;
+                inferred = infer_schema_from_field_condition(field_condition);
             }
             Condition::Filter(filter) => {
                 self.update_from_filter(nested_prefix, filter);
+                return;
             }
-            Condition::Nested(nested) => self.update_from_filter(
-                Some(&JsonPathV2::extend_or_new(nested_prefix, nested.raw_key())),
-                nested.filter(),
-            ),
+            Condition::Nested(nested) => {
+                self.update_from_filter(
+                    Some(&JsonPathV2::extend_or_new(nested_prefix, nested.raw_key())),
+                    nested.filter(),
+                );
+                return;
+            }
             // Any index will suffice
             Condition::IsEmpty(is_empty) => {
-                self.unindexed_schema
-                    .entry(JsonPathV2::extend_or_new(
-                        nested_prefix,
-                        &is_empty.is_empty.key,
-                    ))
-                    .or_default()
-                    .extend(all_indexes());
+                key = &is_empty.is_empty.key;
+                inferred = all_indexes().collect();
             }
             Condition::IsNull(is_null) => {
-                self.unindexed_schema
-                    .entry(JsonPathV2::extend_or_new(
-                        nested_prefix,
-                        &is_null.is_null.key,
-                    ))
-                    .or_default()
-                    .extend(all_indexes());
+                key = &is_null.is_null.key;
+                inferred = all_indexes().collect();
             }
-            Condition::HasId(_) => {}
+            // No index needed
+            Condition::HasId(_) => return,
+        };
+
+        let full_key = JsonPathV2::extend_or_new(nested_prefix, key);
+        let mut needs_index = false;
+        match self.payload_schema.get(&full_key) {
+            Some(index_info) => {
+                let already_indexed = inferred.iter().any(|inferred| inferred == index_info);
+
+                if !already_indexed {
+                    needs_index = true;
+                }
+            }
+            None => {
+                needs_index = true;
+            }
+        }
+
+        if needs_index {
+            self.unindexed_schema
+                .entry(full_key)
+                .or_default()
+                .extend(inferred);
         }
     }
 }
