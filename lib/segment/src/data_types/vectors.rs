@@ -69,7 +69,7 @@ impl<'a> TryFrom<VectorRef<'a>> for &'a MultiDenseVector {
 
     fn try_from(value: VectorRef<'a>) -> Result<Self, Self::Error> {
         match value {
-            VectorRef::Dense(_) => Err(OperationError::WrongMulti),
+            VectorRef::Dense(_) => Err(OperationError::WrongMulti), // VectorRef::Dense cannot be converted to &MultiDense
             VectorRef::Sparse(_v) => Err(OperationError::WrongSparse),
             VectorRef::MultiDense(v) => Ok(v),
         }
@@ -116,7 +116,7 @@ impl TryFrom<Vector> for MultiDenseVector {
 
     fn try_from(value: Vector) -> Result<Self, Self::Error> {
         match value {
-            Vector::Dense(_) => Err(OperationError::WrongMulti),
+            Vector::Dense(v) => Ok(MultiDenseVector::new(v, 1)), // expand single dense vector
             Vector::Sparse(_) => Err(OperationError::WrongSparse),
             Vector::MultiDense(v) => Ok(v),
         }
@@ -369,7 +369,7 @@ impl<'a> TryInto<&'a MultiDenseVector> for &'a Vector {
 
     fn try_into(self) -> Result<&'a MultiDenseVector, Self::Error> {
         match self {
-            Vector::Dense(_) => Err(OperationError::WrongMulti),
+            Vector::Dense(_) => Err(OperationError::WrongMulti), // &Dense vector cannot be converted to &MultiDense
             Vector::Sparse(_) => Err(OperationError::WrongSparse),
             Vector::MultiDense(v) => Ok(v),
         }
