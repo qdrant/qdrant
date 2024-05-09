@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use bitvec::prelude::BitVec;
 use common::types::{PointOffsetType, TelemetryDetail};
-use parking_lot::{RwLock, RwLockUpgradableReadGuard, RwLockWriteGuard};
+use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::common::operation_error::{OperationResult, SegmentFailedState};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::order_by::OrderingValue;
@@ -227,19 +227,17 @@ impl ProxySegment {
         {
             let deleted_points = self.deleted_points.upgradable_read();
             if !deleted_points.is_empty() {
-                let mut wrapped_segment_write = RwLockUpgradableReadGuard::upgrade(wrapped_segment);
-                for point_id in deleted_points.iter() {
-                    wrapped_segment_write.delete_point(op_num, *point_id)?;
-                }
-                wrapped_segment = RwLockWriteGuard::downgrade_to_upgradable(wrapped_segment_write);
-
+                wrapped_segment.with_upgraded(|wrapped_segment| {
+                    for point_id in deleted_points.iter() {
+                        wrapped_segment.delete_point(op_num, *point_id)?;
+                    }
+                    OperationResult::Ok(())
+                })?;
                 RwLockUpgradableReadGuard::upgrade(deleted_points).clear();
 
                 // Note: We do not clear the deleted mask here, as it provides
                 // no performance advantage and does not affect the correctness of search.
                 // Points are still marked as deleted in two places, which is fine
-            } else {
-                drop(deleted_points);
             }
         }
 
@@ -247,12 +245,12 @@ impl ProxySegment {
         {
             let deleted_indexes = self.deleted_indexes.upgradable_read();
             if !deleted_indexes.is_empty() {
-                let mut wrapped_segment_write = RwLockUpgradableReadGuard::upgrade(wrapped_segment);
-                for key in deleted_indexes.iter() {
-                    wrapped_segment_write.delete_field_index(op_num, key)?;
-                }
-                wrapped_segment = RwLockWriteGuard::downgrade_to_upgradable(wrapped_segment_write);
-
+                wrapped_segment.with_upgraded(|wrapped_segment| {
+                    for key in deleted_indexes.iter() {
+                        wrapped_segment.delete_field_index(op_num, key)?;
+                    }
+                    OperationResult::Ok(())
+                })?;
                 RwLockUpgradableReadGuard::upgrade(deleted_indexes).clear();
             }
         }
@@ -261,12 +259,12 @@ impl ProxySegment {
         {
             let created_indexes = self.created_indexes.upgradable_read();
             if !created_indexes.is_empty() {
-                let mut wrapped_segment_write = RwLockUpgradableReadGuard::upgrade(wrapped_segment);
-                for (key, field_schema) in created_indexes.iter() {
-                    wrapped_segment_write.create_field_index(op_num, key, Some(field_schema))?;
-                }
-                drop(wrapped_segment_write);
-
+                wrapped_segment.with_upgraded(|wrapped_segment| {
+                    for (key, field_schema) in created_indexes.iter() {
+                        wrapped_segment.create_field_index(op_num, key, Some(field_schema))?;
+                    }
+                    OperationResult::Ok(())
+                })?;
                 RwLockUpgradableReadGuard::upgrade(created_indexes).clear();
             }
         }
