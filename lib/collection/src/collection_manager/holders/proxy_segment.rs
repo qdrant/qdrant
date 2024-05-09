@@ -219,18 +219,22 @@ impl ProxySegment {
     /// shard holder at the same time. If the wrapped segment is thrown away, then this is not
     /// required.
     pub(super) fn propagate_to_wrapped(&self) -> OperationResult<()> {
-        let deleted_points = self.deleted_points.upgradable_read();
         let wrapped_segment = self.wrapped_segment.get();
-        let mut wrapped_segment = wrapped_segment.write();
-        let op_num = wrapped_segment.version();
+        let op_num = wrapped_segment.read().version();
 
         // Propagate deleted points
         {
+            let deleted_points = self.deleted_points.upgradable_read();
             if !deleted_points.is_empty() {
-                for point_id in deleted_points.iter() {
-                    wrapped_segment.delete_point(op_num, *point_id)?;
+                {
+                    let mut wrapped_segment = wrapped_segment.write();
+                    for point_id in deleted_points.iter() {
+                        wrapped_segment.delete_point(op_num, *point_id)?;
+                    }
                 }
+
                 RwLockUpgradableReadGuard::upgrade(deleted_points).clear();
+
                 // Note: We do not clear the deleted mask here, as it provides
                 // no performance advantage and does not affect the correctness of search.
                 // Points are still marked as deleted in two places, which is fine
@@ -243,9 +247,13 @@ impl ProxySegment {
         {
             let deleted_indexes = self.deleted_indexes.upgradable_read();
             if !deleted_indexes.is_empty() {
-                for key in deleted_indexes.iter() {
-                    wrapped_segment.delete_field_index(op_num, key)?;
+                {
+                    let mut wrapped_segment = wrapped_segment.write();
+                    for key in deleted_indexes.iter() {
+                        wrapped_segment.delete_field_index(op_num, key)?;
+                    }
                 }
+
                 RwLockUpgradableReadGuard::upgrade(deleted_indexes).clear();
             }
         }
@@ -254,9 +262,13 @@ impl ProxySegment {
         {
             let created_indexes = self.created_indexes.upgradable_read();
             if !created_indexes.is_empty() {
-                for (key, field_schema) in created_indexes.iter() {
-                    wrapped_segment.create_field_index(op_num, key, Some(field_schema))?;
+                {
+                    let mut wrapped_segment = wrapped_segment.write();
+                    for (key, field_schema) in created_indexes.iter() {
+                        wrapped_segment.create_field_index(op_num, key, Some(field_schema))?;
+                    }
                 }
+
                 RwLockUpgradableReadGuard::upgrade(created_indexes).clear();
             }
         }
