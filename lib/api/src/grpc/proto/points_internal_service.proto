@@ -203,7 +203,7 @@ message RawVector {
   oneof variant {
     DenseVector dense = 1;
     SparseVector sparse = 2;
-    MultiDenseVector multi = 3;
+    MultiDenseVector multi_dense = 3;
   }
 }
 

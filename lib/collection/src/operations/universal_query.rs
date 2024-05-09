@@ -67,11 +67,38 @@ pub mod shard_query {
         }
     }
 
+    impl From<QueryEnum> for grpc::RawQuery {
+        fn from(value: QueryEnum) -> Self {
+            use api::grpc::qdrant::raw_query::Variant;
+
+            let variant = match value {
+                QueryEnum::Nearest(named) => {
+                    Variant::Nearest(grpc::RawVector::from(named.to_vector()))
+                }
+                QueryEnum::RecommendBestScore(named) => {
+                    Variant::RecommendBestScore(grpc::raw_query::Recommend::from(named.query))
+                }
+                QueryEnum::Discover(named) => {
+                    Variant::Discover(grpc::raw_query::Discovery::from(named.query))
+                }
+                QueryEnum::Context(named) => {
+                    Variant::Context(grpc::raw_query::Context::from(named.query))
+                }
+            };
+
+            Self {
+                variant: Some(variant),
+            }
+        }
+    }
+
     impl From<ScoringQuery> for grpc::query_shard_points::Query {
         fn from(value: ScoringQuery) -> Self {
+            use grpc::query_shard_points::query::Score;
+
             match value {
                 ScoringQuery::Vector(query) => Self {
-                    score: Some(grpc::query_shard_points::query::Score::Vector(query.into())),
+                    score: Some(Score::Vector(grpc::RawQuery::from(query))),
                 },
             }
         }

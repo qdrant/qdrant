@@ -53,7 +53,7 @@ serde_json = { workspace = true }
 chrono = { workspace = true }
 rand = "0.8.5"
 schemars = { workspace = true }
-itertools = "0.12"
+itertools = { workspace = true }
 anyhow = "1.0.83"
 futures = { workspace = true }
 futures-util = { workspace = true }
@@ -124,6 +124,7 @@ futures = "0.3.30"
 futures-util = "0.3.30"
 indexmap = { version = "2", features = ["serde"] }
 indicatif = "0.17.8"
+itertools = "0.12"
 parking_lot = { version = "0.12.2", features = ["deadlock_detection", "serde"] }
 pprof = { version = "0.12", features = ["flamegraph", "prost-codec"] }
 prost = "0.11.9"

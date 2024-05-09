@@ -3746,9 +3746,9 @@ pub struct DenseVector {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SparseVector {
     #[prost(float, repeated, tag = "1")]
-    pub data: ::prost::alloc::vec::Vec<f32>,
-    #[prost(message, optional, tag = "2")]
-    pub indices: ::core::option::Option<SparseIndices>,
+    pub values: ::prost::alloc::vec::Vec<f32>,
+    #[prost(uint32, repeated, tag = "2")]
+    pub indices: ::prost::alloc::vec::Vec<u32>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3778,7 +3778,7 @@ pub mod vector_input {
         #[prost(message, tag = "3")]
         Sparse(super::SparseVector),
         #[prost(message, tag = "4")]
-        Multi(super::MultiDenseVector),
+        MultiDense(super::MultiDenseVector),
     }
 }
 /// ---------------------------------------------
@@ -8022,7 +8022,7 @@ pub mod raw_vector {
         #[prost(message, tag = "2")]
         Sparse(super::SparseVector),
         #[prost(message, tag = "3")]
-        Multi(super::MultiDenseVector),
+        MultiDense(super::MultiDenseVector),
     }
 }
 /// Query variants for raw vectors (ids have been substituted with vectors)

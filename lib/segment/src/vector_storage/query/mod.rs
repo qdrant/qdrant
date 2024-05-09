@@ -27,3 +27,7 @@ pub trait Query<T> {
     /// then folds the similarites into a single score.
     fn score_by(&self, similarity: impl Fn(&T) -> ScoreType) -> ScoreType;
 }
+
+pub use context_query::{ContextPair, ContextQuery};
+pub use discovery_query::DiscoveryQuery;
+pub use reco_query::RecoQuery;
