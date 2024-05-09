@@ -224,6 +224,7 @@ impl ProxySegment {
         // read lock on the wrapped segment as well while already holding the deleted points lock
         // (or others). Careful locking management is very important here. Instead we just take an
         // upgradable read lock, upgrading to a write lock on demand.
+        // See: <https://github.com/qdrant/qdrant/pull/4206>
         let wrapped_segment = self.wrapped_segment.get();
         let mut wrapped_segment = wrapped_segment.upgradable_read();
         let op_num = wrapped_segment.version();
