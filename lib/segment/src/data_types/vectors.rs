@@ -554,6 +554,19 @@ impl Named for NamedVectorStruct {
 }
 
 impl NamedVectorStruct {
+    pub fn try_new(vector: Vector, name: Option<String>) -> OperationResult<Self> {
+        let name = match (name, &vector) {
+            (None, Vector::Sparse(_)) => {
+                return Err(OperationError::ValidationError {
+                    description: "Sparse vector must have a name".to_string(),
+                })
+            }
+            (Some(name), Vector::MultiDense(_) | Vector::Sparse(_) | Vector::Dense(_)) => name,
+            (None, Vector::MultiDense(_) | Vector::Dense(_)) => DEFAULT_VECTOR_NAME.to_string(),
+        };
+        Ok(Self::new_from_vector(vector, name))
+    }
+
     pub fn new_from_vector(vector: Vector, name: String) -> Self {
         match vector {
             Vector::Dense(vector) => NamedVectorStruct::Dense(NamedVector { name, vector }),
@@ -630,6 +643,7 @@ impl<T: Validate> Validate for NamedQuery<T> {
 
 impl NamedQuery<RecoQuery<Vector>> {
     pub fn new(query: RecoQuery<Vector>, using: Option<String>) -> Self {
+        // TODO: maybe validate there is no sparse vector without vector name
         NamedQuery { query, using }
     }
 }

@@ -15,9 +15,13 @@
 pub mod shard_query {
     use api::grpc::qdrant as grpc;
     use common::types::ScoreType;
+    use itertools::Itertools;
+    use segment::data_types::vectors::{NamedQuery, NamedVectorStruct, Vector};
     use segment::types::{Filter, ScoredPoint, SearchParams, WithPayloadInterface, WithVector};
+    use segment::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery};
 
     use crate::operations::query_enum::QueryEnum;
+    use crate::operations::types::{CollectionError, CollectionResult};
 
     /// Internal response type for a universal query request.
     ///
@@ -42,7 +46,7 @@ pub mod shard_query {
 
     #[derive(Clone)]
     pub struct ShardPrefetch {
-        pub prefetches: Option<Vec<ShardPrefetch>>,
+        pub prefetches: Vec<ShardPrefetch>,
         pub query: ScoringQuery,
         pub limit: usize,
         pub params: Option<SearchParams>,
@@ -55,7 +59,7 @@ pub mod shard_query {
     /// Direct translation of the user-facing request, but with all point ids substituted with their corresponding vectors.
     #[derive(Clone)]
     pub struct ShardQueryRequest {
-        pub prefetch: Option<Vec<ShardPrefetch>>,
+        pub prefetches: Vec<ShardPrefetch>,
         pub query: ScoringQuery,
         pub filter: Option<Filter>,
         pub score_threshold: Option<ScoreType>,
@@ -66,9 +70,132 @@ pub mod shard_query {
         pub with_payload: WithPayloadInterface,
     }
 
-    impl From<grpc::QueryShardPoints> for ShardQueryRequest {
-        fn from(_value: grpc::QueryShardPoints) -> Self {
-            todo!()
+    impl TryFrom<grpc::query_shard_points::Prefetch> for ShardPrefetch {
+        type Error = CollectionError;
+
+        fn try_from(value: grpc::query_shard_points::Prefetch) -> CollectionResult<Self> {
+            let grpc::query_shard_points::Prefetch {
+                prefetch,
+                query,
+                limit,
+                params,
+                filter,
+                score_threshold,
+                using,
+            } = value;
+
+            let shard_prefetch = Self {
+                prefetches: prefetch
+                    .into_iter()
+                    .map(ShardPrefetch::try_from)
+                    .try_collect()?,
+                query: query
+                    .map(|query| ScoringQuery::try_from_grpc_query(query, using))
+                    .transpose()?
+                    .ok_or_else(|| CollectionError::bad_input("missing field: query"))?,
+                limit: limit as usize,
+                params: params.map(SearchParams::from),
+                filter: filter.map(Filter::try_from).transpose()?,
+                score_threshold,
+            };
+
+            Ok(shard_prefetch)
+        }
+    }
+
+    impl QueryEnum {
+        fn try_from_grpc_raw_query(
+            raw_query: grpc::RawQuery,
+            using: Option<String>,
+        ) -> CollectionResult<Self> {
+            use grpc::raw_query::Variant;
+
+            let variant = raw_query
+                .variant
+                .ok_or_else(|| CollectionError::bad_input("missing field: variant"))?;
+
+            let query_enum = match variant {
+                Variant::Nearest(nearest) => QueryEnum::Nearest(NamedVectorStruct::try_new(
+                    Vector::try_from(nearest).map_err(CollectionError::from)?,
+                    using,
+                )?),
+                Variant::RecommendBestScore(recommend) => {
+                    QueryEnum::RecommendBestScore(NamedQuery::new(
+                        RecoQuery::try_from(recommend).map_err(CollectionError::from)?,
+                        using,
+                    ))
+                }
+                Variant::Discover(discovery) => QueryEnum::Discover(NamedQuery {
+                    query: DiscoveryQuery::try_from(discovery).map_err(CollectionError::from)?,
+                    using,
+                }),
+                Variant::Context(context) => QueryEnum::Context(NamedQuery {
+                    query: ContextQuery::try_from(context).map_err(CollectionError::from)?,
+                    using,
+                }),
+            };
+
+            Ok(query_enum)
+        }
+    }
+
+    impl ScoringQuery {
+        fn try_from_grpc_query(
+            query: grpc::query_shard_points::Query,
+            using: Option<String>,
+        ) -> CollectionResult<Self> {
+            let scoring_query = match query.score {
+                Some(grpc::query_shard_points::query::Score::Vector(query)) => {
+                    ScoringQuery::Vector(QueryEnum::try_from_grpc_raw_query(query, using)?)
+                }
+                None => todo!(),
+            };
+
+            Ok(scoring_query)
+        }
+    }
+
+    impl TryFrom<grpc::QueryShardPoints> for ShardQueryRequest {
+        type Error = CollectionError;
+
+        fn try_from(value: grpc::QueryShardPoints) -> CollectionResult<Self> {
+            let grpc::QueryShardPoints {
+                prefetch,
+                query,
+                using,
+                filter,
+                limit,
+                params,
+                score_threshold,
+                offset,
+                with_payload,
+                with_vectors,
+            } = value;
+
+            let request = Self {
+                prefetches: prefetch
+                    .into_iter()
+                    .map(ShardPrefetch::try_from)
+                    .try_collect()?,
+                query: query
+                    .map(|query| ScoringQuery::try_from_grpc_query(query, using))
+                    .transpose()?
+                    .ok_or_else(|| CollectionError::bad_input("missing field: query"))?,
+                filter: filter.map(Filter::try_from).transpose()?,
+                score_threshold,
+                limit: limit as usize,
+                offset: offset as usize,
+                params: params.map(SearchParams::from),
+                with_vector: with_vectors
+                    .map(WithVector::from)
+                    .unwrap_or(WithVector::Bool(false)),
+                with_payload: with_payload
+                    .map(WithPayloadInterface::try_from)
+                    .transpose()?
+                    .unwrap_or(WithPayloadInterface::Bool(true)),
+            };
+
+            Ok(request)
         }
     }
 
@@ -120,11 +247,7 @@ pub mod shard_query {
                 score_threshold,
             } = value;
             Self {
-                prefetch: prefetches
-                    .into_iter()
-                    .flat_map(IntoIterator::into_iter)
-                    .map(Self::from)
-                    .collect(),
+                prefetch: prefetches.into_iter().map(Self::from).collect(),
                 using: query.get_vector_name().map(ToOwned::to_owned),
                 query: Some(grpc::query_shard_points::Query::from(query)),
                 filter: filter.map(grpc::Filter::from),
@@ -138,7 +261,7 @@ pub mod shard_query {
     impl From<ShardQueryRequest> for grpc::QueryShardPoints {
         fn from(value: ShardQueryRequest) -> Self {
             let ShardQueryRequest {
-                prefetch,
+                prefetches,
                 query,
                 filter,
                 score_threshold,
@@ -150,9 +273,8 @@ pub mod shard_query {
             } = value;
 
             Self {
-                prefetch: prefetch
+                prefetch: prefetches
                     .into_iter()
-                    .flat_map(IntoIterator::into_iter)
                     .map(grpc::query_shard_points::Prefetch::from)
                     .collect(),
                 using: query.get_vector_name().map(ToOwned::to_owned),
@@ -226,7 +348,7 @@ pub mod planned_query {
                 offset: req_offset,
                 with_vector,
                 with_payload,
-                prefetch,
+                prefetches: prefetch,
                 params,
             } = request;
 
@@ -235,7 +357,7 @@ pub mod planned_query {
             let rescore;
             let offset;
 
-            if let Some(prefetch) = prefetch {
+            if !prefetch.is_empty() {
                 sources = recurse_prefetches(&mut core_searches, prefetch);
                 rescore = Some(query);
                 offset = req_offset;
@@ -294,20 +416,8 @@ pub mod planned_query {
                 score_threshold,
             } = prefetch;
 
-            let source = match prefetches {
-                Some(inner_prefetches) => {
-                    let sources = recurse_prefetches(core_searches, inner_prefetches);
-
-                    let prefetch_plan = PrefetchPlan {
-                        sources,
-                        merge: PrefetchMerge {
-                            rescore: Some(query),
-                            limit,
-                        },
-                    };
-                    PrefetchSource::Prefetch(prefetch_plan)
-                }
-                None => match query {
+            let source = if prefetches.is_empty() {
+                match query {
                     ScoringQuery::Vector(query_enum) => {
                         let core_search = CoreSearchRequest {
                             query: query_enum,
@@ -325,7 +435,18 @@ pub mod planned_query {
 
                         PrefetchSource::BatchIdx(idx)
                     }
-                },
+                }
+            } else {
+                let sources = recurse_prefetches(core_searches, prefetches);
+
+                let prefetch_plan = PrefetchPlan {
+                    sources,
+                    merge: PrefetchMerge {
+                        rescore: Some(query),
+                        limit,
+                    },
+                };
+                PrefetchSource::Prefetch(prefetch_plan)
             };
             sources.push(source);
         }
