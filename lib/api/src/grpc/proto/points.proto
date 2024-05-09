@@ -46,10 +46,34 @@ message SparseIndices {
   repeated uint32 data = 1;
 }
 
+// Legacy vector format, which determines the vector type by the configuration of its fields.
 message Vector {
   repeated float data = 1; // Vector data (flatten for multi vectors)
   optional SparseIndices indices = 2; // Sparse indices for sparse vectors
   optional uint32 vectors_count = 3; // Number of vectors per multi vector
+}
+
+message DenseVector {
+  repeated float data = 1;
+}
+
+message SparseVector {
+  repeated float data = 1;
+  optional SparseIndices indices = 2;
+}
+
+message MultiDenseVector {
+  repeated DenseVector vectors = 1;
+}
+
+// Vector type to be used in queries. Ids will be substituted with their corresponding vectors from the collection.
+message VectorInput {
+  oneof variant {
+    PointId id = 1;
+    DenseVector dense = 2;
+    SparseVector sparse = 3;
+    MultiDenseVector multi = 4;
+  }
 }
 
 // ---------------------------------------------
