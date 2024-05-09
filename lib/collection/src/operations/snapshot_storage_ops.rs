@@ -173,9 +173,17 @@ pub async fn download_snapshot(
     let download = client
         .get(&s3_path)
         .await
-        .map_err(|e| CollectionError::service_error(format!("Failed to get: {}", e)))?;
+        .map_err(|e| CollectionError::service_error(format!("Failed to get {}: {}", s3_path, e)))?;
 
     let mut stream = download.into_stream();
+
+    // Create the target directory if it does not exist
+    if let Some(target_dir) = target_path.parent() {
+        if !target_dir.exists() {
+            std::fs::create_dir_all(target_dir)?;
+        }
+    }
+
     let mut file = tokio::fs::File::create(target_path)
         .await
         .map_err(|e| CollectionError::service_error(format!("Failed to create file: {}", e)))?;
