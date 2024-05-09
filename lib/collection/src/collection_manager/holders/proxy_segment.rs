@@ -219,11 +219,17 @@ impl ProxySegment {
     /// shard holder at the same time. If the wrapped segment is thrown away, then this is not
     /// required.
     pub(super) fn propagate_to_wrapped(&self) -> OperationResult<()> {
+        // Important: we must not keep a write lock on the wrapped segment for the duration of this
+        // function to prevent a deadlock. The search functions conflict with it trying to take a
+        // read lock on the wrapped segment as well while already holding the deleted points lock
+        // (or others). Careful locking management is very important here. Instead we just take an
+        // upgradable read lock, upgrading to a write lock on demand.
         let wrapped_segment = self.wrapped_segment.get();
         let mut wrapped_segment = wrapped_segment.upgradable_read();
         let op_num = wrapped_segment.version();
 
         // Propagate deleted points
+        // Ordering is important here and must match the flush function to prevent a deadlock
         {
             let deleted_points = self.deleted_points.upgradable_read();
             if !deleted_points.is_empty() {
@@ -242,6 +248,7 @@ impl ProxySegment {
         }
 
         // Propagate deleted indexes
+        // Ordering is important here and must match the flush function to prevent a deadlock
         {
             let deleted_indexes = self.deleted_indexes.upgradable_read();
             if !deleted_indexes.is_empty() {
@@ -256,6 +263,7 @@ impl ProxySegment {
         }
 
         // Propagate created indexes
+        // Ordering is important here and must match the flush function to prevent a deadlock
         {
             let created_indexes = self.created_indexes.upgradable_read();
             if !created_indexes.is_empty() {
