@@ -3488,7 +3488,7 @@ checksum = "9cda97d37376c28c508b0abc56b855c5e700324e9b753226681e658c833675c5"
 dependencies = [
  "async-trait",
  "base64 0.22.0",
- "bytes",
+ "bytes 1.6.0",
  "chrono",
  "futures",
  "humantime",
@@ -3504,7 +3504,7 @@ dependencies = [
  "serde",
  "serde_json",
  "snafu",
- "tokio",
+ "tokio 1.37.0",
  "tracing",
  "url",
  "walkdir",
