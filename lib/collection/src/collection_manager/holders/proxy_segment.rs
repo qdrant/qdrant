@@ -219,44 +219,61 @@ impl ProxySegment {
     /// shard holder at the same time. If the wrapped segment is thrown away, then this is not
     /// required.
     pub(super) fn propagate_to_wrapped(&self) -> OperationResult<()> {
-        let deleted_points = self.deleted_points.upgradable_read();
+        // Important: we must not keep a write lock on the wrapped segment for the duration of this
+        // function to prevent a deadlock. The search functions conflict with it trying to take a
+        // read lock on the wrapped segment as well while already holding the deleted points lock
+        // (or others). Careful locking management is very important here. Instead we just take an
+        // upgradable read lock, upgrading to a write lock on demand.
+        // See: <https://github.com/qdrant/qdrant/pull/4206>
         let wrapped_segment = self.wrapped_segment.get();
-        let mut wrapped_segment = wrapped_segment.write();
+        let mut wrapped_segment = wrapped_segment.upgradable_read();
         let op_num = wrapped_segment.version();
 
         // Propagate deleted points
+        // Ordering is important here and must match the flush function to prevent a deadlock
         {
+            let deleted_points = self.deleted_points.upgradable_read();
             if !deleted_points.is_empty() {
-                for point_id in deleted_points.iter() {
-                    wrapped_segment.delete_point(op_num, *point_id)?;
-                }
+                wrapped_segment.with_upgraded(|wrapped_segment| {
+                    for point_id in deleted_points.iter() {
+                        wrapped_segment.delete_point(op_num, *point_id)?;
+                    }
+                    OperationResult::Ok(())
+                })?;
                 RwLockUpgradableReadGuard::upgrade(deleted_points).clear();
+
                 // Note: We do not clear the deleted mask here, as it provides
                 // no performance advantage and does not affect the correctness of search.
                 // Points are still marked as deleted in two places, which is fine
-            } else {
-                drop(deleted_points);
             }
         }
 
         // Propagate deleted indexes
+        // Ordering is important here and must match the flush function to prevent a deadlock
         {
             let deleted_indexes = self.deleted_indexes.upgradable_read();
             if !deleted_indexes.is_empty() {
-                for key in deleted_indexes.iter() {
-                    wrapped_segment.delete_field_index(op_num, key)?;
-                }
+                wrapped_segment.with_upgraded(|wrapped_segment| {
+                    for key in deleted_indexes.iter() {
+                        wrapped_segment.delete_field_index(op_num, key)?;
+                    }
+                    OperationResult::Ok(())
+                })?;
                 RwLockUpgradableReadGuard::upgrade(deleted_indexes).clear();
             }
         }
 
         // Propagate created indexes
+        // Ordering is important here and must match the flush function to prevent a deadlock
         {
             let created_indexes = self.created_indexes.upgradable_read();
             if !created_indexes.is_empty() {
-                for (key, field_schema) in created_indexes.iter() {
-                    wrapped_segment.create_field_index(op_num, key, Some(field_schema))?;
-                }
+                wrapped_segment.with_upgraded(|wrapped_segment| {
+                    for (key, field_schema) in created_indexes.iter() {
+                        wrapped_segment.create_field_index(op_num, key, Some(field_schema))?;
+                    }
+                    OperationResult::Ok(())
+                })?;
                 RwLockUpgradableReadGuard::upgrade(created_indexes).clear();
             }
         }
