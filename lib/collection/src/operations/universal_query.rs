@@ -16,7 +16,9 @@ pub mod shard_query {
     use api::grpc::qdrant as grpc;
     use common::types::ScoreType;
     use itertools::Itertools;
-    use segment::data_types::vectors::{NamedQuery, NamedVectorStruct, Vector, DEFAULT_VECTOR_NAME};
+    use segment::data_types::vectors::{
+        NamedQuery, NamedVectorStruct, Vector, DEFAULT_VECTOR_NAME,
+    };
     use segment::types::{Filter, ScoredPoint, SearchParams, WithPayloadInterface, WithVector};
     use segment::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery};
     use tonic::Status;
