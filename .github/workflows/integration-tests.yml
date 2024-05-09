@@ -239,7 +239,7 @@ jobs:
     # Setup minio server
     services:
       minio:
-        image: wktk/minio-server
+        image: satantime/minio-server
         ports:
           - 9000:9000
         env:
