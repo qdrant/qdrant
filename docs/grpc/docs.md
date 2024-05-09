@@ -54,6 +54,7 @@
     - [RemoteShardInfo](#qdrant-RemoteShardInfo)
     - [RenameAlias](#qdrant-RenameAlias)
     - [Replica](#qdrant-Replica)
+    - [ReplicateShard](#qdrant-ReplicateShard)
     - [RestartTransfer](#qdrant-RestartTransfer)
     - [ScalarQuantization](#qdrant-ScalarQuantization)
     - [ShardKey](#qdrant-ShardKey)
@@ -162,6 +163,8 @@
     - [PointsUpdateOperation.DeletePayload](#qdrant-PointsUpdateOperation-DeletePayload)
     - [PointsUpdateOperation.DeletePoints](#qdrant-PointsUpdateOperation-DeletePoints)
     - [PointsUpdateOperation.DeleteVectors](#qdrant-PointsUpdateOperation-DeleteVectors)
+    - [PointsUpdateOperation.OverwritePayload](#qdrant-PointsUpdateOperation-OverwritePayload)
+    - [PointsUpdateOperation.OverwritePayload.PayloadEntry](#qdrant-PointsUpdateOperation-OverwritePayload-PayloadEntry)
     - [PointsUpdateOperation.PointStructList](#qdrant-PointsUpdateOperation-PointStructList)
     - [PointsUpdateOperation.SetPayload](#qdrant-PointsUpdateOperation-SetPayload)
     - [PointsUpdateOperation.SetPayload.PayloadEntry](#qdrant-PointsUpdateOperation-SetPayload-PayloadEntry)
@@ -1106,6 +1109,24 @@ Note: 1kB = 1 vector of size 256. |
 
 
 
+<a name="qdrant-ReplicateShard"></a>
+
+### ReplicateShard
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| shard_id | [uint32](#uint32) |  | Local shard id |
+| from_peer_id | [uint64](#uint64) |  |  |
+| to_peer_id | [uint64](#uint64) |  |  |
+| method | [ShardTransferMethod](#qdrant-ShardTransferMethod) | optional |  |
+
+
+
+
+
+
 <a name="qdrant-RestartTransfer"></a>
 
 ### RestartTransfer
@@ -1288,7 +1309,7 @@ Note: 1kB = 1 vector of size 256. |
 | ----- | ---- | ----- | ----------- |
 | collection_name | [string](#string) |  | Name of the collection |
 | move_shard | [MoveShard](#qdrant-MoveShard) |  |  |
-| replicate_shard | [MoveShard](#qdrant-MoveShard) |  |  |
+| replicate_shard | [ReplicateShard](#qdrant-ReplicateShard) |  |  |
 | abort_transfer | [AbortShardTransfer](#qdrant-AbortShardTransfer) |  |  |
 | drop_replica | [Replica](#qdrant-Replica) |  |  |
 | create_shard_key | [CreateShardKey](#qdrant-CreateShardKey) |  |  |
@@ -2702,7 +2723,7 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | upsert | [PointsUpdateOperation.PointStructList](#qdrant-PointsUpdateOperation-PointStructList) |  |  |
 | delete_deprecated | [PointsSelector](#qdrant-PointsSelector) |  | **Deprecated.**  |
 | set_payload | [PointsUpdateOperation.SetPayload](#qdrant-PointsUpdateOperation-SetPayload) |  |  |
-| overwrite_payload | [PointsUpdateOperation.SetPayload](#qdrant-PointsUpdateOperation-SetPayload) |  |  |
+| overwrite_payload | [PointsUpdateOperation.OverwritePayload](#qdrant-PointsUpdateOperation-OverwritePayload) |  |  |
 | delete_payload | [PointsUpdateOperation.DeletePayload](#qdrant-PointsUpdateOperation-DeletePayload) |  |  |
 | clear_payload_deprecated | [PointsSelector](#qdrant-PointsSelector) |  | **Deprecated.**  |
 | update_vectors | [PointsUpdateOperation.UpdateVectors](#qdrant-PointsUpdateOperation-UpdateVectors) |  |  |
@@ -2775,6 +2796,40 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | points_selector | [PointsSelector](#qdrant-PointsSelector) |  | Affected points |
 | vectors | [VectorsSelector](#qdrant-VectorsSelector) |  | List of vector names to delete |
 | shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Option for custom sharding to specify used shard keys |
+
+
+
+
+
+
+<a name="qdrant-PointsUpdateOperation-OverwritePayload"></a>
+
+### PointsUpdateOperation.OverwritePayload
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| payload | [PointsUpdateOperation.OverwritePayload.PayloadEntry](#qdrant-PointsUpdateOperation-OverwritePayload-PayloadEntry) | repeated |  |
+| points_selector | [PointsSelector](#qdrant-PointsSelector) | optional | Affected points |
+| shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Option for custom sharding to specify used shard keys |
+| key | [string](#string) | optional | Option for indicate property of payload |
+
+
+
+
+
+
+<a name="qdrant-PointsUpdateOperation-OverwritePayload-PayloadEntry"></a>
+
+### PointsUpdateOperation.OverwritePayload.PayloadEntry
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| key | [string](#string) |  |  |
+| value | [Value](#qdrant-Value) |  |  |
 
 
 
