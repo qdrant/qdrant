@@ -18,6 +18,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
 use smol_str::SmolStr;
+use strum::EnumIter;
 use uuid::Uuid;
 use validator::{Validate, ValidationError, ValidationErrors};
 
@@ -1079,7 +1080,7 @@ pub enum JsonPayload {
 }
 
 /// All possible names of payload types
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq, EnumIter)]
 #[serde(rename_all = "snake_case")]
 pub enum PayloadSchemaType {
     Keyword,

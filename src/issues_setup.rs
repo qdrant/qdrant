@@ -1,13 +1,20 @@
-use std::sync::Arc;
+use std::time::Duration;
 
 use collection::events::{CollectionDeletedEvent, IndexCreatedEvent, SlowQueryEvent};
-use storage::dispatcher::Dispatcher;
+use segment::problems::unindexed_field;
 use storage::issues_subscribers::UnindexedFieldSubscriber;
 
-pub fn setup_subscribers(dispatcher: Arc<Dispatcher>) {
-    let unindexed_subscriber = UnindexedFieldSubscriber::new(dispatcher);
+use crate::settings::Settings;
 
-    issues::broker::add_subscriber::<SlowQueryEvent>(Box::new(unindexed_subscriber.clone()));
-    issues::broker::add_subscriber::<IndexCreatedEvent>(Box::new(unindexed_subscriber.clone()));
+pub fn setup_subscribers(settings: &Settings) {
+    settings
+        .service
+        .slow_query_secs
+        .map(|secs| unindexed_field::SLOW_QUERY_THRESHOLD.set(Duration::from_secs_f32(secs)));
+
+    let unindexed_subscriber = UnindexedFieldSubscriber;
+
+    issues::broker::add_subscriber::<SlowQueryEvent>(Box::new(unindexed_subscriber));
+    issues::broker::add_subscriber::<IndexCreatedEvent>(Box::new(unindexed_subscriber));
     issues::broker::add_subscriber::<CollectionDeletedEvent>(Box::new(unindexed_subscriber));
 }
