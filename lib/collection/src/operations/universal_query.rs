@@ -16,12 +16,12 @@ pub mod shard_query {
     use api::grpc::qdrant as grpc;
     use common::types::ScoreType;
     use itertools::Itertools;
-    use segment::data_types::vectors::{NamedQuery, NamedVectorStruct, Vector};
+    use segment::data_types::vectors::{NamedQuery, NamedVectorStruct, Vector, DEFAULT_VECTOR_NAME};
     use segment::types::{Filter, ScoredPoint, SearchParams, WithPayloadInterface, WithVector};
     use segment::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery};
+    use tonic::Status;
 
     use crate::operations::query_enum::QueryEnum;
-    use crate::operations::types::{CollectionError, CollectionResult};
 
     /// Internal response type for a universal query request.
     ///
@@ -71,9 +71,9 @@ pub mod shard_query {
     }
 
     impl TryFrom<grpc::query_shard_points::Prefetch> for ShardPrefetch {
-        type Error = CollectionError;
+        type Error = Status;
 
-        fn try_from(value: grpc::query_shard_points::Prefetch) -> CollectionResult<Self> {
+        fn try_from(value: grpc::query_shard_points::Prefetch) -> Result<Self, Self::Error> {
             let grpc::query_shard_points::Prefetch {
                 prefetch,
                 query,
@@ -92,7 +92,7 @@ pub mod shard_query {
                 query: query
                     .map(|query| ScoringQuery::try_from_grpc_query(query, using))
                     .transpose()?
-                    .ok_or_else(|| CollectionError::bad_input("missing field: query"))?,
+                    .ok_or_else(|| Status::invalid_argument("missing field: query"))?,
                 limit: limit as usize,
                 params: params.map(SearchParams::from),
                 filter: filter.map(Filter::try_from).transpose()?,
@@ -107,30 +107,40 @@ pub mod shard_query {
         fn try_from_grpc_raw_query(
             raw_query: grpc::RawQuery,
             using: Option<String>,
-        ) -> CollectionResult<Self> {
+        ) -> Result<Self, Status> {
             use grpc::raw_query::Variant;
 
             let variant = raw_query
                 .variant
-                .ok_or_else(|| CollectionError::bad_input("missing field: variant"))?;
+                .ok_or_else(|| Status::invalid_argument("missing field: variant"))?;
 
             let query_enum = match variant {
-                Variant::Nearest(nearest) => QueryEnum::Nearest(NamedVectorStruct::try_new(
-                    Vector::try_from(nearest).map_err(CollectionError::from)?,
-                    using,
-                )?),
-                Variant::RecommendBestScore(recommend) => {
-                    QueryEnum::RecommendBestScore(NamedQuery::new(
-                        RecoQuery::try_from(recommend).map_err(CollectionError::from)?,
-                        using,
-                    ))
+                Variant::Nearest(nearest) => {
+                    let vector = Vector::try_from(nearest)?;
+                    let name = match (using, &vector) {
+                        (None, Vector::Sparse(_)) => {
+                            return Err(Status::invalid_argument("Sparse vector must have a name"))
+                        }
+                        (
+                            Some(name),
+                            Vector::MultiDense(_) | Vector::Sparse(_) | Vector::Dense(_),
+                        ) => name,
+                        (None, Vector::MultiDense(_) | Vector::Dense(_)) => {
+                            DEFAULT_VECTOR_NAME.to_string()
+                        }
+                    };
+                    let named_vector = NamedVectorStruct::new_from_vector(vector, name);
+                    QueryEnum::Nearest(named_vector)
                 }
+                Variant::RecommendBestScore(recommend) => QueryEnum::RecommendBestScore(
+                    NamedQuery::new(RecoQuery::try_from(recommend)?, using),
+                ),
                 Variant::Discover(discovery) => QueryEnum::Discover(NamedQuery {
-                    query: DiscoveryQuery::try_from(discovery).map_err(CollectionError::from)?,
+                    query: DiscoveryQuery::try_from(discovery)?,
                     using,
                 }),
                 Variant::Context(context) => QueryEnum::Context(NamedQuery {
-                    query: ContextQuery::try_from(context).map_err(CollectionError::from)?,
+                    query: ContextQuery::try_from(context)?,
                     using,
                 }),
             };
@@ -143,12 +153,14 @@ pub mod shard_query {
         fn try_from_grpc_query(
             query: grpc::query_shard_points::Query,
             using: Option<String>,
-        ) -> CollectionResult<Self> {
-            let scoring_query = match query.score {
-                Some(grpc::query_shard_points::query::Score::Vector(query)) => {
+        ) -> Result<Self, Status> {
+            let score = query
+                .score
+                .ok_or_else(|| Status::invalid_argument("missing field: score"))?;
+            let scoring_query = match score {
+                grpc::query_shard_points::query::Score::Vector(query) => {
                     ScoringQuery::Vector(QueryEnum::try_from_grpc_raw_query(query, using)?)
                 }
-                None => todo!(),
             };
 
             Ok(scoring_query)
@@ -156,9 +168,9 @@ pub mod shard_query {
     }
 
     impl TryFrom<grpc::QueryShardPoints> for ShardQueryRequest {
-        type Error = CollectionError;
+        type Error = Status;
 
-        fn try_from(value: grpc::QueryShardPoints) -> CollectionResult<Self> {
+        fn try_from(value: grpc::QueryShardPoints) -> Result<Self, Self::Error> {
             let grpc::QueryShardPoints {
                 prefetch,
                 query,
@@ -180,7 +192,7 @@ pub mod shard_query {
                 query: query
                     .map(|query| ScoringQuery::try_from_grpc_query(query, using))
                     .transpose()?
-                    .ok_or_else(|| CollectionError::bad_input("missing field: query"))?,
+                    .ok_or_else(|| Status::invalid_argument("missing field: query"))?,
                 filter: filter.map(Filter::try_from).transpose()?,
                 score_threshold,
                 limit: limit as usize,
