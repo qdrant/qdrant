@@ -123,6 +123,7 @@
     - [DeletePayloadPoints](#qdrant-DeletePayloadPoints)
     - [DeletePointVectors](#qdrant-DeletePointVectors)
     - [DeletePoints](#qdrant-DeletePoints)
+    - [DenseVector](#qdrant-DenseVector)
     - [DiscoverBatchPoints](#qdrant-DiscoverBatchPoints)
     - [DiscoverBatchResponse](#qdrant-DiscoverBatchResponse)
     - [DiscoverPoints](#qdrant-DiscoverPoints)
@@ -144,6 +145,7 @@
     - [LookupLocation](#qdrant-LookupLocation)
     - [Match](#qdrant-Match)
     - [MinShould](#qdrant-MinShould)
+    - [MultiDenseVector](#qdrant-MultiDenseVector)
     - [NamedVectors](#qdrant-NamedVectors)
     - [NamedVectors.VectorsEntry](#qdrant-NamedVectors-VectorsEntry)
     - [NestedCondition](#qdrant-NestedCondition)
@@ -197,6 +199,7 @@
     - [SetPayloadPoints.PayloadEntry](#qdrant-SetPayloadPoints-PayloadEntry)
     - [ShardKeySelector](#qdrant-ShardKeySelector)
     - [SparseIndices](#qdrant-SparseIndices)
+    - [SparseVector](#qdrant-SparseVector)
     - [StartFrom](#qdrant-StartFrom)
     - [TargetVector](#qdrant-TargetVector)
     - [UpdateBatchPoints](#qdrant-UpdateBatchPoints)
@@ -207,6 +210,7 @@
     - [ValuesCount](#qdrant-ValuesCount)
     - [Vector](#qdrant-Vector)
     - [VectorExample](#qdrant-VectorExample)
+    - [VectorInput](#qdrant-VectorInput)
     - [Vectors](#qdrant-Vectors)
     - [VectorsSelector](#qdrant-VectorsSelector)
     - [WithLookup](#qdrant-WithLookup)
@@ -2124,6 +2128,21 @@ The JSON representation for `Value` is a JSON value.
 
 
 
+<a name="qdrant-DenseVector"></a>
+
+### DenseVector
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| data | [float](#float) | repeated |  |
+
+
+
+
+
+
 <a name="qdrant-DiscoverBatchPoints"></a>
 
 ### DiscoverBatchPoints
@@ -2484,6 +2503,21 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | ----- | ---- | ----- | ----------- |
 | conditions | [Condition](#qdrant-Condition) | repeated |  |
 | min_count | [uint64](#uint64) |  |  |
+
+
+
+
+
+
+<a name="qdrant-MultiDenseVector"></a>
+
+### MultiDenseVector
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| vectors | [DenseVector](#qdrant-DenseVector) | repeated |  |
 
 
 
@@ -3441,6 +3475,22 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 
 
 
+<a name="qdrant-SparseVector"></a>
+
+### SparseVector
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| data | [float](#float) | repeated |  |
+| indices | [SparseIndices](#qdrant-SparseIndices) | optional |  |
+
+
+
+
+
+
 <a name="qdrant-StartFrom"></a>
 
 ### StartFrom
@@ -3583,7 +3633,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 <a name="qdrant-Vector"></a>
 
 ### Vector
-
+Legacy vector format, which determines the vector type by the configuration of its fields.
 
 
 | Field | Type | Label | Description |
@@ -3607,6 +3657,24 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | ----- | ---- | ----- | ----------- |
 | id | [PointId](#qdrant-PointId) |  |  |
 | vector | [Vector](#qdrant-Vector) |  |  |
+
+
+
+
+
+
+<a name="qdrant-VectorInput"></a>
+
+### VectorInput
+Vector type to be used in queries. Ids will be substituted with their corresponding vectors from the collection.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| id | [PointId](#qdrant-PointId) |  |  |
+| dense | [DenseVector](#qdrant-DenseVector) |  |  |
+| sparse | [SparseVector](#qdrant-SparseVector) |  |  |
+| multi | [MultiDenseVector](#qdrant-MultiDenseVector) |  |  |
 
 
 
