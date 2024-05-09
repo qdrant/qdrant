@@ -22,6 +22,7 @@ use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
     CountRequestInternal, CountResult, PointRequestInternal, Record, UpdateResult,
 };
+use crate::operations::universal_query::shard_query::ShardQueryRequest;
 use crate::operations::OperationWithClockTag;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
@@ -288,6 +289,20 @@ impl ShardOperation for QueueProxyShard {
             .as_ref()
             .expect("Queue proxy has been finalized")
             .retrieve(request, with_payload, with_vector)
+            .await
+    }
+
+    /// Forward read-only `query` to `wrapped_shard`
+    async fn query(
+        &self,
+        request: Arc<ShardQueryRequest>,
+        search_runtime_handle: &Handle,
+    ) -> CollectionResult<Vec<ScoredPoint>> {
+        self.inner
+            .as_ref()
+            .expect("Queue proxy has been finalized")
+            .wrapped_shard
+            .query(request, search_runtime_handle)
             .await
     }
 }
@@ -560,6 +575,17 @@ impl ShardOperation for Inner {
         let local_shard = &self.wrapped_shard;
         local_shard
             .retrieve(request, with_payload, with_vector)
+            .await
+    }
+
+    /// Forward read-only `query` to `wrapped_shard`    
+    async fn query(
+        &self,
+        request: Arc<ShardQueryRequest>,
+        search_runtime_handle: &Handle,
+    ) -> CollectionResult<Vec<ScoredPoint>> {
+        self.wrapped_shard
+            .query(request, search_runtime_handle)
             .await
     }
 }

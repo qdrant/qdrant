@@ -13,6 +13,7 @@ use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
     CountRequestInternal, CountResult, PointRequestInternal, Record, UpdateResult,
 };
+use crate::operations::universal_query::shard_query::ShardQueryRequest;
 use crate::operations::OperationWithClockTag;
 use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::LocalShardTelemetry;
@@ -98,6 +99,14 @@ impl ShardOperation for DummyShard {
         _: &WithPayload,
         _: &WithVector,
     ) -> CollectionResult<Vec<Record>> {
+        self.dummy()
+    }
+
+    async fn query(
+        &self,
+        _: Arc<ShardQueryRequest>,
+        _: &Handle,
+    ) -> CollectionResult<Vec<ScoredPoint>> {
         self.dummy()
     }
 }

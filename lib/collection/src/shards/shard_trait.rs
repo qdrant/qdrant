@@ -7,6 +7,7 @@ use segment::types::*;
 use tokio::runtime::Handle;
 
 use crate::operations::types::*;
+use crate::operations::universal_query::shard_query::ShardQueryRequest;
 use crate::operations::OperationWithClockTag;
 
 #[async_trait]
@@ -47,7 +48,11 @@ pub trait ShardOperation {
         with_vector: &WithVector,
     ) -> CollectionResult<Vec<Record>>;
 
-    // TODO(universal-query): Add `query` operation, which accepts an `Arc<ShardQueryRequest>`
+    async fn query(
+        &self,
+        request: Arc<ShardQueryRequest>,
+        search_runtime_handle: &Handle,
+    ) -> CollectionResult<Vec<ScoredPoint>>;
 }
 
 pub type ShardOperationSS = dyn ShardOperation + Send + Sync;
