@@ -396,7 +396,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     // Setup subscribers to listen for issue-able events
-    issues_setup::setup_subscribers(dispatcher_arc.clone());
+    issues_setup::setup_subscribers(&settings);
 
     // Helper to better log start errors
     let log_err_if_any = |server_name, result| match result {

@@ -223,7 +223,10 @@ impl Segment {
                             Vector::from(vec![1.0; dim])
                         }
                         VectorStorageEnum::SparseSimple(_) => Vector::from(SparseVector::default()),
-                        VectorStorageEnum::MultiDenseSimple(_) => {
+                        VectorStorageEnum::MultiDenseSimple(_)
+                        | VectorStorageEnum::MultiDenseSimpleByte(_)
+                        | VectorStorageEnum::MultiDenseAppendableMemmap(_)
+                        | VectorStorageEnum::MultiDenseAppendableMemmapByte(_) => {
                             Vector::from(MultiDenseVector::placeholder(dim))
                         }
                     };
@@ -981,6 +984,7 @@ impl Segment {
 
     /// This function is a simplified version of `search_batch` intended for testing purposes.
     #[allow(clippy::too_many_arguments)]
+    #[cfg(feature = "testing")]
     pub fn search(
         &self,
         vector_name: &str,
@@ -1646,9 +1650,8 @@ impl SegmentEntry for Segment {
         snapshot_dir_path: &Path,
     ) -> OperationResult<PathBuf> {
         log::debug!(
-            "Taking snapshot of segment {:?} into {:?}",
+            "Taking snapshot of segment {:?} into {snapshot_dir_path:?}",
             self.current_path,
-            snapshot_dir_path,
         );
 
         if !snapshot_dir_path.exists() {
@@ -1762,9 +1765,8 @@ impl SegmentEntry for Segment {
             let res = fs::remove_dir_all(&temp_path);
             if let Err(err) = res {
                 log::error!(
-                    "Failed to remove tmp directory at {}: {:?}",
+                    "Failed to remove tmp directory at {}: {err:?}",
                     temp_path.display(),
-                    err
                 );
             }
         });

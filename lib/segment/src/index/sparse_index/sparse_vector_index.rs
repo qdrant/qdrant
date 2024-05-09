@@ -71,6 +71,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                 vector_storage.clone(),
                 path,
                 stopped,
+                || (),
             )?;
             (config, inverted_index, indices_tracker)
         } else if config_path.exists() {
@@ -114,6 +115,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
         path: &Path,
         stopped: &AtomicBool,
+        mut tick_progress: impl FnMut(),
     ) -> OperationResult<(TInvertedIndex, IndicesTracker)> {
         let borrowed_vector_storage = vector_storage.borrow();
         let borrowed_id_tracker = id_tracker.borrow();
@@ -143,6 +145,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                     ram_index_builder.add(id, vector);
                 }
             }
+            tick_progress();
         }
         Ok((
             TInvertedIndex::from_ram_index(ram_index_builder.build(), path)?,
@@ -395,7 +398,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                 if let Some(posting_list_len) =
                     self.inverted_index.posting_list_len(&remapped_dim_id)
                 {
-                    *count = posting_list_len
+                    *count += posting_list_len
                 }
             }
         }
@@ -440,16 +443,18 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         Ok(results)
     }
 
-    fn build_index(
+    fn build_index_with_progress(
         &mut self,
         _permit: Arc<CpuPermit>,
         stopped: &AtomicBool,
+        tick_progress: impl FnMut(),
     ) -> OperationResult<()> {
         let (inverted_index, indices_tracker) = Self::build_inverted_index(
             self.id_tracker.clone(),
             self.vector_storage.clone(),
             &self.path,
             stopped,
+            tick_progress,
         )?;
 
         self.inverted_index = inverted_index;

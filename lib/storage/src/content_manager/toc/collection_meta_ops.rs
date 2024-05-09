@@ -3,6 +3,7 @@ use std::path::Path;
 
 use collection::collection_state;
 use collection::config::ShardingMethod;
+use collection::events::{CollectionDeletedEvent, IndexCreatedEvent};
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::transfer::ShardTransfer;
@@ -178,6 +179,11 @@ impl TableOfContent {
                 .join(collection_name)
                 .with_extension(uuid);
             tokio::fs::rename(path, &deleted_path).await?;
+
+            // Solve all issues related to this collection
+            issues::publish(CollectionDeletedEvent {
+                collection_id: collection_name.to_string(),
+            });
 
             // At this point collection is removed from memory and moved to ".deleted" folder.
             // Next time we load service the collection will not appear in the list of collections.
@@ -512,8 +518,15 @@ impl TableOfContent {
     ) -> Result<(), StorageError> {
         self.get_collection_unchecked(&operation.collection_name)
             .await?
-            .create_payload_index(operation.field_name, operation.field_schema)
+            .create_payload_index(operation.field_name.clone(), operation.field_schema)
             .await?;
+
+        // We can solve issues related to this missing index
+        issues::publish(IndexCreatedEvent {
+            collection_id: operation.collection_name,
+            field_name: operation.field_name,
+        });
+
         Ok(())
     }
 

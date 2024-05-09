@@ -63,7 +63,7 @@ pub trait JsonPathInterface: Sized + Clone + FromStr<Err = ()> + Display {
 /// # Panics
 ///
 /// Panics if the string is not a valid path. Thus, this function should only be used in tests.
-#[cfg(test)]
+#[cfg(feature = "testing")]
 pub fn path<P: JsonPathInterface>(p: &str) -> P {
     p.parse().unwrap()
 }

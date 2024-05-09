@@ -24,6 +24,9 @@ pub struct VectorParams {
     /// Data type of the vectors
     #[prost(enumeration = "Datatype", optional, tag = "6")]
     pub datatype: ::core::option::Option<i32>,
+    /// Configuration for multi-vector search
+    #[prost(message, optional, tag = "7")]
+    pub multivector_config: ::core::option::Option<MultiVectorConfig>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -125,6 +128,14 @@ pub struct SparseVectorConfig {
         ::prost::alloc::string::String,
         SparseVectorParams,
     >,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MultiVectorConfig {
+    /// Comparator for multi-vector search
+    #[prost(enumeration = "MultiVectorComparator", tag = "1")]
+    pub comparator: i32,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -931,6 +942,20 @@ pub struct MoveShard {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ReplicateShard {
+    /// Local shard id
+    #[prost(uint32, tag = "1")]
+    pub shard_id: u32,
+    #[prost(uint64, tag = "2")]
+    pub from_peer_id: u64,
+    #[prost(uint64, tag = "3")]
+    pub to_peer_id: u64,
+    #[prost(enumeration = "ShardTransferMethod", optional, tag = "4")]
+    pub method: ::core::option::Option<i32>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AbortShardTransfer {
     /// Local shard id
     #[prost(uint32, tag = "1")]
@@ -1019,7 +1044,7 @@ pub mod update_collection_cluster_setup_request {
         #[prost(message, tag = "2")]
         MoveShard(super::MoveShard),
         #[prost(message, tag = "3")]
-        ReplicateShard(super::MoveShard),
+        ReplicateShard(super::ReplicateShard),
         #[prost(message, tag = "4")]
         AbortTransfer(super::AbortShardTransfer),
         #[prost(message, tag = "5")]
@@ -1135,6 +1160,30 @@ impl Modifier {
         match value {
             "None" => Some(Self::None),
             "Idf" => Some(Self::Idf),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum MultiVectorComparator {
+    MaxSim = 0,
+}
+impl MultiVectorComparator {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            MultiVectorComparator::MaxSim => "MaxSim",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "MaxSim" => Some(Self::MaxSim),
             _ => None,
         }
     }
@@ -3670,10 +3719,15 @@ pub struct SparseIndices {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Vector {
+    /// Vector data (flatten for multi vectors)
     #[prost(float, repeated, tag = "1")]
     pub data: ::prost::alloc::vec::Vec<f32>,
+    /// Sparse indices for sparse vectors
     #[prost(message, optional, tag = "2")]
     pub indices: ::core::option::Option<SparseIndices>,
+    /// Number of vectors per multi vector
+    #[prost(uint32, optional, tag = "3")]
+    pub vectors_count: ::core::option::Option<u32>,
 }
 /// ---------------------------------------------
 /// ----------------- ShardKeySelector ----------
@@ -4659,6 +4713,25 @@ pub mod points_update_operation {
     #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct OverwritePayload {
+        #[prost(map = "string, message", tag = "1")]
+        pub payload: ::std::collections::HashMap<
+            ::prost::alloc::string::String,
+            super::Value,
+        >,
+        /// Affected points
+        #[prost(message, optional, tag = "2")]
+        pub points_selector: ::core::option::Option<super::PointsSelector>,
+        /// Option for custom sharding to specify used shard keys
+        #[prost(message, optional, tag = "3")]
+        pub shard_key_selector: ::core::option::Option<super::ShardKeySelector>,
+        /// Option for indicate property of payload
+        #[prost(string, optional, tag = "4")]
+        pub key: ::core::option::Option<::prost::alloc::string::String>,
+    }
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct DeletePayload {
         #[prost(string, repeated, tag = "1")]
         pub keys: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
@@ -4728,7 +4801,7 @@ pub mod points_update_operation {
         #[prost(message, tag = "3")]
         SetPayload(SetPayload),
         #[prost(message, tag = "4")]
-        OverwritePayload(SetPayload),
+        OverwritePayload(OverwritePayload),
         #[prost(message, tag = "5")]
         DeletePayload(DeletePayload),
         #[prost(message, tag = "6")]
@@ -8238,53 +8311,6 @@ pub mod points_internal_client {
                 .insert(GrpcMethod::new("qdrant.PointsInternal", "DeleteFieldIndex"));
             self.inner.unary(req, path, codec).await
         }
-        pub async fn search(
-            &mut self,
-            request: impl tonic::IntoRequest<super::SearchPointsInternal>,
-        ) -> std::result::Result<tonic::Response<super::SearchResponse>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/qdrant.PointsInternal/Search",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("qdrant.PointsInternal", "Search"));
-            self.inner.unary(req, path, codec).await
-        }
-        pub async fn search_batch(
-            &mut self,
-            request: impl tonic::IntoRequest<super::SearchBatchPointsInternal>,
-        ) -> std::result::Result<
-            tonic::Response<super::SearchBatchResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/qdrant.PointsInternal/SearchBatch",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("qdrant.PointsInternal", "SearchBatch"));
-            self.inner.unary(req, path, codec).await
-        }
         pub async fn core_search_batch(
             &mut self,
             request: impl tonic::IntoRequest<super::CoreSearchBatchPointsInternal>,
@@ -8484,17 +8510,6 @@ pub mod points_internal_server {
             request: tonic::Request<super::DeleteFieldIndexCollectionInternal>,
         ) -> std::result::Result<
             tonic::Response<super::PointsOperationResponseInternal>,
-            tonic::Status,
-        >;
-        async fn search(
-            &self,
-            request: tonic::Request<super::SearchPointsInternal>,
-        ) -> std::result::Result<tonic::Response<super::SearchResponse>, tonic::Status>;
-        async fn search_batch(
-            &self,
-            request: tonic::Request<super::SearchBatchPointsInternal>,
-        ) -> std::result::Result<
-            tonic::Response<super::SearchBatchResponse>,
             tonic::Status,
         >;
         async fn core_search_batch(
@@ -9103,98 +9118,6 @@ pub mod points_internal_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = DeleteFieldIndexSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/qdrant.PointsInternal/Search" => {
-                    #[allow(non_camel_case_types)]
-                    struct SearchSvc<T: PointsInternal>(pub Arc<T>);
-                    impl<
-                        T: PointsInternal,
-                    > tonic::server::UnaryService<super::SearchPointsInternal>
-                    for SearchSvc<T> {
-                        type Response = super::SearchResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::SearchPointsInternal>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as PointsInternal>::search(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = SearchSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/qdrant.PointsInternal/SearchBatch" => {
-                    #[allow(non_camel_case_types)]
-                    struct SearchBatchSvc<T: PointsInternal>(pub Arc<T>);
-                    impl<
-                        T: PointsInternal,
-                    > tonic::server::UnaryService<super::SearchBatchPointsInternal>
-                    for SearchBatchSvc<T> {
-                        type Response = super::SearchBatchResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::SearchBatchPointsInternal>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as PointsInternal>::search_batch(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = SearchBatchSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

@@ -9,17 +9,17 @@ use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
-use super::chunked_vectors::ChunkedVectors;
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
-    MultiDenseVector, TypedMultiDenseVector, TypedMultiDenseVectorRef, VectorElementType, VectorRef,
+    MultiDenseVector, TypedMultiDenseVector, TypedMultiDenseVectorRef, VectorRef,
 };
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::bitvec::bitvec_set_deleted;
+use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::common::StoredRecord;
 use crate::vector_storage::{MultiVectorStorage, VectorStorage, VectorStorageEnum};
 
@@ -49,7 +49,6 @@ pub struct SimpleMultiDenseVectorStorage<T: PrimitiveVectorElement> {
     deleted_count: usize,
 }
 
-#[allow(unused)]
 pub fn open_simple_multi_dense_vector_storage(
     database: Arc<RwLock<DB>>,
     database_column_name: &str,
@@ -58,6 +57,48 @@ pub fn open_simple_multi_dense_vector_storage(
     multi_vector_config: MultiVectorConfig,
     stopped: &AtomicBool,
 ) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
+    let storage = open_simple_multi_dense_vector_storage_impl(
+        database,
+        database_column_name,
+        dim,
+        distance,
+        multi_vector_config,
+        stopped,
+    )?;
+    Ok(Arc::new(AtomicRefCell::new(
+        VectorStorageEnum::MultiDenseSimple(storage),
+    )))
+}
+
+pub fn open_simple_multi_dense_vector_storage_byte(
+    database: Arc<RwLock<DB>>,
+    database_column_name: &str,
+    dim: usize,
+    distance: Distance,
+    multi_vector_config: MultiVectorConfig,
+    stopped: &AtomicBool,
+) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
+    let storage = open_simple_multi_dense_vector_storage_impl(
+        database,
+        database_column_name,
+        dim,
+        distance,
+        multi_vector_config,
+        stopped,
+    )?;
+    Ok(Arc::new(AtomicRefCell::new(
+        VectorStorageEnum::MultiDenseSimpleByte(storage),
+    )))
+}
+
+fn open_simple_multi_dense_vector_storage_impl<T: PrimitiveVectorElement>(
+    database: Arc<RwLock<DB>>,
+    database_column_name: &str,
+    dim: usize,
+    distance: Distance,
+    multi_vector_config: MultiVectorConfig,
+    stopped: &AtomicBool,
+) -> OperationResult<SimpleMultiDenseVectorStorage<T>> {
     let mut vectors = ChunkedVectors::new(dim);
     let mut vectors_metadata = Vec::<MultiVectorMetadata>::new();
     let (mut deleted, mut deleted_count) = (BitVec::new(), 0);
@@ -66,7 +107,7 @@ pub fn open_simple_multi_dense_vector_storage(
     for (key, value) in db_wrapper.lock_db().iter()? {
         let point_id: PointOffsetType = bincode::deserialize(&key)
             .map_err(|_| OperationError::service_error("cannot deserialize point id from db"))?;
-        let stored_record: StoredMultiDenseVector<VectorElementType> = bincode::deserialize(&value)
+        let stored_record: StoredMultiDenseVector<T> = bincode::deserialize(&value)
             .map_err(|_| OperationError::service_error("cannot deserialize record from db"))?;
 
         // Propagate deleted flag
@@ -98,22 +139,20 @@ pub fn open_simple_multi_dense_vector_storage(
         check_process_stopped(stopped)?;
     }
 
-    Ok(Arc::new(AtomicRefCell::new(
-        VectorStorageEnum::MultiDenseSimple(SimpleMultiDenseVectorStorage {
-            dim,
-            distance,
-            multi_vector_config,
-            vectors,
-            vectors_metadata,
-            db_wrapper,
-            update_buffer: StoredMultiDenseVector {
-                deleted: false,
-                vector: TypedMultiDenseVector::placeholder(dim),
-            },
-            deleted,
-            deleted_count,
-        }),
-    )))
+    Ok(SimpleMultiDenseVectorStorage {
+        dim,
+        distance,
+        multi_vector_config,
+        vectors,
+        vectors_metadata,
+        db_wrapper,
+        update_buffer: StoredMultiDenseVector {
+            deleted: false,
+            vector: TypedMultiDenseVector::placeholder(dim),
+        },
+        deleted,
+        deleted_count,
+    })
 }
 
 impl<T: PrimitiveVectorElement> SimpleMultiDenseVectorStorage<T> {

@@ -177,6 +177,7 @@ impl CpuPermit {
     }
 
     /// New CPU permit with given CPU count without a backing semaphore for a shared pool.
+    #[cfg(feature = "testing")]
     pub fn dummy(count: u32) -> Self {
         Self {
             num_cpus: count,
