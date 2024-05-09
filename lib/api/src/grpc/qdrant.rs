@@ -942,6 +942,20 @@ pub struct MoveShard {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ReplicateShard {
+    /// Local shard id
+    #[prost(uint32, tag = "1")]
+    pub shard_id: u32,
+    #[prost(uint64, tag = "2")]
+    pub from_peer_id: u64,
+    #[prost(uint64, tag = "3")]
+    pub to_peer_id: u64,
+    #[prost(enumeration = "ShardTransferMethod", optional, tag = "4")]
+    pub method: ::core::option::Option<i32>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AbortShardTransfer {
     /// Local shard id
     #[prost(uint32, tag = "1")]
@@ -1030,7 +1044,7 @@ pub mod update_collection_cluster_setup_request {
         #[prost(message, tag = "2")]
         MoveShard(super::MoveShard),
         #[prost(message, tag = "3")]
-        ReplicateShard(super::MoveShard),
+        ReplicateShard(super::ReplicateShard),
         #[prost(message, tag = "4")]
         AbortTransfer(super::AbortShardTransfer),
         #[prost(message, tag = "5")]
@@ -4699,6 +4713,25 @@ pub mod points_update_operation {
     #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct OverwritePayload {
+        #[prost(map = "string, message", tag = "1")]
+        pub payload: ::std::collections::HashMap<
+            ::prost::alloc::string::String,
+            super::Value,
+        >,
+        /// Affected points
+        #[prost(message, optional, tag = "2")]
+        pub points_selector: ::core::option::Option<super::PointsSelector>,
+        /// Option for custom sharding to specify used shard keys
+        #[prost(message, optional, tag = "3")]
+        pub shard_key_selector: ::core::option::Option<super::ShardKeySelector>,
+        /// Option for indicate property of payload
+        #[prost(string, optional, tag = "4")]
+        pub key: ::core::option::Option<::prost::alloc::string::String>,
+    }
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct DeletePayload {
         #[prost(string, repeated, tag = "1")]
         pub keys: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
@@ -4768,7 +4801,7 @@ pub mod points_update_operation {
         #[prost(message, tag = "3")]
         SetPayload(SetPayload),
         #[prost(message, tag = "4")]
-        OverwritePayload(SetPayload),
+        OverwritePayload(OverwritePayload),
         #[prost(message, tag = "5")]
         DeletePayload(DeletePayload),
         #[prost(message, tag = "6")]

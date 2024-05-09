@@ -45,8 +45,8 @@ use crate::lookup::WithLookup;
 use crate::operations::cluster_ops::{
     AbortShardTransfer, AbortTransferOperation, ClusterOperations, CreateShardingKey,
     CreateShardingKeyOperation, DropReplicaOperation, DropShardingKey, DropShardingKeyOperation,
-    MoveShard, MoveShardOperation, Replica, ReplicateShardOperation, RestartTransfer,
-    RestartTransferOperation,
+    MoveShard, MoveShardOperation, Replica, ReplicateShard, ReplicateShardOperation,
+    RestartTransfer, RestartTransferOperation,
 };
 use crate::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
@@ -1745,6 +1745,20 @@ impl From<CollectionClusterInfo> for api::grpc::qdrant::CollectionClusterInfoRes
                 .map(|shard| shard.into())
                 .collect(),
         }
+    }
+}
+
+impl TryFrom<api::grpc::qdrant::ReplicateShard> for ReplicateShard {
+    type Error = Status;
+
+    fn try_from(value: api::grpc::qdrant::ReplicateShard) -> Result<Self, Self::Error> {
+        let method = value.method.map(TryInto::try_into).transpose()?;
+        Ok(Self {
+            shard_id: value.shard_id,
+            from_peer_id: value.from_peer_id,
+            to_peer_id: value.to_peer_id,
+            method,
+        })
     }
 }
 

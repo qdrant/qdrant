@@ -583,7 +583,7 @@ pub async fn update_batch(
                 .await
             }
             points_update_operation::Operation::OverwritePayload(
-                points_update_operation::SetPayload {
+                points_update_operation::OverwritePayload {
                     payload,
                     points_selector,
                     shard_key_selector,
