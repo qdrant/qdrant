@@ -644,6 +644,7 @@ impl ShardReplicaSet {
                         self.set_local(local_shard, Some(state)).await?;
                         self.notify_peer_failure(peer_id);
                     }
+
                     ReplicaState::Dead
                     | ReplicaState::Partial
                     | ReplicaState::Initializing
@@ -651,6 +652,8 @@ impl ShardReplicaSet {
                     | ReplicaState::Recovery => {
                         self.set_local(local_shard, Some(state)).await?;
                     }
+
+                    ReplicaState::Resharding => todo!(),
                 }
                 continue;
             }
@@ -920,6 +923,8 @@ pub enum ReplicaState {
     // Shard is undergoing recovery by an external node
     // Normally rejects updates, accepts updates if force is true
     Recovery,
+    // TODO
+    Resharding,
 }
 
 impl ReplicaState {
@@ -933,7 +938,8 @@ impl ReplicaState {
             | ReplicaState::Initializing
             | ReplicaState::Partial
             | ReplicaState::PartialSnapshot
-            | ReplicaState::Recovery => false,
+            | ReplicaState::Recovery
+            | ReplicaState::Resharding => false,
         }
     }
 
@@ -947,6 +953,8 @@ impl ReplicaState {
             | ReplicaState::Dead
             | ReplicaState::Initializing
             | ReplicaState::Listener => false,
+
+            ReplicaState::Resharding => todo!(),
         }
     }
 }

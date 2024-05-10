@@ -38,9 +38,12 @@ impl ShardReplicaSet {
 
         if let Some(local_shard) = local.deref() {
             match self.peer_state(&self.this_peer_id()) {
-                Some(ReplicaState::Active | ReplicaState::Partial | ReplicaState::Initializing) => {
-                    Ok(Some(local_shard.get().update(operation, wait).await?))
-                }
+                Some(
+                    ReplicaState::Active
+                    | ReplicaState::Partial
+                    | ReplicaState::Initializing
+                    | ReplicaState::Resharding,
+                ) => Ok(Some(local_shard.get().update(operation, wait).await?)),
                 Some(ReplicaState::Listener) => {
                     Ok(Some(local_shard.get().update(operation, false).await?))
                 }
@@ -405,6 +408,7 @@ impl ShardReplicaSet {
             Some(ReplicaState::Listener) => true,
             Some(ReplicaState::PartialSnapshot) => false,
             Some(ReplicaState::Recovery) => false,
+            Some(ReplicaState::Resharding) => todo!(),
             None => false,
         };
         res && !self.is_locally_disabled(peer_id)
