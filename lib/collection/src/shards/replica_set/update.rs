@@ -408,7 +408,7 @@ impl ShardReplicaSet {
             Some(ReplicaState::Listener) => true,
             Some(ReplicaState::PartialSnapshot) => false,
             Some(ReplicaState::Recovery) => false,
-            Some(ReplicaState::Resharding) => todo!(),
+            Some(ReplicaState::Resharding) => true,
             None => false,
         };
         res && !self.is_locally_disabled(peer_id)

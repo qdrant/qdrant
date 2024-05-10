@@ -649,11 +649,10 @@ impl ShardReplicaSet {
                     | ReplicaState::Partial
                     | ReplicaState::Initializing
                     | ReplicaState::PartialSnapshot
-                    | ReplicaState::Recovery => {
+                    | ReplicaState::Recovery
+                    | ReplicaState::Resharding => {
                         self.set_local(local_shard, Some(state)).await?;
                     }
-
-                    ReplicaState::Resharding => todo!(),
                 }
                 continue;
             }
@@ -947,14 +946,15 @@ impl ReplicaState {
     pub fn is_partial_or_recovery(self) -> bool {
         // Use explicit match, to catch future changes to `ReplicaState`
         match self {
-            ReplicaState::Partial | ReplicaState::PartialSnapshot | ReplicaState::Recovery => true,
+            ReplicaState::Partial
+            | ReplicaState::PartialSnapshot
+            | ReplicaState::Recovery
+            | ReplicaState::Resharding => true,
 
             ReplicaState::Active
             | ReplicaState::Dead
             | ReplicaState::Initializing
             | ReplicaState::Listener => false,
-
-            ReplicaState::Resharding => todo!(),
         }
     }
 }
