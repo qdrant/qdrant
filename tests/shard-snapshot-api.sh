@@ -85,6 +85,23 @@ function kill-jobs {
 	kill $(jobs -p) &>/dev/null || :
 }
 
+function storage-s3-test-all {
+	echo "Using S3 storage"
+  CONFIG_FILE="./config/config.yaml"
+
+	yq eval -i '.storage.snapshots_config += {"s3_config": {}}' $CONFIG_FILE
+
+	# Set to S3 with dynamic or fixed credentials
+	yq eval -i '.storage.snapshots_config.snapshots_storage = "s3"' $CONFIG_FILE
+	yq eval -i '.storage.snapshots_config.s3_config.bucket = "test-bucket"' $CONFIG_FILE
+	yq eval -i '.storage.snapshots_config.s3_config.region = "us-east-1"' $CONFIG_FILE
+	yq eval -i '.storage.snapshots_config.s3_config.access_key = "minioadmin"' $CONFIG_FILE
+	yq eval -i '.storage.snapshots_config.s3_config.secret_key = "minioadmin"' $CONFIG_FILE
+	yq eval -i '.storage.snapshots_config.s3_config.endpoint_url = "http://127.0.0.1:9000"' $CONFIG_FILE
+
+	test-all
+}
+
 
 declare TESTS=(
 	list
