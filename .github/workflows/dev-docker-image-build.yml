@@ -20,12 +20,12 @@ jobs:
 
             if [ -n "$buildx_containers" ]; then
               echo "Buildx containers to delete: " "$buildx_containers"
-              docker container rm -f "$buildx_containers"
+              docker container rm -f $buildx_containers
             fi
 
             if [ -n "$buildx_volumes" ]; then
               echo "Buildx volumes to delete: " "$buildx_volumes"
-              docker volume rm -f "$buildx_volumes"
+              docker volume rm -f $buildx_volumes
             fi
 
             branch=${GITHUB_REF_NAME//\//-} # replace all / with -
