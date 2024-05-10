@@ -23,10 +23,12 @@ impl Responder for SnapshotStream {
 
     fn respond_to(self, _: &actix_web::HttpRequest) -> HttpResponse<Self::Body> {
         match self {
-            SnapshotStream::LocalFS(stream) => {
-                let file = NamedFile::open(stream.snapshot_path).unwrap();
-                file.into_response(&stream.req)
-            }
+            SnapshotStream::LocalFS(stream) => match NamedFile::open(stream.snapshot_path) {
+                Ok(file) => file.into_response(&stream.req),
+                Err(e) => {
+                    HttpResponse::InternalServerError().body(format!("Failed to open file: {}", e))
+                }
+            },
 
             SnapshotStream::CloudStorage(stream) => HttpResponse::Ok()
                 .content_type("application/octet-stream")
