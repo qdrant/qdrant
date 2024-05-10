@@ -6,6 +6,7 @@ use std::time::Duration;
 use parking_lot::Mutex;
 use tokio::time::sleep;
 
+use super::resharding_stream_records::transfer_resharding_stream_records;
 use super::snapshot::transfer_snapshot;
 use super::stream_records::transfer_stream_records;
 use super::transfer_tasks_pool::TransferTaskProgress;
@@ -60,6 +61,18 @@ pub async fn transfer_shard(
         // Transfer shard record in batches
         ShardTransferMethod::StreamRecords => {
             transfer_stream_records(
+                shard_holder.clone(),
+                progress,
+                shard_id,
+                remote_shard,
+                collection_name,
+            )
+            .await?;
+        }
+
+        // Transfer shard record in batches for resharding
+        ShardTransferMethod::ReshardingStreamRecords => {
+            transfer_resharding_stream_records(
                 shard_holder.clone(),
                 progress,
                 shard_id,

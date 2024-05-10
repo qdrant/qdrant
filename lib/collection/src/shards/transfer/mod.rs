@@ -15,6 +15,7 @@ use crate::operations::types::{CollectionError, CollectionResult};
 
 pub mod driver;
 pub mod helpers;
+pub mod resharding_stream_records;
 pub mod snapshot;
 pub mod stream_records;
 pub mod transfer_tasks_pool;
@@ -103,6 +104,9 @@ pub enum ShardTransferMethod {
     Snapshot,
     /// Attempt to transfer shard difference by WAL delta.
     WalDelta,
+    /// Shard transfer for resharding: stream all records in batches until all points are
+    /// transferred.
+    ReshardingStreamRecords,
 }
 
 /// Interface to consensus for shard transfer operations.
