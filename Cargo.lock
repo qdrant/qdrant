@@ -466,7 +466,7 @@ checksum = "25bdb32cbbdce2b519a9cd7df3a678443100e265d5e25ca763b7572a5104f5f3"
 
 [[package]]
 name = "api"
-version = "1.9.2-dev"
+version = "1.9.3-dev"
 dependencies = [
  "chrono",
  "common",
@@ -4112,7 +4112,7 @@ dependencies = [
 
 [[package]]
 name = "qdrant"
-version = "1.9.2-dev"
+version = "1.9.3-dev"
 dependencies = [
  "actix-cors",
  "actix-files",
