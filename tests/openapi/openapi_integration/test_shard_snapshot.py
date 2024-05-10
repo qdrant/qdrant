@@ -14,7 +14,7 @@ collection_name = 'test_collection_snapshot'
 
 @pytest.fixture(autouse=True)
 def setup(on_disk_vectors):
-    basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
+    basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors, wal_capacity=1)
     yield
     drop_collection(collection_name=collection_name)
 
