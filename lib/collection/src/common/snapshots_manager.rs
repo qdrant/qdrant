@@ -7,6 +7,7 @@ use serde::Deserialize;
 use tempfile::TempPath;
 use tokio::io::AsyncWriteExt;
 
+use super::snapshot_stream::{SnapShotStreamCloudStrage, SnapShotStreamLocalFS, SnapshotStream};
 use crate::common::file_utils::move_file;
 use crate::common::sha_256::hash_file;
 use crate::operations::snapshot_ops::{
@@ -16,8 +17,6 @@ use crate::operations::snapshot_storage_ops::{self};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::shard::ShardId;
 use crate::shards::shard_holder::LockedShardHolder;
-
-use super::snapshot_stream::{SnapShotStreamCloudStrage, SnapShotStreamLocalFS, SnapshotStream};
 
 #[derive(Clone, Deserialize, Debug, Default)]
 pub struct SnapShotsConfig {
