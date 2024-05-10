@@ -15,8 +15,8 @@ jobs:
             ref: ${{ github.ref.name }}
         - name: Build the Docker image
           run: |
-            buildx_containers=$(docker container ls -a -qf "name=buildx_buildkit")
-            buildx_volumes=$(docker volume ls -qf "name=buildx_buildkit")
+            buildx_containers=$(docker container ls -a -qf "name=buildx_buildkit" | tr '\n' ' ')
+            buildx_volumes=$(docker volume ls -qf "name=buildx_buildkit" | tr '\n' ' ')
 
             if [ -n "$buildx_containers" ]; then
               echo "Buildx containers to delete: " "$buildx_containers"
