@@ -188,6 +188,8 @@ pub async fn download_snapshot(
         .await
         .map_err(|e| CollectionError::service_error(format!("Failed to create file: {}", e)))?;
 
+    let mut total = 0;
+
     while let Some(data) = stream.next().await {
         let data = data.map_err(|e| {
             CollectionError::service_error(format!("Failed to get data from stream: {}", e))
@@ -195,6 +197,16 @@ pub async fn download_snapshot(
         file.write_all(&data).await.map_err(|e| {
             CollectionError::service_error(format!("Failed to write to file: {}", e))
         })?;
+        total += data.len();
+    }
+    // check len to file len
+    let file_meta = tokio::fs::metadata(target_path).await?;
+    if file_meta.len() != total as u64 {
+        return Err(CollectionError::service_error(format!(
+            "Downloaded file size does not match the expected size: {} != {}",
+            file_meta.len(),
+            total
+        )));
     }
     Ok(())
 }
