@@ -187,6 +187,7 @@ pub fn init(
         } else {
             log::info!("TLS disabled for gRPC API");
         }
+        log::debug!("qdrant.load: end");
 
         // The stack of middleware that our service will be wrapped in
         let middleware_layer = tower::ServiceBuilder::new()

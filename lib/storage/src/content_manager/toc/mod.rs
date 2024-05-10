@@ -106,6 +106,8 @@ impl TableOfContent {
             let temp_path = Path::new(path);
             create_dir_all(temp_path).expect("Can't create temporary files directory");
         }
+
+        log::debug!("read collections: start");
         let collection_paths =
             read_dir(&collections_path).expect("Can't read Collections directory");
         let mut collections: HashMap<String, Collection> = Default::default();
@@ -135,6 +137,7 @@ impl TableOfContent {
                 panic!("Can't create a directory for snapshot of {collection_name}: {e}")
             });
             log::info!("Loading collection: {collection_name}");
+            log::debug!("Collection.load: start");
             let collection = general_runtime.block_on(Collection::load(
                 collection_name.clone(),
                 this_peer_id,
@@ -163,9 +166,11 @@ impl TableOfContent {
                 optimizer_cpu_budget.clone(),
                 storage_config.optimizers_overwrite.clone(),
             ));
+            log::debug!("Collection.load: end");
 
             collections.insert(collection_name, collection);
         }
+        log::debug!("read collections: end");
         let alias_path = Path::new(&storage_config.storage_path).join(ALIASES_PATH);
         let alias_persistence =
             AliasPersistence::open(alias_path).expect("Can't open database by the provided config");

@@ -215,11 +215,13 @@ impl LocalShard {
         let wal_path = Self::wal_path(shard_path);
         let segments_path = Self::segments_path(shard_path);
 
+        log::debug!("SerdeWal.new: start");
         let wal: SerdeWal<OperationWithClockTag> = SerdeWal::new(
             wal_path.to_str().unwrap(),
             (&collection_config_read.wal_config).into(),
         )
         .map_err(|e| CollectionError::service_error(format!("Wal error: {e}")))?;
+        log::debug!("SerdeWal.new: end");
 
         let segment_dirs = std::fs::read_dir(&segments_path).map_err(|err| {
             CollectionError::service_error(format!(
@@ -324,6 +326,7 @@ impl LocalShard {
             segment_holder.create_appendable_segment(&segments_path, &collection_params)?;
         }
 
+        log::debug!("LocalShard.new: start");
         let local_shard = LocalShard::new(
             segment_holder,
             collection_config,
@@ -338,7 +341,10 @@ impl LocalShard {
         .await;
 
         // Apply outstanding operations from WAL
+        log::debug!("LocalShard.new: end");
+        log::debug!("local_shard.load_from_wal: start");
         local_shard.load_from_wal(collection_id).await?;
+        log::debug!("local_shard.load_from_wal: end");
 
         let available_memory_bytes = Mem::new().available_memory_bytes() as usize;
         let vectors_size_bytes = local_shard.estimate_vector_data_size().await;
@@ -353,6 +359,7 @@ impl LocalShard {
         // even to store half of the vector data.
         let do_mmap_prefault = available_memory_bytes * 2 > vectors_size_bytes;
 
+        log::debug!("local_shard.segment.read: start");
         if do_mmap_prefault {
             for (_, segment) in local_shard.segments.read().iter() {
                 if let LockedSegment::Original(segment) = segment {
@@ -360,6 +367,7 @@ impl LocalShard {
                 }
             }
         }
+        log::debug!("local_shard.segment.read: end");
 
         Ok(local_shard)
     }
