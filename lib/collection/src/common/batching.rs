@@ -13,12 +13,14 @@ use crate::operations::types::CollectionResult;
 ///
 /// Example usage (simplified):
 ///
+/// ```python
 /// requests = [
 ///     Recommend(positive=[1], shard_key="cats"),
 ///     Recommend(positive=[2], shard_key="cats"),
 ///     Recommend(positive=[3], shard_key="dogs"),
 ///     Recommend(positive=[3], shard_key="dogs"),
 /// ]
+/// ```
 ///
 /// We want to:
 ///     1. Group requests by shard_key into Acc1 (vector of requests)

@@ -14,15 +14,14 @@ use crate::common::sparse_vector::SparseVector;
 ///
 /// The layout of the memory-mapped file is as follows:
 ///
-/// =======  ===========  ==========  ===================
-/// name     type         size        start
-/// =======  ===========  ==========  ===================
-/// nrow     u64          8           0
-/// ncol     u64          8           8
-/// nnz      u64          8           16
-/// indptr   u64[nrow+1]  8*(nrow+1)  24
-/// indices  u32[nnz]     4*nnz       24+8*(nrow+1)
-/// data     u32[nnz]     4*nnz       24+8*(nrow+1)+4*nnz
+/// | name    | type          | size       | start               |
+/// |---------|---------------|------------|---------------------|
+/// | nrow    | `u64`         | 8          | 0                   |
+/// | ncol    | `u64`         | 8          | 8                   |
+/// | nnz     | `u64`         | 8          | 16                  |
+/// | indptr  | `u64[nrow+1]` | 8*(nrow+1) | 24                  |
+/// | indices | `u32[nnz]`    | 4*nnz      | 24+8*(nrow+1)       |
+/// | data    | `u32[nnz]`    | 4*nnz      | 24+8*(nrow+1)+4*nnz |
 pub struct Csr {
     mmap: Mmap,
 

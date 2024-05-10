@@ -15,6 +15,7 @@ multiling-korean = ["charabia/korean"]
 testing = []
 
 [dev-dependencies]
+common = { path = "../common/common", features = ["testing"] }
 criterion = "0.5"
 dataset = { path = "../common/dataset" }
 indicatif = { workspace = true }
