@@ -182,7 +182,7 @@ async fn get_logger_config(handle: web::Data<tracing::LoggerHandle>) -> impl Res
 #[post("/logger")]
 async fn update_logger_config(
     handle: web::Data<tracing::LoggerHandle>,
-    config: web::Json<tracing::LoggerConfigDiff>,
+    config: web::Json<tracing::LoggerConfig>,
 ) -> impl Responder {
     let timing = Instant::now();
 

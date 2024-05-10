@@ -29,7 +29,7 @@ impl LoggerHandle {
         self.config.read().await.clone()
     }
 
-    pub async fn update_config(&self, mut diff: config::LoggerConfigDiff) -> anyhow::Result<()> {
+    pub async fn update_config(&self, new_config: config::LoggerConfig) -> anyhow::Result<()> {
         let mut config = self.config.write().await;
 
         // `tracing-subscriber` does not support `reload`ing `Filtered` layers, so we *have to* use
@@ -44,17 +44,16 @@ impl LoggerHandle {
         // - https://github.com/tokio-rs/tracing/issues/1629
         // - https://github.com/tokio-rs/tracing/pull/2657
 
-        // Only update logger configuration, if `diff` contains changes to current parameters
-        diff.filter(&config);
+        let new_layer = default::new_layer(&new_config.default);
+        let new_filter = default::new_filter(&new_config.default);
 
-        // Parse `diff` and prepare `update` *outside* of `modify` call
-        if let Some(update) = diff.default.prepare_update() {
-            // Apply prepared `update` using trivial code that should never trigger a deadlock
-            self.default.modify(move |logger| update.apply(logger))?;
-        }
+        self.default.modify(move |logger| {
+            *logger.filter_mut() = new_filter;
+            *logger.inner_mut() = Some(new_layer);
+        })?;
 
         // Update `config`
-        config.default.update(diff.default);
+        config.default = new_config.default;
 
         Ok(())
     }
