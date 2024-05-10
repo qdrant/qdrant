@@ -98,8 +98,10 @@ fn create_segment(
                 .map(|vector_name| get_vector_name_with_prefix(DB_VECTOR_CF, vector_name)),
         )
         .collect();
+    log::debug!("{:?}.open_db: start", segment_path.file_name());
     let database = open_db(segment_path, &vector_db_names)
         .map_err(|err| OperationError::service_error(format!("RocksDB open error: {err}")))?;
+    log::debug!("{:?}.open_db: end", segment_path.file_name());
 
     let payload_storage = match config.payload_storage_type {
         PayloadStorageType::InMemory => sp(SimplePayloadStorage::open(database.clone())?.into()),
@@ -118,10 +120,16 @@ fn create_segment(
         )
         .all(|v| v);
 
+    log::debug!("{:?}.SimpleIdTracker.open: start", segment_path.file_name());
     let id_tracker = sp(IdTrackerEnum::MutableIdTracker(SimpleIdTracker::open(
         database.clone(),
     )?));
+    log::debug!("{:?}.SimpleIdTracker.open: end", segment_path.file_name());
 
+    log::debug!(
+        "{:?}.StructPayloadIndex.open: start",
+        segment_path.file_name()
+    );
     let payload_index_path = segment_path.join(PAYLOAD_INDEX_PATH);
     let payload_index: Arc<AtomicRefCell<StructPayloadIndex>> = sp(StructPayloadIndex::open(
         payload_storage,
@@ -129,7 +137,12 @@ fn create_segment(
         &payload_index_path,
         appendable_flag,
     )?);
+    log::debug!(
+        "{:?}.StructPayloadIndex.open: end",
+        segment_path.file_name()
+    );
 
+    log::debug!("{:?}.vector_data: start", segment_path.file_name());
     let mut vector_data = HashMap::new();
     for (vector_name, vector_config) in &config.vector_data {
         let vector_storage_path = get_vector_storage_path(segment_path, vector_name);
@@ -311,6 +324,10 @@ fn create_segment(
             );
         }
 
+        log::debug!(
+            "{:?}.QuantizedVectors.load: start",
+            segment_path.file_name()
+        );
         let quantized_vectors = sp(if config.quantization_config(vector_name).is_some() {
             let quantized_data_path = vector_storage_path;
             if QuantizedVectors::config_exists(&quantized_data_path) {
@@ -323,7 +340,9 @@ fn create_segment(
         } else {
             None
         });
+        log::debug!("{:?}.QuantizedVectors.load: end", segment_path.file_name());
 
+        log::debug!("{:?}.Index: start", segment_path.file_name());
         let vector_index: Arc<AtomicRefCell<VectorIndexEnum>> = match &vector_config.index {
             Indexes::Plain {} => sp(VectorIndexEnum::Plain(PlainIndex::new(
                 id_tracker.clone(),
@@ -350,9 +369,11 @@ fn create_segment(
                 )?)
             }),
         };
+        log::debug!("{:?}.Index: end", segment_path.file_name());
 
         check_process_stopped(stopped)?;
 
+        log::debug!("{:?}.vector_data.insert: start", segment_path.file_name());
         vector_data.insert(
             vector_name.to_owned(),
             VectorData {
@@ -361,8 +382,11 @@ fn create_segment(
                 quantized_vectors,
             },
         );
+        log::debug!("{:?}.vector_data.insert: end", segment_path.file_name());
     }
+    log::debug!("{:?}.vector_data: end", segment_path.file_name());
 
+    log::debug!("{:?}.sparse_vector_data: start", segment_path.file_name());
     for (vector_name, sparse_vector_config) in &config.sparse_vector_data {
         let vector_storage_path = get_vector_storage_path(segment_path, vector_name);
         let vector_index_path = get_vector_index_path(segment_path, vector_name);
@@ -421,6 +445,7 @@ fn create_segment(
             },
         );
     }
+    log::debug!("{:?}.sparse_vector_data: end", segment_path.file_name());
 
     let segment_type = if config.is_any_vector_indexed() {
         SegmentType::Indexed
@@ -456,6 +481,7 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option
         return Ok(None);
     }
 
+    log::debug!("load_segment.{:?}: start", path.file_name());
     let Some(stored_version) = SegmentVersion::load(path)? else {
         // Assume segment was not properly saved.
         // Server might have crashed before saving the segment fully.
@@ -465,6 +491,7 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option
         );
         return Ok(None);
     };
+    log::debug!("load_segment.{:?}: end", path.file_name());
 
     let app_version = SegmentVersion::current();
 
@@ -495,10 +522,21 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option
         SegmentVersion::save(path)?
     }
 
+    log::debug!(
+        "load_segment.{:?}.Segment.load_state: start",
+        path.file_name()
+    );
     let segment_state = Segment::load_state(path)?;
+    log::debug!(
+        "load_segment.{:?}.Segment.load_state: end",
+        path.file_name()
+    );
 
+    log::debug!("load_segment.{:?}.create_segment: start", path.file_name());
     let segment = create_segment(segment_state.version, path, &segment_state.config, stopped)?;
+    log::debug!("load_segment.{:?}.create_segment: end", path.file_name());
 
+    log::debug!("load_segment.{:?}: end", path.file_name());
     Ok(Some(segment))
 }
 

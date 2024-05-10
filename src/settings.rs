@@ -153,6 +153,8 @@ impl Settings {
         let mut load_errors = vec![];
         let config_exists = |path| File::with_name(path).collect().is_ok();
 
+        load_errors.push(LogMsg::Warn(format!("qdrant.load: start")));
+
         // Check if custom config file exists, report error if not
         if let Some(ref path) = custom_config_path {
             if !config_exists(path) {

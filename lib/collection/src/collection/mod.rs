@@ -233,6 +233,7 @@ impl Collection {
 
         let shared_collection_config = Arc::new(RwLock::new(collection_config.clone()));
 
+        log::debug!("shard_holder.load_shards: start");
         shard_holder
             .load_shards(
                 path,
@@ -249,6 +250,7 @@ impl Collection {
                 optimizer_cpu_budget.clone(),
             )
             .await;
+        log::debug!("shard_holder.load_shards: end");
 
         let locked_shard_holder = Arc::new(LockedShardHolder::new(shard_holder));
 

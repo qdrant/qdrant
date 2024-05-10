@@ -693,6 +693,7 @@ impl ShardHolder {
             for (path, _shard_version, shard_type) in
                 latest_shard_paths(collection_path, shard_id).await.unwrap()
             {
+                log::debug!("ShardReplicaSet.load: start");
                 let replica_set = ShardReplicaSet::load(
                     shard_id,
                     collection_id.clone(),
@@ -709,6 +710,7 @@ impl ShardHolder {
                     optimizer_cpu_budget.clone(),
                 )
                 .await;
+                log::debug!("ShardReplicaSet.load: end");
 
                 let mut require_migration = true;
                 match shard_type {
