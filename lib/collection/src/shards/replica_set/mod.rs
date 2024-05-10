@@ -922,7 +922,7 @@ pub enum ReplicaState {
     // Shard is undergoing recovery by an external node
     // Normally rejects updates, accepts updates if force is true
     Recovery,
-    // TODO
+    // Points are being migrated to this shard as part of resharding
     Resharding,
 }
 

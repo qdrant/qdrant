@@ -1455,7 +1455,7 @@ pub enum ReplicaState {
     PartialSnapshot = 5,
     /// Shard is undergoing recovered by an external node; Normally rejects updates, accepts updates if force is true
     Recovery = 6,
-    /// TODO
+    /// Points are being migrated to this shard as part of resharding
     Resharding = 7,
 }
 impl ReplicaState {
