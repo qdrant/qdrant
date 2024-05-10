@@ -270,7 +270,7 @@ impl<T: PrimitiveVectorElement> TryFrom<Vec<TypedDenseVector<T>>> for TypedMulti
         let dim = value[0].len();
         // assert all vectors have the same dimension
         if let Some(bad_vec) = value.iter().find(|v| v.len() != dim) {
-            Err(OperationError::WrongVector {
+            Err(OperationError::WrongVectorDimension {
                 expected_dim: dim,
                 received_dim: bad_vec.len(),
             })
