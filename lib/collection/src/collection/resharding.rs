@@ -9,6 +9,7 @@ pub struct Progress {
 }
 
 impl Progress {
+    #[allow(dead_code)]
     pub fn new(peer_id: PeerId, shard_id: ShardId) -> Self {
         Self { peer_id, shard_id }
     }

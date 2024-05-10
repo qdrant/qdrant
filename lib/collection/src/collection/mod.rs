@@ -45,6 +45,7 @@ use crate::telemetry::CollectionTelemetry;
 const RESHARDING_PROGRESS_FILE: &str = "resharding_progress.json";
 
 /// Collection's data is split into several shards.
+#[allow(dead_code)]
 pub struct Collection {
     pub(crate) id: CollectionId,
     pub(crate) shards_holder: Arc<LockedShardHolder>,
