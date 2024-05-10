@@ -146,14 +146,14 @@ fn sparse_vector_index_fallback_plain_search() {
 
 /// Checks that the sparse vector index is consistent with the underlying storage
 fn check_index_storage_consistency<T: InvertedIndex>(sparse_vector_index: &SparseVectorIndex<T>) {
-    let borrowed_vector_storage = sparse_vector_index.vector_storage.borrow();
+    let borrowed_vector_storage = sparse_vector_index.vector_storage().borrow();
     let point_count = borrowed_vector_storage.available_vector_count();
     for id in 0..point_count as PointOffsetType {
         // assuming no deleted points
         let vector = borrowed_vector_storage.get_vector(id);
         let vector: &SparseVector = vector.as_vec_ref().try_into().unwrap();
         let remapped_vector = sparse_vector_index
-            .indices_tracker
+            .indices_tracker()
             .remap_vector(vector.to_owned());
         // check posting lists are consistent with storage
         for (dim_id, dim_value) in remapped_vector
@@ -161,7 +161,7 @@ fn check_index_storage_consistency<T: InvertedIndex>(sparse_vector_index: &Spars
             .iter()
             .zip(remapped_vector.values.iter())
         {
-            let posting_list = sparse_vector_index.inverted_index.get(dim_id).unwrap();
+            let posting_list = sparse_vector_index.inverted_index().get(dim_id).unwrap();
             // assert posting list sorted by record id
             assert!(posting_list
                 .elements
@@ -207,14 +207,14 @@ fn sparse_vector_index_consistent_with_storage() {
     let mmap_index_dir = Builder::new().prefix("mmap_index_dir").tempdir().unwrap();
 
     // create mmap sparse vector index
-    let mut sparse_index_config = sparse_vector_ram_index.config;
+    let mut sparse_index_config = sparse_vector_ram_index.config();
     sparse_index_config.index_type = SparseIndexType::Mmap;
     let mut sparse_vector_mmap_index: SparseVectorIndex<InvertedIndexMmap> =
         SparseVectorIndex::open(
             sparse_index_config,
-            sparse_vector_ram_index.id_tracker.clone(),
-            sparse_vector_ram_index.vector_storage.clone(),
-            sparse_vector_ram_index.payload_index.clone(),
+            sparse_vector_ram_index.id_tracker().clone(),
+            sparse_vector_ram_index.vector_storage().clone(),
+            sparse_vector_ram_index.payload_index().clone(),
             mmap_index_dir.path(),
             &stopped,
         )
@@ -237,13 +237,13 @@ fn sparse_vector_index_consistent_with_storage() {
     drop(sparse_vector_mmap_index);
 
     // load index from memmap file
-    let mut sparse_index_config = sparse_vector_ram_index.config;
+    let mut sparse_index_config = sparse_vector_ram_index.config();
     sparse_index_config.index_type = SparseIndexType::Mmap;
     let sparse_vector_mmap_index: SparseVectorIndex<InvertedIndexMmap> = SparseVectorIndex::open(
         sparse_index_config,
-        sparse_vector_ram_index.id_tracker.clone(),
-        sparse_vector_ram_index.vector_storage.clone(),
-        sparse_vector_ram_index.payload_index.clone(),
+        sparse_vector_ram_index.id_tracker().clone(),
+        sparse_vector_ram_index.vector_storage().clone(),
+        sparse_vector_ram_index.payload_index().clone(),
         mmap_index_dir.path(),
         &stopped,
     )
@@ -294,14 +294,14 @@ fn sparse_vector_index_ram_deleted_points_search() {
     // sanity check (all indexed, no deleted points)
     assert_eq!(
         sparse_vector_index
-            .id_tracker
+            .id_tracker()
             .borrow()
             .available_point_count(),
         sparse_vector_index.indexed_vector_count()
     );
     assert_eq!(
         sparse_vector_index
-            .id_tracker
+            .id_tracker()
             .borrow()
             .deleted_point_count(),
         0
@@ -318,23 +318,23 @@ fn sparse_vector_index_ram_deleted_points_search() {
 
     // delete a point
     let deleted_external = sparse_vector_index
-        .id_tracker
+        .id_tracker()
         .borrow_mut()
         .external_id(deleted_idx)
         .unwrap();
     sparse_vector_index
-        .id_tracker
+        .id_tracker()
         .borrow_mut()
         .drop(deleted_external)
         .unwrap();
 
     assert!(sparse_vector_index
-        .id_tracker
+        .id_tracker()
         .borrow()
         .is_deleted_point(deleted_idx));
     assert_eq!(
         sparse_vector_index
-            .id_tracker
+            .id_tracker()
             .borrow()
             .deleted_point_count(),
         1
@@ -342,7 +342,7 @@ fn sparse_vector_index_ram_deleted_points_search() {
     // still need to update index
     assert_eq!(
         sparse_vector_index
-            .id_tracker
+            .id_tracker()
             .borrow()
             .available_point_count(),
         sparse_vector_index.indexed_vector_count() - 1
@@ -355,7 +355,7 @@ fn sparse_vector_index_ram_deleted_points_search() {
     sparse_vector_index.build_index(permit, &stopped).unwrap();
     assert_eq!(
         sparse_vector_index
-            .id_tracker
+            .id_tracker()
             .borrow()
             .available_point_count(),
         sparse_vector_index.indexed_vector_count()
@@ -411,14 +411,14 @@ fn sparse_vector_index_ram_filtered_search() {
     assert_eq!(before_result[0].len(), 0);
 
     // create payload field index
-    let mut payload_index = sparse_vector_index.payload_index.borrow_mut();
+    let mut payload_index = sparse_vector_index.payload_index().borrow_mut();
     payload_index
         .set_indexed(&path(field_name), Keyword.into())
         .unwrap();
     drop(payload_index);
 
     // assert payload field index created and empty
-    let payload_index = sparse_vector_index.payload_index.borrow();
+    let payload_index = sparse_vector_index.payload_index().borrow();
     let indexed_fields = payload_index.indexed_fields();
     assert_eq!(
         *indexed_fields.get(&path(field_name)).unwrap(),
@@ -436,7 +436,7 @@ fn sparse_vector_index_ram_filtered_search() {
         field_name: field_value,
     })
     .into();
-    let mut payload_index = sparse_vector_index.payload_index.borrow_mut();
+    let mut payload_index = sparse_vector_index.payload_index().borrow_mut();
     for idx in 0..half_indexed_count {
         payload_index
             .assign(idx as PointOffsetType, &payload, &None)
@@ -445,7 +445,7 @@ fn sparse_vector_index_ram_filtered_search() {
     drop(payload_index);
 
     // assert payload index updated
-    let payload_index = sparse_vector_index.payload_index.borrow();
+    let payload_index = sparse_vector_index.payload_index().borrow();
     let field_indexes = &payload_index.field_indexes;
     let field_index = field_indexes.get(&path(field_name)).unwrap();
     assert_eq!(field_index[0].count_indexed_points(), half_indexed_count);
@@ -512,7 +512,7 @@ fn sparse_vector_index_plain_search() {
     .into();
 
     // add payload to all points
-    let mut payload_index = sparse_vector_index.payload_index.borrow_mut();
+    let mut payload_index = sparse_vector_index.payload_index().borrow_mut();
     for idx in 0..NUM_VECTORS {
         payload_index
             .assign(idx as PointOffsetType, &payload, &None)
@@ -558,7 +558,7 @@ fn handling_empty_sparse_vectors() {
         &stopped,
     )
     .unwrap();
-    let mut borrowed_storage = sparse_vector_index.vector_storage.borrow_mut();
+    let mut borrowed_storage = sparse_vector_index.vector_storage().borrow_mut();
 
     // add empty points to storage
     for idx in 0..NUM_VECTORS {
@@ -572,7 +572,7 @@ fn handling_empty_sparse_vectors() {
     // assert all empty points are in storage
     assert_eq!(
         sparse_vector_index
-            .vector_storage
+            .vector_storage()
             .borrow()
             .available_vector_count(),
         NUM_VECTORS,
@@ -815,14 +815,14 @@ fn sparse_vector_index_files() {
     let mmap_index_dir = Builder::new().prefix("mmap_index_dir").tempdir().unwrap();
 
     // create mmap sparse vector index
-    let mut sparse_index_config = sparse_vector_ram_index.config;
+    let mut sparse_index_config = sparse_vector_ram_index.config();
     sparse_index_config.index_type = SparseIndexType::Mmap;
     let mut sparse_vector_mmap_index: SparseVectorIndex<InvertedIndexMmap> =
         SparseVectorIndex::open(
             sparse_index_config,
-            sparse_vector_ram_index.id_tracker.clone(),
-            sparse_vector_ram_index.vector_storage.clone(),
-            sparse_vector_ram_index.payload_index.clone(),
+            sparse_vector_ram_index.id_tracker().clone(),
+            sparse_vector_ram_index.vector_storage().clone(),
+            sparse_vector_ram_index.payload_index().clone(),
             mmap_index_dir.path(),
             &stopped,
         )
@@ -845,14 +845,14 @@ fn sparse_vector_index_files() {
 
     // create mutable RAM sparse vector index
     let mutable_index_dir = Builder::new().prefix("mmap_index_dir").tempdir().unwrap();
-    let mut sparse_index_config = sparse_vector_ram_index.config;
+    let mut sparse_index_config = sparse_vector_ram_index.config();
     sparse_index_config.index_type = SparseIndexType::MutableRam;
     let mut sparse_vector_mutable_index: SparseVectorIndex<InvertedIndexRam> =
         SparseVectorIndex::open(
             sparse_index_config,
-            sparse_vector_ram_index.id_tracker.clone(),
-            sparse_vector_ram_index.vector_storage.clone(),
-            sparse_vector_ram_index.payload_index.clone(),
+            sparse_vector_ram_index.id_tracker().clone(),
+            sparse_vector_ram_index.vector_storage().clone(),
+            sparse_vector_ram_index.payload_index().clone(),
             mutable_index_dir.path(),
             &stopped,
         )
@@ -908,10 +908,10 @@ fn sparse_vector_test_large_index() {
     match &*borrowed_vector_index {
         VectorIndexEnum::SparseRam(sparse_vector_index) => {
             assert!(sparse_vector_index
-                .indices_tracker
+                .indices_tracker()
                 .remap_index(DimId::MAX)
                 .is_some());
-            assert_eq!(sparse_vector_index.inverted_index.max_index().unwrap(), 0);
+            assert_eq!(sparse_vector_index.inverted_index().max_index().unwrap(), 0);
         }
         _ => panic!("unexpected vector index type"),
     }

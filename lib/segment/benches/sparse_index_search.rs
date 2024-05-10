@@ -92,7 +92,7 @@ fn sparse_vector_index_search_benchmark_impl(
     .into();
 
     // all points have the same payload
-    let mut payload_index = sparse_vector_index.payload_index.borrow_mut();
+    let mut payload_index = sparse_vector_index.payload_index().borrow_mut();
     for idx in 0..NUM_VECTORS {
         payload_index
             .assign(idx as PointOffsetType, &payload, &None)
@@ -112,9 +112,9 @@ fn sparse_vector_index_search_benchmark_impl(
     let mut sparse_vector_index_mmap: SparseVectorIndex<InvertedIndexMmap> =
         SparseVectorIndex::open(
             sparse_index_config,
-            sparse_vector_index.id_tracker.clone(),
-            sparse_vector_index.vector_storage.clone(),
-            sparse_vector_index.payload_index.clone(),
+            sparse_vector_index.id_tracker().clone(),
+            sparse_vector_index.vector_storage().clone(),
+            sparse_vector_index.payload_index().clone(),
             mmap_index_dir.path(),
             &stopped,
         )
@@ -186,7 +186,7 @@ fn sparse_vector_index_search_benchmark_impl(
         });
     }
 
-    let mut payload_index = sparse_vector_index.payload_index.borrow_mut();
+    let mut payload_index = sparse_vector_index.payload_index().borrow_mut();
 
     // create payload field index
     payload_index
