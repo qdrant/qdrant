@@ -310,3 +310,35 @@ jobs:
           trap 'kill $(jobs -p) &>/dev/null || :' EXIT
           sleep 10
           ./tests/shard-snapshot-api.sh test-all
+
+  test-shard-snapshot-api-s3-minio:
+    runs-on: ubuntu-latest
+    # Setup minio server
+    services:
+      minio:
+        image: satantime/minio-server
+        ports:
+          - 9000:9000
+        env:
+          MINIO_ACCESS_KEY: "minioadmin"
+          MINIO_SECRET_KEY: "minioadmin"
+    steps:
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@v4
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install dependencies
+        run: sudo apt-get install clang jq
+      - name: Build
+        run: cargo build --bin qdrant
+      - name: Run Shard Snapshot API Tests
+        shell: bash
+        run: |
+          cargo run &
+          trap 'kill $(jobs -p) &>/dev/null || :' EXIT
+          sleep 10
+          ./tests/shard-snapshot-api.sh storage-s3-test-all
