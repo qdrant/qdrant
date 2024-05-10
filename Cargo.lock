@@ -1076,6 +1076,8 @@ dependencies = [
 name = "collection"
 version = "0.4.2"
 dependencies = [
+ "actix-files",
+ "actix-web",
  "actix-web-validator",
  "api",
  "approx",

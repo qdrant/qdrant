@@ -9,7 +9,7 @@ use tokio::io::AsyncWriteExt;
 use super::snapshot_ops::SnapshotDescription;
 use super::types::{CollectionError, CollectionResult};
 
-fn trim_dot_slash(path: &Path) -> CollectionResult<object_store::path::Path> {
+pub(crate) fn trim_dot_slash(path: &Path) -> CollectionResult<object_store::path::Path> {
     // Get file name by trimming the path.
     // if the path is ./path/to/file.txt, the key should be path/to/file.txt
     let key = path.to_str().ok_or_else(|| {

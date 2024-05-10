@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use actix_web::HttpRequest;
 use object_store::aws::AmazonS3Builder;
 use serde::Deserialize;
 use tempfile::TempPath;
@@ -11,10 +12,12 @@ use crate::common::sha_256::hash_file;
 use crate::operations::snapshot_ops::{
     get_checksum_path, get_snapshot_description, SnapshotDescription,
 };
-use crate::operations::snapshot_storage_ops;
+use crate::operations::snapshot_storage_ops::{self};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::shard::ShardId;
 use crate::shards::shard_holder::LockedShardHolder;
+
+use super::snapshot_stream::{SnapShotStreamCloudStrage, SnapShotStreamLocalFS, SnapshotStream};
 
 #[derive(Clone, Deserialize, Debug, Default)]
 pub struct SnapShotsConfig {
@@ -213,16 +216,17 @@ impl SnapshotStorageManager {
         }
     }
 
-    /// Ensures that a snapshot is available locally.
-    /// If the snapshot is not available locally, it will be downloaded to the local `snapshot_path`.
-    /// If the snapshot is already available locally, the function will return the local path.
-    pub async fn ensure_snapshot_is_local(&self, snapshot_path: &Path) -> CollectionResult<()> {
+    pub async fn get_snapshot_stream(
+        self,
+        req: HttpRequest,
+        snapshot_path: &Path,
+    ) -> CollectionResult<SnapshotStream> {
         match self {
             SnapshotStorageManager::LocalFS(storage_impl) => {
-                Ok(storage_impl.ensure_snapshot_is_local(snapshot_path).await?)
+                storage_impl.get_snapshot_stream(req, snapshot_path).await
             }
             SnapshotStorageManager::S3(storage_impl) => {
-                Ok(storage_impl.ensure_snapshot_is_local(snapshot_path).await?)
+                storage_impl.get_snapshot_stream(snapshot_path).await
             }
         }
     }
@@ -400,15 +404,15 @@ impl SnapshotStorageLocalFS {
             .await
     }
 
-    async fn ensure_snapshot_is_local(&self, snapshot_path: &Path) -> CollectionResult<()> {
-        // check if the snapshot is already local
-        if !snapshot_path.exists() {
-            return Err(CollectionError::not_found(format!(
-                "Snapshot {} not found",
-                snapshot_path.display()
-            )));
-        }
-        Ok(())
+    async fn get_snapshot_stream(
+        &self,
+        req: HttpRequest,
+        snapshot_path: &Path,
+    ) -> CollectionResult<SnapshotStream> {
+        Ok(SnapshotStream::LocalFS(SnapShotStreamLocalFS {
+            req,
+            snapshot_path: snapshot_path.to_path_buf(),
+        }))
     }
 }
 
@@ -479,8 +483,16 @@ impl SnapshotStorageCloud {
             .join(snapshot_file_name))
     }
 
-    async fn ensure_snapshot_is_local(&self, snapshot_path: &Path) -> CollectionResult<()> {
-        snapshot_storage_ops::download_snapshot(&self.client, snapshot_path, snapshot_path).await?;
-        Ok(())
+    pub async fn get_snapshot_stream(
+        &self,
+        snapshot_path: &Path,
+    ) -> CollectionResult<SnapshotStream> {
+        let snapshot_path = snapshot_storage_ops::trim_dot_slash(snapshot_path)?;
+        let download = self.client.get(&snapshot_path).await.map_err(|e| {
+            CollectionError::service_error(format!("Failed to get {}: {}", snapshot_path, e))
+        })?;
+        Ok(SnapshotStream::CloudStorage(SnapShotStreamCloudStrage {
+            streamer: Box::pin(download.into_stream()),
+        }))
     }
 }

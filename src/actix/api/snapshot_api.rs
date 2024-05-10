@@ -1,13 +1,13 @@
 use std::path::Path;
 
-use actix_files::NamedFile;
 use actix_multipart::form::tempfile::TempFile;
 use actix_multipart::form::MultipartForm;
 use actix_web::rt::time::Instant;
-use actix_web::{delete, get, post, put, web, Responder, Result};
+use actix_web::{delete, get, post, put, web, HttpRequest, Responder, Result};
 use actix_web_validator as valid;
 use collection::common::file_utils::move_file;
 use collection::common::sha_256::{hash_file, hashes_equal};
+use collection::common::snapshot_stream::SnapshotStream;
 use collection::operations::snapshot_ops::{
     ShardSnapshotRecover, SnapshotPriority, SnapshotRecover,
 };
@@ -65,19 +65,20 @@ pub struct SnapshottingForm {
 
 // Actix specific code
 pub async fn do_get_full_snapshot(
+    req: HttpRequest,
     toc: &TableOfContent,
     access: Access,
     snapshot_name: &str,
-) -> Result<NamedFile, HttpError> {
+) -> Result<SnapshotStream, HttpError> {
     access.check_global_access(AccessRequirements::new())?;
     let snapshots_storage_manager = toc.get_snapshots_storage_manager()?;
     let snapshot_path = snapshots_storage_manager
         .get_full_snapshot_path(toc.snapshots_path(), snapshot_name)
         .await?;
-    snapshots_storage_manager
-        .ensure_snapshot_is_local(&snapshot_path)
+    let snapshot_stream = snapshots_storage_manager
+        .get_snapshot_stream(req, &snapshot_path)
         .await?;
-    Ok(NamedFile::open(snapshot_path)?)
+    Ok(snapshot_stream)
 }
 
 pub async fn do_save_uploaded_snapshot(
@@ -124,11 +125,12 @@ pub async fn do_save_uploaded_snapshot(
 
 // Actix specific code
 pub async fn do_get_snapshot(
+    req: HttpRequest,
     toc: &TableOfContent,
     access: Access,
     collection_name: &str,
     snapshot_name: &str,
-) -> Result<NamedFile, HttpError> {
+) -> Result<SnapshotStream, HttpError> {
     let collection_pass =
         access.check_collection_access(collection_name, AccessRequirements::new().whole())?;
     let collection: tokio::sync::RwLockReadGuard<collection::collection::Collection> =
@@ -137,10 +139,10 @@ pub async fn do_get_snapshot(
     let snapshot_path = snapshot_storage_manager
         .get_snapshot_path(collection.snapshots_path(), snapshot_name)
         .await?;
-    snapshot_storage_manager
-        .ensure_snapshot_is_local(&snapshot_path)
+    let snapshot_stream = snapshot_storage_manager
+        .get_snapshot_stream(req, &snapshot_path)
         .await?;
-    Ok(NamedFile::open(snapshot_path)?)
+    Ok(snapshot_stream)
 }
 
 #[get("/collections/{name}/snapshots")]
@@ -240,12 +242,14 @@ async fn recover_from_snapshot(
 
 #[get("/collections/{name}/snapshots/{snapshot_name}")]
 async fn get_snapshot(
+    req: HttpRequest,
     dispatcher: web::Data<Dispatcher>,
     path: web::Path<(String, String)>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let (collection_name, snapshot_name) = path.into_inner();
     do_get_snapshot(
+        req,
         dispatcher.toc(&access),
         access,
         &collection_name,
@@ -278,12 +282,13 @@ async fn create_full_snapshot(
 
 #[get("/snapshots/{snapshot_name}")]
 async fn get_full_snapshot(
+    req: HttpRequest,
     dispatcher: web::Data<Dispatcher>,
     path: web::Path<String>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let snapshot_name = path.into_inner();
-    do_get_full_snapshot(dispatcher.toc(&access), access, &snapshot_name).await
+    do_get_full_snapshot(req, dispatcher.toc(&access), access, &snapshot_name).await
 }
 
 #[delete("/snapshots/{snapshot_name}")]
@@ -452,6 +457,7 @@ async fn upload_shard_snapshot(
 
 #[get("/collections/{collection}/shards/{shard}/snapshots/{snapshot}")]
 async fn download_shard_snapshot(
+    req: HttpRequest,
     dispatcher: web::Data<Dispatcher>,
     path: web::Path<(String, ShardId, String)>,
     ActixAccess(access): ActixAccess,
@@ -472,10 +478,10 @@ async fn download_shard_snapshot(
             &snapshot,
         )
         .await?;
-    snapshots_storage_manager
-        .ensure_snapshot_is_local(&snapshot_path)
+    let snapshot_stream = snapshots_storage_manager
+        .get_snapshot_stream(req, &snapshot_path)
         .await?;
-    Ok(NamedFile::open(snapshot_path))
+    Ok(snapshot_stream)
 }
 
 #[delete("/collections/{collection}/shards/{shard}/snapshots/{snapshot}")]
