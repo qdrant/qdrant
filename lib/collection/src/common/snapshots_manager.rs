@@ -470,11 +470,13 @@ impl SnapshotStorageCloud {
     async fn get_shard_snapshot_path(
         &self,
         _shards_holder: Arc<LockedShardHolder>,
-        _shard_id: u32,
-        _snapshots_path: &Path,
+        shard_id: u32,
+        snapshots_path: &Path,
         snapshot_file_name: impl AsRef<Path>,
     ) -> CollectionResult<PathBuf> {
-        Ok(snapshot_file_name.as_ref().to_path_buf())
+        Ok(snapshots_path
+            .join(format!("shards/{shard_id}"))
+            .join(snapshot_file_name))
     }
 
     async fn ensure_snapshot_is_local(&self, snapshot_path: &Path) -> CollectionResult<()> {

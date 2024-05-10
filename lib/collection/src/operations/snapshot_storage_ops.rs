@@ -173,13 +173,22 @@ pub async fn download_snapshot(
     let download = client
         .get(&s3_path)
         .await
-        .map_err(|e| CollectionError::service_error(format!("Failed to get: {}", e)))?;
+        .map_err(|e| CollectionError::service_error(format!("Failed to get {}: {}", s3_path, e)))?;
 
     let mut stream = download.into_stream();
+
+    // Create the target directory if it does not exist
+    if let Some(target_dir) = target_path.parent() {
+        if !target_dir.exists() {
+            std::fs::create_dir_all(target_dir)?;
+        }
+    }
+
     let mut file = tokio::fs::File::create(target_path)
         .await
         .map_err(|e| CollectionError::service_error(format!("Failed to create file: {}", e)))?;
 
+    let mut total_size = 0;
     while let Some(data) = stream.next().await {
         let data = data.map_err(|e| {
             CollectionError::service_error(format!("Failed to get data from stream: {}", e))
@@ -187,6 +196,21 @@ pub async fn download_snapshot(
         file.write_all(&data).await.map_err(|e| {
             CollectionError::service_error(format!("Failed to write to file: {}", e))
         })?;
+        total_size += data.len();
+    }
+    // ensure flush
+    file.flush()
+        .await
+        .map_err(|e| CollectionError::service_error(format!("Failed to flush file: {}", e)))?;
+
+    // check len to file len
+    let file_meta = tokio::fs::metadata(target_path).await?;
+    if file_meta.len() != total_size as u64 {
+        return Err(CollectionError::service_error(format!(
+            "Downloaded file size does not match the expected size: {} != {}",
+            file_meta.len(),
+            total_size
+        )));
     }
     Ok(())
 }
