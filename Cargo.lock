@@ -2662,6 +2662,7 @@ version = "0.0.0"
 dependencies = [
  "atomicwrites",
  "bincode",
+ "semver",
  "serde",
  "serde_json",
  "thiserror",

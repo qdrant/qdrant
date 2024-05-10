@@ -60,8 +60,8 @@ const SNAPSHOT_FILES_PATH: &str = "files";
 pub struct SegmentVersion;
 
 impl StorageVersion for SegmentVersion {
-    fn current() -> String {
-        env!("CARGO_PKG_VERSION").to_string()
+    fn current_raw() -> &'static str {
+        env!("CARGO_PKG_VERSION")
     }
 }
 

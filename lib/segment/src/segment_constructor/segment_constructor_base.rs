@@ -9,7 +9,6 @@ use atomic_refcell::AtomicRefCell;
 use io::storage_version::StorageVersion;
 use log::info;
 use parking_lot::Mutex;
-use semver::Version;
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -447,7 +446,7 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option
         return Ok(None);
     }
 
-    if !SegmentVersion::check_exists(path) {
+    let Some(stored_version) = SegmentVersion::load(path)? else {
         // Assume segment was not properly saved.
         // Server might have crashed before saving the segment fully.
         log::warn!(
@@ -455,10 +454,9 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option
             path.display()
         );
         return Ok(None);
-    }
+    };
 
-    let stored_version: Version = SegmentVersion::load(path)?.parse()?;
-    let app_version: Version = SegmentVersion::current().parse()?;
+    let app_version = SegmentVersion::current();
 
     if stored_version != app_version {
         info!("Migrating segment {} -> {}", stored_version, app_version,);
