@@ -253,6 +253,23 @@ def test_multi_vector_validation():
 
 # allow multivec search on legacy API by emulating a multivec input with a single dense vector
 def test_search_legacy_api():
+    # validate input size
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/search',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "vector": {
+                "name": "my-multivec",
+                "vector": [0.05, 0.61, 0.76]
+            },
+            "limit": 3
+        }
+    )
+    assert not response.ok
+    assert 'Wrong input: Vector dimension error: expected dim: 4, got 3' in \
+           response.json()["status"]["error"]
+
     # search on empty collection
     response = request_with_validation(
         api='/collections/{collection_name}/points/search',
