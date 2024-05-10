@@ -25,9 +25,13 @@ impl Responder for SnapshotStream {
         match self {
             SnapshotStream::LocalFS(stream) => match NamedFile::open(stream.snapshot_path) {
                 Ok(file) => file.into_response(&stream.req),
-                Err(e) => {
-                    HttpResponse::InternalServerError().body(format!("Failed to open file: {}", e))
-                }
+                Err(e) => match e.kind() {
+                    std::io::ErrorKind::NotFound => {
+                        HttpResponse::NotFound().body(format!("File not found: {}", e))
+                    }
+                    _ => HttpResponse::InternalServerError()
+                        .body(format!("Failed to open file: {}", e)),
+                },
             },
 
             SnapshotStream::CloudStorage(stream) => HttpResponse::Ok()
