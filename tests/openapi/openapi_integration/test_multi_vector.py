@@ -179,7 +179,7 @@ def test_multi_vector_validation():
         }
     )
     assert not response.ok
-    assert 'Wrong input: Vector inserting error: expected dim: 4, got 0' in response.json()["status"]["error"]
+    assert 'Wrong input: Vector dimension error: expected dim: 4, got 0' in response.json()["status"]["error"]
 
     # fails because it uses an empty inner vector
     response = request_with_validation(
@@ -251,7 +251,7 @@ def test_multi_vector_validation():
            response.json()["status"]["error"]
 
 
-# allow multivec search on legacy API by emulating multivec search with a single vector
+# allow multivec search on legacy API by emulating a multivec input with a single dense vector
 def test_search_legacy_api():
     # search on empty collection
     response = request_with_validation(

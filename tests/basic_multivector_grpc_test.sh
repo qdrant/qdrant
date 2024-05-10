@@ -181,7 +181,7 @@ response=$(
   }' $QDRANT_HOST qdrant.Points/Upsert 2>&1
 )
 
-if [[ $response != *"Wrong input: Vector inserting error: expected dim: 4, got 8"* ]]; then
+if [[ $response != *"Wrong input: Vector dimension error: expected dim: 4, got 8"* ]]; then
     echo Unexpected response, expected validation error: "$response"
     exit 1
 fi
@@ -252,7 +252,7 @@ response=$(
     }' $QDRANT_HOST qdrant.Points/Search 2>&1
 )
 
-if [[ $response != *"Wrong input: Vector inserting error: expected dim: 4, got 3"* ]]; then
+if [[ $response != *"Wrong input: Vector dimension error: expected dim: 4, got 3"* ]]; then
     echo Unexpected response, expected validation error: "$response"
     exit 1
 fi
@@ -266,7 +266,7 @@ response=$(
     }' $QDRANT_HOST qdrant.Points/Search 2>&1
 )
 
-if [[ $response != *"Wrong input: Vector inserting error: expected dim: 4, got 5"* ]]; then
+if [[ $response != *"Wrong input: Vector dimension error: expected dim: 4, got 5"* ]]; then
     echo Unexpected response, expected validation error: "$response"
     exit 1
 fi

@@ -179,7 +179,7 @@ fn check_vector_against_config(
             // Check dimensionality
             let dim = vector_config.size;
             if vector.len() != dim {
-                return Err(OperationError::WrongVector {
+                return Err(OperationError::WrongVectorDimension {
                     expected_dim: dim,
                     received_dim: vector.len(),
                 });
@@ -192,7 +192,7 @@ fn check_vector_against_config(
             let dim = vector_config.size;
             for vector in multi_vector.multi_vectors() {
                 if vector.len() != dim {
-                    return Err(OperationError::WrongVector {
+                    return Err(OperationError::WrongVectorDimension {
                         expected_dim: dim,
                         received_dim: vector.len(),
                     });

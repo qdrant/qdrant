@@ -17,8 +17,8 @@ pub const PROCESS_CANCELLED_BY_SERVICE_MESSAGE: &str = "process cancelled by ser
 #[derive(Error, Debug, Clone)]
 #[error("{0}")]
 pub enum OperationError {
-    #[error("Vector inserting error: expected dim: {expected_dim}, got {received_dim}")]
-    WrongVector {
+    #[error("Vector dimension error: expected dim: {expected_dim}, got {received_dim}")]
+    WrongVectorDimension {
         expected_dim: usize,
         received_dim: usize,
     },
