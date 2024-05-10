@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use common::cpu::CpuBudget;
 use common::types::TelemetryDetail;
-use segment::common::version::StorageVersion;
+use io::storage_version::StorageVersion;
 use segment::types::ShardKey;
 use semver::Version;
 use tokio::runtime::Handle;

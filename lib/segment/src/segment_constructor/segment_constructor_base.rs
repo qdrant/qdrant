@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use io::storage_version::StorageVersion;
 use log::info;
 use parking_lot::Mutex;
 use semver::Version;
@@ -14,7 +15,6 @@ use uuid::Uuid;
 
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
-use crate::common::version::StorageVersion;
 use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
 use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 use crate::id_tracker::IdTracker;

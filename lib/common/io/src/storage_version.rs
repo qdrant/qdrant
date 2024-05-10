@@ -3,7 +3,8 @@ use std::io::{Read, Write};
 use std::path::Path;
 
 use atomicwrites::{AllowOverwrite, AtomicFile};
-use io::file_operations::{FileOperationResult, FileStorageError};
+
+use crate::file_operations::{FileOperationResult, FileStorageError};
 
 pub const VERSION_FILE: &str = "version.info";
 

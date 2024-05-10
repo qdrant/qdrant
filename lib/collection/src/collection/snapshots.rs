@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use io::file_operations::read_json;
-use segment::common::version::StorageVersion as _;
+use io::storage_version::StorageVersion as _;
 use tokio::fs;
 
 use super::Collection;
