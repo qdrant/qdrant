@@ -667,6 +667,14 @@ impl Collection {
     pub fn shared_storage_config(&self) -> Arc<SharedStorageConfig> {
         self.shared_storage_config.clone()
     }
+
+    pub fn snapshots_path(&self) -> &Path {
+        &self.snapshots_path
+    }
+
+    pub fn shards_holder(&self) -> Arc<LockedShardHolder> {
+        self.shards_holder.clone()
+    }
 }
 
 struct CollectionVersion;

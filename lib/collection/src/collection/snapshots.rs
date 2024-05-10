@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use io::file_operations::read_json;
 use segment::common::version::StorageVersion as _;
@@ -21,12 +21,12 @@ use crate::shards::shard_holder::{ShardKeyMapping, SHARD_KEY_MAPPING_FILE};
 use crate::shards::shard_versioning;
 
 impl Collection {
-    pub fn get_snapshots_storage_manager(&self) -> SnapshotStorageManager {
-        SnapshotStorageManager::new(self.shared_storage_config.s3_config.clone())
+    pub fn get_snapshots_storage_manager(&self) -> CollectionResult<SnapshotStorageManager> {
+        SnapshotStorageManager::new(self.shared_storage_config.snapshots_config.clone())
     }
 
     pub async fn list_snapshots(&self) -> CollectionResult<Vec<SnapshotDescription>> {
-        let snapshot_manager = self.get_snapshots_storage_manager();
+        let snapshot_manager = self.get_snapshots_storage_manager()?;
         snapshot_manager.list_snapshots(&self.snapshots_path).await
     }
 
@@ -166,7 +166,7 @@ impl Collection {
             CollectionError::service_error(format!("failed to create snapshot archive: {err}"))
         })?;
 
-        let snapshot_manager = self.get_snapshots_storage_manager();
+        let snapshot_manager = self.get_snapshots_storage_manager()?;
         snapshot_manager
             .store_file(snapshot_temp_arc_file.path(), snapshot_path.as_path())
             .await
@@ -275,37 +275,6 @@ impl Collection {
             .await
     }
 
-    /// Get absolute file path for a collection snapshot by name
-    ///
-    /// This enforces the file to be inside the snapshots directory
-    pub async fn get_snapshot_path(&self, snapshot_name: &str) -> CollectionResult<PathBuf> {
-        let absolute_snapshot_dir = self.snapshots_path.canonicalize().map_err(|_| {
-            CollectionError::not_found(format!(
-                "Snapshot directory: {}",
-                self.snapshots_path.display()
-            ))
-        })?;
-
-        let absolute_snapshot_path = absolute_snapshot_dir
-            .join(snapshot_name)
-            .canonicalize()
-            .map_err(|_| CollectionError::not_found(format!("Snapshot {snapshot_name}")))?;
-
-        if !absolute_snapshot_path.starts_with(absolute_snapshot_dir) {
-            return Err(CollectionError::not_found(format!(
-                "Snapshot {snapshot_name}"
-            )));
-        }
-
-        if !absolute_snapshot_path.is_file() {
-            return Err(CollectionError::not_found(format!(
-                "Snapshot {snapshot_name}"
-            )));
-        }
-
-        Ok(absolute_snapshot_path)
-    }
-
     pub async fn list_shard_snapshots(
         &self,
         shard_id: ShardId,
@@ -367,18 +336,6 @@ impl Collection {
             .read()
             .await
             .assert_shard_exists(shard_id)
-            .await
-    }
-
-    pub async fn get_shard_snapshot_path(
-        &self,
-        shard_id: ShardId,
-        snapshot_file_name: impl AsRef<Path>,
-    ) -> CollectionResult<PathBuf> {
-        self.shards_holder
-            .read()
-            .await
-            .get_shard_snapshot_path(&self.snapshots_path, shard_id, snapshot_file_name)
             .await
     }
 }

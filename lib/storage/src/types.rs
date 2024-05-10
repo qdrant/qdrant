@@ -3,7 +3,7 @@ use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use collection::common::snapshots_manager::S3Config;
+use collection::common::snapshots_manager::SnapShotsConfig;
 use collection::config::WalConfig;
 use collection::operations::shared_storage_config::{
     SharedStorageConfig, DEFAULT_IO_SHARD_TRANSFER_LIMIT, DEFAULT_SNAPSHOTS_PATH,
@@ -57,7 +57,7 @@ pub struct StorageConfig {
     #[validate(length(min = 1))]
     pub snapshots_path: String,
     #[serde(default)]
-    pub s3_config: Option<S3Config>,
+    pub snapshots_config: SnapShotsConfig,
     #[validate(length(min = 1))]
     #[serde(default)]
     pub temp_path: Option<String>,
@@ -110,7 +110,7 @@ impl StorageConfig {
             self.performance.incoming_shard_transfers_limit,
             self.performance.outgoing_shard_transfers_limit,
             self.snapshots_path.clone(),
-            self.s3_config.clone(),
+            self.snapshots_config.clone(),
         )
     }
 }

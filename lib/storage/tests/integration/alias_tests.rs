@@ -33,7 +33,7 @@ fn test_alias_operation() {
             .to_str()
             .unwrap()
             .to_string(),
-        s3_config: None,
+        snapshots_config: Default::default(),
         temp_path: None,
         on_disk_payload: false,
         optimizers: OptimizersConfig {
