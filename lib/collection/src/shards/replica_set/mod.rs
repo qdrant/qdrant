@@ -923,6 +923,7 @@ pub enum ReplicaState {
     // Normally rejects updates, accepts updates if force is true
     Recovery,
     // Points are being migrated to this shard as part of resharding
+    #[schemars(skip)]
     Resharding,
 }
 
