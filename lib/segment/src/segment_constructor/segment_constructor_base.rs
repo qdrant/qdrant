@@ -116,7 +116,7 @@ fn create_segment(
             config
                 .sparse_vector_data
                 .values()
-                .map(|sparse_vector_config| sparse_vector_config.is_appendable()),
+                .map(|sparse_vector_config| sparse_vector_config.index.index_type.is_appendable()),
         )
         .all(|v| v);
 

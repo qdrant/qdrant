@@ -27,7 +27,7 @@ use crate::common::utils::{self, MaybeOneOrMany, MultiValue};
 use crate::data_types::integer_index::IntegerIndexParams;
 use crate::data_types::text_index::TextIndexParams;
 use crate::data_types::vectors::{VectorElementType, VectorStruct};
-use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
+use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
 use crate::json_path::{JsonPath, JsonPathInterface};
 use crate::spaces::metric::MetricPostProcessing;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
@@ -705,7 +705,7 @@ impl SegmentConfig {
             || self
                 .sparse_vector_data
                 .values()
-                .any(|config| config.is_index_on_disk())
+                .any(|config| config.index.index_type.is_on_disk())
     }
 }
 
@@ -813,20 +813,8 @@ pub struct SparseVectorDataConfig {
 }
 
 impl SparseVectorDataConfig {
-    pub fn is_appendable(&self) -> bool {
-        self.index.index_type == SparseIndexType::MutableRam
-    }
-
-    pub fn is_index_immutable(&self) -> bool {
-        self.index.index_type != SparseIndexType::MutableRam
-    }
-
     pub fn is_indexed(&self) -> bool {
         true
-    }
-
-    pub fn is_index_on_disk(&self) -> bool {
-        self.index.index_type == SparseIndexType::Mmap
     }
 }
 
