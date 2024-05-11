@@ -28,6 +28,6 @@ fn config() -> serde_json::Value {
     json!({
         "log_level": "debug",
         "span_events": ["new", "close"],
-        "color": "auto",
+        "color": "enable",
     })
 }
