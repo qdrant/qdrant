@@ -10,7 +10,6 @@ mod test;
 use std::fmt::Write as _;
 use std::str::FromStr as _;
 
-use serde::Deserialize;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{filter, reload};
 
@@ -90,14 +89,4 @@ fn filter(user_filters: &str) -> filter::EnvFilter {
     filter::EnvFilter::builder()
         .with_regex(false)
         .parse_lossy(filter)
-}
-
-// Helper to distinguish between unspecified field and explicit `null`
-// See https://github.com/serde-rs/serde/issues/984#issuecomment-314143738
-fn deserialize_some<'de, T, D>(deserializer: D) -> Result<Option<T>, D::Error>
-where
-    T: serde::Deserialize<'de>,
-    D: serde::Deserializer<'de>,
-{
-    Deserialize::deserialize(deserializer).map(Some)
 }
