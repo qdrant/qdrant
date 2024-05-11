@@ -6,11 +6,12 @@ use collection::operations::types::ScrollRequestInternal;
 use collection::operations::CollectionUpdateOperations;
 use itertools::Itertools;
 use segment::data_types::vectors::BatchVectorStruct;
+use segment::json_path::path;
 use segment::types::{PayloadContainer, PayloadSelectorExclude, WithPayloadInterface};
 use serde_json::Value;
 use tempfile::Builder;
 
-use crate::common::{load_local_collection, path, simple_collection_fixture, N_SHARDS};
+use crate::common::{load_local_collection, simple_collection_fixture, N_SHARDS};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_collection_reloading() {

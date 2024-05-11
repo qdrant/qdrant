@@ -55,3 +55,5 @@ fi
 ./tests/basic_grpc_test.sh
 
 ./tests/basic_sparse_grpc_test.sh
+
+./tests/basic_multivector_grpc_test.sh

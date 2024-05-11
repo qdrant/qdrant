@@ -11,6 +11,7 @@ pub mod shard_key_selector;
 pub mod shard_selector_internal;
 pub mod shared_storage_config;
 pub mod snapshot_ops;
+pub mod snapshot_storage_ops;
 pub mod types;
 pub mod validation;
 pub mod vector_ops;

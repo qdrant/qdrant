@@ -483,7 +483,7 @@ impl Anonymize for JsonPathV2 {
 mod tests {
     use super::*;
     fn path(s: &str) -> JsonPathV2 {
-        s.parse().unwrap()
+        super::super::path(s)
     }
 
     #[test]

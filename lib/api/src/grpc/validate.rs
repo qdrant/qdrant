@@ -130,6 +130,12 @@ impl Validate for grpc::MoveShard {
     }
 }
 
+impl Validate for grpc::ReplicateShard {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        validate_shard_different_peers(self.from_peer_id, self.to_peer_id)
+    }
+}
+
 impl Validate for crate::grpc::qdrant::AbortShardTransfer {
     fn validate(&self) -> Result<(), ValidationErrors> {
         validate_shard_different_peers(self.from_peer_id, self.to_peer_id)
@@ -222,10 +228,23 @@ impl Validate for grpc::FieldCondition {
 
 impl Validate for grpc::Vector {
     fn validate(&self) -> Result<(), ValidationErrors> {
-        if let Some(indices) = &self.indices {
-            sparse::common::sparse_vector::validate_sparse_vector_impl(&indices.data, &self.data)
-        } else {
-            Ok(())
+        match (&self.indices, self.vectors_count) {
+            (Some(_), Some(_)) => {
+                let mut errors = ValidationErrors::new();
+                errors.add(
+                    "indices",
+                    ValidationError::new("`indices` and `vectors_count` cannot be both specified"),
+                );
+                Err(errors)
+            }
+            (Some(indices), None) => sparse::common::sparse_vector::validate_sparse_vector_impl(
+                &indices.data,
+                &self.data,
+            ),
+            (None, Some(vectors_count)) => {
+                common::validation::validate_multi_vector_len(vectors_count, &self.data)
+            }
+            (None, None) => Ok(()),
         }
     }
 }
@@ -355,7 +374,7 @@ pub fn validate_geo_polygon_interiors(
 }
 
 /// Validate that the timestamp is within the range specified in the protobuf docs.
-/// https://protobuf.dev/reference/protobuf/google.protobuf/#timestamp
+/// <https://protobuf.dev/reference/protobuf/google.protobuf/#timestamp>
 pub fn validate_timestamp(ts: &Option<prost_wkt_types::Timestamp>) -> Result<(), ValidationError> {
     let Some(ts) = ts else {
         return Ok(());

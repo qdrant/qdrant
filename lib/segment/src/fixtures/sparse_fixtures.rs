@@ -89,6 +89,24 @@ pub fn fixture_sparse_index_ram<R: Rng + ?Sized>(
     data_dir: &Path,
     stopped: &AtomicBool,
 ) -> SparseVectorIndex<InvertedIndexRam> {
+    fixture_sparse_index_ram_from_iter(
+        (0..num_vectors).map(|_| random_sparse_vector(rnd, max_dim)),
+        full_scan_threshold,
+        data_dir,
+        stopped,
+        || || (),
+    )
+}
+
+/// Prepares a sparse vector index with a given iterator of sparse vectors
+pub fn fixture_sparse_index_ram_from_iter<P: FnMut()>(
+    vectors: impl ExactSizeIterator<Item = SparseVector>,
+    full_scan_threshold: usize,
+    data_dir: &Path,
+    stopped: &AtomicBool,
+    progress: impl FnOnce() -> P,
+) -> SparseVectorIndex<InvertedIndexRam> {
+    let num_vectors = vectors.len();
     let mut sparse_vector_index = fixture_open_sparse_index(
         data_dir,
         num_vectors,
@@ -97,13 +115,12 @@ pub fn fixture_sparse_index_ram<R: Rng + ?Sized>(
         stopped,
     )
     .unwrap();
-    let mut borrowed_storage = sparse_vector_index.vector_storage.borrow_mut();
+    let mut borrowed_storage = sparse_vector_index.vector_storage().borrow_mut();
 
     // add points to storage
-    for idx in 0..num_vectors {
-        let vec = &random_sparse_vector(rnd, max_dim);
+    for (idx, vec) in vectors.enumerate() {
         borrowed_storage
-            .insert_vector(idx as PointOffsetType, vec.into())
+            .insert_vector(idx as PointOffsetType, (&vec).into())
             .unwrap();
     }
     drop(borrowed_storage);
@@ -111,10 +128,10 @@ pub fn fixture_sparse_index_ram<R: Rng + ?Sized>(
     // assert all points are in storage
     assert_eq!(
         sparse_vector_index
-            .vector_storage
+            .vector_storage()
             .borrow()
             .available_vector_count(),
-        num_vectors
+        num_vectors,
     );
 
     // assert no points are indexed following open for RAM index
@@ -124,7 +141,10 @@ pub fn fixture_sparse_index_ram<R: Rng + ?Sized>(
     let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
 
     // build index to refresh RAM index
-    sparse_vector_index.build_index(permit, stopped).unwrap();
+    let tick_progress = progress();
+    sparse_vector_index
+        .build_index_with_progress(permit, stopped, tick_progress)
+        .unwrap();
     assert_eq!(sparse_vector_index.indexed_vector_count(), num_vectors);
     sparse_vector_index
 }

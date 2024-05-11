@@ -109,7 +109,7 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
         b.iter(|| {
             let mmap_index_dir = Builder::new().prefix("mmap_index_dir").tempdir().unwrap();
             let mmap_inverted_index = InvertedIndexMmap::convert_and_save(
-                &sparse_vector_index.inverted_index,
+                sparse_vector_index.inverted_index(),
                 &mmap_index_dir,
             )
             .unwrap();

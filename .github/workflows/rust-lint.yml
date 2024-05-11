@@ -36,4 +36,8 @@ jobs:
     - name: Check code formatting
       run: cargo +nightly fmt --all -- --check
     - name: Check cargo clippy warnings
+      run: cargo clippy --workspace -- -D warnings
+    - name: Check cargo clippy warnings for all targets
+      run: cargo clippy --workspace --all-targets -- -D warnings
+    - name: Check cargo clippy warnings for all targets and features
       run: cargo clippy --workspace --all-targets --all-features -- -D warnings

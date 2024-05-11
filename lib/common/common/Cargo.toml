@@ -9,6 +9,9 @@ license = "Apache-2.0"
 edition = "2021"
 publish = false
 
+[features]
+testing = []
+
 [dependencies]
 num_cpus = "1.16"
 ordered-float = "4.2"

@@ -29,7 +29,7 @@ pub fn build_simple_segment(
                     storage_type: VectorStorageType::Memory,
                     index: Indexes::Plain {},
                     quantization_config: None,
-                    multi_vec_config: None,
+                    multivec_config: None,
                     datatype: None,
                 },
             )]),
@@ -55,7 +55,7 @@ pub fn build_multivec_segment(
             storage_type: VectorStorageType::Memory,
             index: Indexes::Plain {},
             quantization_config: None,
-            multi_vec_config: None,
+            multivec_config: None,
             datatype: None,
         },
     );
@@ -67,7 +67,7 @@ pub fn build_multivec_segment(
             storage_type: VectorStorageType::Memory,
             index: Indexes::Plain {},
             quantization_config: None,
-            multi_vec_config: None,
+            multivec_config: None,
             datatype: None,
         },
     );

@@ -15,17 +15,17 @@ jobs:
             ref: ${{ github.ref.name }}
         - name: Build the Docker image
           run: |
-            buildx_containers=$(docker container ls -qf "name=buildx_buildkit")
-            buildx_volumes=$(docker volume ls -qf "name=buildx_buildkit")
+            buildx_containers=$(docker container ls -a -qf "name=buildx_buildkit" | tr -d '\n')
+            buildx_volumes=$(docker volume ls -qf "name=buildx_buildkit" | tr -d '\n')
 
             if [ -n "$buildx_containers" ]; then
-              echo "Buildx containers to delete: " "$buildx_containers"
-              docker container rm -f "$buildx_containers"
+              echo "Buildx containers to delete: $buildx_containers"
+              docker container rm -f $buildx_containers
             fi
 
             if [ -n "$buildx_volumes" ]; then
-              echo "Buildx volumes to delete: " "$buildx_volumes"
-              docker volume rm "$buildx_volumes"
+              echo "Buildx volumes to delete: $buildx_volumes"
+              docker volume rm -f $buildx_volumes
             fi
 
             branch=${GITHUB_REF_NAME//\//-} # replace all / with -

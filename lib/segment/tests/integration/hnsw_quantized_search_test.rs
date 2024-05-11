@@ -15,6 +15,7 @@ use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::hnsw::HNSWIndex;
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::{VectorIndex, VectorIndexEnum};
+use segment::json_path::path;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
@@ -29,7 +30,6 @@ use serde_json::json;
 use tempfile::Builder;
 
 use crate::fixtures::segment::build_segment_1;
-use crate::utils::path;
 
 fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> usize {
     a[0].iter()
@@ -71,7 +71,7 @@ fn hnsw_quantized_search_test(
                 storage_type: VectorStorageType::Memory,
                 index: Indexes::Plain {},
                 quantization_config: None,
-                multi_vec_config: None,
+                multivec_config: None,
                 datatype: None,
             },
         )]),
@@ -198,14 +198,7 @@ fn check_matches(
             segment.vector_data[DEFAULT_VECTOR_NAME]
                 .vector_index
                 .borrow()
-                .search(
-                    &[query],
-                    filter,
-                    top,
-                    None,
-                    &false.into(),
-                    &Default::default(),
-                )
+                .search(&[query], filter, top, None, &Default::default())
                 .unwrap()
         })
         .collect::<Vec<_>>();
@@ -222,7 +215,6 @@ fn check_matches(
                     hnsw_ef: Some(ef),
                     ..Default::default()
                 }),
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();
@@ -256,7 +248,6 @@ fn check_oversampling(
                     }),
                     ..Default::default()
                 }),
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();
@@ -277,7 +268,6 @@ fn check_oversampling(
                     }),
                     ..Default::default()
                 }),
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();
@@ -315,7 +305,6 @@ fn check_rescoring(
                     }),
                     ..Default::default()
                 }),
-                &false.into(),
                 &Default::default(),
             )
             .unwrap();

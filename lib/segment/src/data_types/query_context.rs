@@ -1,9 +1,14 @@
 use std::collections::HashMap;
+use std::ops::Deref;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
+use bitvec::prelude::BitSlice;
 use sparse::common::types::{DimId, DimWeight};
 
 use crate::data_types::tiny_map;
 
+#[derive(Debug)]
 pub struct QueryContext {
     /// Total amount of available points in the segment.
     available_point_count: usize,
@@ -11,6 +16,10 @@ pub struct QueryContext {
     /// Parameter, which defines how big a plain segment can be to be considered
     /// small enough to be searched with `indexed_only` option.
     search_optimized_threshold_kb: usize,
+
+    /// Defines if the search process was stopped.
+    /// Is changed externally if API times out or cancelled.
+    is_stopped: Arc<AtomicBool>,
 
     /// Statistics of the element frequency,
     /// collected over all segments.
@@ -24,8 +33,18 @@ impl QueryContext {
         Self {
             available_point_count: 0,
             search_optimized_threshold_kb,
+            is_stopped: Arc::new(AtomicBool::new(false)),
             idf: tiny_map::TinyMap::new(),
         }
+    }
+
+    pub fn is_stopped(&self) -> bool {
+        self.is_stopped.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub fn with_is_stopped(mut self, flag: Arc<AtomicBool>) -> Self {
+        self.is_stopped = flag;
+        self
     }
 
     pub fn available_point_count(&self) -> usize {
@@ -60,11 +79,10 @@ impl QueryContext {
         &mut self.idf
     }
 
-    pub fn get_vector_context(&self, vector_name: &str) -> VectorQueryContext {
-        VectorQueryContext {
-            available_point_count: self.available_point_count,
-            search_optimized_threshold_kb: self.search_optimized_threshold_kb,
-            idf: self.idf.get(vector_name),
+    pub fn get_segment_query_context(&self) -> SegmentQueryContext {
+        SegmentQueryContext {
+            query_context: Some(self),
+            deleted_points: None,
         }
     }
 }
@@ -75,7 +93,39 @@ impl Default for QueryContext {
     }
 }
 
+/// Defines context of the search query on the segment level
+#[derive(Default, Clone, Debug)]
+pub struct SegmentQueryContext<'a> {
+    query_context: Option<&'a QueryContext>,
+    deleted_points: Option<&'a BitSlice>,
+}
+
+impl<'a> SegmentQueryContext<'a> {
+    pub fn get_vector_context(&self, vector_name: &str) -> VectorQueryContext {
+        if let Some(query_context) = self.query_context {
+            VectorQueryContext {
+                available_point_count: query_context.available_point_count,
+                search_optimized_threshold_kb: query_context.search_optimized_threshold_kb,
+                is_stopped: Some(&query_context.is_stopped),
+                idf: query_context.idf.get(vector_name),
+                deleted_points: self.deleted_points,
+            }
+        } else {
+            VectorQueryContext {
+                deleted_points: self.deleted_points,
+                ..Default::default()
+            }
+        }
+    }
+
+    pub fn with_deleted_points(mut self, deleted_points: &'a BitSlice) -> Self {
+        self.deleted_points = Some(deleted_points);
+        self
+    }
+}
+
 /// Query context related to a specific vector
+#[derive(Debug)]
 pub struct VectorQueryContext<'a> {
     /// Total amount of available points in the segment.
     available_point_count: usize,
@@ -84,7 +134,27 @@ pub struct VectorQueryContext<'a> {
     /// small enough to be searched with `indexed_only` option.
     search_optimized_threshold_kb: usize,
 
+    is_stopped: Option<&'a AtomicBool>,
+
     idf: Option<&'a HashMap<DimId, usize>>,
+
+    deleted_points: Option<&'a BitSlice>,
+}
+
+pub enum SimpleCow<'a, T> {
+    Borrowed(&'a T),
+    Owned(T),
+}
+
+impl<'a, T> Deref for SimpleCow<'a, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            SimpleCow::Borrowed(value) => value,
+            SimpleCow::Owned(value) => value,
+        }
+    }
 }
 
 impl VectorQueryContext<'_> {
@@ -94,6 +164,16 @@ impl VectorQueryContext<'_> {
 
     pub fn search_optimized_threshold_kb(&self) -> usize {
         self.search_optimized_threshold_kb
+    }
+
+    pub fn deleted_points(&self) -> Option<&BitSlice> {
+        self.deleted_points
+    }
+
+    pub fn is_stopped(&self) -> SimpleCow<'_, AtomicBool> {
+        self.is_stopped
+            .map(SimpleCow::Borrowed)
+            .unwrap_or_else(|| SimpleCow::Owned(AtomicBool::new(false)))
     }
 
     /// Compute advanced formula for Inverse Document Frequency (IDF) according to wikipedia.
@@ -128,7 +208,9 @@ impl Default for VectorQueryContext<'_> {
         VectorQueryContext {
             available_point_count: 0,
             search_optimized_threshold_kb: usize::MAX,
+            is_stopped: None,
             idf: None,
+            deleted_points: None,
         }
     }
 }
