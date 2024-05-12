@@ -14,6 +14,7 @@ use sparse::common::types::DimId;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
 use sparse::index::inverted_index::InvertedIndex;
+use sparse::index::migrate::migrate;
 use sparse::index::search_context::SearchContext;
 
 use super::indices_tracker::IndicesTracker;
@@ -102,6 +103,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             (config, inverted_index, indices_tracker)
         } else if config_path.exists() {
             // Load inverted index and config
+            migrate(path)?;
             let loaded_config = SparseIndexConfig::load(&config_path)?;
             let inverted_index = TInvertedIndex::open(path)?;
             let indices_tracker =
