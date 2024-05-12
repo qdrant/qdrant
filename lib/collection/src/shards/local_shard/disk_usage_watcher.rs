@@ -6,7 +6,7 @@ pub struct DiskUsageWatcher {
     pub(crate) disk_path: PathBuf,
     pub(crate) disk_free_space_bytes: u64,
     pub(crate) disk_buffer_threshold_mb: u64,
-    // DiskUsageWathcer is disabled if it failed to create a new instance
+    // DiskUsageWatcher is disabled if it failed to create a new instance
     // This may happen if the platform or environment does not support the required APIs
     pub(crate) disabled: bool,
 }
