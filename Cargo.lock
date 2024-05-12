@@ -4870,6 +4870,7 @@ dependencies = [
  "bincode",
  "bitpacking",
  "bitvec",
+ "cc",
  "cgroups-rs",
  "charabia",
  "chrono",

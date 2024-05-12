@@ -1,10 +1,9 @@
 #if !defined PC_VER
 #include <arm_neon.h>
-#else
-#include "NEONvsSSE.h"
 #endif
 
-
+#ifdef __ARM_FEATURE_FP16_VECTOR_ARITHMETIC
+#include <arm_fp16.h>
 float32_t dotProduct_half_4x4(const float16_t* pSrcA, const float16_t* pSrcB, uint32_t blockSize)
 {
     float32_t dotProduct = 0.0f;
@@ -12,9 +11,8 @@ float32_t dotProduct_half_4x4(const float16_t* pSrcA, const float16_t* pSrcB, ui
     float16x8_t sum2 = vdupq_n_f16(0.0f);
     float16x8_t sum3 = vdupq_n_f16(0.0f);
     float16x8_t sum4 = vdupq_n_f16(0.0f);
-    uint32_t i = 0;
 
-    for(i=0; i < blockSize - (blockSize % 32); i+=32)
+    for(uint32_t i=0; i < blockSize - (blockSize % 32); i+=32)
     {
         sum1 = vfmaq_f16(sum1, vld1q_f16(pSrcA), vld1q_f16(pSrcB));
         sum2 = vfmaq_f16(sum2, vld1q_f16(pSrcA+8), vld1q_f16(pSrcB+8));
@@ -25,16 +23,18 @@ float32_t dotProduct_half_4x4(const float16_t* pSrcA, const float16_t* pSrcB, ui
         pSrcB += 32;
     }
 
-    sum1 = vaddq_f16(sum1, sum2);
-    sum1 = vaddq_f16(sum1, sum3);
-    sum1 = vaddq_f16(sum1, sum4);
-
     float32x4_t sum = vcvt_f32_f16(vget_high_f16(sum1));
     sum = vaddq_f32(sum, vcvt_f32_f16(vget_low_f16(sum1)));
+    sum = vaddq_f32(sum, vcvt_f32_f16(vget_high_f16(sum2)));
+    sum = vaddq_f32(sum, vcvt_f32_f16(vget_low_f16(sum2)));
+    sum = vaddq_f32(sum, vcvt_f32_f16(vget_high_f16(sum3)));
+    sum = vaddq_f32(sum, vcvt_f32_f16(vget_low_f16(sum3)));
+    sum = vaddq_f32(sum, vcvt_f32_f16(vget_high_f16(sum4)));
+    sum = vaddq_f32(sum, vcvt_f32_f16(vget_low_f16(sum4)));
 
     dotProduct = vaddvq_f32(sum);
-    for (i=0; i < (blockSize % 32); i++) {
-        dotProduct += (*pSrcA)*(*pSrcB);
+    for (uint32_t i=0; i < (blockSize % 32); i++) {
+        dotProduct += (float32_t)((*pSrcA)*(*pSrcB));
         pSrcA += 1;
         pSrcB += 1;
     }
@@ -53,9 +53,8 @@ float32_t euclideanDist_half_4x4(const float16_t* pSrcA, const float16_t* pSrcB,
     float16x8_t sub3 = vdupq_n_f16(0.0f);
     float16x8_t sum4 = vdupq_n_f16(0.0f);
     float16x8_t sub4 = vdupq_n_f16(0.0f);
-    uint32_t i = 0;
 
-    for(i=0; i < blockSize - (blockSize % 32); i+=32)
+    for(uint32_t i=0; i < blockSize - (blockSize % 32); i+=32)
     {
         sub1 = vsubq_f16(vld1q_f16(pSrcA), vld1q_f16(pSrcB));
         sum1 = vfmaq_f16(sum1, sub1, sub1);
@@ -73,18 +72,20 @@ float32_t euclideanDist_half_4x4(const float16_t* pSrcA, const float16_t* pSrcB,
         pSrcB += 32;
     }
 
-    sum1 = vaddq_f16(sum1, sum2);
-    sum1 = vaddq_f16(sum1, sum3);
-    sum1 = vaddq_f16(sum1, sum4);
-
     float32x4_t sum = vcvt_f32_f16(vget_high_f16(sum1));
     sum = vaddq_f32(sum, vcvt_f32_f16(vget_low_f16(sum1)));
+    sum = vaddq_f32(sum, vcvt_f32_f16(vget_high_f16(sum2)));
+    sum = vaddq_f32(sum, vcvt_f32_f16(vget_low_f16(sum2)));
+    sum = vaddq_f32(sum, vcvt_f32_f16(vget_high_f16(sum3)));
+    sum = vaddq_f32(sum, vcvt_f32_f16(vget_low_f16(sum3)));
+    sum = vaddq_f32(sum, vcvt_f32_f16(vget_high_f16(sum4)));
+    sum = vaddq_f32(sum, vcvt_f32_f16(vget_low_f16(sum4)));
 
     euclideanDistance = vaddvq_f32(sum);
-    float32_t tmp = 0.0f;
-    for (i=0; i < (blockSize % 32); i++) {
+    float16_t tmp = 0.0f;
+    for (uint32_t i=0; i < (blockSize % 32); i++) {
         tmp = (*pSrcA - *pSrcB);
-        euclideanDistance += tmp * tmp;
+        euclideanDistance += (float32_t)(tmp * tmp);
         pSrcA += 1;
         pSrcB += 1;
     }
@@ -115,21 +116,22 @@ float32_t manhattanDist_half_4x4(const float16_t* pSrcA, const float16_t* pSrcB,
         pSrcB += 32;
     }
 
-    sum1 = vaddq_f16(sum1, sum2);
-    sum1 = vaddq_f16(sum1, sum3);
-    sum1 = vaddq_f16(sum1, sum4);
-
     float32x4_t sum = vcvt_f32_f16(vget_high_f16(sum1));
     sum = vaddq_f32(sum, vcvt_f32_f16(vget_low_f16(sum1)));
+    sum = vaddq_f32(sum, vcvt_f32_f16(vget_high_f16(sum2)));
+    sum = vaddq_f32(sum, vcvt_f32_f16(vget_low_f16(sum2)));
+    sum = vaddq_f32(sum, vcvt_f32_f16(vget_high_f16(sum3)));
+    sum = vaddq_f32(sum, vcvt_f32_f16(vget_low_f16(sum3)));
+    sum = vaddq_f32(sum, vcvt_f32_f16(vget_high_f16(sum4)));
+    sum = vaddq_f32(sum, vcvt_f32_f16(vget_low_f16(sum4)));
 
     manhattanDistance = vaddvq_f32(sum);
-    float32_t tmp = 0.0f;
     for (i=0; i < (blockSize % 32); i++) {
-        tmp = (*pSrcA - *pSrcB);
-        manhattanDistance += tmp > 0 ? tmp : -tmp;
+        manhattanDistance += (float32_t)(vabsh_f16(*pSrcA - *pSrcB));
         pSrcA += 1;
         pSrcB += 1;
     }
 
     return manhattanDistance;
 }
+#endif

@@ -7,150 +7,39 @@ use common::types::ScoreType;
 use half::f16;
 
 use crate::data_types::vectors::VectorElementTypeHalf;
+use crate::spaces::simple_sse;
+use itertools::Itertools;
 
 #[target_feature(enable = "sse")]
-#[allow(clippy::missing_safety_doc)]
-pub unsafe fn hsum128_ps_sse(x: __m128) -> f32 {
-    let x64: __m128 = _mm_add_ps(x, _mm_movehl_ps(x, x));
-    let x32: __m128 = _mm_add_ss(x64, _mm_shuffle_ps(x64, x64, 0x55));
-    _mm_cvtss_f32(x32)
+pub(crate) unsafe fn euclid_similarity_sse_half(
+    v1: &[VectorElementTypeHalf],
+    v2: &[VectorElementTypeHalf],
+) -> ScoreType {
+    let v1_f32 = v1.iter().map(|x| f16::to_f32(*x)).collect_vec();
+    let v2_f32 = v2.iter().map(|x| f16::to_f32(*x)).collect_vec();
+    simple_sse::euclid_similarity_sse(&v1_f32, &v2_f32)
 }
 
 #[target_feature(enable = "sse")]
 #[target_feature(enable = "f16c")]
-pub(crate) unsafe fn euclid_similarity_sse(
+pub(crate) unsafe fn manhattan_similarity_sse_half(
     v1: &[VectorElementTypeHalf],
     v2: &[VectorElementTypeHalf],
 ) -> ScoreType {
-    let n = v1.len();
-    let m = n - (n % 8);
-    let mut ptr1: *const __m128i = v1.as_ptr() as *const __m128i;
-    let mut ptr2: *const __m128i = v2.as_ptr() as *const __m128i;
-    let mut sum128_1: __m128 = _mm_setzero_ps();
-
-    let mut addr1s: __m128i;
-    let mut addr2s: __m128i;
-
-    let mut i: usize = 0;
-    while i < m {
-        addr1s = _mm_loadu_si128(ptr1);
-        addr2s = _mm_loadu_si128(ptr2);
-        let mut sub128_1 = _mm_sub_ps(_mm_cvtph_ps(addr1s), _mm_cvtph_ps(addr2s));
-        sum128_1 = _mm_add_ps(_mm_mul_ps(sub128_1, sub128_1), sum128_1);
-
-        sub128_1 = _mm_sub_ps(
-            _mm_cvtph_ps(_mm_srli_si128(addr1s, 8)),
-            _mm_cvtph_ps(_mm_srli_si128(addr2s, 8)),
-        );
-        sum128_1 = _mm_add_ps(_mm_mul_ps(sub128_1, sub128_1), sum128_1);
-
-        ptr1 = ptr1.wrapping_add(1);
-        ptr2 = ptr2.wrapping_add(1);
-        i += 8;
-    }
-
-    let ptr1_f16: *const f16 = ptr1 as *const f16;
-    let ptr2_f16: *const f16 = ptr2 as *const f16;
-
-    let mut result = hsum128_ps_sse(sum128_1);
-    for i in 0..n - m {
-        result += (f16::to_f32(*ptr1_f16.wrapping_add(i)) - f16::to_f32(*ptr2_f16.wrapping_add(i)))
-            .powi(2);
-    }
-    -result
+    let v1_f32 = v1.iter().map(|x| f16::to_f32(*x)).collect_vec();
+    let v2_f32 = v2.iter().map(|x| f16::to_f32(*x)).collect_vec();
+    simple_sse::manhattan_similarity_sse(&v1_f32, &v2_f32)
 }
 
 #[target_feature(enable = "sse")]
 #[target_feature(enable = "f16c")]
-pub(crate) unsafe fn manhattan_similarity_sse(
+pub(crate) unsafe fn dot_similarity_sse_half(
     v1: &[VectorElementTypeHalf],
     v2: &[VectorElementTypeHalf],
 ) -> ScoreType {
-    let mask: __m128 = _mm_set1_ps(-0.0f32); // 1 << 31 used to clear sign bit to mimic abs
-
-    let n = v1.len();
-    let m = n - (n % 8);
-    let mut ptr1: *const __m128i = v1.as_ptr() as *const __m128i;
-    let mut ptr2: *const __m128i = v2.as_ptr() as *const __m128i;
-    let mut sum128_1: __m128 = _mm_setzero_ps();
-
-    let mut addr1s: __m128i;
-    let mut addr2s: __m128i;
-
-    let mut i: usize = 0;
-    while i < m {
-        addr1s = _mm_loadu_si128(ptr1);
-        addr2s = _mm_loadu_si128(ptr2);
-
-        let mut sub128_1 = _mm_sub_ps(_mm_cvtph_ps(addr1s), _mm_cvtph_ps(addr2s));
-        sum128_1 = _mm_add_ps(_mm_andnot_ps(mask, sub128_1), sum128_1);
-
-        sub128_1 = _mm_sub_ps(
-            _mm_cvtph_ps(_mm_srli_si128(addr1s, 8)),
-            _mm_cvtph_ps(_mm_srli_si128(addr2s, 8)),
-        );
-        sum128_1 = _mm_add_ps(_mm_andnot_ps(mask, sub128_1), sum128_1);
-
-        ptr1 = ptr1.wrapping_add(1);
-        ptr2 = ptr2.wrapping_add(1);
-        i += 8;
-    }
-
-    let ptr1_f16: *const f16 = ptr1 as *const f16;
-    let ptr2_f16: *const f16 = ptr2 as *const f16;
-
-    let mut result = hsum128_ps_sse(sum128_1);
-    for i in 0..n - m {
-        result += (f16::to_f32(*ptr1_f16.add(i)) - f16::to_f32(*ptr2_f16.add(i))).abs();
-    }
-    -result
-}
-
-#[target_feature(enable = "sse")]
-#[target_feature(enable = "f16c")]
-pub(crate) unsafe fn dot_similarity_sse(
-    v1: &[VectorElementTypeHalf],
-    v2: &[VectorElementTypeHalf],
-) -> ScoreType {
-    let n = v1.len();
-    let m = n - (n % 16);
-    let mut ptr1: *const __m128i = v1.as_ptr() as *const __m128i;
-    let mut ptr2: *const __m128i = v2.as_ptr() as *const __m128i;
-    let mut sum128_1: __m128 = _mm_setzero_ps();
-
-    let mut addr1s: __m128i;
-    let mut addr2s: __m128i;
-
-    let mut i: usize = 0;
-    while i < m {
-        addr1s = _mm_loadu_si128(ptr1);
-        addr2s = _mm_loadu_si128(ptr2);
-        sum128_1 = _mm_add_ps(
-            _mm_mul_ps(_mm_cvtph_ps(addr1s), _mm_cvtph_ps(addr2s)),
-            sum128_1,
-        );
-
-        sum128_1 = _mm_add_ps(
-            _mm_mul_ps(
-                _mm_cvtph_ps(_mm_srli_si128(addr1s, 8)),
-                _mm_cvtph_ps(_mm_srli_si128(addr2s, 8)),
-            ),
-            sum128_1,
-        );
-
-        ptr1 = ptr1.wrapping_add(1);
-        ptr2 = ptr2.wrapping_add(1);
-        i += 8;
-    }
-
-    let ptr1_f16: *const f16 = ptr1 as *const f16;
-    let ptr2_f16: *const f16 = ptr2 as *const f16;
-
-    let mut result = hsum128_ps_sse(sum128_1);
-    for i in 0..n - m {
-        result += f16::to_f32(*ptr1_f16.add(i)) * f16::to_f32(*ptr2_f16.add(i));
-    }
-    result
+    let v1_f32 = v1.iter().map(|x| f16::to_f32(*x)).collect_vec();
+    let v2_f32 = v2.iter().map(|x| f16::to_f32(*x)).collect_vec();
+    simple_sse::dot_similarity_sse(&v1_f32, &v2_f32)
 }
 
 #[cfg(test)]
@@ -161,110 +50,65 @@ mod tests {
         use crate::spaces::metric_f16::simple::*;
 
         if is_x86_feature_detected!("sse") {
-            let v1: Vec<f16> = vec![
-                f16::from_f32(1.),
-                f16::from_f32(2.),
-                f16::from_f32(3.),
-                f16::from_f32(4.),
-                f16::from_f32(5.),
-                f16::from_f32(6.),
-                f16::from_f32(7.),
-                f16::from_f32(8.),
-                f16::from_f32(9.),
-                f16::from_f32(10.),
-                f16::from_f32(11.),
-                f16::from_f32(12.),
-                f16::from_f32(13.),
-                f16::from_f32(14.),
-                f16::from_f32(15.),
-                f16::from_f32(16.),
-                f16::from_f32(17.),
-                f16::from_f32(18.),
-                f16::from_f32(19.),
-                f16::from_f32(20.),
-                f16::from_f32(21.),
-                f16::from_f32(22.),
-                f16::from_f32(1.),
-                f16::from_f32(2.),
-                f16::from_f32(3.),
-                f16::from_f32(4.),
-                f16::from_f32(5.),
-                f16::from_f32(6.),
-                f16::from_f32(7.),
-                f16::from_f32(8.),
-                f16::from_f32(9.),
-                f16::from_f32(10.),
-                f16::from_f32(11.),
-                f16::from_f32(12.),
-                f16::from_f32(13.),
-                f16::from_f32(14.),
-                f16::from_f32(15.),
-                f16::from_f32(16.),
-                f16::from_f32(17.),
-                f16::from_f32(18.),
-                f16::from_f32(19.),
-                f16::from_f32(20.),
-                f16::from_f32(21.),
-                f16::from_f32(22.),
+            let v1_f32: Vec<f32> = vec![
+                3.7, 4.3, 5.6, 7.7, 7.6, 4.2, 4.2, 7.3, 4.1, 6. , 6.4, 1. , 2.4,
+                7. , 2.4, 6.4, 4.8, 2.4, 2.9, 3.9, 3.9, 7.4, 6.9, 5.3, 6.2, 5.2,
+                5.2, 4.2, 5.9, 1.8, 4.5, 3.5, 3.1, 6.1, 6.5, 2.4, 2.1, 7.5, 2.3,
+                5.9, 3.6, 2.9, 6.1, 5.9, 3.3, 2.9, 3.7, 6.8, 7.2, 6.5, 3.1, 5.7,
+                1.1, 7.2, 5.6, 5.1, 7. , 2.5, 6.2, 7.6, 7. , 6.9, 7.5, 3.2, 5.4,
+                5.8, 1.9, 4.9, 7.7, 6.5, 3. , 2. , 6.9, 6.8, 3.3, 1.4, 4.7, 3.7,
+                1.9, 3.6, 3.9, 7.2, 7.7, 7. , 6.9, 5.8, 4.4, 1.8, 4.9, 3.1, 7.9,
+                6.5, 7.5, 3.7, 4.6, 1.5, 3.4, 1.7, 6.4, 7.3, 4.7, 1.9, 7.7, 8. ,
+                4.3, 3.9, 1.5, 6.1, 2.1, 6.9, 2.5, 7.2, 4.1, 4.8, 1. , 4.1, 6.3,
+                5.9, 6.2, 3.9, 4.1, 1.2, 7.3, 1. , 4. , 3.1, 6. , 5.8, 6.8, 2.6,
+                5.1, 2.3, 1.2, 5.6, 3.3, 1.6, 4.7, 7. , 4.7, 7.7, 1.5, 4.1, 4.1,
+                5.8, 7.5, 7.6, 5.2, 2.8, 6.9, 6.1, 4.3, 5.9, 5.2, 8. , 2.1, 1.3,
+                3.2, 4.3, 5.5, 7.7, 6.8, 2.6, 5.2, 4.1, 4.9, 3.7, 6.2, 1.6, 4.9,
+                2.6, 6.9, 2.3, 3.9, 7.7, 6.6, 5.3, 3.1, 5.5, 3. , 2.4, 1.9, 6.7,
+                7.1, 6.3, 7.4, 6.8, 2.3, 6.1, 3.6, 1.1, 2.8, 7. , 3.5, 4.1, 3.4,
+                7.4, 1.4, 5.5, 6.3, 6.8, 2. , 2.1, 2.7, 7.8, 6. , 3.6, 5.9, 3.9,
+                3.6, 7.8, 5.4, 6.8, 4.6, 7.8, 2.3, 6.2, 7.6, 5.8, 3.3, 3.2, 6.2,
+                1.9, 6. , 5.3, 3.2, 5.8, 7. , 1.6, 1.3, 7.7, 6.1, 1.2, 2.8, 2. ,
+                2.2, 2.2, 5.4, 4.8, 1.8, 3.6, 1.9, 6. , 3.3, 3.1, 4.9, 6.2, 2.9,
+                6.1, 6.6, 3.9, 3.8, 4.8, 6.1, 6.9, 6.7, 5.9, 6.3, 3.3, 3.2, 5.9
             ];
-            let v2: Vec<f16> = vec![
-                f16::from_f32(2.),
-                f16::from_f32(3.),
-                f16::from_f32(4.),
-                f16::from_f32(5.),
-                f16::from_f32(6.),
-                f16::from_f32(7.),
-                f16::from_f32(8.),
-                f16::from_f32(9.),
-                f16::from_f32(10.),
-                f16::from_f32(11.),
-                f16::from_f32(12.),
-                f16::from_f32(13.),
-                f16::from_f32(14.),
-                f16::from_f32(15.),
-                f16::from_f32(16.),
-                f16::from_f32(17.),
-                f16::from_f32(18.),
-                f16::from_f32(19.),
-                f16::from_f32(20.),
-                f16::from_f32(21.),
-                f16::from_f32(22.),
-                f16::from_f32(23.),
-                f16::from_f32(2.),
-                f16::from_f32(3.),
-                f16::from_f32(4.),
-                f16::from_f32(5.),
-                f16::from_f32(6.),
-                f16::from_f32(7.),
-                f16::from_f32(8.),
-                f16::from_f32(9.),
-                f16::from_f32(10.),
-                f16::from_f32(11.),
-                f16::from_f32(12.),
-                f16::from_f32(13.),
-                f16::from_f32(14.),
-                f16::from_f32(15.),
-                f16::from_f32(16.),
-                f16::from_f32(17.),
-                f16::from_f32(18.),
-                f16::from_f32(19.),
-                f16::from_f32(20.),
-                f16::from_f32(21.),
-                f16::from_f32(22.),
-                f16::from_f32(23.),
+            let v2_f32: Vec<f32> = vec![
+                1.5, 1.3, 1.7, 6.4, 4.6, 6.2, 1.7, 2.6, 4.3, 6.1, 7.2, 3.7, 1.3,
+                7.3, 3.6, 5.6, 5.9, 5.6, 2.3, 3.7, 7.4, 3.6, 7.5, 7.6, 4.8, 5.6,
+                2.2, 4.3, 4.4, 4.9, 6.1, 2.9, 5.6, 1.6, 2.4, 7.6, 6. , 6.3, 7.3,
+                1. , 3.1, 7. , 3.1, 5.5, 2.6, 6.7, 2.2, 1.8, 6.6, 7.1, 1.6, 3.7,
+                7.7, 6.3, 2.8, 3. , 6.5, 3.3, 3.6, 2.7, 7. , 4.2, 7.7, 5.6, 3. ,
+                7.4, 1.6, 4.2, 3.7, 2.7, 3.4, 7. , 2.9, 6.6, 8. , 5.7, 4.9, 3.8,
+                4.9, 7.1, 3.9, 4.8, 5.3, 4.2, 7.2, 6.3, 2.4, 1.5, 3.9, 5.5, 4.1,
+                6.2, 1. , 2.8, 2.7, 6.8, 1.7, 6.7, 1.7, 7.2, 2.1, 6.3, 5.1, 7.3,
+                4.7, 1.1, 4.4, 6.4, 4.9, 5.8, 5. , 7.6, 6.5, 4. , 4. , 5.9, 5.3,
+                2.1, 3. , 7.9, 6.1, 6.1, 5.3, 5.8, 1.4, 3.2, 3.3, 1.2, 1. , 6.2,
+                4.2, 4.5, 3.5, 5.1, 7. , 6. , 3.9, 5.5, 6.6, 6.9, 5. , 1. , 4.8,
+                4.2, 5.1, 1.1, 1.3, 1.5, 7.9, 7.7, 5.2, 5.4, 1.4, 1.4, 4.6, 4. ,
+                3.2, 2.2, 4.3, 7.1, 3.9, 4.5, 6.1, 5.3, 3.2, 1.4, 6.7, 1.6, 2.2,
+                2.8, 4.7, 6.1, 6.2, 6.1, 1.4, 7. , 7.4, 7.3, 4.1, 1.5, 3.3, 7.4,
+                5.3, 7.9, 4.3, 2.6, 3.6, 4.1, 5.1, 6.4, 5.8, 2.4, 1.8, 4.8, 6.2,
+                3.5, 5.9, 6.3, 5.1, 4.9, 7.5, 7.1, 2.4, 1.9, 6.3, 4.2, 7.9, 7.4,
+                5.6, 4.7, 7.4, 7.9, 3.2, 4.8, 5.7, 5.9, 7.4, 2.8, 5.2, 6.4, 5.1,
+                4. , 7.2, 3.6, 2. , 3.1, 7.5, 3.7, 2.9, 3.4, 6.1, 1. , 1.2, 1.3,
+                3.8, 2.7, 7.4, 6.6, 5.3, 4.6, 1.8, 3.7, 1.4, 1.1, 1.9, 5.9, 6.5,
+                4.1, 4.9, 5.7, 3.9, 4.1, 7.2, 5. , 7.3, 2.8, 7.1, 7.2, 4. , 2.7
             ];
 
-            let euclid_simd = unsafe { euclid_similarity_sse(&v1, &v2) };
+            let v1: Vec<f16> = v1_f32.iter().map(|x| f16::from_f32(*x)).collect();
+            let v2: Vec<f16> = v2_f32.iter().map(|x| f16::from_f32(*x)).collect();
+
+            let euclid_simd = unsafe { euclid_similarity_sse_half(&v1, &v2) };
             let euclid = euclid_similarity_half(&v1, &v2);
-            assert_eq!(euclid_simd, euclid);
+            assert!((euclid_simd-euclid).abs()/euclid.abs() < 0.0005);
 
-            let manhattan_simd = unsafe { manhattan_similarity_sse(&v1, &v2) };
+            let manhattan_simd = unsafe { manhattan_similarity_sse_half(&v1, &v2) };
             let manhattan = manhattan_similarity_half(&v1, &v2);
-            assert_eq!(manhattan_simd, manhattan);
+            assert!((manhattan_simd-manhattan).abs()/manhattan.abs() < 0.0005);
 
-            let dot_simd = unsafe { dot_similarity_sse(&v1, &v2) };
+            let dot_simd = unsafe { dot_similarity_sse_half(&v1, &v2) };
             let dot = dot_similarity_half(&v1, &v2);
-            assert_eq!(dot_simd, dot);
+            assert!((dot_simd-dot).abs()/dot.abs() < 0.0005);
         } else {
             println!("sse test skipped");
         }

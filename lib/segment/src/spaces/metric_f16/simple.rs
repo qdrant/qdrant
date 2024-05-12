@@ -45,23 +45,24 @@ impl Metric<VectorElementTypeHalf> for EuclidMetric {
         {
             if is_x86_feature_detected!("avx")
                 && is_x86_feature_detected!("fma")
+                && is_x86_feature_detected!("f16c")
                 && v1.len() >= MIN_DIM_SIZE_AVX
             {
-                return unsafe { euclid_similarity_avx(v1, v2) };
+                return unsafe { euclid_similarity_avx_half(v1, v2) };
             }
         }
 
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         {
             if is_x86_feature_detected!("sse") && v1.len() >= MIN_DIM_SIZE_SIMD {
-                return unsafe { euclid_similarity_sse(v1, v2) };
+                return unsafe { euclid_similarity_sse_half(v1, v2) };
             }
         }
 
         #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
         {
             if std::arch::is_aarch64_feature_detected!("neon") && v1.len() >= MIN_DIM_SIZE_SIMD {
-                return unsafe { euclid_similarity_neon(v1, v2) };
+                return unsafe { euclid_similarity_neon_half(v1, v2) };
             }
         }
 
@@ -89,23 +90,24 @@ impl Metric<VectorElementTypeHalf> for ManhattanMetric {
         {
             if is_x86_feature_detected!("avx")
                 && is_x86_feature_detected!("fma")
+                && is_x86_feature_detected!("f16c")
                 && v1.len() >= MIN_DIM_SIZE_AVX
             {
-                return unsafe { manhattan_similarity_avx(v1, v2) };
+                return unsafe { manhattan_similarity_avx_half(v1, v2) };
             }
         }
 
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         {
             if is_x86_feature_detected!("sse") && v1.len() >= MIN_DIM_SIZE_SIMD {
-                return unsafe { manhattan_similarity_sse(v1, v2) };
+                return unsafe { manhattan_similarity_sse_half(v1, v2) };
             }
         }
 
         #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
         {
             if std::arch::is_aarch64_feature_detected!("neon") && v1.len() >= MIN_DIM_SIZE_SIMD {
-                return unsafe { manhattan_similarity_neon(v1, v2) };
+                return unsafe { manhattan_similarity_neon_half(v1, v2) };
             }
         }
 
@@ -127,23 +129,24 @@ impl Metric<VectorElementTypeHalf> for DotProductMetric {
         {
             if is_x86_feature_detected!("avx")
                 && is_x86_feature_detected!("fma")
+                && is_x86_feature_detected!("f16c")
                 && v1.len() >= MIN_DIM_SIZE_AVX
             {
-                return unsafe { dot_similarity_avx(v1, v2) };
+                return unsafe { dot_similarity_avx_half(v1, v2) };
             }
         }
 
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         {
             if is_x86_feature_detected!("sse") && v1.len() >= MIN_DIM_SIZE_SIMD {
-                return unsafe { dot_similarity_sse(v1, v2) };
+                return unsafe { dot_similarity_sse_half(v1, v2) };
             }
         }
 
         #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
         {
             if std::arch::is_aarch64_feature_detected!("neon") && v1.len() >= MIN_DIM_SIZE_SIMD {
-                return unsafe { dot_similarity_neon(v1, v2) };
+                return unsafe { dot_similarity_neon_half(v1, v2) };
             }
         }
 
@@ -174,14 +177,14 @@ pub fn euclid_similarity_half(
     v1: &[VectorElementTypeHalf],
     v2: &[VectorElementTypeHalf],
 ) -> ScoreType {
-    f16::to_f32(-v1.iter().zip(v2).map(|(a, b)| (a - b).powi(2)).sum::<f16>())
+    -v1.iter().zip(v2).map(|(a, b)| f16::to_f32((a - b).powi(2))).sum::<f32>()
 }
 
 pub fn manhattan_similarity_half(
     v1: &[VectorElementTypeHalf],
     v2: &[VectorElementTypeHalf],
 ) -> ScoreType {
-    f16::to_f32(-v1.iter().zip(v2).map(|(a, b)| (a - b).abs()).sum::<f16>())
+    -v1.iter().zip(v2).map(|(a, b)| f16::to_f32((a - b).abs())).sum::<f32>()
 }
 
 pub fn cosine_preprocess(vector: DenseVector) -> DenseVector {
@@ -197,5 +200,5 @@ pub fn dot_similarity_half(
     v1: &[VectorElementTypeHalf],
     v2: &[VectorElementTypeHalf],
 ) -> ScoreType {
-    f16::to_f32(v1.iter().zip(v2).map(|(a, b)| a * b).sum())
+    v1.iter().zip(v2).map(|(a, b)| f16::to_f32(a * b)).sum::<f32>()
 }
