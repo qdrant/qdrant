@@ -14,7 +14,7 @@ use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::SeqNumberType;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{self, Receiver, Sender};
-use tokio::sync::{oneshot, Mutex as TokioMutex};
+use tokio::sync::{oneshot, Mutex as TokioMutex, RwLock};
 use tokio::task::{self, JoinHandle};
 use tokio::time::error::Elapsed;
 use tokio::time::{timeout, Duration};
@@ -27,6 +27,7 @@ use crate::common::stoppable_task::{spawn_stoppable, StoppableTaskHandle};
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
+use crate::shards::local_shard::disk_usage_watcher::DiskUsageWatcher;
 use crate::shards::local_shard::LocalShardClocks;
 use crate::wal::WalError;
 use crate::wal_delta::LockedWal;
@@ -114,6 +115,8 @@ pub struct UpdateHandler {
     shard_path: PathBuf,
     /// Whether we have ever triggered optimizers since starting.
     has_triggered_optimizers: Arc<AtomicBool>,
+    // Monitor for if the disk usage is sufficient for write operation
+    disk_usage_watcher: Arc<RwLock<DiskUsageWatcher>>,
 }
 
 impl UpdateHandler {
@@ -130,6 +133,7 @@ impl UpdateHandler {
         max_optimization_threads: Option<usize>,
         clocks: LocalShardClocks,
         shard_path: PathBuf,
+        disk_usage_watcher: Arc<RwLock<DiskUsageWatcher>>,
     ) -> UpdateHandler {
         UpdateHandler {
             shared_storage_config,
@@ -150,6 +154,7 @@ impl UpdateHandler {
             clocks,
             shard_path,
             has_triggered_optimizers: Default::default(),
+            disk_usage_watcher,
         }
     }
 
@@ -182,6 +187,7 @@ impl UpdateHandler {
             flush_rx,
             self.clocks.clone(),
             self.shard_path.clone(),
+            self.disk_usage_watcher.clone(),
         )));
         self.flush_stop = Some(flush_tx);
     }
@@ -620,6 +626,7 @@ impl UpdateHandler {
             .unwrap_or_else(|_| debug!("Optimizer already stopped"));
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn flush_worker(
         segments: LockedSegmentHolder,
         wal: LockedWal,
@@ -628,8 +635,10 @@ impl UpdateHandler {
         mut stop_receiver: oneshot::Receiver<()>,
         clocks: LocalShardClocks,
         shard_path: PathBuf,
+        disk_usage_watcher: Arc<RwLock<DiskUsageWatcher>>,
     ) {
         loop {
+            println!("Flush worker");
             // Stop flush worker on signal or if sender was dropped
             // Even if timer did not finish
             tokio::select! {
@@ -641,6 +650,11 @@ impl UpdateHandler {
             }
 
             trace!("Attempting flushing");
+            if let Err(err) = disk_usage_watcher.write().await.update_disk_usage().await {
+                error!("Failed to ensure sufficient disk space: {err}");
+                segments.write().report_optimizer_error(err);
+                continue;
+            }
             let wal_flash_job = wal.lock().flush_async();
 
             if let Err(err) = wal_flash_job.join() {

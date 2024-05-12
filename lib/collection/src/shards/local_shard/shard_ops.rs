@@ -213,54 +213,6 @@ impl LocalShard {
 
         Ok(records)
     }
-
-    /// Ensures that the `available disk space` is at least >= `wal_capacity_mb`.
-    ///
-    /// This function checks the available disk space on the file system where the specified path is located.
-    /// It verifies that there is at least enough free space to meet the WAL buffer size configured for the collection.
-    /// Introducing this check helps prevent service disruptions from unexpected disk space exhaustion.
-    ///
-    /// # Returns
-    /// A result indicating success (`Ok(())`) if there is sufficient disk space,
-    /// or a `CollectionError::service_error` if the disk space is insufficient or cannot be retrieved.
-    ///
-    /// # Errors
-    /// This function returns an error if:
-    /// - The disk space retrieval fails, detailing the failure reason.
-    /// - The available space is less than the configured WAL buffer size, specifying both the available and required space.
-    async fn ensure_sufficient_disk_space(&self) -> CollectionResult<()> {
-        // Offload the synchronous I/O operation to a blocking thread
-        let path = self.path.clone();
-        let disk_free_space_bytes: u64 =
-            tokio::task::spawn_blocking(move || fs4::available_space(path.as_path()))
-                .await
-                .map_err(|e| {
-                    CollectionError::service_error(format!("Failed to join async task: {}", e))
-                })?
-                .map_err(|err| {
-                    CollectionError::service_error(format!(
-                        "Failed to get free space for path: {} due to: {}",
-                        self.path.as_path().display(),
-                        err
-                    ))
-                })?;
-        let disk_buffer_bytes = self
-            .collection_config
-            .read()
-            .await
-            .wal_config
-            .wal_capacity_mb
-            * 1024
-            * 1024;
-
-        if disk_free_space_bytes < disk_buffer_bytes.try_into().unwrap_or_default() {
-            return Err(CollectionError::service_error(
-                "No space left on device: WAL buffer size exceeds available disk space".to_string(),
-            ));
-        }
-
-        Ok(())
-    }
 }
 
 #[async_trait]
@@ -287,7 +239,11 @@ impl ShardOperation for LocalShard {
             (None, None)
         };
 
-        self.ensure_sufficient_disk_space().await?;
+        if self.disk_usage_watcher.read().await.is_disk_full().await {
+            return Err(CollectionError::service_error(
+                "No space left on device: WAL buffer size exceeds available disk space".to_string(),
+            ));
+        }
 
         let operation_id = {
             let update_sender = self.update_sender.load();
