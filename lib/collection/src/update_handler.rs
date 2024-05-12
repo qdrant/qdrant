@@ -638,7 +638,6 @@ impl UpdateHandler {
         disk_usage_watcher: Arc<RwLock<DiskUsageWatcher>>,
     ) {
         loop {
-            println!("Flush worker");
             // Stop flush worker on signal or if sender was dropped
             // Even if timer did not finish
             tokio::select! {
