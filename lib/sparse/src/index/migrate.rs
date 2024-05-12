@@ -1,11 +1,7 @@
-use std::fs::File;
 use std::path::Path;
 
-use atomicwrites::{AtomicFile, OverwriteBehavior};
 use io::file_operations::{FileOperationResult, FileStorageError};
 use io::storage_version::StorageVersion;
-
-use super::inverted_index::inverted_index_mmap::InvertedIndexMmap;
 
 pub struct SparseVectorIndexVersion;
 
@@ -30,6 +26,10 @@ pub fn migrate(path: &Path) -> FileOperationResult<()> {
 }
 
 fn migrate_from_v1(path: &Path) -> FileOperationResult<()> {
+    // Disable migration for now.
+    SparseVectorIndexVersion::save(path)?;
+
+    /*
     log::info!("Migrating {path:?}");
 
     let index_v1 = InvertedIndexMmap::index_file_path_v1(path);
@@ -44,6 +44,7 @@ fn migrate_from_v1(path: &Path) -> FileOperationResult<()> {
 
     // 3. Remove old index file.
     std::fs::remove_file(&index_v1)?;
+    */
 
     Ok(())
 }

@@ -21,8 +21,7 @@ use crate::index::migrate::SparseVectorIndexVersion;
 use crate::index::posting_list::{PostingElement, PostingListIterator};
 
 const POSTING_HEADER_SIZE: usize = size_of::<PostingListFileHeader>();
-const INDEX_FILE_NAME_V1: &str = "inverted_index.data";
-const INDEX_FILE_NAME_V2: &str = "inverted_index_v2.data";
+const INDEX_FILE_NAME: &str = "inverted_index.data";
 const INDEX_CONFIG_FILE_NAME: &str = "inverted_index_config.json";
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -67,13 +66,7 @@ impl InvertedIndex for InvertedIndexMmap {
     }
 
     fn files(path: &Path) -> Vec<PathBuf> {
-        let mut files = vec![
-            // Only for v2
-            path.join(VERSION_FILE),
-            Self::index_file_path(path),
-            // Only for v1
-            Self::index_file_path_v1(path),
-        ];
+        let mut files = vec![path.join(VERSION_FILE), Self::index_file_path(path)];
         files.retain(|f| f.exists());
 
         files.push(Self::index_config_file_path(path));
@@ -106,11 +99,7 @@ impl InvertedIndex for InvertedIndexMmap {
 
 impl InvertedIndexMmap {
     pub fn index_file_path(path: &Path) -> PathBuf {
-        path.join(INDEX_FILE_NAME_V2)
-    }
-
-    pub fn index_file_path_v1(path: &Path) -> PathBuf {
-        path.join(INDEX_FILE_NAME_V1)
+        path.join(INDEX_FILE_NAME)
     }
 
     pub fn index_config_file_path(path: &Path) -> PathBuf {
