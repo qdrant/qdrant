@@ -79,7 +79,7 @@ pub struct LocalShard {
     pub(super) optimizers: Arc<Vec<Arc<Optimizer>>>,
     pub(super) optimizers_log: Arc<ParkingMutex<TrackerLog>>,
     update_runtime: Handle,
-    pub(super) disk_usage_watcher: Arc<TokioRwLock<DiskUsageWatcher>>,
+    disk_usage_watcher: DiskUsageWatcher,
 }
 
 /// Shard holds information about segments and WAL.
@@ -146,13 +146,12 @@ impl LocalShard {
         // default to 2x the WAL capacity
         let disk_buffer_threshold_mb =
             2 * (collection_config.read().await.wal_config.wal_capacity_mb);
-        let disk_usage_watcher = Arc::new(TokioRwLock::new(
-            disk_usage_watcher::DiskUsageWatcher::new(
-                shard_path.to_owned(),
-                disk_buffer_threshold_mb as u64,
-            )
-            .await,
-        ));
+
+        let disk_usage_watcher = disk_usage_watcher::DiskUsageWatcher::new(
+            shard_path.to_owned(),
+            disk_buffer_threshold_mb,
+        )
+        .await;
 
         let mut update_handler = UpdateHandler::new(
             shared_storage_config.clone(),
@@ -166,7 +165,6 @@ impl LocalShard {
             config.optimizer_config.max_optimization_threads,
             clocks.clone(),
             shard_path.into(),
-            disk_usage_watcher.clone(),
         );
 
         let (update_sender, update_receiver) =
