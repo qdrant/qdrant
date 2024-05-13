@@ -6,9 +6,10 @@ use api::grpc::qdrant::{
     ClearPayloadPointsInternal, CoreSearchBatchPointsInternal, CountPointsInternal, CountResponse,
     CreateFieldIndexCollectionInternal, DeleteFieldIndexCollectionInternal,
     DeletePayloadPointsInternal, DeletePointsInternal, DeleteVectorsInternal, GetPointsInternal,
-    GetResponse, PointsOperationResponseInternal, RecommendPointsInternal, RecommendResponse,
-    ScrollPointsInternal, ScrollResponse, SearchBatchResponse, SetPayloadPointsInternal,
-    SyncPointsInternal, UpdateVectorsInternal, UpsertPointsInternal,
+    GetResponse, PointsOperationResponseInternal, QueryPointsInternal, QueryResponse,
+    RecommendPointsInternal, RecommendResponse, ScrollPointsInternal, ScrollResponse,
+    SearchBatchResponse, SetPayloadPointsInternal, SyncPointsInternal, UpdateVectorsInternal,
+    UpsertPointsInternal,
 };
 use storage::content_manager::toc::TableOfContent;
 use storage::rbac::Access;
@@ -426,5 +427,13 @@ impl PointsInternal for PointsInternalService {
             FULL_ACCESS.clone(),
         )
         .await
+    }
+
+    async fn query(
+        &self,
+        _request: Request<QueryPointsInternal>,
+    ) -> Result<Response<QueryResponse>, Status> {
+        // TODO(universal-query): Implement this
+        return Err(Status::unimplemented("Not yet implemented"));
     }
 }

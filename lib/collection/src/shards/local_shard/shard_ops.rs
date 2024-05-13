@@ -2,19 +2,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use futures::future::try_join_all;
-use itertools::Itertools;
-use segment::data_types::order_by::{Direction, OrderBy};
+use segment::data_types::order_by::OrderBy;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
 use tokio::sync::oneshot;
 
-use crate::collection_manager::holders::segment_holder::LockedSegment;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
-use crate::common::stopping_guard::StoppingGuard;
-use crate::operations::query_enum::QueryEnum;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
     CountRequestInternal, CountResult, PointRequestInternal, Record, UpdateResult, UpdateStatus,
@@ -23,197 +18,6 @@ use crate::operations::OperationWithClockTag;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
 use crate::update_handler::{OperationData, UpdateSignal};
-
-impl LocalShard {
-    async fn do_search(
-        &self,
-        core_request: Arc<CoreSearchRequestBatch>,
-        search_runtime_handle: &Handle,
-        timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        let is_stopped_guard = StoppingGuard::new();
-
-        let (query_context, collection_params) = {
-            let collection_config = self.collection_config.read().await;
-
-            let query_context_opt = SegmentsSearcher::prepare_query_context(
-                self.segments.clone(),
-                &core_request,
-                &collection_config,
-                &is_stopped_guard,
-            )
-            .await?;
-
-            let Some(query_context) = query_context_opt else {
-                // No segments to search
-                return Ok(vec![]);
-            };
-
-            (query_context, collection_config.params.clone())
-        };
-
-        let search_request = SegmentsSearcher::search(
-            Arc::clone(&self.segments),
-            Arc::clone(&core_request),
-            search_runtime_handle,
-            true,
-            query_context,
-        );
-
-        let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
-
-        let res = tokio::time::timeout(timeout, search_request)
-            .await
-            .map_err(|_| {
-                log::debug!("Search timeout reached: {} seconds", timeout.as_secs());
-                // StoppingGuard takes care of setting is_stopped to true
-                CollectionError::timeout(timeout.as_secs() as usize, "Search")
-            })??;
-
-        let top_results = res
-            .into_iter()
-            .zip(core_request.searches.iter())
-            .map(|(vector_res, req)| {
-                let vector_name = req.query.get_vector_name();
-                let distance = collection_params.get_distance(vector_name).unwrap();
-                let processed_res = vector_res.into_iter().map(|mut scored_point| {
-                    match req.query {
-                        QueryEnum::Nearest(_) => {
-                            scored_point.score = distance.postprocess_score(scored_point.score);
-                        }
-                        // Don't post-process if we are dealing with custom scoring
-                        QueryEnum::RecommendBestScore(_)
-                        | QueryEnum::Discover(_)
-                        | QueryEnum::Context(_) => {}
-                    };
-                    scored_point
-                });
-
-                if let Some(threshold) = req.score_threshold {
-                    processed_res
-                        .take_while(|scored_point| {
-                            distance.check_threshold(scored_point.score, threshold)
-                        })
-                        .collect()
-                } else {
-                    processed_res.collect()
-                }
-            })
-            .collect();
-        Ok(top_results)
-    }
-
-    async fn scroll_by_id(
-        &self,
-        offset: Option<ExtendedPointId>,
-        limit: usize,
-        with_payload_interface: &WithPayloadInterface,
-        with_vector: &WithVector,
-        filter: Option<&Filter>,
-        search_runtime_handle: &Handle,
-    ) -> CollectionResult<Vec<Record>> {
-        let segments = self.segments();
-
-        let (non_appendable, appendable) = segments.read().split_segments();
-
-        let read_filtered = |segment: LockedSegment| {
-            let filter = filter.cloned();
-
-            search_runtime_handle.spawn_blocking(move || {
-                segment
-                    .get()
-                    .read()
-                    .read_filtered(offset, Some(limit), filter.as_ref())
-            })
-        };
-
-        let non_appendable = try_join_all(non_appendable.into_iter().map(read_filtered)).await?;
-        let appendable = try_join_all(appendable.into_iter().map(read_filtered)).await?;
-
-        let point_ids = non_appendable
-            .into_iter()
-            .chain(appendable)
-            .flatten()
-            .sorted()
-            .dedup()
-            .take(limit)
-            .collect_vec();
-
-        let with_payload = WithPayload::from(with_payload_interface);
-        let mut points =
-            SegmentsSearcher::retrieve(segments, &point_ids, &with_payload, with_vector)?;
-
-        points.sort_by_key(|point| point.id);
-
-        Ok(points)
-    }
-
-    async fn scroll_by_field(
-        &self,
-        limit: usize,
-        with_payload_interface: &WithPayloadInterface,
-        with_vector: &WithVector,
-        filter: Option<&Filter>,
-        search_runtime_handle: &Handle,
-        order_by: &OrderBy,
-    ) -> CollectionResult<Vec<Record>> {
-        let segments = self.segments();
-
-        let (non_appendable, appendable) = segments.read().split_segments();
-
-        let read_ordered_filtered = |segment: LockedSegment| {
-            let filter = filter.cloned();
-            let order_by = order_by.clone();
-
-            search_runtime_handle.spawn_blocking(move || {
-                segment
-                    .get()
-                    .read()
-                    .read_ordered_filtered(Some(limit), filter.as_ref(), &order_by)
-            })
-        };
-
-        let non_appendable =
-            try_join_all(non_appendable.into_iter().map(read_ordered_filtered)).await?;
-        let appendable = try_join_all(appendable.into_iter().map(read_ordered_filtered)).await?;
-
-        let all_reads = non_appendable
-            .into_iter()
-            .chain(appendable)
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let top_records = all_reads
-            .into_iter()
-            .kmerge_by(|a, b| match order_by.direction() {
-                Direction::Asc => a <= b,
-                Direction::Desc => a >= b,
-            })
-            .dedup()
-            .take(limit)
-            .collect_vec();
-
-        let with_payload = WithPayload::from(with_payload_interface);
-
-        let point_ids = top_records.iter().map(|(_, id)| *id).collect_vec();
-
-        // Fetch with the requested vector and payload
-        let mut records =
-            SegmentsSearcher::retrieve(segments, &point_ids, &with_payload, with_vector)?;
-
-        // Add order_by value to the payload. It will be removed in the next step, after crossing the shard boundary.
-        records
-            .iter_mut()
-            .zip(top_records)
-            .for_each(|(record, (value, _))| {
-                let new_payload =
-                    OrderBy::insert_order_value_in_payload(record.payload.take(), value);
-
-                record.payload = Some(new_payload);
-            });
-
-        Ok(records)
-    }
-}
 
 #[async_trait]
 impl ShardOperation for LocalShard {

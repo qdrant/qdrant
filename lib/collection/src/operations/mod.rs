@@ -13,6 +13,7 @@ pub mod shared_storage_config;
 pub mod snapshot_ops;
 pub mod snapshot_storage_ops;
 pub mod types;
+pub mod universal_query;
 pub mod validation;
 pub mod vector_ops;
 pub mod vector_params_builder;
