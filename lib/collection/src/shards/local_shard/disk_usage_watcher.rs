@@ -89,7 +89,7 @@ impl DiskUsageWatcher {
 
             Ok(is_full)
         } else {
-            last_check_guard.next_check_count -= 1;
+            last_check_guard.next_check_count = last_check_guard.next_check_count.saturating_sub(1);
             Ok(None)
         }
     }
