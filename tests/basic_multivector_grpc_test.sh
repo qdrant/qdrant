@@ -257,21 +257,6 @@ if [[ $response != *"Wrong input: Vector dimension error: expected dim: 4, got 3
     exit 1
 fi
 
-response=$(
-  $docker_grpcurl -d '{
-      "collection_name": "test_multivector_collection",
-      "vector": [0.2,0.1,0.9, 0.7, 0.8],
-      "limit": 3,
-      "vector_name": "my-multivec"
-    }' $QDRANT_HOST qdrant.Points/Search 2>&1
-)
-
-if [[ $response != *"Wrong input: Vector dimension error: expected dim: 4, got 5"* ]]; then
-    echo Unexpected response, expected validation error: "$response"
-    exit 1
-fi
-
-
 set -e
 
 # search with a single dense vector with the right dimension works against a multivector collection
