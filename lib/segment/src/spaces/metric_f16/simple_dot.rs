@@ -4,11 +4,11 @@ use half::f16;
 use crate::data_types::vectors::{DenseVector, VectorElementTypeHalf};
 use crate::spaces::metric::Metric;
 #[cfg(target_arch = "x86_64")]
-use crate::spaces::metric_f16::avx::dot::dot_similarity_avx_half;
+use crate::spaces::metric_f16::avx::dot::avx_dot_similarity_half;
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-use crate::spaces::metric_f16::neon::dot::dot_similarity_neon_half;
+use crate::spaces::metric_f16::neon::dot::neon_dot_similarity_half;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-use crate::spaces::metric_f16::sse::dot::dot_similarity_sse_half;
+use crate::spaces::metric_f16::sse::dot::sse_dot_similarity_half;
 #[cfg(target_arch = "x86_64")]
 use crate::spaces::simple::MIN_DIM_SIZE_AVX;
 use crate::spaces::simple::{DotProductMetric, MIN_DIM_SIZE_SIMD};
@@ -27,21 +27,21 @@ impl Metric<VectorElementTypeHalf> for DotProductMetric {
                 && is_x86_feature_detected!("f16c")
                 && v1.len() >= MIN_DIM_SIZE_AVX
             {
-                return unsafe { dot_similarity_avx_half(v1, v2) };
+                return unsafe { avx_dot_similarity_half(v1, v2) };
             }
         }
 
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         {
             if is_x86_feature_detected!("sse") && v1.len() >= MIN_DIM_SIZE_SIMD {
-                return unsafe { dot_similarity_sse_half(v1, v2) };
+                return unsafe { sse_dot_similarity_half(v1, v2) };
             }
         }
 
         #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
         {
             if std::arch::is_aarch64_feature_detected!("neon") && v1.len() >= MIN_DIM_SIZE_SIMD {
-                return unsafe { dot_similarity_neon_half(v1, v2) };
+                return unsafe { neon_dot_similarity_half(v1, v2) };
             }
         }
 

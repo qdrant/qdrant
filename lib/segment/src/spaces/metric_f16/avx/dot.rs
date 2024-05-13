@@ -9,7 +9,7 @@ use crate::spaces::simple_avx::hsum256_ps_avx;
 #[target_feature(enable = "avx")]
 #[target_feature(enable = "fma")]
 #[target_feature(enable = "f16c")]
-pub unsafe fn dot_similarity_avx_half(
+pub unsafe fn avx_dot_similarity_half(
     v1: &[VectorElementTypeHalf],
     v2: &[VectorElementTypeHalf],
 ) -> ScoreType {
@@ -116,7 +116,7 @@ mod tests {
             let v1: Vec<f16> = v1_f32.iter().map(|x| f16::from_f32(*x)).collect();
             let v2: Vec<f16> = v2_f32.iter().map(|x| f16::from_f32(*x)).collect();
 
-            let dot_simd = unsafe { dot_similarity_avx_half(&v1, &v2) };
+            let dot_simd = unsafe { avx_dot_similarity_half(&v1, &v2) };
             let dot = dot_similarity_half(&v1, &v2);
             assert!((dot_simd - dot).abs() / dot.abs() < 0.0005);
         } else {

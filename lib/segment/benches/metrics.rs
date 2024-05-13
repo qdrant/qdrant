@@ -8,30 +8,26 @@ use rand::{Rng, SeedableRng};
 use segment::data_types::vectors::{VectorElementTypeByte, VectorElementTypeHalf};
 use segment::spaces::metric::Metric;
 #[cfg(target_arch = "x86_64")]
-use segment::spaces::metric_f16::avx::cosine::cosine_similarity_avx_half;
+use segment::spaces::metric_f16::avx::dot::avx_dot_similarity_half;
 #[cfg(target_arch = "x86_64")]
-use segment::spaces::metric_f16::avx::dot::dot_similarity_avx_half;
+use segment::spaces::metric_f16::avx::euclid::avx_euclid_similarity_half;
 #[cfg(target_arch = "x86_64")]
-use segment::spaces::metric_f16::avx::euclid::euclid_similarity_avx_half;
-#[cfg(target_arch = "x86_64")]
-use segment::spaces::metric_f16::avx::manhattan::manhattan_similarity_avx_half;
+use segment::spaces::metric_f16::avx::manhattan::avx_manhattan_similarity_half;
 #[cfg(target_arch = "aarch64")]
-use segment::spaces::metric_f16::neon::dot::dot_similarity_neon_half;
+use segment::spaces::metric_f16::neon::dot::neon_dot_similarity_half;
 #[cfg(target_arch = "aarch64")]
-use segment::spaces::metric_f16::neon::euclid::euclid_similarity_neon_half;
+use segment::spaces::metric_f16::neon::euclid::neon_euclid_similarity_half;
 #[cfg(target_arch = "aarch64")]
-use segment::spaces::metric_f16::neon::manhattan::manhattan_similarity_neon_half;
+use segment::spaces::metric_f16::neon::manhattan::neon_manhattan_similarity_half;
 use segment::spaces::metric_f16::simple_dot::dot_similarity_half;
 use segment::spaces::metric_f16::simple_euclid::euclid_similarity_half;
 use segment::spaces::metric_f16::simple_manhattan::manhattan_similarity_half;
 #[cfg(target_arch = "x86_64")]
-use segment::spaces::metric_f16::sse::cosine::cosine_similarity_sse_half;
+use segment::spaces::metric_f16::sse::dot::sse_dot_similarity_half;
 #[cfg(target_arch = "x86_64")]
-use segment::spaces::metric_f16::sse::dot::dot_similarity_sse_half;
+use segment::spaces::metric_f16::sse::euclid::sse_euclid_similarity_half;
 #[cfg(target_arch = "x86_64")]
-use segment::spaces::metric_f16::sse::euclid::euclid_similarity_sse_half;
-#[cfg(target_arch = "x86_64")]
-use segment::spaces::metric_f16::sse::manhattan::manhattan_similarity_sse_half;
+use segment::spaces::metric_f16::sse::manhattan::sse_manhattan_similarity_half;
 #[cfg(target_arch = "x86_64")]
 use segment::spaces::metric_uint::avx2::cosine::avx_cosine_similarity_bytes;
 #[cfg(target_arch = "x86_64")]
@@ -306,7 +302,7 @@ fn half_metrics_bench(c: &mut Criterion) {
         let mut i = 0;
         b.iter(|| unsafe {
             i = (i + 1) % COUNT;
-            dot_similarity_avx_half(&random_vectors_1[i], &random_vectors_2[i])
+            avx_dot_similarity_half(&random_vectors_1[i], &random_vectors_2[i])
         });
     });
 
@@ -315,7 +311,7 @@ fn half_metrics_bench(c: &mut Criterion) {
         let mut i = 0;
         b.iter(|| unsafe {
             i = (i + 1) % COUNT;
-            dot_similarity_sse_half(&random_vectors_1[i], &random_vectors_2[i])
+            sse_dot_similarity_half(&random_vectors_1[i], &random_vectors_2[i])
         });
     });
 
@@ -324,7 +320,7 @@ fn half_metrics_bench(c: &mut Criterion) {
         let mut i = 0;
         b.iter(|| unsafe {
             i = (i + 1) % COUNT;
-            dot_similarity_neon_half(&random_vectors_1[i], &random_vectors_2[i])
+            neon_dot_similarity_half(&random_vectors_1[i], &random_vectors_2[i])
         });
     });
 
@@ -352,7 +348,7 @@ fn half_metrics_bench(c: &mut Criterion) {
         let mut i = 0;
         b.iter(|| unsafe {
             i = (i + 1) % COUNT;
-            euclid_similarity_avx_half(&random_vectors_1[i], &random_vectors_2[i])
+            avx_euclid_similarity_half(&random_vectors_1[i], &random_vectors_2[i])
         });
     });
 
@@ -361,7 +357,7 @@ fn half_metrics_bench(c: &mut Criterion) {
         let mut i = 0;
         b.iter(|| unsafe {
             i = (i + 1) % COUNT;
-            euclid_similarity_sse_half(&random_vectors_1[i], &random_vectors_2[i])
+            sse_euclid_similarity_half(&random_vectors_1[i], &random_vectors_2[i])
         });
     });
 
@@ -370,7 +366,7 @@ fn half_metrics_bench(c: &mut Criterion) {
         let mut i = 0;
         b.iter(|| unsafe {
             i = (i + 1) % COUNT;
-            euclid_similarity_neon_half(&random_vectors_1[i], &random_vectors_2[i])
+            neon_euclid_similarity_half(&random_vectors_1[i], &random_vectors_2[i])
         });
     });
 
@@ -398,7 +394,7 @@ fn half_metrics_bench(c: &mut Criterion) {
         let mut i = 0;
         b.iter(|| unsafe {
             i = (i + 1) % COUNT;
-            manhattan_similarity_avx_half(&random_vectors_1[i], &random_vectors_2[i])
+            avx_manhattan_similarity_half(&random_vectors_1[i], &random_vectors_2[i])
         });
     });
 
@@ -407,7 +403,7 @@ fn half_metrics_bench(c: &mut Criterion) {
         let mut i = 0;
         b.iter(|| unsafe {
             i = (i + 1) % COUNT;
-            manhattan_similarity_sse_half(&random_vectors_1[i], &random_vectors_2[i])
+            sse_manhattan_similarity_half(&random_vectors_1[i], &random_vectors_2[i])
         });
     });
 
@@ -416,7 +412,7 @@ fn half_metrics_bench(c: &mut Criterion) {
         let mut i = 0;
         b.iter(|| unsafe {
             i = (i + 1) % COUNT;
-            manhattan_similarity_neon_half(&random_vectors_1[i], &random_vectors_2[i])
+            neon_manhattan_similarity_half(&random_vectors_1[i], &random_vectors_2[i])
         });
     });
 }
