@@ -5,13 +5,12 @@ use tracing_subscriber::prelude::*;
 use tracing_subscriber::{filter, fmt, registry};
 
 use super::*;
-use crate::tracing::config::SpanEvent;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Config {
     pub log_level: Option<String>,
-    pub span_events: Option<HashSet<SpanEvent>>,
+    pub span_events: Option<HashSet<config::SpanEvent>>,
     pub color: Option<config::Color>,
 }
 
@@ -21,6 +20,15 @@ pub type Logger<S> = filter::Filtered<
     filter::EnvFilter,
     S,
 >;
+
+pub fn new_logger<S>(config: &Config) -> Logger<S>
+where
+    S: tracing::Subscriber + for<'span> registry::LookupSpan<'span>,
+{
+    let layer = new_layer(config);
+    let filter = new_filter(config);
+    Some(layer).with_filter(filter)
+}
 
 pub fn new_layer<S>(config: &Config) -> fmt::Layer<S>
 where
@@ -37,19 +45,10 @@ where
         });
 
     fmt::Layer::default()
-        .with_ansi(config.color.unwrap_or_default().to_bool())
         .with_span_events(span_events)
+        .with_ansi(config.color.unwrap_or_default().to_bool())
 }
 
 pub fn new_filter(config: &Config) -> filter::EnvFilter {
     filter(config.log_level.as_deref().unwrap_or(""))
-}
-
-pub fn new_logger<S>(config: &Config) -> Logger<S>
-where
-    S: tracing::Subscriber + for<'span> registry::LookupSpan<'span>,
-{
-    let layer = new_layer(config);
-    let filter = new_filter(config);
-    Some(layer).with_filter(filter)
 }
