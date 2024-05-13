@@ -9,6 +9,7 @@ use crate::spaces::simple_avx::hsum256_ps_avx;
 #[target_feature(enable = "avx")]
 #[target_feature(enable = "fma")]
 #[target_feature(enable = "f16c")]
+#[allow(clippy::missing_safety_doc)]
 pub unsafe fn avx_dot_similarity_half(
     v1: &[VectorElementTypeHalf],
     v2: &[VectorElementTypeHalf],

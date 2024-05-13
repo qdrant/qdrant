@@ -6,6 +6,7 @@ use crate::data_types::vectors::VectorElementTypeHalf;
 use crate::spaces::simple_sse;
 
 #[target_feature(enable = "sse")]
+#[allow(clippy::missing_safety_doc)]
 pub unsafe fn sse_euclid_similarity_half(
     v1: &[VectorElementTypeHalf],
     v2: &[VectorElementTypeHalf],
