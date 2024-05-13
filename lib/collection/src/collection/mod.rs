@@ -42,7 +42,7 @@ use crate::shards::transfer::{ShardTransfer, ShardTransferMethod};
 use crate::shards::{replica_set, CollectionId};
 use crate::telemetry::CollectionTelemetry;
 
-const RESHARDING_PROGRESS_FILE: &str = "resharding_progress.json";
+const RESHARDING_STATE_FILE: &str = "resharding_state.json";
 
 /// Collection's data is split into several shards.
 #[allow(dead_code)]
@@ -52,7 +52,7 @@ pub struct Collection {
     pub(crate) collection_config: Arc<RwLock<CollectionConfig>>,
     pub(crate) shared_storage_config: Arc<SharedStorageConfig>,
     pub(crate) payload_index_schema: SaveOnDisk<PayloadIndexSchema>,
-    resharding_progress: SaveOnDisk<Option<resharding::Progress>>,
+    resharding_state: SaveOnDisk<Option<resharding::State>>,
     this_peer_id: PeerId,
     path: PathBuf,
     snapshots_path: PathBuf,
@@ -136,7 +136,7 @@ impl Collection {
         collection_config.save(path)?;
 
         let payload_index_schema = Self::load_payload_index_schema(path)?;
-        let resharding_progress = Self::load_resharding_progress(path)?;
+        let resharding_state = Self::load_resharding_state(path)?;
 
         Ok(Self {
             id: name.clone(),
@@ -144,7 +144,7 @@ impl Collection {
             collection_config: shared_collection_config,
             payload_index_schema,
             shared_storage_config,
-            resharding_progress,
+            resharding_state,
             this_peer_id,
             path: path.to_owned(),
             snapshots_path: snapshots_path.to_owned(),
@@ -236,7 +236,7 @@ impl Collection {
         let payload_index_schema = Self::load_payload_index_schema(path)
             .expect("Can't load or initialize payload index schema");
 
-        let resharding_progress = Self::load_resharding_progress(path)
+        let resharding_state = Self::load_resharding_state(path)
             .expect("Can't load or initialize resharding progress");
 
         Self {
@@ -245,7 +245,7 @@ impl Collection {
             collection_config: shared_collection_config,
             payload_index_schema,
             shared_storage_config,
-            resharding_progress,
+            resharding_state,
             this_peer_id,
             path: path.to_owned(),
             snapshots_path: snapshots_path.to_owned(),
@@ -263,16 +263,16 @@ impl Collection {
         }
     }
 
-    fn resharding_progress_file(collection_path: &Path) -> PathBuf {
-        collection_path.join(RESHARDING_PROGRESS_FILE)
+    fn resharding_state_file(collection_path: &Path) -> PathBuf {
+        collection_path.join(RESHARDING_STATE_FILE)
     }
 
-    fn load_resharding_progress(
+    fn load_resharding_state(
         collection_path: &Path,
-    ) -> CollectionResult<SaveOnDisk<Option<resharding::Progress>>> {
-        let resharding_progress_file = Self::resharding_progress_file(collection_path);
-        let resharding_progress = SaveOnDisk::load_or_init(resharding_progress_file)?;
-        Ok(resharding_progress)
+    ) -> CollectionResult<SaveOnDisk<Option<resharding::State>>> {
+        let resharding_state_file = Self::resharding_state_file(collection_path);
+        let resharding_state = SaveOnDisk::load_or_init(resharding_state_file)?;
+        Ok(resharding_state)
     }
 
     /// Check if stored version have consequent version.
