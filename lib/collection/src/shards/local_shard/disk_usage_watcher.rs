@@ -5,13 +5,16 @@ use tokio::time::Instant;
 
 use crate::operations::types::{CollectionError, CollectionResult};
 
+/// Defines how often the disk usage should be checked if the disk is far from being full
+const DEFAULT_FREQUENCY: usize = 128;
+
 /// Defines how frequent the check of the disk usage should be, depending on the free space
 ///
 /// The idea is that if we have a lot of disk space, it is unlikely that it will be out of space soon,
 /// so we can check it less frequently. But if we have a little space, we should check it more often
 /// and at some point, we should check it every time
-const FREE_SPACE_TO_CHECK_FREQUENCY_HEURISTIC_MB: &[(usize, usize); 4] =
-    &[(512, 0), (1024, 10), (2048, 20), (8096, 100)];
+const FREE_SPACE_TO_CHECK_FREQUENCY_HEURISTIC_MB: &[(usize, usize); 5] =
+    &[(512, 0), (1024, 8), (2048, 16), (4096, 32), (8096, 64)];
 
 /// Even if there were no many updates, we still want to force the check of the disk usage
 /// because some external process could have consumed the disk space
@@ -70,7 +73,7 @@ impl DiskUsageWatcher {
             let is_full = match free_space {
                 Some(free_space) => {
                     let free_space = free_space as usize;
-                    let mut next_check = 0;
+                    let mut next_check = DEFAULT_FREQUENCY;
                     for (threshold_mb, interval) in FREE_SPACE_TO_CHECK_FREQUENCY_HEURISTIC_MB {
                         if free_space < (*threshold_mb * 1024 * 1024) {
                             next_check = *interval;
