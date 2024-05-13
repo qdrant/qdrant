@@ -26,6 +26,10 @@ impl LoggerConfig {
         logger_config.default.log_level = logger_config.default.log_level.take().or(log_level);
         logger_config
     }
+
+    pub fn merge(&mut self, other: Self) {
+        self.default.merge(other.default);
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Hash)]

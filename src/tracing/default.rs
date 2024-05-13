@@ -14,6 +14,14 @@ pub struct Config {
     pub color: Option<config::Color>,
 }
 
+impl Config {
+    pub fn merge(&mut self, other: Self) {
+        self.log_level = other.log_level.or(self.log_level.take());
+        self.span_events = other.span_events.or(self.span_events.take());
+        self.color = other.color.or(self.color.take());
+    }
+}
+
 #[rustfmt::skip] // `rustfmt` formats this into unreadable single line
 pub type Logger<S> = filter::Filtered<
     Option<fmt::Layer<S>>,

@@ -44,16 +44,20 @@ impl LoggerHandle {
         // - https://github.com/tokio-rs/tracing/issues/1629
         // - https://github.com/tokio-rs/tracing/pull/2657
 
-        let new_layer = default::new_layer(&new_config.default);
-        let new_filter = default::new_filter(&new_config.default);
+        let mut merged_config = config.clone();
+        merged_config.merge(new_config);
 
-        self.default.modify(move |logger| {
-            *logger.filter_mut() = new_filter;
-            *logger.inner_mut() = Some(new_layer);
-        })?;
+        if merged_config.default != config.default {
+            let new_layer = default::new_layer(&merged_config.default);
+            let new_filter = default::new_filter(&merged_config.default);
 
-        // Update `config`
-        config.default = new_config.default;
+            self.default.modify(move |logger| {
+                *logger.inner_mut() = Some(new_layer);
+                *logger.filter_mut() = new_filter;
+            })?;
+
+            config.default = merged_config.default;
+        }
 
         Ok(())
     }
