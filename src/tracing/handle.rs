@@ -1,0 +1,64 @@
+use std::sync::Arc;
+
+use tokio::sync::RwLock;
+use tracing_subscriber::{reload, Registry};
+
+use super::*;
+
+#[derive(Clone)]
+pub struct LoggerHandle {
+    config: Arc<RwLock<config::LoggerConfig>>,
+    default: DefaultLoggerReloadHandle,
+}
+
+#[rustfmt::skip] // `rustfmt` formats this into unreadable single line
+type DefaultLoggerReloadHandle<S = Registry> = reload::Handle<
+    default::Logger<S>,
+    S,
+>;
+
+impl LoggerHandle {
+    pub fn new(config: config::LoggerConfig, default: DefaultLoggerReloadHandle) -> Self {
+        Self {
+            config: Arc::new(RwLock::new(config)),
+            default,
+        }
+    }
+
+    pub async fn get_config(&self) -> config::LoggerConfig {
+        self.config.read().await.clone()
+    }
+
+    pub async fn update_config(&self, new_config: config::LoggerConfig) -> anyhow::Result<()> {
+        let mut config = self.config.write().await;
+
+        // `tracing-subscriber` does not support `reload`ing `Filtered` layers, so we *have to* use
+        // `modify`. However, `modify` would *deadlock* if provided closure logs anything or produce
+        // any `tracing` event.
+        //
+        // So, we structure `update_config` to only do an absolute minimum of changes and only use
+        // the most trivial operations during `modify`, to guarantee we won't deadlock.
+        //
+        // See:
+        // - https://docs.rs/tracing-subscriber/latest/tracing_subscriber/reload/struct.Handle.html#method.reload
+        // - https://github.com/tokio-rs/tracing/issues/1629
+        // - https://github.com/tokio-rs/tracing/pull/2657
+
+        let mut merged_config = config.clone();
+        merged_config.merge(new_config);
+
+        if merged_config.default != config.default {
+            let new_layer = default::new_layer(&merged_config.default);
+            let new_filter = default::new_filter(&merged_config.default);
+
+            self.default.modify(move |logger| {
+                *logger.inner_mut() = Some(new_layer);
+                *logger.filter_mut() = new_filter;
+            })?;
+
+            config.default = merged_config.default;
+        }
+
+        Ok(())
+    }
+}
