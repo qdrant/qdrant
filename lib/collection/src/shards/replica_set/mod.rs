@@ -644,11 +644,13 @@ impl ShardReplicaSet {
                         self.set_local(local_shard, Some(state)).await?;
                         self.notify_peer_failure(peer_id);
                     }
+
                     ReplicaState::Dead
                     | ReplicaState::Partial
                     | ReplicaState::Initializing
                     | ReplicaState::PartialSnapshot
-                    | ReplicaState::Recovery => {
+                    | ReplicaState::Recovery
+                    | ReplicaState::Resharding => {
                         self.set_local(local_shard, Some(state)).await?;
                     }
                 }
@@ -920,6 +922,9 @@ pub enum ReplicaState {
     // Shard is undergoing recovery by an external node
     // Normally rejects updates, accepts updates if force is true
     Recovery,
+    // Points are being migrated to this shard as part of resharding
+    #[schemars(skip)]
+    Resharding,
 }
 
 impl ReplicaState {
@@ -933,7 +938,8 @@ impl ReplicaState {
             | ReplicaState::Initializing
             | ReplicaState::Partial
             | ReplicaState::PartialSnapshot
-            | ReplicaState::Recovery => false,
+            | ReplicaState::Recovery
+            | ReplicaState::Resharding => false,
         }
     }
 
@@ -941,7 +947,10 @@ impl ReplicaState {
     pub fn is_partial_or_recovery(self) -> bool {
         // Use explicit match, to catch future changes to `ReplicaState`
         match self {
-            ReplicaState::Partial | ReplicaState::PartialSnapshot | ReplicaState::Recovery => true,
+            ReplicaState::Partial
+            | ReplicaState::PartialSnapshot
+            | ReplicaState::Recovery
+            | ReplicaState::Resharding => true,
 
             ReplicaState::Active
             | ReplicaState::Dead

@@ -1612,6 +1612,7 @@ Note: 1kB = 1 vector of size 256. |
 | Listener | 4 | A shard which receives data, but is not used for search; Useful for backup shards |
 | PartialSnapshot | 5 | Deprecated: snapshot shard transfer is in progress; Updates should not be sent to (and are ignored by) the shard |
 | Recovery | 6 | Shard is undergoing recovered by an external node; Normally rejects updates, accepts updates if force is true |
+| Resharding | 7 | Points are being migrated to this shard as part of resharding |
 
 
 

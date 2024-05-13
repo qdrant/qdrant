@@ -474,6 +474,7 @@ enum ReplicaState {
   Listener = 4; // A shard which receives data, but is not used for search; Useful for backup shards
   PartialSnapshot = 5; // Deprecated: snapshot shard transfer is in progress; Updates should not be sent to (and are ignored by) the shard
   Recovery = 6; // Shard is undergoing recovered by an external node; Normally rejects updates, accepts updates if force is true
+  Resharding = 7; // Points are being migrated to this shard as part of resharding
 }
 
 message ShardKey {
@@ -505,7 +506,7 @@ message ShardTransferInfo {
 }
 
 message CollectionClusterInfoResponse {
-  uint64 peer_id = 1;  // ID of this peer 
+  uint64 peer_id = 1;  // ID of this peer
   uint64 shard_count = 2; // Total number of shards
   repeated LocalShardInfo local_shards = 3; // Local shards
   repeated RemoteShardInfo remote_shards = 4; // Remote shards
