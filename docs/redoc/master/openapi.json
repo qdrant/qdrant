@@ -6483,7 +6483,6 @@
         "properties": {
           "should": {
             "description": "At least one of those conditions should match",
-            "default": null,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Condition"
@@ -6512,7 +6511,6 @@
           },
           "must": {
             "description": "All conditions must match",
-            "default": null,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Condition"
@@ -6530,7 +6528,6 @@
           },
           "must_not": {
             "description": "All conditions must NOT match",
-            "default": null,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Condition"
