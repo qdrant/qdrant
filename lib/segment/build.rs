@@ -37,7 +37,7 @@ fn main() {
         "#;
 
         let mut child = Command::new("cc")
-            .args(&["-x", "c", "-"])
+            .args(["-x", "c", "-"])
             .stdin(Stdio::piped())
             .spawn()
             .expect("failed to execute process");
