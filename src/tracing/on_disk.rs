@@ -49,7 +49,7 @@ where
         Ok(layer) => layer,
         Err(err) => {
             eprintln!(
-                "failed to enable loggin into {} log-file: {err}",
+                "failed to enable logging into {} log-file: {err}",
                 config.log_file.as_deref().unwrap_or(""),
             );
 
