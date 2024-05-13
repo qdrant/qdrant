@@ -239,7 +239,7 @@ impl ShardOperation for LocalShard {
             (None, None)
         };
 
-        if self.disk_usage_watcher.read().await.is_disk_full().await {
+        if self.disk_usage_watcher.write().await.is_disk_full().await {
             return Err(CollectionError::service_error(
                 "No space left on device: WAL buffer size exceeds available disk space".to_string(),
             ));
