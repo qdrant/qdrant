@@ -36,7 +36,7 @@ impl Vector {
 pub enum VectorRef<'a> {
     Dense(&'a [VectorElementType]),
     Sparse(&'a SparseVector),
-    MultiDense(&'a MultiDenseVector),
+    MultiDense(TypedMultiDenseVectorRef<'a, VectorElementType>),
 }
 
 impl<'a> TryFrom<VectorRef<'a>> for &'a [VectorElementType] {
@@ -63,12 +63,15 @@ impl<'a> TryFrom<VectorRef<'a>> for &'a SparseVector {
     }
 }
 
-impl<'a> TryFrom<VectorRef<'a>> for &'a MultiDenseVector {
+impl<'a> TryFrom<VectorRef<'a>> for TypedMultiDenseVectorRef<'a, f32> {
     type Error = OperationError;
 
     fn try_from(value: VectorRef<'a>) -> Result<Self, Self::Error> {
         match value {
-            VectorRef::Dense(_) => Err(OperationError::WrongMulti), // VectorRef::Dense cannot be converted to &MultiDense
+            VectorRef::Dense(d) => Ok(TypedMultiDenseVectorRef {
+                flattened_vectors: d,
+                dim: d.len(),
+            }),
             VectorRef::Sparse(_v) => Err(OperationError::WrongSparse),
             VectorRef::MultiDense(v) => Ok(v),
         }
@@ -119,7 +122,7 @@ impl TryFrom<Vector> for MultiDenseVector {
                 // expand single dense vector into multivector with a single vector
                 let len = v.len();
                 Ok(MultiDenseVector::new(v, len))
-            },
+            }
             Vector::Sparse(_) => Err(OperationError::WrongSparse),
             Vector::MultiDense(v) => Ok(v),
         }
@@ -140,6 +143,12 @@ impl<'a> From<&'a DenseVector> for VectorRef<'a> {
 
 impl<'a> From<&'a MultiDenseVector> for VectorRef<'a> {
     fn from(val: &'a MultiDenseVector) -> Self {
+        VectorRef::MultiDense(TypedMultiDenseVectorRef::from(val))
+    }
+}
+
+impl<'a> From<TypedMultiDenseVectorRef<'a, VectorElementType>> for VectorRef<'a> {
+    fn from(val: TypedMultiDenseVectorRef<'a, VectorElementType>) -> Self {
         VectorRef::MultiDense(val)
     }
 }
@@ -173,7 +182,7 @@ impl<'a> From<&'a Vector> for VectorRef<'a> {
         match val {
             Vector::Dense(v) => VectorRef::Dense(v.as_slice()),
             Vector::Sparse(v) => VectorRef::Sparse(v),
-            Vector::MultiDense(v) => VectorRef::MultiDense(v),
+            Vector::MultiDense(v) => VectorRef::MultiDense(TypedMultiDenseVectorRef::from(v)),
         }
     }
 }
@@ -286,7 +295,7 @@ impl<T: PrimitiveVectorElement> TryFrom<Vec<TypedDenseVector<T>>> for TypedMulti
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TypedMultiDenseVectorRef<'a, T> {
     pub flattened_vectors: &'a [T],
     pub dim: usize,
@@ -294,12 +303,16 @@ pub struct TypedMultiDenseVectorRef<'a, T> {
 
 impl<'a, T: PrimitiveVectorElement> TypedMultiDenseVectorRef<'a, T> {
     /// Slices the multi vector into the underlying individual vectors
-    pub fn multi_vectors(&self) -> impl Iterator<Item = &[T]> {
+    pub fn multi_vectors(self) -> impl Iterator<Item = &'a [T]> {
         self.flattened_vectors.chunks_exact(self.dim)
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub fn is_empty(self) -> bool {
         self.flattened_vectors.is_empty()
+    }
+
+    pub fn len(self) -> usize {
+        self.flattened_vectors.len() / self.dim
     }
 
     // Cannot use `ToOwned` trait because of `Borrow` implementation for `TypedMultiDenseVector`
@@ -336,7 +349,7 @@ impl<'a> VectorRef<'a> {
         match self {
             VectorRef::Dense(v) => Vector::Dense(v.to_vec()),
             VectorRef::Sparse(v) => Vector::Sparse(v.clone()),
-            VectorRef::MultiDense(v) => Vector::MultiDense(v.clone()),
+            VectorRef::MultiDense(v) => Vector::MultiDense(v.to_owned()),
         }
     }
 }
@@ -386,7 +399,10 @@ pub fn only_default_vector(vec: &[VectorElementType]) -> NamedVectors {
 }
 
 pub fn only_default_multi_vector(vec: &MultiDenseVector) -> NamedVectors {
-    NamedVectors::from_ref(DEFAULT_VECTOR_NAME, VectorRef::MultiDense(vec))
+    NamedVectors::from_ref(
+        DEFAULT_VECTOR_NAME,
+        VectorRef::MultiDense(TypedMultiDenseVectorRef::from(vec)),
+    )
 }
 
 /// Full vector data per point separator with single and multiple vector modes
