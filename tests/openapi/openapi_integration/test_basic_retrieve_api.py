@@ -266,6 +266,29 @@ def test_recommendation():
     assert response.ok
 
 
+def test_query_single_condition():
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/search',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "filter": {
+                "must": {
+                        "key": "city",
+                        "match": {
+                            "value": "London"
+                        }
+                    }
+            },
+            "vector": [0.2, 0.1, 0.9, 0.7],
+            "limit": 3
+        }
+    )
+    assert response.ok
+    # only 2 London records in collection
+    assert len(response.json()['result']) == 2
+
+
 def test_query_nested():
     response = request_with_validation(
         api='/collections/{collection_name}/points',

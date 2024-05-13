@@ -6483,11 +6483,21 @@
         "properties": {
           "should": {
             "description": "At least one of those conditions should match",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Condition"
-            },
-            "nullable": true
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Condition"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Condition"
+                }
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "min_should": {
             "description": "At least minimum amount of given conditions should match",
@@ -6502,19 +6512,39 @@
           },
           "must": {
             "description": "All conditions must match",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Condition"
-            },
-            "nullable": true
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Condition"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Condition"
+                }
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "must_not": {
             "description": "All conditions must NOT match",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Condition"
-            },
-            "nullable": true
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Condition"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Condition"
+                }
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         },
         "additionalProperties": false
