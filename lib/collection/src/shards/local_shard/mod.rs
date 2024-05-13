@@ -1,4 +1,5 @@
 pub mod clock_map;
+pub mod disk_usage_watcher;
 mod shard_ops;
 
 use std::collections::{BTreeSet, HashMap};
@@ -34,6 +35,7 @@ use tokio::sync::{mpsc, oneshot, Mutex, RwLock as TokioRwLock};
 use wal::{Wal, WalOptions};
 
 use self::clock_map::{ClockMap, RecoveryPoint};
+use self::disk_usage_watcher::DiskUsageWatcher;
 use super::update_tracker::UpdateTracker;
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::{
@@ -77,6 +79,7 @@ pub struct LocalShard {
     pub(super) optimizers: Arc<Vec<Arc<Optimizer>>>,
     pub(super) optimizers_log: Arc<ParkingMutex<TrackerLog>>,
     update_runtime: Handle,
+    pub(super) disk_usage_watcher: Arc<TokioRwLock<DiskUsageWatcher>>,
 }
 
 /// Shard holds information about segments and WAL.
@@ -140,6 +143,17 @@ impl LocalShard {
         let locked_wal = Arc::new(ParkingMutex::new(wal));
         let optimizers_log = Arc::new(ParkingMutex::new(Default::default()));
 
+        // default to 2x the WAL capacity
+        let disk_buffer_threshold_mb =
+            2 * (collection_config.read().await.wal_config.wal_capacity_mb);
+        let disk_usage_watcher = Arc::new(TokioRwLock::new(
+            disk_usage_watcher::DiskUsageWatcher::new(
+                shard_path.to_owned(),
+                disk_buffer_threshold_mb as u64,
+            )
+            .await,
+        ));
+
         let mut update_handler = UpdateHandler::new(
             shared_storage_config.clone(),
             optimizers.clone(),
@@ -152,6 +166,7 @@ impl LocalShard {
             config.optimizer_config.max_optimization_threads,
             clocks.clone(),
             shard_path.into(),
+            disk_usage_watcher.clone(),
         );
 
         let (update_sender, update_receiver) =
@@ -174,6 +189,7 @@ impl LocalShard {
             update_runtime,
             optimizers,
             optimizers_log,
+            disk_usage_watcher,
         }
     }
 

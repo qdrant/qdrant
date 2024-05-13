@@ -239,6 +239,12 @@ impl ShardOperation for LocalShard {
             (None, None)
         };
 
+        if self.disk_usage_watcher.write().await.is_disk_full().await {
+            return Err(CollectionError::service_error(
+                "No space left on device: WAL buffer size exceeds available disk space".to_string(),
+            ));
+        }
+
         let operation_id = {
             let update_sender = self.update_sender.load();
             let channel_permit = update_sender.reserve().await?;
