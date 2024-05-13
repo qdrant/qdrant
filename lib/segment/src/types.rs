@@ -735,6 +735,8 @@ pub enum VectorStorageDatatype {
     #[default]
     Float32,
     // Half-precision floating point
+    // ToDo: This is not ready, skip serde
+    #[serde(skip)]
     Float16,
     // Unsigned 8-bit integer
     Uint8,
