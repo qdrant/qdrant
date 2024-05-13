@@ -1455,6 +1455,8 @@ pub enum ReplicaState {
     PartialSnapshot = 5,
     /// Shard is undergoing recovered by an external node; Normally rejects updates, accepts updates if force is true
     Recovery = 6,
+    /// Points are being migrated to this shard as part of resharding
+    Resharding = 7,
 }
 impl ReplicaState {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -1470,6 +1472,7 @@ impl ReplicaState {
             ReplicaState::Listener => "Listener",
             ReplicaState::PartialSnapshot => "PartialSnapshot",
             ReplicaState::Recovery => "Recovery",
+            ReplicaState::Resharding => "Resharding",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -1482,6 +1485,7 @@ impl ReplicaState {
             "Listener" => Some(Self::Listener),
             "PartialSnapshot" => Some(Self::PartialSnapshot),
             "Recovery" => Some(Self::Recovery),
+            "Resharding" => Some(Self::Resharding),
             _ => None,
         }
     }
