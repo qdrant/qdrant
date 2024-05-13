@@ -34,18 +34,10 @@ pub fn new_layer<S>(config: &Config) -> fmt::Layer<S>
 where
     S: tracing::Subscriber + for<'span> registry::LookupSpan<'span>,
 {
-    let span_events = config
-        .span_events
-        .as_ref()
-        .unwrap_or(&HashSet::new())
-        .iter()
-        .copied()
-        .fold(fmt::format::FmtSpan::NONE, |events, event| {
-            events | event.to_fmt_span()
-        });
-
     fmt::Layer::default()
-        .with_span_events(span_events)
+        .with_span_events(config::SpanEvent::unwrap_or_default_config(
+            &config.span_events,
+        ))
         .with_ansi(config.color.unwrap_or_default().to_bool())
 }
 

@@ -38,23 +38,22 @@ pub enum SpanEvent {
 }
 
 impl SpanEvent {
-    pub fn from_fmt_span(events: fmt::format::FmtSpan) -> HashSet<Self> {
-        const EVENTS: &[SpanEvent] = &[
-            SpanEvent::New,
-            SpanEvent::Enter,
-            SpanEvent::Exit,
-            SpanEvent::Close,
-        ];
-
-        EVENTS
-            .iter()
-            .copied()
-            .filter(|event| events.clone() & event.to_fmt_span() == event.to_fmt_span())
-            .collect()
+    pub fn unwrap_or_default_config(events: &Option<HashSet<Self>>) -> fmt::format::FmtSpan {
+        Self::into_fmt_span(events.as_ref().unwrap_or(&HashSet::new()).iter().copied())
     }
 
-    pub fn to_fmt_span(self) -> fmt::format::FmtSpan {
-        match self {
+    pub fn into_fmt_span(events: impl IntoIterator<Item = Self>) -> fmt::format::FmtSpan {
+        events
+            .into_iter()
+            .fold(fmt::format::FmtSpan::NONE, |events, event| {
+                events | event.into()
+            })
+    }
+}
+
+impl From<SpanEvent> for fmt::format::FmtSpan {
+    fn from(event: SpanEvent) -> Self {
+        match event {
             SpanEvent::New => fmt::format::FmtSpan::NEW,
             SpanEvent::Enter => fmt::format::FmtSpan::ENTER,
             SpanEvent::Exit => fmt::format::FmtSpan::EXIT,
