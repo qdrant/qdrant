@@ -120,7 +120,7 @@ impl TryFrom<Vector> for MultiDenseVector {
                 // expand single dense vector into multivector with a single vector
                 let len = v.len();
                 Ok(MultiDenseVector::new(v, len))
-            },
+            }
             Vector::Sparse(_) => Err(OperationError::WrongSparse),
             Vector::MultiDense(v) => Ok(v),
         }
