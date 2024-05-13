@@ -156,6 +156,7 @@ fn create_segment(
                                 stopped,
                             )?
                         }
+                        VectorStorageDatatype::Float16 => todo!(),
                     }
                 } else {
                     match storage_element_type {
@@ -197,7 +198,7 @@ fn create_segment(
                                 vector_config.distance,
                                 *multi_vec_config,
                             )?
-                        },
+                        }
                         VectorStorageDatatype::Float16 => todo!(),
                     }
                 } else {
