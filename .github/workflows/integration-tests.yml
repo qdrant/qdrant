@@ -196,43 +196,6 @@ jobs:
         shell: bash
         run: ./low-ram.sh
 
-  test-snapshot-operations-local:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Install dependencies
-        run: sudo apt-get install clang jq
-      - name: Setup git-lfs
-        run: git lfs install
-      - name: Install minimal stable
-        uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - uses: actions/checkout@v4
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      - name: Docker build
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          tags: qdrant-snapshots
-          cache-from: |
-            type=gha,scope=${{ github.ref }}
-            type=gha,scope=${{ github.base_ref }}
-          cache-to: type=gha,mode=max,scope=${{ github.ref }}
-          load: true
-          build-args: |
-            PROFILE=ci
-      - name: Install dependencies
-        run: sudo snap install yq
-      - name: Run test snapshot operations on different storage filesystems
-        working-directory: ./tests/snapshots
-        shell: bash
-        run: ./snapshots-recovery.sh local
-
   test-snapshot-operations-s3-minio:
     runs-on: ubuntu-latest
 
@@ -285,31 +248,11 @@ jobs:
       - name: Run test snapshot operations on different storage filesystems
         working-directory: ./tests/snapshots
         shell: bash
-        run: ./snapshots-recovery.sh s3
-
-  test-shard-snapshot-api:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Install minimal stable
-        uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - uses: actions/checkout@v4
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Install dependencies
-        run: sudo apt-get install clang jq
-      - name: Build
-        run: cargo build --bin qdrant
-      - name: Run Shard Snapshot API Tests
+        run: ./snapshots-recovery.sh local
+      - name: Run test snapshot operations on different storage filesystems
+        working-directory: ./tests/snapshots
         shell: bash
-        run: |
-          cargo run &
-          trap 'kill $(jobs -p) &>/dev/null || :' EXIT
-          sleep 10
-          ./tests/shard-snapshot-api.sh test-all
+        run: ./snapshots-recovery.sh s3
 
   test-shard-snapshot-api-s3-minio:
     runs-on: ubuntu-latest
@@ -341,4 +284,5 @@ jobs:
           cargo run &
           trap 'kill $(jobs -p) &>/dev/null || :' EXIT
           sleep 10
+          ./tests/shard-snapshot-api.sh test-all
           ./tests/shard-snapshot-api.sh storage-s3-test-all
