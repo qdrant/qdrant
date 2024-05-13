@@ -9,7 +9,7 @@ fn deseriailze_logger_config() {
     let json = json!({
         "log_level": "debug",
         "span_events": ["new", "close"],
-        "color": "enable",
+        "color": true,
     });
 
     let config = deserialize_config(json);
@@ -21,7 +21,7 @@ fn deseriailze_logger_config() {
                 config::SpanEvent::New,
                 config::SpanEvent::Close,
             ])),
-            color: Some(config::Color::Enable),
+            color: Some(config::Color::Explicit(true)),
         },
     };
 

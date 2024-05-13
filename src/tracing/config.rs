@@ -67,16 +67,15 @@ impl From<SpanEvent> for fmt::format::FmtSpan {
 pub enum Color {
     #[default]
     Auto,
-    Enable,
-    Disable,
+    #[serde(untagged)]
+    Explicit(bool),
 }
 
 impl Color {
     pub fn to_bool(self) -> bool {
         match self {
             Self::Auto => colored::control::SHOULD_COLORIZE.should_colorize(),
-            Self::Enable => true,
-            Self::Disable => false,
+            Self::Explicit(bool) => bool,
         }
     }
 }
