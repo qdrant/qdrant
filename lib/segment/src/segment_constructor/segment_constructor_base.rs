@@ -156,6 +156,7 @@ fn create_segment(
                                 stopped,
                             )?
                         }
+                        VectorStorageDatatype::Float16 => todo!(),
                     }
                 } else {
                     match storage_element_type {
@@ -173,6 +174,7 @@ fn create_segment(
                             vector_config.distance,
                             stopped,
                         )?,
+                        VectorStorageDatatype::Float16 => todo!(),
                     }
                 }
             }
@@ -197,6 +199,7 @@ fn create_segment(
                                 *multi_vec_config,
                             )?
                         }
+                        VectorStorageDatatype::Float16 => todo!(),
                     }
                 } else {
                     match storage_element_type {
@@ -210,6 +213,7 @@ fn create_segment(
                             vector_config.size,
                             vector_config.distance,
                         )?,
+                        VectorStorageDatatype::Float16 => todo!(),
                     }
                 }
             }
@@ -233,6 +237,7 @@ fn create_segment(
                                 *multi_vec_config,
                             )?
                         }
+                        VectorStorageDatatype::Float16 => todo!(),
                     }
                 } else {
                     match storage_element_type {
@@ -246,6 +251,7 @@ fn create_segment(
                             vector_config.size,
                             vector_config.distance,
                         )?,
+                        VectorStorageDatatype::Float16 => todo!(),
                     }
                 }
             }
