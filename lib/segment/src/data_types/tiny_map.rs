@@ -80,10 +80,10 @@ where
         }
     }
 
-    pub fn get<Q: ?Sized>(&self, key: &Q) -> Option<&V>
+    pub fn get<Q>(&self, key: &Q) -> Option<&V>
     where
         K: borrow::Borrow<Q>,
-        Q: Eq,
+        Q: Eq + ?Sized,
     {
         self.list
             .iter()
@@ -91,10 +91,10 @@ where
             .map(|(_, v)| v)
     }
 
-    pub fn get_mut<Q: ?Sized>(&mut self, key: &Q) -> Option<&mut V>
+    pub fn get_mut<Q>(&mut self, key: &Q) -> Option<&mut V>
     where
         K: borrow::Borrow<Q>,
-        Q: Eq,
+        Q: Eq + ?Sized,
     {
         self.list
             .iter_mut()
@@ -113,10 +113,10 @@ where
         }
     }
 
-    pub fn contains_key<Q: ?Sized>(&self, key: &Q) -> bool
+    pub fn contains_key<Q>(&self, key: &Q) -> bool
     where
         K: borrow::Borrow<Q>,
-        Q: Eq,
+        Q: Eq + ?Sized,
     {
         self.list.iter().any(|(k, _)| k.borrow() == key)
     }
@@ -207,7 +207,7 @@ mod tests {
         map.clear();
         map.insert(key.clone(), value.clone());
         assert_eq!(map.get_mut(&key), Some(&mut value));
-        *map.get_mut(&key).unwrap() = value3.clone();
+        map.get_mut(&key).unwrap().clone_from(&value3);
         assert_eq!(map.get(&key), Some(&value3));
 
         // Test iter

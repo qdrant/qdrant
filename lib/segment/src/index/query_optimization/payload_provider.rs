@@ -27,6 +27,7 @@ impl PayloadProvider {
     {
         let payload_storage_guard = self.payload_storage.borrow();
         let payload_ptr_opt = match payload_storage_guard.deref() {
+            #[cfg(feature = "testing")]
             PayloadStorageEnum::InMemoryPayloadStorage(s) => {
                 s.payload_ptr(point_id).map(|x| x.into())
             }

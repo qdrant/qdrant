@@ -33,11 +33,9 @@ pub fn open_appendable_memmap_vector_storage(
     path: &Path,
     dim: usize,
     distance: Distance,
-    stopped: &AtomicBool,
 ) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
-    let storage = open_appendable_memmap_vector_storage_impl::<VectorElementType>(
-        path, dim, distance, stopped,
-    )?;
+    let storage =
+        open_appendable_memmap_vector_storage_impl::<VectorElementType>(path, dim, distance)?;
 
     Ok(Arc::new(AtomicRefCell::new(
         VectorStorageEnum::DenseAppendableMemmap(Box::new(storage)),
@@ -48,11 +46,9 @@ pub fn open_appendable_memmap_vector_storage_byte(
     path: &Path,
     dim: usize,
     distance: Distance,
-    stopped: &AtomicBool,
 ) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
-    let storage = open_appendable_memmap_vector_storage_impl::<VectorElementTypeByte>(
-        path, dim, distance, stopped,
-    )?;
+    let storage =
+        open_appendable_memmap_vector_storage_impl::<VectorElementTypeByte>(path, dim, distance)?;
 
     Ok(Arc::new(AtomicRefCell::new(
         VectorStorageEnum::DenseAppendableMemmapByte(Box::new(storage)),
@@ -63,7 +59,6 @@ pub fn open_appendable_memmap_vector_storage_impl<T: PrimitiveVectorElement>(
     path: &Path,
     dim: usize,
     distance: Distance,
-    stopped: &AtomicBool,
 ) -> OperationResult<AppendableMmapDenseVectorStorage<T>> {
     create_dir_all(path)?;
 
@@ -72,18 +67,8 @@ pub fn open_appendable_memmap_vector_storage_impl<T: PrimitiveVectorElement>(
 
     let vectors = ChunkedMmapVectors::<T>::open(&vectors_path, dim)?;
 
-    let num_vectors = vectors.len();
-
     let deleted: DynamicMmapFlags = DynamicMmapFlags::open(&deleted_path)?;
-
-    let mut deleted_count = 0;
-
-    for i in 0..num_vectors {
-        if deleted.get(i) {
-            deleted_count += 1;
-        }
-        check_process_stopped(stopped)?;
-    }
+    let deleted_count = deleted.count_flags();
 
     Ok(AppendableMmapDenseVectorStorage {
         vectors,
@@ -116,7 +101,7 @@ impl<T: PrimitiveVectorElement + 'static> AppendableMmapDenseVectorStorage<T> {
 
 impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for AppendableMmapDenseVectorStorage<T> {
     fn get_dense(&self, key: PointOffsetType) -> &[T] {
-        self.vectors.get(key)
+        self.vectors.get(key).expect("mmap vector not found")
     }
 }
 
@@ -142,7 +127,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapDenseVectorStora
     }
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {
-        CowVector::from(T::slice_to_float_cow(self.vectors.get(key).into()))
+        CowVector::from(T::slice_to_float_cow(self.get_dense(key).into()))
     }
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {

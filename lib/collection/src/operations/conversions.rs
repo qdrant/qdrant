@@ -20,7 +20,9 @@ use segment::data_types::vectors::{
     BatchVectorStruct, Named, NamedQuery, NamedVectorStruct, Vector, VectorStruct,
     DEFAULT_VECTOR_NAME,
 };
-use segment::types::{DateTimeWrapper, Distance, QuantizationConfig, ScoredPoint};
+use segment::types::{
+    DateTimeWrapper, Distance, MultiVectorConfig, QuantizationConfig, ScoredPoint,
+};
 use segment::vector_storage::query::context_query::{ContextPair, ContextQuery};
 use segment::vector_storage::query::discovery_query::DiscoveryQuery;
 use segment::vector_storage::query::reco_query::RecoQuery;
@@ -30,7 +32,7 @@ use tonic::Status;
 use super::consistency_params::ReadConsistency;
 use super::types::{
     BaseGroupRequest, ContextExamplePair, CoreSearchRequest, Datatype, DiscoverRequestInternal,
-    GroupsResult, OrderByInterface, PointGroup, QueryEnum, RecommendExample,
+    GroupsResult, Modifier, OrderByInterface, PointGroup, RecommendExample,
     RecommendGroupsRequestInternal, RecommendStrategy, SearchGroupsRequestInternal,
     SparseIndexParams, SparseVectorParams, VectorParamsDiff, VectorsConfigDiff,
 };
@@ -43,8 +45,8 @@ use crate::lookup::WithLookup;
 use crate::operations::cluster_ops::{
     AbortShardTransfer, AbortTransferOperation, ClusterOperations, CreateShardingKey,
     CreateShardingKeyOperation, DropReplicaOperation, DropShardingKey, DropShardingKeyOperation,
-    MoveShard, MoveShardOperation, Replica, ReplicateShardOperation, RestartTransfer,
-    RestartTransferOperation,
+    MoveShard, MoveShardOperation, Replica, ReplicateShard, ReplicateShardOperation,
+    RestartTransfer, RestartTransferOperation,
 };
 use crate::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
@@ -54,6 +56,7 @@ use crate::operations::point_ops::PointsSelector::PointIdsSelector;
 use crate::operations::point_ops::{
     Batch, FilterSelector, PointIdsList, PointStruct, PointsSelector, WriteOrdering,
 };
+use crate::operations::query_enum::QueryEnum;
 use crate::operations::shard_key_selector::ShardKeySelector;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
@@ -552,6 +555,10 @@ impl TryFrom<api::grpc::qdrant::VectorParams> for VectorParams {
                 .transpose()?,
             on_disk: vector_params.on_disk,
             datatype: convert_datatype_from_proto(vector_params.datatype)?,
+            multivec_config: vector_params
+                .multivector_config
+                .map(MultiVectorConfig::try_from)
+                .transpose()?,
         })
     }
 }
@@ -591,6 +598,15 @@ impl TryFrom<api::grpc::qdrant::VectorParamsDiff> for VectorParamsDiff {
     }
 }
 
+impl From<api::grpc::qdrant::Modifier> for Modifier {
+    fn from(value: api::grpc::qdrant::Modifier) -> Self {
+        match value {
+            api::grpc::qdrant::Modifier::None => Modifier::None,
+            api::grpc::qdrant::Modifier::Idf => Modifier::Idf,
+        }
+    }
+}
+
 impl From<api::grpc::qdrant::SparseVectorParams> for SparseVectorParams {
     fn from(sparse_vector_params: api::grpc::qdrant::SparseVectorParams) -> Self {
         Self {
@@ -600,6 +616,19 @@ impl From<api::grpc::qdrant::SparseVectorParams> for SparseVectorParams {
                     full_scan_threshold: index_config.full_scan_threshold.map(|v| v as usize),
                     on_disk: index_config.on_disk,
                 }),
+            modifier: sparse_vector_params
+                .modifier
+                .and_then(api::grpc::qdrant::Modifier::from_i32)
+                .map(Modifier::from),
+        }
+    }
+}
+
+impl From<Modifier> for api::grpc::qdrant::Modifier {
+    fn from(value: Modifier) -> Self {
+        match value {
+            Modifier::None => api::grpc::qdrant::Modifier::None,
+            Modifier::Idf => api::grpc::qdrant::Modifier::Idf,
         }
     }
 }
@@ -613,6 +642,9 @@ impl From<SparseVectorParams> for api::grpc::qdrant::SparseVectorParams {
                     on_disk: index_config.on_disk,
                 }
             }),
+            modifier: sparse_vector_params
+                .modifier
+                .map(|modifier| api::grpc::qdrant::Modifier::from(modifier) as i32),
         }
     }
 }
@@ -1634,6 +1666,9 @@ impl From<VectorParams> for api::grpc::qdrant::VectorParams {
             datatype: value
                 .datatype
                 .map(|dt| api::grpc::qdrant::Datatype::from(dt).into()),
+            multivector_config: value
+                .multivec_config
+                .map(api::grpc::qdrant::MultiVectorConfig::from),
         }
     }
 }
@@ -1710,6 +1745,20 @@ impl From<CollectionClusterInfo> for api::grpc::qdrant::CollectionClusterInfoRes
                 .map(|shard| shard.into())
                 .collect(),
         }
+    }
+}
+
+impl TryFrom<api::grpc::qdrant::ReplicateShard> for ReplicateShard {
+    type Error = Status;
+
+    fn try_from(value: api::grpc::qdrant::ReplicateShard) -> Result<Self, Self::Error> {
+        let method = value.method.map(TryInto::try_into).transpose()?;
+        Ok(Self {
+            shard_id: value.shard_id,
+            from_peer_id: value.from_peer_id,
+            to_peer_id: value.to_peer_id,
+            method,
+        })
     }
 }
 

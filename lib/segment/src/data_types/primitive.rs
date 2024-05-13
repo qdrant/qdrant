@@ -169,7 +169,7 @@ impl PrimitiveVectorElement for VectorElementTypeByte {
     ) -> Cow<TypedMultiDenseVector<Self>> {
         Cow::Owned(TypedMultiDenseVector::new(
             multivector
-                .inner_vector
+                .flattened_vectors
                 .iter()
                 .map(|&x| x as Self)
                 .collect_vec(),
@@ -182,7 +182,7 @@ impl PrimitiveVectorElement for VectorElementTypeByte {
     ) -> Cow<TypedMultiDenseVector<VectorElementType>> {
         Cow::Owned(TypedMultiDenseVector::new(
             multivector
-                .inner_vector
+                .flattened_vectors
                 .iter()
                 .map(|&x| x as VectorElementType)
                 .collect_vec(),

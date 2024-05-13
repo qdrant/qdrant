@@ -505,6 +505,9 @@ impl RemoteShard {
     ///
     /// This method specifies a timeout of 24 hours.
     ///
+    /// Setting an API key may leak when requesting a snapshot file from a malicious server.
+    /// This is potentially dangerous if a user has control over what URL is accessed.
+    ///
     /// # Cancel safety
     ///
     /// This method is cancel safe.
@@ -514,6 +517,7 @@ impl RemoteShard {
         shard_id: ShardId,
         url: &Url,
         snapshot_priority: SnapshotPriority,
+        api_key: Option<&str>,
     ) -> CollectionResult<RecoverSnapshotResponse> {
         let res = self
             .with_shard_snapshots_client_timeout(
@@ -529,6 +533,7 @@ impl RemoteShard {
                                 snapshot_priority,
                             ) as i32,
                             checksum: None,
+                            api_key: api_key.map(Into::into),
                         })
                         .await
                 },

@@ -14,6 +14,7 @@ use segment::fixtures::payload_fixtures::{random_dense_byte_vector, random_int_p
 use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::hnsw::HNSWIndex;
 use segment::index::{PayloadIndex, VectorIndex};
+use segment::json_path::path;
 use segment::segment_constructor::build_segment;
 use segment::types::{
     Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload, Range, SearchParams,
@@ -25,8 +26,6 @@ use segment::vector_storage::query::reco_query::RecoQuery;
 use segment::vector_storage::VectorStorageEnum;
 use serde_json::json;
 use tempfile::Builder;
-
-use crate::utils::path;
 
 const MAX_EXAMPLE_PAIRS: usize = 4;
 
@@ -124,7 +123,7 @@ fn test_byte_storage_hnsw(
                 storage_type: VectorStorageType::Memory,
                 index: Indexes::Plain {},
                 quantization_config: None,
-                multi_vec_config: None,
+                multivec_config: None,
                 datatype: None,
             },
         )]),
@@ -140,7 +139,7 @@ fn test_byte_storage_hnsw(
                 storage_type: VectorStorageType::Memory,
                 index: Indexes::Plain {},
                 quantization_config: None,
-                multi_vec_config: None,
+                multivec_config: None,
                 datatype: Some(VectorStorageDatatype::Uint8),
             },
         )]),
@@ -254,8 +253,7 @@ fn test_byte_storage_hnsw(
                     hnsw_ef: Some(ef),
                     ..Default::default()
                 }),
-                &false.into(),
-                usize::MAX,
+                &Default::default(),
             )
             .unwrap();
 
@@ -271,26 +269,12 @@ fn test_byte_storage_hnsw(
         let plain_result_float = segment_float.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(
-                &[&query],
-                filter_query,
-                top,
-                None,
-                &false.into(),
-                usize::MAX,
-            )
+            .search(&[&query], filter_query, top, None, &Default::default())
             .unwrap();
         let plain_result_byte = segment_byte.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(
-                &[&query],
-                filter_query,
-                top,
-                None,
-                &false.into(),
-                usize::MAX,
-            )
+            .search(&[&query], filter_query, top, None, &Default::default())
             .unwrap();
         compare_search_result(&plain_result_float, &plain_result_byte);
 

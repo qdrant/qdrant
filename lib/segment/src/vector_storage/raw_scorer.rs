@@ -153,6 +153,15 @@ pub fn new_stoppable_raw_scorer<'a>(
         VectorStorageEnum::MultiDenseSimple(vs) => {
             raw_multi_scorer_impl(query, vs, point_deleted, is_stopped)
         }
+        VectorStorageEnum::MultiDenseSimpleByte(vs) => {
+            raw_multi_scorer_byte_impl(query, vs, point_deleted, is_stopped)
+        }
+        VectorStorageEnum::MultiDenseAppendableMemmap(vs) => {
+            raw_multi_scorer_impl(query, vs.as_ref(), point_deleted, is_stopped)
+        }
+        VectorStorageEnum::MultiDenseAppendableMemmapByte(vs) => {
+            raw_multi_scorer_byte_impl(query, vs.as_ref(), point_deleted, is_stopped)
+        }
     }
 }
 
@@ -461,7 +470,10 @@ fn new_multi_scorer_with_metric<
     let vec_deleted = vector_storage.deleted_vector_bitslice();
     match query {
         QueryVector::Nearest(vector) => raw_scorer_from_query_scorer(
-            MultiMetricQueryScorer::<TMetric, _>::new(vector.try_into()?, vector_storage),
+            MultiMetricQueryScorer::<VectorElementType, TMetric, _>::new(
+                vector.try_into()?,
+                vector_storage,
+            ),
             point_deleted,
             vec_deleted,
             is_stopped,
@@ -469,7 +481,10 @@ fn new_multi_scorer_with_metric<
         QueryVector::Recommend(reco_query) => {
             let reco_query: RecoQuery<MultiDenseVector> = reco_query.transform_into()?;
             raw_scorer_from_query_scorer(
-                MultiCustomQueryScorer::<TMetric, _, _>::new(reco_query, vector_storage),
+                MultiCustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
+                    reco_query,
+                    vector_storage,
+                ),
                 point_deleted,
                 vec_deleted,
                 is_stopped,
@@ -479,7 +494,10 @@ fn new_multi_scorer_with_metric<
             let discovery_query: DiscoveryQuery<MultiDenseVector> =
                 discovery_query.transform_into()?;
             raw_scorer_from_query_scorer(
-                MultiCustomQueryScorer::<TMetric, _, _>::new(discovery_query, vector_storage),
+                MultiCustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
+                    discovery_query,
+                    vector_storage,
+                ),
                 point_deleted,
                 vec_deleted,
                 is_stopped,
@@ -488,7 +506,105 @@ fn new_multi_scorer_with_metric<
         QueryVector::Context(context_query) => {
             let context_query: ContextQuery<MultiDenseVector> = context_query.transform_into()?;
             raw_scorer_from_query_scorer(
-                MultiCustomQueryScorer::<TMetric, _, _>::new(context_query, vector_storage),
+                MultiCustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
+                    context_query,
+                    vector_storage,
+                ),
+                point_deleted,
+                vec_deleted,
+                is_stopped,
+            )
+        }
+    }
+}
+
+pub fn raw_multi_scorer_byte_impl<'a, TVectorStorage: MultiVectorStorage<VectorElementTypeByte>>(
+    query: QueryVector,
+    vector_storage: &'a TVectorStorage,
+    point_deleted: &'a BitSlice,
+    is_stopped: &'a AtomicBool,
+) -> OperationResult<Box<dyn RawScorer + 'a>> {
+    match vector_storage.distance() {
+        Distance::Cosine => new_multi_scorer_byte_with_metric::<CosineMetric, _>(
+            query,
+            vector_storage,
+            point_deleted,
+            is_stopped,
+        ),
+        Distance::Euclid => new_multi_scorer_byte_with_metric::<EuclidMetric, _>(
+            query,
+            vector_storage,
+            point_deleted,
+            is_stopped,
+        ),
+        Distance::Dot => new_multi_scorer_byte_with_metric::<DotProductMetric, _>(
+            query,
+            vector_storage,
+            point_deleted,
+            is_stopped,
+        ),
+        Distance::Manhattan => new_multi_scorer_byte_with_metric::<ManhattanMetric, _>(
+            query,
+            vector_storage,
+            point_deleted,
+            is_stopped,
+        ),
+    }
+}
+
+fn new_multi_scorer_byte_with_metric<
+    'a,
+    TMetric: Metric<VectorElementTypeByte> + 'a,
+    TVectorStorage: MultiVectorStorage<VectorElementTypeByte>,
+>(
+    query: QueryVector,
+    vector_storage: &'a TVectorStorage,
+    point_deleted: &'a BitSlice,
+    is_stopped: &'a AtomicBool,
+) -> OperationResult<Box<dyn RawScorer + 'a>> {
+    let vec_deleted = vector_storage.deleted_vector_bitslice();
+    match query {
+        QueryVector::Nearest(vector) => raw_scorer_from_query_scorer(
+            MultiMetricQueryScorer::<VectorElementTypeByte, TMetric, _>::new(
+                vector.try_into()?,
+                vector_storage,
+            ),
+            point_deleted,
+            vec_deleted,
+            is_stopped,
+        ),
+        QueryVector::Recommend(reco_query) => {
+            let reco_query: RecoQuery<MultiDenseVector> = reco_query.transform_into()?;
+            raw_scorer_from_query_scorer(
+                MultiCustomQueryScorer::<VectorElementTypeByte, TMetric, _, _, _>::new(
+                    reco_query,
+                    vector_storage,
+                ),
+                point_deleted,
+                vec_deleted,
+                is_stopped,
+            )
+        }
+        QueryVector::Discovery(discovery_query) => {
+            let discovery_query: DiscoveryQuery<MultiDenseVector> =
+                discovery_query.transform_into()?;
+            raw_scorer_from_query_scorer(
+                MultiCustomQueryScorer::<VectorElementTypeByte, TMetric, _, _, _>::new(
+                    discovery_query,
+                    vector_storage,
+                ),
+                point_deleted,
+                vec_deleted,
+                is_stopped,
+            )
+        }
+        QueryVector::Context(context_query) => {
+            let context_query: ContextQuery<MultiDenseVector> = context_query.transform_into()?;
+            raw_scorer_from_query_scorer(
+                MultiCustomQueryScorer::<VectorElementTypeByte, TMetric, _, _, _>::new(
+                    context_query,
+                    vector_storage,
+                ),
                 point_deleted,
                 vec_deleted,
                 is_stopped,

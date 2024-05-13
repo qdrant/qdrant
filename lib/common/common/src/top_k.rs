@@ -5,7 +5,7 @@ use ordered_float::Float;
 use crate::types::{ScoreType, ScoredPointOffset};
 
 /// TopK implementation following the median algorithm described in
-/// https://quickwit.io/blog/top-k-complexity
+/// <https://quickwit.io/blog/top-k-complexity>.
 ///
 /// Keeps the largest `k` ScoredPointOffset.
 #[derive(Default)]

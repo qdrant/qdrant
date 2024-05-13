@@ -117,7 +117,7 @@ pub struct MoveShardOperation {
 #[serde(rename_all = "snake_case")]
 pub struct ReplicateShardOperation {
     #[validate]
-    pub replicate_shard: MoveShard,
+    pub replicate_shard: ReplicateShard,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
@@ -132,6 +132,22 @@ pub struct DropReplicaOperation {
 pub struct AbortTransferOperation {
     #[validate]
     pub abort_transfer: AbortShardTransfer,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[serde(rename_all = "snake_case")]
+pub struct ReplicateShard {
+    pub shard_id: ShardId,
+    pub to_peer_id: PeerId,
+    pub from_peer_id: PeerId,
+    /// Method for transferring the shard from one node to another
+    pub method: Option<ShardTransferMethod>,
+}
+
+impl Validate for ReplicateShard {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        validate_shard_different_peers(self.from_peer_id, self.to_peer_id)
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]

@@ -36,7 +36,7 @@ pub struct PostingList {
 }
 
 impl PostingList {
-    /// used for testing
+    #[cfg(test)]
     pub fn from(records: Vec<(PointOffsetType, DimWeight)>) -> PostingList {
         let mut posting_list = PostingBuilder::new();
         for (id, weight) in records {

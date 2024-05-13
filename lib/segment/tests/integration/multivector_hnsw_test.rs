@@ -16,6 +16,7 @@ use segment::fixtures::payload_fixtures::random_int_payload;
 use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::hnsw::HNSWIndex;
 use segment::index::VectorIndex;
+use segment::json_path::path;
 use segment::segment_constructor::build_segment;
 use segment::spaces::metric::Metric;
 use segment::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
@@ -23,12 +24,10 @@ use segment::types::{
     Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, MultiVectorConfig, Payload,
     PayloadSchemaType, SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageType,
 };
-use segment::vector_storage::simple_multi_dense_vector_storage::open_simple_multi_dense_vector_storage;
+use segment::vector_storage::multi_dense::simple_multi_dense_vector_storage::open_simple_multi_dense_vector_storage;
 use segment::vector_storage::VectorStorage;
 use serde_json::json;
 use tempfile::Builder;
-
-use crate::utils::path;
 
 #[test]
 fn test_single_multi_and_dense_hnsw_equivalency() {
@@ -50,7 +49,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
                 storage_type: VectorStorageType::Memory,
                 index: Indexes::Plain {},
                 quantization_config: None,
-                multi_vec_config: None,
+                multivec_config: None,
                 datatype: None,
             },
         )]),
@@ -178,8 +177,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
                 Some(&filter),
                 10,
                 None,
-                &false.into(),
-                usize::MAX,
+                &Default::default(),
             )
             .unwrap();
 
@@ -189,8 +187,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
                 Some(&filter),
                 10,
                 None,
-                &false.into(),
-                usize::MAX,
+                &Default::default(),
             )
             .unwrap();
 

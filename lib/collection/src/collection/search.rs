@@ -5,10 +5,15 @@ use std::time::Duration;
 use futures::{future, TryFutureExt};
 use segment::data_types::vectors::VectorStruct;
 use segment::spaces::tools;
-use segment::types::{ExtendedPointId, Order, ScoredPoint, WithPayloadInterface, WithVector};
+use segment::types::{
+    ExtendedPointId, Filter, Order, ScoredPoint, WithPayloadInterface, WithVector,
+};
+use tokio::time::Instant;
 
 use super::Collection;
+use crate::events::SlowQueryEvent;
 use crate::operations::consistency_params::ReadConsistency;
+use crate::operations::query_enum::QueryEnum;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::*;
 
@@ -127,6 +132,8 @@ impl Collection {
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let request = Arc::new(request);
 
+        let instant = Instant::now();
+
         // query all shards concurrently
         let all_searches_res = {
             let shard_holder = self.shards_holder.read().await;
@@ -146,7 +153,7 @@ impl Collection {
                         }
                         for batch in &mut records {
                             for point in batch {
-                                point.shard_key = shard_key.clone();
+                                point.shard_key.clone_from(&shard_key);
                             }
                         }
                         Ok(records)
@@ -155,8 +162,19 @@ impl Collection {
             future::try_join_all(all_searches).await?
         };
 
-        self.merge_from_shards(all_searches_res, request, !shard_selection.is_shard_id())
-            .await
+        let result = self
+            .merge_from_shards(
+                all_searches_res,
+                Arc::clone(&request),
+                !shard_selection.is_shard_id(),
+            )
+            .await;
+
+        let filters_refs = request.searches.iter().map(|req| req.filter.as_ref());
+
+        self.post_process_if_slow_request(instant.elapsed(), filters_refs);
+
+        result
     }
 
     pub(crate) async fn fill_search_result_with_payload(
@@ -264,5 +282,23 @@ impl Collection {
             .collect::<CollectionResult<Vec<_>>>()?;
 
         Ok(top_results)
+    }
+
+    fn post_process_if_slow_request<'a>(
+        &self,
+        duration: Duration,
+        filters: impl Iterator<Item = Option<&'a Filter>>,
+    ) {
+        if duration > segment::problems::UnindexedField::slow_query_threshold() {
+            let filters = filters.flatten().cloned().collect::<Vec<_>>();
+
+            let schema = self.payload_index_schema.read().schema.clone();
+
+            issues::publish(SlowQueryEvent {
+                collection_id: self.id.clone(),
+                filters,
+                schema,
+            });
+        }
     }
 }

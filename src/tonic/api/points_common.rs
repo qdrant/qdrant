@@ -23,11 +23,12 @@ use collection::operations::payload_ops::DeletePayload;
 use collection::operations::point_ops::{
     self, PointInsertOperations, PointOperations, PointSyncOperation, PointsList,
 };
+use collection::operations::query_enum::QueryEnum;
 use collection::operations::shard_key_selector::ShardKeySelector;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     default_exact_count, CoreSearchRequest, CoreSearchRequestBatch, OrderByInterface,
-    PointRequestInternal, QueryEnum, RecommendExample, Record, ScrollRequestInternal,
+    PointRequestInternal, RecommendExample, Record, ScrollRequestInternal,
 };
 use collection::operations::vector_ops::{DeleteVectors, PointVectors, UpdateVectors};
 use collection::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
@@ -582,7 +583,7 @@ pub async fn update_batch(
                 .await
             }
             points_update_operation::Operation::OverwritePayload(
-                points_update_operation::SetPayload {
+                points_update_operation::OverwritePayload {
                     payload,
                     points_selector,
                     shard_key_selector,

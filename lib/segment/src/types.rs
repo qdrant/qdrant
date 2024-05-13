@@ -18,6 +18,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
 use smol_str::SmolStr;
+use strum::EnumIter;
 use uuid::Uuid;
 use validator::{Validate, ValidationError, ValidationErrors};
 
@@ -30,7 +31,6 @@ use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseI
 use crate::json_path::{JsonPath, JsonPathInterface};
 use crate::spaces::metric::MetricPostProcessing;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
-use crate::types::MultiVectorConfig::MaxSim;
 use crate::vector_storage::simple_sparse_vector_storage::SPARSE_VECTOR_DISTANCE;
 
 pub type PayloadKeyType = JsonPath;
@@ -740,19 +740,19 @@ pub enum VectorStorageDatatype {
     Uint8,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone)]
-pub enum MultiVectorConfig {
-    MaxSim(MaxSimConfig),
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone, Hash)]
+#[serde(rename_all = "snake_case")]
+pub struct MultiVectorConfig {
+    /// How to compare multivector points
+    pub comparator: MultiVectorComparator,
 }
 
-impl Default for MultiVectorConfig {
-    fn default() -> Self {
-        MaxSim(MaxSimConfig::default())
-    }
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum MultiVectorComparator {
+    #[default]
+    MaxSim,
 }
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone)]
-pub struct MaxSimConfig {}
 
 impl VectorStorageType {
     /// Whether this storage type is a mmap on disk
@@ -780,7 +780,7 @@ pub struct VectorDataConfig {
     pub quantization_config: Option<QuantizationConfig>,
     /// Vector specific configuration to enable multiple vectors per point
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub multi_vec_config: Option<MultiVectorConfig>,
+    pub multivec_config: Option<MultiVectorConfig>,
     /// Vector specific configuration to set specific storage element type
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub datatype: Option<VectorStorageDatatype>,
@@ -1082,7 +1082,7 @@ pub enum JsonPayload {
 }
 
 /// All possible names of payload types
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq, EnumIter)]
 #[serde(rename_all = "snake_case")]
 pub enum PayloadSchemaType {
     Keyword,
@@ -1140,14 +1140,20 @@ impl TryFrom<PayloadIndexInfo> for PayloadFieldSchema {
     type Error = String;
 
     fn try_from(index_info: PayloadIndexInfo) -> Result<Self, Self::Error> {
-        match (index_info.data_type, index_info.params) {
-            (PayloadSchemaType::Text, Some(PayloadSchemaParams::Text(params))) => Ok(
+        let Some(params) = index_info.params else {
+            return Ok(PayloadFieldSchema::FieldType(index_info.data_type));
+        };
+
+        match (index_info.data_type, params) {
+            (PayloadSchemaType::Text, PayloadSchemaParams::Text(params)) => Ok(
                 PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(params)),
             ),
-            (data_type, Some(_)) => Err(format!(
-                "Payload field with type {data_type:?} has unexpected params"
-            )),
-            (data_type, None) => Ok(PayloadFieldSchema::FieldType(data_type)),
+            (PayloadSchemaType::Integer, PayloadSchemaParams::Integer(params)) => Ok(
+                PayloadFieldSchema::FieldParams(PayloadSchemaParams::Integer(params)),
+            ),
+            (data_type, PayloadSchemaParams::Integer(_) | PayloadSchemaParams::Text(_)) => Err(
+                format!("Payload field with type {data_type:?} has unexpected params"),
+            ),
         }
     }
 }
@@ -1501,10 +1507,16 @@ pub struct GeoBoundingBox {
 
 impl GeoBoundingBox {
     pub fn check_point(&self, point: &GeoPoint) -> bool {
-        (self.top_left.lon < point.lon)
-            && (point.lon < self.bottom_right.lon)
-            && (self.bottom_right.lat < point.lat)
-            && (point.lat < self.top_left.lat)
+        let longitude_check = if self.top_left.lon > self.bottom_right.lon {
+            // Handle antimeridian crossing
+            point.lon > self.top_left.lon || point.lon < self.bottom_right.lon
+        } else {
+            self.top_left.lon < point.lon && point.lon < self.bottom_right.lon
+        };
+
+        let latitude_check = self.bottom_right.lat < point.lat && point.lat < self.top_left.lat;
+
+        longitude_check && latitude_check
     }
 }
 
@@ -2365,6 +2377,35 @@ mod tests {
 
         // haversine distance between (0, 0) and (0.5, 0.5) is 235866.91169814655
         let outside_result = bounding_box.check_point(&GeoPoint { lon: 1.5, lat: 1.5 });
+        assert!(!outside_result);
+    }
+
+    #[test]
+    fn test_geo_boundingbox_antimeridian_check_point() {
+        // Use the bounding box for USA: (74.071028, 167), (18.7763, -66.885417)
+        let bounding_box = GeoBoundingBox {
+            top_left: GeoPoint {
+                lat: 74.071028,
+                lon: 167.0,
+            },
+            bottom_right: GeoPoint {
+                lat: 18.7763,
+                lon: -66.885417,
+            },
+        };
+
+        // Test NYC, which is inside the bounding box
+        let inside_result = bounding_box.check_point(&GeoPoint {
+            lat: 40.75798,
+            lon: -73.991516,
+        });
+        assert!(inside_result);
+
+        // Test Berlin, which is outside the bounding box
+        let outside_result = bounding_box.check_point(&GeoPoint {
+            lat: 52.52437,
+            lon: 13.41053,
+        });
         assert!(!outside_result);
     }
 

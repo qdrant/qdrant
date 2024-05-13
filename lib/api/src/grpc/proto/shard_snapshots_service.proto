@@ -46,6 +46,7 @@ message RecoverShardSnapshotRequest {
   ShardSnapshotLocation snapshot_location = 3; // Location of the shard snapshot
   ShardSnapshotPriority snapshot_priority = 4; // Priority of the shard snapshot
   optional string checksum = 5; // SHA256 checksum for verifying snapshot integrity
+  optional string api_key = 6; // Optional API key used when fetching the snapshot from a remote URL
 }
 
 message ShardSnapshotLocation {

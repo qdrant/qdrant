@@ -33,7 +33,7 @@ fn test_alias_operation() {
             .to_str()
             .unwrap()
             .to_string(),
-        s3_config: None,
+        snapshots_config: Default::default(),
         temp_path: None,
         on_disk_payload: false,
         optimizers: OptimizersConfig {
@@ -85,7 +85,7 @@ fn test_alias_operation() {
         update_runtime,
         general_runtime,
         CpuBudget::default(),
-        ChannelService::new(6333),
+        ChannelService::new(6333, None),
         0,
         Some(propose_operation_sender),
     ));

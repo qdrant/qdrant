@@ -34,7 +34,6 @@ pub type ShardsPlacement = Vec<ShardReplicasPlacement>;
 /// Shard
 ///
 /// Contains a part of the collection's points
-#[allow(clippy::large_enum_variant)]
 pub enum Shard {
     Local(LocalShard),
     Proxy(ProxyShard),

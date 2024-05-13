@@ -617,7 +617,7 @@ impl ShardReplicaSet {
         }
 
         for (peer_id, state) in replicas {
-            let peer_already_exists = old_peers.get(&peer_id).is_some();
+            let peer_already_exists = old_peers.contains_key(&peer_id);
 
             if peer_already_exists {
                 // do nothing
@@ -848,8 +848,8 @@ impl ShardReplicaSet {
         local_shard.update_cutoff(cutoff).await
     }
 
-    pub(crate) fn get_snapshots_storage_manager(&self) -> SnapshotStorageManager {
-        SnapshotStorageManager::new(self.shared_storage_config.s3_config.clone())
+    pub(crate) fn get_snapshots_storage_manager(&self) -> CollectionResult<SnapshotStorageManager> {
+        SnapshotStorageManager::new(self.shared_storage_config.snapshots_config.clone())
     }
 }
 

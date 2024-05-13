@@ -5,7 +5,6 @@ use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 
 use crate::common::mmap_type::MmapSlice;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::data_types::primitive::PrimitiveVectorElement;
 
 const MMAP_CHUNKS_PATTERN_START: &str = "chunk_";
 const MMAP_CHUNKS_PATTERN_END: &str = ".mmap";
@@ -22,9 +21,7 @@ fn check_mmap_file_name_pattern(file_name: &str) -> Option<usize> {
         .and_then(|file_name| file_name.parse::<usize>().ok())
 }
 
-pub fn read_mmaps<T: PrimitiveVectorElement>(
-    directory: &Path,
-) -> OperationResult<Vec<MmapChunk<T>>> {
+pub fn read_mmaps<T: Sized>(directory: &Path) -> OperationResult<Vec<MmapChunk<T>>> {
     let mut mmap_files: HashMap<usize, _> = HashMap::new();
     for entry in directory.read_dir()? {
         let entry = entry?;
@@ -63,7 +60,7 @@ pub fn chunk_name(directory: &Path, chunk_id: usize) -> PathBuf {
     ))
 }
 
-pub fn create_chunk<T: PrimitiveVectorElement>(
+pub fn create_chunk<T: Sized>(
     directory: &Path,
     chunk_id: usize,
     chunk_length_bytes: usize,

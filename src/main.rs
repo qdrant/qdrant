@@ -5,6 +5,7 @@ mod actix;
 mod common;
 mod consensus;
 mod greeting;
+mod issues_setup;
 mod migrations;
 mod settings;
 mod snapshots;
@@ -222,7 +223,8 @@ fn main() -> anyhow::Result<()> {
 
     // Channel service is used to manage connections between peers.
     // It allocates required number of channels and manages proper reconnection handling
-    let mut channel_service = ChannelService::new(settings.service.http_port);
+    let mut channel_service =
+        ChannelService::new(settings.service.http_port, settings.service.api_key.clone());
 
     if is_distributed_deployment {
         // We only need channel_service in case if cluster is enabled.
@@ -392,6 +394,9 @@ fn main() -> anyhow::Result<()> {
     } else {
         log::info!("Telemetry reporting disabled");
     }
+
+    // Setup subscribers to listen for issue-able events
+    issues_setup::setup_subscribers(&settings);
 
     // Helper to better log start errors
     let log_err_if_any = |server_name, result| match result {

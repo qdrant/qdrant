@@ -39,6 +39,9 @@ pub struct ServiceConfig {
     /// This includes the Web-UI. True by default.
     #[serde(default)]
     pub enable_static_content: Option<bool>,
+
+    /// How much time is considered too long for a query to execute.
+    pub slow_query_secs: Option<f32>,
 }
 
 #[derive(Debug, Deserialize, Clone, Default, Validate)]

@@ -13,6 +13,7 @@ use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::hnsw::HNSWIndex;
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::VectorIndex;
+use segment::json_path::path;
 use segment::segment_constructor::build_segment;
 use segment::types::{
     Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload, PayloadSchemaType,
@@ -20,8 +21,6 @@ use segment::types::{
 };
 use serde_json::json;
 use tempfile::Builder;
-
-use crate::utils::path;
 
 #[test]
 fn test_batch_and_single_request_equivalency() {
@@ -43,7 +42,7 @@ fn test_batch_and_single_request_equivalency() {
                 storage_type: VectorStorageType::Memory,
                 index: Indexes::Plain {},
                 quantization_config: None,
-                multi_vec_config: None,
+                multivec_config: None,
                 datatype: None,
             },
         )]),
@@ -118,8 +117,7 @@ fn test_batch_and_single_request_equivalency() {
                 Some(&filter),
                 10,
                 None,
-                &false.into(),
-                10_000,
+                Default::default(),
             )
             .unwrap();
 
@@ -180,8 +178,7 @@ fn test_batch_and_single_request_equivalency() {
                 Some(&filter),
                 10,
                 None,
-                &false.into(),
-                usize::MAX,
+                &Default::default(),
             )
             .unwrap();
 
@@ -191,8 +188,7 @@ fn test_batch_and_single_request_equivalency() {
                 Some(&filter),
                 10,
                 None,
-                &false.into(),
-                usize::MAX,
+                &Default::default(),
             )
             .unwrap();
 
@@ -202,8 +198,7 @@ fn test_batch_and_single_request_equivalency() {
                 Some(&filter),
                 10,
                 None,
-                &false.into(),
-                usize::MAX,
+                &Default::default(),
             )
             .unwrap();
 

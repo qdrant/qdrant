@@ -282,7 +282,7 @@ impl Collection {
                             return Ok(records);
                         }
                         for point in &mut records {
-                            point.shard_key = shard_key.clone();
+                            point.shard_key.clone_from(&shard_key);
                         }
                         Ok(records)
                     })
@@ -405,7 +405,7 @@ impl Collection {
                             return Ok(records);
                         }
                         for point in &mut records {
-                            point.shard_key = shard_key.clone();
+                            point.shard_key.clone_from(&shard_key);
                         }
                         Ok(records)
                     })

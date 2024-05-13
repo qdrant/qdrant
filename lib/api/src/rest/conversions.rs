@@ -6,9 +6,8 @@ impl From<segment::data_types::vectors::Vector> for Vector {
         match value {
             segment::data_types::vectors::Vector::Dense(vector) => Vector::Dense(vector),
             segment::data_types::vectors::Vector::Sparse(vector) => Vector::Sparse(vector),
-            segment::data_types::vectors::Vector::MultiDense(_vector) => {
-                // TODO(colbert)
-                unimplemented!()
+            segment::data_types::vectors::Vector::MultiDense(vector) => {
+                Vector::MultiDense(vector.into_multi_vectors())
             }
         }
     }
@@ -19,6 +18,13 @@ impl From<Vector> for segment::data_types::vectors::Vector {
         match value {
             Vector::Dense(vector) => segment::data_types::vectors::Vector::Dense(vector),
             Vector::Sparse(vector) => segment::data_types::vectors::Vector::Sparse(vector),
+            Vector::MultiDense(vector) => {
+                // the REST vectors have been validated already
+                // we can use an internal constructor
+                segment::data_types::vectors::Vector::MultiDense(
+                    segment::data_types::vectors::MultiDenseVector::new_unchecked(vector),
+                )
+            }
         }
     }
 }

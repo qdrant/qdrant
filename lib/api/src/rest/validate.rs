@@ -28,6 +28,7 @@ impl Validate for Vector {
         match self {
             Vector::Dense(_) => Ok(()),
             Vector::Sparse(v) => v.validate(),
+            Vector::MultiDense(m) => common::validation::validate_multi_vector(m),
         }
     }
 }

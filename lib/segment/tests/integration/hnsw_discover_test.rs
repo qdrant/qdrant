@@ -13,6 +13,7 @@ use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::hnsw::HNSWIndex;
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::{PayloadIndex, VectorIndex};
+use segment::json_path::path;
 use segment::segment_constructor::build_segment;
 use segment::types::{
     Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload, PayloadSchemaType,
@@ -22,8 +23,6 @@ use segment::vector_storage::query::context_query::ContextPair;
 use segment::vector_storage::query::discovery_query::DiscoveryQuery;
 use serde_json::json;
 use tempfile::Builder;
-
-use crate::utils::path;
 
 const MAX_EXAMPLE_PAIRS: usize = 3;
 
@@ -77,7 +76,7 @@ fn hnsw_discover_precision() {
                 storage_type: VectorStorageType::Memory,
                 index: Indexes::Plain {},
                 quantization_config: None,
-                multi_vec_config: None,
+                multivec_config: None,
                 datatype: None,
             },
         )]),
@@ -139,15 +138,14 @@ fn hnsw_discover_precision() {
                     hnsw_ef: Some(ef),
                     ..Default::default()
                 }),
-                &false.into(),
-                usize::MAX,
+                &Default::default(),
             )
             .unwrap();
 
         let plain_discovery_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(&[&query], None, top, None, &false.into(), usize::MAX)
+            .search(&[&query], None, top, None, &Default::default())
             .unwrap();
 
         if plain_discovery_result == index_discovery_result {
@@ -190,7 +188,7 @@ fn filtered_hnsw_discover_precision() {
                 storage_type: VectorStorageType::Memory,
                 index: Indexes::Plain {},
                 quantization_config: None,
-                multi_vec_config: None,
+                multivec_config: None,
                 datatype: None,
             },
         )]),
@@ -271,22 +269,14 @@ fn filtered_hnsw_discover_precision() {
                     hnsw_ef: Some(ef),
                     ..Default::default()
                 }),
-                &false.into(),
-                usize::MAX,
+                &Default::default(),
             )
             .unwrap();
 
         let plain_discovery_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(
-                &[&query],
-                filter_query,
-                top,
-                None,
-                &false.into(),
-                usize::MAX,
-            )
+            .search(&[&query], filter_query, top, None, &Default::default())
             .unwrap();
 
         if plain_discovery_result == index_discovery_result {

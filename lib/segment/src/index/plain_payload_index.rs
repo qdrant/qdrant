@@ -15,6 +15,7 @@ use crate::common::operation_time_statistics::{
     OperationDurationStatistics, OperationDurationsAggregator, ScopeDurationMeasurer,
 };
 use crate::common::{Flusher, BYTES_IN_KB};
+use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorRef};
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
@@ -254,15 +255,19 @@ impl VectorIndex for PlainIndex {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
-        is_stopped: &AtomicBool,
-        search_optimized_threshold_kb: usize,
+        query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         let is_indexed_only = params.map(|p| p.indexed_only).unwrap_or(false);
         if is_indexed_only
-            && !self.is_small_enough_for_unindexed_search(search_optimized_threshold_kb, filter)
+            && !self.is_small_enough_for_unindexed_search(
+                query_context.search_optimized_threshold_kb(),
+                filter,
+            )
         {
             return Ok(vec![vec![]; vectors.len()]);
         }
+
+        let is_stopped = query_context.is_stopped();
 
         match filter {
             Some(filter) => {
@@ -271,14 +276,17 @@ impl VectorIndex for PlainIndex {
                 let payload_index = self.payload_index.borrow();
                 let vector_storage = self.vector_storage.borrow();
                 let filtered_ids_vec = payload_index.query_points(filter);
+                let deleted_points = query_context
+                    .deleted_points()
+                    .unwrap_or(id_tracker.deleted_point_bitslice());
                 vectors
                     .iter()
                     .map(|&vector| {
                         new_stoppable_raw_scorer(
                             vector.to_owned(),
                             &vector_storage,
-                            id_tracker.deleted_point_bitslice(),
-                            is_stopped,
+                            deleted_points,
+                            &is_stopped,
                         )
                         .map(|scorer| {
                             scorer.peek_top_iter(&mut filtered_ids_vec.iter().copied(), top)
@@ -290,14 +298,17 @@ impl VectorIndex for PlainIndex {
                 let _timer = ScopeDurationMeasurer::new(&self.unfiltered_searches_telemetry);
                 let vector_storage = self.vector_storage.borrow();
                 let id_tracker = self.id_tracker.borrow();
+                let deleted_points = query_context
+                    .deleted_points()
+                    .unwrap_or(id_tracker.deleted_point_bitslice());
                 vectors
                     .iter()
                     .map(|&vector| {
                         new_stoppable_raw_scorer(
                             vector.to_owned(),
                             &vector_storage,
-                            id_tracker.deleted_point_bitslice(),
-                            is_stopped,
+                            deleted_points,
+                            &is_stopped,
                         )
                         .map(|scorer| scorer.peek_top_all(top))
                     })
@@ -306,10 +317,11 @@ impl VectorIndex for PlainIndex {
         }
     }
 
-    fn build_index(
+    fn build_index_with_progress(
         &mut self,
         _permit: Arc<CpuPermit>,
         _stopped: &AtomicBool,
+        _tick_progress: impl FnMut(),
     ) -> OperationResult<()> {
         Ok(())
     }

@@ -10,10 +10,11 @@ use rand::distributions::Uniform;
 use rand::rngs::ThreadRng;
 use rand::Rng;
 use segment::data_types::vectors::DenseVector;
+use segment::json_path::path;
 use segment::types::{Filter, Payload, WithPayloadInterface, WithVector};
 use serde_json::json;
 
-use crate::common::{path, simple_collection_fixture};
+use crate::common::simple_collection_fixture;
 
 fn rand_dense_vector(rng: &mut ThreadRng, size: usize) -> DenseVector {
     rng.sample_iter(Uniform::new(0.4, 0.6)).take(size).collect()

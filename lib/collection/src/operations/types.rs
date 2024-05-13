@@ -19,17 +19,14 @@ use segment::common::operation_error::OperationError;
 use segment::data_types::groups::GroupId;
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{
-    DenseVector, Named, NamedQuery, NamedVectorStruct, QueryVector, Vector, VectorRef,
-    VectorStruct, DEFAULT_VECTOR_NAME,
+    DenseVector, QueryVector, VectorRef, VectorStruct, DEFAULT_VECTOR_NAME,
 };
 use segment::json_path::{JsonPath, JsonPathInterface};
 use segment::types::{
-    Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, QuantizationConfig,
-    SearchParams, SeqNumberType, ShardKey, VectorStorageDatatype, WithPayloadInterface, WithVector,
+    Distance, Filter, MultiVectorConfig, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType,
+    QuantizationConfig, SearchParams, SeqNumberType, ShardKey, VectorStorageDatatype,
+    WithPayloadInterface, WithVector,
 };
-use segment::vector_storage::query::context_query::ContextQuery;
-use segment::vector_storage::query::discovery_query::DiscoveryQuery;
-use segment::vector_storage::query::reco_query::RecoQuery;
 use semver::Version;
 use serde;
 use serde::{Deserialize, Serialize};
@@ -47,6 +44,7 @@ use super::ClockTag;
 use crate::config::{CollectionConfig, CollectionParams};
 use crate::lookup::types::WithLookupInterface;
 use crate::operations::config_diff::{HnswConfigDiff, QuantizationConfigDiff};
+use crate::operations::query_enum::QueryEnum;
 use crate::operations::shard_key_selector::ShardKeySelector;
 use crate::save_on_disk;
 use crate::shards::replica_set::ReplicaState;
@@ -413,43 +411,6 @@ pub struct SearchRequestInternal {
 pub struct SearchRequestBatch {
     #[validate]
     pub searches: Vec<SearchRequest>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum QueryEnum {
-    Nearest(NamedVectorStruct),
-    RecommendBestScore(NamedQuery<RecoQuery<Vector>>),
-    Discover(NamedQuery<DiscoveryQuery<Vector>>),
-    Context(NamedQuery<ContextQuery<Vector>>),
-}
-
-impl QueryEnum {
-    pub fn get_vector_name(&self) -> &str {
-        match self {
-            QueryEnum::Nearest(vector) => vector.get_name(),
-            QueryEnum::RecommendBestScore(reco_query) => reco_query.get_name(),
-            QueryEnum::Discover(discovery_query) => discovery_query.get_name(),
-            QueryEnum::Context(context_query) => context_query.get_name(),
-        }
-    }
-}
-
-impl From<DenseVector> for QueryEnum {
-    fn from(vector: DenseVector) -> Self {
-        QueryEnum::Nearest(NamedVectorStruct::Default(vector))
-    }
-}
-
-impl From<NamedQuery<DiscoveryQuery<Vector>>> for QueryEnum {
-    fn from(query: NamedQuery<DiscoveryQuery<Vector>>) -> Self {
-        QueryEnum::Discover(query)
-    }
-}
-
-impl AsRef<QueryEnum> for QueryEnum {
-    fn as_ref(&self) -> &QueryEnum {
-        self
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -942,6 +903,8 @@ pub enum CollectionError {
     Timeout { description: String },
     #[error("Precondition failed: {description}")]
     PreConditionFailed { description: String },
+    #[error("Object Store error: {what}")]
+    ObjectStoreError { what: String },
 }
 
 impl CollectionError {
@@ -975,6 +938,10 @@ impl CollectionError {
 
     pub fn bad_shard_selection(description: String) -> CollectionError {
         CollectionError::BadShardSelection { description }
+    }
+
+    pub fn object_storage_error(what: impl Into<String>) -> CollectionError {
+        CollectionError::ObjectStoreError { what: what.into() }
     }
 
     pub fn forward_proxy_error(peer_id: PeerId, error: impl Into<Self>) -> Self {
@@ -1026,6 +993,7 @@ impl CollectionError {
             Self::BadShardSelection { .. } => false,
             Self::InconsistentShardFailure { .. } => false,
             Self::ForwardProxyError { .. } => false,
+            Self::ObjectStoreError { .. } => false,
         }
     }
 }
@@ -1344,6 +1312,9 @@ pub struct VectorParams {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub datatype: Option<Datatype>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub multivec_config: Option<MultiVectorConfig>,
 }
 
 /// Validate the value is in `[1, 65536]` or `None`.
@@ -1367,6 +1338,17 @@ impl Anonymize for VectorParams {
     }
 }
 
+/// If used, include weight modification, which will be applied to sparse vectors at query time:
+/// None - no modification (default)
+/// Idf - inverse document frequency, based on statistics of the collection
+#[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Modifier {
+    #[default]
+    None,
+    Idf,
+}
+
 /// Params of single sparse vector data storage
 #[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -1374,12 +1356,18 @@ pub struct SparseVectorParams {
     /// Custom params for index. If none - values from collection configuration are used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub index: Option<SparseIndexParams>,
+
+    /// Configures addition value modifications for sparse vectors.
+    /// Default: none
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modifier: Option<Modifier>,
 }
 
 impl Anonymize for SparseVectorParams {
     fn anonymize(&self) -> Self {
         Self {
             index: self.index.anonymize(),
+            modifier: self.modifier.clone(),
         }
     }
 }

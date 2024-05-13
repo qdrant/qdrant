@@ -1,11 +1,13 @@
 use std::borrow::Cow;
+use std::hash::Hash;
 
+use common::types::ScoreType;
 use itertools::Itertools;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use validator::{Validate, ValidationError, ValidationErrors};
 
-use crate::common::types::{DimId, DimWeight};
+use crate::common::types::{DimId, DimOffset, DimWeight};
 
 /// Sparse vector structure
 #[derive(Debug, PartialEq, Clone, Default, Serialize, Deserialize, JsonSchema)]
@@ -15,6 +17,95 @@ pub struct SparseVector {
     pub indices: Vec<DimId>,
     /// values and indices must be the same length
     pub values: Vec<DimWeight>,
+}
+
+/// Same as `SparseVector` but with `DimOffset` indices.
+/// Meaning that is uses internal segment-specific indices.
+#[derive(Debug, PartialEq, Clone, Default, Serialize, Deserialize)]
+pub struct RemappedSparseVector {
+    /// indices must be unique
+    pub indices: Vec<DimOffset>,
+    /// values and indices must be the same length
+    pub values: Vec<DimWeight>,
+}
+
+/// Sort two arrays by the first array.
+fn double_sort<T: Ord + Copy, V: Copy>(indices: &mut [T], values: &mut [V]) {
+    // Check if the indices are already sorted
+    if indices.windows(2).all(|w| w[0] < w[1]) {
+        return;
+    }
+
+    let mut indexed_values: Vec<(T, V)> = indices
+        .iter()
+        .zip(values.iter())
+        .map(|(&i, &v)| (i, v))
+        .collect();
+
+    // Sort the vector of tuples by indices
+    indexed_values.sort_unstable_by_key(|&(i, _)| i);
+
+    for (i, (index, value)) in indexed_values.into_iter().enumerate() {
+        indices[i] = index;
+        values[i] = value;
+    }
+}
+
+fn score_vectors<T: Ord + Eq>(
+    self_indices: &[T],
+    self_values: &[DimWeight],
+    other_indices: &[T],
+    other_values: &[DimWeight],
+) -> Option<ScoreType> {
+    let mut score = 0.0;
+    // track whether there is any overlap
+    let mut overlap = false;
+    let mut i = 0;
+    let mut j = 0;
+    while i < self_indices.len() && j < other_indices.len() {
+        match self_indices[i].cmp(&other_indices[j]) {
+            std::cmp::Ordering::Less => i += 1,
+            std::cmp::Ordering::Greater => j += 1,
+            std::cmp::Ordering::Equal => {
+                overlap = true;
+                score += self_values[i] * other_values[j];
+                i += 1;
+                j += 1;
+            }
+        }
+    }
+    if overlap {
+        Some(score)
+    } else {
+        None
+    }
+}
+
+impl RemappedSparseVector {
+    pub fn new(indices: Vec<DimId>, values: Vec<DimWeight>) -> Result<Self, ValidationErrors> {
+        let vector = Self { indices, values };
+        vector.validate()?;
+        Ok(vector)
+    }
+
+    pub fn sort_by_indices(&mut self) {
+        double_sort(&mut self.indices, &mut self.values);
+    }
+
+    /// Check if this vector is sorted by indices.
+    pub fn is_sorted(&self) -> bool {
+        self.indices.windows(2).all(|w| w[0] < w[1])
+    }
+
+    /// Score this vector against another vector using dot product.
+    /// Warning: Expects both vectors to be sorted by indices.
+    ///
+    /// Return None if the vectors do not overlap.
+    pub fn score(&self, other: &RemappedSparseVector) -> Option<ScoreType> {
+        debug_assert!(self.is_sorted());
+        debug_assert!(other.is_sorted());
+        score_vectors(&self.indices, &self.values, &other.indices, &other.values)
+    }
 }
 
 impl SparseVector {
@@ -28,23 +119,7 @@ impl SparseVector {
     ///
     /// Sorting is required for scoring and overlap checks.
     pub fn sort_by_indices(&mut self) {
-        // do not sort if already sorted
-        if self.is_sorted() {
-            return;
-        }
-
-        let mut indexed_values: Vec<(u32, f32)> = self
-            .indices
-            .iter()
-            .zip(self.values.iter())
-            .map(|(&i, &v)| (i, v))
-            .collect();
-
-        // Sort the vector of tuples by indices
-        indexed_values.sort_by_key(|&(i, _)| i);
-
-        self.indices = indexed_values.iter().map(|&(i, _)| i).collect();
-        self.values = indexed_values.iter().map(|&(_, v)| v).collect();
+        double_sort(&mut self.indices, &mut self.values);
     }
 
     /// Check if this vector is sorted by indices.
@@ -61,31 +136,10 @@ impl SparseVector {
     /// Warning: Expects both vectors to be sorted by indices.
     ///
     /// Return None if the vectors do not overlap.
-    pub fn score(&self, other: &SparseVector) -> Option<f32> {
+    pub fn score(&self, other: &SparseVector) -> Option<ScoreType> {
         debug_assert!(self.is_sorted());
         debug_assert!(other.is_sorted());
-        let mut score = 0.0;
-        // track whether there is any overlap
-        let mut overlap = false;
-        let mut i = 0;
-        let mut j = 0;
-        while i < self.indices.len() && j < other.indices.len() {
-            match self.indices[i].cmp(&other.indices[j]) {
-                std::cmp::Ordering::Less => i += 1,
-                std::cmp::Ordering::Greater => j += 1,
-                std::cmp::Ordering::Equal => {
-                    overlap = true;
-                    score += self.values[i] * other.values[j];
-                    i += 1;
-                    j += 1;
-                }
-            }
-        }
-        if overlap {
-            Some(score)
-        } else {
-            None
-        }
+        score_vectors(&self.indices, &self.values, &other.indices, &other.values)
     }
 
     /// Construct a new vector that is the result of performing all indices-wise operations.
@@ -153,18 +207,31 @@ impl SparseVector {
         debug_assert!(result.validate().is_ok());
         result
     }
+
+    /// Create [RemappedSparseVector] from this vector in a naive way. Only suitable for testing.
+    #[cfg(feature = "testing")]
+    pub fn into_remapped(self) -> RemappedSparseVector {
+        RemappedSparseVector {
+            indices: self.indices,
+            values: self.values,
+        }
+    }
+}
+
+impl TryFrom<Vec<(u32, f32)>> for RemappedSparseVector {
+    type Error = ValidationErrors;
+
+    fn try_from(tuples: Vec<(u32, f32)>) -> Result<Self, Self::Error> {
+        let (indices, values): (Vec<_>, Vec<_>) = tuples.into_iter().unzip();
+        RemappedSparseVector::new(indices, values)
+    }
 }
 
 impl TryFrom<Vec<(u32, f32)>> for SparseVector {
     type Error = ValidationErrors;
 
     fn try_from(tuples: Vec<(u32, f32)>) -> Result<Self, Self::Error> {
-        let mut indices = Vec::with_capacity(tuples.len());
-        let mut values = Vec::with_capacity(tuples.len());
-        for (i, w) in tuples {
-            indices.push(i);
-            values.push(w);
-        }
+        let (indices, values): (Vec<_>, Vec<_>) = tuples.into_iter().unzip();
         SparseVector::new(indices, values)
     }
 }
@@ -176,14 +243,27 @@ impl<const N: usize> From<[(u32, f32); N]> for SparseVector {
     }
 }
 
+#[cfg(test)]
+impl<const N: usize> From<[(u32, f32); N]> for RemappedSparseVector {
+    fn from(value: [(u32, f32); N]) -> Self {
+        value.to_vec().try_into().unwrap()
+    }
+}
+
 impl Validate for SparseVector {
     fn validate(&self) -> Result<(), ValidationErrors> {
         validate_sparse_vector_impl(&self.indices, &self.values)
     }
 }
 
-pub fn validate_sparse_vector_impl(
-    indices: &[DimId],
+impl Validate for RemappedSparseVector {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        validate_sparse_vector_impl(&self.indices, &self.values)
+    }
+}
+
+pub fn validate_sparse_vector_impl<T: Clone + Eq + Hash>(
+    indices: &[T],
     values: &[DimWeight],
 ) -> Result<(), ValidationErrors> {
     let mut errors = ValidationErrors::default();
@@ -211,36 +291,36 @@ mod tests {
 
     #[test]
     fn test_score_aligned_same_size() {
-        let v1 = SparseVector::new(vec![1, 2, 3], vec![1.0, 2.0, 3.0]).unwrap();
-        let v2 = SparseVector::new(vec![1, 2, 3], vec![1.0, 2.0, 3.0]).unwrap();
+        let v1 = RemappedSparseVector::new(vec![1, 2, 3], vec![1.0, 2.0, 3.0]).unwrap();
+        let v2 = RemappedSparseVector::new(vec![1, 2, 3], vec![1.0, 2.0, 3.0]).unwrap();
         assert_eq!(v1.score(&v2), Some(14.0));
     }
 
     #[test]
     fn test_score_not_aligned_same_size() {
-        let v1 = SparseVector::new(vec![1, 2, 3], vec![1.0, 2.0, 3.0]).unwrap();
-        let v2 = SparseVector::new(vec![2, 3, 4], vec![2.0, 3.0, 4.0]).unwrap();
+        let v1 = RemappedSparseVector::new(vec![1, 2, 3], vec![1.0, 2.0, 3.0]).unwrap();
+        let v2 = RemappedSparseVector::new(vec![2, 3, 4], vec![2.0, 3.0, 4.0]).unwrap();
         assert_eq!(v1.score(&v2), Some(13.0));
     }
 
     #[test]
     fn test_score_aligned_different_size() {
-        let v1 = SparseVector::new(vec![1, 2, 3], vec![1.0, 2.0, 3.0]).unwrap();
-        let v2 = SparseVector::new(vec![1, 2, 3, 4], vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+        let v1 = RemappedSparseVector::new(vec![1, 2, 3], vec![1.0, 2.0, 3.0]).unwrap();
+        let v2 = RemappedSparseVector::new(vec![1, 2, 3, 4], vec![1.0, 2.0, 3.0, 4.0]).unwrap();
         assert_eq!(v1.score(&v2), Some(14.0));
     }
 
     #[test]
     fn test_score_not_aligned_different_size() {
-        let v1 = SparseVector::new(vec![1, 2, 3], vec![1.0, 2.0, 3.0]).unwrap();
-        let v2 = SparseVector::new(vec![2, 3, 4, 5], vec![2.0, 3.0, 4.0, 5.0]).unwrap();
+        let v1 = RemappedSparseVector::new(vec![1, 2, 3], vec![1.0, 2.0, 3.0]).unwrap();
+        let v2 = RemappedSparseVector::new(vec![2, 3, 4, 5], vec![2.0, 3.0, 4.0, 5.0]).unwrap();
         assert_eq!(v1.score(&v2), Some(13.0));
     }
 
     #[test]
     fn test_score_no_overlap() {
-        let v1 = SparseVector::new(vec![1, 2, 3], vec![1.0, 2.0, 3.0]).unwrap();
-        let v2 = SparseVector::new(vec![4, 5, 6], vec![2.0, 3.0, 4.0]).unwrap();
+        let v1 = RemappedSparseVector::new(vec![1, 2, 3], vec![1.0, 2.0, 3.0]).unwrap();
+        let v2 = RemappedSparseVector::new(vec![4, 5, 6], vec![2.0, 3.0, 4.0]).unwrap();
         assert!(v1.score(&v2).is_none());
     }
 

@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use wal::{Wal, WalOptions};
 
-#[allow(clippy::enum_variant_names)]
 #[derive(Error, Debug)]
 #[error("{0}")]
 pub enum WalError {
