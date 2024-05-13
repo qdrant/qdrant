@@ -142,7 +142,11 @@ fn main() -> anyhow::Result<()> {
 
     let reporting_id = TelemetryCollector::generate_id();
 
-    tracing::setup(&settings.log_level)?;
+    let logger_handle = tracing::setup(
+        settings
+            .logger
+            .with_top_level_directive(settings.log_level.clone()),
+    )?;
 
     setup_panic_hook(reporting_enabled, reporting_id.to_string());
 
@@ -425,6 +429,7 @@ fn main() -> anyhow::Result<()> {
                         telemetry_collector,
                         health_checker,
                         settings,
+                        logger_handle,
                     ),
                 )
             })
