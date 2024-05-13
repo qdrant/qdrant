@@ -1,6 +1,9 @@
 pub mod clock_map;
 pub mod disk_usage_watcher;
-mod shard_ops;
+pub(super) mod query;
+pub(super) mod scroll;
+pub(super) mod search;
+pub(super) mod shard_ops;
 
 use std::collections::{BTreeSet, HashMap};
 use std::mem::size_of;
