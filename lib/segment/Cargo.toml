@@ -14,6 +14,9 @@ multiling-japanese = ["charabia/japanese"]
 multiling-korean = ["charabia/korean"]
 testing = []
 
+[build-dependencies]
+cc = "1.0"
+
 [dev-dependencies]
 common = { path = "../common/common", features = ["testing"] }
 criterion = "0.5"
@@ -87,6 +90,7 @@ tracing = { workspace = true, optional = true }
 macro_rules_attribute = "0.2.0"
 generic-tests = "0.1.2"
 nom = "7.1.3"
+half = { version = "2.4.1", features = ["alloc", "serde", "num-traits"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 cgroups-rs = "0.3"
