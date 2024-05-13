@@ -115,7 +115,11 @@ impl TryFrom<Vector> for MultiDenseVector {
 
     fn try_from(value: Vector) -> Result<Self, Self::Error> {
         match value {
-            Vector::Dense(v) => Ok(MultiDenseVector::new(v, 1)), // expand single dense vector
+            Vector::Dense(v) => {
+                // expand single dense vector into multivector with a single vector
+                let len = v.len();
+                Ok(MultiDenseVector::new(v, len))
+            },
             Vector::Sparse(_) => Err(OperationError::WrongSparse),
             Vector::MultiDense(v) => Ok(v),
         }
