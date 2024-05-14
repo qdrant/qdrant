@@ -75,10 +75,17 @@ impl ShardHashRing {
         }
     }
 
-    pub fn get<U: Hash>(&self, key: &U) -> Option<&ShardId> {
+    pub fn get<U: Hash>(&self, key: &U) -> Vec<ShardId> {
         match self {
-            Self::Single(ring) => ring.get(key),
-            Self::Resharding { old, new: _ } => old.get(key),
+            Self::Single(ring) => ring.get(key).into_iter().cloned().collect(),
+            Self::Resharding { old, new } => old
+                .get(key)
+                .into_iter()
+                .chain(new.get(key))
+                // Both hash rings may return the same shard ID, take it once
+                .dedup()
+                .cloned()
+                .collect(),
         }
     }
 }

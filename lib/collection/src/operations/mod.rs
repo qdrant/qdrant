@@ -208,14 +208,25 @@ impl Validate for CollectionUpdateOperations {
     }
 }
 
-fn point_to_shard(point_id: ExtendedPointId, ring: &ShardHashRing) -> ShardId {
-    *ring
-        .get(&point_id)
-        .expect("Hash ring is guaranteed to be non-empty")
+/// Get the shards for a point ID
+///
+/// Normally returns a single shard ID. Might return multiple if resharding is currently in
+/// progress.
+///
+/// # Panics
+///
+/// Panics if the hash ring is empty and there is no shard for the given point ID.
+fn point_to_shards(point_id: &ExtendedPointId, ring: &ShardHashRing) -> Vec<ShardId> {
+    let shard_ids = ring.get(point_id);
+    assert!(
+        !shard_ids.is_empty(),
+        "Hash ring is guaranteed to be non-empty",
+    );
+    shard_ids
 }
 
 /// Split iterator of items that have point ids by shard
-fn split_iter_by_shard<I, F, O>(
+fn split_iter_by_shard<I, F, O: Clone>(
     iter: I,
     id_extractor: F,
     ring: &ShardHashRing,
@@ -226,8 +237,12 @@ where
 {
     let mut op_vec_by_shard: HashMap<ShardId, Vec<O>> = HashMap::new();
     for operation in iter {
-        let shard_id = point_to_shard(id_extractor(&operation), ring);
-        op_vec_by_shard.entry(shard_id).or_default().push(operation);
+        for shard_id in point_to_shards(&id_extractor(&operation), ring) {
+            op_vec_by_shard
+                .entry(shard_id)
+                .or_default()
+                .push(operation.clone());
+        }
     }
     OperationToShard::by_shard(op_vec_by_shard)
 }

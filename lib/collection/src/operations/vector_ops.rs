@@ -8,7 +8,7 @@ use strum::{EnumDiscriminants, EnumIter};
 use validator::{Validate, ValidationError, ValidationErrors};
 
 use super::point_ops::PointIdsList;
-use super::{point_to_shard, split_iter_by_shard, OperationToShard, SplitByShard};
+use super::{point_to_shards, split_iter_by_shard, OperationToShard, SplitByShard};
 use crate::operations::shard_key_selector::ShardKeySelector;
 use crate::shards::shard_holder::ShardHashRing;
 
@@ -113,9 +113,10 @@ impl SplitByShard for VectorOperations {
                 let shard_points = update_vectors
                     .points
                     .into_iter()
-                    .map(|point| {
-                        let shard_id = point_to_shard(point.id, ring);
-                        (shard_id, point)
+                    .flat_map(|point| {
+                        point_to_shards(&point.id, ring)
+                            .into_iter()
+                            .map(move |shard_id| (shard_id, point.clone()))
                     })
                     .fold(
                         HashMap::new(),
