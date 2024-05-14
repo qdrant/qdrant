@@ -198,10 +198,48 @@ message CountPointsInternal {
   optional uint32 shard_id = 2;
 }
 
+// A bare vector. No id reference here.
+message RawVector {
+  oneof variant {
+    DenseVector dense = 1;
+    SparseVector sparse = 2;
+    MultiDenseVector multi = 3;
+  }
+}
+
+// Query variants for raw vectors (ids have been substituted with vectors)
+message RawQuery {
+  message Recommend {
+    repeated RawVector positives = 1;
+    repeated RawVector negatives = 2;
+  }
+
+  message RawContextPair {
+    RawVector positive = 1;
+    RawVector negative = 2;
+  }
+
+  message Discovery {
+    RawVector target = 1;
+    repeated RawContextPair context = 2;
+  }
+
+  message Context {
+    repeated RawContextPair context = 1;
+  }
+
+  oneof variant {
+    RawVector nearest = 1; // ANN
+    Recommend recommend_best_score = 2; // Recommend points with highest similarity to positive examples, or lowest to negative examples
+    Discovery discover = 3; // Search for points that get closer to a target, constrained by a context of positive and negative pairs
+    Context context = 4; // Use only the context to find points that minimize loss against negative examples
+  }
+}
+
 message QueryShardPoints {
   message Query {
     oneof score {
-      QueryEnum vector = 1;
+      RawQuery vector = 1;
       // TODO(universal-query): Add fusion and order-by
     }
   }

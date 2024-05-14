@@ -3719,6 +3719,7 @@ pub struct SparseIndices {
     #[prost(uint32, repeated, tag = "1")]
     pub data: ::prost::alloc::vec::Vec<u32>,
 }
+/// Legacy vector format, which determines the vector type by the configuration of its fields.
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -3732,6 +3733,53 @@ pub struct Vector {
     /// Number of vectors per multi vector
     #[prost(uint32, optional, tag = "3")]
     pub vectors_count: ::core::option::Option<u32>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DenseVector {
+    #[prost(float, repeated, tag = "1")]
+    pub data: ::prost::alloc::vec::Vec<f32>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SparseVector {
+    #[prost(float, repeated, tag = "1")]
+    pub data: ::prost::alloc::vec::Vec<f32>,
+    #[prost(message, optional, tag = "2")]
+    pub indices: ::core::option::Option<SparseIndices>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MultiDenseVector {
+    #[prost(message, repeated, tag = "1")]
+    pub vectors: ::prost::alloc::vec::Vec<DenseVector>,
+}
+/// Vector type to be used in queries. Ids will be substituted with their corresponding vectors from the collection.
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct VectorInput {
+    #[prost(oneof = "vector_input::Variant", tags = "1, 2, 3, 4")]
+    pub variant: ::core::option::Option<vector_input::Variant>,
+}
+/// Nested message and enum types in `VectorInput`.
+pub mod vector_input {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Variant {
+        #[prost(message, tag = "1")]
+        Id(super::PointId),
+        #[prost(message, tag = "2")]
+        Dense(super::DenseVector),
+        #[prost(message, tag = "3")]
+        Sparse(super::SparseVector),
+        #[prost(message, tag = "4")]
+        Multi(super::MultiDenseVector),
+    }
 }
 /// ---------------------------------------------
 /// ----------------- ShardKeySelector ----------
@@ -7790,8 +7838,8 @@ pub struct SearchBatchPointsInternal {
     #[prost(uint64, optional, tag = "4")]
     pub timeout: ::core::option::Option<u64>,
 }
-#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecoQuery {
@@ -7802,8 +7850,8 @@ pub struct RecoQuery {
     #[validate]
     pub negatives: ::prost::alloc::vec::Vec<Vector>,
 }
-#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ContextPair {
@@ -7814,8 +7862,8 @@ pub struct ContextPair {
     #[validate]
     pub negative: ::core::option::Option<Vector>,
 }
-#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DiscoveryQuery {
@@ -7826,8 +7874,8 @@ pub struct DiscoveryQuery {
     #[validate]
     pub context: ::prost::alloc::vec::Vec<ContextPair>,
 }
-#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
+#[derive(validator::Validate)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ContextQuery {
@@ -7955,6 +8003,90 @@ pub struct CountPointsInternal {
     #[prost(uint32, optional, tag = "2")]
     pub shard_id: ::core::option::Option<u32>,
 }
+/// A bare vector. No id reference here.
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RawVector {
+    #[prost(oneof = "raw_vector::Variant", tags = "1, 2, 3")]
+    pub variant: ::core::option::Option<raw_vector::Variant>,
+}
+/// Nested message and enum types in `RawVector`.
+pub mod raw_vector {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Variant {
+        #[prost(message, tag = "1")]
+        Dense(super::DenseVector),
+        #[prost(message, tag = "2")]
+        Sparse(super::SparseVector),
+        #[prost(message, tag = "3")]
+        Multi(super::MultiDenseVector),
+    }
+}
+/// Query variants for raw vectors (ids have been substituted with vectors)
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RawQuery {
+    #[prost(oneof = "raw_query::Variant", tags = "1, 2, 3, 4")]
+    pub variant: ::core::option::Option<raw_query::Variant>,
+}
+/// Nested message and enum types in `RawQuery`.
+pub mod raw_query {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct Recommend {
+        #[prost(message, repeated, tag = "1")]
+        pub positives: ::prost::alloc::vec::Vec<super::RawVector>,
+        #[prost(message, repeated, tag = "2")]
+        pub negatives: ::prost::alloc::vec::Vec<super::RawVector>,
+    }
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct RawContextPair {
+        #[prost(message, optional, tag = "1")]
+        pub positive: ::core::option::Option<super::RawVector>,
+        #[prost(message, optional, tag = "2")]
+        pub negative: ::core::option::Option<super::RawVector>,
+    }
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct Discovery {
+        #[prost(message, optional, tag = "1")]
+        pub target: ::core::option::Option<super::RawVector>,
+        #[prost(message, repeated, tag = "2")]
+        pub context: ::prost::alloc::vec::Vec<RawContextPair>,
+    }
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct Context {
+        #[prost(message, repeated, tag = "1")]
+        pub context: ::prost::alloc::vec::Vec<RawContextPair>,
+    }
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Variant {
+        /// ANN
+        #[prost(message, tag = "1")]
+        Nearest(super::RawVector),
+        /// Recommend points with highest similarity to positive examples, or lowest to negative examples
+        #[prost(message, tag = "2")]
+        RecommendBestScore(Recommend),
+        /// Search for points that get closer to a target, constrained by a context of positive and negative pairs
+        #[prost(message, tag = "3")]
+        Discover(Discovery),
+        /// Use only the context to find points that minimize loss against negative examples
+        #[prost(message, tag = "4")]
+        Context(Context),
+    }
+}
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -7993,7 +8125,7 @@ pub mod query_shard_points {
         pub enum Score {
             /// TODO(universal-query): Add fusion and order-by
             #[prost(message, tag = "1")]
-            Vector(super::super::QueryEnum),
+            Vector(super::super::RawQuery),
         }
     }
     #[derive(serde::Serialize)]
