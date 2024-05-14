@@ -554,7 +554,8 @@ impl Named for NamedVectorStruct {
 }
 
 impl NamedVectorStruct {
-    pub fn new_from_vector(vector: Vector, name: String) -> Self {
+    pub fn new_from_vector(vector: Vector, name: impl Into<String>) -> Self {
+        let name = name.into();
         match vector {
             Vector::Dense(vector) => NamedVectorStruct::Dense(NamedVector { name, vector }),
             Vector::Sparse(vector) => NamedVectorStruct::Sparse(NamedSparseVector { name, vector }),

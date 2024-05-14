@@ -29,7 +29,7 @@ pub struct ShardQueryRequest {
     pub with_payload: WithPayloadInterface,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ScoringQuery {
     /// Score points against some vector(s)
     Vector(QueryEnum),
