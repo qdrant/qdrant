@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::fs::create_dir_all;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -11,11 +10,11 @@ use common::types::PointOffsetType;
 
 use crate::common::operation_error::{check_process_stopped, OperationResult};
 use crate::common::Flusher;
-use crate::data_types::named_vectors::CowVector;
+use crate::data_types::named_vectors::{CowMultiVector, CowVector};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
-    MultiDenseVector, TypedMultiDenseVector, TypedMultiDenseVectorRef, VectorElementType,
-    VectorElementTypeByte, VectorRef,
+    TypedMultiDenseVector, TypedMultiDenseVectorRef, VectorElementType, VectorElementTypeByte,
+    VectorRef,
 };
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
@@ -173,13 +172,15 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapMultiDenseVector
             flattened_vectors: multivector.flattened_vectors.to_vec(),
             dim: multivector.dim,
         };
-        CowVector::MultiDense(T::into_float_multivector(Cow::Owned(multivector)))
+        CowVector::MultiDense(T::into_float_multivector(CowMultiVector::Owned(
+            multivector,
+        )))
     }
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
-        let multi_vector: &MultiDenseVector = vector.try_into()?;
-        let multi_vector = T::from_float_multivector(Cow::Borrowed(multi_vector));
-        let multi_vector = multi_vector.as_ref();
+        let multi_vector: TypedMultiDenseVectorRef<VectorElementType> = vector.try_into()?;
+        let multi_vector = T::from_float_multivector(CowMultiVector::Borrowed(multi_vector));
+        let multi_vector = multi_vector.as_vec_ref();
         assert_eq!(multi_vector.dim, self.vectors.dim());
 
         let mut offset = self
@@ -208,7 +209,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapMultiDenseVector
 
         self.vectors.insert_many(
             offset.offset,
-            &multi_vector.flattened_vectors,
+            multi_vector.flattened_vectors,
             multi_vector.len(),
         )?;
         self.offsets.insert(key as usize, &[offset])?;

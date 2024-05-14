@@ -4,6 +4,7 @@ use half::f16;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
+use super::named_vectors::CowMultiVector;
 use super::vectors::TypedMultiDenseVector;
 use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte, VectorElementTypeHalf};
 use crate::spaces::metric::Metric;
@@ -26,12 +27,12 @@ pub trait PrimitiveVectorElement:
     fn datatype() -> VectorStorageDatatype;
 
     fn from_float_multivector(
-        multivector: Cow<TypedMultiDenseVector<VectorElementType>>,
-    ) -> Cow<TypedMultiDenseVector<Self>>;
+        multivector: CowMultiVector<VectorElementType>,
+    ) -> CowMultiVector<Self>;
 
     fn into_float_multivector(
-        multivector: Cow<TypedMultiDenseVector<Self>>,
-    ) -> Cow<TypedMultiDenseVector<VectorElementType>>;
+        multivector: CowMultiVector<Self>,
+    ) -> CowMultiVector<VectorElementType>;
 }
 
 impl PrimitiveVectorElement for VectorElementType {
@@ -56,14 +57,14 @@ impl PrimitiveVectorElement for VectorElementType {
     }
 
     fn from_float_multivector(
-        multivector: Cow<TypedMultiDenseVector<VectorElementType>>,
-    ) -> Cow<TypedMultiDenseVector<Self>> {
+        multivector: CowMultiVector<VectorElementType>,
+    ) -> CowMultiVector<Self> {
         multivector
     }
 
     fn into_float_multivector(
-        multivector: Cow<TypedMultiDenseVector<Self>>,
-    ) -> Cow<TypedMultiDenseVector<VectorElementType>> {
+        multivector: CowMultiVector<Self>,
+    ) -> CowMultiVector<VectorElementType> {
         multivector
     }
 }
@@ -93,28 +94,30 @@ impl PrimitiveVectorElement for VectorElementTypeHalf {
     }
 
     fn from_float_multivector(
-        multivector: Cow<TypedMultiDenseVector<VectorElementType>>,
-    ) -> Cow<TypedMultiDenseVector<Self>> {
-        Cow::Owned(TypedMultiDenseVector::new(
+        multivector: CowMultiVector<VectorElementType>,
+    ) -> CowMultiVector<Self> {
+        CowMultiVector::Owned(TypedMultiDenseVector::new(
             multivector
+                .as_vec_ref()
                 .flattened_vectors
                 .iter()
                 .map(|&x| f16::from_f32(x))
                 .collect_vec(),
-            multivector.dim,
+            multivector.as_vec_ref().dim,
         ))
     }
 
     fn into_float_multivector(
-        multivector: Cow<TypedMultiDenseVector<Self>>,
-    ) -> Cow<TypedMultiDenseVector<VectorElementType>> {
-        Cow::Owned(TypedMultiDenseVector::new(
+        multivector: CowMultiVector<Self>,
+    ) -> CowMultiVector<VectorElementType> {
+        CowMultiVector::Owned(TypedMultiDenseVector::new(
             multivector
+                .as_vec_ref()
                 .flattened_vectors
                 .iter()
                 .map(|&x| f16::to_f32(x))
                 .collect_vec(),
-            multivector.dim,
+            multivector.as_vec_ref().dim,
         ))
     }
 
@@ -165,28 +168,30 @@ impl PrimitiveVectorElement for VectorElementTypeByte {
     }
 
     fn from_float_multivector(
-        multivector: Cow<TypedMultiDenseVector<VectorElementType>>,
-    ) -> Cow<TypedMultiDenseVector<Self>> {
-        Cow::Owned(TypedMultiDenseVector::new(
+        multivector: CowMultiVector<VectorElementType>,
+    ) -> CowMultiVector<Self> {
+        CowMultiVector::Owned(TypedMultiDenseVector::new(
             multivector
+                .as_vec_ref()
                 .flattened_vectors
                 .iter()
                 .map(|&x| x as Self)
                 .collect_vec(),
-            multivector.dim,
+            multivector.as_vec_ref().dim,
         ))
     }
 
     fn into_float_multivector(
-        multivector: Cow<TypedMultiDenseVector<Self>>,
-    ) -> Cow<TypedMultiDenseVector<VectorElementType>> {
-        Cow::Owned(TypedMultiDenseVector::new(
+        multivector: CowMultiVector<Self>,
+    ) -> CowMultiVector<VectorElementType> {
+        CowMultiVector::Owned(TypedMultiDenseVector::new(
             multivector
+                .as_vec_ref()
                 .flattened_vectors
                 .iter()
                 .map(|&x| x as VectorElementType)
                 .collect_vec(),
-            multivector.dim,
+            multivector.as_vec_ref().dim,
         ))
     }
 }

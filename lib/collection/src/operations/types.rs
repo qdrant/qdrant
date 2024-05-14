@@ -1019,7 +1019,7 @@ impl From<String> for CollectionError {
 impl From<OperationError> for CollectionError {
     fn from(err: OperationError) -> Self {
         match err {
-            OperationError::WrongVector { .. } => Self::BadInput {
+            OperationError::WrongVectorDimension { .. } => Self::BadInput {
                 description: format!("{err}"),
             },
             OperationError::VectorNameNotExists { .. } => Self::BadInput {

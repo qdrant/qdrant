@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::ops::Range;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -12,10 +11,10 @@ use rocksdb::DB;
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
-use crate::data_types::named_vectors::CowVector;
+use crate::data_types::named_vectors::{CowMultiVector, CowVector};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
-    MultiDenseVector, TypedMultiDenseVector, TypedMultiDenseVectorRef, VectorRef,
+    TypedMultiDenseVector, TypedMultiDenseVectorRef, VectorElementType, VectorRef,
 };
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::bitvec::bitvec_set_deleted;
@@ -177,7 +176,7 @@ impl<T: PrimitiveVectorElement> SimpleMultiDenseVectorStorage<T> {
         &mut self,
         key: PointOffsetType,
         deleted: bool,
-        vector: Option<&TypedMultiDenseVector<T>>,
+        vector: Option<TypedMultiDenseVectorRef<T>>,
     ) -> OperationResult<()> {
         // Write vector state to buffer record
         let record = &mut self.update_buffer;
@@ -188,7 +187,7 @@ impl<T: PrimitiveVectorElement> SimpleMultiDenseVectorStorage<T> {
             record
                 .vector
                 .flattened_vectors
-                .extend_from_slice(&vector.flattened_vectors);
+                .extend_from_slice(vector.flattened_vectors);
         }
 
         // Store updated record
@@ -206,9 +205,9 @@ impl<T: PrimitiveVectorElement> SimpleMultiDenseVectorStorage<T> {
         vector: VectorRef,
         is_deleted: bool,
     ) -> OperationResult<()> {
-        let multi_vector: &MultiDenseVector = vector.try_into()?;
-        let multi_vector = T::from_float_multivector(Cow::Borrowed(multi_vector));
-        let multi_vector = multi_vector.as_ref();
+        let multi_vector: TypedMultiDenseVectorRef<VectorElementType> = vector.try_into()?;
+        let multi_vector = T::from_float_multivector(CowMultiVector::Borrowed(multi_vector));
+        let multi_vector = multi_vector.as_vec_ref();
         assert_eq!(multi_vector.dim, self.dim);
 
         let key_usize = key as usize;
@@ -229,13 +228,13 @@ impl<T: PrimitiveVectorElement> SimpleMultiDenseVectorStorage<T> {
             }
             self.vectors.insert_many(
                 metadata.start,
-                &multi_vector.flattened_vectors,
+                multi_vector.flattened_vectors,
                 multi_vector.len(),
             )?;
         } else {
             self.vectors.insert_many(
                 metadata.start,
-                &multi_vector.flattened_vectors,
+                multi_vector.flattened_vectors,
                 multi_vector.len(),
             )?;
         }
@@ -282,10 +281,10 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleMultiDenseVectorStorage<
     }
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {
-        // TODO(colbert) avoid copying
-        let multi_dense_vector = self.get_multi(key).to_owned();
-        let multi_dense_vector = T::into_float_multivector(Cow::Owned(multi_dense_vector));
-        CowVector::from(multi_dense_vector)
+        let multi_dense_vector = self.get_multi(key);
+        CowVector::MultiDense(T::into_float_multivector(CowMultiVector::Borrowed(
+            multi_dense_vector,
+        )))
     }
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
