@@ -1,5 +1,6 @@
 use std::collections::HashSet;
-use std::fs;
+use std::sync::Mutex;
+use std::{fs, io};
 
 use anyhow::Context as _;
 use serde::{Deserialize, Serialize};
@@ -38,8 +39,10 @@ pub type Layer<S> = fmt::Layer<
     S,
     fmt::format::DefaultFields,
     fmt::format::Format,
-    fs::File,
+    MakeWriter,
 >;
+
+pub type MakeWriter = Mutex<io::BufWriter<fs::File>>;
 
 pub fn new_logger<S>(config: &mut Config) -> Logger<S>
 where
@@ -81,7 +84,7 @@ where
         .with_context(|| format!("failed to open {} log-file", log_file))?;
 
     let layer = fmt::Layer::default()
-        .with_writer(writer)
+        .with_writer(Mutex::new(io::BufWriter::new(writer)))
         .with_span_events(config::SpanEvent::unwrap_or_default_config(
             &config.span_events,
         ))
