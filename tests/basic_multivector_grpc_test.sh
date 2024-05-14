@@ -63,8 +63,8 @@ $docker_grpcurl -d '{
          "vectors": {
            "vectors": {
              "my-multivec": {
-               "data": [0.19, 0.81, 0.75, 0.11, 0.19, 0.81, 0.75, 0.11],
-               "vectors_count": 2
+               "data": [0.19, 0.81, 0.75, 0.11],
+               "vectors_count": 1
              }
            }
          }
@@ -91,8 +91,8 @@ $docker_grpcurl -d '{
         "vectors": {
           "vectors": {
             "my-multivec": {
-              "data": [0.18, 0.01, 0.85, 0.80, 0.18, 0.01, 0.85, 0.80],
-              "vectors_count": 2
+              "data": [0.18, 0.01, 0.85, 0.80],
+              "vectors_count": 1
             }
           }
         }

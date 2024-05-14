@@ -231,6 +231,61 @@ def test_multi_vector_validation():
            response.json()["status"]["error"]
 
 
+# allow multivec upsert on legacy API by emulating a multivec input with a single dense vector
+def test_upsert_legacy_api():
+    response = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "points": [
+                {
+                    "id": 1,
+                    "vector": {
+                        "my-multivec": [
+                            [0.05, 0.61, 0.76, 0.74],
+                            [0.05, 0.61, 0.76, 0.74],
+                            [0.05, 0.61, 0.76, 0.74]
+                        ]
+                    }
+                },
+                {
+                    "id": 2,
+                    "vector": {
+                        "my-multivec": [0.19, 0.81, 0.75, 0.11]
+                    }
+                },
+            ]
+        }
+    )
+    assert response.ok
+
+    # retrieve by id 1
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': 1},
+    )
+    assert response.ok
+    point = response.json()['result']
+
+    assert point['id'] == 1
+    assert point['vector']['my-multivec'] == [[0.05, 0.61, 0.76, 0.74], [0.05, 0.61, 0.76, 0.74], [0.05, 0.61, 0.76, 0.74]]
+
+    # retrieve by id 2
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': 2},
+    )
+    assert response.ok
+    point = response.json()['result']
+
+    assert point['id'] == 2
+    assert point['vector']['my-multivec'] == [[0.19, 0.81, 0.75, 0.11]]
+
+
 # allow multivec search on legacy API by emulating a multivec input with a single dense vector
 def test_search_legacy_api():
     # validate input size
