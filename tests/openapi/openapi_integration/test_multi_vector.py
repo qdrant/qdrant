@@ -206,7 +206,7 @@ def test_multi_vector_validation():
     assert 'Validation error in JSON body: [points[0].vector.?.data: all vectors must be non-empty]' in \
            response.json()["status"]["error"]
 
-    # fails because it uses inner vectors with different dimentions
+    # fails because it uses inner vectors with different dimensions
     response = request_with_validation(
         api='/collections/{collection_name}/points',
         method="PUT",
