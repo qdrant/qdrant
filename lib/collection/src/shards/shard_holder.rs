@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
+use std::mem;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -49,6 +50,7 @@ pub struct ShardHolder {
     shards: HashMap<ShardId, ShardReplicaSet>,
     pub(crate) shard_transfers: SaveOnDisk<HashSet<ShardTransfer>>,
     rings: HashMap<Option<ShardKey>, ShardHashRing>,
+    resharding: Option<ShardId>,
     key_mapping: SaveOnDisk<ShardKeyMapping>,
     // Duplicates the information from `key_mapping` for faster access
     // Do not require locking
@@ -59,6 +61,7 @@ pub struct ShardHolder {
 pub enum ShardHashRing {
     /// Single hashring
     Single(HashRing<ShardId>),
+
     /// Two hashrings when transitioning during resharding
     /// Depending on the current resharding state, points may be in either or both shards.
     Resharding {
@@ -68,11 +71,25 @@ pub enum ShardHashRing {
 }
 
 impl ShardHashRing {
-    /// Create a new single hashring
+    /// Create a new single hashring.
     ///
     /// The hashring is created with a fair distribution of points and `HASH_RING_SHARD_SCALE` scale.
     pub fn single() -> Self {
         Self::Single(HashRing::fair(HASH_RING_SHARD_SCALE))
+    }
+
+    /// Create a new resharding hashring, with resharding shard already added into `new` hashring.
+    ///
+    /// The hashring is created with a fair distribution of points and `HASH_RING_SHARD_SCALE` scale.
+    pub fn resharding(shard_id: ShardId) -> Self {
+        let mut ring = Self::Resharding {
+            old: HashRing::fair(HASH_RING_SHARD_SCALE),
+            new: HashRing::fair(HASH_RING_SHARD_SCALE),
+        };
+
+        ring.add_resharding(shard_id);
+
+        ring
     }
 
     pub fn is_empty(&self) -> bool {
@@ -82,12 +99,35 @@ impl ShardHashRing {
         }
     }
 
+    pub fn is_resharding(&self) -> bool {
+        matches!(self, Self::Resharding { .. })
+    }
+
     pub fn add(&mut self, shard: ShardId) {
         match self {
             Self::Single(ring) => ring.add(shard),
-            // When resharding, update the new ring
-            Self::Resharding { old: _, new } => new.add(shard),
+            Self::Resharding { old, new } => {
+                if new.get(&shard).is_none() {
+                    old.add(shard);
+                    new.add(shard);
+                }
+            }
         }
+    }
+
+    pub fn add_resharding(&mut self, shard: ShardId) {
+        if let Self::Single(old) = self {
+            let mut old = mem::replace(old, HashRing::raw());
+            let new = old.clone();
+
+            *self = Self::Resharding { old, new };
+        }
+
+        let Self::Resharding { new, .. } = self else {
+            unreachable!();
+        };
+
+        new.add(shard);
     }
 
     pub fn get<U: Hash>(&self, key: &U) -> ShardIds {
@@ -111,11 +151,16 @@ impl ShardHashRing {
 pub type LockedShardHolder = RwLock<ShardHolder>;
 
 impl ShardHolder {
-    pub fn new(collection_path: &Path) -> CollectionResult<Self> {
-        let rings = HashMap::from([(None, ShardHashRing::single())]);
+    pub fn new(collection_path: &Path, resharding: Option<ShardId>) -> CollectionResult<Self> {
+        let default_ring = resharding.map_or_else(ShardHashRing::single, ShardHashRing::resharding);
+
+        let rings = HashMap::from([(None, default_ring)]);
+
         let shard_transfers = SaveOnDisk::load_or_init(collection_path.join(SHARD_TRANSFERS_FILE))?;
+
         let key_mapping: SaveOnDisk<ShardKeyMapping> =
             SaveOnDisk::load_or_init(collection_path.join(SHARD_KEY_MAPPING_FILE))?;
+
         let mut shard_id_to_key_mapping = HashMap::new();
 
         for (shard_key, shard_ids) in key_mapping.read().iter() {
@@ -128,6 +173,7 @@ impl ShardHolder {
             shards: HashMap::new(),
             shard_transfers,
             rings,
+            resharding,
             key_mapping,
             shard_id_to_key_mapping,
         })
@@ -153,6 +199,51 @@ impl ShardHolder {
             drop(replica_set);
             tokio::fs::remove_dir_all(shard_path).await?;
         }
+        Ok(())
+    }
+
+    pub fn start_resharding(
+        &mut self,
+        shard_id: ShardId,
+        shard: ShardReplicaSet,
+    ) -> Result<(), CollectionError> {
+        let Some(default_ring) = self.rings.get_mut(&None) else {
+            // TODO: `CollectionError::service_error`? 🤔
+            return Err(CollectionError::bad_request(
+                "shard holder does not contain default hashring".into(),
+            ));
+        };
+
+        if default_ring.is_resharding() {
+            debug_assert!(
+                self.resharding.is_some(),
+                "shard holder contains resharding hashring, but resharding field is {:?}",
+                self.resharding
+            );
+
+            // TODO: `CollectionError::service_error`? 🤔
+            return Err(CollectionError::bad_request(
+                "shard holder already contains resharding hashring".into(),
+            ));
+        }
+
+        debug_assert!(
+            self.resharding.is_none(),
+            "shard holder does not contain resharding hashring, but resharding field is {:?}",
+            self.resharding
+        );
+
+        if self.shards.contains_key(&shard_id) {
+            // TODO: `CollectionError::service_error`? 🤔
+            return Err(CollectionError::bad_request(format!(
+                "shard holder already contains shard {shard_id} replica set"
+            )));
+        }
+
+        default_ring.add_resharding(shard_id);
+        self.resharding = Some(shard_id);
+        self.add_shard(shard_id, shard, None)?;
+
         Ok(())
     }
 
@@ -214,6 +305,8 @@ impl ShardHolder {
     }
 
     fn rebuild_rings(&mut self) {
+        // TODO: Correctly rebuild resharding hashrings!
+
         let mut rings = HashMap::from([(None, ShardHashRing::single())]);
         let ids_to_key = self.get_shard_id_to_key_mapping();
         for shard_id in self.shards.keys() {
@@ -413,8 +506,12 @@ impl ShardHolder {
                 debug_assert!(false, "Do not expect empty shard selector")
             }
             ShardSelectorInternal::All => {
-                for (shard_id, shard) in self.shards.iter() {
-                    let shard_key = self.shard_id_to_key_mapping.get(shard_id);
+                for (&shard_id, shard) in self.shards.iter() {
+                    if self.resharding == Some(shard_id) {
+                        continue;
+                    }
+
+                    let shard_key = self.shard_id_to_key_mapping.get(&shard_id);
                     res.push((shard, shard_key));
                 }
             }

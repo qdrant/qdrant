@@ -125,6 +125,7 @@ impl Dispatcher {
                 // Sync nodes after collection or shard key creation
                 CollectionMetaOperations::CreateCollection(_)
                 | CollectionMetaOperations::CreateShardKey(_) => true,
+
                 // Sync nodes when creating or renaming collection aliases
                 CollectionMetaOperations::ChangeAliases(changes) => {
                     changes.actions.iter().any(|change| match change {
@@ -132,6 +133,10 @@ impl Dispatcher {
                         AliasOperations::DeleteAlias(_) => false,
                     })
                 }
+
+                // TODO: Do we need/want to synchronize `Resharding` operations?
+                CollectionMetaOperations::Resharding(_, _) => false,
+
                 // No need to sync nodes for other operations
                 CollectionMetaOperations::UpdateCollection(_)
                 | CollectionMetaOperations::DeleteCollection(_)

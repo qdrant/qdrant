@@ -16,6 +16,7 @@ impl Collection {
         &self,
         shard_id: ShardId,
         replicas: &[PeerId],
+        init_state: Option<ReplicaState>,
     ) -> Result<ShardReplicaSet, CollectionError> {
         let is_local = replicas.contains(&self.this_peer_id);
 
@@ -40,7 +41,7 @@ impl Collection {
             self.update_runtime.clone(),
             self.search_runtime.clone(),
             self.optimizer_cpu_budget.clone(),
-            Some(ReplicaState::Active),
+            init_state.or(Some(ReplicaState::Active)),
         )
         .await
     }
@@ -100,7 +101,7 @@ impl Collection {
             let shard_id = max_shard_id + idx as ShardId + 1;
 
             let replica_set = self
-                .create_replica_set(shard_id, shard_replicas_placement)
+                .create_replica_set(shard_id, shard_replicas_placement, None)
                 .await?;
 
             for (field_name, field_schema) in payload_schema.iter() {

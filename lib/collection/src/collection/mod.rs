@@ -101,7 +101,7 @@ impl Collection {
     ) -> Result<Self, CollectionError> {
         let start_time = std::time::Instant::now();
 
-        let mut shard_holder = ShardHolder::new(path)?;
+        let mut shard_holder = ShardHolder::new(path, None)?;
 
         let shared_collection_config = Arc::new(RwLock::new(collection_config.clone()));
         for (shard_id, mut peers) in shard_distribution.shards {
@@ -208,7 +208,14 @@ impl Collection {
         });
         collection_config.validate_and_warn();
 
-        let mut shard_holder = ShardHolder::new(path).expect("Can not create shard holder");
+        let resharding_state = Self::load_resharding_state(path)
+            .expect("Can't load or initialize resharding progress");
+
+        let mut shard_holder = ShardHolder::new(
+            path,
+            resharding_state.read().as_ref().map(|state| state.shard_id),
+        )
+        .expect("Can not create shard holder");
 
         let shared_collection_config = Arc::new(RwLock::new(collection_config.clone()));
 
@@ -232,9 +239,6 @@ impl Collection {
 
         let payload_index_schema = Self::load_payload_index_schema(path)
             .expect("Can't load or initialize payload index schema");
-
-        let resharding_state = Self::load_resharding_state(path)
-            .expect("Can't load or initialize resharding progress");
 
         Self {
             id: collection_id.clone(),
@@ -646,6 +650,48 @@ impl Collection {
                 break;
             }
         }
+
+        Ok(())
+    }
+
+    pub async fn start_resharding(
+        &self,
+        peer_id: PeerId,
+        shard_id: ShardId,
+    ) -> CollectionResult<()> {
+        // TODO: Improve error handling?
+
+        let mut shard_holder = self.shards_holder.write().await;
+
+        if self.resharding_state.read().is_some() {
+            return Err(CollectionError::bad_request(format!(
+                "resharding of collection {} is already in progress",
+                self.id
+            )));
+        }
+
+        if shard_holder.get_shard(&shard_id).is_some() {
+            return Err(CollectionError::bad_shard_selection(format!(
+                "shard {shard_id} already exists in collection {}",
+                self.id
+            )));
+        }
+
+        let replica_set = self
+            .create_replica_set(shard_id, &[peer_id], Some(ReplicaState::Resharding))
+            .await?;
+
+        shard_holder.start_resharding(shard_id, replica_set)?;
+
+        self.resharding_state.write(|state| {
+            debug_assert!(
+                state.is_none(),
+                "resharding of collection {} is already in progress",
+                self.id
+            );
+
+            *state = Some(resharding::State::new(peer_id, shard_id));
+        })?;
 
         Ok(())
     }
