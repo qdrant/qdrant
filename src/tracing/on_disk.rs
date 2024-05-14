@@ -74,7 +74,7 @@ where
     }
 
     let Some(log_file) = &config.log_file else {
-        return Ok(None);
+        return Err(anyhow::format_err!("log file is not specified"));
     };
 
     let writer = fs::OpenOptions::new()
