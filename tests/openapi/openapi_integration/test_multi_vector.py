@@ -141,26 +141,6 @@ def test_multi_vector_float_persisted():
 
 
 def test_multi_vector_validation():
-    # fails because uses dense vector
-    response = request_with_validation(
-        api='/collections/{collection_name}/points',
-        method="PUT",
-        path_params={'collection_name': collection_name},
-        query_params={'wait': 'true'},
-        body={
-            "points": [
-                {
-                    "id": 1,
-                    "vector": {
-                        "my-multivec": [0.19, 0.81, 0.75, 0.11]
-                    }
-                }
-            ]
-        }
-    )
-    assert not response.ok
-    assert 'Wrong input: Conversion between multi and regular vectors failed' in response.json()["status"]["error"]
-
     # fails because it uses and empty multi vector
     response = request_with_validation(
         api='/collections/{collection_name}/points',
@@ -179,7 +159,7 @@ def test_multi_vector_validation():
         }
     )
     assert not response.ok
-    assert 'Wrong input: Vector inserting error: expected dim: 4, got 0' in response.json()["status"]["error"]
+    assert 'Wrong input: Vector dimension error: expected dim: 4, got 0' in response.json()["status"]["error"]
 
     # fails because it uses an empty inner vector
     response = request_with_validation(
@@ -226,7 +206,7 @@ def test_multi_vector_validation():
     assert 'Validation error in JSON body: [points[0].vector.?.data: all vectors must be non-empty]' in \
            response.json()["status"]["error"]
 
-    # fails because it uses one inner vector
+    # fails because it uses inner vectors with different dimensions
     response = request_with_validation(
         api='/collections/{collection_name}/points',
         method="PUT",
@@ -251,19 +231,149 @@ def test_multi_vector_validation():
            response.json()["status"]["error"]
 
 
+# allow multivec upsert on legacy API by emulating a multivec input with a single dense vector
+def test_upsert_legacy_api():
+    response = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "points": [
+                {
+                    "id": 1,
+                    "vector": {
+                        "my-multivec": [
+                            [0.05, 0.61, 0.76, 0.74],
+                            [0.05, 0.61, 0.76, 0.74],
+                            [0.05, 0.61, 0.76, 0.74]
+                        ]
+                    }
+                },
+                {
+                    "id": 2,
+                    "vector": {
+                        "my-multivec": [0.19, 0.81, 0.75, 0.11]
+                    }
+                },
+            ]
+        }
+    )
+    assert response.ok
+
+    # retrieve by id 1
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': 1},
+    )
+    assert response.ok
+    point = response.json()['result']
+
+    assert point['id'] == 1
+    assert point['vector']['my-multivec'] == [[0.05, 0.61, 0.76, 0.74], [0.05, 0.61, 0.76, 0.74], [0.05, 0.61, 0.76, 0.74]]
+
+    # retrieve by id 2
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': 2},
+    )
+    assert response.ok
+    point = response.json()['result']
+
+    assert point['id'] == 2
+    assert point['vector']['my-multivec'] == [[0.19, 0.81, 0.75, 0.11]]
+
+
+# allow multivec search on legacy API by emulating a multivec input with a single dense vector
 def test_search_legacy_api():
-    # uses raw requests to avoid schema validation error
-    response = requests.post(
-        f"http://{QDRANT_HOST}/collections/{collection_name}/points/search",
-        json={
+    # validate input size
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/search',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
             "vector": {
-                "my-multivec": [
-                    [0.05, 0.61, 0.76, 0.74],
-                ]
+                "name": "my-multivec",
+                "vector": [0.05, 0.61, 0.76]
             },
             "limit": 3
         }
     )
     assert not response.ok
-    assert 'Format error in JSON body: data did not match any variant of untagged enum NamedVectorStruct' in \
+    assert 'Wrong input: Vector dimension error: expected dim: 4, got 3' in \
            response.json()["status"]["error"]
+
+    # search on empty collection
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/search',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "vector": {
+                "name": "my-multivec",
+                "vector": [0.05, 0.61, 0.76, 0.74]
+            },
+            "limit": 3
+        }
+    )
+    assert response.ok
+    assert len(response.json()['result']) == 0
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "points": [
+                {
+                    "id": 1,
+                    "vector": {
+                        "my-multivec": [
+                            [0.05, 0.61, 0.76, 0.74],
+                            [0.05, 0.61, 0.76, 0.74],
+                            [0.05, 0.61, 0.76, 0.74]
+                        ]
+                    }
+                },
+                {
+                    "id": 2,
+                    "vector": {
+                        "my-multivec": [
+                            [0.19, 0.81, 0.75, 0.11],
+                            [0.19, 0.81, 0.75, 0.11],
+                            [0.19, 0.81, 0.75, 0.11]
+                        ]
+                    }
+                },
+                {
+                    "id": 3,
+                    "vector": {
+                        "my-multivec": [
+                            [0.36, 0.55, 0.47, 0.94],
+                            [0.36, 0.55, 0.47, 0.94],
+                            [0.36, 0.55, 0.47, 0.94]
+                        ]
+                    }
+                },
+            ]
+        }
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/search',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "vector": {
+                "name": "my-multivec",
+                "vector": [0.05, 0.61, 0.76, 0.74]
+            },
+            "limit": 3
+        }
+    )
+    assert response.ok
+    assert len(response.json()['result']) == 3

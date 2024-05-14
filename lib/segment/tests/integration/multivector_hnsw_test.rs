@@ -7,8 +7,8 @@ use rand::prelude::StdRng;
 use rand::SeedableRng;
 use segment::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use segment::data_types::vectors::{
-    only_default_vector, MultiDenseVector, QueryVector, VectorElementType, VectorRef,
-    DEFAULT_VECTOR_NAME,
+    only_default_vector, MultiDenseVector, QueryVector, TypedMultiDenseVectorRef,
+    VectorElementType, VectorRef, DEFAULT_VECTOR_NAME,
 };
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::index_fixtures::random_vector;
@@ -109,7 +109,10 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
         let internal_id = segment.id_tracker.borrow().internal_id(idx).unwrap();
         multi_storage
             .borrow_mut()
-            .insert_vector(internal_id, VectorRef::MultiDense(&vector_multi))
+            .insert_vector(
+                internal_id,
+                VectorRef::MultiDense(TypedMultiDenseVectorRef::from(&vector_multi)),
+            )
             .unwrap();
     }
 

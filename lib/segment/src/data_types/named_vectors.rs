@@ -3,9 +3,11 @@ use std::collections::HashMap;
 
 use sparse::common::sparse_vector::SparseVector;
 
+use super::primitive::PrimitiveVectorElement;
 use super::tiny_map;
 use super::vectors::{
-    DenseVector, MultiDenseVector, Vector, VectorElementType, VectorElementTypeByte, VectorRef,
+    DenseVector, MultiDenseVector, TypedMultiDenseVector, TypedMultiDenseVectorRef, Vector,
+    VectorElementType, VectorElementTypeByte, VectorRef,
 };
 use crate::common::operation_error::OperationError;
 use crate::spaces::metric::Metric;
@@ -15,10 +17,16 @@ use crate::types::{Distance, VectorDataConfig, VectorStorageDatatype};
 type CowKey<'a> = Cow<'a, str>;
 
 #[derive(Clone, PartialEq, Debug)]
+pub enum CowMultiVector<'a, TElement: PrimitiveVectorElement> {
+    Owned(TypedMultiDenseVector<TElement>),
+    Borrowed(TypedMultiDenseVectorRef<'a, TElement>),
+}
+
+#[derive(Clone, PartialEq, Debug)]
 pub enum CowVector<'a> {
     Dense(Cow<'a, [VectorElementType]>),
     Sparse(Cow<'a, SparseVector>),
-    MultiDense(Cow<'a, MultiDenseVector>),
+    MultiDense(CowMultiVector<'a, VectorElementType>),
 }
 
 impl<'a> Default for CowVector<'a> {
@@ -34,12 +42,31 @@ pub struct NamedVectors<'a> {
     map: TinyMap<'a>,
 }
 
+impl<'a, TElement: PrimitiveVectorElement> CowMultiVector<'a, TElement> {
+    pub fn to_owned(self) -> TypedMultiDenseVector<TElement> {
+        match self {
+            CowMultiVector::Owned(v) => v,
+            CowMultiVector::Borrowed(v) => v.to_owned(),
+        }
+    }
+
+    pub fn as_vec_ref(&'a self) -> TypedMultiDenseVectorRef<'a, TElement> {
+        match self {
+            CowMultiVector::Owned(v) => TypedMultiDenseVectorRef {
+                flattened_vectors: &v.flattened_vectors,
+                dim: v.dim,
+            },
+            CowMultiVector::Borrowed(v) => *v,
+        }
+    }
+}
+
 impl<'a> CowVector<'a> {
     pub fn to_owned(self) -> Vector {
         match self {
             CowVector::Dense(v) => Vector::Dense(v.into_owned()),
             CowVector::Sparse(v) => Vector::Sparse(v.into_owned()),
-            CowVector::MultiDense(v) => Vector::MultiDense(v.into_owned()),
+            CowVector::MultiDense(v) => Vector::MultiDense(v.to_owned()),
         }
     }
 
@@ -47,7 +74,7 @@ impl<'a> CowVector<'a> {
         match self {
             CowVector::Dense(v) => VectorRef::Dense(v.as_ref()),
             CowVector::Sparse(v) => VectorRef::Sparse(v.as_ref()),
-            CowVector::MultiDense(v) => VectorRef::MultiDense(v.as_ref()),
+            CowVector::MultiDense(v) => VectorRef::MultiDense(v.as_vec_ref()),
         }
     }
 }
@@ -66,7 +93,7 @@ impl<'a> From<Vector> for CowVector<'a> {
         match v {
             Vector::Dense(v) => CowVector::Dense(Cow::Owned(v)),
             Vector::Sparse(v) => CowVector::Sparse(Cow::Owned(v)),
-            Vector::MultiDense(v) => CowVector::MultiDense(Cow::Owned(v)),
+            Vector::MultiDense(v) => CowVector::MultiDense(CowMultiVector::Owned(v)),
         }
     }
 }
@@ -85,15 +112,17 @@ impl<'a> From<DenseVector> for CowVector<'a> {
 
 impl<'a> From<MultiDenseVector> for CowVector<'a> {
     fn from(v: MultiDenseVector) -> Self {
-        CowVector::MultiDense(Cow::Owned(v))
+        CowVector::MultiDense(CowMultiVector::Owned(v))
     }
 }
 
 impl<'a> From<Cow<'a, MultiDenseVector>> for CowVector<'a> {
     fn from(v: Cow<'a, MultiDenseVector>) -> Self {
         match v {
-            Cow::Borrowed(v) => CowVector::MultiDense(Cow::Borrowed(v)),
-            Cow::Owned(v) => CowVector::MultiDense(Cow::Owned(v)),
+            Cow::Borrowed(v) => {
+                CowVector::MultiDense(CowMultiVector::Borrowed(TypedMultiDenseVectorRef::from(v)))
+            }
+            Cow::Owned(v) => CowVector::MultiDense(CowMultiVector::Owned(v)),
         }
     }
 }
@@ -112,7 +141,7 @@ impl<'a> From<&'a [VectorElementType]> for CowVector<'a> {
 
 impl<'a> From<&'a MultiDenseVector> for CowVector<'a> {
     fn from(v: &'a MultiDenseVector) -> Self {
-        CowVector::MultiDense(Cow::Borrowed(v))
+        CowVector::MultiDense(CowMultiVector::Borrowed(TypedMultiDenseVectorRef::from(v)))
     }
 }
 
@@ -157,7 +186,7 @@ impl<'a> From<VectorRef<'a>> for CowVector<'a> {
         match v {
             VectorRef::Dense(v) => CowVector::Dense(Cow::Borrowed(v)),
             VectorRef::Sparse(v) => CowVector::Sparse(Cow::Borrowed(v)),
-            VectorRef::MultiDense(v) => CowVector::MultiDense(Cow::Borrowed(v)),
+            VectorRef::MultiDense(v) => CowVector::MultiDense(CowMultiVector::Borrowed(v)),
         }
     }
 }
@@ -237,7 +266,7 @@ impl<'a> NamedVectors<'a> {
         self.map.get(key).map(|v| v.as_vec_ref())
     }
 
-    pub fn preprocess<'b>(&'b mut self, get_vector_data: impl Fn(&str) -> &'b VectorDataConfig) {
+    pub fn preprocess<'b>(&mut self, get_vector_data: impl Fn(&str) -> &'b VectorDataConfig) {
         for (name, vector) in self.map.iter_mut() {
             match vector {
                 CowVector::Dense(v) => {
@@ -247,16 +276,27 @@ impl<'a> NamedVectors<'a> {
                 }
                 CowVector::Sparse(v) => {
                     // sort by indices to enable faster dot product and overlap checks
-                    v.to_mut().sort_by_indices();
+                    if !v.is_sorted() {
+                        v.to_mut().sort_by_indices();
+                    }
                 }
-                CowVector::MultiDense(v) => {
+                CowVector::MultiDense(multi_vector) => {
+                    // invalid temp value to swap with multi_vector and reduce reallocations
+                    let mut tmp_multi_vector = CowMultiVector::Borrowed(TypedMultiDenseVectorRef {
+                        flattened_vectors: &[],
+                        dim: 0,
+                    });
+                    // `multi_vector` is empty invalid and `tmp_multi_vector` owns the real data
+                    std::mem::swap(&mut tmp_multi_vector, multi_vector);
+                    let mut owned_multi_vector = tmp_multi_vector.to_owned();
                     let config = get_vector_data(name.as_ref());
-                    for dense_vector in v.to_mut().multi_vectors_mut() {
+                    for dense_vector in owned_multi_vector.multi_vectors_mut() {
                         let preprocessed_vector =
                             Self::preprocess_dense_vector(dense_vector.to_vec(), config);
                         // replace dense vector with preprocessed vector
                         dense_vector.copy_from_slice(&preprocessed_vector);
                     }
+                    *multi_vector = CowMultiVector::Owned(owned_multi_vector);
                 }
             }
         }

@@ -63,8 +63,8 @@ $docker_grpcurl -d '{
          "vectors": {
            "vectors": {
              "my-multivec": {
-               "data": [0.19, 0.81, 0.75, 0.11, 0.19, 0.81, 0.75, 0.11],
-               "vectors_count": 2
+               "data": [0.19, 0.81, 0.75, 0.11],
+               "vectors_count": 1
              }
            }
          }
@@ -91,8 +91,8 @@ $docker_grpcurl -d '{
         "vectors": {
           "vectors": {
             "my-multivec": {
-              "data": [0.18, 0.01, 0.85, 0.80, 0.18, 0.01, 0.85, 0.80],
-              "vectors_count": 2
+              "data": [0.18, 0.01, 0.85, 0.80],
+              "vectors_count": 1
             }
           }
         }
@@ -181,7 +181,7 @@ response=$(
   }' $QDRANT_HOST qdrant.Points/Upsert 2>&1
 )
 
-if [[ $response != *"Wrong input: Vector inserting error: expected dim: 4, got 8"* ]]; then
+if [[ $response != *"Wrong input: Vector dimension error: expected dim: 4, got 8"* ]]; then
     echo Unexpected response, expected validation error: "$response"
     exit 1
 fi
@@ -242,4 +242,27 @@ if [[ $response != *"vectors count must be greater than 0"* ]]; then
     exit 1
 fi
 
+# search fails if the dense vector is not of the right dimension
+response=$(
+  $docker_grpcurl -d '{
+      "collection_name": "test_multivector_collection",
+      "vector": [0.2,0.1,0.9],
+      "limit": 3,
+      "vector_name": "my-multivec"
+    }' $QDRANT_HOST qdrant.Points/Search 2>&1
+)
+
+if [[ $response != *"Wrong input: Vector dimension error: expected dim: 4, got 3"* ]]; then
+    echo Unexpected response, expected validation error: "$response"
+    exit 1
+fi
+
 set -e
+
+# search with a single dense vector with the right dimension works against a multivector collection
+$docker_grpcurl -d '{
+    "collection_name": "test_multivector_collection",
+    "vector": [0.2,0.1,0.9,0.7],
+    "limit": 3,
+    "vector_name": "my-multivec"
+  }' $QDRANT_HOST qdrant.Points/Search
