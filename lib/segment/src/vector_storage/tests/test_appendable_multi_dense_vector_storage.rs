@@ -8,7 +8,7 @@ use rstest::rstest;
 use tempfile::Builder;
 
 use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
-use crate::data_types::vectors::{MultiDenseVector, QueryVector};
+use crate::data_types::vectors::{MultiDenseVector, QueryVector, TypedMultiDenseVectorRef};
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::id_tracker::IdTrackerSS;
 use crate::types::{Distance, MultiVectorConfig};
@@ -59,8 +59,8 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
     // Check that all points are inserted
     for (i, vec) in points.iter().enumerate() {
         let stored_vec = borrowed_storage.get_vector(i as PointOffsetType);
-        let multi_dense: &MultiDenseVector = stored_vec.as_vec_ref().try_into().unwrap();
-        assert_eq!(multi_dense, vec);
+        let multi_dense: TypedMultiDenseVectorRef<_> = stored_vec.as_vec_ref().try_into().unwrap();
+        assert_eq!(multi_dense.to_owned(), vec.clone());
     }
 
     // Delete select number of points

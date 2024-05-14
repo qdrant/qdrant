@@ -1,9 +1,9 @@
-use std::borrow::Cow;
 use std::marker::PhantomData;
 
 use common::types::{PointOffsetType, ScoreType};
 
 use super::score_multi;
+use crate::data_types::named_vectors::CowMultiVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
     DenseVector, MultiDenseVector, TypedMultiDenseVector, TypedMultiDenseVectorRef,
@@ -48,7 +48,8 @@ impl<
                     .collect();
                 let preprocessed = MultiDenseVector::new(preprocessed, vector.dim);
                 let converted =
-                    TElement::from_float_multivector(Cow::Owned(preprocessed)).into_owned();
+                    TElement::from_float_multivector(CowMultiVector::Owned(preprocessed))
+                        .to_owned();
                 Ok(converted)
             })
             .unwrap();
@@ -80,7 +81,7 @@ impl<
             score_multi::<TElement, TMetric>(
                 self.vector_storage.multi_vector_config(),
                 TypedMultiDenseVectorRef::from(example),
-                stored.clone(),
+                stored,
             )
         })
     }
