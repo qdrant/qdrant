@@ -12,6 +12,7 @@ use crate::operations::types::CollectionResult;
 use crate::operations::universal_query::planned_query::{
     PlannedQuery, PrefetchMerge, PrefetchPlan, PrefetchSource,
 };
+use crate::operations::universal_query::shard_query::ShardQueryResponse;
 
 impl LocalShard {
     pub async fn do_planned_query(
@@ -19,15 +20,17 @@ impl LocalShard {
         request: PlannedQuery,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
-    ) -> CollectionResult<Vec<ScoredPoint>> {
+    ) -> CollectionResult<ShardQueryResponse> {
         let core_results = self
             .do_search(Arc::clone(&request.batch), search_runtime_handle, timeout)
             .await?;
 
-        self.recurse_prefetch(&request.merge_plan, &core_results)
-            .await
+        let _merged_results = self
+            .recurse_prefetch(&request.merge_plan, &core_results)
+            .await;
 
         // TODO(universal-query): Implement with_vector and with_payload
+        todo!()
     }
 
     fn recurse_prefetch<'shard, 'query>(

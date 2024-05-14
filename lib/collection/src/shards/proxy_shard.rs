@@ -23,7 +23,7 @@ use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
     CountRequestInternal, CountResult, PointRequestInternal, Record, UpdateResult,
 };
-use crate::operations::universal_query::shard_query::ShardQueryRequest;
+use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::OperationWithClockTag;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
@@ -252,7 +252,7 @@ impl ShardOperation for ProxyShard {
         &self,
         request: Arc<ShardQueryRequest>,
         search_runtime_handle: &Handle,
-    ) -> CollectionResult<Vec<ScoredPoint>> {
+    ) -> CollectionResult<ShardQueryResponse> {
         self.wrapped_shard
             .query(request, search_runtime_handle)
             .await

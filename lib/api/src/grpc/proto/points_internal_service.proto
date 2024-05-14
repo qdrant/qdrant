@@ -272,7 +272,11 @@ message QueryPointsInternal {
   optional uint32 shard_id = 3;
 }
 
-message QueryResponse {
+message IntermediateResult {
   repeated ScoredPoint result = 1;
+}
+
+message QueryResponse {
+  repeated IntermediateResult result = 1;
   double time = 2; // Time spent to process
 }

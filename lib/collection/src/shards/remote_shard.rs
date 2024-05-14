@@ -47,7 +47,7 @@ use crate::operations::types::{
     CountRequestInternal, CountResult, PointRequestInternal, Record, SearchRequestInternal,
     UpdateResult,
 };
-use crate::operations::universal_query::shard_query::ShardQueryRequest;
+use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::vector_ops::VectorOperations;
 use crate::operations::{CollectionUpdateOperations, FieldIndexOperations, OperationWithClockTag};
 use crate::shards::channel_service::ChannelService;
@@ -841,7 +841,7 @@ impl ShardOperation for RemoteShard {
         &self,
         request: Arc<ShardQueryRequest>,
         _search_runtime_handle: &Handle,
-    ) -> CollectionResult<Vec<ScoredPoint>> {
+    ) -> CollectionResult<ShardQueryResponse> {
         let is_payload_required = request.with_payload.is_required();
 
         let query_points = Some(QueryShardPoints::from(request.as_ref().to_owned()));
@@ -859,12 +859,18 @@ impl ShardOperation for RemoteShard {
             .await?
             .into_inner();
 
-        let result: Result<Vec<ScoredPoint>, Status> = query_response
+        let result: Result<ShardQueryResponse, Status> = query_response
             .result
             .into_iter()
-            .map(|point| try_scored_point_from_grpc(point, is_payload_required))
+            .map(|intermediate| {
+                intermediate
+                    .result
+                    .into_iter()
+                    .map(|point| try_scored_point_from_grpc(point, is_payload_required))
+                    .collect()
+            })
             .collect();
 
-        result.map_err(|e| e.into())
+        result.map_err(CollectionError::from)
     }
 }

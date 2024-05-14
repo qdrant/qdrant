@@ -22,7 +22,7 @@ use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
     CountRequestInternal, CountResult, PointRequestInternal, Record, UpdateResult,
 };
-use crate::operations::universal_query::shard_query::ShardQueryRequest;
+use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::OperationWithClockTag;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
@@ -297,7 +297,7 @@ impl ShardOperation for QueueProxyShard {
         &self,
         request: Arc<ShardQueryRequest>,
         search_runtime_handle: &Handle,
-    ) -> CollectionResult<Vec<ScoredPoint>> {
+    ) -> CollectionResult<ShardQueryResponse> {
         self.inner
             .as_ref()
             .expect("Queue proxy has been finalized")
@@ -583,7 +583,7 @@ impl ShardOperation for Inner {
         &self,
         request: Arc<ShardQueryRequest>,
         search_runtime_handle: &Handle,
-    ) -> CollectionResult<Vec<ScoredPoint>> {
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         self.wrapped_shard
             .query(request, search_runtime_handle)
             .await

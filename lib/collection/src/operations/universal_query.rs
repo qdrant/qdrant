@@ -15,9 +15,11 @@
 pub mod shard_query {
     use api::grpc::qdrant as grpc;
     use common::types::ScoreType;
-    use segment::types::{Filter, SearchParams, WithPayloadInterface, WithVector};
+    use segment::types::{Filter, ScoredPoint, SearchParams, WithPayloadInterface, WithVector};
 
     use crate::operations::query_enum::QueryEnum;
+
+    pub type ShardQueryResponse = Vec<Vec<ScoredPoint>>;
 
     #[derive(Debug, Clone)]
     pub enum ScoringQuery {

@@ -178,7 +178,7 @@ impl ShardOperation for LocalShard {
         &self,
         request: Arc<ShardQueryRequest>,
         search_runtime_handle: &Handle,
-    ) -> CollectionResult<Vec<ScoredPoint>> {
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         self.do_planned_query(
             PlannedQuery::try_from(request.as_ref().to_owned())?,
             search_runtime_handle,
