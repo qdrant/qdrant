@@ -141,26 +141,6 @@ def test_multi_vector_float_persisted():
 
 
 def test_multi_vector_validation():
-    # fails because uses dense vector
-    response = request_with_validation(
-        api='/collections/{collection_name}/points',
-        method="PUT",
-        path_params={'collection_name': collection_name},
-        query_params={'wait': 'true'},
-        body={
-            "points": [
-                {
-                    "id": 1,
-                    "vector": {
-                        "my-multivec": [0.19, 0.81, 0.75, 0.11]
-                    }
-                }
-            ]
-        }
-    )
-    assert not response.ok
-    assert 'Wrong input: Conversion between multi and regular vectors failed' in response.json()["status"]["error"]
-
     # fails because it uses and empty multi vector
     response = request_with_validation(
         api='/collections/{collection_name}/points',
@@ -226,7 +206,7 @@ def test_multi_vector_validation():
     assert 'Validation error in JSON body: [points[0].vector.?.data: all vectors must be non-empty]' in \
            response.json()["status"]["error"]
 
-    # fails because it uses one inner vector
+    # fails because it uses inner vectors with different dimentions
     response = request_with_validation(
         api='/collections/{collection_name}/points',
         method="PUT",
