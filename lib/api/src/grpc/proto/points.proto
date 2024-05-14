@@ -59,7 +59,7 @@ message DenseVector {
 
 message SparseVector {
   repeated float data = 1;
-  optional SparseIndices indices = 2;
+  SparseIndices indices = 2;
 }
 
 message MultiDenseVector {
