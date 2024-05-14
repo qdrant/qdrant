@@ -3484,7 +3484,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | data | [float](#float) | repeated |  |
-| indices | [SparseIndices](#qdrant-SparseIndices) | optional |  |
+| indices | [SparseIndices](#qdrant-SparseIndices) |  |  |
 
 
 
