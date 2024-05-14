@@ -6,7 +6,7 @@ use super::transfer_tasks_pool::TransferTaskProgress;
 use crate::operations::types::{CollectionError, CollectionResult, CountRequestInternal};
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard::ShardId;
-use crate::shards::shard_holder::LockedShardHolder;
+use crate::shards::shard_holder::{LockedShardHolder, RingsKey};
 
 const TRANSFER_BATCH_SIZE: usize = 100;
 
@@ -29,9 +29,11 @@ pub(super) async fn transfer_resharding_stream_records(
     remote_shard: RemoteShard,
     collection_name: &str,
 ) -> CollectionResult<()> {
-    let remote_peer_id = remote_shard.peer_id;
+    // TODO: transfer to a different target shard
+    // TODO: define shard key here!
+    let shard_key = None;
 
-    // TODO: actually filter points here based on hashring!
+    let remote_peer_id = remote_shard.peer_id;
 
     log::debug!(
         "Starting shard {shard_id} transfer to peer {remote_peer_id} by reshard streaming records"
@@ -81,10 +83,20 @@ pub(super) async fn transfer_resharding_stream_records(
             )));
         };
 
-        // TODO: don't take all points, only take points that fall into the new shard
+        // TODO: do not get rings every loop iteration!
+        let old_ring = shard_holder.rings.get(&shard_key.clone().map(RingsKey::ShardKey).unwrap_or(RingsKey::Default)).ok_or_else(|| {
+            CollectionError::service_error(format!(
+                    "Shard {shard_id} cannot be transferred for resharding, failed to get shard hash ring"
+            ))
+        })?;
+        let new_ring = shard_holder.rings.get(&RingsKey::Resharding).ok_or_else(|| {
+            CollectionError::service_error(format!(
+                    "Shard {shard_id} cannot be transferred for resharding, no resharding hash ring configured"
+            ))
+        })?;
 
         offset = replica_set
-            .transfer_batch(offset, TRANSFER_BATCH_SIZE)
+            .transfer_batch(offset, TRANSFER_BATCH_SIZE, Some((old_ring, new_ring)))
             .await?;
 
         {

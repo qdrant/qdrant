@@ -77,7 +77,7 @@ pub(super) async fn transfer_stream_records(
         };
 
         offset = replica_set
-            .transfer_batch(offset, TRANSFER_BATCH_SIZE)
+            .transfer_batch(offset, TRANSFER_BATCH_SIZE, None)
             .await?;
 
         {
