@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -40,41 +41,62 @@ pub type ShardKeyMapping = HashMap<ShardKey, HashSet<ShardId>>;
 pub struct ShardHolder {
     shards: HashMap<ShardId, ShardReplicaSet>,
     pub(crate) shard_transfers: SaveOnDisk<HashSet<ShardTransfer>>,
-    rings: HashMap<RingsKey, HashRing<ShardId>>,
+    rings: HashMap<Option<ShardKey>, ShardHashRing>,
     key_mapping: SaveOnDisk<ShardKeyMapping>,
     // Duplicates the information from `key_mapping` for faster access
     // Do not require locking
     shard_id_to_key_mapping: HashMap<ShardId, ShardKey>,
 }
 
-pub type LockedShardHolder = RwLock<ShardHolder>;
-
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum RingsKey {
-    Default,
-    ShardKey(ShardKey),
-    Resharding,
+pub enum ShardHashRing {
+    /// Single hashring
+    Single(HashRing<ShardId>),
+    /// Two hashrings when transitioning during resharding
+    /// Depending on the current resharding state, points may be in either or both shards.
+    Resharding {
+        old: HashRing<ShardId>,
+        new: HashRing<ShardId>,
+    },
 }
 
-impl From<Option<ShardKey>> for RingsKey {
-    fn from(shard_key: Option<ShardKey>) -> Self {
-        match shard_key {
-            Some(shard_key) => shard_key.into(),
-            None => Self::Default,
+impl ShardHashRing {
+    pub fn is_empty(&self) -> bool {
+        match self {
+            Self::Single(ring) => ring.is_empty(),
+            Self::Resharding { old, new } => old.is_empty() && new.is_empty(),
+        }
+    }
+
+    pub fn add(&mut self, shard: ShardId) {
+        match self {
+            Self::Single(ring) => ring.add(shard),
+            // When resharding, update the new ring
+            Self::Resharding { old: _, new } => new.add(shard),
+        }
+    }
+
+    pub fn get<U: Hash>(&self, key: &U) -> Option<&ShardId> {
+        match self {
+            Self::Single(ring) => ring.get(key),
+            Self::Resharding { old, new: _ } => old.get(key),
         }
     }
 }
 
-impl From<ShardKey> for RingsKey {
-    fn from(shard_key: ShardKey) -> Self {
-        Self::ShardKey(shard_key)
+impl From<HashRing<ShardId>> for ShardHashRing {
+    fn from(ring: HashRing<ShardId>) -> Self {
+        Self::Single(ring)
     }
 }
 
+pub type LockedShardHolder = RwLock<ShardHolder>;
+
 impl ShardHolder {
     pub fn new(collection_path: &Path) -> CollectionResult<Self> {
-        let mut rings = HashMap::new();
-        rings.insert(RingsKey::Default, HashRing::fair(HASH_RING_SHARD_SCALE));
+        let rings = HashMap::from([(
+            None,
+            ShardHashRing::from(HashRing::fair(HASH_RING_SHARD_SCALE)),
+        )]);
         let shard_transfers = SaveOnDisk::load_or_init(collection_path.join(SHARD_TRANSFERS_FILE))?;
         let key_mapping: SaveOnDisk<ShardKeyMapping> =
             SaveOnDisk::load_or_init(collection_path.join(SHARD_KEY_MAPPING_FILE))?;
@@ -126,8 +148,8 @@ impl ShardHolder {
     ) -> Result<(), CollectionError> {
         self.shards.insert(shard_id, shard);
         self.rings
-            .entry(shard_key.clone().into())
-            .or_insert_with(|| HashRing::fair(HASH_RING_SHARD_SCALE))
+            .entry(shard_key.clone())
+            .or_insert_with(|| ShardHashRing::from(HashRing::fair(HASH_RING_SHARD_SCALE)))
             .add(shard_id);
 
         if let Some(shard_key) = shard_key {
@@ -176,14 +198,16 @@ impl ShardHolder {
     }
 
     fn rebuild_rings(&mut self) {
-        let mut rings = HashMap::new();
-        rings.insert(RingsKey::Default, HashRing::fair(HASH_RING_SHARD_SCALE));
+        let mut rings = HashMap::from([(
+            None,
+            ShardHashRing::from(HashRing::fair(HASH_RING_SHARD_SCALE)),
+        )]);
         let ids_to_key = self.get_shard_id_to_key_mapping();
         for shard_id in self.shards.keys() {
             let shard_key = ids_to_key.get(shard_id).cloned();
             rings
-                .entry(shard_key.into())
-                .or_insert_with(|| HashRing::fair(HASH_RING_SHARD_SCALE))
+                .entry(shard_key)
+                .or_insert_with(|| ShardHashRing::from(HashRing::fair(HASH_RING_SHARD_SCALE)))
                 .add(*shard_id);
         }
 
@@ -242,7 +266,7 @@ impl ShardHolder {
         operation: O,
         shard_keys_selection: &Option<ShardKey>,
     ) -> CollectionResult<Vec<(&ShardReplicaSet, O)>> {
-        let Some(hashring) = self.rings.get(&shard_keys_selection.clone().into()) else {
+        let Some(hashring) = self.rings.get(&shard_keys_selection.clone()) else {
             return if let Some(shard_key) = shard_keys_selection {
                 Err(CollectionError::bad_input(format!(
                     "Shard key {shard_key} not found"
