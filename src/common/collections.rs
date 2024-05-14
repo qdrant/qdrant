@@ -20,8 +20,8 @@ use itertools::Itertools;
 use rand::prelude::SliceRandom;
 use storage::content_manager::collection_meta_ops::ShardTransferOperations::{Abort, Start};
 use storage::content_manager::collection_meta_ops::{
-    CollectionMetaOperations, CreateShardKey, DropShardKey, ShardTransferOperations,
-    UpdateCollectionOperation,
+    CollectionMetaOperations, CreateShardKey, DropShardKey, ReshardingOperation,
+    ShardTransferOperations, UpdateCollectionOperation,
 };
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
@@ -506,6 +506,50 @@ pub async fn do_update_collection_cluster(
                             from: from_peer_id,
                             method,
                         }),
+                    ),
+                    access,
+                    wait_timeout,
+                )
+                .await
+        }
+        ClusterOperations::StartResharding(op) => {
+            // TODO: Check that there's no resharding in progress already!
+
+            let peer_id = match op.peer_id {
+                Some(peer_id) => {
+                    validate_peer_exists(peer_id)?;
+                    peer_id
+                }
+
+                None => {
+                    // TODO: Select `peer_id` for resharding in a more reasonable way!?
+                    consensus_state
+                        .persistent
+                        .read()
+                        .peer_address_by_id
+                        .read()
+                        .keys()
+                        .copied()
+                        .next()
+                        .unwrap()
+                }
+            };
+
+            // TODO: Select `shard_id` for resharding in a more reasonable way!?
+            let shard_id = collection
+                .state()
+                .await
+                .shards
+                .keys()
+                .copied()
+                .max()
+                .map_or(0, |id| id + 1);
+
+            dispatcher
+                .submit_collection_meta_op(
+                    CollectionMetaOperations::Resharding(
+                        collection_name.clone(),
+                        ReshardingOperation::Start { peer_id, shard_id },
                     ),
                     access,
                     wait_timeout,

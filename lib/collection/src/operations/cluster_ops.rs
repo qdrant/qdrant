@@ -26,6 +26,9 @@ pub enum ClusterOperations {
     DropShardingKey(DropShardingKeyOperation),
     /// Restart transfer
     RestartTransfer(RestartTransferOperation),
+    /// Start resharding
+    #[schemars(skip)]
+    StartResharding(StartReshardingOperation),
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
@@ -102,6 +105,7 @@ impl Validate for ClusterOperations {
             ClusterOperations::CreateShardingKey(op) => op.validate(),
             ClusterOperations::DropShardingKey(op) => op.validate(),
             ClusterOperations::RestartTransfer(op) => op.validate(),
+            ClusterOperations::StartResharding(op) => op.validate(),
         }
     }
 }
@@ -132,6 +136,11 @@ pub struct DropReplicaOperation {
 pub struct AbortTransferOperation {
     #[validate]
     pub abort_transfer: AbortShardTransfer,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
+pub struct StartReshardingOperation {
+    pub peer_id: Option<PeerId>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
