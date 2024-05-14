@@ -5719,7 +5719,8 @@
         "type": "string",
         "enum": [
           "float32",
-          "uint8"
+          "uint8",
+          "float16"
         ]
       },
       "MultiVectorConfig": {
@@ -9368,6 +9369,7 @@
         "type": "string",
         "enum": [
           "float32",
+          "float16",
           "uint8"
         ]
       },

@@ -65,15 +65,25 @@ pub fn open_appendable_memmap_multi_vector_storage_byte(
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
 ) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
-    let storage = open_appendable_memmap_multi_vector_storage_impl::<VectorElementTypeByte>(
-        path,
-        dim,
-        distance,
-        multi_vector_config,
-    )?;
+    let storage =
+        open_appendable_memmap_multi_vector_storage_impl(path, dim, distance, multi_vector_config)?;
 
     Ok(Arc::new(AtomicRefCell::new(
         VectorStorageEnum::MultiDenseAppendableMemmapByte(Box::new(storage)),
+    )))
+}
+
+pub fn open_appendable_memmap_multi_vector_storage_half(
+    path: &Path,
+    dim: usize,
+    distance: Distance,
+    multi_vector_config: MultiVectorConfig,
+) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
+    let storage =
+        open_appendable_memmap_multi_vector_storage_impl(path, dim, distance, multi_vector_config)?;
+
+    Ok(Arc::new(AtomicRefCell::new(
+        VectorStorageEnum::MultiDenseAppendableMemmapHalf(Box::new(storage)),
     )))
 }
 

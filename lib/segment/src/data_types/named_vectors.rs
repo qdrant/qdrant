@@ -335,7 +335,20 @@ impl<'a> NamedVectors<'a> {
                     <ManhattanMetric as Metric<VectorElementTypeByte>>::preprocess(dense_vector)
                 }
             },
-            Some(VectorStorageDatatype::Float16) => todo!(),
+            Some(VectorStorageDatatype::Float16) => match config.distance {
+                Distance::Cosine => {
+                    <CosineMetric as Metric<VectorElementTypeHalf>>::preprocess(dense_vector)
+                }
+                Distance::Euclid => {
+                    <EuclidMetric as Metric<VectorElementTypeHalf>>::preprocess(dense_vector)
+                }
+                Distance::Dot => {
+                    <DotProductMetric as Metric<VectorElementTypeHalf>>::preprocess(dense_vector)
+                }
+                Distance::Manhattan => {
+                    <ManhattanMetric as Metric<VectorElementTypeHalf>>::preprocess(dense_vector)
+                }
+            },
         }
     }
 }

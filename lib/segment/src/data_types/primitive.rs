@@ -80,17 +80,10 @@ impl PrimitiveVectorElement for VectorElementTypeHalf {
 
     fn quantization_preprocess<'a>(
         _quantization_config: &QuantizationConfig,
-        distance: Distance,
+        _distance: Distance,
         vector: &'a [Self],
     ) -> Cow<'a, [f32]> {
-        let v = vector.iter().map(|&x| f16::to_f32(x)).collect_vec();
-        let preprocessed_vector = match distance {
-            Distance::Cosine => <CosineMetric as Metric<VectorElementType>>::preprocess(v),
-            Distance::Euclid => <EuclidMetric as Metric<VectorElementType>>::preprocess(v),
-            Distance::Dot => <DotProductMetric as Metric<VectorElementType>>::preprocess(v),
-            Distance::Manhattan => <ManhattanMetric as Metric<VectorElementType>>::preprocess(v),
-        };
-        Cow::from(preprocessed_vector)
+        Cow::Owned(vector.iter().map(|&x| f16::to_f32(x)).collect_vec())
     }
 
     fn from_float_multivector(

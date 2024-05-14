@@ -570,6 +570,7 @@ fn convert_datatype_from_proto(datatype: Option<i32>) -> Result<Option<Datatype>
             match grpc_datatype {
                 api::grpc::qdrant::Datatype::Uint8 => Ok(Some(Datatype::Uint8)),
                 api::grpc::qdrant::Datatype::Float32 => Ok(Some(Datatype::Float32)),
+                api::grpc::qdrant::Datatype::Float16 => Ok(Some(Datatype::Float16)),
                 api::grpc::qdrant::Datatype::Default => Ok(None),
             }
         } else {
@@ -1680,6 +1681,7 @@ impl From<Datatype> for api::grpc::qdrant::Datatype {
         match value {
             Datatype::Float32 => api::grpc::qdrant::Datatype::Float32,
             Datatype::Uint8 => api::grpc::qdrant::Datatype::Uint8,
+            Datatype::Float16 => api::grpc::qdrant::Datatype::Float16,
         }
     }
 }
