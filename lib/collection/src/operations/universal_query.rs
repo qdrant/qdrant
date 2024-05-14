@@ -19,6 +19,9 @@ pub mod shard_query {
 
     use crate::operations::query_enum::QueryEnum;
 
+    /// Internal response type for a universal query request.
+    ///
+    /// Capable of returning multiple intermediate results if needed, like the case of RRF (Reciprocal Rank Fusion)
     pub type ShardQueryResponse = Vec<Vec<ScoredPoint>>;
 
     #[derive(Debug, Clone)]
