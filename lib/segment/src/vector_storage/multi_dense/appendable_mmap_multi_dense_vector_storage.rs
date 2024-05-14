@@ -13,8 +13,7 @@ use crate::common::Flusher;
 use crate::data_types::named_vectors::{CowMultiVector, CowVector};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
-    TypedMultiDenseVector, TypedMultiDenseVectorRef, VectorElementType, VectorElementTypeByte,
-    VectorRef,
+    TypedMultiDenseVector, TypedMultiDenseVectorRef, VectorElementType, VectorRef,
 };
 use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;

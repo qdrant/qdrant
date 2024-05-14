@@ -7,7 +7,7 @@ use super::primitive::PrimitiveVectorElement;
 use super::tiny_map;
 use super::vectors::{
     DenseVector, MultiDenseVector, TypedMultiDenseVector, TypedMultiDenseVectorRef, Vector,
-    VectorElementType, VectorElementTypeByte, VectorRef,
+    VectorElementType, VectorElementTypeByte, VectorElementTypeHalf, VectorRef,
 };
 use crate::common::operation_error::OperationError;
 use crate::spaces::metric::Metric;
