@@ -27,7 +27,7 @@ use strum::{EnumDiscriminants, EnumIter};
 use validator::Validate;
 
 use crate::shards::shard::{PeerId, ShardId};
-use crate::shards::shard_holder::ShardHashRing;
+use crate::shards::shard_holder::{ShardHashRing, ShardIds};
 
 pub type ClockToken = u64;
 
@@ -216,7 +216,7 @@ impl Validate for CollectionUpdateOperations {
 /// # Panics
 ///
 /// Panics if the hash ring is empty and there is no shard for the given point ID.
-fn point_to_shards(point_id: &ExtendedPointId, ring: &ShardHashRing) -> Vec<ShardId> {
+fn point_to_shards(point_id: &ExtendedPointId, ring: &ShardHashRing) -> ShardIds {
     let shard_ids = ring.get(point_id);
     assert!(
         !shard_ids.is_empty(),

@@ -7,6 +7,7 @@ use common::cpu::CpuBudget;
 use itertools::Itertools;
 // TODO rename ReplicaShard to ReplicaSetShard
 use segment::types::ShardKey;
+use smallvec::SmallVec;
 use tar::Builder as TarBuilder;
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
@@ -37,6 +38,12 @@ const SHARD_TRANSFERS_FILE: &str = "shard_transfers";
 pub const SHARD_KEY_MAPPING_FILE: &str = "shard_key_mapping.json";
 
 pub type ShardKeyMapping = HashMap<ShardKey, HashSet<ShardId>>;
+
+/// List type for shard IDs
+///
+/// Uses a `SmallVec` putting two IDs on the stack. That's the maximum number of shards we expect
+/// with the current resharding implementation.
+pub type ShardIds = SmallVec<[ShardId; 2]>;
 
 pub struct ShardHolder {
     shards: HashMap<ShardId, ShardReplicaSet>,
@@ -75,7 +82,7 @@ impl ShardHashRing {
         }
     }
 
-    pub fn get<U: Hash>(&self, key: &U) -> Vec<ShardId> {
+    pub fn get<U: Hash>(&self, key: &U) -> ShardIds {
         match self {
             Self::Single(ring) => ring.get(key).into_iter().cloned().collect(),
             Self::Resharding { old, new } => old
