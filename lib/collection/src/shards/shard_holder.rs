@@ -92,14 +92,17 @@ impl ShardHashRing {
     pub fn get<U: Hash>(&self, key: &U) -> ShardIds {
         match self {
             Self::Single(ring) => ring.get(key).into_iter().cloned().collect(),
-            Self::Resharding { old, new } => old
-                .get(key)
-                .into_iter()
-                .chain(new.get(key))
-                // Both hash rings may return the same shard ID, take it once
-                .dedup()
-                .cloned()
-                .collect(),
+            // TODO(resharding): just use the old hash ring for now, never route to two shards
+            // TODO(resharding): switch to both as commented below once read folding is implemented
+            Self::Resharding { old, new: _ } => old.get(key).into_iter().cloned().collect(),
+            // Self::Resharding { old, new } => old
+            //     .get(key)
+            //     .into_iter()
+            //     .chain(new.get(key))
+            //     // Both hash rings may return the same shard ID, take it once
+            //     .dedup()
+            //     .cloned()
+            //     .collect(),
         }
     }
 }
