@@ -630,6 +630,7 @@ impl<T: Validate> Validate for NamedQuery<T> {
 
 impl NamedQuery<RecoQuery<Vector>> {
     pub fn new(query: RecoQuery<Vector>, using: Option<String>) -> Self {
+        // TODO: maybe validate there is no sparse vector without vector name
         NamedQuery { query, using }
     }
 }
