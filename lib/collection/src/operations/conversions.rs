@@ -23,9 +23,7 @@ use segment::data_types::vectors::{
 use segment::types::{
     DateTimeWrapper, Distance, MultiVectorConfig, QuantizationConfig, ScoredPoint,
 };
-use segment::vector_storage::query::context_query::{ContextPair, ContextQuery};
-use segment::vector_storage::query::discovery_query::DiscoveryQuery;
-use segment::vector_storage::query::reco_query::RecoQuery;
+use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
 use sparse::common::sparse_vector::{validate_sparse_vector_impl, SparseVector};
 use tonic::Status;
 

@@ -12,10 +12,7 @@ use super::named_vectors::NamedVectors;
 use super::primitive::PrimitiveVectorElement;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::transpose_map_into_named_vector;
-use crate::vector_storage::query::context_query::ContextQuery;
-use crate::vector_storage::query::discovery_query::DiscoveryQuery;
-use crate::vector_storage::query::reco_query::RecoQuery;
-use crate::vector_storage::query::TransformInto;
+use crate::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery, TransformInto};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Vector {

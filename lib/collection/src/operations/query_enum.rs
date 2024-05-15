@@ -1,7 +1,5 @@
 use segment::data_types::vectors::{DenseVector, Named, NamedQuery, NamedVectorStruct, Vector};
-use segment::vector_storage::query::context_query::ContextQuery;
-use segment::vector_storage::query::discovery_query::DiscoveryQuery;
-use segment::vector_storage::query::reco_query::RecoQuery;
+use segment::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery};
 use sparse::common::sparse_vector::SparseVector;
 
 impl QueryEnum {
