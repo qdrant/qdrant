@@ -24,6 +24,7 @@ pub struct ShardQueryRequest {
     pub score_threshold: Option<ScoreType>,
     pub limit: usize,
     pub offset: usize,
+    /// Search params for when there is no prefetch
     pub params: Option<SearchParams>,
     pub with_vector: WithVector,
     pub with_payload: WithPayloadInterface,
@@ -33,6 +34,9 @@ pub struct ShardQueryRequest {
 pub enum ScoringQuery {
     /// Score points against some vector(s)
     Vector(QueryEnum),
+
+    /// Reciprocal rank fusion
+    Rrf,
     // TODO(universal-query): Add fusion and order-by
 }
 
@@ -41,6 +45,7 @@ impl ScoringQuery {
     pub fn get_vector_name(&self) -> Option<&str> {
         match self {
             ScoringQuery::Vector(query) => Some(query.get_vector_name()),
+            _ => None,
         }
     }
 }
@@ -189,6 +194,7 @@ impl ScoringQuery {
             grpc::query_shard_points::query::Score::Vector(query) => {
                 ScoringQuery::Vector(QueryEnum::try_from_grpc_raw_query(query, using)?)
             }
+            grpc::query_shard_points::query::Score::Rrf(_) => ScoringQuery::Rrf,
         };
 
         Ok(scoring_query)
@@ -225,6 +231,9 @@ impl From<ScoringQuery> for grpc::query_shard_points::Query {
         match value {
             ScoringQuery::Vector(query) => Self {
                 score: Some(Score::Vector(grpc::RawQuery::from(query))),
+            },
+            ScoringQuery::Rrf => Self {
+                score: Some(Score::Rrf(true)),
             },
         }
     }
