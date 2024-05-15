@@ -1556,6 +1556,12 @@ impl From<UpdateResult> for UpdateResultInternal {
     }
 }
 
+impl From<DenseVector> for segment_vectors::DenseVector {
+    fn from(value: DenseVector) -> Self {
+        value.data
+    }
+}
+
 impl From<segment_vectors::DenseVector> for DenseVector {
     fn from(value: segment_vectors::DenseVector) -> Self {
         Self { data: value }
@@ -1565,6 +1571,14 @@ impl From<segment_vectors::DenseVector> for DenseVector {
 impl From<sparse::common::sparse_vector::SparseVector> for SparseVector {
     fn from(value: sparse::common::sparse_vector::SparseVector) -> Self {
         let sparse::common::sparse_vector::SparseVector { indices, values } = value;
+
+        Self { indices, values }
+    }
+}
+
+impl From<SparseVector> for sparse::common::sparse_vector::SparseVector {
+    fn from(value: SparseVector) -> Self {
+        let SparseVector { indices, values } = value;
 
         Self { indices, values }
     }
@@ -1581,6 +1595,22 @@ impl From<segment_vectors::MultiDenseVector> for MultiDenseVector {
             .map(DenseVector::from)
             .collect();
         Self { vectors }
+    }
+}
+
+impl From<MultiDenseVector> for segment_vectors::MultiDenseVector {
+    /// Uses the equivalent of [new_unchecked()](segment_vectors::MultiDenseVector::new_unchecked), but rewritten to avoid collecting twice
+    fn from(value: MultiDenseVector) -> Self {
+        let dim = value.vectors[0].data.len();
+        let inner_vector = value
+            .vectors
+            .into_iter()
+            .flat_map(segment_vectors::DenseVector::from)
+            .collect();
+        Self {
+            flattened_vectors: inner_vector,
+            dim,
+        }
     }
 }
 
@@ -1602,6 +1632,32 @@ impl From<segment_vectors::Vector> for RawVector {
     }
 }
 
+impl TryFrom<RawVector> for segment_vectors::Vector {
+    type Error = Status;
+
+    fn try_from(value: RawVector) -> Result<Self, Self::Error> {
+        use crate::grpc::qdrant::raw_vector::Variant;
+
+        let variant = value
+            .variant
+            .ok_or_else(|| Status::invalid_argument("No vector variant provided"))?;
+
+        let vector = match variant {
+            Variant::Dense(dense) => {
+                segment_vectors::Vector::Dense(segment_vectors::DenseVector::from(dense))
+            }
+            Variant::Sparse(sparse) => segment_vectors::Vector::Sparse(
+                sparse::common::sparse_vector::SparseVector::from(sparse),
+            ),
+            Variant::MultiDense(multi_dense) => segment_vectors::Vector::MultiDense(
+                segment_vectors::MultiDenseVector::from(multi_dense),
+            ),
+        };
+
+        Ok(vector)
+    }
+}
+
 impl From<segment_vectors::NamedVectorStruct> for RawVector {
     fn from(value: segment_vectors::NamedVectorStruct) -> Self {
         Self::from(value.to_vector())
@@ -1617,12 +1673,52 @@ impl From<segment_query::RecoQuery<segment_vectors::Vector>> for raw_query::Reco
     }
 }
 
+impl TryFrom<raw_query::Recommend> for segment_query::RecoQuery<segment_vectors::Vector> {
+    type Error = Status;
+    fn try_from(value: raw_query::Recommend) -> Result<Self, Self::Error> {
+        Ok(Self {
+            positives: value
+                .positives
+                .into_iter()
+                .map(segment_vectors::Vector::try_from)
+                .try_collect()?,
+            negatives: value
+                .negatives
+                .into_iter()
+                .map(segment_vectors::Vector::try_from)
+                .try_collect()?,
+        })
+    }
+}
+
 impl From<segment_query::ContextPair<segment_vectors::Vector>> for raw_query::RawContextPair {
     fn from(value: segment_query::ContextPair<segment_vectors::Vector>) -> Self {
         Self {
             positive: Some(RawVector::from(value.positive)),
             negative: Some(RawVector::from(value.negative)),
         }
+    }
+}
+
+impl TryFrom<raw_query::RawContextPair> for segment_query::ContextPair<segment_vectors::Vector> {
+    type Error = Status;
+    fn try_from(value: raw_query::RawContextPair) -> Result<Self, Self::Error> {
+        Ok(Self {
+            positive: value
+                .positive
+                .map(segment_vectors::Vector::try_from)
+                .transpose()?
+                .ok_or_else(|| {
+                    Status::invalid_argument("No positive part of context pair provided")
+                })?,
+            negative: value
+                .negative
+                .map(segment_vectors::Vector::try_from)
+                .transpose()?
+                .ok_or_else(|| {
+                    Status::invalid_argument("No negative part of context pair provided")
+                })?,
+        })
     }
 }
 
@@ -1634,11 +1730,42 @@ impl From<segment_query::ContextQuery<segment_vectors::Vector>> for raw_query::C
     }
 }
 
+impl TryFrom<raw_query::Context> for segment_query::ContextQuery<segment_vectors::Vector> {
+    type Error = Status;
+    fn try_from(value: raw_query::Context) -> Result<Self, Self::Error> {
+        Ok(Self {
+            pairs: value
+                .context
+                .into_iter()
+                .map(segment_query::ContextPair::try_from)
+                .try_collect()?,
+        })
+    }
+}
+
 impl From<segment_query::DiscoveryQuery<segment_vectors::Vector>> for raw_query::Discovery {
     fn from(value: segment_query::DiscoveryQuery<segment_vectors::Vector>) -> Self {
         Self {
             target: Some(RawVector::from(value.target)),
             context: value.pairs.into_iter().map(RawContextPair::from).collect(),
         }
+    }
+}
+
+impl TryFrom<raw_query::Discovery> for segment_query::DiscoveryQuery<segment_vectors::Vector> {
+    type Error = Status;
+    fn try_from(value: raw_query::Discovery) -> Result<Self, Self::Error> {
+        Ok(Self {
+            target: value
+                .target
+                .map(segment_vectors::Vector::try_from)
+                .transpose()?
+                .ok_or_else(|| Status::invalid_argument("No target provided"))?,
+            pairs: value
+                .context
+                .into_iter()
+                .map(segment_query::ContextPair::try_from)
+                .try_collect()?,
+        })
     }
 }
