@@ -9,7 +9,7 @@ use super::quantized_vectors::QuantizedVectorStorage;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
-    DenseVector, QueryVector, VectorElementType, VectorElementTypeByte,
+    DenseVector, QueryVector, VectorElementType, VectorElementTypeByte, VectorElementTypeHalf,
 };
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
@@ -75,7 +75,16 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     self.build_with_metric::<VectorElementTypeByte, ManhattanMetric>()
                 }
             },
-            VectorStorageDatatype::Float16 => todo!(),
+            VectorStorageDatatype::Float16 => match self.distance {
+                Distance::Cosine => self.build_with_metric::<VectorElementTypeHalf, CosineMetric>(),
+                Distance::Euclid => self.build_with_metric::<VectorElementTypeHalf, EuclidMetric>(),
+                Distance::Dot => {
+                    self.build_with_metric::<VectorElementTypeHalf, DotProductMetric>()
+                }
+                Distance::Manhattan => {
+                    self.build_with_metric::<VectorElementTypeHalf, ManhattanMetric>()
+                }
+            },
         }
     }
 

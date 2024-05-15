@@ -13,7 +13,7 @@ use crate::common::operation_error::{check_process_stopped, OperationResult};
 use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
-use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte, VectorRef};
+use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
 use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
@@ -47,11 +47,22 @@ pub fn open_appendable_memmap_vector_storage_byte(
     dim: usize,
     distance: Distance,
 ) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
-    let storage =
-        open_appendable_memmap_vector_storage_impl::<VectorElementTypeByte>(path, dim, distance)?;
+    let storage = open_appendable_memmap_vector_storage_impl(path, dim, distance)?;
 
     Ok(Arc::new(AtomicRefCell::new(
         VectorStorageEnum::DenseAppendableMemmapByte(Box::new(storage)),
+    )))
+}
+
+pub fn open_appendable_memmap_vector_storage_half(
+    path: &Path,
+    dim: usize,
+    distance: Distance,
+) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
+    let storage = open_appendable_memmap_vector_storage_impl(path, dim, distance)?;
+
+    Ok(Arc::new(AtomicRefCell::new(
+        VectorStorageEnum::DenseAppendableMemmapHalf(Box::new(storage)),
     )))
 }
 

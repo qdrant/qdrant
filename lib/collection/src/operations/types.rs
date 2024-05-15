@@ -1273,6 +1273,7 @@ pub enum Datatype {
     #[default]
     Float32,
     Uint8,
+    Float16,
 }
 
 impl From<Datatype> for VectorStorageDatatype {
@@ -1280,6 +1281,7 @@ impl From<Datatype> for VectorStorageDatatype {
         match value {
             Datatype::Float32 => VectorStorageDatatype::Float32,
             Datatype::Uint8 => VectorStorageDatatype::Uint8,
+            Datatype::Float16 => VectorStorageDatatype::Float16,
         }
     }
 }

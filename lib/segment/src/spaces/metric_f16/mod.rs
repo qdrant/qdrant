@@ -1,3 +1,4 @@
+pub mod simple_cosine;
 pub mod simple_dot;
 pub mod simple_euclid;
 pub mod simple_manhattan;

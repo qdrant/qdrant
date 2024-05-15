@@ -15,7 +15,7 @@ use crate::common::operation_error::{check_process_stopped, OperationResult};
 use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
-use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte, VectorRef};
+use crate::data_types::vectors::{VectorElementType, VectorRef};
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::common::get_async_scorer;
 use crate::vector_storage::dense::mmap_dense_vectors::MmapDenseVectors;
@@ -58,14 +58,22 @@ pub fn open_memmap_vector_storage_byte(
     dim: usize,
     distance: Distance,
 ) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
-    let storage = open_memmap_vector_storage_with_async_io_impl::<VectorElementTypeByte>(
-        path,
-        dim,
-        distance,
-        get_async_scorer(),
-    )?;
+    let storage =
+        open_memmap_vector_storage_with_async_io_impl(path, dim, distance, get_async_scorer())?;
     Ok(Arc::new(AtomicRefCell::new(
         VectorStorageEnum::DenseMemmapByte(storage),
+    )))
+}
+
+pub fn open_memmap_vector_storage_half(
+    path: &Path,
+    dim: usize,
+    distance: Distance,
+) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
+    let storage =
+        open_memmap_vector_storage_with_async_io_impl(path, dim, distance, get_async_scorer())?;
+    Ok(Arc::new(AtomicRefCell::new(
+        VectorStorageEnum::DenseMemmapHalf(storage),
     )))
 }
 
