@@ -84,9 +84,13 @@ pub fn add_subscriber<E: 'static>(subscriber: Box<dyn Subscriber<E> + Send + Syn
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dashboard::Dashboard;
     use crate::issue::DummyIssue;
 
-    struct DummySubscriber;
+    #[derive(Clone)]
+    struct DummySubscriber {
+        dashboard: Arc<Dashboard>,
+    }
 
     struct DummyEvent {
         pub collection_id: String,
@@ -95,17 +99,15 @@ mod tests {
     impl Subscriber<DummyEvent> for DummySubscriber {
         fn notify(&self, event: Arc<DummyEvent>) {
             let issue = DummyIssue::new(event.collection_id.clone());
-            crate::submit(issue);
+            self.dashboard.add_issue(issue);
         }
     }
 
-    struct CollectionDeletedEvent {
-        collection_id: String,
-    }
+    struct ClearAllIssuesEvent;
 
-    impl Subscriber<CollectionDeletedEvent> for DummySubscriber {
-        fn notify(&self, event: Arc<CollectionDeletedEvent>) {
-            crate::solve_by_filter::<DummyIssue, _>(|code| code.instance_id == event.collection_id);
+    impl Subscriber<ClearAllIssuesEvent> for DummySubscriber {
+        fn notify(&self, _event: Arc<ClearAllIssuesEvent>) {
+            self.dashboard.issues.clear();
         }
     }
 
@@ -113,27 +115,33 @@ mod tests {
     fn test_basic_use() {
         let mut broker = EventBroker::new();
 
-        broker.add_subscriber::<DummyEvent>(Box::new(DummySubscriber));
-        broker.add_subscriber::<CollectionDeletedEvent>(Box::new(DummySubscriber));
+        let test_dashboard = Arc::new(Dashboard::default());
+
+        let subscriber = DummySubscriber {
+            dashboard: test_dashboard.clone(),
+        };
+
+        broker.add_subscriber::<DummyEvent>(Box::new(subscriber.clone()));
+        broker.add_subscriber::<ClearAllIssuesEvent>(Box::new(subscriber));
 
         broker.publish(DummyEvent {
             collection_id: "dummy".to_string(),
         });
 
-        assert!(crate::all_issues()
+        assert!(test_dashboard
+            .get_all_issues()
             .iter()
             .any(|issue| issue.id == "DUMMY/dummy"));
 
-        broker.publish(CollectionDeletedEvent {
-            collection_id: "dummy".to_string(),
-        });
+        broker.publish(ClearAllIssuesEvent);
 
         assert!(
-            crate::all_issues()
+            test_dashboard
+                .get_all_issues()
                 .iter()
                 .all(|issue| issue.id != "DUMMY/dummy"),
             "{:?}",
-            crate::all_issues()
+            test_dashboard.get_all_issues()
         );
     }
 }
