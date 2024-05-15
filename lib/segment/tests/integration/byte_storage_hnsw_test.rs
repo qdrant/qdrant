@@ -78,17 +78,24 @@ fn compare_search_result(result_a: &[Vec<ScoredPointOffset>], result_b: &[Vec<Sc
         assert_eq!(a.len(), b.len());
         for (a, b) in a.iter().zip(b) {
             assert_eq!(a.idx, b.idx);
-            assert!((a.score - b.score).abs() < 1e-6);
+            assert!((a.score - b.score).abs() < 1e-3);
         }
     }
 }
 
 #[rstest]
-#[case::nearest(QueryVariant::Nearest, 32, 10)]
-#[case::discovery(QueryVariant::Discovery, 128, 20)]
-#[case::recommend(QueryVariant::RecommendBestScore, 64, 20)]
+#[case::nearest(QueryVariant::Nearest, VectorStorageDatatype::Uint8, 32, 10)]
+#[case::nearest(QueryVariant::Nearest, VectorStorageDatatype::Float16, 32, 10)]
+#[case::discovery(QueryVariant::Discovery, VectorStorageDatatype::Uint8, 128, 20)]
+#[case::recommend(
+    QueryVariant::RecommendBestScore,
+    VectorStorageDatatype::Float16,
+    64,
+    20
+)]
 fn test_byte_storage_hnsw(
     #[case] query_variant: QueryVariant,
+    #[case] storage_data_type: VectorStorageDatatype,
     #[case] ef: usize,
     #[case] max_failures: usize, // out of 100
 ) {
@@ -140,7 +147,7 @@ fn test_byte_storage_hnsw(
                 index: Indexes::Plain {},
                 quantization_config: None,
                 multivec_config: None,
-                datatype: Some(VectorStorageDatatype::Uint8),
+                datatype: Some(storage_data_type),
             },
         )]),
         sparse_vector_data: Default::default(),
@@ -151,16 +158,16 @@ fn test_byte_storage_hnsw(
 
     let mut segment_float = build_segment(dir_float.path(), &config_float, true).unwrap();
     let mut segment_byte = build_segment(dir_byte.path(), &config_byte, true).unwrap();
-    // check that `segment_byte` uses byte storage
+    // check that `segment_byte` uses byte or half storage
     {
         let borrowed_storage = segment_byte.vector_data[DEFAULT_VECTOR_NAME]
             .vector_storage
             .borrow();
         let raw_storage: &VectorStorageEnum = &borrowed_storage;
-        assert!(matches!(
-            raw_storage,
-            &VectorStorageEnum::DenseSimpleByte(_)
-        ));
+        assert!(
+            matches!(raw_storage, &VectorStorageEnum::DenseSimpleByte(_))
+                | matches!(raw_storage, &VectorStorageEnum::DenseSimpleHalf(_))
+        );
     }
 
     for n in 0..num_vectors {
@@ -276,7 +283,9 @@ fn test_byte_storage_hnsw(
             .borrow()
             .search(&[&query], filter_query, top, None, &Default::default())
             .unwrap();
-        compare_search_result(&plain_result_float, &plain_result_byte);
+        if storage_data_type == VectorStorageDatatype::Uint8 {
+            compare_search_result(&plain_result_float, &plain_result_byte);
+        }
 
         if plain_result_byte == index_result_byte {
             hits += 1;

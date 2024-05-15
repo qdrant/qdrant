@@ -1531,6 +1531,7 @@ Note: 1kB = 1 vector of size 256. |
 | Default | 0 |  |
 | Float32 | 1 |  |
 | Uint8 | 2 |  |
+| Float16 | 3 |  |
 
 
 

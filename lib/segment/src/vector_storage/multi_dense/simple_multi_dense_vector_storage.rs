@@ -90,6 +90,27 @@ pub fn open_simple_multi_dense_vector_storage_byte(
     )))
 }
 
+pub fn open_simple_multi_dense_vector_storage_half(
+    database: Arc<RwLock<DB>>,
+    database_column_name: &str,
+    dim: usize,
+    distance: Distance,
+    multi_vector_config: MultiVectorConfig,
+    stopped: &AtomicBool,
+) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
+    let storage = open_simple_multi_dense_vector_storage_impl(
+        database,
+        database_column_name,
+        dim,
+        distance,
+        multi_vector_config,
+        stopped,
+    )?;
+    Ok(Arc::new(AtomicRefCell::new(
+        VectorStorageEnum::MultiDenseSimpleHalf(storage),
+    )))
+}
+
 fn open_simple_multi_dense_vector_storage_impl<T: PrimitiveVectorElement>(
     database: Arc<RwLock<DB>>,
     database_column_name: &str,

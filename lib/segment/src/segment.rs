@@ -216,17 +216,22 @@ impl Segment {
                     let vector = match *vector_storage {
                         VectorStorageEnum::DenseSimple(_)
                         | VectorStorageEnum::DenseSimpleByte(_)
+                        | VectorStorageEnum::DenseSimpleHalf(_)
                         | VectorStorageEnum::DenseMemmap(_)
                         | VectorStorageEnum::DenseMemmapByte(_)
+                        | VectorStorageEnum::DenseMemmapHalf(_)
                         | VectorStorageEnum::DenseAppendableMemmap(_)
-                        | VectorStorageEnum::DenseAppendableMemmapByte(_) => {
+                        | VectorStorageEnum::DenseAppendableMemmapByte(_)
+                        | VectorStorageEnum::DenseAppendableMemmapHalf(_) => {
                             Vector::from(vec![1.0; dim])
                         }
                         VectorStorageEnum::SparseSimple(_) => Vector::from(SparseVector::default()),
                         VectorStorageEnum::MultiDenseSimple(_)
                         | VectorStorageEnum::MultiDenseSimpleByte(_)
+                        | VectorStorageEnum::MultiDenseSimpleHalf(_)
                         | VectorStorageEnum::MultiDenseAppendableMemmap(_)
-                        | VectorStorageEnum::MultiDenseAppendableMemmapByte(_) => {
+                        | VectorStorageEnum::MultiDenseAppendableMemmapByte(_)
+                        | VectorStorageEnum::MultiDenseAppendableMemmapHalf(_) => {
                             Vector::from(MultiDenseVector::placeholder(dim))
                         }
                     };
