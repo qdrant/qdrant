@@ -67,6 +67,13 @@ pub enum ShardHashRing {
 }
 
 impl ShardHashRing {
+    /// Create a new single hashring
+    ///
+    /// The hashring is created with a fair distribution of points and `HASH_RING_SHARD_SCALE` scale.
+    pub fn single() -> Self {
+        Self::Single(HashRing::fair(HASH_RING_SHARD_SCALE))
+    }
+
     pub fn is_empty(&self) -> bool {
         match self {
             Self::Single(ring) => ring.is_empty(),
@@ -97,20 +104,11 @@ impl ShardHashRing {
     }
 }
 
-impl From<HashRing<ShardId>> for ShardHashRing {
-    fn from(ring: HashRing<ShardId>) -> Self {
-        Self::Single(ring)
-    }
-}
-
 pub type LockedShardHolder = RwLock<ShardHolder>;
 
 impl ShardHolder {
     pub fn new(collection_path: &Path) -> CollectionResult<Self> {
-        let rings = HashMap::from([(
-            None,
-            ShardHashRing::from(HashRing::fair(HASH_RING_SHARD_SCALE)),
-        )]);
+        let rings = HashMap::from([(None, ShardHashRing::single())]);
         let shard_transfers = SaveOnDisk::load_or_init(collection_path.join(SHARD_TRANSFERS_FILE))?;
         let key_mapping: SaveOnDisk<ShardKeyMapping> =
             SaveOnDisk::load_or_init(collection_path.join(SHARD_KEY_MAPPING_FILE))?;
@@ -163,7 +161,7 @@ impl ShardHolder {
         self.shards.insert(shard_id, shard);
         self.rings
             .entry(shard_key.clone())
-            .or_insert_with(|| ShardHashRing::from(HashRing::fair(HASH_RING_SHARD_SCALE)))
+            .or_insert_with(ShardHashRing::single)
             .add(shard_id);
 
         if let Some(shard_key) = shard_key {
@@ -212,16 +210,13 @@ impl ShardHolder {
     }
 
     fn rebuild_rings(&mut self) {
-        let mut rings = HashMap::from([(
-            None,
-            ShardHashRing::from(HashRing::fair(HASH_RING_SHARD_SCALE)),
-        )]);
+        let mut rings = HashMap::from([(None, ShardHashRing::single())]);
         let ids_to_key = self.get_shard_id_to_key_mapping();
         for shard_id in self.shards.keys() {
             let shard_key = ids_to_key.get(shard_id).cloned();
             rings
                 .entry(shard_key)
-                .or_insert_with(|| ShardHashRing::from(HashRing::fair(HASH_RING_SHARD_SCALE)))
+                .or_insert_with(ShardHashRing::single)
                 .add(*shard_id);
         }
 
