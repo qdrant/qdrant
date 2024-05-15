@@ -58,42 +58,48 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
 
     fn try_from(request: ShardQueryRequest) -> CollectionResult<Self> {
         let ShardQueryRequest {
+            prefetches,
             query,
-            filter,
-            score_threshold,
+            filter: req_filter,
+            score_threshold: req_score_threshold,
             limit,
             offset: req_offset,
             with_vector: req_with_vector,
             with_payload: req_with_payload,
-            prefetches: prefetch,
             params,
         } = request;
 
         let mut core_searches = Vec::new();
         let sources;
         let rescore;
+        let filter;
         let offset;
+        let score_threshold;
         let with_vector;
         let with_payload;
 
-        if !prefetch.is_empty() {
-            sources = recurse_prefetches(&mut core_searches, prefetch);
+        if !prefetches.is_empty() {
+            sources = recurse_prefetches(&mut core_searches, prefetches)?;
             rescore = Some(query);
+            filter = req_filter;
             offset = req_offset;
+            score_threshold = req_score_threshold;
             with_vector = req_with_vector;
             with_payload = req_with_payload;
         } else {
             // Everything should come from 1 core search
-            #[allow(clippy::infallible_destructuring_match)]
-            // TODO: remove once there are more variants
             let query = match query {
                 ScoringQuery::Vector(query) => query,
-                // TODO: return error for fusion queries without prefetch
+                ScoringQuery::Rrf => {
+                    return Err(CollectionError::bad_request(
+                        "cannot make RRF without prefetches".to_string(),
+                    ))
+                }
             };
             let core_search = CoreSearchRequest {
                 query,
-                filter,
-                score_threshold,
+                filter: req_filter,
+                score_threshold: req_score_threshold,
                 with_vector: Some(req_with_vector),
                 with_payload: Some(req_with_payload),
                 offset: req_offset,
@@ -104,7 +110,9 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
 
             sources = vec![PrefetchSource::BatchIdx(0)];
             rescore = None;
+            filter = None;
             offset = 0;
+            score_threshold = None;
             with_vector = WithVector::Bool(false);
             with_payload = WithPayloadInterface::Bool(false);
         }
@@ -115,8 +123,8 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
                 merge: PrefetchMerge {
                     rescore,
                     limit,
-                    filter: None,
-                    score_threshold: None,
+                    filter,
+                    score_threshold,
                 },
             },
             batch: Arc::new(CoreSearchRequestBatch {
@@ -132,7 +140,7 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
 fn recurse_prefetches(
     core_searches: &mut Vec<CoreSearchRequest>,
     prefetches: Vec<ShardPrefetch>,
-) -> Vec<PrefetchSource> {
+) -> CollectionResult<Vec<PrefetchSource>> {
     let mut sources = Vec::with_capacity(prefetches.len());
 
     for prefetch in prefetches {
@@ -164,12 +172,17 @@ fn recurse_prefetches(
 
                     PrefetchSource::BatchIdx(idx)
                 }
+                ScoringQuery::Rrf => {
+                    return Err(CollectionError::bad_request(
+                        "cannot do RRF without prefetches".to_string(),
+                    ))
+                }
             }
         } else {
-            let sources = recurse_prefetches(core_searches, prefetches);
+            let inner_sources = recurse_prefetches(core_searches, prefetches)?;
 
             let prefetch_plan = PrefetchPlan {
-                sources,
+                sources: inner_sources,
                 merge: PrefetchMerge {
                     rescore: Some(query),
                     filter,
@@ -182,13 +195,16 @@ fn recurse_prefetches(
         sources.push(source);
     }
 
-    sources
+    Ok(sources)
 }
 
 #[cfg(test)]
 mod tests {
     use segment::data_types::vectors::{MultiDenseVector, NamedVectorStruct, Vector};
-    use segment::types::{Filter, SearchParams, WithPayloadInterface, WithVector};
+    use segment::types::{
+        Condition, FieldCondition, Filter, Match, SearchParams, WithPayloadInterface, WithVector,
+    };
+    use sparse::common::sparse_vector::SparseVector;
 
     use super::*;
     use crate::operations::query_enum::QueryEnum;
@@ -277,7 +293,7 @@ mod tests {
                             "multi"
                         )
                     ))),
-                    filter: None,
+                    filter: Some(Filter::default()),
                     limit: 10,
                     score_threshold: None,
                 }
@@ -345,5 +361,205 @@ mod tests {
             planned_query.with_payload,
             WithPayloadInterface::Bool(false)
         );
+    }
+
+    #[test]
+    fn test_try_from_hybrid_query() {
+        let dummy_vector = vec![1.0, 2.0, 3.0];
+        let dummy_sparse = SparseVector::new(vec![100, 123, 2000], vec![0.2, 0.3, 0.4]).unwrap();
+        let request = ShardQueryRequest {
+            prefetches: vec![
+                ShardPrefetch {
+                    prefetches: Vec::new(),
+                    query: ScoringQuery::Vector(QueryEnum::Nearest(
+                        NamedVectorStruct::new_from_vector(
+                            Vector::Dense(dummy_vector.clone()),
+                            "dense",
+                        ),
+                    )),
+                    limit: 100,
+                    params: None,
+                    filter: None,
+                    score_threshold: None,
+                },
+                ShardPrefetch {
+                    prefetches: Vec::new(),
+                    query: ScoringQuery::Vector(QueryEnum::Nearest(
+                        NamedVectorStruct::new_from_vector(
+                            Vector::Sparse(dummy_sparse.clone()),
+                            "sparse",
+                        ),
+                    )),
+                    limit: 100,
+                    params: None,
+                    filter: None,
+                    score_threshold: None,
+                },
+            ],
+            query: ScoringQuery::Rrf,
+            filter: Some(Filter::default()),
+            score_threshold: None,
+            limit: 50,
+            offset: 0,
+            params: None,
+            with_vector: WithVector::Bool(true),
+            with_payload: WithPayloadInterface::Bool(false),
+        };
+
+        let planned_query = PlannedQuery::try_from(request).unwrap();
+
+        assert_eq!(
+            planned_query.batch.searches,
+            vec![
+                CoreSearchRequest {
+                    query: QueryEnum::Nearest(NamedVectorStruct::new_from_vector(
+                        Vector::Dense(dummy_vector.clone()),
+                        "dense",
+                    )),
+                    filter: None,
+                    params: None,
+                    limit: 100,
+                    offset: 0,
+                    with_payload: Some(WithPayloadInterface::Bool(false)),
+                    with_vector: Some(WithVector::Bool(false)),
+                    score_threshold: None,
+                },
+                CoreSearchRequest {
+                    query: QueryEnum::Nearest(NamedVectorStruct::new_from_vector(
+                        Vector::Sparse(dummy_sparse.clone()),
+                        "sparse",
+                    )),
+                    filter: None,
+                    params: None,
+                    limit: 100,
+                    offset: 0,
+                    with_payload: Some(WithPayloadInterface::Bool(false)),
+                    with_vector: Some(WithVector::Bool(false)),
+                    score_threshold: None,
+                }
+            ]
+        );
+
+        assert_eq!(
+            planned_query.merge_plan,
+            PrefetchPlan {
+                sources: vec![PrefetchSource::BatchIdx(0), PrefetchSource::BatchIdx(1)],
+                merge: PrefetchMerge {
+                    rescore: Some(ScoringQuery::Rrf),
+                    filter: Some(Filter::default()),
+                    limit: 50,
+                    score_threshold: None
+                }
+            }
+        );
+
+        assert_eq!(planned_query.offset, 0);
+        assert_eq!(planned_query.with_vector, WithVector::Bool(true));
+        assert_eq!(
+            planned_query.with_payload,
+            WithPayloadInterface::Bool(false)
+        );
+    }
+
+    #[test]
+    fn test_try_from_rrf_without_source() {
+        let request = ShardQueryRequest {
+            prefetches: vec![],
+            query: ScoringQuery::Rrf,
+            filter: Some(Filter::default()),
+            score_threshold: None,
+            limit: 50,
+            offset: 0,
+            params: None,
+            with_vector: WithVector::Bool(true),
+            with_payload: WithPayloadInterface::Bool(false),
+        };
+
+        let planned_query = PlannedQuery::try_from(request);
+
+        assert!(planned_query.is_err())
+    }
+
+    #[test]
+    fn test_base_params_mapping_in_try_from() {
+        let dummy_vector = vec![1.0, 2.0, 3.0];
+        let dummy_params = Some(SearchParams {
+            indexed_only: true,
+            ..Default::default()
+        });
+        let dummy_filter = Some(Filter::new_must(Condition::Field(
+            FieldCondition::new_match(
+                "my_key".try_into().unwrap(),
+                Match::new_value(segment::types::ValueVariants::Keyword("hello".to_string())),
+            ),
+        )));
+
+        let request = ShardQueryRequest {
+            prefetches: vec![ShardPrefetch {
+                prefetches: Vec::new(),
+                query: ScoringQuery::Vector(QueryEnum::Nearest(
+                    NamedVectorStruct::new_from_vector(
+                        Vector::Dense(dummy_vector.clone()),
+                        "dense",
+                    ),
+                )),
+                limit: 37,
+                params: dummy_params,
+                filter: dummy_filter.clone(),
+                score_threshold: Some(0.1),
+            }],
+            query: ScoringQuery::Rrf,
+            filter: Some(Filter::default()),
+            score_threshold: Some(0.666),
+            limit: 50,
+            offset: 49,
+
+            // these params will be ignored because we have a prefetch
+            params: Some(SearchParams {
+                exact: true,
+                ..Default::default()
+            }),
+            with_vector: WithVector::Bool(true),
+            with_payload: WithPayloadInterface::Bool(false),
+        };
+
+        let planned_query = PlannedQuery::try_from(request).unwrap();
+
+        assert_eq!(planned_query.offset, 49);
+        assert_eq!(
+            planned_query.with_payload,
+            WithPayloadInterface::Bool(false)
+        );
+        assert_eq!(planned_query.with_vector, WithVector::Bool(true));
+
+        assert_eq!(
+            planned_query.merge_plan,
+            PrefetchPlan {
+                sources: vec![PrefetchSource::BatchIdx(0)],
+                merge: PrefetchMerge {
+                    rescore: Some(ScoringQuery::Rrf),
+                    filter: Some(Filter::default()),
+                    limit: 50,
+                    score_threshold: Some(0.666)
+                }
+            }
+        );
+
+        assert_eq!(
+            planned_query.batch.searches,
+            vec![CoreSearchRequest {
+                query: QueryEnum::Nearest(NamedVectorStruct::new_from_vector(
+                    Vector::Dense(dummy_vector.clone()),
+                    "dense",
+                ),),
+                filter: dummy_filter,
+                params: dummy_params,
+                limit: 37,
+                offset: 0,
+                with_payload: Some(WithPayloadInterface::Bool(false)),
+                with_vector: Some(WithVector::Bool(false)),
+                score_threshold: Some(0.1)
+            }]
+        )
     }
 }
