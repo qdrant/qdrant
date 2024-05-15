@@ -13,18 +13,34 @@
 // TODO(universal-query): Create `CollectionQueryRequest` struct
 
 pub mod shard_query {
+    use api::grpc::qdrant as grpc;
     use common::types::ScoreType;
-    use segment::types::{Filter, SearchParams, WithPayloadInterface, WithVector};
+    use segment::types::{Filter, ScoredPoint, SearchParams, WithPayloadInterface, WithVector};
 
     use crate::operations::query_enum::QueryEnum;
 
-    #[derive(Debug)]
+    /// Internal response type for a universal query request.
+    ///
+    /// Capable of returning multiple intermediate results if needed, like the case of RRF (Reciprocal Rank Fusion)
+    pub type ShardQueryResponse = Vec<Vec<ScoredPoint>>;
+
+    #[derive(Debug, Clone)]
     pub enum ScoringQuery {
         /// Score points against some vector(s)
         Vector(QueryEnum),
         // TODO(universal-query): Add fusion and order-by
     }
 
+    impl ScoringQuery {
+        /// Get the vector name if it is scored against a vector
+        pub fn get_vector_name(&self) -> Option<&str> {
+            match self {
+                ScoringQuery::Vector(query) => Some(query.get_vector_name()),
+            }
+        }
+    }
+
+    #[derive(Clone)]
     pub struct ShardPrefetch {
         pub prefetches: Option<Vec<ShardPrefetch>>,
         pub query: ScoringQuery,
@@ -37,6 +53,7 @@ pub mod shard_query {
     /// Internal representation of a universal query request.
     ///
     /// Direct translation of the user-facing request, but with all point ids substituted with their corresponding vectors.
+    #[derive(Clone)]
     pub struct ShardQueryRequest {
         pub prefetch: Option<Vec<ShardPrefetch>>,
         pub query: ScoringQuery,
@@ -47,6 +64,108 @@ pub mod shard_query {
         pub params: Option<SearchParams>,
         pub with_vector: WithVector,
         pub with_payload: WithPayloadInterface,
+    }
+
+    impl From<grpc::QueryShardPoints> for ShardQueryRequest {
+        fn from(_value: grpc::QueryShardPoints) -> Self {
+            todo!()
+        }
+    }
+
+    impl From<QueryEnum> for grpc::RawQuery {
+        fn from(value: QueryEnum) -> Self {
+            use api::grpc::qdrant::raw_query::Variant;
+
+            let variant = match value {
+                QueryEnum::Nearest(named) => {
+                    Variant::Nearest(grpc::RawVector::from(named.to_vector()))
+                }
+                QueryEnum::RecommendBestScore(named) => {
+                    Variant::RecommendBestScore(grpc::raw_query::Recommend::from(named.query))
+                }
+                QueryEnum::Discover(named) => {
+                    Variant::Discover(grpc::raw_query::Discovery::from(named.query))
+                }
+                QueryEnum::Context(named) => {
+                    Variant::Context(grpc::raw_query::Context::from(named.query))
+                }
+            };
+
+            Self {
+                variant: Some(variant),
+            }
+        }
+    }
+
+    impl From<ScoringQuery> for grpc::query_shard_points::Query {
+        fn from(value: ScoringQuery) -> Self {
+            use grpc::query_shard_points::query::Score;
+
+            match value {
+                ScoringQuery::Vector(query) => Self {
+                    score: Some(Score::Vector(grpc::RawQuery::from(query))),
+                },
+            }
+        }
+    }
+
+    impl From<ShardPrefetch> for grpc::query_shard_points::Prefetch {
+        fn from(value: ShardPrefetch) -> Self {
+            let ShardPrefetch {
+                prefetches,
+                query,
+                limit,
+                params,
+                filter,
+                score_threshold,
+            } = value;
+            Self {
+                prefetch: prefetches
+                    .into_iter()
+                    .flat_map(IntoIterator::into_iter)
+                    .map(Self::from)
+                    .collect(),
+                using: query.get_vector_name().map(ToOwned::to_owned),
+                query: Some(grpc::query_shard_points::Query::from(query)),
+                filter: filter.map(grpc::Filter::from),
+                params: params.map(grpc::SearchParams::from),
+                score_threshold,
+                limit: limit as u64,
+            }
+        }
+    }
+
+    impl From<ShardQueryRequest> for grpc::QueryShardPoints {
+        fn from(value: ShardQueryRequest) -> Self {
+            let ShardQueryRequest {
+                prefetch,
+                query,
+                filter,
+                score_threshold,
+                limit,
+                offset,
+                params,
+                with_vector,
+                with_payload,
+            } = value;
+
+            Self {
+                prefetch: prefetch
+                    .into_iter()
+                    .flat_map(IntoIterator::into_iter)
+                    .map(grpc::query_shard_points::Prefetch::from)
+                    .collect(),
+                using: query.get_vector_name().map(ToOwned::to_owned),
+                query: Some(grpc::query_shard_points::Query::from(query)),
+                filter: filter.map(grpc::Filter::from),
+                params: params.map(grpc::SearchParams::from),
+                score_threshold,
+                limit: limit as u64,
+                offset: offset as u64,
+                with_payload: Some(grpc::WithPayloadSelector::from(with_payload)),
+                with_vectors: Some(grpc::WithVectorsSelector::from(with_vector)),
+            }
+        }
     }
 }
 

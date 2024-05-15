@@ -3749,9 +3749,9 @@ pub struct DenseVector {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SparseVector {
     #[prost(float, repeated, tag = "1")]
-    pub data: ::prost::alloc::vec::Vec<f32>,
-    #[prost(message, optional, tag = "2")]
-    pub indices: ::core::option::Option<SparseIndices>,
+    pub values: ::prost::alloc::vec::Vec<f32>,
+    #[prost(uint32, repeated, tag = "2")]
+    pub indices: ::prost::alloc::vec::Vec<u32>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -3781,7 +3781,7 @@ pub mod vector_input {
         #[prost(message, tag = "3")]
         Sparse(super::SparseVector),
         #[prost(message, tag = "4")]
-        Multi(super::MultiDenseVector),
+        MultiDense(super::MultiDenseVector),
     }
 }
 /// ---------------------------------------------
@@ -8025,7 +8025,7 @@ pub mod raw_vector {
         #[prost(message, tag = "2")]
         Sparse(super::SparseVector),
         #[prost(message, tag = "3")]
-        Multi(super::MultiDenseVector),
+        MultiDense(super::MultiDenseVector),
     }
 }
 /// Query variants for raw vectors (ids have been substituted with vectors)
@@ -8094,21 +8094,25 @@ pub mod raw_query {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryShardPoints {
-    #[prost(message, optional, tag = "1")]
-    pub prefetch: ::core::option::Option<query_shard_points::Prefetch>,
+    #[prost(message, repeated, tag = "1")]
+    pub prefetch: ::prost::alloc::vec::Vec<query_shard_points::Prefetch>,
     #[prost(message, optional, tag = "2")]
     pub query: ::core::option::Option<query_shard_points::Query>,
-    #[prost(string, tag = "3")]
-    pub using: ::prost::alloc::string::String,
+    #[prost(string, optional, tag = "3")]
+    pub using: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(message, optional, tag = "4")]
     pub filter: ::core::option::Option<Filter>,
     #[prost(uint64, tag = "5")]
     pub limit: u64,
-    #[prost(uint64, tag = "6")]
+    #[prost(message, optional, tag = "6")]
+    pub params: ::core::option::Option<SearchParams>,
+    #[prost(float, optional, tag = "7")]
+    pub score_threshold: ::core::option::Option<f32>,
+    #[prost(uint64, tag = "8")]
     pub offset: u64,
-    #[prost(message, optional, tag = "7")]
+    #[prost(message, optional, tag = "9")]
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
-    #[prost(message, optional, tag = "8")]
+    #[prost(message, optional, tag = "10")]
     pub with_vectors: ::core::option::Option<WithVectorsSelector>,
 }
 /// Nested message and enum types in `QueryShardPoints`.
@@ -8135,33 +8139,46 @@ pub mod query_shard_points {
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Prefetch {
-        #[prost(message, optional, boxed, tag = "1")]
-        pub prefetch: ::core::option::Option<::prost::alloc::boxed::Box<Prefetch>>,
+        #[prost(message, repeated, tag = "1")]
+        pub prefetch: ::prost::alloc::vec::Vec<Prefetch>,
         #[prost(message, optional, tag = "2")]
         pub query: ::core::option::Option<Query>,
-        #[prost(string, tag = "3")]
-        pub using: ::prost::alloc::string::String,
+        #[prost(string, optional, tag = "3")]
+        pub using: ::core::option::Option<::prost::alloc::string::String>,
         #[prost(message, optional, tag = "4")]
         pub filter: ::core::option::Option<super::Filter>,
         #[prost(uint64, tag = "5")]
         pub limit: u64,
+        #[prost(message, optional, tag = "6")]
+        pub params: ::core::option::Option<super::SearchParams>,
+        #[prost(float, optional, tag = "7")]
+        pub score_threshold: ::core::option::Option<f32>,
     }
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryPointsInternal {
-    #[prost(message, optional, tag = "1")]
+    #[prost(string, tag = "1")]
+    pub collection_name: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
     pub query_points: ::core::option::Option<QueryShardPoints>,
-    #[prost(uint32, optional, tag = "2")]
+    #[prost(uint32, optional, tag = "3")]
     pub shard_id: ::core::option::Option<u32>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IntermediateResult {
+    #[prost(message, repeated, tag = "1")]
+    pub result: ::prost::alloc::vec::Vec<ScoredPoint>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryResponse {
     #[prost(message, repeated, tag = "1")]
-    pub result: ::prost::alloc::vec::Vec<ScoredPoint>,
+    pub result: ::prost::alloc::vec::Vec<IntermediateResult>,
     /// Time spent to process
     #[prost(double, tag = "2")]
     pub time: f64,

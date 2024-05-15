@@ -4,8 +4,7 @@ use futures::Future;
 use itertools::Itertools;
 use segment::data_types::vectors::NamedQuery;
 use segment::types::{Condition, Filter, HasIdCondition, ScoredPoint};
-use segment::vector_storage::query::context_query::{ContextPair, ContextQuery};
-use segment::vector_storage::query::discovery_query::DiscoveryQuery;
+use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery};
 use tokio::sync::RwLockReadGuard;
 
 use crate::collection::Collection;

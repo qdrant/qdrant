@@ -2,17 +2,21 @@ use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
 use chrono::{NaiveDateTime, Timelike};
+use itertools::Itertools;
 use segment::data_types::integer_index::IntegerIndexType;
 use segment::data_types::text_index::TextIndexType;
-use segment::data_types::vectors::{DenseVector, MultiDenseVector};
+use segment::data_types::vectors as segment_vectors;
 use segment::json_path::JsonPath;
 use segment::types::{default_quantization_ignore_value, DateTimePayloadType, FloatPayloadType};
+use segment::vector_storage::query as segment_query;
 use tonic::Status;
 use uuid::Uuid;
 
+use super::qdrant::raw_query::RawContextPair;
 use super::qdrant::{
-    start_from, BinaryQuantization, CompressionRatio, DatetimeRange, Direction, GeoLineString,
-    GroupId, MultiVectorComparator, MultiVectorConfig, OrderBy, Range, SparseIndices, StartFrom,
+    raw_query, start_from, BinaryQuantization, CompressionRatio, DatetimeRange, Direction,
+    GeoLineString, GroupId, MultiVectorComparator, MultiVectorConfig, OrderBy, Range, RawVector,
+    SparseIndices, StartFrom,
 };
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
@@ -24,16 +28,16 @@ use crate::grpc::qdrant::vectors::VectorsOptions;
 use crate::grpc::qdrant::with_payload_selector::SelectorOptions;
 use crate::grpc::qdrant::{
     shard_key, with_vectors_selector, CollectionDescription, CollectionOperationResponse,
-    Condition, Distance, FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius,
-    HasIdCondition, HealthCheckReply, HnswConfigDiff, IntegerIndexParams, IsEmptyCondition,
-    IsNullCondition, ListCollectionsResponse, ListValue, Match, MinShould, NamedVectors,
-    NestedCondition, PayloadExcludeSelector, PayloadIncludeSelector, PayloadIndexParams,
-    PayloadSchemaInfo, PayloadSchemaType, PointId, PointsOperationResponse,
-    PointsOperationResponseInternal, ProductQuantization, QuantizationConfig,
-    QuantizationSearchParams, QuantizationType, RepeatedIntegers, RepeatedStrings,
-    ScalarQuantization, ScoredPoint, SearchParams, ShardKey, Struct, TextIndexParams,
-    TokenizerType, UpdateResult, UpdateResultInternal, Value, ValuesCount, Vector, Vectors,
-    VectorsSelector, WithPayloadSelector, WithVectorsSelector,
+    Condition, DenseVector, Distance, FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoPolygon,
+    GeoRadius, HasIdCondition, HealthCheckReply, HnswConfigDiff, IntegerIndexParams,
+    IsEmptyCondition, IsNullCondition, ListCollectionsResponse, ListValue, Match, MinShould,
+    MultiDenseVector, NamedVectors, NestedCondition, PayloadExcludeSelector,
+    PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo, PayloadSchemaType, PointId,
+    PointsOperationResponse, PointsOperationResponseInternal, ProductQuantization,
+    QuantizationConfig, QuantizationSearchParams, QuantizationType, RepeatedIntegers,
+    RepeatedStrings, ScalarQuantization, ScoredPoint, SearchParams, ShardKey, SparseVector, Struct,
+    TextIndexParams, TokenizerType, UpdateResult, UpdateResultInternal, Value, ValuesCount, Vector,
+    Vectors, VectorsSelector, WithPayloadSelector, WithVectorsSelector,
 };
 
 pub fn payload_to_proto(payload: segment::types::Payload) -> HashMap<String, Value> {
@@ -474,22 +478,22 @@ impl From<segment::types::PointIdType> for PointId {
     }
 }
 
-impl From<segment::data_types::vectors::Vector> for Vector {
-    fn from(vector: segment::data_types::vectors::Vector) -> Self {
+impl From<segment_vectors::Vector> for Vector {
+    fn from(vector: segment_vectors::Vector) -> Self {
         match vector {
-            segment::data_types::vectors::Vector::Dense(vector) => Self {
+            segment_vectors::Vector::Dense(vector) => Self {
                 data: vector,
                 indices: None,
                 vectors_count: None,
             },
-            segment::data_types::vectors::Vector::Sparse(vector) => Self {
+            segment_vectors::Vector::Sparse(vector) => Self {
                 data: vector.values,
                 indices: Some(SparseIndices {
                     data: vector.indices,
                 }),
                 vectors_count: None,
             },
-            segment::data_types::vectors::Vector::MultiDense(vector) => {
+            segment_vectors::Vector::MultiDense(vector) => {
                 let vector_count = vector.multi_vectors().count() as u32;
                 Self {
                     data: vector.flattened_vectors,
@@ -501,13 +505,13 @@ impl From<segment::data_types::vectors::Vector> for Vector {
     }
 }
 
-impl TryFrom<Vector> for segment::data_types::vectors::Vector {
+impl TryFrom<Vector> for segment_vectors::Vector {
     type Error = Status;
 
     fn try_from(vector: Vector) -> Result<Self, Self::Error> {
         // sparse vector
         if let Some(indices) = vector.indices {
-            return Ok(segment::data_types::vectors::Vector::Sparse(
+            return Ok(segment_vectors::Vector::Sparse(
                 sparse::common::sparse_vector::SparseVector::new(indices.data, vector.data)
                     .map_err(|_| {
                         Status::invalid_argument(
@@ -525,17 +529,17 @@ impl TryFrom<Vector> for segment::data_types::vectors::Vector {
                 ));
             }
             let dim = vector.data.len() / vector_count as usize;
-            let multi = MultiDenseVector::new(vector.data, dim);
-            return Ok(segment::data_types::vectors::Vector::MultiDense(multi));
+            let multi = segment_vectors::MultiDenseVector::new(vector.data, dim);
+            return Ok(segment_vectors::Vector::MultiDense(multi));
         }
 
         // dense vector
-        Ok(segment::data_types::vectors::Vector::Dense(vector.data))
+        Ok(segment_vectors::Vector::Dense(vector.data))
     }
 }
 
-impl From<HashMap<String, segment::data_types::vectors::Vector>> for NamedVectors {
-    fn from(vectors: HashMap<String, segment::data_types::vectors::Vector>) -> Self {
+impl From<HashMap<String, segment_vectors::Vector>> for NamedVectors {
+    fn from(vectors: HashMap<String, segment_vectors::Vector>) -> Self {
         Self {
             vectors: vectors
                 .into_iter()
@@ -545,16 +549,16 @@ impl From<HashMap<String, segment::data_types::vectors::Vector>> for NamedVector
     }
 }
 
-impl From<segment::data_types::vectors::VectorStruct> for Vectors {
-    fn from(vector_struct: segment::data_types::vectors::VectorStruct) -> Self {
+impl From<segment_vectors::VectorStruct> for Vectors {
+    fn from(vector_struct: segment_vectors::VectorStruct) -> Self {
         match vector_struct {
-            segment::data_types::vectors::VectorStruct::Single(vector) => {
-                let vector: segment::data_types::vectors::Vector = vector.into();
+            segment_vectors::VectorStruct::Single(vector) => {
+                let vector: segment_vectors::Vector = vector.into();
                 Self {
                     vectors_options: Some(VectorsOptions::Vector(vector.into())),
                 }
             }
-            segment::data_types::vectors::VectorStruct::Multi(vectors) => Self {
+            segment_vectors::VectorStruct::Multi(vectors) => Self {
                 vectors_options: Some(VectorsOptions::Vectors(NamedVectors {
                     vectors: HashMap::from_iter(
                         vectors
@@ -596,7 +600,7 @@ impl From<segment::data_types::groups::GroupId> for GroupId {
     }
 }
 
-impl TryFrom<NamedVectors> for HashMap<String, segment::data_types::vectors::Vector> {
+impl TryFrom<NamedVectors> for HashMap<String, segment_vectors::Vector> {
     type Error = Status;
 
     fn try_from(vectors: NamedVectors) -> Result<Self, Self::Error> {
@@ -604,7 +608,7 @@ impl TryFrom<NamedVectors> for HashMap<String, segment::data_types::vectors::Vec
             .vectors
             .into_iter()
             .map(
-                |(name, vector)| match segment::data_types::vectors::Vector::try_from(vector) {
+                |(name, vector)| match segment_vectors::Vector::try_from(vector) {
                     Ok(vector) => Ok((name, vector)),
                     Err(err) => Err(err),
                 },
@@ -613,7 +617,7 @@ impl TryFrom<NamedVectors> for HashMap<String, segment::data_types::vectors::Vec
     }
 }
 
-impl TryFrom<Vectors> for segment::data_types::vectors::VectorStruct {
+impl TryFrom<Vectors> for segment_vectors::VectorStruct {
     type Error = Status;
 
     fn try_from(vectors: Vectors) -> Result<Self, Self::Error> {
@@ -625,10 +629,10 @@ impl TryFrom<Vectors> for segment::data_types::vectors::VectorStruct {
                             "Sparse vector must be named".to_string(),
                         ));
                     }
-                    segment::data_types::vectors::VectorStruct::Single(vector.data)
+                    segment_vectors::VectorStruct::Single(vector.data)
                 }
                 VectorsOptions::Vectors(vectors) => {
-                    segment::data_types::vectors::VectorStruct::Multi(vectors.try_into()?)
+                    segment_vectors::VectorStruct::Multi(vectors.try_into()?)
                 }
             }),
             None => Err(Status::invalid_argument("No Provided")),
@@ -1487,10 +1491,10 @@ pub fn from_grpc_dist(dist: i32) -> Result<segment::types::Distance, Status> {
 
 pub fn into_named_vector_struct(
     vector_name: Option<String>,
-    vector: DenseVector,
+    vector: segment_vectors::DenseVector,
     indices: Option<SparseIndices>,
-) -> Result<segment::data_types::vectors::NamedVectorStruct, Status> {
-    use segment::data_types::vectors::{NamedSparseVector, NamedVector, NamedVectorStruct};
+) -> Result<segment_vectors::NamedVectorStruct, Status> {
+    use segment_vectors::{NamedSparseVector, NamedVector, NamedVectorStruct};
     use sparse::common::sparse_vector::SparseVector;
     Ok(match indices {
         Some(indices) => NamedVectorStruct::Sparse(NamedSparseVector {
@@ -1548,6 +1552,93 @@ impl From<UpdateResult> for UpdateResultInternal {
             operation_id: res.operation_id,
             status: res.status,
             clock_tag: None,
+        }
+    }
+}
+
+impl From<segment_vectors::DenseVector> for DenseVector {
+    fn from(value: segment_vectors::DenseVector) -> Self {
+        Self { data: value }
+    }
+}
+
+impl From<sparse::common::sparse_vector::SparseVector> for SparseVector {
+    fn from(value: sparse::common::sparse_vector::SparseVector) -> Self {
+        let sparse::common::sparse_vector::SparseVector { indices, values } = value;
+
+        Self { indices, values }
+    }
+}
+
+impl From<segment_vectors::MultiDenseVector> for MultiDenseVector {
+    fn from(value: segment_vectors::MultiDenseVector) -> Self {
+        let vectors = value
+            .flattened_vectors
+            .into_iter()
+            .chunks(value.dim)
+            .into_iter()
+            .map(Iterator::collect::<Vec<_>>)
+            .map(DenseVector::from)
+            .collect();
+        Self { vectors }
+    }
+}
+
+impl From<segment_vectors::Vector> for RawVector {
+    fn from(value: segment_vectors::Vector) -> Self {
+        use segment_vectors::Vector;
+
+        use crate::grpc::qdrant::raw_vector::Variant;
+
+        let variant = match value {
+            Vector::Dense(vector) => Variant::Dense(DenseVector::from(vector)),
+            Vector::Sparse(vector) => Variant::Sparse(SparseVector::from(vector)),
+            Vector::MultiDense(vector) => Variant::MultiDense(MultiDenseVector::from(vector)),
+        };
+
+        Self {
+            variant: Some(variant),
+        }
+    }
+}
+
+impl From<segment_vectors::NamedVectorStruct> for RawVector {
+    fn from(value: segment_vectors::NamedVectorStruct) -> Self {
+        Self::from(value.to_vector())
+    }
+}
+
+impl From<segment_query::RecoQuery<segment_vectors::Vector>> for raw_query::Recommend {
+    fn from(value: segment_query::RecoQuery<segment_vectors::Vector>) -> Self {
+        Self {
+            positives: value.positives.into_iter().map(RawVector::from).collect(),
+            negatives: value.negatives.into_iter().map(RawVector::from).collect(),
+        }
+    }
+}
+
+impl From<segment_query::ContextPair<segment_vectors::Vector>> for raw_query::RawContextPair {
+    fn from(value: segment_query::ContextPair<segment_vectors::Vector>) -> Self {
+        Self {
+            positive: Some(RawVector::from(value.positive)),
+            negative: Some(RawVector::from(value.negative)),
+        }
+    }
+}
+
+impl From<segment_query::ContextQuery<segment_vectors::Vector>> for raw_query::Context {
+    fn from(value: segment_query::ContextQuery<segment_vectors::Vector>) -> Self {
+        Self {
+            context: value.pairs.into_iter().map(RawContextPair::from).collect(),
+        }
+    }
+}
+
+impl From<segment_query::DiscoveryQuery<segment_vectors::Vector>> for raw_query::Discovery {
+    fn from(value: segment_query::DiscoveryQuery<segment_vectors::Vector>) -> Self {
+        Self {
+            target: Some(RawVector::from(value.target)),
+            context: value.pairs.into_iter().map(RawContextPair::from).collect(),
         }
     }
 }

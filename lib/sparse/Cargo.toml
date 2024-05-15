@@ -23,7 +23,7 @@ tempfile = "3.10.1"
 ordered-float = "4.2"
 rand = "0.8.5"
 validator = { workspace = true }
-itertools = "0.12.1"
+itertools = { workspace = true }
 parking_lot = "0.12.2"
 
 [dev-dependencies]

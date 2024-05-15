@@ -18,6 +18,7 @@ use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
     CountRequestInternal, CountResult, PointRequestInternal, Record, UpdateResult, UpdateStatus,
 };
+use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::{
     CollectionUpdateOperations, CreateIndex, FieldIndexOperations, OperationWithClockTag,
 };
@@ -270,5 +271,14 @@ impl ShardOperation for ForwardProxyShard {
         local_shard
             .retrieve(request, with_payload, with_vector)
             .await
+    }
+
+    async fn query(
+        &self,
+        request: Arc<ShardQueryRequest>,
+        search_runtime_handle: &Handle,
+    ) -> CollectionResult<ShardQueryResponse> {
+        let local_shard = &self.wrapped_shard;
+        local_shard.query(request, search_runtime_handle).await
     }
 }

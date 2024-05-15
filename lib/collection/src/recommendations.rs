@@ -9,7 +9,7 @@ use segment::data_types::vectors::{
 use segment::types::{
     Condition, ExtendedPointId, Filter, HasIdCondition, PointIdType, ScoredPoint,
 };
-use segment::vector_storage::query::reco_query::RecoQuery;
+use segment::vector_storage::query::RecoQuery;
 use sparse::common::sparse_vector::SparseVector;
 use tokio::sync::RwLockReadGuard;
 

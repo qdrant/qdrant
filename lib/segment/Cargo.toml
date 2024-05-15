@@ -37,7 +37,7 @@ bitpacking = "0.9.2"
 tempfile = "3.10.1"
 parking_lot = { workspace = true }
 rayon = "1.10.0"
-itertools = "0.12"
+itertools = { workspace = true }
 rocksdb = { version = "0.22.0", default-features = false, features = ["snappy"] }
 uuid = { workspace = true }
 bincode = "1.3"
