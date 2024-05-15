@@ -470,6 +470,7 @@ version = "1.9.2"
 dependencies = [
  "chrono",
  "common",
+ "itertools 0.12.1",
  "log",
  "parking_lot",
  "prost 0.11.9",

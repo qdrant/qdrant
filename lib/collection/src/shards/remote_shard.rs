@@ -12,8 +12,9 @@ use api::grpc::qdrant::{
     CollectionOperationResponse, CoreSearchBatchPointsInternal, CountPoints, CountPointsInternal,
     GetCollectionInfoRequest, GetCollectionInfoRequestInternal, GetPoints, GetPointsInternal,
     GetShardRecoveryPointRequest, HealthCheckRequest, InitiateShardTransferRequest,
-    RecoverShardSnapshotRequest, RecoverSnapshotResponse, ScrollPoints, ScrollPointsInternal,
-    ShardSnapshotLocation, UpdateShardCutoffPointRequest, WaitForShardStateRequest,
+    QueryPointsInternal, QueryShardPoints, RecoverShardSnapshotRequest, RecoverSnapshotResponse,
+    ScrollPoints, ScrollPointsInternal, ShardSnapshotLocation, UpdateShardCutoffPointRequest,
+    WaitForShardStateRequest,
 };
 use api::grpc::transport_channel_pool::{AddTimeout, MAX_GRPC_CHANNEL_TIMEOUT};
 use async_trait::async_trait;
@@ -46,6 +47,7 @@ use crate::operations::types::{
     CountRequestInternal, CountResult, PointRequestInternal, Record, SearchRequestInternal,
     UpdateResult,
 };
+use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::vector_ops::VectorOperations;
 use crate::operations::{CollectionUpdateOperations, FieldIndexOperations, OperationWithClockTag};
 use crate::shards::channel_service::ChannelService;
@@ -833,5 +835,42 @@ impl ShardOperation for RemoteShard {
             .collect();
 
         result.map_err(|e| e.into())
+    }
+
+    async fn query(
+        &self,
+        request: Arc<ShardQueryRequest>,
+        _search_runtime_handle: &Handle,
+    ) -> CollectionResult<ShardQueryResponse> {
+        let is_payload_required = request.with_payload.is_required();
+
+        let query_points = Some(QueryShardPoints::from(request.as_ref().to_owned()));
+
+        let request = &QueryPointsInternal {
+            collection_name: self.collection_id.clone(),
+            query_points,
+            shard_id: Some(__self.id),
+        };
+
+        let query_response = self
+            .with_points_client(|mut client| async move {
+                client.query(tonic::Request::new(request.clone())).await
+            })
+            .await?
+            .into_inner();
+
+        let result: Result<ShardQueryResponse, Status> = query_response
+            .result
+            .into_iter()
+            .map(|intermediate| {
+                intermediate
+                    .result
+                    .into_iter()
+                    .map(|point| try_scored_point_from_grpc(point, is_payload_required))
+                    .collect()
+            })
+            .collect();
+
+        result.map_err(CollectionError::from)
     }
 }

@@ -4,10 +4,7 @@ use bitvec::prelude::BitSlice;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use sparse::common::sparse_vector::SparseVector;
 
-use super::query::context_query::ContextQuery;
-use super::query::discovery_query::DiscoveryQuery;
-use super::query::reco_query::RecoQuery;
-use super::query::TransformInto;
+use super::query::{ContextQuery, DiscoveryQuery, RecoQuery, TransformInto};
 use super::query_scorer::custom_query_scorer::CustomQueryScorer;
 use super::query_scorer::multi_custom_query_scorer::MultiCustomQueryScorer;
 use super::query_scorer::sparse_custom_query_scorer::SparseCustomQueryScorer;

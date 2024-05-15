@@ -21,9 +21,7 @@ use segment::types::{
     Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload, PayloadSchemaType,
     Range, SearchParams, SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageType,
 };
-use segment::vector_storage::query::context_query::ContextPair;
-use segment::vector_storage::query::discovery_query::DiscoveryQuery;
-use segment::vector_storage::query::reco_query::RecoQuery;
+use segment::vector_storage::query::{ContextPair, DiscoveryQuery, RecoQuery};
 use serde_json::json;
 use tempfile::Builder;
 

@@ -43,7 +43,7 @@ use crate::types::{
     Filter, HnswConfig, QuantizationSearchParams, SearchParams, VECTOR_ELEMENT_SIZE,
 };
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-use crate::vector_storage::query::discovery_query::DiscoveryQuery;
+use crate::vector_storage::query::DiscoveryQuery;
 use crate::vector_storage::{
     new_raw_scorer, new_stoppable_raw_scorer, RawScorer, VectorStorage, VectorStorageEnum,
 };

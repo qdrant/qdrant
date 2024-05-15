@@ -3484,8 +3484,8 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| data | [float](#float) | repeated |  |
-| indices | [SparseIndices](#qdrant-SparseIndices) |  |  |
+| values | [float](#float) | repeated |  |
+| indices | [uint32](#uint32) | repeated |  |
 
 
 
@@ -3675,7 +3675,7 @@ Vector type to be used in queries. Ids will be substituted with their correspond
 | id | [PointId](#qdrant-PointId) |  |  |
 | dense | [DenseVector](#qdrant-DenseVector) |  |  |
 | sparse | [SparseVector](#qdrant-SparseVector) |  |  |
-| multi | [MultiDenseVector](#qdrant-MultiDenseVector) |  |  |
+| multi_dense | [MultiDenseVector](#qdrant-MultiDenseVector) |  |  |
 
 
 

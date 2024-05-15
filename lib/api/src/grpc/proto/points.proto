@@ -58,8 +58,8 @@ message DenseVector {
 }
 
 message SparseVector {
-  repeated float data = 1;
-  SparseIndices indices = 2;
+  repeated float values = 1;
+  repeated uint32 indices = 2;
 }
 
 message MultiDenseVector {
@@ -72,7 +72,7 @@ message VectorInput {
     PointId id = 1;
     DenseVector dense = 2;
     SparseVector sparse = 3;
-    MultiDenseVector multi = 4;
+    MultiDenseVector multi_dense = 4;
   }
 }
 

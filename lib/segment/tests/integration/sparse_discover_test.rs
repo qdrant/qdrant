@@ -20,8 +20,7 @@ use segment::types::{
     Distance, Indexes, SegmentConfig, SeqNumberType, SparseVectorDataConfig, VectorDataConfig,
     VectorStorageType, DEFAULT_SPARSE_FULL_SCAN_THRESHOLD,
 };
-use segment::vector_storage::query::context_query::ContextPair;
-use segment::vector_storage::query::discovery_query::DiscoveryQuery;
+use segment::vector_storage::query::{ContextPair, DiscoveryQuery};
 use sparse::common::sparse_vector::SparseVector;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use tempfile::Builder;

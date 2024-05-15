@@ -203,7 +203,7 @@ message RawVector {
   oneof variant {
     DenseVector dense = 1;
     SparseVector sparse = 2;
-    MultiDenseVector multi = 3;
+    MultiDenseVector multi_dense = 3;
   }
 }
 
@@ -245,29 +245,38 @@ message QueryShardPoints {
   }
   
   message Prefetch {
-    Prefetch prefetch = 1;
+    repeated Prefetch prefetch = 1;
     Query query = 2;
-    string using = 3;
+    optional string using = 3;
     Filter filter = 4;
     uint64 limit = 5;
+    SearchParams params = 6;
+    optional float score_threshold = 7;
   }
-
-  Prefetch prefetch = 1;
+  
+  repeated Prefetch prefetch = 1;
   Query query = 2;
-  string using = 3;
+  optional string using = 3;
   Filter filter = 4;
   uint64 limit = 5;
-  uint64 offset = 6;
-  WithPayloadSelector with_payload = 7;
-  WithVectorsSelector with_vectors = 8;
+  SearchParams params = 6;
+  optional float score_threshold = 7;
+  uint64 offset = 8;
+  WithPayloadSelector with_payload = 9;
+  WithVectorsSelector with_vectors = 10;
 }
 
 message QueryPointsInternal {
-  QueryShardPoints query_points = 1;
-  optional uint32 shard_id = 2;
+  string collection_name = 1;
+  QueryShardPoints query_points = 2;
+  optional uint32 shard_id = 3;
+}
+
+message IntermediateResult {
+  repeated ScoredPoint result = 1;
 }
 
 message QueryResponse {
-  repeated ScoredPoint result = 1;
+  repeated IntermediateResult result = 1;
   double time = 2; // Time spent to process
 }
