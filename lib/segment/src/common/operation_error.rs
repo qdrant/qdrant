@@ -84,15 +84,6 @@ pub struct SegmentFailedState {
     pub error: OperationError,
 }
 
-impl From<semver::Error> for OperationError {
-    fn from(error: semver::Error) -> Self {
-        OperationError::ServiceError {
-            description: error.to_string(),
-            backtrace: Some(Backtrace::force_capture().to_string()),
-        }
-    }
-}
-
 impl From<ThreadPoolBuildError> for OperationError {
     fn from(error: ThreadPoolBuildError) -> Self {
         OperationError::ServiceError {

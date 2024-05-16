@@ -21,6 +21,24 @@ pub enum SparseIndexType {
     Mmap,
 }
 
+impl SparseIndexType {
+    pub fn is_appendable(self) -> bool {
+        self == Self::MutableRam
+    }
+
+    pub fn is_immutable(self) -> bool {
+        self != Self::MutableRam
+    }
+
+    pub fn is_on_disk(self) -> bool {
+        self == Self::Mmap
+    }
+
+    pub fn is_persisted(self) -> bool {
+        self == Self::Mmap || self == Self::ImmutableRam
+    }
+}
+
 /// Configuration for sparse inverted index.
 #[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]

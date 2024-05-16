@@ -12,6 +12,7 @@ edition = "2021"
 testing = []
 
 [dependencies]
+atomicwrites = "0.4.3"
 common = { path = "../common/common" }
 io = { path = "../common/io" }
 memory = { path = "../common/memory" }
@@ -24,6 +25,7 @@ ordered-float = "4.2"
 rand = "0.8.5"
 validator = { workspace = true }
 itertools = { workspace = true }
+log = "0.4"
 parking_lot = "0.12.2"
 
 [dev-dependencies]

@@ -7,6 +7,7 @@ use crate::common::types::DimOffset;
 use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use crate::index::posting_list::PostingListIterator;
 
+pub mod inverted_index_immutable_ram;
 pub mod inverted_index_mmap;
 pub mod inverted_index_ram;
 pub mod inverted_index_ram_builder;

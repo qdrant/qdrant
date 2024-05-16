@@ -10,6 +10,7 @@ use atomic_refcell::AtomicRefCell;
 use bitvec::prelude::BitVec;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use io::file_operations::{atomic_save_json, read_json};
+use io::storage_version::{StorageVersion, VERSION_FILE};
 use itertools::Either;
 use memory::mmap_ops;
 use parking_lot::{Mutex, RwLock};
@@ -23,7 +24,6 @@ use crate::common::operation_error::{
     get_service_error, OperationError, OperationResult, SegmentFailedState,
 };
 use crate::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
-use crate::common::version::{StorageVersion, VERSION_FILE};
 use crate::common::{check_named_vectors, check_query_vectors, check_stopped, check_vector_name};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{Direction, OrderBy, OrderingValue};
@@ -60,8 +60,8 @@ const SNAPSHOT_FILES_PATH: &str = "files";
 pub struct SegmentVersion;
 
 impl StorageVersion for SegmentVersion {
-    fn current() -> String {
-        env!("CARGO_PKG_VERSION").to_string()
+    fn current_raw() -> &'static str {
+        env!("CARGO_PKG_VERSION")
     }
 }
 
@@ -1806,6 +1806,9 @@ impl SegmentEntry for Segment {
                 let vector_index = vector_data.vector_index.borrow();
                 match vector_index.deref() {
                     VectorIndexEnum::SparseRam(sparse_index) => {
+                        sparse_index.fill_idf_statistics(idf);
+                    }
+                    VectorIndexEnum::SparseImmutableRam(sparse_index) => {
                         sparse_index.fill_idf_statistics(idf);
                     }
                     VectorIndexEnum::SparseMmap(sparse_index) => {
