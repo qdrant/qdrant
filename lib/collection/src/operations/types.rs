@@ -143,7 +143,7 @@ impl CollectionInfo {
             segments_count: 0,
             config: collection_config,
             payload_schema: HashMap::new(),
-            comment: Some(String::new()),
+            comment: None,
         }
     }
 }
@@ -159,7 +159,7 @@ impl From<CollectionInfoInternal> for CollectionInfo {
             segments_count: info.segments_count,
             config: info.config,
             payload_schema: info.payload_schema,
-            comment: Some(info.comment),
+            comment: info.comment,
         }
     }
 }
@@ -191,7 +191,7 @@ pub struct CollectionInfoInternal {
     /// Types of stored payload
     pub payload_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
     /// Properties or metadata of the collection
-    pub comment: String,
+    pub comment: Option<String>,
 }
 
 /// Current clustering distribution for the collection

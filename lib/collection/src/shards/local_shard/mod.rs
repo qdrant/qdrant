@@ -898,7 +898,7 @@ impl LocalShard {
         let mut status = CollectionStatus::Green;
         let mut schema: HashMap<PayloadKeyType, PayloadIndexInfo> = Default::default();
         let mut optimizer_status = OptimizersStatus::Ok;
-        let comment = String::new();
+        let comment = None;
 
         {
             let segments = self.segments().read();

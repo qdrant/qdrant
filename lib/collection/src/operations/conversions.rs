@@ -438,7 +438,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                 .into_iter()
                 .map(|(k, v)| (k.to_string(), v.into()))
                 .collect(),
-            comment: Some(comment.expect("REASON")),
+            comment,
         }
     }
 }
