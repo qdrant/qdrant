@@ -5453,6 +5453,7 @@ name = "sparse"
 version = "0.1.0"
 dependencies = [
  "atomicwrites",
+ "bitpacking",
  "common",
  "criterion",
  "dataset",
