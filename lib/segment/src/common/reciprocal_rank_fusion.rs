@@ -44,15 +44,14 @@ pub fn rrf_scoring(responses: Vec<Vec<ScoredPoint>>, limit: usize) -> Vec<Scored
         }
     }
 
-    // sort by tracked scores
     let mut scores = points_by_id.into_iter().collect::<Vec<_>>();
-    scores.sort_by(|a, b| OrderedFloat(b.1.score).cmp(&OrderedFloat(a.1.score)));
-
-    // discard lower scores
-    scores.truncate(limit);
+    scores.sort_by(|a, b| {
+        // sort by score descending
+        OrderedFloat(b.1.score).cmp(&OrderedFloat(a.1.score))
+    });
 
     // materialized updated scored points
-    scores.into_iter().map(|(_, v)| v).collect()
+    scores.into_iter().take(limit).map(|(_, v)| v).collect()
 }
 
 #[cfg(test)]
