@@ -45,7 +45,7 @@ pub fn rrf_scoring(responses: Vec<Vec<ScoredPoint>>, limit: usize) -> Vec<Scored
     }
 
     let mut scores = points_by_id.into_iter().collect::<Vec<_>>();
-    scores.sort_by(|a, b| {
+    scores.sort_unstable_by(|a, b| {
         // sort by score descending
         OrderedFloat(b.1.score).cmp(&OrderedFloat(a.1.score))
     });
