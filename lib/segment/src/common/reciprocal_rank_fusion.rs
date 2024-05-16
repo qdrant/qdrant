@@ -35,15 +35,15 @@ pub fn rrf_scoring(responses: Vec<Vec<ScoredPoint>>, limit: usize) -> Vec<Scored
 
     for response in responses {
         for (pos, score) in response.into_iter().enumerate() {
-            let rff_score = position_score(pos);
+            let rrf_score = position_score(pos);
             match scores_by_id.entry(score.id) {
                 Entry::Occupied(mut entry) => {
                     // accumulate score
-                    *entry.get_mut() += rff_score;
+                    *entry.get_mut() += rrf_score;
                 }
                 Entry::Vacant(entry) => {
                     // init score
-                    entry.insert(rff_score);
+                    entry.insert(rrf_score);
                     // track point
                     points_by_id.insert(score.id, score);
                 }
