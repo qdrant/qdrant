@@ -121,10 +121,7 @@ pub fn validate_transfer(
         )));
     }
 
-    if matches!(
-        transfer.method,
-        Some(ShardTransferMethod::ReshardingStreamRecords)
-    ) {
+    if transfer.method == Some(ShardTransferMethod::ReshardingStreamRecords) {
         match transfer.to_shard_id {
             Some(to_shard_id) if transfer.shard_id != to_shard_id => {}
             Some(to_shard_id) => {
