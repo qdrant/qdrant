@@ -11,7 +11,7 @@ use crate::shards::forward_proxy_shard::ForwardProxyShard;
 use crate::shards::local_shard::clock_map::RecoveryPoint;
 use crate::shards::queue_proxy_shard::QueueProxyShard;
 use crate::shards::remote_shard::RemoteShard;
-use crate::shards::shard::{Shard, ShardId};
+use crate::shards::shard::Shard;
 use crate::shards::transfer::transfer_tasks_pool::TransferTaskProgress;
 
 impl ShardReplicaSet {
@@ -332,7 +332,7 @@ impl ShardReplicaSet {
         &self,
         offset: Option<PointIdType>,
         batch_size: usize,
-        hashring_filter: Option<(&HashRing<ShardId>, &HashRing<ShardId>)>,
+        hashring_filter: Option<&HashRing>,
     ) -> CollectionResult<Option<PointIdType>> {
         let local = self.local.read().await;
 

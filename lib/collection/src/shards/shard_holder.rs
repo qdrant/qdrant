@@ -39,7 +39,7 @@ pub type ShardKeyMapping = HashMap<ShardKey, HashSet<ShardId>>;
 pub struct ShardHolder {
     shards: HashMap<ShardId, ShardReplicaSet>,
     pub(crate) shard_transfers: SaveOnDisk<HashSet<ShardTransfer>>,
-    rings: HashMap<Option<ShardKey>, HashRing>,
+    pub(crate) rings: HashMap<Option<ShardKey>, HashRing>,
     resharding: Option<ShardId>,
     key_mapping: SaveOnDisk<ShardKeyMapping>,
     // Duplicates the information from `key_mapping` for faster access

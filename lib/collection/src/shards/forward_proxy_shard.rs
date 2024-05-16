@@ -12,7 +12,6 @@ use segment::types::{
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 
-use super::shard::ShardId;
 use super::update_tracker::UpdateTracker;
 use crate::hash_ring::HashRing;
 use crate::operations::point_ops::{PointOperations, PointStruct, PointSyncOperation};
@@ -87,7 +86,7 @@ impl ForwardProxyShard {
         &self,
         offset: Option<PointIdType>,
         batch_size: usize,
-        hashring_filter: Option<(&HashRing<ShardId>, &HashRing<ShardId>)>,
+        hashring_filter: Option<&HashRing>,
         runtime_handle: &Handle,
     ) -> CollectionResult<Option<PointIdType>> {
         debug_assert!(batch_size > 0);
@@ -115,13 +114,11 @@ impl ForwardProxyShard {
 
         let points: Result<Vec<PointStruct>, String> = batch
             .into_iter()
-            // If using a hashring filter, only transfer points that moved
+            // If using a hashring filter, only transfer points that moved, otherwise transfer all
             .filter(|point| {
-                match hashring_filter {
-                    // TODO: only check new hash ring? check for correct target shard?
-                    Some((old, new)) => old.get(&point.id) != new.get(&point.id),
-                    None => true,
-                }
+                hashring_filter
+                    .map(|hashring| hashring.has_moved(&point.id))
+                    .unwrap_or(true)
             })
             .map(|point| point.try_into())
             .collect();

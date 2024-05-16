@@ -6,7 +6,7 @@ use super::transfer_tasks_pool::TransferTaskProgress;
 use crate::operations::types::{CollectionError, CollectionResult, CountRequestInternal};
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard::ShardId;
-use crate::shards::shard_holder::{LockedShardHolder, RingsKey};
+use crate::shards::shard_holder::LockedShardHolder;
 
 const TRANSFER_BATCH_SIZE: usize = 100;
 
@@ -84,19 +84,14 @@ pub(super) async fn transfer_resharding_stream_records(
         };
 
         // TODO: do not get rings every loop iteration!
-        let old_ring = shard_holder.rings.get(&shard_key.clone().map(RingsKey::ShardKey).unwrap_or(RingsKey::Default)).ok_or_else(|| {
+        let hashring = shard_holder.rings.get(&shard_key.clone()).ok_or_else(|| {
             CollectionError::service_error(format!(
-                    "Shard {shard_id} cannot be transferred for resharding, failed to get shard hash ring"
-            ))
-        })?;
-        let new_ring = shard_holder.rings.get(&RingsKey::Resharding).ok_or_else(|| {
-            CollectionError::service_error(format!(
-                    "Shard {shard_id} cannot be transferred for resharding, no resharding hash ring configured"
+                    "Shard {shard_id} cannot be transferred for resharding, failed to get shard hash rings"
             ))
         })?;
 
         offset = replica_set
-            .transfer_batch(offset, TRANSFER_BATCH_SIZE, Some((old_ring, new_ring)))
+            .transfer_batch(offset, TRANSFER_BATCH_SIZE, Some(hashring))
             .await?;
 
         {
