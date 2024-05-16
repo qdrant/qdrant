@@ -82,7 +82,7 @@ impl Numericable for i64 {
         self
     }
     fn from_i64(x: i64) -> Self {
-        x as Self
+        x
     }
     fn abs_diff(self, b: Self) -> Self {
         i64::abs_diff(self, b) as i64

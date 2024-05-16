@@ -35,12 +35,14 @@ impl JwtParser {
     pub fn decode(&self, token: &str) -> Option<Result<Claims, AuthError>> {
         let claims = match decode::<Claims>(token, &self.key, &self.validation) {
             Ok(token_data) => token_data.claims,
-            Err(e) => match e.kind() {
-                ErrorKind::ExpiredSignature | ErrorKind::InvalidSignature => {
-                    return Some(Err(AuthError::Forbidden(e.to_string())))
+            Err(e) => {
+                return match e.kind() {
+                    ErrorKind::ExpiredSignature | ErrorKind::InvalidSignature => {
+                        Some(Err(AuthError::Forbidden(e.to_string())))
+                    }
+                    _ => None,
                 }
-                _ => return None,
-            },
+            }
         };
         if let Err(e) = claims.validate() {
             return Some(Err(AuthError::Unauthorized(e.to_string())));

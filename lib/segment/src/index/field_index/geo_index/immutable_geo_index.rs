@@ -173,10 +173,10 @@ impl ImmutableGeoMapIndex {
         geo: &GeoHash,
     ) -> impl Iterator<Item = &(GeoHash, HashSet<PointOffsetType>)> + '_ {
         let geo_clone = geo.clone();
-        let start_index = match self.points_map.binary_search_by(|(p, _h)| p.cmp(geo)) {
-            Ok(index) => index,
-            Err(index) => index,
-        };
+        let start_index = self
+            .points_map
+            .binary_search_by(|(p, _h)| p.cmp(geo))
+            .unwrap_or_else(|index| index);
         self.points_map[start_index..]
             .iter()
             .take_while(move |(p, _h)| p.starts_with(geo_clone.as_str()))

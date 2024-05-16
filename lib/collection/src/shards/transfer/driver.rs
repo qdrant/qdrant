@@ -111,11 +111,7 @@ pub async fn transfer_shard(
                     fallback_shard_transfer_method,
                 )
                 .await?;
-                if did_fall_back {
-                    return Ok(false);
-                } else {
-                    return Err(err);
-                }
+                return if did_fall_back { Ok(false) } else { Err(err) };
             }
         }
     }
