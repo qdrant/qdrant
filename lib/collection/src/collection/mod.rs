@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use common::cpu::CpuBudget;
 use common::types::TelemetryDetail;
-use segment::common::version::StorageVersion;
+use io::storage_version::StorageVersion;
 use segment::types::ShardKey;
 use semver::Version;
 use tokio::runtime::Handle;
@@ -180,12 +180,9 @@ impl Collection {
         let start_time = std::time::Instant::now();
         let stored_version = CollectionVersion::load(path)
             .expect("Can't read collection version")
-            .parse()
-            .expect("Failed to parse stored collection version as semver");
+            .expect("Collection version is not found");
 
-        let app_version: Version = CollectionVersion::current()
-            .parse()
-            .expect("Failed to parse current collection version as semver");
+        let app_version = CollectionVersion::current();
 
         if stored_version > app_version {
             panic!("Collection version is greater than application version");
@@ -703,7 +700,7 @@ impl Collection {
 struct CollectionVersion;
 
 impl StorageVersion for CollectionVersion {
-    fn current() -> String {
-        env!("CARGO_PKG_VERSION").to_string()
+    fn current_raw() -> &'static str {
+        env!("CARGO_PKG_VERSION")
     }
 }

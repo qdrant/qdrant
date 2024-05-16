@@ -2662,6 +2662,7 @@ version = "0.0.0"
 dependencies = [
  "atomicwrites",
  "bincode",
+ "semver",
  "serde",
  "serde_json",
  "thiserror",
@@ -5451,12 +5452,14 @@ dependencies = [
 name = "sparse"
 version = "0.1.0"
 dependencies = [
+ "atomicwrites",
  "common",
  "criterion",
  "dataset",
  "indicatif",
  "io",
  "itertools 0.12.1",
+ "log",
  "memmap2 0.9.4",
  "memory",
  "ordered-float 4.2.0",

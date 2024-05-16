@@ -4,13 +4,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use common::cpu::CpuPermit;
+use io::storage_version::StorageVersion;
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
 use segment::common::operation_error::check_process_stopped;
 use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
-use segment::common::version::StorageVersion;
 use segment::entry::entry_point::SegmentEntry;
 use segment::index::sparse_index::sparse_index_config::SparseIndexType;
 use segment::segment::{Segment, SegmentVersion};

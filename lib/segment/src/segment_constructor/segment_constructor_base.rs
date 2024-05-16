@@ -6,15 +6,14 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use io::storage_version::StorageVersion;
 use log::info;
 use parking_lot::Mutex;
-use semver::Version;
 use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
-use crate::common::version::StorageVersion;
 use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
 use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 use crate::id_tracker::IdTracker;
@@ -117,7 +116,7 @@ fn create_segment(
             config
                 .sparse_vector_data
                 .values()
-                .map(|sparse_vector_config| sparse_vector_config.is_appendable()),
+                .map(|sparse_vector_config| sparse_vector_config.index.index_type.is_appendable()),
         )
         .all(|v| v);
 
@@ -381,6 +380,24 @@ fn create_segment(
         }
 
         let vector_index = match sparse_vector_config.index.index_type {
+            SparseIndexType::MutableRam => sp(VectorIndexEnum::SparseRam(SparseVectorIndex::open(
+                sparse_vector_config.index,
+                id_tracker.clone(),
+                vector_storage.clone(),
+                payload_index.clone(),
+                &vector_index_path,
+                stopped,
+            )?)),
+            SparseIndexType::ImmutableRam => sp(VectorIndexEnum::SparseImmutableRam(
+                SparseVectorIndex::open(
+                    sparse_vector_config.index,
+                    id_tracker.clone(),
+                    vector_storage.clone(),
+                    payload_index.clone(),
+                    &vector_index_path,
+                    stopped,
+                )?,
+            )),
             SparseIndexType::Mmap => sp(VectorIndexEnum::SparseMmap(SparseVectorIndex::open(
                 sparse_vector_config.index,
                 id_tracker.clone(),
@@ -389,16 +406,6 @@ fn create_segment(
                 &vector_index_path,
                 stopped,
             )?)),
-            SparseIndexType::MutableRam | SparseIndexType::ImmutableRam => {
-                sp(VectorIndexEnum::SparseRam(SparseVectorIndex::open(
-                    sparse_vector_config.index,
-                    id_tracker.clone(),
-                    vector_storage.clone(),
-                    payload_index.clone(),
-                    &vector_index_path,
-                    stopped,
-                )?))
-            }
         };
 
         check_process_stopped(stopped)?;
@@ -447,7 +454,7 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option
         return Ok(None);
     }
 
-    if !SegmentVersion::check_exists(path) {
+    let Some(stored_version) = SegmentVersion::load(path)? else {
         // Assume segment was not properly saved.
         // Server might have crashed before saving the segment fully.
         log::warn!(
@@ -455,10 +462,9 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option
             path.display()
         );
         return Ok(None);
-    }
+    };
 
-    let stored_version: Version = SegmentVersion::load(path)?.parse()?;
-    let app_version: Version = SegmentVersion::current().parse()?;
+    let app_version = SegmentVersion::current();
 
     if stored_version != app_version {
         info!("Migrating segment {} -> {}", stored_version, app_version,);

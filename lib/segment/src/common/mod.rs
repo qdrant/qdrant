@@ -10,7 +10,6 @@ pub mod rocksdb_wrapper;
 pub mod utils;
 pub mod validate_snapshot_archive;
 pub mod vector_utils;
-pub mod version;
 
 use std::sync::atomic::AtomicBool;
 

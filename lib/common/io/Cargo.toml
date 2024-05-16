@@ -12,6 +12,7 @@ publish = false
 [dependencies]
 atomicwrites = "0.4.3"
 bincode = "1.3.3"
+semver = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = "1.0.59"
