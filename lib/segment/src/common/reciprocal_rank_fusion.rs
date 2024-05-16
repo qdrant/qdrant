@@ -28,17 +28,17 @@ pub fn rrf_scoring(responses: Vec<Vec<ScoredPoint>>, limit: usize) -> Vec<Scored
     let mut points_by_id: HashMap<ExtendedPointId, ScoredPoint> = HashMap::new();
 
     for response in responses {
-        for (pos, mut score) in response.into_iter().enumerate() {
+        for (pos, mut point) in response.into_iter().enumerate() {
             let rrf_score = position_score(pos);
-            match points_by_id.entry(score.id) {
+            match points_by_id.entry(point.id) {
                 Entry::Occupied(mut entry) => {
                     // accumulate score
                     entry.get_mut().score += rrf_score;
                 }
                 Entry::Vacant(entry) => {
-                    score.score = rrf_score;
+                    point.score = rrf_score;
                     // init score
-                    entry.insert(score);
+                    entry.insert(point);
                 }
             }
         }
