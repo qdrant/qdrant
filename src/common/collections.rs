@@ -545,11 +545,17 @@ pub async fn do_update_collection_cluster(
                 .max()
                 .map_or(0, |id| id + 1);
 
+            let shard_key = op.shard_key;
+
             dispatcher
                 .submit_collection_meta_op(
                     CollectionMetaOperations::Resharding(
                         collection_name.clone(),
-                        ReshardingOperation::Start { peer_id, shard_id },
+                        ReshardingOperation::Start {
+                            peer_id,
+                            shard_id,
+                            shard_key,
+                        },
                     ),
                     access,
                     wait_timeout,

@@ -141,6 +141,7 @@ pub struct AbortTransferOperation {
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct StartReshardingOperation {
     pub peer_id: Option<PeerId>,
+    pub shard_key: Option<ShardKey>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
