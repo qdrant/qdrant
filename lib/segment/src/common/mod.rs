@@ -4,7 +4,7 @@ pub mod macros;
 pub mod mmap_type;
 pub mod operation_error;
 pub mod operation_time_statistics;
-mod reciprocal_rank_fusion;
+pub mod reciprocal_rank_fusion;
 pub mod rocksdb_buffered_delete_wrapper;
 pub mod rocksdb_buffered_update_wrapper;
 pub mod rocksdb_wrapper;

@@ -1,3 +1,6 @@
+//! Reciprocal Rank Fusion (RRF) is a method for combining rankings from multiple sources.
+//! See https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf
+
 use std::collections::hash_map::Entry;
 
 use ahash::{HashMap, HashMapExt};
@@ -5,68 +8,51 @@ use ordered_float::OrderedFloat;
 
 use crate::types::{ExtendedPointId, ScoredPoint};
 
-/// Reciprocal Rank Fusion (RRF) is a method for combining rankings from multiple sources.
-/// See https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf
-
 /// Mitigates the impact of high rankings by outlier systems
 const RFF_RANKING_K: f32 = 2.0;
 
+/// Compute the RRF score for a given position.
+fn position_score(position: usize) -> f32 {
+    1.0 / (position as f32 + RFF_RANKING_K)
+}
+
 /// Compute RRF scores for multiple results from different sources.
 /// Each response can have a different length.
-/// Each response must be sorted by score in descending order.
+/// The input scores are irrelevant, only the order matters.
 ///
 /// The output is a single sorted list of ScoredPoint.
 /// Does not break ties.
-#[allow(dead_code)]
+#[allow(dead_code)] // TODO remove when used
 pub fn rrf_scoring(responses: Vec<Vec<ScoredPoint>>, limit: usize) -> Vec<ScoredPoint> {
-    // ensure each input is sorted
-    debug_assert!(responses
-        .iter()
-        .all(|r| r.windows(2).all(|w| w[0].score >= w[1].score)));
-    fn position_score(position: usize) -> f32 {
-        1.0 / (position as f32 + RFF_RANKING_K)
-    }
-
-    // track RFF scores per point id
-    let mut scores_by_id: HashMap<ExtendedPointId, f32> = HashMap::new();
-
     // track scored points by id
     let mut points_by_id: HashMap<ExtendedPointId, ScoredPoint> = HashMap::new();
 
     for response in responses {
-        for (pos, score) in response.into_iter().enumerate() {
+        for (pos, mut score) in response.into_iter().enumerate() {
             let rrf_score = position_score(pos);
-            match scores_by_id.entry(score.id) {
+            match points_by_id.entry(score.id) {
                 Entry::Occupied(mut entry) => {
                     // accumulate score
-                    *entry.get_mut() += rrf_score;
+                    entry.get_mut().score += rrf_score;
                 }
                 Entry::Vacant(entry) => {
+                    score.score = rrf_score;
                     // init score
-                    entry.insert(rrf_score);
-                    // track point
-                    points_by_id.insert(score.id, score);
+                    entry.insert(score);
                 }
             }
         }
     }
 
     // sort by tracked scores
-    let mut scores = scores_by_id.into_iter().collect::<Vec<_>>();
-    scores.sort_by(|a, b| OrderedFloat(b.1).cmp(&OrderedFloat(a.1)));
+    let mut scores = points_by_id.into_iter().collect::<Vec<_>>();
+    scores.sort_by(|a, b| OrderedFloat(b.1.score).cmp(&OrderedFloat(a.1.score)));
 
     // discard lower scores
     scores.truncate(limit);
 
     // materialized updated scored points
-    let mut results = Vec::with_capacity(limit);
-    for (id, score) in scores {
-        let mut point = points_by_id.remove(&id).expect("missing point");
-        // update score
-        point.score = score;
-        results.push(point);
-    }
-    results
+    scores.into_iter().map(|(_, v)| v).collect()
 }
 
 #[cfg(test)]
