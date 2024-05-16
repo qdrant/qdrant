@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
-use super::{ShardTransfer, ShardTransferKey};
+use super::{ShardTransfer, ShardTransferKey, ShardTransferMethod};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
@@ -75,6 +75,7 @@ where
 /// 1. If `from` and `to` exists
 /// 2. If `from` have local shard and it is active
 /// 3. If there is no active transfers which involve `from` or `to`
+/// 4. If a target shard is only set for resharding  transfers
 ///
 /// If validation fails, return `BadRequest` error.
 pub fn validate_transfer(
@@ -117,6 +118,30 @@ pub fn validate_transfer(
         return Err(CollectionError::bad_request(format!(
             "Shard {} is already involved in transfer {} -> {}",
             transfer.shard_id, existing_transfer.from, existing_transfer.to,
+        )));
+    }
+
+    if matches!(
+        transfer.method,
+        Some(ShardTransferMethod::ReshardingStreamRecords)
+    ) {
+        match transfer.to_shard_id {
+            Some(to_shard_id) if transfer.shard_id != to_shard_id => {}
+            Some(to_shard_id) => {
+                return Err(CollectionError::bad_request(format!(
+                    "Source and target shard must be different for resharding transfer, both are {to_shard_id}",
+                )));
+            }
+            None => {
+                return Err(CollectionError::bad_request(
+                    "Target shard is not set for resharding transfer".into(),
+                ));
+            }
+        }
+    } else if let Some(to_shard_id) = transfer.to_shard_id {
+        return Err(CollectionError::bad_request(format!(
+            "Target shard {to_shard_id} can only be set for {:?} transfers",
+            ShardTransferMethod::ReshardingStreamRecords,
         )));
     }
 
