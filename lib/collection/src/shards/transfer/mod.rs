@@ -38,6 +38,10 @@ pub struct ShardTransfer {
     /// Method to transfer shard with. `None` to choose automatically.
     #[serde(default)]
     pub method: Option<ShardTransferMethod>,
+    /// For resharding, a different target shard ID may be configured
+    /// By default the shard ID on the target peer is the same.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_shard_id: Option<ShardId>,
 }
 
 impl ShardTransfer {

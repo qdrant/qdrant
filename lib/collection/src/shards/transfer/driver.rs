@@ -44,7 +44,10 @@ pub async fn transfer_shard(
     snapshots_path: &Path,
     temp_dir: &Path,
 ) -> CollectionResult<bool> {
-    let shard_id = transfer_config.shard_id;
+    // The remote might target a different shard ID depending on the shard transfer type
+    let shard_id = transfer_config
+        .to_shard_id
+        .unwrap_or(transfer_config.shard_id);
 
     // Initiate shard on a remote peer
     let remote_shard = RemoteShard::new(
