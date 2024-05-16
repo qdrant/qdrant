@@ -193,7 +193,7 @@ impl CompressedPostingList {
         chunk_index: usize,
         decompressed: &mut [PointOffsetType],
     ) {
-        assert!(decompressed.len() == BitPackerImpl::BLOCK_LEN);
+        assert_eq!(decompressed.len(), BitPackerImpl::BLOCK_LEN);
         let chunk = &self.chunks[chunk_index];
         let chunk_size = Self::get_chunk_size(&self.chunks, &self.data, chunk_index);
         let chunk_bits = (chunk_size * 8) / BitPackerImpl::BLOCK_LEN;
