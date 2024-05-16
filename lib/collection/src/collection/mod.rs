@@ -658,6 +658,7 @@ impl Collection {
         &self,
         peer_id: PeerId,
         shard_id: ShardId,
+        shard_key: Option<ShardKey>,
     ) -> CollectionResult<()> {
         // TODO: Improve error handling?
 
@@ -681,7 +682,7 @@ impl Collection {
             .create_replica_set(shard_id, &[peer_id], Some(ReplicaState::Resharding))
             .await?;
 
-        shard_holder.start_resharding(shard_id, replica_set)?;
+        shard_holder.start_resharding(shard_id, replica_set, shard_key.clone())?;
 
         self.resharding_state.write(|state| {
             debug_assert!(
@@ -690,7 +691,7 @@ impl Collection {
                 self.id
             );
 
-            *state = Some(resharding::State::new(peer_id, shard_id));
+            *state = Some(resharding::State::new(peer_id, shard_id, shard_key));
         })?;
 
         Ok(())

@@ -152,10 +152,6 @@ pub type LockedShardHolder = RwLock<ShardHolder>;
 
 impl ShardHolder {
     pub fn new(collection_path: &Path, resharding: Option<ShardId>) -> CollectionResult<Self> {
-        let default_ring = resharding.map_or_else(ShardHashRing::single, ShardHashRing::resharding);
-
-        let rings = HashMap::from([(None, default_ring)]);
-
         let shard_transfers = SaveOnDisk::load_or_init(collection_path.join(SHARD_TRANSFERS_FILE))?;
 
         let key_mapping: SaveOnDisk<ShardKeyMapping> =
@@ -167,6 +163,15 @@ impl ShardHolder {
             for shard_id in shard_ids {
                 shard_id_to_key_mapping.insert(*shard_id, shard_key.clone());
             }
+        }
+
+        let mut rings = HashMap::from([(None, ShardHashRing::single())]);
+
+        if let Some(shard_id) = resharding {
+            rings.insert(
+                shard_id_to_key_mapping.get(&shard_id).cloned(),
+                ShardHashRing::resharding(shard_id),
+            );
         }
 
         Ok(Self {
@@ -206,15 +211,16 @@ impl ShardHolder {
         &mut self,
         shard_id: ShardId,
         shard: ShardReplicaSet,
+        shard_key: Option<ShardKey>,
     ) -> Result<(), CollectionError> {
-        let Some(default_ring) = self.rings.get_mut(&None) else {
+        let Some(ring) = self.rings.get_mut(&shard_key) else {
             // TODO: `CollectionError::service_error`? 🤔
             return Err(CollectionError::bad_request(
                 "shard holder does not contain default hashring".into(),
             ));
         };
 
-        if default_ring.is_resharding() {
+        if ring.is_resharding() {
             debug_assert!(
                 self.resharding.is_some(),
                 "shard holder contains resharding hashring, but resharding field is {:?}",
@@ -240,9 +246,9 @@ impl ShardHolder {
             )));
         }
 
-        default_ring.add_resharding(shard_id);
+        ring.add_resharding(shard_id);
         self.resharding = Some(shard_id);
-        self.add_shard(shard_id, shard, None)?;
+        self.add_shard(shard_id, shard, shard_key)?;
 
         Ok(())
     }
@@ -305,7 +311,7 @@ impl ShardHolder {
     }
 
     fn rebuild_rings(&mut self) {
-        // TODO: Correctly rebuild resharding hashrings!
+        // TODO(resharding): Correctly rebuild resharding hashrings!
 
         let mut rings = HashMap::from([(None, ShardHashRing::single())]);
         let ids_to_key = self.get_shard_id_to_key_mapping();

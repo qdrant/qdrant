@@ -274,8 +274,14 @@ impl TableOfContent {
         let collection = self.get_collection_unchecked(&collection).await?;
 
         match operation {
-            ReshardingOperation::Start { peer_id, shard_id } => {
-                collection.start_resharding(peer_id, shard_id).await?;
+            ReshardingOperation::Start {
+                peer_id,
+                shard_id,
+                shard_key,
+            } => {
+                collection
+                    .start_resharding(peer_id, shard_id, shard_key)
+                    .await?;
             }
         }
 
