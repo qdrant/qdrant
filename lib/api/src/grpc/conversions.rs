@@ -16,7 +16,7 @@ use super::qdrant::raw_query::RawContextPair;
 use super::qdrant::{
     raw_query, start_from, BinaryQuantization, CompressionRatio, DatetimeRange, Direction,
     GeoLineString, GroupId, MultiVectorComparator, MultiVectorConfig, OrderBy, Range, RawVector,
-    SparseIndices, StartFrom,
+    Score, SparseIndices, StartFrom,
 };
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
@@ -1767,5 +1767,26 @@ impl TryFrom<raw_query::Discovery> for segment_query::DiscoveryQuery<segment_vec
                 .map(segment_query::ContextPair::try_from)
                 .try_collect()?,
         })
+    }
+}
+
+impl TryFrom<Score> for segment::types::Score {
+    type Error = Status;
+
+    fn try_from(value: Score) -> Result<Self, Self::Error> {
+        use super::qdrant::score::Variant;
+
+        let variant = value
+            .variant
+            .ok_or_else(|| Status::invalid_argument("grpc Score is missing score variant"))?;
+
+        let score = match variant {
+            Variant::Similarity(sim) => Self::Similarity(sim),
+            Variant::IntValue(i) => Self::IntValue(i),
+            Variant::FloatValue(f) => Self::FloatValue(f),
+            Variant::Id(id) => Self::Id(segment::types::PointIdType::try_from(id)?),
+        };
+
+        Ok(score)
     }
 }

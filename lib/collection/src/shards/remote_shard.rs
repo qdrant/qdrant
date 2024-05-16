@@ -35,6 +35,7 @@ use url::Url;
 
 use super::conversions::{
     internal_delete_vectors, internal_delete_vectors_by_filter, internal_update_vectors,
+    try_queried_point_from_grpc,
 };
 use super::local_shard::clock_map::RecoveryPoint;
 use super::replica_set::ReplicaState;
@@ -849,7 +850,7 @@ impl ShardOperation for RemoteShard {
         let request = &QueryPointsInternal {
             collection_name: self.collection_id.clone(),
             query_points,
-            shard_id: Some(__self.id),
+            shard_id: Some(self.id),
         };
 
         let query_response = self
@@ -860,13 +861,13 @@ impl ShardOperation for RemoteShard {
             .into_inner();
 
         let result: Result<ShardQueryResponse, Status> = query_response
-            .result
+            .results
             .into_iter()
             .map(|intermediate| {
                 intermediate
                     .result
                     .into_iter()
-                    .map(|point| try_scored_point_from_grpc(point, is_payload_required))
+                    .map(|point| try_queried_point_from_grpc(point, is_payload_required))
                     .collect()
             })
             .collect();

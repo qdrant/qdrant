@@ -25,6 +25,7 @@ use validator::{Validate, ValidationError, ValidationErrors};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::{self, MaybeOneOrMany, MultiValue};
 use crate::data_types::integer_index::IntegerIndexParams;
+use crate::data_types::order_by::OrderingValue;
 use crate::data_types::text_index::TextIndexParams;
 use crate::data_types::vectors::{VectorElementType, VectorStruct};
 use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
@@ -228,6 +229,89 @@ impl PartialOrd for ScoredPoint {
 }
 
 impl PartialEq for ScoredPoint {
+    fn eq(&self, other: &Self) -> bool {
+        (self.id, &self.score) == (other.id, &other.score)
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Score {
+    Id(PointIdType),
+    Similarity(ScoreType),
+    IntValue(IntPayloadType),
+    FloatValue(FloatPayloadType),
+}
+
+impl Eq for Score {}
+
+impl PartialOrd for Score {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Score {
+    /// Compare with variant hierarchy: Id > Similarity > (IntValue | FloatValue)
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (self, other) {
+            (Score::Id(self_id), Score::Id(other_id)) => self_id.cmp(other_id),
+            (Score::Id(_), Score::Similarity(_) | Score::FloatValue(_) | Score::IntValue(_)) => {
+                Ordering::Greater
+            }
+            (Score::Similarity(_) | Score::FloatValue(_) | Score::IntValue(_), Score::Id(_)) => {
+                Ordering::Less
+            }
+
+            (Score::Similarity(sim), Score::Similarity(other_sim)) => {
+                OrderedFloat(*sim).cmp(&OrderedFloat(*other_sim))
+            }
+            (Score::Similarity(_), Score::IntValue(_) | Score::FloatValue(_)) => Ordering::Greater,
+            (Score::IntValue(_) | Score::FloatValue(_), Score::Similarity(_)) => Ordering::Less,
+            (Score::FloatValue(f), Score::IntValue(i)) => {
+                OrderingValue::Float(*f).cmp(&OrderingValue::Int(*i))
+            }
+            (Score::IntValue(i), Score::FloatValue(f)) => {
+                OrderingValue::Int(*i).cmp(&OrderingValue::Float(*f))
+            }
+            (Score::IntValue(self_i), Score::IntValue(other_i)) => self_i.cmp(other_i),
+            (Score::FloatValue(self_f), Score::FloatValue(other_f)) => {
+                OrderedFloat(*self_f).cmp(&OrderedFloat(*other_f))
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct QueriedPoint {
+    /// Point id
+    pub id: PointIdType,
+    /// Point version
+    pub version: SeqNumberType,
+    /// Points vector distance to the query vector
+    pub score: Score,
+    /// Payload - values assigned to the point
+    pub payload: Option<Payload>,
+    /// Vector of the point
+    pub vector: Option<VectorStruct>,
+    /// Shard Key
+    pub shard_key: Option<ShardKey>,
+}
+
+impl Eq for QueriedPoint {}
+
+impl Ord for QueriedPoint {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.score.cmp(&other.score)
+    }
+}
+
+impl PartialOrd for QueriedPoint {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for QueriedPoint {
     fn eq(&self, other: &Self) -> bool {
         (self.id, &self.score) == (other.id, &other.score)
     }

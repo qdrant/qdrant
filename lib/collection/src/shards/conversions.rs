@@ -11,7 +11,9 @@ use api::grpc::qdrant::{
 };
 use segment::data_types::vectors::VectorStruct;
 use segment::json_path::JsonPath;
-use segment::types::{Filter, PayloadFieldSchema, PayloadSchemaParams, PointIdType, ScoredPoint};
+use segment::types::{
+    Filter, PayloadFieldSchema, PayloadSchemaParams, PointIdType, QueriedPoint, Score, ScoredPoint,
+};
 use tonic::Status;
 
 use crate::operations::conversions::write_ordering_to_proto;
@@ -440,6 +442,39 @@ pub fn try_scored_point_from_grpc(
         id,
         version: point.version,
         score: point.score,
+        payload,
+        vector,
+        shard_key: convert_shard_key_from_grpc_opt(point.shard_key),
+    })
+}
+
+pub fn try_queried_point_from_grpc(
+    point: api::grpc::qdrant::QueriedPoint,
+    with_payload: bool,
+) -> Result<QueriedPoint, tonic::Status> {
+    let id = PointIdType::try_from(point.id.ok_or_else(|| {
+        tonic::Status::invalid_argument("grpc QueriedPoint does not have an ID")
+    })?)?;
+
+    let score = Score::try_from(
+        point
+            .score
+            .ok_or_else(|| Status::invalid_argument("grpc QueriedPoint does not have a score"))?,
+    )?;
+
+    let payload = if with_payload {
+        Some(api::grpc::conversions::proto_to_payloads(point.payload)?)
+    } else {
+        debug_assert!(point.payload.is_empty());
+        None
+    };
+
+    let vector = point.vectors.map(VectorStruct::try_from).transpose()?;
+
+    Ok(QueriedPoint {
+        id,
+        version: point.version,
+        score,
         payload,
         vector,
         shard_key: convert_shard_key_from_grpc_opt(point.shard_key),

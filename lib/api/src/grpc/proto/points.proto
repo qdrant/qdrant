@@ -672,6 +672,24 @@ message UpdateBatchResponse {
   double time = 2; // Time spent to process
 }
 
+message Score {
+  oneof variant {
+    PointId id = 1;
+    float similarity = 2;
+    int64 int_value = 3;
+    double float_value = 4;
+  }
+}
+
+message QueriedPoint {
+  PointId id = 1; // Point id
+  map<string, Value> payload = 2; // Payload
+  Score score = 3; // Score to order against other points
+  uint64 version = 4; // Last update operation applied to this point
+  optional Vectors vectors = 5; // Vectors to search
+  optional ShardKey shard_key = 6; // Shard key
+}
+
 // ---------------------------------------------
 // ------------- Filter Conditions -------------
 // ---------------------------------------------

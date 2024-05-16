@@ -278,10 +278,10 @@ message QueryPointsInternal {
 }
 
 message IntermediateResult {
-  repeated ScoredPoint result = 1;
+  repeated QueriedPoint result = 1;
 }
 
 message QueryResponse {
-  repeated IntermediateResult result = 1;
+  repeated IntermediateResult results = 1;
   double time = 2; // Time spent to process
 }

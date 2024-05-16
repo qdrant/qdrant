@@ -5131,6 +5131,52 @@ pub struct UpdateBatchResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
 }
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Score {
+    #[prost(oneof = "score::Variant", tags = "1, 2, 3, 4")]
+    pub variant: ::core::option::Option<score::Variant>,
+}
+/// Nested message and enum types in `Score`.
+pub mod score {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Variant {
+        #[prost(message, tag = "1")]
+        Id(super::PointId),
+        #[prost(float, tag = "2")]
+        Similarity(f32),
+        #[prost(int64, tag = "3")]
+        IntValue(i64),
+        #[prost(double, tag = "4")]
+        FloatValue(f64),
+    }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct QueriedPoint {
+    /// Point id
+    #[prost(message, optional, tag = "1")]
+    pub id: ::core::option::Option<PointId>,
+    /// Payload
+    #[prost(map = "string, message", tag = "2")]
+    pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
+    /// Score to order against other points
+    #[prost(message, optional, tag = "3")]
+    pub score: ::core::option::Option<Score>,
+    /// Last update operation applied to this point
+    #[prost(uint64, tag = "4")]
+    pub version: u64,
+    /// Vectors to search
+    #[prost(message, optional, tag = "5")]
+    pub vectors: ::core::option::Option<Vectors>,
+    /// Shard key
+    #[prost(message, optional, tag = "6")]
+    pub shard_key: ::core::option::Option<ShardKey>,
+}
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -8177,14 +8223,14 @@ pub struct QueryPointsInternal {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IntermediateResult {
     #[prost(message, repeated, tag = "1")]
-    pub result: ::prost::alloc::vec::Vec<ScoredPoint>,
+    pub result: ::prost::alloc::vec::Vec<QueriedPoint>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryResponse {
     #[prost(message, repeated, tag = "1")]
-    pub result: ::prost::alloc::vec::Vec<IntermediateResult>,
+    pub results: ::prost::alloc::vec::Vec<IntermediateResult>,
     /// Time spent to process
     #[prost(double, tag = "2")]
     pub time: f64,

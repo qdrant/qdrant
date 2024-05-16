@@ -583,7 +583,7 @@ impl ShardOperation for Inner {
         &self,
         request: Arc<ShardQueryRequest>,
         search_runtime_handle: &Handle,
-    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+    ) -> CollectionResult<ShardQueryResponse> {
         self.wrapped_shard
             .query(request, search_runtime_handle)
             .await

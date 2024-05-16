@@ -172,6 +172,8 @@
     - [PointsUpdateOperation.SetPayload.PayloadEntry](#qdrant-PointsUpdateOperation-SetPayload-PayloadEntry)
     - [PointsUpdateOperation.UpdateVectors](#qdrant-PointsUpdateOperation-UpdateVectors)
     - [QuantizationSearchParams](#qdrant-QuantizationSearchParams)
+    - [QueriedPoint](#qdrant-QueriedPoint)
+    - [QueriedPoint.PayloadEntry](#qdrant-QueriedPoint-PayloadEntry)
     - [Range](#qdrant-Range)
     - [ReadConsistency](#qdrant-ReadConsistency)
     - [RecommendBatchPoints](#qdrant-RecommendBatchPoints)
@@ -184,6 +186,7 @@
     - [RepeatedStrings](#qdrant-RepeatedStrings)
     - [RetrievedPoint](#qdrant-RetrievedPoint)
     - [RetrievedPoint.PayloadEntry](#qdrant-RetrievedPoint-PayloadEntry)
+    - [Score](#qdrant-Score)
     - [ScoredPoint](#qdrant-ScoredPoint)
     - [ScoredPoint.PayloadEntry](#qdrant-ScoredPoint-PayloadEntry)
     - [ScrollPoints](#qdrant-ScrollPoints)
@@ -2959,6 +2962,42 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 
 
 
+<a name="qdrant-QueriedPoint"></a>
+
+### QueriedPoint
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| id | [PointId](#qdrant-PointId) |  | Point id |
+| payload | [QueriedPoint.PayloadEntry](#qdrant-QueriedPoint-PayloadEntry) | repeated | Payload |
+| score | [Score](#qdrant-Score) |  | Score to order against other points |
+| version | [uint64](#uint64) |  | Last update operation applied to this point |
+| vectors | [Vectors](#qdrant-Vectors) | optional | Vectors to search |
+| shard_key | [ShardKey](#qdrant-ShardKey) | optional | Shard key |
+
+
+
+
+
+
+<a name="qdrant-QueriedPoint-PayloadEntry"></a>
+
+### QueriedPoint.PayloadEntry
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| key | [string](#string) |  |  |
+| value | [Value](#qdrant-Value) |  |  |
+
+
+
+
+
+
 <a name="qdrant-Range"></a>
 
 ### Range
@@ -3183,6 +3222,24 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | ----- | ---- | ----- | ----------- |
 | key | [string](#string) |  |  |
 | value | [Value](#qdrant-Value) |  |  |
+
+
+
+
+
+
+<a name="qdrant-Score"></a>
+
+### Score
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| id | [PointId](#qdrant-PointId) |  |  |
+| similarity | [float](#float) |  |  |
+| int_value | [int64](#int64) |  |  |
+| float_value | [double](#double) |  |  |
 
 
 
