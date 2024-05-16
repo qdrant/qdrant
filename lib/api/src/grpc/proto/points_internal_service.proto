@@ -239,8 +239,9 @@ message RawQuery {
 message QueryShardPoints {
   message Query {
     oneof score {
-      RawQuery vector = 1;
-      // TODO(universal-query): Add fusion and order-by
+      RawQuery vector = 1; // (re)score against a vector query
+      bool rrf = 2; // Reciprocal Rank Fusion
+      // TODO(universal-query): Add order-by
     }
   }
   
