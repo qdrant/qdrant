@@ -66,6 +66,13 @@ impl TableOfContent {
                 log::debug!("Changing aliases");
                 self.update_aliases(operation).await
             }
+            CollectionMetaOperations::Resharding(collection, operation) => {
+                log::debug!("Resharding {operation:?} of {collection}");
+
+                self.handle_resharding(collection, operation)
+                    .await
+                    .map(|_| true)
+            }
             CollectionMetaOperations::TransferShard(collection, operation) => {
                 log::debug!("Transfer shard {:?} of {}", operation, collection);
 
@@ -257,6 +264,28 @@ impl TableOfContent {
             };
         }
         Ok(true)
+    }
+
+    async fn handle_resharding(
+        &self,
+        collection: CollectionId,
+        operation: ReshardingOperation,
+    ) -> Result<(), StorageError> {
+        let collection = self.get_collection_unchecked(&collection).await?;
+
+        match operation {
+            ReshardingOperation::Start {
+                peer_id,
+                shard_id,
+                shard_key,
+            } => {
+                collection
+                    .start_resharding(peer_id, shard_id, shard_key)
+                    .await?;
+            }
+        }
+
+        Ok(())
     }
 
     async fn handle_transfer(

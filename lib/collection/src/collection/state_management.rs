@@ -92,7 +92,9 @@ impl Collection {
                 Some(replica_set) => replica_set.apply_state(shard_info.replicas).await?,
                 None => {
                     let shard_replicas: Vec<_> = shard_info.replicas.keys().copied().collect();
-                    let replica_set = self.create_replica_set(shard_id, &shard_replicas).await?;
+                    let replica_set = self
+                        .create_replica_set(shard_id, &shard_replicas, None)
+                        .await?;
                     replica_set.apply_state(shard_info.replicas).await?;
                     extra_shards.insert(shard_id, replica_set);
                 }
