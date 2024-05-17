@@ -513,8 +513,6 @@ pub async fn do_update_collection_cluster(
                 .await
         }
         ClusterOperations::StartResharding(op) => {
-            // TODO: Check that there's no resharding in progress already!
-
             let peer_id = match op.peer_id {
                 Some(peer_id) => {
                     validate_peer_exists(peer_id)?;
@@ -522,7 +520,7 @@ pub async fn do_update_collection_cluster(
                 }
 
                 None => {
-                    // TODO: Select `peer_id` for resharding in a more reasonable way!?
+                    // TODO(resharding): Select `peer_id` for resharding in a more reasonable way!?
                     consensus_state
                         .persistent
                         .read()
@@ -535,17 +533,30 @@ pub async fn do_update_collection_cluster(
                 }
             };
 
-            // TODO: Select `shard_id` for resharding in a more reasonable way!?
-            let shard_id = collection
-                .state()
-                .await
+            let collection_state = collection.state().await;
+
+            // TODO(resharding): Select `shard_id` for resharding in a more reasonable way?..
+            let shard_id = collection_state
                 .shards
                 .keys()
                 .copied()
                 .max()
                 .map_or(0, |id| id + 1);
 
-            let shard_key = op.shard_key;
+            if let Some(shard_key) = &op.shard_key {
+                if !collection_state.shards_key_mapping.contains_key(shard_key) {
+                    return Err(StorageError::bad_request(format!(
+                        "sharding key {shard_key} does not exists for collection {collection_name}"
+                    )));
+                }
+            }
+
+            if let Some(resharding) = &collection_state.resharding {
+                return Err(StorageError::bad_request(format!(
+                    "resharding {resharding:?} is already in progress \
+                     for collection {collection_name}"
+                )));
+            }
 
             dispatcher
                 .submit_collection_meta_op(
@@ -554,7 +565,7 @@ pub async fn do_update_collection_cluster(
                         ReshardingOperation::Start {
                             peer_id,
                             shard_id,
-                            shard_key,
+                            shard_key: op.shard_key,
                         },
                     ),
                     access,
