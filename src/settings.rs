@@ -121,9 +121,9 @@ pub struct TlsConfig {
     pub cert_ttl: Option<u64>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Default, Debug, Deserialize, Clone)]
 pub struct DebugConfig {
-    pub pyroscope: PyroscopeConfig,
+    pub pyroscope: Option<PyroscopeConfig>,
 }
 
 #[derive(Debug, Deserialize, Clone, Validate)]
@@ -143,7 +143,8 @@ pub struct Settings {
     pub telemetry_disabled: bool,
     #[validate]
     pub tls: Option<TlsConfig>,
-    pub debug: Option<DebugConfig>,
+    // #[serde(default)]
+    pub debug: DebugConfig,
     /// A list of messages for errors that happened during loading the configuration. We collect
     /// them and store them here while loading because then our logger is not configured yet.
     /// We therefore need to log these messages later, after the logger is ready.

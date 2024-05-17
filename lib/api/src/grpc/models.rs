@@ -28,7 +28,7 @@ impl Default for VersionInfo {
     }
 }
 
-#[derive(Serialize, JsonSchema, Debug, Deserialize, Clone)] // Validate
+#[derive(Serialize, JsonSchema, Debug, Deserialize, Clone)]
 pub struct PyroscopeConfig {
     pub url: String,
     pub identifier: String,

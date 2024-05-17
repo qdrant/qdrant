@@ -39,11 +39,11 @@ impl PyroscopeState {
     }
 
     pub fn from_settings(settings: &Settings) -> Option<Self> {
-        if let Some(debug_config) = settings.debug.clone() {
-            Some(PyroscopeState::from_config(&debug_config.pyroscope))
-        } else {
-            None
-        }
+        settings
+            .debug
+            .pyroscope
+            .clone()
+            .map(|pyroscope_config| PyroscopeState::from_config(&pyroscope_config))
     }
 }
 
