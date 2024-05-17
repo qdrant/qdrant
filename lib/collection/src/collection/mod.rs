@@ -660,7 +660,7 @@ impl Collection {
         shard_id: ShardId,
         shard_key: Option<ShardKey>,
     ) -> CollectionResult<()> {
-        // TODO: Improve error handling?
+        // TODO(resharding): Improve error handling?
 
         let mut shard_holder = self.shards_holder.write().await;
 

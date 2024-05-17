@@ -134,7 +134,7 @@ impl Dispatcher {
                     })
                 }
 
-                // TODO: Do we need/want to synchronize `Resharding` operations?
+                // TODO(resharding): Do we need/want to synchronize `Resharding` operations?
                 CollectionMetaOperations::Resharding(_, _) => false,
 
                 // No need to sync nodes for other operations
