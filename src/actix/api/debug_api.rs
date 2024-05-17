@@ -23,7 +23,9 @@ async fn get_debug_config(
         match state.as_ref() {
             Some(state) => {
                 let config = state.config.lock().unwrap().clone();
-                Ok(GetDebugConfigResponse { pyroscope: Some(config) })
+                Ok(GetDebugConfigResponse {
+                    pyroscope: Some(config),
+                })
             }
             None => Ok(GetDebugConfigResponse { pyroscope: None }),
         }
