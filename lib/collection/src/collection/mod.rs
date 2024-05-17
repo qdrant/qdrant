@@ -1,7 +1,7 @@
 mod collection_ops;
 pub mod payload_index_schema;
 mod point_ops;
-mod resharding;
+pub mod resharding;
 mod search;
 mod shard_transfer;
 mod sharding_keys;
@@ -471,6 +471,7 @@ impl Collection {
                     (*shard_id, shard_info)
                 })
                 .collect(),
+            resharding: self.resharding_state.read().clone(),
             transfers,
             shards_key_mapping: shards_holder.get_shard_key_to_ids_mapping(),
             payload_index_schema: self.payload_index_schema.read().clone(),

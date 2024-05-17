@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::shards::shard::{PeerId, ShardId};
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct ReshardingState {
     pub peer_id: PeerId,
     pub shard_id: ShardId,
