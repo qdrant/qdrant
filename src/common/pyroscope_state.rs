@@ -18,7 +18,10 @@ impl PyroscopeState {
         let pprof_config = PprofConfig::new().sample_rate(config.sampling_rate.unwrap_or(100));
         let backend_impl = pprof_backend(pprof_config);
 
-        log::info!("Starting agent with identifier {}", &config.identifier);
+        log::info!(
+            "Starting pyroscope agent with identifier {}",
+            &config.identifier
+        );
         let agent = PyroscopeAgent::builder(config.url.to_string(), "qdrant".to_string())
             .backend(backend_impl)
             .tags([("app", "Qdrant"), ("identifier", &config.identifier)].to_vec())
