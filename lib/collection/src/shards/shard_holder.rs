@@ -213,8 +213,16 @@ impl ShardHolder {
         shard: ShardReplicaSet,
         shard_key: Option<ShardKey>,
     ) -> Result<(), CollectionError> {
+        // TODO(resharding):
+        //
+        // `CollectionError::service_error` seems more fitting here... but if `start_resharding`
+        // returns `service_error` here, it will crash consensus thread.
+        //
+        // So it's seems less annoying to allow all of these errors be `bad_request`s for now, and
+        // (maybe) switch (some of) them to `service_error`s later.
+
         let Some(ring) = self.rings.get_mut(&shard_key) else {
-            // TODO: `CollectionError::service_error`? 🤔
+            // TODO(resharding): `CollectionError::service_error`? 🤔
             return Err(CollectionError::bad_request(
                 "shard holder does not contain default hashring".into(),
             ));
@@ -227,7 +235,7 @@ impl ShardHolder {
                 self.resharding
             );
 
-            // TODO: `CollectionError::service_error`? 🤔
+            // TODO(resharding): `CollectionError::service_error`? 🤔
             return Err(CollectionError::bad_request(
                 "shard holder already contains resharding hashring".into(),
             ));
@@ -240,7 +248,7 @@ impl ShardHolder {
         );
 
         if self.shards.contains_key(&shard_id) {
-            // TODO: `CollectionError::service_error`? 🤔
+            // TODO(resharding): `CollectionError::service_error`? 🤔
             return Err(CollectionError::bad_request(format!(
                 "shard holder already contains shard {shard_id} replica set"
             )));
