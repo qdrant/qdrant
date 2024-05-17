@@ -22,6 +22,7 @@ use semver::Version;
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
 
+use self::resharding::ReshardingState;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_state::{ShardInfo, State};
 use crate::common::is_ready::IsReady;
@@ -52,7 +53,7 @@ pub struct Collection {
     pub(crate) collection_config: Arc<RwLock<CollectionConfig>>,
     pub(crate) shared_storage_config: Arc<SharedStorageConfig>,
     pub(crate) payload_index_schema: SaveOnDisk<PayloadIndexSchema>,
-    resharding_state: SaveOnDisk<Option<resharding::State>>,
+    resharding_state: SaveOnDisk<Option<ReshardingState>>,
     this_peer_id: PeerId,
     path: PathBuf,
     snapshots_path: PathBuf,
@@ -270,7 +271,7 @@ impl Collection {
 
     fn load_resharding_state(
         collection_path: &Path,
-    ) -> CollectionResult<SaveOnDisk<Option<resharding::State>>> {
+    ) -> CollectionResult<SaveOnDisk<Option<ReshardingState>>> {
         let resharding_state_file = Self::resharding_state_file(collection_path);
         let resharding_state = SaveOnDisk::load_or_init(resharding_state_file)?;
         Ok(resharding_state)
@@ -691,7 +692,7 @@ impl Collection {
                 self.id
             );
 
-            *state = Some(resharding::State::new(peer_id, shard_id, shard_key));
+            *state = Some(ReshardingState::new(peer_id, shard_id, shard_key));
         })?;
 
         Ok(())
