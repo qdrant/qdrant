@@ -15,15 +15,18 @@ pub struct GetDebugConfigResponse {
 #[get("/debug")]
 async fn get_debug_config(
     ActixAccess(access): ActixAccess,
-    _state: web::Data<PyroscopeState>,
+    state: web::Data<Option<PyroscopeState>>,
 ) -> impl Responder {
     crate::actix::helpers::time(async move {
         access.check_global_access(AccessRequirements::new().manage())?;
 
-        // let config_guard = state.config.lock().unwrap();
-        // let config = config_guard.clone();
-
-        Ok(true)
+        match state.as_ref() {
+            Some(state) => {
+                let config = state.config.lock().unwrap().clone();
+                Ok(GetDebugConfigResponse { pyroscope: Some(config) })
+            }
+            None => Ok(GetDebugConfigResponse { pyroscope: None }),
+        }
     })
     .await
 }
@@ -36,8 +39,7 @@ async fn update_debug_config(
 ) -> impl Responder {
     crate::actix::helpers::time(async move {
         access.check_global_access(AccessRequirements::new().manage())?;
-        state.update_agent(&new_config);
-
+        state.restart_agent(&new_config);
         Ok(true)
     })
     .await

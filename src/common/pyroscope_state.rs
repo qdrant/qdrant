@@ -21,6 +21,7 @@ impl PyroscopeState {
             "Starting pyroscope agent with identifier {}",
             &config.identifier
         );
+        // TODO: Add more tags like peerId and peerUrl
         let agent = PyroscopeAgent::builder(config.url.to_string(), "qdrant".to_string())
             .backend(backend_impl)
             .tags([("app", "Qdrant"), ("identifier", &config.identifier)].to_vec())
@@ -31,7 +32,7 @@ impl PyroscopeState {
     }
 
     /// Update agent config and restart
-    pub fn update_agent(&self, config: &PyroscopeConfig) {
+    pub fn restart_agent(&self, config: &PyroscopeConfig) {
         let mut agent_guard = self.agent.lock().unwrap();
         if let Some(running_agent) = agent_guard.take() {
             let ready_agent = running_agent.stop().unwrap();
