@@ -43,11 +43,6 @@ pub struct UpdateDebugConfigRequest {
 }
 
 #[derive(Serialize, JsonSchema)]
-pub struct UpdateDebugConfigResponse {
-    pub pyroscope: bool,
-}
-
-#[derive(Serialize, JsonSchema)]
 pub struct GetDebugConfigResponse {
     pub pyroscope: Option<PyroscopeConfig>,
 }

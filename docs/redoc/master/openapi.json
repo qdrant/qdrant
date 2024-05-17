@@ -11291,30 +11291,24 @@
           },
           "sampling_rate": {
             "type": "integer",
-            "format": "int32",
+            "format": "uint32",
+            "minimum": 0,
             "nullable": true
-          }
-        }
-      },
-      "UpdateDebugConfigResponse": {
-        "type": "object",
-        "required": [
-          "pyroscope"
-        ],
-        "properties": {
-          "pyroscope": {
-            "type": "boolean"
           }
         }
       },
       "GetDebugConfigResponse": {
         "type": "object",
-        "required": [
-          "pyroscope"
-        ],
         "properties": {
           "pyroscope": {
-            "$ref": "#/components/schemas/PyroscopeConfig"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PyroscopeConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       }
