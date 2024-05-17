@@ -374,7 +374,7 @@ impl ShardReplicaSet {
 
         if !successes
             .iter()
-            .any(|(peer_id, _)| self.peer_is_active(peer_id))
+            .any(|(peer_id, _)| self.peer_is_active_or_resharding(peer_id))
         {
             return Err(CollectionError::service_error(format!(
                 "Failed to apply operation to at least one `Active` replica. \

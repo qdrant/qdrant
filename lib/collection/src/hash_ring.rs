@@ -1,6 +1,7 @@
 use std::fmt;
 use std::hash::Hash;
 
+use itertools::Itertools as _;
 use smallvec::SmallVec;
 
 use crate::shards::shard::ShardId;
@@ -133,20 +134,20 @@ impl<T: Hash + Copy + PartialEq> HashRing<T> {
         removed_resharding
     }
 
-    pub fn get<U: Hash>(&self, key: &U) -> ShardIds<T> {
+    pub fn get<U: Hash>(&self, key: &U) -> ShardIds<T>
+    where
+        T: PartialEq,
+    {
         match self {
             Self::Single(ring) => ring.get(key).into_iter().cloned().collect(),
-            // TODO(resharding): just use the old hash ring for now, never route to two shards
-            // TODO(resharding): switch to both as commented below once read folding is implemented
-            Self::Resharding { old, new: _ } => old.get(key).into_iter().cloned().collect(),
-            // Self::Resharding { old, new } => old
-            //     .get(key)
-            //     .into_iter()
-            //     .chain(new.get(key))
-            //     // Both hash rings may return the same shard ID, take it once
-            //     .dedup()
-            //     .cloned()
-            //     .collect(),
+            Self::Resharding { old, new } => old
+                .get(key)
+                .into_iter()
+                .chain(new.get(key))
+                // Both hash rings may return the same shard ID, take it once
+                .dedup()
+                .cloned()
+                .collect(),
         }
     }
 
