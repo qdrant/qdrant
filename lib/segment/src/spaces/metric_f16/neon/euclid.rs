@@ -26,6 +26,7 @@ pub unsafe fn neon_euclid_similarity_half(
 }
 
 #[cfg(not(feature = "neon_fp16"))]
+#[allow(clippy::missing_safety_doc)]
 pub unsafe fn neon_euclid_similarity_half(
     v1: &[VectorElementTypeHalf],
     v2: &[VectorElementTypeHalf],
