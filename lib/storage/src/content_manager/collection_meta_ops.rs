@@ -291,6 +291,15 @@ pub struct ChangeAliasesOperation {
 #[serde(rename_all = "snake_case")]
 pub struct DeleteCollectionOperation(pub String);
 
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize)]
+pub enum ReshardingOperation {
+    Start {
+        peer_id: PeerId,
+        shard_id: ShardId,
+        shard_key: Option<ShardKey>,
+    },
+}
+
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
 pub enum ShardTransferOperations {
     Start(ShardTransfer),
@@ -368,6 +377,7 @@ pub enum CollectionMetaOperations {
     UpdateCollection(UpdateCollectionOperation),
     DeleteCollection(DeleteCollectionOperation),
     ChangeAliases(ChangeAliasesOperation),
+    Resharding(CollectionId, ReshardingOperation),
     TransferShard(CollectionId, ShardTransferOperations),
     SetShardReplicaState(SetShardReplicaState),
     CreateShardKey(CreateShardKey),
