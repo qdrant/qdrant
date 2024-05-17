@@ -168,3 +168,28 @@ paths:
                 type: boolean
         "4XX":
           description: error
+
+  /debug:
+    get:
+      summary: Get debugging config
+      description: Get a report of performance issues and configuration suggestions
+      operationId: get_debug
+      tags:
+        - beta
+      responses: #@ response(reference("GetDebugConfigResponse"))
+    post:
+      summary: Update debugging config
+      description: Integrate with debugging tools like Pyroscope
+      operationId: update_debug
+      tags:
+        - beta
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: boolean
+        "4XX":
+          description: error
+

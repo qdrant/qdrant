@@ -1,6 +1,7 @@
 pub mod cluster_api;
 pub mod collections_api;
 pub mod count_api;
+pub mod debug_api;
 pub mod discovery_api;
 pub mod issues_api;
 pub mod read_params;
