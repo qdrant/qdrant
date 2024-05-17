@@ -29,11 +29,11 @@ pub(super) async fn transfer_resharding_stream_records(
     remote_shard: RemoteShard,
     collection_name: &str,
 ) -> CollectionResult<()> {
-    // TODO: transfer to a different target shard
     // TODO: define shard key here!
     let shard_key = None;
 
     let remote_peer_id = remote_shard.peer_id;
+    let hashring;
 
     log::debug!(
         "Starting shard {shard_id} transfer to peer {remote_peer_id} by reshard streaming records"
@@ -48,6 +48,12 @@ pub(super) async fn transfer_resharding_stream_records(
                 "Shard {shard_id} cannot be proxied because it does not exist"
             )));
         };
+
+        hashring = shard_holder.rings.get(&shard_key).cloned().ok_or_else(|| {
+            CollectionError::service_error(format!(
+                "Shard {shard_id} cannot be transferred for resharding, failed to get shard hash rings"
+            ))
+        })?;
 
         replica_set.proxify_local(remote_shard.clone()).await?;
 
@@ -83,15 +89,8 @@ pub(super) async fn transfer_resharding_stream_records(
             )));
         };
 
-        // TODO: do not get rings every loop iteration!
-        let hashring = shard_holder.rings.get(&shard_key.clone()).ok_or_else(|| {
-            CollectionError::service_error(format!(
-                    "Shard {shard_id} cannot be transferred for resharding, failed to get shard hash rings"
-            ))
-        })?;
-
         offset = replica_set
-            .transfer_batch(offset, TRANSFER_BATCH_SIZE, Some(hashring))
+            .transfer_batch(offset, TRANSFER_BATCH_SIZE, Some(&hashring))
             .await?;
 
         {
