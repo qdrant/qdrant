@@ -8121,7 +8121,7 @@ pub mod query_shard_points {
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Query {
-        #[prost(oneof = "query::Score", tags = "1, 2")]
+        #[prost(oneof = "query::Score", tags = "1, 2, 3")]
         pub score: ::core::option::Option<query::Score>,
     }
     /// Nested message and enum types in `Query`.
@@ -8136,6 +8136,9 @@ pub mod query_shard_points {
             /// Reciprocal Rank Fusion
             #[prost(bool, tag = "2")]
             Rrf(bool),
+            /// Order by a field
+            #[prost(message, tag = "3")]
+            OrderBy(super::super::OrderBy),
         }
     }
     #[derive(serde::Serialize)]
