@@ -11,28 +11,6 @@ pub enum HashRing<T: Hash + Copy> {
 }
 
 impl<T: Hash + Copy> HashRing<T> {
-    // `hashring::HashRing` does not implement `Clone`, so we have to do this... 🤦‍♀️
-    pub fn clone(&mut self) -> Self {
-        match self {
-            HashRing::Raw(ring) => {
-                let (this, other) = duplicate(mem::take(ring));
-                *ring = this;
-
-                Self::Raw(other)
-            }
-
-            HashRing::Fair { ring, scale } => {
-                let (this, other) = duplicate(mem::take(ring));
-                *ring = this;
-
-                Self::Fair {
-                    ring: other,
-                    scale: *scale,
-                }
-            }
-        }
-    }
-
     pub fn raw() -> Self {
         Self::Raw(hashring::HashRing::new())
     }
@@ -93,22 +71,6 @@ impl<T: Hash + Copy> HashRing<T> {
             HashRing::Fair { ring, .. } => ring.is_empty(),
         }
     }
-}
-
-// `hashring::HashRing` does not implement `Clone`, so we have to do this... 🤦‍♀️
-fn duplicate<T>(ring: hashring::HashRing<T>) -> (hashring::HashRing<T>, hashring::HashRing<T>)
-where
-    T: Clone + Hash,
-{
-    let nodes: Vec<_> = ring.into_iter().collect();
-
-    let mut first = hashring::HashRing::new();
-    first.batch_add(nodes.clone());
-
-    let mut second = hashring::HashRing::new();
-    second.batch_add(nodes);
-
-    (first, second)
 }
 
 #[cfg(test)]
