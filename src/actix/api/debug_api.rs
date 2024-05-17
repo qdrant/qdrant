@@ -1,13 +1,16 @@
 use actix_web::{get, post, web, Responder};
-use api::grpc::models::{
-    GetDebugConfigResponse,
-    PyroscopeConfig,
-    // UpdateDebugConfigRequest
-};
+use schemars::JsonSchema;
+use serde::Serialize;
 use storage::rbac::AccessRequirements;
 
 use crate::actix::auth::ActixAccess;
 use crate::common::pyroscope_state::PyroscopeState;
+use crate::settings::PyroscopeConfig;
+
+#[derive(Serialize, JsonSchema)]
+pub struct GetDebugConfigResponse {
+    pub pyroscope: Option<PyroscopeConfig>,
+}
 
 #[get("/debug")]
 async fn get_debug_config(
@@ -20,7 +23,7 @@ async fn get_debug_config(
         // let config_guard = state.config.lock().unwrap();
         // let config = config_guard.clone();
 
-        Ok(GetDebugConfigResponse { pyroscope: None })
+        Ok(true)
     })
     .await
 }

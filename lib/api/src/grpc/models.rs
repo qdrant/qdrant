@@ -2,7 +2,7 @@ use std::fmt::Debug;
 
 use schemars::JsonSchema;
 use serde;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 pub fn get_git_commit_id() -> Option<String> {
     option_env!("GIT_COMMIT_ID")
@@ -26,20 +26,6 @@ impl Default for VersionInfo {
             commit: get_git_commit_id(),
         }
     }
-}
-
-#[derive(Serialize, JsonSchema, Debug, Deserialize, Clone)]
-pub struct PyroscopeConfig {
-    pub url: String,
-    pub identifier: String,
-    pub user: Option<String>,
-    pub password: Option<String>,
-    pub sampling_rate: Option<u32>,
-}
-
-#[derive(Serialize, JsonSchema)]
-pub struct GetDebugConfigResponse {
-    pub pyroscope: Option<PyroscopeConfig>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]

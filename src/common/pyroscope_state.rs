@@ -1,11 +1,10 @@
 use std::sync::{Arc, Mutex};
 
-use api::grpc::models::PyroscopeConfig;
 use pyroscope::pyroscope::PyroscopeAgentRunning;
 use pyroscope::PyroscopeAgent;
 use pyroscope_pprofrs::{pprof_backend, PprofConfig};
 
-use crate::settings::Settings;
+use crate::settings::{PyroscopeConfig, Settings};
 
 #[derive(Clone)]
 pub struct PyroscopeState {

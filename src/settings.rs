@@ -1,12 +1,12 @@
 use std::{env, io};
 
-use api::grpc::models::PyroscopeConfig;
 use api::grpc::transport_channel_pool::{
     DEFAULT_CONNECT_TIMEOUT, DEFAULT_GRPC_TIMEOUT, DEFAULT_POOL_SIZE,
 };
 use collection::operations::validation;
 use config::{Config, ConfigError, Environment, File, FileFormat, Source};
-use serde::Deserialize;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use storage::types::StorageConfig;
 use validator::Validate;
 
@@ -119,6 +119,15 @@ pub struct TlsConfig {
     #[serde(default = "default_tls_cert_ttl")]
     #[validate(range(min = 1))]
     pub cert_ttl: Option<u64>,
+}
+
+#[derive(Serialize, JsonSchema, Debug, Deserialize, Clone)]
+pub struct PyroscopeConfig {
+    pub url: String,
+    pub identifier: String,
+    pub user: Option<String>,
+    pub password: Option<String>,
+    pub sampling_rate: Option<u32>,
 }
 
 #[derive(Default, Debug, Deserialize, Clone)]
