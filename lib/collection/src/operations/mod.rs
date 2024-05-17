@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter};
 use validator::Validate;
 
-use crate::hash_ring::{ShardHashRing, ShardIds};
+use crate::hash_ring::{HashRing, ShardIds};
 use crate::shards::shard::{PeerId, ShardId};
 
 pub type ClockToken = u64;
@@ -216,7 +216,7 @@ impl Validate for CollectionUpdateOperations {
 /// # Panics
 ///
 /// Panics if the hash ring is empty and there is no shard for the given point ID.
-fn point_to_shards(point_id: &ExtendedPointId, ring: &ShardHashRing) -> ShardIds {
+fn point_to_shards(point_id: &ExtendedPointId, ring: &HashRing) -> ShardIds {
     let shard_ids = ring.get(point_id);
     assert!(
         !shard_ids.is_empty(),
@@ -229,7 +229,7 @@ fn point_to_shards(point_id: &ExtendedPointId, ring: &ShardHashRing) -> ShardIds
 fn split_iter_by_shard<I, F, O: Clone>(
     iter: I,
     id_extractor: F,
-    ring: &ShardHashRing,
+    ring: &HashRing,
 ) -> OperationToShard<Vec<O>>
 where
     I: IntoIterator<Item = O>,
@@ -249,13 +249,13 @@ where
 
 /// Trait for Operation enums to split them by shard.
 pub trait SplitByShard {
-    fn split_by_shard(self, ring: &ShardHashRing) -> OperationToShard<Self>
+    fn split_by_shard(self, ring: &HashRing) -> OperationToShard<Self>
     where
         Self: Sized;
 }
 
 impl SplitByShard for CollectionUpdateOperations {
-    fn split_by_shard(self, ring: &ShardHashRing) -> OperationToShard<Self> {
+    fn split_by_shard(self, ring: &HashRing) -> OperationToShard<Self> {
         match self {
             CollectionUpdateOperations::PointOperation(operation) => operation
                 .split_by_shard(ring)

@@ -9,7 +9,7 @@ use validator::{Validate, ValidationError, ValidationErrors};
 
 use super::point_ops::PointIdsList;
 use super::{point_to_shards, split_iter_by_shard, OperationToShard, SplitByShard};
-use crate::hash_ring::ShardHashRing;
+use crate::hash_ring::HashRing;
 use crate::operations::shard_key_selector::ShardKeySelector;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
@@ -101,13 +101,13 @@ impl Validate for VectorOperations {
 }
 
 impl SplitByShard for Vec<PointVectors> {
-    fn split_by_shard(self, ring: &ShardHashRing) -> OperationToShard<Self> {
+    fn split_by_shard(self, ring: &HashRing) -> OperationToShard<Self> {
         split_iter_by_shard(self, |point| point.id, ring)
     }
 }
 
 impl SplitByShard for VectorOperations {
-    fn split_by_shard(self, ring: &ShardHashRing) -> OperationToShard<Self> {
+    fn split_by_shard(self, ring: &HashRing) -> OperationToShard<Self> {
         match self {
             VectorOperations::UpdateVectors(update_vectors) => {
                 let shard_points = update_vectors

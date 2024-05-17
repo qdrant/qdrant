@@ -7,7 +7,7 @@ use strum::{EnumDiscriminants, EnumIter};
 use validator::Validate;
 
 use super::{split_iter_by_shard, OperationToShard, SplitByShard};
-use crate::hash_ring::ShardHashRing;
+use crate::hash_ring::HashRing;
 use crate::operations::shard_key_selector::ShardKeySelector;
 
 /// This data structure is used in API interface and applied across multiple shards
@@ -175,7 +175,7 @@ impl Validate for PayloadOps {
 }
 
 impl SplitByShard for PayloadOps {
-    fn split_by_shard(self, ring: &ShardHashRing) -> OperationToShard<Self> {
+    fn split_by_shard(self, ring: &HashRing) -> OperationToShard<Self> {
         match self {
             PayloadOps::SetPayload(operation) => {
                 operation.split_by_shard(ring).map(PayloadOps::SetPayload)
@@ -194,7 +194,7 @@ impl SplitByShard for PayloadOps {
 }
 
 impl SplitByShard for DeletePayloadOp {
-    fn split_by_shard(self, ring: &ShardHashRing) -> OperationToShard<Self> {
+    fn split_by_shard(self, ring: &HashRing) -> OperationToShard<Self> {
         match (&self.points, &self.filter) {
             (Some(_), _) => {
                 split_iter_by_shard(self.points.unwrap(), |id| *id, ring).map(|points| {
@@ -212,7 +212,7 @@ impl SplitByShard for DeletePayloadOp {
 }
 
 impl SplitByShard for SetPayloadOp {
-    fn split_by_shard(self, ring: &ShardHashRing) -> OperationToShard<Self> {
+    fn split_by_shard(self, ring: &HashRing) -> OperationToShard<Self> {
         match (&self.points, &self.filter) {
             (Some(_), _) => {
                 split_iter_by_shard(self.points.unwrap(), |id| *id, ring).map(|points| {

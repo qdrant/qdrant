@@ -7,7 +7,7 @@ use crate::shards::shard::ShardId;
 const HASH_RING_SHARD_SCALE: u32 = 100;
 
 #[derive(Clone)]
-pub enum ShardHashRing {
+pub enum HashRing {
     /// Single hashring
     Single(Inner<ShardId>),
 
@@ -19,7 +19,7 @@ pub enum ShardHashRing {
     },
 }
 
-impl ShardHashRing {
+impl HashRing {
     /// Create a new single hashring.
     ///
     /// The hashring is created with a fair distribution of points and `HASH_RING_SHARD_SCALE` scale.
