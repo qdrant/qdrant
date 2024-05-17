@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
-use std::mem;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::{fmt, mem};
 
 use common::cpu::CpuBudget;
 use itertools::Itertools;
@@ -223,9 +223,14 @@ impl ShardHolder {
 
         let Some(ring) = self.rings.get_mut(&shard_key) else {
             // TODO(resharding): `CollectionError::service_error`? 🤔
-            return Err(CollectionError::bad_request(
-                "shard holder does not contain default hashring".into(),
-            ));
+            return Err(CollectionError::bad_request(format!(
+                "shard holder does not contain {} hashring",
+                if let Some(shard_key) = &shard_key {
+                    shard_key as &dyn fmt::Display
+                } else {
+                    &"default"
+                }
+            )));
         };
 
         if ring.is_resharding() {
