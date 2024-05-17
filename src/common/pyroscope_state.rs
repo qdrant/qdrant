@@ -14,7 +14,7 @@ pub struct PyroscopeState {
 }
 
 impl PyroscopeState {
-    pub fn build_agent(config: &PyroscopeConfig) -> PyroscopeAgent<PyroscopeAgentRunning> {
+    fn build_agent(config: &PyroscopeConfig) -> PyroscopeAgent<PyroscopeAgentRunning> {
         let pprof_config = PprofConfig::new().sample_rate(config.sampling_rate.unwrap_or(100));
         let backend_impl = pprof_backend(pprof_config);
 
@@ -31,11 +31,20 @@ impl PyroscopeState {
         agent.start().unwrap()
     }
 
-    pub fn from_config(config: &PyroscopeConfig) -> Self {
-        PyroscopeState {
-            config: Arc::new(Mutex::new(config.clone())),
-            agent: Arc::new(Mutex::new(Some(PyroscopeState::build_agent(config)))),
+    /// Update agent config and restart
+    pub fn update_agent(&self, config: &PyroscopeConfig) {
+        let mut agent_guard = self.agent.lock().unwrap();
+        if let Some(running_agent) = agent_guard.take() {
+            let ready_agent = running_agent.stop().unwrap();
+            ready_agent.shutdown();
         }
+
+        *agent_guard = Some(PyroscopeState::build_agent(config));
+
+        let mut config_guard = self.config.lock().unwrap();
+        *config_guard = config.clone();
+
+        log::info!("Pyroscope agent started");
     }
 
     pub fn from_settings(settings: &Settings) -> Option<Self> {
@@ -43,16 +52,24 @@ impl PyroscopeState {
             .debug
             .pyroscope
             .clone()
-            .map(|pyroscope_config| PyroscopeState::from_config(&pyroscope_config))
+            .map(|pyroscope_config| PyroscopeState {
+                config: Arc::new(Mutex::new(pyroscope_config.clone())),
+                agent: Arc::new(Mutex::new(Some(PyroscopeState::build_agent(
+                    &pyroscope_config,
+                )))),
+            })
     }
 }
 
 impl Drop for PyroscopeState {
     fn drop(&mut self) {
+        log::info!("Stopping pyroscope agent");
         let mut agent_guard = self.agent.lock().unwrap();
         if let Some(running_agent) = agent_guard.take() {
             let ready_agent = running_agent.stop().unwrap();
             ready_agent.shutdown();
         }
+
+        log::info!("Pyroscope agent stopped");
     }
 }

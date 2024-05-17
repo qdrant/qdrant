@@ -33,18 +33,7 @@ async fn update_debug_config(
 ) -> impl Responder {
     crate::actix::helpers::time(async move {
         access.check_global_access(AccessRequirements::new().manage())?;
-
-        // Get the current agent and stop it
-        let mut agent_guard = state.agent.lock().unwrap();
-        if let Some(running_agent) = agent_guard.take() {
-            let ready_agent = running_agent.stop().unwrap();
-            ready_agent.shutdown();
-        }
-
-        *agent_guard = Some(PyroscopeState::build_agent(&new_config));
-
-        let mut config = state.config.lock().unwrap();
-        *config = new_config.into_inner();
+        state.update_agent(&new_config);
 
         Ok(true)
     })

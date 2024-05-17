@@ -38,11 +38,6 @@ pub struct PyroscopeConfig {
 }
 
 #[derive(Serialize, JsonSchema)]
-pub struct UpdateDebugConfigRequest {
-    pub pyroscope: PyroscopeConfig,
-}
-
-#[derive(Serialize, JsonSchema)]
 pub struct GetDebugConfigResponse {
     pub pyroscope: Option<PyroscopeConfig>,
 }
