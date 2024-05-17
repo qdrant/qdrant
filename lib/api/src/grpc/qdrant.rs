@@ -5160,7 +5160,7 @@ pub struct QueriedPoint {
     /// Payload
     #[prost(map = "string, message", tag = "2")]
     pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
-    /// Score to order against other points
+    /// Score to order against other points, if not present, the point is ordered by its ID.
     #[prost(message, optional, tag = "3")]
     pub score: ::core::option::Option<Score>,
     /// Last update operation applied to this point

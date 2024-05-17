@@ -2972,7 +2972,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | ----- | ---- | ----- | ----------- |
 | id | [PointId](#qdrant-PointId) |  | Point id |
 | payload | [QueriedPoint.PayloadEntry](#qdrant-QueriedPoint-PayloadEntry) | repeated | Payload |
-| score | [Score](#qdrant-Score) |  | Score to order against other points |
+| score | [Score](#qdrant-Score) | optional | Score to order against other points, if not present, the point is ordered by its ID. |
 | version | [uint64](#uint64) |  | Last update operation applied to this point |
 | vectors | [Vectors](#qdrant-Vectors) | optional | Vectors to search |
 | shard_key | [ShardKey](#qdrant-ShardKey) | optional | Shard key |
@@ -3236,10 +3236,8 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| id | [PointId](#qdrant-PointId) |  |  |
-| similarity | [float](#float) |  |  |
-| int_value | [int64](#int64) |  |  |
-| float_value | [double](#double) |  |  |
+| int | [int64](#int64) |  |  |
+| float | [double](#double) |  |  |
 
 
 
