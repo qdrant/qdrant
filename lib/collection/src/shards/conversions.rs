@@ -456,11 +456,7 @@ pub fn try_queried_point_from_grpc(
         tonic::Status::invalid_argument("grpc QueriedPoint does not have an ID")
     })?)?;
 
-    let score = Score::try_from(
-        point
-            .score
-            .ok_or_else(|| Status::invalid_argument("grpc QueriedPoint does not have a score"))?,
-    )?;
+    let score = point.score.map(Score::try_from).transpose()?;
 
     let payload = if with_payload {
         Some(api::grpc::conversions::proto_to_payloads(point.payload)?)

@@ -236,10 +236,8 @@ impl PartialEq for ScoredPoint {
 
 #[derive(Debug, PartialEq)]
 pub enum Score {
-    Id(PointIdType),
-    Similarity(ScoreType),
-    IntValue(IntPayloadType),
-    FloatValue(FloatPayloadType),
+    Int(i64),
+    Float(f64),
 }
 
 impl Eq for Score {}
@@ -251,30 +249,16 @@ impl PartialOrd for Score {
 }
 
 impl Ord for Score {
-    /// Compare with variant hierarchy: Id > Similarity > (IntValue | FloatValue)
     fn cmp(&self, other: &Self) -> Ordering {
         match (self, other) {
-            (Score::Id(self_id), Score::Id(other_id)) => self_id.cmp(other_id),
-            (Score::Id(_), Score::Similarity(_) | Score::FloatValue(_) | Score::IntValue(_)) => {
-                Ordering::Greater
-            }
-            (Score::Similarity(_) | Score::FloatValue(_) | Score::IntValue(_), Score::Id(_)) => {
-                Ordering::Less
-            }
-
-            (Score::Similarity(sim), Score::Similarity(other_sim)) => {
-                OrderedFloat(*sim).cmp(&OrderedFloat(*other_sim))
-            }
-            (Score::Similarity(_), Score::IntValue(_) | Score::FloatValue(_)) => Ordering::Greater,
-            (Score::IntValue(_) | Score::FloatValue(_), Score::Similarity(_)) => Ordering::Less,
-            (Score::FloatValue(f), Score::IntValue(i)) => {
+            (Score::Float(f), Score::Int(i)) => {
                 OrderingValue::Float(*f).cmp(&OrderingValue::Int(*i))
             }
-            (Score::IntValue(i), Score::FloatValue(f)) => {
+            (Score::Int(i), Score::Float(f)) => {
                 OrderingValue::Int(*i).cmp(&OrderingValue::Float(*f))
             }
-            (Score::IntValue(self_i), Score::IntValue(other_i)) => self_i.cmp(other_i),
-            (Score::FloatValue(self_f), Score::FloatValue(other_f)) => {
+            (Score::Int(self_i), Score::Int(other_i)) => self_i.cmp(other_i),
+            (Score::Float(self_f), Score::Float(other_f)) => {
                 OrderedFloat(*self_f).cmp(&OrderedFloat(*other_f))
             }
         }
@@ -288,7 +272,7 @@ pub struct QueriedPoint {
     /// Point version
     pub version: SeqNumberType,
     /// Points vector distance to the query vector
-    pub score: Score,
+    pub score: Option<Score>,
     /// Payload - values assigned to the point
     pub payload: Option<Payload>,
     /// Vector of the point
@@ -300,8 +284,14 @@ pub struct QueriedPoint {
 impl Eq for QueriedPoint {}
 
 impl Ord for QueriedPoint {
+    /// A point with a score is always better than point without a score
     fn cmp(&self, other: &Self) -> Ordering {
-        self.score.cmp(&other.score)
+        match (&self.score, &other.score) {
+            (Some(a), Some(b)) => a.cmp(b),
+            (None, Some(_)) => Ordering::Less,
+            (Some(_), None) => Ordering::Greater,
+            (None, None) => self.id.cmp(&other.id),
+        }
     }
 }
 

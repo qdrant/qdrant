@@ -674,17 +674,15 @@ message UpdateBatchResponse {
 
 message Score {
   oneof variant {
-    PointId id = 1;
-    float similarity = 2;
-    int64 int_value = 3;
-    double float_value = 4;
+    int64 int = 1;
+    double float = 2;
   }
 }
 
 message QueriedPoint {
   PointId id = 1; // Point id
   map<string, Value> payload = 2; // Payload
-  Score score = 3; // Score to order against other points
+  optional Score score = 3; // Score to order against other points, if not present, the point is ordered by its ID.
   uint64 version = 4; // Last update operation applied to this point
   optional Vectors vectors = 5; // Vectors to search
   optional ShardKey shard_key = 6; // Shard key

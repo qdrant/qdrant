@@ -1778,13 +1778,11 @@ impl TryFrom<Score> for segment::types::Score {
 
         let variant = value
             .variant
-            .ok_or_else(|| Status::invalid_argument("grpc Score is missing score variant"))?;
+            .ok_or_else(|| Status::invalid_argument("grpc Score is missing its variant"))?;
 
         let score = match variant {
-            Variant::Similarity(sim) => Self::Similarity(sim),
-            Variant::IntValue(i) => Self::IntValue(i),
-            Variant::FloatValue(f) => Self::FloatValue(f),
-            Variant::Id(id) => Self::Id(segment::types::PointIdType::try_from(id)?),
+            Variant::Int(i) => Self::Int(i),
+            Variant::Float(f) => Self::Float(f),
         };
 
         Ok(score)

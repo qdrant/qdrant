@@ -5135,7 +5135,7 @@ pub struct UpdateBatchResponse {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Score {
-    #[prost(oneof = "score::Variant", tags = "1, 2, 3, 4")]
+    #[prost(oneof = "score::Variant", tags = "1, 2")]
     pub variant: ::core::option::Option<score::Variant>,
 }
 /// Nested message and enum types in `Score`.
@@ -5144,14 +5144,10 @@ pub mod score {
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Variant {
-        #[prost(message, tag = "1")]
-        Id(super::PointId),
-        #[prost(float, tag = "2")]
-        Similarity(f32),
-        #[prost(int64, tag = "3")]
-        IntValue(i64),
-        #[prost(double, tag = "4")]
-        FloatValue(f64),
+        #[prost(int64, tag = "1")]
+        Int(i64),
+        #[prost(double, tag = "2")]
+        Float(f64),
     }
 }
 #[derive(serde::Serialize)]
