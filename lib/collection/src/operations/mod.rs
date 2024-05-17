@@ -26,8 +26,8 @@ use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter};
 use validator::Validate;
 
+use crate::hash_ring::{ShardHashRing, ShardIds};
 use crate::shards::shard::{PeerId, ShardId};
-use crate::shards::shard_holder::{ShardHashRing, ShardIds};
 
 pub type ClockToken = u64;
 

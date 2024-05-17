@@ -7,8 +7,8 @@ use strum::{EnumDiscriminants, EnumIter};
 use validator::Validate;
 
 use super::{split_iter_by_shard, OperationToShard, SplitByShard};
+use crate::hash_ring::ShardHashRing;
 use crate::operations::shard_key_selector::ShardKeySelector;
-use crate::shards::shard_holder::ShardHashRing;
 
 /// This data structure is used in API interface and applied across multiple shards
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]

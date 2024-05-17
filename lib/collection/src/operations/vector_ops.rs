@@ -9,8 +9,8 @@ use validator::{Validate, ValidationError, ValidationErrors};
 
 use super::point_ops::PointIdsList;
 use super::{point_to_shards, split_iter_by_shard, OperationToShard, SplitByShard};
+use crate::hash_ring::ShardHashRing;
 use crate::operations::shard_key_selector::ShardKeySelector;
-use crate::shards::shard_holder::ShardHashRing;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 pub struct UpdateVectors {

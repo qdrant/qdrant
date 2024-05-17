@@ -13,10 +13,10 @@ use strum::{EnumDiscriminants, EnumIter};
 use validator::Validate;
 
 use super::{point_to_shards, split_iter_by_shard, OperationToShard, SplitByShard};
+use crate::hash_ring::ShardHashRing;
 use crate::operations::shard_key_selector::ShardKeySelector;
 use crate::operations::types::Record;
 use crate::shards::shard::ShardId;
-use crate::shards::shard_holder::ShardHashRing;
 
 /// Defines write ordering guarantees for collection operations
 ///
