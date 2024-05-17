@@ -55,6 +55,7 @@ pub struct ShardHolder {
     shard_id_to_key_mapping: HashMap<ShardId, ShardKey>,
 }
 
+#[derive(Clone)]
 pub enum ShardHashRing {
     /// Single hashring
     Single(HashRing<ShardId>),
