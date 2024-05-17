@@ -9,13 +9,13 @@ const HASH_RING_SHARD_SCALE: u32 = 100;
 #[derive(Clone)]
 pub enum ShardHashRing {
     /// Single hashring
-    Single(HashRing<ShardId>),
+    Single(Inner<ShardId>),
 
     /// Two hashrings when transitioning during resharding
     /// Depending on the current resharding state, points may be in either or both shards.
     Resharding {
-        old: HashRing<ShardId>,
-        new: HashRing<ShardId>,
+        old: Inner<ShardId>,
+        new: Inner<ShardId>,
     },
 }
 
@@ -24,7 +24,7 @@ impl ShardHashRing {
     ///
     /// The hashring is created with a fair distribution of points and `HASH_RING_SHARD_SCALE` scale.
     pub fn single() -> Self {
-        Self::Single(HashRing::fair(HASH_RING_SHARD_SCALE))
+        Self::Single(Inner::fair(HASH_RING_SHARD_SCALE))
     }
 
     /// Create a new resharding hashring, with resharding shard already added into `new` hashring.
@@ -32,8 +32,8 @@ impl ShardHashRing {
     /// The hashring is created with a fair distribution of points and `HASH_RING_SHARD_SCALE` scale.
     pub fn resharding(shard_id: ShardId) -> Self {
         let mut ring = Self::Resharding {
-            old: HashRing::fair(HASH_RING_SHARD_SCALE),
-            new: HashRing::fair(HASH_RING_SHARD_SCALE),
+            old: Inner::fair(HASH_RING_SHARD_SCALE),
+            new: Inner::fair(HASH_RING_SHARD_SCALE),
         };
 
         ring.add_resharding(shard_id);
@@ -102,7 +102,7 @@ impl ShardHashRing {
 pub type ShardIds = SmallVec<[ShardId; 2]>;
 
 #[derive(Clone)]
-pub enum HashRing<T: Hash + Copy> {
+pub enum Inner<T: Hash + Copy> {
     Raw(hashring::HashRing<T>),
     Fair {
         ring: hashring::HashRing<(T, u32)>,
@@ -110,7 +110,7 @@ pub enum HashRing<T: Hash + Copy> {
     },
 }
 
-impl<T: Hash + Copy> HashRing<T> {
+impl<T: Hash + Copy> Inner<T> {
     pub fn raw() -> Self {
         Self::Raw(hashring::HashRing::new())
     }
@@ -127,8 +127,8 @@ impl<T: Hash + Copy> HashRing<T> {
 
     pub fn add(&mut self, shard: T) {
         match self {
-            HashRing::Raw(ring) => ring.add(shard),
-            HashRing::Fair { ring, scale } => {
+            Inner::Raw(ring) => ring.add(shard),
+            Inner::Fair { ring, scale } => {
                 for i in 0..*scale {
                     ring.add((shard, i))
                 }
@@ -138,8 +138,8 @@ impl<T: Hash + Copy> HashRing<T> {
 
     pub fn remove(&mut self, shard: &T) -> bool {
         match self {
-            HashRing::Raw(ring) => ring.remove(shard).is_some(),
-            HashRing::Fair { ring, scale } => {
+            Inner::Raw(ring) => ring.remove(shard).is_some(),
+            Inner::Fair { ring, scale } => {
                 let mut removed = false;
                 for i in 0..*scale {
                     if ring.remove(&(*shard, i)).is_some() {
@@ -153,22 +153,22 @@ impl<T: Hash + Copy> HashRing<T> {
 
     pub fn get<U: Hash>(&self, key: &U) -> Option<&T> {
         match self {
-            HashRing::Raw(ring) => ring.get(key),
-            HashRing::Fair { ring, .. } => ring.get(key).map(|(shard, _)| shard),
+            Inner::Raw(ring) => ring.get(key),
+            Inner::Fair { ring, .. } => ring.get(key).map(|(shard, _)| shard),
         }
     }
 
     pub fn len(&self) -> usize {
         match self {
-            HashRing::Raw(ring) => ring.len(),
-            HashRing::Fair { ring, .. } => ring.len(),
+            Inner::Raw(ring) => ring.len(),
+            Inner::Fair { ring, .. } => ring.len(),
         }
     }
 
     pub fn is_empty(&self) -> bool {
         match self {
-            HashRing::Raw(ring) => ring.is_empty(),
-            HashRing::Fair { ring, .. } => ring.is_empty(),
+            Inner::Raw(ring) => ring.is_empty(),
+            Inner::Fair { ring, .. } => ring.is_empty(),
         }
     }
 }
@@ -179,7 +179,7 @@ mod tests {
 
     #[test]
     fn test_non_seq_keys() {
-        let mut ring = HashRing::fair(100);
+        let mut ring = Inner::fair(100);
         ring.add(5);
         ring.add(7);
         ring.add(8);
