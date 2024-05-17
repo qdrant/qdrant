@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::hash::Hash;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::{fmt, mem};
 
 use common::cpu::CpuBudget;
 use itertools::Itertools;
@@ -116,10 +116,8 @@ impl ShardHashRing {
     }
 
     pub fn add_resharding(&mut self, shard: ShardId) {
-        if let Self::Single(old) = self {
-            let mut old = mem::replace(old, HashRing::raw());
-            let new = old.clone();
-
+        if let Self::Single(ring) = self {
+            let (old, new) = (ring.clone(), ring.clone());
             *self = Self::Resharding { old, new };
         }
 
