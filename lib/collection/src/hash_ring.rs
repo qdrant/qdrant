@@ -7,19 +7,16 @@ use crate::shards::shard::ShardId;
 const HASH_RING_SHARD_SCALE: u32 = 100;
 
 #[derive(Clone)]
-pub enum HashRing {
+pub enum HashRing<T = ShardId> {
     /// Single hashring
-    Single(Inner<ShardId>),
+    Single(Inner<T>),
 
     /// Two hashrings when transitioning during resharding
     /// Depending on the current resharding state, points may be in either or both shards.
-    Resharding {
-        old: Inner<ShardId>,
-        new: Inner<ShardId>,
-    },
+    Resharding { old: Inner<T>, new: Inner<T> },
 }
 
-impl HashRing {
+impl<T: Hash + Copy> HashRing<T> {
     /// Create a new single hashring.
     ///
     /// The hashring is created with a fair distribution of points and `HASH_RING_SHARD_SCALE` scale.
@@ -30,13 +27,13 @@ impl HashRing {
     /// Create a new resharding hashring, with resharding shard already added into `new` hashring.
     ///
     /// The hashring is created with a fair distribution of points and `HASH_RING_SHARD_SCALE` scale.
-    pub fn resharding(shard_id: ShardId) -> Self {
+    pub fn resharding(shard: T) -> Self {
         let mut ring = Self::Resharding {
             old: Inner::fair(HASH_RING_SHARD_SCALE),
             new: Inner::fair(HASH_RING_SHARD_SCALE),
         };
 
-        ring.add_resharding(shard_id);
+        ring.add_resharding(shard);
 
         ring
     }
@@ -52,7 +49,7 @@ impl HashRing {
         matches!(self, Self::Resharding { .. })
     }
 
-    pub fn add(&mut self, shard: ShardId) {
+    pub fn add(&mut self, shard: T) {
         match self {
             Self::Single(ring) => ring.add(shard),
             Self::Resharding { old, new } => {
@@ -64,7 +61,7 @@ impl HashRing {
         }
     }
 
-    pub fn add_resharding(&mut self, shard: ShardId) {
+    pub fn add_resharding(&mut self, shard: T) {
         if let Self::Single(ring) = self {
             let (old, new) = (ring.clone(), ring.clone());
             *self = Self::Resharding { old, new };
@@ -77,7 +74,7 @@ impl HashRing {
         new.add(shard);
     }
 
-    pub fn get<U: Hash>(&self, key: &U) -> ShardIds {
+    pub fn get<U: Hash>(&self, key: &U) -> ShardIds<T> {
         match self {
             Self::Single(ring) => ring.get(key).into_iter().cloned().collect(),
             // TODO(resharding): just use the old hash ring for now, never route to two shards
@@ -99,11 +96,12 @@ impl HashRing {
 ///
 /// Uses a `SmallVec` putting two IDs on the stack. That's the maximum number of shards we expect
 /// with the current resharding implementation.
-pub type ShardIds = SmallVec<[ShardId; 2]>;
+pub type ShardIds<T = ShardId> = SmallVec<[T; 2]>;
 
 #[derive(Clone)]
-pub enum Inner<T: Hash + Copy> {
+pub enum Inner<T> {
     Raw(hashring::HashRing<T>),
+
     Fair {
         ring: hashring::HashRing<(T, u32)>,
         scale: u32,
