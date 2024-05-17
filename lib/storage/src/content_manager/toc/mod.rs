@@ -241,7 +241,7 @@ impl TableOfContent {
     /// Intended for internal use only.
     ///
     /// **Do no make public**
-    pub(self) async fn get_collection_unchecked(
+    async fn get_collection_unchecked(
         &self,
         collection_name: &str,
     ) -> Result<RwLockReadGuard<Collection>, StorageError> {
