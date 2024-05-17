@@ -1,5 +1,6 @@
 use std::hash::Hash;
 
+#[derive(Clone)]
 pub enum HashRing<T: Hash + Copy> {
     Raw(hashring::HashRing<T>),
     Fair {
