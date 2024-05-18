@@ -12,8 +12,8 @@ use crate::operations::types::{
 };
 
 pub struct PlannedQuery {
-    pub merge_plan: PrefetchPlan,
-    pub batch: Arc<CoreSearchRequestBatch>,
+    pub merge_plan: MergePlan,
+    pub searches: Arc<CoreSearchRequestBatch>,
     pub scrolls: Arc<Vec<ScrollRequestInternal>>,
     pub offset: usize,
     pub with_vector: WithVector,
@@ -22,7 +22,7 @@ pub struct PlannedQuery {
 
 /// Defines how to merge multiple [prefetch sources](PrefetchSource)
 #[derive(Debug, PartialEq)]
-pub struct PrefetchMerge {
+pub struct ResultsMerge {
     /// Alter the scores before selecting the best limit
     pub rescore: Option<ScoringQuery>,
 
@@ -39,22 +39,22 @@ pub struct PrefetchMerge {
 #[derive(Debug, PartialEq)]
 pub enum PrefetchSource {
     /// A reference offset into the main search batch
-    BatchIdx(usize),
+    SearchesIdx(usize),
 
     /// A reference offset into the scrolls list
     ScrollsIdx(usize),
 
     /// A nested prefetch
-    Prefetch(PrefetchPlan),
+    Prefetch(MergePlan),
 }
 
 #[derive(Debug, PartialEq)]
-pub struct PrefetchPlan {
+pub struct MergePlan {
     /// Gather all these sources
     pub sources: Vec<PrefetchSource>,
 
     /// How to merge the sources
-    pub merge: PrefetchMerge,
+    pub merge: ResultsMerge,
 }
 
 // TODO(universal-query): Maybe just return a CoreSearchRequest if there is no prefetch?
@@ -109,11 +109,11 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
 
                     core_searches.push(core_search);
 
-                    sources = vec![PrefetchSource::BatchIdx(0)];
+                    sources = vec![PrefetchSource::SearchesIdx(0)];
                 }
-                ScoringQuery::Rrf => {
+                ScoringQuery::Fusion(_) => {
                     return Err(CollectionError::bad_request(
-                        "cannot make RRF without prefetches".to_string(),
+                        "cannot apply Fusion without prefetches".to_string(),
                     ))
                 }
                 ScoringQuery::OrderBy(order_by) => {
@@ -142,16 +142,16 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
         }
 
         Ok(Self {
-            merge_plan: PrefetchPlan {
+            merge_plan: MergePlan {
                 sources,
-                merge: PrefetchMerge {
+                merge: ResultsMerge {
                     rescore,
                     limit,
                     filter,
                     score_threshold,
                 },
             },
-            batch: Arc::new(CoreSearchRequestBatch {
+            searches: Arc::new(CoreSearchRequestBatch {
                 searches: core_searches,
             }),
             scrolls: Arc::new(scrolls),
@@ -197,11 +197,11 @@ fn recurse_prefetches(
                     let idx = core_searches.len();
                     core_searches.push(core_search);
 
-                    PrefetchSource::BatchIdx(idx)
+                    PrefetchSource::SearchesIdx(idx)
                 }
-                ScoringQuery::Rrf => {
+                ScoringQuery::Fusion(_) => {
                     return Err(CollectionError::bad_request(
-                        "cannot do RRF without prefetches".to_string(),
+                        "cannot apply Fusion without prefetches".to_string(),
                     ))
                 }
                 ScoringQuery::OrderBy(order_by) => {
@@ -224,9 +224,9 @@ fn recurse_prefetches(
             // This is a nested prefetch. Recurse into it
             let inner_sources = recurse_prefetches(core_searches, scrolls, prefetches)?;
 
-            let prefetch_plan = PrefetchPlan {
+            let prefetch_plan = MergePlan {
                 sources: inner_sources,
-                merge: PrefetchMerge {
+                merge: ResultsMerge {
                     rescore: Some(query),
                     filter,
                     limit,
@@ -251,6 +251,7 @@ mod tests {
 
     use super::*;
     use crate::operations::query_enum::QueryEnum;
+    use crate::operations::universal_query::shard_query::Fusion;
 
     #[test]
     fn test_try_from_double_rescore() {
@@ -294,7 +295,7 @@ mod tests {
         let planned_query = PlannedQuery::try_from(request).unwrap();
 
         assert_eq!(
-            planned_query.batch.searches,
+            planned_query.searches.searches,
             vec![CoreSearchRequest {
                 query: QueryEnum::Nearest(NamedVectorStruct::new_from_vector(
                     Vector::Dense(dummy_vector.clone()),
@@ -312,10 +313,10 @@ mod tests {
 
         assert_eq!(
             planned_query.merge_plan,
-            PrefetchPlan {
-                sources: vec![PrefetchSource::Prefetch(PrefetchPlan {
-                    sources: vec![PrefetchSource::BatchIdx(0)],
-                    merge: PrefetchMerge {
+            MergePlan {
+                sources: vec![PrefetchSource::Prefetch(MergePlan {
+                    sources: vec![PrefetchSource::SearchesIdx(0)],
+                    merge: ResultsMerge {
                         rescore: Some(ScoringQuery::Vector(QueryEnum::Nearest(
                             NamedVectorStruct::new_from_vector(
                                 Vector::Dense(dummy_vector.clone()),
@@ -327,7 +328,7 @@ mod tests {
                         score_threshold: None
                     }
                 })],
-                merge: PrefetchMerge {
+                merge: ResultsMerge {
                     rescore: Some(ScoringQuery::Vector(QueryEnum::Nearest(
                         NamedVectorStruct::new_from_vector(
                             Vector::MultiDense(MultiDenseVector::new_unchecked(vec![
@@ -369,7 +370,7 @@ mod tests {
         let planned_query = PlannedQuery::try_from(request).unwrap();
 
         assert_eq!(
-            planned_query.batch.searches,
+            planned_query.searches.searches,
             vec![CoreSearchRequest {
                 query: QueryEnum::Nearest(NamedVectorStruct::new_from_vector(
                     Vector::Dense(dummy_vector.clone()),
@@ -387,9 +388,9 @@ mod tests {
 
         assert_eq!(
             planned_query.merge_plan,
-            PrefetchPlan {
-                sources: vec![PrefetchSource::BatchIdx(0)],
-                merge: PrefetchMerge {
+            MergePlan {
+                sources: vec![PrefetchSource::SearchesIdx(0)],
+                merge: ResultsMerge {
                     rescore: None,
                     filter: None,
                     limit: 10,
@@ -439,7 +440,7 @@ mod tests {
                     score_threshold: None,
                 },
             ],
-            query: ScoringQuery::Rrf,
+            query: ScoringQuery::Fusion(Fusion::Rrf),
             filter: Some(Filter::default()),
             score_threshold: None,
             limit: 50,
@@ -452,7 +453,7 @@ mod tests {
         let planned_query = PlannedQuery::try_from(request).unwrap();
 
         assert_eq!(
-            planned_query.batch.searches,
+            planned_query.searches.searches,
             vec![
                 CoreSearchRequest {
                     query: QueryEnum::Nearest(NamedVectorStruct::new_from_vector(
@@ -485,10 +486,13 @@ mod tests {
 
         assert_eq!(
             planned_query.merge_plan,
-            PrefetchPlan {
-                sources: vec![PrefetchSource::BatchIdx(0), PrefetchSource::BatchIdx(1)],
-                merge: PrefetchMerge {
-                    rescore: Some(ScoringQuery::Rrf),
+            MergePlan {
+                sources: vec![
+                    PrefetchSource::SearchesIdx(0),
+                    PrefetchSource::SearchesIdx(1)
+                ],
+                merge: ResultsMerge {
+                    rescore: Some(ScoringQuery::Fusion(Fusion::Rrf)),
                     filter: Some(Filter::default()),
                     limit: 50,
                     score_threshold: None
@@ -508,7 +512,7 @@ mod tests {
     fn test_try_from_rrf_without_source() {
         let request = ShardQueryRequest {
             prefetches: vec![],
-            query: ScoringQuery::Rrf,
+            query: ScoringQuery::Fusion(Fusion::Rrf),
             filter: Some(Filter::default()),
             score_threshold: None,
             limit: 50,
@@ -551,7 +555,7 @@ mod tests {
                 filter: dummy_filter.clone(),
                 score_threshold: Some(0.1),
             }],
-            query: ScoringQuery::Rrf,
+            query: ScoringQuery::Fusion(Fusion::Rrf),
             filter: Some(Filter::default()),
             score_threshold: Some(0.666),
             limit: 50,
@@ -577,10 +581,10 @@ mod tests {
 
         assert_eq!(
             planned_query.merge_plan,
-            PrefetchPlan {
-                sources: vec![PrefetchSource::BatchIdx(0)],
-                merge: PrefetchMerge {
-                    rescore: Some(ScoringQuery::Rrf),
+            MergePlan {
+                sources: vec![PrefetchSource::SearchesIdx(0)],
+                merge: ResultsMerge {
+                    rescore: Some(ScoringQuery::Fusion(Fusion::Rrf)),
                     filter: Some(Filter::default()),
                     limit: 50,
                     score_threshold: Some(0.666)
@@ -589,7 +593,7 @@ mod tests {
         );
 
         assert_eq!(
-            planned_query.batch.searches,
+            planned_query.searches.searches,
             vec![CoreSearchRequest {
                 query: QueryEnum::Nearest(NamedVectorStruct::new_from_vector(
                     Vector::Dense(dummy_vector.clone()),
