@@ -8,11 +8,13 @@ use segment::types::{Filter, WithPayloadInterface, WithVector};
 use super::shard_query::{ScoringQuery, ShardPrefetch, ShardQueryRequest};
 use crate::operations::types::{
     CollectionError, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch,
+    ScrollRequestInternal,
 };
 
 pub struct PlannedQuery {
     pub merge_plan: PrefetchPlan,
     pub batch: Arc<CoreSearchRequestBatch>,
+    pub scrolls: Arc<Vec<ScrollRequestInternal>>,
     pub offset: usize,
     pub with_vector: WithVector,
     pub with_payload: WithPayloadInterface,
@@ -38,6 +40,9 @@ pub struct PrefetchMerge {
 pub enum PrefetchSource {
     /// A reference offset into the main search batch
     BatchIdx(usize),
+
+    /// A reference offset into the scrolls list
+    ScrollsIdx(usize),
 
     /// A nested prefetch
     Prefetch(PrefetchPlan),
@@ -70,6 +75,7 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
         } = request;
 
         let mut core_searches = Vec::new();
+        let mut scrolls = Vec::new();
         let sources;
         let rescore;
         let filter;
@@ -79,7 +85,7 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
         let with_payload;
 
         if !prefetches.is_empty() {
-            sources = recurse_prefetches(&mut core_searches, prefetches)?;
+            sources = recurse_prefetches(&mut core_searches, &mut scrolls, prefetches)?;
             rescore = Some(query);
             filter = req_filter;
             offset = req_offset;
@@ -87,28 +93,46 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
             with_vector = req_with_vector;
             with_payload = req_with_payload;
         } else {
-            // Everything should come from 1 core search
-            let query = match query {
-                ScoringQuery::Vector(query) => query,
+            match query {
+                ScoringQuery::Vector(query) => {
+                    // Everything should come from 1 core search
+                    let core_search = CoreSearchRequest {
+                        query,
+                        filter: req_filter,
+                        score_threshold: req_score_threshold,
+                        with_vector: Some(req_with_vector),
+                        with_payload: Some(req_with_payload),
+                        offset: req_offset,
+                        params,
+                        limit,
+                    };
+
+                    core_searches.push(core_search);
+
+                    sources = vec![PrefetchSource::BatchIdx(0)];
+                }
                 ScoringQuery::Rrf => {
                     return Err(CollectionError::bad_request(
                         "cannot make RRF without prefetches".to_string(),
                     ))
                 }
-            };
-            let core_search = CoreSearchRequest {
-                query,
-                filter: req_filter,
-                score_threshold: req_score_threshold,
-                with_vector: Some(req_with_vector),
-                with_payload: Some(req_with_payload),
-                offset: req_offset,
-                params,
-                limit,
-            };
-            core_searches.push(core_search);
+                ScoringQuery::OrderBy(order_by) => {
+                    // Everything should come from 1 scroll
+                    let scroll = ScrollRequestInternal {
+                        order_by: Some(order_by),
+                        filter: req_filter,
+                        with_vector: req_with_vector,
+                        with_payload: Some(req_with_payload),
+                        limit: Some(limit),
+                        offset: None,
+                    };
 
-            sources = vec![PrefetchSource::BatchIdx(0)];
+                    scrolls.push(scroll);
+
+                    sources = vec![PrefetchSource::ScrollsIdx(0)];
+                }
+            };
+
             rescore = None;
             filter = None;
             offset = 0;
@@ -130,6 +154,7 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
             batch: Arc::new(CoreSearchRequestBatch {
                 searches: core_searches,
             }),
+            scrolls: Arc::new(scrolls),
             offset,
             with_vector,
             with_payload,
@@ -139,6 +164,7 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
 
 fn recurse_prefetches(
     core_searches: &mut Vec<CoreSearchRequest>,
+    scrolls: &mut Vec<ScrollRequestInternal>,
     prefetches: Vec<ShardPrefetch>,
 ) -> CollectionResult<Vec<PrefetchSource>> {
     let mut sources = Vec::with_capacity(prefetches.len());
@@ -154,6 +180,7 @@ fn recurse_prefetches(
         } = prefetch;
 
         let source = if prefetches.is_empty() {
+            // This is a leaf prefetch. Fetch this info from the segments
             match query {
                 ScoringQuery::Vector(query_enum) => {
                     let core_search = CoreSearchRequest {
@@ -177,9 +204,25 @@ fn recurse_prefetches(
                         "cannot do RRF without prefetches".to_string(),
                     ))
                 }
+                ScoringQuery::OrderBy(order_by) => {
+                    let scroll = ScrollRequestInternal {
+                        order_by: Some(order_by),
+                        filter,
+                        with_vector: WithVector::Bool(false),
+                        with_payload: Some(WithPayloadInterface::Bool(false)),
+                        limit: Some(limit),
+                        offset: None,
+                    };
+
+                    let idx = scrolls.len();
+                    scrolls.push(scroll);
+
+                    PrefetchSource::ScrollsIdx(idx)
+                }
             }
         } else {
-            let inner_sources = recurse_prefetches(core_searches, prefetches)?;
+            // This is a nested prefetch. Recurse into it
+            let inner_sources = recurse_prefetches(core_searches, scrolls, prefetches)?;
 
             let prefetch_plan = PrefetchPlan {
                 sources: inner_sources,

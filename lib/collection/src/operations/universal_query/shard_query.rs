@@ -1,12 +1,14 @@
 use api::grpc::qdrant as grpc;
 use common::types::ScoreType;
 use itertools::Itertools;
+use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{NamedQuery, NamedVectorStruct, Vector, DEFAULT_VECTOR_NAME};
 use segment::types::{Filter, ScoredPoint, SearchParams, WithPayloadInterface, WithVector};
 use segment::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery};
 use tonic::Status;
 
 use crate::operations::query_enum::QueryEnum;
+use crate::operations::types::OrderByInterface;
 
 /// Internal response type for a universal query request.
 ///
@@ -37,7 +39,9 @@ pub enum ScoringQuery {
 
     /// Reciprocal rank fusion
     Rrf,
-    // TODO(universal-query): Add fusion and order-by
+
+    /// Order by a payload field
+    OrderBy(OrderByInterface),
 }
 
 impl ScoringQuery {
@@ -195,6 +199,9 @@ impl ScoringQuery {
                 ScoringQuery::Vector(QueryEnum::try_from_grpc_raw_query(query, using)?)
             }
             grpc::query_shard_points::query::Score::Rrf(_) => ScoringQuery::Rrf,
+            grpc::query_shard_points::query::Score::OrderBy(order_by) => {
+                ScoringQuery::OrderBy(OrderByInterface::try_from(order_by)?)
+            }
         };
 
         Ok(scoring_query)
@@ -234,6 +241,9 @@ impl From<ScoringQuery> for grpc::query_shard_points::Query {
             },
             ScoringQuery::Rrf => Self {
                 score: Some(Score::Rrf(true)),
+            },
+            ScoringQuery::OrderBy(order_by) => Self {
+                score: Some(Score::OrderBy(grpc::OrderBy::from(OrderBy::from(order_by)))),
             },
         }
     }

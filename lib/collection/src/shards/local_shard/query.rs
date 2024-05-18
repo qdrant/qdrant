@@ -15,6 +15,7 @@ use crate::operations::universal_query::planned_query::{
 use crate::operations::universal_query::shard_query::ShardQueryResponse;
 
 impl LocalShard {
+    #[allow(unreachable_code, clippy::diverging_sub_expression, unused_variables)]
     pub async fn do_planned_query(
         &self,
         request: PlannedQuery,
@@ -25,8 +26,10 @@ impl LocalShard {
             .do_search(Arc::clone(&request.batch), search_runtime_handle, timeout)
             .await?;
 
+        let scrolls = todo!(); // TODO(universal-query): implement batch scrolling
+
         let _merged_results = self
-            .recurse_prefetch(&request.merge_plan, &core_results)
+            .recurse_prefetch(&request.merge_plan, &core_results, scrolls)
             .await;
 
         // TODO(universal-query): Implement with_vector and with_payload
@@ -37,6 +40,7 @@ impl LocalShard {
         &'shard self,
         prefetch: &'query PrefetchPlan,
         core_results: &'query Vec<Vec<ScoredPoint>>,
+        scrolls: &'query Vec<Vec<ScoredPoint>>,
     ) -> BoxFuture<'query, CollectionResult<Vec<ScoredPoint>>>
     where
         'shard: 'query,
@@ -49,8 +53,12 @@ impl LocalShard {
                     PrefetchSource::BatchIdx(idx) => {
                         core_results.get(*idx).cloned().unwrap_or_default() // TODO(universal-query): don't clone, by using something like a hashmap instead of a vec
                     }
+                    PrefetchSource::ScrollsIdx(idx) => {
+                        scrolls.get(*idx).cloned().unwrap_or_default() // TODO(universal-query): don't clone, by using something like a hashmap instead of a vec
+                    }
                     PrefetchSource::Prefetch(prefetch) => {
-                        self.recurse_prefetch(prefetch, core_results).await?
+                        self.recurse_prefetch(prefetch, core_results, scrolls)
+                            .await?
                     }
                 };
                 sources.push(vec);
