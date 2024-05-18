@@ -10,7 +10,7 @@ use tokio::runtime::Handle;
 use super::LocalShard;
 use crate::operations::types::CollectionResult;
 use crate::operations::universal_query::planned_query::{
-    PlannedQuery, PrefetchMerge, PrefetchPlan, PrefetchSource,
+    MergePlan, PlannedQuery, PrefetchSource, ResultsMerge,
 };
 use crate::operations::universal_query::shard_query::ShardQueryResponse;
 
@@ -23,7 +23,11 @@ impl LocalShard {
         timeout: Option<Duration>,
     ) -> CollectionResult<ShardQueryResponse> {
         let core_results = self
-            .do_search(Arc::clone(&request.batch), search_runtime_handle, timeout)
+            .do_search(
+                Arc::clone(&request.searches),
+                search_runtime_handle,
+                timeout,
+            )
             .await?;
 
         let scrolls = todo!(); // TODO(universal-query): implement batch scrolling
@@ -38,7 +42,7 @@ impl LocalShard {
 
     fn recurse_prefetch<'shard, 'query>(
         &'shard self,
-        prefetch: &'query PrefetchPlan,
+        prefetch: &'query MergePlan,
         core_results: &'query Vec<Vec<ScoredPoint>>,
         scrolls: &'query Vec<Vec<ScoredPoint>>,
     ) -> BoxFuture<'query, CollectionResult<Vec<ScoredPoint>>>
@@ -50,7 +54,7 @@ impl LocalShard {
 
             for source in prefetch.sources.iter() {
                 let vec: Vec<ScoredPoint> = match source {
-                    PrefetchSource::BatchIdx(idx) => {
+                    PrefetchSource::SearchesIdx(idx) => {
                         core_results.get(*idx).cloned().unwrap_or_default() // TODO(universal-query): don't clone, by using something like a hashmap instead of a vec
                     }
                     PrefetchSource::ScrollsIdx(idx) => {
@@ -72,7 +76,7 @@ impl LocalShard {
     async fn merge_prefetches(
         &self,
         sources: Vec<Vec<ScoredPoint>>,
-        merge: &PrefetchMerge,
+        merge: &ResultsMerge,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         if let Some(_rescore) = merge.rescore.as_ref() {
             // TODO(universal-query): Implement rescore

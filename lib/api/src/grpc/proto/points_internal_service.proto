@@ -236,11 +236,15 @@ message RawQuery {
   }
 }
 
+enum Fusion {
+    RRF = 0; // Reciprocal Rank Fusion
+}
+
 message QueryShardPoints {
   message Query {
     oneof score {
       RawQuery vector = 1; // (re)score against a vector query
-      bool rrf = 2; // Reciprocal Rank Fusion
+      Fusion fusion = 2; // One of the fusion methods
       OrderBy order_by = 3; // Order by a field
     }
   }
