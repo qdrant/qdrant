@@ -10,7 +10,7 @@ use tokio::runtime::Handle;
 use super::LocalShard;
 use crate::operations::types::CollectionResult;
 use crate::operations::universal_query::planned_query::{
-    PlannedQuery, ResultsMerge, MergePlan, PrefetchSource,
+    MergePlan, PlannedQuery, PrefetchSource, ResultsMerge,
 };
 use crate::operations::universal_query::shard_query::ShardQueryResponse;
 
@@ -23,7 +23,11 @@ impl LocalShard {
         timeout: Option<Duration>,
     ) -> CollectionResult<ShardQueryResponse> {
         let core_results = self
-            .do_search(Arc::clone(&request.searches), search_runtime_handle, timeout)
+            .do_search(
+                Arc::clone(&request.searches),
+                search_runtime_handle,
+                timeout,
+            )
             .await?;
 
         let scrolls = todo!(); // TODO(universal-query): implement batch scrolling

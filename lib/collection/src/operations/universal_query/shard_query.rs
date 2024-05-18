@@ -33,12 +33,17 @@ pub struct ShardQueryRequest {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum Fusion {
+    Rrf,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum ScoringQuery {
     /// Score points against some vector(s)
     Vector(QueryEnum),
 
     /// Reciprocal rank fusion
-    Rrf,
+    Fusion(Fusion),
 
     /// Order by a payload field
     OrderBy(OrderByInterface),
@@ -186,6 +191,34 @@ impl QueryEnum {
     }
 }
 
+impl TryFrom<i32> for Fusion {
+    type Error = tonic::Status;
+
+    fn try_from(fusion: i32) -> Result<Self, Self::Error> {
+        let fusion = api::grpc::qdrant::Fusion::from_i32(fusion).ok_or_else(|| {
+            tonic::Status::invalid_argument(format!("invalid read fusion type value {fusion}",))
+        })?;
+
+        Ok(Fusion::from(fusion))
+    }
+}
+
+impl From<api::grpc::qdrant::Fusion> for Fusion {
+    fn from(fusion: api::grpc::qdrant::Fusion) -> Self {
+        match fusion {
+            api::grpc::qdrant::Fusion::Rrf => Fusion::Rrf,
+        }
+    }
+}
+
+impl From<Fusion> for api::grpc::qdrant::Fusion {
+    fn from(fusion: Fusion) -> Self {
+        match fusion {
+            Fusion::Rrf => api::grpc::qdrant::Fusion::Rrf,
+        }
+    }
+}
+
 impl ScoringQuery {
     fn try_from_grpc_query(
         query: grpc::query_shard_points::Query,
@@ -198,7 +231,9 @@ impl ScoringQuery {
             grpc::query_shard_points::query::Score::Vector(query) => {
                 ScoringQuery::Vector(QueryEnum::try_from_grpc_raw_query(query, using)?)
             }
-            grpc::query_shard_points::query::Score::Rrf(_) => ScoringQuery::Rrf,
+            grpc::query_shard_points::query::Score::Fusion(fusion) => {
+                ScoringQuery::Fusion(Fusion::try_from(fusion)?)
+            }
             grpc::query_shard_points::query::Score::OrderBy(order_by) => {
                 ScoringQuery::OrderBy(OrderByInterface::try_from(order_by)?)
             }
@@ -239,8 +274,8 @@ impl From<ScoringQuery> for grpc::query_shard_points::Query {
             ScoringQuery::Vector(query) => Self {
                 score: Some(Score::Vector(grpc::RawQuery::from(query))),
             },
-            ScoringQuery::Rrf => Self {
-                score: Some(Score::Rrf(true)),
+            ScoringQuery::Fusion(fusion) => Self {
+                score: Some(Score::Fusion(api::grpc::qdrant::Fusion::from(fusion) as i32)),
             },
             ScoringQuery::OrderBy(order_by) => Self {
                 score: Some(Score::OrderBy(grpc::OrderBy::from(OrderBy::from(order_by)))),

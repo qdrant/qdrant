@@ -8133,9 +8133,9 @@ pub mod query_shard_points {
             /// (re)score against a vector query
             #[prost(message, tag = "1")]
             Vector(super::super::RawQuery),
-            /// Reciprocal Rank Fusion
-            #[prost(bool, tag = "2")]
-            Rrf(bool),
+            /// One of the fusion methods
+            #[prost(enumeration = "super::super::Fusion", tag = "2")]
+            Fusion(i32),
             /// Order by a field
             #[prost(message, tag = "3")]
             OrderBy(super::super::OrderBy),
@@ -8188,6 +8188,31 @@ pub struct QueryResponse {
     /// Time spent to process
     #[prost(double, tag = "2")]
     pub time: f64,
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum Fusion {
+    /// Reciprocal Rank Fusion
+    Rrf = 0,
+}
+impl Fusion {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Fusion::Rrf => "RRF",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "RRF" => Some(Self::Rrf),
+            _ => None,
+        }
+    }
 }
 /// Generated client implementations.
 pub mod points_internal_client {

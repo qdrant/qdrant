@@ -111,9 +111,9 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
 
                     sources = vec![PrefetchSource::SearchesIdx(0)];
                 }
-                ScoringQuery::Rrf => {
+                ScoringQuery::Fusion(_) => {
                     return Err(CollectionError::bad_request(
-                        "cannot make RRF without prefetches".to_string(),
+                        "cannot apply Fusion without prefetches".to_string(),
                     ))
                 }
                 ScoringQuery::OrderBy(order_by) => {
@@ -199,9 +199,9 @@ fn recurse_prefetches(
 
                     PrefetchSource::SearchesIdx(idx)
                 }
-                ScoringQuery::Rrf => {
+                ScoringQuery::Fusion(_) => {
                     return Err(CollectionError::bad_request(
-                        "cannot do RRF without prefetches".to_string(),
+                        "cannot apply Fusion without prefetches".to_string(),
                     ))
                 }
                 ScoringQuery::OrderBy(order_by) => {
@@ -251,6 +251,7 @@ mod tests {
 
     use super::*;
     use crate::operations::query_enum::QueryEnum;
+    use crate::operations::universal_query::shard_query::Fusion;
 
     #[test]
     fn test_try_from_double_rescore() {
@@ -439,7 +440,7 @@ mod tests {
                     score_threshold: None,
                 },
             ],
-            query: ScoringQuery::Rrf,
+            query: ScoringQuery::Fusion(Fusion::Rrf),
             filter: Some(Filter::default()),
             score_threshold: None,
             limit: 50,
@@ -486,9 +487,12 @@ mod tests {
         assert_eq!(
             planned_query.merge_plan,
             MergePlan {
-                sources: vec![PrefetchSource::SearchesIdx(0), PrefetchSource::SearchesIdx(1)],
+                sources: vec![
+                    PrefetchSource::SearchesIdx(0),
+                    PrefetchSource::SearchesIdx(1)
+                ],
                 merge: ResultsMerge {
-                    rescore: Some(ScoringQuery::Rrf),
+                    rescore: Some(ScoringQuery::Fusion(Fusion::Rrf)),
                     filter: Some(Filter::default()),
                     limit: 50,
                     score_threshold: None
@@ -508,7 +512,7 @@ mod tests {
     fn test_try_from_rrf_without_source() {
         let request = ShardQueryRequest {
             prefetches: vec![],
-            query: ScoringQuery::Rrf,
+            query: ScoringQuery::Fusion(Fusion::Rrf),
             filter: Some(Filter::default()),
             score_threshold: None,
             limit: 50,
@@ -551,7 +555,7 @@ mod tests {
                 filter: dummy_filter.clone(),
                 score_threshold: Some(0.1),
             }],
-            query: ScoringQuery::Rrf,
+            query: ScoringQuery::Fusion(Fusion::Rrf),
             filter: Some(Filter::default()),
             score_threshold: Some(0.666),
             limit: 50,
@@ -580,7 +584,7 @@ mod tests {
             MergePlan {
                 sources: vec![PrefetchSource::SearchesIdx(0)],
                 merge: ResultsMerge {
-                    rescore: Some(ScoringQuery::Rrf),
+                    rescore: Some(ScoringQuery::Fusion(Fusion::Rrf)),
                     filter: Some(Filter::default()),
                     limit: 50,
                     score_threshold: Some(0.666)
