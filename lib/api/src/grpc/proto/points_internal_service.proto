@@ -241,7 +241,7 @@ message QueryShardPoints {
     oneof score {
       RawQuery vector = 1; // (re)score against a vector query
       bool rrf = 2; // Reciprocal Rank Fusion
-      // TODO(universal-query): Add order-by
+      OrderBy order_by = 3; // Order by a field
     }
   }
   
