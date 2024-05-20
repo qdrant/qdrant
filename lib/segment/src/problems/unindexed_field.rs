@@ -112,7 +112,7 @@ impl Issue for UnindexedField {
 
     fn description(&self) -> String {
         format!(
-            "Unindexed field '{}' is slowing down queries in collection '{}'",
+            "Unindexed field '{}' is slowing queries down in collection '{}'",
             self.field_name, self.collection_name
         )
     }
@@ -133,7 +133,7 @@ impl Issue for UnindexedField {
 
             ImmediateSolution {
                 message: format!(
-                    "Create an index on field '{}' of schema '{}' in collection '{}'. Check the documentation for more details: https://qdrant.tech/documentation/concepts/indexing/#payload-index",
+                    "Create an index on field '{}' of schema {} in collection '{}'. Check the documentation for more details: https://qdrant.tech/documentation/concepts/indexing/#payload-index",
                     self.field_name, serde_json::to_string(&field_schema).unwrap(), self.collection_name
                 ),
                 action: Action {
@@ -326,19 +326,15 @@ impl<'a> Extractor<'a> {
         };
 
         let full_key = JsonPathV2::extend_or_new(nested_prefix, key);
-        let mut needs_index = false;
-        match self.payload_schema.get(&full_key) {
+
+        let needs_index = match self.payload_schema.get(&full_key) {
             Some(index_info) => {
                 let already_indexed = inferred.iter().any(|inferred| inferred == index_info);
 
-                if !already_indexed {
-                    needs_index = true;
-                }
+                !already_indexed
             }
-            None => {
-                needs_index = true;
-            }
-        }
+            None => true,
+        };
 
         if needs_index {
             self.unindexed_schema
