@@ -184,6 +184,7 @@
     - [RepeatedStrings](#qdrant-RepeatedStrings)
     - [RetrievedPoint](#qdrant-RetrievedPoint)
     - [RetrievedPoint.PayloadEntry](#qdrant-RetrievedPoint-PayloadEntry)
+    - [Score](#qdrant-Score)
     - [ScoredPoint](#qdrant-ScoredPoint)
     - [ScoredPoint.PayloadEntry](#qdrant-ScoredPoint-PayloadEntry)
     - [ScrollPoints](#qdrant-ScrollPoints)
@@ -3189,6 +3190,22 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 
 
 
+<a name="qdrant-Score"></a>
+
+### Score
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| int | [int64](#int64) |  |  |
+| float | [double](#double) |  |  |
+
+
+
+
+
+
 <a name="qdrant-ScoredPoint"></a>
 
 ### ScoredPoint
@@ -3199,10 +3216,11 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | ----- | ---- | ----- | ----------- |
 | id | [PointId](#qdrant-PointId) |  | Point id |
 | payload | [ScoredPoint.PayloadEntry](#qdrant-ScoredPoint-PayloadEntry) | repeated | Payload |
-| score | [float](#float) |  | Similarity score |
+| float_score | [float](#float) |  | Similarity score. To be deprecated in favor of &#34;score&#34; field |
 | version | [uint64](#uint64) |  | Last update operation applied to this point |
 | vectors | [Vectors](#qdrant-Vectors) | optional | Vectors to search |
 | shard_key | [ShardKey](#qdrant-ShardKey) | optional | Shard key |
+| score | [Score](#qdrant-Score) | optional | Score to compare against other scored points. If not provided, sorts by id. |
 
 
 
