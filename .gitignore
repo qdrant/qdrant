@@ -16,3 +16,4 @@ tests/storage-compat/compatibility.tar
 tests/storage-compat/full-snapshot.snapshot.gz
 tests/storage-compat/storage.tar.bz2
 venv
+tests/load-time/mri_output

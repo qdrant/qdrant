@@ -1,0 +1,28 @@
+version: '2.4'
+
+services:
+  qdrant:
+#    image: load/load:latest
+    image: load/load:qdrant_logs
+    blkio_config:
+      device_read_bps:
+        # edit path according to system settings
+        - path: /dev/nvme0n1
+          rate: 700000
+      device_write_bps:
+        - path: /dev/nvme0n1
+          rate: 700000
+    command: [
+      'python3', 'load_time_calculation.py',
+      '--mri', '/target/debug/mri',
+      '--mri-output', '/mri_output',
+      '--mri-output-format', 'jsonl',
+       '--qdrant', './qdrant/qdrant',
+      '--snapshots', '${SNAPSHOT_PATH}',
+      '--test-prefix', 'limit_iops_700000'
+    ]
+    volumes:
+      - ${MRI_OUTPUT_FOLDER_PATH}/limit_iops:/mri_output
+      - ${SNAPSHOT_PATH}:${SNAPSHOT_PATH}:ro
+      - ${MRI_EXEC_PATH}:/target:ro
+      - ${TEST_PATH}/load_time_calculation.py:/load_time_calculation.py:ro
