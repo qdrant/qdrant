@@ -1,0 +1,18 @@
+services:
+  qdrant:
+#    image: load/load:latest
+    image: load/load:qdrant_logs
+    command: [
+      'python3', 'load_time_calculation.py',
+      '--mri', '/target/debug/mri',
+      '--mri-output', '/mri_output',
+      '--mri-output-format', 'jsonl',
+       '--qdrant', './qdrant/qdrant',
+      '--snapshots', '${SNAPSHOT_PATH}',
+       '--test-prefix', 'simple'
+    ]
+    volumes:
+      - ${MRI_OUTPUT_FOLDER_PATH}/simple:/mri_output
+      - ${SNAPSHOT_PATH}:${SNAPSHOT_PATH}:ro
+      - ${MRI_EXEC_PATH}:/target:ro
+      - ${TEST_PATH}/load_time_calculation.py:/load_time_calculation.py:ro
