@@ -127,15 +127,26 @@ impl ShardOperation for LocalShard {
                 .await
             }
             Some(order_by) => {
-                self.scroll_by_field(
-                    limit,
-                    with_payload_interface,
-                    with_vector,
-                    filter,
-                    search_runtime_handle,
-                    order_by,
-                )
-                .await
+                let (mut records, values) = self
+                    .scroll_by_field(
+                        limit,
+                        with_payload_interface,
+                        with_vector,
+                        filter,
+                        search_runtime_handle,
+                        order_by,
+                    )
+                    .await?;
+
+                records.iter_mut().zip(values).for_each(|(record, value)| {
+                    // Add order_by value to the payload. It will be removed in the next step, after crossing the shard boundary.
+                    let new_payload =
+                        OrderBy::insert_order_value_in_payload(record.payload.take(), value);
+
+                    record.payload = Some(new_payload);
+                });
+
+                Ok(records)
             }
         }
     }
