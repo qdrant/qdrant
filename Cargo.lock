@@ -5144,12 +5144,13 @@ dependencies = [
 
 [[package]]
 name = "serde-untagged"
-version = "0.1.5"
+version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a160535368dfc353348e7eaa299156bd508c60c45a9249725f5f6d370d82a66"
+checksum = "2676ba99bd82f75cae5cbd2c8eda6fa0b8760f18978ea840e980dd5567b5c5b6"
 dependencies = [
  "erased-serde",
  "serde",
+ "typeid",
 ]
 
 [[package]]
@@ -6188,6 +6189,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "59547bce71d9c38b83d9c0e92b6066c4253371f15005def0c30d9657f50c7642"
 
 [[package]]
+name = "typeid"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "059d83cc991e7a42fc37bd50941885db0888e34209f8cfd9aab07ddec03bc9cf"
+
+[[package]]
 name = "typenum"
 version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6438,7 +6445,7 @@ dependencies = [
  "memmap2 0.9.4",
  "rand 0.8.5",
  "rand_distr",
- "rustix 0.37.27",
+ "rustix 0.38.31",
  "serde",
 ]
 

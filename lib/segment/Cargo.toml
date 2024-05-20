@@ -45,7 +45,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_cbor = { workspace = true }
 serde-value = "0.7"
-serde-untagged = "0.1.5"
+serde-untagged = "0.1.6"
 ordered-float = "4.2"
 thiserror = "1.0"
 atomic_refcell = "0.1.13"
