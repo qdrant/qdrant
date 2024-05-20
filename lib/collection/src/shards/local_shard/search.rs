@@ -63,14 +63,8 @@ impl LocalShard {
                 let vector_name = req.query.get_vector_name();
                 let distance = collection_params.get_distance(vector_name).unwrap();
                 let processed_res = vector_res.into_iter().map(|mut scored_point| {
-                    match req.query {
-                        QueryEnum::Nearest(_) => {
-                            scored_point.score = distance.postprocess_score(scored_point.score);
-                        }
-                        // Don't post-process if we are dealing with custom scoring
-                        QueryEnum::RecommendBestScore(_)
-                        | QueryEnum::Discover(_)
-                        | QueryEnum::Context(_) => {}
+                    if req.query.has_custom_scoring() {
+                        scored_point.score = distance.postprocess_score(scored_point.score);
                     };
                     scored_point
                 });

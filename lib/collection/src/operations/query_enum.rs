@@ -1,4 +1,5 @@
 use segment::data_types::vectors::{DenseVector, Named, NamedQuery, NamedVectorStruct, Vector};
+use segment::types::Order;
 use segment::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery};
 use sparse::common::sparse_vector::SparseVector;
 
@@ -59,6 +60,18 @@ pub enum QueryEnum {
     RecommendBestScore(NamedQuery<RecoQuery<Vector>>),
     Discover(NamedQuery<DiscoveryQuery<Vector>>),
     Context(NamedQuery<ContextQuery<Vector>>),
+}
+
+impl QueryEnum {
+    /// Only when the distance is the scoring, this will return false.
+    pub fn has_custom_scoring(&self) -> bool {
+        match self {
+            QueryEnum::Nearest(_) => false,
+            QueryEnum::RecommendBestScore(_) | QueryEnum::Discover(_) | QueryEnum::Context(_) => {
+                true
+            }
+        }
+    }
 }
 
 impl From<DenseVector> for QueryEnum {

@@ -6,7 +6,7 @@ use fnv::FnvBuildHasher;
 use indexmap::IndexSet;
 use segment::json_path::{JsonPath, JsonPathInterface as _};
 use segment::types::{
-    AnyVariants, Condition, FieldCondition, Filter, Match, ScoredPoint, WithPayloadInterface,
+    AnyVariants, Condition, FieldCondition, Filter, Match, Order, ScoredPoint, WithPayloadInterface
 };
 use serde_json::Value;
 use tokio::sync::RwLockReadGuard;
@@ -232,7 +232,9 @@ pub async fn group_by(
     shard_selection: ShardSelectorInternal,
     timeout: Option<Duration>,
 ) -> CollectionResult<Vec<PointGroup>> {
-    let score_ordering = {
+    let score_ordering = if request.source.query.has_custom_scoring() {
+        Order::LargeBetter
+    } else {
         let vector_name = request.source.query.get_vector_name();
         let collection_params = collection.collection_config.read().await;
         let distance = collection_params.params.get_distance(vector_name)?;
