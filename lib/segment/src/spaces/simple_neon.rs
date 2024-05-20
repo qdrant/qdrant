@@ -45,7 +45,7 @@ pub(crate) unsafe fn euclid_similarity_neon(
     for i in 0..n - m {
         result += (*ptr1.add(i) - *ptr2.add(i)).powi(2);
     }
-    -result
+    -result as ScoreType
 }
 
 #[cfg(target_feature = "neon")]
@@ -84,7 +84,7 @@ pub(crate) unsafe fn manhattan_similarity_neon(
     for i in 0..n - m {
         result += (*ptr1.add(i) - *ptr2.add(i)).abs();
     }
-    -result
+    -result as ScoreType
 }
 
 #[cfg(target_feature = "neon")]
@@ -153,7 +153,7 @@ pub(crate) unsafe fn dot_similarity_neon(
     for i in 0..n - m {
         result += (*ptr1.add(i)) * (*ptr2.add(i));
     }
-    result
+    result as ScoreType
 }
 
 #[cfg(test)]

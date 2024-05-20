@@ -40,7 +40,7 @@ use crate::spaces::tools::{peek_top_largest_iterable, peek_top_smallest_iterable
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef,
-    PayloadSchemaType, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
+    PayloadSchemaType, PointIdType, Score, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
     SegmentState, SegmentType, SeqNumberType, VectorDataInfo, WithPayload, WithVector,
 };
 use crate::utils;
@@ -699,7 +699,7 @@ impl Segment {
                 Ok(ScoredPoint {
                     id: point_id,
                     version: point_version,
-                    score: scored_point_offset.score,
+                    score: Some(Score::Float(scored_point_offset.score as f64)),
                     payload,
                     vector,
                     shard_key: None,

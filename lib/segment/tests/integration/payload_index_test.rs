@@ -37,6 +37,7 @@ use segment::types::{
 use serde_json::json;
 use tempfile::Builder;
 
+use crate::utils::assert_scores;
 use crate::utils::scored_point_ties::ScoredPointTies;
 
 const DIM: usize = 5;
@@ -347,7 +348,7 @@ fn validate_geo_filter(query_filter: Filter) {
             .zip(struct_result.iter())
             .for_each(|(r1, r2)| {
                 assert_eq!(r1.id, r2.id);
-                assert!((r1.score - r2.score) < 0.0001)
+                assert_scores(r1.score, r2.score);
             });
     }
 }
@@ -652,7 +653,7 @@ fn test_struct_payload_index() {
             .map(|(r1, r2)| (r1.scored_point, r2.scored_point))
             .for_each(|(r1, r2)| {
                 assert_eq!(r1.id, r2.id, "got different ScoredPoint {r1:?} and {r2:?} for\nquery vector {query_vector:?}\nquery filter {query_filter:?}\nplain result {plain_result:?}\nstruct result{struct_result:?}");
-                assert!((r1.score - r2.score) < 0.0001)
+                assert_scores(r1.score, r2.score);
             });
     }
 }
@@ -805,7 +806,7 @@ fn test_struct_payload_index_nested_fields() {
             .zip(struct_result.iter())
             .for_each(|(r1, r2)| {
                 assert_eq!(r1.id, r2.id, "got different ScoredPoint {r1:?} and {r2:?} for\nquery vector {query_vector:?}\nquery filter {query_filter:?}\nplain result {plain_result:?}\nstruct result{struct_result:?}");
-                assert!((r1.score - r2.score) < 0.0001)
+                assert_scores(r1.score, r2.score);
             });
     }
 }

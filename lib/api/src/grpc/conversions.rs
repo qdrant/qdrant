@@ -7,7 +7,9 @@ use segment::data_types::integer_index::IntegerIndexType;
 use segment::data_types::text_index::TextIndexType;
 use segment::data_types::vectors as segment_vectors;
 use segment::json_path::JsonPath;
-use segment::types::{default_quantization_ignore_value, DateTimePayloadType, FloatPayloadType};
+use segment::types::{
+    default_quantization_ignore_value, DateTimePayloadType, FloatPayloadType, ScoreExt,
+};
 use segment::vector_storage::query as segment_query;
 use tonic::Status;
 use uuid::Uuid;
@@ -16,7 +18,7 @@ use super::qdrant::raw_query::RawContextPair;
 use super::qdrant::{
     raw_query, start_from, BinaryQuantization, CompressionRatio, DatetimeRange, Direction,
     GeoLineString, GroupId, MultiVectorComparator, MultiVectorConfig, OrderBy, Range, RawVector,
-    SparseIndices, StartFrom,
+    Score, SparseIndices, StartFrom,
 };
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
@@ -571,12 +573,46 @@ impl From<segment_vectors::VectorStruct> for Vectors {
     }
 }
 
+impl From<segment::types::Score> for Score {
+    fn from(value: segment::types::Score) -> Self {
+        use crate::grpc::qdrant::score::Variant;
+        let variant = match value {
+            segment::types::Score::Float(score) => Variant::Float(score),
+            segment::types::Score::Int(score) => Variant::Int(score),
+        };
+
+        Self {
+            variant: Some(variant),
+        }
+    }
+}
+
+impl TryFrom<Score> for segment::types::Score {
+    type Error = Status;
+
+    fn try_from(value: Score) -> Result<Self, Self::Error> {
+        use crate::grpc::qdrant::score::Variant;
+
+        let variant = value
+            .variant
+            .ok_or_else(|| Status::invalid_argument("No score variant"))?;
+
+        let score = match variant {
+            Variant::Float(score) => segment::types::Score::Float(score),
+            Variant::Int(score) => segment::types::Score::Int(score),
+        };
+
+        Ok(score)
+    }
+}
+
 impl From<segment::types::ScoredPoint> for ScoredPoint {
     fn from(point: segment::types::ScoredPoint) -> Self {
         Self {
             id: Some(point.id.into()),
             payload: point.payload.map(payload_to_proto).unwrap_or_default(),
-            score: point.score,
+            float_score: point.score.to_float_score(),
+            score: point.score.map(Score::from),
             version: point.version,
             vectors: point.vector.map(|v| v.into()),
             shard_key: point.shard_key.map(convert_shard_key_to_grpc),

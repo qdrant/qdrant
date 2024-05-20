@@ -116,9 +116,7 @@ where
 
             // Put the lookups in their respective groups
             groups.iter_mut().for_each(|group| {
-                group.lookup = lookups
-                    .remove(&PseudoId::from(group.id.clone()))
-                    .map(api::rest::Record::from);
+                group.lookup = lookups.remove(&PseudoId::from(group.id.clone()));
             });
         }
 

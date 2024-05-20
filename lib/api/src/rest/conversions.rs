@@ -1,3 +1,5 @@
+use segment::types::ScoreExt;
+
 use super::schema::{BatchVectorStruct, ScoredPoint, Vector, VectorStruct};
 use crate::rest::{DenseVector, NamedVectorStruct};
 
@@ -96,20 +98,7 @@ impl From<segment::types::ScoredPoint> for ScoredPoint {
         ScoredPoint {
             id: value.id,
             version: value.version,
-            score: value.score,
-            payload: value.payload,
-            vector: value.vector.map(From::from),
-            shard_key: value.shard_key,
-        }
-    }
-}
-
-impl From<ScoredPoint> for segment::types::ScoredPoint {
-    fn from(value: ScoredPoint) -> Self {
-        segment::types::ScoredPoint {
-            id: value.id,
-            version: value.version,
-            score: value.score,
+            score: value.score.to_float_score(),
             payload: value.payload,
             vector: value.vector.map(From::from),
             shard_key: value.shard_key,

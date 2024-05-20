@@ -59,7 +59,7 @@ where
     TEncodedVectors: quantization::EncodedVectors<TEncodedQuery>,
 {
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        self.quantized_data.score_point(&self.query, idx)
+        self.quantized_data.score_point(&self.query, idx) as ScoreType
     }
 
     fn score(&self, v2: &[TElement]) -> ScoreType {
@@ -71,6 +71,6 @@ where
     }
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
-        self.quantized_data.score_internal(point_a, point_b)
+        self.quantized_data.score_internal(point_a, point_b) as ScoreType
     }
 }

@@ -1,5 +1,5 @@
 use api::grpc::models::{CollectionsResponse, VersionInfo};
-use api::rest::{Record, ScoredPoint};
+use api::rest::{GroupsResult, PointGroup, Record, ScoredPoint};
 use collection::operations::cluster_ops::ClusterOperations;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
@@ -10,9 +10,8 @@ use collection::operations::snapshot_ops::{
 use collection::operations::types::{
     AliasDescription, CollectionClusterInfo, CollectionExistence, CollectionInfo,
     CollectionsAliasesResponse, CountRequest, CountResult, DiscoverRequest, DiscoverRequestBatch,
-    GroupsResult, PointGroup, PointRequest, RecommendGroupsRequest, RecommendRequest,
-    RecommendRequestBatch, ScrollRequest, ScrollResult, SearchGroupsRequest, SearchRequest,
-    SearchRequestBatch, UpdateResult,
+    PointRequest, RecommendGroupsRequest, RecommendRequest, RecommendRequestBatch, ScrollRequest,
+    ScrollResult, SearchGroupsRequest, SearchRequest, SearchRequestBatch, UpdateResult,
 };
 use collection::operations::vector_ops::{DeleteVectors, UpdateVectors};
 use schemars::gen::SchemaSettings;

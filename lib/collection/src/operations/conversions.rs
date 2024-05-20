@@ -20,9 +20,7 @@ use segment::data_types::vectors::{
     BatchVectorStruct, Named, NamedQuery, NamedVectorStruct, Vector, VectorStruct,
     DEFAULT_VECTOR_NAME,
 };
-use segment::types::{
-    DateTimeWrapper, Distance, MultiVectorConfig, QuantizationConfig, ScoredPoint,
-};
+use segment::types::{DateTimeWrapper, Distance, MultiVectorConfig, QuantizationConfig};
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
 use sparse::common::sparse_vector::{validate_sparse_vector_impl, SparseVector};
 use tonic::Status;
@@ -1389,13 +1387,10 @@ impl From<PointGroup> for api::grpc::qdrant::PointGroup {
             hits: group
                 .hits
                 .into_iter()
-                .map_into::<ScoredPoint>()
-                .map_into()
+                .map(api::grpc::qdrant::ScoredPoint::from)
                 .collect(),
             id: Some(group.id.into()),
-            lookup: group
-                .lookup
-                .map(|record| api::grpc::qdrant::RetrievedPoint::from(Record::from(record))),
+            lookup: group.lookup.map(api::grpc::qdrant::RetrievedPoint::from),
         }
     }
 }

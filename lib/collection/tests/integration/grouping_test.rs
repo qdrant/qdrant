@@ -23,6 +23,7 @@ fn rand_dense_vector(rng: &mut ThreadRng, size: usize) -> DenseVector {
 mod group_by {
     use collection::grouping::GroupBy;
     use segment::data_types::vectors::BatchVectorStruct;
+    use segment::types::Score;
 
     use super::*;
 
@@ -112,12 +113,12 @@ mod group_by {
         assert_eq!(result[0].hits.len(), group_req.group_size);
 
         // is sorted?
-        let mut last_group_best_score = f32::MAX;
+        let mut last_group_best_score = Some(Score::Float(f64::MAX));
         for group in result {
             assert!(group.hits[0].score <= last_group_best_score);
             last_group_best_score = group.hits[0].score;
 
-            let mut last_score = f32::MAX;
+            let mut last_score = Some(Score::Float(f64::MAX));
             for hit in group.hits {
                 assert!(hit.score <= last_score);
                 last_score = hit.score;
@@ -160,7 +161,7 @@ mod group_by {
 
         assert_eq!(result.len(), request.limit);
 
-        let mut last_group_best_score = f32::MAX;
+        let mut last_group_best_score = Some(Score::Float(f64::MAX));
         for group in result {
             assert_eq!(group.hits.len(), request.group_size);
 
@@ -168,7 +169,7 @@ mod group_by {
             assert!(group.hits[0].score <= last_group_best_score);
             last_group_best_score = group.hits[0].score;
 
-            let mut last_score = f32::MAX;
+            let mut last_score = Some(Score::Float(f64::MAX));
             for hit in group.hits {
                 assert!(hit.score <= last_score);
                 last_score = hit.score;

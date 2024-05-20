@@ -24,7 +24,7 @@ use segment::data_types::vectors::{
 use segment::json_path::{JsonPath, JsonPathInterface};
 use segment::types::{
     Distance, Filter, MultiVectorConfig, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType,
-    QuantizationConfig, SearchParams, SeqNumberType, ShardKey, VectorStorageDatatype,
+    QuantizationConfig, ScoredPoint, SearchParams, SeqNumberType, ShardKey, VectorStorageDatatype,
     WithPayloadInterface, WithVector,
 };
 use semver::Version;
@@ -814,18 +814,17 @@ pub struct DiscoverRequestBatch {
     pub searches: Vec<DiscoverRequest>,
 }
 
-#[derive(Debug, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Clone)]
 pub struct PointGroup {
     /// Scored points that have the same value of the group_by key
-    pub hits: Vec<api::rest::ScoredPoint>,
+    pub hits: Vec<ScoredPoint>,
     /// Value of the group_by key, shared across all the hits in the group
     pub id: GroupId,
     /// Record that has been looked up using the group id
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub lookup: Option<api::rest::Record>,
+    pub lookup: Option<Record>,
 }
 
-#[derive(Debug, Serialize, JsonSchema)]
+#[derive(Debug)]
 pub struct GroupsResult {
     pub groups: Vec<PointGroup>,
 }

@@ -4,16 +4,15 @@
 use std::collections::hash_map::Entry;
 
 use ahash::{HashMap, HashMapExt};
-use ordered_float::OrderedFloat;
 
-use crate::types::{ExtendedPointId, ScoredPoint};
+use crate::types::{ExtendedPointId, Score, ScoredPoint};
 
 /// Mitigates the impact of high rankings by outlier systems
-const RFF_RANKING_K: f32 = 2.0;
+const RFF_RANKING_K: f64 = 2.0;
 
 /// Compute the RRF score for a given position.
-fn position_score(position: usize) -> f32 {
-    1.0 / (position as f32 + RFF_RANKING_K)
+fn position_score(position: usize) -> f64 {
+    1.0 / (position as f64 + RFF_RANKING_K)
 }
 
 /// Compute RRF scores for multiple results from different sources.
@@ -33,10 +32,12 @@ pub fn rrf_scoring(responses: Vec<Vec<ScoredPoint>>, limit: usize) -> Vec<Scored
             match points_by_id.entry(point.id) {
                 Entry::Occupied(mut entry) => {
                     // accumulate score
-                    entry.get_mut().score += rrf_score;
+                    if let Some(Score::Float(score)) = entry.get_mut().score.as_mut() {
+                        *score += rrf_score;
+                    }
                 }
                 Entry::Vacant(entry) => {
-                    point.score = rrf_score;
+                    point.score = Some(Score::Float(rrf_score));
                     // init score
                     entry.insert(point);
                 }
@@ -47,7 +48,7 @@ pub fn rrf_scoring(responses: Vec<Vec<ScoredPoint>>, limit: usize) -> Vec<Scored
     let mut scores = points_by_id.into_iter().collect::<Vec<_>>();
     scores.sort_unstable_by(|a, b| {
         // sort by score descending
-        OrderedFloat(b.1.score).cmp(&OrderedFloat(a.1.score))
+        b.1.score.cmp(&a.1.score)
     });
 
     // materialized updated scored points
@@ -63,11 +64,18 @@ mod tests {
         ScoredPoint {
             id: id.into(),
             version: 0,
-            score,
+            score: Some(Score::Float(score as f64)),
             payload: None,
             vector: None,
             shard_key: None,
         }
+    }
+
+    fn assert_score(score: Option<Score>, expected: f64) {
+        let Some(Score::Float(score)) = score else {
+            panic!("Expected a float score");
+        };
+        assert!((score - expected).abs() < 0.0001);
     }
 
     #[test]
@@ -83,7 +91,7 @@ mod tests {
         let scored_points = rrf_scoring(responses, 10);
         assert_eq!(scored_points.len(), 1);
         assert_eq!(scored_points[0].id, 1.into());
-        assert_eq!(scored_points[0].score, 0.5); // 1 / (0 + 2)
+        assert_score(scored_points[0].score, 0.5); // 1 / (0 + 2)
     }
 
     #[test]
@@ -112,42 +120,42 @@ mod tests {
         let scored_points = rrf_scoring(responses.clone(), 1);
         assert_eq!(scored_points.len(), 1);
         assert_eq!(scored_points[0].id, 1.into());
-        assert_eq!(scored_points[0].score, 1.0833334);
+        assert_score(scored_points[0].score, 1.0833334);
 
         // top 2
         let scored_points = rrf_scoring(responses.clone(), 2);
         assert_eq!(scored_points.len(), 2);
         assert_eq!(scored_points[0].id, 1.into());
-        assert_eq!(scored_points[0].score, 1.0833334);
+        assert_score(scored_points[0].score, 1.0833334);
 
         assert_eq!(scored_points[1].id, 2.into());
-        assert_eq!(scored_points[1].score, 0.8333334);
+        assert_score(scored_points[1].score, 0.8333334);
 
         // top 3
         let scored_points = rrf_scoring(responses.clone(), 3);
         assert_eq!(scored_points.len(), 3);
         assert_eq!(scored_points[0].id, 1.into());
-        assert_eq!(scored_points[0].score, 1.0833334);
+        assert_score(scored_points[0].score, 1.0833334);
 
         assert_eq!(scored_points[1].id, 2.into());
-        assert_eq!(scored_points[1].score, 0.8333334);
+        assert_score(scored_points[1].score, 0.8333334);
 
         assert_eq!(scored_points[2].id, 3.into());
-        assert_eq!(scored_points[2].score, 0.5833334);
+        assert_score(scored_points[2].score, 0.5833334);
 
         // top 4
         let scored_points = rrf_scoring(responses, 4);
         assert_eq!(scored_points.len(), 4);
         assert_eq!(scored_points[0].id, 1.into());
-        assert_eq!(scored_points[0].score, 1.0833334);
+        assert_score(scored_points[0].score, 1.0833334);
 
         assert_eq!(scored_points[1].id, 2.into());
-        assert_eq!(scored_points[1].score, 0.8333334);
+        assert_score(scored_points[1].score, 0.8333334);
 
         assert_eq!(scored_points[2].id, 3.into());
-        assert_eq!(scored_points[2].score, 0.5833334);
+        assert_score(scored_points[2].score, 0.5833334);
 
         assert_eq!(scored_points[3].id, 5.into());
-        assert_eq!(scored_points[3].score, 0.5);
+        assert_score(scored_points[3].score, 0.5);
     }
 }

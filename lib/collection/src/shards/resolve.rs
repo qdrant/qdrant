@@ -247,6 +247,7 @@ mod test {
     use std::fmt;
 
     use common::types::ScoreType;
+    use segment::types::Score;
 
     use super::*;
 
@@ -273,7 +274,7 @@ mod test {
         ScoredPoint {
             id: id.into(),
             version: 1,
-            score,
+            score: Some(Score::Float(score as f64)),
             payload: None,
             vector: None,
             shard_key: None,
@@ -331,7 +332,9 @@ mod test {
                 }
 
                 Action::Modify(index) => {
-                    batch[index - offset].score += 1.0;
+                    if let Some(Score::Float(score)) = &mut batch[index - offset].score {
+                        *score += 1.0;
+                    }
                 }
             }
         }

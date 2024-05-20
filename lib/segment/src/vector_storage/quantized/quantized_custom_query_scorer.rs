@@ -118,7 +118,7 @@ where
 {
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         self.query
-            .score_by(|this| self.quantized_storage.score_point(this, idx))
+            .score_by(|this| self.quantized_storage.score_point(this, idx) as ScoreType)
     }
 
     fn score(&self, v2: &[TElement]) -> ScoreType {

@@ -2,8 +2,7 @@ use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
-use common::types::ScoreType;
-use segment::types::{PointIdType, ScoredPoint, SeqNumberType};
+use segment::types::{PointIdType, Score, ScoredPoint, SeqNumberType};
 
 pub struct SearchResultAggregator {
     queue: FixedLengthPriorityQueue<ScoredPoint>,
@@ -94,7 +93,7 @@ impl BatchResultAggregator {
     }
 
     /// Return lowest acceptable score for given batch id
-    pub fn batch_lowest_scores(&self, batch_id: usize) -> Option<ScoreType> {
+    pub fn batch_lowest_scores(&self, batch_id: usize) -> Option<Option<Score>> {
         let batch_scores = &self.batch_aggregators[batch_id];
         batch_scores.lowest().map(|x| x.score)
     }

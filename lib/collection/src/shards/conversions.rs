@@ -1,4 +1,5 @@
 use api::grpc::conversions::{convert_shard_key_from_grpc_opt, payload_to_proto};
+use api::grpc::qdrant as grpc;
 use api::grpc::qdrant::points_selector::PointsSelectorOneOf;
 use api::grpc::qdrant::{
     ClearPayloadPoints, ClearPayloadPointsInternal, CreateFieldIndexCollection,
@@ -11,7 +12,9 @@ use api::grpc::qdrant::{
 };
 use segment::data_types::vectors::VectorStruct;
 use segment::json_path::JsonPath;
-use segment::types::{Filter, PayloadFieldSchema, PayloadSchemaParams, PointIdType, ScoredPoint};
+use segment::types::{
+    Filter, PayloadFieldSchema, PayloadSchemaParams, PointIdType, Score, ScoredPoint,
+};
 use tonic::Status;
 
 use crate::operations::conversions::write_ordering_to_proto;
@@ -416,7 +419,7 @@ pub fn internal_delete_index(
 }
 
 pub fn try_scored_point_from_grpc(
-    point: api::grpc::qdrant::ScoredPoint,
+    point: grpc::ScoredPoint,
     with_payload: bool,
 ) -> Result<ScoredPoint, tonic::Status> {
     let id = point
@@ -439,7 +442,42 @@ pub fn try_scored_point_from_grpc(
     Ok(ScoredPoint {
         id,
         version: point.version,
-        score: point.score,
+        score: Some(Score::Float(point.float_score as f64)),
+        payload,
+        vector,
+        shard_key: convert_shard_key_from_grpc_opt(point.shard_key),
+    })
+}
+
+/// During the score migration window, we need to treat queried points different from scored points.
+// TODO(1.11): Adapt and use only try_scored_point_from_grpc
+pub fn try_queried_point_from_grpc(
+    point: grpc::ScoredPoint,
+    with_payload: bool,
+) -> Result<ScoredPoint, tonic::Status> {
+    let id = point
+        .id
+        .ok_or_else(|| tonic::Status::invalid_argument("scored point does not have an ID"))?
+        .try_into()?;
+
+    let score = point.score.map(Score::try_from).transpose()?;
+
+    let payload = if with_payload {
+        Some(api::grpc::conversions::proto_to_payloads(point.payload)?)
+    } else {
+        debug_assert!(point.payload.is_empty());
+        None
+    };
+
+    let vector = point
+        .vectors
+        .map(|vectors| vectors.try_into())
+        .transpose()?;
+
+    Ok(ScoredPoint {
+        id,
+        version: point.version,
+        score,
         payload,
         vector,
         shard_key: convert_shard_key_from_grpc_opt(point.shard_key),

@@ -564,14 +564,22 @@ enum UpdateStatus {
   ClockRejected = 3; // Internal: update is rejected due to an outdated clock
 }
 
+message Score {
+  oneof variant {
+    int64 int = 1;
+    double float = 2;
+  }
+}
+
 message ScoredPoint {
   PointId id = 1; // Point id
   map<string, Value> payload = 2; // Payload
-  float score = 3; // Similarity score
+  float float_score = 3; // Similarity score. To be deprecated in favor of "score" field
   reserved 4; // deprecated "vector" field
   uint64 version = 5; // Last update operation applied to this point
   optional Vectors vectors = 6; // Vectors to search
   optional ShardKey shard_key = 7; // Shard key
+  optional Score score = 8; // Score to compare against other scored points. If not provided, sorts by id.
 }
 
 message GroupId {

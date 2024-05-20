@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use schemars::JsonSchema;
+use segment::data_types::groups::GroupId;
 use serde::{Deserialize, Serialize};
 
 /// Type for dense vector
@@ -104,6 +105,22 @@ pub struct Record {
     /// Shard Key
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<segment::types::ShardKey>,
+}
+
+#[derive(Debug, Serialize, JsonSchema, Clone)]
+pub struct PointGroup {
+    /// Scored points that have the same value of the group_by key
+    pub hits: Vec<ScoredPoint>,
+    /// Value of the group_by key, shared across all the hits in the group
+    pub id: GroupId,
+    /// Record that has been looked up using the group id
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lookup: Option<Record>,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct GroupsResult {
+    pub groups: Vec<PointGroup>,
 }
 
 /// Vector data separator for named and unnamed modes

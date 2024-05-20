@@ -32,11 +32,7 @@ impl Group {
 impl From<Group> for PointGroup {
     fn from(group: Group) -> Self {
         Self {
-            hits: group
-                .hits
-                .into_iter()
-                .map(api::rest::ScoredPoint::from)
-                .collect(),
+            hits: group.hits,
             id: group.key,
             lookup: None,
         }

@@ -1,13 +1,12 @@
+use std::cmp::Reverse;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 
-use common::types::ScoreType;
-use itertools::Itertools;
-use ordered_float::OrderedFloat;
+use itertools::{Either, Itertools};
 use segment::data_types::groups::GroupId;
 use segment::json_path::JsonPath;
 use segment::spaces::tools::{peek_top_largest_iterable, peek_top_smallest_iterable};
-use segment::types::{ExtendedPointId, Order, PayloadContainer, PointIdType, ScoredPoint};
+use segment::types::{ExtendedPointId, Order, PayloadContainer, PointIdType, Score, ScoredPoint};
 use serde_json::Value;
 
 use super::types::AggregatorError::{self, *};
@@ -20,7 +19,7 @@ pub(super) struct GroupsAggregator {
     grouped_by: JsonPath,
     max_groups: usize,
     full_groups: HashSet<GroupId>,
-    group_best_scores: HashMap<GroupId, ScoreType>,
+    group_best_scores: HashMap<GroupId, Option<Score>>,
     all_ids: HashSet<ExtendedPointId>,
     order: Order,
 }
@@ -124,14 +123,13 @@ impl GroupsAggregator {
 
     /// Return `max_groups` number of keys of the groups with the best score
     fn best_group_keys(&self) -> impl Iterator<Item = &GroupId> {
-        self.group_best_scores
-            .iter()
-            .sorted_by_key(|(_, score)| match self.order {
-                Order::LargeBetter => -OrderedFloat(**score),
-                Order::SmallBetter => OrderedFloat(**score),
-            })
-            .take(self.max_groups)
-            .map(|(k, _)| k)
+        let iter = self.group_best_scores.iter();
+        match self.order {
+            Order::LargeBetter => Either::Left(iter.sorted_by_key(|(_, score)| Reverse(**score))),
+            Order::SmallBetter => Either::Right(iter.sorted_by_key(|(_, score)| **score)),
+        }
+        .take(self.max_groups)
+        .map(|(k, _)| k)
     }
 
     /// Gets the keys of the groups that have less than the max group size
@@ -189,6 +187,7 @@ impl GroupsAggregator {
 #[cfg(test)]
 mod unit_tests {
 
+    use common::types::ScoreType;
     use segment::types::Payload;
     use serde_json::json;
 
@@ -198,7 +197,7 @@ mod unit_tests {
         ScoredPoint {
             id: idx.into(),
             version: 0,
-            score,
+            score: Some(Score::Float(score as f64)),
             payload: Some(Payload::from(serde_json::json!({ "docId": payloads }))),
             vector: None,
             shard_key: None,
@@ -209,7 +208,7 @@ mod unit_tests {
         ScoredPoint {
             id: idx.into(),
             version: 0,
-            score,
+            score: Some(Score::Float(score as f64)),
             payload: None,
             vector: None,
             shard_key: None,

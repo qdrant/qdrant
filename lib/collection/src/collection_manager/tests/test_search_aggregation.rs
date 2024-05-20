@@ -1,5 +1,5 @@
 use common::types::ScoreType;
-use segment::types::{PointIdType, ScoredPoint, SeqNumberType};
+use segment::types::{PointIdType, Score, ScoredPoint, SeqNumberType};
 
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 
@@ -7,11 +7,18 @@ fn score_point(id: usize, score: ScoreType, version: SeqNumberType) -> ScoredPoi
     ScoredPoint {
         id: PointIdType::NumId(id as u64),
         version,
-        score,
+        score: Some(Score::Float(score as f64)),
         payload: None,
         vector: None,
         shard_key: None,
     }
+}
+
+fn assert_score(score: Option<Score>, expected: f64) {
+    let Some(Score::Float(score)) = score else {
+        panic!("Expected a float score");
+    };
+    assert!((score - expected).abs() < 0.0001);
 }
 
 fn search_result_b0_s0() -> Vec<ScoredPoint> {
@@ -107,13 +114,13 @@ fn test_aggregation_of_batch_search_results() {
 
     assert_eq!(top_results[1][0].id, PointIdType::NumId(111));
     assert_eq!(top_results[1][0].version, 14);
-    assert_eq!(top_results[1][0].score, 0.91);
+    assert_score(top_results[1][0].score, 0.91);
 
     assert_eq!(top_results[1][1].id, PointIdType::NumId(112));
     assert_eq!(top_results[1][1].version, 23);
-    assert_eq!(top_results[1][1].score, 0.81);
+    assert_score(top_results[1][1].score, 0.81);
 
     assert_eq!(top_results[1][2].id, PointIdType::NumId(113));
     assert_eq!(top_results[1][2].version, 12);
-    assert_eq!(top_results[1][2].score, 0.71);
+    assert_score(top_results[1][2].score, 0.71);
 }

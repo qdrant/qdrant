@@ -4914,6 +4914,25 @@ pub struct UpdateResult {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Score {
+    #[prost(oneof = "score::Variant", tags = "1, 2")]
+    pub variant: ::core::option::Option<score::Variant>,
+}
+/// Nested message and enum types in `Score`.
+pub mod score {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Variant {
+        #[prost(int64, tag = "1")]
+        Int(i64),
+        #[prost(double, tag = "2")]
+        Float(f64),
+    }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScoredPoint {
     /// Point id
     #[prost(message, optional, tag = "1")]
@@ -4921,9 +4940,9 @@ pub struct ScoredPoint {
     /// Payload
     #[prost(map = "string, message", tag = "2")]
     pub payload: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
-    /// Similarity score
+    /// Similarity score. To be deprecated in favor of "score" field
     #[prost(float, tag = "3")]
-    pub score: f32,
+    pub float_score: f32,
     /// Last update operation applied to this point
     #[prost(uint64, tag = "5")]
     pub version: u64,
@@ -4933,6 +4952,9 @@ pub struct ScoredPoint {
     /// Shard key
     #[prost(message, optional, tag = "7")]
     pub shard_key: ::core::option::Option<ShardKey>,
+    /// Score to compare against other scored points. If not provided, sorts by id.
+    #[prost(message, optional, tag = "8")]
+    pub score: ::core::option::Option<Score>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

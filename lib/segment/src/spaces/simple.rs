@@ -212,17 +212,11 @@ impl MetricPostProcessing for CosineMetric {
 }
 
 pub fn euclid_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
-    -v1.iter()
-        .zip(v2)
-        .map(|(a, b)| (a - b).powi(2))
-        .sum::<ScoreType>()
+    -v1.iter().zip(v2).map(|(a, b)| (a - b).powi(2)).sum::<f32>() as ScoreType
 }
 
 pub fn manhattan_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
-    -v1.iter()
-        .zip(v2)
-        .map(|(a, b)| (a - b).abs())
-        .sum::<ScoreType>()
+    -v1.iter().zip(v2).map(|(a, b)| (a - b).abs()).sum::<f32>() as ScoreType
 }
 
 pub fn cosine_preprocess(vector: DenseVector) -> DenseVector {
@@ -235,7 +229,7 @@ pub fn cosine_preprocess(vector: DenseVector) -> DenseVector {
 }
 
 pub fn dot_similarity(v1: &[VectorElementType], v2: &[VectorElementType]) -> ScoreType {
-    v1.iter().zip(v2).map(|(a, b)| a * b).sum()
+    v1.iter().zip(v2).map(|(a, b)| a * b).sum::<f32>() as ScoreType
 }
 
 #[cfg(test)]

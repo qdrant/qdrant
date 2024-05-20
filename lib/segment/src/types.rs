@@ -25,6 +25,7 @@ use validator::{Validate, ValidationError, ValidationErrors};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::{self, MaybeOneOrMany, MultiValue};
 use crate::data_types::integer_index::IntegerIndexParams;
+use crate::data_types::order_by::OrderingValue;
 use crate::data_types::text_index::TextIndexParams;
 use crate::data_types::vectors::{VectorElementType, VectorStruct};
 use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
@@ -183,7 +184,7 @@ impl Distance {
     }
 
     /// Checks if score satisfies threshold condition
-    pub fn check_threshold(&self, score: ScoreType, threshold: ScoreType) -> bool {
+    pub fn check_threshold(&self, score: Option<Score>, threshold: Option<Score>) -> bool {
         match self.distance_order() {
             Order::LargeBetter => score > threshold,
             Order::SmallBetter => score < threshold,
@@ -196,6 +197,37 @@ pub enum Order {
     SmallBetter,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Score {
+    Int(i64),
+    Float(f64),
+}
+
+impl Eq for Score {}
+
+impl PartialOrd for Score {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Score {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (self, other) {
+            (Score::Float(f), Score::Int(i)) => {
+                OrderingValue::Float(*f).cmp(&OrderingValue::Int(*i))
+            }
+            (Score::Int(i), Score::Float(f)) => {
+                OrderingValue::Int(*i).cmp(&OrderingValue::Float(*f))
+            }
+            (Score::Int(self_i), Score::Int(other_i)) => self_i.cmp(other_i),
+            (Score::Float(self_f), Score::Float(other_f)) => {
+                OrderedFloat(*self_f).cmp(&OrderedFloat(*other_f))
+            }
+        }
+    }
+}
+
 /// Search result
 #[derive(Clone, Debug)]
 pub struct ScoredPoint {
@@ -204,7 +236,7 @@ pub struct ScoredPoint {
     /// Point version
     pub version: SeqNumberType,
     /// Points vector distance to the query vector
-    pub score: ScoreType,
+    pub score: Option<Score>,
     /// Payload - values assigned to the point
     pub payload: Option<Payload>,
     /// Vector of the point
@@ -212,12 +244,36 @@ pub struct ScoredPoint {
     /// Shard Key
     pub shard_key: Option<ShardKey>,
 }
+pub trait ScoreExt {
+    fn to_float_score(self) -> ScoreType;
+
+    fn from_float_score(score: ScoreType) -> Self;
+}
+
+impl ScoreExt for Option<Score> {
+    fn to_float_score(self) -> ScoreType {
+        match self {
+            Some(Score::Float(score)) => score as ScoreType,
+            Some(Score::Int(score)) => score as ScoreType,
+            None => 0.0,
+        }
+    }
+
+    fn from_float_score(score: ScoreType) -> Self {
+        Some(Score::Float(score as f64))
+    }
+}
 
 impl Eq for ScoredPoint {}
 
 impl Ord for ScoredPoint {
     fn cmp(&self, other: &Self) -> Ordering {
-        OrderedFloat(self.score).cmp(&OrderedFloat(other.score))
+        match (&self.score, &other.score) {
+            (Some(self_score), Some(other_score)) => self_score.cmp(other_score),
+            (Some(_), None) => Ordering::Greater,
+            (None, Some(_)) => Ordering::Less,
+            (None, None) => self.id.cmp(&other.id),
+        }
     }
 }
 

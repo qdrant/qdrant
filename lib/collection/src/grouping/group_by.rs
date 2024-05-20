@@ -6,7 +6,7 @@ use fnv::FnvBuildHasher;
 use indexmap::IndexSet;
 use segment::json_path::{JsonPath, JsonPathInterface as _};
 use segment::types::{
-    AnyVariants, Condition, FieldCondition, Filter, Match, Order, ScoredPoint, WithPayloadInterface
+    AnyVariants, Condition, FieldCondition, Filter, Match, Order, ScoredPoint, WithPayloadInterface,
 };
 use serde_json::Value;
 use tokio::sync::RwLockReadGuard;
@@ -458,9 +458,20 @@ mod tests {
     use std::collections::HashMap;
 
     use segment::data_types::groups::GroupId;
-    use segment::types::{Payload, ScoredPoint};
+    use segment::types::{Payload, Score, ScoredPoint};
 
     use crate::grouping::types::Group;
+
+    fn make_scored_point(id: u64, score: f64, payload: Option<Payload>) -> ScoredPoint {
+        ScoredPoint {
+            id: id.into(),
+            version: 0,
+            score: Some(Score::Float(score)),
+            payload,
+            vector: None,
+            shard_key: None,
+        }
+    }
 
     #[test]
     fn test_hydrated_from() {
@@ -470,43 +481,15 @@ mod tests {
             (
                 "a",
                 [
-                    ScoredPoint {
-                        id: 1.into(),
-                        version: 0,
-                        score: 1.0,
-                        payload: None,
-                        vector: None,
-                        shard_key: None,
-                    },
-                    ScoredPoint {
-                        id: 2.into(),
-                        version: 0,
-                        score: 1.0,
-                        payload: None,
-                        vector: None,
-                        shard_key: None,
-                    },
+                    make_scored_point(1, 1.0, None),
+                    make_scored_point(2, 1.0, None),
                 ],
             ),
             (
                 "b",
                 [
-                    ScoredPoint {
-                        id: 3.into(),
-                        version: 0,
-                        score: 1.0,
-                        payload: None,
-                        vector: None,
-                        shard_key: None,
-                    },
-                    ScoredPoint {
-                        id: 4.into(),
-                        version: 0,
-                        score: 1.0,
-                        payload: None,
-                        vector: None,
-                        shard_key: None,
-                    },
+                    make_scored_point(3, 1.0, None),
+                    make_scored_point(4, 1.0, None),
                 ],
             ),
         ]
@@ -523,38 +506,10 @@ mod tests {
         let payload_b = Payload::from(serde_json::json!({"some_key": "some value b"}));
 
         let hydrated = vec![
-            ScoredPoint {
-                id: 1.into(),
-                version: 0,
-                score: 1.0,
-                payload: Some(payload_a.clone()),
-                vector: None,
-                shard_key: None,
-            },
-            ScoredPoint {
-                id: 2.into(),
-                version: 0,
-                score: 1.0,
-                payload: Some(payload_a.clone()),
-                vector: None,
-                shard_key: None,
-            },
-            ScoredPoint {
-                id: 3.into(),
-                version: 0,
-                score: 1.0,
-                payload: Some(payload_b.clone()),
-                vector: None,
-                shard_key: None,
-            },
-            ScoredPoint {
-                id: 4.into(),
-                version: 0,
-                score: 1.0,
-                payload: Some(payload_b.clone()),
-                vector: None,
-                shard_key: None,
-            },
+            make_scored_point(1, 1.0, Some(payload_a.clone())),
+            make_scored_point(2, 1.0, Some(payload_a.clone())),
+            make_scored_point(3, 1.0, Some(payload_b.clone())),
+            make_scored_point(4, 1.0, Some(payload_b.clone())),
         ];
 
         let set: HashMap<_, _> = hydrated.into_iter().map(|p| (p.id, p)).collect();

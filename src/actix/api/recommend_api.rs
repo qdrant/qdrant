@@ -149,10 +149,12 @@ async fn recommend_point_groups(
         access,
         params.timeout(),
     )
-    .await;
+    .await
+    .map(api::rest::GroupsResult::from);
 
     process_response(response, timing)
 }
+
 // Configure services
 pub fn config_recommend_api(cfg: &mut web::ServiceConfig) {
     cfg.service(recommend_points)

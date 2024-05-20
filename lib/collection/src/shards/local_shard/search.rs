@@ -1,13 +1,12 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use segment::types::ScoredPoint;
+use segment::types::{Score, ScoredPoint};
 use tokio::runtime::Handle;
 
 use super::LocalShard;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::common::stopping_guard::StoppingGuard;
-use crate::operations::query_enum::QueryEnum;
 use crate::operations::types::{CollectionError, CollectionResult, CoreSearchRequestBatch};
 
 impl LocalShard {
@@ -64,12 +63,15 @@ impl LocalShard {
                 let distance = collection_params.get_distance(vector_name).unwrap();
                 let processed_res = vector_res.into_iter().map(|mut scored_point| {
                     if req.query.has_custom_scoring() {
-                        scored_point.score = distance.postprocess_score(scored_point.score);
+                        if let Some(Score::Float(score)) = &mut scored_point.score {
+                            *score = distance.postprocess_score(*score as f32) as f64;
+                        }
                     };
                     scored_point
                 });
 
                 if let Some(threshold) = req.score_threshold {
+                    let threshold = Some(Score::Float(threshold as f64));
                     processed_res
                         .take_while(|scored_point| {
                             distance.check_threshold(scored_point.score, threshold)

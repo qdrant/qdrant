@@ -3,7 +3,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 
 use common::top_k::TopK;
-use common::types::{PointOffsetType, ScoredPointOffset};
+use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 
 use crate::common::scores_memory_pool::PooledScoresHandle;
 use crate::common::sparse_vector::RemappedSparseVector;
@@ -260,7 +260,7 @@ impl<'a, 'b> SearchContext<'a, 'b> {
         if self.postings_iterators.is_empty() {
             return Vec::new();
         }
-        let mut best_min_score = f32::MIN;
+        let mut best_min_score = ScoreType::MIN;
         loop {
             // check for cancellation (atomic amortized by batch)
             if self.is_stopped.load(Relaxed) {
@@ -330,7 +330,7 @@ impl<'a, 'b> SearchContext<'a, 'b> {
     /// Prune posting lists that cannot possibly contribute to the top results
     /// Assumes longest posting list is at the head of the posting list iterators
     /// Returns true if the longest posting list was pruned
-    pub fn prune_longest_posting_list(&mut self, min_score: f32) -> bool {
+    pub fn prune_longest_posting_list(&mut self, min_score: ScoreType) -> bool {
         if self.postings_iterators.is_empty() {
             return false;
         }
@@ -356,8 +356,9 @@ impl<'a, 'b> SearchContext<'a, 'b> {
                             // we can under prune as we should actually check the best score up to `next_min_id` - 1 only
                             // instead of the max possible score but it is not possible to know the best score up to `next_min_id` - 1
                             let max_weight_from_list = element.weight.max(element.max_next_weight);
-                            let max_score_contribution =
-                                max_weight_from_list * longest_posting_iterator.query_weight;
+                            let max_score_contribution = (max_weight_from_list
+                                * longest_posting_iterator.query_weight)
+                                as ScoreType;
                             if max_score_contribution <= min_score {
                                 // prune to next_min_id
                                 let longest_posting_iterator =
@@ -377,7 +378,7 @@ impl<'a, 'b> SearchContext<'a, 'b> {
                     // check against the max possible score using the `max_next_weight`
                     let max_weight_from_list = element.weight.max(element.max_next_weight);
                     let max_score_contribution =
-                        max_weight_from_list * longest_posting_iterator.query_weight;
+                        (max_weight_from_list * longest_posting_iterator.query_weight) as ScoreType;
                     if max_score_contribution <= min_score {
                         // prune to the end!
                         let longest_posting_iterator = &mut self.postings_iterators[0];

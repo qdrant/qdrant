@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use common::types::ScoreType;
 use futures::future::try_join_all;
 use itertools::Itertools;
 use ordered_float::Float;
@@ -11,7 +10,7 @@ use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::query_context::QueryContext;
 use segment::data_types::vectors::{QueryVector, VectorStruct};
 use segment::types::{
-    Filter, Indexes, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SeqNumberType,
+    Filter, Indexes, PointIdType, Score, ScoredPoint, SearchParams, SegmentConfig, SeqNumberType,
     WithPayload, WithPayloadInterface, WithVector,
 };
 use tinyvec::TinyVec;
@@ -95,8 +94,8 @@ impl SegmentsSearcher {
         result_aggregator.update_point_versions(&search_result);
 
         // Therefore we need to track the lowest scored element per segment for each batch
-        let mut lowest_scores_per_request: Vec<Vec<ScoreType>> = vec![
-            vec![f32::max_value(); batch_size]; // initial max score value for each batch
+        let mut lowest_scores_per_request: Vec<Vec<Option<Score>>> = vec![
+            vec![Some(Score::Float(f64::max_value())); batch_size]; // initial max score value for each batch
             number_segments
         ];
 
@@ -110,10 +109,8 @@ impl SegmentsSearcher {
             // merge results for each batch search request across segments
             for (batch_req_idx, query_res) in segment_result.into_iter().enumerate() {
                 retrieved_points_per_request[segment_idx][batch_req_idx] = query_res.len();
-                lowest_scores_per_request[segment_idx][batch_req_idx] = query_res
-                    .last()
-                    .map(|x| x.score)
-                    .unwrap_or_else(f32::min_value);
+                lowest_scores_per_request[segment_idx][batch_req_idx] =
+                    query_res.last().and_then(|x| x.score);
                 result_aggregator.update_batch_results(batch_req_idx, query_res.into_iter());
             }
         }
@@ -136,7 +133,7 @@ impl SegmentsSearcher {
                         && retrieved_points < required_limit
                         && segment_lowest_score >= lowest_batch_score
                     {
-                        log::debug!("Search to re-run without sampling on segment_id: {segment_id} segment_lowest_score: {segment_lowest_score}, lowest_batch_score: {lowest_batch_score}, retrieved_points: {retrieved_points}, required_limit: {required_limit}");
+                        log::debug!("Search to re-run without sampling on segment_id: {segment_id} segment_lowest_score: {segment_lowest_score:?}, lowest_batch_score: {lowest_batch_score:?}, retrieved_points: {retrieved_points}, required_limit: {required_limit}");
                         // It is possible, that current segment can have better results than
                         // the lowest score in the batch. In that case, we need to re-run the search
                         // without sampling on that segment.

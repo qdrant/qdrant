@@ -1,6 +1,5 @@
 use std::cmp::Ordering;
 
-use ordered_float::OrderedFloat;
 use segment::types::ScoredPoint;
 
 // Newtype to provide alternative comparator for ScoredPoint which breaks ties by id
@@ -16,8 +15,7 @@ impl From<ScoredPoint> for ScoredPointTies {
 
 impl Ord for ScoredPointTies {
     fn cmp(&self, other: &Self) -> Ordering {
-        let res =
-            OrderedFloat(self.scored_point.score).cmp(&OrderedFloat(other.scored_point.score));
+        let res = self.scored_point.score.cmp(&other.scored_point.score);
         // for identical scores, we fallback to sorting by ids to have a stable output
         if res == Ordering::Equal {
             self.scored_point.id.cmp(&other.scored_point.id)

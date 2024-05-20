@@ -138,7 +138,8 @@ async fn search_point_groups(
         access,
         params.timeout(),
     )
-    .await;
+    .await
+    .map(api::rest::GroupsResult::from);
 
     process_response(response, timing)
 }
