@@ -3,6 +3,7 @@
 pub mod config;
 pub mod default;
 pub mod handle;
+pub mod on_disk;
 
 #[cfg(test)]
 mod test;
@@ -27,12 +28,29 @@ const DEFAULT_FILTERS: &[(&str, log::LevelFilter)] = &[
     ("raft", log::LevelFilter::Warn),
 ];
 
-pub fn setup(config: config::LoggerConfig) -> anyhow::Result<LoggerHandle> {
+pub fn setup(mut config: config::LoggerConfig) -> anyhow::Result<LoggerHandle> {
+    // Note that on-disk logger *have* to be initialized *before* default logger!
+    //
+    // If default logger is initialized before on-disk logger, then ANSI escape-sequences (that are
+    // used to apply color and formatting in the terminal, but looks like corrupted text in the text
+    // editor) might appear in the on-disk log-file.
+    //
+    // This happens because when multiple `fmt::Layer`s are initialized in the same subscriber,
+    // the top-level `fmt::Layer` would cache pre-formatted fragments of the log-line
+    // for the next `fmt::Layer`s to reuse.
+    //
+    // And default logger outputs colored log-lines, which on-disk logger reuse even if colors are
+    // disabled for the on-disk logger. :/
+
+    let on_disk_logger = on_disk::new_logger(&mut config.on_disk);
+    let (on_disk_logger, on_disk_logger_handle) = reload::Layer::new(on_disk_logger);
+    let reg = tracing_subscriber::registry().with(on_disk_logger);
+
     let default_logger = default::new_logger(&config.default);
     let (default_logger, default_logger_handle) = reload::Layer::new(default_logger);
-    let reg = tracing_subscriber::registry().with(default_logger);
+    let reg = reg.with(default_logger);
 
-    let logger_handle = LoggerHandle::new(config, default_logger_handle);
+    let logger_handle = LoggerHandle::new(config, default_logger_handle, on_disk_logger_handle);
 
     // Use `console` or `console-subscriber` feature to enable `console-subscriber`
     //

@@ -10,6 +10,8 @@ use super::*;
 pub struct LoggerConfig {
     #[serde(flatten)]
     pub default: default::Config,
+    #[serde(default)]
+    pub on_disk: on_disk::Config,
 }
 
 impl LoggerConfig {
@@ -29,6 +31,7 @@ impl LoggerConfig {
 
     pub fn merge(&mut self, other: Self) {
         self.default.merge(other.default);
+        self.on_disk.merge(other.on_disk);
     }
 }
 
