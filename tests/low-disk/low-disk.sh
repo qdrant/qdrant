@@ -3,18 +3,20 @@
 # and verify that it doesn't crash when disk
 # is running low during points insertion.
 
+# possible values are search|indexing
+declare TEST=${1:-"search"}
+
 set -xeuo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
-#declare DOCKER_IMAGE_NAME=qdrant-recovery
-declare DOCKER_IMAGE_NAME=qdrant/qdrant
+declare DOCKER_IMAGE_NAME=qdrant-recovery
 
 docker buildx build --build-arg=PROFILE=ci --load ../../ --tag=$DOCKER_IMAGE_NAME
 
-declare OOD_CONTAINER_NAME=qdrant-ood
+declare OOD_CONTAINER_NAME=qdrant-ood-$TEST
 
-docker rm -f ${OOD_CONTAINER_NAME} || true
+docker rm -f "${OOD_CONTAINER_NAME}" || true
 
 declare container && container=$(
     docker run -d \
@@ -45,7 +47,7 @@ done
 
 # check that low disk is handled OK during points insertion
 # this also does search after each insertion
-python3 create_and_search_items.py low-disk 2000 6333
+python3 create_and_search_items.py "$TEST" low-disk 2000 6333
 
 sleep 5
 
@@ -57,6 +59,6 @@ if (! docker logs "$container" 2>&1 | grep "$OUT_OF_DISK_MSG") ; then
     exit 9
 fi
 
-printf 'Insertion: OK\n\n'
+printf '%s: OK\n\n' "${TEST}"
 
 echo "Success"

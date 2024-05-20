@@ -195,10 +195,14 @@ jobs:
         working-directory: ./tests/low-ram
         shell: bash
         run: ./low-ram.sh
-      - name: Run low Disk test
+      - name: Run low Disk test - search
         working-directory: ./tests/low-disk
         shell: bash
         run: ./low-disk.sh
+      - name: Run low Disk test - indexing
+        working-directory: ./tests/low-disk
+        shell: bash
+        run: ./low-disk.sh indexing
 
   test-snapshot-operations-s3-minio:
     runs-on: ubuntu-latest
