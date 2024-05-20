@@ -85,7 +85,7 @@ tracing = { workspace = true, optional = true }
 fs4 = "0.8.2"
 
 # AWS S3 support
-object_store = { version = "0.10.0" , features = ["aws"] }
+object_store = { version = "0.10.1" , features = ["aws"] }
 
 
 [[bench]]

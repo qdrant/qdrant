@@ -3499,9 +3499,9 @@ dependencies = [
 
 [[package]]
 name = "object_store"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9cda97d37376c28c508b0abc56b855c5e700324e9b753226681e658c833675c5"
+checksum = "fbebfd32c213ba1907fa7a9c9138015a8de2b43e30c5aa45b18f7deb46786ad6"
 dependencies = [
  "async-trait",
  "base64 0.22.0",
@@ -6438,7 +6438,7 @@ dependencies = [
  "memmap2 0.9.4",
  "rand 0.8.5",
  "rand_distr",
- "rustix 0.37.27",
+ "rustix 0.38.31",
  "serde",
 ]
 
