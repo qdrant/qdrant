@@ -5164,8 +5164,8 @@ pub struct QueriedPoint {
     #[prost(message, optional, tag = "3")]
     pub score: ::core::option::Option<Score>,
     /// Last update operation applied to this point
-    #[prost(uint64, tag = "4")]
-    pub version: u64,
+    #[prost(uint64, optional, tag = "4")]
+    pub version: ::core::option::Option<u64>,
     /// Vectors to search
     #[prost(message, optional, tag = "5")]
     pub vectors: ::core::option::Option<Vectors>,

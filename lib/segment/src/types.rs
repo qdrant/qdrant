@@ -270,7 +270,7 @@ pub struct QueriedPoint {
     /// Point id
     pub id: PointIdType,
     /// Point version
-    pub version: SeqNumberType,
+    pub version: Option<SeqNumberType>,
     /// Points vector distance to the query vector
     pub score: Option<Score>,
     /// Payload - values assigned to the point

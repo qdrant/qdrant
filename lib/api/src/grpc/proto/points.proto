@@ -683,7 +683,7 @@ message QueriedPoint {
   PointId id = 1; // Point id
   map<string, Value> payload = 2; // Payload
   optional Score score = 3; // Score to order against other points, if not present, the point is ordered by its ID.
-  uint64 version = 4; // Last update operation applied to this point
+  optional uint64 version = 4; // Last update operation applied to this point
   optional Vectors vectors = 5; // Vectors to search
   optional ShardKey shard_key = 6; // Shard key
 }
