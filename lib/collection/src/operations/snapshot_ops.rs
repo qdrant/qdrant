@@ -18,8 +18,8 @@ use crate::operations::types::CollectionResult;
 #[serde(rename_all = "snake_case")]
 pub enum SnapshotPriority {
     NoSync,
-    Snapshot,
     #[default]
+    Snapshot,
     Replica,
     // `ShardTransfer` is for internal use only, and should not be exposed/used in public API
     #[serde(skip)]
