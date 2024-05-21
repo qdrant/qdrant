@@ -12,7 +12,7 @@ use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, Manhat
 use crate::types::{Distance, QuantizationConfig, VectorStorageDatatype};
 
 pub trait PrimitiveVectorElement:
-    Copy + Clone + Default + Serialize + for<'a> Deserialize<'a>
+    Copy + Clone + Default + Serialize + for<'a> Deserialize<'a> + Send + Sync + 'static
 {
     fn slice_from_float_cow(vector: Cow<[VectorElementType]>) -> Cow<[Self]>;
 

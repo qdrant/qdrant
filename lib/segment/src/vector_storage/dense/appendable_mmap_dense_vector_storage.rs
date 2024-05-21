@@ -22,7 +22,7 @@ use crate::vector_storage::{DenseVectorStorage, VectorStorage, VectorStorageEnum
 const VECTORS_DIR_PATH: &str = "vectors";
 const DELETED_DIR_PATH: &str = "deleted";
 
-pub struct AppendableMmapDenseVectorStorage<T: PrimitiveVectorElement + 'static> {
+pub struct AppendableMmapDenseVectorStorage<T: PrimitiveVectorElement> {
     vectors: ChunkedMmapVectors<T>,
     deleted: DynamicMmapFlags,
     distance: Distance,
@@ -89,7 +89,7 @@ pub fn open_appendable_memmap_vector_storage_impl<T: PrimitiveVectorElement>(
     })
 }
 
-impl<T: PrimitiveVectorElement + 'static> AppendableMmapDenseVectorStorage<T> {
+impl<T: PrimitiveVectorElement> AppendableMmapDenseVectorStorage<T> {
     /// Set deleted flag for given key. Returns previous deleted state.
     #[inline]
     fn set_deleted(&mut self, key: PointOffsetType, deleted: bool) -> OperationResult<bool> {
