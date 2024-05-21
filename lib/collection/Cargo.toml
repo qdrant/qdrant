@@ -82,7 +82,7 @@ ringbuffer = "0.15.0"
 strum = { workspace = true }
 
 tracing = { workspace = true, optional = true }
-fs4 = "0.8.2"
+fs4 = "0.8.3"
 
 # AWS S3 support
 object_store = { version = "0.10.1" , features = ["aws"] }
