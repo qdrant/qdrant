@@ -714,20 +714,33 @@ impl Collection {
                 && state.shard_key == shard_key;
 
             if !is_in_progress {
-                return Err(CollectionError::bad_request(format!("TODO")));
+                return Err(CollectionError::bad_request(format!(
+                    "resharding of collection {} is not in progress",
+                    self.id,
+                )));
             }
         } else {
-            log::warn!("resharding of collection {} is not in progress", self.id);
+            log::warn!(
+                "aborting resharding of collection {} ({peer_id}/{shard_id}/{shard_key:?}),\
+                 but resharding is not in progress",
+                self.id,
+            );
         };
 
         if shard_holder.get_shard(&shard_id).is_none() {
-            log::warn!("shard {shard_id} does not exist in collection {}", self.id);
+            log::warn!(
+                "aborting resharding of collection {} ({peer_id}/{shard_id}/{shard_key:?}), \
+                 but shard {shard_id} does not exist in collection",
+                 self.id,
+            );
         }
 
+        // TODO: Contextualize errors? 🤔
         shard_holder
             .abort_resharding(shard_id, peer_id, shard_key.clone())
             .await?;
 
+        // TODO: Contextualize errors? 🤔
         self.resharding_state.write(|state| {
             *state = None;
         })?;
