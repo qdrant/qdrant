@@ -23,6 +23,7 @@ use segment::types::{
     VectorStorageType,
 };
 use segment::vector_storage::query::{ContextPair, DiscoveryQuery, RecoQuery};
+use segment::vector_storage::VectorStorage;
 use serde_json::json;
 use tempfile::Builder;
 
@@ -154,6 +155,13 @@ fn test_multi_filterable_hnsw(
             .set_full_payload(n as SeqNumberType, idx, &payload)
             .unwrap();
     }
+    assert_eq!(
+        segment.vector_data[DEFAULT_VECTOR_NAME]
+            .vector_storage
+            .borrow()
+            .total_vector_count(),
+        num_points as usize
+    );
 
     let payload_index_ptr = segment.payload_index.clone();
 
