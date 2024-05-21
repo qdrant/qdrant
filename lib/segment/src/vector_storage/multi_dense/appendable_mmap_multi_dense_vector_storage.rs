@@ -31,7 +31,7 @@ struct MultivectorMmapOffset {
     capacity: PointOffsetType,
 }
 
-pub struct AppendableMmapMultiDenseVectorStorage<T: PrimitiveVectorElement + 'static> {
+pub struct AppendableMmapMultiDenseVectorStorage<T: PrimitiveVectorElement> {
     vectors: ChunkedMmapVectors<T>,
     offsets: ChunkedMmapVectors<MultivectorMmapOffset>,
     deleted: DynamicMmapFlags,
@@ -114,7 +114,7 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
     })
 }
 
-impl<T: PrimitiveVectorElement + 'static> AppendableMmapMultiDenseVectorStorage<T> {
+impl<T: PrimitiveVectorElement> AppendableMmapMultiDenseVectorStorage<T> {
     /// Set deleted flag for given key. Returns previous deleted state.
     #[inline]
     fn set_deleted(&mut self, key: PointOffsetType, deleted: bool) -> OperationResult<bool> {

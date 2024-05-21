@@ -87,7 +87,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
 
     pub fn build_with_metric<TElement, TMetric>(self) -> OperationResult<Box<dyn RawScorer + 'a>>
     where
-        TElement: PrimitiveVectorElement + 'a,
+        TElement: PrimitiveVectorElement,
         TMetric: Metric<TElement> + 'a,
     {
         match self.quantized_storage {
@@ -118,7 +118,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
         quantized_storage: &'a impl EncodedVectors<TEncodedQuery>,
     ) -> OperationResult<Box<dyn RawScorer + 'a>>
     where
-        TElement: PrimitiveVectorElement + 'a,
+        TElement: PrimitiveVectorElement,
         TMetric: Metric<TElement> + 'a,
         TEncodedQuery: 'a,
     {
