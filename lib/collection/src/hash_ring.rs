@@ -1,3 +1,4 @@
+use std::fmt;
 use std::hash::Hash;
 
 use smallvec::SmallVec;
@@ -74,9 +75,16 @@ impl<T: Hash + Copy> HashRing<T> {
         new.add(shard);
     }
 
-    pub fn remove_resharding(&mut self, shard: T) {
+    pub fn remove_resharding(&mut self, shard: T)
+    where
+        T: fmt::Display,
+    {
         let Self::Resharding { old, new } = self else {
-            log::warn!("TODO");
+            log::warn!(
+                "removing resharding shard,
+                 but hashring is not in resharding mode"
+            );
+
             return;
         };
 
@@ -87,31 +95,44 @@ impl<T: Hash + Copy> HashRing<T> {
         let removed_from_new = new.remove(&shard);
 
         match (removed_from_old, removed_from_new) {
-            (false, true) => {
-                log::debug!("TODO");
-            }
-
-            (false, false) => {
-                log::warn!("TODO");
-            }
+            (false, true) => (),
 
             (true, true) => {
-                log::error!("TODO");
+                log::error!(
+                    "removing resharding shard, \
+                     but {shard} is not resharding shard"
+                );
+
                 return;
             }
 
             (true, false) => {
-                log::error!("TODO");
+                log::error!(
+                    "removing resharding shard, \
+                     but shard {shard} only exists in the old hashring"
+                );
+
                 return;
+            }
+
+            (false, false) => {
+                log::warn!(
+                    "removing resharding shard, \
+                     but shard {shard} does not exist in the hashring"
+                );
+
+                // TODO(resharding): `return` here?
             }
         }
 
-        if old.len() != new.len() {
-            log::warn!("TODO");
-            return;
-        }
+        if old.len() == new.len() {
+            log::debug!(
+                "switching hashring into single mode, \
+                 because all resharding shards were removed",
+            );
 
-        *self = Self::Single(old);
+            *self = Self::Single(old);
+        }
     }
 
     pub fn get<U: Hash>(&self, key: &U) -> ShardIds<T> {
