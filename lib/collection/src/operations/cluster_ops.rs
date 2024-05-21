@@ -29,6 +29,9 @@ pub enum ClusterOperations {
     /// Start resharding
     #[schemars(skip)]
     StartResharding(StartReshardingOperation),
+    // Abort resharding
+    #[schemars(skip)]
+    AbortResharding(AbortReshardingOperation),
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
@@ -106,6 +109,7 @@ impl Validate for ClusterOperations {
             ClusterOperations::DropShardingKey(op) => op.validate(),
             ClusterOperations::RestartTransfer(op) => op.validate(),
             ClusterOperations::StartResharding(op) => op.validate(),
+            ClusterOperations::AbortResharding(op) => op.validate(),
         }
     }
 }
@@ -140,8 +144,12 @@ pub struct AbortTransferOperation {
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct StartReshardingOperation {
-    pub peer_id: Option<PeerId>,
-    pub shard_key: Option<ShardKey>,
+    pub start_resharding: StartResharding,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
+pub struct AbortReshardingOperation {
+    pub abort_resharding: AbortResharding,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
@@ -196,3 +204,12 @@ pub struct AbortShardTransfer {
     pub to_peer_id: PeerId,
     pub from_peer_id: PeerId,
 }
+
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
+pub struct StartResharding {
+    pub peer_id: Option<PeerId>,
+    pub shard_key: Option<ShardKey>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
+pub struct AbortResharding {}

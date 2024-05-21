@@ -657,6 +657,10 @@ impl Collection {
         Ok(())
     }
 
+    pub fn resharding_state(&self) -> Option<ReshardingState> {
+        self.resharding_state.read().clone()
+    }
+
     pub async fn start_resharding(
         &self,
         peer_id: PeerId,
