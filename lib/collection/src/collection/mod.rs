@@ -731,7 +731,7 @@ impl Collection {
             log::warn!(
                 "aborting resharding of collection {} ({peer_id}/{shard_id}/{shard_key:?}), \
                  but shard {shard_id} does not exist in collection",
-                 self.id,
+                self.id,
             );
         }
 
