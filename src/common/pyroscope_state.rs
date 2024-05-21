@@ -47,7 +47,7 @@ impl PyroscopeState {
         log::info!("Pyroscope agent started");
     }
 
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
     pub fn from_settings(settings: &Settings) -> Option<Self> {
         settings
             .debug
@@ -61,7 +61,7 @@ impl PyroscopeState {
             })
     }
 
-    #[cfg(target_os = "windows")]
+    #[cfg(not(target_os = "linux"))]
     pub fn from_settings(settings: &Settings) -> Option<Self> {
         None
     }
