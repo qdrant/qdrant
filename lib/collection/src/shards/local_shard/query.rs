@@ -34,19 +34,15 @@ impl LocalShard {
 
         // TODO(universal-query): implement batch scrolling
         let scrolls = &vec![];
-        let merged_results = self
-            .recurse_prefetch(
-                &request.merge_plan,
-                &core_results,
-                scrolls,
-                search_runtime_handle,
-                timeout,
-            )
-            .await?;
-
-        // TODO(universal-query): Implement with_vector and with_payload
-        let results = vec![merged_results];
-        Ok(results)
+        self.recurse_prefetch(
+            &request.merge_plan,
+            &core_results,
+            scrolls,
+            search_runtime_handle,
+            timeout,
+            0, // initial depth
+        )
+        .await
     }
 
     fn recurse_prefetch<'shard, 'query>(
@@ -56,20 +52,25 @@ impl LocalShard {
         scrolls: &'query Vec<Vec<ScoredPoint>>,
         search_runtime_handle: &'shard Handle,
         timeout: Option<Duration>,
-    ) -> BoxFuture<'query, CollectionResult<Vec<ScoredPoint>>>
+        depth: usize,
+    ) -> BoxFuture<'query, CollectionResult<Vec<Vec<ScoredPoint>>>>
     where
         'shard: 'query,
     {
         async move {
-            let mut sources = Vec::with_capacity(prefetch.sources.len());
+            let mut sources: Vec<Vec<ScoredPoint>> = Vec::with_capacity(prefetch.sources.len());
 
             for source in prefetch.sources.iter() {
-                let vec: Vec<ScoredPoint> = match source {
+                let vec: Vec<Vec<ScoredPoint>> = match source {
                     PrefetchSource::SearchesIdx(idx) => {
-                        core_results.get(*idx).cloned().unwrap_or_default() // TODO(universal-query): don't clone, by using something like a hashmap instead of a vec
+                        // TODO(universal-query): don't clone, by using something like a hashmap instead of a vec
+                        let scored_searches = core_results.get(*idx).cloned().unwrap_or_default();
+                        vec![scored_searches]
                     }
                     PrefetchSource::ScrollsIdx(idx) => {
-                        scrolls.get(*idx).cloned().unwrap_or_default() // TODO(universal-query): don't clone, by using something like a hashmap instead of a vec
+                        // TODO(universal-query): don't clone, by using something like a hashmap instead of a vec
+                        let scrolled = scrolls.get(*idx).cloned().unwrap_or_default();
+                        vec![scrolled]
                     }
                     PrefetchSource::Prefetch(prefetch) => {
                         self.recurse_prefetch(
@@ -78,15 +79,23 @@ impl LocalShard {
                             scrolls,
                             search_runtime_handle,
                             timeout,
+                            depth + 1,
                         )
                         .await?
                     }
                 };
-                sources.push(vec);
+                sources.extend(vec);
             }
 
-            self.merge_prefetches(sources, &prefetch.merge, search_runtime_handle, timeout)
-                .await
+            if depth == 0 && prefetch.merge.rescore == Some(ScoringQuery::Fusion(Fusion::Rrf)) {
+                // in case of top level RRF, we need to propagate intermediate results
+                Ok(sources)
+            } else {
+                let merged = self
+                    .merge_prefetches(sources, &prefetch.merge, search_runtime_handle, timeout)
+                    .await?;
+                Ok(vec![merged])
+            }
         }
         .boxed()
     }
