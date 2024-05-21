@@ -76,7 +76,11 @@ where
 /// 1. If `from` and `to` exists
 /// 2. If `from` have local shard and it is active
 /// 3. If there is no active transfers which involve `from` or `to`
-/// 4. If a target shard is only set for resharding  transfers
+/// 4. If a target shard is only set for resharding transfers
+///
+/// For resharding transfers this also checks:
+/// 1. If the source and target shards are different
+/// 2. If the source and target shardsd share the same shard key
 ///
 /// If validation fails, return `BadRequest` error.
 pub fn validate_transfer(
