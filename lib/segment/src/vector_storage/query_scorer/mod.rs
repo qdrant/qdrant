@@ -1,5 +1,4 @@
 use common::types::{PointOffsetType, ScoreType};
-use ordered_float::OrderedFloat;
 
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::TypedMultiDenseVectorRef;
@@ -26,21 +25,20 @@ pub fn score_max_similarity<T: PrimitiveVectorElement, TMetric: Metric<T>>(
     multi_dense_a: TypedMultiDenseVectorRef<T>,
     multi_dense_b: TypedMultiDenseVectorRef<T>,
 ) -> ScoreType {
-    // TODO(colbert) add user input validation
     debug_assert!(!multi_dense_a.is_empty());
     debug_assert!(!multi_dense_b.is_empty());
     let mut sum = 0.0;
     for dense_a in multi_dense_a.multi_vectors() {
-        let mut max_sim = OrderedFloat(ScoreType::NEG_INFINITY);
+        let mut max_sim = ScoreType::NEG_INFINITY;
         // manual `max_by` for performance
         for dense_b in multi_dense_b.multi_vectors() {
-            let sim = OrderedFloat(TMetric::similarity(dense_a, dense_b));
+            let sim = TMetric::similarity(dense_a, dense_b);
             if sim > max_sim {
                 max_sim = sim;
             }
         }
         // sum of max similarity
-        sum += max_sim.into_inner();
+        sum += max_sim;
     }
     sum
 }
