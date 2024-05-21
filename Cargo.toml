@@ -54,7 +54,7 @@ chrono = { workspace = true }
 rand = "0.8.5"
 schemars = { workspace = true }
 itertools = { workspace = true }
-anyhow = "1.0.83"
+anyhow = "1.0.86"
 futures = { workspace = true }
 futures-util = { workspace = true }
 clap = { version = "4.5.4", features = ["derive"] }
