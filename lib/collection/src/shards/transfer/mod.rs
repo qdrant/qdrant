@@ -110,6 +110,8 @@ pub enum ShardTransferMethod {
     WalDelta,
     /// Shard transfer for resharding: stream all records in batches until all points are
     /// transferred.
+    #[doc(hidden)]
+    #[schemars(skip)]
     ReshardingStreamRecords,
 }
 
