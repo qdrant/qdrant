@@ -667,9 +667,9 @@ impl Collection {
 
         let mut shard_holder = self.shards_holder.write().await;
 
-        if self.resharding_state.read().is_some() {
+        if let Some(state) = self.resharding_state.read().deref() {
             return Err(CollectionError::bad_request(format!(
-                "resharding of collection {} is already in progress",
+                "resharding of collection {} is already in progress: {state:?}",
                 self.id
             )));
         }
@@ -690,7 +690,7 @@ impl Collection {
         self.resharding_state.write(|state| {
             debug_assert!(
                 state.is_none(),
-                "resharding of collection {} is already in progress",
+                "resharding of collection {} is already in progress: {state:?}",
                 self.id
             );
 
