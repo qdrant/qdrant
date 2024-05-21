@@ -9,6 +9,7 @@ use crate::settings::{PyroscopeConfig, Settings};
 #[derive(Clone)]
 pub struct PyroscopeState {
     pub config: Arc<Mutex<PyroscopeConfig>>,
+    #[cfg(target_os = "linux")]
     pub agent: Arc<Mutex<Option<PyroscopeAgent<PyroscopeAgentRunning>>>>,
 }
 
