@@ -114,6 +114,7 @@ pub trait SparseVectorStorage: VectorStorage {
 
 pub trait MultiVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
     fn get_multi(&self, key: PointOffsetType) -> TypedMultiDenseVectorRef<T>;
+    fn iterate_inner_vectors(&self) -> impl Iterator<Item = &[T]> + Clone + Send;
     fn multi_vector_config(&self) -> &MultiVectorConfig;
 }
 
