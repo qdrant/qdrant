@@ -124,32 +124,31 @@ pub fn validate_transfer(
     }
 
     if transfer.method == Some(ShardTransferMethod::ReshardingStreamRecords) {
-        match transfer.to_shard_id {
-            Some(to_shard_id) if transfer.shard_id != to_shard_id => {
-                let source_shard_key = shards_key_mapping
-                    .iter()
-                    .find(|(_, shard_ids)| shard_ids.contains(&to_shard_id))
-                    .map(|(key, _)| key);
-                let target_shard_key = shards_key_mapping
-                    .iter()
-                    .find(|(_, shard_ids)| shard_ids.contains(&to_shard_id))
-                    .map(|(key, _)| key);
-                if source_shard_key != target_shard_key {
-                    return Err(CollectionError::bad_request(format!(
-                        "Source and target shard must have the same shard key, but they have {source_shard_key:?} and {target_shard_key:?}",
-                    )));
-                }
-            }
-            Some(to_shard_id) => {
-                return Err(CollectionError::bad_request(format!(
-                    "Source and target shard must be different for resharding transfer, both are {to_shard_id}",
-                )));
-            }
-            None => {
-                return Err(CollectionError::bad_request(
-                    "Target shard is not set for resharding transfer".into(),
-                ));
-            }
+        let Some(to_shard_id) = transfer.to_shard_id else {
+            return Err(CollectionError::bad_request(
+                "Target shard is not set for resharding transfer".into(),
+            ));
+        };
+
+        if transfer.shard_id == to_shard_id {
+            return Err(CollectionError::bad_request(format!(
+                "Source and target shard must be different for resharding transfer, both are {to_shard_id}",
+            )));
+        }
+
+        // Both shard IDs must share the same shard key
+        let source_shard_key = shards_key_mapping
+            .iter()
+            .find(|(_, shard_ids)| shard_ids.contains(&to_shard_id))
+            .map(|(key, _)| key);
+        let target_shard_key = shards_key_mapping
+            .iter()
+            .find(|(_, shard_ids)| shard_ids.contains(&to_shard_id))
+            .map(|(key, _)| key);
+        if source_shard_key != target_shard_key {
+            return Err(CollectionError::bad_request(format!(
+                "Source and target shard must have the same shard key, but they have {source_shard_key:?} and {target_shard_key:?}",
+            )));
         }
     } else if let Some(to_shard_id) = transfer.to_shard_id {
         return Err(CollectionError::bad_request(format!(
