@@ -58,13 +58,15 @@ def wait_for_status(qdrant_host, collection_name, status: str):
     print(f"After 30s status is not {status}, found: {curr_status}. Stop waiting.")
 
 
-def insert_points(qdrant_host, collection_name, batch_json):
+def insert_points(qdrant_host, collection_name, batch_json, quit_on_ood: bool = False):
     resp = requests.put(
         f"{qdrant_host}/collections/{collection_name}/points?wait=true", json=batch_json
     )
     expected_error_message = "No space left on device"
     if resp.status_code != 200:
         if resp.status_code == 500 and expected_error_message in resp.text:
+            if quit_on_ood:
+                return "ood"
             requests.put(f"{qdrant_host}/collections/{collection_name}/points?wait=true", json=batch_json)
         else:
             error_response = resp.json()
@@ -107,6 +109,15 @@ def insert_points_and_search(qdrant_host, collection_name, points_amount):
 
 
 def insert_points_then_index(qdrant_host, collection_name, points_amount):
+    """
+    Disable indexing, create collection, insert points up to
+    a point when there is no space left on disk, then start indexing.
+    Wait for indexing then send a search request.
+    @param qdrant_host:
+    @param collection_name:
+    @param points_amount:
+    @return:
+    """
     collection_json = {
         "vectors": {
             "size": VECTOR_SIZE,
@@ -122,7 +133,10 @@ def insert_points_then_index(qdrant_host, collection_name, points_amount):
     }
     create_collection(qdrant_host, collection_name, collection_json)
     for points_batch in generate_points(points_amount):
-        insert_points(qdrant_host, collection_name, points_batch)
+        res = insert_points(qdrant_host, collection_name, points_batch, quit_on_ood=True)
+        if res == "ood":
+            break
+        search_point(qdrant_host, collection_name)
 
     # start indexing
     collection_json = {
@@ -133,6 +147,7 @@ def insert_points_then_index(qdrant_host, collection_name, points_amount):
     update_collection(qdrant_host, collection_name, collection_json)
     wait_for_status(qdrant_host, collection_name, "yellow")
     wait_for_status(qdrant_host, collection_name, "green")
+    search_point(qdrant_host, collection_name)
 
 
 def main():
