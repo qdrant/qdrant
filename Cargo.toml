@@ -54,7 +54,7 @@ chrono = { workspace = true }
 rand = "0.8.5"
 schemars = { workspace = true }
 itertools = { workspace = true }
-anyhow = "1.0.86"
+anyhow = { workspace = true }
 futures = { workspace = true }
 futures-util = { workspace = true }
 clap = { version = "4.5.4", features = ["derive"] }
@@ -118,6 +118,7 @@ rstack-self = { version = "0.3.0", optional = true }
 tikv-jemallocator = "0.5"
 
 [workspace.dependencies]
+anyhow = "1.0.86"
 chrono = { version = "0.4.38", features = ["serde"] }
 fnv = "1.0"
 futures = "0.3.30"
