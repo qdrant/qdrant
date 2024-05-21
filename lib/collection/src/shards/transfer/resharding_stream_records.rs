@@ -29,9 +29,6 @@ pub(super) async fn transfer_resharding_stream_records(
     remote_shard: RemoteShard,
     collection_name: &str,
 ) -> CollectionResult<()> {
-    // TODO: define shard key here!
-    let shard_key = None;
-
     let remote_peer_id = remote_shard.peer_id;
     let hashring;
 
@@ -49,6 +46,11 @@ pub(super) async fn transfer_resharding_stream_records(
             )));
         };
 
+        // Derive shard key scope for this transfer from the shard ID, get the hash ring
+        let shard_key = shard_holder
+            .get_shard_id_to_key_mapping()
+            .get(&shard_id)
+            .cloned();
         hashring = shard_holder.rings.get(&shard_key).cloned().ok_or_else(|| {
             CollectionError::service_error(format!(
                 "Shard {shard_id} cannot be transferred for resharding, failed to get shard hash rings"
