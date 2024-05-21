@@ -15,8 +15,8 @@ use uuid::Uuid;
 use super::qdrant::raw_query::RawContextPair;
 use super::qdrant::{
     raw_query, start_from, BinaryQuantization, CompressionRatio, DatetimeRange, Direction,
-    GeoLineString, GroupId, MultiVectorComparator, MultiVectorConfig, OrderBy, Range, RawVector,
-    SparseIndices, StartFrom,
+    GeoLineString, GroupId, MultiVectorComparator, MultiVectorConfig, OrderBy, OrderedValue, Range,
+    RawVector, SparseIndices, StartFrom,
 };
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
@@ -571,6 +571,44 @@ impl From<segment_vectors::VectorStruct> for Vectors {
     }
 }
 
+impl From<segment::data_types::order_by::OrderedValue> for OrderedValue {
+    fn from(value: segment::data_types::order_by::OrderedValue) -> Self {
+        use segment::data_types::order_by as segment;
+
+        use crate::grpc::qdrant::ordered_value::Variant;
+
+        let variant = match value {
+            segment::OrderedValue::Float(value) => Variant::Float(value),
+            segment::OrderedValue::Int(value) => Variant::Int(value),
+        };
+
+        Self {
+            variant: Some(variant),
+        }
+    }
+}
+
+impl TryFrom<OrderedValue> for segment::data_types::order_by::OrderedValue {
+    type Error = Status;
+
+    fn try_from(value: OrderedValue) -> Result<Self, Self::Error> {
+        use segment::data_types::order_by as segment;
+
+        use crate::grpc::qdrant::ordered_value::Variant;
+
+        let variant = value.variant.ok_or_else(|| {
+            Status::invalid_argument("OrderedValue should have a variant".to_string())
+        })?;
+
+        let value = match variant {
+            Variant::Float(value) => segment::OrderedValue::Float(value),
+            Variant::Int(value) => segment::OrderedValue::Int(value),
+        };
+
+        Ok(value)
+    }
+}
+
 impl From<segment::types::ScoredPoint> for ScoredPoint {
     fn from(point: segment::types::ScoredPoint) -> Self {
         Self {
@@ -580,6 +618,7 @@ impl From<segment::types::ScoredPoint> for ScoredPoint {
             version: point.version,
             vectors: point.vector.map(|v| v.into()),
             shard_key: point.shard_key.map(convert_shard_key_to_grpc),
+            order_value: point.order_value.map(From::from),
         }
     }
 }

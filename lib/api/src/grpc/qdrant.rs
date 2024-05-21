@@ -4914,6 +4914,25 @@ pub struct UpdateResult {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct OrderedValue {
+    #[prost(oneof = "ordered_value::Variant", tags = "1, 2")]
+    pub variant: ::core::option::Option<ordered_value::Variant>,
+}
+/// Nested message and enum types in `OrderedValue`.
+pub mod ordered_value {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Variant {
+        #[prost(int64, tag = "1")]
+        Int(i64),
+        #[prost(double, tag = "2")]
+        Float(f64),
+    }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ScoredPoint {
     /// Point id
     #[prost(message, optional, tag = "1")]
@@ -4933,6 +4952,9 @@ pub struct ScoredPoint {
     /// Shard key
     #[prost(message, optional, tag = "7")]
     pub shard_key: ::core::option::Option<ShardKey>,
+    /// Order by value
+    #[prost(message, optional, tag = "8")]
+    pub order_value: ::core::option::Option<OrderedValue>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

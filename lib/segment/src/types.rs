@@ -25,6 +25,7 @@ use validator::{Validate, ValidationError, ValidationErrors};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::{self, MaybeOneOrMany, MultiValue};
 use crate::data_types::integer_index::IntegerIndexParams;
+use crate::data_types::order_by::OrderedValue;
 use crate::data_types::text_index::TextIndexParams;
 use crate::data_types::vectors::{VectorElementType, VectorStruct};
 use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
@@ -211,6 +212,8 @@ pub struct ScoredPoint {
     pub vector: Option<VectorStruct>,
     /// Shard Key
     pub shard_key: Option<ShardKey>,
+    /// Order-by value
+    pub order_value: Option<OrderedValue>,
 }
 
 impl Eq for ScoredPoint {}

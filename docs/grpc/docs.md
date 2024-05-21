@@ -150,6 +150,7 @@
     - [NamedVectors.VectorsEntry](#qdrant-NamedVectors-VectorsEntry)
     - [NestedCondition](#qdrant-NestedCondition)
     - [OrderBy](#qdrant-OrderBy)
+    - [OrderedValue](#qdrant-OrderedValue)
     - [PayloadExcludeSelector](#qdrant-PayloadExcludeSelector)
     - [PayloadIncludeSelector](#qdrant-PayloadIncludeSelector)
     - [PointGroup](#qdrant-PointGroup)
@@ -2589,6 +2590,22 @@ Additionally, the first and last points of each GeoLineString must be the same.
 
 
 
+<a name="qdrant-OrderedValue"></a>
+
+### OrderedValue
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| int | [int64](#int64) |  |  |
+| float | [double](#double) |  |  |
+
+
+
+
+
+
 <a name="qdrant-PayloadExcludeSelector"></a>
 
 ### PayloadExcludeSelector
@@ -3203,6 +3220,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | version | [uint64](#uint64) |  | Last update operation applied to this point |
 | vectors | [Vectors](#qdrant-Vectors) | optional | Vectors to search |
 | shard_key | [ShardKey](#qdrant-ShardKey) | optional | Shard key |
+| order_value | [OrderedValue](#qdrant-OrderedValue) | optional | Order by value |
 
 
 

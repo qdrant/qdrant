@@ -7149,8 +7149,31 @@
                 "nullable": true
               }
             ]
+          },
+          "order_value": {
+            "description": "Order-by value",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrderedValue"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
+      },
+      "OrderedValue": {
+        "anyOf": [
+          {
+            "type": "integer",
+            "format": "int64"
+          },
+          {
+            "type": "number",
+            "format": "double"
+          }
+        ]
       },
       "UpdateResult": {
         "type": "object",

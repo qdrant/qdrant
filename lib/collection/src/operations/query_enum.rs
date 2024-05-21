@@ -12,6 +12,16 @@ impl QueryEnum {
         }
     }
 
+    /// Only when the distance is the scoring, this will return false.
+    pub fn has_custom_scoring(&self) -> bool {
+        match self {
+            QueryEnum::Nearest(_) => false,
+            QueryEnum::RecommendBestScore(_) | QueryEnum::Discover(_) | QueryEnum::Context(_) => {
+                true
+            }
+        }
+    }
+
     pub fn iterate_sparse(&self, mut f: impl FnMut(&str, &SparseVector)) {
         match self {
             QueryEnum::Nearest(vector) => match vector {
