@@ -65,7 +65,6 @@ impl PyroscopeState {
     pub fn from_settings(settings: &Settings) -> Option<Self> {
         None
     }
-
 }
 
 impl Drop for PyroscopeState {
