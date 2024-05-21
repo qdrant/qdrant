@@ -7,8 +7,7 @@ use crate::operations::types::{CollectionError, CollectionResult, CountRequestIn
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_holder::LockedShardHolder;
-
-const TRANSFER_BATCH_SIZE: usize = 100;
+use crate::shards::transfer::stream_records::TRANSFER_BATCH_SIZE;
 
 /// Orchestrate shard transfer by streaming records, but only the points that fall into the new
 /// shard.
