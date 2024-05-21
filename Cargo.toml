@@ -69,7 +69,7 @@ tokio = { workspace = true }
 
 actix-cors = "0.7.0"
 actix-files = "0.6.5"
-actix-web = { version = "4.6.0", optional = true, features = ["rustls-0_22", "actix-tls"] }
+actix-web = { version = "4.6.0", optional = true, features = ["rustls-0_23", "actix-tls"] }
 actix-web-validator = "5.0.1"
 tonic = { workspace = true }
 tonic-reflection = { workspace = true }
@@ -77,7 +77,7 @@ tower = { version = "0.4.13" }
 tower-layer = "0.3.2"
 reqwest = { workspace = true }
 # rustls minor version must be synced with actix-web
-rustls = "0.22.4"
+rustls = {  version = "0.23.7", features = ["ring"] }
 rustls-pki-types = "1.7.0"
 rustls-pemfile = "2.1.2"
 prometheus = { version = "0.13.4", default-features = false }
