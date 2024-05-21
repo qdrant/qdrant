@@ -306,7 +306,10 @@ impl TableOfContent {
         match transfer_operation {
             ShardTransferOperations::Start(transfer) => {
                 let collection_state::State {
-                    shards, transfers, ..
+                    shards,
+                    transfers,
+                    shards_key_mapping,
+                    ..
                 } = collection.state().await;
                 let all_peers: HashSet<_> = self
                     .channel_service
@@ -332,6 +335,7 @@ impl TableOfContent {
                     &all_peers,
                     shard_state,
                     &transfers,
+                    &shards_key_mapping,
                 )?;
 
                 let on_finish = {

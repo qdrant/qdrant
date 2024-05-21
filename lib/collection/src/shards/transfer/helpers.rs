@@ -5,6 +5,7 @@ use super::{ShardTransfer, ShardTransferKey, ShardTransferMethod};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
+use crate::shards::shard_holder::ShardKeyMapping;
 
 pub fn validate_transfer_exists(
     transfer_key: &ShardTransferKey,
@@ -83,6 +84,7 @@ pub fn validate_transfer(
     all_peers: &HashSet<PeerId>,
     shard_state: Option<&HashMap<PeerId, ReplicaState>>,
     current_transfers: &HashSet<ShardTransfer>,
+    shards_key_mapping: &ShardKeyMapping,
 ) -> CollectionResult<()> {
     let shard_state = if let Some(shard_state) = shard_state {
         shard_state
@@ -123,7 +125,21 @@ pub fn validate_transfer(
 
     if transfer.method == Some(ShardTransferMethod::ReshardingStreamRecords) {
         match transfer.to_shard_id {
-            Some(to_shard_id) if transfer.shard_id != to_shard_id => {}
+            Some(to_shard_id) if transfer.shard_id != to_shard_id => {
+                let source_shard_key = shards_key_mapping
+                    .iter()
+                    .find(|(_, shard_ids)| shard_ids.contains(&to_shard_id))
+                    .map(|(key, _)| key);
+                let target_shard_key = shards_key_mapping
+                    .iter()
+                    .find(|(_, shard_ids)| shard_ids.contains(&to_shard_id))
+                    .map(|(key, _)| key);
+                if source_shard_key != target_shard_key {
+                    return Err(CollectionError::bad_request(format!(
+                        "Source and target shard must have the same shard key, but they have {source_shard_key:?} and {target_shard_key:?}",
+                    )));
+                }
+            }
             Some(to_shard_id) => {
                 return Err(CollectionError::bad_request(format!(
                     "Source and target shard must be different for resharding transfer, both are {to_shard_id}",
