@@ -40,19 +40,17 @@ def update_collection(qdrant_host, collection_name, collection_json: dict):
 
 
 def wait_for_status(qdrant_host, collection_name, status: str):
-    counter = 0
     curr_status = ""
-    while counter < 30:
+    for i in range(30):
         resp = requests.get(
             f"{qdrant_host}/collections/{collection_name}")
-        counter += 1
         curr_status = resp.json()["result"]["status"]
         if resp.status_code != 200:
             print(f"Collection info fetching failed with response body:\n{resp.json()}")
             exit(-1)
         if curr_status == status:
             print(f"Status {status}: OK")
-            return
+            return "ok"
         sleep(1)
         print(f"Wait for status {status}")
     print(f"After 30s status is not {status}, found: {curr_status}. Stop waiting.")
@@ -105,7 +103,8 @@ def insert_points_and_search(qdrant_host, collection_name, points_amount):
     create_collection(qdrant_host, collection_name, collection_json)
     for points_batch in generate_points(points_amount):
         insert_points(qdrant_host, collection_name, points_batch)
-        search_point(qdrant_host, collection_name)
+
+    search_point(qdrant_host, collection_name)
 
 
 def insert_points_then_index(qdrant_host, collection_name, points_amount):
@@ -136,7 +135,6 @@ def insert_points_then_index(qdrant_host, collection_name, points_amount):
         res = insert_points(qdrant_host, collection_name, points_batch, quit_on_ood=True)
         if res == "ood":
             break
-        search_point(qdrant_host, collection_name)
 
     # start indexing
     collection_json = {
