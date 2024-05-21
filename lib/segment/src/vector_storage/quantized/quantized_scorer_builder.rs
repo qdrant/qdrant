@@ -144,7 +144,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
             }
             QueryVector::Recommend(reco_query) => {
                 let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
-                let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _, _, _>::new(
+                let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _, _>::new(
                     reco_query,
                     quantized_storage,
                     quantization_config,
@@ -154,7 +154,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
             QueryVector::Discovery(discovery_query) => {
                 let discovery_query: DiscoveryQuery<DenseVector> =
                     discovery_query.transform_into()?;
-                let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _, _, _>::new(
+                let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _, _>::new(
                     discovery_query,
                     quantized_storage,
                     quantization_config,
@@ -163,7 +163,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
             }
             QueryVector::Context(context_query) => {
                 let context_query: ContextQuery<DenseVector> = context_query.transform_into()?;
-                let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _, _, _>::new(
+                let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _, _>::new(
                     context_query,
                     quantized_storage,
                     quantization_config,
