@@ -1,5 +1,5 @@
 schemathesis~=3.24.3
-requests==2.31.0
+requests==2.32.0
 pytest==7.4.4
 pytest-timeout==2.2.0
 more-itertools==10.2.0
