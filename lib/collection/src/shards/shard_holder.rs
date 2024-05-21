@@ -165,6 +165,46 @@ impl ShardHolder {
         Ok(())
     }
 
+    pub async fn abort_resharding(
+        &mut self,
+        shard_id: ShardId,
+        peer_id: PeerId,
+        shard_key: Option<ShardKey>,
+    ) -> Result<(), CollectionError> {
+        if let Some(ring) = self.rings.get_mut(&shard_key) {
+            log::debug!("TODO");
+            ring.remove_resharding(shard_id);
+        } else {
+            log::warn!("TODO");
+        }
+
+        if let Some(shard) = self.get_shard(&shard_id) {
+            match shard.peer_state(&peer_id) {
+                Some(ReplicaState::Resharding) => {
+                    log::debug!("TODO");
+                    shard.remove_peer(peer_id).await?;
+                }
+
+                Some(state) => {
+                    log::error!("TODO");
+                }
+
+                None => {
+                    log::warn!("TODO");
+                }
+            }
+
+            if shard.peers().is_empty() {
+                log::debug!("TODO");
+                self.drop_and_remove_shard(shard_id).await?;
+            }
+        } else {
+            log::warn!("TODO");
+        }
+
+        Ok(())
+    }
+
     pub fn add_shard(
         &mut self,
         shard_id: ShardId,

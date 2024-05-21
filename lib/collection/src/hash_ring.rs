@@ -74,6 +74,46 @@ impl<T: Hash + Copy> HashRing<T> {
         new.add(shard);
     }
 
+    pub fn remove_resharding(&mut self, shard: T) {
+        let Self::Resharding { old, new } = self else {
+            log::warn!("TODO");
+            return;
+        };
+
+        let mut old = old.clone();
+        let mut new = new.clone();
+
+        let removed_from_old = old.remove(&shard);
+        let removed_from_new = new.remove(&shard);
+
+        match (removed_from_old, removed_from_new) {
+            (false, true) => {
+                log::debug!("TODO");
+            }
+
+            (false, false) => {
+                log::warn!("TODO");
+            }
+
+            (true, true) => {
+                log::error!("TODO");
+                return;
+            }
+
+            (true, false) => {
+                log::error!("TODO");
+                return;
+            }
+        }
+
+        if old.len() != new.len() {
+            log::warn!("TODO");
+            return;
+        }
+
+        *self = Self::Single(old);
+    }
+
     pub fn get<U: Hash>(&self, key: &U) -> ShardIds<T> {
         match self {
             Self::Single(ring) => ring.get(key).into_iter().cloned().collect(),

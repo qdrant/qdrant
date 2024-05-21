@@ -700,6 +700,41 @@ impl Collection {
         Ok(())
     }
 
+    pub async fn abort_resharding(
+        &self,
+        peer_id: PeerId,
+        shard_id: ShardId,
+        shard_key: Option<ShardKey>,
+    ) -> CollectionResult<()> {
+        let mut shard_holder = self.shards_holder.write().await;
+
+        if let Some(state) = self.resharding_state.read().deref() {
+            let is_in_progress = state.peer_id == peer_id
+                && state.shard_id == shard_id
+                && state.shard_key == shard_key;
+
+            if !is_in_progress {
+                return Err(CollectionError::bad_request(format!("TODO")));
+            }
+        } else {
+            log::warn!("resharding of collection {} is not in progress", self.id);
+        };
+
+        if shard_holder.get_shard(&shard_id).is_none() {
+            log::warn!("shard {shard_id} does not exist in collection {}", self.id);
+        }
+
+        shard_holder
+            .abort_resharding(shard_id, peer_id, shard_key.clone())
+            .await?;
+
+        self.resharding_state.write(|state| {
+            *state = None;
+        })?;
+
+        Ok(())
+    }
+
     pub async fn get_telemetry_data(&self, detail: TelemetryDetail) -> CollectionTelemetry {
         let (shards_telemetry, transfers) = {
             let mut shards_telemetry = Vec::new();

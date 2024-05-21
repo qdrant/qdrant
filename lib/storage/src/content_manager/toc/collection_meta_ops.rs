@@ -283,6 +283,16 @@ impl TableOfContent {
                     .start_resharding(peer_id, shard_id, shard_key)
                     .await?;
             }
+
+            ReshardingOperation::Abort {
+                peer_id,
+                shard_id,
+                shard_key,
+            } => {
+                collection
+                    .abort_resharding(peer_id, shard_id, shard_key)
+                    .await?;
+            }
         }
 
         Ok(())

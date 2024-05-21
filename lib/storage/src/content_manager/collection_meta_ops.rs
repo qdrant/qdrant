@@ -298,6 +298,12 @@ pub enum ReshardingOperation {
         shard_id: ShardId,
         shard_key: Option<ShardKey>,
     },
+
+    Abort {
+        peer_id: PeerId,
+        shard_id: ShardId,
+        shard_key: Option<ShardKey>,
+    },
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]
