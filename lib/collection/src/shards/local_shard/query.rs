@@ -32,7 +32,8 @@ impl LocalShard {
             )
             .await?;
 
-        let scrolls = todo!(); // TODO(universal-query): implement batch scrolling
+        // TODO(universal-query): implement batch scrolling
+        let scrolls = &vec![];
         let merged_results = self
             .recurse_prefetch(
                 &request.merge_plan,
@@ -104,9 +105,9 @@ impl LocalShard {
                 let top_rrf = rrf_scoring(sources, limit);
                 Ok(top_rrf)
             }
-            ScoringQuery::OrderBy(_) => {
+            ScoringQuery::OrderBy(o) => {
                 // TODO implement order by
-                todo!()
+                todo!("order by not implemented yet for {:?}", o)
             }
             ScoringQuery::Vector(query_enum) => {
                 // create batch search request for rescoring query

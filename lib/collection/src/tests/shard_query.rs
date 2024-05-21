@@ -57,7 +57,7 @@ async fn test_shard_query_rescoring() {
 
     let sources_scores = shard.query(Arc::new(query), &current_runtime).await;
     let expected_error =
-        CollectionError::bad_request("cannot make RRF without prefetches".to_string());
+        CollectionError::bad_request("cannot apply Fusion without prefetches".to_string());
     assert!(matches!(sources_scores, Err(err) if err == expected_error));
 
     // RFF query with prefetches
