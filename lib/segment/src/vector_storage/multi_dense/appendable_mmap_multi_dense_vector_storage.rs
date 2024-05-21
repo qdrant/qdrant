@@ -148,6 +148,13 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for AppendableMmapMultiDen
         }
     }
 
+    fn iterate_inner_vectors(&self) -> impl Iterator<Item = &[T]> + Clone + Send {
+        (0..self.total_vector_count()).flat_map(|key| {
+            let mmap_offset = self.offsets.get(key).unwrap().first().unwrap();
+            (0..mmap_offset.count).map(|i| self.vectors.get(mmap_offset.offset + i).unwrap())
+        })
+    }
+
     fn multi_vector_config(&self) -> &MultiVectorConfig {
         &self.multi_vector_config
     }
