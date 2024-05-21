@@ -1,7 +1,10 @@
 use std::sync::{Arc, Mutex};
 
+#[cfg(target_os = "linux")]
 use pyroscope::pyroscope::PyroscopeAgentRunning;
+#[cfg(target_os = "linux")]
 use pyroscope::PyroscopeAgent;
+#[cfg(target_os = "linux")]
 use pyroscope_pprofrs::{pprof_backend, PprofConfig};
 
 use crate::settings::{PyroscopeConfig, Settings};
@@ -14,6 +17,7 @@ pub struct PyroscopeState {
 }
 
 impl PyroscopeState {
+    #[cfg(target_os = "linux")]
     fn build_agent(config: &PyroscopeConfig) -> PyroscopeAgent<PyroscopeAgentRunning> {
         let pprof_config = PprofConfig::new().sample_rate(config.sampling_rate.unwrap_or(100));
         let backend_impl = pprof_backend(pprof_config);
@@ -32,6 +36,7 @@ impl PyroscopeState {
         agent.start().unwrap()
     }
 
+    #[cfg(target_os = "linux")]
     /// Update agent config and restart
     pub fn restart_agent(&self, config: &PyroscopeConfig) {
         let mut agent_guard = self.agent.lock().unwrap();
@@ -48,6 +53,9 @@ impl PyroscopeState {
         log::info!("Pyroscope agent started");
     }
 
+    #[cfg(not(target_os = "linux"))]
+    pub fn restart_agent(&self, _config: &PyroscopeConfig) {}
+
     #[cfg(target_os = "linux")]
     pub fn from_settings(settings: &Settings) -> Option<Self> {
         settings
@@ -63,11 +71,12 @@ impl PyroscopeState {
     }
 
     #[cfg(not(target_os = "linux"))]
-    pub fn from_settings(settings: &Settings) -> Option<Self> {
+    pub fn from_settings(_settings: &Settings) -> Option<Self> {
         None
     }
 }
 
+#[cfg(target_os = "linux")]
 impl Drop for PyroscopeState {
     fn drop(&mut self) {
         log::info!("Stopping pyroscope agent");

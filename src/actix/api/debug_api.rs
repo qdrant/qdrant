@@ -20,22 +20,23 @@ async fn get_debug_config(
     crate::actix::helpers::time(async move {
         access.check_global_access(AccessRequirements::new().manage())?;
 
+        let _ = state;
+
         #[cfg(target_os = "linux")]
-        {
-            match state.as_ref() {
-                Some(state) => {
-                    let config = state.config.lock().unwrap().clone();
-                    Ok(GetDebugConfigResponse {
-                        pyroscope: Some(config),
-                    })
+        let response = match state.as_ref() {
+            Some(state) => {
+                let config = state.config.lock().unwrap().clone();
+                GetDebugConfigResponse {
+                    pyroscope: Some(config),
                 }
-                None => Ok(GetDebugConfigResponse { pyroscope: None }),
             }
-        }
+            None => GetDebugConfigResponse { pyroscope: None },
+        };
+
         #[cfg(not(target_os = "linux"))]
-        {
-            Ok(GetDebugConfigResponse { pyroscope: None })
-        }
+        let response = GetDebugConfigResponse { pyroscope: None };
+
+        Ok(response)
     })
     .await
 }
@@ -43,21 +44,24 @@ async fn get_debug_config(
 #[post("/debug")]
 async fn update_debug_config(
     ActixAccess(access): ActixAccess,
-    state: web::Data<PyroscopeState>,
+    state: web::Data<Option<PyroscopeState>>,
     new_config: web::Json<PyroscopeConfig>,
 ) -> impl Responder {
     crate::actix::helpers::time(async move {
         access.check_global_access(AccessRequirements::new().manage())?;
-
         #[cfg(target_os = "linux")]
-        {
+        if let Some(state) = state.as_ref() {
             state.restart_agent(&new_config);
-            Ok(true)
+            return Ok(true);
         }
+
         #[cfg(not(target_os = "linux"))]
         {
-            Ok(false)
+            let _ = state; // Ignore new_config on non-linux OS
+            let _ = new_config;
         }
+
+        Ok(false)
     })
     .await
 }
