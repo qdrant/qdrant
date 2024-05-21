@@ -152,7 +152,7 @@ pub struct Settings {
     pub telemetry_disabled: bool,
     #[validate]
     pub tls: Option<TlsConfig>,
-    // #[serde(default)]
+    #[serde(default)]
     pub debug: DebugConfig,
     /// A list of messages for errors that happened during loading the configuration. We collect
     /// them and store them here while loading because then our logger is not configured yet.

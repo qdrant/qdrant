@@ -24,7 +24,7 @@ impl PyroscopeState {
         // TODO: Add more tags like peerId and peerUrl
         let agent = PyroscopeAgent::builder(config.url.to_string(), "qdrant".to_string())
             .backend(backend_impl)
-            .tags([("app", "Qdrant"), ("identifier", &config.identifier)].to_vec())
+            .tags(vec![("app", "Qdrant"), ("identifier", &config.identifier)])
             .build()
             .expect("Couldn't build pyroscope agent");
 
