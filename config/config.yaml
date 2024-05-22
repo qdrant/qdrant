@@ -161,6 +161,26 @@ storage:
   # More info: https://qdrant.tech/documentation/guides/distributed_deployment/#shard-transfer-method
   shard_transfer_method: null
 
+  # Default parameters for vectors.
+  vectors_config:
+    # Whether vectors should be stored in memory or on disk.
+    on_disk: false
+
+  # Default quantization configuration.
+  # More info: https://qdrant.tech/documentation/guides/quantization
+  quantization:
+    scalar:
+      # Which of scalar quantization to use
+      type: int8
+
+      # The quantile of the quantized vector components. The quantile is used to calculate the quantization bounds.
+      # For instance, if you specify 0.99 as the quantile, 1% of extreme values will be excluded from the quantization bounds.
+      quantile: 0.99
+
+      # Whether to store the quantized vectors in ram.
+      # `null` means quantized vectors are loaded in the same way as the original vectors.
+      always_ram: null
+
 service:
   # Maximum size of POST data in a single request in megabytes
   max_request_size_mb: 32

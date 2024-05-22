@@ -362,6 +362,13 @@ pub struct SearchParams {
     pub indexed_only: bool,
 }
 
+/// Configuration for vectors.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
+pub struct VectorsConfig {
+    #[serde(default)]
+    on_disk: bool,
+}
+
 /// Vector index configuration
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]

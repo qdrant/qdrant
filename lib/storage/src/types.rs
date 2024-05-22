@@ -15,7 +15,7 @@ use collection::shards::transfer::ShardTransferMethod;
 use memory::madvise;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
-use segment::types::{HnswConfig, QuantizationConfig};
+use segment::types::{HnswConfig, QuantizationConfig, VectorsConfig};
 use serde::{Deserialize, Serialize};
 use tonic::transport::Uri;
 use validator::Validate;
@@ -92,6 +92,8 @@ pub struct StorageConfig {
     /// Default method used for transferring shards.
     #[serde(default)]
     pub shard_transfer_method: Option<ShardTransferMethod>,
+    #[serde(default)]
+    pub vectors_config: Option<VectorsConfig>,
 }
 
 impl StorageConfig {
