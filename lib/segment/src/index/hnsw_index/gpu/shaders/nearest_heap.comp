@@ -6,11 +6,11 @@
 #endif
 
 #include "common.comp"
-#include "links.comp"
 
 layout(set = NEAREST_HEAP_LAYOUT_SET, binding = 0)
 readonly uniform NearestHeapParams {
     uint capacity;
+    uint ef;
 } nearest_heap_params;
 
 layout(set = NEAREST_HEAP_LAYOUT_SET, binding = 1)
@@ -28,6 +28,7 @@ uint nearest_smaller_index;
 uint nearest_count;
 
 #define NEAREST_HEAP_CAPACITY nearest_heap_params.capacity
+#define NEAREST_HEAP_EF nearest_heap_params.ef
 #define NEAREST_BUFFER_OFFSET (NEAREST_HEAP_CAPACITY * (gl_GlobalInvocationID.x / SUBGROUP_SIZE))
 
 void nearest_heap_init() {
@@ -45,7 +46,7 @@ void nearest_heap_init() {
 
 // Push the nearest `ScoredPoint`. Returns true if the `ScoredPoint` was added.
 bool push_nearest(ScoredPoint scored_point) {
-    if (nearest_count == EF) {
+    if (nearest_count == NEAREST_HEAP_EF) {
         if (scored_point.score > nearest_smaller_score) {
             uint buffer_offset = NEAREST_BUFFER_OFFSET;
             if (nearest_smaller_index % SUBGROUP_SIZE == SUBGROUP_INVOKATION_ID) {
@@ -99,7 +100,7 @@ void sort_nearest() {
     uint buffer_offset = NEAREST_BUFFER_OFFSET;
     uint capacity = NEAREST_HEAP_CAPACITY;
     uint other_invokation_id = SUBGROUP_INVOKATION_ID % 2 == 0 ? SUBGROUP_INVOKATION_ID + 1 : SUBGROUP_INVOKATION_ID - 1;
-    for (uint e = 0; e < EF; e++) {
+    for (uint e = 0; e < NEAREST_HEAP_EF; e++) {
         for (uint i = SUBGROUP_INVOKATION_ID; i < capacity; i += SUBGROUP_SIZE) {
             uint buffer_index = buffer_offset + i;
             float score = nearest_scores.data[buffer_index];

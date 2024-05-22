@@ -98,11 +98,9 @@ mod tests {
     use rand::{Rng, SeedableRng};
 
     use super::*;
-    use crate::index::hnsw_index::gpu::gpu_links::GpuLinks;
 
     #[test]
     fn test_gpu_nearest_heap() {
-        let m = 8;
         let ef = 100;
         let points_count = 100; // TODO: revert to 1024
         let groups_count = 2; // TODO: revert to 8
@@ -124,7 +122,6 @@ mod tests {
 
         let threads_count = device.subgroup_size() * groups_count;
         let mut context = gpu::Context::new(device.clone());
-        let gpu_links = GpuLinks::new(device.clone(), m, ef, m, points_count).unwrap();
         let gpu_nearest_heap = GpuNearestHeap::new(device.clone(), threads_count, ef).unwrap();
 
         let shader = Arc::new(gpu::Shader::new(
@@ -180,8 +177,7 @@ mod tests {
 
         let pipeline = gpu::Pipeline::builder()
             .add_descriptor_set_layout(0, descriptor_set_layout.clone())
-            .add_descriptor_set_layout(1, gpu_links.descriptor_set_layout.clone())
-            .add_descriptor_set_layout(2, gpu_nearest_heap.descriptor_set_layout.clone())
+            .add_descriptor_set_layout(1, gpu_nearest_heap.descriptor_set_layout.clone())
             .add_shader(shader.clone())
             .build(device.clone());
 
@@ -189,7 +185,6 @@ mod tests {
             pipeline,
             &[
                 descriptor_set.clone(),
-                gpu_links.descriptor_set.clone(),
                 gpu_nearest_heap.descriptor_set.clone(),
             ],
         );

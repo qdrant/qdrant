@@ -9,10 +9,7 @@
 #include "common.comp"
 layout(local_size_x = SUBGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 
-#define LINKS_LAYOUT_SET 1
-#include "links.comp"
-
-#define NEAREST_HEAP_LAYOUT_SET 2
+#define NEAREST_HEAP_LAYOUT_SET 1
 #include "nearest_heap.comp"
 
 // TODO: revert to 1024
@@ -51,10 +48,10 @@ void main() {
 
     sort_nearest();
     if (subgroupElect()) {
-        for (uint i = 0; i < EF; i++) {
-            sorted_output.data[idx * EF + i] = ScoredPoint(
-                nearest_indices.data[idx * EF + i],
-                nearest_scores.data[idx * EF + i]
+        for (uint i = 0; i < NEAREST_HEAP_EF; i++) {
+            sorted_output.data[idx * NEAREST_HEAP_EF + i] = ScoredPoint(
+                nearest_indices.data[idx * NEAREST_HEAP_EF + i],
+                nearest_scores.data[idx * NEAREST_HEAP_EF + i]
             );
         }
     }
