@@ -10,7 +10,6 @@
 //! 4. `QueryShardPoints`: to be used in the internal service. Created for RemoteShard, converts to and from ShardQueryRequest
 //! 5. `PlannedQuery`: an easier-to-execute representation. Created in LocalShard
 
+pub mod collection_query;
 pub mod planned_query;
 pub mod shard_query;
-
-// TODO(universal-query): Create `CollectionQueryRequest` struct
