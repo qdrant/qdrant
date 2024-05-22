@@ -45,13 +45,12 @@ pub async fn transfer_shard(
     temp_dir: &Path,
 ) -> CollectionResult<bool> {
     // The remote might target a different shard ID depending on the shard transfer type
-    let shard_id = transfer_config
-        .to_shard_id
-        .unwrap_or(transfer_config.shard_id);
+    let local_shard_id = transfer_config.shard_id;
+    let remote_shard_id = transfer_config.to_shard_id.unwrap_or(local_shard_id);
 
     // Initiate shard on a remote peer
     let remote_shard = RemoteShard::new(
-        shard_id,
+        remote_shard_id,
         collection_id.clone(),
         transfer_config.to,
         channel_service.clone(),
@@ -66,7 +65,7 @@ pub async fn transfer_shard(
             transfer_stream_records(
                 shard_holder.clone(),
                 progress,
-                shard_id,
+                local_shard_id,
                 remote_shard,
                 collection_name,
             )
@@ -78,7 +77,7 @@ pub async fn transfer_shard(
             transfer_resharding_stream_records(
                 shard_holder.clone(),
                 progress,
-                shard_id,
+                local_shard_id,
                 remote_shard,
                 collection_name,
             )
@@ -91,7 +90,7 @@ pub async fn transfer_shard(
                 transfer_config,
                 shard_holder,
                 progress,
-                shard_id,
+                local_shard_id,
                 remote_shard,
                 channel_service,
                 consensus,
@@ -108,7 +107,7 @@ pub async fn transfer_shard(
                 transfer_config.clone(),
                 shard_holder,
                 progress,
-                shard_id,
+                local_shard_id,
                 remote_shard,
                 channel_service,
                 consensus,
