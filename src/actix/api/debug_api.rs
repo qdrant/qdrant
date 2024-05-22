@@ -1,16 +1,9 @@
 use actix_web::{get, post, web, Responder};
-use schemars::JsonSchema;
-use serde::Serialize;
 use storage::rbac::AccessRequirements;
 
 use crate::actix::auth::ActixAccess;
+use crate::common::debug::{DebugConfig, PyroscopeConfig};
 use crate::common::pyroscope_state::PyroscopeState;
-use crate::settings::PyroscopeConfig;
-
-#[derive(Serialize, JsonSchema)]
-pub struct GetDebugConfigResponse {
-    pub pyroscope: Option<PyroscopeConfig>,
-}
 
 #[get("/debug")]
 async fn get_debug_config(
@@ -26,15 +19,15 @@ async fn get_debug_config(
         let response = match state.as_ref() {
             Some(state) => {
                 let config = state.config.lock().unwrap().clone();
-                GetDebugConfigResponse {
+                DebugConfig {
                     pyroscope: Some(config),
                 }
             }
-            None => GetDebugConfigResponse { pyroscope: None },
+            None => DebugConfig { pyroscope: None },
         };
 
         #[cfg(not(target_os = "linux"))]
-        let response = GetDebugConfigResponse { pyroscope: None };
+        let response = DebugConfig { pyroscope: None };
 
         Ok(response)
     })

@@ -5,11 +5,11 @@ use api::grpc::transport_channel_pool::{
 };
 use collection::operations::validation;
 use config::{Config, ConfigError, Environment, File, FileFormat, Source};
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use storage::types::StorageConfig;
 use validator::Validate;
 
+use crate::common::debug::DebugConfig;
 use crate::tracing;
 
 const DEFAULT_CONFIG: &str = include_str!("../config/config.yaml");
@@ -119,20 +119,6 @@ pub struct TlsConfig {
     #[serde(default = "default_tls_cert_ttl")]
     #[validate(range(min = 1))]
     pub cert_ttl: Option<u64>,
-}
-
-#[derive(Serialize, JsonSchema, Debug, Deserialize, Clone)]
-pub struct PyroscopeConfig {
-    pub url: String,
-    pub identifier: String,
-    pub user: Option<String>,
-    pub password: Option<String>,
-    pub sampling_rate: Option<u32>,
-}
-
-#[derive(Default, Debug, Deserialize, Clone)]
-pub struct DebugConfig {
-    pub pyroscope: Option<PyroscopeConfig>,
 }
 
 #[derive(Debug, Deserialize, Clone, Validate)]

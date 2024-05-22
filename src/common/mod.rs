@@ -23,4 +23,6 @@ pub mod auth;
 
 pub mod strings;
 
+pub mod debug;
+
 pub mod pyroscope_state;

@@ -7,7 +7,8 @@ use pyroscope::PyroscopeAgent;
 #[cfg(target_os = "linux")]
 use pyroscope_pprofrs::{pprof_backend, PprofConfig};
 
-use crate::settings::{PyroscopeConfig, Settings};
+use crate::common::debug::PyroscopeConfig;
+use crate::settings::Settings;
 
 #[derive(Clone)]
 pub struct PyroscopeState {
@@ -52,9 +53,6 @@ impl PyroscopeState {
 
         log::info!("Pyroscope agent started");
     }
-
-    #[cfg(not(target_os = "linux"))]
-    pub fn restart_agent(&self, _config: &PyroscopeConfig) {}
 
     #[cfg(target_os = "linux")]
     pub fn from_settings(settings: &Settings) -> Option<Self> {
