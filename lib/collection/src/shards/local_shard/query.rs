@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -11,9 +11,7 @@ use tokio::runtime::Handle;
 
 use super::LocalShard;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
-use crate::operations::types::{
-    CollectionResult, CoreSearchRequest, CoreSearchRequestBatch, Record,
-};
+use crate::operations::types::{CollectionResult, CoreSearchRequest, CoreSearchRequestBatch};
 use crate::operations::universal_query::planned_query::{
     MergePlan, PlannedQuery, PrefetchSource, ResultsMerge,
 };
@@ -48,12 +46,12 @@ impl LocalShard {
 
         // fetch payload and/or vector for scored points if necessary
         if request.with_payload.is_required() || request.with_vector.is_enabled() {
-            // ids to retrieve
-            let mut point_ids_set = HashSet::new();
-            for scored_point in scored_points.iter().flatten() {
-                point_ids_set.insert(scored_point.id);
-            }
-            let point_ids: Vec<_> = point_ids_set.into_iter().collect();
+            // ids to retrieve (deduplication happens in the searcher)
+            let point_ids = scored_points
+                .iter()
+                .flatten()
+                .map(|scored_point| scored_point.id)
+                .collect::<Vec<PointIdType>>();
 
             // it might make sense to change this approach to fetch payload and vector at the collection level
             // after the shard results merge, but it requires careful benchmarking
@@ -64,25 +62,10 @@ impl LocalShard {
                 &request.with_vector,
             )?;
 
-            // map records by id for cheap lookup
-            let records_by_id: HashMap<PointIdType, Record> = records
-                .into_iter()
-                .map(|record| (record.id, record))
-                .collect();
-
             // update scored points in place
-            for scored_point in scored_points.iter_mut().flatten() {
-                if let Some(record) = records_by_id.get(&scored_point.id) {
-                    scored_point.payload.clone_from(&record.payload);
-                    scored_point.vector.clone_from(&record.vector);
-                } else {
-                    // this should not happen
-                    debug_assert!(
-                        false,
-                        "record not found for scored point id: {:?}",
-                        scored_point.id
-                    );
-                }
+            for (scored_point, record) in scored_points.iter_mut().flatten().zip(records.iter()) {
+                scored_point.payload.clone_from(&record.payload);
+                scored_point.vector.clone_from(&record.vector);
             }
         }
 

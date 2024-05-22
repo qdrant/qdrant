@@ -99,7 +99,7 @@ async fn test_shard_query_rrf_rescoring() {
     // so the number of results is not limited by the outer limit at the shard level
     // the first source returned all its inner results
     assert_eq!(sources_scores[0].len(), inner_limit);
-    // no payload/vector were requests
+    // no payload/vector were requested
     sources_scores[0].iter().for_each(|scored_point| {
         assert_eq!(scored_point.vector, None);
         assert_eq!(scored_point.payload, None);
@@ -319,7 +319,7 @@ async fn test_shard_query_payload_vector() {
     assert_eq!(sources_scores.len(), 1);
     // number of results is limited by the outer limit for rescoring
     assert_eq!(sources_scores[0].len(), outer_limit);
-    // payload/vector were requests
+    // payload/vector were requested
     sources_scores[0].iter().for_each(|scored_point| {
         assert!(scored_point.vector.is_some());
         assert!(scored_point.payload.is_some());
