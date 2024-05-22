@@ -42,10 +42,41 @@ pub struct PerformanceConfig {
     pub incoming_shard_transfers_limit: Option<usize>,
     #[serde(default = "default_io_shard_transfers_limit")]
     pub outgoing_shard_transfers_limit: Option<usize>,
+    #[serde(default)]
+    pub resource_availability_metrics: Option<ResourceUtilizabilityMetrics>,
 }
 
 const fn default_io_shard_transfers_limit() -> Option<usize> {
     DEFAULT_IO_SHARD_TRANSFER_LIMIT
+}
+
+/// Represents the percentage of resource availability, indicating how well-equipped the
+/// current node is to handle I/O-bound or CPU-bound tasks.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct ResourceUtilizabilityMetrics {
+    /// Factor of availability for the node to perform a CPU-bound task, like indexing or upserting.
+    /// This is a percent value:
+    /// 0% - Prevent the node from doing any task that requires a lot of CPU power if there is another node
+    /// that could perform this task better.
+    /// 100% - Prefer this node over other nodes with less CPU availability.
+    #[serde(default = "default_cpu_utilization_ratio")]
+    pub cpu_utilization_ratio: usize,
+
+    /// Factor of availability for the node to perform an I/O-bound task, like searching.
+    /// This is a percent value:
+    /// 0% - Prevent the node from doing any I/O-bound task at all if there is another node
+    /// that could perform this task better.
+    /// 100% - Prefer this node over other nodes for I/O bound tasks.
+    #[serde(default = "default_io_utilization_ratio")]
+    pub io_utilization_ratio: usize,
+}
+
+const fn default_io_utilization_ratio() -> usize {
+    50
+}
+
+const fn default_cpu_utilization_ratio() -> usize {
+    50
 }
 
 /// Global configuration of the storage, loaded on the service launch, default stored in ./config
