@@ -335,6 +335,12 @@ impl SegmentsSearcher {
         Ok(top_scores)
     }
 
+    /// Retrieve records for the given points ids from the segments
+    /// - if payload is enabled, payload will be fetched
+    /// - if vector is enabled, vector will be fetched
+    ///
+    /// The points ids can contain duplicates, the records will be fetched only once
+    /// and returned in the same order as the input points.
     pub fn retrieve(
         segments: &RwLock<SegmentHolder>,
         points: &[PointIdType],
