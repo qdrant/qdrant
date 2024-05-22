@@ -1,104 +1,13 @@
 use std::sync::Arc;
 
 use common::cpu::CpuBudget;
-use segment::data_types::vectors::VectorStruct;
-use segment::types::{Distance, PayloadFieldSchema, PayloadSchemaType};
 use tempfile::Builder;
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 
-use crate::config::{CollectionConfig, CollectionParams, WalConfig};
-use crate::operations::point_ops::{PointOperations, PointStruct};
-use crate::operations::types::VectorsConfig;
-use crate::operations::vector_params_builder::VectorParamsBuilder;
-use crate::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
-use crate::tests::snapshot_test::TEST_OPTIMIZERS_CONFIG;
-
-fn create_collection_config() -> CollectionConfig {
-    let wal_config = WalConfig {
-        wal_capacity_mb: 1,
-        wal_segments_ahead: 0,
-    };
-
-    let collection_params = CollectionParams {
-        vectors: VectorsConfig::Single(VectorParamsBuilder::new(4, Distance::Dot).build()),
-        ..CollectionParams::empty()
-    };
-
-    let mut optimizer_config = TEST_OPTIMIZERS_CONFIG.clone();
-
-    optimizer_config.default_segment_number = 1;
-    optimizer_config.flush_interval_sec = 0;
-
-    CollectionConfig {
-        params: collection_params,
-        optimizer_config,
-        wal_config,
-        hnsw_config: Default::default(),
-        quantization_config: Default::default(),
-    }
-}
-
-fn upsert_operation() -> CollectionUpdateOperations {
-    CollectionUpdateOperations::PointOperation(
-        vec![
-            PointStruct {
-                id: 1.into(),
-                vector: VectorStruct::from(vec![1.0, 2.0, 3.0, 4.0]).into(),
-                payload: Some(
-                    serde_json::from_str(r#"{ "location": { "lat": 10.12, "lon": 32.12  } }"#).unwrap(),
-                ),
-            },
-            PointStruct {
-                id: 2.into(),
-                vector: VectorStruct::from(vec![2.0, 1.0, 3.0, 4.0]).into(),
-                payload: Some(
-                    serde_json::from_str(r#"{ "location": { "lat": 11.12, "lon": 34.82  } }"#).unwrap(),
-                ),
-            },
-            PointStruct {
-                id: 3.into(),
-                vector: VectorStruct::from(vec![3.0, 2.0, 1.0, 4.0]).into(),
-                payload: Some(
-                    serde_json::from_str(r#"{ "location": [ { "lat": 12.12, "lon": 34.82  }, { "lat": 12.2, "lon": 12.82  }] }"#).unwrap(),
-                ),
-            },
-            PointStruct {
-                id: 4.into(),
-                vector: VectorStruct::from(vec![4.0, 2.0, 3.0, 1.0]).into(),
-                payload: Some(
-                    serde_json::from_str(r#"{ "location": { "lat": 13.12, "lon": 34.82  } }"#).unwrap(),
-                ),
-            },
-            PointStruct {
-                id: 5.into(),
-                vector: VectorStruct::from(vec![5.0, 2.0, 3.0, 4.0]).into(),
-                payload: Some(
-                    serde_json::from_str(r#"{ "location": { "lat": 14.12, "lon": 32.12  } }"#).unwrap(),
-                ),
-            },
-
-        ]
-        .into(),
-    )
-}
-
-fn create_payload_index_operation() -> CollectionUpdateOperations {
-    CollectionUpdateOperations::FieldIndexOperation(FieldIndexOperations::CreateIndex(
-        CreateIndex {
-            field_name: "location".parse().unwrap(),
-            field_schema: Some(PayloadFieldSchema::FieldType(PayloadSchemaType::Geo)),
-        },
-    ))
-}
-
-fn delete_point_operation(idx: u64) -> CollectionUpdateOperations {
-    CollectionUpdateOperations::PointOperation(PointOperations::DeletePoints {
-        ids: vec![idx.into()],
-    })
-}
+use crate::tests::fixtures::*;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_delete_from_indexed_payload() {

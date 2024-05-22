@@ -867,7 +867,7 @@ pub struct CountResult {
     pub count: usize,
 }
 
-#[derive(Error, Debug, Clone)]
+#[derive(Error, Debug, Clone, PartialEq)]
 #[error("{0}")]
 pub enum CollectionError {
     #[error("Wrong input: {description}")]

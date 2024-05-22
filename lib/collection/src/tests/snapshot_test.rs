@@ -11,21 +11,10 @@ use crate::config::{CollectionConfig, CollectionParams, WalConfig};
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{NodeType, VectorsConfig};
 use crate::operations::vector_params_builder::VectorParamsBuilder;
-use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::collection_shard_distribution::CollectionShardDistribution;
 use crate::shards::replica_set::{AbortShardTransfer, ChangePeerState};
-
-pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
-    deleted_threshold: 0.9,
-    vacuum_min_vector_number: 1000,
-    default_segment_number: 2,
-    max_segment_size: None,
-    memmap_threshold: None,
-    indexing_threshold: Some(50_000),
-    flush_interval_sec: 30,
-    max_optimization_threads: Some(2),
-};
+use crate::tests::fixtures::TEST_OPTIMIZERS_CONFIG;
 
 pub fn dummy_on_replica_failure() -> ChangePeerState {
     Arc::new(move |_peer_id, _shard_id| {})
