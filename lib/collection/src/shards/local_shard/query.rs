@@ -49,13 +49,11 @@ impl LocalShard {
         // fetch payload and/or vector for scored points if necessary
         if request.with_payload.is_required() || request.with_vector.is_enabled() {
             // ids to retrieve
-            let mut point_ids = Vec::new();
+            let mut point_ids_set = HashSet::new();
             for scored_point in scored_points.iter().flatten() {
-                point_ids.push(scored_point.id);
+                point_ids_set.insert(scored_point.id);
             }
-            // remove duplicates
-            point_ids.sort_unstable();
-            point_ids.dedup();
+            let point_ids: Vec<_> = point_ids_set.into_iter().collect();
 
             // it might make sense to change this approach to fetch payload and vector at the collection level
             // after the shard results merge, but it requires careful benchmarking
