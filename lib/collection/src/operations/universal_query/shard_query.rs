@@ -1,10 +1,12 @@
 use api::grpc::qdrant as grpc;
 use common::types::ScoreType;
 use itertools::Itertools;
+use schemars::JsonSchema;
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{NamedQuery, NamedVectorStruct, Vector, DEFAULT_VECTOR_NAME};
 use segment::types::{Filter, ScoredPoint, SearchParams, WithPayloadInterface, WithVector};
 use segment::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery};
+use serde::{Deserialize, Serialize};
 use tonic::Status;
 
 use crate::operations::query_enum::QueryEnum;
@@ -32,7 +34,8 @@ pub struct ShardQueryRequest {
     pub with_payload: WithPayloadInterface,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged, rename_all = "snake_case")]
 pub enum Fusion {
     Rrf,
 }

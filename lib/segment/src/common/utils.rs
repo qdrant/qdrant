@@ -474,13 +474,16 @@ pub fn transpose_map_into_named_vector<TVector: Into<Vector>>(
 /// Use via `#[serde(with = "MaybeOneOrMany")]` and `#[schemars(with="MaybeOneOrMany<T>")]` field attributes
 pub struct MaybeOneOrMany<T>(pub Option<Vec<T>>);
 
-impl<'de, T: Serialize + Deserialize<'de>> MaybeOneOrMany<T> {
+impl<T: Serialize> MaybeOneOrMany<T> {
     pub fn serialize<S>(value: &Option<Vec<T>>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
         value.serialize(serializer)
     }
+}
+
+impl<'de, T: Deserialize<'de>> MaybeOneOrMany<T> {
     pub fn deserialize<D>(deserializer: D) -> Result<Option<Vec<T>>, D::Error>
     where
         D: serde::Deserializer<'de>,

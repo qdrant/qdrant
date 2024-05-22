@@ -12,4 +12,5 @@
 
 pub mod collection_query;
 pub mod planned_query;
+pub mod rest;
 pub mod shard_query;
