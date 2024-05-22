@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use futures::stream::FuturesUnordered;
@@ -414,7 +415,13 @@ impl Collection {
             });
             future::try_join_all(retrieve_futures).await?
         };
-        let points = all_shard_collection_results.into_iter().flatten().collect();
+        let mut covered_point_ids = HashSet::new();
+        let points = all_shard_collection_results
+            .into_iter()
+            .flatten()
+            // Add each point only once, deduplicate point IDs
+            .filter(|point| covered_point_ids.insert(point.id))
+            .collect();
         Ok(points)
     }
 }
