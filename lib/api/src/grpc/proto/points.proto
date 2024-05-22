@@ -564,7 +564,7 @@ enum UpdateStatus {
   ClockRejected = 3; // Internal: update is rejected due to an outdated clock
 }
 
-message OrderedValue {
+message OrderValue {
   oneof variant {
     int64 int = 1;
     double float = 2;
@@ -579,7 +579,7 @@ message ScoredPoint {
   uint64 version = 5; // Last update operation applied to this point
   optional Vectors vectors = 6; // Vectors to search
   optional ShardKey shard_key = 7; // Shard key
-  optional OrderedValue order_value = 8; // Order by value
+  optional OrderValue order_value = 8; // Order by value
 }
 
 message GroupId {

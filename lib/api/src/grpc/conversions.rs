@@ -15,7 +15,7 @@ use uuid::Uuid;
 use super::qdrant::raw_query::RawContextPair;
 use super::qdrant::{
     raw_query, start_from, BinaryQuantization, CompressionRatio, DatetimeRange, Direction,
-    GeoLineString, GroupId, MultiVectorComparator, MultiVectorConfig, OrderBy, OrderedValue, Range,
+    GeoLineString, GroupId, MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue, Range,
     RawVector, SparseIndices, StartFrom,
 };
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
@@ -571,15 +571,15 @@ impl From<segment_vectors::VectorStruct> for Vectors {
     }
 }
 
-impl From<segment::data_types::order_by::OrderedValue> for OrderedValue {
-    fn from(value: segment::data_types::order_by::OrderedValue) -> Self {
+impl From<segment::data_types::order_by::OrderValue> for OrderValue {
+    fn from(value: segment::data_types::order_by::OrderValue) -> Self {
         use segment::data_types::order_by as segment;
 
-        use crate::grpc::qdrant::ordered_value::Variant;
+        use crate::grpc::qdrant::order_value::Variant;
 
         let variant = match value {
-            segment::OrderedValue::Float(value) => Variant::Float(value),
-            segment::OrderedValue::Int(value) => Variant::Int(value),
+            segment::OrderValue::Float(value) => Variant::Float(value),
+            segment::OrderValue::Int(value) => Variant::Int(value),
         };
 
         Self {
@@ -588,21 +588,21 @@ impl From<segment::data_types::order_by::OrderedValue> for OrderedValue {
     }
 }
 
-impl TryFrom<OrderedValue> for segment::data_types::order_by::OrderedValue {
+impl TryFrom<OrderValue> for segment::data_types::order_by::OrderValue {
     type Error = Status;
 
-    fn try_from(value: OrderedValue) -> Result<Self, Self::Error> {
+    fn try_from(value: OrderValue) -> Result<Self, Self::Error> {
         use segment::data_types::order_by as segment;
 
-        use crate::grpc::qdrant::ordered_value::Variant;
+        use crate::grpc::qdrant::order_value::Variant;
 
         let variant = value.variant.ok_or_else(|| {
             Status::invalid_argument("OrderedValue should have a variant".to_string())
         })?;
 
         let value = match variant {
-            Variant::Float(value) => segment::OrderedValue::Float(value),
-            Variant::Int(value) => segment::OrderedValue::Int(value),
+            Variant::Float(value) => segment::OrderValue::Float(value),
+            Variant::Int(value) => segment::OrderValue::Int(value),
         };
 
         Ok(value)

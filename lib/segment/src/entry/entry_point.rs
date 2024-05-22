@@ -5,7 +5,7 @@ use common::types::TelemetryDetail;
 
 use crate::common::operation_error::{OperationResult, SegmentFailedState};
 use crate::data_types::named_vectors::NamedVectors;
-use crate::data_types::order_by::{OrderBy, OrderedValue};
+use crate::data_types::order_by::{OrderBy, OrderValue};
 use crate::data_types::query_context::{QueryContext, SegmentQueryContext};
 use crate::data_types::vectors::{QueryVector, Vector};
 use crate::index::field_index::CardinalityEstimation;
@@ -124,7 +124,7 @@ pub trait SegmentEntry {
         limit: Option<usize>,
         filter: Option<&'a Filter>,
         order_by: &'a OrderBy,
-    ) -> OperationResult<Vec<(OrderedValue, PointIdType)>>;
+    ) -> OperationResult<Vec<(OrderValue, PointIdType)>>;
 
     /// Read points in [from; to) range
     fn read_range(&self, from: Option<PointIdType>, to: Option<PointIdType>) -> Vec<PointIdType>;

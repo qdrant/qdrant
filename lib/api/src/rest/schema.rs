@@ -90,7 +90,7 @@ pub struct ScoredPoint {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shard_key: Option<segment::types::ShardKey>,
     /// Order-by value
-    pub order_value: Option<segment::data_types::order_by::OrderedValue>,
+    pub order_value: Option<segment::data_types::order_by::OrderValue>,
 }
 
 /// Point data

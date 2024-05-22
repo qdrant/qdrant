@@ -8,7 +8,7 @@ use super::map_index::MapIndex;
 use super::numeric_index::StreamRange;
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
-use crate::data_types::order_by::OrderedValue;
+use crate::data_types::order_by::OrderValue;
 use crate::index::field_index::binary_index::BinaryIndex;
 use crate::index::field_index::full_text_index::text_index::FullTextIndex;
 use crate::index::field_index::geo_index::GeoMapIndex;
@@ -357,21 +357,21 @@ pub enum NumericFieldIndex<'a> {
     FloatIndex(&'a NumericIndex<FloatPayloadType>),
 }
 
-impl<'a> StreamRange<OrderedValue> for NumericFieldIndex<'a> {
+impl<'a> StreamRange<OrderValue> for NumericFieldIndex<'a> {
     fn stream_range(
         &self,
         range: &RangeInterface,
-    ) -> Box<dyn DoubleEndedIterator<Item = (OrderedValue, PointOffsetType)> + 'a> {
+    ) -> Box<dyn DoubleEndedIterator<Item = (OrderValue, PointOffsetType)> + 'a> {
         match self {
             NumericFieldIndex::IntIndex(index) => Box::new(
                 index
                     .stream_range(range)
-                    .map(|(v, p)| (OrderedValue::from(v), p)),
+                    .map(|(v, p)| (OrderValue::from(v), p)),
             ),
             NumericFieldIndex::FloatIndex(index) => Box::new(
                 index
                     .stream_range(range)
-                    .map(|(v, p)| (OrderedValue::from(v), p)),
+                    .map(|(v, p)| (OrderValue::from(v), p)),
             ),
         }
     }
@@ -381,7 +381,7 @@ impl<'a> NumericFieldIndex<'a> {
     pub fn get_ordering_values(
         &self,
         idx: PointOffsetType,
-    ) -> Box<dyn Iterator<Item = OrderedValue> + 'a> {
+    ) -> Box<dyn Iterator<Item = OrderValue> + 'a> {
         match self {
             NumericFieldIndex::IntIndex(index) => Box::new(
                 index
@@ -389,7 +389,7 @@ impl<'a> NumericFieldIndex<'a> {
                     .into_iter()
                     .flatten()
                     .copied()
-                    .map(OrderedValue::Int),
+                    .map(OrderValue::Int),
             ),
             NumericFieldIndex::FloatIndex(index) => Box::new(
                 index
@@ -397,7 +397,7 @@ impl<'a> NumericFieldIndex<'a> {
                     .into_iter()
                     .flatten()
                     .copied()
-                    .map(OrderedValue::Float),
+                    .map(OrderValue::Float),
             ),
         }
     }

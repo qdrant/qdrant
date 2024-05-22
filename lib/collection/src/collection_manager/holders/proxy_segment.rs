@@ -8,7 +8,7 @@ use common::types::{PointOffsetType, TelemetryDetail};
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::common::operation_error::{OperationResult, SegmentFailedState};
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::order_by::OrderedValue;
+use segment::data_types::order_by::OrderValue;
 use segment::data_types::query_context::{QueryContext, SegmentQueryContext};
 use segment::data_types::vectors::{QueryVector, Vector};
 use segment::entry::entry_point::SegmentEntry;
@@ -636,7 +636,7 @@ impl SegmentEntry for ProxySegment {
         limit: Option<usize>,
         filter: Option<&'a Filter>,
         order_by: &'a segment::data_types::order_by::OrderBy,
-    ) -> OperationResult<Vec<(OrderedValue, PointIdType)>> {
+    ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
         let deleted_points = self.deleted_points.read();
         let mut read_points = if deleted_points.is_empty() {
             self.wrapped_segment
