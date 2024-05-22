@@ -219,8 +219,14 @@ pub struct ScoredPoint {
 impl Eq for ScoredPoint {}
 
 impl Ord for ScoredPoint {
+    /// Compare two scored points by score, unless they have `order_value`, in that case compare by `order_value`.
     fn cmp(&self, other: &Self) -> Ordering {
-        OrderedFloat(self.score).cmp(&OrderedFloat(other.score))
+        match (&self.order_value, &other.order_value) {
+            (None, None) => OrderedFloat(self.score).cmp(&OrderedFloat(other.score)),
+            (Some(_), None) => Ordering::Greater,
+            (None, Some(_)) => Ordering::Less,
+            (Some(self_order), Some(other_order)) => self_order.cmp(other_order),
+        }
     }
 }
 
