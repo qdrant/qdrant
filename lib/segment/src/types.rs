@@ -25,6 +25,7 @@ use validator::{Validate, ValidationError, ValidationErrors};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::{self, MaybeOneOrMany, MultiValue};
 use crate::data_types::integer_index::IntegerIndexParams;
+use crate::data_types::order_by::OrderValue;
 use crate::data_types::text_index::TextIndexParams;
 use crate::data_types::vectors::{VectorElementType, VectorStruct};
 use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
@@ -211,13 +212,21 @@ pub struct ScoredPoint {
     pub vector: Option<VectorStruct>,
     /// Shard Key
     pub shard_key: Option<ShardKey>,
+    /// Order-by value
+    pub order_value: Option<OrderValue>,
 }
 
 impl Eq for ScoredPoint {}
 
 impl Ord for ScoredPoint {
+    /// Compare two scored points by score, unless they have `order_value`, in that case compare by `order_value`.
     fn cmp(&self, other: &Self) -> Ordering {
-        OrderedFloat(self.score).cmp(&OrderedFloat(other.score))
+        match (&self.order_value, &other.order_value) {
+            (None, None) => OrderedFloat(self.score).cmp(&OrderedFloat(other.score)),
+            (Some(_), None) => Ordering::Greater,
+            (None, Some(_)) => Ordering::Less,
+            (Some(self_order), Some(other_order)) => self_order.cmp(other_order),
+        }
     }
 }
 

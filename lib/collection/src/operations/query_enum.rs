@@ -12,6 +12,16 @@ impl QueryEnum {
         }
     }
 
+    /// Only when the distance is the scoring, this will return true.
+    pub fn is_distance_scored(&self) -> bool {
+        match self {
+            QueryEnum::Nearest(_) => true,
+            QueryEnum::RecommendBestScore(_) | QueryEnum::Discover(_) | QueryEnum::Context(_) => {
+                false
+            }
+        }
+    }
+
     pub fn iterate_sparse(&self, mut f: impl FnMut(&str, &SparseVector)) {
         match self {
             QueryEnum::Nearest(vector) => match vector {

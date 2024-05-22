@@ -13,7 +13,6 @@ use tokio::time::Instant;
 use super::Collection;
 use crate::events::SlowQueryEvent;
 use crate::operations::consistency_params::ReadConsistency;
-use crate::operations::query_enum::QueryEnum;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::*;
 
@@ -247,16 +246,14 @@ impl Collection {
             .into_iter()
             .zip(request.searches.iter())
             .map(|(res, request)| {
-                let order = match &request.query {
-                    QueryEnum::Nearest(_) => collection_params
+                let order = if request.query.is_distance_scored() {
+                    collection_params
                         .get_distance(request.query.get_vector_name())?
-                        .distance_order(),
-
+                        .distance_order()
+                } else {
                     // Score comes from special handling of the distances in a way that it doesn't
                     // directly represent distance anymore, so the order is always `LargeBetter`
-                    QueryEnum::Discover(_)
-                    | QueryEnum::Context(_)
-                    | QueryEnum::RecommendBestScore(_) => Order::LargeBetter,
+                    Order::LargeBetter
                 };
 
                 let mut top_res = match order {
