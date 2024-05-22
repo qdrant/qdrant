@@ -25,19 +25,17 @@ impl LocalShard {
         timeout: Option<Duration>,
     ) -> CollectionResult<ShardQueryResponse> {
         let core_results = self
-            .do_search(
-                Arc::clone(&request.searches),
-                search_runtime_handle,
-                timeout,
-            )
+            .do_search(request.searches, search_runtime_handle, timeout)
             .await?;
 
-        // TODO(universal-query): implement batch scrolling
-        let scrolls = &vec![];
+        let scrolls = self
+            .query_scroll_batch(request.scrolls, search_runtime_handle)
+            .await?;
+
         self.recurse_prefetch(
             &request.merge_plan,
             &core_results,
-            scrolls,
+            &scrolls,
             search_runtime_handle,
             timeout,
             0, // initial depth
