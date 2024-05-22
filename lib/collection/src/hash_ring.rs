@@ -90,14 +90,15 @@ impl<T: Hash + Copy> HashRing<T> {
             //     .collect(),
         }
     }
-}
 
-impl<T: Hash + Copy + PartialEq> HashRing<T> {
     /// Check whether the given point has moved according to this hashring
     ///
     /// Returns true if this is a resharding hashring in which both hashrings place the given point
     /// ID in a different shard.
-    pub fn has_moved<U: Hash>(&self, key: &U) -> bool {
+    pub fn has_moved<U: Hash>(&self, key: &U) -> bool
+    where
+        T: PartialEq,
+    {
         match self {
             Self::Single(_) => false,
             Self::Resharding { old, new } => old.get(key) != new.get(key),
