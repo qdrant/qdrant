@@ -168,18 +168,7 @@ storage:
 
   # Default quantization configuration.
   # More info: https://qdrant.tech/documentation/guides/quantization
-  quantization:
-    scalar:
-      # Which of scalar quantization to use
-      type: int8
-
-      # The quantile of the quantized vector components. The quantile is used to calculate the quantization bounds.
-      # For instance, if you specify 0.99 as the quantile, 1% of extreme values will be excluded from the quantization bounds.
-      quantile: 0.99
-
-      # Whether to store the quantized vectors in ram.
-      # `null` means quantized vectors are loaded in the same way as the original vectors.
-      always_ram: null
+  quantization: null
 
 service:
   # Maximum size of POST data in a single request in megabytes
@@ -260,6 +249,12 @@ cluster:
     # tick period may create significant network and CPU overhead.
     # We encourage you NOT to change this parameter unless you know what you are doing.
     tick_period_ms: 100
+
+    # Number of replicas of each shard that network tries to maintain
+    replication_factor: 1
+
+    # How many replicas should apply the operation for us to consider it successful
+    write_consistency_factor: 1
 
 
 # Set to true to prevent service from sending usage statistics to the developers.

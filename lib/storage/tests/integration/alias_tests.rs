@@ -67,6 +67,7 @@ fn test_alias_operation() {
         update_concurrency: Some(NonZeroUsize::new(2).unwrap()),
         // update_concurrency: None,
         shard_transfer_method: None,
+        vectors_config: None,
     };
 
     let search_runtime = Runtime::new().unwrap();
