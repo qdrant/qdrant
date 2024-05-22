@@ -100,10 +100,9 @@ async fn test_shard_query_rrf_rescoring() {
     // the first source returned all its inner results
     assert_eq!(sources_scores[0].len(), inner_limit);
     // no payload/vector were requests
-    sources_scores[0].iter().all(|scored_point| {
+    sources_scores[0].iter().for_each(|scored_point| {
         assert_eq!(scored_point.vector, None);
         assert_eq!(scored_point.payload, None);
-        true
     });
 
     // RRF query with two prefetches
@@ -321,9 +320,8 @@ async fn test_shard_query_payload_vector() {
     // number of results is limited by the outer limit for rescoring
     assert_eq!(sources_scores[0].len(), outer_limit);
     // payload/vector were requests
-    sources_scores[0].iter().all(|scored_point| {
+    sources_scores[0].iter().for_each(|scored_point| {
         assert!(scored_point.vector.is_some());
         assert!(scored_point.payload.is_some());
-        true
     });
 }
