@@ -11,6 +11,7 @@ use crate::operations::types::{
     ScrollRequestInternal,
 };
 
+#[derive(Debug)]
 pub struct PlannedQuery {
     pub merge_plan: MergePlan,
     pub searches: Arc<CoreSearchRequestBatch>,
@@ -29,7 +30,7 @@ pub struct ResultsMerge {
     /// Use this filter
     pub filter: Option<Filter>,
 
-    /// Keep this much points from the top
+    /// Keep this many points from the top
     pub limit: usize,
 
     /// Keep only points with better score than this threshold

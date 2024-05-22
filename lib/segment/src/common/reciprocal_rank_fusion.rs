@@ -22,7 +22,6 @@ fn position_score(position: usize) -> f32 {
 ///
 /// The output is a single sorted list of ScoredPoint.
 /// Does not break ties.
-#[allow(dead_code)] // TODO remove when used
 pub fn rrf_scoring(responses: Vec<Vec<ScoredPoint>>, limit: usize) -> Vec<ScoredPoint> {
     // track scored points by id
     let mut points_by_id: HashMap<ExtendedPointId, ScoredPoint> = HashMap::new();
