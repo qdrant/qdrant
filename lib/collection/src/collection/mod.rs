@@ -433,7 +433,7 @@ impl Collection {
         let shard = shard_holder_read.get_shard(&shard_id);
         let Some(replica_set) = shard else {
             return Err(CollectionError::NotFound {
-                what: "Shard {shard_id}".into(),
+                what: format!("Shard {shard_id}"),
             });
         };
 
