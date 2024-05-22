@@ -75,7 +75,7 @@ impl<T: Hash + Copy> HashRing<T> {
         new.add(shard);
     }
 
-    pub fn remove_resharding(&mut self, shard: T)
+    pub fn remove_resharding(&mut self, shard: T) -> bool
     where
         T: fmt::Display,
     {
@@ -85,7 +85,7 @@ impl<T: Hash + Copy> HashRing<T> {
                  but hashring is not in resharding mode"
             );
 
-            return;
+            return false;
         };
 
         let mut old = old.clone();
@@ -94,8 +94,8 @@ impl<T: Hash + Copy> HashRing<T> {
         let removed_from_old = old.remove(&shard);
         let removed_from_new = new.remove(&shard);
 
-        match (removed_from_old, removed_from_new) {
-            (false, true) => (),
+        let removed_resharding = match (removed_from_old, removed_from_new) {
+            (false, true) => true,
 
             (true, true) => {
                 log::error!(
@@ -103,7 +103,7 @@ impl<T: Hash + Copy> HashRing<T> {
                      but {shard} is not resharding shard"
                 );
 
-                return;
+                false
             }
 
             (true, false) => {
@@ -112,7 +112,7 @@ impl<T: Hash + Copy> HashRing<T> {
                      but shard {shard} only exists in the old hashring"
                 );
 
-                return;
+                false
             }
 
             (false, false) => {
@@ -121,10 +121,11 @@ impl<T: Hash + Copy> HashRing<T> {
                      but shard {shard} does not exist in the hashring"
                 );
 
-                // TODO(resharding): `return` here?
+                false
             }
-        }
+        };
 
+        // TODO(resharding): Improve old/new hashrings equality check!?
         if old.len() == new.len() {
             log::debug!(
                 "switching hashring into single mode, \
@@ -133,6 +134,8 @@ impl<T: Hash + Copy> HashRing<T> {
 
             *self = Self::Single(old);
         }
+
+        removed_resharding
     }
 
     pub fn get<U: Hash>(&self, key: &U) -> ShardIds<T> {

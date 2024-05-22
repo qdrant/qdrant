@@ -170,10 +170,13 @@ impl ShardHolder {
         shard_id: ShardId,
         peer_id: PeerId,
         shard_key: Option<ShardKey>,
+        is_in_progress: bool,
     ) -> Result<(), CollectionError> {
+        let mut removed_resharding = false;
+
         if let Some(ring) = self.rings.get_mut(&shard_key) {
             log::debug!("removing peer {peer_id} from {shard_key:?} hashring");
-            ring.remove_resharding(shard_id);
+            removed_resharding = ring.remove_resharding(shard_id);
         } else {
             log::warn!(
                 "aborting resharding of shard {shard_id} ({peer_id}/{shard_key:?}), \
@@ -185,6 +188,11 @@ impl ShardHolder {
             match shard.peer_state(&peer_id) {
                 Some(ReplicaState::Resharding) => {
                     log::debug!("removing peer {peer_id} from {shard_id} replica set");
+                    shard.remove_peer(peer_id).await?;
+                }
+
+                Some(ReplicaState::Dead) if is_in_progress || removed_resharding => {
+                    log::debug!("removing dead peer {peer_id} from {shard_id} replica set");
                     shard.remove_peer(peer_id).await?;
                 }
 
