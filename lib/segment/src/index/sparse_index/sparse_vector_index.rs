@@ -184,11 +184,13 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     /// Warning: the cost of this function grows with the number of dimensions in the query vector
     #[cfg(feature = "testing")]
     pub fn max_result_count(&self, query_vector: &SparseVector) -> usize {
+        use sparse::index::posting_list_common::PostingListIter as _;
+
         let mut unique_record_ids = std::collections::HashSet::new();
         for dim_id in query_vector.indices.iter() {
             if let Some(dim_id) = self.indices_tracker.remap_index(*dim_id) {
-                if let Some(posting_list) = self.inverted_index.get(&dim_id) {
-                    for element in posting_list.elements.iter() {
+                if let Some(posting_list_iter) = self.inverted_index.get(&dim_id) {
+                    for element in posting_list_iter.into_std_iter() {
                         unique_record_ids.insert(element.record_id);
                     }
                 }

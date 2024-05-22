@@ -2,17 +2,23 @@ use std::path::{Path, PathBuf};
 
 use common::types::PointOffsetType;
 
+use super::posting_list_common::PostingListIter;
 use crate::common::sparse_vector::RemappedSparseVector;
 use crate::common::types::DimOffset;
 use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
-use crate::index::posting_list::PostingListIterator;
 
+pub mod inverted_index_compressed_immutable_ram;
+pub mod inverted_index_compressed_mmap;
 pub mod inverted_index_immutable_ram;
 pub mod inverted_index_mmap;
 pub mod inverted_index_ram;
 pub mod inverted_index_ram_builder;
 
 pub trait InvertedIndex: Sized {
+    type Iter<'a>: PostingListIter + Clone
+    where
+        Self: 'a;
+
     /// Open existing index based on path
     fn open(path: &Path) -> std::io::Result<Self>;
 
@@ -20,7 +26,7 @@ pub trait InvertedIndex: Sized {
     fn save(&self, path: &Path) -> std::io::Result<()>;
 
     /// Get posting list for dimension id
-    fn get(&self, id: &DimOffset) -> Option<PostingListIterator>;
+    fn get(&self, id: &DimOffset) -> Option<Self::Iter<'_>>;
 
     /// Get number of posting lists
     fn len(&self) -> usize;
