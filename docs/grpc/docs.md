@@ -114,6 +114,8 @@
     - [ClearPayloadPoints](#qdrant-ClearPayloadPoints)
     - [Condition](#qdrant-Condition)
     - [ContextExamplePair](#qdrant-ContextExamplePair)
+    - [ContextInput](#qdrant-ContextInput)
+    - [ContextPairInput](#qdrant-ContextPairInput)
     - [CountPoints](#qdrant-CountPoints)
     - [CountResponse](#qdrant-CountResponse)
     - [CountResult](#qdrant-CountResult)
@@ -126,6 +128,7 @@
     - [DenseVector](#qdrant-DenseVector)
     - [DiscoverBatchPoints](#qdrant-DiscoverBatchPoints)
     - [DiscoverBatchResponse](#qdrant-DiscoverBatchResponse)
+    - [DiscoverInput](#qdrant-DiscoverInput)
     - [DiscoverPoints](#qdrant-DiscoverPoints)
     - [DiscoverResponse](#qdrant-DiscoverResponse)
     - [FieldCondition](#qdrant-FieldCondition)
@@ -172,12 +175,16 @@
     - [PointsUpdateOperation.SetPayload](#qdrant-PointsUpdateOperation-SetPayload)
     - [PointsUpdateOperation.SetPayload.PayloadEntry](#qdrant-PointsUpdateOperation-SetPayload-PayloadEntry)
     - [PointsUpdateOperation.UpdateVectors](#qdrant-PointsUpdateOperation-UpdateVectors)
+    - [PrefetchQuery](#qdrant-PrefetchQuery)
     - [QuantizationSearchParams](#qdrant-QuantizationSearchParams)
+    - [Query](#qdrant-Query)
+    - [QueryPoints](#qdrant-QueryPoints)
     - [Range](#qdrant-Range)
     - [ReadConsistency](#qdrant-ReadConsistency)
     - [RecommendBatchPoints](#qdrant-RecommendBatchPoints)
     - [RecommendBatchResponse](#qdrant-RecommendBatchResponse)
     - [RecommendGroupsResponse](#qdrant-RecommendGroupsResponse)
+    - [RecommendInput](#qdrant-RecommendInput)
     - [RecommendPointGroups](#qdrant-RecommendPointGroups)
     - [RecommendPoints](#qdrant-RecommendPoints)
     - [RecommendResponse](#qdrant-RecommendResponse)
@@ -221,6 +228,7 @@
   
     - [Direction](#qdrant-Direction)
     - [FieldType](#qdrant-FieldType)
+    - [Fusion](#qdrant-Fusion)
     - [ReadConsistencyType](#qdrant-ReadConsistencyType)
     - [RecommendStrategy](#qdrant-RecommendStrategy)
     - [UpdateStatus](#qdrant-UpdateStatus)
@@ -1965,6 +1973,37 @@ The JSON representation for `Value` is a JSON value.
 
 
 
+<a name="qdrant-ContextInput"></a>
+
+### ContextInput
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| context_pairs | [ContextPairInput](#qdrant-ContextPairInput) | repeated | Search space will be constrained by these pairs of vectors |
+
+
+
+
+
+
+<a name="qdrant-ContextPairInput"></a>
+
+### ContextPairInput
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| positive | [VectorInput](#qdrant-VectorInput) |  | A positive vector |
+| negative | [VectorInput](#qdrant-VectorInput) |  | Repel from this vector |
+
+
+
+
+
+
 <a name="qdrant-CountPoints"></a>
 
 ### CountPoints
@@ -1973,7 +2012,7 @@ The JSON representation for `Value` is a JSON value.
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| collection_name | [string](#string) |  | name of the collection |
+| collection_name | [string](#string) |  | Name of the collection |
 | filter | [Filter](#qdrant-Filter) |  | Filter conditions - return only those points that satisfy the specified conditions |
 | exact | [bool](#bool) | optional | If `true` - return exact count, if `false` - return approximate count |
 | read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees |
@@ -2173,6 +2212,22 @@ The JSON representation for `Value` is a JSON value.
 | ----- | ---- | ----- | ----------- |
 | result | [BatchResult](#qdrant-BatchResult) | repeated |  |
 | time | [double](#double) |  | Time spent to process |
+
+
+
+
+
+
+<a name="qdrant-DiscoverInput"></a>
+
+### DiscoverInput
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| target | [VectorInput](#qdrant-VectorInput) |  | Use this as the primary search objective |
+| context_pairs | [ContextPairInput](#qdrant-ContextPairInput) | repeated | Search space will be constrained by these pairs of vectors |
 
 
 
@@ -2955,6 +3010,26 @@ Additionally, the first and last points of each GeoLineString must be the same.
 
 
 
+<a name="qdrant-PrefetchQuery"></a>
+
+### PrefetchQuery
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| prefetch | [PrefetchQuery](#qdrant-PrefetchQuery) | repeated | Sub-requests to perform first. If present, the query will be performed on the results of the prefetches. |
+| query | [Query](#qdrant-Query) | optional | Query to perform. If missing, returns points ordered by their IDs. |
+| using | [string](#string) | optional | Define which vector to use for querying. If missing, the default vector is is used. |
+| filter | [Filter](#qdrant-Filter) | optional | Filter conditions - return only those points that satisfy the specified conditions. |
+| search_params | [SearchParams](#qdrant-SearchParams) | optional | Search params for when there is no prefetch. |
+| limit | [uint64](#uint64) | optional | Max number of points. Default is 10 |
+
+
+
+
+
+
 <a name="qdrant-QuantizationSearchParams"></a>
 
 ### QuantizationSearchParams
@@ -2970,6 +3045,52 @@ Additionally, the first and last points of each GeoLineString must be the same.
 Defines how many extra vectors should be pre-selected using quantized index, and then re-scored using original vectors.
 
 For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will be pre-selected using quantized index, and then top-100 will be returned after re-scoring. |
+
+
+
+
+
+
+<a name="qdrant-Query"></a>
+
+### Query
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| nearest | [VectorInput](#qdrant-VectorInput) |  | Find the nearest neighbors to this vector. |
+| recommend | [RecommendInput](#qdrant-RecommendInput) |  | Use multiple positive and negative vectors to find the results. |
+| discover | [DiscoverInput](#qdrant-DiscoverInput) |  | Search for nearest points, but constrain the search space with context |
+| context | [ContextInput](#qdrant-ContextInput) |  | Return points that live in positive areas. |
+| order_by | [OrderBy](#qdrant-OrderBy) |  | Order the points by a payload field. |
+| fusion | [Fusion](#qdrant-Fusion) |  | Fuse the results of multiple prefetches. |
+
+
+
+
+
+
+<a name="qdrant-QueryPoints"></a>
+
+### QueryPoints
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| collection_name | [string](#string) |  | Name of the collection |
+| prefetch | [PrefetchQuery](#qdrant-PrefetchQuery) | repeated | Sub-requests to perform first. If present, the query will be performed on the results of the prefetches. |
+| query | [Query](#qdrant-Query) | optional | Query to perform. If missing, returns points ordered by their IDs. |
+| using | [string](#string) | optional | Define which vector to use for querying. If missing, the default vector is used. |
+| filter | [Filter](#qdrant-Filter) | optional | Filter conditions - return only those points that satisfy the specified conditions. |
+| search_params | [SearchParams](#qdrant-SearchParams) | optional | Search params for when there is no prefetch. |
+| limit | [uint64](#uint64) | optional | Max number of points. Default is 10. |
+| offset | [uint64](#uint64) | optional | Offset of the result. Skip this many points. Default is 0. |
+| with_vectors | [WithVectorsSelector](#qdrant-WithVectorsSelector) | optional | Options for specifying which vectors to include into the response. |
+| with_payload | [WithPayloadSelector](#qdrant-WithPayloadSelector) | optional | Options for specifying which payload to include or not. |
+| read_consistency | [ReadConsistency](#qdrant-ReadConsistency) | optional | Options for specifying read consistency guarantees. |
+| shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Specify in which shards to look for the points, if not specified - look in all shards. |
 
 
 
@@ -3054,6 +3175,23 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | ----- | ---- | ----- | ----------- |
 | result | [GroupsResult](#qdrant-GroupsResult) |  |  |
 | time | [double](#double) |  | Time spent to process |
+
+
+
+
+
+
+<a name="qdrant-RecommendInput"></a>
+
+### RecommendInput
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| positive | [VectorInput](#qdrant-VectorInput) | repeated | Look for vectors closest to the vectors from these points |
+| negative | [VectorInput](#qdrant-VectorInput) | repeated | Try to avoid vectors like the vector from these points |
+| strategy | [RecommendStrategy](#qdrant-RecommendStrategy) | optional | How to use the provided vectors to find the results |
 
 
 
@@ -3824,6 +3962,17 @@ Vector type to be used in queries. Ids will be substituted with their correspond
 | FieldTypeText | 4 |  |
 | FieldTypeBool | 5 |  |
 | FieldTypeDatetime | 6 |  |
+
+
+
+<a name="qdrant-Fusion"></a>
+
+### Fusion
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| RRF | 0 | Reciprocal Rank Fusion |
 
 
 

@@ -475,11 +475,70 @@ message DiscoverBatchPoints {
 }
 
 message CountPoints {
-  string collection_name = 1; // name of the collection
+  string collection_name = 1; // Name of the collection
   Filter filter = 2; // Filter conditions - return only those points that satisfy the specified conditions
   optional bool exact = 3; // If `true` - return exact count, if `false` - return approximate count
   optional ReadConsistency read_consistency = 4; // Options for specifying read consistency guarantees
   optional ShardKeySelector shard_key_selector = 5; // Specify in which shards to look for the points, if not specified - look in all shards
+}
+
+message RecommendInput {
+  repeated VectorInput positive = 1; // Look for vectors closest to the vectors from these points
+  repeated VectorInput negative = 2; // Try to avoid vectors like the vector from these points
+  optional RecommendStrategy strategy = 3; // How to use the provided vectors to find the results
+}
+
+message ContextPairInput {
+  VectorInput positive = 1; // A positive vector
+  VectorInput negative = 2; // Repel from this vector
+}
+
+message DiscoverInput {
+  VectorInput target = 1; // Use this as the primary search objective
+  repeated ContextPairInput context_pairs = 2; // Search space will be constrained by these pairs of vectors
+}
+
+message ContextInput {
+  repeated ContextPairInput context_pairs = 1; // Search space will be constrained by these pairs of vectors
+}
+
+enum Fusion {
+    RRF = 0; // Reciprocal Rank Fusion
+}
+
+message Query {
+  oneof variant {
+    VectorInput nearest = 1; // Find the nearest neighbors to this vector.
+    RecommendInput recommend = 2; // Use multiple positive and negative vectors to find the results.
+    DiscoverInput discover = 3; // Search for nearest points, but constrain the search space with context
+    ContextInput context = 4; // Return points that live in positive areas.
+    OrderBy order_by = 5; // Order the points by a payload field.
+    Fusion fusion = 6; // Fuse the results of multiple prefetches.
+  }
+}
+
+message PrefetchQuery {
+  repeated PrefetchQuery prefetch = 1; // Sub-requests to perform first. If present, the query will be performed on the results of the prefetches.
+  optional Query query = 2; // Query to perform. If missing, returns points ordered by their IDs.
+  optional string using = 3; // Define which vector to use for querying. If missing, the default vector is is used.
+  optional Filter filter = 4; // Filter conditions - return only those points that satisfy the specified conditions.
+  optional SearchParams search_params = 5; // Search params for when there is no prefetch.
+  optional uint64 limit = 6; // Max number of points. Default is 10
+}
+
+message QueryPoints {
+  string collection_name = 1; // Name of the collection
+  repeated PrefetchQuery prefetch = 2; // Sub-requests to perform first. If present, the query will be performed on the results of the prefetches.
+  optional Query query = 3; // Query to perform. If missing, returns points ordered by their IDs.
+  optional string using = 4; // Define which vector to use for querying. If missing, the default vector is used.
+  optional Filter filter = 5; // Filter conditions - return only those points that satisfy the specified conditions.
+  optional SearchParams search_params = 6; // Search params for when there is no prefetch.
+  optional uint64 limit = 7; // Max number of points. Default is 10.
+  optional uint64 offset = 8; // Offset of the result. Skip this many points. Default is 0.
+  optional WithVectorsSelector with_vectors = 9; // Options for specifying which vectors to include into the response.
+  optional WithPayloadSelector with_payload = 10; // Options for specifying which payload to include or not.
+  optional ReadConsistency read_consistency = 11; // Options for specifying read consistency guarantees.
+  optional ShardKeySelector shard_key_selector = 12; // Specify in which shards to look for the points, if not specified - look in all shards.
 }
 
 message PointsUpdateOperation {

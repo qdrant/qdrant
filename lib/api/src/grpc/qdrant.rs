@@ -4706,7 +4706,7 @@ pub struct DiscoverBatchPoints {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CountPoints {
-    /// name of the collection
+    /// Name of the collection
     #[prost(string, tag = "1")]
     #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
@@ -4722,6 +4722,147 @@ pub struct CountPoints {
     pub read_consistency: ::core::option::Option<ReadConsistency>,
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[prost(message, optional, tag = "5")]
+    pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RecommendInput {
+    /// Look for vectors closest to the vectors from these points
+    #[prost(message, repeated, tag = "1")]
+    pub positive: ::prost::alloc::vec::Vec<VectorInput>,
+    /// Try to avoid vectors like the vector from these points
+    #[prost(message, repeated, tag = "2")]
+    pub negative: ::prost::alloc::vec::Vec<VectorInput>,
+    /// How to use the provided vectors to find the results
+    #[prost(enumeration = "RecommendStrategy", optional, tag = "3")]
+    pub strategy: ::core::option::Option<i32>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ContextPairInput {
+    /// A positive vector
+    #[prost(message, optional, tag = "1")]
+    pub positive: ::core::option::Option<VectorInput>,
+    /// Repel from this vector
+    #[prost(message, optional, tag = "2")]
+    pub negative: ::core::option::Option<VectorInput>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DiscoverInput {
+    /// Use this as the primary search objective
+    #[prost(message, optional, tag = "1")]
+    pub target: ::core::option::Option<VectorInput>,
+    /// Search space will be constrained by these pairs of vectors
+    #[prost(message, repeated, tag = "2")]
+    pub context_pairs: ::prost::alloc::vec::Vec<ContextPairInput>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ContextInput {
+    /// Search space will be constrained by these pairs of vectors
+    #[prost(message, repeated, tag = "1")]
+    pub context_pairs: ::prost::alloc::vec::Vec<ContextPairInput>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Query {
+    #[prost(oneof = "query::Variant", tags = "1, 2, 3, 4, 5, 6")]
+    pub variant: ::core::option::Option<query::Variant>,
+}
+/// Nested message and enum types in `Query`.
+pub mod query {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Variant {
+        /// Find the nearest neighbors to this vector.
+        #[prost(message, tag = "1")]
+        Nearest(super::VectorInput),
+        /// Use multiple positive and negative vectors to find the results.
+        #[prost(message, tag = "2")]
+        Recommend(super::RecommendInput),
+        /// Search for nearest points, but constrain the search space with context
+        #[prost(message, tag = "3")]
+        Discover(super::DiscoverInput),
+        /// Return points that live in positive areas.
+        #[prost(message, tag = "4")]
+        Context(super::ContextInput),
+        /// Order the points by a payload field.
+        #[prost(message, tag = "5")]
+        OrderBy(super::OrderBy),
+        /// Fuse the results of multiple prefetches.
+        #[prost(enumeration = "super::Fusion", tag = "6")]
+        Fusion(i32),
+    }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PrefetchQuery {
+    /// Sub-requests to perform first. If present, the query will be performed on the results of the prefetches.
+    #[prost(message, repeated, tag = "1")]
+    pub prefetch: ::prost::alloc::vec::Vec<PrefetchQuery>,
+    /// Query to perform. If missing, returns points ordered by their IDs.
+    #[prost(message, optional, tag = "2")]
+    pub query: ::core::option::Option<Query>,
+    /// Define which vector to use for querying. If missing, the default vector is is used.
+    #[prost(string, optional, tag = "3")]
+    pub using: ::core::option::Option<::prost::alloc::string::String>,
+    /// Filter conditions - return only those points that satisfy the specified conditions.
+    #[prost(message, optional, tag = "4")]
+    pub filter: ::core::option::Option<Filter>,
+    /// Search params for when there is no prefetch.
+    #[prost(message, optional, tag = "5")]
+    pub search_params: ::core::option::Option<SearchParams>,
+    /// Max number of points. Default is 10
+    #[prost(uint64, optional, tag = "6")]
+    pub limit: ::core::option::Option<u64>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct QueryPoints {
+    /// Name of the collection
+    #[prost(string, tag = "1")]
+    pub collection_name: ::prost::alloc::string::String,
+    /// Sub-requests to perform first. If present, the query will be performed on the results of the prefetches.
+    #[prost(message, repeated, tag = "2")]
+    pub prefetch: ::prost::alloc::vec::Vec<PrefetchQuery>,
+    /// Query to perform. If missing, returns points ordered by their IDs.
+    #[prost(message, optional, tag = "3")]
+    pub query: ::core::option::Option<Query>,
+    /// Define which vector to use for querying. If missing, the default vector is used.
+    #[prost(string, optional, tag = "4")]
+    pub using: ::core::option::Option<::prost::alloc::string::String>,
+    /// Filter conditions - return only those points that satisfy the specified conditions.
+    #[prost(message, optional, tag = "5")]
+    pub filter: ::core::option::Option<Filter>,
+    /// Search params for when there is no prefetch.
+    #[prost(message, optional, tag = "6")]
+    pub search_params: ::core::option::Option<SearchParams>,
+    /// Max number of points. Default is 10.
+    #[prost(uint64, optional, tag = "7")]
+    pub limit: ::core::option::Option<u64>,
+    /// Offset of the result. Skip this many points. Default is 0.
+    #[prost(uint64, optional, tag = "8")]
+    pub offset: ::core::option::Option<u64>,
+    /// Options for specifying which vectors to include into the response.
+    #[prost(message, optional, tag = "9")]
+    pub with_vectors: ::core::option::Option<WithVectorsSelector>,
+    /// Options for specifying which payload to include or not.
+    #[prost(message, optional, tag = "10")]
+    pub with_payload: ::core::option::Option<WithPayloadSelector>,
+    /// Options for specifying read consistency guarantees.
+    #[prost(message, optional, tag = "11")]
+    pub read_consistency: ::core::option::Option<ReadConsistency>,
+    /// Specify in which shards to look for the points, if not specified - look in all shards.
+    #[prost(message, optional, tag = "12")]
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
 #[derive(serde::Serialize)]
@@ -5631,6 +5772,31 @@ impl RecommendStrategy {
         match value {
             "AverageVector" => Some(Self::AverageVector),
             "BestScore" => Some(Self::BestScore),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum Fusion {
+    /// Reciprocal Rank Fusion
+    Rrf = 0,
+}
+impl Fusion {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Fusion::Rrf => "RRF",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "RRF" => Some(Self::Rrf),
             _ => None,
         }
     }
@@ -8210,31 +8376,6 @@ pub struct QueryResponse {
     /// Time spent to process
     #[prost(double, tag = "2")]
     pub time: f64,
-}
-#[derive(serde::Serialize)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum Fusion {
-    /// Reciprocal Rank Fusion
-    Rrf = 0,
-}
-impl Fusion {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Fusion::Rrf => "RRF",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "RRF" => Some(Self::Rrf),
-            _ => None,
-        }
-    }
 }
 /// Generated client implementations.
 pub mod points_internal_client {
