@@ -743,12 +743,12 @@ impl Collection {
             );
         }
 
-        // TODO: Contextualize errors? 🤔
+        // TODO(resharding): Contextualize errors? 🤔
         shard_holder
             .abort_resharding(shard_id, peer_id, shard_key.clone(), is_in_progress)
             .await?;
 
-        // TODO: Contextualize errors? 🤔
+        // TODO(resharding): Contextualize errors? 🤔
         self.resharding_state.write(|state| {
             *state = None;
         })?;
