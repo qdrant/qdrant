@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -6,11 +6,14 @@ use futures::future::BoxFuture;
 use futures::FutureExt;
 use itertools::Itertools as _;
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
-use segment::types::{Filter, HasIdCondition, ScoredPoint};
+use segment::types::{Filter, HasIdCondition, PointIdType, ScoredPoint, WithPayload};
 use tokio::runtime::Handle;
 
 use super::LocalShard;
-use crate::operations::types::{CollectionResult, CoreSearchRequest, CoreSearchRequestBatch};
+use crate::collection_manager::segments_searcher::SegmentsSearcher;
+use crate::operations::types::{
+    CollectionResult, CoreSearchRequest, CoreSearchRequestBatch, Record,
+};
 use crate::operations::universal_query::planned_query::{
     MergePlan, PlannedQuery, PrefetchSource, ResultsMerge,
 };
@@ -32,15 +35,60 @@ impl LocalShard {
             .query_scroll_batch(request.scrolls, search_runtime_handle)
             .await?;
 
-        self.recurse_prefetch(
-            &request.merge_plan,
-            &core_results,
-            &scrolls,
-            search_runtime_handle,
-            timeout,
-            0, // initial depth
-        )
-        .await
+        let mut scored_points = self
+            .recurse_prefetch(
+                &request.merge_plan,
+                &core_results,
+                &scrolls,
+                search_runtime_handle,
+                timeout,
+                0, // initial depth
+            )
+            .await?;
+
+        // fetch payload and/or vector for scored points if necessary
+        if request.with_payload.is_required() || request.with_vector.is_enabled() {
+            // ids to retrieve
+            let mut point_ids = Vec::new();
+            for scored_point in scored_points.iter().flatten() {
+                point_ids.push(scored_point.id);
+            }
+            // remove duplicates
+            point_ids.sort_unstable();
+            point_ids.dedup();
+
+            // it might make sense to change this approach to fetch payload and vector at the collection level
+            // after the shard results merge, but it requires careful benchmarking
+            let records = SegmentsSearcher::retrieve(
+                self.segments(),
+                &point_ids,
+                &WithPayload::from(&request.with_payload),
+                &request.with_vector,
+            )?;
+
+            // map records by id for cheap lookup
+            let records_by_id: HashMap<PointIdType, Record> = records
+                .into_iter()
+                .map(|record| (record.id, record))
+                .collect();
+
+            // update scored points in place
+            for scored_point in scored_points.iter_mut().flatten() {
+                if let Some(record) = records_by_id.get(&scored_point.id) {
+                    scored_point.payload.clone_from(&record.payload);
+                    scored_point.vector.clone_from(&record.vector);
+                } else {
+                    // this should not happen
+                    debug_assert!(
+                        false,
+                        "record not found for scored point id: {:?}",
+                        scored_point.id
+                    );
+                }
+            }
+        }
+
+        Ok(scored_points)
     }
 
     fn recurse_prefetch<'shard, 'query>(
