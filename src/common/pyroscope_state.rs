@@ -1,89 +1,89 @@
-use std::sync::{Arc, Mutex};
-
 #[cfg(target_os = "linux")]
-use pyroscope::pyroscope::PyroscopeAgentRunning;
-#[cfg(target_os = "linux")]
-use pyroscope::PyroscopeAgent;
-#[cfg(target_os = "linux")]
-use pyroscope_pprofrs::{pprof_backend, PprofConfig};
+pub mod pyro {
+    use std::sync::{Arc, Mutex};
 
-use crate::common::debug::PyroscopeConfig;
-use crate::settings::Settings;
+    use pyroscope::pyroscope::PyroscopeAgentRunning;
+    use pyroscope::PyroscopeAgent;
+    use pyroscope_pprofrs::{pprof_backend, PprofConfig};
 
-#[derive(Clone)]
-pub struct PyroscopeState {
-    pub config: Arc<Mutex<PyroscopeConfig>>,
-    #[cfg(target_os = "linux")]
-    pub agent: Arc<Mutex<Option<PyroscopeAgent<PyroscopeAgentRunning>>>>,
-}
+    use crate::common::debug::PyroscopeConfig;
+    use crate::settings::Settings;
 
-impl PyroscopeState {
-    #[cfg(target_os = "linux")]
-    fn build_agent(config: &PyroscopeConfig) -> PyroscopeAgent<PyroscopeAgentRunning> {
-        let pprof_config = PprofConfig::new().sample_rate(config.sampling_rate.unwrap_or(100));
-        let backend_impl = pprof_backend(pprof_config);
-
-        log::info!(
-            "Starting pyroscope agent with identifier {}",
-            &config.identifier
-        );
-        // TODO: Add more tags like peerId and peerUrl
-        let agent = PyroscopeAgent::builder(config.url.to_string(), "qdrant".to_string())
-            .backend(backend_impl)
-            .tags(vec![("app", "Qdrant"), ("identifier", &config.identifier)])
-            .build()
-            .expect("Couldn't build pyroscope agent");
-
-        agent.start().unwrap()
+    #[derive(Clone)]
+    pub struct PyroscopeState {
+        pub config: PyroscopeConfig,
+        #[cfg(target_os = "linux")]
+        pub agent: Arc<Mutex<Option<PyroscopeAgent<PyroscopeAgentRunning>>>>,
     }
 
-    #[cfg(target_os = "linux")]
-    /// Update agent config and restart
-    pub fn restart_agent(&self, config: &PyroscopeConfig) {
-        let mut agent_guard = self.agent.lock().unwrap();
-        if let Some(running_agent) = agent_guard.take() {
-            let ready_agent = running_agent.stop().unwrap();
-            ready_agent.shutdown();
+    impl PyroscopeState {
+        fn build_agent(config: &PyroscopeConfig) -> PyroscopeAgent<PyroscopeAgentRunning> {
+            let pprof_config = PprofConfig::new().sample_rate(config.sampling_rate.unwrap_or(100));
+            let backend_impl = pprof_backend(pprof_config);
+
+            log::info!(
+                "Starting pyroscope agent with identifier {}",
+                &config.identifier
+            );
+            // TODO: Add more tags like peerId and peerUrl
+            let agent = PyroscopeAgent::builder(config.url.to_string(), "qdrant".to_string())
+                .backend(backend_impl)
+                .tags(vec![("app", "Qdrant"), ("identifier", &config.identifier)])
+                .build()
+                .expect("Couldn't build pyroscope agent");
+
+            agent.start().unwrap()
         }
 
-        *agent_guard = Some(PyroscopeState::build_agent(config));
+        /// Update agent config and restart
+        pub fn restart_agent(&mut self, config: PyroscopeConfig) {
+            // Stop the running agent if it exists:
+            let mut agent_guard = self.agent.lock().unwrap();
+            if let Some(running_agent) = agent_guard.take() {
+                let ready_agent = running_agent.stop().unwrap();
+                ready_agent.shutdown();
+            }
 
-        let mut config_guard = self.config.lock().unwrap();
-        *config_guard = config.clone();
+            *agent_guard = Some(PyroscopeState::build_agent(&config));
+            self.config = config.clone();
+            log::info!("Pyroscope agent started");
+        }
 
-        log::info!("Pyroscope agent started");
+        pub fn from_settings(settings: &Settings) -> Option<Self> {
+            settings
+                .debug
+                .pyroscope
+                .clone()
+                .map(|pyroscope_config| PyroscopeState {
+                    config: pyroscope_config.clone(),
+                    agent: Arc::new(Mutex::new(Some(PyroscopeState::build_agent(
+                        &pyroscope_config,
+                    )))),
+                })
+        }
     }
 
-    #[cfg(target_os = "linux")]
-    pub fn from_settings(settings: &Settings) -> Option<Self> {
-        settings
-            .debug
-            .pyroscope
-            .clone()
-            .map(|pyroscope_config| PyroscopeState {
-                config: Arc::new(Mutex::new(pyroscope_config.clone())),
-                agent: Arc::new(Mutex::new(Some(PyroscopeState::build_agent(
-                    &pyroscope_config,
-                )))),
-            })
-    }
+    impl Drop for PyroscopeState {
+        fn drop(&mut self) {
+            log::info!("Stopping pyroscope agent");
+            let mut agent_guard = self.agent.lock().unwrap();
+            if let Some(running_agent) = agent_guard.take() {
+                let ready_agent = running_agent.stop().unwrap();
+                ready_agent.shutdown();
+            }
 
-    #[cfg(not(target_os = "linux"))]
-    pub fn from_settings(_settings: &Settings) -> Option<Self> {
-        None
+            log::info!("Pyroscope agent stopped");
+        }
     }
 }
 
-#[cfg(target_os = "linux")]
-impl Drop for PyroscopeState {
-    fn drop(&mut self) {
-        log::info!("Stopping pyroscope agent");
-        let mut agent_guard = self.agent.lock().unwrap();
-        if let Some(running_agent) = agent_guard.take() {
-            let ready_agent = running_agent.stop().unwrap();
-            ready_agent.shutdown();
-        }
+#[cfg(not(target_os = "linux"))]
+pub mod pyro {
+    pub struct PyroscopeState {}
 
-        log::info!("Pyroscope agent stopped");
+    impl PyroscopeState {
+        pub fn from_settings(settings: &Settings) -> Option<Self> {
+            None
+        }
     }
 }

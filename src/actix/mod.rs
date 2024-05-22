@@ -36,9 +36,9 @@ use crate::actix::api::snapshot_api::config_snapshots_api;
 use crate::actix::api::update_api::config_update_api;
 use crate::actix::auth::{Auth, WhitelistItem};
 use crate::common::auth::AuthKeys;
+use crate::common::debug::DebugState;
 use crate::common::health;
 use crate::common::http_client::HttpClient;
-use crate::common::pyroscope_state::PyroscopeState;
 use crate::common::telemetry::TelemetryCollector;
 use crate::settings::{max_web_workers, Settings};
 use crate::tracing::LoggerHandle;
@@ -74,7 +74,7 @@ pub fn init(
             .await
             .actix_telemetry_collector
             .clone();
-        let pyroscope_state = web::Data::new(PyroscopeState::from_settings(&settings));
+        let debug_state = web::Data::new(DebugState::from_settings(&settings));
         let telemetry_collector_data = web::Data::from(telemetry_collector);
         let logger_handle_data = web::Data::new(logger_handle);
         let http_client = web::Data::new(HttpClient::from_settings(&settings)?);
@@ -153,7 +153,7 @@ pub fn init(
                 .app_data(telemetry_collector_data.clone())
                 .app_data(logger_handle_data.clone())
                 .app_data(http_client.clone())
-                .app_data(pyroscope_state.clone())
+                .app_data(debug_state.clone())
                 .app_data(health_checker.clone())
                 .app_data(validate_path_config)
                 .app_data(validate_query_config)

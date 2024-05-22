@@ -2,34 +2,29 @@ use actix_web::{get, post, web, Responder};
 use storage::rbac::AccessRequirements;
 
 use crate::actix::auth::ActixAccess;
-use crate::common::debug::{DebugConfig, PyroscopeConfig};
-use crate::common::pyroscope_state::PyroscopeState;
+use crate::common::debug::{DebugConfig, DebugState};
 
 #[get("/debug")]
 async fn get_debug_config(
     ActixAccess(access): ActixAccess,
-    state: web::Data<Option<PyroscopeState>>,
+    debug_state: web::Data<DebugState>,
 ) -> impl Responder {
     crate::actix::helpers::time(async move {
         access.check_global_access(AccessRequirements::new().manage())?;
 
-        let _ = state;
+        let _ = debug_state;
 
         #[cfg(target_os = "linux")]
-        let response = match state.as_ref() {
-            Some(state) => {
-                let config = state.config.lock().unwrap().clone();
-                DebugConfig {
-                    pyroscope: Some(config),
-                }
-            }
-            None => DebugConfig { pyroscope: None },
-        };
+        {
+            let pyroscope_state_guard = debug_state.pyroscope.lock().unwrap();
+            let pyroscope_config = pyroscope_state_guard.as_ref().map(|s| s.config.clone());
+            Ok(DebugConfig {
+                pyroscope: pyroscope_config,
+            })
+        }
 
         #[cfg(not(target_os = "linux"))]
-        let response = DebugConfig { pyroscope: None };
-
-        Ok(response)
+        Ok(DebugConfig { pyroscope: None });
     })
     .await
 }
@@ -37,24 +32,29 @@ async fn get_debug_config(
 #[post("/debug")]
 async fn update_debug_config(
     ActixAccess(access): ActixAccess,
-    state: web::Data<Option<PyroscopeState>>,
-    new_config: web::Json<PyroscopeConfig>,
+    debug_state: web::Data<DebugState>,
+    new_debug_config: web::Json<DebugConfig>,
 ) -> impl Responder {
     crate::actix::helpers::time(async move {
         access.check_global_access(AccessRequirements::new().manage())?;
         #[cfg(target_os = "linux")]
-        if let Some(state) = state.as_ref() {
-            state.restart_agent(&new_config);
-            return Ok(true);
+        {
+            match new_debug_config.pyroscope.clone() {
+                Some(pyro_config) => debug_state.update_pyroscope_config(pyro_config),
+                None => {
+                    let mut pyroscope_guard = debug_state.pyroscope.lock().unwrap();
+                    *pyroscope_guard = None; // TODO: Find out if this actually calls drop (shutdown agent) or not?
+                }
+            }
+            Ok(true)
         }
 
         #[cfg(not(target_os = "linux"))]
         {
-            let _ = state; // Ignore new_config on non-linux OS
-            let _ = new_config;
+            let _ = debug_state; // Ignore new_config on non-linux OS
+            let _ = new_debug_config;
+            Ok(false)
         }
-
-        Ok(false)
     })
     .await
 }
