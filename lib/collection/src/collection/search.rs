@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::mem;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -6,7 +7,7 @@ use futures::{future, TryFutureExt};
 use segment::data_types::vectors::VectorStruct;
 use segment::spaces::tools;
 use segment::types::{
-    ExtendedPointId, Filter, Order, PointIdType, ScoredPoint, WithPayloadInterface, WithVector,
+    ExtendedPointId, Filter, Order, ScoredPoint, WithPayloadInterface, WithVector,
 };
 use tokio::time::Instant;
 
@@ -228,25 +229,27 @@ impl Collection {
 
     async fn merge_from_shards(
         &self,
-        all_searches_res: Vec<Vec<Vec<ScoredPoint>>>,
+        mut all_searches_res: Vec<Vec<Vec<ScoredPoint>>>,
         request: Arc<CoreSearchRequestBatch>,
         is_client_request: bool,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let batch_size = request.searches.len();
 
-        // merge results from shards in order
-        let mut merged_results: Vec<Vec<ScoredPoint>> = vec![vec![]; batch_size];
-        let mut merged_point_ids: Vec<HashSet<PointIdType>> = vec![HashSet::new(); batch_size];
-        for shard_searches_results in all_searches_res.into_iter() {
-            for (index, shard_searches_result) in shard_searches_results.into_iter().enumerate() {
-                let point_ids = &mut merged_point_ids[index];
-                merged_results[index].extend(
-                    shard_searches_result
-                        .into_iter()
-                        // Add each point only once, deduplicate point IDs
-                        .filter(|result| point_ids.insert(result.id)),
-                );
-            }
+        // Merge results from shards in order and deduplicate based on point ID
+        let batch_count = all_searches_res.first().map_or(0, Vec::len);
+        debug_assert!(all_searches_res.iter().all(|x| batch_count == x.len()));
+        let mut merged_results: Vec<Vec<ScoredPoint>> = Vec::with_capacity(batch_size);
+        let mut covered_point_ids = HashSet::new();
+        for batch_index in 0..batch_count {
+            let results_from_shards = all_searches_res
+                .iter_mut()
+                .flat_map(|res| mem::take(&mut res[batch_index]));
+            let results = results_from_shards
+                // Add each point only once, deduplicate point IDs
+                .filter(|result| covered_point_ids.insert(result.id))
+                .collect();
+            merged_results.push(results);
+            covered_point_ids.clear();
         }
 
         let collection_params = self.collection_config.read().await.params.clone();
