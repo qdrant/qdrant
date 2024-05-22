@@ -1,8 +1,10 @@
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 
-use crate::{common::pyroscope_state::pyro::PyroscopeState, settings::Settings};
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+
+use crate::common::pyroscope_state::pyro::PyroscopeState;
+use crate::settings::Settings;
 
 #[derive(Serialize, JsonSchema, Debug, Deserialize, Clone)]
 pub struct PyroscopeConfig {
