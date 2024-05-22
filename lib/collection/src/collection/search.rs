@@ -246,14 +246,14 @@ impl Collection {
             .into_iter()
             .zip(request.searches.iter())
             .map(|(res, request)| {
-                let order = if request.query.has_custom_scoring() {
-                    // Score comes from special handling of the distances in a way that it doesn't
-                    // directly represent distance anymore, so the order is always `LargeBetter`
-                    Order::LargeBetter
-                } else {
+                let order = if request.query.is_distance_scored() {
                     collection_params
                         .get_distance(request.query.get_vector_name())?
                         .distance_order()
+                } else {
+                    // Score comes from special handling of the distances in a way that it doesn't
+                    // directly represent distance anymore, so the order is always `LargeBetter`
+                    Order::LargeBetter
                 };
 
                 let mut top_res = match order {

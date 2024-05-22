@@ -232,13 +232,13 @@ pub async fn group_by(
     shard_selection: ShardSelectorInternal,
     timeout: Option<Duration>,
 ) -> CollectionResult<Vec<PointGroup>> {
-    let score_ordering = if request.source.query.has_custom_scoring() {
-        Order::LargeBetter
-    } else {
+    let score_ordering = if request.source.query.is_distance_scored() {
         let vector_name = request.source.query.get_vector_name();
         let collection_params = collection.collection_config.read().await;
         let distance = collection_params.params.get_distance(vector_name)?;
         distance.distance_order()
+    } else {
+        Order::LargeBetter
     };
 
     let mut aggregator = GroupsAggregator::new(

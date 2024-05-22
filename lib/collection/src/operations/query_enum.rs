@@ -12,8 +12,8 @@ impl QueryEnum {
         }
     }
 
-    /// Only when the distance is the scoring, this will return false.
-    pub fn has_custom_scoring(&self) -> bool {
+    /// Only when the distance is the scoring, this will return true.
+    pub fn is_distance_scored(&self) -> bool {
         match self {
             QueryEnum::Nearest(_) => false,
             QueryEnum::RecommendBestScore(_) | QueryEnum::Discover(_) | QueryEnum::Context(_) => {
