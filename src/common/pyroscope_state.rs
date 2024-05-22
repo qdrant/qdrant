@@ -1,19 +1,15 @@
 #[cfg(target_os = "linux")]
 pub mod pyro {
-    use std::sync::{Arc, Mutex};
 
     use pyroscope::pyroscope::PyroscopeAgentRunning;
     use pyroscope::PyroscopeAgent;
     use pyroscope_pprofrs::{pprof_backend, PprofConfig};
 
     use crate::common::debug::PyroscopeConfig;
-    use crate::settings::Settings;
 
-    #[derive(Clone)]
     pub struct PyroscopeState {
         pub config: PyroscopeConfig,
-        #[cfg(target_os = "linux")]
-        pub agent: Arc<Mutex<Option<PyroscopeAgent<PyroscopeAgentRunning>>>>,
+        pub agent: Option<PyroscopeAgent<PyroscopeAgentRunning>>,
     }
 
     impl PyroscopeState {
@@ -35,43 +31,28 @@ pub mod pyro {
             agent.start().unwrap()
         }
 
-        /// Update agent config and restart
-        pub fn restart_agent(&mut self, config: PyroscopeConfig) {
-            // Stop the running agent if it exists:
-            let mut agent_guard = self.agent.lock().unwrap();
-            if let Some(running_agent) = agent_guard.take() {
-                let ready_agent = running_agent.stop().unwrap();
-                ready_agent.shutdown();
+        pub fn from_config(config: Option<PyroscopeConfig>) -> Option<Self> {
+            match config {
+                Some(pyro_config) => Some(PyroscopeState {
+                    config: pyro_config.clone(),
+                    agent: Some(PyroscopeState::build_agent(&pyro_config)),
+                }),
+                None => {
+                    log::info!("Pyroscope agent not started");
+                    None
+                }
             }
-
-            *agent_guard = Some(PyroscopeState::build_agent(&config));
-            self.config = config.clone();
-            log::info!("Pyroscope agent started");
-        }
-
-        pub fn from_settings(settings: &Settings) -> Option<Self> {
-            settings
-                .debug
-                .pyroscope
-                .clone()
-                .map(|pyroscope_config| PyroscopeState {
-                    config: pyroscope_config.clone(),
-                    agent: Arc::new(Mutex::new(Some(PyroscopeState::build_agent(
-                        &pyroscope_config,
-                    )))),
-                })
         }
     }
 
     impl Drop for PyroscopeState {
         fn drop(&mut self) {
             log::info!("Stopping pyroscope agent");
-            let mut agent_guard = self.agent.lock().unwrap();
-            if let Some(running_agent) = agent_guard.take() {
-                let ready_agent = running_agent.stop().unwrap();
-                ready_agent.shutdown();
+            if let Some(agent) = self.agent.take() {
+                // Use take() to replace self.agent with None and get the contained value
+                let stopped_agent = agent.stop().unwrap(); // Now you can call stop() on the agent directly
+                stopped_agent.shutdown();
             }
-
             log::info!("Pyroscope agent stopped");
         }
     }
