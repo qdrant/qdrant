@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use common::cpu::CpuPermit;
 use common::types::{PointOffsetType, TelemetryDetail};
+use itertools::Itertools;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use segment::common::operation_error::OperationResult;
@@ -33,6 +34,7 @@ use sparse::common::types::DimId;
 use sparse::index::inverted_index::inverted_index_immutable_ram::InvertedIndexImmutableRam;
 use sparse::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
 use sparse::index::inverted_index::InvertedIndex;
+use sparse::index::posting_list_common::PostingListIter as _;
 use tempfile::Builder;
 
 /// Max dimension of sparse vectors used in tests
@@ -164,13 +166,13 @@ fn check_index_storage_consistency<T: InvertedIndex>(sparse_vector_index: &Spars
             let posting_list = sparse_vector_index.inverted_index().get(dim_id).unwrap();
             // assert posting list sorted by record id
             assert!(posting_list
-                .elements
-                .windows(2)
-                .all(|w| w[0].record_id < w[1].record_id));
+                .clone()
+                .into_std_iter()
+                .tuple_windows()
+                .all(|(w0, w1)| w0.record_id < w1.record_id));
             // assert posted list contains record id
             assert!(posting_list
-                .elements
-                .iter()
+                .into_std_iter()
                 .any(|e| e.record_id == id && e.weight == *dim_value));
         }
         // check the vector can be found via search using large top

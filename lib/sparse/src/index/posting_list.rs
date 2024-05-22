@@ -1,38 +1,16 @@
 use std::cmp::max;
+use std::ops::ControlFlow;
 
 use common::types::PointOffsetType;
 use ordered_float::OrderedFloat;
 
+use super::posting_list_common::{PostingElement, PostingElementEx, PostingListIter};
 use crate::common::types::DimWeight;
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct PostingElement {
-    /// Record ID
-    pub record_id: PointOffsetType,
-    /// Weight of the record in the dimension
-    pub weight: DimWeight,
-    /// Max weight of the next elements in the posting list.
-    pub max_next_weight: DimWeight,
-}
-
-const DEFAULT_MAX_NEXT_WEIGHT: DimWeight = f32::NEG_INFINITY;
-
-impl PostingElement {
-    /// Initialize negative infinity as max_next_weight.
-    /// Needs to be updated at insertion time.
-    pub(crate) fn new(record_id: PointOffsetType, weight: DimWeight) -> PostingElement {
-        PostingElement {
-            record_id,
-            weight,
-            max_next_weight: DEFAULT_MAX_NEXT_WEIGHT,
-        }
-    }
-}
 
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct PostingList {
     /// List of the posting elements ordered by id
-    pub elements: Vec<PostingElement>,
+    pub elements: Vec<PostingElementEx>,
 }
 
 impl PostingList {
@@ -48,7 +26,7 @@ impl PostingList {
     /// Creates a new posting list with a single element.
     pub fn new_one(record_id: PointOffsetType, weight: DimWeight) -> PostingList {
         PostingList {
-            elements: vec![PostingElement::new(record_id, weight)],
+            elements: vec![PostingElementEx::new(record_id, weight)],
         }
     }
 
@@ -56,7 +34,7 @@ impl PostingList {
     ///
     /// Worst case is adding a new element at the end of the list with a very large weight.
     /// This forces to propagate it as potential max_next_weight to all the previous elements.
-    pub fn upsert(&mut self, posting_element: PostingElement) {
+    pub fn upsert(&mut self, posting_element: PostingElementEx) {
         // find insertion point in sorted posting list (most expensive operation for large posting list)
         let index = self
             .elements
@@ -118,10 +96,14 @@ impl PostingList {
             }
         }
     }
+
+    pub fn iter(&self) -> PostingListIterator {
+        PostingListIterator::new(&self.elements)
+    }
 }
 
 pub struct PostingBuilder {
-    elements: Vec<PostingElement>,
+    elements: Vec<PostingElementEx>,
 }
 
 impl Default for PostingBuilder {
@@ -139,7 +121,7 @@ impl PostingBuilder {
 
     /// Add a new record to the posting list.
     pub fn add(&mut self, record_id: PointOffsetType, weight: DimWeight) {
-        self.elements.push(PostingElement::new(record_id, weight));
+        self.elements.push(PostingElementEx::new(record_id, weight));
     }
 
     /// Consume the builder and return the posting list.
@@ -173,22 +155,79 @@ impl PostingBuilder {
 }
 
 /// Iterator over posting list elements offering skipping abilities to avoid full iteration.
+#[derive(Debug, Clone)]
 pub struct PostingListIterator<'a> {
-    pub elements: &'a [PostingElement],
+    pub elements: &'a [PostingElementEx],
     pub current_index: usize,
 }
 
+impl<'a> PostingListIter for PostingListIterator<'a> {
+    #[inline]
+    fn peek(&mut self) -> Option<PostingElementEx> {
+        self.elements.get(self.current_index).cloned()
+    }
+
+    #[inline]
+    fn last_id(&self) -> Option<PointOffsetType> {
+        self.elements.last().map(|e| e.record_id)
+    }
+
+    #[inline]
+    fn skip_to(&mut self, record_id: PointOffsetType) -> Option<PostingElementEx> {
+        self.skip_to(record_id)
+    }
+
+    #[inline]
+    fn skip_to_end(&mut self) {
+        self.skip_to_end();
+    }
+
+    #[inline]
+    fn len_to_end(&self) -> usize {
+        self.len_to_end()
+    }
+
+    #[inline]
+    fn current_index(&self) -> usize {
+        self.current_index
+    }
+
+    #[inline]
+    fn try_for_each<F, R>(&mut self, mut f: F) -> ControlFlow<R>
+    where
+        F: FnMut(PostingElement) -> ControlFlow<R>,
+    {
+        let mut current_index = self.current_index;
+        for element in &self.elements[current_index..] {
+            match f(element.clone().into()) {
+                ControlFlow::Continue(_) => {
+                    current_index += 1;
+                }
+                ControlFlow::Break(r) => {
+                    self.current_index = current_index;
+                    return ControlFlow::Break(r);
+                }
+            }
+        }
+        self.current_index = current_index;
+        ControlFlow::Continue(())
+    }
+
+    fn reliable_max_next_weight() -> bool {
+        true
+    }
+
+    fn into_std_iter(self) -> impl Iterator<Item = PostingElement> {
+        self.elements.iter().cloned().map(PostingElement::from)
+    }
+}
+
 impl<'a> PostingListIterator<'a> {
-    pub fn new(elements: &'a [PostingElement]) -> PostingListIterator<'a> {
+    pub fn new(elements: &'a [PostingElementEx]) -> PostingListIterator<'a> {
         PostingListIterator {
             elements,
             current_index: 0,
         }
-    }
-
-    /// Slice of the remaining elements.
-    pub fn remaining_elements(&self) -> &'a [PostingElement] {
-        &self.elements[self.current_index..]
     }
 
     /// Advances the iterator to the next element.
@@ -204,7 +243,7 @@ impl<'a> PostingListIterator<'a> {
     }
 
     /// Returns the next element without advancing the iterator.
-    pub fn peek(&self) -> Option<&PostingElement> {
+    pub fn peek(&self) -> Option<&PostingElementEx> {
         self.elements.get(self.current_index)
     }
 
@@ -219,7 +258,7 @@ impl<'a> PostingListIterator<'a> {
     /// If the iterator is already at the end, None is returned.
     /// If the iterator skipped to the end, None is returned and current index is set to the length of the list.
     /// Uses binary search.
-    pub fn skip_to(&mut self, id: PointOffsetType) -> Option<&PostingElement> {
+    pub fn skip_to(&mut self, id: PointOffsetType) -> Option<PostingElementEx> {
         // Check if we are already at the end
         if self.current_index >= self.elements.len() {
             return None;
@@ -232,7 +271,7 @@ impl<'a> PostingListIterator<'a> {
         match next_element {
             Ok(found_offset) => {
                 self.current_index += found_offset;
-                Some(&self.elements[self.current_index])
+                Some(self.elements[self.current_index].clone())
             }
             Err(insert_index) => {
                 self.current_index += insert_index;
@@ -242,7 +281,7 @@ impl<'a> PostingListIterator<'a> {
     }
 
     /// Skips to the end of the posting list and returns None.
-    pub fn skip_to_end(&mut self) -> Option<&PostingElement> {
+    pub fn skip_to_end(&mut self) -> Option<&PostingElementEx> {
         self.current_index = self.elements.len();
         None
     }
@@ -251,6 +290,7 @@ impl<'a> PostingListIterator<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::index::posting_list_common::DEFAULT_MAX_NEXT_WEIGHT;
 
     #[test]
     fn test_posting_operations() {
@@ -314,7 +354,7 @@ mod tests {
         );
 
         // insert mew last element
-        posting_list.upsert(PostingElement::new(4, 4.0));
+        posting_list.upsert(PostingElementEx::new(4, 4.0));
         assert_eq!(posting_list.elements[3].record_id, 4);
         assert_eq!(posting_list.elements[3].weight, 4.0);
         assert_eq!(
@@ -360,7 +400,7 @@ mod tests {
         );
 
         // insert mew last element
-        posting_list.upsert(PostingElement::new(4, 4.0));
+        posting_list.upsert(PostingElementEx::new(4, 4.0));
 
         // `4` is shifted to the right
         assert_eq!(posting_list.elements[4].record_id, 5);
@@ -406,7 +446,7 @@ mod tests {
         );
 
         // increase weight of existing element
-        posting_list.upsert(PostingElement::new(2, 4.0));
+        posting_list.upsert(PostingElementEx::new(2, 4.0));
 
         assert_eq!(posting_list.elements[0].record_id, 1);
         assert_eq!(posting_list.elements[0].weight, 1.0);

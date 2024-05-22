@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
 use common::types::PointOffsetType;
+use criterion::measurement::Measurement;
 use criterion::{criterion_group, criterion_main, Criterion};
 use dataset::Dataset;
 use indicatif::{ProgressBar, ProgressDrawTarget};
@@ -10,10 +11,14 @@ use itertools::Itertools;
 use rand::rngs::StdRng;
 use rand::SeedableRng as _;
 use sparse::common::scores_memory_pool::ScoresMemoryPool;
-use sparse::common::sparse_vector::SparseVector;
+use sparse::common::sparse_vector::{RemappedSparseVector, SparseVector};
 use sparse::common::sparse_vector_fixture::{random_positive_sparse_vector, random_sparse_vector};
+use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexImmutableRam;
+use sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexMmap as InvertedIndexCompressedMmap;
+use sparse::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
+use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::loaders::{self, Csr};
 use sparse::index::search_context::SearchContext;
 mod prof;
@@ -26,14 +31,17 @@ pub fn bench_search(c: &mut Criterion) {
     bench_uniform_random(c, "random-50k", 50_000);
     bench_uniform_random(c, "random-500k", 500_000);
 
-    let query_vectors =
-        loaders::load_csr_vecs(Dataset::NeurIps2023Queries.download().unwrap()).unwrap();
+    {
+        let query_vectors =
+            loaders::load_csr_vecs(Dataset::NeurIps2023Queries.download().unwrap()).unwrap();
 
-    let index_1m = load_csr_index(Dataset::NeurIps2023_1M.download().unwrap(), 1.0).unwrap();
-    run_bench(c, "neurips2023-1M", index_1m, query_vectors.clone());
+        let index_1m = load_csr_index(Dataset::NeurIps2023_1M.download().unwrap(), 1.0).unwrap();
+        run_bench(c, "neurips2023-1M", index_1m, &query_vectors);
 
-    let index_full = load_csr_index(Dataset::NeurIps2023Full.download().unwrap(), 0.25).unwrap();
-    run_bench(c, "neurips2023-full-25pct", index_full, query_vectors);
+        let index_full =
+            load_csr_index(Dataset::NeurIps2023Full.download().unwrap(), 0.25).unwrap();
+        run_bench(c, "neurips2023-full-25pct", index_full, &query_vectors);
+    }
 
     bench_movies(c);
 }
@@ -52,7 +60,7 @@ fn bench_uniform_random(c: &mut Criterion, name: &str, num_vectors: usize) {
         .map(|_| random_positive_sparse_vector(&mut rnd, MAX_SPARSE_DIM))
         .collect::<Vec<_>>();
 
-    run_bench(c, name, index, query_vectors);
+    run_bench(c, name, index, &query_vectors);
 }
 
 pub fn bench_movies(c: &mut Criterion) {
@@ -70,29 +78,15 @@ pub fn bench_movies(c: &mut Criterion) {
             .map(|(idx, vec)| (idx as PointOffsetType, vec.unwrap().into_remapped())),
     );
 
-    run_bench(c, "movies", index, query_vectors);
+    run_bench(c, "movies", index, &query_vectors);
 }
 
 pub fn run_bench(
     c: &mut Criterion,
     name: &str,
     index: InvertedIndexRam,
-    mut query_vectors: Vec<SparseVector>,
+    query_vectors: &[SparseVector],
 ) {
-    let pool = ScoresMemoryPool::new();
-    let stopped = AtomicBool::new(false);
-
-    let mut group = c.benchmark_group(format!("search/{}", name));
-
-    let mut it = query_vectors.iter().cycle();
-    group.bench_function("basic", |b| {
-        b.iter_batched(
-            || it.next().unwrap().clone().into_remapped(),
-            |vec| SearchContext::new(vec, TOP, &index, pool.get(), &stopped).search(&|_| true),
-            criterion::BatchSize::SmallInput,
-        )
-    });
-
     let hottest_id = index
         .postings
         .iter()
@@ -114,32 +108,87 @@ pub fn run_bench(
         index.postings[hottest_id as usize].elements.len(),
     );
 
-    for vec in &mut query_vectors {
-        vec.indices.truncate(4);
-        vec.values.truncate(4);
-        if let Err(idx) = vec.indices.binary_search(&hottest_id) {
-            if idx < vec.indices.len() {
-                vec.indices[idx] = hottest_id;
-                vec.values[idx] = 1.0;
-            } else {
-                vec.indices.push(hottest_id);
-                vec.values.push(1.0);
+    let hottest_query_vectors = query_vectors
+        .iter()
+        .cloned()
+        .map(|mut vec| {
+            vec.indices.truncate(4);
+            vec.values.truncate(4);
+            if let Err(idx) = vec.indices.binary_search(&hottest_id) {
+                if idx < vec.indices.len() {
+                    vec.indices[idx] = hottest_id;
+                    vec.values[idx] = 1.0;
+                } else {
+                    vec.indices.push(hottest_id);
+                    vec.values.push(1.0);
+                }
             }
-        }
-    }
+            vec.into_remapped()
+        })
+        .collect::<Vec<_>>();
+
+    run_bench2(
+        c.benchmark_group(format!("search/ram/{name}")),
+        &index,
+        query_vectors,
+        &hottest_query_vectors,
+    );
+
+    run_bench2(
+        c.benchmark_group(format!("search/ram_c/{name}")),
+        &InvertedIndexImmutableRam::from_ram_index(index.clone(), "nonexistent/path").unwrap(),
+        query_vectors,
+        &hottest_query_vectors,
+    );
+
+    let tmp_dir_path = tempfile::Builder::new()
+        .prefix("test_index_dir1")
+        .tempdir()
+        .unwrap();
+    run_bench2(
+        c.benchmark_group(format!("search/mmap/{name}")),
+        &InvertedIndexMmap::from_ram_index(index.clone(), tmp_dir_path.path()).unwrap(),
+        query_vectors,
+        &hottest_query_vectors,
+    );
+
+    let tmp_dir_path = tempfile::Builder::new()
+        .prefix("test_index_dir2")
+        .tempdir()
+        .unwrap();
+    run_bench2(
+        c.benchmark_group(format!("search/mmap_c/{name}")),
+        &InvertedIndexCompressedMmap::from_ram_index(index, tmp_dir_path.path()).unwrap(),
+        query_vectors,
+        &hottest_query_vectors,
+    );
+}
+
+fn run_bench2(
+    mut group: criterion::BenchmarkGroup<'_, impl Measurement>,
+    index: &impl InvertedIndex,
+    query_vectors: &[SparseVector],
+    hottest_query_vectors: &[RemappedSparseVector],
+) {
+    let pool = ScoresMemoryPool::new();
+    let stopped = AtomicBool::new(false);
 
     let mut it = query_vectors.iter().cycle();
+    group.bench_function("basic", |b| {
+        b.iter_batched(
+            || it.next().unwrap().clone().into_remapped(),
+            |vec| SearchContext::new(vec, TOP, index, pool.get(), &stopped).search(&|_| true),
+            criterion::BatchSize::SmallInput,
+        )
+    });
+
+    let mut it = hottest_query_vectors.iter().cycle();
     group.bench_function("hottest", |b| {
-        b.iter(|| {
-            SearchContext::new(
-                it.next().unwrap().clone().into_remapped(),
-                TOP,
-                &index,
-                pool.get(),
-                &stopped,
-            )
-            .search(&|_| true)
-        })
+        b.iter_batched(
+            || it.next().unwrap().clone(),
+            |vec| SearchContext::new(vec, TOP, index, pool.get(), &stopped).search(&|_| true),
+            criterion::BatchSize::SmallInput,
+        )
     });
 }
 
