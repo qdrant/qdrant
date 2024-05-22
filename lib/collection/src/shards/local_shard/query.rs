@@ -55,7 +55,7 @@ impl LocalShard {
 
             // it might make sense to change this approach to fetch payload and vector at the collection level
             // after the shard results merge, but it requires careful benchmarking
-            let records = SegmentsSearcher::retrieve(
+            let mut records = SegmentsSearcher::retrieve(
                 self.segments(),
                 &point_ids,
                 &WithPayload::from(&request.with_payload),
@@ -63,9 +63,10 @@ impl LocalShard {
             )?;
 
             // update scored points in place
-            for (scored_point, record) in scored_points.iter_mut().flatten().zip(records.iter()) {
-                scored_point.payload.clone_from(&record.payload);
-                scored_point.vector.clone_from(&record.vector);
+            for (scored_point, record) in scored_points.iter_mut().flatten().zip(records.iter_mut())
+            {
+                scored_point.payload = record.payload.take();
+                scored_point.vector = record.vector.take();
             }
         }
 
