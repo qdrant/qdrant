@@ -7154,7 +7154,7 @@
             "description": "Order-by value",
             "anyOf": [
               {
-                "$ref": "#/components/schemas/OrderedValue"
+                "$ref": "#/components/schemas/OrderValue"
               },
               {
                 "nullable": true
@@ -7163,7 +7163,7 @@
           }
         }
       },
-      "OrderedValue": {
+      "OrderValue": {
         "anyOf": [
           {
             "type": "integer",
