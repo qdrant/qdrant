@@ -277,6 +277,7 @@ mod test {
             payload: None,
             vector: None,
             shard_key: None,
+            order_value: None,
         }
     }
 

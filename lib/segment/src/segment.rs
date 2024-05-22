@@ -26,7 +26,7 @@ use crate::common::operation_error::{
 use crate::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
 use crate::common::{check_named_vectors, check_query_vectors, check_stopped, check_vector_name};
 use crate::data_types::named_vectors::NamedVectors;
-use crate::data_types::order_by::{Direction, OrderBy, OrderingValue};
+use crate::data_types::order_by::{Direction, OrderBy, OrderValue};
 use crate::data_types::query_context::{QueryContext, SegmentQueryContext};
 use crate::data_types::vectors::{MultiDenseVector, QueryVector, Vector, VectorRef};
 use crate::entry::entry_point::SegmentEntry;
@@ -703,6 +703,7 @@ impl Segment {
                     payload,
                     vector,
                     shard_key: None,
+                    order_value: None,
                 })
             })
             .collect()
@@ -802,7 +803,7 @@ impl Segment {
         order_by: &OrderBy,
         limit: Option<usize>,
         condition: &Filter,
-    ) -> OperationResult<Vec<(OrderingValue, PointIdType)>> {
+    ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
         let payload_index = self.payload_index.borrow();
         let id_tracker = self.id_tracker.borrow();
 
@@ -878,7 +879,7 @@ impl Segment {
         order_by: &OrderBy,
         limit: Option<usize>,
         filter: Option<&Filter>,
-    ) -> OperationResult<Vec<(OrderingValue, PointIdType)>> {
+    ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
         let payload_index = self.payload_index.borrow();
 
         let numeric_index = payload_index
@@ -1304,7 +1305,7 @@ impl SegmentEntry for Segment {
         limit: Option<usize>,
         filter: Option<&'a Filter>,
         order_by: &'a OrderBy,
-    ) -> OperationResult<Vec<(OrderingValue, PointIdType)>> {
+    ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
         match filter {
             None => self.filtered_read_by_value_stream(order_by, limit, None),
             Some(filter) => {
