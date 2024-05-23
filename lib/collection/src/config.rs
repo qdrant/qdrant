@@ -11,8 +11,10 @@ use segment::common::anonymize::Anonymize;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::types::{
-    Distance, HnswConfig, Indexes, PayloadStorageType, QuantizationConfig, SparseVectorDataConfig,
-    VectorDataConfig, VectorStorageDatatype, VectorStorageType,
+    default_replication_factor_const, default_shard_number_const,
+    default_write_consistency_factor_const, Distance, HnswConfig, Indexes, PayloadStorageType,
+    QuantizationConfig, SparseVectorDataConfig, VectorDataConfig, VectorStorageDatatype,
+    VectorStorageType,
 };
 use serde::{Deserialize, Serialize};
 use validator::Validate;
@@ -132,15 +134,15 @@ impl Anonymize for CollectionParams {
 }
 
 pub fn default_shard_number() -> NonZeroU32 {
-    NonZeroU32::new(1).unwrap()
+    NonZeroU32::new(default_shard_number_const()).unwrap()
 }
 
 pub fn default_replication_factor() -> NonZeroU32 {
-    NonZeroU32::new(1).unwrap()
+    NonZeroU32::new(default_replication_factor_const()).unwrap()
 }
 
 pub fn default_write_consistency_factor() -> NonZeroU32 {
-    NonZeroU32::new(1).unwrap()
+    NonZeroU32::new(default_write_consistency_factor_const()).unwrap()
 }
 
 const fn default_on_disk_payload() -> bool {

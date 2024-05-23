@@ -15,7 +15,7 @@ use collection::shards::transfer::ShardTransferMethod;
 use memory::madvise;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
-use segment::types::{CollectionConfig, HnswConfig};
+use segment::types::{CollectionConfigDefaults, HnswConfig};
 use serde::{Deserialize, Serialize};
 use tonic::transport::Uri;
 use validator::Validate;
@@ -92,7 +92,7 @@ pub struct StorageConfig {
     pub shard_transfer_method: Option<ShardTransferMethod>,
     /// Default values for collections.
     #[serde(default)]
-    pub collection: Option<CollectionConfig>,
+    pub collection: Option<CollectionConfigDefaults>,
 }
 
 impl StorageConfig {

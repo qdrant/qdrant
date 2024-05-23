@@ -372,35 +372,43 @@ pub struct SearchParams {
 }
 
 /// Collection default values
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
-pub struct CollectionConfig {
+#[derive(Debug, Deserialize, Validate, Clone, PartialEq, Eq)]
+pub struct CollectionConfigDefaults {
     #[serde(default)]
-    pub vectors: Option<VectorsConfig>,
+    pub vectors: Option<VectorsConfigDefaults>,
 
     #[validate]
     pub quantization: Option<QuantizationConfig>,
 
     #[validate(range(min = 1))]
-    #[serde(default = "default_replication_factor")]
+    #[serde(default = "default_shard_number_const")]
+    pub shard_number: u32,
+
+    #[validate(range(min = 1))]
+    #[serde(default = "default_replication_factor_const")]
     pub replication_factor: u32,
 
-    #[serde(default = "default_write_consistency_factor")]
+    #[serde(default = "default_write_consistency_factor_const")]
     #[validate(range(min = 1))]
     pub write_consistency_factor: u32,
 }
 
 /// Configuration for vectors.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
-pub struct VectorsConfig {
+#[derive(Debug, Deserialize, Validate, Clone, PartialEq, Eq)]
+pub struct VectorsConfigDefaults {
     #[serde(default)]
     pub on_disk: Option<bool>,
 }
 
-const fn default_replication_factor() -> u32 {
+pub const fn default_shard_number_const() -> u32 {
     1
 }
 
-const fn default_write_consistency_factor() -> u32 {
+pub const fn default_replication_factor_const() -> u32 {
+    1
+}
+
+pub const fn default_write_consistency_factor_const() -> u32 {
     1
 }
 
