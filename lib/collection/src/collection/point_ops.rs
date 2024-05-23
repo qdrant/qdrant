@@ -256,7 +256,7 @@ impl Collection {
         // `order_by` does not support offset
         if order_by.is_none() {
             // Needed to return next page offset.
-            limit += 1;
+            limit = limit.saturating_add(1);
         };
 
         let local_only = shard_selection.is_shard_id();
