@@ -4730,10 +4730,10 @@ pub struct CountPoints {
 pub struct RecommendInput {
     /// Look for vectors closest to the vectors from these points
     #[prost(message, repeated, tag = "1")]
-    pub positive: ::prost::alloc::vec::Vec<VectorInput>,
+    pub positives: ::prost::alloc::vec::Vec<VectorInput>,
     /// Try to avoid vectors like the vector from these points
     #[prost(message, repeated, tag = "2")]
-    pub negative: ::prost::alloc::vec::Vec<VectorInput>,
+    pub negatives: ::prost::alloc::vec::Vec<VectorInput>,
     /// How to use the provided vectors to find the results
     #[prost(enumeration = "RecommendStrategy", optional, tag = "3")]
     pub strategy: ::core::option::Option<i32>,

@@ -9,7 +9,7 @@ use super::shard_query::Fusion;
 
 /// Internal representation of a query request, used to converge from REST and gRPC. This can have IDs referencing vectors.
 pub struct CollectionQueryRequest {
-    pub prefetches: Vec<CollectionPrefetch>,
+    pub prefetch: Vec<CollectionPrefetch>,
     pub query: Option<Query>,
     pub using: String,
     pub filter: Option<Filter>,
@@ -59,11 +59,12 @@ pub struct CollectionPrefetch {
 
 mod from_rest {
     use api::rest::schema as rest;
+
     use super::*;
 
-    impl From<rest::QueryRequest> for CollectionQueryRequest {
-        fn from(value: rest::QueryRequest) -> Self {
-            let rest::QueryRequest {
+    impl From<rest::QueryRequestInternal> for CollectionQueryRequest {
+        fn from(value: rest::QueryRequestInternal) -> Self {
+            let rest::QueryRequestInternal {
                 prefetch,
                 query,
                 using,
@@ -77,7 +78,7 @@ mod from_rest {
             } = value;
 
             Self {
-                prefetches: prefetch.into_iter().flatten().map(From::from).collect(),
+                prefetch: prefetch.into_iter().flatten().map(From::from).collect(),
                 query: query.map(From::from),
                 using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
                 filter,
@@ -220,5 +221,247 @@ mod from_rest {
                 rest::Fusion::Rrf => Fusion::Rrf,
             }
         }
+    }
+}
+
+mod from_grpc {
+    use api::grpc::qdrant::{self as grpc};
+    use api::rest::ShardKeySelector;
+    use tonic::Status;
+
+    use super::*;
+    use crate::operations::consistency_params::ReadConsistency;
+    use crate::operations::shard_selector_internal::ShardSelectorInternal;
+
+    pub struct IntoCollectionQueryRequest {
+        pub request: CollectionQueryRequest,
+        pub collection_name: String,
+        pub shard_key: ShardSelectorInternal,
+        pub read_consistency: Option<ReadConsistency>,
+    }
+
+    impl TryFrom<grpc::QueryPoints> for IntoCollectionQueryRequest {
+        type Error = Status;
+
+        fn try_from(value: grpc::QueryPoints) -> Result<Self, Self::Error> {
+            let grpc::QueryPoints {
+                collection_name,
+                prefetch,
+                query,
+                using,
+                filter,
+                search_params,
+                score_threshold,
+                limit,
+                offset,
+                with_payload,
+                with_vectors,
+                read_consistency,
+                shard_key_selector,
+            } = value;
+
+            let request = CollectionQueryRequest {
+                prefetch: prefetch
+                    .into_iter()
+                    .map(TryFrom::try_from)
+                    .collect::<Result<_, _>>()?,
+                query: query.map(TryFrom::try_from).transpose()?,
+                using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
+                filter: filter.map(TryFrom::try_from).transpose()?,
+                score_threshold,
+                limit: limit.unwrap_or(10) as usize,
+                offset: offset.unwrap_or(0) as usize,
+                params: search_params.map(From::from),
+                with_vector: with_vectors
+                    .map(From::from)
+                    .unwrap_or(WithVector::Bool(false)),
+                with_payload: with_payload
+                    .map(TryFrom::try_from)
+                    .transpose()?
+                    .unwrap_or(WithPayloadInterface::Bool(false)),
+            };
+
+            let shard_key =
+                ShardSelectorInternal::from(shard_key_selector.map(ShardKeySelector::from));
+
+            let read_consistency = read_consistency.map(TryFrom::try_from).transpose()?;
+
+            Ok(IntoCollectionQueryRequest {
+                request,
+                collection_name,
+                shard_key,
+                read_consistency,
+            })
+        }
+    }
+
+    impl TryFrom<grpc::PrefetchQuery> for CollectionPrefetch {
+        type Error = Status;
+
+        fn try_from(value: grpc::PrefetchQuery) -> Result<Self, Self::Error> {
+            let grpc::PrefetchQuery {
+                prefetch,
+                query,
+                using,
+                filter,
+                search_params,
+                score_threshold,
+                limit,
+            } = value;
+
+            let collection_query = Self {
+                prefetch: prefetch
+                    .into_iter()
+                    .map(TryFrom::try_from)
+                    .collect::<Result<_, _>>()?,
+                query: query.map(TryFrom::try_from).transpose()?,
+                using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
+                filter: filter.map(TryFrom::try_from).transpose()?,
+                score_threshold,
+                limit: limit.unwrap_or(10) as usize,
+                params: search_params.map(From::from),
+            };
+
+            Ok(collection_query)
+        }
+    }
+
+    impl TryFrom<grpc::Query> for Query {
+        type Error = Status;
+
+        fn try_from(value: grpc::Query) -> Result<Self, Self::Error> {
+            use api::grpc::qdrant::query::Variant;
+
+            let variant = value
+                .variant
+                .ok_or_else(|| Status::invalid_argument("Query variant is missing"))?;
+
+            let query = match variant {
+                Variant::Nearest(nearest) => {
+                    Query::Vector(VectorQuery::Nearest(TryFrom::try_from(nearest)?))
+                }
+                Variant::Recommend(recommend) => Query::Vector(TryFrom::try_from(recommend)?),
+                Variant::Discover(discover) => Query::Vector(TryFrom::try_from(discover)?),
+                Variant::Context(context) => Query::Vector(TryFrom::try_from(context)?),
+                Variant::OrderBy(order_by) => Query::OrderBy(OrderBy::try_from(order_by)?),
+                Variant::Fusion(fusion) => Query::Fusion(Fusion::try_from(fusion)?),
+            };
+
+            Ok(query)
+        }
+    }
+
+    impl TryFrom<grpc::RecommendInput> for VectorQuery {
+        type Error = Status;
+
+        fn try_from(value: grpc::RecommendInput) -> Result<Self, Self::Error> {
+            let grpc::RecommendInput {
+                positives,
+                negatives,
+                strategy,
+            } = value;
+
+            let positives = positives
+                .into_iter()
+                .map(TryFrom::try_from)
+                .collect::<Result<Vec<_>, _>>()?;
+            let negatives = negatives
+                .into_iter()
+                .map(TryFrom::try_from)
+                .collect::<Result<Vec<_>, _>>()?;
+
+            let reco_query = RecoQuery::new(positives, negatives);
+
+            let strategy = strategy
+                .and_then(grpc::RecommendStrategy::from_i32)
+                .map(RecommendStrategy::from)
+                .unwrap_or_default();
+
+            let query = match strategy {
+                RecommendStrategy::AverageVector => VectorQuery::RecommendAverageVector(reco_query),
+                RecommendStrategy::BestScore => VectorQuery::RecommendBestScore(reco_query),
+            };
+
+            Ok(query)
+        }
+    }
+
+    impl TryFrom<grpc::DiscoverInput> for VectorQuery {
+        type Error = Status;
+
+        fn try_from(value: grpc::DiscoverInput) -> Result<Self, Self::Error> {
+            let grpc::DiscoverInput {
+                target,
+                context_pairs,
+            } = value;
+
+            let target = VectorInput::try_from(
+                target
+                    .ok_or_else(|| Status::invalid_argument("DiscoverInput target is missing"))?,
+            )?;
+
+            let context = context_pairs
+                .into_iter()
+                .map(context_pair_from_grpc)
+                .collect::<Result<_, _>>()?;
+
+            Ok(VectorQuery::Discover(DiscoveryQuery::new(target, context)))
+        }
+    }
+
+    impl TryFrom<grpc::ContextInput> for VectorQuery {
+        type Error = Status;
+
+        fn try_from(value: grpc::ContextInput) -> Result<Self, Self::Error> {
+            let grpc::ContextInput { context_pairs } = value;
+
+            Ok(VectorQuery::Context(ContextQuery {
+                pairs: context_pairs
+                    .into_iter()
+                    .map(context_pair_from_grpc)
+                    .collect::<Result<_, _>>()?,
+            }))
+        }
+    }
+
+    impl TryFrom<grpc::VectorInput> for VectorInput {
+        type Error = Status;
+
+        fn try_from(value: grpc::VectorInput) -> Result<Self, Self::Error> {
+            use api::grpc::qdrant::vector_input::Variant;
+
+            let variant = value
+                .variant
+                .ok_or_else(|| Status::invalid_argument("VectorInput variant is missing"))?;
+
+            let vector_input = match variant {
+                Variant::Id(id) => VectorInput::Id(TryFrom::try_from(id)?),
+                Variant::Dense(dense) => VectorInput::Vector(Vector::Dense(From::from(dense))),
+                Variant::Sparse(sparse) => VectorInput::Vector(Vector::Sparse(From::from(sparse))),
+                Variant::MultiDense(multi_dense) => VectorInput::Vector(
+                    // TODO(universal-query): Validate at API level
+                    Vector::MultiDense(From::from(multi_dense)),
+                ),
+            };
+
+            Ok(vector_input)
+        }
+    }
+
+    /// Circular dependencies prevents us from implementing `TryFrom` directly
+    fn context_pair_from_grpc(
+        value: grpc::ContextPairInput,
+    ) -> Result<ContextPair<VectorInput>, Status> {
+        let grpc::ContextPairInput { positive, negative } = value;
+
+        let positive =
+            positive.ok_or_else(|| Status::invalid_argument("ContextPair positive is missing"))?;
+        let negative =
+            negative.ok_or_else(|| Status::invalid_argument("ContextPair negative is missing"))?;
+
+        Ok(ContextPair {
+            positive: VectorInput::try_from(positive)?,
+            negative: VectorInput::try_from(negative)?,
+        })
     }
 }
