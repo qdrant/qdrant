@@ -24,6 +24,7 @@ use crate::shards::collection_shard_distribution::CollectionShardDistribution;
 use crate::shards::replica_set::{AbortShardTransfer, ChangePeerState, ReplicaState};
 use crate::shards::shard::{PeerId, ShardId};
 
+const DIM: u64 = 4;
 const PEER_ID: u64 = 1;
 const SHARD_COUNT: u32 = 4;
 const DUPLICATE_POINT_ID: ExtendedPointId = ExtendedPointId::NumId(100);
@@ -36,8 +37,8 @@ async fn fixture() -> Collection {
     };
 
     let collection_params = CollectionParams {
-        vectors: VectorsConfig::Single(VectorParamsBuilder::new(4, Distance::Dot).build()),
-        shard_number: NonZeroU32::new(4).unwrap(),
+        vectors: VectorsConfig::Single(VectorParamsBuilder::new(DIM, Distance::Dot).build()),
+        shard_number: NonZeroU32::new(SHARD_COUNT).unwrap(),
         replication_factor: NonZeroU32::new(1).unwrap(),
         write_consistency_factor: NonZeroU32::new(1).unwrap(),
         ..CollectionParams::empty()
@@ -151,6 +152,7 @@ async fn test_scroll_dedup() {
         )
         .await
         .expect("failed to search");
+    assert!(!result.points.is_empty(), "expected some points");
 
     let mut seen = HashSet::new();
     for point_id in result.points.iter().map(|point| point.id) {
@@ -176,6 +178,7 @@ async fn test_scroll_dedup() {
         )
         .await
         .expect("failed to search");
+    assert!(!result.points.is_empty(), "expected some points");
 
     let mut seen = HashSet::new();
     for point_id in result.points.iter().map(|point| point.id) {
@@ -205,6 +208,7 @@ async fn test_retrieve_dedup() {
         )
         .await
         .expect("failed to search");
+    assert!(!records.is_empty(), "expected some records");
 
     let mut seen = HashSet::new();
     for point_id in records.iter().map(|record| record.id) {
