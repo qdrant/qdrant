@@ -253,7 +253,7 @@ fn test_multivector_quantization_hnsw(
 
     segment.vector_data.values_mut().for_each(|vector_storage| {
         {
-            // test persistence, encode ans save quantized vectors
+            // test persistence, encode and save quantized vectors
             QuantizedVectors::create(
                 &vector_storage.vector_storage.borrow(),
                 &quantization_config,
