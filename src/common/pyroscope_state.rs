@@ -47,13 +47,13 @@ pub mod pyro {
 
     impl Drop for PyroscopeState {
         fn drop(&mut self) {
-            log::info!("Stopping pyroscope agent");
+            log::info!("DROP: Stopping pyroscope agent");
             if let Some(agent) = self.agent.take() {
                 // Use take() to replace self.agent with None and get the contained value
                 let stopped_agent = agent.stop().unwrap(); // Now you can call stop() on the agent directly
                 stopped_agent.shutdown();
             }
-            log::info!("Pyroscope agent stopped");
+            log::info!("DROP: Pyroscope agent stopped");
         }
     }
 }

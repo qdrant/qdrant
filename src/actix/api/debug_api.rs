@@ -2,7 +2,7 @@ use actix_web::{get, patch, web, Responder};
 use storage::rbac::AccessRequirements;
 
 use crate::actix::auth::ActixAccess;
-use crate::common::debug::{DebugConfig, DebugState};
+use crate::common::debug::{DebugConfigPatch, DebugState};
 
 #[get("/debug")]
 async fn get_debug_config(
@@ -20,11 +20,11 @@ async fn get_debug_config(
 async fn update_debug_config(
     ActixAccess(access): ActixAccess,
     debug_state: web::Data<DebugState>,
-    new_debug_config: web::Json<DebugConfig>,
+    debug_patch: web::Json<DebugConfigPatch>,
 ) -> impl Responder {
     crate::actix::helpers::time(async move {
         access.check_global_access(AccessRequirements::new().manage())?;
-        Ok(debug_state.apply_config_patch(new_debug_config.into_inner()))
+        Ok(debug_state.apply_config_patch(debug_patch.into_inner()))
     })
     .await
 }

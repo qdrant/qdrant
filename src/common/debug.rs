@@ -20,6 +20,20 @@ pub struct DebugConfig {
     pub pyroscope: Option<PyroscopeConfig>,
 }
 
+#[derive(Default, Debug, Serialize, JsonSchema, Deserialize, Clone)]
+#[serde(rename_all = "snake_case")]
+#[serde(untagged)]
+pub enum PyroscopeConfigPatch {
+    Patch(Option<PyroscopeConfig>),
+    #[default]
+    Null,
+}
+
+#[derive(Default, Debug, Serialize, JsonSchema, Deserialize, Clone)]
+pub struct DebugConfigPatch {
+    pub pyroscope: PyroscopeConfigPatch,
+}
+
 pub struct DebugState {
     pub pyroscope: Arc<Mutex<Option<PyroscopeState>>>,
 }
@@ -50,19 +64,25 @@ impl DebugState {
         }
     }
 
-    pub fn apply_config_patch(&self, config_patch: DebugConfig) -> bool {
+    pub fn apply_config_patch(&self, patch: DebugConfigPatch) -> bool {
         #[cfg(target_os = "linux")]
         {
-            // FIXME: Need to differentiate between null and non existing key.
-            // Serde seems to be passing both cases as None
-            // If null, disable pyroscope. If non existing, skip.
-            if let Some(pyro_config) = config_patch.pyroscope {
-                let mut pyroscope_state_guard = self.pyroscope.lock().unwrap();
-                *pyroscope_state_guard = PyroscopeState::from_config(Some(pyro_config));
-            } else {
-                let mut pyroscope_guard = self.pyroscope.lock().unwrap();
-                *pyroscope_guard = None; // TODO: Find out if this actually calls drop (shutdown agent) or not?
+            match patch.pyroscope {
+                PyroscopeConfigPatch::Patch(pyro_config) => {
+                    log::info!("Patch matched");
+                    if let Some(pyro_config) = pyro_config {
+                        log::info!("Patch matched: Config found");
+                        let mut pyroscope_state_guard = self.pyroscope.lock().unwrap();
+                        *pyroscope_state_guard = PyroscopeState::from_config(Some(pyro_config));
+                    }
+                }
+                PyroscopeConfigPatch::Null => {
+                    log::info!("Null matched");
+                    let mut pyroscope_guard = self.pyroscope.lock().unwrap();
+                    *pyroscope_guard = None; // This also shuts down the agent (because of drop)
+                }
             }
+
             true
         }
 
