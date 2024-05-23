@@ -252,14 +252,21 @@ fn test_multivector_quantization_hnsw(
     };
 
     segment.vector_data.values_mut().for_each(|vector_storage| {
-        let quantized_vectors = QuantizedVectors::create(
-            &vector_storage.vector_storage.borrow(),
-            &quantization_config,
-            quantized_data_path,
-            4,
-            &stopped,
-        )
-        .unwrap();
+        {
+            // test persistence, encode ans save quantized vectors
+            QuantizedVectors::create(
+                &vector_storage.vector_storage.borrow(),
+                &quantization_config,
+                quantized_data_path,
+                4,
+                &stopped,
+            )
+            .unwrap();
+        }
+        // test persistence, load quantized vectors
+        let quantized_vectors =
+            QuantizedVectors::load(&vector_storage.vector_storage.borrow(), quantized_data_path)
+                .unwrap();
         vector_storage.quantized_vectors = Arc::new(AtomicRefCell::new(Some(quantized_vectors)));
     });
 
