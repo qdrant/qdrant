@@ -4,17 +4,22 @@ use std::sync::Arc;
 
 use api::rest::VectorStruct;
 use common::cpu::CpuBudget;
-use segment::types::{Distance, ExtendedPointId, Payload, PayloadFieldSchema, PayloadSchemaType};
+use rand::{thread_rng, Rng};
+use segment::data_types::vectors::NamedVectorStruct;
+use segment::types::{
+    Distance, ExtendedPointId, Payload, PayloadFieldSchema, PayloadSchemaType, SearchParams,
+};
 use serde_json::{Map, Value};
 use tempfile::Builder;
 
 use crate::collection::{Collection, RequestShardTransfer};
 use crate::config::{CollectionConfig, CollectionParams, WalConfig};
 use crate::operations::point_ops::{PointInsertOperationsInternal, PointOperations, PointStruct};
+use crate::operations::query_enum::QueryEnum;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{
-    OrderByInterface, PointRequestInternal, ScrollRequestInternal, VectorsConfig,
+    CoreSearchRequest, OrderByInterface, PointRequestInternal, ScrollRequestInternal, VectorsConfig,
 };
 use crate::operations::vector_params_builder::VectorParamsBuilder;
 use crate::operations::{CollectionUpdateOperations, OperationWithClockTag};
@@ -94,12 +99,15 @@ async fn fixture() -> Collection {
     // Insert two points into all shards directly, a point matching the shard ID, and point 100
     // We insert into all shards directly to prevent spreading points by the hashring
     // We insert the same point into multiple shards on purpose
+    let mut rng = thread_rng();
     for (shard_id, shard) in collection.shards_holder().write().await.get_shards() {
         let op = OperationWithClockTag::from(CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsList(vec![
                 PointStruct {
                     id: (*shard_id as u64).into(),
-                    vector: VectorStruct::Multi(HashMap::new()),
+                    vector: VectorStruct::Single(
+                        (0..DIM).map(|_| rng.gen_range(0.0..1.0)).collect(),
+                    ),
                     payload: Some(Payload(Map::from_iter([(
                         "num".to_string(),
                         Value::from(-(*shard_id as i32)),
@@ -107,7 +115,9 @@ async fn fixture() -> Collection {
                 },
                 PointStruct {
                     id: DUPLICATE_POINT_ID,
-                    vector: VectorStruct::Multi(HashMap::new()),
+                    vector: VectorStruct::Single(
+                        (0..DIM).map(|_| rng.gen_range(0.0..1.0)).collect(),
+                    ),
                     payload: Some(Payload(Map::from_iter([(
                         "num".to_string(),
                         Value::from(100 - *shard_id as i32),
@@ -212,6 +222,42 @@ async fn test_retrieve_dedup() {
 
     let mut seen = HashSet::new();
     for point_id in records.iter().map(|record| record.id) {
+        assert!(
+            seen.insert(point_id),
+            "got point id {point_id} more than once, they should be deduplicated",
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_search_dedup() {
+    let collection = fixture().await;
+
+    let points = collection
+        .search(
+            CoreSearchRequest {
+                query: QueryEnum::Nearest(NamedVectorStruct::Default(vec![0.1, 0.2, 0.3, 0.4])),
+                filter: None,
+                params: Some(SearchParams {
+                    exact: true,
+                    ..Default::default()
+                }),
+                limit: 100,
+                offset: 0,
+                with_payload: None,
+                with_vector: None,
+                score_threshold: None,
+            },
+            None,
+            &ShardSelectorInternal::All,
+            None,
+        )
+        .await
+        .expect("failed to search");
+    assert!(!points.is_empty(), "expected some points");
+
+    let mut seen = HashSet::new();
+    for point_id in points.iter().map(|point| point.id) {
         assert!(
             seen.insert(point_id),
             "got point id {point_id} more than once, they should be deduplicated",
