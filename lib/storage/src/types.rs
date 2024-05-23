@@ -50,8 +50,8 @@ const fn default_io_shard_transfers_limit() -> Option<usize> {
     DEFAULT_IO_SHARD_TRANSFER_LIMIT
 }
 
-/// Represents the percentage of resource availability, indicating how well-equipped the
-/// current node is to handle I/O-bound or CPU-bound tasks.
+/// Represents the factors of resource availability, indicating how well-equipped the
+/// current node is to handle I/O-bound or CPU-bound tasks relatively compared to the other nodes.
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ResourceUtilizabilityMetrics {
     /// Factor of availability for the node to perform a CPU-bound task, like indexing or upserting.
@@ -61,7 +61,6 @@ pub struct ResourceUtilizabilityMetrics {
     pub cpu_utilization_factor: isize,
 
     /// Factor of availability for the node to perform an I/O-bound task, like searching.
-    /// This is a percent value:
     /// The larger the value, the more likely it is that this node gets I/O-bound jobs assigned
     /// over other nodes.
     #[serde(default = "default_io_utilization_ratio")]
