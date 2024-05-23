@@ -2,9 +2,7 @@ use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
 use collection::collection::Collection;
-use collection::config::{
-    self, default_shard_number, CollectionConfig, CollectionParams, ShardingMethod,
-};
+use collection::config::{self, CollectionConfig, CollectionParams, ShardingMethod};
 use collection::operations::config_diff::DiffConfig as _;
 use collection::operations::types::{
     check_sparse_compatible, CollectionResult, SparseVectorParams, VectorsConfig,
@@ -34,7 +32,7 @@ impl TableOfContent {
         let collection_create_guard = self.collection_create_lock.lock().await;
 
         let CreateCollection {
-            vectors,
+            mut vectors,
             shard_number,
             sharding_method,
             on_disk_payload,
@@ -73,6 +71,12 @@ impl TableOfContent {
         let collection_path = self.create_collection_path(collection_name).await?;
         let snapshots_path = self.create_snapshots_path(collection_name).await?;
 
+        let collection_defaults_config = self.storage_config.collection.as_ref();
+
+        let default_shard_number = collection_defaults_config
+            .map(|x| x.shard_number)
+            .unwrap_or_else(|| config::default_shard_number().get());
+
         let shard_number = match sharding_method.unwrap_or_default() {
             ShardingMethod::Auto => {
                 if let Some(shard_number) = shard_number {
@@ -95,16 +99,37 @@ impl TableOfContent {
                 if let Some(shard_number) = shard_number {
                     shard_number
                 } else {
-                    default_shard_number().get()
+                    default_shard_number
                 }
             }
         };
 
-        let replication_factor =
-            replication_factor.unwrap_or_else(|| config::default_replication_factor().get());
+        let replication_factor = replication_factor
+            .or_else(|| collection_defaults_config.map(|i| i.replication_factor))
+            .unwrap_or_else(|| config::default_replication_factor().get());
 
         let write_consistency_factor = write_consistency_factor
+            .or_else(|| collection_defaults_config.map(|i| i.write_consistency_factor))
             .unwrap_or_else(|| config::default_write_consistency_factor().get());
+
+        // Apply default vector config values if not set.
+        let vectors_defaults = collection_defaults_config.and_then(|i| i.vectors.as_ref());
+        if let Some(vectors_defaults) = vectors_defaults {
+            match &mut vectors {
+                VectorsConfig::Single(s) => {
+                    if let Some(on_disk_default) = vectors_defaults.on_disk {
+                        s.on_disk.get_or_insert(on_disk_default);
+                    }
+                }
+                VectorsConfig::Multi(m) => {
+                    for (_, vec_params) in m.iter_mut() {
+                        if let Some(on_disk_default) = vectors_defaults.on_disk {
+                            vec_params.on_disk.get_or_insert(on_disk_default);
+                        }
+                    }
+                }
+            };
+        }
 
         let collection_params = CollectionParams {
             vectors,
@@ -142,7 +167,11 @@ impl TableOfContent {
         };
 
         let quantization_config = match quantization_config {
-            None => self.storage_config.quantization.clone(),
+            None => self
+                .storage_config
+                .collection
+                .as_ref()
+                .and_then(|i| i.quantization.clone()),
             Some(diff) => Some(diff),
         };
 
