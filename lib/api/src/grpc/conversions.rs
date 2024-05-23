@@ -17,7 +17,7 @@ use super::qdrant::raw_query::RawContextPair;
 use super::qdrant::{
     raw_query, start_from, BinaryQuantization, CompressionRatio, DatetimeRange, Direction,
     GeoLineString, GroupId, MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue, Range,
-    RawVector, RecommendStrategy, SparseIndices, StartFrom,
+    RawVector, RecommendStrategy, ShardKeySelector, SparseIndices, StartFrom,
 };
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
@@ -40,6 +40,7 @@ use crate::grpc::qdrant::{
     TextIndexParams, TokenizerType, UpdateResult, UpdateResultInternal, Value, ValuesCount, Vector,
     Vectors, VectorsSelector, WithPayloadSelector, WithVectorsSelector,
 };
+use crate::rest::schema as rest;
 
 pub fn payload_to_proto(payload: segment::types::Payload) -> HashMap<String, Value> {
     payload
@@ -161,6 +162,21 @@ pub fn convert_shard_key_from_grpc_opt(
                 shard_key::Key::Number(number) => Some(segment::types::ShardKey::Number(number)),
             },
         },
+    }
+}
+impl From<ShardKeySelector> for rest::ShardKeySelector {
+    fn from(value: ShardKeySelector) -> Self {
+        let shard_keys: Vec<_> = value
+            .shard_keys
+            .into_iter()
+            .filter_map(convert_shard_key_from_grpc)
+            .collect();
+
+        if shard_keys.len() == 1 {
+            rest::ShardKeySelector::ShardKey(shard_keys.into_iter().next().unwrap())
+        } else {
+            rest::ShardKeySelector::ShardKeys(shard_keys)
+        }
     }
 }
 

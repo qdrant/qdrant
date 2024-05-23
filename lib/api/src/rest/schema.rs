@@ -5,7 +5,7 @@ use schemars::JsonSchema;
 use segment::common::utils::MaybeOneOrMany;
 use segment::data_types::order_by::OrderBy;
 use segment::json_path::JsonPath;
-use segment::types::{Filter, SearchParams, WithPayloadInterface, WithVector};
+use segment::types::{Filter, SearchParams, ShardKey, WithPayloadInterface, WithVector};
 use serde::{Deserialize, Serialize};
 use sparse::common::sparse_vector::SparseVector;
 
@@ -77,6 +77,14 @@ impl VectorStruct {
 pub enum BatchVectorStruct {
     Single(Vec<DenseVector>),
     Multi(HashMap<String, Vec<Vector>>),
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, JsonSchema, PartialEq)]
+#[serde(untagged)]
+pub enum ShardKeySelector {
+    ShardKey(ShardKey),
+    ShardKeys(Vec<ShardKey>),
+    // ToDo: select by pattern
 }
 
 /// Search result
@@ -163,7 +171,7 @@ pub enum VectorInput {
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct QueryRequest {
+pub struct QueryRequestInternal {
     /// Sub-requests to perform first. If present, the query will be performed on the results of the prefetches.
     #[serde(with = "MaybeOneOrMany")]
     #[schemars(with = "MaybeOneOrMany<Prefetch>")]
@@ -195,6 +203,13 @@ pub struct QueryRequest {
 
     /// Options for specifying which payload to include or not. Default is false.
     pub with_payload: Option<WithPayloadInterface>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct QueryRequest {
+    #[serde(flatten)]
+    pub internal: QueryRequestInternal,
+    pub shard_key: Option<ShardKeySelector>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]

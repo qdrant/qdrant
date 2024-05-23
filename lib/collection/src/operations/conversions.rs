@@ -11,6 +11,7 @@ use api::grpc::qdrant::update_collection_cluster_setup_request::{
     Operation as ClusterOperationsPb, Operation,
 };
 use api::grpc::qdrant::CreateShardKey;
+use api::rest::schema::ShardKeySelector;
 use common::types::ScoreType;
 use itertools::Itertools;
 use segment::data_types::vectors::{
@@ -50,7 +51,6 @@ use crate::operations::point_ops::{
     Batch, FilterSelector, PointIdsList, PointStruct, PointsSelector, WriteOrdering,
 };
 use crate::operations::query_enum::QueryEnum;
-use crate::operations::shard_key_selector::ShardKeySelector;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
     AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionStatus, CountResult,
@@ -1884,22 +1884,6 @@ impl TryFrom<ClusterOperationsPb> for ClusterOperations {
                 })
             }
         })
-    }
-}
-
-impl From<api::grpc::qdrant::ShardKeySelector> for ShardKeySelector {
-    fn from(value: api::grpc::qdrant::ShardKeySelector) -> Self {
-        let shard_keys: Vec<_> = value
-            .shard_keys
-            .into_iter()
-            .filter_map(convert_shard_key_from_grpc)
-            .collect();
-
-        if shard_keys.len() == 1 {
-            ShardKeySelector::ShardKey(shard_keys.into_iter().next().unwrap())
-        } else {
-            ShardKeySelector::ShardKeys(shard_keys)
-        }
     }
 }
 

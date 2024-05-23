@@ -7,7 +7,7 @@ use std::num::NonZeroU64;
 use std::time::SystemTimeError;
 
 use api::grpc::transport_channel_pool::RequestError;
-use api::rest::{OrderByInterface, RecommendStrategy};
+use api::rest::{OrderByInterface, RecommendStrategy, ShardKeySelector};
 use common::defaults;
 use common::types::ScoreType;
 use common::validation::validate_range_generic;
@@ -45,7 +45,6 @@ use crate::config::{CollectionConfig, CollectionParams};
 use crate::lookup::types::WithLookupInterface;
 use crate::operations::config_diff::{HnswConfigDiff, QuantizationConfigDiff};
 use crate::operations::query_enum::QueryEnum;
-use crate::operations::shard_key_selector::ShardKeySelector;
 use crate::save_on_disk;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};

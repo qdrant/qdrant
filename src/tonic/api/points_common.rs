@@ -15,7 +15,7 @@ use api::grpc::qdrant::{
     SearchPoints, SearchResponse, SetPayloadPoints, SyncPoints, UpdateBatchPoints,
     UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
 };
-use api::rest::OrderByInterface;
+use api::rest::{OrderByInterface, ShardKeySelector};
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::conversions::{
     try_discover_request_from_grpc, try_points_selector_from_grpc, write_ordering_from_proto,
@@ -25,7 +25,6 @@ use collection::operations::point_ops::{
     self, PointInsertOperations, PointOperations, PointSyncOperation, PointsList,
 };
 use collection::operations::query_enum::QueryEnum;
-use collection::operations::shard_key_selector::ShardKeySelector;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     default_exact_count, CoreSearchRequest, CoreSearchRequestBatch, PointRequestInternal,

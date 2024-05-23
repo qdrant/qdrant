@@ -1,7 +1,7 @@
+use api::rest::schema::ShardKeySelector;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::types::PointIdType;
 
-use crate::operations::shard_key_selector::ShardKeySelector;
 use crate::operations::types::{DiscoverRequestInternal, RecommendRequestInternal, UsingVector};
 
 const EMPTY_SHARD_KEY_SELECTOR: Option<ShardKeySelector> = None;
