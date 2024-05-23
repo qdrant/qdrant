@@ -58,14 +58,14 @@ pub struct ResourceUtilizabilityMetrics {
     /// The larger the value, the more likely it is that this node gets CPU-bound jobs assigned
     /// over other nodes.
     #[serde(default = "default_cpu_utilization_ratio")]
-    pub cpu_utilization_ratio: usize,
+    pub cpu_utilization_factor: usize,
 
     /// Factor of availability for the node to perform an I/O-bound task, like searching.
     /// This is a percent value:
     /// The larger the value, the more likely it is that this node gets I/O-bound jobs assigned
     /// over other nodes.
     #[serde(default = "default_io_utilization_ratio")]
-    pub io_utilization_ratio: usize,
+    pub io_utilization_factor: usize,
 }
 
 const fn default_io_utilization_ratio() -> usize {
