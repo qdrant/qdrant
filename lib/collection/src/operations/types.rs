@@ -515,14 +515,6 @@ impl From<u64> for RecommendExample {
     }
 }
 
-// /// How to use positive and negative examples to find the results, default is `average_vector`:
-// #[derive(Debug, Deserialize, Serialize, JsonSchema, Default, PartialEq, Clone, Copy)]
-// pub enum RecommendStrategy {
-//     #[default]
-//     AverageVector,
-//     BestScore,
-// }
-
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case", untagged)]
 pub enum UsingVector {
