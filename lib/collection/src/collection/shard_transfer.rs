@@ -84,6 +84,7 @@ impl Collection {
                 ShardTransferMethod::Snapshot | ShardTransferMethod::WalDelta => {
                     ReplicaState::Recovery
                 }
+                ShardTransferMethod::ReshardingStreamRecords => ReplicaState::Resharding,
             };
 
             // Create local shard if it does not exist on receiver, or simply set replica state otherwise

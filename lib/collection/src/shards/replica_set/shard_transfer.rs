@@ -5,6 +5,7 @@ use parking_lot::Mutex;
 use segment::types::PointIdType;
 
 use super::ShardReplicaSet;
+use crate::hash_ring::HashRing;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::forward_proxy_shard::ForwardProxyShard;
 use crate::shards::local_shard::clock_map::RecoveryPoint;
@@ -331,6 +332,7 @@ impl ShardReplicaSet {
         &self,
         offset: Option<PointIdType>,
         batch_size: usize,
+        hashring_filter: Option<&HashRing>,
     ) -> CollectionResult<Option<PointIdType>> {
         let local = self.local.read().await;
 
@@ -342,7 +344,7 @@ impl ShardReplicaSet {
         };
 
         proxy
-            .transfer_batch(offset, batch_size, &self.search_runtime)
+            .transfer_batch(offset, batch_size, hashring_filter, &self.search_runtime)
             .await
     }
 

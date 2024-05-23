@@ -13,6 +13,7 @@ use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 
 use super::update_tracker::UpdateTracker;
+use crate::hash_ring::HashRing;
 use crate::operations::point_ops::{PointOperations, PointStruct, PointSyncOperation};
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
@@ -85,6 +86,7 @@ impl ForwardProxyShard {
         &self,
         offset: Option<PointIdType>,
         batch_size: usize,
+        hashring_filter: Option<&HashRing>,
         runtime_handle: &Handle,
     ) -> CollectionResult<Option<PointIdType>> {
         debug_assert!(batch_size > 0);
@@ -110,8 +112,16 @@ impl ForwardProxyShard {
             Some(batch.pop().unwrap().id)
         };
 
-        let points: Result<Vec<PointStruct>, String> =
-            batch.into_iter().map(|point| point.try_into()).collect();
+        let points: Result<Vec<PointStruct>, String> = batch
+            .into_iter()
+            // If using a hashring filter, only transfer points that moved, otherwise transfer all
+            .filter(|point| {
+                hashring_filter
+                    .map(|hashring| hashring.has_moved(&point.id))
+                    .unwrap_or(true)
+            })
+            .map(|point| point.try_into())
+            .collect();
 
         let points = points?;
 
