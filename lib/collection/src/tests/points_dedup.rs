@@ -4,7 +4,8 @@ use std::sync::Arc;
 
 use api::rest::VectorStruct;
 use common::cpu::CpuBudget;
-use segment::types::{Distance, ExtendedPointId};
+use segment::types::{Distance, ExtendedPointId, Payload, PayloadFieldSchema, PayloadSchemaType};
+use serde_json::{Map, Value};
 use tempfile::Builder;
 
 use crate::collection::{Collection, RequestShardTransfer};
@@ -12,7 +13,9 @@ use crate::config::{CollectionConfig, CollectionParams, WalConfig};
 use crate::operations::point_ops::{PointInsertOperationsInternal, PointOperations, PointStruct};
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::shared_storage_config::SharedStorageConfig;
-use crate::operations::types::{PointRequestInternal, ScrollRequestInternal, VectorsConfig};
+use crate::operations::types::{
+    OrderByInterface, PointRequestInternal, ScrollRequestInternal, VectorsConfig,
+};
 use crate::operations::vector_params_builder::VectorParamsBuilder;
 use crate::operations::{CollectionUpdateOperations, OperationWithClockTag};
 use crate::optimizers_builder::OptimizersConfig;
@@ -78,6 +81,15 @@ async fn fixture() -> Collection {
     .await
     .unwrap();
 
+    // Create payload index to allow order by
+    collection
+        .create_payload_index(
+            "num".parse().unwrap(),
+            PayloadFieldSchema::FieldType(PayloadSchemaType::Integer),
+        )
+        .await
+        .expect("failed to create payload index");
+
     // Insert two points into all shards directly, a point matching the shard ID, and point 100
     // We insert into all shards directly to prevent spreading points by the hashring
     // We insert the same point into multiple shards on purpose
@@ -87,12 +99,18 @@ async fn fixture() -> Collection {
                 PointStruct {
                     id: (*shard_id as u64).into(),
                     vector: VectorStruct::Multi(HashMap::new()),
-                    payload: None,
+                    payload: Some(Payload(Map::from_iter([(
+                        "num".to_string(),
+                        Value::from(-(*shard_id as i32)),
+                    )]))),
                 },
                 PointStruct {
                     id: DUPLICATE_POINT_ID,
                     vector: VectorStruct::Multi(HashMap::new()),
-                    payload: None,
+                    payload: Some(Payload(Map::from_iter([(
+                        "num".to_string(),
+                        Value::from(100 - *shard_id as i32),
+                    )]))),
                 },
             ])),
         ));
@@ -117,7 +135,7 @@ async fn fixture() -> Collection {
 async fn test_scroll_dedup() {
     let collection = fixture().await;
 
-    // Scroll all points, we must get each point ID once
+    // Scroll all points without ordering
     let result = collection
         .scroll_by(
             ScrollRequestInternal {
@@ -133,6 +151,32 @@ async fn test_scroll_dedup() {
         )
         .await
         .expect("failed to search");
+
+    let mut seen = HashSet::new();
+    for point_id in result.points.iter().map(|point| point.id) {
+        assert!(
+            seen.insert(point_id),
+            "got point id {point_id} more than once, they should be deduplicated",
+        );
+    }
+
+    // Scroll all points with ordering
+    let result = collection
+        .scroll_by(
+            ScrollRequestInternal {
+                offset: None,
+                limit: Some(usize::MAX),
+                filter: None,
+                with_payload: Some(false.into()),
+                with_vector: false.into(),
+                order_by: Some(OrderByInterface::Key("num".parse().unwrap())),
+            },
+            None,
+            &ShardSelectorInternal::All,
+        )
+        .await
+        .expect("failed to search");
+
     let mut seen = HashSet::new();
     for point_id in result.points.iter().map(|point| point.id) {
         assert!(
