@@ -7,6 +7,7 @@ use std::num::NonZeroU64;
 use std::time::SystemTimeError;
 
 use api::grpc::transport_channel_pool::RequestError;
+use api::rest::{OrderByInterface, RecommendStrategy};
 use common::defaults;
 use common::types::ScoreType;
 use common::validation::validate_range_generic;
@@ -17,7 +18,6 @@ use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::common::operation_error::OperationError;
 use segment::data_types::groups::GroupId;
-use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{
     DenseVector, QueryVector, VectorRef, VectorStruct, DEFAULT_VECTOR_NAME,
 };
@@ -291,26 +291,6 @@ pub struct ScrollRequest {
     pub shard_key: Option<ShardKeySelector>,
 }
 
-#[derive(Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq)]
-#[serde(untagged)]
-pub enum OrderByInterface {
-    Key(JsonPath),
-    Struct(OrderBy),
-}
-
-impl From<OrderByInterface> for OrderBy {
-    fn from(order_by: OrderByInterface) -> Self {
-        match order_by {
-            OrderByInterface::Key(key) => OrderBy {
-                key,
-                direction: None,
-                start_from: None,
-            },
-            OrderByInterface::Struct(order_by) => order_by,
-        }
-    }
-}
-
 /// Scroll request - paginate over all points which matches given condition
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -536,22 +516,13 @@ impl From<u64> for RecommendExample {
     }
 }
 
-/// How to use positive and negative examples to find the results, default is `average_vector`:
-///
-/// * `average_vector` - Average positive and negative vectors and create a single query
-///   with the formula `query = avg_pos + avg_pos - avg_neg`. Then performs normal search.
-///
-/// * `best_score` - Uses custom search objective. Each candidate is compared against all
-///   examples, its score is then chosen from the `max(max_pos_score, max_neg_score)`.
-///   If the `max_neg_score` is chosen then it is squared and negated, otherwise it is just
-///   the `max_pos_score`.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Default, PartialEq, Clone, Copy)]
-#[serde(rename_all = "snake_case")]
-pub enum RecommendStrategy {
-    #[default]
-    AverageVector,
-    BestScore,
-}
+// /// How to use positive and negative examples to find the results, default is `average_vector`:
+// #[derive(Debug, Deserialize, Serialize, JsonSchema, Default, PartialEq, Clone, Copy)]
+// pub enum RecommendStrategy {
+//     #[default]
+//     AverageVector,
+//     BestScore,
+// }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case", untagged)]
@@ -614,7 +585,7 @@ pub struct RecommendRequestInternal {
     pub negative: Vec<RecommendExample>,
 
     /// How to use positive and negative examples to find the results
-    pub strategy: Option<RecommendStrategy>,
+    pub strategy: Option<api::rest::RecommendStrategy>,
 
     /// Look only for points which satisfies this conditions
     #[validate]

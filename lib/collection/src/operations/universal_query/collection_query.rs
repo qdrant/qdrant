@@ -1,10 +1,10 @@
 use common::types::ScoreType;
+use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::Vector;
 use segment::types::{Filter, PointIdType, SearchParams, WithPayloadInterface, WithVector};
 use segment::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery};
 
 use super::shard_query::Fusion;
-use crate::operations::types::OrderByInterface;
 
 /// Internal representation of a query request, used to converge from REST and gRPC. This can have IDs referencing vectors.
 pub struct CollectionQueryRequest {
@@ -29,7 +29,7 @@ pub enum Query {
     Fusion(Fusion),
 
     /// Order by a payload field
-    OrderBy(OrderByInterface),
+    OrderBy(OrderBy),
 }
 
 pub enum VectorInput {

@@ -1,16 +1,13 @@
 use api::grpc::qdrant as grpc;
 use common::types::ScoreType;
 use itertools::Itertools;
-use schemars::JsonSchema;
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{NamedQuery, NamedVectorStruct, Vector, DEFAULT_VECTOR_NAME};
 use segment::types::{Filter, ScoredPoint, SearchParams, WithPayloadInterface, WithVector};
 use segment::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery};
-use serde::{Deserialize, Serialize};
 use tonic::Status;
 
 use crate::operations::query_enum::QueryEnum;
-use crate::operations::types::OrderByInterface;
 
 /// Internal response type for a universal query request.
 ///
@@ -34,8 +31,7 @@ pub struct ShardQueryRequest {
     pub with_payload: WithPayloadInterface,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(untagged, rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Fusion {
     Rrf,
 }
@@ -49,7 +45,7 @@ pub enum ScoringQuery {
     Fusion(Fusion),
 
     /// Order by a payload field
-    OrderBy(OrderByInterface),
+    OrderBy(OrderBy),
 }
 
 impl ScoringQuery {
@@ -238,7 +234,7 @@ impl ScoringQuery {
                 ScoringQuery::Fusion(Fusion::try_from(fusion)?)
             }
             grpc::query_shard_points::query::Score::OrderBy(order_by) => {
-                ScoringQuery::OrderBy(OrderByInterface::try_from(order_by)?)
+                ScoringQuery::OrderBy(OrderBy::try_from(order_by)?)
             }
         };
 
@@ -281,7 +277,7 @@ impl From<ScoringQuery> for grpc::query_shard_points::Query {
                 score: Some(Score::Fusion(api::grpc::qdrant::Fusion::from(fusion) as i32)),
             },
             ScoringQuery::OrderBy(order_by) => Self {
-                score: Some(Score::OrderBy(grpc::OrderBy::from(OrderBy::from(order_by)))),
+                score: Some(Score::OrderBy(grpc::OrderBy::from(order_by))),
             },
         }
     }
