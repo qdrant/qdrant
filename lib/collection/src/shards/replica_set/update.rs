@@ -320,7 +320,8 @@ impl ShardReplicaSet {
 
         // Notify consensus about failures if:
         // 1. There is at least one success, otherwise it might be a problem of sending node
-        // 2. ???
+        // 2. Failed peer is in `Resharding` state
+        // 3. ???
 
         let failure_error = if let Some((peer_id, collection_error)) = failures.first() {
             format!("Failed peer: {}, error: {}", peer_id, collection_error)
@@ -367,6 +368,14 @@ impl ShardReplicaSet {
         }
 
         if !failures.is_empty() && successes.len() < minimal_success_count {
+            // TODO(resarding): 🤔
+            self.handle_failed_replicas(
+                failures
+                    .iter()
+                    .filter(|(peer_id, _)| self.peer_is_resharding(peer_id)),
+                &self.replica_state.read(),
+            );
+
             // completely failed - report error to user
             let (_peer_id, err) = failures.into_iter().next().expect("failures is not empty");
             return Err(err);
@@ -414,9 +423,14 @@ impl ShardReplicaSet {
         res && !self.is_locally_disabled(peer_id)
     }
 
-    fn handle_failed_replicas(
+    fn peer_is_resharding(&self, peer_id: &PeerId) -> bool {
+        self.peer_state(peer_id) == Some(ReplicaState::Resharding)
+            && !self.is_locally_disabled(peer_id)
+    }
+
+    fn handle_failed_replicas<'a>(
         &self,
-        failures: &Vec<(PeerId, CollectionError)>,
+        failures: impl IntoIterator<Item = &'a (PeerId, CollectionError)>,
         state: &ReplicaSetState,
     ) -> bool {
         let mut wait_for_deactivation = false;
@@ -432,10 +446,12 @@ impl ShardReplicaSet {
                 continue;
             };
 
-            if peer_state != ReplicaState::Active && peer_state != ReplicaState::Initializing {
-                continue;
+            match peer_state {
+                ReplicaState::Active | ReplicaState::Initializing | ReplicaState::Resharding => (),
+                _ => continue,
             }
 
+            // TODO(resharding): 🤔
             if peer_state == ReplicaState::Partial
                 && matches!(err, CollectionError::PreConditionFailed { .. })
             {
@@ -444,6 +460,7 @@ impl ShardReplicaSet {
                 continue;
             }
 
+            // TODO(resharding): 🤔🤔🤔
             if err.is_transient() || peer_state == ReplicaState::Initializing {
                 // If the error is transient, we should not deactivate the peer
                 // before allowing other operations to continue.
