@@ -137,7 +137,6 @@ fn main() -> anyhow::Result<()> {
     remove_started_file_indicator();
 
     let settings = Settings::new(args.config_path)?;
-    println!("{:#?}", settings.storage.performance);
 
     let reporting_enabled = !settings.telemetry_disabled && !args.disable_telemetry;
 
