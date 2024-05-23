@@ -1,8 +1,8 @@
 #[cfg(target_os = "linux")]
 pub mod pyro {
 
-    use pyroscope::PyroscopeAgent;
-    use pyroscope::{pyroscope::PyroscopeAgentRunning, PyroscopeError};
+    use pyroscope::pyroscope::PyroscopeAgentRunning;
+    use pyroscope::{PyroscopeAgent, PyroscopeError};
     use pyroscope_pprofrs::{pprof_backend, PprofConfig};
 
     use crate::common::debug::PyroscopeConfig;
