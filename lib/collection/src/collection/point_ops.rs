@@ -298,6 +298,8 @@ impl Collection {
             None => retrieved_iter
                 .flatten()
                 .sorted_unstable_by_key(|point| point.id)
+                // Add each point only once, deduplicate point IDs
+                .dedup_by(|a, b| a.id == b.id)
                 .take(limit)
                 .map(api::rest::Record::from)
                 .collect_vec(),
