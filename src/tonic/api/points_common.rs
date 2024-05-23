@@ -1428,7 +1428,10 @@ pub async fn scroll(
         with_vector: with_vectors
             .map(|selector| selector.into())
             .unwrap_or_default(),
-        order_by: order_by.map(OrderBy::try_from).transpose()?.map(OrderByInterface::Struct),
+        order_by: order_by
+            .map(OrderBy::try_from)
+            .transpose()?
+            .map(OrderByInterface::Struct),
     };
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;

@@ -523,7 +523,8 @@ message PrefetchQuery {
   optional string using = 3; // Define which vector to use for querying. If missing, the default vector is is used.
   optional Filter filter = 4; // Filter conditions - return only those points that satisfy the specified conditions.
   optional SearchParams search_params = 5; // Search params for when there is no prefetch.
-  optional uint64 limit = 6; // Max number of points. Default is 10
+  optional float score_threshold = 6; // Return points with scores better than this threshold.
+  optional uint64 limit = 7; // Max number of points. Default is 10
 }
 
 message QueryPoints {
@@ -533,12 +534,13 @@ message QueryPoints {
   optional string using = 4; // Define which vector to use for querying. If missing, the default vector is used.
   optional Filter filter = 5; // Filter conditions - return only those points that satisfy the specified conditions.
   optional SearchParams search_params = 6; // Search params for when there is no prefetch.
-  optional uint64 limit = 7; // Max number of points. Default is 10.
-  optional uint64 offset = 8; // Offset of the result. Skip this many points. Default is 0.
-  optional WithVectorsSelector with_vectors = 9; // Options for specifying which vectors to include into the response.
-  optional WithPayloadSelector with_payload = 10; // Options for specifying which payload to include or not.
-  optional ReadConsistency read_consistency = 11; // Options for specifying read consistency guarantees.
-  optional ShardKeySelector shard_key_selector = 12; // Specify in which shards to look for the points, if not specified - look in all shards.
+  optional float score_threshold = 7; // Return points with scores better than this threshold.
+  optional uint64 limit = 8; // Max number of points. Default is 10.
+  optional uint64 offset = 9; // Offset of the result. Skip this many points. Default is 0.
+  optional WithVectorsSelector with_vectors = 10; // Options for specifying which vectors to include into the response.
+  optional WithPayloadSelector with_payload = 11; // Options for specifying which payload to include or not.
+  optional ReadConsistency read_consistency = 12; // Options for specifying read consistency guarantees.
+  optional ShardKeySelector shard_key_selector = 13; // Specify in which shards to look for the points, if not specified - look in all shards.
 }
 
 message PointsUpdateOperation {

@@ -15,7 +15,9 @@ use uuid::Uuid;
 
 use super::qdrant::raw_query::RawContextPair;
 use super::qdrant::{
-    raw_query, start_from, BinaryQuantization, CompressionRatio, DatetimeRange, Direction, GeoLineString, GroupId, MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue, Range, RawVector, RecommendStrategy, SparseIndices, StartFrom
+    raw_query, start_from, BinaryQuantization, CompressionRatio, DatetimeRange, Direction,
+    GeoLineString, GroupId, MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue, Range,
+    RawVector, RecommendStrategy, SparseIndices, StartFrom,
 };
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
@@ -1443,8 +1445,9 @@ impl TryFrom<OrderBy> for segment::data_types::order_by::OrderBy {
     type Error = Status;
 
     fn try_from(value: OrderBy) -> Result<Self, Self::Error> {
-        use crate::grpc::qdrant::start_from::Value;
         use segment::data_types::order_by::StartFrom;
+
+        use crate::grpc::qdrant::start_from::Value;
 
         let direction = value
             .direction
@@ -1456,20 +1459,16 @@ impl TryFrom<OrderBy> for segment::data_types::order_by::OrderBy {
             .and_then(|value| value.value)
             .map(|v| -> Result<StartFrom, Status> {
                 match v {
-                    Value::Integer(int) => {
-                        Ok(StartFrom::Integer(int))
-                    }
-                    Value::Float(float) => {
-                        Ok(StartFrom::Float(float))
-                    }
+                    Value::Integer(int) => Ok(StartFrom::Integer(int)),
+                    Value::Float(float) => Ok(StartFrom::Float(float)),
                     Value::Timestamp(timestamp) => {
                         Ok(StartFrom::Datetime(try_date_time_from_proto(timestamp)?))
                     }
-                    Value::Datetime(datetime_str) => Ok(
-                        StartFrom::Datetime(segment::types::DateTimeWrapper::from_str(&datetime_str).map_err(
-                            |e| Status::invalid_argument(format!("Malformed datetime: {e}")),
-                        )?),
-                    ),
+                    Value::Datetime(datetime_str) => Ok(StartFrom::Datetime(
+                        segment::types::DateTimeWrapper::from_str(&datetime_str).map_err(|e| {
+                            Status::invalid_argument(format!("Malformed datetime: {e}"))
+                        })?,
+                    )),
                 }
             })
             .transpose()?;

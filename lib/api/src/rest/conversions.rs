@@ -1,6 +1,7 @@
 use segment::data_types::order_by::OrderBy;
 
-use super::{schema::{BatchVectorStruct, ScoredPoint, Vector, VectorStruct}, OrderByInterface};
+use super::schema::{BatchVectorStruct, ScoredPoint, Vector, VectorStruct};
+use super::OrderByInterface;
 use crate::rest::{DenseVector, NamedVectorStruct};
 
 impl From<segment::data_types::vectors::Vector> for Vector {

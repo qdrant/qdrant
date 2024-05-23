@@ -1,7 +1,11 @@
 use std::collections::HashMap;
 
+use common::types::ScoreType;
 use schemars::JsonSchema;
-use segment::{common::utils::MaybeOneOrMany, data_types::order_by::OrderBy, json_path::JsonPath, types::{Filter, SearchParams, WithPayloadInterface, WithVector}};
+use segment::common::utils::MaybeOneOrMany;
+use segment::data_types::order_by::OrderBy;
+use segment::json_path::JsonPath;
+use segment::types::{Filter, SearchParams, WithPayloadInterface, WithVector};
 use serde::{Deserialize, Serialize};
 use sparse::common::sparse_vector::SparseVector;
 
@@ -177,6 +181,9 @@ pub struct QueryRequest {
     /// Search params for when there is no prefetch
     pub params: Option<SearchParams>,
 
+    /// Return points with scores better than this threshold.
+    pub score_threshold: Option<ScoreType>,
+
     /// Max number of points. Default is 10.
     pub limit: Option<usize>,
 
@@ -237,6 +244,9 @@ pub struct Prefetch {
 
     /// Search params for when there is no prefetch
     pub params: Option<SearchParams>,
+
+    /// Return points with scores better than this threshold.
+    pub score_threshold: Option<ScoreType>,
 
     /// Max number of points. Default is 10.
     pub limit: Option<usize>,

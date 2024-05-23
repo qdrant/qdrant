@@ -17,9 +17,7 @@ use segment::data_types::vectors::{
     BatchVectorStruct, Named, NamedQuery, NamedVectorStruct, Vector, VectorStruct,
     DEFAULT_VECTOR_NAME,
 };
-use segment::types::{
-    Distance, MultiVectorConfig, QuantizationConfig, ScoredPoint,
-};
+use segment::types::{Distance, MultiVectorConfig, QuantizationConfig, ScoredPoint};
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
 use sparse::common::sparse_vector::{validate_sparse_vector_impl, SparseVector};
 use tonic::Status;
@@ -27,9 +25,9 @@ use tonic::Status;
 use super::consistency_params::ReadConsistency;
 use super::types::{
     BaseGroupRequest, ContextExamplePair, CoreSearchRequest, Datatype, DiscoverRequestInternal,
-    GroupsResult, Modifier, PointGroup, RecommendExample,
-    RecommendGroupsRequestInternal, SearchGroupsRequestInternal,
-    SparseIndexParams, SparseVectorParams, VectorParamsDiff, VectorsConfigDiff,
+    GroupsResult, Modifier, PointGroup, RecommendExample, RecommendGroupsRequestInternal,
+    SearchGroupsRequestInternal, SparseIndexParams, SparseVectorParams, VectorParamsDiff,
+    VectorsConfigDiff,
 };
 use crate::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,

@@ -4820,8 +4820,11 @@ pub struct PrefetchQuery {
     /// Search params for when there is no prefetch.
     #[prost(message, optional, tag = "5")]
     pub search_params: ::core::option::Option<SearchParams>,
+    /// Return points with scores better than this threshold.
+    #[prost(float, optional, tag = "6")]
+    pub score_threshold: ::core::option::Option<f32>,
     /// Max number of points. Default is 10
-    #[prost(uint64, optional, tag = "6")]
+    #[prost(uint64, optional, tag = "7")]
     pub limit: ::core::option::Option<u64>,
 }
 #[derive(serde::Serialize)]
@@ -4846,23 +4849,26 @@ pub struct QueryPoints {
     /// Search params for when there is no prefetch.
     #[prost(message, optional, tag = "6")]
     pub search_params: ::core::option::Option<SearchParams>,
+    /// Return points with scores better than this threshold.
+    #[prost(float, optional, tag = "7")]
+    pub score_threshold: ::core::option::Option<f32>,
     /// Max number of points. Default is 10.
-    #[prost(uint64, optional, tag = "7")]
+    #[prost(uint64, optional, tag = "8")]
     pub limit: ::core::option::Option<u64>,
     /// Offset of the result. Skip this many points. Default is 0.
-    #[prost(uint64, optional, tag = "8")]
+    #[prost(uint64, optional, tag = "9")]
     pub offset: ::core::option::Option<u64>,
     /// Options for specifying which vectors to include into the response.
-    #[prost(message, optional, tag = "9")]
+    #[prost(message, optional, tag = "10")]
     pub with_vectors: ::core::option::Option<WithVectorsSelector>,
     /// Options for specifying which payload to include or not.
-    #[prost(message, optional, tag = "10")]
+    #[prost(message, optional, tag = "11")]
     pub with_payload: ::core::option::Option<WithPayloadSelector>,
     /// Options for specifying read consistency guarantees.
-    #[prost(message, optional, tag = "11")]
+    #[prost(message, optional, tag = "12")]
     pub read_consistency: ::core::option::Option<ReadConsistency>,
     /// Specify in which shards to look for the points, if not specified - look in all shards.
-    #[prost(message, optional, tag = "12")]
+    #[prost(message, optional, tag = "13")]
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
 #[derive(serde::Serialize)]

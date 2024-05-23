@@ -3023,6 +3023,7 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | using | [string](#string) | optional | Define which vector to use for querying. If missing, the default vector is is used. |
 | filter | [Filter](#qdrant-Filter) | optional | Filter conditions - return only those points that satisfy the specified conditions. |
 | search_params | [SearchParams](#qdrant-SearchParams) | optional | Search params for when there is no prefetch. |
+| score_threshold | [float](#float) | optional | Return points with scores better than this threshold. |
 | limit | [uint64](#uint64) | optional | Max number of points. Default is 10 |
 
 
@@ -3085,6 +3086,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | using | [string](#string) | optional | Define which vector to use for querying. If missing, the default vector is used. |
 | filter | [Filter](#qdrant-Filter) | optional | Filter conditions - return only those points that satisfy the specified conditions. |
 | search_params | [SearchParams](#qdrant-SearchParams) | optional | Search params for when there is no prefetch. |
+| score_threshold | [float](#float) | optional | Return points with scores better than this threshold. |
 | limit | [uint64](#uint64) | optional | Max number of points. Default is 10. |
 | offset | [uint64](#uint64) | optional | Offset of the result. Skip this many points. Default is 0. |
 | with_vectors | [WithVectorsSelector](#qdrant-WithVectorsSelector) | optional | Options for specifying which vectors to include into the response. |
