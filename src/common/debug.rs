@@ -1,4 +1,5 @@
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -50,7 +51,7 @@ impl DebugState {
         let pyroscope_config = {
             #[cfg(target_os = "linux")]
             {
-                let pyroscope_state_guard = self.pyroscope.lock().unwrap();
+                let pyroscope_state_guard = self.pyroscope.lock();
                 pyroscope_state_guard.as_ref().map(|s| s.config.clone())
             }
             #[cfg(not(target_os = "linux"))]
@@ -72,13 +73,13 @@ impl DebugState {
                     log::info!("Patch matched");
                     if let Some(pyro_config) = pyro_config {
                         log::info!("Patch matched: Config found");
-                        let mut pyroscope_state_guard = self.pyroscope.lock().unwrap();
+                        let mut pyroscope_state_guard = self.pyroscope.lock();
                         *pyroscope_state_guard = PyroscopeState::from_config(Some(pyro_config));
                     }
                 }
                 PyroscopeConfigPatch::Null => {
                     log::info!("Null matched");
-                    let mut pyroscope_guard = self.pyroscope.lock().unwrap();
+                    let mut pyroscope_guard = self.pyroscope.lock();
                     *pyroscope_guard = None; // This also shuts down the agent (because of drop)
                 }
             }
