@@ -39,10 +39,16 @@ impl TableOfContent {
                         .sharding_method
                         .unwrap_or_default()
                     {
-                        ShardingMethod::Auto => CollectionShardDistribution::all_local(
-                            operation.create_collection.shard_number,
-                            self.this_peer_id,
-                        ),
+                        ShardingMethod::Auto => {
+                            let shard_number =
+                                operation.create_collection.shard_number.or_else(|| {
+                                    self.storage_config
+                                        .collection
+                                        .as_ref()
+                                        .map(|i| i.shard_number_per_node)
+                                });
+                            CollectionShardDistribution::all_local(shard_number, self.this_peer_id)
+                        }
                         ShardingMethod::Custom => ShardDistributionProposal::empty().into(),
                     },
                     Some(distribution) => distribution.into(),
