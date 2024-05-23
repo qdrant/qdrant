@@ -4,8 +4,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures::{future, TryFutureExt};
+use itertools::{Either, Itertools};
 use segment::data_types::vectors::VectorStruct;
-use segment::spaces::tools;
 use segment::types::{
     ExtendedPointId, Filter, Order, ScoredPoint, WithPayloadInterface, WithVector,
 };
@@ -235,59 +235,48 @@ impl Collection {
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let batch_size = request.searches.len();
 
+        let collection_params = self.collection_config.read().await.params.clone();
+
         // Merge results from shards in order and deduplicate based on point ID
-        let batch_count = all_searches_res.first().map_or(0, Vec::len);
-        debug_assert!(all_searches_res.iter().all(|x| batch_count == x.len()));
-        let mut merged_results: Vec<Vec<ScoredPoint>> = Vec::with_capacity(batch_size);
-        let mut covered_point_ids = HashSet::new();
-        for batch_index in 0..batch_count {
+        let mut top_results: Vec<Vec<ScoredPoint>> = Vec::with_capacity(batch_size);
+        let mut seen_ids = HashSet::new();
+
+        for (batch_index, request) in request.searches.iter().enumerate() {
+            let order = if request.query.is_distance_scored() {
+                collection_params
+                    .get_distance(request.query.get_vector_name())?
+                    .distance_order()
+            } else {
+                // Score comes from special handling of the distances in a way that it doesn't
+                // directly represent distance anymore, so the order is always `LargeBetter`
+                Order::LargeBetter
+            };
+
             let results_from_shards = all_searches_res
                 .iter_mut()
-                .flat_map(|res| mem::take(&mut res[batch_index]));
-            let results = results_from_shards
-                // Add each point only once, deduplicate point IDs
-                .filter(|result| covered_point_ids.insert(result.id))
-                .collect();
-            merged_results.push(results);
-            covered_point_ids.clear();
+                .map(|res| mem::take(&mut res[batch_index]));
+
+            let merged_iter = match order {
+                Order::LargeBetter => Either::Left(results_from_shards.kmerge_by(|a, b| a > b)),
+                Order::SmallBetter => Either::Right(results_from_shards.kmerge_by(|a, b| a < b)),
+            }
+            .filter(|point| seen_ids.insert(point.id));
+
+            // Skip `offset` only for client requests
+            // to avoid applying `offset` twice in distributed mode.
+            let top_res = if is_client_request && request.offset > 0 {
+                merged_iter
+                    .skip(request.offset)
+                    .take(request.limit)
+                    .collect()
+            } else {
+                merged_iter.take(request.offset + request.limit).collect()
+            };
+
+            top_results.push(top_res);
+
+            seen_ids.clear();
         }
-
-        let collection_params = self.collection_config.read().await.params.clone();
-        let top_results: Vec<_> = merged_results
-            .into_iter()
-            .zip(request.searches.iter())
-            .map(|(res, request)| {
-                let order = if request.query.is_distance_scored() {
-                    collection_params
-                        .get_distance(request.query.get_vector_name())?
-                        .distance_order()
-                } else {
-                    // Score comes from special handling of the distances in a way that it doesn't
-                    // directly represent distance anymore, so the order is always `LargeBetter`
-                    Order::LargeBetter
-                };
-
-                let mut top_res = match order {
-                    Order::LargeBetter => {
-                        tools::peek_top_largest_iterable(res, request.limit + request.offset)
-                    }
-                    Order::SmallBetter => {
-                        tools::peek_top_smallest_iterable(res, request.limit + request.offset)
-                    }
-                };
-                // Remove `offset` from top result only for client requests
-                // to avoid applying `offset` twice in distributed mode.
-                if is_client_request && request.offset > 0 {
-                    if top_res.len() >= request.offset {
-                        // Panics if the end point > length of the vector.
-                        top_res.drain(..request.offset);
-                    } else {
-                        top_res.clear()
-                    }
-                }
-                Ok(top_res)
-            })
-            .collect::<CollectionResult<Vec<_>>>()?;
 
         Ok(top_results)
     }
