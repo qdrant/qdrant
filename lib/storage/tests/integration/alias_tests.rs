@@ -55,6 +55,7 @@ fn test_alias_operation() {
             search_timeout_sec: None,
             incoming_shard_transfers_limit: Some(1),
             outgoing_shard_transfers_limit: Some(1),
+            resource_utilizability_metrics: None,
         },
         hnsw_index: Default::default(),
         mmap_advice: madvise::Advice::Random,
