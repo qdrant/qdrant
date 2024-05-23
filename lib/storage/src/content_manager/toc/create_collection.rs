@@ -142,7 +142,11 @@ impl TableOfContent {
         };
 
         let quantization_config = match quantization_config {
-            None => self.storage_config.quantization.clone(),
+            None => self
+                .storage_config
+                .collection
+                .as_ref()
+                .and_then(|i| i.quantization.clone()),
             Some(diff) => Some(diff),
         };
 

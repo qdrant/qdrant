@@ -371,6 +371,39 @@ pub struct SearchParams {
     pub indexed_only: bool,
 }
 
+/// Collection default values
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
+pub struct CollectionConfig {
+    #[serde(default)]
+    pub vectors: Option<VectorsConfig>,
+
+    #[validate]
+    pub quantization: Option<QuantizationConfig>,
+
+    #[validate(range(min = 1))]
+    #[serde(default = "default_replication_factor")]
+    pub replication_factor: u32,
+
+    #[serde(default = "default_write_consistency_factor")]
+    #[validate(range(min = 1))]
+    pub write_consistency_factor: u32,
+}
+
+/// Configuration for vectors.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
+pub struct VectorsConfig {
+    #[serde(default)]
+    pub on_disk: Option<bool>,
+}
+
+const fn default_replication_factor() -> u32 {
+    1
+}
+
+const fn default_write_consistency_factor() -> u32 {
+    1
+}
+
 /// Vector index configuration
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
