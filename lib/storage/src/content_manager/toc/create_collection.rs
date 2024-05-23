@@ -34,7 +34,7 @@ impl TableOfContent {
         let collection_create_guard = self.collection_create_lock.lock().await;
 
         let CreateCollection {
-            vectors,
+            mut vectors,
             shard_number,
             sharding_method,
             on_disk_payload,
@@ -100,11 +100,34 @@ impl TableOfContent {
             }
         };
 
-        let replication_factor =
-            replication_factor.unwrap_or_else(|| config::default_replication_factor().get());
+        let collection_defaults_config = self.storage_config.collection.as_ref();
+
+        let replication_factor = replication_factor
+            .or_else(|| collection_defaults_config.map(|i| i.replication_factor))
+            .unwrap_or_else(|| config::default_replication_factor().get());
 
         let write_consistency_factor = write_consistency_factor
+            .or_else(|| collection_defaults_config.map(|i| i.write_consistency_factor))
             .unwrap_or_else(|| config::default_write_consistency_factor().get());
+
+        // Apply default vector config values if not set.
+        let vectors_defaults = collection_defaults_config.and_then(|i| i.vectors.as_ref());
+        if let Some(vectors_defaults) = vectors_defaults {
+            match &mut vectors {
+                VectorsConfig::Single(s) => {
+                    if let Some(on_disk_default) = vectors_defaults.on_disk {
+                        s.on_disk.get_or_insert(on_disk_default);
+                    }
+                }
+                VectorsConfig::Multi(m) => {
+                    for (_, vec_params) in m.iter_mut() {
+                        if let Some(on_disk_default) = vectors_defaults.on_disk {
+                            vec_params.on_disk.get_or_insert(on_disk_default);
+                        }
+                    }
+                }
+            };
+        }
 
         let collection_params = CollectionParams {
             vectors,
