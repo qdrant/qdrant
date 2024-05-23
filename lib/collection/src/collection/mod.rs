@@ -610,6 +610,7 @@ impl Collection {
                     from: replica_id,
                     to: *this_peer_id,
                     shard_id,
+                    to_shard_id: None,
                     sync: true,
                     // For automatic shard transfers, always select some default method from this point on
                     method: Some(shard_transfer_method),

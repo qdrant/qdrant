@@ -15,6 +15,7 @@ use crate::operations::types::{CollectionError, CollectionResult};
 
 pub mod driver;
 pub mod helpers;
+pub mod resharding_stream_records;
 pub mod snapshot;
 pub mod stream_records;
 pub mod transfer_tasks_pool;
@@ -37,6 +38,10 @@ pub struct ShardTransfer {
     /// Method to transfer shard with. `None` to choose automatically.
     #[serde(default)]
     pub method: Option<ShardTransferMethod>,
+    /// For resharding, a different target shard ID may be configured
+    /// By default the shard ID on the target peer is the same.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_shard_id: Option<ShardId>,
 }
 
 impl ShardTransfer {
@@ -103,6 +108,11 @@ pub enum ShardTransferMethod {
     Snapshot,
     /// Attempt to transfer shard difference by WAL delta.
     WalDelta,
+    /// Shard transfer for resharding: stream all records in batches until all points are
+    /// transferred.
+    #[doc(hidden)]
+    #[schemars(skip)]
+    ReshardingStreamRecords,
 }
 
 /// Interface to consensus for shard transfer operations.

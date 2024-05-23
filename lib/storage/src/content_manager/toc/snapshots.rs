@@ -125,6 +125,7 @@ impl TableOfContent {
         if let Some(proposal_sender) = &self.consensus_proposal_sender {
             let transfer_request = ShardTransfer {
                 shard_id,
+                to_shard_id: None,
                 from: from_peer,
                 to: to_peer,
                 sync,
