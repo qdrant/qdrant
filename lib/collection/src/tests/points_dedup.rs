@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use api::rest::VectorStruct;
 use common::cpu::CpuBudget;
-use segment::types::Distance;
+use segment::types::{Distance, ExtendedPointId};
 use tempfile::Builder;
 
 use crate::collection::{Collection, RequestShardTransfer};
@@ -12,7 +12,7 @@ use crate::config::{CollectionConfig, CollectionParams, WalConfig};
 use crate::operations::point_ops::{PointInsertOperationsInternal, PointOperations, PointStruct};
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::shared_storage_config::SharedStorageConfig;
-use crate::operations::types::{ScrollRequestInternal, VectorsConfig};
+use crate::operations::types::{PointRequestInternal, ScrollRequestInternal, VectorsConfig};
 use crate::operations::vector_params_builder::VectorParamsBuilder;
 use crate::operations::{CollectionUpdateOperations, OperationWithClockTag};
 use crate::optimizers_builder::OptimizersConfig;
@@ -23,6 +23,7 @@ use crate::shards::shard::{PeerId, ShardId};
 
 const PEER_ID: u64 = 1;
 const SHARD_COUNT: u32 = 4;
+const DUPLICATE_POINT_ID: ExtendedPointId = ExtendedPointId::NumId(100);
 
 /// Create the collection used for deduplication tests.
 async fn fixture() -> Collection {
@@ -89,7 +90,7 @@ async fn fixture() -> Collection {
                     payload: None,
                 },
                 PointStruct {
-                    id: 100.into(),
+                    id: DUPLICATE_POINT_ID,
                     vector: VectorStruct::Multi(HashMap::new()),
                     payload: None,
                 },
@@ -134,6 +135,35 @@ async fn test_scroll_dedup() {
         .expect("failed to search");
     let mut seen = HashSet::new();
     for point_id in result.points.iter().map(|point| point.id) {
+        assert!(
+            seen.insert(point_id),
+            "got point id {point_id} more than once, they should be deduplicated",
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_retrieve_dedup() {
+    let collection = fixture().await;
+
+    let records = collection
+        .retrieve(
+            PointRequestInternal {
+                ids: (0..SHARD_COUNT as u64)
+                    .map(ExtendedPointId::from)
+                    .chain([DUPLICATE_POINT_ID])
+                    .collect(),
+                with_payload: Some(false.into()),
+                with_vector: false.into(),
+            },
+            None,
+            &ShardSelectorInternal::All,
+        )
+        .await
+        .expect("failed to search");
+
+    let mut seen = HashSet::new();
+    for point_id in records.iter().map(|record| record.id) {
         assert!(
             seen.insert(point_id),
             "got point id {point_id} more than once, they should be deduplicated",
