@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
-use segment::types::{HnswConfig, QuantizationConfig, SegmentType, VECTOR_ELEMENT_SIZE};
+use segment::types::{HnswConfig, QuantizationConfig, SegmentType};
 
 use crate::collection_manager::holders::segment_holder::{
     LockedSegmentHolder, SegmentHolder, SegmentId,
@@ -65,15 +65,7 @@ impl IndexingOptimizer {
             .filter_map(|(idx, segment)| {
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
-                let point_count = read_segment.available_point_count();
-                let vector_size = point_count
-                    * read_segment
-                        .vector_dims()
-                        .values()
-                        .max()
-                        .copied()
-                        .unwrap_or(0)
-                    * VECTOR_ELEMENT_SIZE;
+                let vector_size = read_segment.max_avaliable_vectors_size_in_bytes().unwrap_or_default();
 
                 if read_segment.segment_type() == SegmentType::Special {
                     return None; // Never optimize already optimized segment
@@ -106,15 +98,9 @@ impl IndexingOptimizer {
             .filter_map(|(idx, segment)| {
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
-                let point_count = read_segment.available_point_count();
-                let max_vector_size_bytes = point_count
-                    * read_segment
-                        .vector_dims()
-                        .values()
-                        .max()
-                        .copied()
-                        .unwrap_or(0)
-                    * VECTOR_ELEMENT_SIZE;
+                let max_vector_size_bytes = read_segment
+                    .max_avaliable_vectors_size_in_bytes()
+                    .unwrap_or_default();
 
                 let segment_config = read_segment.config();
 
@@ -136,8 +122,7 @@ impl IndexingOptimizer {
                     if let Some(vector_data) = segment_config.vector_data.get(vector_name) {
                         let is_indexed = vector_data.index.is_indexed();
                         let is_on_disk = vector_data.storage_type.is_on_disk();
-                        let storage_size_bytes =
-                            point_count * vector_data.size * VECTOR_ELEMENT_SIZE;
+                        let storage_size_bytes = read_segment.avaliable_vectors_size_in_bytes(vector_name).unwrap_or_default();
 
                         let is_big_for_index = storage_size_bytes >= indexing_threshold_bytes;
                         let is_big_for_mmap = storage_size_bytes >= mmap_threshold_bytes;
@@ -165,13 +150,10 @@ impl IndexingOptimizer {
                             if let Some(sparse_vector_data) =
                                 segment_config.sparse_vector_data.get(sparse_vector_name)
                             {
-                                let vector_dim =
-                                    read_segment.vector_dim(sparse_vector_name).unwrap_or(0);
-
                                 let is_index_immutable =
                                     sparse_vector_data.index.index_type.is_immutable();
 
-                                let storage_size = point_count * vector_dim * VECTOR_ELEMENT_SIZE;
+                                let storage_size = read_segment.avaliable_vectors_size_in_bytes(sparse_vector_name).unwrap_or_default();
 
                                 let is_big_for_index = storage_size >= indexing_threshold_bytes;
                                 let is_big_for_mmap = storage_size >= mmap_threshold_bytes;

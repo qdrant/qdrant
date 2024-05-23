@@ -51,6 +51,8 @@ pub trait VectorStorage {
             .saturating_sub(self.deleted_vector_count())
     }
 
+    fn data_size_in_bytes(&self) -> usize;
+
     /// Get the vector by the given key
     fn get_vector(&self, key: PointOffsetType) -> CowVector;
 
@@ -244,6 +246,27 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.total_vector_count(),
             VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.total_vector_count(),
             VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.total_vector_count(),
+        }
+    }
+
+    fn data_size_in_bytes(&self) -> usize {
+        match self {
+            VectorStorageEnum::DenseSimple(v) => v.data_size_in_bytes(),
+            VectorStorageEnum::DenseSimpleByte(v) => v.data_size_in_bytes(),
+            VectorStorageEnum::DenseSimpleHalf(v) => v.data_size_in_bytes(),
+            VectorStorageEnum::DenseMemmap(v) => v.data_size_in_bytes(),
+            VectorStorageEnum::DenseMemmapByte(v) => v.data_size_in_bytes(),
+            VectorStorageEnum::DenseMemmapHalf(v) => v.data_size_in_bytes(),
+            VectorStorageEnum::DenseAppendableMemmap(v) => v.data_size_in_bytes(),
+            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.data_size_in_bytes(),
+            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.data_size_in_bytes(),
+            VectorStorageEnum::SparseSimple(v) => v.data_size_in_bytes(),
+            VectorStorageEnum::MultiDenseSimple(v) => v.data_size_in_bytes(),
+            VectorStorageEnum::MultiDenseSimpleByte(v) => v.data_size_in_bytes(),
+            VectorStorageEnum::MultiDenseSimpleHalf(v) => v.data_size_in_bytes(),
+            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.data_size_in_bytes(),
+            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.data_size_in_bytes(),
+            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.data_size_in_bytes(),
         }
     }
 

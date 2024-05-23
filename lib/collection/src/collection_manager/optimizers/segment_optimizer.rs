@@ -18,7 +18,7 @@ use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::types::{
     HnswConfig, Indexes, PayloadFieldSchema, PayloadKeyType, PayloadStorageType, PointIdType,
-    QuantizationConfig, SegmentConfig, VectorStorageType, VECTOR_ELEMENT_SIZE,
+    QuantizationConfig, SegmentConfig, VectorStorageType,
 };
 
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
@@ -129,10 +129,8 @@ pub trait SegmentOptimizer {
             };
             let locked_segment = segment.read();
 
-            for (vector_name, dim) in locked_segment.vector_dims() {
-                let available_vectors =
-                    locked_segment.available_vector_count(&vector_name).unwrap();
-                let vector_size = dim * VECTOR_ELEMENT_SIZE * available_vectors;
+            for (vector_name, _dim) in locked_segment.vector_dims() {
+                let vector_size = locked_segment.avaliable_vectors_size_in_bytes(&vector_name)?;
                 let size = bytes_count_by_vector_name.entry(vector_name).or_insert(0);
                 *size += vector_size;
             }

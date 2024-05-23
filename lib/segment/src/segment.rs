@@ -1340,6 +1340,14 @@ impl SegmentEntry for Segment {
         self.id_tracker.borrow().deleted_point_count()
     }
 
+    fn avaliable_vectors_size_in_bytes(&self, vector_name: &str) -> OperationResult<usize> {
+        check_vector_name(vector_name, &self.segment_config)?;
+        Ok(self.vector_data[vector_name]
+            .vector_storage
+            .borrow()
+            .data_size_in_bytes())
+    }
+
     fn estimate_point_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation {
         match filter {
             None => {

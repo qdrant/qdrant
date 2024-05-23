@@ -181,6 +181,10 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapMultiDenseVector
         self.offsets.len()
     }
 
+    fn data_size_in_bytes(&self) -> usize {
+        self.vectors.len() * self.vector_dim() * std::mem::size_of::<T>()
+    }
+
     fn get_vector(&self, key: PointOffsetType) -> CowVector {
         // TODO(colbert) borrow instead of clone
         let multivector = self.get_multi(key);

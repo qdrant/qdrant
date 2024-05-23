@@ -147,6 +147,24 @@ pub trait SegmentEntry {
     /// Number of deleted points
     fn deleted_point_count(&self) -> usize;
 
+    fn avaliable_vectors_size_in_bytes(&self, vector_name: &str) -> OperationResult<usize>;
+
+    fn all_avaliable_vectors_size_in_bytes(&self) -> OperationResult<usize> {
+        let mut total_size = 0;
+        for vector_name in self.vector_dims().keys() {
+            total_size += self.avaliable_vectors_size_in_bytes(vector_name)?;
+        }
+        Ok(total_size)
+    }
+
+    fn max_avaliable_vectors_size_in_bytes(&self) -> OperationResult<usize> {
+        let mut max_size = 0;
+        for vector_name in self.vector_dims().keys() {
+            max_size = std::cmp::max(max_size, self.avaliable_vectors_size_in_bytes(vector_name)?);
+        }
+        Ok(max_size)
+    }
+
     /// Get segment type
     fn segment_type(&self) -> SegmentType;
 

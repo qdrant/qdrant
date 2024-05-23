@@ -695,6 +695,10 @@ impl SegmentEntry for ProxySegment {
         self.write_segment.get().read().deleted_point_count()
     }
 
+    fn avaliable_vectors_size_in_bytes(&self, vector_name: &str) -> OperationResult<usize> {
+        
+    }
+
     fn estimate_point_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation {
         let deleted_point_count = self.deleted_points.read().len();
 

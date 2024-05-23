@@ -214,6 +214,10 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleDenseVectorStorage<T> {
         self.vectors.len()
     }
 
+    fn data_size_in_bytes(&self) -> usize {
+        self.total_vector_count() * self.vector_dim() * std::mem::size_of::<T>()
+    }
+
     fn get_vector(&self, key: PointOffsetType) -> CowVector {
         CowVector::from(T::slice_to_float_cow(self.vectors.get(key).into()))
     }

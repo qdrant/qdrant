@@ -2,7 +2,6 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 use std::hash::Hash;
-use std::mem::size_of;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::str::FromStr;
@@ -27,7 +26,7 @@ use crate::common::utils::{self, MaybeOneOrMany, MultiValue};
 use crate::data_types::integer_index::IntegerIndexParams;
 use crate::data_types::order_by::OrderValue;
 use crate::data_types::text_index::TextIndexParams;
-use crate::data_types::vectors::{VectorElementType, VectorStruct};
+use crate::data_types::vectors::VectorStruct;
 use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
 use crate::json_path::{JsonPath, JsonPathInterface};
 use crate::spaces::metric::MetricPostProcessing;
@@ -79,8 +78,6 @@ impl From<chrono::DateTime<chrono::Utc>> for DateTimeWrapper {
         DateTimeWrapper(dt)
     }
 }
-
-pub const VECTOR_ELEMENT_SIZE: usize = size_of::<VectorElementType>();
 
 /// Type, used for specifying point ID in user interface
 #[derive(Debug, Serialize, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, JsonSchema)]
@@ -789,6 +786,16 @@ pub enum VectorStorageDatatype {
     // Unsigned 8-bit integer
     Uint8,
 }
+
+impl VectorStorageDatatype {
+    pub fn size(&self) -> usize {
+        match self {
+            VectorStorageDatatype::Float32 => std::mem::size_of::<f32>(),
+            VectorStorageDatatype::Float16 => std::mem::size_of::<u16>(),
+            VectorStorageDatatype::Uint8 => std::mem::size_of::<u8>(),
+        }
+    }
+} 
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone, Hash)]
 #[serde(rename_all = "snake_case")]

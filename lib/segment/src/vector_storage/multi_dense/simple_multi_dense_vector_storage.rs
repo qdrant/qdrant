@@ -308,6 +308,10 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleMultiDenseVectorStorage<
         self.vectors_metadata.len()
     }
 
+    fn data_size_in_bytes(&self) -> usize {
+        self.vectors.len() * self.vector_dim() * std::mem::size_of::<T>()
+    }
+
     fn get_vector(&self, key: PointOffsetType) -> CowVector {
         let multi_dense_vector = self.get_multi(key);
         CowVector::MultiDense(T::into_float_multivector(CowMultiVector::Borrowed(

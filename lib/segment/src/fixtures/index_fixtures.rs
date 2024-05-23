@@ -68,6 +68,10 @@ impl<TMetric: Metric<VectorElementType>> VectorStorage for TestRawScorerProducer
         self.vectors.len()
     }
 
+    fn data_size_in_bytes(&self) -> usize {
+        self.total_vector_count() * self.vector_dim() * std::mem::size_of::<VectorElementType>()
+    }
+
     fn get_vector(&self, key: PointOffsetType) -> CowVector {
         self.get_dense(key).into()
     }

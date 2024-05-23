@@ -40,7 +40,7 @@ use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::Condition::Field;
 use crate::types::{
     default_quantization_ignore_value, default_quantization_oversampling_value, FieldCondition,
-    Filter, HnswConfig, QuantizationSearchParams, SearchParams, VECTOR_ELEMENT_SIZE,
+    Filter, HnswConfig, QuantizationSearchParams, SearchParams,
 };
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::query::DiscoveryQuery;
@@ -95,7 +95,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             let vector_storage = vector_storage.borrow();
             let available_vectors = vector_storage.available_vector_count();
             let full_scan_threshold = hnsw_config.full_scan_threshold.saturating_mul(BYTES_IN_KB)
-                / (vector_storage.vector_dim() * VECTOR_ELEMENT_SIZE);
+                / (vector_storage.vector_dim() * vector_storage.datatype().size());
 
             HnswGraphConfig::new(
                 hnsw_config.m,

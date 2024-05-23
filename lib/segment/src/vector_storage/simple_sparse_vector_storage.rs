@@ -175,6 +175,10 @@ impl VectorStorage for SimpleSparseVectorStorage {
         self.total_vector_count
     }
 
+    fn data_size_in_bytes(&self) -> usize {
+        self.total_sparse_size
+    }
+
     fn get_vector(&self, key: PointOffsetType) -> CowVector {
         let vector = self.get_vector_opt(key);
         debug_assert!(vector.is_some());

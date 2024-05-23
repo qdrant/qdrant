@@ -6,7 +6,7 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use segment::index::sparse_index::sparse_index_config::SparseIndexType;
-use segment::types::{HnswConfig, Indexes, QuantizationConfig, SegmentType, VECTOR_ELEMENT_SIZE};
+use segment::types::{HnswConfig, Indexes, QuantizationConfig, SegmentType};
 
 use crate::collection_manager::holders::segment_holder::{LockedSegmentHolder, SegmentId};
 use crate::collection_manager::optimizers::segment_optimizer::{
@@ -110,15 +110,9 @@ impl ConfigMismatchOptimizer {
             .filter_map(|(idx, segment)| {
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
-                let point_count = read_segment.available_point_count();
-                let vector_size = point_count
-                    * read_segment
-                        .vector_dims()
-                        .values()
-                        .max()
-                        .copied()
-                        .unwrap_or(0)
-                    * VECTOR_ELEMENT_SIZE;
+                let vector_size = read_segment
+                    .max_avaliable_vectors_size_in_bytes()
+                    .unwrap_or(0);
 
                 let segment_config = read_segment.config();
 
