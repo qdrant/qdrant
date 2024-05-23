@@ -333,16 +333,15 @@ impl Collection {
             replica_set.peer_state(&peer_id),
         );
 
+        let current_state = replica_set.peer_state(&peer_id);
+
         // Validation:
         // 0. Check that `from_state` matches current state
 
-        if from_state.is_some() {
-            let current_state = replica_set.peer_state(&peer_id);
-            if current_state != from_state {
-                return Err(CollectionError::bad_input(format!(
-                    "Replica {peer_id} of shard {shard_id} has state {current_state:?}, but expected {from_state:?}"
-                )));
-            }
+        if from_state.is_some() && current_state != from_state {
+            return Err(CollectionError::bad_input(format!(
+                "Replica {peer_id} of shard {shard_id} has state {current_state:?}, but expected {from_state:?}"
+            )));
         }
 
         // 1. Do not deactivate the last active replica
@@ -366,11 +365,29 @@ impl Collection {
             }
         }
 
+        // TODO(resharding): 🤔
+        if current_state == Some(ReplicaState::Resharding) && state == ReplicaState::Dead {
+            let shard_key = shard_holder
+                .get_shard_id_to_key_mapping()
+                .get(&shard_id)
+                .cloned();
+
+            drop(shard_holder);
+
+            self.abort_resharding(peer_id, shard_id, shard_key).await?;
+
+            // TODO(resharding): Abort all resharding transfers!?
+
+            return Ok(());
+        }
+
         replica_set
             .ensure_replica_with_state(&peer_id, state)
             .await?;
 
         if state == ReplicaState::Dead {
+            // TODO(resharding): Abort all resharding transfers!?
+
             // Terminate transfer if source or target replicas are now dead
             let related_transfers = shard_holder.get_related_transfers(&shard_id, &peer_id);
             for transfer in related_transfers {
