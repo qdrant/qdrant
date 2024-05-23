@@ -6,6 +6,7 @@ use std::time::Duration;
 use parking_lot::Mutex;
 use tokio::time::sleep;
 
+use super::resharding_stream_records::transfer_resharding_stream_records;
 use super::snapshot::transfer_snapshot;
 use super::stream_records::transfer_stream_records;
 use super::transfer_tasks_pool::TransferTaskProgress;
@@ -43,11 +44,13 @@ pub async fn transfer_shard(
     snapshots_path: &Path,
     temp_dir: &Path,
 ) -> CollectionResult<bool> {
-    let shard_id = transfer_config.shard_id;
+    // The remote might target a different shard ID depending on the shard transfer type
+    let local_shard_id = transfer_config.shard_id;
+    let remote_shard_id = transfer_config.to_shard_id.unwrap_or(local_shard_id);
 
     // Initiate shard on a remote peer
     let remote_shard = RemoteShard::new(
-        shard_id,
+        remote_shard_id,
         collection_id.clone(),
         transfer_config.to,
         channel_service.clone(),
@@ -62,7 +65,19 @@ pub async fn transfer_shard(
             transfer_stream_records(
                 shard_holder.clone(),
                 progress,
-                shard_id,
+                local_shard_id,
+                remote_shard,
+                collection_name,
+            )
+            .await?;
+        }
+
+        // Transfer shard record in batches for resharding
+        ShardTransferMethod::ReshardingStreamRecords => {
+            transfer_resharding_stream_records(
+                shard_holder.clone(),
+                progress,
+                local_shard_id,
                 remote_shard,
                 collection_name,
             )
@@ -75,7 +90,7 @@ pub async fn transfer_shard(
                 transfer_config,
                 shard_holder,
                 progress,
-                shard_id,
+                local_shard_id,
                 remote_shard,
                 channel_service,
                 consensus,
@@ -92,7 +107,7 @@ pub async fn transfer_shard(
                 transfer_config.clone(),
                 shard_holder,
                 progress,
-                shard_id,
+                local_shard_id,
                 remote_shard,
                 channel_service,
                 consensus,

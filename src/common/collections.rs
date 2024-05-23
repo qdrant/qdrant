@@ -259,6 +259,7 @@ pub async fn do_update_collection_cluster(
                         collection_name,
                         Start(ShardTransfer {
                             shard_id: move_shard.shard_id,
+                            to_shard_id: None,
                             to: move_shard.to_peer_id,
                             from: move_shard.from_peer_id,
                             sync: false,
@@ -294,6 +295,7 @@ pub async fn do_update_collection_cluster(
                         collection_name,
                         Start(ShardTransfer {
                             shard_id: replicate_shard.shard_id,
+                            to_shard_id: None,
                             to: replicate_shard.to_peer_id,
                             from: replicate_shard.from_peer_id,
                             sync: true,
