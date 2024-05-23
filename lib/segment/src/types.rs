@@ -368,20 +368,9 @@ pub struct CollectionConfig {
     #[serde(default)]
     pub vectors: Option<VectorsConfig>,
 
-    #[serde(default)]
-    pub consensus: Option<CollectionConsensusConfig>,
-}
+    #[validate]
+    pub quantization: Option<QuantizationConfig>,
 
-/// Configuration for vectors.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
-pub struct VectorsConfig {
-    #[serde(default)]
-    pub on_disk: Option<bool>,
-}
-
-/// Consensus related defaults for collections.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
-pub struct CollectionConsensusConfig {
     #[validate(range(min = 1))]
     #[serde(default = "default_replication_factor")]
     pub replication_factor: u32,
@@ -389,6 +378,13 @@ pub struct CollectionConsensusConfig {
     #[serde(default = "default_write_consistency_factor")]
     #[validate(range(min = 1))]
     pub write_consistency_factor: u32,
+}
+
+/// Configuration for vectors.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
+pub struct VectorsConfig {
+    #[serde(default)]
+    pub on_disk: Option<bool>,
 }
 
 const fn default_replication_factor() -> u32 {

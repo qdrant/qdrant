@@ -57,7 +57,6 @@ fn test_alias_operation() {
             outgoing_shard_transfers_limit: Some(1),
         },
         hnsw_index: Default::default(),
-        quantization: None,
         mmap_advice: madvise::Advice::Random,
         node_type: Default::default(),
         update_queue_size: Default::default(),

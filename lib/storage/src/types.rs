@@ -15,7 +15,7 @@ use collection::shards::transfer::ShardTransferMethod;
 use memory::madvise;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
-use segment::types::{CollectionConfig, HnswConfig, QuantizationConfig};
+use segment::types::{CollectionConfig, HnswConfig};
 use serde::{Deserialize, Serialize};
 use tonic::transport::Uri;
 use validator::Validate;
@@ -70,8 +70,6 @@ pub struct StorageConfig {
     pub performance: PerformanceConfig,
     #[validate]
     pub hnsw_index: HnswConfig,
-    #[validate]
-    pub quantization: Option<QuantizationConfig>,
     #[serde(default = "default_mmap_advice")]
     pub mmap_advice: madvise::Advice,
     #[serde(default)]
