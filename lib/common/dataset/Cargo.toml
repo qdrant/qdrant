@@ -11,8 +11,6 @@ publish = false
 
 [dependencies]
 anyhow = "1.0.86"
-async-compression = {version="0.3.13", features=["all", "stream"]}
 flate2 = { version = "1.0.30" }
 indicatif = { workspace = true }
-project-root = "0.2.2"
 reqwest = { workspace = true }

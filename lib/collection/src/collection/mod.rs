@@ -433,7 +433,7 @@ impl Collection {
         let shard = shard_holder_read.get_shard(&shard_id);
         let Some(replica_set) = shard else {
             return Err(CollectionError::NotFound {
-                what: "Shard {shard_id}".into(),
+                what: format!("Shard {shard_id}"),
             });
         };
 
@@ -610,6 +610,7 @@ impl Collection {
                     from: replica_id,
                     to: *this_peer_id,
                     shard_id,
+                    to_shard_id: None,
                     sync: true,
                     // For automatic shard transfers, always select some default method from this point on
                     method: Some(shard_transfer_method),

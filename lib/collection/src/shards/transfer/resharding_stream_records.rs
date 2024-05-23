@@ -7,10 +7,10 @@ use crate::operations::types::{CollectionError, CollectionResult, CountRequestIn
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_holder::LockedShardHolder;
+use crate::shards::transfer::stream_records::TRANSFER_BATCH_SIZE;
 
-pub(super) const TRANSFER_BATCH_SIZE: usize = 100;
-
-/// Orchestrate shard transfer by streaming records
+/// Orchestrate shard transfer by streaming records, but only the points that fall into the new
+/// shard.
 ///
 /// This is called on the sender and will arrange all that is needed for the shard transfer
 /// process.
@@ -21,7 +21,7 @@ pub(super) const TRANSFER_BATCH_SIZE: usize = 100;
 /// # Cancel safety
 ///
 /// This function is cancel safe.
-pub(super) async fn transfer_stream_records(
+pub(super) async fn transfer_resharding_stream_records(
     shard_holder: Arc<LockedShardHolder>,
     progress: Arc<Mutex<TransferTaskProgress>>,
     shard_id: ShardId,
@@ -29,8 +29,11 @@ pub(super) async fn transfer_stream_records(
     collection_name: &str,
 ) -> CollectionResult<()> {
     let remote_peer_id = remote_shard.peer_id;
+    let hashring;
 
-    log::debug!("Starting shard {shard_id} transfer to peer {remote_peer_id} by streaming records");
+    log::debug!(
+        "Starting shard {shard_id} transfer to peer {remote_peer_id} by reshard streaming records"
+    );
 
     // Proxify local shard and create payload indexes on remote shard
     {
@@ -41,6 +44,17 @@ pub(super) async fn transfer_stream_records(
                 "Shard {shard_id} cannot be proxied because it does not exist"
             )));
         };
+
+        // Derive shard key scope for this transfer from the shard ID, get the hash ring
+        let shard_key = shard_holder
+            .get_shard_id_to_key_mapping()
+            .get(&shard_id)
+            .cloned();
+        hashring = shard_holder.rings.get(&shard_key).cloned().ok_or_else(|| {
+            CollectionError::service_error(format!(
+                "Shard {shard_id} cannot be transferred for resharding, failed to get shard hash rings"
+            ))
+        })?;
 
         replica_set.proxify_local(remote_shard.clone()).await?;
 
@@ -61,7 +75,7 @@ pub(super) async fn transfer_stream_records(
     }
 
     // Transfer contents batch by batch
-    log::trace!("Transferring points to shard {shard_id} by streaming records");
+    log::trace!("Transferring points to shard {shard_id} by reshard streaming records");
 
     let mut offset = None;
 
@@ -77,7 +91,7 @@ pub(super) async fn transfer_stream_records(
         };
 
         offset = replica_set
-            .transfer_batch(offset, TRANSFER_BATCH_SIZE, None)
+            .transfer_batch(offset, TRANSFER_BATCH_SIZE, Some(&hashring))
             .await?;
 
         {
@@ -126,7 +140,9 @@ pub(super) async fn transfer_stream_records(
         }
     }
 
-    log::debug!("Ending shard {shard_id} transfer to peer {remote_peer_id} by streaming records");
+    log::debug!(
+        "Ending shard {shard_id} transfer to peer {remote_peer_id} by reshard streaming records"
+    );
 
     Ok(())
 }

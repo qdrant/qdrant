@@ -1,10 +1,11 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
-use super::{ShardTransfer, ShardTransferKey};
+use super::{ShardTransfer, ShardTransferKey, ShardTransferMethod};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
+use crate::shards::shard_holder::ShardKeyMapping;
 
 pub fn validate_transfer_exists(
     transfer_key: &ShardTransferKey,
@@ -75,6 +76,11 @@ where
 /// 1. If `from` and `to` exists
 /// 2. If `from` have local shard and it is active
 /// 3. If there is no active transfers which involve `from` or `to`
+/// 4. If a target shard is only set for resharding transfers
+///
+/// For resharding transfers this also checks:
+/// 1. If the source and target shards are different
+/// 2. If the source and target shardsd share the same shard key
 ///
 /// If validation fails, return `BadRequest` error.
 pub fn validate_transfer(
@@ -82,6 +88,7 @@ pub fn validate_transfer(
     all_peers: &HashSet<PeerId>,
     shard_state: Option<&HashMap<PeerId, ReplicaState>>,
     current_transfers: &HashSet<ShardTransfer>,
+    shards_key_mapping: &ShardKeyMapping,
 ) -> CollectionResult<()> {
     let shard_state = if let Some(shard_state) = shard_state {
         shard_state
@@ -117,6 +124,40 @@ pub fn validate_transfer(
         return Err(CollectionError::bad_request(format!(
             "Shard {} is already involved in transfer {} -> {}",
             transfer.shard_id, existing_transfer.from, existing_transfer.to,
+        )));
+    }
+
+    if transfer.method == Some(ShardTransferMethod::ReshardingStreamRecords) {
+        let Some(to_shard_id) = transfer.to_shard_id else {
+            return Err(CollectionError::bad_request(
+                "Target shard is not set for resharding transfer".into(),
+            ));
+        };
+
+        if transfer.shard_id == to_shard_id {
+            return Err(CollectionError::bad_request(format!(
+                "Source and target shard must be different for resharding transfer, both are {to_shard_id}",
+            )));
+        }
+
+        // Both shard IDs must share the same shard key
+        let source_shard_key = shards_key_mapping
+            .iter()
+            .find(|(_, shard_ids)| shard_ids.contains(&to_shard_id))
+            .map(|(key, _)| key);
+        let target_shard_key = shards_key_mapping
+            .iter()
+            .find(|(_, shard_ids)| shard_ids.contains(&to_shard_id))
+            .map(|(key, _)| key);
+        if source_shard_key != target_shard_key {
+            return Err(CollectionError::bad_request(format!(
+                "Source and target shard must have the same shard key, but they have {source_shard_key:?} and {target_shard_key:?}",
+            )));
+        }
+    } else if let Some(to_shard_id) = transfer.to_shard_id {
+        return Err(CollectionError::bad_request(format!(
+            "Target shard {to_shard_id} can only be set for {:?} transfers",
+            ShardTransferMethod::ReshardingStreamRecords,
         )));
     }
 
