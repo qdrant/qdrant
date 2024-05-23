@@ -1,8 +1,8 @@
 #[cfg(target_os = "linux")]
 pub mod pyro {
 
-    use pyroscope::pyroscope::PyroscopeAgentRunning;
     use pyroscope::PyroscopeAgent;
+    use pyroscope::{pyroscope::PyroscopeAgentRunning, PyroscopeError};
     use pyroscope_pprofrs::{pprof_backend, PprofConfig};
 
     use crate::common::debug::PyroscopeConfig;
@@ -13,7 +13,9 @@ pub mod pyro {
     }
 
     impl PyroscopeState {
-        fn build_agent(config: &PyroscopeConfig) -> PyroscopeAgent<PyroscopeAgentRunning> {
+        fn build_agent(
+            config: &PyroscopeConfig,
+        ) -> Result<PyroscopeAgent<PyroscopeAgentRunning>, PyroscopeError> {
             let pprof_config = PprofConfig::new().sample_rate(config.sampling_rate.unwrap_or(100));
             let backend_impl = pprof_backend(pprof_config);
 
@@ -25,18 +27,27 @@ pub mod pyro {
             let agent = PyroscopeAgent::builder(config.url.to_string(), "qdrant".to_string())
                 .backend(backend_impl)
                 .tags(vec![("app", "Qdrant"), ("identifier", &config.identifier)])
-                .build()
-                .expect("Couldn't build pyroscope agent");
+                .build()?;
+            let running_agent = agent.start()?;
 
-            agent.start().unwrap()
+            Ok(running_agent)
         }
 
         pub fn from_config(config: Option<PyroscopeConfig>) -> Option<Self> {
             match config {
-                Some(pyro_config) => Some(PyroscopeState {
-                    config: pyro_config.clone(),
-                    agent: Some(PyroscopeState::build_agent(&pyro_config)),
-                }),
+                Some(pyro_config) => {
+                    let agent = PyroscopeState::build_agent(&pyro_config);
+                    match agent {
+                        Ok(agent) => Some(PyroscopeState {
+                            config: pyro_config.clone(),
+                            agent: Some(agent),
+                        }),
+                        Err(err) => {
+                            log::warn!("Pyroscope agent failed to start {}", err);
+                            None
+                        }
+                    }
+                }
                 None => {
                     log::info!("Pyroscope agent not started");
                     None
@@ -50,6 +61,8 @@ pub mod pyro {
             log::info!("DROP: Stopping pyroscope agent");
             if let Some(agent) = self.agent.take() {
                 // Use take() to replace self.agent with None and get the contained value
+                // FIXME: How to pass Result<> from this to the API call?
+                // I might have to add an explicit function for this when API is called to disable pyroscope
                 let stopped_agent = agent.stop().unwrap(); // Now you can call stop() on the agent directly
                 stopped_agent.shutdown();
             }
