@@ -161,10 +161,19 @@ storage:
   # More info: https://qdrant.tech/documentation/guides/distributed_deployment/#shard-transfer-method
   shard_transfer_method: null
 
-  # Default parameters for vectors.
-  vectors_config:
-    # Whether vectors should be stored in memory or on disk.
-    on_disk: false
+  # Default parameters for collections
+  collection:
+    # Default parameters for vectors.
+    vectors:
+      # Whether vectors should be stored in memory or on disk.
+      on_disk: null
+
+    consensus:
+      # Number of replicas of each shard that network tries to maintain
+      replication_factor: 1
+
+      # How many replicas should apply the operation for us to consider it successful
+      write_consistency_factor: 1
 
   # Default quantization configuration.
   # More info: https://qdrant.tech/documentation/guides/quantization
@@ -249,12 +258,6 @@ cluster:
     # tick period may create significant network and CPU overhead.
     # We encourage you NOT to change this parameter unless you know what you are doing.
     tick_period_ms: 100
-
-    # Number of replicas of each shard that network tries to maintain
-    replication_factor: 1
-
-    # How many replicas should apply the operation for us to consider it successful
-    write_consistency_factor: 1
 
 
 # Set to true to prevent service from sending usage statistics to the developers.

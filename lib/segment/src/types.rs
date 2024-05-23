@@ -362,11 +362,41 @@ pub struct SearchParams {
     pub indexed_only: bool,
 }
 
+/// Collection default values
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
+pub struct CollectionConfig {
+    #[serde(default)]
+    pub vectors: Option<VectorsConfig>,
+
+    #[serde(default)]
+    pub consensus: Option<CollectionConsensusConfig>,
+}
+
 /// Configuration for vectors.
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
 pub struct VectorsConfig {
     #[serde(default)]
-    on_disk: bool,
+    pub on_disk: Option<bool>,
+}
+
+/// Consensus related defaults for collections.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
+pub struct CollectionConsensusConfig {
+    #[validate(range(min = 1))]
+    #[serde(default = "default_replication_factor")]
+    pub replication_factor: u32,
+
+    #[serde(default = "default_write_consistency_factor")]
+    #[validate(range(min = 1))]
+    pub write_consistency_factor: u32,
+}
+
+const fn default_replication_factor() -> u32 {
+    1
+}
+
+const fn default_write_consistency_factor() -> u32 {
+    1
 }
 
 /// Vector index configuration

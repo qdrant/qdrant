@@ -97,11 +97,6 @@ pub struct ConsensusConfig {
     #[validate(range(min = 1))]
     #[serde(default = "default_message_timeout_tics")]
     pub message_timeout_ticks: u64,
-    #[validate(range(min = 1))]
-    #[serde(default = "default_replication_factor")]
-    pub replication_factor: u32,
-    #[serde(default = "default_write_consistency_factor")]
-    pub write_consistency_factor: u32,
 }
 
 impl Default for ConsensusConfig {
@@ -111,8 +106,6 @@ impl Default for ConsensusConfig {
             tick_period_ms: default_tick_period_ms(),
             bootstrap_timeout_sec: default_bootstrap_timeout_sec(),
             message_timeout_ticks: default_message_timeout_tics(),
-            replication_factor: default_replication_factor(),
-            write_consistency_factor: default_write_consistency_factor(),
         }
     }
 }
@@ -291,14 +284,6 @@ const fn default_connection_pool_size() -> usize {
 
 const fn default_message_timeout_tics() -> u64 {
     10
-}
-
-const fn default_replication_factor() -> u32 {
-    1
-}
-
-const fn default_write_consistency_factor() -> u32 {
-    1
 }
 
 const fn default_tls_cert_ttl() -> Option<u64> {
