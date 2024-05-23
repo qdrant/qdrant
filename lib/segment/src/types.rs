@@ -391,6 +391,9 @@ pub struct CollectionConfigDefaults {
     #[serde(default = "default_write_consistency_factor_const")]
     #[validate(range(min = 1))]
     pub write_consistency_factor: u32,
+
+    #[serde(default = "default_force_disable_optimizations_const")]
+    pub force_disable_optimizations: bool,
 }
 
 /// Configuration for vectors.
@@ -410,6 +413,10 @@ pub const fn default_replication_factor_const() -> u32 {
 
 pub const fn default_write_consistency_factor_const() -> u32 {
     1
+}
+
+pub const fn default_force_disable_optimizations_const() -> bool {
+    false
 }
 
 /// Vector index configuration

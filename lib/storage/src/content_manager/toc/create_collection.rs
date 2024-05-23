@@ -11,6 +11,7 @@ use collection::shards::collection_shard_distribution::CollectionShardDistributi
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::CollectionId;
+use segment::types::default_force_disable_optimizations_const;
 
 use super::TableOfContent;
 use crate::content_manager::collection_meta_ops::*;
@@ -156,10 +157,17 @@ impl TableOfContent {
             Some(diff) => diff.update(&self.storage_config.wal)?,
         };
 
-        let optimizers_config = match optimizers_config_diff {
+        let mut optimizers_config = match optimizers_config_diff {
             None => self.storage_config.optimizers.clone(),
             Some(diff) => diff.update(&self.storage_config.optimizers)?,
         };
+
+        if collection_defaults_config
+            .map(|i| i.force_disable_optimizations)
+            .unwrap_or(default_force_disable_optimizations_const())
+        {
+            optimizers_config.max_optimization_threads = Some(0);
+        }
 
         let hnsw_config = match hnsw_config_diff {
             None => self.storage_config.hnsw_index.clone(),
