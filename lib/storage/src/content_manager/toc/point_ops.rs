@@ -7,6 +7,7 @@ use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::point_ops::WriteOrdering;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::*;
+use collection::operations::universal_query::collection_query::CollectionQueryRequest;
 use collection::operations::{CollectionUpdateOperations, OperationWithClockTag};
 use collection::{discovery, recommendations};
 use futures::stream::FuturesUnordered;
@@ -291,6 +292,27 @@ impl TableOfContent {
             .scroll_by(request, read_consistency, &shard_selection)
             .await
             .map_err(|err| err.into())
+    }
+
+    pub async fn query(
+        &self,
+        collection_name: &str,
+        mut request: CollectionQueryRequest,
+        _read_consistency: Option<ReadConsistency>, // TODO(universal-query): pass this to collection
+        _shard_selection: ShardSelectorInternal, // TODO(universal-query): pass this to collection
+        access: Access,
+    ) -> Result<Vec<ScoredPoint>, StorageError> {
+        let collection_pass = access.check_point_op(collection_name, &mut request)?;
+        
+        let _collection = self.get_collection(&collection_pass).await?;
+        
+        //TODO(universal-query): implement query in collection
+        // collection
+        //     .query(request, read_consistency, &shard_selection)
+        //     .await
+        //     .map_err(|err| err.into())
+        
+        todo!()
     }
 
     /// # Cancel safety
