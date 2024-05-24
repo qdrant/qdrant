@@ -21,6 +21,7 @@ pub trait QueryScorer<TVector: ?Sized> {
 
 /// Colbert MaxSim metric, metric for multi-dense vectors
 /// https://arxiv.org/pdf/2112.01488.pdf, figure 1
+/// This metric is also implemented in `QuantizedMultivectorStorage` structure for quantized data.
 pub fn score_max_similarity<T: PrimitiveVectorElement, TMetric: Metric<T>>(
     multi_dense_a: TypedMultiDenseVectorRef<T>,
     multi_dense_b: TypedMultiDenseVectorRef<T>,
