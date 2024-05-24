@@ -143,29 +143,6 @@ pub enum VectorStorageEnum {
     ),
 }
 
-impl VectorStorageEnum {
-    pub fn try_vector_dim(&self) -> Option<usize> {
-        match self {
-            VectorStorageEnum::DenseSimple(v) => Some(v.vector_dim()),
-            VectorStorageEnum::DenseSimpleByte(v) => Some(v.vector_dim()),
-            VectorStorageEnum::DenseSimpleHalf(v) => Some(v.vector_dim()),
-            VectorStorageEnum::DenseMemmap(v) => Some(v.vector_dim()),
-            VectorStorageEnum::DenseMemmapByte(v) => Some(v.vector_dim()),
-            VectorStorageEnum::DenseMemmapHalf(v) => Some(v.vector_dim()),
-            VectorStorageEnum::DenseAppendableMemmap(v) => Some(v.vector_dim()),
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => Some(v.vector_dim()),
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => Some(v.vector_dim()),
-            VectorStorageEnum::SparseSimple(_) => None,
-            VectorStorageEnum::MultiDenseSimple(v) => Some(v.vector_dim()),
-            VectorStorageEnum::MultiDenseSimpleByte(v) => Some(v.vector_dim()),
-            VectorStorageEnum::MultiDenseSimpleHalf(v) => Some(v.vector_dim()),
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => Some(v.vector_dim()),
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => Some(v.vector_dim()),
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => Some(v.vector_dim()),
-        }
-    }
-}
-
 impl VectorStorage for VectorStorageEnum {
     fn distance(&self) -> Distance {
         match self {

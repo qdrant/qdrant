@@ -787,16 +787,6 @@ pub enum VectorStorageDatatype {
     Uint8,
 }
 
-impl VectorStorageDatatype {
-    pub fn size(&self) -> usize {
-        match self {
-            VectorStorageDatatype::Float32 => std::mem::size_of::<f32>(),
-            VectorStorageDatatype::Float16 => std::mem::size_of::<u16>(),
-            VectorStorageDatatype::Uint8 => std::mem::size_of::<u8>(),
-        }
-    }
-}
-
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone, Hash)]
 #[serde(rename_all = "snake_case")]
 pub struct MultiVectorConfig {
