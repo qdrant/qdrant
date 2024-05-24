@@ -8,7 +8,6 @@ use segment::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery};
 use tonic::Status;
 
 use crate::operations::query_enum::QueryEnum;
-use crate::operations::types::OrderByInterface;
 
 /// Internal response type for a universal query request.
 ///
@@ -46,7 +45,7 @@ pub enum ScoringQuery {
     Fusion(Fusion),
 
     /// Order by a payload field
-    OrderBy(OrderByInterface),
+    OrderBy(OrderBy),
 }
 
 impl ScoringQuery {
@@ -235,7 +234,7 @@ impl ScoringQuery {
                 ScoringQuery::Fusion(Fusion::try_from(fusion)?)
             }
             grpc::query_shard_points::query::Score::OrderBy(order_by) => {
-                ScoringQuery::OrderBy(OrderByInterface::try_from(order_by)?)
+                ScoringQuery::OrderBy(OrderBy::try_from(order_by)?)
             }
         };
 
@@ -278,7 +277,7 @@ impl From<ScoringQuery> for grpc::query_shard_points::Query {
                 score: Some(Score::Fusion(api::grpc::qdrant::Fusion::from(fusion) as i32)),
             },
             ScoringQuery::OrderBy(order_by) => Self {
-                score: Some(Score::OrderBy(grpc::OrderBy::from(OrderBy::from(order_by)))),
+                score: Some(Score::OrderBy(grpc::OrderBy::from(order_by))),
             },
         }
     }

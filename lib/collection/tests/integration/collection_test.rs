@@ -1,12 +1,13 @@
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 
+use api::rest::OrderByInterface;
 use collection::operations::payload_ops::{PayloadOps, SetPayloadOp};
 use collection::operations::point_ops::{Batch, PointOperations, PointStruct, WriteOrdering};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
-    CountRequestInternal, OrderByInterface, PointRequestInternal, RecommendRequestInternal,
-    ScrollRequestInternal, SearchRequestInternal, UpdateStatus,
+    CountRequestInternal, PointRequestInternal, RecommendRequestInternal, ScrollRequestInternal,
+    SearchRequestInternal, UpdateStatus,
 };
 use collection::operations::CollectionUpdateOperations;
 use collection::recommendations::recommend_by;

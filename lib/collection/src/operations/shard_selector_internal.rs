@@ -1,6 +1,6 @@
+use api::rest::ShardKeySelector;
 use segment::types::ShardKey;
 
-use crate::operations::shard_key_selector::ShardKeySelector;
 use crate::shards::shard::ShardId;
 
 #[derive(Debug, Clone, PartialEq)]

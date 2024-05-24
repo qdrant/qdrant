@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use api::rest::OrderByInterface;
 use common::types::ScoreType;
 use segment::types::{Filter, WithPayloadInterface, WithVector};
 
@@ -120,7 +121,7 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
                 ScoringQuery::OrderBy(order_by) => {
                     // Everything should come from 1 scroll
                     let scroll = ScrollRequestInternal {
-                        order_by: Some(order_by),
+                        order_by: Some(OrderByInterface::Struct(order_by)),
                         filter: req_filter,
                         with_vector: req_with_vector,
                         with_payload: Some(req_with_payload),
@@ -207,7 +208,7 @@ fn recurse_prefetches(
                 }
                 ScoringQuery::OrderBy(order_by) => {
                     let scroll = ScrollRequestInternal {
-                        order_by: Some(order_by),
+                        order_by: Some(OrderByInterface::Struct(order_by)),
                         filter,
                         with_vector: WithVector::Bool(false),
                         with_payload: Some(WithPayloadInterface::Bool(false)),

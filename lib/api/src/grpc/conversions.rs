@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::str::FromStr as _;
 use std::time::Instant;
 
 use chrono::{NaiveDateTime, Timelike};
@@ -16,7 +17,7 @@ use super::qdrant::raw_query::RawContextPair;
 use super::qdrant::{
     raw_query, start_from, BinaryQuantization, CompressionRatio, DatetimeRange, Direction,
     GeoLineString, GroupId, MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue, Range,
-    RawVector, SparseIndices, StartFrom,
+    RawVector, RecommendStrategy, ShardKeySelector, SparseIndices, StartFrom,
 };
 use crate::grpc::models::{CollectionsResponse, VersionInfo};
 use crate::grpc::qdrant::condition::ConditionOneOf;
@@ -39,6 +40,7 @@ use crate::grpc::qdrant::{
     TextIndexParams, TokenizerType, UpdateResult, UpdateResultInternal, Value, ValuesCount, Vector,
     Vectors, VectorsSelector, WithPayloadSelector, WithVectorsSelector,
 };
+use crate::rest::schema as rest;
 
 pub fn payload_to_proto(payload: segment::types::Payload) -> HashMap<String, Value> {
     payload
@@ -160,6 +162,21 @@ pub fn convert_shard_key_from_grpc_opt(
                 shard_key::Key::Number(number) => Some(segment::types::ShardKey::Number(number)),
             },
         },
+    }
+}
+impl From<ShardKeySelector> for rest::ShardKeySelector {
+    fn from(value: ShardKeySelector) -> Self {
+        let shard_keys: Vec<_> = value
+            .shard_keys
+            .into_iter()
+            .filter_map(convert_shard_key_from_grpc)
+            .collect();
+
+        if shard_keys.len() == 1 {
+            rest::ShardKeySelector::ShardKey(shard_keys.into_iter().next().unwrap())
+        } else {
+            rest::ShardKeySelector::ShardKeys(shard_keys)
+        }
     }
 }
 
@@ -1440,6 +1457,45 @@ impl From<segment::data_types::order_by::Direction> for Direction {
         }
     }
 }
+impl TryFrom<OrderBy> for segment::data_types::order_by::OrderBy {
+    type Error = Status;
+
+    fn try_from(value: OrderBy) -> Result<Self, Self::Error> {
+        use segment::data_types::order_by::StartFrom;
+
+        use crate::grpc::qdrant::start_from::Value;
+
+        let direction = value
+            .direction
+            .and_then(Direction::from_i32)
+            .map(segment::data_types::order_by::Direction::from);
+
+        let start_from = value
+            .start_from
+            .and_then(|value| value.value)
+            .map(|v| -> Result<StartFrom, Status> {
+                match v {
+                    Value::Integer(int) => Ok(StartFrom::Integer(int)),
+                    Value::Float(float) => Ok(StartFrom::Float(float)),
+                    Value::Timestamp(timestamp) => {
+                        Ok(StartFrom::Datetime(try_date_time_from_proto(timestamp)?))
+                    }
+                    Value::Datetime(datetime_str) => Ok(StartFrom::Datetime(
+                        segment::types::DateTimeWrapper::from_str(&datetime_str).map_err(|e| {
+                            Status::invalid_argument(format!("Malformed datetime: {e}"))
+                        })?,
+                    )),
+                }
+            })
+            .transpose()?;
+
+        Ok(Self {
+            key: json_path_from_proto(&value.key)?,
+            direction,
+            start_from,
+        })
+    }
+}
 
 impl From<segment::data_types::order_by::OrderBy> for OrderBy {
     fn from(value: segment::data_types::order_by::OrderBy) -> Self {
@@ -1700,6 +1756,26 @@ impl TryFrom<RawVector> for segment_vectors::Vector {
 impl From<segment_vectors::NamedVectorStruct> for RawVector {
     fn from(value: segment_vectors::NamedVectorStruct) -> Self {
         Self::from(value.to_vector())
+    }
+}
+
+impl From<RecommendStrategy> for crate::rest::RecommendStrategy {
+    fn from(value: RecommendStrategy) -> Self {
+        match value {
+            RecommendStrategy::AverageVector => crate::rest::RecommendStrategy::AverageVector,
+            RecommendStrategy::BestScore => crate::rest::RecommendStrategy::BestScore,
+        }
+    }
+}
+
+impl TryFrom<i32> for crate::rest::RecommendStrategy {
+    type Error = Status;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        let strategy = RecommendStrategy::from_i32(value).ok_or_else(|| {
+            Status::invalid_argument(format!("Unknown recommend strategy: {}", value))
+        })?;
+        Ok(strategy.into())
     }
 }
 

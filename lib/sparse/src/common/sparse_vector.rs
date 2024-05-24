@@ -13,9 +13,9 @@ use crate::common::types::{DimId, DimOffset, DimWeight};
 #[derive(Debug, PartialEq, Clone, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct SparseVector {
-    /// indices must be unique
+    /// Indices must be unique
     pub indices: Vec<DimId>,
-    /// values and indices must be the same length
+    /// Values and indices must be the same length
     pub values: Vec<DimWeight>,
 }
 

@@ -1,3 +1,4 @@
+use api::rest::ShardKeySelector;
 use schemars::JsonSchema;
 use segment::json_path::JsonPath;
 use segment::types::{Filter, Payload, PayloadKeyType, PointIdType};
@@ -8,7 +9,6 @@ use validator::Validate;
 
 use super::{split_iter_by_shard, OperationToShard, SplitByShard};
 use crate::hash_ring::HashRing;
-use crate::operations::shard_key_selector::ShardKeySelector;
 
 /// This data structure is used in API interface and applied across multiple shards
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]

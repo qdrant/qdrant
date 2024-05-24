@@ -1,7 +1,13 @@
 use std::collections::HashMap;
 
+use common::types::ScoreType;
 use schemars::JsonSchema;
+use segment::common::utils::MaybeOneOrMany;
+use segment::data_types::order_by::OrderBy;
+use segment::json_path::JsonPath;
+use segment::types::{Filter, SearchParams, ShardKey, WithPayloadInterface, WithVector};
 use serde::{Deserialize, Serialize};
+use sparse::common::sparse_vector::SparseVector;
 
 /// Type for dense vector
 pub type DenseVector = Vec<segment::data_types::vectors::VectorElementType>;
@@ -73,6 +79,14 @@ pub enum BatchVectorStruct {
     Multi(HashMap<String, Vec<Vector>>),
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone, JsonSchema, PartialEq)]
+#[serde(untagged)]
+pub enum ShardKeySelector {
+    ShardKey(ShardKey),
+    ShardKeys(Vec<ShardKey>),
+    // ToDo: select by pattern
+}
+
 /// Search result
 #[derive(Serialize, JsonSchema, Clone, Debug)]
 pub struct ScoredPoint {
@@ -131,4 +145,181 @@ pub enum NamedVectorStruct {
     Dense(segment::data_types::vectors::NamedVector),
     Sparse(segment::data_types::vectors::NamedSparseVector),
     // No support for multi-dense vectors in search
+}
+
+#[derive(Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq)]
+#[serde(untagged)]
+pub enum OrderByInterface {
+    Key(JsonPath),
+    Struct(OrderBy),
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged, rename_all = "snake_case")]
+pub enum Fusion {
+    /// Reciprocal rank fusion
+    Rrf,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum VectorInput {
+    Id(segment::types::PointIdType),
+    DenseVector(DenseVector),
+    SparseVector(SparseVector),
+    MultiDenseVector(MultiDenseVector),
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct QueryRequestInternal {
+    /// Sub-requests to perform first. If present, the query will be performed on the results of the prefetches.
+    #[serde(with = "MaybeOneOrMany")]
+    #[schemars(with = "MaybeOneOrMany<Prefetch>")]
+    pub prefetch: Option<Vec<Prefetch>>,
+
+    /// Query to perform. If missing, returns points ordered by their IDs.
+    pub query: Option<QueryInterface>,
+
+    /// Define which vector to use for querying. If missing, the default vector is used.
+    pub using: Option<String>,
+
+    /// Filter conditions - return only those points that satisfy the specified conditions.
+    pub filter: Option<Filter>,
+
+    /// Search params for when there is no prefetch
+    pub params: Option<SearchParams>,
+
+    /// Return points with scores better than this threshold.
+    pub score_threshold: Option<ScoreType>,
+
+    /// Max number of points. Default is 10.
+    pub limit: Option<usize>,
+
+    /// Offset of the result. Skip this many points. Default is 0
+    pub offset: Option<usize>,
+
+    /// Options for specifying which vectors to include into the response. Default is false.
+    pub with_vector: Option<WithVector>,
+
+    /// Options for specifying which payload to include or not. Default is false.
+    pub with_payload: Option<WithPayloadInterface>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct QueryRequest {
+    #[serde(flatten)]
+    pub internal: QueryRequestInternal,
+    pub shard_key: Option<ShardKeySelector>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum QueryInterface {
+    Nearest(VectorInput),
+    Query(Query),
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Query {
+    /// Find the nearest neighbors to this vector.
+    Nearest(VectorInput),
+
+    /// Use multiple positive and negative vectors to find the results.
+    Recommend(RecommendInput),
+
+    /// Search for nearest points, but constrain the search space with context
+    Discover(DiscoverInput),
+
+    /// Return points that live in positive areas.
+    Context(ContextInput),
+
+    /// Order the points by a payload field.
+    OrderBy(OrderByInterface),
+
+    /// Fuse the results of multiple prefetches.
+    Fusion(Fusion),
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct Prefetch {
+    /// Sub-requests to perform first. If present, the query will be performed on the results of the prefetches.
+    #[serde(with = "MaybeOneOrMany")]
+    #[schemars(with = "MaybeOneOrMany<Prefetch>")]
+    pub prefetch: Option<Vec<Prefetch>>,
+
+    /// Query to perform. If missing, returns points ordered by their IDs.
+    pub query: Option<QueryInterface>,
+
+    /// Define which vector to use for querying. If missing, the default vector is used.
+    pub using: Option<String>,
+
+    /// Filter conditions - return only those points that satisfy the specified conditions.
+    pub filter: Option<Filter>,
+
+    /// Search params for when there is no prefetch
+    pub params: Option<SearchParams>,
+
+    /// Return points with scores better than this threshold.
+    pub score_threshold: Option<ScoreType>,
+
+    /// Max number of points. Default is 10.
+    pub limit: Option<usize>,
+}
+
+/// How to use positive and negative examples to find the results, default is `average_vector`:
+///
+/// * `average_vector` - Average positive and negative vectors and create a single query
+///   with the formula `query = avg_pos + avg_pos - avg_neg`. Then performs normal search.
+///
+/// * `best_score` - Uses custom search objective. Each candidate is compared against all
+///   examples, its score is then chosen from the `max(max_pos_score, max_neg_score)`.
+///   If the `max_neg_score` is chosen then it is squared and negated, otherwise it is just
+///   the `max_pos_score`.
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Default, PartialEq, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum RecommendStrategy {
+    #[default]
+    AverageVector,
+    BestScore,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct RecommendInput {
+    /// Look for vectors closest to the vectors from these points
+    pub positives: Option<Vec<VectorInput>>,
+
+    /// Try to avoid vectors like the vector from these points
+    pub negatives: Option<Vec<VectorInput>>,
+
+    /// How to use the provided vectors to find the results
+    pub strategy: Option<RecommendStrategy>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct DiscoverInput {
+    /// Use this as the primary search objective
+    pub target: VectorInput,
+
+    /// Search space will be constrained by these pairs of vectors
+    #[serde(with = "MaybeOneOrMany")]
+    #[schemars(with = "MaybeOneOrMany<ContextPair>")]
+    pub context_pairs: Option<Vec<ContextPair>>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct ContextInput {
+    /// Search space will be constrained by these pairs of vectors
+    #[serde(with = "MaybeOneOrMany")]
+    #[schemars(with = "MaybeOneOrMany<ContextPair>")]
+    pub pairs: Option<Vec<ContextPair>>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct ContextPair {
+    /// A positive vector
+    pub positive: VectorInput,
+
+    /// Repel from this vector
+    pub negative: VectorInput,
 }
