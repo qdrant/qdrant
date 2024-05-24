@@ -136,6 +136,10 @@ impl<T: PrimitiveVectorElement> AppendableMmapMultiDenseVectorStorage<T> {
 }
 
 impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for AppendableMmapMultiDenseVectorStorage<T> {
+    fn vector_dim(&self) -> usize {
+        self.vectors.dim()
+    }
+
     fn get_multi(&self, key: PointOffsetType) -> TypedMultiDenseVectorRef<T> {
         let mmap_offset = self.offsets.get(key as usize).unwrap().first().unwrap();
         let flattened_vectors = self
@@ -161,10 +165,6 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for AppendableMmapMultiDen
 }
 
 impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapMultiDenseVectorStorage<T> {
-    fn vector_dim(&self) -> usize {
-        self.vectors.dim()
-    }
-
     fn distance(&self) -> Distance {
         self.distance
     }
@@ -181,7 +181,8 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapMultiDenseVector
         self.offsets.len()
     }
 
-    fn data_size_in_bytes(&self) -> usize {
+    fn available_size_in_bytes(&self) -> usize {
+        // TODO: calcuate avaliable, not total
         self.vectors.len() * self.vector_dim() * std::mem::size_of::<T>()
     }
 

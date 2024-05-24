@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use common::types::TelemetryDetail;
@@ -135,9 +135,7 @@ pub trait SegmentEntry {
     /// Estimate available point count in this segment for given filter.
     fn estimate_point_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation;
 
-    fn vector_dim(&self, vector_name: &str) -> OperationResult<usize>;
-
-    fn vector_dims(&self) -> HashMap<String, usize>;
+    fn vector_names(&self) -> HashSet<String>;
 
     /// Number of available points
     ///
@@ -151,16 +149,16 @@ pub trait SegmentEntry {
 
     fn all_avaliable_vectors_size_in_bytes(&self) -> OperationResult<usize> {
         let mut total_size = 0;
-        for vector_name in self.vector_dims().keys() {
-            total_size += self.avaliable_vectors_size_in_bytes(vector_name)?;
+        for vector_name in self.vector_names() {
+            total_size += self.avaliable_vectors_size_in_bytes(&vector_name)?;
         }
         Ok(total_size)
     }
 
     fn max_avaliable_vectors_size_in_bytes(&self) -> OperationResult<usize> {
         let mut max_size = 0;
-        for vector_name in self.vector_dims().keys() {
-            max_size = std::cmp::max(max_size, self.avaliable_vectors_size_in_bytes(vector_name)?);
+        for vector_name in self.vector_names() {
+            max_size = std::cmp::max(max_size, self.avaliable_vectors_size_in_bytes(&vector_name)?);
         }
         Ok(max_size)
     }

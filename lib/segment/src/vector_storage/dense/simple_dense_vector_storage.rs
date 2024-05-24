@@ -188,16 +188,16 @@ impl<T: PrimitiveVectorElement> SimpleDenseVectorStorage<T> {
 }
 
 impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for SimpleDenseVectorStorage<T> {
+    fn vector_dim(&self) -> usize {
+        self.dim
+    }
+
     fn get_dense(&self, key: PointOffsetType) -> &[T] {
         self.vectors.get(key)
     }
 }
 
 impl<T: PrimitiveVectorElement> VectorStorage for SimpleDenseVectorStorage<T> {
-    fn vector_dim(&self) -> usize {
-        self.dim
-    }
-
     fn distance(&self) -> Distance {
         self.distance
     }
@@ -214,8 +214,8 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleDenseVectorStorage<T> {
         self.vectors.len()
     }
 
-    fn data_size_in_bytes(&self) -> usize {
-        self.total_vector_count() * self.vector_dim() * std::mem::size_of::<T>()
+    fn available_size_in_bytes(&self) -> usize {
+        self.available_vector_count() * self.vector_dim() * std::mem::size_of::<T>()
     }
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {

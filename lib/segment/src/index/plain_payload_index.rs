@@ -232,7 +232,7 @@ impl PlainIndex {
         filter: Option<&Filter>,
     ) -> bool {
         let vector_storage = self.vector_storage.borrow();
-        let vector_size_bytes = vector_storage.vector_dim() * vector_storage.datatype().size();
+        let vector_size_bytes = vector_storage.try_vector_dim().unwrap() * vector_storage.datatype().size();
         let indexing_threshold_bytes = search_optimized_threshold_kb * BYTES_IN_KB;
 
         if let Some(payload_filter) = filter {

@@ -124,21 +124,6 @@ impl SimpleSparseVectorStorage {
 
         Ok(())
     }
-
-    /// Estimate average vector size based on total number of non-zero elements in all vectors.
-    ///
-    /// This is needed because the optimizer relies on the vector dimension * size_of_f32 * point_count to
-    /// trigger reindexing and on_disk data move.
-    /// TODO(sparse) get a separate function to get the vector storage instead for the optimizer
-    pub fn get_average_dimension(&self) -> usize {
-        if self.total_vector_count == 0 {
-            // default dimension to play nice with optimizers
-            1
-        } else {
-            // multiply by 2 to account for indices & values
-            (self.total_sparse_size / self.total_vector_count) * 2
-        }
-    }
 }
 
 impl SparseVectorStorage for SimpleSparseVectorStorage {
@@ -154,11 +139,6 @@ impl SparseVectorStorage for SimpleSparseVectorStorage {
 }
 
 impl VectorStorage for SimpleSparseVectorStorage {
-    fn vector_dim(&self) -> usize {
-        // estimate average vector size
-        self.get_average_dimension()
-    }
-
     fn distance(&self) -> Distance {
         SPARSE_VECTOR_DISTANCE
     }
@@ -175,8 +155,9 @@ impl VectorStorage for SimpleSparseVectorStorage {
         self.total_vector_count
     }
 
-    fn data_size_in_bytes(&self) -> usize {
-        self.total_sparse_size
+    fn available_size_in_bytes(&self) -> usize {
+        // multiply by 2 to account for indices & values
+        self.total_sparse_size * 2
     }
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {

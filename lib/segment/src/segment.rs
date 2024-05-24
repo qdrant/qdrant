@@ -46,7 +46,7 @@ use crate::types::{
 use crate::utils;
 use crate::utils::fs::find_symlink;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-use crate::vector_storage::{VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{DenseVectorStorage, MultiVectorStorage, VectorStorage, VectorStorageEnum};
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
 
@@ -211,29 +211,24 @@ impl Segment {
             let mut vector_index = vector_data.vector_index.borrow_mut();
             match vector_opt {
                 None => {
-                    let dim = vector_storage.vector_dim();
                     // placeholder vector for marking deletion
-                    let vector = match *vector_storage {
-                        VectorStorageEnum::DenseSimple(_)
-                        | VectorStorageEnum::DenseSimpleByte(_)
-                        | VectorStorageEnum::DenseSimpleHalf(_)
-                        | VectorStorageEnum::DenseMemmap(_)
-                        | VectorStorageEnum::DenseMemmapByte(_)
-                        | VectorStorageEnum::DenseMemmapHalf(_)
-                        | VectorStorageEnum::DenseAppendableMemmap(_)
-                        | VectorStorageEnum::DenseAppendableMemmapByte(_)
-                        | VectorStorageEnum::DenseAppendableMemmapHalf(_) => {
-                            Vector::from(vec![1.0; dim])
-                        }
+                    let vector = match &*vector_storage {
+                        VectorStorageEnum::DenseSimple(v) => Vector::from(vec![1.0; v.vector_dim()]),
+                        VectorStorageEnum::DenseSimpleByte(v) => Vector::from(vec![1.0; v.vector_dim()]),
+                        VectorStorageEnum::DenseSimpleHalf(v) => Vector::from(vec![1.0; v.vector_dim()]),
+                        VectorStorageEnum::DenseMemmap(v) => Vector::from(vec![1.0; v.vector_dim()]),
+                        VectorStorageEnum::DenseMemmapByte(v) => Vector::from(vec![1.0; v.vector_dim()]),
+                        VectorStorageEnum::DenseMemmapHalf(v) => Vector::from(vec![1.0; v.vector_dim()]),
+                        VectorStorageEnum::DenseAppendableMemmap(v) => Vector::from(vec![1.0; v.vector_dim()]),
+                        VectorStorageEnum::DenseAppendableMemmapByte(v) => Vector::from(vec![1.0; v.vector_dim()]),
+                        VectorStorageEnum::DenseAppendableMemmapHalf(v)  => Vector::from(vec![1.0; v.vector_dim()]),
                         VectorStorageEnum::SparseSimple(_) => Vector::from(SparseVector::default()),
-                        VectorStorageEnum::MultiDenseSimple(_)
-                        | VectorStorageEnum::MultiDenseSimpleByte(_)
-                        | VectorStorageEnum::MultiDenseSimpleHalf(_)
-                        | VectorStorageEnum::MultiDenseAppendableMemmap(_)
-                        | VectorStorageEnum::MultiDenseAppendableMemmapByte(_)
-                        | VectorStorageEnum::MultiDenseAppendableMemmapHalf(_) => {
-                            Vector::from(MultiDenseVector::placeholder(dim))
-                        }
+                        VectorStorageEnum::MultiDenseSimple(v) => Vector::from(MultiDenseVector::placeholder(v.vector_dim())),
+                        VectorStorageEnum::MultiDenseSimpleByte(v) => Vector::from(MultiDenseVector::placeholder(v.vector_dim())),
+                        VectorStorageEnum::MultiDenseSimpleHalf(v) => Vector::from(MultiDenseVector::placeholder(v.vector_dim())),
+                        VectorStorageEnum::MultiDenseAppendableMemmap(v) => Vector::from(MultiDenseVector::placeholder(v.vector_dim())),
+                        VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => Vector::from(MultiDenseVector::placeholder(v.vector_dim())),
+                        VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => Vector::from(MultiDenseVector::placeholder(v.vector_dim())),
                     };
                     vector_storage.insert_vector(new_index, VectorRef::from(&vector))?;
                     vector_storage.delete_vector(new_index)?;
@@ -1345,7 +1340,7 @@ impl SegmentEntry for Segment {
         Ok(self.vector_data[vector_name]
             .vector_storage
             .borrow()
-            .data_size_in_bytes())
+            .available_size_in_bytes())
     }
 
     fn estimate_point_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation {
@@ -1639,23 +1634,10 @@ impl SegmentEntry for Segment {
         Ok(deleted_points)
     }
 
-    fn vector_dim(&self, vector_name: &str) -> OperationResult<usize> {
-        check_vector_name(vector_name, &self.segment_config)?;
-        Ok(self.vector_data[vector_name]
-            .vector_storage
-            .borrow()
-            .vector_dim())
-    }
-
-    fn vector_dims(&self) -> HashMap<String, usize> {
+    fn vector_names(&self) -> HashSet<String> {
         self.vector_data
-            .iter()
-            .map(|(vector_name, vector_data)| {
-                (
-                    vector_name.clone(),
-                    vector_data.vector_storage.borrow().vector_dim(),
-                )
-            })
+            .keys()
+            .cloned()
             .collect()
     }
 
@@ -2115,7 +2097,6 @@ mod tests {
         .unwrap();
 
         // validate restored snapshot is the same as original segment
-        assert_eq!(segment.vector_dims(), restored_segment.vector_dims());
         assert_eq!(
             segment.total_point_count(),
             restored_segment.total_point_count(),
@@ -2596,7 +2577,6 @@ mod tests {
         for wrong_name in wrong_names {
             check_vector_name(wrong_name, &config).err().unwrap();
             segment.vector(wrong_name, point_id).err().unwrap();
-            segment.vector_dim(wrong_name).err().unwrap();
             segment
                 .delete_vector(101, point_id, wrong_name)
                 .err()

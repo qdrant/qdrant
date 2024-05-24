@@ -15,6 +15,7 @@ pub fn sampler(rng: impl rand::Rng) -> impl Iterator<Item = f32> {
 }
 
 pub fn insert_distributed_vectors(
+    dim: usize,
     storage: &mut VectorStorageEnum,
     vectors: usize,
     sampler: &mut impl Iterator<Item = VectorElementType>,
@@ -22,7 +23,7 @@ pub fn insert_distributed_vectors(
     let start = storage.total_vector_count() as u32;
     let end = start + vectors as u32;
 
-    let mut vector = vec![0.; storage.vector_dim()];
+    let mut vector = vec![0.; dim];
 
     for offset in start..end {
         for (item, value) in vector.iter_mut().zip(&mut *sampler) {

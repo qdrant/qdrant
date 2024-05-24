@@ -136,16 +136,16 @@ impl<T: PrimitiveVectorElement> MemmapDenseVectorStorage<T> {
 }
 
 impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for MemmapDenseVectorStorage<T> {
+    fn vector_dim(&self) -> usize {
+        self.mmap_store.as_ref().unwrap().dim
+    }
+
     fn get_dense(&self, key: PointOffsetType) -> &[T] {
         self.mmap_store.as_ref().unwrap().get_vector(key)
     }
 }
 
 impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
-    fn vector_dim(&self) -> usize {
-        self.mmap_store.as_ref().unwrap().dim
-    }
-
     fn distance(&self) -> Distance {
         self.distance
     }
@@ -162,8 +162,8 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
         self.mmap_store.as_ref().unwrap().num_vectors
     }
 
-    fn data_size_in_bytes(&self) -> usize {
-        self.total_vector_count() * self.vector_dim() * std::mem::size_of::<T>()
+    fn available_size_in_bytes(&self) -> usize {
+        self.available_vector_count() * self.vector_dim() * std::mem::size_of::<T>()
     }
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {

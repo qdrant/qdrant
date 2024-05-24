@@ -42,16 +42,16 @@ pub struct TestRawScorerProducer<TMetric: Metric<VectorElementType>> {
 impl<TMetric: Metric<VectorElementType>> DenseVectorStorage<VectorElementType>
     for TestRawScorerProducer<TMetric>
 {
+    fn vector_dim(&self) -> usize {
+        self.vectors.get(0).len()
+    }
+
     fn get_dense(&self, key: PointOffsetType) -> &[VectorElementType] {
         self.vectors.get(key)
     }
 }
 
 impl<TMetric: Metric<VectorElementType>> VectorStorage for TestRawScorerProducer<TMetric> {
-    fn vector_dim(&self) -> usize {
-        self.vectors.get(0).len()
-    }
-
     fn distance(&self) -> Distance {
         TMetric::distance()
     }
@@ -68,8 +68,8 @@ impl<TMetric: Metric<VectorElementType>> VectorStorage for TestRawScorerProducer
         self.vectors.len()
     }
 
-    fn data_size_in_bytes(&self) -> usize {
-        self.total_vector_count() * self.vector_dim() * std::mem::size_of::<VectorElementType>()
+    fn available_size_in_bytes(&self) -> usize {
+        self.available_vector_count() * self.vector_dim() * std::mem::size_of::<VectorElementType>()
     }
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {

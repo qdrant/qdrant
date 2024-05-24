@@ -129,7 +129,7 @@ pub trait SegmentOptimizer {
             };
             let locked_segment = segment.read();
 
-            for (vector_name, _dim) in locked_segment.vector_dims() {
+            for vector_name in locked_segment.vector_names() {
                 let vector_size = locked_segment.avaliable_vectors_size_in_bytes(&vector_name)?;
                 let size = bytes_count_by_vector_name.entry(vector_name).or_insert(0);
                 *size += vector_size;

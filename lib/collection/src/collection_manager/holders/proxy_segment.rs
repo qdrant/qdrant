@@ -696,7 +696,10 @@ impl SegmentEntry for ProxySegment {
     }
 
     fn avaliable_vectors_size_in_bytes(&self, vector_name: &str) -> OperationResult<usize> {
-        
+        // TODO: count deleted vectors size
+        let wrapped_size = self.wrapped_segment.get().read().avaliable_vectors_size_in_bytes(vector_name)?;
+        let write_size = self.write_segment.get().read().avaliable_vectors_size_in_bytes(vector_name)?;
+        Ok(wrapped_size + write_size)
     }
 
     fn estimate_point_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation {
@@ -926,12 +929,8 @@ impl SegmentEntry for ProxySegment {
         Ok(deleted_points)
     }
 
-    fn vector_dim(&self, vector_name: &str) -> OperationResult<usize> {
-        self.write_segment.get().read().vector_dim(vector_name)
-    }
-
-    fn vector_dims(&self) -> HashMap<String, usize> {
-        self.write_segment.get().read().vector_dims()
+    fn vector_names(&self) -> HashSet<String> {
+        self.write_segment.get().read().vector_names()
     }
 
     fn take_snapshot(
