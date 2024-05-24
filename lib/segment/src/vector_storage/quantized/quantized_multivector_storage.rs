@@ -1,13 +1,14 @@
-use std::fs::File;
-use std::io::{Read, Write};
 use std::marker::PhantomData;
+use std::ops::DerefMut;
 use std::path::Path;
 
 use common::types::{PointOffsetType, ScoreType};
+use memmap2::MmapMut;
 use quantization::{EncodedVectors, VectorParameters};
 use serde::{Deserialize, Serialize};
 
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::mmap_type::MmapSlice;
+use crate::common::operation_error::OperationResult;
 use crate::data_types::vectors::TypedMultiDenseVectorRef;
 use crate::types::{MultiVectorComparator, MultiVectorConfig};
 
@@ -55,12 +56,23 @@ where
         meta_path: &Path,
         offsets_path: &Path,
     ) -> OperationResult<()> {
-        let offsets_serialized = bincode::serialize(&self.offsets).map_err(|_| {
-            OperationError::service_error("Cannot serialize quantized multivector offsets")
-        })?;
-        let mut file = File::create(offsets_path)?;
-        file.write_all(&offsets_serialized)?;
-        file.flush()?;
+        offsets_path.parent().map(std::fs::create_dir_all);
+
+        let offsets_file_size = self.offsets.len() * std::mem::size_of::<MultivectorOffset>();
+        let offsets_file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            // Don't truncate because we explicitly set the length later
+            .truncate(false)
+            .open(offsets_path)?;
+        offsets_file.set_len(offsets_file_size as u64)?;
+
+        let offsets_mmap = unsafe { MmapMut::map_mut(&offsets_file) }?;
+        let mut offsets_mmap_type =
+            unsafe { MmapSlice::<MultivectorOffset>::try_from(offsets_mmap)? };
+        offsets_mmap_type.deref_mut().copy_from_slice(&self.offsets);
+        offsets_mmap_type.flusher()()?;
 
         Ok(self.quantized_storage.save(data_path, meta_path)?)
     }
@@ -72,15 +84,15 @@ where
         vector_parameters: &VectorParameters,
         multi_vector_config: &MultiVectorConfig,
     ) -> OperationResult<Self> {
-        let mut file = File::open(offsets_path)?;
-        let mut offsets_serialized = Vec::new();
-        file.read_to_end(&mut offsets_serialized)?;
-        let offsets = bincode::deserialize(&offsets_serialized).map_err(|_| {
-            OperationError::service_error(format!(
-                "Cannot deserialize quantized multivector offsets: {:?}",
-                offsets_path
-            ))
-        })?;
+        let offsets_file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(false)
+            .open(offsets_path)?;
+        let offsets_mmap = unsafe { MmapMut::map_mut(&offsets_file) }?;
+        let mut offsets_mmap_type =
+            unsafe { MmapSlice::<MultivectorOffset>::try_from(offsets_mmap)? };
+        let offsets = offsets_mmap_type.deref_mut().iter().copied().collect();
 
         Ok(Self {
             dim: vector_parameters.dim,
