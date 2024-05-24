@@ -22,7 +22,7 @@ use segment::types::{
 };
 use segment::vector_storage::query::{ContextPair, DiscoveryQuery};
 use sparse::common::sparse_vector::SparseVector;
-use sparse::index::inverted_index::inverted_index_immutable_ram::InvertedIndexImmutableRam;
+use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexImmutableRam;
 use tempfile::Builder;
 
 const MAX_EXAMPLE_PAIRS: usize = 3;
@@ -166,7 +166,7 @@ fn sparse_index_discover_test() {
     let payload_index_ptr = sparse_segment.payload_index.clone();
 
     let vector_storage = &sparse_segment.vector_data[SPARSE_VECTOR_NAME].vector_storage;
-    let mut sparse_index = SparseVectorIndex::<InvertedIndexImmutableRam>::open(
+    let mut sparse_index = SparseVectorIndex::<InvertedIndexImmutableRam<f32>>::open(
         SparseIndexConfig {
             full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
             index_type: SparseIndexType::ImmutableRam,

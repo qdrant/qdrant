@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use common::cpu::CpuPermit;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
-use sparse::index::inverted_index::inverted_index_immutable_ram::InvertedIndexImmutableRam;
-use sparse::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
+use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexImmutableRam;
+use sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexMmap;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 
 use super::hnsw_index::graph_links::{GraphLinksMmap, GraphLinksRam};
@@ -59,8 +59,8 @@ pub enum VectorIndexEnum {
     HnswRam(HNSWIndex<GraphLinksRam>),
     HnswMmap(HNSWIndex<GraphLinksMmap>),
     SparseRam(SparseVectorIndex<InvertedIndexRam>),
-    SparseImmutableRam(SparseVectorIndex<InvertedIndexImmutableRam>),
-    SparseMmap(SparseVectorIndex<InvertedIndexMmap>),
+    SparseImmutableRam(SparseVectorIndex<InvertedIndexImmutableRam<f32>>),
+    SparseMmap(SparseVectorIndex<InvertedIndexMmap<f32>>),
 }
 
 impl VectorIndexEnum {

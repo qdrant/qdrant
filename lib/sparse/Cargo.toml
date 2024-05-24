@@ -1,6 +1,6 @@
 [package]
 name = "sparse"
-version = "0.1.0"
+version = "0.2.0"
 authors = [
     "Andrey Vasnetsov <andrey@vasnetsov.com>",
     "Qdrant Team <info@qdrant.tech>",

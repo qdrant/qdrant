@@ -22,7 +22,7 @@ use segment::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use segment::vector_storage::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
 use segment::vector_storage::VectorStorage;
 use sparse::common::sparse_vector_fixture::random_sparse_vector;
-use sparse::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
+use sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexMmap;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use sparse::index::inverted_index::InvertedIndex;
 use tempfile::Builder;
@@ -109,7 +109,7 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
     group.bench_function("convert-mmap-index", |b| {
         b.iter(|| {
             let mmap_index_dir = Builder::new().prefix("mmap_index_dir").tempdir().unwrap();
-            let mmap_inverted_index = InvertedIndexMmap::from_ram_index(
+            let mmap_inverted_index = InvertedIndexMmap::<f32>::from_ram_index(
                 Cow::Borrowed(sparse_vector_index.inverted_index()),
                 &mmap_index_dir,
             )
