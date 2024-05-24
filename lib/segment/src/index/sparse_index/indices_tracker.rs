@@ -16,16 +16,9 @@ pub struct IndicesTracker {
 }
 
 impl IndicesTracker {
-    pub fn open(path: &Path, max_index_fn: impl Fn() -> DimOffset) -> std::io::Result<Self> {
+    pub fn open(path: &Path) -> std::io::Result<Self> {
         let path = Self::file_path(path);
-        if !path.exists() {
-            let max_index = max_index_fn();
-            Ok(IndicesTracker {
-                map: (0..max_index).map(|i| (i, i)).collect(),
-            })
-        } else {
-            Ok(read_json(&path)?)
-        }
+        Ok(read_json(&path)?)
     }
 
     pub fn save(&self, path: &Path) -> OperationResult<()> {
