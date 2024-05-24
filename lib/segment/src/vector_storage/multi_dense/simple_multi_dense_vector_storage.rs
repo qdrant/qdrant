@@ -309,8 +309,8 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleMultiDenseVectorStorage<
     }
 
     fn available_size_in_bytes(&self) -> usize {
-        // TODO: calculate available, not total
-        self.vectors.len() * self.vector_dim() * std::mem::size_of::<T>()
+        let total_size = self.vectors.len() * self.vector_dim() * std::mem::size_of::<T>();
+        total_size * self.available_vector_count() / self.total_vector_count()
     }
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {
