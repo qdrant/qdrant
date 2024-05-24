@@ -106,7 +106,7 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     Distance::Dot,
     128, // dim
     32, // ef
-    5., // min_acc out of 100
+    25., // min_acc out of 100
 )]
 #[case::discovery_binary_dot(
     QueryVariant::Discovery,
@@ -114,7 +114,7 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     Distance::Dot,
     128, // dim
     128, // ef
-    1., // min_acc out of 100
+    20., // min_acc out of 100
 )]
 #[case::recommend_binary_dot(
     QueryVariant::RecommendBestScore,
@@ -122,7 +122,7 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     Distance::Dot,
     128, // dim
     64, // ef
-    1., // min_acc out of 100
+    20., // min_acc out of 100
 )]
 #[case::nearest_binary_cosine(
     QueryVariant::Nearest,
