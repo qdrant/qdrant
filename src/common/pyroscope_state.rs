@@ -54,15 +54,30 @@ pub mod pyro {
                 }
             }
         }
+
+        pub fn stop_agent(&mut self) -> bool {
+            log::info!("STOP: Stopping pyroscope agent");
+            if let Some(agent) = self.agent.take() {
+                match agent.stop() {
+                    Ok(stopped_agent) => {
+                        stopped_agent.shutdown();
+                        log::info!("STOP: Pyroscope agent stopped");
+                        return true;
+                    }
+                    Err(err) => {
+                        log::warn!("Pyroscope agent failed to stop {}", err);
+                        return false;
+                    }
+                }
+            }
+            true
+        }
     }
 
     impl Drop for PyroscopeState {
         fn drop(&mut self) {
             log::info!("DROP: Stopping pyroscope agent");
             if let Some(agent) = self.agent.take() {
-                // Use take() to replace self.agent with None and get the contained value
-                // FIXME: How to pass Result<> from this to the API call?
-                // I might have to add an explicit function for this when API is called to disable pyroscope
                 let stopped_agent = agent.stop().unwrap(); // Now you can call stop() on the agent directly
                 stopped_agent.shutdown();
             }

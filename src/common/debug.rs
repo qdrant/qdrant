@@ -73,14 +73,22 @@ impl DebugState {
                     log::info!("Patch matched");
                     if let Some(pyro_config) = pyro_config {
                         log::info!("Patch matched: Config found");
-                        let mut pyroscope_state_guard = self.pyroscope.lock();
-                        *pyroscope_state_guard = PyroscopeState::from_config(Some(pyro_config));
+                        if let Some(mut pyroscope_state) = self.pyroscope.lock().take() {
+                            log::info!("Patch matched: Config found: State found");
+                            return pyroscope_state.stop_agent();
+                        }
+
+                        let mut pyroscope_guard = self.pyroscope.lock();
+                        *pyroscope_guard = PyroscopeState::from_config(Some(pyro_config));
+                        return true;
                     }
                 }
                 PyroscopeConfigPatch::Null => {
                     log::info!("Null matched");
-                    let mut pyroscope_guard = self.pyroscope.lock();
-                    *pyroscope_guard = None; // This also shuts down the agent (because of drop)
+                    if let Some(mut pyroscope_state) = self.pyroscope.lock().take() {
+                        log::info!("Null matched: Config found");
+                        return pyroscope_state.stop_agent();
+                    }
                 }
             }
 

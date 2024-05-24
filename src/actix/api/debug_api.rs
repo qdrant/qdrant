@@ -24,6 +24,9 @@ async fn update_debug_config(
 ) -> impl Responder {
     crate::actix::helpers::time(async move {
         access.check_global_access(AccessRequirements::new().manage())?;
+
+        log::info!("===== Debug patch {:?} =====", debug_patch);
+
         Ok(debug_state.apply_config_patch(debug_patch.into_inner()))
     })
     .await
