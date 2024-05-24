@@ -209,6 +209,9 @@ impl<T: PrimitiveVectorElement> SimpleMultiDenseVectorStorage<T> {
                 .vector
                 .flattened_vectors
                 .extend_from_slice(vector.flattened_vectors);
+        } else {
+            // reset buffer record
+            record.vector.flattened_vectors.clear();
         }
 
         // Store updated record

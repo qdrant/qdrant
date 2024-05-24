@@ -114,6 +114,10 @@ impl SimpleSparseVectorStorage {
                 self.total_sparse_size += vector.values.len();
             }
             record.vector = vector.clone();
+        } else {
+            // reset buffer record
+            record.vector.values.clear();
+            record.vector.indices.clear();
         }
 
         // Store updated record

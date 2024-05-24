@@ -175,6 +175,9 @@ impl<T: PrimitiveVectorElement> SimpleDenseVectorStorage<T> {
         record.deleted = deleted;
         if let Some(vector) = vector {
             record.vector.copy_from_slice(vector);
+        } else {
+            // reset buffer record
+            record.vector.iter_mut().for_each(|v| *v = T::default());
         }
 
         // Store updated record
