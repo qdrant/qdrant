@@ -76,7 +76,10 @@ where
         let mut offsets_serialized = Vec::new();
         file.read_to_end(&mut offsets_serialized)?;
         let offsets = bincode::deserialize(&offsets_serialized).map_err(|_| {
-            OperationError::service_error("Cannot deserialize quantized multivector offsets")
+            OperationError::service_error(format!(
+                "Cannot deserialize quantized multivector offsets: {:?}",
+                offsets_path
+            ))
         })?;
 
         Ok(Self {
