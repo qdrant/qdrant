@@ -20,7 +20,7 @@ pub type ShardQueryResponse = Vec<Vec<ScoredPoint>>;
 #[derive(Clone)]
 pub struct ShardQueryRequest {
     pub prefetches: Vec<ShardPrefetch>,
-    pub query: ScoringQuery,
+    pub query: Option<ScoringQuery>,
     pub filter: Option<Filter>,
     pub score_threshold: Option<ScoreType>,
     pub limit: usize,
@@ -61,7 +61,7 @@ impl ScoringQuery {
 #[derive(Clone)]
 pub struct ShardPrefetch {
     pub prefetches: Vec<ShardPrefetch>,
-    pub query: ScoringQuery,
+    pub query: Option<ScoringQuery>,
     pub limit: usize,
     pub params: Option<SearchParams>,
     pub filter: Option<Filter>,
@@ -92,8 +92,7 @@ impl TryFrom<grpc::QueryShardPoints> for ShardQueryRequest {
                 .try_collect()?,
             query: query
                 .map(|query| ScoringQuery::try_from_grpc_query(query, using))
-                .transpose()?
-                .ok_or_else(|| Status::invalid_argument("missing field: query"))?,
+                .transpose()?,
             filter: filter.map(Filter::try_from).transpose()?,
             score_threshold,
             limit: limit as usize,
@@ -133,8 +132,7 @@ impl TryFrom<grpc::query_shard_points::Prefetch> for ShardPrefetch {
                 .try_collect()?,
             query: query
                 .map(|query| ScoringQuery::try_from_grpc_query(query, using))
-                .transpose()?
-                .ok_or_else(|| Status::invalid_argument("missing field: query"))?,
+                .transpose()?,
             limit: limit as usize,
             params: params.map(SearchParams::from),
             filter: filter.map(Filter::try_from).transpose()?,
@@ -295,8 +293,10 @@ impl From<ShardPrefetch> for grpc::query_shard_points::Prefetch {
         } = value;
         Self {
             prefetch: prefetches.into_iter().map(Self::from).collect(),
-            using: query.get_vector_name().map(ToOwned::to_owned),
-            query: Some(grpc::query_shard_points::Query::from(query)),
+            using: query
+                .as_ref()
+                .and_then(|query| query.get_vector_name().map(ToOwned::to_owned)),
+            query: query.map(From::from),
             filter: filter.map(grpc::Filter::from),
             params: params.map(grpc::SearchParams::from),
             score_threshold,
@@ -324,8 +324,10 @@ impl From<ShardQueryRequest> for grpc::QueryShardPoints {
                 .into_iter()
                 .map(grpc::query_shard_points::Prefetch::from)
                 .collect(),
-            using: query.get_vector_name().map(ToOwned::to_owned),
-            query: Some(grpc::query_shard_points::Query::from(query)),
+            using: query
+                .as_ref()
+                .and_then(|query| query.get_vector_name().map(ToOwned::to_owned)),
+            query: query.map(From::from),
             filter: filter.map(grpc::Filter::from),
             params: params.map(grpc::SearchParams::from),
             score_threshold,
