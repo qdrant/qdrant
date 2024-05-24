@@ -159,7 +159,9 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             match borrowed_vector_storage.get_vector_opt(id) {
                 None => {
                     // the vector was lost in a crash but will be recovered by the WAL
-                    log::debug!("Sparse vector with id {} is not found", id)
+                    let point_id = borrowed_id_tracker.external_id(id);
+                    let point_version = borrowed_id_tracker.internal_version(id);
+                    log::debug!("Sparse vector with id {id} is not found, external_id: {point_id:?}, version: {point_version:?}")
                 }
                 Some(vector) => {
                     let vector: &SparseVector = vector.as_vec_ref().try_into()?;

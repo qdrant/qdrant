@@ -62,6 +62,10 @@ impl<'a, TElement: PrimitiveVectorElement> CowMultiVector<'a, TElement> {
 }
 
 impl<'a> CowVector<'a> {
+    pub fn default_sparse() -> Self {
+        CowVector::Sparse(Cow::Owned(SparseVector::default()))
+    }
+
     pub fn to_owned(self) -> Vector {
         match self {
             CowVector::Dense(v) => Vector::Dense(v.into_owned()),
