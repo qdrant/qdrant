@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
-use api::rest::VectorStruct;
+use api::rest::{OrderByInterface, VectorStruct};
 use common::cpu::CpuBudget;
 use rand::{thread_rng, Rng};
 use segment::data_types::vectors::NamedVectorStruct;
@@ -19,7 +19,7 @@ use crate::operations::query_enum::QueryEnum;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{
-    CoreSearchRequest, OrderByInterface, PointRequestInternal, ScrollRequestInternal, VectorsConfig,
+    CoreSearchRequest, PointRequestInternal, ScrollRequestInternal, VectorsConfig,
 };
 use crate::operations::vector_params_builder::VectorParamsBuilder;
 use crate::operations::{CollectionUpdateOperations, OperationWithClockTag};
