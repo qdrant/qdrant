@@ -150,14 +150,11 @@ pub trait SegmentEntry {
 
     /// Max value from all `available_vectors_size_in_bytes`
     fn max_available_vectors_size_in_bytes(&self) -> OperationResult<usize> {
-        let mut max_size = 0;
-        for vector_name in self.vector_names() {
-            max_size = std::cmp::max(
-                max_size,
-                self.available_vectors_size_in_bytes(&vector_name)?,
-            );
-        }
-        Ok(max_size)
+        self.vector_names()
+            .into_iter()
+            .map(|vector_name| self.available_vectors_size_in_bytes(&vector_name))
+            .collect::<OperationResult<Vec<_>>>()
+            .map(|sizes| sizes.into_iter().max().unwrap_or_default())
     }
 
     /// Get segment type
