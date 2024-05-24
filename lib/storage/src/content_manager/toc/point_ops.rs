@@ -303,15 +303,15 @@ impl TableOfContent {
         access: Access,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         let collection_pass = access.check_point_op(collection_name, &mut request)?;
-        
+
         let _collection = self.get_collection(&collection_pass).await?;
-        
+
         //TODO(universal-query): implement query in collection
         // collection
         //     .query(request, read_consistency, &shard_selection)
         //     .await
         //     .map_err(|err| err.into())
-        
+
         todo!()
     }
 
