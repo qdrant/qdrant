@@ -309,7 +309,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleMultiDenseVectorStorage<
     }
 
     fn available_size_in_bytes(&self) -> usize {
-        // TODO: calculate avaliable, not total
+        // TODO: calculate available, not total
         self.vectors.len() * self.vector_dim() * std::mem::size_of::<T>()
     }
 

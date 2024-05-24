@@ -695,19 +695,27 @@ impl SegmentEntry for ProxySegment {
         self.write_segment.get().read().deleted_point_count()
     }
 
-    fn avaliable_vectors_size_in_bytes(&self, vector_name: &str) -> OperationResult<usize> {
-        // TODO: count deleted vectors size
+    fn available_vectors_size_in_bytes(&self, vector_name: &str) -> OperationResult<usize> {
         let wrapped_size = self
             .wrapped_segment
             .get()
             .read()
-            .avaliable_vectors_size_in_bytes(vector_name)?;
+            .available_vectors_size_in_bytes(vector_name)?;
+        let wrapped_count = self.wrapped_segment.get().read().available_point_count();
         let write_size = self
             .write_segment
             .get()
             .read()
-            .avaliable_vectors_size_in_bytes(vector_name)?;
-        Ok(wrapped_size + write_size)
+            .available_vectors_size_in_bytes(vector_name)?;
+        let write_count = self.write_segment.get().read().available_point_count();
+        let deleted_points_count = self.deleted_points.read().len();
+        let stored_points = wrapped_count + write_count;
+        let avaliable_points = stored_points.saturating_sub(deleted_points_count);
+        // because we don't know the exact size of deleted vectors, we assume that they are the same avg size as the wrapped ones
+        Ok(
+            ((wrapped_size as u128 + write_size as u128) * avaliable_points as u128
+                / stored_points as u128) as usize,
+        )
     }
 
     fn estimate_point_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation {

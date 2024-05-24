@@ -66,7 +66,7 @@ impl IndexingOptimizer {
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
                 let vector_size = read_segment
-                    .max_avaliable_vectors_size_in_bytes()
+                    .max_available_vectors_size_in_bytes()
                     .unwrap_or_default();
 
                 if read_segment.segment_type() == SegmentType::Special {
@@ -101,7 +101,7 @@ impl IndexingOptimizer {
                 let segment_entry = segment.get();
                 let read_segment = segment_entry.read();
                 let max_vector_size_bytes = read_segment
-                    .max_avaliable_vectors_size_in_bytes()
+                    .max_available_vectors_size_in_bytes()
                     .unwrap_or_default();
 
                 let segment_config = read_segment.config();
@@ -125,7 +125,7 @@ impl IndexingOptimizer {
                         let is_indexed = vector_data.index.is_indexed();
                         let is_on_disk = vector_data.storage_type.is_on_disk();
                         let storage_size_bytes = read_segment
-                            .avaliable_vectors_size_in_bytes(vector_name)
+                            .available_vectors_size_in_bytes(vector_name)
                             .unwrap_or_default();
 
                         let is_big_for_index = storage_size_bytes >= indexing_threshold_bytes;
@@ -158,7 +158,7 @@ impl IndexingOptimizer {
                                     sparse_vector_data.index.index_type.is_immutable();
 
                                 let storage_size = read_segment
-                                    .avaliable_vectors_size_in_bytes(sparse_vector_name)
+                                    .available_vectors_size_in_bytes(sparse_vector_name)
                                     .unwrap_or_default();
 
                                 let is_big_for_index = storage_size >= indexing_threshold_bytes;

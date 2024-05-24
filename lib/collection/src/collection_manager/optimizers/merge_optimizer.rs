@@ -116,7 +116,7 @@ impl SegmentOptimizer for MergeOptimizer {
                 (read_segment.segment_type() != SegmentType::Special).then_some((
                     *idx,
                     read_segment
-                        .max_avaliable_vectors_size_in_bytes()
+                        .max_available_vectors_size_in_bytes()
                         .unwrap_or_default(),
                 ))
             })
