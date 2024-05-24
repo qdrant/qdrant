@@ -112,7 +112,7 @@ impl ConfigMismatchOptimizer {
                 let read_segment = segment_entry.read();
                 let vector_size = read_segment
                     .max_available_vectors_size_in_bytes()
-                    .unwrap_or(0);
+                    .unwrap_or_default();
 
                 let segment_config = read_segment.config();
 

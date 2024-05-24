@@ -232,19 +232,23 @@ impl PlainIndex {
         filter: Option<&Filter>,
     ) -> bool {
         let vector_storage = self.vector_storage.borrow();
-        let vector_size_bytes =
-            vector_storage.available_size_in_bytes() / vector_storage.available_vector_count();
-        let indexing_threshold_bytes = search_optimized_threshold_kb * BYTES_IN_KB;
+        let available_vector_count = vector_storage.available_vector_count();
+        if available_vector_count > 0 {
+            let vector_size_bytes =
+                vector_storage.available_size_in_bytes() / vector_storage.available_vector_count();
+            let indexing_threshold_bytes = search_optimized_threshold_kb * BYTES_IN_KB;
 
-        if let Some(payload_filter) = filter {
-            let payload_index = self.payload_index.borrow();
-            let cardinality = payload_index.estimate_cardinality(payload_filter);
-            let scan_size = vector_size_bytes.saturating_mul(cardinality.max);
-            scan_size <= indexing_threshold_bytes
+            if let Some(payload_filter) = filter {
+                let payload_index = self.payload_index.borrow();
+                let cardinality = payload_index.estimate_cardinality(payload_filter);
+                let scan_size = vector_size_bytes.saturating_mul(cardinality.max);
+                scan_size <= indexing_threshold_bytes
+            } else {
+                let vector_storage_size = vector_size_bytes.saturating_mul(available_vector_count);
+                vector_storage_size <= indexing_threshold_bytes
+            }
         } else {
-            let vector_count = vector_storage.available_vector_count();
-            let vector_storage_size = vector_size_bytes.saturating_mul(vector_count);
-            vector_storage_size <= indexing_threshold_bytes
+            true
         }
     }
 }

@@ -712,10 +712,14 @@ impl SegmentEntry for ProxySegment {
         let stored_points = wrapped_count + write_count;
         let avaliable_points = stored_points.saturating_sub(deleted_points_count);
         // because we don't know the exact size of deleted vectors, we assume that they are the same avg size as the wrapped ones
-        Ok(
-            ((wrapped_size as u128 + write_size as u128) * avaliable_points as u128
-                / stored_points as u128) as usize,
-        )
+        if stored_points > 0 {
+            Ok(
+                ((wrapped_size as u128 + write_size as u128) * avaliable_points as u128
+                    / stored_points as u128) as usize,
+            )
+        } else {
+            Ok(0)
+        }
     }
 
     fn estimate_point_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation {
