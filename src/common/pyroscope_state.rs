@@ -88,6 +88,8 @@ pub mod pyro {
 
 #[cfg(not(target_os = "linux"))]
 pub mod pyro {
+    use crate::common::debug::PyroscopeConfig;
+
     pub struct PyroscopeState {}
 
     impl PyroscopeState {
