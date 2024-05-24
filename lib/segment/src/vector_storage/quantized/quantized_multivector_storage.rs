@@ -91,7 +91,7 @@ where
         })
     }
 
-    /// Custom `score_max_similarity` implemenation for quantized vectors
+    /// Custom `score_max_similarity` implementation for quantized vectors
     fn score_point_max_similarity(&self, query: &Vec<TEncodedQuery>, vector_index: u32) -> f32 {
         let vectors_count = self.offsets[vector_index as usize].count;
         let vectors_offset = self.offsets[vector_index as usize].offset;
@@ -113,7 +113,7 @@ where
         sum
     }
 
-    /// Custom `score_max_similarity` implemenation for quantized vectors
+    /// Custom `score_max_similarity` implementation for quantized vectors
     fn score_internal_max_similarity(&self, vector_a_index: u32, vector_b_index: u32) -> f32 {
         let vector_a_count = self.offsets[vector_a_index as usize].count;
         let vector_b_count = self.offsets[vector_b_index as usize].count;
