@@ -21,18 +21,10 @@ pub struct DebugConfig {
     pub pyroscope: Option<PyroscopeConfig>,
 }
 
-#[derive(Default, Debug, Serialize, JsonSchema, Deserialize, Clone)]
+#[derive(Debug, Serialize, JsonSchema, Deserialize, Clone)]
 #[serde(rename_all = "snake_case")]
-#[serde(untagged)]
-pub enum PyroscopeConfigPatch {
-    Patch(Option<PyroscopeConfig>),
-    #[default]
-    Null,
-}
-
-#[derive(Default, Debug, Serialize, JsonSchema, Deserialize, Clone)]
-pub struct DebugConfigPatch {
-    pub pyroscope: PyroscopeConfigPatch,
+pub enum DebugConfigPatch {
+    Pyroscope(Option<PyroscopeConfig>),
 }
 
 pub struct DebugState {
@@ -68,31 +60,27 @@ impl DebugState {
     pub fn apply_config_patch(&self, patch: DebugConfigPatch) -> bool {
         #[cfg(target_os = "linux")]
         {
-            match patch.pyroscope {
-                PyroscopeConfigPatch::Patch(pyro_config) => {
-                    log::info!("Patch matched");
-                    if let Some(pyro_config) = pyro_config {
-                        log::info!("Patch matched: Config found");
-                        if let Some(mut pyroscope_state) = self.pyroscope.lock().take() {
-                            log::info!("Patch matched: Config found: State found");
-                            return pyroscope_state.stop_agent();
-                        }
-
-                        let mut pyroscope_guard = self.pyroscope.lock();
-                        *pyroscope_guard = PyroscopeState::from_config(Some(pyro_config));
-                        return true;
-                    }
-                }
-                PyroscopeConfigPatch::Null => {
-                    log::info!("Null matched");
+            match patch {
+                DebugConfigPatch::Pyroscope(new_config) => {
+                    log::info!("User wants to patch pyroscope.");
                     if let Some(mut pyroscope_state) = self.pyroscope.lock().take() {
-                        log::info!("Null matched: Config found");
-                        return pyroscope_state.stop_agent();
+                        let stopped = pyroscope_state.stop_agent();
+                        if !stopped {
+                            return false;
+                        }
+                    }
+
+                    match new_config {
+                        Some(new_config) => {
+                            log::info!("New Config found");
+                            let mut pyroscope_guard = self.pyroscope.lock();
+                            *pyroscope_guard = PyroscopeState::from_config(Some(new_config));
+                            true
+                        }
+                        None => true,
                     }
                 }
             }
-
-            true
         }
 
         #[cfg(not(target_os = "linux"))]
