@@ -1,4 +1,5 @@
 pub mod fixtures;
+mod points_dedup;
 mod sha_256_test;
 mod shard_query;
 mod snapshot_test;

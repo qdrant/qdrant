@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use futures::stream::FuturesUnordered;
@@ -297,6 +298,8 @@ impl Collection {
             None => retrieved_iter
                 .flatten()
                 .sorted_unstable_by_key(|point| point.id)
+                // Add each point only once, deduplicate point IDs
+                .dedup_by(|a, b| a.id == b.id)
                 .take(limit)
                 .map(api::rest::Record::from)
                 .collect_vec(),
@@ -325,6 +328,8 @@ impl Collection {
                         Direction::Asc => value_a <= value_b,
                         Direction::Desc => value_a >= value_b,
                     })
+                    // Add each point only once, deduplicate point IDs
+                    .dedup_by(|(_, record_a), (_, record_b)| record_a.id == record_b.id)
                     .map(|(_, record)| api::rest::Record::from(record))
                     .take(limit)
                     .collect_vec()
@@ -412,7 +417,13 @@ impl Collection {
             });
             future::try_join_all(retrieve_futures).await?
         };
-        let points = all_shard_collection_results.into_iter().flatten().collect();
+        let mut covered_point_ids = HashSet::new();
+        let points = all_shard_collection_results
+            .into_iter()
+            .flatten()
+            // Add each point only once, deduplicate point IDs
+            .filter(|point| covered_point_ids.insert(point.id))
+            .collect();
         Ok(points)
     }
 }
