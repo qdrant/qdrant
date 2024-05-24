@@ -147,6 +147,7 @@ fn sparse_vector_index_fallback_plain_search() {
 }
 
 /// Checks that the sparse vector index is consistent with the underlying storage
+#[cfg(test)]
 fn check_index_storage_consistency<T: InvertedIndex>(sparse_vector_index: &SparseVectorIndex<T>) {
     let borrowed_vector_storage = sparse_vector_index.vector_storage().borrow();
     let point_count = borrowed_vector_storage.available_vector_count();
