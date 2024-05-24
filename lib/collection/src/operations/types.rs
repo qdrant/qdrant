@@ -203,6 +203,8 @@ pub struct CollectionClusterInfo {
     pub remote_shards: Vec<RemoteShardInfo>,
     /// Shard transfers
     pub shard_transfers: Vec<ShardTransferInfo>,
+    /// Resharding operations
+    pub resharding_operations: Vec<ReshardingInfo>,
 }
 
 #[derive(Debug, Serialize, JsonSchema, Clone)]
@@ -229,6 +231,15 @@ pub struct ShardTransferInfo {
     /// A human-readable report of the transfer progress. Available only on the source peer.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub comment: Option<String>,
+}
+
+#[derive(Debug, Serialize, JsonSchema, Clone)]
+pub struct ReshardingInfo {
+    pub shard_id: ShardId,
+
+    pub peer_id: PeerId,
+
+    pub shard_key: Option<ShardKey>,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]

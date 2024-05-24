@@ -55,6 +55,7 @@
     - [RenameAlias](#qdrant-RenameAlias)
     - [Replica](#qdrant-Replica)
     - [ReplicateShard](#qdrant-ReplicateShard)
+    - [ReshardingInfo](#qdrant-ReshardingInfo)
     - [RestartTransfer](#qdrant-RestartTransfer)
     - [ScalarQuantization](#qdrant-ScalarQuantization)
     - [ShardKey](#qdrant-ShardKey)
@@ -389,6 +390,7 @@
 | local_shards | [LocalShardInfo](#qdrant-LocalShardInfo) | repeated | Local shards |
 | remote_shards | [RemoteShardInfo](#qdrant-RemoteShardInfo) | repeated | Remote shards |
 | shard_transfers | [ShardTransferInfo](#qdrant-ShardTransferInfo) | repeated | Shard transfers |
+| resharding_operations | [ReshardingInfo](#qdrant-ReshardingInfo) | repeated | Resharding operations |
 
 
 
@@ -1140,6 +1142,23 @@ Note: 1kB = 1 vector of size 256. |
 | from_peer_id | [uint64](#uint64) |  |  |
 | to_peer_id | [uint64](#uint64) |  |  |
 | method | [ShardTransferMethod](#qdrant-ShardTransferMethod) | optional |  |
+
+
+
+
+
+
+<a name="qdrant-ReshardingInfo"></a>
+
+### ReshardingInfo
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| shard_id | [uint32](#uint32) |  |  |
+| peer_id | [uint64](#uint64) |  |  |
+| shard_key | [ShardKey](#qdrant-ShardKey) | optional |  |
 
 
 

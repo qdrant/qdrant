@@ -334,6 +334,16 @@ impl Collection {
         let shard_transfers =
             shards_holder.get_shard_transfer_info(&*self.transfer_tasks.lock().await);
 
+        let mut resharding_operations = vec![];
+        if let Some(resharding_state) = &*shards_holder.resharding_state.read() {
+            let resharding_info = ReshardingInfo {
+                shard_id: resharding_state.shard_id,
+                peer_id,
+                shard_key: resharding_state.shard_key.clone(),
+            };
+            resharding_operations.push(resharding_info);
+        }
+
         // sort by shard_id
         local_shards.sort_by_key(|k| k.shard_id);
         remote_shards.sort_by_key(|k| k.shard_id);
@@ -344,6 +354,7 @@ impl Collection {
             local_shards,
             remote_shards,
             shard_transfers,
+            resharding_operations,
         };
         Ok(info)
     }
