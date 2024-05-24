@@ -1,6 +1,7 @@
 #[cfg(not(target_os = "windows"))]
 mod prof;
 
+use std::borrow::Cow;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -108,8 +109,8 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
     group.bench_function("convert-mmap-index", |b| {
         b.iter(|| {
             let mmap_index_dir = Builder::new().prefix("mmap_index_dir").tempdir().unwrap();
-            let mmap_inverted_index = InvertedIndexMmap::convert_and_save(
-                sparse_vector_index.inverted_index(),
+            let mmap_inverted_index = InvertedIndexMmap::from_ram_index(
+                Cow::Borrowed(sparse_vector_index.inverted_index()),
                 &mmap_index_dir,
             )
             .unwrap();

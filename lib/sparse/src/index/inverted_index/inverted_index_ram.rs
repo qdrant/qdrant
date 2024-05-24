@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cmp::max;
 use std::path::{Path, PathBuf};
 
@@ -52,10 +53,10 @@ impl InvertedIndex for InvertedIndexRam {
     }
 
     fn from_ram_index<P: AsRef<Path>>(
-        ram_index: InvertedIndexRam,
+        ram_index: Cow<InvertedIndexRam>,
         _path: P,
     ) -> std::io::Result<Self> {
-        Ok(ram_index)
+        Ok(ram_index.into_owned())
     }
 
     fn vector_count(&self) -> usize {

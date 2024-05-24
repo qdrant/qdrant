@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::path::Path;
 
 use common::types::PointOffsetType;
@@ -75,13 +76,13 @@ impl InvertedIndex for InvertedIndexImmutableRam {
     }
 
     fn from_ram_index<P: AsRef<Path>>(
-        ram_index: InvertedIndexRam,
+        ram_index: Cow<InvertedIndexRam>,
         _path: P,
     ) -> std::io::Result<Self> {
         let mut postings = Vec::with_capacity(ram_index.postings.len());
-        for old_posting_list in ram_index.postings {
+        for old_posting_list in &ram_index.postings {
             let mut new_posting_list = CompressedPostingBuilder::new();
-            for elem in old_posting_list.elements {
+            for elem in &old_posting_list.elements {
                 new_posting_list.add(elem.record_id, elem.weight);
             }
             postings.push(new_posting_list.build());
@@ -120,7 +121,7 @@ mod tests {
         builder.add(3, vec![(1, 30.0), (2, 30.0), (3, 30.0)].try_into().unwrap());
         let inverted_index_ram = builder.build();
 
-        check_save_load(inverted_index_ram);
+        check_save_load(&inverted_index_ram);
     }
 
     #[test]
@@ -133,14 +134,16 @@ mod tests {
         }
         let inverted_index_ram = builder.build();
 
-        check_save_load(inverted_index_ram);
+        check_save_load(&inverted_index_ram);
     }
 
-    fn check_save_load(inverted_index_ram: InvertedIndexRam) {
+    fn check_save_load(inverted_index_ram: &InvertedIndexRam) {
         let tmp_dir_path = Builder::new().prefix("test_index_dir").tempdir().unwrap();
-        let inverted_index_immutable_ram =
-            InvertedIndexImmutableRam::from_ram_index(inverted_index_ram, tmp_dir_path.path())
-                .unwrap();
+        let inverted_index_immutable_ram = InvertedIndexImmutableRam::from_ram_index(
+            Cow::Borrowed(inverted_index_ram),
+            tmp_dir_path.path(),
+        )
+        .unwrap();
         inverted_index_immutable_ram
             .save(tmp_dir_path.path())
             .unwrap();

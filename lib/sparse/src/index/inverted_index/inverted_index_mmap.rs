@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::mem::size_of;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -78,7 +79,7 @@ impl InvertedIndex for InvertedIndexMmap {
     }
 
     fn from_ram_index<P: AsRef<Path>>(
-        ram_index: InvertedIndexRam,
+        ram_index: Cow<InvertedIndexRam>,
         path: P,
     ) -> std::io::Result<Self> {
         Self::convert_and_save(&ram_index, path)
