@@ -97,7 +97,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             let full_scan_threshold = if available_vectors > 0 {
                 hnsw_config.full_scan_threshold.saturating_mul(BYTES_IN_KB)
                     / (vector_storage.available_size_in_bytes()
-                        / vector_storage.available_vector_count())
+                        / available_vectors)
             } else {
                 1
             };
