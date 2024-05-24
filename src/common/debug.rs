@@ -85,7 +85,7 @@ impl DebugState {
 
         #[cfg(not(target_os = "linux"))]
         {
-            let _ = config_patch; // Ignore new_config on non-linux OS
+            let _ = patch; // Ignore new_config on non-linux OS
             false
         }
     }

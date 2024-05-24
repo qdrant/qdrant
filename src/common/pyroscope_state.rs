@@ -91,7 +91,7 @@ pub mod pyro {
     pub struct PyroscopeState {}
 
     impl PyroscopeState {
-        pub fn from_settings(settings: &Settings) -> Option<Self> {
+        pub fn from_config(config: Option<PyroscopeConfig>) -> Option<Self> {
             None
         }
     }
