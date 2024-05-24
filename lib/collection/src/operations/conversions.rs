@@ -1,28 +1,24 @@
 use std::collections::{BTreeMap, HashMap};
 use std::num::{NonZeroU32, NonZeroU64};
-use std::str::FromStr;
 use std::time::Duration;
 
 use api::grpc::conversions::{
     convert_shard_key_from_grpc, convert_shard_key_from_grpc_opt, convert_shard_key_to_grpc,
     from_grpc_dist, json_path_from_proto, payload_to_proto, proto_to_payloads,
-    try_date_time_from_proto,
 };
 use api::grpc::qdrant::quantization_config_diff::Quantization;
 use api::grpc::qdrant::update_collection_cluster_setup_request::{
     Operation as ClusterOperationsPb, Operation,
 };
 use api::grpc::qdrant::CreateShardKey;
+use api::rest::schema::ShardKeySelector;
 use common::types::ScoreType;
 use itertools::Itertools;
-use segment::data_types::order_by::{OrderBy, StartFrom};
 use segment::data_types::vectors::{
     BatchVectorStruct, Named, NamedQuery, NamedVectorStruct, Vector, VectorStruct,
     DEFAULT_VECTOR_NAME,
 };
-use segment::types::{
-    DateTimeWrapper, Distance, MultiVectorConfig, QuantizationConfig, ScoredPoint,
-};
+use segment::types::{Distance, MultiVectorConfig, QuantizationConfig, ScoredPoint};
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
 use sparse::common::sparse_vector::{validate_sparse_vector_impl, SparseVector};
 use tonic::Status;
@@ -30,9 +26,9 @@ use tonic::Status;
 use super::consistency_params::ReadConsistency;
 use super::types::{
     BaseGroupRequest, ContextExamplePair, CoreSearchRequest, Datatype, DiscoverRequestInternal,
-    GroupsResult, Modifier, OrderByInterface, PointGroup, RecommendExample,
-    RecommendGroupsRequestInternal, RecommendStrategy, SearchGroupsRequestInternal,
-    SparseIndexParams, SparseVectorParams, VectorParamsDiff, VectorsConfigDiff,
+    GroupsResult, Modifier, PointGroup, RecommendExample, RecommendGroupsRequestInternal,
+    SearchGroupsRequestInternal, SparseIndexParams, SparseVectorParams, VectorParamsDiff,
+    VectorsConfigDiff,
 };
 use crate::config::{
     default_replication_factor, default_write_consistency_factor, CollectionConfig,
@@ -55,7 +51,6 @@ use crate::operations::point_ops::{
     Batch, FilterSelector, PointIdsList, PointStruct, PointsSelector, WriteOrdering,
 };
 use crate::operations::query_enum::QueryEnum;
-use crate::operations::shard_key_selector::ShardKeySelector;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
     AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionStatus, CountResult,
@@ -1410,15 +1405,6 @@ impl From<api::grpc::qdrant::LookupLocation> for LookupLocation {
     }
 }
 
-impl From<api::grpc::qdrant::RecommendStrategy> for RecommendStrategy {
-    fn from(value: api::grpc::qdrant::RecommendStrategy) -> Self {
-        match value {
-            api::grpc::qdrant::RecommendStrategy::AverageVector => RecommendStrategy::AverageVector,
-            api::grpc::qdrant::RecommendStrategy::BestScore => RecommendStrategy::BestScore,
-        }
-    }
-}
-
 impl TryFrom<i32> for ReplicaState {
     type Error = Status;
 
@@ -1456,17 +1442,6 @@ impl From<ReplicaState> for api::grpc::qdrant::ReplicaState {
             ReplicaState::Recovery => Self::Recovery,
             ReplicaState::Resharding => Self::Resharding,
         }
-    }
-}
-
-impl TryFrom<i32> for RecommendStrategy {
-    type Error = Status;
-
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
-        let strategy = api::grpc::qdrant::RecommendStrategy::from_i32(value).ok_or_else(|| {
-            Status::invalid_argument(format!("Unknown recommend strategy: {}", value))
-        })?;
-        Ok(strategy.into())
     }
 }
 
@@ -1912,22 +1887,6 @@ impl TryFrom<ClusterOperationsPb> for ClusterOperations {
     }
 }
 
-impl From<api::grpc::qdrant::ShardKeySelector> for ShardKeySelector {
-    fn from(value: api::grpc::qdrant::ShardKeySelector) -> Self {
-        let shard_keys: Vec<_> = value
-            .shard_keys
-            .into_iter()
-            .filter_map(convert_shard_key_from_grpc)
-            .collect();
-
-        if shard_keys.len() == 1 {
-            ShardKeySelector::ShardKey(shard_keys.into_iter().next().unwrap())
-        } else {
-            ShardKeySelector::ShardKeys(shard_keys)
-        }
-    }
-}
-
 impl From<api::grpc::qdrant::ShardKeySelector> for ShardSelectorInternal {
     fn from(value: api::grpc::qdrant::ShardKeySelector) -> Self {
         let shard_keys: Vec<_> = value
@@ -1941,45 +1900,5 @@ impl From<api::grpc::qdrant::ShardKeySelector> for ShardSelectorInternal {
         } else {
             ShardSelectorInternal::ShardKeys(shard_keys)
         }
-    }
-}
-
-impl TryFrom<api::grpc::qdrant::OrderBy> for OrderByInterface {
-    type Error = Status;
-
-    fn try_from(value: api::grpc::qdrant::OrderBy) -> Result<Self, Self::Error> {
-        let direction = value
-            .direction
-            .and_then(api::grpc::qdrant::Direction::from_i32)
-            .map(segment::data_types::order_by::Direction::from);
-
-        let start_from = value
-            .start_from
-            .and_then(|value| value.value)
-            .map(|v| -> Result<StartFrom, Status> {
-                match v {
-                    api::grpc::qdrant::start_from::Value::Integer(int) => {
-                        Ok(StartFrom::Integer(int))
-                    }
-                    api::grpc::qdrant::start_from::Value::Float(float) => {
-                        Ok(StartFrom::Float(float))
-                    }
-                    api::grpc::qdrant::start_from::Value::Timestamp(timestamp) => {
-                        Ok(StartFrom::Datetime(try_date_time_from_proto(timestamp)?))
-                    }
-                    api::grpc::qdrant::start_from::Value::Datetime(datetime_str) => Ok(
-                        StartFrom::Datetime(DateTimeWrapper::from_str(&datetime_str).map_err(
-                            |e| Status::invalid_argument(format!("Malformed datetime: {e}")),
-                        )?),
-                    ),
-                }
-            })
-            .transpose()?;
-
-        Ok(Self::Struct(OrderBy {
-            key: json_path_from_proto(&value.key)?,
-            direction,
-            start_from,
-        }))
     }
 }

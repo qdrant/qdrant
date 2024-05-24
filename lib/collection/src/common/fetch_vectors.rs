@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use api::rest::ShardKeySelector;
 use futures::future::try_join_all;
 use futures::Future;
 use segment::data_types::vectors::{Vector, VectorRef};
@@ -10,7 +11,6 @@ use crate::collection::Collection;
 use crate::common::batching::batch_requests;
 use crate::common::retrieve_request_trait::RetrieveRequest;
 use crate::operations::consistency_params::ReadConsistency;
-use crate::operations::shard_key_selector::ShardKeySelector;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
     CollectionError, CollectionResult, PointRequestInternal, RecommendExample, Record,

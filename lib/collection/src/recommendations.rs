@@ -1,6 +1,7 @@
 use std::future::Future;
 use std::time::Duration;
 
+use api::rest::RecommendStrategy;
 use itertools::Itertools;
 use segment::data_types::vectors::{
     DenseVector, NamedQuery, NamedVectorStruct, Vector, VectorElementType, VectorRef,
@@ -25,7 +26,7 @@ use crate::operations::query_enum::QueryEnum;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
     CollectionError, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch,
-    RecommendRequestInternal, RecommendStrategy, UsingVector,
+    RecommendRequestInternal, UsingVector,
 };
 
 fn avg_vectors<'a>(vectors: impl Iterator<Item = VectorRef<'a>>) -> CollectionResult<Vector> {

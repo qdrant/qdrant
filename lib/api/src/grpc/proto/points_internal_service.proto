@@ -236,10 +236,6 @@ message RawQuery {
   }
 }
 
-enum Fusion {
-    RRF = 0; // Reciprocal Rank Fusion
-}
-
 message QueryShardPoints {
   message Query {
     oneof score {

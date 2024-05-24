@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
+use api::rest::schema::ShardKeySelector;
 use schemars::JsonSchema;
 use segment::types::{Filter, PointIdType};
 use serde::{Deserialize, Serialize};
@@ -10,7 +11,6 @@ use validator::{Validate, ValidationError, ValidationErrors};
 use super::point_ops::PointIdsList;
 use super::{point_to_shards, split_iter_by_shard, OperationToShard, SplitByShard};
 use crate::hash_ring::HashRing;
-use crate::operations::shard_key_selector::ShardKeySelector;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone)]
 pub struct UpdateVectors {

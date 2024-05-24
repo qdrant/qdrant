@@ -6317,7 +6317,7 @@
         ],
         "properties": {
           "indices": {
-            "description": "indices must be unique",
+            "description": "Indices must be unique",
             "type": "array",
             "items": {
               "type": "integer",
@@ -6326,7 +6326,7 @@
             }
           },
           "values": {
-            "description": "values and indices must be the same length",
+            "description": "Values and indices must be the same length",
             "type": "array",
             "items": {
               "type": "number",

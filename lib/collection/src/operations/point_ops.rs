@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-use api::rest::{BatchVectorStruct, VectorStruct};
+use api::rest::{BatchVectorStruct, ShardKeySelector, VectorStruct};
 use itertools::izip;
 use schemars::JsonSchema;
 use segment::common::utils::transpose_map_into_named_vector;
@@ -14,7 +14,6 @@ use validator::Validate;
 
 use super::{point_to_shards, split_iter_by_shard, OperationToShard, SplitByShard};
 use crate::hash_ring::HashRing;
-use crate::operations::shard_key_selector::ShardKeySelector;
 use crate::operations::types::Record;
 use crate::shards::shard::ShardId;
 
