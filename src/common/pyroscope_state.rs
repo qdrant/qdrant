@@ -48,20 +48,17 @@ pub mod pyro {
                         }
                     }
                 }
-                None => {
-                    log::info!("Pyroscope agent not started");
-                    None
-                }
+                None => None,
             }
         }
 
         pub fn stop_agent(&mut self) -> bool {
-            log::info!("STOP: Stopping pyroscope agent");
+            log::info!("Stopping pyroscope agent");
             if let Some(agent) = self.agent.take() {
                 match agent.stop() {
                     Ok(stopped_agent) => {
                         stopped_agent.shutdown();
-                        log::info!("STOP: Pyroscope agent stopped");
+                        log::info!("Pyroscope agent stopped");
                         return true;
                     }
                     Err(err) => {
@@ -76,12 +73,7 @@ pub mod pyro {
 
     impl Drop for PyroscopeState {
         fn drop(&mut self) {
-            log::info!("DROP: Stopping pyroscope agent");
-            if let Some(agent) = self.agent.take() {
-                let stopped_agent = agent.stop().unwrap(); // Now you can call stop() on the agent directly
-                stopped_agent.shutdown();
-            }
-            log::info!("DROP: Pyroscope agent stopped");
+            self.stop_agent();
         }
     }
 }
