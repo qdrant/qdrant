@@ -145,16 +145,10 @@ pub trait SegmentEntry {
     /// Number of deleted points
     fn deleted_point_count(&self) -> usize;
 
+    /// Size of all available vectors in storage
     fn available_vectors_size_in_bytes(&self, vector_name: &str) -> OperationResult<usize>;
 
-    fn all_available_vectors_size_in_bytes(&self) -> OperationResult<usize> {
-        let mut total_size = 0;
-        for vector_name in self.vector_names() {
-            total_size += self.available_vectors_size_in_bytes(&vector_name)?;
-        }
-        Ok(total_size)
-    }
-
+    /// Max value from all `available_vectors_size_in_bytes`
     fn max_available_vectors_size_in_bytes(&self) -> OperationResult<usize> {
         let mut max_size = 0;
         for vector_name in self.vector_names() {
