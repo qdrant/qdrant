@@ -115,7 +115,9 @@ impl SegmentOptimizer for MergeOptimizer {
                 let read_segment = segment_entry.read();
                 (read_segment.segment_type() != SegmentType::Special).then_some((
                     *idx,
-                    read_segment.max_avaliable_vectors_size_in_bytes().unwrap_or_default(),
+                    read_segment
+                        .max_avaliable_vectors_size_in_bytes()
+                        .unwrap_or_default(),
                 ))
             })
             .sorted_by_key(|(_, size)| *size)

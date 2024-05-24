@@ -697,8 +697,16 @@ impl SegmentEntry for ProxySegment {
 
     fn avaliable_vectors_size_in_bytes(&self, vector_name: &str) -> OperationResult<usize> {
         // TODO: count deleted vectors size
-        let wrapped_size = self.wrapped_segment.get().read().avaliable_vectors_size_in_bytes(vector_name)?;
-        let write_size = self.write_segment.get().read().avaliable_vectors_size_in_bytes(vector_name)?;
+        let wrapped_size = self
+            .wrapped_segment
+            .get()
+            .read()
+            .avaliable_vectors_size_in_bytes(vector_name)?;
+        let write_size = self
+            .write_segment
+            .get()
+            .read()
+            .avaliable_vectors_size_in_bytes(vector_name)?;
         Ok(wrapped_size + write_size)
     }
 

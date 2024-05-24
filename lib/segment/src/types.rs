@@ -795,7 +795,7 @@ impl VectorStorageDatatype {
             VectorStorageDatatype::Uint8 => std::mem::size_of::<u8>(),
         }
     }
-} 
+}
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone, Hash)]
 #[serde(rename_all = "snake_case")]

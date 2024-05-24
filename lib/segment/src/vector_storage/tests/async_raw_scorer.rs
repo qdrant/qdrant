@@ -104,10 +104,7 @@ fn test_random_score(
     storage: &VectorStorageEnum,
     deleted_points: &BitSlice,
 ) -> Result<()> {
-    let query: QueryVector = sampler(&mut rng)
-        .take(dim)
-        .collect_vec()
-        .into();
+    let query: QueryVector = sampler(&mut rng).take(dim).collect_vec().into();
 
     let raw_scorer = new_raw_scorer(query.clone(), storage, deleted_points).unwrap();
 

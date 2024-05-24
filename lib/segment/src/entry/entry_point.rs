@@ -158,7 +158,10 @@ pub trait SegmentEntry {
     fn max_avaliable_vectors_size_in_bytes(&self) -> OperationResult<usize> {
         let mut max_size = 0;
         for vector_name in self.vector_names() {
-            max_size = std::cmp::max(max_size, self.avaliable_vectors_size_in_bytes(&vector_name)?);
+            max_size = std::cmp::max(
+                max_size,
+                self.avaliable_vectors_size_in_bytes(&vector_name)?,
+            );
         }
         Ok(max_size)
     }

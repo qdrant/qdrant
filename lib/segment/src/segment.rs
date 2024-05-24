@@ -46,7 +46,9 @@ use crate::types::{
 use crate::utils;
 use crate::utils::fs::find_symlink;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-use crate::vector_storage::{DenseVectorStorage, MultiVectorStorage, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{
+    DenseVectorStorage, MultiVectorStorage, VectorStorage, VectorStorageEnum,
+};
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
 
@@ -213,22 +215,52 @@ impl Segment {
                 None => {
                     // placeholder vector for marking deletion
                     let vector = match &*vector_storage {
-                        VectorStorageEnum::DenseSimple(v) => Vector::from(vec![1.0; v.vector_dim()]),
-                        VectorStorageEnum::DenseSimpleByte(v) => Vector::from(vec![1.0; v.vector_dim()]),
-                        VectorStorageEnum::DenseSimpleHalf(v) => Vector::from(vec![1.0; v.vector_dim()]),
-                        VectorStorageEnum::DenseMemmap(v) => Vector::from(vec![1.0; v.vector_dim()]),
-                        VectorStorageEnum::DenseMemmapByte(v) => Vector::from(vec![1.0; v.vector_dim()]),
-                        VectorStorageEnum::DenseMemmapHalf(v) => Vector::from(vec![1.0; v.vector_dim()]),
-                        VectorStorageEnum::DenseAppendableMemmap(v) => Vector::from(vec![1.0; v.vector_dim()]),
-                        VectorStorageEnum::DenseAppendableMemmapByte(v) => Vector::from(vec![1.0; v.vector_dim()]),
-                        VectorStorageEnum::DenseAppendableMemmapHalf(v)  => Vector::from(vec![1.0; v.vector_dim()]),
+                        VectorStorageEnum::DenseSimple(v) => {
+                            Vector::from(vec![1.0; v.vector_dim()])
+                        }
+                        VectorStorageEnum::DenseSimpleByte(v) => {
+                            Vector::from(vec![1.0; v.vector_dim()])
+                        }
+                        VectorStorageEnum::DenseSimpleHalf(v) => {
+                            Vector::from(vec![1.0; v.vector_dim()])
+                        }
+                        VectorStorageEnum::DenseMemmap(v) => {
+                            Vector::from(vec![1.0; v.vector_dim()])
+                        }
+                        VectorStorageEnum::DenseMemmapByte(v) => {
+                            Vector::from(vec![1.0; v.vector_dim()])
+                        }
+                        VectorStorageEnum::DenseMemmapHalf(v) => {
+                            Vector::from(vec![1.0; v.vector_dim()])
+                        }
+                        VectorStorageEnum::DenseAppendableMemmap(v) => {
+                            Vector::from(vec![1.0; v.vector_dim()])
+                        }
+                        VectorStorageEnum::DenseAppendableMemmapByte(v) => {
+                            Vector::from(vec![1.0; v.vector_dim()])
+                        }
+                        VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
+                            Vector::from(vec![1.0; v.vector_dim()])
+                        }
                         VectorStorageEnum::SparseSimple(_) => Vector::from(SparseVector::default()),
-                        VectorStorageEnum::MultiDenseSimple(v) => Vector::from(MultiDenseVector::placeholder(v.vector_dim())),
-                        VectorStorageEnum::MultiDenseSimpleByte(v) => Vector::from(MultiDenseVector::placeholder(v.vector_dim())),
-                        VectorStorageEnum::MultiDenseSimpleHalf(v) => Vector::from(MultiDenseVector::placeholder(v.vector_dim())),
-                        VectorStorageEnum::MultiDenseAppendableMemmap(v) => Vector::from(MultiDenseVector::placeholder(v.vector_dim())),
-                        VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => Vector::from(MultiDenseVector::placeholder(v.vector_dim())),
-                        VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => Vector::from(MultiDenseVector::placeholder(v.vector_dim())),
+                        VectorStorageEnum::MultiDenseSimple(v) => {
+                            Vector::from(MultiDenseVector::placeholder(v.vector_dim()))
+                        }
+                        VectorStorageEnum::MultiDenseSimpleByte(v) => {
+                            Vector::from(MultiDenseVector::placeholder(v.vector_dim()))
+                        }
+                        VectorStorageEnum::MultiDenseSimpleHalf(v) => {
+                            Vector::from(MultiDenseVector::placeholder(v.vector_dim()))
+                        }
+                        VectorStorageEnum::MultiDenseAppendableMemmap(v) => {
+                            Vector::from(MultiDenseVector::placeholder(v.vector_dim()))
+                        }
+                        VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => {
+                            Vector::from(MultiDenseVector::placeholder(v.vector_dim()))
+                        }
+                        VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => {
+                            Vector::from(MultiDenseVector::placeholder(v.vector_dim()))
+                        }
                     };
                     vector_storage.insert_vector(new_index, VectorRef::from(&vector))?;
                     vector_storage.delete_vector(new_index)?;
@@ -1635,10 +1667,7 @@ impl SegmentEntry for Segment {
     }
 
     fn vector_names(&self) -> HashSet<String> {
-        self.vector_data
-            .keys()
-            .cloned()
-            .collect()
+        self.vector_data.keys().cloned().collect()
     }
 
     fn take_snapshot(
