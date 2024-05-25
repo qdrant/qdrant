@@ -99,6 +99,11 @@ mod tests {
 
     use super::*;
 
+    #[repr(C)]
+    struct TestParams {
+        input_counts: u32,
+    }
+
     #[test]
     fn test_gpu_nearest_heap() {
         let ef = 100;
@@ -129,12 +134,6 @@ mod tests {
             include_bytes!("./shaders/test_nearest_heap.spv"),
         ));
 
-        let descriptor_set_layout = gpu::DescriptorSetLayout::builder()
-            .add_storage_buffer(0)
-            .add_storage_buffer(1)
-            .add_storage_buffer(2)
-            .build(device.clone());
-
         let input_points_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::Storage,
@@ -148,11 +147,29 @@ mod tests {
         ));
         upload_staging_buffer.upload_slice(&inputs_data, 0);
         context.copy_gpu_buffer(
-            upload_staging_buffer,
+            upload_staging_buffer.clone(),
             input_points_buffer.clone(),
             0,
             0,
             input_points_buffer.size,
+        );
+        context.run();
+        context.wait_finish();
+
+        let test_params_buffer = Arc::new(gpu::Buffer::new(
+            device.clone(),
+            gpu::BufferType::Uniform,
+            std::mem::size_of::<TestParams>(),
+        ));
+        upload_staging_buffer.upload(&TestParams {
+            input_counts: inputs_count as u32,
+        }, 0);
+        context.copy_gpu_buffer(
+            upload_staging_buffer,
+            test_params_buffer.clone(),
+            0,
+            0,
+            test_params_buffer.size,
         );
         context.run();
         context.wait_finish();
@@ -169,10 +186,18 @@ mod tests {
             ef * groups_count * std::mem::size_of::<ScoredPointOffset>(),
         ));
 
+        let descriptor_set_layout = gpu::DescriptorSetLayout::builder()
+            .add_uniform_buffer(0)
+            .add_storage_buffer(1)
+            .add_storage_buffer(2)
+            .add_storage_buffer(3)
+            .build(device.clone());
+
         let descriptor_set = gpu::DescriptorSet::builder(descriptor_set_layout.clone())
-            .add_storage_buffer(0, input_points_buffer.clone())
-            .add_storage_buffer(1, scores_output_buffer.clone())
-            .add_storage_buffer(2, sorted_output_buffer.clone())
+            .add_uniform_buffer(0, test_params_buffer.clone())
+            .add_storage_buffer(1, input_points_buffer.clone())
+            .add_storage_buffer(2, scores_output_buffer.clone())
+            .add_storage_buffer(3, sorted_output_buffer.clone())
             .build();
 
         let pipeline = gpu::Pipeline::builder()

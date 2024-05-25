@@ -12,47 +12,49 @@ layout(local_size_x = SUBGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 #define NEAREST_HEAP_LAYOUT_SET 1
 #include "nearest_heap.comp"
 
-// TODO: revert to 1024
-#define INPUT_SIZE 100
+layout(set = 0, binding = 0)
+readonly uniform TestParams {
+    uint input_counts;
+} test_params;
 
-layout(set = 0, binding = 0) buffer ScoredPointsInput {
+layout(set = 0, binding = 1) buffer ScoredPointsInput {
     ScoredPoint data[];
 } input_points;
 
-layout(set = 0, binding = 1) buffer ScoresOuput {
+layout(set = 0, binding = 2) buffer ScoresOuput {
     float data[];
 } scores_output;
 
-layout(set = 0, binding = 2) buffer SortedOuput {
+layout(set = 0, binding = 3) buffer SortedOuput {
     ScoredPoint data[];
 } sorted_output;
 
 void main() {
     nearest_heap_init();
-    uint idx = gl_GlobalInvocationID.x / SUBGROUP_SIZE;
+    uint subgroup_index = gl_GlobalInvocationID.x / SUBGROUP_SIZE;
 
-    for (uint i = 0; i < INPUT_SIZE; i++) {
-        ScoredPoint point = input_points.data[i];
+    for (uint i = 0; i < test_params.input_counts; i++) {
+        ScoredPoint point = input_points.data[subgroup_index * test_params.input_counts + i];
         push_nearest(point);
 
-        float nearest_smaller_score_check = subgroupMin(nearest_smaller_score);
-        bool is_different = nearest_smaller_score_check != nearest_smaller_score;
-        if (subgroupAny(is_different)) {
-            if (subgroupElect()) {
-                scores_output.data[idx * INPUT_SIZE + i] = positive_infinity;
-            }
-        } else if (subgroupElect()) {
-            scores_output.data[idx * INPUT_SIZE + i] = nearest_smaller_score;
-        }
+//        float nearest_smaller_score_check = subgroupMin(nearest_smaller_score);
+//        bool is_different = nearest_smaller_score_check != nearest_smaller_score;
+//        if (subgroupAny(is_different)) {
+//            if (subgroupElect()) {
+//                scores_output.data[idx * INPUT_SIZE + i] = positive_infinity;
+//            }
+//        } else if (subgroupElect()) {
+//            scores_output.data[idx * INPUT_SIZE + i] = nearest_smaller_score;
+//        }
     }
 
-    sort_nearest();
-    if (subgroupElect()) {
-        for (uint i = 0; i < NEAREST_HEAP_EF; i++) {
-            sorted_output.data[idx * NEAREST_HEAP_EF + i] = ScoredPoint(
-                nearest_indices.data[idx * NEAREST_HEAP_EF + i],
-                nearest_scores.data[idx * NEAREST_HEAP_EF + i]
-            );
-        }
-    }
+//    sort_nearest();
+//    if (subgroupElect()) {
+//        for (uint i = 0; i < NEAREST_HEAP_EF; i++) {
+//            sorted_output.data[idx * NEAREST_HEAP_EF + i] = ScoredPoint(
+//                nearest_indices.data[idx * NEAREST_HEAP_EF + i],
+//                nearest_scores.data[idx * NEAREST_HEAP_EF + i]
+//            );
+//        }
+//    }
 }
