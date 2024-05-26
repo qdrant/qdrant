@@ -7,6 +7,13 @@ use std::vec::IntoIter as VecIntoIter;
 
 use serde::{Deserialize, Serialize};
 
+/// To avoid excessive memory allocation, FixedLengthPriorityQueue
+/// imposes a reasonable limit on the allocation size. If the limit
+/// is extremely large, we treat it as if no limit was set and
+/// delay allocation, assuming that the results will fit within a
+/// predefined threshold.
+const LARGEST_REASONABLE_ALLOCATION_SIZE: usize = 1_048_576;
+
 /// A container that forgets all but the top N elements
 ///
 /// This is a MinHeap by default - it will keep the largest elements, pop smallest
@@ -26,8 +33,8 @@ impl<T: Ord> FixedLengthPriorityQueue<T> {
     /// Creates a new queue with the given length
     /// Panics if length is 0
     pub fn new(length: usize) -> Self {
-        let heap = BinaryHeap::with_capacity(length + 1);
-        let length = NonZeroUsize::new(length).expect("length must be > 0");
+        let heap = BinaryHeap::with_capacity((length + 1).min(LARGEST_REASONABLE_ALLOCATION_SIZE));
+        let length = NonZeroUsize::new(length).expect("length must be greater than zero");
         FixedLengthPriorityQueue::<T> { heap, length }
     }
 
