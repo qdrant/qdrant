@@ -24,7 +24,10 @@ impl<T: Ord> FixedLengthPriorityQueue<T> {
     /// Creates a new queue with the given length
     /// Panics if length is 0
     pub fn new(length: usize) -> Self {
-        let heap = BinaryHeap::with_capacity(length + 1);
+        let mut heap = BinaryHeap::new();
+        heap.try_reserve_exact(length + 1)
+            .expect("Failed to reserve memory for heap");
+        let heap = heap;
         let length = NonZeroUsize::new(length).expect("length must be > 0");
         FixedLengthPriorityQueue::<T> { heap, length }
     }
