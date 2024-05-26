@@ -5,17 +5,19 @@ use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::ScoreType;
 use segment::types::{PointIdType, ScoredPoint, SeqNumberType};
 
+use crate::operations::types::CollectionResult;
+
 pub struct SearchResultAggregator {
     queue: FixedLengthPriorityQueue<ScoredPoint>,
     seen: HashSet<PointIdType>, // Point ids seen
 }
 
 impl SearchResultAggregator {
-    pub fn new(limit: usize) -> Self {
-        SearchResultAggregator {
-            queue: FixedLengthPriorityQueue::new(limit),
+    pub fn new(limit: usize) -> CollectionResult<Self> {
+        Ok(SearchResultAggregator {
+            queue: FixedLengthPriorityQueue::new(limit)?,
             seen: HashSet::new(),
-        }
+        })
     }
 
     pub fn push(&mut self, point: ScoredPoint) {
@@ -43,16 +45,16 @@ pub struct BatchResultAggregator {
 }
 
 impl BatchResultAggregator {
-    pub fn new(tops: impl Iterator<Item = usize>) -> Self {
+    pub fn new(tops: impl Iterator<Item = usize>) -> CollectionResult<Self> {
         let mut merged_results_per_batch = vec![];
         for top in tops {
-            merged_results_per_batch.push(SearchResultAggregator::new(top));
+            merged_results_per_batch.push(SearchResultAggregator::new(top)?);
         }
 
-        BatchResultAggregator {
+        Ok(BatchResultAggregator {
             batch_aggregators: merged_results_per_batch,
             point_versions: HashMap::new(),
-        }
+        })
     }
 
     pub fn update_point_versions(&mut self, search_results: &Vec<Vec<Vec<ScoredPoint>>>) {

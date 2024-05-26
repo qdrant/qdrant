@@ -12,6 +12,7 @@ use serde_json::Value;
 
 use super::types::AggregatorError::{self, *};
 use super::types::Group;
+use crate::operations::types::CollectionResult;
 
 type Hits = HashMap<PointIdType, ScoredPoint>;
 pub(super) struct GroupsAggregator {
@@ -161,7 +162,7 @@ impl GroupsAggregator {
     }
 
     /// Returns the best groups sorted by their best hit. The hits are sorted too.
-    pub(super) fn distill(mut self) -> Vec<Group> {
+    pub(super) fn distill(mut self) -> CollectionResult<Vec<Group>> {
         let best_groups: Vec<_> = self.best_group_keys().cloned().collect();
         let mut groups = Vec::with_capacity(best_groups.len());
 
@@ -175,14 +176,14 @@ impl GroupsAggregator {
                 Order::SmallBetter => {
                     peek_top_smallest_iterable(scored_points_iter, self.max_group_size)
                 }
-            };
+            }?;
             groups.push(Group {
                 hits,
                 key: group_key,
             });
         }
 
-        groups
+        Ok(groups)
     }
 }
 
@@ -232,7 +233,7 @@ mod unit_tests {
             aggregator.add_point(point).unwrap();
         }
 
-        let result = aggregator.distill();
+        let result = aggregator.distill().unwrap();
 
         assert_eq!(result.len(), 2);
 
@@ -326,7 +327,7 @@ mod unit_tests {
 
         assert_eq!(aggregator.len_of_filled_best_groups(), 3);
 
-        let groups = aggregator.distill();
+        let groups = aggregator.distill().unwrap();
 
         #[rustfmt::skip]
         let expected_groups = vec![
@@ -404,7 +405,7 @@ mod unit_tests {
             aggregator.add_point(point).unwrap();
         });
 
-        let groups = aggregator.distill();
+        let groups = aggregator.distill().unwrap();
 
         #[rustfmt::skip]
         let expected_groups = vec![

@@ -148,12 +148,12 @@ where
         &self,
         points: &mut dyn Iterator<Item = PointOffsetType>,
         top: usize,
-    ) -> Vec<ScoredPointOffset> {
+    ) -> OperationResult<Vec<ScoredPointOffset>> {
         if top == 0 {
-            return vec![];
+            return Ok(vec![]);
         }
 
-        let mut pq = FixedLengthPriorityQueue::new(top);
+        let mut pq = FixedLengthPriorityQueue::new(top)?;
         let points_stream = points
             .take_while(|_| !self.is_stopped.load(Ordering::Relaxed))
             .filter(|point_id| self.check_vector(*point_id));
@@ -172,19 +172,19 @@ where
         // Instead of silently falling back to the sync implementation, we prefer to panic
         // and notify the user that they better use the default IO implementation.
 
-        pq.into_vec()
+        Ok(pq.into_vec())
     }
 
-    fn peek_top_all(&self, top: usize) -> Vec<ScoredPointOffset> {
+    fn peek_top_all(&self, top: usize) -> OperationResult<Vec<ScoredPointOffset>> {
         if top == 0 {
-            return vec![];
+            return Ok(vec![]);
         }
 
         let points_stream = (0..self.points_count)
             .take_while(|_| !self.is_stopped.load(Ordering::Relaxed))
             .filter(|point_id| self.check_vector(*point_id));
 
-        let mut pq = FixedLengthPriorityQueue::new(top);
+        let mut pq = FixedLengthPriorityQueue::new(top)?;
         self.storage
             .read_vectors_async(points_stream, |_, point_id, other_vector| {
                 let scored_point_offset = ScoredPointOffset {
@@ -199,7 +199,7 @@ where
         // Instead of silently falling back to the sync implementation, we prefer to panic
         // and notify the user that they better use the default IO implementation.
 
-        pq.into_vec()
+        Ok(pq.into_vec())
     }
 }
 

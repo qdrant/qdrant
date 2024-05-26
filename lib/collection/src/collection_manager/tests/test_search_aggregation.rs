@@ -85,7 +85,8 @@ fn test_aggregation_of_batch_search_results() {
         search_results,
         result_limits,
         further_results,
-    );
+    )
+    .unwrap();
 
     // ------------Segment----------batch---
     assert!(re_request[&1].contains(&0));

@@ -168,7 +168,7 @@ fn points_by_filter(
 ) -> CollectionResult<Vec<PointIdType>> {
     let mut affected_points: Vec<PointIdType> = Vec::new();
     segments.for_each_segment(|s| {
-        let points = s.read_filtered(None, None, Some(filter));
+        let points = s.read_filtered(None, None, Some(filter))?;
         affected_points.extend_from_slice(points.as_slice());
         Ok(true)
     })?;

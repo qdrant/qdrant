@@ -1,6 +1,6 @@
 use std::cmp::Reverse;
 use std::collections::binary_heap::Iter as BinaryHeapIter;
-use std::collections::BinaryHeap;
+use std::collections::{BinaryHeap, TryReserveError};
 use std::iter::Rev;
 use std::num::NonZeroUsize;
 use std::vec::IntoIter as VecIntoIter;
@@ -16,20 +16,19 @@ pub struct FixedLengthPriorityQueue<T: Ord> {
 
 impl<T: Ord> Default for FixedLengthPriorityQueue<T> {
     fn default() -> Self {
-        Self::new(1)
+        Self::new(1).unwrap()
     }
 }
 
 impl<T: Ord> FixedLengthPriorityQueue<T> {
     /// Creates a new queue with the given length
     /// Panics if length is 0
-    pub fn new(length: usize) -> Self {
+    pub fn new(length: usize) -> Result<Self, TryReserveError> {
         let mut heap = BinaryHeap::new();
-        heap.try_reserve_exact(length + 1)
-            .expect("Failed to reserve memory for heap");
+        heap.try_reserve_exact(length + 1)?;
         let heap = heap;
         let length = NonZeroUsize::new(length).expect("length must be > 0");
-        FixedLengthPriorityQueue::<T> { heap, length }
+        Ok(FixedLengthPriorityQueue::<T> { heap, length })
     }
 
     pub fn push(&mut self, value: T) -> Option<T> {

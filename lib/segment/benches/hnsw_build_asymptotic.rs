@@ -29,7 +29,7 @@ fn build_index<TMetric: Metric<VectorElementType>>(
 
     let vector_holder = TestRawScorerProducer::<TMetric>::new(DIM, num_vectors, &mut rng);
     let mut graph_layers_builder =
-        GraphLayersBuilder::new(num_vectors, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC);
+        GraphLayersBuilder::new(num_vectors, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC).unwrap();
     let fake_filter_context = FakeFilterContext {};
     for idx in 0..(num_vectors as PointOffsetType) {
         let added_vector = vector_holder.vectors.get(idx).to_vec();
@@ -37,7 +37,7 @@ fn build_index<TMetric: Metric<VectorElementType>>(
         let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let level = graph_layers_builder.get_random_layer(&mut rng);
         graph_layers_builder.set_levels(idx, level);
-        graph_layers_builder.link_new_point(idx, scorer);
+        graph_layers_builder.link_new_point(idx, scorer).unwrap();
     }
     (
         vector_holder,
@@ -58,7 +58,7 @@ fn hnsw_build_asymptotic(c: &mut Criterion) {
             let query = random_vector(&mut rng, DIM);
             let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
-            graph_layers.search(TOP, EF, scorer, None);
+            graph_layers.search(TOP, EF, scorer, None).unwrap();
         })
     });
 
@@ -67,7 +67,7 @@ fn hnsw_build_asymptotic(c: &mut Criterion) {
         let query = random_vector(&mut rng, DIM);
         let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
         let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
-        graph_layers.search(TOP, EF, scorer, None);
+        graph_layers.search(TOP, EF, scorer, None).unwrap();
     }
 
     let (vector_holder, graph_layers) = build_index::<CosineMetric>(NUM_VECTORS * 10);
@@ -78,7 +78,7 @@ fn hnsw_build_asymptotic(c: &mut Criterion) {
             let query = random_vector(&mut rng, DIM);
             let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
-            graph_layers.search(TOP, EF, scorer, None);
+            graph_layers.search(TOP, EF, scorer, None).unwrap();
         })
     });
 
@@ -101,7 +101,7 @@ fn hnsw_build_asymptotic(c: &mut Criterion) {
         let query = random_vector(&mut rng, DIM);
         let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
         let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
-        graph_layers.search(TOP, EF, scorer, None);
+        graph_layers.search(TOP, EF, scorer, None).unwrap();
     }
 }
 

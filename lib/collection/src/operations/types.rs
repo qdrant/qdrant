@@ -1,5 +1,5 @@
 use std::backtrace::Backtrace;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, TryReserveError};
 use std::error::Error as _;
 use std::fmt::Write as _;
 use std::iter;
@@ -27,6 +27,7 @@ use segment::types::{
     QuantizationConfig, SearchParams, SeqNumberType, ShardKey, VectorStorageDatatype,
     WithPayloadInterface, WithVector,
 };
+use segment::utils::mem::Mem;
 use semver::Version;
 use serde;
 use serde::{Deserialize, Serialize};
@@ -1200,6 +1201,16 @@ impl From<tempfile::PathPersistError> for CollectionError {
             err.path.display(),
             err.error,
         ))
+    }
+}
+
+impl From<TryReserveError> for CollectionError {
+    fn from(err: TryReserveError) -> Self {
+        let free_memory = Mem::new().available_memory_bytes();
+        CollectionError::OutOfMemory {
+            description: format!("Failed to reserve memory: {err}"),
+            free: free_memory,
+        }
     }
 }
 

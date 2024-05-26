@@ -74,10 +74,10 @@ impl SegmentsSearcher {
         search_result: BatchSearchResult,
         limits: Vec<usize>,
         further_results: Vec<Vec<bool>>,
-    ) -> (
+    ) -> CollectionResult<(
         BatchResultAggregator,
         HashMap<SegmentOffset, Vec<BatchOffset>>,
-    ) {
+    )> {
         let number_segments = search_result.len();
         let batch_size = limits.len();
 
@@ -91,7 +91,7 @@ impl SegmentsSearcher {
         // In that case, we need to re-run the search without sampling on that segment.
 
         // Initialize result aggregators for each batched request
-        let mut result_aggregator = BatchResultAggregator::new(limits.iter().copied());
+        let mut result_aggregator = BatchResultAggregator::new(limits.iter().copied())?;
         result_aggregator.update_point_versions(&search_result);
 
         // Therefore we need to track the lowest scored element per segment for each batch
@@ -149,7 +149,7 @@ impl SegmentsSearcher {
             }
         }
 
-        (result_aggregator, searches_to_rerun)
+        Ok((result_aggregator, searches_to_rerun))
     }
 
     pub async fn prepare_query_context(
@@ -281,7 +281,7 @@ impl SegmentsSearcher {
                 .map(|request| request.limit + request.offset)
                 .collect(),
             further_results,
-        );
+        )?;
         // The second step of the search is to re-run the search without sampling on some segments
         // Expected that this stage will be executed rarely
         if !searches_to_rerun.is_empty() {

@@ -290,7 +290,7 @@ impl VectorIndex for PlainIndex {
                         )
                         .map(|scorer| {
                             scorer.peek_top_iter(&mut filtered_ids_vec.iter().copied(), top)
-                        })
+                        })?
                     })
                     .collect()
             }
@@ -310,7 +310,7 @@ impl VectorIndex for PlainIndex {
                             deleted_points,
                             &is_stopped,
                         )
-                        .map(|scorer| scorer.peek_top_all(top))
+                        .map(|scorer| scorer.peek_top_all(top))?
                     })
                     .collect()
             }

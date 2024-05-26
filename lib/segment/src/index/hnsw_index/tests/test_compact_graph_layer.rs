@@ -34,7 +34,9 @@ fn search_in_builder(
         &mut points_scorer,
     );
 
-    let nearest = builder.search_on_level(zero_level_entry, 0, max(top, ef), &mut points_scorer);
+    let nearest = builder
+        .search_on_level(zero_level_entry, 0, max(top, ef), &mut points_scorer)
+        .unwrap();
     nearest.into_iter().take(top).collect_vec()
 }
 
@@ -75,7 +77,7 @@ fn test_compact_graph_layers() {
         .map(|query| {
             let raw_scorer = vector_holder.get_raw_scorer(query.clone()).unwrap();
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
-            graph_layers.search(top, ef, scorer, None)
+            graph_layers.search(top, ef, scorer, None).unwrap()
         })
         .collect_vec();
 

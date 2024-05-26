@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use futures::future::try_join_all;
 use itertools::Itertools as _;
+use segment::common::operation_error::OperationError;
 use segment::data_types::order_by::{Direction, OrderBy, OrderValue};
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
@@ -131,8 +132,19 @@ impl LocalShard {
             })
         };
 
+        let unwrap_vec = |vec: Vec<Result<Vec<ExtendedPointId>, OperationError>>| -> Result<Vec<Vec<ExtendedPointId>>, OperationError> {
+            for ele in vec.iter() {
+                if let Err(err) = ele {
+                    return Err(err.clone());
+                }
+            }
+            Ok(vec.into_iter().map(|x| x.unwrap()).collect())
+        };
+
         let non_appendable = try_join_all(non_appendable.into_iter().map(read_filtered)).await?;
+        let non_appendable = unwrap_vec(non_appendable)?;
         let appendable = try_join_all(appendable.into_iter().map(read_filtered)).await?;
+        let appendable = unwrap_vec(appendable)?;
 
         let point_ids = non_appendable
             .into_iter()

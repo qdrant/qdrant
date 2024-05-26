@@ -79,9 +79,9 @@ pub trait RawScorer {
         &self,
         points: &mut dyn Iterator<Item = PointOffsetType>,
         top: usize,
-    ) -> Vec<ScoredPointOffset>;
+    ) -> OperationResult<Vec<ScoredPointOffset>>;
 
-    fn peek_top_all(&self, top: usize) -> Vec<ScoredPointOffset>;
+    fn peek_top_all(&self, top: usize) -> OperationResult<Vec<ScoredPointOffset>>;
 }
 
 pub struct RawScorerImpl<'a, TVector: ?Sized, TQueryScorer>
@@ -875,7 +875,7 @@ where
         &self,
         points: &mut dyn Iterator<Item = PointOffsetType>,
         top: usize,
-    ) -> Vec<ScoredPointOffset> {
+    ) -> OperationResult<Vec<ScoredPointOffset>> {
         let scores = points
             .take_while(|_| !self.is_stopped.load(Ordering::Relaxed))
             .filter(|point_id| self.check_vector(*point_id))
@@ -886,7 +886,7 @@ where
         peek_top_largest_iterable(scores, top)
     }
 
-    fn peek_top_all(&self, top: usize) -> Vec<ScoredPointOffset> {
+    fn peek_top_all(&self, top: usize) -> OperationResult<Vec<ScoredPointOffset>> {
         let scores = (0..self.point_deleted.len() as PointOffsetType)
             .take_while(|_| !self.is_stopped.load(Ordering::Relaxed))
             .filter(|point_id| self.check_vector(*point_id))

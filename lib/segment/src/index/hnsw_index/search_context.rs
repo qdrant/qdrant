@@ -5,6 +5,8 @@ use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{ScoreType, ScoredPointOffset};
 use num_traits::float::FloatCore;
 
+use crate::common::operation_error::OperationResult;
+
 /// Structure that holds context of the search
 pub struct SearchContext {
     /// Overall nearest points found so far
@@ -14,13 +16,13 @@ pub struct SearchContext {
 }
 
 impl SearchContext {
-    pub fn new(entry_point: ScoredPointOffset, ef: usize) -> Self {
-        let mut nearest = FixedLengthPriorityQueue::new(ef);
+    pub fn new(entry_point: ScoredPointOffset, ef: usize) -> OperationResult<Self> {
+        let mut nearest = FixedLengthPriorityQueue::new(ef)?;
         nearest.push(entry_point);
-        SearchContext {
+        Ok(SearchContext {
             nearest,
             candidates: BinaryHeap::from_iter([entry_point]),
-        }
+        })
     }
 
     pub fn lower_bound(&self) -> ScoreType {

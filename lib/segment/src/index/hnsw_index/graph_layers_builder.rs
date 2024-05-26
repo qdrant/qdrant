@@ -109,7 +109,7 @@ impl GraphLayersBuilder {
         entry_points_num: usize, // Depends on number of points
         use_heuristic: bool,
         reserve: bool,
-    ) -> Self {
+    ) -> OperationResult<Self> {
         let links_layers = std::iter::repeat_with(|| {
             vec![RwLock::new(if reserve {
                 Vec::with_capacity(m0)
@@ -122,7 +122,7 @@ impl GraphLayersBuilder {
 
         let ready_list = RwLock::new(BitVec::repeat(false, num_vectors));
 
-        Self {
+        Ok(Self {
             max_level: AtomicUsize::new(0),
             m,
             m0,
@@ -130,10 +130,10 @@ impl GraphLayersBuilder {
             level_factor: 1.0 / (max(m, 2) as f64).ln(),
             use_heuristic,
             links_layers,
-            entry_points: Mutex::new(EntryPoints::new(entry_points_num)),
+            entry_points: Mutex::new(EntryPoints::new(entry_points_num)?),
             visited_pool: VisitedPool::new(),
             ready_list,
-        }
+        })
     }
 
     pub fn new(
@@ -143,7 +143,7 @@ impl GraphLayersBuilder {
         ef_construct: usize,
         entry_points_num: usize, // Depends on number of points
         use_heuristic: bool,
-    ) -> Self {
+    ) -> OperationResult<Self> {
         Self::new_with_params(
             num_vectors,
             m,
@@ -298,7 +298,11 @@ impl GraphLayersBuilder {
         Self::select_candidate_with_heuristic_from_sorted(closest_iter, m, score_internal)
     }
 
-    pub fn link_new_point(&self, point_id: PointOffsetType, mut points_scorer: FilteredScorer) {
+    pub fn link_new_point(
+        &self,
+        point_id: PointOffsetType,
+        mut points_scorer: FilteredScorer,
+    ) -> OperationResult<()> {
         // Check if there is an suitable entry point
         //   - entry point level if higher or equal
         //   - it satisfies filters
@@ -344,7 +348,7 @@ impl GraphLayersBuilder {
 
                     visited_list.check_and_update_visited(level_entry.idx);
 
-                    let mut search_context = SearchContext::new(level_entry, self.ef_construct);
+                    let mut search_context = SearchContext::new(level_entry, self.ef_construct)?;
 
                     self._search_on_level(
                         &mut search_context,
@@ -450,6 +454,7 @@ impl GraphLayersBuilder {
             }
         }
         self.ready_list.write().set(point_id as usize, true);
+        Ok(())
     }
 
     /// This function returns average number of links per node in HNSW graph
@@ -524,7 +529,8 @@ mod tests {
             ef_construct,
             entry_points_num,
             use_heuristic,
-        );
+        )
+        .unwrap();
 
         for idx in 0..(num_vectors as PointOffsetType) {
             let level = graph_layers.get_random_layer(rng);
@@ -539,7 +545,7 @@ mod tests {
                     let raw_scorer = vector_holder.get_raw_scorer(added_vector).unwrap();
                     let scorer =
                         FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
-                    graph_layers.link_new_point(idx, scorer);
+                    graph_layers.link_new_point(idx, scorer).unwrap();
                 });
         });
 
@@ -568,7 +574,8 @@ mod tests {
             ef_construct,
             entry_points_num,
             use_heuristic,
-        );
+        )
+        .unwrap();
 
         for idx in 0..(num_vectors as PointOffsetType) {
             let level = graph_layers.get_random_layer(rng);
@@ -580,7 +587,7 @@ mod tests {
             let added_vector = vector_holder.vectors.get(idx).to_vec();
             let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone()).unwrap();
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
-            graph_layers.link_new_point(idx, scorer);
+            graph_layers.link_new_point(idx, scorer).unwrap();
         }
 
         (vector_holder, graph_layers)
@@ -633,7 +640,7 @@ mod tests {
         let top = 5;
         let query = random_vector(&mut rng, dim);
         let processed_query = <M as Metric<VectorElementType>>::preprocess(query.clone());
-        let mut reference_top = FixedLengthPriorityQueue::new(top);
+        let mut reference_top = FixedLengthPriorityQueue::new(top).unwrap();
         for idx in 0..vector_holder.vectors.len() as PointOffsetType {
             let vec = &vector_holder.vectors.get(idx);
             reference_top.push(ScoredPointOffset {
@@ -650,7 +657,7 @@ mod tests {
         let raw_scorer = vector_holder.get_raw_scorer(query.clone()).unwrap();
         let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let ef = 16;
-        let graph_search = graph.search(top, ef, scorer, None);
+        let graph_search = graph.search(top, ef, scorer, None).unwrap();
 
         assert_eq!(reference_top.into_vec(), graph_search);
     }
@@ -716,7 +723,7 @@ mod tests {
         let top = 5;
         let query = random_vector(&mut rng, dim);
         let processed_query = <M as Metric<VectorElementType>>::preprocess(query.clone());
-        let mut reference_top = FixedLengthPriorityQueue::new(top);
+        let mut reference_top = FixedLengthPriorityQueue::new(top).unwrap();
         for idx in 0..vector_holder.vectors.len() as PointOffsetType {
             let vec = &vector_holder.vectors.get(idx);
             reference_top.push(ScoredPointOffset {
@@ -733,7 +740,7 @@ mod tests {
         let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
         let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let ef = 16;
-        let graph_search = graph.search(top, ef, scorer, None);
+        let graph_search = graph.search(top, ef, scorer, None).unwrap();
 
         assert_eq!(reference_top.into_vec(), graph_search);
     }
@@ -751,7 +758,8 @@ mod tests {
 
         let vector_holder = TestRawScorerProducer::<CosineMetric>::new(DIM, NUM_VECTORS, &mut rng);
         let mut graph_layers_builder =
-            GraphLayersBuilder::new(NUM_VECTORS, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC);
+            GraphLayersBuilder::new(NUM_VECTORS, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC)
+                .unwrap();
         let fake_filter_context = FakeFilterContext {};
         for idx in 0..(NUM_VECTORS as PointOffsetType) {
             let added_vector = vector_holder.vectors.get(idx).to_vec();
@@ -759,7 +767,7 @@ mod tests {
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
             let level = graph_layers_builder.get_random_layer(&mut rng);
             graph_layers_builder.set_levels(idx, level);
-            graph_layers_builder.link_new_point(idx, scorer);
+            graph_layers_builder.link_new_point(idx, scorer).unwrap();
         }
         let graph_layers = graph_layers_builder
             .into_graph_layers::<GraphLinksRam>(None)
@@ -799,7 +807,7 @@ mod tests {
         let vector_holder = TestRawScorerProducer::<EuclidMetric>::new(DIM, NUM_VECTORS, &mut rng);
 
         let mut candidates: FixedLengthPriorityQueue<ScoredPointOffset> =
-            FixedLengthPriorityQueue::new(NUM_VECTORS);
+            FixedLengthPriorityQueue::new(NUM_VECTORS).unwrap();
 
         let new_vector_to_insert = random_vector(&mut rng, DIM);
 
@@ -858,7 +866,7 @@ mod tests {
 
         let mut insert_ids = (1..points.len() as PointOffsetType).collect_vec();
 
-        let mut candidates = FixedLengthPriorityQueue::new(insert_ids.len());
+        let mut candidates = FixedLengthPriorityQueue::new(insert_ids.len()).unwrap();
         for &id in &insert_ids {
             candidates.push(ScoredPointOffset {
                 idx: id,
@@ -872,7 +880,8 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(42);
 
-        let graph_layers_builder = GraphLayersBuilder::new(num_points, m, m, ef_construct, 1, true);
+        let graph_layers_builder =
+            GraphLayersBuilder::new(num_points, m, m, ef_construct, 1, true).unwrap();
         insert_ids.shuffle(&mut rng);
         for &id in &insert_ids {
             let level_m = graph_layers_builder.get_m(0);

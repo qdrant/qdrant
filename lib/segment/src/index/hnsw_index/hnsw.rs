@@ -227,7 +227,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             let points_scorer =
                 FilteredScorer::new(raw_scorer.as_ref(), Some(&block_condition_checker));
 
-            graph_layers_builder.link_new_point(block_point_id, points_scorer);
+            graph_layers_builder.link_new_point(block_point_id, points_scorer)?;
             Ok::<_, OperationError>(())
         };
 
@@ -294,7 +294,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         match &self.graph {
             Some(graph) => {
                 let search_result =
-                    graph.search(oversampled_top, ef, points_scorer, custom_entry_points);
+                    graph.search(oversampled_top, ef, points_scorer, custom_entry_points)?;
                 self.postprocess_search_result(search_result, vector, params, top, &is_stopped)
             }
             None => Ok(Default::default()),
@@ -355,7 +355,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let oversampled_top = Self::get_oversampled_top(quantized_vectors.as_ref(), params, top);
 
         let search_result =
-            raw_scorer.peek_top_iter(&mut filtered_points.iter().copied(), oversampled_top);
+            raw_scorer.peek_top_iter(&mut filtered_points.iter().copied(), oversampled_top)?;
 
         self.postprocess_search_result(search_result, vector, params, top, &is_stopped)
     }
@@ -568,7 +568,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                                 deleted_points,
                                 &is_stopped,
                             )
-                            .map(|scorer| scorer.peek_top_all(top))
+                            .map(|scorer| scorer.peek_top_all(top))?
                         })
                         .collect()
                 } else {
@@ -696,7 +696,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 * 10)
                 .max(1),
             HNSW_USE_HEURISTIC,
-        );
+        )?;
 
         let pool = rayon::ThreadPoolBuilder::new()
             .thread_name(|idx| format!("hnsw-build-{idx}"))
@@ -759,7 +759,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 }?;
                 let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
 
-                graph_layers_builder.link_new_point(vector_id, points_scorer);
+                graph_layers_builder.link_new_point(vector_id, points_scorer)?;
                 Ok::<_, OperationError>(())
             };
 
@@ -819,7 +819,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                         1,
                         HNSW_USE_HEURISTIC,
                         false,
-                    );
+                    )?;
                     self.build_filtered_graph(
                         &pool,
                         stopped,

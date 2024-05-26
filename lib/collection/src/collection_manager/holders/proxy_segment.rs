@@ -606,29 +606,29 @@ impl SegmentEntry for ProxySegment {
         offset: Option<PointIdType>,
         limit: Option<usize>,
         filter: Option<&'a Filter>,
-    ) -> Vec<PointIdType> {
+    ) -> OperationResult<Vec<PointIdType>> {
         let deleted_points = self.deleted_points.read();
         let mut read_points = if deleted_points.is_empty() {
             self.wrapped_segment
                 .get()
                 .read()
-                .read_filtered(offset, limit, filter)
+                .read_filtered(offset, limit, filter)?
         } else {
             let wrapped_filter =
                 self.add_deleted_points_condition_to_filter(filter, &deleted_points);
             self.wrapped_segment
                 .get()
                 .read()
-                .read_filtered(offset, limit, Some(&wrapped_filter))
+                .read_filtered(offset, limit, Some(&wrapped_filter))?
         };
         let mut write_segment_points = self
             .write_segment
             .get()
             .read()
-            .read_filtered(offset, limit, filter);
+            .read_filtered(offset, limit, filter)?;
         read_points.append(&mut write_segment_points);
         read_points.sort_unstable();
-        read_points
+        Ok(read_points)
     }
 
     fn read_ordered_filtered<'a>(
@@ -891,7 +891,7 @@ impl SegmentEntry for ProxySegment {
             self.wrapped_segment
                 .get()
                 .read()
-                .read_filtered(None, None, Some(filter));
+                .read_filtered(None, None, Some(filter))?;
         let points_offsets_to_delete = match &self.wrapped_segment {
             LockedSegment::Original(raw_segment) => {
                 let raw_segment_read = raw_segment.read();
@@ -1264,20 +1264,23 @@ mod tests {
         let original_points = original_segment
             .get()
             .read()
-            .read_filtered(None, Some(100), None);
+            .read_filtered(None, Some(100), None)
+            .unwrap();
 
-        let original_points_filtered =
-            original_segment
-                .get()
-                .read()
-                .read_filtered(None, Some(100), Some(&filter));
+        let original_points_filtered = original_segment
+            .get()
+            .read()
+            .read_filtered(None, Some(100), Some(&filter))
+            .unwrap();
 
         let mut proxy_segment = wrap_proxy(&dir, original_segment);
 
         proxy_segment.delete_point(100, 2.into()).unwrap();
 
-        let proxy_res = proxy_segment.read_filtered(None, Some(100), None);
-        let proxy_res_filtered = proxy_segment.read_filtered(None, Some(100), Some(&filter));
+        let proxy_res = proxy_segment.read_filtered(None, Some(100), None).unwrap();
+        let proxy_res_filtered = proxy_segment
+            .read_filtered(None, Some(100), Some(&filter))
+            .unwrap();
 
         assert_eq!(original_points_filtered.len() - 1, proxy_res_filtered.len());
         assert_eq!(original_points.len() - 1, proxy_res.len());

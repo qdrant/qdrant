@@ -770,7 +770,7 @@ impl Segment {
         offset: Option<PointIdType>,
         limit: Option<usize>,
         condition: &Filter,
-    ) -> Vec<PointIdType> {
+    ) -> OperationResult<Vec<PointIdType>> {
         let payload_index = self.payload_index.borrow();
         let id_tracker = self.id_tracker.borrow();
 
@@ -789,13 +789,13 @@ impl Segment {
             });
 
         let mut page = match limit {
-            Some(limit) => peek_top_smallest_iterable(ids_iterator, limit),
+            Some(limit) => peek_top_smallest_iterable(ids_iterator, limit)?,
             None => ids_iterator.collect(),
         };
 
         page.sort_unstable();
 
-        page
+        Ok(page)
     }
 
     pub fn filtered_read_by_index_ordered(
@@ -838,7 +838,7 @@ impl Segment {
         let page = match order_by.direction() {
             Direction::Asc => {
                 let mut page = match limit {
-                    Some(limit) => peek_top_smallest_iterable(values_ids_iterator, limit),
+                    Some(limit) => peek_top_smallest_iterable(values_ids_iterator, limit)?,
                     None => values_ids_iterator.collect(),
                 };
                 page.sort_unstable_by(|(value_a, _), (value_b, _)| value_a.cmp(value_b));
@@ -846,7 +846,7 @@ impl Segment {
             }
             Direction::Desc => {
                 let mut page = match limit {
-                    Some(limit) => peek_top_largest_iterable(values_ids_iterator, limit),
+                    Some(limit) => peek_top_largest_iterable(values_ids_iterator, limit)?,
                     None => values_ids_iterator.collect(),
                 };
                 page.sort_unstable_by(|(value_a, _), (value_b, _)| value_b.cmp(value_a));
@@ -1287,14 +1287,14 @@ impl SegmentEntry for Segment {
         offset: Option<PointIdType>,
         limit: Option<usize>,
         filter: Option<&'a Filter>,
-    ) -> Vec<PointIdType> {
+    ) -> OperationResult<Vec<PointIdType>> {
         match filter {
-            None => self.read_by_id_stream(offset, limit),
+            None => Ok(self.read_by_id_stream(offset, limit)),
             Some(condition) => {
                 if self.should_pre_filter(condition, limit) {
                     self.filtered_read_by_index(offset, limit, condition)
                 } else {
-                    self.filtered_read_by_id_stream(offset, limit, condition)
+                    Ok(self.filtered_read_by_id_stream(offset, limit, condition))
                 }
             }
         }
@@ -1623,7 +1623,7 @@ impl SegmentEntry for Segment {
         filter: &'a Filter,
     ) -> OperationResult<usize> {
         let mut deleted_points = 0;
-        for point_id in self.read_filtered(None, None, Some(filter)) {
+        for point_id in self.read_filtered(None, None, Some(filter))? {
             deleted_points += self.delete_point(op_num, point_id)? as usize;
         }
 

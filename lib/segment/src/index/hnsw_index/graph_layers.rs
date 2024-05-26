@@ -96,13 +96,13 @@ pub trait GraphLayersBase {
         level: usize,
         ef: usize,
         points_scorer: &mut FilteredScorer,
-    ) -> FixedLengthPriorityQueue<ScoredPointOffset> {
+    ) -> OperationResult<FixedLengthPriorityQueue<ScoredPointOffset>> {
         let mut visited_list = self.get_visited_list_from_pool();
         visited_list.check_and_update_visited(level_entry.idx);
-        let mut search_context = SearchContext::new(level_entry, ef);
+        let mut search_context = SearchContext::new(level_entry, ef)?;
 
         self._search_on_level(&mut search_context, level, &mut visited_list, points_scorer);
-        search_context.nearest
+        Ok(search_context.nearest)
     }
 
     /// Greedy searches for entry point of level `target_level`.
@@ -207,9 +207,9 @@ impl<TGraphLinks: GraphLinks> GraphLayers<TGraphLinks> {
         ef: usize,
         mut points_scorer: FilteredScorer,
         custom_entry_points: Option<&[PointOffsetType]>,
-    ) -> Vec<ScoredPointOffset> {
+    ) -> OperationResult<Vec<ScoredPointOffset>> {
         let Some(entry_point) = self.get_entry_point(&points_scorer, custom_entry_points) else {
-            return Vec::default();
+            return Ok(Vec::default());
         };
 
         let zero_level_entry = self.search_entry(
@@ -218,8 +218,9 @@ impl<TGraphLinks: GraphLinks> GraphLayers<TGraphLinks> {
             0,
             &mut points_scorer,
         );
-        let nearest = self.search_on_level(zero_level_entry, 0, max(top, ef), &mut points_scorer);
-        nearest.into_iter().take(top).collect_vec()
+        let nearest =
+            self.search_on_level(zero_level_entry, 0, max(top, ef), &mut points_scorer)?;
+        Ok(nearest.into_iter().take(top).collect_vec())
     }
 
     pub fn get_path(path: &Path) -> PathBuf {
@@ -321,7 +322,7 @@ mod tests {
         let raw_scorer = vector_storage.get_raw_scorer(query.to_owned()).unwrap();
         let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let ef = 16;
-        graph.search(top, ef, scorer, None)
+        graph.search(top, ef, scorer, None).unwrap()
     }
 
     const M: usize = 8;
@@ -344,7 +345,7 @@ mod tests {
             m0: 2 * m,
             ef_construct,
             links: GraphLinksRam::default(),
-            entry_points: EntryPoints::new(entry_points_num),
+            entry_points: EntryPoints::new(entry_points_num).unwrap(),
             visited_pool: VisitedPool::new(),
         };
 
@@ -361,15 +362,17 @@ mod tests {
         let raw_scorer = vector_holder.get_raw_scorer(added_vector).unwrap();
         let mut scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
 
-        let nearest_on_level = graph_layers.search_on_level(
-            ScoredPointOffset {
-                idx: 0,
-                score: scorer.score_point(0),
-            },
-            0,
-            32,
-            &mut scorer,
-        );
+        let nearest_on_level = graph_layers
+            .search_on_level(
+                ScoredPointOffset {
+                    idx: 0,
+                    score: scorer.score_point(0),
+                },
+                0,
+                32,
+                &mut scorer,
+            )
+            .unwrap();
 
         assert_eq!(nearest_on_level.len(), graph_links[0][0].len() + 1);
 
@@ -452,7 +455,7 @@ mod tests {
         let top = 5;
         let query = random_vector(&mut rng, dim);
         let processed_query = <M as Metric<VectorElementType>>::preprocess(query.clone());
-        let mut reference_top = FixedLengthPriorityQueue::new(top);
+        let mut reference_top = FixedLengthPriorityQueue::new(top).unwrap();
         for idx in 0..vector_holder.vectors.len() as PointOffsetType {
             let vec = &vector_holder.vectors.get(idx);
             reference_top.push(ScoredPointOffset {

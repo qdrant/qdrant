@@ -370,7 +370,7 @@ pub async fn group_by(
     }
 
     // extract best results
-    let mut groups = aggregator.distill();
+    let mut groups = aggregator.distill()?;
 
     // flatten results
     let bare_points = groups

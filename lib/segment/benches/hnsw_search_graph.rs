@@ -27,14 +27,14 @@ fn hnsw_benchmark(c: &mut Criterion) {
     let fake_filter_context = FakeFilterContext {};
 
     let mut graph_layers_builder =
-        GraphLayersBuilder::new(NUM_VECTORS, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC);
+        GraphLayersBuilder::new(NUM_VECTORS, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC).unwrap();
     for idx in 0..(NUM_VECTORS as PointOffsetType) {
         let added_vector = vector_holder.vectors.get(idx).to_vec();
         let raw_scorer = vector_holder.get_raw_scorer(added_vector).unwrap();
         let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let level = graph_layers_builder.get_random_layer(&mut rng);
         graph_layers_builder.set_levels(idx, level);
-        graph_layers_builder.link_new_point(idx, scorer);
+        graph_layers_builder.link_new_point(idx, scorer).unwrap();
     }
     let graph_layers = graph_layers_builder
         .into_graph_layers::<GraphLinksRam>(None)
@@ -47,7 +47,7 @@ fn hnsw_benchmark(c: &mut Criterion) {
             let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
 
-            graph_layers.search(TOP, EF, scorer, None);
+            graph_layers.search(TOP, EF, scorer, None).unwrap();
         })
     });
 

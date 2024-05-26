@@ -4,6 +4,8 @@ use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::PointOffsetType;
 use serde::{Deserialize, Serialize};
 
+use crate::common::operation_error::OperationResult;
+
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
 pub struct EntryPoint {
     pub point_id: PointOffsetType,
@@ -31,11 +33,11 @@ pub struct EntryPoints {
 }
 
 impl EntryPoints {
-    pub fn new(extra_entry_points: usize) -> Self {
-        EntryPoints {
+    pub fn new(extra_entry_points: usize) -> OperationResult<Self> {
+        Ok(EntryPoints {
             entry_points: vec![],
-            extra_entry_points: FixedLengthPriorityQueue::new(extra_entry_points),
-        }
+            extra_entry_points: FixedLengthPriorityQueue::new(extra_entry_points)?,
+        })
     }
     pub fn merge_from_other(&mut self, mut other: EntryPoints) {
         self.entry_points.append(&mut other.entry_points);
@@ -119,7 +121,7 @@ mod tests {
 
     #[test]
     fn test_entry_points() {
-        let mut points = EntryPoints::new(10);
+        let mut points = EntryPoints::new(10).unwrap();
 
         let mut rnd = rand::thread_rng();
 
