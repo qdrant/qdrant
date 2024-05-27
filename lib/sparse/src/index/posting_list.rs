@@ -1,5 +1,4 @@
 use std::cmp::max;
-use std::ops::ControlFlow;
 
 use common::types::PointOffsetType;
 use ordered_float::OrderedFloat;
@@ -192,25 +191,21 @@ impl<'a> PostingListIter for PostingListIterator<'a> {
         self.current_index
     }
 
-    #[inline]
-    fn try_for_each<F, R>(&mut self, mut f: F) -> ControlFlow<R>
-    where
-        F: FnMut(PostingElement) -> ControlFlow<R>,
-    {
+    fn for_each_till_id<Ctx: ?Sized>(
+        &mut self,
+        id: PointOffsetType,
+        ctx: &mut Ctx,
+        mut f: impl FnMut(&mut Ctx, PointOffsetType, DimWeight),
+    ) {
         let mut current_index = self.current_index;
         for element in &self.elements[current_index..] {
-            match f(element.clone().into()) {
-                ControlFlow::Continue(_) => {
-                    current_index += 1;
-                }
-                ControlFlow::Break(r) => {
-                    self.current_index = current_index;
-                    return ControlFlow::Break(r);
-                }
+            if element.record_id > id {
+                break;
             }
+            f(ctx, element.record_id, element.weight);
+            current_index += 1;
         }
         self.current_index = current_index;
-        ControlFlow::Continue(())
     }
 
     fn reliable_max_next_weight() -> bool {

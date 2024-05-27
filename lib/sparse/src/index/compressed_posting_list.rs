@@ -1,6 +1,5 @@
 use std::cmp::Ordering;
 use std::mem::size_of;
-use std::ops::ControlFlow;
 
 use bitpacking::BitPacker as _;
 use common::types::PointOffsetType;
@@ -282,32 +281,50 @@ impl<'a> CompressedPostingListIterator<'a> {
 
     #[inline]
     fn next(&mut self) -> Option<PostingElement> {
-        let mut result = None;
-        let mut first = true;
-        self.try_for_each(|e| {
-            if first {
-                result = Some(e);
-                first = false;
-                ControlFlow::Continue(())
-            } else {
-                ControlFlow::Break(())
+        let result = self.peek()?;
+
+        if self.compressed_idx / BitPackerImpl::BLOCK_LEN < self.list.chunks.len() {
+            self.compressed_idx += 1;
+            if self.compressed_idx % BitPackerImpl::BLOCK_LEN == 0 {
+                self.unpacked = false;
             }
-        });
-        result
+        } else {
+            self.remainders_idx += 1;
+        }
+
+        Some(result.into())
     }
 }
 
 impl<'a> PostingListIter for CompressedPostingListIterator<'a> {
     #[inline]
     fn peek(&mut self) -> Option<PostingElementEx> {
-        match self.try_for_each(ControlFlow::Break) {
-            ControlFlow::Break(e) => Some(PostingElementEx {
+        let compressed_idx = self.compressed_idx;
+        if compressed_idx / BitPackerImpl::BLOCK_LEN < self.list.chunks.len() {
+            if !self.unpacked {
+                self.list.decompress_chunk(
+                    compressed_idx / BitPackerImpl::BLOCK_LEN,
+                    &mut self.decompressed_chunk,
+                );
+                self.unpacked = true;
+            }
+
+            let chunk = &self.list.chunks[compressed_idx / BitPackerImpl::BLOCK_LEN];
+            return Some(PostingElementEx {
+                record_id: self.decompressed_chunk[compressed_idx % BitPackerImpl::BLOCK_LEN],
+                weight: chunk.weights[compressed_idx % BitPackerImpl::BLOCK_LEN],
+                max_next_weight: 0.0,
+            });
+        }
+
+        self.list
+            .remainders
+            .get(self.remainders_idx)
+            .map(|e| PostingElementEx {
                 record_id: e.record_id,
                 weight: e.weight,
                 max_next_weight: 0.0,
-            }),
-            _ => None,
-        }
+            })
     }
 
     #[inline]
@@ -347,10 +364,12 @@ impl<'a> PostingListIter for CompressedPostingListIterator<'a> {
     }
 
     #[inline]
-    fn try_for_each<F, R>(&mut self, mut f: F) -> ControlFlow<R>
-    where
-        F: FnMut(PostingElement) -> ControlFlow<R>,
-    {
+    fn for_each_till_id<Ctx: ?Sized>(
+        &mut self,
+        id: PointOffsetType,
+        ctx: &mut Ctx,
+        mut f: impl FnMut(&mut Ctx, PointOffsetType, DimWeight),
+    ) {
         let mut compressed_idx = self.compressed_idx;
         if compressed_idx / BitPackerImpl::BLOCK_LEN < self.list.chunks.len() {
             // 1. Iterate over already decompressed chunk
@@ -361,14 +380,11 @@ impl<'a> PostingListIter for CompressedPostingListIterator<'a> {
                     &self.decompressed_chunk[compressed_idx % BitPackerImpl::BLOCK_LEN..],
                     &chunk.weights[compressed_idx % BitPackerImpl::BLOCK_LEN..],
                 ) {
-                    let res = f(PostingElement {
-                        record_id: *idx,
-                        weight: *weight,
-                    });
-                    if let ControlFlow::Break(_) = res {
+                    if *idx > id {
                         self.compressed_idx = compressed_idx;
-                        return res;
+                        return;
                     }
+                    f(ctx, *idx, *weight);
                     compressed_idx += 1;
                 }
             }
@@ -381,17 +397,21 @@ impl<'a> PostingListIter for CompressedPostingListIterator<'a> {
                 );
                 let chunk = &self.list.chunks[compressed_idx / BitPackerImpl::BLOCK_LEN];
 
-                for (idx, weight) in std::iter::zip(&self.decompressed_chunk, &chunk.weights) {
-                    let res = f(PostingElement {
-                        record_id: *idx,
-                        weight: *weight,
-                    });
-                    if let ControlFlow::Break(_) = res {
-                        self.compressed_idx = compressed_idx;
-                        self.unpacked = true;
-                        return res;
+                if *self.decompressed_chunk.last().unwrap() <= id {
+                    for (idx, weight) in std::iter::zip(&self.decompressed_chunk, &chunk.weights) {
+                        f(ctx, *idx, *weight);
                     }
-                    compressed_idx += 1;
+                    compressed_idx += BitPackerImpl::BLOCK_LEN;
+                } else {
+                    for (idx, weight) in std::iter::zip(&self.decompressed_chunk, &chunk.weights) {
+                        if *idx > id {
+                            self.compressed_idx = compressed_idx;
+                            self.unpacked = true;
+                            return;
+                        }
+                        compressed_idx += 1;
+                        f(ctx, *idx, *weight);
+                    }
                 }
             }
         }
@@ -399,14 +419,12 @@ impl<'a> PostingListIter for CompressedPostingListIterator<'a> {
 
         // 3. Iterate over remainders
         for e in &self.list.remainders[self.remainders_idx..] {
-            f(PostingElement {
-                record_id: e.record_id,
-                weight: e.weight,
-            })?;
+            if e.record_id > id {
+                return;
+            }
+            f(ctx, e.record_id, e.weight);
             self.remainders_idx += 1;
         }
-
-        ControlFlow::Continue(())
     }
 
     fn reliable_max_next_weight() -> bool {
@@ -467,7 +485,7 @@ mod tests {
 
     #[test]
     #[allow(clippy::needless_range_loop)] // for consistency
-    fn test_try_foreach() {
+    fn test_try_till_id() {
         for i in 0..CASES.len() {
             for j in i..CASES.len() {
                 for k in j..CASES.len() {
@@ -479,55 +497,31 @@ mod tests {
 
                     let mut data = Vec::new();
                     let mut counter = 0;
-                    let end = iter.try_for_each(|e| {
-                        eprintln!("  {}", e.record_id);
-                        if counter == CASES[i] {
-                            ControlFlow::Break(e.record_id)
-                        } else {
-                            data.push(e.record_id);
+
+                    iter.for_each_till_id(
+                        case.get(CASES[i]).map_or(PointOffsetType::MAX, |x| x.0) - 1,
+                        &mut (),
+                        |_, id, weight| {
+                            eprintln!("  {}", id);
+                            data.push((id, weight));
                             counter += 1;
-                            ControlFlow::Continue(())
-                        }
-                    });
-                    let end = match end {
-                        ControlFlow::Continue(()) => None,
-                        ControlFlow::Break(id) => Some(id),
-                    };
-                    assert_eq!(end, case.get(CASES[i]).map(|e| e.0));
-                    assert_eq!(
-                        data,
-                        case[..CASES[i]].iter().map(|e| e.0).collect::<Vec<_>>()
+                        },
                     );
+                    assert_eq!(data, &case[..CASES[i]]);
                     eprintln!(" ;");
 
                     let mut data = Vec::new();
                     let mut counter = 0;
-                    let end = iter.try_for_each(|e| {
-                        eprintln!("  {}", e.record_id);
-                        if counter == CASES[j] - CASES[i] {
-                            ControlFlow::Break(e.record_id)
-                        } else {
-                            data.push(e.record_id);
+                    iter.for_each_till_id(
+                        case.get(CASES[j]).map_or(PointOffsetType::MAX, |x| x.0) - 1,
+                        &mut (),
+                        |_, id, weight| {
+                            eprintln!("  {}", id);
+                            data.push((id, weight));
                             counter += 1;
-                            ControlFlow::Continue(())
-                        }
-                    });
-                    let end = match end {
-                        ControlFlow::Continue(()) => None,
-                        ControlFlow::Break(id) => Some(id),
-                    };
-                    assert_eq!(end, case.get(CASES[j]).map(|e| e.0));
-                    assert_eq!(
-                        data,
-                        if i != j {
-                            case[CASES[i]..CASES[j]]
-                                .iter()
-                                .map(|e| e.0)
-                                .collect::<Vec<_>>()
-                        } else {
-                            Vec::new()
-                        }
+                        },
                     );
+                    assert_eq!(data, &case[CASES[i]..CASES[j]]);
                 }
             }
         }
