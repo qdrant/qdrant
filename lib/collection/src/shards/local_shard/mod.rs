@@ -699,9 +699,7 @@ impl LocalShard {
             rx.await?;
         }
 
-        let collection_path = self.path.parent().map(Path::to_path_buf).ok_or_else(|| {
-            CollectionError::service_error("Failed to determine collection path for shard")
-        })?;
+        let shard_path = self.path.clone();
         let collection_params = self.collection_config.read().await.params.clone();
         let temp_path = temp_path.to_owned();
 
@@ -709,7 +707,7 @@ impl LocalShard {
             // Do not change segments while snapshotting
             SegmentHolder::snapshot_all_segments(
                 segments.clone(),
-                &collection_path,
+                &shard_path,
                 Some(&collection_params),
                 &temp_path,
                 &snapshot_segments_shard_path,
