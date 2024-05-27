@@ -506,7 +506,8 @@ impl Segment {
                 // Without this check, the service will panic on the `get_vector` call.
                 Err(OperationError::InconsistentStorage {
                     description: format!(
-                        "Vector storage is inconsistent, total_vector_count: {}, point_offset: {}",
+                        "Vector storage '{}' is inconsistent, total_vector_count: {}, point_offset: {}",
+                        vector_name,
                         vector_storage.total_vector_count(),
                         point_offset
                     ),
