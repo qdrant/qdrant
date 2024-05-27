@@ -699,7 +699,7 @@ impl LocalShard {
             rx.await?;
         }
 
-        let shard_path = self.path.clone();
+        let segments_path = Self::segments_path(&self.path);
         let collection_params = self.collection_config.read().await.params.clone();
         let temp_path = temp_path.to_owned();
 
@@ -707,7 +707,7 @@ impl LocalShard {
             // Do not change segments while snapshotting
             SegmentHolder::snapshot_all_segments(
                 segments.clone(),
-                &shard_path,
+                &segments_path,
                 Some(&collection_params),
                 &temp_path,
                 &snapshot_segments_shard_path,

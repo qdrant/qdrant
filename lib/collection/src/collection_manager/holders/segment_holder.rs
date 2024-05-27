@@ -1308,12 +1308,12 @@ mod tests {
 
         let holder = Arc::new(RwLock::new(holder));
 
-        let shard_dir = Builder::new().prefix("shard_dir").tempdir().unwrap();
+        let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
         let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
         let snapshot_dir = Builder::new().prefix("snapshot_dir").tempdir().unwrap();
         SegmentHolder::snapshot_all_segments(
             holder,
-            shard_dir.path(),
+            segments_dir.path(),
             None,
             temp_dir.path(),
             snapshot_dir.path(),
