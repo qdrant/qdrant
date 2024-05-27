@@ -311,7 +311,8 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleMultiDenseVectorStorage<
     fn available_size_in_bytes(&self) -> usize {
         let total_size = self.vectors.len() * self.vector_dim() * std::mem::size_of::<T>();
         if self.total_vector_count() > 0 {
-            total_size * self.available_vector_count() / self.total_vector_count()
+            (total_size as u128 * self.available_vector_count() as u128
+                / self.total_vector_count() as u128) as usize
         } else {
             0
         }
