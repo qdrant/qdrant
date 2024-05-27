@@ -88,7 +88,7 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
 
         if !prefetches.is_empty() {
             sources = recurse_prefetches(&mut core_searches, &mut scrolls, prefetches)?;
-            rescore = Some(query);
+            rescore = query;
             filter = req_filter;
             offset = req_offset;
             score_threshold = req_score_threshold;
@@ -96,7 +96,7 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
             with_payload = req_with_payload;
         } else {
             match query {
-                ScoringQuery::Vector(query) => {
+                Some(ScoringQuery::Vector(query)) => {
                     // Everything should come from 1 core search
                     let core_search = CoreSearchRequest {
                         query,
@@ -113,15 +113,30 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
 
                     sources = vec![PrefetchSource::SearchesIdx(0)];
                 }
-                ScoringQuery::Fusion(_) => {
+                Some(ScoringQuery::Fusion(_)) => {
                     return Err(CollectionError::bad_request(
                         "cannot apply Fusion without prefetches".to_string(),
                     ))
                 }
-                ScoringQuery::OrderBy(order_by) => {
+                Some(ScoringQuery::OrderBy(order_by)) => {
                     // Everything should come from 1 scroll
                     let scroll = ScrollRequestInternal {
                         order_by: Some(OrderByInterface::Struct(order_by)),
+                        filter: req_filter,
+                        with_vector: req_with_vector,
+                        with_payload: Some(req_with_payload),
+                        limit: Some(limit),
+                        offset: None,
+                    };
+
+                    scrolls.push(scroll);
+
+                    sources = vec![PrefetchSource::ScrollsIdx(0)];
+                }
+                None => {
+                    // Everything should come from 1 scroll
+                    let scroll = ScrollRequestInternal {
+                        order_by: None,
                         filter: req_filter,
                         with_vector: req_with_vector,
                         with_payload: Some(req_with_payload),
@@ -184,7 +199,7 @@ fn recurse_prefetches(
         let source = if prefetches.is_empty() {
             // This is a leaf prefetch. Fetch this info from the segments
             match query {
-                ScoringQuery::Vector(query_enum) => {
+                Some(ScoringQuery::Vector(query_enum)) => {
                     let core_search = CoreSearchRequest {
                         query: query_enum,
                         filter,
@@ -201,14 +216,29 @@ fn recurse_prefetches(
 
                     PrefetchSource::SearchesIdx(idx)
                 }
-                ScoringQuery::Fusion(_) => {
+                Some(ScoringQuery::Fusion(_)) => {
                     return Err(CollectionError::bad_request(
                         "cannot apply Fusion without prefetches".to_string(),
                     ))
                 }
-                ScoringQuery::OrderBy(order_by) => {
+                Some(ScoringQuery::OrderBy(order_by)) => {
                     let scroll = ScrollRequestInternal {
                         order_by: Some(OrderByInterface::Struct(order_by)),
+                        filter,
+                        with_vector: WithVector::Bool(false),
+                        with_payload: Some(WithPayloadInterface::Bool(false)),
+                        limit: Some(limit),
+                        offset: None,
+                    };
+
+                    let idx = scrolls.len();
+                    scrolls.push(scroll);
+
+                    PrefetchSource::ScrollsIdx(idx)
+                }
+                None => {
+                    let scroll = ScrollRequestInternal {
+                        order_by: None,
                         filter,
                         with_vector: WithVector::Bool(false),
                         with_payload: Some(WithPayloadInterface::Bool(false)),
@@ -229,7 +259,7 @@ fn recurse_prefetches(
             let prefetch_plan = MergePlan {
                 sources: inner_sources,
                 merge: ResultsMerge {
-                    rescore: Some(query),
+                    rescore: query,
                     filter,
                     limit,
                     score_threshold,
@@ -262,28 +292,30 @@ mod tests {
             prefetches: vec![ShardPrefetch {
                 prefetches: vec![ShardPrefetch {
                     prefetches: Default::default(),
-                    query: ScoringQuery::Vector(QueryEnum::Nearest(
+                    query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
                         NamedVectorStruct::new_from_vector(
                             Vector::Dense(dummy_vector.clone()),
                             "byte",
                         ),
-                    )),
+                    ))),
                     limit: 1000,
                     params: None,
                     filter: None,
                     score_threshold: None,
                 }],
-                query: ScoringQuery::Vector(QueryEnum::Nearest(
+                query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
                     NamedVectorStruct::new_from_vector(Vector::Dense(dummy_vector.clone()), "full"),
-                )),
+                ))),
                 limit: 100,
                 params: None,
                 filter: None,
                 score_threshold: None,
             }],
-            query: ScoringQuery::Vector(QueryEnum::Nearest(NamedVectorStruct::new_from_vector(
-                Vector::MultiDense(MultiDenseVector::new_unchecked(vec![dummy_vector.clone()])),
-                "multi",
+            query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
+                NamedVectorStruct::new_from_vector(
+                    Vector::MultiDense(MultiDenseVector::new_unchecked(vec![dummy_vector.clone()])),
+                    "multi",
+                ),
             ))),
             filter: Some(Filter::default()),
             score_threshold: None,
@@ -356,9 +388,8 @@ mod tests {
         let dummy_vector = vec![1.0, 2.0, 3.0];
         let request = ShardQueryRequest {
             prefetches: vec![], // No prefetch
-            query: ScoringQuery::Vector(QueryEnum::Nearest(NamedVectorStruct::new_from_vector(
-                Vector::Dense(dummy_vector.clone()),
-                "full",
+            query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
+                NamedVectorStruct::new_from_vector(Vector::Dense(dummy_vector.clone()), "full"),
             ))),
             filter: Some(Filter::default()),
             score_threshold: Some(0.5),
@@ -417,12 +448,12 @@ mod tests {
             prefetches: vec![
                 ShardPrefetch {
                     prefetches: Vec::new(),
-                    query: ScoringQuery::Vector(QueryEnum::Nearest(
+                    query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
                         NamedVectorStruct::new_from_vector(
                             Vector::Dense(dummy_vector.clone()),
                             "dense",
                         ),
-                    )),
+                    ))),
                     limit: 100,
                     params: None,
                     filter: None,
@@ -430,19 +461,19 @@ mod tests {
                 },
                 ShardPrefetch {
                     prefetches: Vec::new(),
-                    query: ScoringQuery::Vector(QueryEnum::Nearest(
+                    query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
                         NamedVectorStruct::new_from_vector(
                             Vector::Sparse(dummy_sparse.clone()),
                             "sparse",
                         ),
-                    )),
+                    ))),
                     limit: 100,
                     params: None,
                     filter: None,
                     score_threshold: None,
                 },
             ],
-            query: ScoringQuery::Fusion(Fusion::Rrf),
+            query: Some(ScoringQuery::Fusion(Fusion::Rrf)),
             filter: Some(Filter::default()),
             score_threshold: None,
             limit: 50,
@@ -514,7 +545,7 @@ mod tests {
     fn test_try_from_rrf_without_source() {
         let request = ShardQueryRequest {
             prefetches: vec![],
-            query: ScoringQuery::Fusion(Fusion::Rrf),
+            query: Some(ScoringQuery::Fusion(Fusion::Rrf)),
             filter: Some(Filter::default()),
             score_threshold: None,
             limit: 50,
@@ -546,18 +577,18 @@ mod tests {
         let request = ShardQueryRequest {
             prefetches: vec![ShardPrefetch {
                 prefetches: Vec::new(),
-                query: ScoringQuery::Vector(QueryEnum::Nearest(
+                query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
                     NamedVectorStruct::new_from_vector(
                         Vector::Dense(dummy_vector.clone()),
                         "dense",
                     ),
-                )),
+                ))),
                 limit: 37,
                 params: dummy_params,
                 filter: dummy_filter.clone(),
                 score_threshold: Some(0.1),
             }],
-            query: ScoringQuery::Fusion(Fusion::Rrf),
+            query: Some(ScoringQuery::Fusion(Fusion::Rrf)),
             filter: Some(Filter::default()),
             score_threshold: Some(0.666),
             limit: 50,
