@@ -207,7 +207,7 @@ mod tests {
 
     #[test]
     fn test_repartition() {
-        let mut ring = HashRing::fair(100);
+        let mut ring = Inner::fair(100);
 
         ring.add(1);
         ring.add(2);
