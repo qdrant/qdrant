@@ -33,7 +33,7 @@ pub struct DebugState {
 
 impl DebugState {
     pub fn from_settings(settings: &Settings) -> Self {
-        let pyroscope_config = settings.debug.pyroscope.clone();
+        let pyroscope_config = settings.debugger.pyroscope.clone();
         Self {
             pyroscope: Arc::new(Mutex::new(PyroscopeState::from_config(pyroscope_config))),
         }
