@@ -62,16 +62,15 @@ impl DebugState {
         {
             match patch {
                 DebugConfigPatch::Pyroscope(new_config) => {
-                    if let Some(mut pyroscope_state) = self.pyroscope.lock().take() {
-                        let stopped = pyroscope_state.stop_agent();
-                        if !stopped {
-                            return false;
-                        }
+                    let mut pyroscope_guard = self.pyroscope.lock();
+                    let pyroscope_state = pyroscope_guard.as_mut().unwrap();
+                    let stopped = pyroscope_state.stop_agent();
+                    if !stopped {
+                        return false;
                     }
 
                     match new_config {
                         Some(new_config) => {
-                            let mut pyroscope_guard = self.pyroscope.lock();
                             *pyroscope_guard = PyroscopeState::from_config(Some(new_config));
                             true
                         }
