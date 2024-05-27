@@ -658,7 +658,7 @@ impl<'s> SegmentHolder {
     /// sourced from it.
     pub fn proxy_all_segments_and_apply<F>(
         segments: LockedSegmentHolder,
-        shard_path: &Path,
+        segments_path: &Path,
         collection_params: Option<&CollectionParams>,
         f: F,
     ) -> OperationResult<()>
@@ -670,7 +670,7 @@ impl<'s> SegmentHolder {
         // Proxy all segments
         log::trace!("Proxying all shard segments to apply function");
         let (mut proxies, tmp_segment, mut segments_lock) =
-            Self::proxy_all_segments(segments_lock, shard_path, collection_params)?;
+            Self::proxy_all_segments(segments_lock, segments_path, collection_params)?;
 
         // Apply provided function
         log::trace!("Applying function on all proxied shard segments");
@@ -721,7 +721,7 @@ impl<'s> SegmentHolder {
     #[allow(clippy::type_complexity)]
     fn proxy_all_segments<'a>(
         segments_lock: RwLockUpgradableReadGuard<'a, SegmentHolder>,
-        shard_path: &Path,
+        segments_path: &Path,
         collection_params: Option<&CollectionParams>,
     ) -> OperationResult<(
         Vec<(SegmentId, LockedSegment)>,
@@ -753,7 +753,7 @@ impl<'s> SegmentHolder {
         };
 
         // Create temporary appendable segment to direct all proxy writes into
-        let tmp_segment = LockedSegment::new(build_segment(shard_path, &config, false)?);
+        let tmp_segment = LockedSegment::new(build_segment(segments_path, &config, false)?);
 
         // List all segments we want to snapshot
         let segment_ids = segments_lock.segment_ids();
@@ -936,14 +936,14 @@ impl<'s> SegmentHolder {
     /// Shortcuts at the first failing segment snapshot.
     pub fn snapshot_all_segments(
         segments: LockedSegmentHolder,
-        shard_path: &Path,
+        segments_path: &Path,
         collection_params: Option<&CollectionParams>,
         temp_dir: &Path,
         snapshot_dir_path: &Path,
     ) -> OperationResult<()> {
         // Snapshotting may take long-running read locks on segments blocking incoming writes, do
         // this through proxied segments to allow writes to continue.
-        Self::proxy_all_segments_and_apply(segments, shard_path, collection_params, |segment| {
+        Self::proxy_all_segments_and_apply(segments, segments_path, collection_params, |segment| {
             let read_segment = segment.read();
             read_segment.take_snapshot(temp_dir, snapshot_dir_path)?;
             Ok(())
