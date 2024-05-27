@@ -211,7 +211,7 @@ impl<T: PrimitiveVectorElement> SimpleMultiDenseVectorStorage<T> {
                 .extend_from_slice(vector.flattened_vectors);
         } else {
             // reset buffer record
-            record.vector.flattened_vectors.clear();
+            record.vector = TypedMultiDenseVector::placeholder(self.dim);
         }
 
         // Store updated record
