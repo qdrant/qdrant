@@ -148,12 +148,11 @@ impl LocalShard {
             }
             ScoringQuery::Vector(query_enum) => {
                 // create single search request for rescoring query
-                let point_ids = sources.into_iter().fold(HashSet::new(), |mut acc, source| {
-                    for scored_point in source {
-                        acc.insert(scored_point.id);
-                    }
-                    acc
-                });
+                let point_ids = sources
+                    .into_iter()
+                    .flatten()
+                    .map(|point| point.id)
+                    .collect::<HashSet<_>>();
 
                 // create filter for target point ids
                 let filter = Filter::new_must(segment::types::Condition::HasId(
