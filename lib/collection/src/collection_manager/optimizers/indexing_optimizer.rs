@@ -252,7 +252,7 @@ impl SegmentOptimizer for IndexingOptimizer {
         "indexing"
     }
 
-    fn collection_path(&self) -> &Path {
+    fn segments_path(&self) -> &Path {
         self.segments_path.as_path()
     }
 

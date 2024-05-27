@@ -223,7 +223,7 @@ impl SegmentOptimizer for ConfigMismatchOptimizer {
         "config mismatch"
     }
 
-    fn collection_path(&self) -> &Path {
+    fn segments_path(&self) -> &Path {
         self.segments_path.as_path()
     }
 
