@@ -156,8 +156,7 @@ impl VectorStorage for SimpleSparseVectorStorage {
     }
 
     fn available_size_in_bytes(&self) -> usize {
-        // multiply by 2 to account for indices & values
-        self.total_sparse_size * 2
+        self.total_sparse_size * (std::mem::size_of::<f32>() + std::mem::size_of::<u32>())
     }
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {
