@@ -5,7 +5,7 @@ pub mod pyro {
     use pyroscope::{PyroscopeAgent, PyroscopeError};
     use pyroscope_pprofrs::{pprof_backend, PprofConfig};
 
-    use crate::common::debug::PyroscopeConfig;
+    use crate::common::debugger::PyroscopeConfig;
 
     pub struct PyroscopeState {
         pub config: PyroscopeConfig,
@@ -80,7 +80,7 @@ pub mod pyro {
 
 #[cfg(not(target_os = "linux"))]
 pub mod pyro {
-    use crate::common::debug::PyroscopeConfig;
+    use crate::common::debugger::PyroscopeConfig;
 
     pub struct PyroscopeState {}
 

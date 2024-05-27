@@ -17,7 +17,7 @@ pub struct PyroscopeConfig {
 }
 
 #[derive(Default, Debug, Serialize, JsonSchema, Deserialize, Clone)]
-pub struct DebugConfig {
+pub struct DebuggerConfig {
     pub pyroscope: Option<PyroscopeConfig>,
 }
 
@@ -27,11 +27,11 @@ pub enum DebugConfigPatch {
     Pyroscope(Option<PyroscopeConfig>),
 }
 
-pub struct DebugState {
+pub struct DebuggerState {
     pub pyroscope: Arc<Mutex<Option<PyroscopeState>>>,
 }
 
-impl DebugState {
+impl DebuggerState {
     pub fn from_settings(settings: &Settings) -> Self {
         let pyroscope_config = settings.debugger.pyroscope.clone();
         Self {
@@ -39,7 +39,7 @@ impl DebugState {
         }
     }
 
-    pub fn get_config(&self) -> DebugConfig {
+    pub fn get_config(&self) -> DebuggerConfig {
         let pyroscope_config = {
             #[cfg(target_os = "linux")]
             {
@@ -52,7 +52,7 @@ impl DebugState {
             }
         };
 
-        DebugConfig {
+        DebuggerConfig {
             pyroscope: pyroscope_config,
         }
     }
