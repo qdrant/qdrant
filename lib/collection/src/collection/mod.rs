@@ -1,6 +1,7 @@
 mod collection_ops;
 pub mod payload_index_schema;
 mod point_ops;
+pub mod query;
 mod resharding;
 mod search;
 mod shard_transfer;

@@ -1,13 +1,15 @@
 use api::grpc::qdrant as grpc;
 use common::types::ScoreType;
 use itertools::Itertools;
-use segment::data_types::order_by::OrderBy;
+use segment::data_types::order_by::{Direction, OrderBy};
 use segment::data_types::vectors::{NamedQuery, NamedVectorStruct, Vector, DEFAULT_VECTOR_NAME};
-use segment::types::{Filter, ScoredPoint, SearchParams, WithPayloadInterface, WithVector};
+use segment::types::{Filter, Order, ScoredPoint, SearchParams, WithPayloadInterface, WithVector};
 use segment::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery};
 use tonic::Status;
 
+use crate::config::CollectionParams;
 use crate::operations::query_enum::QueryEnum;
+use crate::operations::types::CollectionResult;
 
 /// Internal response type for a universal query request.
 ///
@@ -64,6 +66,38 @@ impl ScoringQuery {
             ScoringQuery::Vector(query) => Some(query.get_vector_name()),
             _ => None,
         }
+    }
+
+    /// Return the order of results, depending on the type of query
+    pub fn order(
+        opt_self: Option<&Self>,
+        collection_params: &CollectionParams,
+    ) -> CollectionResult<Order> {
+        let order = match opt_self {
+            Some(scoring_query) => match scoring_query {
+                ScoringQuery::Vector(query_enum) => {
+                    if query_enum.is_distance_scored() {
+                        collection_params
+                            .get_distance(query_enum.get_vector_name())?
+                            .distance_order()
+                    } else {
+                        Order::LargeBetter
+                    }
+                }
+                ScoringQuery::Fusion(fusion) => match fusion {
+                    Fusion::Rrf => Order::LargeBetter,
+                },
+                ScoringQuery::OrderBy(order_by) => match order_by.direction() {
+                    Direction::Asc => Order::SmallBetter,
+                    Direction::Desc => Order::LargeBetter,
+                },
+            },
+            None => {
+                // Order by ID
+                Order::SmallBetter
+            }
+        };
+        Ok(order)
     }
 }
 
