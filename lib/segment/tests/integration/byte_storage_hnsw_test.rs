@@ -82,14 +82,14 @@ fn compare_search_result(result_a: &[Vec<ScoredPointOffset>], result_b: &[Vec<Sc
 }
 
 #[rstest]
-#[case::nearest(QueryVariant::Nearest, VectorStorageDatatype::Uint8, 32, 20)]
-#[case::nearest(QueryVariant::Nearest, VectorStorageDatatype::Float16, 32, 20)]
-#[case::discovery(QueryVariant::Discovery, VectorStorageDatatype::Uint8, 128, 30)]
+#[case::nearest(QueryVariant::Nearest, VectorStorageDatatype::Uint8, 32, 10)]
+#[case::nearest(QueryVariant::Nearest, VectorStorageDatatype::Float16, 32, 10)]
+#[case::discovery(QueryVariant::Discovery, VectorStorageDatatype::Uint8, 128, 20)]
 #[case::recommend(
     QueryVariant::RecommendBestScore,
     VectorStorageDatatype::Float16,
     64,
-    30
+    20
 )]
 fn test_byte_storage_hnsw(
     #[case] query_variant: QueryVariant,
@@ -107,7 +107,7 @@ fn test_byte_storage_hnsw(
     let num_vectors: u64 = 5_000;
     let ef_construct = 16;
     let distance = Distance::Cosine;
-    let full_scan_threshold = 16; // KB
+    let full_scan_threshold = 0;
     let num_payload_values = 2;
 
     let mut rnd = StdRng::seed_from_u64(42);
@@ -233,8 +233,8 @@ fn test_byte_storage_hnsw(
     for i in 0..attempts {
         let query = random_query(&query_variant, &mut rnd, dim);
 
-        let range_size = 160;
-        let left_range = rnd.gen_range(0..200);
+        let range_size = 40;
+        let left_range = rnd.gen_range(0..400);
         let right_range = left_range + range_size;
 
         let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(
