@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::mem;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -11,6 +12,7 @@ use tokio::runtime::Handle;
 
 use super::LocalShard;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
+use crate::operations::query_enum::QueryEnum;
 use crate::operations::types::{CollectionResult, CoreSearchRequest, CoreSearchRequestBatch};
 use crate::operations::universal_query::planned_query::{
     MergePlan, PlannedQuery, PrefetchSource, ResultsMerge,
@@ -25,19 +27,19 @@ impl LocalShard {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<ShardQueryResponse> {
-        let core_results = self
+        let mut core_results = self
             .do_search(request.searches, search_runtime_handle, timeout)
             .await?;
 
-        let scrolls = self
+        let mut scrolls = self
             .query_scroll_batch(request.scrolls, search_runtime_handle)
             .await?;
 
         let mut scored_points = self
             .recurse_prefetch(
                 request.merge_plan,
-                &core_results,
-                &scrolls,
+                &mut core_results,
+                &mut scrolls,
                 search_runtime_handle,
                 timeout,
                 0, // initial depth
@@ -76,8 +78,8 @@ impl LocalShard {
     fn recurse_prefetch<'shard, 'query>(
         &'shard self,
         prefetch: MergePlan,
-        core_results: &'query Vec<Vec<ScoredPoint>>,
-        scrolls: &'query Vec<Vec<ScoredPoint>>,
+        core_results: &'query mut Vec<Vec<ScoredPoint>>,
+        scrolls: &'query mut Vec<Vec<ScoredPoint>>,
         search_runtime_handle: &'shard Handle,
         timeout: Option<Duration>,
         depth: usize,
@@ -89,18 +91,16 @@ impl LocalShard {
             let mut sources: Vec<Vec<ScoredPoint>> = Vec::with_capacity(prefetch.sources.len());
 
             for source in prefetch.sources.into_iter() {
-                let vec: Vec<Vec<ScoredPoint>> = match source {
+                match source {
                     PrefetchSource::SearchesIdx(idx) => {
-                        // TODO(universal-query): don't clone, by using something like a hashmap instead of a vec
-                        let scored_searches = core_results.get(idx).cloned().unwrap_or_default();
-                        vec![scored_searches]
+                        debug_assert!(idx < core_results.len());
+                        sources.push(mem::take(&mut core_results[idx]));
                     }
                     PrefetchSource::ScrollsIdx(idx) => {
-                        // TODO(universal-query): don't clone, by using something like a hashmap instead of a vec
-                        let scrolled = scrolls.get(idx).cloned().unwrap_or_default();
-                        vec![scrolled]
+                        debug_assert!(idx < scrolls.len());
+                        sources.push(mem::take(&mut scrolls[idx]));
                     }
-                    PrefetchSource::Prefetch(prefetch) => {
+                    PrefetchSource::Prefetch(prefetch) => sources.extend(
                         self.recurse_prefetch(
                             prefetch,
                             core_results,
@@ -109,10 +109,9 @@ impl LocalShard {
                             timeout,
                             depth + 1,
                         )
-                        .await?
-                    }
+                        .await?,
+                    ),
                 };
-                sources.extend(vec);
             }
 
             if depth == 0 && prefetch.merge.rescore == Some(ScoringQuery::Fusion(Fusion::Rrf)) {
@@ -147,48 +146,62 @@ impl LocalShard {
                 todo!("order by not implemented yet for {:?}", o)
             }
             ScoringQuery::Vector(query_enum) => {
-                // create single search request for rescoring query
-                let point_ids = sources.into_iter().fold(HashSet::new(), |mut acc, source| {
-                    for scored_point in source {
-                        acc.insert(scored_point.id);
-                    }
+                self.vector_rescore(sources, query_enum, limit, search_runtime_handle, timeout)
+                    .await
+            }
+        }
+    }
+
+    async fn vector_rescore(
+        &self,
+        sources: Vec<Vec<ScoredPoint>>,
+        query_enum: QueryEnum,
+        limit: usize,
+        search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
+    ) -> Result<Vec<ScoredPoint>, crate::operations::types::CollectionError> {
+        // create single search request for rescoring query
+        let point_ids =
+            sources
+                .into_iter()
+                .flatten()
+                .fold(HashSet::new(), |mut acc, scored_point| {
+                    acc.insert(scored_point.id);
                     acc
                 });
 
-                // create filter for target point ids
-                let filter = Filter::new_must(segment::types::Condition::HasId(
-                    HasIdCondition::from(point_ids),
-                ));
+        // create filter for target point ids
+        let filter = Filter::new_must(segment::types::Condition::HasId(HasIdCondition::from(
+            point_ids,
+        )));
 
-                let search_request = CoreSearchRequest {
-                    query: query_enum,
-                    filter: Some(filter),
-                    params: None,
-                    limit,
-                    offset: 0,
-                    with_payload: None, // the payload is fetched separately
-                    with_vector: None,  // the vector is fetched separetely
-                    score_threshold: None,
-                };
+        let search_request = CoreSearchRequest {
+            query: query_enum,
+            filter: Some(filter),
+            params: None,
+            limit,
+            offset: 0,
+            with_payload: None, // the payload is fetched separately
+            with_vector: None,  // the vector is fetched separetely
+            score_threshold: None,
+        };
 
-                let rescoring_core_search_request = CoreSearchRequestBatch {
-                    searches: vec![search_request],
-                };
+        let rescoring_core_search_request = CoreSearchRequestBatch {
+            searches: vec![search_request],
+        };
 
-                let top = self
-                    .do_search(
-                        Arc::new(rescoring_core_search_request),
-                        search_runtime_handle,
-                        timeout,
-                    )
-                    .await?
-                    // One search request is sent. We expect only one result
-                    .pop()
-                    .unwrap_or_default();
+        let top = self
+            .do_search(
+                Arc::new(rescoring_core_search_request),
+                search_runtime_handle,
+                timeout,
+            )
+            .await?
+            // One search request is sent. We expect only one result
+            .pop()
+            .unwrap_or_default();
 
-                Ok(top)
-            }
-        }
+        Ok(top)
     }
 
     /// Merge multiple prefetches into a single result up to the limit.
