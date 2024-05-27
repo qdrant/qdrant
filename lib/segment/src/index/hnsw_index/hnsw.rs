@@ -94,12 +94,16 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         } else {
             let vector_storage = vector_storage.borrow();
             let available_vectors = vector_storage.available_vector_count();
-            let full_scan_threshold = if available_vectors > 0 {
-                hnsw_config.full_scan_threshold.saturating_mul(BYTES_IN_KB)
-                    / (vector_storage.available_size_in_bytes() / available_vectors)
-            } else {
-                1
-            };
+            let full_scan_threshold = vector_storage
+                .available_size_in_bytes()
+                .checked_div(available_vectors)
+                .and_then(|avg_vector_size| {
+                    hnsw_config
+                        .full_scan_threshold
+                        .saturating_mul(BYTES_IN_KB)
+                        .checked_div(avg_vector_size)
+                })
+                .unwrap_or(1);
 
             HnswGraphConfig::new(
                 hnsw_config.m,
