@@ -182,7 +182,7 @@ impl LocalShard {
             limit,
             offset: 0,
             with_payload: None, // the payload is fetched separately
-            with_vector: None,  // the vector is fetched separetely
+            with_vector: None,  // the vector is fetched separately
             score_threshold: None,
         };
 
