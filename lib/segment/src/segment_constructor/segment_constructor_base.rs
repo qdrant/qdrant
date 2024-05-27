@@ -505,7 +505,7 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option
 ///
 /// # Arguments
 ///
-/// * `shard_path` - Path to the collection shard. Segment folder will be created in this directory
+/// * `segments_path` - Path to the segments directory. Segment folder will be created in this directory
 /// * `config` - Segment configuration
 /// * `ready` - Whether the segment is ready after building; will save segment version
 ///
@@ -513,11 +513,11 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option
 /// will not be stored. Then the segment is skipped on restart when trying to load it again. In
 /// that case, the segment version must be stored manually to make it ready.
 pub fn build_segment(
-    shard_path: &Path,
+    segments_path: &Path,
     config: &SegmentConfig,
     ready: bool,
 ) -> OperationResult<Segment> {
-    let segment_path = shard_path.join(Uuid::new_v4().to_string());
+    let segment_path = segments_path.join(Uuid::new_v4().to_string());
 
     std::fs::create_dir_all(&segment_path)?;
 
