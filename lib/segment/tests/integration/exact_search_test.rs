@@ -13,6 +13,7 @@ use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::hnsw::HNSWIndex;
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::{PayloadIndex, VectorIndex};
+use segment::json_path::path;
 use segment::segment_constructor::build_segment;
 use segment::types::{
     Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload, PayloadSchemaType,
@@ -20,8 +21,6 @@ use segment::types::{
 };
 use serde_json::json;
 use tempfile::Builder;
-
-use crate::utils::path;
 
 #[test]
 fn exact_search_test() {
@@ -51,7 +50,7 @@ fn exact_search_test() {
                 storage_type: VectorStorageType::Memory,
                 index: Indexes::Plain {},
                 quantization_config: None,
-                multi_vec_config: None,
+                multivec_config: None,
                 datatype: None,
             },
         )]),
@@ -163,14 +162,13 @@ fn exact_search_test() {
                     exact: true,
                     ..Default::default()
                 }),
-                &false.into(),
-                usize::MAX,
+                &Default::default(),
             )
             .unwrap();
         let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(&[&query], None, top, None, &false.into(), usize::MAX)
+            .search(&[&query], None, top, None, &Default::default())
             .unwrap();
 
         assert_eq!(
@@ -203,21 +201,13 @@ fn exact_search_test() {
                     exact: true,
                     ..Default::default()
                 }),
-                &false.into(),
-                usize::MAX,
+                &Default::default(),
             )
             .unwrap();
         let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(
-                &[&query],
-                filter_query,
-                top,
-                None,
-                &false.into(),
-                usize::MAX,
-            )
+            .search(&[&query], filter_query, top, None, &Default::default())
             .unwrap();
 
         assert_eq!(

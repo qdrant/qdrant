@@ -1,19 +1,21 @@
 use std::cmp::{max, min, Ordering};
+use std::ops::ControlFlow;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 
 use common::top_k::TopK;
 use common::types::{PointOffsetType, ScoredPointOffset};
 
+use super::posting_list_common::PostingListIter;
 use crate::common::scores_memory_pool::PooledScoresHandle;
-use crate::common::sparse_vector::SparseVector;
+use crate::common::sparse_vector::RemappedSparseVector;
 use crate::common::types::{DimId, DimWeight};
 use crate::index::inverted_index::InvertedIndex;
 use crate::index::posting_list::PostingListIterator;
 
 /// Iterator over posting lists with a reference to the corresponding query index and weight
-pub struct IndexedPostingListIterator<'a> {
-    posting_list_iterator: PostingListIterator<'a>,
+pub struct IndexedPostingListIterator<T: PostingListIter> {
+    posting_list_iterator: T,
     query_index: DimId,
     query_weight: DimWeight,
 }
@@ -21,9 +23,9 @@ pub struct IndexedPostingListIterator<'a> {
 /// Making this larger makes the search faster but uses more (pooled) memory
 const ADVANCE_BATCH_SIZE: usize = 10_000;
 
-pub struct SearchContext<'a, 'b> {
-    postings_iterators: Vec<IndexedPostingListIterator<'a>>,
-    query: SparseVector,
+pub struct SearchContext<'a, 'b, T: PostingListIter = PostingListIterator<'a>> {
+    postings_iterators: Vec<IndexedPostingListIterator<T>>,
+    query: RemappedSparseVector,
     top: usize,
     is_stopped: &'a AtomicBool,
     top_results: TopK,
@@ -33,29 +35,28 @@ pub struct SearchContext<'a, 'b> {
     use_pruning: bool,
 }
 
-impl<'a, 'b> SearchContext<'a, 'b> {
+impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
     pub fn new(
-        query: SparseVector,
+        query: RemappedSparseVector,
         top: usize,
-        inverted_index: &'a impl InvertedIndex,
+        inverted_index: &'a impl InvertedIndex<Iter<'a> = T>,
         pooled: PooledScoresHandle<'b>,
         is_stopped: &'a AtomicBool,
-    ) -> SearchContext<'a, 'b> {
+    ) -> SearchContext<'a, 'b, T> {
         let mut postings_iterators = Vec::new();
         // track min and max record ids across all posting lists
         let mut max_record_id = 0;
         let mut min_record_id = u32::MAX;
         // iterate over query indices
         for (query_weight_offset, id) in query.indices.iter().enumerate() {
-            if let Some(posting_list_iterator) = inverted_index.get(id) {
-                let posting_elements = posting_list_iterator.elements;
-                if !posting_elements.is_empty() {
+            if let Some(mut it) = inverted_index.get(id) {
+                if let (Some(first), Some(last_id)) = (it.peek(), it.last_id()) {
                     // check if new min
-                    let min_record_id_posting = posting_elements[0].record_id;
+                    let min_record_id_posting = first.record_id;
                     min_record_id = min(min_record_id, min_record_id_posting);
 
                     // check if new max
-                    let max_record_id_posting = posting_elements.last().unwrap().record_id;
+                    let max_record_id_posting = last_id;
                     max_record_id = max(max_record_id, max_record_id_posting);
 
                     // capture query info
@@ -63,7 +64,7 @@ impl<'a, 'b> SearchContext<'a, 'b> {
                     let query_weight = query.values[query_weight_offset];
 
                     postings_iterators.push(IndexedPostingListIterator {
-                        posting_list_iterator,
+                        posting_list_iterator: it,
                         query_index,
                         query_weight,
                     });
@@ -74,7 +75,7 @@ impl<'a, 'b> SearchContext<'a, 'b> {
         // Query vectors with negative values can NOT use the pruning mechanism which relies on the pre-computed `max_next_weight`.
         // The max contribution per posting list that we calculate is not made to compute the max value of two negative numbers.
         // This is a limitation of the current pruning implementation.
-        let use_pruning = query.values.iter().all(|v| *v >= 0.0);
+        let use_pruning = T::reliable_max_next_weight() && query.values.iter().all(|v| *v >= 0.0);
         let min_record_id = Some(min_record_id);
         SearchContext {
             postings_iterators,
@@ -116,7 +117,7 @@ impl<'a, 'b> SearchContext<'a, 'b> {
                 }
             }
             // reconstruct sparse vector and score against query
-            let sparse_vector = SparseVector { indices, values };
+            let sparse_vector = RemappedSparseVector { indices, values };
             self.top_results.push(ScoredPointOffset {
                 score: sparse_vector.score(&self.query).unwrap_or(0.0),
                 idx: id,
@@ -139,36 +140,19 @@ impl<'a, 'b> SearchContext<'a, 'b> {
         self.pooled.scores.resize(batch_len as usize, 0.0);
 
         for posting in self.postings_iterators.iter_mut() {
-            // offset at which the posting list stops contributing to the batch (relative to the batch start)
-            let mut posting_stopped_at = None;
-            for (offset, element) in posting
-                .posting_list_iterator
-                .remaining_elements()
-                .iter()
-                .enumerate()
-            {
+            posting.posting_list_iterator.try_for_each(|element| {
                 let element_id = element.record_id;
                 if element_id > batch_last_id {
                     // reaching end of the batch
-                    posting_stopped_at = Some(offset);
-                    break;
+                    ControlFlow::Break(())
+                } else {
+                    let element_score = element.weight * posting.query_weight;
+                    // update score for id
+                    let local_id = (element_id - batch_start_id) as usize;
+                    self.pooled.scores[local_id] += element_score;
+                    ControlFlow::Continue(())
                 }
-                let element_score = element.weight * posting.query_weight;
-                // update score for id
-                let local_id = (element_id - batch_start_id) as usize;
-                self.pooled.scores[local_id] += element_score;
-            }
-            // advance posting list iterator
-            match posting_stopped_at {
-                None => {
-                    // posting list is exhausted before reaching the end of the batch
-                    posting.posting_list_iterator.skip_to_end();
-                }
-                Some(stopped_at) => {
-                    // posting list is not exhausted - advance to last id
-                    posting.posting_list_iterator.advance_by(stopped_at)
-                }
-            };
+            });
         }
 
         for (local_index, &score) in self.pooled.scores.iter().enumerate() {
@@ -191,28 +175,29 @@ impl<'a, 'b> SearchContext<'a, 'b> {
     /// Compute scores for the last posting list quickly
     fn process_last_posting_list<F: Fn(PointOffsetType) -> bool>(&mut self, filter_condition: &F) {
         debug_assert_eq!(self.postings_iterators.len(), 1);
-        let posting = &self.postings_iterators[0];
-        for element in posting.posting_list_iterator.remaining_elements() {
+        let posting = &mut self.postings_iterators[0];
+        posting.posting_list_iterator.try_for_each(|element| {
             // do not score if filter condition is not satisfied
             if !filter_condition(element.record_id) {
-                continue;
+                return ControlFlow::Continue(());
             }
             let score = element.weight * posting.query_weight;
             self.top_results.push(ScoredPointOffset {
                 score,
                 idx: element.record_id,
             });
-        }
+            ControlFlow::<()>::Continue(())
+        });
     }
 
     /// Returns the next min record id from all posting list iterators
     ///
     /// returns None if all posting list iterators are exhausted
-    fn next_min_id(to_inspect: &[IndexedPostingListIterator<'_>]) -> Option<PointOffsetType> {
+    fn next_min_id(to_inspect: &mut [IndexedPostingListIterator<T>]) -> Option<PointOffsetType> {
         let mut min_record_id = None;
 
         // Iterate to find min record id at the head of the posting lists
-        for posting_iterator in to_inspect.iter() {
+        for posting_iterator in to_inspect.iter_mut() {
             if let Some(next_element) = posting_iterator.posting_list_iterator.peek() {
                 match min_record_id {
                     None => min_record_id = Some(next_element.record_id), // first record with matching id
@@ -288,7 +273,7 @@ impl<'a, 'b> SearchContext<'a, 'b> {
             });
 
             // update min_record_id
-            self.min_record_id = Self::next_min_id(&self.postings_iterators);
+            self.min_record_id = Self::next_min_id(&mut self.postings_iterators);
 
             // check if all posting lists are exhausted
             if self.postings_iterators.is_empty() {
@@ -318,7 +303,7 @@ impl<'a, 'b> SearchContext<'a, 'b> {
                 let pruned = self.prune_longest_posting_list(new_min_score);
                 if pruned {
                     // update min_record_id
-                    self.min_record_id = Self::next_min_id(&self.postings_iterators);
+                    self.min_record_id = Self::next_min_id(&mut self.postings_iterators);
                 }
             }
         }
@@ -335,9 +320,10 @@ impl<'a, 'b> SearchContext<'a, 'b> {
             return false;
         }
         // peek first element of longest posting list
-        let longest_posting_iterator = &self.postings_iterators[0];
+        let (longest_posting_iterator, rest_iterators) = self.postings_iterators.split_at_mut(1);
+        let longest_posting_iterator = &mut longest_posting_iterator[0];
         if let Some(element) = longest_posting_iterator.posting_list_iterator.peek() {
-            let next_min_id_in_others = Self::next_min_id(&self.postings_iterators[1..]);
+            let next_min_id_in_others = Self::next_min_id(rest_iterators);
             match next_min_id_in_others {
                 Some(next_min_id) => {
                     match next_min_id.cmp(&element.record_id) {
@@ -363,9 +349,10 @@ impl<'a, 'b> SearchContext<'a, 'b> {
                                 let longest_posting_iterator =
                                     &mut self.postings_iterators[0].posting_list_iterator;
                                 let position_before_pruning =
-                                    longest_posting_iterator.current_index;
+                                    longest_posting_iterator.current_index();
                                 longest_posting_iterator.skip_to(next_min_id);
-                                let position_after_pruning = longest_posting_iterator.current_index;
+                                let position_after_pruning =
+                                    longest_posting_iterator.current_index();
                                 // check if pruning took place
                                 return position_before_pruning != position_after_pruning;
                             }
@@ -400,6 +387,7 @@ mod tests {
 
     use super::*;
     use crate::common::scores_memory_pool::ScoresMemoryPool;
+    use crate::common::sparse_vector::SparseVector;
     use crate::common::sparse_vector_fixture::random_sparse_vector;
     use crate::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
     use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
@@ -418,7 +406,7 @@ mod tests {
         let is_stopped = AtomicBool::new(false);
         let index = InvertedIndexRam::empty();
         let mut search_context = SearchContext::new(
-            SparseVector::default(), // empty query vector
+            RemappedSparseVector::default(), // empty query vector
             10,
             &index,
             get_pooled_scores(),
@@ -435,7 +423,7 @@ mod tests {
     fn _search_test(inverted_index: &impl InvertedIndex) {
         let is_stopped = AtomicBool::new(false);
         let mut search_context = SearchContext::new(
-            SparseVector {
+            RemappedSparseVector {
                 indices: vec![1, 2, 3],
                 values: vec![1.0, 1.0, 1.0],
             },
@@ -495,7 +483,7 @@ mod tests {
         let mut inverted_index_ram = builder.build();
 
         let mut search_context = SearchContext::new(
-            SparseVector {
+            RemappedSparseVector {
                 indices: vec![1, 2, 3],
                 values: vec![1.0, 1.0, 1.0],
             },
@@ -526,13 +514,13 @@ mod tests {
         // update index with new point
         inverted_index_ram.upsert(
             4,
-            SparseVector {
+            RemappedSparseVector {
                 indices: vec![1, 2, 3],
                 values: vec![40.0, 40.0, 40.0],
             },
         );
         let mut search_context = SearchContext::new(
-            SparseVector {
+            RemappedSparseVector {
                 indices: vec![1, 2, 3],
                 values: vec![1.0, 1.0, 1.0],
             },
@@ -568,7 +556,7 @@ mod tests {
     fn _search_with_hot_key_test(inverted_index: &impl InvertedIndex) {
         let is_stopped = AtomicBool::new(false);
         let mut search_context = SearchContext::new(
-            SparseVector {
+            RemappedSparseVector {
                 indices: vec![1, 2, 3],
                 values: vec![1.0, 1.0, 1.0],
             },
@@ -597,7 +585,7 @@ mod tests {
         );
 
         let mut search_context = SearchContext::new(
-            SparseVector {
+            RemappedSparseVector {
                 indices: vec![1, 2, 3],
                 values: vec![1.0, 1.0, 1.0],
             },
@@ -664,7 +652,7 @@ mod tests {
 
         let is_stopped = AtomicBool::new(false);
         let mut search_context = SearchContext::new(
-            SparseVector {
+            RemappedSparseVector {
                 indices: vec![1, 2, 3],
                 values: vec![1.0, 1.0, 1.0],
             },
@@ -698,7 +686,7 @@ mod tests {
 
         let is_stopped = AtomicBool::new(false);
         let mut search_context = SearchContext::new(
-            SparseVector {
+            RemappedSparseVector {
                 indices: vec![1, 2, 3],
                 values: vec![1.0, 1.0, 1.0],
             },
@@ -733,7 +721,7 @@ mod tests {
 
         let is_stopped = AtomicBool::new(false);
         let mut search_context = SearchContext::new(
-            SparseVector {
+            RemappedSparseVector {
                 indices: vec![1, 2, 3],
                 values: vec![1.0, 1.0, 1.0],
             },
@@ -766,7 +754,9 @@ mod tests {
         let mut inverted_index_ram = InvertedIndexRam::empty();
 
         for i in 1..=num_vectors {
-            let vector = random_sparse_vector(rnd_gen, max_sparse_dimension);
+            let SparseVector { indices, values } =
+                random_sparse_vector(rnd_gen, max_sparse_dimension);
+            let vector = RemappedSparseVector::new(indices, values).unwrap();
             inverted_index_ram.upsert(i, vector);
         }
         inverted_index_ram
@@ -782,7 +772,7 @@ mod tests {
         let inverted_index_ram = builder.build();
 
         let mut search_context = SearchContext::new(
-            SparseVector {
+            RemappedSparseVector {
                 indices: vec![1, 2, 3],
                 values: vec![1.0, 1.0, 1.0],
             },
@@ -819,7 +809,7 @@ mod tests {
         let inverted_index_ram = builder.build();
 
         let mut search_context = SearchContext::new(
-            SparseVector {
+            RemappedSparseVector {
                 indices: vec![1, 2, 3],
                 values: vec![1.0, 1.0, 1.0],
             },
@@ -860,7 +850,7 @@ mod tests {
 
         // query vector has a gap for dimension 2
         let mut search_context = SearchContext::new(
-            SparseVector {
+            RemappedSparseVector {
                 indices: vec![1, 3],
                 values: vec![1.0, 1.0],
             },

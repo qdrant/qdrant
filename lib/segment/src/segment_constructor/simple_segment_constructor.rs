@@ -29,7 +29,7 @@ pub fn build_simple_segment(
                     storage_type: VectorStorageType::Memory,
                     index: Indexes::Plain {},
                     quantization_config: None,
-                    multi_vec_config: None,
+                    multivec_config: None,
                     datatype: None,
                 },
             )]),
@@ -55,7 +55,7 @@ pub fn build_multivec_segment(
             storage_type: VectorStorageType::Memory,
             index: Indexes::Plain {},
             quantization_config: None,
-            multi_vec_config: None,
+            multivec_config: None,
             datatype: None,
         },
     );
@@ -67,7 +67,7 @@ pub fn build_multivec_segment(
             storage_type: VectorStorageType::Memory,
             index: Indexes::Plain {},
             quantization_config: None,
-            multi_vec_config: None,
+            multivec_config: None,
             datatype: None,
         },
     );
@@ -114,7 +114,7 @@ mod tests {
         let vec5 = vec![1.0, 0.0, 0.0, 0.0];
 
         match segment.upsert_point(1, 120.into(), only_default_vector(&wrong_vec)) {
-            Err(OperationError::WrongVector { .. }) => (),
+            Err(OperationError::WrongVectorDimension { .. }) => (),
             Err(_) => panic!("Wrong error"),
             Ok(_) => panic!("Operation with wrong vector should fail"),
         };

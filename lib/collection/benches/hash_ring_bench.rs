@@ -1,15 +1,15 @@
 #[cfg(not(target_os = "windows"))]
 mod prof;
 
-use collection::hash_ring::HashRing;
+use collection::hash_ring::Inner;
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::Rng;
 
 fn hash_ring_bench(c: &mut Criterion) {
     let mut group = c.benchmark_group("hash-ring-bench");
 
-    let mut ring_raw = HashRing::raw();
-    let mut ring_fair = HashRing::fair(100);
+    let mut ring_raw = Inner::raw();
+    let mut ring_fair = Inner::fair(100);
 
     // add 10 shards to ring
     for i in 0..10 {

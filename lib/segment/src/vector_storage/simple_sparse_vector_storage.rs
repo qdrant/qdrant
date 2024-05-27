@@ -176,7 +176,9 @@ impl VectorStorage for SimpleSparseVectorStorage {
     }
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {
-        self.get_vector_opt(key).expect("Vector must exist")
+        let vector = self.get_vector_opt(key);
+        debug_assert!(vector.is_some());
+        vector.unwrap_or_else(CowVector::default_sparse)
     }
 
     fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {

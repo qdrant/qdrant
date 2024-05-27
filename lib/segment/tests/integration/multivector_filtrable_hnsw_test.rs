@@ -15,19 +15,17 @@ use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::hnsw::HNSWIndex;
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::{PayloadIndex, VectorIndex};
+use segment::json_path::path;
 use segment::segment_constructor::build_segment;
 use segment::types::{
     Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, MultiVectorConfig, Payload,
     PayloadSchemaType, Range, SearchParams, SegmentConfig, SeqNumberType, VectorDataConfig,
     VectorStorageType,
 };
-use segment::vector_storage::query::context_query::ContextPair;
-use segment::vector_storage::query::discovery_query::DiscoveryQuery;
-use segment::vector_storage::query::reco_query::RecoQuery;
+use segment::vector_storage::query::{ContextPair, DiscoveryQuery, RecoQuery};
+use segment::vector_storage::VectorStorage;
 use serde_json::json;
 use tempfile::Builder;
-
-use crate::utils::path;
 
 const MAX_EXAMPLE_PAIRS: usize = 4;
 
@@ -129,7 +127,7 @@ fn test_multi_filterable_hnsw(
                 storage_type: VectorStorageType::Memory,
                 index: Indexes::Plain {}, // uses plain index for comparison
                 quantization_config: None,
-                multi_vec_config: Some(MultiVectorConfig::default()), // uses multivec config
+                multivec_config: Some(MultiVectorConfig::default()), // uses multivec config
                 datatype: None,
             },
         )]),
@@ -157,6 +155,13 @@ fn test_multi_filterable_hnsw(
             .set_full_payload(n as SeqNumberType, idx, &payload)
             .unwrap();
     }
+    assert_eq!(
+        segment.vector_data[DEFAULT_VECTOR_NAME]
+            .vector_storage
+            .borrow()
+            .total_vector_count(),
+        num_points as usize
+    );
 
     let payload_index_ptr = segment.payload_index.clone();
 
@@ -227,8 +232,7 @@ fn test_multi_filterable_hnsw(
                     hnsw_ef: Some(ef),
                     ..Default::default()
                 }),
-                &false.into(),
-                usize::MAX,
+                &Default::default(),
             )
             .unwrap();
 
@@ -245,14 +249,7 @@ fn test_multi_filterable_hnsw(
         let plain_result = segment.vector_data[DEFAULT_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(
-                &[&query],
-                filter_query,
-                top,
-                None,
-                &false.into(),
-                usize::MAX,
-            )
+            .search(&[&query], filter_query, top, None, &Default::default())
             .unwrap();
 
         if plain_result == index_result {

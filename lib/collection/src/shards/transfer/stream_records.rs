@@ -8,7 +8,7 @@ use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_holder::LockedShardHolder;
 
-const TRANSFER_BATCH_SIZE: usize = 100;
+pub(super) const TRANSFER_BATCH_SIZE: usize = 100;
 
 /// Orchestrate shard transfer by streaming records
 ///
@@ -77,7 +77,7 @@ pub(super) async fn transfer_stream_records(
         };
 
         offset = replica_set
-            .transfer_batch(offset, TRANSFER_BATCH_SIZE)
+            .transfer_batch(offset, TRANSFER_BATCH_SIZE, None)
             .await?;
 
         {

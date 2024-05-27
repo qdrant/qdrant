@@ -1,6 +1,6 @@
 [package]
 name = "qdrant"
-version = "1.9.1-dev"
+version = "1.9.3-dev"
 authors = [
     "Andrey Vasnetsov <andrey@vasnetsov.com>",
     "Qdrant Team <info@qdrant.tech>",
@@ -53,8 +53,8 @@ serde_json = { workspace = true }
 chrono = { workspace = true }
 rand = "0.8.5"
 schemars = { workspace = true }
-itertools = "0.12"
-anyhow = "1.0.82"
+itertools = { workspace = true }
+anyhow = "1.0.86"
 futures = { workspace = true }
 futures-util = { workspace = true }
 clap = { version = "4.5.4", features = ["derive"] }
@@ -69,7 +69,7 @@ tokio = { workspace = true }
 
 actix-cors = "0.7.0"
 actix-files = "0.6.5"
-actix-web = { version = "4.5.1", optional = true, features = ["rustls-0_22", "actix-tls"] }
+actix-web = { version = "4.6.0", optional = true, features = ["rustls-0_23", "actix-tls"] }
 actix-web-validator = "5.0.1"
 tonic = { workspace = true }
 tonic-reflection = { workspace = true }
@@ -77,10 +77,10 @@ tower = { version = "0.4.13" }
 tower-layer = "0.3.2"
 reqwest = { workspace = true }
 # rustls minor version must be synced with actix-web
-rustls = "0.22.4"
-rustls-pki-types = "1.4.1"
+rustls = { version = "0.23.7", default-features = false, features = [ "logging", "std", "tls12", "ring"] }
+rustls-pki-types = "1.7.0"
 rustls-pemfile = "2.1.2"
-prometheus = { version = "0.13.3", default-features = false }
+prometheus = { version = "0.13.4", default-features = false }
 validator = { workspace = true }
 jsonwebtoken = "9.3.0"
 
@@ -123,11 +123,14 @@ fnv = "1.0"
 futures = "0.3.30"
 futures-util = "0.3.30"
 indexmap = { version = "2", features = ["serde"] }
-parking_lot = { version = "0.12.1", features = ["deadlock_detection", "serde"] }
+indicatif = "0.17.8"
+itertools = "0.12"
+parking_lot = { version = "0.12.2", features = ["deadlock_detection", "serde"] }
+pprof = { version = "0.12", features = ["flamegraph", "prost-codec"] }
 prost = "0.11.9"
 prost-wkt-types = "0.4.2"
 reqwest = { version = "0.12.4", default-features = false, features = ["http2", "stream", "rustls-tls", "blocking"] }
-schemars = { version = "0.8.16", features = ["uuid1", "preserve_order", "chrono", "url", "indexmap2"] }
+schemars = { version = "0.8.20", features = ["uuid1", "preserve_order", "chrono", "url", "indexmap2"] }
 semver = { version = "1.0", features = ["serde"] }
 serde = { version = "~1.0", features = ["derive", "rc"] }
 serde_cbor = { version = "0.11.2" }
@@ -180,6 +183,7 @@ opt-level = 0
 [profile.bench]
 lto = false
 debug = true
+codegen-units = 256 # restore default value for faster compilation
 
 # Profile for performance testing, which is faster to build than release.
 [profile.perf]

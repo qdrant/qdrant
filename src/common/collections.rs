@@ -20,8 +20,8 @@ use itertools::Itertools;
 use rand::prelude::SliceRandom;
 use storage::content_manager::collection_meta_ops::ShardTransferOperations::{Abort, Start};
 use storage::content_manager::collection_meta_ops::{
-    CollectionMetaOperations, CreateShardKey, DropShardKey, ShardTransferOperations,
-    UpdateCollectionOperation,
+    CollectionMetaOperations, CreateShardKey, DropShardKey, ReshardingOperation,
+    ShardTransferOperations, UpdateCollectionOperation,
 };
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
@@ -259,6 +259,7 @@ pub async fn do_update_collection_cluster(
                         collection_name,
                         Start(ShardTransfer {
                             shard_id: move_shard.shard_id,
+                            to_shard_id: None,
                             to: move_shard.to_peer_id,
                             from: move_shard.from_peer_id,
                             sync: false,
@@ -294,6 +295,7 @@ pub async fn do_update_collection_cluster(
                         collection_name,
                         Start(ShardTransfer {
                             shard_id: replicate_shard.shard_id,
+                            to_shard_id: None,
                             to: replicate_shard.to_peer_id,
                             from: replicate_shard.from_peer_id,
                             sync: true,
@@ -506,6 +508,67 @@ pub async fn do_update_collection_cluster(
                             from: from_peer_id,
                             method,
                         }),
+                    ),
+                    access,
+                    wait_timeout,
+                )
+                .await
+        }
+        ClusterOperations::StartResharding(op) => {
+            let peer_id = match op.peer_id {
+                Some(peer_id) => {
+                    validate_peer_exists(peer_id)?;
+                    peer_id
+                }
+
+                None => {
+                    // TODO(resharding): Select `peer_id` for resharding in a more reasonable way!?
+                    consensus_state
+                        .persistent
+                        .read()
+                        .peer_address_by_id
+                        .read()
+                        .keys()
+                        .copied()
+                        .next()
+                        .unwrap()
+                }
+            };
+
+            let collection_state = collection.state().await;
+
+            // TODO(resharding): Select `shard_id` for resharding in a more reasonable way?..
+            let shard_id = collection_state
+                .shards
+                .keys()
+                .copied()
+                .max()
+                .map_or(0, |id| id + 1);
+
+            if let Some(shard_key) = &op.shard_key {
+                if !collection_state.shards_key_mapping.contains_key(shard_key) {
+                    return Err(StorageError::bad_request(format!(
+                        "sharding key {shard_key} does not exists for collection {collection_name}"
+                    )));
+                }
+            }
+
+            if let Some(resharding) = &collection_state.resharding {
+                return Err(StorageError::bad_request(format!(
+                    "resharding {resharding:?} is already in progress \
+                     for collection {collection_name}"
+                )));
+            }
+
+            dispatcher
+                .submit_collection_meta_op(
+                    CollectionMetaOperations::Resharding(
+                        collection_name.clone(),
+                        ReshardingOperation::Start {
+                            peer_id,
+                            shard_id,
+                            shard_key: op.shard_key,
+                        },
                     ),
                     access,
                     wait_timeout,

@@ -9,15 +9,12 @@ use super::quantized_vectors::QuantizedVectorStorage;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
-    DenseVector, QueryVector, VectorElementType, VectorElementTypeByte,
+    DenseVector, QueryVector, VectorElementType, VectorElementTypeByte, VectorElementTypeHalf,
 };
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::{Distance, QuantizationConfig, VectorStorageDatatype};
-use crate::vector_storage::query::context_query::ContextQuery;
-use crate::vector_storage::query::discovery_query::DiscoveryQuery;
-use crate::vector_storage::query::reco_query::RecoQuery;
-use crate::vector_storage::query::TransformInto;
+use crate::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery, TransformInto};
 use crate::vector_storage::{raw_scorer_from_query_scorer, RawScorer};
 
 pub(super) struct QuantizedScorerBuilder<'a> {
@@ -75,12 +72,22 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     self.build_with_metric::<VectorElementTypeByte, ManhattanMetric>()
                 }
             },
+            VectorStorageDatatype::Float16 => match self.distance {
+                Distance::Cosine => self.build_with_metric::<VectorElementTypeHalf, CosineMetric>(),
+                Distance::Euclid => self.build_with_metric::<VectorElementTypeHalf, EuclidMetric>(),
+                Distance::Dot => {
+                    self.build_with_metric::<VectorElementTypeHalf, DotProductMetric>()
+                }
+                Distance::Manhattan => {
+                    self.build_with_metric::<VectorElementTypeHalf, ManhattanMetric>()
+                }
+            },
         }
     }
 
     pub fn build_with_metric<TElement, TMetric>(self) -> OperationResult<Box<dyn RawScorer + 'a>>
     where
-        TElement: PrimitiveVectorElement + 'a,
+        TElement: PrimitiveVectorElement,
         TMetric: Metric<TElement> + 'a,
     {
         match self.quantized_storage {
@@ -111,7 +118,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
         quantized_storage: &'a impl EncodedVectors<TEncodedQuery>,
     ) -> OperationResult<Box<dyn RawScorer + 'a>>
     where
-        TElement: PrimitiveVectorElement + 'a,
+        TElement: PrimitiveVectorElement,
         TMetric: Metric<TElement> + 'a,
         TEncodedQuery: 'a,
     {
@@ -137,7 +144,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
             }
             QueryVector::Recommend(reco_query) => {
                 let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
-                let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _, _, _>::new(
+                let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _, _>::new(
                     reco_query,
                     quantized_storage,
                     quantization_config,
@@ -147,7 +154,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
             QueryVector::Discovery(discovery_query) => {
                 let discovery_query: DiscoveryQuery<DenseVector> =
                     discovery_query.transform_into()?;
-                let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _, _, _>::new(
+                let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _, _>::new(
                     discovery_query,
                     quantized_storage,
                     quantization_config,
@@ -156,7 +163,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
             }
             QueryVector::Context(context_query) => {
                 let context_query: ContextQuery<DenseVector> = context_query.transform_into()?;
-                let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _, _, _>::new(
+                let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _, _>::new(
                     context_query,
                     quantized_storage,
                     quantization_config,

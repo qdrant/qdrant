@@ -617,7 +617,7 @@ impl ShardReplicaSet {
         }
 
         for (peer_id, state) in replicas {
-            let peer_already_exists = old_peers.get(&peer_id).is_some();
+            let peer_already_exists = old_peers.contains_key(&peer_id);
 
             if peer_already_exists {
                 // do nothing
@@ -644,11 +644,13 @@ impl ShardReplicaSet {
                         self.set_local(local_shard, Some(state)).await?;
                         self.notify_peer_failure(peer_id);
                     }
+
                     ReplicaState::Dead
                     | ReplicaState::Partial
                     | ReplicaState::Initializing
                     | ReplicaState::PartialSnapshot
-                    | ReplicaState::Recovery => {
+                    | ReplicaState::Recovery
+                    | ReplicaState::Resharding => {
                         self.set_local(local_shard, Some(state)).await?;
                     }
                 }
@@ -848,8 +850,8 @@ impl ShardReplicaSet {
         local_shard.update_cutoff(cutoff).await
     }
 
-    pub(crate) fn get_snapshots_storage_manager(&self) -> SnapshotStorageManager {
-        SnapshotStorageManager::new(self.shared_storage_config.s3_config.clone())
+    pub(crate) fn get_snapshots_storage_manager(&self) -> CollectionResult<SnapshotStorageManager> {
+        SnapshotStorageManager::new(self.shared_storage_config.snapshots_config.clone())
     }
 }
 
@@ -920,6 +922,9 @@ pub enum ReplicaState {
     // Shard is undergoing recovery by an external node
     // Normally rejects updates, accepts updates if force is true
     Recovery,
+    // Points are being migrated to this shard as part of resharding
+    #[schemars(skip)]
+    Resharding,
 }
 
 impl ReplicaState {
@@ -933,7 +938,8 @@ impl ReplicaState {
             | ReplicaState::Initializing
             | ReplicaState::Partial
             | ReplicaState::PartialSnapshot
-            | ReplicaState::Recovery => false,
+            | ReplicaState::Recovery
+            | ReplicaState::Resharding => false,
         }
     }
 
@@ -941,7 +947,10 @@ impl ReplicaState {
     pub fn is_partial_or_recovery(self) -> bool {
         // Use explicit match, to catch future changes to `ReplicaState`
         match self {
-            ReplicaState::Partial | ReplicaState::PartialSnapshot | ReplicaState::Recovery => true,
+            ReplicaState::Partial
+            | ReplicaState::PartialSnapshot
+            | ReplicaState::Recovery
+            | ReplicaState::Resharding => true,
 
             ReplicaState::Active
             | ReplicaState::Dead

@@ -18,19 +18,20 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
 use smol_str::SmolStr;
+use strum::EnumIter;
 use uuid::Uuid;
 use validator::{Validate, ValidationError, ValidationErrors};
 
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::common::utils::{self, MultiValue};
+use crate::common::utils::{self, MaybeOneOrMany, MultiValue};
 use crate::data_types::integer_index::IntegerIndexParams;
+use crate::data_types::order_by::OrderValue;
 use crate::data_types::text_index::TextIndexParams;
 use crate::data_types::vectors::{VectorElementType, VectorStruct};
-use crate::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
+use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
 use crate::json_path::{JsonPath, JsonPathInterface};
 use crate::spaces::metric::MetricPostProcessing;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
-use crate::types::MultiVectorConfig::MaxSim;
 use crate::vector_storage::simple_sparse_vector_storage::SPARSE_VECTOR_DISTANCE;
 
 pub type PayloadKeyType = JsonPath;
@@ -211,13 +212,21 @@ pub struct ScoredPoint {
     pub vector: Option<VectorStruct>,
     /// Shard Key
     pub shard_key: Option<ShardKey>,
+    /// Order-by value
+    pub order_value: Option<OrderValue>,
 }
 
 impl Eq for ScoredPoint {}
 
 impl Ord for ScoredPoint {
+    /// Compare two scored points by score, unless they have `order_value`, in that case compare by `order_value`.
     fn cmp(&self, other: &Self) -> Ordering {
-        OrderedFloat(self.score).cmp(&OrderedFloat(other.score))
+        match (&self.order_value, &other.order_value) {
+            (None, None) => OrderedFloat(self.score).cmp(&OrderedFloat(other.score)),
+            (Some(_), None) => Ordering::Greater,
+            (None, Some(_)) => Ordering::Less,
+            (Some(self_order), Some(other_order)) => self_order.cmp(other_order),
+        }
     }
 }
 
@@ -360,6 +369,47 @@ pub struct SearchParams {
     /// guarantee that all uploaded vectors will be included in search results
     #[serde(default)]
     pub indexed_only: bool,
+}
+
+/// Collection default values
+#[derive(Debug, Deserialize, Validate, Clone, PartialEq, Eq)]
+pub struct CollectionConfigDefaults {
+    #[serde(default)]
+    pub vectors: Option<VectorsConfigDefaults>,
+
+    #[validate]
+    pub quantization: Option<QuantizationConfig>,
+
+    #[validate(range(min = 1))]
+    #[serde(default = "default_shard_number_const")]
+    pub shard_number: u32,
+
+    #[validate(range(min = 1))]
+    #[serde(default = "default_replication_factor_const")]
+    pub replication_factor: u32,
+
+    #[serde(default = "default_write_consistency_factor_const")]
+    #[validate(range(min = 1))]
+    pub write_consistency_factor: u32,
+}
+
+/// Configuration for vectors.
+#[derive(Debug, Deserialize, Validate, Clone, PartialEq, Eq)]
+pub struct VectorsConfigDefaults {
+    #[serde(default)]
+    pub on_disk: Option<bool>,
+}
+
+pub const fn default_shard_number_const() -> u32 {
+    1
+}
+
+pub const fn default_replication_factor_const() -> u32 {
+    1
+}
+
+pub const fn default_write_consistency_factor_const() -> u32 {
+    1
 }
 
 /// Vector index configuration
@@ -705,7 +755,7 @@ impl SegmentConfig {
             || self
                 .sparse_vector_data
                 .values()
-                .any(|config| config.is_index_on_disk())
+                .any(|config| config.index.index_type.is_on_disk())
     }
 }
 
@@ -734,23 +784,25 @@ pub enum VectorStorageDatatype {
     // Single-precision floating point
     #[default]
     Float32,
+    // Half-precision floating point
+    Float16,
     // Unsigned 8-bit integer
     Uint8,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone)]
-pub enum MultiVectorConfig {
-    MaxSim(MaxSimConfig),
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone, Hash)]
+#[serde(rename_all = "snake_case")]
+pub struct MultiVectorConfig {
+    /// How to compare multivector points
+    pub comparator: MultiVectorComparator,
 }
 
-impl Default for MultiVectorConfig {
-    fn default() -> Self {
-        MaxSim(MaxSimConfig::default())
-    }
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum MultiVectorComparator {
+    #[default]
+    MaxSim,
 }
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone)]
-pub struct MaxSimConfig {}
 
 impl VectorStorageType {
     /// Whether this storage type is a mmap on disk
@@ -778,7 +830,7 @@ pub struct VectorDataConfig {
     pub quantization_config: Option<QuantizationConfig>,
     /// Vector specific configuration to enable multiple vectors per point
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub multi_vec_config: Option<MultiVectorConfig>,
+    pub multivec_config: Option<MultiVectorConfig>,
     /// Vector specific configuration to set specific storage element type
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub datatype: Option<VectorStorageDatatype>,
@@ -811,20 +863,8 @@ pub struct SparseVectorDataConfig {
 }
 
 impl SparseVectorDataConfig {
-    pub fn is_appendable(&self) -> bool {
-        self.index.index_type == SparseIndexType::MutableRam
-    }
-
-    pub fn is_index_immutable(&self) -> bool {
-        self.index.index_type != SparseIndexType::MutableRam
-    }
-
     pub fn is_indexed(&self) -> bool {
         true
-    }
-
-    pub fn is_index_on_disk(&self) -> bool {
-        self.index.index_type == SparseIndexType::Mmap
     }
 }
 
@@ -1080,7 +1120,7 @@ pub enum JsonPayload {
 }
 
 /// All possible names of payload types
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq, EnumIter)]
 #[serde(rename_all = "snake_case")]
 pub enum PayloadSchemaType {
     Keyword,
@@ -1138,14 +1178,20 @@ impl TryFrom<PayloadIndexInfo> for PayloadFieldSchema {
     type Error = String;
 
     fn try_from(index_info: PayloadIndexInfo) -> Result<Self, Self::Error> {
-        match (index_info.data_type, index_info.params) {
-            (PayloadSchemaType::Text, Some(PayloadSchemaParams::Text(params))) => Ok(
+        let Some(params) = index_info.params else {
+            return Ok(PayloadFieldSchema::FieldType(index_info.data_type));
+        };
+
+        match (index_info.data_type, params) {
+            (PayloadSchemaType::Text, PayloadSchemaParams::Text(params)) => Ok(
                 PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(params)),
             ),
-            (data_type, Some(_)) => Err(format!(
-                "Payload field with type {data_type:?} has unexpected params"
-            )),
-            (data_type, None) => Ok(PayloadFieldSchema::FieldType(data_type)),
+            (PayloadSchemaType::Integer, PayloadSchemaParams::Integer(params)) => Ok(
+                PayloadFieldSchema::FieldParams(PayloadSchemaParams::Integer(params)),
+            ),
+            (data_type, PayloadSchemaParams::Integer(_) | PayloadSchemaParams::Text(_)) => Err(
+                format!("Payload field with type {data_type:?} has unexpected params"),
+            ),
         }
     }
 }
@@ -1564,10 +1610,16 @@ pub struct GeoBoundingBox {
 
 impl GeoBoundingBox {
     pub fn check_point(&self, point: &GeoPoint) -> bool {
-        (self.top_left.lon < point.lon)
-            && (point.lon < self.bottom_right.lon)
-            && (self.bottom_right.lat < point.lat)
-            && (point.lat < self.top_left.lat)
+        let longitude_check = if self.top_left.lon > self.bottom_right.lon {
+            // Handle antimeridian crossing
+            point.lon > self.top_left.lon || point.lon < self.bottom_right.lon
+        } else {
+            self.top_left.lon < point.lon && point.lon < self.bottom_right.lon
+        };
+
+        let latitude_check = self.bottom_right.lat < point.lat && point.lat < self.top_left.lat;
+
+        longitude_check && latitude_check
     }
 }
 
@@ -2207,15 +2259,21 @@ impl MinShould {
 pub struct Filter {
     /// At least one of those conditions should match
     #[validate]
+    #[serde(default, with = "MaybeOneOrMany")]
+    #[schemars(with = "MaybeOneOrMany<Condition>")]
     pub should: Option<Vec<Condition>>,
     /// At least minimum amount of given conditions should match
     #[validate]
     pub min_should: Option<MinShould>,
     /// All conditions must match
     #[validate]
+    #[serde(default, with = "MaybeOneOrMany")]
+    #[schemars(with = "MaybeOneOrMany<Condition>")]
     pub must: Option<Vec<Condition>>,
     /// All conditions must NOT match
     #[validate]
+    #[serde(default, with = "MaybeOneOrMany")]
+    #[schemars(with = "MaybeOneOrMany<Condition>")]
     pub must_not: Option<Vec<Condition>>,
 }
 
@@ -2473,6 +2531,35 @@ mod tests {
 
         // haversine distance between (0, 0) and (0.5, 0.5) is 235866.91169814655
         let outside_result = bounding_box.check_point(&GeoPoint { lon: 1.5, lat: 1.5 });
+        assert!(!outside_result);
+    }
+
+    #[test]
+    fn test_geo_boundingbox_antimeridian_check_point() {
+        // Use the bounding box for USA: (74.071028, 167), (18.7763, -66.885417)
+        let bounding_box = GeoBoundingBox {
+            top_left: GeoPoint {
+                lat: 74.071028,
+                lon: 167.0,
+            },
+            bottom_right: GeoPoint {
+                lat: 18.7763,
+                lon: -66.885417,
+            },
+        };
+
+        // Test NYC, which is inside the bounding box
+        let inside_result = bounding_box.check_point(&GeoPoint {
+            lat: 40.75798,
+            lon: -73.991516,
+        });
+        assert!(inside_result);
+
+        // Test Berlin, which is outside the bounding box
+        let outside_result = bounding_box.check_point(&GeoPoint {
+            lat: 52.52437,
+            lon: 13.41053,
+        });
         assert!(!outside_result);
     }
 
@@ -2840,6 +2927,49 @@ mod tests {
             }
             o => panic!("Condition::Nested expected but got {:?}", o),
         };
+    }
+
+    #[test]
+    fn test_parse_single_nested_filter_query() {
+        let query = r#"
+        {
+          "must": {
+              "nested": {
+                "key": "country.cities",
+                "filter": {
+                  "must": {
+                      "key": "population",
+                      "range": {
+                        "gte": 8
+                      }
+                    }
+                }
+              }
+            }
+        }
+        "#;
+        let filter: Filter = serde_json::from_str(query).unwrap();
+        let musts = filter.must.unwrap();
+        assert_eq!(musts.len(), 1);
+
+        let first_must = musts.first().unwrap();
+        let Condition::Nested(nested_condition) = first_must else {
+            panic!("Condition::Nested expected but got {:?}", first_must)
+        };
+
+        assert_eq!(nested_condition.raw_key().to_string(), "country.cities");
+        assert_eq!(nested_condition.array_key().to_string(), "country.cities[]");
+
+        let nested_must = nested_condition.filter().must.as_ref().unwrap();
+        assert_eq!(nested_must.len(), 1);
+
+        let must = nested_must.first().unwrap();
+        let Condition::Field(c) = must else {
+            panic!("Condition::Field expected, got {:?}", must)
+        };
+
+        assert_eq!(c.key.to_string(), "population");
+        assert!(c.range.is_some());
     }
 
     #[test]

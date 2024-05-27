@@ -1,16 +1,18 @@
 use std::borrow::Cow;
 
+use half::f16;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
+use super::named_vectors::CowMultiVector;
 use super::vectors::TypedMultiDenseVector;
-use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte};
+use crate::data_types::vectors::{VectorElementType, VectorElementTypeByte, VectorElementTypeHalf};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::{Distance, QuantizationConfig, VectorStorageDatatype};
 
 pub trait PrimitiveVectorElement:
-    Copy + Clone + Default + Serialize + for<'a> Deserialize<'a>
+    Copy + Clone + Default + Serialize + for<'a> Deserialize<'a> + Send + Sync + 'static
 {
     fn slice_from_float_cow(vector: Cow<[VectorElementType]>) -> Cow<[Self]>;
 
@@ -25,12 +27,12 @@ pub trait PrimitiveVectorElement:
     fn datatype() -> VectorStorageDatatype;
 
     fn from_float_multivector(
-        multivector: Cow<TypedMultiDenseVector<VectorElementType>>,
-    ) -> Cow<TypedMultiDenseVector<Self>>;
+        multivector: CowMultiVector<VectorElementType>,
+    ) -> CowMultiVector<Self>;
 
     fn into_float_multivector(
-        multivector: Cow<TypedMultiDenseVector<Self>>,
-    ) -> Cow<TypedMultiDenseVector<VectorElementType>>;
+        multivector: CowMultiVector<Self>,
+    ) -> CowMultiVector<VectorElementType>;
 }
 
 impl PrimitiveVectorElement for VectorElementType {
@@ -55,15 +57,65 @@ impl PrimitiveVectorElement for VectorElementType {
     }
 
     fn from_float_multivector(
-        multivector: Cow<TypedMultiDenseVector<VectorElementType>>,
-    ) -> Cow<TypedMultiDenseVector<Self>> {
+        multivector: CowMultiVector<VectorElementType>,
+    ) -> CowMultiVector<Self> {
         multivector
     }
 
     fn into_float_multivector(
-        multivector: Cow<TypedMultiDenseVector<Self>>,
-    ) -> Cow<TypedMultiDenseVector<VectorElementType>> {
+        multivector: CowMultiVector<Self>,
+    ) -> CowMultiVector<VectorElementType> {
         multivector
+    }
+}
+
+impl PrimitiveVectorElement for VectorElementTypeHalf {
+    fn slice_from_float_cow(vector: Cow<[VectorElementType]>) -> Cow<[Self]> {
+        Cow::Owned(vector.iter().map(|&x| f16::from_f32(x)).collect())
+    }
+
+    fn slice_to_float_cow(vector: Cow<[Self]>) -> Cow<[VectorElementType]> {
+        Cow::Owned(vector.iter().map(|&x| f16::to_f32(x)).collect_vec())
+    }
+
+    fn quantization_preprocess<'a>(
+        _quantization_config: &QuantizationConfig,
+        _distance: Distance,
+        vector: &'a [Self],
+    ) -> Cow<'a, [f32]> {
+        Cow::Owned(vector.iter().map(|&x| f16::to_f32(x)).collect_vec())
+    }
+
+    fn from_float_multivector(
+        multivector: CowMultiVector<VectorElementType>,
+    ) -> CowMultiVector<Self> {
+        CowMultiVector::Owned(TypedMultiDenseVector::new(
+            multivector
+                .as_vec_ref()
+                .flattened_vectors
+                .iter()
+                .map(|&x| f16::from_f32(x))
+                .collect_vec(),
+            multivector.as_vec_ref().dim,
+        ))
+    }
+
+    fn into_float_multivector(
+        multivector: CowMultiVector<Self>,
+    ) -> CowMultiVector<VectorElementType> {
+        CowMultiVector::Owned(TypedMultiDenseVector::new(
+            multivector
+                .as_vec_ref()
+                .flattened_vectors
+                .iter()
+                .map(|&x| f16::to_f32(x))
+                .collect_vec(),
+            multivector.as_vec_ref().dim,
+        ))
+    }
+
+    fn datatype() -> VectorStorageDatatype {
+        VectorStorageDatatype::Float16
     }
 }
 
@@ -109,28 +161,30 @@ impl PrimitiveVectorElement for VectorElementTypeByte {
     }
 
     fn from_float_multivector(
-        multivector: Cow<TypedMultiDenseVector<VectorElementType>>,
-    ) -> Cow<TypedMultiDenseVector<Self>> {
-        Cow::Owned(TypedMultiDenseVector::new(
+        multivector: CowMultiVector<VectorElementType>,
+    ) -> CowMultiVector<Self> {
+        CowMultiVector::Owned(TypedMultiDenseVector::new(
             multivector
-                .inner_vector
+                .as_vec_ref()
+                .flattened_vectors
                 .iter()
                 .map(|&x| x as Self)
                 .collect_vec(),
-            multivector.dim,
+            multivector.as_vec_ref().dim,
         ))
     }
 
     fn into_float_multivector(
-        multivector: Cow<TypedMultiDenseVector<Self>>,
-    ) -> Cow<TypedMultiDenseVector<VectorElementType>> {
-        Cow::Owned(TypedMultiDenseVector::new(
+        multivector: CowMultiVector<Self>,
+    ) -> CowMultiVector<VectorElementType> {
+        CowMultiVector::Owned(TypedMultiDenseVector::new(
             multivector
-                .inner_vector
+                .as_vec_ref()
+                .flattened_vectors
                 .iter()
                 .map(|&x| x as VectorElementType)
                 .collect_vec(),
-            multivector.dim,
+            multivector.as_vec_ref().dim,
         ))
     }
 }

@@ -1,13 +1,18 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::mem;
 use std::sync::Arc;
 use std::time::Duration;
 
 use futures::{future, TryFutureExt};
+use itertools::{Either, Itertools};
 use segment::data_types::vectors::VectorStruct;
-use segment::spaces::tools;
-use segment::types::{ExtendedPointId, Order, ScoredPoint, WithPayloadInterface, WithVector};
+use segment::types::{
+    ExtendedPointId, Filter, Order, ScoredPoint, WithPayloadInterface, WithVector,
+};
+use tokio::time::Instant;
 
 use super::Collection;
+use crate::events::SlowQueryEvent;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::*;
@@ -127,6 +132,8 @@ impl Collection {
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let request = Arc::new(request);
 
+        let instant = Instant::now();
+
         // query all shards concurrently
         let all_searches_res = {
             let shard_holder = self.shards_holder.read().await;
@@ -146,7 +153,7 @@ impl Collection {
                         }
                         for batch in &mut records {
                             for point in batch {
-                                point.shard_key = shard_key.clone();
+                                point.shard_key.clone_from(&shard_key);
                             }
                         }
                         Ok(records)
@@ -155,8 +162,19 @@ impl Collection {
             future::try_join_all(all_searches).await?
         };
 
-        self.merge_from_shards(all_searches_res, request, !shard_selection.is_shard_id())
-            .await
+        let result = self
+            .merge_from_shards(
+                all_searches_res,
+                Arc::clone(&request),
+                !shard_selection.is_shard_id(),
+            )
+            .await;
+
+        let filters_refs = request.searches.iter().map(|req| req.filter.as_ref());
+
+        self.post_process_if_slow_request(instant.elapsed(), filters_refs);
+
+        result
     }
 
     pub(crate) async fn fill_search_result_with_payload(
@@ -217,52 +235,67 @@ impl Collection {
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let batch_size = request.searches.len();
 
-        // merge results from shards in order
-        let mut merged_results: Vec<Vec<ScoredPoint>> = vec![vec![]; batch_size];
-        for shard_searches_results in all_searches_res.iter_mut() {
-            for (index, shard_searches_result) in shard_searches_results.iter_mut().enumerate() {
-                merged_results[index].append(shard_searches_result)
-            }
-        }
         let collection_params = self.collection_config.read().await.params.clone();
-        let top_results: Vec<_> = merged_results
-            .into_iter()
-            .zip(request.searches.iter())
-            .map(|(res, request)| {
-                let order = match &request.query {
-                    QueryEnum::Nearest(_) => collection_params
-                        .get_distance(request.query.get_vector_name())?
-                        .distance_order(),
 
-                    // Score comes from special handling of the distances in a way that it doesn't
-                    // directly represent distance anymore, so the order is always `LargeBetter`
-                    QueryEnum::Discover(_)
-                    | QueryEnum::Context(_)
-                    | QueryEnum::RecommendBestScore(_) => Order::LargeBetter,
-                };
+        // Merge results from shards in order and deduplicate based on point ID
+        let mut top_results: Vec<Vec<ScoredPoint>> = Vec::with_capacity(batch_size);
+        let mut seen_ids = HashSet::new();
 
-                let mut top_res = match order {
-                    Order::LargeBetter => {
-                        tools::peek_top_largest_iterable(res, request.limit + request.offset)
-                    }
-                    Order::SmallBetter => {
-                        tools::peek_top_smallest_iterable(res, request.limit + request.offset)
-                    }
-                };
-                // Remove `offset` from top result only for client requests
-                // to avoid applying `offset` twice in distributed mode.
-                if is_client_request && request.offset > 0 {
-                    if top_res.len() >= request.offset {
-                        // Panics if the end point > length of the vector.
-                        top_res.drain(..request.offset);
-                    } else {
-                        top_res.clear()
-                    }
-                }
-                Ok(top_res)
-            })
-            .collect::<CollectionResult<Vec<_>>>()?;
+        for (batch_index, request) in request.searches.iter().enumerate() {
+            let order = if request.query.is_distance_scored() {
+                collection_params
+                    .get_distance(request.query.get_vector_name())?
+                    .distance_order()
+            } else {
+                // Score comes from special handling of the distances in a way that it doesn't
+                // directly represent distance anymore, so the order is always `LargeBetter`
+                Order::LargeBetter
+            };
+
+            let results_from_shards = all_searches_res
+                .iter_mut()
+                .map(|res| mem::take(&mut res[batch_index]));
+
+            let merged_iter = match order {
+                Order::LargeBetter => Either::Left(results_from_shards.kmerge_by(|a, b| a > b)),
+                Order::SmallBetter => Either::Right(results_from_shards.kmerge_by(|a, b| a < b)),
+            }
+            .filter(|point| seen_ids.insert(point.id));
+
+            // Skip `offset` only for client requests
+            // to avoid applying `offset` twice in distributed mode.
+            let top_res = if is_client_request && request.offset > 0 {
+                merged_iter
+                    .skip(request.offset)
+                    .take(request.limit)
+                    .collect()
+            } else {
+                merged_iter.take(request.offset + request.limit).collect()
+            };
+
+            top_results.push(top_res);
+
+            seen_ids.clear();
+        }
 
         Ok(top_results)
+    }
+
+    fn post_process_if_slow_request<'a>(
+        &self,
+        duration: Duration,
+        filters: impl Iterator<Item = Option<&'a Filter>>,
+    ) {
+        if duration > segment::problems::UnindexedField::slow_query_threshold() {
+            let filters = filters.flatten().cloned().collect::<Vec<_>>();
+
+            let schema = self.payload_index_schema.read().schema.clone();
+
+            issues::publish(SlowQueryEvent {
+                collection_id: self.id.clone(),
+                filters,
+                schema,
+            });
+        }
     }
 }

@@ -5,7 +5,7 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 use std::{fmt, thread};
 
-use anyhow::{anyhow, Context};
+use anyhow::{anyhow, Context as _};
 use api::grpc::dynamic_channel_pool::make_grpc_channel;
 use api::grpc::qdrant::raft_client::RaftClient;
 use api::grpc::qdrant::{AllPeers, PeerId as GrpcPeerId, RaftMessage as GrpcRaftMessage};
@@ -239,7 +239,10 @@ impl Consensus {
             }
             log::debug!("Local raft state found - skipping initialization");
         };
+
         let mut node = Node::new(&raft_config, state_ref.clone(), logger)?;
+        node.set_batch_append(true);
+
         // Before consensus has started apply any unapplied committed entries
         // They might have not been applied due to unplanned Qdrant shutdown
         let _stop_consensus = state_ref.apply_entries(&mut node)?;
@@ -448,40 +451,196 @@ impl Consensus {
     }
 
     pub fn start(&mut self) -> anyhow::Result<()> {
-        let mut t = Instant::now();
-        let mut timeout = Duration::from_millis(self.config.tick_period_ms);
+        let tick_period = Duration::from_millis(self.config.tick_period_ms);
+
+        let mut previous_tick = Instant::now();
 
         loop {
-            if !self
-                .try_promote_learner()
-                .map_err(|err| anyhow!("Failed to promote learner: {}", err))?
-            {
-                // If learner promotion was proposed - do not add other proposals.
-                let have_changes = self.propose_updates(timeout)?;
-                if !have_changes {
-                    self.try_sync_local_state()?;
-                }
-            }
-            let d = t.elapsed();
-            t = Instant::now();
-            if d >= timeout {
-                timeout = Duration::from_millis(self.config.tick_period_ms);
-                // We drive Raft every `tick_period_ms`.
+            // Apply in-memory changes to the Raft State Machine
+            // If updates = None, we need to skip this step due to timing limits
+            // If updates = Some(0), means we didn't receive any updates explicitly
+            let updates = self.advance_node(previous_tick, tick_period)?;
+
+            let mut elapsed = previous_tick.elapsed();
+
+            while elapsed > tick_period {
                 self.node.tick();
-                // Try to reapply entries if some were not applied due to errors.
-                let store = self.node.store().clone();
-                let stop_consensus = store.apply_entries(&mut self.node)?;
+
+                previous_tick += tick_period;
+                elapsed -= tick_period;
+            }
+
+            if self.node.has_ready() {
+                // Persist AND apply changes, which were committed in the Raft State Machine
+                let stop_consensus = self.on_ready()?;
+
                 if stop_consensus {
                     return Ok(());
                 }
-            } else {
-                timeout -= d;
-            }
-            let stop_consensus = self.on_ready()?;
-            if stop_consensus {
-                return Ok(());
+            } else if updates == Some(0) {
+                // Assume consensus is up-to-date, we can sync local state
+                // Which involves resoling inconsistencies and trying to recover data marked as dead
+                self.try_sync_local_state()?;
             }
         }
+    }
+
+    fn advance_node(
+        &mut self,
+        previous_tick: Instant,
+        tick_period: Duration,
+    ) -> anyhow::Result<Option<usize>> {
+        if previous_tick.elapsed() >= tick_period {
+            return Ok(None);
+        }
+
+        if self
+            .try_promote_learner()
+            .context("failed to promote learner")?
+        {
+            return Ok(Some(1));
+        }
+
+        let mut updates = 0;
+        let mut timeout_at = previous_tick + tick_period;
+
+        // We need to limit the batch size, as application of one batch should be limited in time.
+        const RAFT_BATCH_SIZE: usize = 128;
+
+        let wait_timeout_for_consecutive_messages = tick_period / 10;
+
+        // This loop batches incoming messages, so we would need to "apply" them only once.
+        // The "Apply" step is expensive, so it is done for performance reasons.
+
+        // But on the other hand, we still want to react to rare
+        // individual messages as fast as possible.
+        // To fulfill both requirements, we are going the following way:
+        //   1. Wait for the first message for full tick period.
+        //   2. If the message is received, wait for the next message only for 1/10 of the tick period.
+        loop {
+            // This queue have 2 types of events:
+            // - Messages from the leader, like pings, requests to add logs, acks, etc.
+            // - Messages from users, like requests to start shard transfers, etc.
+            //
+            // Timeout defines how long can we wait for the next message.
+            // Since this thread is sync, we can't wait indefinitely.
+            // Timeout is set up to be about the time of tick.
+            let message = match self.recv_update(timeout_at) {
+                Ok(message) => message,
+                Err(_) => break,
+            };
+
+            // Those messages should not be batched, so we interrupt the loop if we see them.
+            // Motivation is: if we change the peer, it should be done immediately,
+            //  otherwise we loose the update on this new peer
+            let is_conf_change = matches!(
+                message,
+                Message::FromClient(
+                    ConsensusOperations::AddPeer { .. } | ConsensusOperations::RemovePeer(_)
+                ),
+            );
+
+            // We put the message in Raft State Machine
+            // This update will hold update in memory, but will not be persisted yet.
+            // E.g. if it is a ping, we don't need to persist anything ofr it.
+            if let Err(err) = self.advance_node_impl(message) {
+                log::warn!("{err}");
+                continue;
+            }
+
+            updates += 1;
+            timeout_at = Instant::now() + wait_timeout_for_consecutive_messages;
+
+            if previous_tick.elapsed() >= tick_period
+                || updates >= RAFT_BATCH_SIZE
+                || is_conf_change
+            {
+                break;
+            }
+        }
+
+        Ok(Some(updates))
+    }
+
+    fn recv_update(&mut self, timeout_at: Instant) -> Result<Message, TryRecvUpdateError> {
+        self.runtime.block_on(async {
+            tokio::select! {
+                biased;
+                _ = tokio::time::sleep_until(timeout_at.into()) => Err(TryRecvUpdateError::Timeout),
+                message = self.receiver.recv() => message.ok_or(TryRecvUpdateError::Closed),
+            }
+        })
+    }
+
+    fn advance_node_impl(&mut self, message: Message) -> anyhow::Result<()> {
+        match message {
+            Message::FromClient(ConsensusOperations::AddPeer { peer_id, uri }) => {
+                let mut change = ConfChangeV2::default();
+
+                change.set_changes(vec![raft_proto::new_conf_change_single(
+                    peer_id,
+                    ConfChangeType::AddLearnerNode,
+                )]);
+
+                log::debug!("Proposing network configuration change: {:?}", change);
+                self.node
+                    .propose_conf_change(uri.into_bytes(), change)
+                    .context("failed to propose conf change")?;
+            }
+
+            Message::FromClient(ConsensusOperations::RemovePeer(peer_id)) => {
+                let mut change = ConfChangeV2::default();
+
+                change.set_changes(vec![raft_proto::new_conf_change_single(
+                    peer_id,
+                    ConfChangeType::RemoveNode,
+                )]);
+
+                log::debug!("Proposing network configuration change: {:?}", change);
+                self.node
+                    .propose_conf_change(vec![], change)
+                    .context("failed to propose conf change")?;
+            }
+
+            Message::FromClient(ConsensusOperations::RequestSnapshot) => {
+                self.node
+                    .request_snapshot()
+                    .context("failed to request snapshot")?;
+            }
+
+            Message::FromClient(ConsensusOperations::ReportSnapshot { peer_id, status }) => {
+                self.node.report_snapshot(peer_id, status.into());
+            }
+
+            Message::FromClient(operation) => {
+                let data =
+                    serde_cbor::to_vec(&operation).context("failed to serialize operation")?;
+
+                log::trace!("Proposing entry from client with length: {}", data.len());
+                self.node
+                    .propose(vec![], data)
+                    .context("failed to propose entry")?;
+            }
+
+            Message::FromPeer(message) => {
+                let is_heartbeat = matches!(
+                    message.get_msg_type(),
+                    MessageType::MsgHeartbeat | MessageType::MsgHeartbeatResponse,
+                );
+
+                if !is_heartbeat {
+                    log::trace!(
+                        "Received a message from peer with progress: {:?}. Message: {:?}",
+                        self.node.raft.prs().get(message.from),
+                        message,
+                    );
+                }
+
+                self.node.step(*message).context("failed to step message")?;
+            }
+        }
+
+        Ok(())
     }
 
     fn try_sync_local_state(&mut self) -> anyhow::Result<()> {
@@ -498,126 +657,41 @@ impl Consensus {
         Ok(())
     }
 
-    /// Listens for the next proposal and sends it to the Raft node.
-    /// Returns `true` if something happened and `false` if timeout was reached.
-    fn propose_updates(&mut self, timeout: Duration) -> anyhow::Result<bool> {
-        // Poll the async. channel on the consensus runtime.
-        // https://docs.rs/tokio/1.22.0/tokio/sync/mpsc/index.html#communicating-between-sync-and-async-code
-        let received = self.runtime.block_on(async {
-            // Wait for the next proposal during `timeout`.
-            tokio::time::timeout(timeout, self.receiver.recv()).await
-        });
-        match received {
-            Ok(Some(Message::FromPeer(message))) => {
-                if message.get_msg_type() == MessageType::MsgHeartbeat
-                    || message.get_msg_type() == MessageType::MsgHeartbeatResponse
-                {
-                    // Do not log heartbeat messages
-                } else {
-                    log::trace!(
-                        "Received a message from peer with progress: {:?}. Message: {:?}",
-                        self.node.raft.prs().get(message.from),
-                        message
-                    );
-                }
-                if let Err(error) = self.node.step(*message) {
-                    log::warn!("Failed to step message: {:?}", error);
-                }
-                Ok(true)
-            }
-            Ok(Some(Message::FromClient(operation))) => {
-                let result = match operation {
-                    ConsensusOperations::RemovePeer(peer_id) => {
-                        let mut change = ConfChangeV2::default();
-                        change.set_changes(vec![raft_proto::new_conf_change_single(
-                            peer_id,
-                            ConfChangeType::RemoveNode,
-                        )]);
-                        log::debug!("Proposing network configuration change: {:?}", change);
-                        self.node.propose_conf_change(vec![], change)
-                    }
-                    ConsensusOperations::AddPeer { peer_id, uri } => {
-                        let mut change = ConfChangeV2::default();
-                        change.set_changes(vec![raft_proto::new_conf_change_single(
-                            peer_id,
-                            ConfChangeType::AddLearnerNode,
-                        )]);
-                        log::debug!("Proposing network configuration change: {:?}", change);
-                        self.node.propose_conf_change(uri.into_bytes(), change)
-                    }
-                    ConsensusOperations::RequestSnapshot => self.node.request_snapshot(),
-                    ConsensusOperations::ReportSnapshot { peer_id, status } => {
-                        self.node.report_snapshot(peer_id, status.into());
-                        Ok(())
-                    }
-                    _ => {
-                        // For debug:
-                        // Drop message with 30% probability
-                        #[cfg(feature = "chaos-test")]
-                        if rand::thread_rng().gen_bool(0.3) {
-                            log::warn!("Dropping message with 30% probability: {:?}", &operation);
-                            return Ok(true);
-                        }
-
-                        let message = match serde_cbor::to_vec(&operation) {
-                            Ok(message) => message,
-                            Err(err) => {
-                                log::error!("Failed to serialize operation: {}", err);
-                                return Ok(true);
-                            }
-                        };
-                        log::trace!("Proposing entry from client with length: {}", message.len());
-                        self.node.propose(vec![], message)
-                    }
-                };
-
-                match result {
-                    Ok(_) => {}
-                    Err(consensus_err) => {
-                        // Do not stop consensus if client proposal failed.
-                        log::error!("Failed to propose entry: {:?}", consensus_err);
-                    }
-                }
-                Ok(true)
-            }
-            Ok(None) => {
-                log::warn!("Stopping Raft as message sender was dropped");
-                Ok(true)
-            }
-            Err(_timeout_elapsed) => Ok(false), // recv. timeout
-        }
-    }
-
     /// Returns `true` if learner promotion was proposed, `false` otherwise.
     /// Learner node does not vote on elections, cause it might not have a big picture yet.
     /// So consensus should guarantee that learners are promoted one-by-one.
     /// Promotions are done by leader and only after it has no pending entries,
     /// that guarantees that learner will start voting only after it applies all the changes in the log
     fn try_promote_learner(&mut self) -> anyhow::Result<bool> {
-        let learner = if let Some(learner) = self.find_learner_to_promote() {
-            learner
-        } else {
+        // Promote only if leader
+        if self.node.status().ss.raft_state != StateRole::Leader {
             return Ok(false);
-        };
+        }
+
+        // Promote only when there are no uncommitted changes.
         let store = self.node.store();
         let commit = store.hard_state().commit;
         let last_log_entry = store.last_index()?;
-        // Promote only when there are no uncommitted changes.
+
         if commit != last_log_entry {
             return Ok(false);
         }
-        let status = self.node.status();
-        // Promote only if leader
-        if status.ss.raft_state != StateRole::Leader {
+
+        let Some(learner) = self.find_learner_to_promote() else {
             return Ok(false);
-        }
+        };
+
+        log::debug!("Proposing promotion for learner {learner} to voter");
+
         let mut change = ConfChangeV2::default();
+
         change.set_changes(vec![raft_proto::new_conf_change_single(
             learner,
             ConfChangeType::AddNode,
         )]);
-        log::debug!("Proposing promotion for learner {learner} to voter");
+
         self.node.propose_conf_change(vec![], change)?;
+
         Ok(true)
     }
 
@@ -776,6 +850,15 @@ impl Consensus {
     fn send_messages(&mut self, messages: Vec<RaftMessage>) {
         self.broker.send(messages);
     }
+}
+
+#[derive(Copy, Clone, Debug, thiserror::Error)]
+enum TryRecvUpdateError {
+    #[error("timeout elapsed")]
+    Timeout,
+
+    #[error("channel closed")]
+    Closed,
 }
 
 /// This function actually applies the committed entries to the state machine.
@@ -1193,7 +1276,7 @@ mod tests {
             update_runtime,
             general_runtime,
             CpuBudget::default(),
-            ChannelService::new(settings.service.http_port),
+            ChannelService::new(settings.service.http_port, None),
             persistent_state.this_peer_id(),
             Some(operation_sender.clone()),
         );
@@ -1216,7 +1299,7 @@ mod tests {
             6335,
             ConsensusConfig::default(),
             None,
-            ChannelService::new(settings.service.http_port),
+            ChannelService::new(settings.service.http_port, None),
             handle.clone(),
         )
         .unwrap();

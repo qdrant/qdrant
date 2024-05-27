@@ -136,7 +136,15 @@ impl SegmentBuilder {
                         );
                         continue;
                     };
-                let other_version = other_id_tracker.internal_version(old_internal_id).unwrap();
+
+                let other_version = other_id_tracker
+                    .internal_version(old_internal_id)
+                    .unwrap_or_else(|| {
+                        log::debug!(
+                            "Internal version not found for internal id {old_internal_id}, using 0"
+                        );
+                        0
+                    });
 
                 match id_tracker.internal_id(external_id) {
                     None => {

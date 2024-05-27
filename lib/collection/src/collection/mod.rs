@@ -1,6 +1,7 @@
 mod collection_ops;
 pub mod payload_index_schema;
 mod point_ops;
+pub mod resharding;
 mod search;
 mod shard_transfer;
 mod sharding_keys;
@@ -15,12 +16,13 @@ use std::time::Duration;
 
 use common::cpu::CpuBudget;
 use common::types::TelemetryDetail;
-use segment::common::version::StorageVersion;
+use io::storage_version::StorageVersion;
 use segment::types::ShardKey;
 use semver::Version;
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
 
+use self::resharding::ReshardingState;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_state::{ShardInfo, State};
 use crate::common::is_ready::IsReady;
@@ -41,13 +43,17 @@ use crate::shards::transfer::{ShardTransfer, ShardTransferMethod};
 use crate::shards::{replica_set, CollectionId};
 use crate::telemetry::CollectionTelemetry;
 
+const RESHARDING_STATE_FILE: &str = "resharding_state.json";
+
 /// Collection's data is split into several shards.
+#[allow(dead_code)]
 pub struct Collection {
     pub(crate) id: CollectionId,
     pub(crate) shards_holder: Arc<LockedShardHolder>,
     pub(crate) collection_config: Arc<RwLock<CollectionConfig>>,
     pub(crate) shared_storage_config: Arc<SharedStorageConfig>,
     pub(crate) payload_index_schema: SaveOnDisk<PayloadIndexSchema>,
+    resharding_state: SaveOnDisk<Option<ReshardingState>>,
     this_peer_id: PeerId,
     path: PathBuf,
     snapshots_path: PathBuf,
@@ -96,7 +102,7 @@ impl Collection {
     ) -> Result<Self, CollectionError> {
         let start_time = std::time::Instant::now();
 
-        let mut shard_holder = ShardHolder::new(path)?;
+        let mut shard_holder = ShardHolder::new(path, None)?;
 
         let shared_collection_config = Arc::new(RwLock::new(collection_config.clone()));
         for (shard_id, mut peers) in shard_distribution.shards {
@@ -131,6 +137,7 @@ impl Collection {
         collection_config.save(path)?;
 
         let payload_index_schema = Self::load_payload_index_schema(path)?;
+        let resharding_state = Self::load_resharding_state(path)?;
 
         Ok(Self {
             id: name.clone(),
@@ -138,6 +145,7 @@ impl Collection {
             collection_config: shared_collection_config,
             payload_index_schema,
             shared_storage_config,
+            resharding_state,
             this_peer_id,
             path: path.to_owned(),
             snapshots_path: snapshots_path.to_owned(),
@@ -173,12 +181,9 @@ impl Collection {
         let start_time = std::time::Instant::now();
         let stored_version = CollectionVersion::load(path)
             .expect("Can't read collection version")
-            .parse()
-            .expect("Failed to parse stored collection version as semver");
+            .expect("Collection version is not found");
 
-        let app_version: Version = CollectionVersion::current()
-            .parse()
-            .expect("Failed to parse current collection version as semver");
+        let app_version = CollectionVersion::current();
 
         if stored_version > app_version {
             panic!("Collection version is greater than application version");
@@ -204,7 +209,14 @@ impl Collection {
         });
         collection_config.validate_and_warn();
 
-        let mut shard_holder = ShardHolder::new(path).expect("Can not create shard holder");
+        let resharding_state = Self::load_resharding_state(path)
+            .expect("Can't load or initialize resharding progress");
+
+        let mut shard_holder = ShardHolder::new(
+            path,
+            resharding_state.read().as_ref().map(|state| state.shard_id),
+        )
+        .expect("Can not create shard holder");
 
         let shared_collection_config = Arc::new(RwLock::new(collection_config.clone()));
 
@@ -235,6 +247,7 @@ impl Collection {
             collection_config: shared_collection_config,
             payload_index_schema,
             shared_storage_config,
+            resharding_state,
             this_peer_id,
             path: path.to_owned(),
             snapshots_path: snapshots_path.to_owned(),
@@ -250,6 +263,18 @@ impl Collection {
             search_runtime: search_runtime.unwrap_or_else(Handle::current),
             optimizer_cpu_budget,
         }
+    }
+
+    fn resharding_state_file(collection_path: &Path) -> PathBuf {
+        collection_path.join(RESHARDING_STATE_FILE)
+    }
+
+    fn load_resharding_state(
+        collection_path: &Path,
+    ) -> CollectionResult<SaveOnDisk<Option<ReshardingState>>> {
+        let resharding_state_file = Self::resharding_state_file(collection_path);
+        let resharding_state = SaveOnDisk::load_or_init(resharding_state_file)?;
+        Ok(resharding_state)
     }
 
     /// Check if stored version have consequent version.
@@ -408,7 +433,7 @@ impl Collection {
         let shard = shard_holder_read.get_shard(&shard_id);
         let Some(replica_set) = shard else {
             return Err(CollectionError::NotFound {
-                what: "Shard {shard_id}".into(),
+                what: format!("Shard {shard_id}"),
             });
         };
 
@@ -446,6 +471,7 @@ impl Collection {
                     (*shard_id, shard_info)
                 })
                 .collect(),
+            resharding: self.resharding_state.read().clone(),
             transfers,
             shards_key_mapping: shards_holder.get_shard_key_to_ids_mapping(),
             payload_index_schema: self.payload_index_schema.read().clone(),
@@ -584,6 +610,7 @@ impl Collection {
                     from: replica_id,
                     to: *this_peer_id,
                     shard_id,
+                    to_shard_id: None,
                     sync: true,
                     // For automatic shard transfers, always select some default method from this point on
                     method: Some(shard_transfer_method),
@@ -630,6 +657,49 @@ impl Collection {
         Ok(())
     }
 
+    pub async fn start_resharding(
+        &self,
+        peer_id: PeerId,
+        shard_id: ShardId,
+        shard_key: Option<ShardKey>,
+    ) -> CollectionResult<()> {
+        // TODO(resharding): Improve error handling?
+
+        let mut shard_holder = self.shards_holder.write().await;
+
+        if self.resharding_state.read().is_some() {
+            return Err(CollectionError::bad_request(format!(
+                "resharding of collection {} is already in progress",
+                self.id
+            )));
+        }
+
+        if shard_holder.get_shard(&shard_id).is_some() {
+            return Err(CollectionError::bad_shard_selection(format!(
+                "shard {shard_id} already exists in collection {}",
+                self.id
+            )));
+        }
+
+        let replica_set = self
+            .create_replica_set(shard_id, &[peer_id], Some(ReplicaState::Resharding))
+            .await?;
+
+        shard_holder.start_resharding(shard_id, replica_set, shard_key.clone())?;
+
+        self.resharding_state.write(|state| {
+            debug_assert!(
+                state.is_none(),
+                "resharding of collection {} is already in progress",
+                self.id
+            );
+
+            *state = Some(ReshardingState::new(peer_id, shard_id, shard_key));
+        })?;
+
+        Ok(())
+    }
+
     pub async fn get_telemetry_data(&self, detail: TelemetryDetail) -> CollectionTelemetry {
         let (shards_telemetry, transfers) = {
             let mut shards_telemetry = Vec::new();
@@ -667,12 +737,20 @@ impl Collection {
     pub fn shared_storage_config(&self) -> Arc<SharedStorageConfig> {
         self.shared_storage_config.clone()
     }
+
+    pub fn snapshots_path(&self) -> &Path {
+        &self.snapshots_path
+    }
+
+    pub fn shards_holder(&self) -> Arc<LockedShardHolder> {
+        self.shards_holder.clone()
+    }
 }
 
 struct CollectionVersion;
 
 impl StorageVersion for CollectionVersion {
-    fn current() -> String {
-        env!("CARGO_PKG_VERSION").to_string()
+    fn current_raw() -> &'static str {
+        env!("CARGO_PKG_VERSION")
     }
 }

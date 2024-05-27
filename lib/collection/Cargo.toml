@@ -9,6 +9,7 @@ license = "Apache-2.0"
 edition = "2021"
 
 [features]
+testing = []
 tracing = ["dep:tracing", "api/tracing", "segment/tracing"]
 
 [dev-dependencies]
@@ -16,9 +17,12 @@ criterion = "0.5"
 proptest = "1.4.0"
 rstest = "0.19.0"
 approx = "0.5.1"
+collection = { path = ".", features = ["testing"] }
+common = { path = "../common/common", features = ["testing"] }
+segment = { path = "../segment", features = ["testing"] }
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
-pprof = { version = "0.12", features = ["flamegraph", "prost-codec"] }
+pprof = { workspace = true }
 
 [dependencies]
 parking_lot = { workspace = true }
@@ -28,12 +32,14 @@ thiserror = "1.0"
 serde = { workspace = true }
 serde_cbor = { workspace = true }
 serde_json = { workspace = true }
-rmp-serde = "~1.2"
+rmp-serde = "~1.3"
 wal = { workspace = true }
 ordered-float = "4.2"
-hashring = "0.3.3"
+hashring = "0.3.4"
 tinyvec = { version = "1.6.0", features = ["alloc"] }
+bitvec = "1.0.1"
 lazy_static = "1.4.0"
+smallvec = "1.13.2"
 
 tokio = { workspace = true }
 tokio-util = { workspace = true }
@@ -49,6 +55,8 @@ uuid = { workspace = true }
 url = { version = "2", features = ["serde"] }
 validator = { workspace = true }
 actix-web-validator = "5.0.1"
+actix-web = {version = "4.6.0"}
+actix-files = "0.6.5"
 
 common = { path = "../common/common" }
 cancel = { path = "../common/cancel" }
@@ -58,8 +66,8 @@ segment = { path = "../segment" }
 sparse = { path = "../sparse" }
 api = { path = "../api" }
 
-itertools = "0.12"
-indicatif = "0.17.8"
+itertools = { workspace = true }
+indicatif = { workspace = true }
 chrono = { workspace = true }
 schemars = { workspace = true }
 tar = { workspace = true }
@@ -74,6 +82,11 @@ ringbuffer = "0.15.0"
 strum = { workspace = true }
 
 tracing = { workspace = true, optional = true }
+fs4 = "0.8.3"
+
+# AWS S3 support
+object_store = { version = "0.10.1" , features = ["aws"] }
+
 
 [[bench]]
 name = "hash_ring_bench"

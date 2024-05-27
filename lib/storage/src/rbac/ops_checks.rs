@@ -50,6 +50,7 @@ impl Access {
             | CollectionMetaOperations::UpdateCollection(_)
             | CollectionMetaOperations::DeleteCollection(_)
             | CollectionMetaOperations::ChangeAliases(_)
+            | CollectionMetaOperations::Resharding(_, _)
             | CollectionMetaOperations::TransferShard(_, _)
             | CollectionMetaOperations::SetShardReplicaState(_)
             | CollectionMetaOperations::CreateShardKey(_)
@@ -524,15 +525,14 @@ mod tests {
 mod tests_ops {
     use std::fmt::Debug;
 
-    use api::rest::{BatchVectorStruct, VectorStruct};
+    use api::rest::{BatchVectorStruct, OrderByInterface, RecommendStrategy, VectorStruct};
     use collection::operations::payload_ops::PayloadOpsDiscriminants;
     use collection::operations::point_ops::{
         Batch, PointInsertOperationsInternal, PointInsertOperationsInternalDiscriminants,
         PointOperationsDiscriminants, PointStruct, PointSyncOperation,
     };
-    use collection::operations::types::{
-        OrderByInterface, QueryEnum, RecommendStrategy, SearchRequestInternal, UsingVector,
-    };
+    use collection::operations::query_enum::QueryEnum;
+    use collection::operations::types::{SearchRequestInternal, UsingVector};
     use collection::operations::vector_ops::{
         PointVectors, UpdateVectorsOp, VectorOperationsDiscriminants,
     };

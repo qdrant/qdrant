@@ -20,10 +20,9 @@ use segment::types::{
     Distance, Indexes, SegmentConfig, SeqNumberType, SparseVectorDataConfig, VectorDataConfig,
     VectorStorageType, DEFAULT_SPARSE_FULL_SCAN_THRESHOLD,
 };
-use segment::vector_storage::query::context_query::ContextPair;
-use segment::vector_storage::query::discovery_query::DiscoveryQuery;
+use segment::vector_storage::query::{ContextPair, DiscoveryQuery};
 use sparse::common::sparse_vector::SparseVector;
-use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
+use sparse::index::inverted_index::inverted_index_immutable_ram::InvertedIndexImmutableRam;
 use tempfile::Builder;
 
 const MAX_EXAMPLE_PAIRS: usize = 3;
@@ -138,7 +137,7 @@ fn sparse_index_discover_test() {
                 storage_type: VectorStorageType::Memory,
                 index: Indexes::Plain {},
                 quantization_config: None,
-                multi_vec_config: None,
+                multivec_config: None,
                 datatype: None,
             },
         )]),
@@ -167,7 +166,7 @@ fn sparse_index_discover_test() {
     let payload_index_ptr = sparse_segment.payload_index.clone();
 
     let vector_storage = &sparse_segment.vector_data[SPARSE_VECTOR_NAME].vector_storage;
-    let mut sparse_index = SparseVectorIndex::<InvertedIndexRam>::open(
+    let mut sparse_index = SparseVectorIndex::<InvertedIndexImmutableRam>::open(
         SparseIndexConfig {
             full_scan_threshold: Some(DEFAULT_SPARSE_FULL_SCAN_THRESHOLD),
             index_type: SparseIndexType::ImmutableRam,
@@ -189,13 +188,13 @@ fn sparse_index_discover_test() {
         let (sparse_query, dense_query) = random_discovery_query(&mut rnd, dim);
 
         let sparse_discovery_result = sparse_index
-            .search(&[&sparse_query], None, top, None, &false.into(), usize::MAX)
+            .search(&[&sparse_query], None, top, None, &Default::default())
             .unwrap();
 
         let dense_discovery_result = dense_segment.vector_data[SPARSE_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(&[&dense_query], None, top, None, &false.into(), usize::MAX)
+            .search(&[&dense_query], None, top, None, &Default::default())
             .unwrap();
 
         // check id only because scores can be epsilon-size different
@@ -213,13 +212,13 @@ fn sparse_index_discover_test() {
         // do regular nearest search
         let (sparse_query, dense_query) = random_nearest_query(&mut rnd, dim);
         let sparse_search_result = sparse_index
-            .search(&[&sparse_query], None, top, None, &false.into(), usize::MAX)
+            .search(&[&sparse_query], None, top, None, &Default::default())
             .unwrap();
 
         let dense_search_result = dense_segment.vector_data[SPARSE_VECTOR_NAME]
             .vector_index
             .borrow()
-            .search(&[&dense_query], None, top, None, &false.into(), usize::MAX)
+            .search(&[&dense_query], None, top, None, &Default::default())
             .unwrap();
 
         // check that nearest search uses sparse index

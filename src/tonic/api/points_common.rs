@@ -15,6 +15,7 @@ use api::grpc::qdrant::{
     SearchPoints, SearchResponse, SetPayloadPoints, SyncPoints, UpdateBatchPoints,
     UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
 };
+use api::rest::{OrderByInterface, ShardKeySelector};
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::conversions::{
     try_discover_request_from_grpc, try_points_selector_from_grpc, write_ordering_from_proto,
@@ -23,16 +24,17 @@ use collection::operations::payload_ops::DeletePayload;
 use collection::operations::point_ops::{
     self, PointInsertOperations, PointOperations, PointSyncOperation, PointsList,
 };
-use collection::operations::shard_key_selector::ShardKeySelector;
+use collection::operations::query_enum::QueryEnum;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
-    default_exact_count, CoreSearchRequest, CoreSearchRequestBatch, OrderByInterface,
-    PointRequestInternal, QueryEnum, RecommendExample, Record, ScrollRequestInternal,
+    default_exact_count, CoreSearchRequest, CoreSearchRequestBatch, PointRequestInternal,
+    RecommendExample, Record, ScrollRequestInternal,
 };
 use collection::operations::vector_ops::{DeleteVectors, PointVectors, UpdateVectors};
 use collection::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
 use collection::shards::shard::ShardId;
 use itertools::Itertools;
+use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::VectorStruct;
 use segment::types::{
     ExtendedPointId, Filter, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
@@ -582,7 +584,7 @@ pub async fn update_batch(
                 .await
             }
             points_update_operation::Operation::OverwritePayload(
-                points_update_operation::SetPayload {
+                points_update_operation::OverwritePayload {
                     payload,
                     points_selector,
                     shard_key_selector,
@@ -1425,7 +1427,10 @@ pub async fn scroll(
         with_vector: with_vectors
             .map(|selector| selector.into())
             .unwrap_or_default(),
-        order_by: order_by.map(OrderByInterface::try_from).transpose()?,
+        order_by: order_by
+            .map(OrderBy::try_from)
+            .transpose()?
+            .map(OrderByInterface::Struct),
     };
 
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;

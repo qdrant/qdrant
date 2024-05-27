@@ -61,7 +61,6 @@ fn is_localhost_ip(host: &str) -> bool {
 
 /// Prints welcome message
 #[rustfmt::skip]
-#[allow(clippy::needless_raw_string_hashes)]
 pub fn welcome(settings: &Settings) {
     if !stdout().is_terminal()  {
         colored::control::set_override(false);

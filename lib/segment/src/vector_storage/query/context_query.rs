@@ -34,6 +34,7 @@ impl<T> ContextPair<T> {
     /// to approach the best zone, once the best zone is reached, score will be same for all
     /// points inside that zone.
     /// e.g.:
+    /// ```text
     ///                   │
     ///                   │
     ///                   │    +0
@@ -44,9 +45,9 @@ impl<T> ContextPair<T> {
     ///   ─►          ─►  │
     ///  -0.4        -0.1 │   +0
     ///                   │
-    ///
+    /// ```
     /// Simple 2D model:
-    /// https://www.desmos.com/calculator/lbxycyh2hs
+    /// <https://www.desmos.com/calculator/lbxycyh2hs>
     pub fn loss_by(&self, similarity: impl Fn(&T) -> ScoreType) -> ScoreType {
         const MARGIN: ScoreType = ScoreType::EPSILON;
 

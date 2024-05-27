@@ -18,8 +18,8 @@ use crate::operations::types::CollectionResult;
 #[serde(rename_all = "snake_case")]
 pub enum SnapshotPriority {
     NoSync,
-    Snapshot,
     #[default]
+    Snapshot,
     Replica,
     // `ShardTransfer` is for internal use only, and should not be exposed/used in public API
     #[serde(skip)]
@@ -75,6 +75,10 @@ pub struct SnapshotRecover {
     #[serde(default)]
     #[validate(custom = "common::validation::validate_sha256_hash")]
     pub checksum: Option<String>,
+
+    /// Optional API key used when fetching the snapshot from a remote URL.
+    #[serde(default)]
+    pub api_key: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
@@ -160,6 +164,10 @@ pub struct ShardSnapshotRecover {
     #[validate(custom = "common::validation::validate_sha256_hash")]
     #[serde(default)]
     pub checksum: Option<String>,
+
+    /// Optional API key used when fetching the snapshot from a remote URL.
+    #[serde(default)]
+    pub api_key: Option<String>,
 }
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize, schemars::JsonSchema)]

@@ -1,8 +1,10 @@
 use std::path::Path;
 use std::{fs, io, result};
 
+use reqwest::header::{HeaderMap, HeaderValue, InvalidHeaderValue};
 use storage::content_manager::errors::StorageError;
 
+use super::auth::HTTP_HEADER_API_KEY;
 use crate::settings::{Settings, TlsConfig};
 
 #[derive(Clone)]
@@ -33,26 +35,53 @@ impl HttpClient {
         Ok(http_client)
     }
 
-    pub fn client(&self) -> Result<reqwest::Client> {
-        match &self.tls_config {
-            Some(tls_config) => https_client(tls_config, self.verify_https_client_certificate),
-            None => Ok(reqwest::Client::new()),
-        }
+    /// Create a new HTTP(S) client
+    ///
+    /// An API key can be optionally provided to be used in this HTTP client. It'll send the API
+    /// key as `Api-key` header in every request.
+    ///
+    /// # Warning
+    ///
+    /// Setting an API key may leak when the client is used to send a request to a malicious
+    /// server. This is potentially dangerous if a user has control over what URL is accessed.
+    ///
+    /// For this reason the API key is not set by default as provided in the configuration. It must
+    /// be explicitly provided when creating the HTTP client.
+    pub fn client(&self, api_key: Option<&str>) -> Result<reqwest::Client> {
+        https_client(
+            api_key,
+            self.tls_config.as_ref(),
+            self.verify_https_client_certificate,
+        )
     }
 }
 
 fn https_client(
-    tls_config: &TlsConfig,
+    api_key: Option<&str>,
+    tls_config: Option<&TlsConfig>,
     verify_https_client_certificate: bool,
 ) -> Result<reqwest::Client> {
-    let mut builder = reqwest::Client::builder()
-        .add_root_certificate(https_client_ca_cert(tls_config.ca_cert.as_ref())?);
+    let mut builder = reqwest::Client::builder();
 
-    if verify_https_client_certificate {
-        builder = builder.identity(https_client_identity(
-            tls_config.cert.as_ref(),
-            tls_config.key.as_ref(),
-        )?);
+    // Configure TLS root certificate and validation
+    if let Some(tls_config) = tls_config {
+        builder = builder.add_root_certificate(https_client_ca_cert(tls_config.ca_cert.as_ref())?);
+
+        if verify_https_client_certificate {
+            builder = builder.identity(https_client_identity(
+                tls_config.cert.as_ref(),
+                tls_config.key.as_ref(),
+            )?);
+        }
+    }
+
+    // Attach API key as sensitive header
+    if let Some(api_key) = api_key {
+        let mut headers = HeaderMap::new();
+        let mut api_key_value = HeaderValue::from_str(api_key).map_err(Error::MalformedApiKey)?;
+        api_key_value.set_sensitive(true);
+        headers.insert(HTTP_HEADER_API_KEY, api_key_value);
+        builder = builder.default_headers(headers);
     }
 
     let client = builder.build()?;
@@ -96,6 +125,9 @@ pub enum Error {
 
     #[error("failed to setup HTTPS client: {0}")]
     Reqwest(#[from] reqwest::Error),
+
+    #[error("malformed API key")]
+    MalformedApiKey(#[source] InvalidHeaderValue),
 }
 
 impl Error {

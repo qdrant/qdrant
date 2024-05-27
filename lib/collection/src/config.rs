@@ -11,8 +11,10 @@ use segment::common::anonymize::Anonymize;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::types::{
-    Distance, HnswConfig, Indexes, PayloadStorageType, QuantizationConfig, SparseVectorDataConfig,
-    VectorDataConfig, VectorStorageDatatype, VectorStorageType,
+    default_replication_factor_const, default_shard_number_const,
+    default_write_consistency_factor_const, Distance, HnswConfig, Indexes, PayloadStorageType,
+    QuantizationConfig, SparseVectorDataConfig, VectorDataConfig, VectorStorageDatatype,
+    VectorStorageType,
 };
 use serde::{Deserialize, Serialize};
 use validator::Validate;
@@ -132,15 +134,15 @@ impl Anonymize for CollectionParams {
 }
 
 pub fn default_shard_number() -> NonZeroU32 {
-    NonZeroU32::new(1).unwrap()
+    NonZeroU32::new(default_shard_number_const()).unwrap()
 }
 
 pub fn default_replication_factor() -> NonZeroU32 {
-    NonZeroU32::new(1).unwrap()
+    NonZeroU32::new(default_replication_factor_const()).unwrap()
 }
 
 pub fn default_write_consistency_factor() -> NonZeroU32 {
-    NonZeroU32::new(1).unwrap()
+    NonZeroU32::new(default_write_consistency_factor_const()).unwrap()
 }
 
 const fn default_on_disk_payload() -> bool {
@@ -245,6 +247,12 @@ impl CollectionParams {
             })
     }
 
+    pub fn get_sparse_vector_params_opt(&self, vector_name: &str) -> Option<&SparseVectorParams> {
+        self.sparse_vectors
+            .as_ref()
+            .and_then(|sparse_vectors| sparse_vectors.get(vector_name))
+    }
+
     pub fn get_sparse_vector_params_mut(
         &mut self,
         vector_name: &str,
@@ -310,7 +318,11 @@ impl CollectionParams {
     ) -> CollectionResult<()> {
         for (vector_name, update_params) in update_vectors.0.iter() {
             let sparse_vector_params = self.get_sparse_vector_params_mut(vector_name)?;
-            let SparseVectorParams { index } = update_params.clone();
+            let SparseVectorParams { index, modifier } = update_params.clone();
+
+            if let Some(modifier) = modifier {
+                sparse_vector_params.modifier = Some(modifier);
+            }
 
             if let Some(index) = index {
                 if let Some(existing_index) = &mut sparse_vector_params.index {
@@ -347,8 +359,7 @@ impl CollectionParams {
                         } else {
                             VectorStorageType::Memory
                         },
-                        // TODO(colbert) add `multivec` to `VectorParams`
-                        multi_vec_config: None,
+                        multivec_config: params.multivec_config,
                         datatype: params.datatype.map(VectorStorageDatatype::from),
                     },
                 )

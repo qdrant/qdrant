@@ -4,8 +4,7 @@ use futures::Future;
 use itertools::Itertools;
 use segment::data_types::vectors::NamedQuery;
 use segment::types::{Condition, Filter, HasIdCondition, ScoredPoint};
-use segment::vector_storage::query::context_query::{ContextPair, ContextQuery};
-use segment::vector_storage::query::discovery_query::DiscoveryQuery;
+use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery};
 use tokio::sync::RwLockReadGuard;
 
 use crate::collection::Collection;
@@ -15,10 +14,11 @@ use crate::common::fetch_vectors::{
 };
 use crate::common::retrieve_request_trait::RetrieveRequest;
 use crate::operations::consistency_params::ReadConsistency;
+use crate::operations::query_enum::QueryEnum;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
     CollectionError, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch,
-    DiscoverRequestInternal, QueryEnum,
+    DiscoverRequestInternal,
 };
 
 fn discovery_into_core_search(

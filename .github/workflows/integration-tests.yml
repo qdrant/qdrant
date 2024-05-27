@@ -48,7 +48,7 @@ jobs:
         run: sudo apt-get install clang
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.11'
       - name: Install python deps
         run: pip install -r ./tests/consensus_tests/requirements.txt
       - name: Build
@@ -75,7 +75,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.11'
       - name: Install requests python lib
         run: pip install requests
       - name: Set up Docker Buildx
@@ -161,7 +161,7 @@ jobs:
         run: ./tests/openapi_consistency_check.sh
 
 
-  test-low-ram:
+  test-low-resources:
     runs-on: ubuntu-latest
 
     steps:
@@ -195,11 +195,32 @@ jobs:
         working-directory: ./tests/low-ram
         shell: bash
         run: ./low-ram.sh
+      - name: Run low Disk test
+        working-directory: ./tests/low-disk
+        shell: bash
+        run: ./low-disk.sh
 
-  test-snapshot-operations:
+  test-snapshot-operations-s3-minio:
     runs-on: ubuntu-latest
 
+    # Setup minio server
+    services:
+      minio:
+        image: satantime/minio-server
+        ports:
+          - 9000:9000
+        env:
+          MINIO_ACCESS_KEY: "minioadmin"
+          MINIO_SECRET_KEY: "minioadmin"
+
     steps:
+      - name: Setup test bucket
+        env:
+          AWS_ACCESS_KEY_ID: "minioadmin"
+          AWS_SECRET_ACCESS_KEY: "minioadmin"
+          AWS_EC2_METADATA_DISABLED: "true"
+        run: echo $(aws --endpoint-url http://127.0.0.1:9000/ s3 mb s3://test-bucket)
+
       - name: Install dependencies
         run: sudo apt-get install clang jq
       - name: Setup git-lfs
@@ -226,14 +247,28 @@ jobs:
           load: true
           build-args: |
             PROFILE=ci
+      - name: Install dependencies
+        run: sudo snap install yq
       - name: Run test snapshot operations on different storage filesystems
         working-directory: ./tests/snapshots
         shell: bash
-        run: ./snapshots-recovery.sh
+        run: ./snapshots-recovery.sh local
+      - name: Run test snapshot operations on different storage filesystems
+        working-directory: ./tests/snapshots
+        shell: bash
+        run: ./snapshots-recovery.sh s3
 
-  test-shard-snapshot-api:
+  test-shard-snapshot-api-s3-minio:
     runs-on: ubuntu-latest
-
+    # Setup minio server
+    services:
+      minio:
+        image: satantime/minio-server
+        ports:
+          - 9000:9000
+        env:
+          MINIO_ACCESS_KEY: "minioadmin"
+          MINIO_SECRET_KEY: "minioadmin"
     steps:
       - name: Install minimal stable
         uses: dtolnay/rust-toolchain@stable
@@ -254,3 +289,4 @@ jobs:
           trap 'kill $(jobs -p) &>/dev/null || :' EXIT
           sleep 10
           ./tests/shard-snapshot-api.sh test-all
+          ./tests/shard-snapshot-api.sh storage-s3-test-all

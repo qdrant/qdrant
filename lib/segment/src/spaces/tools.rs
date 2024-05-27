@@ -23,8 +23,8 @@ where
         return vec![];
     }
 
-    // If small values is better - PQ should pop-out big values first.
-    // Hence is should be min-heap
+    // If the caller is interested in smallest
+    // values coming first, the priority queue should be a min-heap
     let mut pq = FixedLengthPriorityQueue::new(top);
     for element in elements {
         pq.push(Reverse(element));
@@ -40,8 +40,8 @@ where
         return vec![];
     }
 
-    // If big values is better - PQ should pop-out small values first.
-    // Hence it should be min-heap
+    // If the caller is interested in greatest
+    // values coming first, the priority queue should be a max-heap
     let mut pq = FixedLengthPriorityQueue::new(top);
     for element in elements {
         pq.push(element);

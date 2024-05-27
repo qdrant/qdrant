@@ -30,6 +30,7 @@ use crate::common::telemetry::TelemetryData;
 mod actix;
 mod common;
 mod settings;
+mod tracing;
 
 #[derive(Serialize, JsonSchema)]
 struct AllDefinitions {

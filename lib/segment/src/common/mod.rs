@@ -4,13 +4,13 @@ pub mod macros;
 pub mod mmap_type;
 pub mod operation_error;
 pub mod operation_time_statistics;
+pub mod reciprocal_rank_fusion;
 pub mod rocksdb_buffered_delete_wrapper;
 pub mod rocksdb_buffered_update_wrapper;
 pub mod rocksdb_wrapper;
 pub mod utils;
 pub mod validate_snapshot_archive;
 pub mod vector_utils;
-pub mod version;
 
 use std::sync::atomic::AtomicBool;
 
@@ -179,7 +179,7 @@ fn check_vector_against_config(
             // Check dimensionality
             let dim = vector_config.size;
             if vector.len() != dim {
-                return Err(OperationError::WrongVector {
+                return Err(OperationError::WrongVectorDimension {
                     expected_dim: dim,
                     received_dim: vector.len(),
                 });
@@ -192,7 +192,7 @@ fn check_vector_against_config(
             let dim = vector_config.size;
             for vector in multi_vector.multi_vectors() {
                 if vector.len() != dim {
-                    return Err(OperationError::WrongVector {
+                    return Err(OperationError::WrongVectorDimension {
                         expected_dim: dim,
                         received_dim: vector.len(),
                     });

@@ -6,6 +6,7 @@ enum Datatype {
   Default = 0;
   Float32 = 1;
   Uint8 = 2;
+  Float16 = 3;
 }
 
 message VectorParams {
@@ -15,6 +16,7 @@ message VectorParams {
   optional QuantizationConfig quantization_config = 4; // Configuration of vector quantization config. If omitted - the collection configuration will be used
   optional bool on_disk = 5; // If true - serve vectors from disk. If set to false, the vectors will be loaded in RAM.
   optional Datatype datatype = 6; // Data type of the vectors
+  optional MultiVectorConfig multivector_config = 7; // Configuration for multi-vector search
 }
 
 message VectorParamsDiff {
@@ -45,13 +47,28 @@ message VectorsConfigDiff {
   }
 }
 
+enum Modifier {
+    None = 0;
+    Idf = 1; // Apply Inverse Document Frequency
+}
+
 message SparseVectorParams {
   optional SparseIndexConfig index = 1; // Configuration of sparse index
+  optional Modifier modifier = 2; // If set - apply modifier to the vector values
 }
 
 message SparseVectorConfig {
   map<string, SparseVectorParams> map = 1;
 }
+
+enum MultiVectorComparator {
+    MaxSim = 0;
+}
+
+message MultiVectorConfig {
+    MultiVectorComparator comparator = 1; // Comparator for multi-vector search
+}
+
 
 message GetCollectionInfoRequest {
   string collection_name = 1; // Name of the collection
@@ -458,6 +475,7 @@ enum ReplicaState {
   Listener = 4; // A shard which receives data, but is not used for search; Useful for backup shards
   PartialSnapshot = 5; // Deprecated: snapshot shard transfer is in progress; Updates should not be sent to (and are ignored by) the shard
   Recovery = 6; // Shard is undergoing recovered by an external node; Normally rejects updates, accepts updates if force is true
+  Resharding = 7; // Points are being migrated to this shard as part of resharding
 }
 
 message ShardKey {
@@ -489,7 +507,7 @@ message ShardTransferInfo {
 }
 
 message CollectionClusterInfoResponse {
-  uint64 peer_id = 1;  // ID of this peer 
+  uint64 peer_id = 1;  // ID of this peer
   uint64 shard_count = 2; // Total number of shards
   repeated LocalShardInfo local_shards = 3; // Local shards
   repeated RemoteShardInfo remote_shards = 4; // Remote shards
@@ -497,6 +515,13 @@ message CollectionClusterInfoResponse {
 }
 
 message MoveShard {
+  uint32 shard_id = 1; // Local shard id
+  uint64 from_peer_id = 2;
+  uint64 to_peer_id = 3;
+  optional ShardTransferMethod method = 4;
+}
+
+message ReplicateShard {
   uint32 shard_id = 1; // Local shard id
   uint64 from_peer_id = 2;
   uint64 to_peer_id = 3;
@@ -542,7 +567,7 @@ message UpdateCollectionClusterSetupRequest {
   string collection_name = 1; // Name of the collection
   oneof operation {
     MoveShard move_shard = 2;
-    MoveShard replicate_shard = 3;
+    ReplicateShard replicate_shard = 3;
     AbortShardTransfer abort_transfer = 4;
     Replica drop_replica = 5;
     CreateShardKey create_shard_key = 7;

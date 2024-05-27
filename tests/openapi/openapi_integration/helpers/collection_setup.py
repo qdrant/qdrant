@@ -120,6 +120,7 @@ def basic_collection_setup(
         collection_name='test_collection',
         on_disk_payload=False,
         on_disk_vectors=False,
+        wal_capacity=None,
 ):
     drop_collection(collection_name)
 
@@ -136,7 +137,10 @@ def basic_collection_setup(
             "sparse_vectors": {
                 "sparse-text": {},
             },
-            "on_disk_payload": on_disk_payload
+            "on_disk_payload": on_disk_payload,
+            "wal_config": {
+                "wal_capacity_mb": wal_capacity,
+            }
         }
     )
     assert response.ok

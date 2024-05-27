@@ -510,6 +510,11 @@ mod tests {
         lon: 139.691706,
     };
 
+    const LOS_ANGELES: GeoPoint = GeoPoint {
+        lat: 34.052235,
+        lon: -118.243683,
+    };
+
     const FIELD_NAME: &str = "test";
 
     fn condition_for_geo_radius(key: &str, geo_radius: GeoRadius) -> FieldCondition {
@@ -518,6 +523,10 @@ mod tests {
 
     fn condition_for_geo_polygon(key: &str, geo_polygon: GeoPolygon) -> FieldCondition {
         FieldCondition::new_geo_polygon(path(key), geo_polygon)
+    }
+
+    fn condition_for_geo_box(key: &str, geo_bounding_box: GeoBoundingBox) -> FieldCondition {
+        FieldCondition::new_geo_bounding_box(path(key), geo_bounding_box)
     }
 
     fn build_random_index(
@@ -1155,5 +1164,73 @@ mod tests {
         assert!(!field_index
             .match_cardinality(&hashes_with_interior)
             .equals_min_exp_max(&CardinalityEstimation::exact(0)),);
+    }
+
+    #[rstest]
+    #[case(true)]
+    #[case(false)]
+    fn query_across_antimeridian(#[case] is_appendable: bool) {
+        let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
+        {
+            let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
+
+            let mut index = GeoMapIndex::new(db, FIELD_NAME, true);
+
+            index.recreate().unwrap();
+
+            // Index BERLIN
+            let geo_values = json!([
+                {
+                    "lon": BERLIN.lon,
+                    "lat": BERLIN.lat
+                }
+            ]);
+            index.add_point(1, &[&geo_values]).unwrap();
+
+            // Index LOS_ANGELES
+            let geo_values = json!([
+                {
+                    "lon": LOS_ANGELES.lon,
+                    "lat": LOS_ANGELES.lat
+                }
+            ]);
+            index.add_point(2, &[&geo_values]).unwrap();
+
+            // Index TOKYO
+            let geo_values = json!([
+                {
+                    "lon": TOKYO.lon,
+                    "lat": TOKYO.lat
+                }
+            ]);
+            index.add_point(3, &[&geo_values]).unwrap();
+
+            index.flusher()().unwrap();
+            drop(index);
+        }
+
+        let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
+        let mut new_index = GeoMapIndex::new(db, FIELD_NAME, is_appendable);
+        new_index.load().unwrap();
+        assert_eq!(new_index.points_count(), 3);
+        assert_eq!(new_index.points_values_count(), 3);
+
+        // Large bounding box around the USA: (74.071028, 167), (18.7763, -66.885417)
+        let bounding_box = GeoBoundingBox {
+            top_left: GeoPoint {
+                lat: 74.071028,
+                lon: 167.0,
+            },
+            bottom_right: GeoPoint {
+                lat: 18.7763,
+                lon: -66.885417,
+            },
+        };
+
+        // check with geo_radius
+        let field_condition = condition_for_geo_box("test", bounding_box.clone());
+        let point_offsets = new_index.filter(&field_condition).unwrap().collect_vec();
+        // Only LOS_ANGELES is in the bounding box
+        assert_eq!(point_offsets, vec![2]);
     }
 }

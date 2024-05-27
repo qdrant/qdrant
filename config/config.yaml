@@ -7,6 +7,15 @@ storage:
   # Where to store snapshots
   snapshots_path: ./snapshots
 
+  snapshots_config:
+    # "local" or "s3" - where to store snapshots
+    snapshots_storage: local
+    # s3_config:
+    #   bucket: ""
+    #   region: ""
+    #   access_key: ""
+    #   secret_key: ""
+
   # Where to store temporary files
   # If null, temporary snapshot are stored in: storage/snapshots_temp/
   temp_path: null
@@ -152,6 +161,23 @@ storage:
   # More info: https://qdrant.tech/documentation/guides/distributed_deployment/#shard-transfer-method
   shard_transfer_method: null
 
+  # Default parameters for collections
+  collection:
+    # Number of replicas of each shard that network tries to maintain
+    replication_factor: 1
+
+    # How many replicas should apply the operation for us to consider it successful
+    write_consistency_factor: 1
+
+    # Default parameters for vectors.
+    vectors:
+      # Whether vectors should be stored in memory or on disk.
+      on_disk: null
+
+    # Default quantization configuration.
+    # More info: https://qdrant.tech/documentation/guides/quantization
+    quantization: null
+
 service:
   # Maximum size of POST data in a single request in megabytes
   max_request_size_mb: 32
@@ -193,7 +219,7 @@ service:
   #
   # Uncomment to enable.
   # api_key: your_secret_api_key_here
-   
+
   # Set an api-key for read-only operations.
   # If set, all requests must include a header with the api-key.
   # example header: `api-key: <API-KEY>`

@@ -25,16 +25,19 @@ pub struct ChannelService {
     pub channel_pool: Arc<TransportChannelPool>,
     /// Port at which the public REST API is exposed for the current peer.
     pub current_rest_port: u16,
+    /// Instance wide API key if configured, must be used with care.
+    pub api_key: Option<String>,
 }
 
 impl ChannelService {
     /// Construct a new channel service with the given REST port.
-    pub fn new(current_rest_port: u16) -> Self {
+    pub fn new(current_rest_port: u16, api_key: Option<String>) -> Self {
         Self {
             id_to_address: Default::default(),
             id_to_metadata: Default::default(),
             channel_pool: Default::default(),
             current_rest_port,
+            api_key,
         }
     }
 
@@ -207,6 +210,7 @@ impl Default for ChannelService {
             id_to_metadata: Default::default(),
             channel_pool: Default::default(),
             current_rest_port: 6333,
+            api_key: None,
         }
     }
 }

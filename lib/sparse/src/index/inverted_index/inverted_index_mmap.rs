@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
+use io::storage_version::{StorageVersion as _, VERSION_FILE};
 use memmap2::{Mmap, MmapMut};
 use memory::madvise;
 use memory::mmap_ops::{
@@ -12,11 +13,13 @@ use memory::mmap_ops::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::common::sparse_vector::SparseVector;
-use crate::common::types::DimId;
+use crate::common::sparse_vector::RemappedSparseVector;
+use crate::common::types::{DimId, DimOffset};
 use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use crate::index::inverted_index::InvertedIndex;
-use crate::index::posting_list::{PostingElement, PostingListIterator};
+use crate::index::migrate::SparseVectorIndexVersion;
+use crate::index::posting_list::PostingListIterator;
+use crate::index::posting_list_common::PostingElementEx;
 
 const POSTING_HEADER_SIZE: usize = size_of::<PostingListFileHeader>();
 const INDEX_FILE_NAME: &str = "inverted_index.data";
@@ -42,6 +45,8 @@ struct PostingListFileHeader {
 }
 
 impl InvertedIndex for InvertedIndexMmap {
+    type Iter<'a> = PostingListIterator<'a>;
+
     fn open(path: &Path) -> std::io::Result<Self> {
         Self::load(path)
     }
@@ -55,14 +60,24 @@ impl InvertedIndex for InvertedIndexMmap {
         self.get(id).map(PostingListIterator::new)
     }
 
-    fn files(path: &Path) -> Vec<PathBuf> {
-        vec![
-            Self::index_file_path(path),
-            Self::index_config_file_path(path),
-        ]
+    fn len(&self) -> usize {
+        self.file_header.posting_count
     }
 
-    fn upsert(&mut self, _id: PointOffsetType, _vector: SparseVector) {
+    fn posting_list_len(&self, id: &DimOffset) -> Option<usize> {
+        self.get(id).map(|posting_list| posting_list.len())
+    }
+
+    fn files(path: &Path) -> Vec<PathBuf> {
+        let mut files = vec![path.join(VERSION_FILE), Self::index_file_path(path)];
+        files.retain(|f| f.exists());
+
+        files.push(Self::index_config_file_path(path));
+
+        files
+    }
+
+    fn upsert(&mut self, _id: PointOffsetType, _vector: RemappedSparseVector) {
         panic!("Cannot upsert into a read-only Mmap inverted index")
     }
 
@@ -94,7 +109,7 @@ impl InvertedIndexMmap {
         path.join(INDEX_CONFIG_FILE_NAME)
     }
 
-    pub fn get(&self, id: &DimId) -> Option<&[PostingElement]> {
+    pub fn get(&self, id: &DimId) -> Option<&[PostingElementEx]> {
         // check that the id is not out of bounds (posting_count includes the empty zeroth entry)
         if *id >= self.file_header.posting_count as DimId {
             return None;
@@ -132,6 +147,9 @@ impl InvertedIndexMmap {
         // save header properties
         let posting_count = inverted_index_ram.postings.len();
         let vector_count = inverted_index_ram.vector_count();
+
+        // save version
+        SparseVectorIndexVersion::save(path.as_ref())?;
 
         // finalize data with index file.
         let file_header = InvertedIndexFileHeader {
@@ -171,7 +189,7 @@ impl InvertedIndexMmap {
     fn total_posting_elements_size(inverted_index_ram: &InvertedIndexRam) -> usize {
         let mut total_posting_elements_size = 0;
         for posting in &inverted_index_ram.postings {
-            total_posting_elements_size += posting.elements.len() * size_of::<PostingElement>();
+            total_posting_elements_size += posting.elements.len() * size_of::<PostingElementEx>();
         }
 
         total_posting_elements_size
@@ -184,7 +202,7 @@ impl InvertedIndexMmap {
     ) {
         let mut elements_offset: usize = total_posting_headers_size;
         for (id, posting) in inverted_index_ram.postings.iter().enumerate() {
-            let posting_elements_size = posting.elements.len() * size_of::<PostingElement>();
+            let posting_elements_size = posting.elements.len() * size_of::<PostingElementEx>();
             let posting_header = PostingListFileHeader {
                 start_offset: elements_offset as u64,
                 end_offset: (elements_offset + posting_elements_size) as u64,

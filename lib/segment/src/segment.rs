@@ -1,14 +1,16 @@
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
 use atomic_refcell::AtomicRefCell;
+use bitvec::prelude::BitVec;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use io::file_operations::{atomic_save_json, read_json};
+use io::storage_version::{StorageVersion, VERSION_FILE};
 use itertools::Either;
 use memory::mmap_ops;
 use parking_lot::{Mutex, RwLock};
@@ -22,10 +24,10 @@ use crate::common::operation_error::{
     get_service_error, OperationError, OperationResult, SegmentFailedState,
 };
 use crate::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
-use crate::common::version::{StorageVersion, VERSION_FILE};
 use crate::common::{check_named_vectors, check_query_vectors, check_stopped, check_vector_name};
 use crate::data_types::named_vectors::NamedVectors;
-use crate::data_types::order_by::{Direction, OrderBy, OrderingValue};
+use crate::data_types::order_by::{Direction, OrderBy, OrderValue};
+use crate::data_types::query_context::{QueryContext, SegmentQueryContext};
 use crate::data_types::vectors::{MultiDenseVector, QueryVector, Vector, VectorRef};
 use crate::entry::entry_point::SegmentEntry;
 use crate::id_tracker::IdTrackerSS;
@@ -58,8 +60,8 @@ const SNAPSHOT_FILES_PATH: &str = "files";
 pub struct SegmentVersion;
 
 impl StorageVersion for SegmentVersion {
-    fn current() -> String {
-        env!("CARGO_PKG_VERSION").to_string()
+    fn current_raw() -> &'static str {
+        env!("CARGO_PKG_VERSION")
     }
 }
 
@@ -214,14 +216,22 @@ impl Segment {
                     let vector = match *vector_storage {
                         VectorStorageEnum::DenseSimple(_)
                         | VectorStorageEnum::DenseSimpleByte(_)
+                        | VectorStorageEnum::DenseSimpleHalf(_)
                         | VectorStorageEnum::DenseMemmap(_)
                         | VectorStorageEnum::DenseMemmapByte(_)
+                        | VectorStorageEnum::DenseMemmapHalf(_)
                         | VectorStorageEnum::DenseAppendableMemmap(_)
-                        | VectorStorageEnum::DenseAppendableMemmapByte(_) => {
+                        | VectorStorageEnum::DenseAppendableMemmapByte(_)
+                        | VectorStorageEnum::DenseAppendableMemmapHalf(_) => {
                             Vector::from(vec![1.0; dim])
                         }
                         VectorStorageEnum::SparseSimple(_) => Vector::from(SparseVector::default()),
-                        VectorStorageEnum::MultiDenseSimple(_) => {
+                        VectorStorageEnum::MultiDenseSimple(_)
+                        | VectorStorageEnum::MultiDenseSimpleByte(_)
+                        | VectorStorageEnum::MultiDenseSimpleHalf(_)
+                        | VectorStorageEnum::MultiDenseAppendableMemmap(_)
+                        | VectorStorageEnum::MultiDenseAppendableMemmapByte(_)
+                        | VectorStorageEnum::MultiDenseAppendableMemmapHalf(_) => {
                             Vector::from(MultiDenseVector::placeholder(dim))
                         }
                     };
@@ -427,6 +437,14 @@ impl Segment {
 
     fn bump_segment_version(&mut self, op_num: SeqNumberType) {
         self.version = Some(max(op_num, self.version.unwrap_or(0)));
+    }
+
+    pub fn get_internal_id(&self, point_id: PointIdType) -> Option<PointOffsetType> {
+        self.id_tracker.borrow().internal_id(point_id)
+    }
+
+    pub fn get_deleted_points_bitvec(&self) -> BitVec {
+        BitVec::from(self.id_tracker.borrow().deleted_point_bitslice())
     }
 
     fn lookup_internal_id(&self, point_id: PointIdType) -> OperationResult<PointOffsetType> {
@@ -685,6 +703,7 @@ impl Segment {
                     payload,
                     vector,
                     shard_key: None,
+                    order_value: None,
                 })
             })
             .collect()
@@ -784,7 +803,7 @@ impl Segment {
         order_by: &OrderBy,
         limit: Option<usize>,
         condition: &Filter,
-    ) -> OperationResult<Vec<(OrderingValue, PointIdType)>> {
+    ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
         let payload_index = self.payload_index.borrow();
         let id_tracker = self.id_tracker.borrow();
 
@@ -860,7 +879,7 @@ impl Segment {
         order_by: &OrderBy,
         limit: Option<usize>,
         filter: Option<&Filter>,
-    ) -> OperationResult<Vec<(OrderingValue, PointIdType)>> {
+    ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
         let payload_index = self.payload_index.borrow();
 
         let numeric_index = payload_index
@@ -971,6 +990,7 @@ impl Segment {
 
     /// This function is a simplified version of `search_batch` intended for testing purposes.
     #[allow(clippy::too_many_arguments)]
+    #[cfg(feature = "testing")]
     pub fn search(
         &self,
         vector_name: &str,
@@ -989,11 +1009,14 @@ impl Segment {
             filter,
             top,
             params,
-            &false.into(),
-            usize::MAX,
+            Default::default(),
         )?;
 
         Ok(result.into_iter().next().unwrap())
+    }
+
+    pub fn cleanup_versions(&mut self) -> OperationResult<()> {
+        self.id_tracker.borrow_mut().cleanup_versions()
     }
 }
 
@@ -1020,21 +1043,20 @@ impl SegmentEntry for Segment {
         filter: Option<&Filter>,
         top: usize,
         params: Option<&SearchParams>,
-        is_stopped: &AtomicBool,
-        search_optimized_threshold_kb: usize,
+        query_context: SegmentQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>> {
         check_query_vectors(vector_name, query_vectors, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
+        let vector_query_context = query_context.get_vector_context(vector_name);
         let internal_results = vector_data.vector_index.borrow().search(
             query_vectors,
             filter,
             top,
             params,
-            is_stopped,
-            search_optimized_threshold_kb,
+            &vector_query_context,
         )?;
 
-        check_stopped(is_stopped)?;
+        check_stopped(&vector_query_context.is_stopped())?;
 
         let res = internal_results
             .iter()
@@ -1283,7 +1305,7 @@ impl SegmentEntry for Segment {
         limit: Option<usize>,
         filter: Option<&'a Filter>,
         order_by: &'a OrderBy,
-    ) -> OperationResult<Vec<(OrderingValue, PointIdType)>> {
+    ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
         match filter {
             None => self.filtered_read_by_value_stream(order_by, limit, None),
             Some(filter) => {
@@ -1634,9 +1656,8 @@ impl SegmentEntry for Segment {
         snapshot_dir_path: &Path,
     ) -> OperationResult<PathBuf> {
         log::debug!(
-            "Taking snapshot of segment {:?} into {:?}",
+            "Taking snapshot of segment {:?} into {snapshot_dir_path:?}",
             self.current_path,
-            snapshot_dir_path,
         );
 
         if !snapshot_dir_path.exists() {
@@ -1750,9 +1771,8 @@ impl SegmentEntry for Segment {
             let res = fs::remove_dir_all(&temp_path);
             if let Err(err) = res {
                 log::error!(
-                    "Failed to remove tmp directory at {}: {:?}",
+                    "Failed to remove tmp directory at {}: {err:?}",
                     temp_path.display(),
-                    err
                 );
             }
         });
@@ -1778,6 +1798,30 @@ impl SegmentEntry for Segment {
             payload_field_indices: self.payload_index.borrow().get_telemetry_data(),
         }
     }
+
+    fn fill_query_context(&self, query_context: &mut QueryContext) {
+        query_context.add_available_point_count(self.available_point_count());
+
+        for (vector_name, idf) in query_context.mut_idf().iter_mut() {
+            if let Some(vector_data) = self.vector_data.get(vector_name) {
+                let vector_index = vector_data.vector_index.borrow();
+                match vector_index.deref() {
+                    VectorIndexEnum::SparseRam(sparse_index) => {
+                        sparse_index.fill_idf_statistics(idf);
+                    }
+                    VectorIndexEnum::SparseImmutableRam(sparse_index) => {
+                        sparse_index.fill_idf_statistics(idf);
+                    }
+                    VectorIndexEnum::SparseMmap(sparse_index) => {
+                        sparse_index.fill_idf_statistics(idf);
+                    }
+                    VectorIndexEnum::Plain(_)
+                    | VectorIndexEnum::HnswRam(_)
+                    | VectorIndexEnum::HnswMmap(_) => {}
+                }
+            }
+        }
+    }
 }
 
 impl Drop for Segment {
@@ -1788,6 +1832,8 @@ impl Drop for Segment {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::AtomicBool;
+
     use tempfile::Builder;
 
     use super::*;
@@ -1844,7 +1890,7 @@ mod tests {
                     storage_type: VectorStorageType::Memory,
                     index: Indexes::Plain {},
                     quantization_config: None,
-                    multi_vec_config: None,
+                    multivec_config: None,
                     datatype: None,
                 },
             )]),
@@ -1886,8 +1932,7 @@ mod tests {
                 None,
                 10,
                 None,
-                &false.into(),
-                10_000,
+                Default::default(),
             )
             .unwrap();
         eprintln!("search_batch_result = {search_batch_result:#?}");
@@ -1919,7 +1964,7 @@ mod tests {
                     storage_type: VectorStorageType::Memory,
                     index: Indexes::Plain {},
                     quantization_config: None,
-                    multi_vec_config: None,
+                    multivec_config: None,
                     datatype: None,
                 },
             )]),
@@ -2011,7 +2056,7 @@ mod tests {
                     storage_type: VectorStorageType::Memory,
                     index: Indexes::Plain {},
                     quantization_config: None,
-                    multi_vec_config: None,
+                    multivec_config: None,
                     datatype: None,
                 },
             )]),
@@ -2108,7 +2153,7 @@ mod tests {
                     storage_type: VectorStorageType::Memory,
                     index: Indexes::Plain {},
                     quantization_config: None,
-                    multi_vec_config: None,
+                    multivec_config: None,
                     datatype: None,
                 },
             )]),
@@ -2142,7 +2187,7 @@ mod tests {
                     storage_type: VectorStorageType::Memory,
                     index: Indexes::Plain {},
                     quantization_config: None,
-                    multi_vec_config: None,
+                    multivec_config: None,
                     datatype: None,
                 },
             )]),
@@ -2237,7 +2282,7 @@ mod tests {
                     storage_type: VectorStorageType::Memory,
                     index: Indexes::Plain {},
                     quantization_config: None,
-                    multi_vec_config: None,
+                    multivec_config: None,
                     datatype: None,
                 },
             )]),
@@ -2292,7 +2337,7 @@ mod tests {
                         storage_type: VectorStorageType::Memory,
                         index: Indexes::Plain {},
                         quantization_config: None,
-                        multi_vec_config: None,
+                        multivec_config: None,
                         datatype: None,
                     },
                 ),
@@ -2304,7 +2349,7 @@ mod tests {
                         storage_type: VectorStorageType::Memory,
                         index: Indexes::Plain {},
                         quantization_config: None,
-                        multi_vec_config: None,
+                        multivec_config: None,
                         datatype: None,
                     },
                 ),
@@ -2402,7 +2447,7 @@ mod tests {
                         storage_type: VectorStorageType::Memory,
                         index: Indexes::Plain {},
                         quantization_config: None,
-                        multi_vec_config: None,
+                        multivec_config: None,
                         datatype: None,
                     },
                 ),
@@ -2414,7 +2459,7 @@ mod tests {
                         storage_type: VectorStorageType::Memory,
                         index: Indexes::Plain {},
                         quantization_config: None,
-                        multi_vec_config: None,
+                        multivec_config: None,
                         datatype: None,
                     },
                 ),
@@ -2513,8 +2558,7 @@ mod tests {
                     None,
                     1,
                     None,
-                    &false.into(),
-                    10_000,
+                    Default::default(),
                 )
                 .err()
                 .unwrap();
@@ -2578,7 +2622,7 @@ mod tests {
                     storage_type: VectorStorageType::Memory,
                     index: Indexes::Plain {},
                     quantization_config: None,
-                    multi_vec_config: None,
+                    multivec_config: None,
                     datatype: None,
                 },
             )]),

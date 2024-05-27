@@ -58,16 +58,60 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
         &chunk_data[idx..idx + self.dim]
     }
 
+    pub fn get_many<TKey>(&self, key: TKey, count: usize) -> &[T]
+    where
+        TKey: num_traits::cast::AsPrimitive<usize>,
+    {
+        let key: usize = key.as_();
+        let chunk_data = &self.chunks[key / self.chunk_capacity];
+        let idx = (key % self.chunk_capacity) * self.dim;
+        &chunk_data[idx..idx + count * self.dim]
+    }
+
     pub fn push(&mut self, vector: &[T]) -> Result<PointOffsetType, TryReserveError> {
         let new_id = self.len as PointOffsetType;
         self.insert(new_id, vector)?;
         Ok(new_id)
     }
 
-    pub fn insert(&mut self, key: PointOffsetType, vector: &[T]) -> Result<(), TryReserveError> {
-        let key = key as usize;
+    // returns how many flattened vectors can be inserted starting from key
+    pub fn get_chunk_left_keys<TKey>(&mut self, start_key: TKey) -> usize
+    where
+        TKey: num_traits::cast::AsPrimitive<usize>,
+    {
+        self.chunk_capacity - (start_key.as_() % self.chunk_capacity)
+    }
+
+    pub fn insert<TKey>(&mut self, key: TKey, vector: &[T]) -> Result<(), TryReserveError>
+    where
+        TKey: num_traits::cast::AsPrimitive<usize>,
+    {
+        assert_eq!(vector.len(), self.dim, "Vector size mismatch");
+        self.insert_many(key, vector, 1)
+    }
+
+    pub fn insert_many<TKey>(
+        &mut self,
+        key: TKey,
+        vectors: &[T],
+        vectors_count: usize,
+    ) -> Result<(), TryReserveError>
+    where
+        TKey: num_traits::cast::AsPrimitive<usize>,
+    {
+        let key = key.as_();
+        assert_eq!(
+            vectors.len(),
+            vectors_count * self.dim,
+            "Vector size mismatch"
+        );
+        assert!(
+            self.get_chunk_left_keys(key) >= vectors_count,
+            "Index out of bounds"
+        );
+
         let desired_capacity = self.chunk_capacity * self.dim;
-        let new_len = max(self.len, key + 1);
+        let new_len = max(self.len, key + vectors_count);
         let chunks_len = new_len.div_ceil(self.chunk_capacity);
 
         if chunks_len > self.chunks.len() {
@@ -110,16 +154,16 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
         // <https://doc.rust-lang.org/std/vec/struct.Vec.html#capacity-and-reallocation>).
         // All other chunks allocate their capacity in full on first use to prevent expensive
         // reallocations when their data grows.
-        if chunk_data.len() < idx + self.dim {
+        if chunk_data.len() < idx + vectors.len() {
             // If the chunk is not the first one, allocate it fully on first use
             if chunk_idx != 0 {
                 chunk_data.try_set_capacity_exact(desired_capacity)?;
             }
-            chunk_data.resize_with(idx + self.dim, T::default);
+            chunk_data.resize_with(idx + vectors.len(), T::default);
         }
 
-        let data = &mut chunk_data[idx..idx + self.dim];
-        data.copy_from_slice(vector);
+        let data = &mut chunk_data[idx..idx + vectors.len()];
+        data.copy_from_slice(vectors);
 
         // Update `self.len` only after the vector is successfully inserted.
         // In case of OOM, `self.len` will not be updated.

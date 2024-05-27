@@ -522,6 +522,54 @@
         }
       }
     },
+    "/issues": {
+      "get": {
+        "summary": "Get issues",
+        "description": "Get a report of performance issues and configuration suggestions",
+        "operationId": "get_issues",
+        "tags": [
+          "beta"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Clear issues",
+        "description": "Removes all issues reported so far",
+        "operationId": "clear_issues",
+        "tags": [
+          "beta"
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error"
+          }
+        }
+      }
+    },
     "/cluster": {
       "get": {
         "tags": [
@@ -5350,7 +5398,6 @@
             "$ref": "#/components/schemas/WalConfig"
           },
           "quantization_config": {
-            "default": null,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/QuantizationConfig"
@@ -5484,6 +5531,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/Datatype"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "multivec_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MultiVectorConfig"
               },
               {
                 "nullable": true
@@ -5662,7 +5719,25 @@
         "type": "string",
         "enum": [
           "float32",
-          "uint8"
+          "uint8",
+          "float16"
+        ]
+      },
+      "MultiVectorConfig": {
+        "type": "object",
+        "required": [
+          "comparator"
+        ],
+        "properties": {
+          "comparator": {
+            "$ref": "#/components/schemas/MultiVectorComparator"
+          }
+        }
+      },
+      "MultiVectorComparator": {
+        "type": "string",
+        "enum": [
+          "max_sim"
         ]
       },
       "ShardingMethod": {
@@ -5681,6 +5756,17 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/SparseIndexParams"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "modifier": {
+            "description": "Configures addition value modifications for sparse vectors. Default: none",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Modifier"
               },
               {
                 "nullable": true
@@ -5706,6 +5792,14 @@
             "nullable": true
           }
         }
+      },
+      "Modifier": {
+        "description": "If used, include weight modification, which will be applied to sparse vectors at query time: None - no modification (default) Idf - inverse document frequency, based on statistics of the collection",
+        "type": "string",
+        "enum": [
+          "none",
+          "idf"
+        ]
       },
       "HnswConfig": {
         "description": "Config of HNSW index",
@@ -5785,7 +5879,6 @@
           },
           "max_segment_size": {
             "description": "Do not create segments larger this size (in kilobytes). Large segments might require disproportionately long indexation times, therefore it makes sense to limit the size of segments.\n\nIf indexing speed is more important - make this parameter lower. If search speed is more important - make this parameter higher. Note: 1Kb = 1 vector of size 256 If not set, will be automatically selected considering the number of available CPUs.",
-            "default": null,
             "type": "integer",
             "format": "uint",
             "minimum": 0,
@@ -5793,7 +5886,6 @@
           },
           "memmap_threshold": {
             "description": "Maximum size (in kilobytes) of vectors to store in-memory per segment. Segments larger than this threshold will be stored as read-only memmaped file.\n\nMemmap storage is disabled by default, to enable it, set this threshold to a reasonable value.\n\nTo disable memmap storage, set this to `0`. Internally it will use the largest threshold possible.\n\nNote: 1Kb = 1 vector of size 256",
-            "default": null,
             "type": "integer",
             "format": "uint",
             "minimum": 0,
@@ -5801,7 +5893,6 @@
           },
           "indexing_threshold": {
             "description": "Maximum size (in kilobytes) of vectors allowed for plain index, exceeding this threshold will enable vector indexing\n\nDefault value is 20,000, based on <https://github.com/google-research/google-research/blob/master/scann/docs/algorithms.md>.\n\nTo disable vector indexing, set to `0`.\n\nNote: 1kB = 1 vector of size 256.",
-            "default": null,
             "type": "integer",
             "format": "uint",
             "minimum": 0,
@@ -5815,7 +5906,6 @@
           },
           "max_optimization_threads": {
             "description": "Max number of threads (jobs) for running optimizations per shard. Note: each optimization job will also use `max_indexing_threads` threads by itself for index building. If null - have no limit and choose dynamically to saturate CPU. If 0 - no optimization threads, optimizations will be disabled.",
-            "default": null,
             "type": "integer",
             "format": "uint",
             "minimum": 0,
@@ -6205,6 +6295,16 @@
           },
           {
             "$ref": "#/components/schemas/SparseVector"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "float"
+              }
+            }
           }
         ]
       },
@@ -6217,7 +6317,7 @@
         ],
         "properties": {
           "indices": {
-            "description": "indices must be unique",
+            "description": "Indices must be unique",
             "type": "array",
             "items": {
               "type": "integer",
@@ -6226,7 +6326,7 @@
             }
           },
           "values": {
-            "description": "values and indices must be the same length",
+            "description": "Values and indices must be the same length",
             "type": "array",
             "items": {
               "type": "number",
@@ -6305,7 +6405,6 @@
           },
           "with_vector": {
             "description": "Whether to return the point vector with the result?",
-            "default": null,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/WithVector"
@@ -6385,11 +6484,20 @@
         "properties": {
           "should": {
             "description": "At least one of those conditions should match",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Condition"
-            },
-            "nullable": true
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Condition"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Condition"
+                }
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "min_should": {
             "description": "At least minimum amount of given conditions should match",
@@ -6404,19 +6512,37 @@
           },
           "must": {
             "description": "All conditions must match",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Condition"
-            },
-            "nullable": true
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Condition"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Condition"
+                }
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "must_not": {
             "description": "All conditions must NOT match",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Condition"
-            },
-            "nullable": true
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Condition"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Condition"
+                }
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         },
         "additionalProperties": false
@@ -6929,7 +7055,6 @@
           },
           "quantization": {
             "description": "Quantization params",
-            "default": null,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/QuantizationSearchParams"
@@ -6957,13 +7082,11 @@
           },
           "rescore": {
             "description": "If true, use original vectors to re-score top-k results. Might require more time in case if original vectors are stored on disk. If not set, qdrant decides automatically apply rescoring or not.",
-            "default": null,
             "type": "boolean",
             "nullable": true
           },
           "oversampling": {
             "description": "Oversampling factor for quantization. Default is 1.0.\n\nDefines how many extra vectors should be pre-selected using quantized index, and then re-scored using original vectors.\n\nFor example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will be pre-selected using quantized index, and then top-100 will be returned after re-scoring.",
-            "default": null,
             "type": "number",
             "format": "double",
             "minimum": 1,
@@ -7026,8 +7149,31 @@
                 "nullable": true
               }
             ]
+          },
+          "order_value": {
+            "description": "Order-by value",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OrderValue"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
+      },
+      "OrderValue": {
+        "anyOf": [
+          {
+            "type": "integer",
+            "format": "int64"
+          },
+          {
+            "type": "number",
+            "format": "double"
+          }
+        ]
       },
       "UpdateResult": {
         "type": "object",
@@ -7148,7 +7294,6 @@
           },
           "with_vector": {
             "description": "Whether to return the point vector with the result?",
-            "default": null,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/WithVector"
@@ -7166,7 +7311,6 @@
           },
           "using": {
             "description": "Define which vector to use for recommendation, if not specified - try to use default vector",
-            "default": null,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/UsingVector"
@@ -7178,7 +7322,6 @@
           },
           "lookup_from": {
             "description": "The location used to lookup vectors. If not specified - use current collection. Note: the other collection should have the same vector size as the current collection",
-            "default": null,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/LookupLocation"
@@ -7235,7 +7378,6 @@
           },
           "vector": {
             "description": "Optional name of the vector field within the collection. If not provided, the default vector field will be used.",
-            "default": null,
             "type": "string",
             "nullable": true
           },
@@ -7426,7 +7568,6 @@
           },
           "shard_number": {
             "description": "For auto sharding: Number of shards in collection. - Default is 1 for standalone, otherwise equal to the number of nodes - Minimum is 1 For custom sharding: Number of shards in collection per shard group. - Default is 1, meaning that each shard key will be mapped to a single shard - Minimum is 1",
-            "default": null,
             "type": "integer",
             "format": "uint32",
             "minimum": 1,
@@ -7434,7 +7575,6 @@
           },
           "sharding_method": {
             "description": "Sharding method Default is Auto - points are distributed across all available shards Custom - points are distributed across shards according to shard key",
-            "default": null,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/ShardingMethod"
@@ -7446,7 +7586,6 @@
           },
           "replication_factor": {
             "description": "Number of shards replicas. Default is 1 Minimum is 1",
-            "default": null,
             "type": "integer",
             "format": "uint32",
             "minimum": 1,
@@ -7454,7 +7593,6 @@
           },
           "write_consistency_factor": {
             "description": "Defines how many replicas should apply the operation for us to consider it successful. Increasing this number will make the collection more resilient to inconsistencies, but will also make it fail if not enough replicas are available. Does not have any performance impact.",
-            "default": null,
             "type": "integer",
             "format": "uint32",
             "minimum": 1,
@@ -7462,7 +7600,6 @@
           },
           "on_disk_payload": {
             "description": "If true - point's payload will not be stored in memory. It will be read from the disk every time it is requested. This setting saves RAM by (slightly) increasing the response time. Note: those payload values that are involved in filtering and are indexed - remain in RAM.",
-            "default": null,
             "type": "boolean",
             "nullable": true
           },
@@ -7501,7 +7638,6 @@
           },
           "init_from": {
             "description": "Specify other collection to copy data from.",
-            "default": null,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/InitFrom"
@@ -7513,7 +7649,6 @@
           },
           "quantization_config": {
             "description": "Quantization parameters. If none - quantization is disabled.",
-            "default": null,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/QuantizationConfig"
@@ -7674,7 +7809,6 @@
           },
           "quantization_config": {
             "description": "Quantization parameters to update. If none - it is left unchanged.",
-            "default": null,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/QuantizationConfigDiff"
@@ -7784,7 +7918,6 @@
           },
           "on_disk_payload": {
             "description": "If true - point's payload will not be stored in memory. It will be read from the disk every time it is requested. This setting saves RAM by (slightly) increasing the response time. Note: those payload values that are involved in filtering and are indexed - remain in RAM.",
-            "default": null,
             "type": "boolean",
             "nullable": true
           }
@@ -9161,7 +9294,7 @@
               }
             ]
           },
-          "multi_vec_config": {
+          "multivec_config": {
             "description": "Vector specific configuration to enable multiple vectors per point",
             "anyOf": [
               {
@@ -9254,30 +9387,12 @@
           }
         ]
       },
-      "MultiVectorConfig": {
-        "oneOf": [
-          {
-            "type": "object",
-            "required": [
-              "MaxSim"
-            ],
-            "properties": {
-              "MaxSim": {
-                "$ref": "#/components/schemas/MaxSimConfig"
-              }
-            },
-            "additionalProperties": false
-          }
-        ]
-      },
-      "MaxSimConfig": {
-        "type": "object"
-      },
       "VectorStorageDatatype": {
         "description": "Storage types for vectors",
         "type": "string",
         "enum": [
           "float32",
+          "float16",
           "uint8"
         ]
       },
@@ -9910,7 +10025,43 @@
         ],
         "properties": {
           "replicate_shard": {
-            "$ref": "#/components/schemas/MoveShard"
+            "$ref": "#/components/schemas/ReplicateShard"
+          }
+        }
+      },
+      "ReplicateShard": {
+        "type": "object",
+        "required": [
+          "from_peer_id",
+          "shard_id",
+          "to_peer_id"
+        ],
+        "properties": {
+          "shard_id": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "to_peer_id": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "from_peer_id": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "method": {
+            "description": "Method for transferring the shard from one node to another",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardTransferMethod"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -10144,7 +10295,6 @@
           },
           "priority": {
             "description": "Defines which data should be used as a source of truth if there are other replicas in the cluster. If set to `Snapshot`, the snapshot will be used as a source of truth, and the current state will be overwritten. If set to `Replica`, the current state will be used as a source of truth, and after recovery if will be synchronized with the snapshot.",
-            "default": null,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/SnapshotPriority"
@@ -10156,7 +10306,11 @@
           },
           "checksum": {
             "description": "Optional SHA256 checksum to verify snapshot integrity before recovery.",
-            "default": null,
+            "type": "string",
+            "nullable": true
+          },
+          "api_key": {
+            "description": "Optional API key used when fetching the snapshot from a remote URL.",
             "type": "string",
             "nullable": true
           }
@@ -10423,7 +10577,6 @@
           },
           "with_vector": {
             "description": "Whether to return the point vector with the result?",
-            "default": null,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/WithVector"
@@ -10503,7 +10656,6 @@
           },
           "with_vectors": {
             "description": "Options for specifying which vectors to include (or not)",
-            "default": null,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/WithVector"
@@ -10552,7 +10704,6 @@
           },
           "strategy": {
             "description": "How to use positive and negative examples to find the results",
-            "default": null,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/RecommendStrategy"
@@ -10597,7 +10748,6 @@
           },
           "with_vector": {
             "description": "Whether to return the point vector with the result?",
-            "default": null,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/WithVector"
@@ -10615,7 +10765,6 @@
           },
           "using": {
             "description": "Define which vector to use for recommendation, if not specified - try to use default vector",
-            "default": null,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/UsingVector"
@@ -10627,7 +10776,6 @@
           },
           "lookup_from": {
             "description": "The location used to lookup vectors. If not specified - use current collection. Note: the other collection should have the same vector size as the current collection",
-            "default": null,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/LookupLocation"
@@ -10821,7 +10969,6 @@
             "$ref": "#/components/schemas/ShardSnapshotLocation"
           },
           "priority": {
-            "default": null,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/SnapshotPriority"
@@ -10833,7 +10980,11 @@
           },
           "checksum": {
             "description": "Optional SHA256 checksum to verify snapshot integrity before recovery.",
-            "default": null,
+            "type": "string",
+            "nullable": true
+          },
+          "api_key": {
+            "description": "Optional API key used when fetching the snapshot from a remote URL.",
             "type": "string",
             "nullable": true
           }
@@ -10946,7 +11097,6 @@
           },
           "using": {
             "description": "Define which vector to use for recommendation, if not specified - try to use default vector",
-            "default": null,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/UsingVector"
@@ -10958,7 +11108,6 @@
           },
           "lookup_from": {
             "description": "The location used to lookup vectors. If not specified - use current collection. Note: the other collection should have the same vector size as the current collection",
-            "default": null,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/LookupLocation"

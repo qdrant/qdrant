@@ -6,11 +6,13 @@ pub mod conversions_rest;
 pub mod operation_effect;
 pub mod payload_ops;
 pub mod point_ops;
-pub mod shard_key_selector;
+pub mod query_enum;
 pub mod shard_selector_internal;
 pub mod shared_storage_config;
 pub mod snapshot_ops;
+pub mod snapshot_storage_ops;
 pub mod types;
+pub mod universal_query;
 pub mod validation;
 pub mod vector_ops;
 pub mod vector_params_builder;
@@ -23,7 +25,7 @@ use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter};
 use validator::Validate;
 
-use crate::hash_ring::HashRing;
+use crate::hash_ring::{HashRing, ShardIds};
 use crate::shards::shard::{PeerId, ShardId};
 
 pub type ClockToken = u64;
@@ -205,17 +207,28 @@ impl Validate for CollectionUpdateOperations {
     }
 }
 
-fn point_to_shard(point_id: ExtendedPointId, ring: &HashRing<ShardId>) -> ShardId {
-    *ring
-        .get(&point_id)
-        .expect("Hash ring is guaranteed to be non-empty")
+/// Get the shards for a point ID
+///
+/// Normally returns a single shard ID. Might return multiple if resharding is currently in
+/// progress.
+///
+/// # Panics
+///
+/// Panics if the hash ring is empty and there is no shard for the given point ID.
+fn point_to_shards(point_id: &ExtendedPointId, ring: &HashRing) -> ShardIds {
+    let shard_ids = ring.get(point_id);
+    assert!(
+        !shard_ids.is_empty(),
+        "Hash ring is guaranteed to be non-empty",
+    );
+    shard_ids
 }
 
 /// Split iterator of items that have point ids by shard
-fn split_iter_by_shard<I, F, O>(
+fn split_iter_by_shard<I, F, O: Clone>(
     iter: I,
     id_extractor: F,
-    ring: &HashRing<ShardId>,
+    ring: &HashRing,
 ) -> OperationToShard<Vec<O>>
 where
     I: IntoIterator<Item = O>,
@@ -223,21 +236,25 @@ where
 {
     let mut op_vec_by_shard: HashMap<ShardId, Vec<O>> = HashMap::new();
     for operation in iter {
-        let shard_id = point_to_shard(id_extractor(&operation), ring);
-        op_vec_by_shard.entry(shard_id).or_default().push(operation);
+        for shard_id in point_to_shards(&id_extractor(&operation), ring) {
+            op_vec_by_shard
+                .entry(shard_id)
+                .or_default()
+                .push(operation.clone());
+        }
     }
     OperationToShard::by_shard(op_vec_by_shard)
 }
 
 /// Trait for Operation enums to split them by shard.
 pub trait SplitByShard {
-    fn split_by_shard(self, ring: &HashRing<ShardId>) -> OperationToShard<Self>
+    fn split_by_shard(self, ring: &HashRing) -> OperationToShard<Self>
     where
         Self: Sized;
 }
 
 impl SplitByShard for CollectionUpdateOperations {
-    fn split_by_shard(self, ring: &HashRing<ShardId>) -> OperationToShard<Self> {
+    fn split_by_shard(self, ring: &HashRing) -> OperationToShard<Self> {
         match self {
             CollectionUpdateOperations::PointOperation(operation) => operation
                 .split_by_shard(ring)

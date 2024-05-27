@@ -1,5 +1,5 @@
 pytest
-requests
+requests==2.32.0
 grpc_requests 
 # Skip building grpcio from source
 --only-binary=grpcio

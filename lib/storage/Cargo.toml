@@ -24,7 +24,7 @@ tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 schemars = { workspace = true }
-itertools = "0.12"
+itertools = { workspace = true }
 log = "0.4"
 tonic = { workspace = true }
 http = "0.2"
@@ -44,12 +44,13 @@ serde_cbor = { workspace = true }
 common = { path = "../common/common" }
 cancel = { path = "../common/cancel" }
 io = { path = "../common/io" }
+issues = { path = "../common/issues" }
 memory = { path = "../common/memory" }
 segment = { path = "../segment" }
 collection = { path = "../collection" }
 api = { path = "../api" }
 futures = { workspace = true }
-anyhow = "1.0.82"
+anyhow = "1.0.86"
 uuid = { workspace = true }
 url = "2.5.0"
 reqwest = { workspace = true }

@@ -1,4 +1,4 @@
-use std::fs::OpenOptions;
+use std::fs::{File, OpenOptions};
 use std::hint::black_box;
 use std::mem::{align_of, size_of};
 use std::path::{Path, PathBuf};
@@ -10,7 +10,7 @@ use memmap2::{Mmap, MmapMut};
 use crate::madvise;
 use crate::madvise::Madviseable;
 
-pub fn create_and_ensure_length(path: &Path, length: usize) -> io::Result<()> {
+pub fn create_and_ensure_length(path: &Path, length: usize) -> io::Result<File> {
     let file = OpenOptions::new()
         .read(true)
         .write(true)
@@ -20,7 +20,7 @@ pub fn create_and_ensure_length(path: &Path, length: usize) -> io::Result<()> {
         .open(path)?;
     file.set_len(length as u64)?;
 
-    Ok(())
+    Ok(file)
 }
 
 pub fn open_read_mmap(path: &Path) -> io::Result<Mmap> {

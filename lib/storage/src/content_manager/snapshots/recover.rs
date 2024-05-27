@@ -75,6 +75,7 @@ async fn _do_recover_from_snapshot(
         location,
         priority,
         checksum,
+        api_key: _,
     } = source;
     let toc = dispatcher.toc(&access);
 

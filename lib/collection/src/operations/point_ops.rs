@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-use api::rest::{BatchVectorStruct, VectorStruct};
+use api::rest::{BatchVectorStruct, ShardKeySelector, VectorStruct};
 use itertools::izip;
 use schemars::JsonSchema;
 use segment::common::utils::transpose_map_into_named_vector;
@@ -12,9 +12,8 @@ use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter};
 use validator::Validate;
 
-use super::{point_to_shard, split_iter_by_shard, OperationToShard, SplitByShard};
+use super::{point_to_shards, split_iter_by_shard, OperationToShard, SplitByShard};
 use crate::hash_ring::HashRing;
-use crate::operations::shard_key_selector::ShardKeySelector;
 use crate::operations::types::Record;
 use crate::shards::shard::ShardId;
 
@@ -295,7 +294,7 @@ impl Validate for Batch {
 }
 
 impl SplitByShard for PointInsertOperationsInternal {
-    fn split_by_shard(self, ring: &HashRing<ShardId>) -> OperationToShard<Self> {
+    fn split_by_shard(self, ring: &HashRing) -> OperationToShard<Self> {
         match self {
             PointInsertOperationsInternal::PointsBatch(batch) => batch
                 .split_by_shard(ring)
@@ -374,7 +373,7 @@ impl Validate for PointOperations {
 }
 
 impl SplitByShard for Batch {
-    fn split_by_shard(self, ring: &HashRing<ShardId>) -> OperationToShard<Self> {
+    fn split_by_shard(self, ring: &HashRing) -> OperationToShard<Self> {
         let batch = self;
         let mut batch_by_shard: HashMap<ShardId, Batch> = HashMap::new();
         let Batch {
@@ -387,18 +386,19 @@ impl SplitByShard for Batch {
             match vectors {
                 BatchVectorStruct::Single(vectors) => {
                     for (id, vector, payload) in izip!(ids, vectors, payloads) {
-                        let shard_id = point_to_shard(id, ring);
-                        let batch = batch_by_shard.entry(shard_id).or_insert_with(|| Batch {
-                            ids: vec![],
-                            vectors: BatchVectorStruct::Single(vec![]),
-                            payloads: Some(vec![]),
-                        });
-                        batch.ids.push(id);
-                        match &mut batch.vectors {
-                            BatchVectorStruct::Single(vectors) => vectors.push(vector),
-                            _ => unreachable!(), // TODO(sparse) propagate error
+                        for shard_id in point_to_shards(&id, ring) {
+                            let batch = batch_by_shard.entry(shard_id).or_insert_with(|| Batch {
+                                ids: vec![],
+                                vectors: BatchVectorStruct::Single(vec![]),
+                                payloads: Some(vec![]),
+                            });
+                            batch.ids.push(id);
+                            match &mut batch.vectors {
+                                BatchVectorStruct::Single(vectors) => vectors.push(vector.clone()),
+                                _ => unreachable!(), // TODO(sparse) propagate error
+                            }
+                            batch.payloads.as_mut().unwrap().push(payload.clone());
                         }
-                        batch.payloads.as_mut().unwrap().push(payload);
                     }
                 }
                 BatchVectorStruct::Multi(named_vectors) => {
@@ -408,25 +408,26 @@ impl SplitByShard for Batch {
                         vec![NamedVectors::default(); ids.len()]
                     };
                     for (id, named_vector, payload) in izip!(ids, named_vectors_list, payloads) {
-                        let shard_id = point_to_shard(id, ring);
-                        let batch = batch_by_shard.entry(shard_id).or_insert_with(|| Batch {
-                            ids: vec![],
-                            vectors: BatchVectorStruct::Multi(HashMap::new()),
-                            payloads: Some(vec![]),
-                        });
-                        batch.ids.push(id);
-                        for (name, vector) in named_vector {
-                            let name = name.into_owned();
-                            let vector: Vector = vector.to_owned();
-                            match &mut batch.vectors {
-                                BatchVectorStruct::Multi(batch_vectors) => batch_vectors
-                                    .entry(name)
-                                    .or_default()
-                                    .push(api::rest::Vector::from(vector)),
-                                _ => unreachable!(), // TODO(sparse) propagate error
+                        for shard_id in point_to_shards(&id, ring) {
+                            let batch = batch_by_shard.entry(shard_id).or_insert_with(|| Batch {
+                                ids: vec![],
+                                vectors: BatchVectorStruct::Multi(HashMap::new()),
+                                payloads: Some(vec![]),
+                            });
+                            batch.ids.push(id);
+                            for (name, vector) in named_vector.clone() {
+                                let name = name.into_owned();
+                                let vector: Vector = vector.to_owned();
+                                match &mut batch.vectors {
+                                    BatchVectorStruct::Multi(batch_vectors) => batch_vectors
+                                        .entry(name)
+                                        .or_default()
+                                        .push(api::rest::Vector::from(vector)),
+                                    _ => unreachable!(), // TODO(sparse) propagate error
+                                }
                             }
+                            batch.payloads.as_mut().unwrap().push(payload.clone());
                         }
-                        batch.payloads.as_mut().unwrap().push(payload);
                     }
                 }
             }
@@ -434,16 +435,17 @@ impl SplitByShard for Batch {
             match vectors {
                 BatchVectorStruct::Single(vectors) => {
                     for (id, vector) in izip!(ids, vectors) {
-                        let shard_id = point_to_shard(id, ring);
-                        let batch = batch_by_shard.entry(shard_id).or_insert_with(|| Batch {
-                            ids: vec![],
-                            vectors: BatchVectorStruct::Single(vec![]),
-                            payloads: None,
-                        });
-                        batch.ids.push(id);
-                        match &mut batch.vectors {
-                            BatchVectorStruct::Single(vectors) => vectors.push(vector),
-                            _ => unreachable!(), // TODO(sparse) propagate error
+                        for shard_id in point_to_shards(&id, ring) {
+                            let batch = batch_by_shard.entry(shard_id).or_insert_with(|| Batch {
+                                ids: vec![],
+                                vectors: BatchVectorStruct::Single(vec![]),
+                                payloads: None,
+                            });
+                            batch.ids.push(id);
+                            match &mut batch.vectors {
+                                BatchVectorStruct::Single(vectors) => vectors.push(vector.clone()),
+                                _ => unreachable!(), // TODO(sparse) propagate error
+                            }
                         }
                     }
                 }
@@ -454,22 +456,23 @@ impl SplitByShard for Batch {
                         vec![NamedVectors::default(); ids.len()]
                     };
                     for (id, named_vector) in izip!(ids, named_vectors_list) {
-                        let shard_id = point_to_shard(id, ring);
-                        let batch = batch_by_shard.entry(shard_id).or_insert_with(|| Batch {
-                            ids: vec![],
-                            vectors: BatchVectorStruct::Multi(HashMap::new()),
-                            payloads: None,
-                        });
-                        batch.ids.push(id);
-                        for (name, vector) in named_vector {
-                            let name = name.into_owned();
-                            let vector: Vector = vector.to_owned();
-                            match &mut batch.vectors {
-                                BatchVectorStruct::Multi(batch_vectors) => batch_vectors
-                                    .entry(name)
-                                    .or_default()
-                                    .push(api::rest::Vector::from(vector)),
-                                _ => unreachable!(), // TODO(sparse) propagate error
+                        for shard_id in point_to_shards(&id, ring) {
+                            let batch = batch_by_shard.entry(shard_id).or_insert_with(|| Batch {
+                                ids: vec![],
+                                vectors: BatchVectorStruct::Multi(HashMap::new()),
+                                payloads: None,
+                            });
+                            batch.ids.push(id);
+                            for (name, vector) in named_vector.clone() {
+                                let name = name.into_owned();
+                                let vector: Vector = vector.to_owned();
+                                match &mut batch.vectors {
+                                    BatchVectorStruct::Multi(batch_vectors) => batch_vectors
+                                        .entry(name)
+                                        .or_default()
+                                        .push(api::rest::Vector::from(vector)),
+                                    _ => unreachable!(), // TODO(sparse) propagate error
+                                }
                             }
                         }
                     }
@@ -482,13 +485,13 @@ impl SplitByShard for Batch {
 }
 
 impl SplitByShard for Vec<PointStruct> {
-    fn split_by_shard(self, ring: &HashRing<ShardId>) -> OperationToShard<Self> {
+    fn split_by_shard(self, ring: &HashRing) -> OperationToShard<Self> {
         split_iter_by_shard(self, |point| point.id, ring)
     }
 }
 
 impl SplitByShard for PointOperations {
-    fn split_by_shard(self, ring: &HashRing<ShardId>) -> OperationToShard<Self> {
+    fn split_by_shard(self, ring: &HashRing) -> OperationToShard<Self> {
         match self {
             PointOperations::UpsertPoints(upsert_points) => upsert_points
                 .split_by_shard(ring)

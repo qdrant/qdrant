@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -30,8 +31,6 @@ use crate::shards::shard_versioning::latest_shard_paths;
 use crate::shards::transfer::{ShardTransfer, ShardTransferKey};
 use crate::shards::CollectionId;
 
-const HASH_RING_SHARD_SCALE: u32 = 100;
-
 const SHARD_TRANSFERS_FILE: &str = "shard_transfers";
 pub const SHARD_KEY_MAPPING_FILE: &str = "shard_key_mapping.json";
 
@@ -40,7 +39,8 @@ pub type ShardKeyMapping = HashMap<ShardKey, HashSet<ShardId>>;
 pub struct ShardHolder {
     shards: HashMap<ShardId, ShardReplicaSet>,
     pub(crate) shard_transfers: SaveOnDisk<HashSet<ShardTransfer>>,
-    rings: HashMap<Option<ShardKey>, HashRing<ShardId>>,
+    pub(crate) rings: HashMap<Option<ShardKey>, HashRing>,
+    resharding: Option<ShardId>,
     key_mapping: SaveOnDisk<ShardKeyMapping>,
     // Duplicates the information from `key_mapping` for faster access
     // Do not require locking
@@ -50,12 +50,12 @@ pub struct ShardHolder {
 pub type LockedShardHolder = RwLock<ShardHolder>;
 
 impl ShardHolder {
-    pub fn new(collection_path: &Path) -> CollectionResult<Self> {
-        let mut rings = HashMap::new();
-        rings.insert(None, HashRing::fair(HASH_RING_SHARD_SCALE));
+    pub fn new(collection_path: &Path, resharding: Option<ShardId>) -> CollectionResult<Self> {
         let shard_transfers = SaveOnDisk::load_or_init(collection_path.join(SHARD_TRANSFERS_FILE))?;
+
         let key_mapping: SaveOnDisk<ShardKeyMapping> =
             SaveOnDisk::load_or_init(collection_path.join(SHARD_KEY_MAPPING_FILE))?;
+
         let mut shard_id_to_key_mapping = HashMap::new();
 
         for (shard_key, shard_ids) in key_mapping.read().iter() {
@@ -64,10 +64,20 @@ impl ShardHolder {
             }
         }
 
+        let mut rings = HashMap::from([(None, HashRing::single())]);
+
+        if let Some(shard_id) = resharding {
+            rings.insert(
+                shard_id_to_key_mapping.get(&shard_id).cloned(),
+                HashRing::resharding(shard_id),
+            );
+        }
+
         Ok(Self {
             shards: HashMap::new(),
             shard_transfers,
             rings,
+            resharding,
             key_mapping,
             shard_id_to_key_mapping,
         })
@@ -96,6 +106,65 @@ impl ShardHolder {
         Ok(())
     }
 
+    pub fn start_resharding(
+        &mut self,
+        shard_id: ShardId,
+        shard: ShardReplicaSet,
+        shard_key: Option<ShardKey>,
+    ) -> Result<(), CollectionError> {
+        // TODO(resharding):
+        //
+        // `CollectionError::service_error` seems more fitting here... but if `start_resharding`
+        // returns `service_error` here, it will crash consensus thread.
+        //
+        // So it's seems less annoying to allow all of these errors be `bad_request`s for now, and
+        // (maybe) switch (some of) them to `service_error`s later.
+
+        let Some(ring) = self.rings.get_mut(&shard_key) else {
+            // TODO(resharding): `CollectionError::service_error`? 🤔
+            return Err(CollectionError::bad_request(format!(
+                "shard holder does not contain {} hashring",
+                if let Some(shard_key) = &shard_key {
+                    shard_key as &dyn fmt::Display
+                } else {
+                    &"default"
+                }
+            )));
+        };
+
+        if ring.is_resharding() {
+            debug_assert!(
+                self.resharding.is_some(),
+                "shard holder contains resharding hashring, but resharding field is {:?}",
+                self.resharding
+            );
+
+            // TODO(resharding): `CollectionError::service_error`? 🤔
+            return Err(CollectionError::bad_request(
+                "shard holder already contains resharding hashring".into(),
+            ));
+        }
+
+        debug_assert!(
+            self.resharding.is_none(),
+            "shard holder does not contain resharding hashring, but resharding field is {:?}",
+            self.resharding
+        );
+
+        if self.shards.contains_key(&shard_id) {
+            // TODO(resharding): `CollectionError::service_error`? 🤔
+            return Err(CollectionError::bad_request(format!(
+                "shard holder already contains shard {shard_id} replica set"
+            )));
+        }
+
+        ring.add_resharding(shard_id);
+        self.resharding = Some(shard_id);
+        self.add_shard(shard_id, shard, shard_key)?;
+
+        Ok(())
+    }
+
     pub fn add_shard(
         &mut self,
         shard_id: ShardId,
@@ -105,7 +174,7 @@ impl ShardHolder {
         self.shards.insert(shard_id, shard);
         self.rings
             .entry(shard_key.clone())
-            .or_insert_with(|| HashRing::fair(HASH_RING_SHARD_SCALE))
+            .or_insert_with(HashRing::single)
             .add(shard_id);
 
         if let Some(shard_key) = shard_key {
@@ -145,7 +214,7 @@ impl ShardHolder {
             }
         })?;
 
-        self.rings.remove(&Some(shard_key.clone()));
+        self.rings.remove(&shard_key.clone().into());
         for shard_id in remove_shard_ids {
             self.drop_and_remove_shard(shard_id).await?;
             self.shard_id_to_key_mapping.remove(&shard_id);
@@ -154,14 +223,15 @@ impl ShardHolder {
     }
 
     fn rebuild_rings(&mut self) {
-        let mut rings = HashMap::new();
-        rings.insert(None, HashRing::fair(HASH_RING_SHARD_SCALE));
+        // TODO(resharding): Correctly rebuild resharding hashrings!
+
+        let mut rings = HashMap::from([(None, HashRing::single())]);
         let ids_to_key = self.get_shard_id_to_key_mapping();
         for shard_id in self.shards.keys() {
             let shard_key = ids_to_key.get(shard_id).cloned();
             rings
                 .entry(shard_key)
-                .or_insert_with(|| HashRing::fair(HASH_RING_SHARD_SCALE))
+                .or_insert_with(HashRing::single)
                 .add(*shard_id);
         }
 
@@ -220,7 +290,7 @@ impl ShardHolder {
         operation: O,
         shard_keys_selection: &Option<ShardKey>,
     ) -> CollectionResult<Vec<(&ShardReplicaSet, O)>> {
-        let Some(hashring) = self.rings.get(shard_keys_selection) else {
+        let Some(hashring) = self.rings.get(&shard_keys_selection.clone()) else {
             return if let Some(shard_key) = shard_keys_selection {
                 Err(CollectionError::bad_input(format!(
                     "Shard key {shard_key} not found"
@@ -354,8 +424,12 @@ impl ShardHolder {
                 debug_assert!(false, "Do not expect empty shard selector")
             }
             ShardSelectorInternal::All => {
-                for (shard_id, shard) in self.shards.iter() {
-                    let shard_key = self.shard_id_to_key_mapping.get(shard_id);
+                for (&shard_id, shard) in self.shards.iter() {
+                    if self.resharding == Some(shard_id) {
+                        continue;
+                    }
+
+                    let shard_key = self.shard_id_to_key_mapping.get(&shard_id);
                     res.push((shard, shard_key));
                 }
             }
@@ -681,7 +755,7 @@ impl ShardHolder {
         let shard = self
             .get_shard(&shard_id)
             .ok_or_else(|| shard_not_found_error(shard_id))?;
-        let snapshot_manager = shard.get_snapshots_storage_manager();
+        let snapshot_manager = shard.get_snapshots_storage_manager()?;
         snapshot_manager.list_snapshots(&snapshots_path).await
     }
 
@@ -775,7 +849,7 @@ impl ShardHolder {
         let snapshot_path =
             self.shard_snapshot_path_unchecked(snapshots_path, shard_id, snapshot_file_name)?;
 
-        let snapshot_manager = shard.get_snapshots_storage_manager();
+        let snapshot_manager = shard.get_snapshots_storage_manager()?;
         let snapshot_description = snapshot_manager
             .store_file(temp_file.path(), &snapshot_path)
             .await;

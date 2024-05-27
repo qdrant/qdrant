@@ -17,13 +17,12 @@ service PointsInternal {
   rpc ClearPayload (ClearPayloadPointsInternal) returns (PointsOperationResponseInternal) {}
   rpc CreateFieldIndex (CreateFieldIndexCollectionInternal) returns (PointsOperationResponseInternal) {}
   rpc DeleteFieldIndex (DeleteFieldIndexCollectionInternal) returns (PointsOperationResponseInternal) {}
-  rpc Search (SearchPointsInternal) returns (SearchResponse) {}
-  rpc SearchBatch (SearchBatchPointsInternal) returns (SearchBatchResponse) {}
   rpc CoreSearchBatch (CoreSearchBatchPointsInternal) returns (SearchBatchResponse) {}
   rpc Scroll (ScrollPointsInternal) returns (ScrollResponse) {}
   rpc Count (CountPointsInternal) returns (CountResponse) {}
   rpc Recommend (RecommendPointsInternal) returns (RecommendResponse) {}
   rpc Get (GetPointsInternal) returns (GetResponse) {}
+  rpc Query (QueryPointsInternal) returns (QueryResponse) {}
 }
 
 
@@ -197,4 +196,88 @@ message GetPointsInternal {
 message CountPointsInternal {
   CountPoints count_points = 1;
   optional uint32 shard_id = 2;
+}
+
+// A bare vector. No id reference here.
+message RawVector {
+  oneof variant {
+    DenseVector dense = 1;
+    SparseVector sparse = 2;
+    MultiDenseVector multi_dense = 3;
+  }
+}
+
+// Query variants for raw vectors (ids have been substituted with vectors)
+message RawQuery {
+  message Recommend {
+    repeated RawVector positives = 1;
+    repeated RawVector negatives = 2;
+  }
+
+  message RawContextPair {
+    RawVector positive = 1;
+    RawVector negative = 2;
+  }
+
+  message Discovery {
+    RawVector target = 1;
+    repeated RawContextPair context = 2;
+  }
+
+  message Context {
+    repeated RawContextPair context = 1;
+  }
+
+  oneof variant {
+    RawVector nearest = 1; // ANN
+    Recommend recommend_best_score = 2; // Recommend points with highest similarity to positive examples, or lowest to negative examples
+    Discovery discover = 3; // Search for points that get closer to a target, constrained by a context of positive and negative pairs
+    Context context = 4; // Use only the context to find points that minimize loss against negative examples
+  }
+}
+
+message QueryShardPoints {
+  message Query {
+    oneof score {
+      RawQuery vector = 1; // (re)score against a vector query
+      Fusion fusion = 2; // One of the fusion methods
+      OrderBy order_by = 3; // Order by a field
+    }
+  }
+  
+  message Prefetch {
+    repeated Prefetch prefetch = 1;
+    Query query = 2;
+    optional string using = 3;
+    Filter filter = 4;
+    uint64 limit = 5;
+    SearchParams params = 6;
+    optional float score_threshold = 7;
+  }
+  
+  repeated Prefetch prefetch = 1;
+  Query query = 2;
+  optional string using = 3;
+  Filter filter = 4;
+  uint64 limit = 5;
+  SearchParams params = 6;
+  optional float score_threshold = 7;
+  uint64 offset = 8;
+  WithPayloadSelector with_payload = 9;
+  WithVectorsSelector with_vectors = 10;
+}
+
+message QueryPointsInternal {
+  string collection_name = 1;
+  QueryShardPoints query_points = 2;
+  optional uint32 shard_id = 3;
+}
+
+message IntermediateResult {
+  repeated ScoredPoint result = 1;
+}
+
+message QueryResponse {
+  repeated IntermediateResult result = 1;
+  double time = 2; // Time spent to process
 }

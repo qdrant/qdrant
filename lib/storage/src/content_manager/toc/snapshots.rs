@@ -13,8 +13,12 @@ use crate::content_manager::errors::StorageError;
 use crate::rbac::CollectionPass;
 
 impl TableOfContent {
-    pub fn get_snapshots_storage_manager(&self) -> SnapshotStorageManager {
-        SnapshotStorageManager::new(self.storage_config.s3_config.clone())
+    pub fn get_snapshots_storage_manager(&self) -> Result<SnapshotStorageManager, StorageError> {
+        SnapshotStorageManager::new(self.storage_config.snapshots_config.clone()).map_err(|err| {
+            StorageError::service_error(format!(
+                "Can't create snapshot storage manager. Error: {err}"
+            ))
+        })
     }
 
     pub fn snapshots_path(&self) -> &str {
@@ -121,6 +125,7 @@ impl TableOfContent {
         if let Some(proposal_sender) = &self.consensus_proposal_sender {
             let transfer_request = ShardTransfer {
                 shard_id,
+                to_shard_id: None,
                 from: from_peer,
                 to: to_peer,
                 sync,

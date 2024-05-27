@@ -1,6 +1,7 @@
 use std::future::Future;
 use std::time::Duration;
 
+use api::rest::RecommendStrategy;
 use itertools::Itertools;
 use segment::data_types::vectors::{
     DenseVector, NamedQuery, NamedVectorStruct, Vector, VectorElementType, VectorRef,
@@ -9,7 +10,7 @@ use segment::data_types::vectors::{
 use segment::types::{
     Condition, ExtendedPointId, Filter, HasIdCondition, PointIdType, ScoredPoint,
 };
-use segment::vector_storage::query::reco_query::RecoQuery;
+use segment::vector_storage::query::RecoQuery;
 use sparse::common::sparse_vector::SparseVector;
 use tokio::sync::RwLockReadGuard;
 
@@ -21,10 +22,11 @@ use crate::common::fetch_vectors::{
 };
 use crate::common::retrieve_request_trait::RetrieveRequest;
 use crate::operations::consistency_params::ReadConsistency;
+use crate::operations::query_enum::QueryEnum;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
-    CollectionError, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch, QueryEnum,
-    RecommendRequestInternal, RecommendStrategy, UsingVector,
+    CollectionError, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch,
+    RecommendRequestInternal, UsingVector,
 };
 
 fn avg_vectors<'a>(vectors: impl Iterator<Item = VectorRef<'a>>) -> CollectionResult<Vector> {

@@ -1,6 +1,6 @@
 [package]
 name = "api"
-version = "1.9.1-dev"
+version = "1.9.3-dev"
 authors = [
     "Andrey Vasnetsov <vasnetsov93@gmail.com>",
     "Qdrant Team <info@qdrant.tech>",
@@ -25,7 +25,7 @@ chrono = { workspace = true }
 thiserror = "1.0"
 parking_lot = { workspace = true }
 validator = { workspace = true }
-log = "0.4"
+itertools = { workspace = true }
 
 common = { path = "../common/common" }
 segment = { path = "../segment" }

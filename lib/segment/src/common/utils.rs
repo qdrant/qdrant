@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::ops::Bound;
 
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use smallvec::{smallvec, SmallVec};
 
@@ -467,9 +469,63 @@ pub fn transpose_map_into_named_vector<TVector: Into<Vector>>(
     result
 }
 
+/// Deserializer helper for `Option<Vec<T>>` that allows deserializing both single and an array of values.
+///
+/// Use via `#[serde(with = "MaybeOneOrMany")]` and `#[schemars(with="MaybeOneOrMany<T>")]` field attributes
+pub struct MaybeOneOrMany<T>(pub Option<Vec<T>>);
+
+impl<T: Serialize> MaybeOneOrMany<T> {
+    pub fn serialize<S>(value: &Option<Vec<T>>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        value.serialize(serializer)
+    }
+}
+
+impl<'de, T: Deserialize<'de>> MaybeOneOrMany<T> {
+    pub fn deserialize<D>(deserializer: D) -> Result<Option<Vec<T>>, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde_untagged::UntaggedEnumVisitor;
+
+        UntaggedEnumVisitor::new()
+            .unit(|| Ok(None))
+            .seq(|x| x.deserialize().map(Some))
+            .map(|x| x.deserialize().map(|x| vec![x]).map(Some))
+            .deserialize(deserializer)
+    }
+}
+
+impl<T: JsonSchema> JsonSchema for MaybeOneOrMany<T> {
+    fn json_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        use schemars::schema::SchemaObject;
+
+        #[derive(JsonSchema)]
+        #[serde(untagged)]
+        enum OneOrMany<T> {
+            _One(T),
+            _Many(Vec<T>),
+            _None(()),
+        }
+
+        let schema: SchemaObject = <OneOrMany<T>>::json_schema(gen).into();
+        schema.into()
+    }
+
+    fn schema_name() -> String {
+        <Vec<T>>::schema_name()
+    }
+
+    fn is_referenceable() -> bool {
+        false
+    }
+}
+
 #[cfg(test)]
 #[generic_tests::define]
-mod tests {
+mod jsonpath_tests {
     use std::any::TypeId;
     use std::str::FromStr;
 
@@ -1208,4 +1264,103 @@ mod tests {
 
     #[instantiate_tests(<JsonPathV2>)]
     mod v2 {}
+}
+
+#[cfg(test)]
+mod tests {
+    use schemars::{schema_for, JsonSchema};
+    use serde::{Deserialize, Serialize};
+
+    use crate::common::utils::MaybeOneOrMany;
+
+    #[test]
+    fn test_deserialize_one_or_many() {
+        #[derive(Serialize, Deserialize)]
+        struct Test {
+            #[serde(with = "MaybeOneOrMany")]
+            data: Option<Vec<Inner>>,
+        }
+
+        #[derive(Serialize, Deserialize)]
+        struct Inner {
+            key: String,
+        }
+
+        let res = serde_json::from_str::<Test>(
+            r#"
+            {
+                "data": null
+            }
+            "#,
+        )
+        .unwrap();
+
+        assert!(res.data.is_none());
+
+        let res = serde_json::from_str::<Test>(
+            r#"
+            {
+                "data": {
+                    "key": "value"
+                }
+            }
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(res.data.as_ref().unwrap().len(), 1);
+        assert_eq!(res.data.as_ref().unwrap()[0].key, "value".to_string());
+
+        let res = serde_json::from_str::<Test>(
+            r#"
+            {
+                "data": [
+                    {
+                        "key": "value"
+                    }
+                ]
+            }
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(res.data.as_ref().unwrap().len(), 1);
+        assert_eq!(res.data.as_ref().unwrap()[0].key, "value".to_string());
+    }
+
+    #[test]
+    fn test_schema_one_or_many() {
+        #[derive(JsonSchema)]
+        struct Test {
+            #[schemars(with = "MaybeOneOrMany<String>")]
+            _field: Option<Vec<String>>,
+        }
+
+        let mut field_schema = dbg!(schemars::schema_for!(Test)
+            .schema
+            .object
+            .unwrap()
+            .properties
+            .remove("_field")
+            .unwrap()
+            .into_object());
+
+        assert!(field_schema.subschemas.is_some());
+
+        let any_of = field_schema.subschemas().any_of.clone().unwrap();
+
+        assert_eq!(any_of.len(), 3);
+        assert_eq!(
+            any_of[0].clone().into_object().instance_type,
+            schema_for!(String).schema.instance_type
+        );
+        assert_eq!(
+            any_of[1].clone().into_object().array,
+            schema_for!(Vec<String>).schema.array
+        );
+        assert_eq!(
+            any_of[2].clone().into_object().instance_type,
+            schema_for!(()).schema.instance_type
+        );
+    }
 }

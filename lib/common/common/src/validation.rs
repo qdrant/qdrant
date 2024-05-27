@@ -142,6 +142,71 @@ pub fn validate_sha256_hash_option(value: &Option<impl AsRef<str>>) -> Result<()
         .unwrap_or(Ok(()))
 }
 
+pub fn validate_multi_vector<T>(multivec: &[Vec<T>]) -> Result<(), ValidationErrors> {
+    // non_empty
+    if multivec.is_empty() {
+        let mut errors = ValidationErrors::default();
+        let mut err = ValidationError::new("empty_multi_vector");
+        err.add_param(Cow::from("message"), &"multi vector must not be empty");
+        errors.add("data", err);
+        return Err(errors);
+    }
+
+    // check all individual vectors non-empty
+    if multivec.iter().any(|v| v.is_empty()) {
+        let mut errors = ValidationErrors::default();
+        let mut err = ValidationError::new("empty_vector");
+        err.add_param(Cow::from("message"), &"all vectors must be non-empty");
+        errors.add("data", err);
+        return Err(errors);
+    }
+
+    // all vectors must have the same length
+    let dim = multivec[0].len();
+    if let Some(bad_vec) = multivec.iter().find(|v| v.len() != dim) {
+        let mut errors = ValidationErrors::default();
+        let mut err = ValidationError::new("inconsistent_multi_vector");
+        err.add_param(
+            Cow::from("message"),
+            &format!(
+                "all vectors must have the same dimension, found vector with dimension {}",
+                bad_vec.len()
+            ),
+        );
+        errors.add("data", err);
+        return Err(errors);
+    }
+
+    Ok(())
+}
+
+pub fn validate_multi_vector_len(
+    vectors_count: u32,
+    flatten_dense_vector: &[f32],
+) -> Result<(), ValidationErrors> {
+    if vectors_count == 0 {
+        let mut errors = ValidationErrors::default();
+        let mut err = ValidationError::new("invalid_vector_count");
+        err.add_param(
+            Cow::from("vectors_count"),
+            &"vectors count must be greater than 0",
+        );
+        errors.add("data", err);
+        return Err(errors);
+    }
+    let dense_vector_len = flatten_dense_vector.len();
+    if dense_vector_len % vectors_count as usize != 0 {
+        let mut errors = ValidationErrors::default();
+        let mut err = ValidationError::new("invalid dense vector length for vectors count");
+        err.add_param(Cow::from("vector_len"), &dense_vector_len);
+        err.add_param(Cow::from("vectors_count"), &vectors_count);
+        errors.add("data", err);
+        Err(errors)
+    } else {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

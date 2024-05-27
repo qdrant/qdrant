@@ -1,5 +1,9 @@
 pub mod clock_map;
-mod shard_ops;
+pub mod disk_usage_watcher;
+pub(super) mod query;
+pub(super) mod scroll;
+pub(super) mod search;
+pub(super) mod shard_ops;
 
 use std::collections::{BTreeSet, HashMap};
 use std::mem::size_of;
@@ -34,6 +38,7 @@ use tokio::sync::{mpsc, oneshot, Mutex, RwLock as TokioRwLock};
 use wal::{Wal, WalOptions};
 
 use self::clock_map::{ClockMap, RecoveryPoint};
+use self::disk_usage_watcher::DiskUsageWatcher;
 use super::update_tracker::UpdateTracker;
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::{
@@ -77,6 +82,7 @@ pub struct LocalShard {
     pub(super) optimizers: Arc<Vec<Arc<Optimizer>>>,
     pub(super) optimizers_log: Arc<ParkingMutex<TrackerLog>>,
     update_runtime: Handle,
+    disk_usage_watcher: DiskUsageWatcher,
 }
 
 /// Shard holds information about segments and WAL.
@@ -140,6 +146,16 @@ impl LocalShard {
         let locked_wal = Arc::new(ParkingMutex::new(wal));
         let optimizers_log = Arc::new(ParkingMutex::new(Default::default()));
 
+        // default to 2x the WAL capacity
+        let disk_buffer_threshold_mb =
+            2 * (collection_config.read().await.wal_config.wal_capacity_mb);
+
+        let disk_usage_watcher = disk_usage_watcher::DiskUsageWatcher::new(
+            shard_path.to_owned(),
+            disk_buffer_threshold_mb,
+        )
+        .await;
+
         let mut update_handler = UpdateHandler::new(
             shared_storage_config.clone(),
             optimizers.clone(),
@@ -174,6 +190,7 @@ impl LocalShard {
             update_runtime,
             optimizers,
             optimizers_log,
+            disk_usage_watcher,
         }
     }
 
@@ -561,7 +578,24 @@ impl LocalShard {
             }
         }
 
-        self.segments.read().flush_all(true)?;
+        {
+            let segments = self.segments.read();
+
+            // It is possible, that after recovery, if WAL flush was not enforced.
+            // We could be left with some un-versioned points.
+            // To maintain consistency, we can either remove them or try to recover.
+            for (_idx, segment) in segments.iter() {
+                match segment {
+                    LockedSegment::Original(raw_segment) => {
+                        raw_segment.write().cleanup_versions()?;
+                    }
+                    LockedSegment::Proxy(_) => {
+                        debug_assert!(false, "Proxy segment found in load_from_wal");
+                    }
+                }
+            }
+            segments.flush_all(true)?;
+        }
 
         bar.finish();
         if !show_progress_bar {

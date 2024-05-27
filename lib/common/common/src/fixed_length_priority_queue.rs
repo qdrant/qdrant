@@ -7,6 +7,15 @@ use std::vec::IntoIter as VecIntoIter;
 
 use serde::{Deserialize, Serialize};
 
+/// To avoid excessive memory allocation, FixedLengthPriorityQueue
+/// imposes a reasonable limit on the allocation size. If the limit
+/// is extremely large, we treat it as if no limit was set and
+/// delay allocation, assuming that the results will fit within a
+/// predefined threshold.
+const LARGEST_REASONABLE_ALLOCATION_SIZE: usize = 1_048_576;
+
+/// A container that forgets all but the top N elements
+///
 /// This is a MinHeap by default - it will keep the largest elements, pop smallest
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct FixedLengthPriorityQueue<T: Ord> {
@@ -24,11 +33,14 @@ impl<T: Ord> FixedLengthPriorityQueue<T> {
     /// Creates a new queue with the given length
     /// Panics if length is 0
     pub fn new(length: usize) -> Self {
-        let heap = BinaryHeap::with_capacity(length + 1);
-        let length = NonZeroUsize::new(length).expect("length must be > 0");
+        let heap = BinaryHeap::with_capacity((length + 1).min(LARGEST_REASONABLE_ALLOCATION_SIZE));
+        let length = NonZeroUsize::new(length).expect("length must be greater than zero");
         FixedLengthPriorityQueue::<T> { heap, length }
     }
 
+    /// Pushes a value into the priority queue.
+    ///
+    /// If the queue if full, replaces the smallest value and returns it.
     pub fn push(&mut self, value: T) -> Option<T> {
         if self.heap.len() < self.length.into() {
             self.heap.push(Reverse(value));
@@ -43,6 +55,7 @@ impl<T: Ord> FixedLengthPriorityQueue<T> {
         Some(value.0)
     }
 
+    /// Returns the top N elements sorted ascending.
     pub fn into_vec(self) -> Vec<T> {
         self.heap
             .into_sorted_vec()
@@ -51,12 +64,15 @@ impl<T: Ord> FixedLengthPriorityQueue<T> {
             .collect()
     }
 
+    /// Returns an iterator over the elements in the queue.
     pub fn iter(&self) -> Iter<'_, T> {
         Iter {
             it: self.heap.iter().rev(),
         }
     }
 
+    /// Returns the smallest element of the queue,
+    /// if there is any.
     pub fn top(&self) -> Option<&T> {
         self.heap.peek().map(|x| &x.0)
     }

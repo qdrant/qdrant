@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use futures::stream::FuturesUnordered;
@@ -256,7 +257,7 @@ impl Collection {
         // `order_by` does not support offset
         if order_by.is_none() {
             // Needed to return next page offset.
-            limit += 1;
+            limit = limit.saturating_add(1);
         };
 
         let local_only = shard_selection.is_shard_id();
@@ -282,7 +283,7 @@ impl Collection {
                             return Ok(records);
                         }
                         for point in &mut records {
-                            point.shard_key = shard_key.clone();
+                            point.shard_key.clone_from(&shard_key);
                         }
                         Ok(records)
                     })
@@ -297,6 +298,8 @@ impl Collection {
             None => retrieved_iter
                 .flatten()
                 .sorted_unstable_by_key(|point| point.id)
+                // Add each point only once, deduplicate point IDs
+                .dedup_by(|a, b| a.id == b.id)
                 .take(limit)
                 .map(api::rest::Record::from)
                 .collect_vec(),
@@ -325,6 +328,8 @@ impl Collection {
                         Direction::Asc => value_a <= value_b,
                         Direction::Desc => value_a >= value_b,
                     })
+                    // Add each point only once, deduplicate point IDs
+                    .dedup_by(|(_, record_a), (_, record_b)| record_a.id == record_b.id)
                     .map(|(_, record)| api::rest::Record::from(record))
                     .take(limit)
                     .collect_vec()
@@ -405,14 +410,20 @@ impl Collection {
                             return Ok(records);
                         }
                         for point in &mut records {
-                            point.shard_key = shard_key.clone();
+                            point.shard_key.clone_from(&shard_key);
                         }
                         Ok(records)
                     })
             });
             future::try_join_all(retrieve_futures).await?
         };
-        let points = all_shard_collection_results.into_iter().flatten().collect();
+        let mut covered_point_ids = HashSet::new();
+        let points = all_shard_collection_results
+            .into_iter()
+            .flatten()
+            // Add each point only once, deduplicate point IDs
+            .filter(|point| covered_point_ids.insert(point.id))
+            .collect();
         Ok(points)
     }
 }

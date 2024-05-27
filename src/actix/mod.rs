@@ -25,6 +25,7 @@ use crate::actix::api::cluster_api::config_cluster_api;
 use crate::actix::api::collections_api::config_collections_api;
 use crate::actix::api::count_api::count_points;
 use crate::actix::api::discovery_api::config_discovery_api;
+use crate::actix::api::issues_api::config_issues_api;
 use crate::actix::api::recommend_api::config_recommend_api;
 use crate::actix::api::retrieve_api::{get_point, get_points, scroll_points};
 use crate::actix::api::search_api::config_search_api;
@@ -38,6 +39,7 @@ use crate::common::health;
 use crate::common::http_client::HttpClient;
 use crate::common::telemetry::TelemetryCollector;
 use crate::settings::{max_web_workers, Settings};
+use crate::tracing::LoggerHandle;
 
 const DEFAULT_STATIC_DIR: &str = "./static";
 const WEB_UI_PATH: &str = "/dashboard";
@@ -53,6 +55,7 @@ pub fn init(
     telemetry_collector: Arc<tokio::sync::Mutex<TelemetryCollector>>,
     health_checker: Option<Arc<health::HealthChecker>>,
     settings: Settings,
+    logger_handle: LoggerHandle,
 ) -> io::Result<()> {
     actix_web::rt::System::new().block_on(async {
         let auth_keys = AuthKeys::try_create(
@@ -70,6 +73,7 @@ pub fn init(
             .actix_telemetry_collector
             .clone();
         let telemetry_collector_data = web::Data::from(telemetry_collector);
+        let logger_handle_data = web::Data::new(logger_handle);
         let http_client = web::Data::new(HttpClient::from_settings(&settings)?);
         let health_checker = web::Data::new(health_checker);
         let static_folder = settings
@@ -144,6 +148,7 @@ pub fn init(
                 ))
                 .app_data(dispatcher_data.clone())
                 .app_data(telemetry_collector_data.clone())
+                .app_data(logger_handle_data.clone())
                 .app_data(http_client.clone())
                 .app_data(health_checker.clone())
                 .app_data(validate_path_config)
@@ -161,6 +166,7 @@ pub fn init(
                 .configure(config_recommend_api)
                 .configure(config_discovery_api)
                 .configure(config_shards_api)
+                .configure(config_issues_api)
                 // Ordering of services is important for correct path pattern matching
                 // See: <https://github.com/qdrant/qdrant/issues/3543>
                 .service(scroll_points)
@@ -194,7 +200,7 @@ pub fn init(
 
             let config = certificate_helpers::actix_tls_server_config(&settings)
                 .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
-            server.bind_rustls_0_22(bind_addr, config)?
+            server.bind_rustls_0_23(bind_addr, config)?
         } else {
             log::info!("TLS disabled for REST API");
 

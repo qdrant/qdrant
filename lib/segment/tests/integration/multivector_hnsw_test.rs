@@ -7,8 +7,8 @@ use rand::prelude::StdRng;
 use rand::SeedableRng;
 use segment::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use segment::data_types::vectors::{
-    only_default_vector, MultiDenseVector, QueryVector, VectorElementType, VectorRef,
-    DEFAULT_VECTOR_NAME,
+    only_default_vector, MultiDenseVector, QueryVector, TypedMultiDenseVectorRef,
+    VectorElementType, VectorRef, DEFAULT_VECTOR_NAME,
 };
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::index_fixtures::random_vector;
@@ -16,6 +16,7 @@ use segment::fixtures::payload_fixtures::random_int_payload;
 use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::hnsw::HNSWIndex;
 use segment::index::VectorIndex;
+use segment::json_path::path;
 use segment::segment_constructor::build_segment;
 use segment::spaces::metric::Metric;
 use segment::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
@@ -23,12 +24,10 @@ use segment::types::{
     Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, MultiVectorConfig, Payload,
     PayloadSchemaType, SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageType,
 };
-use segment::vector_storage::simple_multi_dense_vector_storage::open_simple_multi_dense_vector_storage;
+use segment::vector_storage::multi_dense::simple_multi_dense_vector_storage::open_simple_multi_dense_vector_storage;
 use segment::vector_storage::VectorStorage;
 use serde_json::json;
 use tempfile::Builder;
-
-use crate::utils::path;
 
 #[test]
 fn test_single_multi_and_dense_hnsw_equivalency() {
@@ -50,7 +49,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
                 storage_type: VectorStorageType::Memory,
                 index: Indexes::Plain {},
                 quantization_config: None,
-                multi_vec_config: None,
+                multivec_config: None,
                 datatype: None,
             },
         )]),
@@ -110,7 +109,10 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
         let internal_id = segment.id_tracker.borrow().internal_id(idx).unwrap();
         multi_storage
             .borrow_mut()
-            .insert_vector(internal_id, VectorRef::MultiDense(&vector_multi))
+            .insert_vector(
+                internal_id,
+                VectorRef::MultiDense(TypedMultiDenseVectorRef::from(&vector_multi)),
+            )
             .unwrap();
     }
 
@@ -178,8 +180,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
                 Some(&filter),
                 10,
                 None,
-                &false.into(),
-                usize::MAX,
+                &Default::default(),
             )
             .unwrap();
 
@@ -189,8 +190,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
                 Some(&filter),
                 10,
                 None,
-                &false.into(),
-                usize::MAX,
+                &Default::default(),
             )
             .unwrap();
 

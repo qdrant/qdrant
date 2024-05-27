@@ -3,7 +3,7 @@ use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use collection::common::snapshots_manager::S3Config;
+use collection::common::snapshots_manager::SnapShotsConfig;
 use collection::config::WalConfig;
 use collection::operations::shared_storage_config::{
     SharedStorageConfig, DEFAULT_IO_SHARD_TRANSFER_LIMIT, DEFAULT_SNAPSHOTS_PATH,
@@ -15,7 +15,7 @@ use collection::shards::transfer::ShardTransferMethod;
 use memory::madvise;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
-use segment::types::{HnswConfig, QuantizationConfig};
+use segment::types::{CollectionConfigDefaults, HnswConfig};
 use serde::{Deserialize, Serialize};
 use tonic::transport::Uri;
 use validator::Validate;
@@ -57,7 +57,7 @@ pub struct StorageConfig {
     #[validate(length(min = 1))]
     pub snapshots_path: String,
     #[serde(default)]
-    pub s3_config: Option<S3Config>,
+    pub snapshots_config: SnapShotsConfig,
     #[validate(length(min = 1))]
     #[serde(default)]
     pub temp_path: Option<String>,
@@ -70,8 +70,6 @@ pub struct StorageConfig {
     pub performance: PerformanceConfig,
     #[validate]
     pub hnsw_index: HnswConfig,
-    #[validate]
-    pub quantization: Option<QuantizationConfig>,
     #[serde(default = "default_mmap_advice")]
     pub mmap_advice: madvise::Advice,
     #[serde(default)]
@@ -92,6 +90,9 @@ pub struct StorageConfig {
     /// Default method used for transferring shards.
     #[serde(default)]
     pub shard_transfer_method: Option<ShardTransferMethod>,
+    /// Default values for collections.
+    #[serde(default)]
+    pub collection: Option<CollectionConfigDefaults>,
 }
 
 impl StorageConfig {
@@ -110,7 +111,7 @@ impl StorageConfig {
             self.performance.incoming_shard_transfers_limit,
             self.performance.outgoing_shard_transfers_limit,
             self.snapshots_path.clone(),
-            self.s3_config.clone(),
+            self.snapshots_config.clone(),
         )
     }
 }

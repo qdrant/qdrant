@@ -7,6 +7,7 @@ use std::num::NonZeroU64;
 use std::time::SystemTimeError;
 
 use api::grpc::transport_channel_pool::RequestError;
+use api::rest::{OrderByInterface, RecommendStrategy, ShardKeySelector};
 use common::defaults;
 use common::types::ScoreType;
 use common::validation::validate_range_generic;
@@ -17,19 +18,15 @@ use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::common::operation_error::OperationError;
 use segment::data_types::groups::GroupId;
-use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{
-    DenseVector, Named, NamedQuery, NamedVectorStruct, QueryVector, Vector, VectorRef,
-    VectorStruct, DEFAULT_VECTOR_NAME,
+    DenseVector, QueryVector, VectorRef, VectorStruct, DEFAULT_VECTOR_NAME,
 };
 use segment::json_path::{JsonPath, JsonPathInterface};
 use segment::types::{
-    Distance, Filter, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType, QuantizationConfig,
-    SearchParams, SeqNumberType, ShardKey, VectorStorageDatatype, WithPayloadInterface, WithVector,
+    Distance, Filter, MultiVectorConfig, Payload, PayloadIndexInfo, PayloadKeyType, PointIdType,
+    QuantizationConfig, SearchParams, SeqNumberType, ShardKey, VectorStorageDatatype,
+    WithPayloadInterface, WithVector,
 };
-use segment::vector_storage::query::context_query::ContextQuery;
-use segment::vector_storage::query::discovery_query::DiscoveryQuery;
-use segment::vector_storage::query::reco_query::RecoQuery;
 use semver::Version;
 use serde;
 use serde::{Deserialize, Serialize};
@@ -47,7 +44,7 @@ use super::ClockTag;
 use crate::config::{CollectionConfig, CollectionParams};
 use crate::lookup::types::WithLookupInterface;
 use crate::operations::config_diff::{HnswConfigDiff, QuantizationConfigDiff};
-use crate::operations::shard_key_selector::ShardKeySelector;
+use crate::operations::query_enum::QueryEnum;
 use crate::save_on_disk;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
@@ -293,26 +290,6 @@ pub struct ScrollRequest {
     pub shard_key: Option<ShardKeySelector>,
 }
 
-#[derive(Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq)]
-#[serde(untagged)]
-pub enum OrderByInterface {
-    Key(JsonPath),
-    Struct(OrderBy),
-}
-
-impl From<OrderByInterface> for OrderBy {
-    fn from(order_by: OrderByInterface) -> Self {
-        match order_by {
-            OrderByInterface::Key(key) => OrderBy {
-                key,
-                direction: None,
-                start_from: None,
-            },
-            OrderByInterface::Struct(order_by) => order_by,
-        }
-    }
-}
-
 /// Scroll request - paginate over all points which matches given condition
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -413,43 +390,6 @@ pub struct SearchRequestInternal {
 pub struct SearchRequestBatch {
     #[validate]
     pub searches: Vec<SearchRequest>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum QueryEnum {
-    Nearest(NamedVectorStruct),
-    RecommendBestScore(NamedQuery<RecoQuery<Vector>>),
-    Discover(NamedQuery<DiscoveryQuery<Vector>>),
-    Context(NamedQuery<ContextQuery<Vector>>),
-}
-
-impl QueryEnum {
-    pub fn get_vector_name(&self) -> &str {
-        match self {
-            QueryEnum::Nearest(vector) => vector.get_name(),
-            QueryEnum::RecommendBestScore(reco_query) => reco_query.get_name(),
-            QueryEnum::Discover(discovery_query) => discovery_query.get_name(),
-            QueryEnum::Context(context_query) => context_query.get_name(),
-        }
-    }
-}
-
-impl From<DenseVector> for QueryEnum {
-    fn from(vector: DenseVector) -> Self {
-        QueryEnum::Nearest(NamedVectorStruct::Default(vector))
-    }
-}
-
-impl From<NamedQuery<DiscoveryQuery<Vector>>> for QueryEnum {
-    fn from(query: NamedQuery<DiscoveryQuery<Vector>>) -> Self {
-        QueryEnum::Discover(query)
-    }
-}
-
-impl AsRef<QueryEnum> for QueryEnum {
-    fn as_ref(&self) -> &QueryEnum {
-        self
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -575,23 +515,6 @@ impl From<u64> for RecommendExample {
     }
 }
 
-/// How to use positive and negative examples to find the results, default is `average_vector`:
-///
-/// * `average_vector` - Average positive and negative vectors and create a single query
-///   with the formula `query = avg_pos + avg_pos - avg_neg`. Then performs normal search.
-///
-/// * `best_score` - Uses custom search objective. Each candidate is compared against all
-///   examples, its score is then chosen from the `max(max_pos_score, max_neg_score)`.
-///   If the `max_neg_score` is chosen then it is squared and negated, otherwise it is just
-///   the `max_pos_score`.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Default, PartialEq, Clone, Copy)]
-#[serde(rename_all = "snake_case")]
-pub enum RecommendStrategy {
-    #[default]
-    AverageVector,
-    BestScore,
-}
-
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case", untagged)]
 pub enum UsingVector {
@@ -653,7 +576,7 @@ pub struct RecommendRequestInternal {
     pub negative: Vec<RecommendExample>,
 
     /// How to use positive and negative examples to find the results
-    pub strategy: Option<RecommendStrategy>,
+    pub strategy: Option<api::rest::RecommendStrategy>,
 
     /// Look only for points which satisfies this conditions
     #[validate]
@@ -906,7 +829,7 @@ pub struct CountResult {
     pub count: usize,
 }
 
-#[derive(Error, Debug, Clone)]
+#[derive(Error, Debug, Clone, PartialEq)]
 #[error("{0}")]
 pub enum CollectionError {
     #[error("Wrong input: {description}")]
@@ -942,6 +865,8 @@ pub enum CollectionError {
     Timeout { description: String },
     #[error("Precondition failed: {description}")]
     PreConditionFailed { description: String },
+    #[error("Object Store error: {what}")]
+    ObjectStoreError { what: String },
 }
 
 impl CollectionError {
@@ -961,8 +886,10 @@ impl CollectionError {
         }
     }
 
-    pub fn bad_input(description: String) -> CollectionError {
-        CollectionError::BadInput { description }
+    pub fn bad_input(description: impl Into<String>) -> CollectionError {
+        CollectionError::BadInput {
+            description: description.into(),
+        }
     }
 
     pub fn not_found(what: impl Into<String>) -> CollectionError {
@@ -975,6 +902,10 @@ impl CollectionError {
 
     pub fn bad_shard_selection(description: String) -> CollectionError {
         CollectionError::BadShardSelection { description }
+    }
+
+    pub fn object_storage_error(what: impl Into<String>) -> CollectionError {
+        CollectionError::ObjectStoreError { what: what.into() }
     }
 
     pub fn forward_proxy_error(peer_id: PeerId, error: impl Into<Self>) -> Self {
@@ -1026,6 +957,7 @@ impl CollectionError {
             Self::BadShardSelection { .. } => false,
             Self::InconsistentShardFailure { .. } => false,
             Self::ForwardProxyError { .. } => false,
+            Self::ObjectStoreError { .. } => false,
         }
     }
 }
@@ -1051,7 +983,7 @@ impl From<String> for CollectionError {
 impl From<OperationError> for CollectionError {
     fn from(err: OperationError) -> Self {
         match err {
-            OperationError::WrongVector { .. } => Self::BadInput {
+            OperationError::WrongVectorDimension { .. } => Self::BadInput {
                 description: format!("{err}"),
             },
             OperationError::VectorNameNotExists { .. } => Self::BadInput {
@@ -1305,6 +1237,7 @@ pub enum Datatype {
     #[default]
     Float32,
     Uint8,
+    Float16,
 }
 
 impl From<Datatype> for VectorStorageDatatype {
@@ -1312,6 +1245,7 @@ impl From<Datatype> for VectorStorageDatatype {
         match value {
             Datatype::Float32 => VectorStorageDatatype::Float32,
             Datatype::Uint8 => VectorStorageDatatype::Uint8,
+            Datatype::Float16 => VectorStorageDatatype::Float16,
         }
     }
 }
@@ -1344,6 +1278,9 @@ pub struct VectorParams {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub datatype: Option<Datatype>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub multivec_config: Option<MultiVectorConfig>,
 }
 
 /// Validate the value is in `[1, 65536]` or `None`.
@@ -1367,6 +1304,17 @@ impl Anonymize for VectorParams {
     }
 }
 
+/// If used, include weight modification, which will be applied to sparse vectors at query time:
+/// None - no modification (default)
+/// Idf - inverse document frequency, based on statistics of the collection
+#[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Modifier {
+    #[default]
+    None,
+    Idf,
+}
+
 /// Params of single sparse vector data storage
 #[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -1374,12 +1322,18 @@ pub struct SparseVectorParams {
     /// Custom params for index. If none - values from collection configuration are used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub index: Option<SparseIndexParams>,
+
+    /// Configures addition value modifications for sparse vectors.
+    /// Default: none
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modifier: Option<Modifier>,
 }
 
 impl Anonymize for SparseVectorParams {
     fn anonymize(&self) -> Self {
         Self {
             index: self.index.anonymize(),
+            modifier: self.modifier.clone(),
         }
     }
 }

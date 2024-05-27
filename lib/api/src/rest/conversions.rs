@@ -1,4 +1,7 @@
+use segment::data_types::order_by::OrderBy;
+
 use super::schema::{BatchVectorStruct, ScoredPoint, Vector, VectorStruct};
+use super::OrderByInterface;
 use crate::rest::{DenseVector, NamedVectorStruct};
 
 impl From<segment::data_types::vectors::Vector> for Vector {
@@ -6,9 +9,8 @@ impl From<segment::data_types::vectors::Vector> for Vector {
         match value {
             segment::data_types::vectors::Vector::Dense(vector) => Vector::Dense(vector),
             segment::data_types::vectors::Vector::Sparse(vector) => Vector::Sparse(vector),
-            segment::data_types::vectors::Vector::MultiDense(_vector) => {
-                // TODO(colbert)
-                unimplemented!()
+            segment::data_types::vectors::Vector::MultiDense(vector) => {
+                Vector::MultiDense(vector.into_multi_vectors())
             }
         }
     }
@@ -19,6 +21,13 @@ impl From<Vector> for segment::data_types::vectors::Vector {
         match value {
             Vector::Dense(vector) => segment::data_types::vectors::Vector::Dense(vector),
             Vector::Sparse(vector) => segment::data_types::vectors::Vector::Sparse(vector),
+            Vector::MultiDense(vector) => {
+                // the REST vectors have been validated already
+                // we can use an internal constructor
+                segment::data_types::vectors::Vector::MultiDense(
+                    segment::data_types::vectors::MultiDenseVector::new_unchecked(vector),
+                )
+            }
         }
     }
 }
@@ -94,6 +103,7 @@ impl From<segment::types::ScoredPoint> for ScoredPoint {
             payload: value.payload,
             vector: value.vector.map(From::from),
             shard_key: value.shard_key,
+            order_value: value.order_value.map(From::from),
         }
     }
 }
@@ -107,6 +117,7 @@ impl From<ScoredPoint> for segment::types::ScoredPoint {
             payload: value.payload,
             vector: value.vector.map(From::from),
             shard_key: value.shard_key,
+            order_value: value.order_value.map(From::from),
         }
     }
 }
@@ -156,5 +167,18 @@ impl From<DenseVector> for NamedVectorStruct {
 impl From<segment::data_types::vectors::NamedVector> for NamedVectorStruct {
     fn from(v: segment::data_types::vectors::NamedVector) -> Self {
         NamedVectorStruct::Dense(v)
+    }
+}
+
+impl From<OrderByInterface> for OrderBy {
+    fn from(order_by: OrderByInterface) -> Self {
+        match order_by {
+            OrderByInterface::Key(key) => OrderBy {
+                key,
+                direction: None,
+                start_from: None,
+            },
+            OrderByInterface::Struct(order_by) => order_by,
+        }
     }
 }

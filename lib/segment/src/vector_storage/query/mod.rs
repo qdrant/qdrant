@@ -3,9 +3,13 @@ use common::types::ScoreType;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::vectors::DenseVector;
 
-pub mod context_query;
-pub mod discovery_query;
-pub mod reco_query;
+mod context_query;
+mod discovery_query;
+mod reco_query;
+
+pub use context_query::{ContextPair, ContextQuery};
+pub use discovery_query::DiscoveryQuery;
+pub use reco_query::RecoQuery;
 
 pub trait TransformInto<Output, T = DenseVector, U = DenseVector> {
     /// Change the underlying type of the query, or just process it in some way.

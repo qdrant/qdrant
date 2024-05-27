@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use api::rest::ShardKeySelector;
 use collection::common::batching::batch_requests;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::payload_ops::{
@@ -10,7 +11,6 @@ use collection::operations::point_ops::{
     FilterSelector, PointIdsList, PointInsertOperations, PointOperations, PointsSelector,
     WriteOrdering,
 };
-use collection::operations::shard_key_selector::ShardKeySelector;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     CoreSearchRequest, CoreSearchRequestBatch, CountRequestInternal, CountResult,

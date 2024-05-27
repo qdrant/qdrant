@@ -118,10 +118,16 @@ impl QuantizedVectors {
             VectorStorageEnum::DenseSimpleByte(v) => {
                 Self::create_impl(v, quantization_config, path, max_threads, stopped)
             }
+            VectorStorageEnum::DenseSimpleHalf(v) => {
+                Self::create_impl(v, quantization_config, path, max_threads, stopped)
+            }
             VectorStorageEnum::DenseMemmap(v) => {
                 Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
             }
             VectorStorageEnum::DenseMemmapByte(v) => {
+                Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
+            }
+            VectorStorageEnum::DenseMemmapHalf(v) => {
                 Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
             }
             VectorStorageEnum::DenseAppendableMemmap(v) => {
@@ -130,8 +136,16 @@ impl QuantizedVectors {
             VectorStorageEnum::DenseAppendableMemmapByte(v) => {
                 Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
             }
+            VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
+                Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
+            }
             VectorStorageEnum::SparseSimple(_) => Err(OperationError::WrongSparse),
-            VectorStorageEnum::MultiDenseSimple(_v) => Err(OperationError::WrongMulti),
+            VectorStorageEnum::MultiDenseSimple(_) => Err(OperationError::WrongMulti),
+            VectorStorageEnum::MultiDenseSimpleByte(_) => Err(OperationError::WrongMulti),
+            VectorStorageEnum::MultiDenseSimpleHalf(_) => Err(OperationError::WrongMulti),
+            VectorStorageEnum::MultiDenseAppendableMemmap(_) => Err(OperationError::WrongMulti),
+            VectorStorageEnum::MultiDenseAppendableMemmapByte(_) => Err(OperationError::WrongMulti),
+            VectorStorageEnum::MultiDenseAppendableMemmapHalf(_) => Err(OperationError::WrongMulti),
         }
     }
 

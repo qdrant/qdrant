@@ -2,7 +2,7 @@ pub mod download;
 pub mod recover;
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use collection::operations::snapshot_ops::SnapshotDescription;
 use serde::{Deserialize, Serialize};
@@ -25,35 +25,6 @@ pub struct SnapshotConfig {
     pub collections_aliases: HashMap<String, String>,
 }
 
-/// Get absolute file path for a full snapshot by name
-///
-/// This enforces the file to be inside the snapshots directory
-pub async fn get_full_snapshot_path(
-    toc: &TableOfContent,
-    snapshot_name: &str,
-) -> Result<PathBuf, StorageError> {
-    let snapshots_path = toc.snapshots_path();
-
-    let absolute_snapshot_dir = Path::new(snapshots_path)
-        .canonicalize()
-        .map_err(|_| StorageError::not_found(format!("Snapshot directory: {snapshots_path}")))?;
-
-    let absolute_snapshot_path = absolute_snapshot_dir
-        .join(snapshot_name)
-        .canonicalize()
-        .map_err(|_| StorageError::not_found(format!("Snapshot {snapshot_name}")))?;
-
-    if !absolute_snapshot_path.starts_with(absolute_snapshot_dir) {
-        return Err(StorageError::not_found(format!("Snapshot {snapshot_name}")));
-    }
-
-    if !absolute_snapshot_path.is_file() {
-        return Err(StorageError::not_found(format!("Snapshot {snapshot_name}")));
-    }
-
-    Ok(absolute_snapshot_path)
-}
-
 pub async fn do_delete_full_snapshot(
     dispatcher: &Dispatcher,
     access: Access,
@@ -61,8 +32,10 @@ pub async fn do_delete_full_snapshot(
 ) -> Result<JoinHandle<Result<bool, StorageError>>, StorageError> {
     access.check_global_access(AccessRequirements::new().manage())?;
     let toc = dispatcher.toc(&access);
-    let snapshot_manager = toc.get_snapshots_storage_manager();
-    let snapshot_dir = get_full_snapshot_path(toc, snapshot_name).await?;
+    let snapshot_manager = toc.get_snapshots_storage_manager()?;
+    let snapshot_dir = snapshot_manager
+        .get_full_snapshot_path(toc.snapshots_path(), snapshot_name)
+        .await?;
     log::info!("Deleting full storage snapshot {:?}", snapshot_dir);
     Ok(tokio::spawn(async move {
         Ok(snapshot_manager.delete_snapshot(&snapshot_dir).await?)
@@ -80,8 +53,10 @@ pub async fn do_delete_collection_snapshot(
     let toc = dispatcher.toc(&access);
     let snapshot_name = snapshot_name.to_string();
     let collection = toc.get_collection(&collection_pass).await?;
-    let file_name = collection.get_snapshot_path(&snapshot_name).await?;
-    let snapshot_manager = toc.get_snapshots_storage_manager();
+    let snapshot_manager = toc.get_snapshots_storage_manager()?;
+    let file_name = snapshot_manager
+        .get_snapshot_path(collection.snapshots_path(), &snapshot_name)
+        .await?;
 
     log::info!("Deleting collection snapshot {:?}", file_name);
     Ok(tokio::spawn(async move {
@@ -94,7 +69,7 @@ pub async fn do_list_full_snapshots(
     access: Access,
 ) -> Result<Vec<SnapshotDescription>, StorageError> {
     access.check_global_access(AccessRequirements::new())?;
-    let snapshots_manager = toc.get_snapshots_storage_manager();
+    let snapshots_manager = toc.get_snapshots_storage_manager()?;
     let snapshots_path = Path::new(toc.snapshots_path());
     Ok(snapshots_manager.list_snapshots(snapshots_path).await?)
 }
@@ -172,7 +147,7 @@ async fn _do_create_full_snapshot(
     let mut temp_collection_snapshots = vec![];
 
     let temp_storage_path = toc.optional_temp_or_storage_temp_path()?;
-    let snapshot_manager = toc.get_snapshots_storage_manager();
+    let snapshot_manager = toc.get_snapshots_storage_manager()?;
 
     for (collection_name, snapshot_details) in &created_snapshots {
         let snapshot_path = snapshot_dir

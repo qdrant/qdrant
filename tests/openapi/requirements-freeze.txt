@@ -26,11 +26,12 @@ pluggy==1.0.0
 pyrate-limiter==2.10.0
 pyrsistent==0.19.3
 pytest==7.4.4
+pytest-loop==1.0.6
 pytest-subtests==0.7.0
 pytest-timeout==2.2.0
 PyYAML==6.0
 referencing==0.31.1
-requests==2.31.0
+requests==2.32.0
 rpds-py==0.13.2
 schemathesis==3.24.3
 six==1.16.0
@@ -42,5 +43,5 @@ tomli==2.0.1
 tomli_w==1.0.0
 typing_extensions==4.5.0
 urllib3==1.26.18
-Werkzeug==3.0.1
+Werkzeug==3.0.3
 yarl==1.8.2

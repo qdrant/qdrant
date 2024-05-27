@@ -81,11 +81,6 @@ pub fn dummy_abort_shard_transfer() -> AbortShardTransfer {
     Arc::new(|_transfer, _reason| {})
 }
 
-#[cfg(test)]
-pub fn path(p: &str) -> segment::json_path::JsonPath {
-    p.parse().unwrap()
-}
-
 /// Default to a collection with all the shards local
 #[cfg(test)]
 pub async fn new_local_collection(
@@ -102,7 +97,7 @@ pub async fn new_local_collection(
         config,
         Default::default(),
         CollectionShardDistribution::all_local(Some(config.params.shard_number.into()), 0),
-        ChannelService::new(REST_PORT),
+        ChannelService::new(REST_PORT, None),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
         dummy_abort_shard_transfer(),
@@ -136,7 +131,7 @@ pub async fn load_local_collection(
         path,
         snapshots_path,
         Default::default(),
-        ChannelService::new(REST_PORT),
+        ChannelService::new(REST_PORT, None),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
         dummy_abort_shard_transfer(),

@@ -271,6 +271,7 @@ impl ShardSnapshots for ShardSnapshotsService {
             request.snapshot_priority.try_into()?,
             request.checksum,
             self.http_client.clone(),
+            request.api_key,
         )
         .await
         .map_err(error_to_status)?;

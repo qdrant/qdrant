@@ -84,17 +84,17 @@ impl OrderBy {
         self.direction.unwrap_or_default()
     }
 
-    pub fn start_from(&self) -> OrderingValue {
+    pub fn start_from(&self) -> OrderValue {
         self.start_from
             .as_ref()
             .map(|start_from| match start_from {
-                StartFrom::Integer(i) => OrderingValue::Int(*i),
-                StartFrom::Float(f) => OrderingValue::Float(*f),
-                StartFrom::Datetime(dt) => OrderingValue::Int(dt.timestamp()),
+                StartFrom::Integer(i) => OrderValue::Int(*i),
+                StartFrom::Float(f) => OrderValue::Float(*f),
+                StartFrom::Datetime(dt) => OrderValue::Int(dt.timestamp()),
             })
             .unwrap_or_else(|| match self.direction() {
-                Direction::Asc => OrderingValue::MIN,
-                Direction::Desc => OrderingValue::MAX,
+                Direction::Asc => OrderValue::MIN,
+                Direction::Desc => OrderValue::MAX,
             })
     }
 
@@ -109,51 +109,52 @@ impl OrderBy {
         new_payload
     }
 
-    fn json_value_to_ordering_value(&self, value: Option<serde_json::Value>) -> OrderingValue {
+    fn json_value_to_ordering_value(&self, value: Option<serde_json::Value>) -> OrderValue {
         value
-            .and_then(|v| OrderingValue::try_from(v).ok())
+            .and_then(|v| OrderValue::try_from(v).ok())
             .unwrap_or_else(|| match self.direction() {
-                Direction::Asc => OrderingValue::MAX,
-                Direction::Desc => OrderingValue::MIN,
+                Direction::Asc => OrderValue::MAX,
+                Direction::Desc => OrderValue::MIN,
             })
     }
 
-    pub fn get_order_value_from_payload(&self, payload: Option<&Payload>) -> OrderingValue {
+    pub fn get_order_value_from_payload(&self, payload: Option<&Payload>) -> OrderValue {
         self.json_value_to_ordering_value(
             payload.and_then(|payload| payload.0.get(INTERNAL_KEY_OF_ORDER_BY_VALUE).cloned()),
         )
     }
 
-    pub fn remove_order_value_from_payload(&self, payload: Option<&mut Payload>) -> OrderingValue {
+    pub fn remove_order_value_from_payload(&self, payload: Option<&mut Payload>) -> OrderValue {
         self.json_value_to_ordering_value(
             payload.and_then(|payload| payload.0.remove(INTERNAL_KEY_OF_ORDER_BY_VALUE)),
         )
     }
 }
 
-#[derive(Debug)]
-pub enum OrderingValue {
-    Float(FloatPayloadType),
+#[derive(Debug, Clone, Copy, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum OrderValue {
     Int(IntPayloadType),
+    Float(FloatPayloadType),
 }
 
-impl OrderingValue {
+impl OrderValue {
     const MAX: Self = Self::Float(f64::NAN);
     const MIN: Self = Self::Float(f64::MIN);
 }
 
-impl From<OrderingValue> for serde_json::Value {
-    fn from(value: OrderingValue) -> Self {
+impl From<OrderValue> for serde_json::Value {
+    fn from(value: OrderValue) -> Self {
         match value {
-            OrderingValue::Float(value) => serde_json::Number::from_f64(value)
+            OrderValue::Float(value) => serde_json::Number::from_f64(value)
                 .map(serde_json::Value::Number)
                 .unwrap_or(serde_json::Value::Null),
-            OrderingValue::Int(value) => serde_json::Value::Number(serde_json::Number::from(value)),
+            OrderValue::Int(value) => serde_json::Value::Number(serde_json::Number::from(value)),
         }
     }
 }
 
-impl TryFrom<serde_json::Value> for OrderingValue {
+impl TryFrom<serde_json::Value> for OrderValue {
     type Error = ();
 
     fn try_from(value: serde_json::Value) -> Result<Self, Self::Error> {
@@ -165,52 +166,48 @@ impl TryFrom<serde_json::Value> for OrderingValue {
     }
 }
 
-impl From<FloatPayloadType> for OrderingValue {
+impl From<FloatPayloadType> for OrderValue {
     fn from(value: FloatPayloadType) -> Self {
-        OrderingValue::Float(value)
+        OrderValue::Float(value)
     }
 }
 
-impl From<IntPayloadType> for OrderingValue {
+impl From<IntPayloadType> for OrderValue {
     fn from(value: IntPayloadType) -> Self {
-        OrderingValue::Int(value)
+        OrderValue::Int(value)
     }
 }
 
-impl Eq for OrderingValue {}
+impl Eq for OrderValue {}
 
-impl PartialEq for OrderingValue {
+impl PartialEq for OrderValue {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (OrderingValue::Float(a), OrderingValue::Float(b)) => {
-                OrderedFloat(*a) == OrderedFloat(*b)
-            }
-            (OrderingValue::Int(a), OrderingValue::Int(b)) => a == b,
-            (OrderingValue::Float(a), OrderingValue::Int(b)) => a.num_eq(*b),
-            (OrderingValue::Int(a), OrderingValue::Float(b)) => a.num_eq(*b),
+            (OrderValue::Float(a), OrderValue::Float(b)) => OrderedFloat(*a) == OrderedFloat(*b),
+            (OrderValue::Int(a), OrderValue::Int(b)) => a == b,
+            (OrderValue::Float(a), OrderValue::Int(b)) => a.num_eq(*b),
+            (OrderValue::Int(a), OrderValue::Float(b)) => a.num_eq(*b),
         }
     }
 }
 
-impl PartialOrd for OrderingValue {
+impl PartialOrd for OrderValue {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for OrderingValue {
+impl Ord for OrderValue {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         match (self, other) {
-            (OrderingValue::Float(a), OrderingValue::Float(b)) => {
-                OrderedFloat(*a).cmp(&OrderedFloat(*b))
-            }
-            (OrderingValue::Int(a), OrderingValue::Int(b)) => a.cmp(b),
-            (OrderingValue::Float(a), OrderingValue::Int(b)) => {
+            (OrderValue::Float(a), OrderValue::Float(b)) => OrderedFloat(*a).cmp(&OrderedFloat(*b)),
+            (OrderValue::Int(a), OrderValue::Int(b)) => a.cmp(b),
+            (OrderValue::Float(a), OrderValue::Int(b)) => {
                 // num_cmp() might return None only if the float value is NaN. We follow the
                 // OrderedFloat logic here: the NaN is always greater than any other value.
                 a.num_cmp(*b).unwrap_or(std::cmp::Ordering::Greater)
             }
-            (OrderingValue::Int(a), OrderingValue::Float(b)) => {
+            (OrderValue::Int(a), OrderValue::Float(b)) => {
                 // Ditto, but the NaN is on the right side of the comparison.
                 a.num_cmp(*b).unwrap_or(std::cmp::Ordering::Less)
             }
@@ -222,22 +219,22 @@ impl Ord for OrderingValue {
 mod tests {
     use proptest::proptest;
 
-    use crate::data_types::order_by::OrderingValue;
+    use crate::data_types::order_by::OrderValue;
 
     proptest! {
 
         #[test]
         fn test_min_ordering_value(a in i64::MIN..0, b in f64::MIN..0.0) {
-            assert!(OrderingValue::MIN.cmp(&OrderingValue::from(a)).is_le());
-            assert!(OrderingValue::MIN.cmp(&OrderingValue::from(b)).is_le());
-            assert!(OrderingValue::MIN.cmp(&OrderingValue::from(f64::NAN)).is_le());
+            assert!(OrderValue::MIN.cmp(&OrderValue::from(a)).is_le());
+            assert!(OrderValue::MIN.cmp(&OrderValue::from(b)).is_le());
+            assert!(OrderValue::MIN.cmp(&OrderValue::from(f64::NAN)).is_le());
         }
 
         #[test]
         fn test_max_ordering_value(a in 0..i64::MAX, b in 0.0..f64::MAX) {
-            assert!(OrderingValue::MAX.cmp(&OrderingValue::from(a)).is_ge());
-            assert!(OrderingValue::MAX.cmp(&OrderingValue::from(b)).is_ge());
-            assert!(OrderingValue::MAX.cmp(&OrderingValue::from(f64::NAN)).is_ge());
+            assert!(OrderValue::MAX.cmp(&OrderValue::from(a)).is_ge());
+            assert!(OrderValue::MAX.cmp(&OrderValue::from(b)).is_ge());
+            assert!(OrderValue::MAX.cmp(&OrderValue::from(f64::NAN)).is_ge());
         }
     }
 }

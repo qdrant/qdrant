@@ -6,13 +6,17 @@ use api::grpc::qdrant::{
     ClearPayloadPointsInternal, CoreSearchBatchPointsInternal, CountPointsInternal, CountResponse,
     CreateFieldIndexCollectionInternal, DeleteFieldIndexCollectionInternal,
     DeletePayloadPointsInternal, DeletePointsInternal, DeleteVectorsInternal, GetPointsInternal,
-    GetResponse, PointsOperationResponseInternal, RecommendPointsInternal, RecommendResponse,
-    ScrollPointsInternal, ScrollResponse, SearchBatchPointsInternal, SearchBatchResponse,
-    SearchPointsInternal, SearchResponse, SetPayloadPointsInternal, SyncPointsInternal,
+    GetResponse, PointsOperationResponseInternal, QueryPointsInternal, QueryResponse,
+    QueryShardPoints, RecommendPointsInternal, RecommendResponse, ScrollPointsInternal,
+    ScrollResponse, SearchBatchResponse, SetPayloadPointsInternal, SyncPointsInternal,
     UpdateVectorsInternal, UpsertPointsInternal,
 };
+use collection::operations::shard_selector_internal::ShardSelectorInternal;
+use collection::operations::universal_query::shard_query::ShardQueryRequest;
+use collection::shards::shard::ShardId;
 use storage::content_manager::toc::TableOfContent;
 use storage::rbac::Access;
+use tokio::time::Instant;
 use tonic::{Request, Response, Status};
 
 use super::points_common::core_search_list;
@@ -34,6 +38,45 @@ impl PointsInternalService {
     pub fn new(toc: Arc<TableOfContent>) -> Self {
         Self { toc }
     }
+}
+
+#[allow(unused_variables)] // TODO(universal-query): remove
+pub async fn query(
+    toc: &TableOfContent,
+    collection_name: String,
+    query_points: QueryShardPoints,
+    shard_selection: Option<ShardId>,
+    access: Access,
+) -> Result<Response<QueryResponse>, Status> {
+    let request = ShardQueryRequest::try_from(query_points).map_err(Status::from)?;
+
+    let timing = Instant::now();
+
+    // As this function is handling an internal request,
+    // we can assume that shard_key is already resolved
+    let shard_selection = match shard_selection {
+        None => {
+            debug_assert!(false, "Shard selection is expected for internal request");
+            ShardSelectorInternal::All
+        }
+        Some(shard_id) => ShardSelectorInternal::ShardId(shard_id),
+    };
+
+    // TODO(universal-query): add `query()` to TableOfContent
+    // let scored_points = toc
+    //     .query(
+    //         &collection_name,
+    //         request,
+    //         shard_selection,
+    //         access,
+    //     )
+    //     .await
+    //     .map_err(error_to_status)?;
+
+    // TODO(universal-query): convert response to grpc
+    todo!()
+
+    // Ok(Response::new(response))
 }
 
 #[tonic::async_trait]
@@ -286,26 +329,6 @@ impl PointsInternal for PointsInternalService {
         .await
     }
 
-    async fn search(
-        &self,
-        _request: Request<SearchPointsInternal>,
-    ) -> Result<Response<SearchResponse>, Status> {
-        return Err(Status::unimplemented(
-            "search API was deprecated and removed, use core_search_batch instead. \
-        Please make sure versions of your cluster is consistent",
-        ));
-    }
-
-    async fn search_batch(
-        &self,
-        _request: Request<SearchBatchPointsInternal>,
-    ) -> Result<Response<SearchBatchResponse>, Status> {
-        return Err(Status::unimplemented(
-            "search_batch API was deprecated and removed, use core_search_batch instead. \
-        Please make sure versions of your cluster is consistent",
-        ));
-    }
-
     async fn core_search_batch(
         &self,
         request: Request<CoreSearchBatchPointsInternal>,
@@ -443,6 +466,37 @@ impl PointsInternal for PointsInternalService {
             self.toc.clone(),
             sync_points,
             clock_tag.map(Into::into),
+            shard_id,
+            FULL_ACCESS.clone(),
+        )
+        .await
+    }
+
+    async fn query(
+        &self,
+        request: Request<QueryPointsInternal>,
+    ) -> Result<Response<QueryResponse>, Status> {
+        // TODO(universal-query): validate
+        // validate_and_log(request.get_ref());
+
+        let QueryPointsInternal {
+            collection_name,
+            shard_id,
+            query_points,
+        } = request.into_inner();
+
+        let query_points =
+            query_points.ok_or_else(|| Status::invalid_argument("QueryPoints is missing"))?;
+
+        // TODO(universal-query): add timeout
+        // let timeout = timeout.map(Duration::from_secs);
+
+        // Individual `read_consistency` values are ignored
+
+        query(
+            self.toc.as_ref(),
+            collection_name,
+            query_points,
             shard_id,
             FULL_ACCESS.clone(),
         )

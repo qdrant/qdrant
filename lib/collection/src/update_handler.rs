@@ -620,6 +620,7 @@ impl UpdateHandler {
             .unwrap_or_else(|_| debug!("Optimizer already stopped"));
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn flush_worker(
         segments: LockedSegmentHolder,
         wal: LockedWal,

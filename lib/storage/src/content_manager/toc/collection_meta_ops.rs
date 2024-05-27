@@ -3,6 +3,7 @@ use std::path::Path;
 
 use collection::collection_state;
 use collection::config::ShardingMethod;
+use collection::events::{CollectionDeletedEvent, IndexCreatedEvent};
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::transfer::ShardTransfer;
@@ -64,6 +65,13 @@ impl TableOfContent {
             CollectionMetaOperations::ChangeAliases(operation) => {
                 log::debug!("Changing aliases");
                 self.update_aliases(operation).await
+            }
+            CollectionMetaOperations::Resharding(collection, operation) => {
+                log::debug!("Resharding {operation:?} of {collection}");
+
+                self.handle_resharding(collection, operation)
+                    .await
+                    .map(|_| true)
             }
             CollectionMetaOperations::TransferShard(collection, operation) => {
                 log::debug!("Transfer shard {:?} of {}", operation, collection);
@@ -179,6 +187,11 @@ impl TableOfContent {
                 .with_extension(uuid);
             tokio::fs::rename(path, &deleted_path).await?;
 
+            // Solve all issues related to this collection
+            issues::publish(CollectionDeletedEvent {
+                collection_id: collection_name.to_string(),
+            });
+
             // At this point collection is removed from memory and moved to ".deleted" folder.
             // Next time we load service the collection will not appear in the list of collections.
             // We can take our time to delete the collection from disk.
@@ -253,6 +266,28 @@ impl TableOfContent {
         Ok(true)
     }
 
+    async fn handle_resharding(
+        &self,
+        collection: CollectionId,
+        operation: ReshardingOperation,
+    ) -> Result<(), StorageError> {
+        let collection = self.get_collection_unchecked(&collection).await?;
+
+        match operation {
+            ReshardingOperation::Start {
+                peer_id,
+                shard_id,
+                shard_key,
+            } => {
+                collection
+                    .start_resharding(peer_id, shard_id, shard_key)
+                    .await?;
+            }
+        }
+
+        Ok(())
+    }
+
     async fn handle_transfer(
         &self,
         collection_id: CollectionId,
@@ -271,11 +306,10 @@ impl TableOfContent {
         match transfer_operation {
             ShardTransferOperations::Start(transfer) => {
                 let collection_state::State {
-                    config: _,
                     shards,
                     transfers,
-                    shards_key_mapping: _,
-                    payload_index_schema: _,
+                    shards_key_mapping,
+                    ..
                 } = collection.state().await;
                 let all_peers: HashSet<_> = self
                     .channel_service
@@ -301,6 +335,7 @@ impl TableOfContent {
                     &all_peers,
                     shard_state,
                     &transfers,
+                    &shards_key_mapping,
                 )?;
 
                 let on_finish = {
@@ -390,6 +425,7 @@ impl TableOfContent {
                     to: transfer_restart.to,
                     sync: old_transfer.sync, // Preserve sync flag from the old transfer
                     method: Some(transfer_restart.method),
+                    to_shard_id: None,
                 };
 
                 Box::pin(
@@ -512,8 +548,15 @@ impl TableOfContent {
     ) -> Result<(), StorageError> {
         self.get_collection_unchecked(&operation.collection_name)
             .await?
-            .create_payload_index(operation.field_name, operation.field_schema)
+            .create_payload_index(operation.field_name.clone(), operation.field_schema)
             .await?;
+
+        // We can solve issues related to this missing index
+        issues::publish(IndexCreatedEvent {
+            collection_id: operation.collection_name,
+            field_name: operation.field_name,
+        });
+
         Ok(())
     }
 
