@@ -161,9 +161,12 @@ mod tests {
             gpu::BufferType::Uniform,
             std::mem::size_of::<TestParams>(),
         ));
-        upload_staging_buffer.upload(&TestParams {
-            input_counts: inputs_count as u32,
-        }, 0);
+        upload_staging_buffer.upload(
+            &TestParams {
+                input_counts: inputs_count as u32,
+            },
+            0,
+        );
         context.copy_gpu_buffer(
             upload_staging_buffer,
             test_params_buffer.clone(),
@@ -220,7 +223,13 @@ mod tests {
         let download_staging_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::GpuToCpu,
-            std::cmp::max(scores_output_buffer.size, sorted_output_buffer.size),
+            std::cmp::max(
+                std::cmp::max(scores_output_buffer.size, sorted_output_buffer.size),
+                std::cmp::max(
+                    gpu_nearest_heap.nearest_scores_buffer.size,
+                    gpu_nearest_heap.nearest_indices_buffer.size,
+                ),
+            ),
         ));
         context.copy_gpu_buffer(
             scores_output_buffer.clone(),
