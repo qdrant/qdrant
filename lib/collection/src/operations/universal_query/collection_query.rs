@@ -9,7 +9,7 @@ use super::shard_query::Fusion;
 /// Internal representation of a query request, used to converge from REST and gRPC. This can have IDs referencing vectors.
 pub struct CollectionQueryRequest {
     pub prefetches: Vec<CollectionPrefetch>,
-    pub query: Query,
+    pub query: Option<Query>,
     pub using: String,
     pub filter: Option<Filter>,
     pub score_threshold: Option<ScoreType>,
@@ -46,7 +46,7 @@ pub enum VectorQuery {
 
 pub struct CollectionPrefetch {
     pub prefetch: Vec<CollectionPrefetch>,
-    pub query: Query,
+    pub query: Option<Query>,
     pub using: String,
     pub filter: Option<Filter>,
     pub score_threshold: Option<ScoreType>,
