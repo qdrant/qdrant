@@ -49,6 +49,7 @@ pub fn db_options() -> Options {
     options.set_delete_obsolete_files_period_micros(DB_DELETE_OBSOLETE_FILES_PERIOD);
     options.create_missing_column_families(true);
     options.set_max_open_files(DB_MAX_OPEN_FILES as i32);
+    options.set_atomic_flush(true);
 
     // Qdrant relies on it's own WAL for durability
     options.set_wal_recovery_mode(DBRecoveryMode::TolerateCorruptedTailRecords);
