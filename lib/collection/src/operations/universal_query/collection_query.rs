@@ -22,6 +22,16 @@ pub struct CollectionQueryRequest {
     pub with_payload: WithPayloadInterface,
 }
 
+impl CollectionQueryRequest {
+    const DEFAULT_LIMIT: usize = 10;
+
+    const DEFAULT_OFFSET: usize = 0;
+
+    const DEFAULT_WITH_VECTOR: WithVector = WithVector::Bool(false);
+
+    const DEFAULT_WITH_PAYLOAD: WithPayloadInterface = WithPayloadInterface::Bool(false);
+}
+
 pub enum Query {
     /// Score points against some vector(s)
     Vector(VectorQuery),
@@ -83,11 +93,11 @@ mod from_rest {
                 using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
                 filter,
                 score_threshold,
-                limit: limit.unwrap_or(10),
-                offset: offset.unwrap_or(0),
+                limit: limit.unwrap_or(Self::DEFAULT_LIMIT),
+                offset: offset.unwrap_or(Self::DEFAULT_OFFSET),
                 params,
-                with_vector: with_vector.unwrap_or(WithVector::Bool(false)),
-                with_payload: with_payload.unwrap_or(WithPayloadInterface::Bool(false)),
+                with_vector: with_vector.unwrap_or(Self::DEFAULT_WITH_VECTOR),
+                with_payload: with_payload.unwrap_or(Self::DEFAULT_WITH_PAYLOAD),
             }
         }
     }
@@ -110,7 +120,7 @@ mod from_rest {
                 using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
                 filter,
                 score_threshold,
-                limit: limit.unwrap_or(10),
+                limit: limit.unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),
                 params,
             }
         }
@@ -269,16 +279,20 @@ mod from_grpc {
                 using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
                 filter: filter.map(TryFrom::try_from).transpose()?,
                 score_threshold,
-                limit: limit.unwrap_or(10) as usize,
-                offset: offset.unwrap_or(0) as usize,
+                limit: limit
+                    .map(|l| l as usize)
+                    .unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),
+                offset: offset
+                    .map(|o| o as usize)
+                    .unwrap_or(CollectionQueryRequest::DEFAULT_OFFSET),
                 params: search_params.map(From::from),
                 with_vector: with_vectors
                     .map(From::from)
-                    .unwrap_or(WithVector::Bool(false)),
+                    .unwrap_or(CollectionQueryRequest::DEFAULT_WITH_VECTOR),
                 with_payload: with_payload
                     .map(TryFrom::try_from)
                     .transpose()?
-                    .unwrap_or(WithPayloadInterface::Bool(false)),
+                    .unwrap_or(CollectionQueryRequest::DEFAULT_WITH_PAYLOAD),
             };
 
             let shard_key =
@@ -318,7 +332,9 @@ mod from_grpc {
                 using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
                 filter: filter.map(TryFrom::try_from).transpose()?,
                 score_threshold,
-                limit: limit.unwrap_or(10) as usize,
+                limit: limit
+                    .map(|l| l as usize)
+                    .unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),
                 params: search_params.map(From::from),
             };
 
