@@ -125,7 +125,7 @@ futures-util = "0.3.30"
 indexmap = { version = "2", features = ["serde"] }
 indicatif = "0.17.8"
 itertools = "0.12"
-parking_lot = { version = "0.12.2", features = ["deadlock_detection", "serde"] }
+parking_lot = { version = "0.12.3", features = ["deadlock_detection", "serde"] }
 pprof = { version = "0.12", features = ["flamegraph", "prost-codec"] }
 prost = "0.11.9"
 prost-wkt-types = "0.4.2"
