@@ -35,7 +35,7 @@ impl LocalShard {
 
         let mut scored_points = self
             .recurse_prefetch(
-                &request.merge_plan,
+                request.merge_plan,
                 &core_results,
                 &scrolls,
                 search_runtime_handle,
@@ -75,7 +75,7 @@ impl LocalShard {
 
     fn recurse_prefetch<'shard, 'query>(
         &'shard self,
-        prefetch: &'query MergePlan,
+        prefetch: MergePlan,
         core_results: &'query Vec<Vec<ScoredPoint>>,
         scrolls: &'query Vec<Vec<ScoredPoint>>,
         search_runtime_handle: &'shard Handle,
@@ -88,16 +88,16 @@ impl LocalShard {
         async move {
             let mut sources: Vec<Vec<ScoredPoint>> = Vec::with_capacity(prefetch.sources.len());
 
-            for source in prefetch.sources.iter() {
+            for source in prefetch.sources.into_iter() {
                 let vec: Vec<Vec<ScoredPoint>> = match source {
                     PrefetchSource::SearchesIdx(idx) => {
                         // TODO(universal-query): don't clone, by using something like a hashmap instead of a vec
-                        let scored_searches = core_results.get(*idx).cloned().unwrap_or_default();
+                        let scored_searches = core_results.get(idx).cloned().unwrap_or_default();
                         vec![scored_searches]
                     }
                     PrefetchSource::ScrollsIdx(idx) => {
                         // TODO(universal-query): don't clone, by using something like a hashmap instead of a vec
-                        let scrolled = scrolls.get(*idx).cloned().unwrap_or_default();
+                        let scrolled = scrolls.get(idx).cloned().unwrap_or_default();
                         vec![scrolled]
                     }
                     PrefetchSource::Prefetch(prefetch) => {
@@ -120,7 +120,7 @@ impl LocalShard {
                 Ok(sources)
             } else {
                 let merged = self
-                    .merge_prefetches(sources, &prefetch.merge, search_runtime_handle, timeout)
+                    .merge_prefetches(sources, prefetch.merge, search_runtime_handle, timeout)
                     .await?;
                 Ok(vec![merged])
             }
@@ -132,7 +132,7 @@ impl LocalShard {
     async fn rescore(
         &self,
         sources: Vec<Vec<ScoredPoint>>,
-        rescore_query: &ScoringQuery,
+        rescore_query: ScoringQuery,
         limit: usize,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
@@ -147,45 +147,45 @@ impl LocalShard {
                 todo!("order by not implemented yet for {:?}", o)
             }
             ScoringQuery::Vector(query_enum) => {
-                // create batch search request for rescoring query
-                let search_requests = sources
-                    .into_iter()
-                    .map(|source| {
-                        // extract target point ids to score
-                        let point_ids: HashSet<_> =
-                            source.iter().map(|scored_point| scored_point.id).collect();
-                        // create filter for target point ids
-                        let filter = Filter::new_must(segment::types::Condition::HasId(
-                            HasIdCondition::from(point_ids),
-                        ));
-                        CoreSearchRequest {
-                            query: query_enum.clone(),
-                            filter: Some(filter),
-                            params: None,
-                            limit,
-                            offset: 0,
-                            with_payload: None, // the payload has already been fetched
-                            with_vector: None,  // the vector has already been fetched
-                            score_threshold: None,
-                        }
-                    })
-                    .collect();
-                let rescoring_core_search_request = CoreSearchRequestBatch {
-                    searches: search_requests,
+                // create single search request for rescoring query
+                let point_ids = sources.into_iter().fold(HashSet::new(), |mut acc, source| {
+                    for scored_point in source {
+                        acc.insert(scored_point.id);
+                    }
+                    acc
+                });
+
+                // create filter for target point ids
+                let filter = Filter::new_must(segment::types::Condition::HasId(
+                    HasIdCondition::from(point_ids),
+                ));
+
+                let search_request = CoreSearchRequest {
+                    query: query_enum,
+                    filter: Some(filter),
+                    params: None,
+                    limit,
+                    offset: 0,
+                    with_payload: None, // the payload is fetched separately
+                    with_vector: None,  // the vector is fetched separetely
+                    score_threshold: None,
                 };
-                let core_results = self
+
+                let rescoring_core_search_request = CoreSearchRequestBatch {
+                    searches: vec![search_request],
+                };
+
+                let top = self
                     .do_search(
                         Arc::new(rescoring_core_search_request),
                         search_runtime_handle,
                         timeout,
                     )
-                    .await?;
-                let top = core_results
-                    .into_iter()
-                    .flatten()
-                    .sorted_unstable()
-                    .take(limit)
-                    .collect();
+                    .await?
+                    // One search request is sent. We expect only one result
+                    .pop()
+                    .unwrap_or_default();
+
                 Ok(top)
             }
         }
@@ -196,11 +196,11 @@ impl LocalShard {
     async fn merge_prefetches(
         &self,
         sources: Vec<Vec<ScoredPoint>>,
-        merge: &ResultsMerge,
+        merge: ResultsMerge,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
-        if let Some(rescore) = &merge.rescore {
+        if let Some(rescore) = merge.rescore {
             self.rescore(
                 sources,
                 rescore,
