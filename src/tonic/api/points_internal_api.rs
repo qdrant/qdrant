@@ -1,22 +1,22 @@
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use api::grpc::qdrant::points_internal_server::PointsInternal;
 use api::grpc::qdrant::{
     ClearPayloadPointsInternal, CoreSearchBatchPointsInternal, CountPointsInternal, CountResponse,
     CreateFieldIndexCollectionInternal, DeleteFieldIndexCollectionInternal,
     DeletePayloadPointsInternal, DeletePointsInternal, DeleteVectorsInternal, GetPointsInternal,
-    GetResponse, PointsOperationResponseInternal, QueryPointsInternal, QueryResponse,
-    QueryShardPoints, RecommendPointsInternal, RecommendResponse, ScrollPointsInternal,
-    ScrollResponse, SearchBatchResponse, SetPayloadPointsInternal, SyncPointsInternal,
-    UpdateVectorsInternal, UpsertPointsInternal,
+    GetResponse, IntermediateResult, PointsOperationResponseInternal, QueryPointsInternal,
+    QueryResponse, QueryShardPoints, RecommendPointsInternal, RecommendResponse,
+    ScrollPointsInternal, ScrollResponse, SearchBatchResponse, SetPayloadPointsInternal,
+    SyncPointsInternal, UpdateVectorsInternal, UpsertPointsInternal,
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::universal_query::shard_query::ShardQueryRequest;
 use collection::shards::shard::ShardId;
+use storage::content_manager::conversions::error_to_status;
 use storage::content_manager::toc::TableOfContent;
 use storage::rbac::Access;
-use tokio::time::Instant;
 use tonic::{Request, Response, Status};
 
 use super::points_common::core_search_list;
@@ -40,15 +40,13 @@ impl PointsInternalService {
     }
 }
 
-#[allow(unused_variables)] // TODO(universal-query): remove
 pub async fn query(
     toc: &TableOfContent,
     collection_name: String,
     query_points: QueryShardPoints,
     shard_selection: Option<ShardId>,
-    access: Access,
 ) -> Result<Response<QueryResponse>, Status> {
-    let request = ShardQueryRequest::try_from(query_points).map_err(Status::from)?;
+    let request = ShardQueryRequest::try_from(query_points)?;
 
     let timing = Instant::now();
 
@@ -62,21 +60,22 @@ pub async fn query(
         Some(shard_id) => ShardSelectorInternal::ShardId(shard_id),
     };
 
-    // TODO(universal-query): add `query()` to TableOfContent
-    // let scored_points = toc
-    //     .query(
-    //         &collection_name,
-    //         request,
-    //         shard_selection,
-    //         access,
-    //     )
-    //     .await
-    //     .map_err(error_to_status)?;
+    let scored_points = toc
+        .query_internal(&collection_name, request, shard_selection)
+        .await
+        .map_err(error_to_status)?;
 
-    // TODO(universal-query): convert response to grpc
-    todo!()
+    let response = QueryResponse {
+        result: scored_points
+            .into_iter()
+            .map(|points| IntermediateResult {
+                result: points.into_iter().map(From::from).collect::<Vec<_>>(),
+            })
+            .collect(),
+        time: timing.elapsed().as_secs_f64(),
+    };
 
-    // Ok(Response::new(response))
+    Ok(Response::new(response))
 }
 
 #[tonic::async_trait]
@@ -493,13 +492,6 @@ impl PointsInternal for PointsInternalService {
 
         // Individual `read_consistency` values are ignored
 
-        query(
-            self.toc.as_ref(),
-            collection_name,
-            query_points,
-            shard_id,
-            FULL_ACCESS.clone(),
-        )
-        .await
+        query(self.toc.as_ref(), collection_name, query_points, shard_id).await
     }
 }

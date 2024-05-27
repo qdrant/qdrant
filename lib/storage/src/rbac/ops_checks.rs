@@ -11,6 +11,9 @@ use collection::operations::types::{
     LookupLocation, PointRequestInternal, RecommendExample, RecommendRequestInternal,
     ScrollRequestInternal,
 };
+use collection::operations::universal_query::collection_query::{
+    CollectionPrefetch, CollectionQueryRequest, Query, VectorInput, VectorQuery,
+};
 use collection::operations::vector_ops::VectorOperations;
 use collection::operations::CollectionUpdateOperations;
 use segment::types::{Condition, ExtendedPointId, FieldCondition, Filter, Match, Payload};
@@ -119,6 +122,36 @@ impl<'a> CollectionAccessView<'a> {
         match example {
             RecommendExample::PointId(_) => self.check_whole_access(),
             RecommendExample::Dense(_) | RecommendExample::Sparse(_) => Ok(()),
+        }
+    }
+
+    fn check_vector_query(&self, vector_query: &VectorQuery) -> Result<(), StorageError> {
+        match vector_query {
+            VectorQuery::Nearest(nearest) => self.check_vector_input(nearest)?,
+            VectorQuery::RecommendBestScore(reco) => {
+                for vector_input in reco.flat_iter() {
+                    self.check_vector_input(vector_input)?
+                }
+            }
+            VectorQuery::Discover(discover) => {
+                for vector_input in discover.flat_iter() {
+                    self.check_vector_input(vector_input)?
+                }
+            }
+            VectorQuery::Context(context) => {
+                for vector_input in context.flat_iter() {
+                    self.check_vector_input(vector_input)?
+                }
+            }
+        };
+
+        Ok(())
+    }
+
+    fn check_vector_input(&self, vector_input: &VectorInput) -> Result<(), StorageError> {
+        match vector_input {
+            VectorInput::Vector(_) => Ok(()),
+            VectorInput::Id(_) => self.check_whole_access(),
         }
     }
 }
@@ -275,6 +308,57 @@ impl CheckableCollectionOperation for ScrollRequestInternal {
         view.apply_filter(&mut self.filter);
         Ok(())
     }
+}
+
+impl CheckableCollectionOperation for CollectionQueryRequest {
+    fn access_requirements(&self) -> AccessRequirements {
+        AccessRequirements {
+            write: false,
+            manage: false,
+            whole: false,
+        }
+    }
+
+    fn check_access(
+        &mut self,
+        view: CollectionAccessView<'_>,
+        access: &CollectionAccessList,
+    ) -> Result<(), StorageError> {
+        view.apply_filter(&mut self.filter);
+
+        if let Some(Query::Vector(vector_query)) = &self.query {
+            view.check_vector_query(vector_query)?
+        }
+
+        // TODO(universal-query): implement lookup_from
+
+        for prefetch_query in self.prefetches.iter_mut() {
+            check_access_for_prefetch(prefetch_query, &view, access)?;
+        }
+
+        Ok(())
+    }
+}
+
+fn check_access_for_prefetch(
+    prefetch: &mut CollectionPrefetch,
+    view: &CollectionAccessView<'_>,
+    _access: &CollectionAccessList, // TODO(universal_query): implement lookup_from
+) -> Result<(), StorageError> {
+    view.apply_filter(&mut prefetch.filter);
+
+    if let Some(Query::Vector(vector_query)) = &prefetch.query {
+        view.check_vector_query(vector_query)?
+    }
+
+    // TODO(universal-query): implement lookup_from
+
+    // Recurse inner prefetches
+    for prefetch_query in prefetch.prefetch.iter_mut() {
+        check_access_for_prefetch(prefetch_query, view, _access)?;
+    }
+
+    Ok(())
 }
 
 impl CheckableCollectionOperation for CollectionUpdateOperations {

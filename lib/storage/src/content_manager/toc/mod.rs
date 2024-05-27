@@ -4,6 +4,7 @@ mod collection_meta_ops;
 mod create_collection;
 mod locks;
 mod point_ops;
+mod point_ops_internal;
 mod snapshots;
 mod temp_directories;
 pub mod transfer;
