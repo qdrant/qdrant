@@ -128,7 +128,7 @@ impl<'a> CollectionAccessView<'a> {
     fn check_vector_query(&self, vector_query: &VectorQuery) -> Result<(), StorageError> {
         match vector_query {
             VectorQuery::Nearest(nearest) => self.check_vector_input(nearest)?,
-            VectorQuery::RecommendBestScore(reco) => {
+            VectorQuery::RecommendBestScore(reco) | VectorQuery::RecommendAverageVector(reco) => {
                 for vector_input in reco.flat_iter() {
                     self.check_vector_input(vector_input)?
                 }
@@ -332,7 +332,7 @@ impl CheckableCollectionOperation for CollectionQueryRequest {
 
         // TODO(universal-query): implement lookup_from
 
-        for prefetch_query in self.prefetches.iter_mut() {
+        for prefetch_query in self.prefetch.iter_mut() {
             check_access_for_prefetch(prefetch_query, &view, access)?;
         }
 
