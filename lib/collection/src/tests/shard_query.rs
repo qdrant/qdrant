@@ -45,7 +45,7 @@ async fn test_shard_query_rrf_rescoring() {
     // RRF query without prefetches
     let query = ShardQueryRequest {
         prefetches: vec![],
-        query: ScoringQuery::Fusion(Fusion::Rrf),
+        query: Some(ScoringQuery::Fusion(Fusion::Rrf)),
         filter: None,
         score_threshold: None,
         limit: 0,
@@ -68,7 +68,7 @@ async fn test_shard_query_rrf_rescoring() {
     let inner_limit = 3;
     let nearest_query_prefetch = ShardPrefetch {
         prefetches: vec![], // no recursion here
-        query: ScoringQuery::Vector(nearest_query.clone()),
+        query: Some(ScoringQuery::Vector(nearest_query.clone())),
         limit: inner_limit,
         params: None,
         filter: None,
@@ -77,7 +77,7 @@ async fn test_shard_query_rrf_rescoring() {
     let outer_limit = 2;
     let query = ShardQueryRequest {
         prefetches: vec![nearest_query_prefetch.clone()],
-        query: ScoringQuery::Fusion(Fusion::Rrf),
+        query: Some(ScoringQuery::Fusion(Fusion::Rrf)),
         filter: None,
         score_threshold: None,
         limit: outer_limit,
@@ -109,7 +109,7 @@ async fn test_shard_query_rrf_rescoring() {
     let inner_limit = 3;
     let nearest_query_prefetch = ShardPrefetch {
         prefetches: vec![], // no recursion here
-        query: ScoringQuery::Vector(nearest_query.clone()),
+        query: Some(ScoringQuery::Vector(nearest_query.clone())),
         limit: inner_limit,
         params: None,
         filter: None,
@@ -121,7 +121,7 @@ async fn test_shard_query_rrf_rescoring() {
             nearest_query_prefetch.clone(),
             nearest_query_prefetch.clone(),
         ],
-        query: ScoringQuery::Fusion(Fusion::Rrf),
+        query: Some(ScoringQuery::Fusion(Fusion::Rrf)),
         filter: None,
         score_threshold: None,
         limit: outer_limit,
@@ -181,7 +181,7 @@ async fn test_shard_query_vector_rescoring() {
 
     let nearest_query_prefetch = ShardPrefetch {
         prefetches: vec![], // no recursion here
-        query: ScoringQuery::Vector(nearest_query.clone()),
+        query: Some(ScoringQuery::Vector(nearest_query.clone())),
         limit: inner_limit,
         params: None,
         filter: None,
@@ -192,7 +192,7 @@ async fn test_shard_query_vector_rescoring() {
     let outer_limit = 2;
     let query = ShardQueryRequest {
         prefetches: vec![],
-        query: ScoringQuery::Vector(nearest_query.clone()),
+        query: Some(ScoringQuery::Vector(nearest_query.clone())),
         filter: None,
         score_threshold: None,
         limit: outer_limit,
@@ -216,7 +216,7 @@ async fn test_shard_query_vector_rescoring() {
     let outer_limit = 2;
     let query = ShardQueryRequest {
         prefetches: vec![nearest_query_prefetch.clone()],
-        query: ScoringQuery::Vector(nearest_query.clone()),
+        query: Some(ScoringQuery::Vector(nearest_query.clone())),
         filter: None,
         score_threshold: None,
         limit: outer_limit,
@@ -243,7 +243,7 @@ async fn test_shard_query_vector_rescoring() {
             nearest_query_prefetch.clone(),
             nearest_query_prefetch.clone(),
         ],
-        query: ScoringQuery::Vector(nearest_query),
+        query: Some(ScoringQuery::Vector(nearest_query)),
         filter: None,
         score_threshold: None,
         limit: outer_limit,
@@ -300,7 +300,7 @@ async fn test_shard_query_payload_vector() {
     let outer_limit = 2;
     let query = ShardQueryRequest {
         prefetches: vec![],
-        query: ScoringQuery::Vector(nearest_query),
+        query: Some(ScoringQuery::Vector(nearest_query)),
         filter: None,
         score_threshold: None,
         limit: outer_limit,

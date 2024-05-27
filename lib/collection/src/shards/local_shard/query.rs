@@ -143,7 +143,7 @@ impl LocalShard {
                 Ok(top_rrf)
             }
             ScoringQuery::OrderBy(o) => {
-                // TODO implement order by
+                // TODO(universal-query): implement order by
                 todo!("order by not implemented yet for {:?}", o)
             }
             ScoringQuery::Vector(query_enum) => {
