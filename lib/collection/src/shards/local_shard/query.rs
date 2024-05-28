@@ -201,11 +201,14 @@ impl LocalShard {
                 Ok(top_rrf)
             }
             ScoringQuery::OrderBy(order_by) => {
-                let point_ids = sources
-                    .into_iter()
-                    .flatten()
-                    .map(|scored_point| scored_point.id)
-                    .collect::<HashSet<_>>();
+                // create single scroll request for rescoring query
+                let mut point_ids = HashSet::new();
+
+                for source in sources {
+                    for point in source.iter() {
+                        point_ids.insert(point.id);
+                    }
+                }
 
                 let filter = Filter::new_must(segment::types::Condition::HasId(
                     HasIdCondition::from(point_ids),
