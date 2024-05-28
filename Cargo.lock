@@ -6992,8 +6992,3 @@ dependencies = [
  "cc",
  "pkg-config",
 ]
-
-[[patch.unused]]
-name = "hashring"
-version = "0.3.4"
-source = "git+https://github.com/qdrant/hashring-rs?branch=hashring-partial-eq#d0157180aa05a89667c73ca9a7f5f86a12e438d8"
