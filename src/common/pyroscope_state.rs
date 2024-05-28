@@ -57,8 +57,9 @@ pub mod pyro {
             if let Some(agent) = self.agent.take() {
                 match agent.stop() {
                     Ok(stopped_agent) => {
+                        log::info!("Stopped pyroscope agent. Shutting it down");
                         stopped_agent.shutdown();
-                        log::info!("Pyroscope agent stopped");
+                        log::info!("Pyroscope agent shut down completed.");
                         return true;
                     }
                     Err(err) => {
