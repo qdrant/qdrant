@@ -12,6 +12,7 @@ use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 
 use super::replica_set::AbortShardTransfer;
+use super::resharding::ReshardingKey;
 use super::transfer::transfer_tasks_pool::TransferTasksPool;
 use crate::collection::resharding::ReshardingState;
 use crate::common::validate_snapshot_archive::validate_open_snapshot_archive;
@@ -112,11 +113,15 @@ impl ShardHolder {
 
     pub fn start_resharding(
         &mut self,
-        peer_id: PeerId,
-        shard_id: ShardId,
+        resharding_key: ReshardingKey,
         shard: ShardReplicaSet,
-        shard_key: Option<ShardKey>,
     ) -> Result<(), CollectionError> {
+        let ReshardingKey {
+            shard_id,
+            shard_key,
+            peer_id,
+        } = resharding_key;
+
         // TODO(resharding):
         //
         // `CollectionError::service_error` seems more fitting here... but if `start_resharding`
@@ -179,11 +184,14 @@ impl ShardHolder {
 
     pub async fn abort_resharding(
         &mut self,
-        peer_id: PeerId,
-        shard_id: ShardId,
-        shard_key: Option<ShardKey>,
+        resharding_key: ReshardingKey,
         is_in_progress: bool,
     ) -> Result<(), CollectionError> {
+        let ReshardingKey {
+            shard_id,
+            shard_key,
+            peer_id,
+        } = resharding_key;
         let mut removed_resharding = false;
 
         if let Some(ring) = self.rings.get_mut(&shard_key) {

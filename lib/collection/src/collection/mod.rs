@@ -35,6 +35,7 @@ use crate::shards::collection_shard_distribution::CollectionShardDistribution;
 use crate::shards::local_shard::clock_map::RecoveryPoint;
 use crate::shards::replica_set::ReplicaState::{Active, Dead, Initializing, Listener};
 use crate::shards::replica_set::{ChangePeerState, ReplicaState, ShardReplicaSet};
+use crate::shards::resharding::ReshardingKey;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::{shard_not_found_error, LockedShardHolder, ShardHolder};
 use crate::shards::transfer::helpers::check_transfer_conflicts_strict;
@@ -642,12 +643,7 @@ impl Collection {
             .clone()
     }
 
-    pub async fn start_resharding(
-        &self,
-        peer_id: PeerId,
-        shard_id: ShardId,
-        shard_key: Option<ShardKey>,
-    ) -> CollectionResult<()> {
+    pub async fn start_resharding(&self, reshard: ReshardingKey) -> CollectionResult<()> {
         // TODO(resharding): Improve error handling?
 
         let mut shard_holder = self.shards_holder.write().await;
@@ -655,38 +651,41 @@ impl Collection {
         if let Some(state) = shard_holder.resharding_state.read().deref() {
             return Err(CollectionError::bad_request(format!(
                 "resharding of collection {} is already in progress: {state:?}",
-                self.id
+                self.id,
             )));
         }
 
-        if shard_holder.get_shard(&shard_id).is_some() {
+        if shard_holder.get_shard(&reshard.shard_id).is_some() {
             return Err(CollectionError::bad_shard_selection(format!(
-                "shard {shard_id} already exists in collection {}",
-                self.id
+                "shard {} already exists in collection {}",
+                reshard.shard_id, self.id,
             )));
         }
 
         let replica_set = self
-            .create_replica_set(shard_id, &[peer_id], Some(ReplicaState::Resharding))
+            .create_replica_set(
+                reshard.shard_id,
+                &[reshard.peer_id],
+                Some(ReplicaState::Resharding),
+            )
             .await?;
 
-        shard_holder.start_resharding(peer_id, shard_id, replica_set, shard_key.clone())?;
+        shard_holder.start_resharding(reshard, replica_set)?;
 
         Ok(())
     }
 
-    pub async fn abort_resharding(
-        &self,
-        peer_id: PeerId,
-        shard_id: ShardId,
-        shard_key: Option<ShardKey>,
-    ) -> CollectionResult<()> {
+    pub async fn abort_resharding(&self, reshard: ReshardingKey) -> CollectionResult<()> {
+        let ReshardingKey {
+            peer_id,
+            shard_id,
+            ref shard_key,
+        } = reshard;
+
         let mut shard_holder = self.shards_holder.write().await;
 
         let is_in_progress = if let Some(state) = shard_holder.resharding_state.read().deref() {
-            let is_in_progress = state.peer_id == peer_id
-                && state.shard_id == shard_id
-                && state.shard_key == shard_key;
+            let is_in_progress = state.key() == reshard;
 
             if !is_in_progress {
                 return Err(CollectionError::bad_request(format!(
@@ -706,7 +705,7 @@ impl Collection {
             false
         };
 
-        if shard_holder.get_shard(&shard_id).is_none() {
+        if shard_holder.get_shard(&reshard.shard_id).is_none() {
             log::warn!(
                 "aborting resharding of collection {} ({peer_id}/{shard_id}/{shard_key:?}), \
                  but shard {shard_id} does not exist in collection",
@@ -716,7 +715,7 @@ impl Collection {
 
         // TODO(resharding): Contextualize errors? 🤔
         shard_holder
-            .abort_resharding(peer_id, shard_id, shard_key.clone(), is_in_progress)
+            .abort_resharding(reshard, is_in_progress)
             .await?;
 
         Ok(())
