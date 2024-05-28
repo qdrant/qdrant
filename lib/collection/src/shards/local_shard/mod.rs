@@ -312,6 +312,10 @@ impl LocalShard {
 
         // Always make sure we have any appendable segments, needed for update operations
         if !segment_holder.has_appendable_segment() {
+            debug_assert!(
+                false,
+                "Shard has no appendable segments, this should never happen",
+            );
             log::warn!("Shard has no appendable segments, this should never happen. Creating new appendable segment now");
             let segments_path = LocalShard::segments_path(shard_path);
             let collection_params = collection_config.read().await.params.clone();
