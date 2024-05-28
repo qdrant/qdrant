@@ -13,6 +13,7 @@ pub mod hnsw_discover_test;
 pub mod hnsw_quantized_search_test;
 mod multivector_filtrable_hnsw_test;
 mod multivector_hnsw_test;
+mod multivector_quantization_test;
 pub mod nested_filtering_test;
 pub mod payload_index_test;
 pub mod scroll_filtering_test;

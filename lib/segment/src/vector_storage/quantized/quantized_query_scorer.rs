@@ -51,7 +51,6 @@ where
         }
     }
 
-    #[allow(unused)]
     pub fn new_multi(
         raw_query: MultiDenseVector,
         quantized_data: &'a TEncodedVectors,
