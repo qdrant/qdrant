@@ -112,6 +112,7 @@ impl ShardHolder {
 
     pub fn start_resharding(
         &mut self,
+        peer_id: PeerId,
         shard_id: ShardId,
         shard: ShardReplicaSet,
         shard_key: Option<ShardKey>,
@@ -163,15 +164,23 @@ impl ShardHolder {
         }
 
         ring.add_resharding(shard_id);
-        self.add_shard(shard_id, shard, shard_key)?;
+        self.add_shard(shard_id, shard, shard_key.clone())?;
+
+        self.resharding_state.write(|state| {
+            debug_assert!(
+                state.is_none(),
+                "resharding is already in progress: {state:?}"
+            );
+            *state = Some(ReshardingState::new(peer_id, shard_id, shard_key));
+        })?;
 
         Ok(())
     }
 
     pub async fn abort_resharding(
         &mut self,
-        shard_id: ShardId,
         peer_id: PeerId,
+        shard_id: ShardId,
         shard_key: Option<ShardKey>,
         is_in_progress: bool,
     ) -> Result<(), CollectionError> {
@@ -223,6 +232,11 @@ impl ShardHolder {
                  but shard holder does not contain {shard_id} replica set",
             );
         }
+
+        // TODO(resharding): Contextualize errors? 🤔
+        self.resharding_state.write(|state| {
+            *state = None;
+        })?;
 
         Ok(())
     }

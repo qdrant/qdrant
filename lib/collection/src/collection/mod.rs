@@ -670,17 +670,7 @@ impl Collection {
             .create_replica_set(shard_id, &[peer_id], Some(ReplicaState::Resharding))
             .await?;
 
-        shard_holder.start_resharding(shard_id, replica_set, shard_key.clone())?;
-
-        shard_holder.resharding_state.write(|state| {
-            debug_assert!(
-                state.is_none(),
-                "resharding of collection {} is already in progress: {state:?}",
-                self.id
-            );
-
-            *state = Some(ReshardingState::new(peer_id, shard_id, shard_key));
-        })?;
+        shard_holder.start_resharding(peer_id, shard_id, replica_set, shard_key.clone())?;
 
         Ok(())
     }
@@ -726,13 +716,8 @@ impl Collection {
 
         // TODO(resharding): Contextualize errors? 🤔
         shard_holder
-            .abort_resharding(shard_id, peer_id, shard_key.clone(), is_in_progress)
+            .abort_resharding(peer_id, shard_id, shard_key.clone(), is_in_progress)
             .await?;
-
-        // TODO(resharding): Contextualize errors? 🤔
-        shard_holder.resharding_state.write(|state| {
-            *state = None;
-        })?;
 
         Ok(())
     }
