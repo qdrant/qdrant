@@ -43,8 +43,6 @@ use crate::shards::transfer::{ShardTransfer, ShardTransferMethod};
 use crate::shards::{replica_set, CollectionId};
 use crate::telemetry::CollectionTelemetry;
 
-const RESHARDING_STATE_FILE: &str = "resharding_state.json";
-
 /// Collection's data is split into several shards.
 #[allow(dead_code)]
 pub struct Collection {
@@ -53,7 +51,6 @@ pub struct Collection {
     pub(crate) collection_config: Arc<RwLock<CollectionConfig>>,
     pub(crate) shared_storage_config: Arc<SharedStorageConfig>,
     pub(crate) payload_index_schema: SaveOnDisk<PayloadIndexSchema>,
-    resharding_state: SaveOnDisk<Option<ReshardingState>>,
     this_peer_id: PeerId,
     path: PathBuf,
     snapshots_path: PathBuf,
@@ -102,7 +99,7 @@ impl Collection {
     ) -> Result<Self, CollectionError> {
         let start_time = std::time::Instant::now();
 
-        let mut shard_holder = ShardHolder::new(path, None)?;
+        let mut shard_holder = ShardHolder::new(path)?;
 
         let shared_collection_config = Arc::new(RwLock::new(collection_config.clone()));
         for (shard_id, mut peers) in shard_distribution.shards {
@@ -137,7 +134,6 @@ impl Collection {
         collection_config.save(path)?;
 
         let payload_index_schema = Self::load_payload_index_schema(path)?;
-        let resharding_state = Self::load_resharding_state(path)?;
 
         Ok(Self {
             id: name.clone(),
@@ -145,7 +141,6 @@ impl Collection {
             collection_config: shared_collection_config,
             payload_index_schema,
             shared_storage_config,
-            resharding_state,
             this_peer_id,
             path: path.to_owned(),
             snapshots_path: snapshots_path.to_owned(),
@@ -209,14 +204,7 @@ impl Collection {
         });
         collection_config.validate_and_warn();
 
-        let resharding_state = Self::load_resharding_state(path)
-            .expect("Can't load or initialize resharding progress");
-
-        let mut shard_holder = ShardHolder::new(
-            path,
-            resharding_state.read().as_ref().map(|state| state.shard_id),
-        )
-        .expect("Can not create shard holder");
+        let mut shard_holder = ShardHolder::new(path).expect("Can not create shard holder");
 
         let shared_collection_config = Arc::new(RwLock::new(collection_config.clone()));
 
@@ -247,7 +235,6 @@ impl Collection {
             collection_config: shared_collection_config,
             payload_index_schema,
             shared_storage_config,
-            resharding_state,
             this_peer_id,
             path: path.to_owned(),
             snapshots_path: snapshots_path.to_owned(),
@@ -263,18 +250,6 @@ impl Collection {
             search_runtime: search_runtime.unwrap_or_else(Handle::current),
             optimizer_cpu_budget,
         }
-    }
-
-    fn resharding_state_file(collection_path: &Path) -> PathBuf {
-        collection_path.join(RESHARDING_STATE_FILE)
-    }
-
-    fn load_resharding_state(
-        collection_path: &Path,
-    ) -> CollectionResult<SaveOnDisk<Option<ReshardingState>>> {
-        let resharding_state_file = Self::resharding_state_file(collection_path);
-        let resharding_state = SaveOnDisk::load_or_init(resharding_state_file)?;
-        Ok(resharding_state)
     }
 
     /// Check if stored version have consequent version.
@@ -460,6 +435,7 @@ impl Collection {
     pub async fn state(&self) -> State {
         let shards_holder = self.shards_holder.read().await;
         let transfers = shards_holder.shard_transfers.read().clone();
+        let resharding = shards_holder.resharding_state.read().clone();
         State {
             config: self.collection_config.read().await.clone(),
             shards: shards_holder
@@ -471,7 +447,7 @@ impl Collection {
                     (*shard_id, shard_info)
                 })
                 .collect(),
-            resharding: self.resharding_state.read().clone(),
+            resharding,
             transfers,
             shards_key_mapping: shards_holder.get_shard_key_to_ids_mapping(),
             payload_index_schema: self.payload_index_schema.read().clone(),
@@ -657,8 +633,13 @@ impl Collection {
         Ok(())
     }
 
-    pub fn resharding_state(&self) -> Option<ReshardingState> {
-        self.resharding_state.read().clone()
+    pub async fn resharding_state(&self) -> Option<ReshardingState> {
+        self.shards_holder
+            .read()
+            .await
+            .resharding_state
+            .read()
+            .clone()
     }
 
     pub async fn start_resharding(
@@ -671,7 +652,7 @@ impl Collection {
 
         let mut shard_holder = self.shards_holder.write().await;
 
-        if let Some(state) = self.resharding_state.read().deref() {
+        if let Some(state) = shard_holder.resharding_state.read().deref() {
             return Err(CollectionError::bad_request(format!(
                 "resharding of collection {} is already in progress: {state:?}",
                 self.id
@@ -691,7 +672,7 @@ impl Collection {
 
         shard_holder.start_resharding(shard_id, replica_set, shard_key.clone())?;
 
-        self.resharding_state.write(|state| {
+        shard_holder.resharding_state.write(|state| {
             debug_assert!(
                 state.is_none(),
                 "resharding of collection {} is already in progress: {state:?}",
@@ -712,7 +693,7 @@ impl Collection {
     ) -> CollectionResult<()> {
         let mut shard_holder = self.shards_holder.write().await;
 
-        let is_in_progress = if let Some(state) = self.resharding_state.read().deref() {
+        let is_in_progress = if let Some(state) = shard_holder.resharding_state.read().deref() {
             let is_in_progress = state.peer_id == peer_id
                 && state.shard_id == shard_id
                 && state.shard_key == shard_key;
@@ -749,7 +730,7 @@ impl Collection {
             .await?;
 
         // TODO(resharding): Contextualize errors? 🤔
-        self.resharding_state.write(|state| {
+        shard_holder.resharding_state.write(|state| {
             *state = None;
         })?;
 

@@ -578,7 +578,7 @@ pub async fn do_update_collection_cluster(
                 .await
         }
         ClusterOperations::AbortResharding(_) => {
-            let Some(state) = collection.resharding_state() else {
+            let Some(state) = collection.resharding_state().await else {
                 return Err(StorageError::bad_request(format!(
                     "resharding is not in progress for collection {collection_name}"
                 )));
