@@ -717,17 +717,29 @@ impl<'s> SegmentHolder {
         result
     }
 
-    /// Proxy all shard segments for [`proxy_all_segments_and_apply`]
-    #[allow(clippy::type_complexity)]
-    fn proxy_all_segments<'a>(
-        segments_lock: RwLockUpgradableReadGuard<'a, SegmentHolder>,
+    /// Build a temporary appendable segment, usually for proxying writes into.
+    ///
+    /// The segment configuration is sourced from the given collection parameters. If none is
+    /// specified this will fall back and clone the configuration of any existing appendable
+    /// segment in the segment holder.
+    ///
+    /// # Errors
+    ///
+    /// Errors if:
+    /// - building the segment fails
+    /// - no segment configuration is provided, and no appendable segment is in the segment holder
+    ///
+    /// # Warning
+    ///
+    /// This builds a segment on disk, but does NOT add it to the current segment holder. That must
+    /// be done explicitly. `save_version` must be true for the segment to be loaded when Qdrant
+    /// restarts.
+    fn build_tmp_segment(
+        &self,
         segments_path: &Path,
         collection_params: Option<&CollectionParams>,
-    ) -> OperationResult<(
-        Vec<(SegmentId, LockedSegment)>,
-        LockedSegment,
-        RwLockUpgradableReadGuard<'a, SegmentHolder>,
-    )> {
+        save_version: bool,
+    ) -> OperationResult<LockedSegment> {
         // Source config for temporary segment which we target all writes to
         let config = match collection_params {
             // Base config on collection params
@@ -742,7 +754,7 @@ impl<'s> SegmentHolder {
             },
             // Base config on existing appendable or non-appendable segment
             None => {
-                segments_lock
+                self
                     .random_appendable_segment()
                     .ok_or_else(|| OperationError::service_error("No existing segment to source temporary segment configuration from"))?
                     .get()
@@ -753,7 +765,27 @@ impl<'s> SegmentHolder {
         };
 
         // Create temporary appendable segment to direct all proxy writes into
-        let tmp_segment = LockedSegment::new(build_segment(segments_path, &config, false)?);
+        Ok(LockedSegment::new(build_segment(
+            segments_path,
+            &config,
+            save_version,
+        )?))
+    }
+
+    /// Proxy all shard segments for [`proxy_all_segments_and_apply`]
+    #[allow(clippy::type_complexity)]
+    fn proxy_all_segments<'a>(
+        segments_lock: RwLockUpgradableReadGuard<'a, SegmentHolder>,
+        collection_path: &Path,
+        collection_params: Option<&CollectionParams>,
+    ) -> OperationResult<(
+        Vec<(SegmentId, LockedSegment)>,
+        LockedSegment,
+        RwLockUpgradableReadGuard<'a, SegmentHolder>,
+    )> {
+        // Create temporary appendable segment to direct all proxy writes into
+        let tmp_segment =
+            segments_lock.build_tmp_segment(collection_path, collection_params, false)?;
 
         // List all segments we want to snapshot
         let segment_ids = segments_lock.segment_ids();
