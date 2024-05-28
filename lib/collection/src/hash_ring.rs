@@ -1,3 +1,4 @@
+use std::fmt;
 use std::hash::Hash;
 
 use smallvec::SmallVec;
@@ -6,7 +7,7 @@ use crate::shards::shard::ShardId;
 
 const HASH_RING_SHARD_SCALE: u32 = 100;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum HashRing<T = ShardId> {
     /// Single hashring
     Single(Inner<T>),
@@ -16,7 +17,7 @@ pub enum HashRing<T = ShardId> {
     Resharding { old: Inner<T>, new: Inner<T> },
 }
 
-impl<T: Hash + Copy> HashRing<T> {
+impl<T: Hash + Copy + PartialEq> HashRing<T> {
     /// Create a new single hashring.
     ///
     /// The hashring is created with a fair distribution of points and `HASH_RING_SHARD_SCALE` scale.
@@ -74,6 +75,68 @@ impl<T: Hash + Copy> HashRing<T> {
         new.add(shard);
     }
 
+    pub fn remove_resharding(&mut self, shard: T) -> bool
+    where
+        T: fmt::Display,
+    {
+        let Self::Resharding { old, new } = self else {
+            log::warn!(
+                "removing resharding shard,
+                 but hashring is not in resharding mode"
+            );
+
+            return false;
+        };
+
+        let mut old = old.clone();
+        let mut new = new.clone();
+
+        let removed_from_old = old.remove(&shard);
+        let removed_from_new = new.remove(&shard);
+
+        let removed_resharding = match (removed_from_old, removed_from_new) {
+            (false, true) => true,
+
+            (true, true) => {
+                log::error!(
+                    "removing resharding shard, \
+                     but {shard} is not resharding shard"
+                );
+
+                false
+            }
+
+            (true, false) => {
+                log::error!(
+                    "removing resharding shard, \
+                     but shard {shard} only exists in the old hashring"
+                );
+
+                false
+            }
+
+            (false, false) => {
+                log::warn!(
+                    "removing resharding shard, \
+                     but shard {shard} does not exist in the hashring"
+                );
+
+                false
+            }
+        };
+
+        if old == new {
+            log::debug!(
+                "switching hashring into single mode, \
+                 because all resharding shards were removed",
+            );
+
+            *self = Self::Single(old);
+        }
+
+        removed_resharding
+    }
+
     pub fn get<U: Hash>(&self, key: &U) -> ShardIds<T> {
         match self {
             Self::Single(ring) => ring.get(key).into_iter().cloned().collect(),
@@ -112,7 +175,7 @@ impl<T: Hash + Copy> HashRing<T> {
 /// with the current resharding implementation.
 pub type ShardIds<T = ShardId> = SmallVec<[T; 2]>;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum Inner<T> {
     Raw(hashring::HashRing<T>),
 
@@ -167,13 +230,6 @@ impl<T: Hash + Copy> Inner<T> {
         match self {
             Inner::Raw(ring) => ring.get(key),
             Inner::Fair { ring, .. } => ring.get(key).map(|(shard, _)| shard),
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        match self {
-            Inner::Raw(ring) => ring.len(),
-            Inner::Fair { ring, .. } => ring.len(),
         }
     }
 
