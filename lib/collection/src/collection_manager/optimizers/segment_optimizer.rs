@@ -50,7 +50,7 @@ pub trait SegmentOptimizer {
     /// Get name describing this optimizer
     fn name(&self) -> &str;
 
-    /// Get path of the the shard
+    /// Get the path of the segments directory
     fn segments_path(&self) -> &Path;
 
     /// Get temp path, where optimized segments could be temporary stored
@@ -586,8 +586,7 @@ pub trait SegmentOptimizer {
 
             let (_, proxies) = write_segments_guard.swap(optimized_segment, &proxy_ids);
 
-            let has_appendable_segments =
-                write_segments_guard.random_appendable_segment().is_some();
+            let has_appendable_segments = write_segments_guard.has_appendable_segment();
 
             // Release reference counter of the optimized segments
             drop(optimizing_segments);

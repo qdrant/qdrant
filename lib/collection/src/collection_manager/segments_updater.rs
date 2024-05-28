@@ -418,9 +418,12 @@ where
         .filter(|x| !(updated_points.contains(x)));
 
     {
-        let default_write_segment = segments.random_appendable_segment().ok_or_else(|| {
-            CollectionError::service_error("No segments exists, expected at least one".to_string())
-        })?;
+        let default_write_segment =
+            segments
+                .random_appendable_segment()
+                .ok_or(CollectionError::service_error(
+                    "No appendable segments exists, expected at least one",
+                ))?;
 
         let segment_arc = default_write_segment.get();
         let mut write_segment = segment_arc.write();
