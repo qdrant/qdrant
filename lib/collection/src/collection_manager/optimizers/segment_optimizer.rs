@@ -586,8 +586,7 @@ pub trait SegmentOptimizer {
 
             let (_, proxies) = write_segments_guard.swap(optimized_segment, &proxy_ids);
 
-            let has_appendable_segments =
-                write_segments_guard.random_appendable_segment().is_some();
+            let has_appendable_segments = write_segments_guard.has_appendable_segment();
 
             // Release reference counter of the optimized segments
             drop(optimizing_segments);
