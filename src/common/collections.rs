@@ -6,7 +6,7 @@ use api::grpc::qdrant::CollectionExists;
 use collection::config::ShardingMethod;
 use collection::operations::cluster_ops::{
     AbortTransferOperation, ClusterOperations, DropReplicaOperation, MoveShardOperation,
-    ReplicateShardOperation, RestartTransfer, RestartTransferOperation,
+    ReplicateShardOperation, RestartTransfer, RestartTransferOperation, StartResharding,
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::snapshot_ops::SnapshotDescription;
@@ -515,7 +515,9 @@ pub async fn do_update_collection_cluster(
                 .await
         }
         ClusterOperations::StartResharding(op) => {
-            let peer_id = match op.peer_id {
+            let StartResharding { peer_id, shard_key } = op.start_resharding;
+
+            let peer_id = match peer_id {
                 Some(peer_id) => {
                     validate_peer_exists(peer_id)?;
                     peer_id
@@ -545,7 +547,7 @@ pub async fn do_update_collection_cluster(
                 .max()
                 .map_or(0, |id| id + 1);
 
-            if let Some(shard_key) = &op.shard_key {
+            if let Some(shard_key) = &shard_key {
                 if !collection_state.shards_key_mapping.contains_key(shard_key) {
                     return Err(StorageError::bad_request(format!(
                         "sharding key {shard_key} does not exists for collection {collection_name}"
@@ -567,7 +569,29 @@ pub async fn do_update_collection_cluster(
                         ReshardingOperation::Start {
                             peer_id,
                             shard_id,
-                            shard_key: op.shard_key,
+                            shard_key,
+                        },
+                    ),
+                    access,
+                    wait_timeout,
+                )
+                .await
+        }
+        ClusterOperations::AbortResharding(_) => {
+            let Some(state) = collection.resharding_state() else {
+                return Err(StorageError::bad_request(format!(
+                    "resharding is not in progress for collection {collection_name}"
+                )));
+            };
+
+            dispatcher
+                .submit_collection_meta_op(
+                    CollectionMetaOperations::Resharding(
+                        collection_name.clone(),
+                        ReshardingOperation::Abort {
+                            peer_id: state.peer_id,
+                            shard_id: state.shard_id,
+                            shard_key: state.shard_key.clone(),
                         },
                     ),
                     access,

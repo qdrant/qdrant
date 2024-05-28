@@ -165,6 +165,65 @@ impl ShardHolder {
         Ok(())
     }
 
+    pub async fn abort_resharding(
+        &mut self,
+        shard_id: ShardId,
+        peer_id: PeerId,
+        shard_key: Option<ShardKey>,
+        is_in_progress: bool,
+    ) -> Result<(), CollectionError> {
+        let mut removed_resharding = false;
+
+        if let Some(ring) = self.rings.get_mut(&shard_key) {
+            log::debug!("removing peer {peer_id} from {shard_key:?} hashring");
+            removed_resharding = ring.remove_resharding(shard_id);
+        } else {
+            log::warn!(
+                "aborting resharding of shard {shard_id} ({peer_id}/{shard_key:?}), \
+                 but {shard_key:?} hashring does not exist"
+            );
+        }
+
+        if let Some(shard) = self.get_shard(&shard_id) {
+            match shard.peer_state(&peer_id) {
+                Some(ReplicaState::Resharding) => {
+                    log::debug!("removing peer {peer_id} from {shard_id} replica set");
+                    shard.remove_peer(peer_id).await?;
+                }
+
+                Some(ReplicaState::Dead) if is_in_progress || removed_resharding => {
+                    log::debug!("removing dead peer {peer_id} from {shard_id} replica set");
+                    shard.remove_peer(peer_id).await?;
+                }
+
+                Some(state) => {
+                    return Err(CollectionError::bad_request(format!(
+                        "peer {peer_id} is in {state:?} state"
+                    )));
+                }
+
+                None => {
+                    log::warn!(
+                        "aborting resharding of shard {shard_id} ({peer_id}/{shard_key:?}), \
+                         but peer {peer_id} does not exist in {shard_id} replica set"
+                    );
+                }
+            }
+
+            if shard.peers().is_empty() {
+                log::debug!("removing {shard_id} replica set, because replica set is empty");
+                self.drop_and_remove_shard(shard_id).await?;
+            }
+        } else {
+            log::warn!(
+                "aborting resharding of shard {shard_id} ({peer_id}/{shard_key:?}), \
+                 but shard holder does not contain {shard_id} replica set",
+            );
+        }
+
+        Ok(())
+    }
+
     pub fn add_shard(
         &mut self,
         shard_id: ShardId,
