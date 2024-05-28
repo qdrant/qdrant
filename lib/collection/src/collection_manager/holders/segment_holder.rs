@@ -717,6 +717,19 @@ impl<'s> SegmentHolder {
         result
     }
 
+    /// Create a new appendable segment and add it to the segment holder.
+    ///
+    /// The segment configuration is sourced from the given collection parameters.
+    pub fn create_appendable_segment(
+        &mut self,
+        segments_path: &Path,
+        collection_params: &CollectionParams,
+    ) -> OperationResult<LockedSegment> {
+        let segment = self.build_tmp_segment(segments_path, Some(collection_params), true)?;
+        self.add_locked(segment.clone());
+        Ok(segment)
+    }
+
     /// Build a temporary appendable segment, usually for proxying writes into.
     ///
     /// The segment configuration is sourced from the given collection parameters. If none is
