@@ -5,7 +5,7 @@ use std::sync::Arc;
 use itertools::Itertools;
 use parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
-use segment::types::{HnswConfig, QuantizationConfig, SegmentType, VECTOR_ELEMENT_SIZE};
+use segment::types::{HnswConfig, QuantizationConfig, SegmentType};
 
 use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentId,
@@ -115,14 +115,9 @@ impl SegmentOptimizer for MergeOptimizer {
                 let read_segment = segment_entry.read();
                 (read_segment.segment_type() != SegmentType::Special).then_some((
                     *idx,
-                    read_segment.available_point_count()
-                        * read_segment
-                            .vector_dims()
-                            .values()
-                            .max()
-                            .copied()
-                            .unwrap_or(0)
-                        * VECTOR_ELEMENT_SIZE,
+                    read_segment
+                        .max_available_vectors_size_in_bytes()
+                        .unwrap_or_default(),
                 ))
             })
             .sorted_by_key(|(_, size)| *size)

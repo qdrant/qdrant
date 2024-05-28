@@ -107,7 +107,7 @@ fn test_byte_storage_hnsw(
     let num_vectors: u64 = 5_000;
     let ef_construct = 16;
     let distance = Distance::Cosine;
-    let full_scan_threshold = 16; // KB
+    let full_scan_threshold = 0;
     let num_payload_values = 2;
 
     let mut rnd = StdRng::seed_from_u64(42);
