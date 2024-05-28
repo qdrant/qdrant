@@ -13,14 +13,10 @@ impl<'a> From<&'a ScoredPoint> for ScoredPointTies<'a> {
 
 impl<'a> Ord for ScoredPointTies<'a> {
     fn cmp(&self, other: &Self) -> Ordering {
-        let res = self.0.cmp(other.0);
-
-        // for identical scores, we fallback to sorting by ids to have a stable output
-        if res == Ordering::Equal {
-            self.0.id.cmp(&other.0.id)
-        } else {
-            res
-        }
+        self.0
+            .cmp(other.0)
+            // for identical scores, we fallback to sorting by ids to have a stable output
+            .then_with(|| self.0.id.cmp(&other.0.id))
     }
 }
 
