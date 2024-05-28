@@ -2,17 +2,21 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
+use api::rest::OrderByInterface;
 use futures::future::BoxFuture;
 use futures::FutureExt;
 use itertools::Itertools as _;
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
-use segment::types::{Filter, HasIdCondition, PointIdType, ScoredPoint, WithPayload};
+use segment::types::{
+    Filter, HasIdCondition, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
+};
 use tokio::runtime::Handle;
 
 use super::LocalShard;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::operations::types::{
     CollectionError, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch,
+    ScrollRequestInternal,
 };
 use crate::operations::universal_query::planned_query::{
     MergePlan, PlannedQuery, PrefetchSource, ResultsMerge,
@@ -144,9 +148,34 @@ impl LocalShard {
                 let top_rrf = rrf_scoring(sources, limit);
                 Ok(top_rrf)
             }
-            ScoringQuery::OrderBy(o) => {
-                // TODO(universal-query): implement order by
-                todo!("order by not implemented yet for {:?}", o)
+            ScoringQuery::OrderBy(order_by) => {
+                let point_ids = sources
+                    .into_iter()
+                    .flatten()
+                    .map(|scored_point| scored_point.id)
+                    .collect::<HashSet<_>>();
+
+                let filter = Filter::new_must(segment::types::Condition::HasId(
+                    HasIdCondition::from(point_ids),
+                ));
+
+                let scroll_request = ScrollRequestInternal {
+                    offset: None,
+                    limit: Some(limit),
+                    filter: Some(filter),
+                    with_payload: Some(WithPayloadInterface::Bool(false)),
+                    with_vector: WithVector::Bool(false),
+                    order_by: Some(OrderByInterface::Struct(order_by)),
+                };
+
+                self.query_scroll_batch(Arc::new(vec![scroll_request]), search_runtime_handle)
+                    .await?
+                    .pop()
+                    .ok_or_else(|| {
+                        CollectionError::service_error(
+                            "Rescoring with order-by query didn't return expected batch of results",
+                        )
+                    })
             }
             ScoringQuery::Vector(query_enum) => {
                 // create single search request for rescoring query
@@ -186,7 +215,7 @@ impl LocalShard {
                 .pop()
                 .ok_or_else(|| {
                     CollectionError::service_error(
-                        "Rescoring query didn't return expected batch of results",
+                        "Rescoring with vector(s) query didn't return expected batch of results",
                     )
                 })
             }
