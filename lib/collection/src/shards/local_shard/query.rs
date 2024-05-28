@@ -11,7 +11,9 @@ use tokio::runtime::Handle;
 
 use super::LocalShard;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
-use crate::operations::types::{CollectionResult, CoreSearchRequest, CoreSearchRequestBatch};
+use crate::operations::types::{
+    CollectionError, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch,
+};
 use crate::operations::universal_query::planned_query::{
     MergePlan, PlannedQuery, PrefetchSource, ResultsMerge,
 };
@@ -174,18 +176,19 @@ impl LocalShard {
                     searches: vec![search_request],
                 };
 
-                let top = self
-                    .do_search(
-                        Arc::new(rescoring_core_search_request),
-                        search_runtime_handle,
-                        timeout,
+                self.do_search(
+                    Arc::new(rescoring_core_search_request),
+                    search_runtime_handle,
+                    timeout,
+                )
+                .await?
+                // One search request is sent. We expect only one result
+                .pop()
+                .ok_or_else(|| {
+                    CollectionError::service_error(
+                        "Rescoring query didn't return expected batch of results",
                     )
-                    .await?
-                    // One search request is sent. We expect only one result
-                    .pop()
-                    .unwrap_or_default();
-
-                Ok(top)
+                })
             }
         }
     }
