@@ -740,7 +740,6 @@ impl<'s> SegmentHolder {
         collection_params: Option<&CollectionParams>,
         save_version: bool,
     ) -> OperationResult<LockedSegment> {
-        // Source config for temporary segment which we target all writes to
         let config = match collection_params {
             // Base config on collection params
             Some(collection_params) => SegmentConfig {
@@ -752,7 +751,7 @@ impl<'s> SegmentHolder {
                     .map_err(|err| OperationError::service_error(format!("Failed to source sparse vector configuration from collection parameters: {err:?}")))?,
                 payload_storage_type: collection_params.payload_storage_type(),
             },
-            // Base config on existing appendable or non-appendable segment
+            // Fall back: base config on existing appendable segment
             None => {
                 self
                     .random_appendable_segment()
@@ -764,7 +763,6 @@ impl<'s> SegmentHolder {
             }
         };
 
-        // Create temporary appendable segment to direct all proxy writes into
         Ok(LockedSegment::new(build_segment(
             segments_path,
             &config,

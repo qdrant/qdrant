@@ -50,7 +50,7 @@ pub trait SegmentOptimizer {
     /// Get name describing this optimizer
     fn name(&self) -> &str;
 
-    /// Get path of the the shard
+    /// Get the path of the segments directory
     fn segments_path(&self) -> &Path;
 
     /// Get temp path, where optimized segments could be temporary stored
