@@ -787,7 +787,7 @@ impl<'s> SegmentHolder {
     #[allow(clippy::type_complexity)]
     fn proxy_all_segments<'a>(
         segments_lock: RwLockUpgradableReadGuard<'a, SegmentHolder>,
-        collection_path: &Path,
+        segments_path: &Path,
         collection_params: Option<&CollectionParams>,
     ) -> OperationResult<(
         Vec<(SegmentId, LockedSegment)>,
@@ -796,7 +796,7 @@ impl<'s> SegmentHolder {
     )> {
         // Create temporary appendable segment to direct all proxy writes into
         let tmp_segment =
-            segments_lock.build_tmp_segment(collection_path, collection_params, false)?;
+            segments_lock.build_tmp_segment(segments_path, collection_params, false)?;
 
         // List all segments we want to snapshot
         let segment_ids = segments_lock.segment_ids();
