@@ -267,6 +267,10 @@ impl<T: PrimitiveVectorElement> SimpleMultiDenseVectorStorage<T> {
 }
 
 impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for SimpleMultiDenseVectorStorage<T> {
+    fn vector_dim(&self) -> usize {
+        self.dim
+    }
+
     fn get_multi(&self, key: PointOffsetType) -> TypedMultiDenseVectorRef<T> {
         let metadata = &self.vectors_metadata[key as usize];
         TypedMultiDenseVectorRef {
@@ -288,10 +292,6 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for SimpleMultiDenseVector
 }
 
 impl<T: PrimitiveVectorElement> VectorStorage for SimpleMultiDenseVectorStorage<T> {
-    fn vector_dim(&self) -> usize {
-        self.dim
-    }
-
     fn distance(&self) -> Distance {
         self.distance
     }
@@ -306,6 +306,16 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleMultiDenseVectorStorage<
 
     fn total_vector_count(&self) -> usize {
         self.vectors_metadata.len()
+    }
+
+    fn available_size_in_bytes(&self) -> usize {
+        if self.total_vector_count() > 0 {
+            let total_size = self.vectors.len() * self.vector_dim() * std::mem::size_of::<T>();
+            (total_size as u128 * self.available_vector_count() as u128
+                / self.total_vector_count() as u128) as usize
+        } else {
+            0
+        }
     }
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {

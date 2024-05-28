@@ -208,7 +208,7 @@ fn scoring_equivalency(
     let mut rng = StdRng::seed_from_u64(SEED);
     let mut sampler = quant_sampler.unwrap_or(Box::new(sampler(rng.clone())));
 
-    super::utils::insert_distributed_vectors(&mut raw_storage, NUM_POINTS, &mut sampler)?;
+    super::utils::insert_distributed_vectors(DIMS, &mut raw_storage, NUM_POINTS, &mut sampler)?;
 
     let mut id_tracker = FixtureIdTracker::new(NUM_POINTS);
     super::utils::delete_random_vectors(

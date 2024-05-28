@@ -69,21 +69,21 @@ fn test_async_raw_scorer(
         let mutable_storage = open_simple_dense_vector_storage(
             db,
             rocksdb_wrapper::DB_VECTOR_CF,
-            4,
+            dim,
             distance,
             &AtomicBool::new(false),
         )?;
 
         let mut mutable_storage = mutable_storage.borrow_mut();
 
-        insert_random_vectors(&mut rng, &mut mutable_storage, points)?;
+        insert_random_vectors(&mut rng, dim, &mut mutable_storage, points)?;
         delete_random_vectors(&mut rng, &mut mutable_storage, &mut id_tracker, delete)?;
 
         storage.update_from(&mutable_storage, &mut (0..points as _), &Default::default())?;
     }
 
     for _ in 0..score {
-        test_random_score(&mut rng, &storage, id_tracker.deleted_point_bitslice())?;
+        test_random_score(&mut rng, dim, &storage, id_tracker.deleted_point_bitslice())?;
     }
 
     Ok(())
@@ -91,21 +91,20 @@ fn test_async_raw_scorer(
 
 fn insert_random_vectors(
     rng: &mut impl rand::Rng,
+    dim: usize,
     storage: &mut VectorStorageEnum,
     vectors: usize,
 ) -> Result<()> {
-    insert_distributed_vectors(storage, vectors, &mut sampler(rng))
+    insert_distributed_vectors(dim, storage, vectors, &mut sampler(rng))
 }
 
 fn test_random_score(
     mut rng: impl rand::Rng,
+    dim: usize,
     storage: &VectorStorageEnum,
     deleted_points: &BitSlice,
 ) -> Result<()> {
-    let query: QueryVector = sampler(&mut rng)
-        .take(storage.vector_dim())
-        .collect_vec()
-        .into();
+    let query: QueryVector = sampler(&mut rng).take(dim).collect_vec().into();
 
     let raw_scorer = new_raw_scorer(query.clone(), storage, deleted_points).unwrap();
 

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use common::types::TelemetryDetail;
@@ -135,9 +135,7 @@ pub trait SegmentEntry {
     /// Estimate available point count in this segment for given filter.
     fn estimate_point_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation;
 
-    fn vector_dim(&self, vector_name: &str) -> OperationResult<usize>;
-
-    fn vector_dims(&self) -> HashMap<String, usize>;
+    fn vector_names(&self) -> HashSet<String>;
 
     /// Number of available points
     ///
@@ -146,6 +144,18 @@ pub trait SegmentEntry {
 
     /// Number of deleted points
     fn deleted_point_count(&self) -> usize;
+
+    /// Size of all available vectors in storage
+    fn available_vectors_size_in_bytes(&self, vector_name: &str) -> OperationResult<usize>;
+
+    /// Max value from all `available_vectors_size_in_bytes`
+    fn max_available_vectors_size_in_bytes(&self) -> OperationResult<usize> {
+        self.vector_names()
+            .into_iter()
+            .map(|vector_name| self.available_vectors_size_in_bytes(&vector_name))
+            .collect::<OperationResult<Vec<_>>>()
+            .map(|sizes| sizes.into_iter().max().unwrap_or_default())
+    }
 
     /// Get segment type
     fn segment_type(&self) -> SegmentType;
