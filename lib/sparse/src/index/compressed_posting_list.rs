@@ -255,16 +255,12 @@ impl CompressedPostingBuilder {
 pub struct CompressedPostingListIterator<'a> {
     list: CompressedPostingListView<'a>,
 
-    /// If true, then `decompressed_chunk` contains the unpacked chunk for the current
-    /// `compressed_idx`.
+    /// If true, then `decompressed_chunk` contains the unpacked chunk for the current position.
     unpacked: bool,
 
     decompressed_chunk: [PointOffsetType; BitPackerImpl::BLOCK_LEN],
 
-    /// Index within compressed chunks.
-    compressed_idx: usize,
-
-    remainders_idx: usize,
+    pos: usize,
 }
 
 impl<'a> CompressedPostingListIterator<'a> {
@@ -274,8 +270,7 @@ impl<'a> CompressedPostingListIterator<'a> {
             list: list.clone(),
             unpacked: false,
             decompressed_chunk: [0; BitPackerImpl::BLOCK_LEN],
-            compressed_idx: 0,
-            remainders_idx: 0,
+            pos: 0,
         }
     }
 
@@ -283,13 +278,13 @@ impl<'a> CompressedPostingListIterator<'a> {
     fn next(&mut self) -> Option<PostingElement> {
         let result = self.peek()?;
 
-        if self.compressed_idx / BitPackerImpl::BLOCK_LEN < self.list.chunks.len() {
-            self.compressed_idx += 1;
-            if self.compressed_idx % BitPackerImpl::BLOCK_LEN == 0 {
+        if self.pos / BitPackerImpl::BLOCK_LEN < self.list.chunks.len() {
+            self.pos += 1;
+            if self.pos % BitPackerImpl::BLOCK_LEN == 0 {
                 self.unpacked = false;
             }
         } else {
-            self.remainders_idx += 1;
+            self.pos += 1;
         }
 
         Some(result.into())
@@ -299,27 +294,25 @@ impl<'a> CompressedPostingListIterator<'a> {
 impl<'a> PostingListIter for CompressedPostingListIterator<'a> {
     #[inline]
     fn peek(&mut self) -> Option<PostingElementEx> {
-        let compressed_idx = self.compressed_idx;
-        if compressed_idx / BitPackerImpl::BLOCK_LEN < self.list.chunks.len() {
+        let pos = self.pos;
+        if pos / BitPackerImpl::BLOCK_LEN < self.list.chunks.len() {
             if !self.unpacked {
-                self.list.decompress_chunk(
-                    compressed_idx / BitPackerImpl::BLOCK_LEN,
-                    &mut self.decompressed_chunk,
-                );
+                self.list
+                    .decompress_chunk(pos / BitPackerImpl::BLOCK_LEN, &mut self.decompressed_chunk);
                 self.unpacked = true;
             }
 
-            let chunk = &self.list.chunks[compressed_idx / BitPackerImpl::BLOCK_LEN];
+            let chunk = &self.list.chunks[pos / BitPackerImpl::BLOCK_LEN];
             return Some(PostingElementEx {
-                record_id: self.decompressed_chunk[compressed_idx % BitPackerImpl::BLOCK_LEN],
-                weight: chunk.weights[compressed_idx % BitPackerImpl::BLOCK_LEN],
+                record_id: self.decompressed_chunk[pos % BitPackerImpl::BLOCK_LEN],
+                weight: chunk.weights[pos % BitPackerImpl::BLOCK_LEN],
                 max_next_weight: 0.0,
             });
         }
 
         self.list
             .remainders
-            .get(self.remainders_idx)
+            .get(pos - self.list.chunks.len() * BitPackerImpl::BLOCK_LEN)
             .map(|e| PostingElementEx {
                 record_id: e.record_id,
                 weight: e.weight,
@@ -349,18 +342,17 @@ impl<'a> PostingListIter for CompressedPostingListIterator<'a> {
 
     #[inline]
     fn skip_to_end(&mut self) {
-        self.compressed_idx = self.list.chunks.len() * BitPackerImpl::BLOCK_LEN;
-        self.remainders_idx = self.list.remainders.len();
+        self.pos = self.list.chunks.len() * BitPackerImpl::BLOCK_LEN + self.list.remainders.len();
     }
 
     #[inline]
     fn len_to_end(&self) -> usize {
-        self.list.len() - self.compressed_idx - self.remainders_idx
+        self.list.len() - self.pos
     }
 
     #[inline]
     fn current_index(&self) -> usize {
-        self.compressed_idx + self.remainders_idx
+        self.pos
     }
 
     #[inline]
@@ -370,61 +362,61 @@ impl<'a> PostingListIter for CompressedPostingListIterator<'a> {
         ctx: &mut Ctx,
         mut f: impl FnMut(&mut Ctx, PointOffsetType, DimWeight),
     ) {
-        let mut compressed_idx = self.compressed_idx;
-        if compressed_idx / BitPackerImpl::BLOCK_LEN < self.list.chunks.len() {
+        let mut pos = self.pos;
+        if pos / BitPackerImpl::BLOCK_LEN < self.list.chunks.len() {
             // 1. Iterate over already decompressed chunk
             if self.unpacked {
-                let chunk = &self.list.chunks[compressed_idx / BitPackerImpl::BLOCK_LEN];
+                let chunk = &self.list.chunks[pos / BitPackerImpl::BLOCK_LEN];
 
                 for (idx, weight) in std::iter::zip(
-                    &self.decompressed_chunk[compressed_idx % BitPackerImpl::BLOCK_LEN..],
-                    &chunk.weights[compressed_idx % BitPackerImpl::BLOCK_LEN..],
+                    &self.decompressed_chunk[pos % BitPackerImpl::BLOCK_LEN..],
+                    &chunk.weights[pos % BitPackerImpl::BLOCK_LEN..],
                 ) {
                     if *idx > id {
-                        self.compressed_idx = compressed_idx;
+                        self.pos = pos;
                         return;
                     }
                     f(ctx, *idx, *weight);
-                    compressed_idx += 1;
+                    pos += 1;
                 }
             }
 
             // 2. Iterate over compressed chunks
-            while compressed_idx / BitPackerImpl::BLOCK_LEN < self.list.chunks.len() {
-                self.list.decompress_chunk(
-                    compressed_idx / BitPackerImpl::BLOCK_LEN,
-                    &mut self.decompressed_chunk,
-                );
-                let chunk = &self.list.chunks[compressed_idx / BitPackerImpl::BLOCK_LEN];
+            while pos / BitPackerImpl::BLOCK_LEN < self.list.chunks.len() {
+                self.list
+                    .decompress_chunk(pos / BitPackerImpl::BLOCK_LEN, &mut self.decompressed_chunk);
+                let chunk = &self.list.chunks[pos / BitPackerImpl::BLOCK_LEN];
 
                 if *self.decompressed_chunk.last().unwrap() <= id {
+                    // Optimistic path: skip id comparison
                     for (idx, weight) in std::iter::zip(&self.decompressed_chunk, &chunk.weights) {
                         f(ctx, *idx, *weight);
                     }
-                    compressed_idx += BitPackerImpl::BLOCK_LEN;
+                    pos += BitPackerImpl::BLOCK_LEN;
                 } else {
                     for (idx, weight) in std::iter::zip(&self.decompressed_chunk, &chunk.weights) {
                         if *idx > id {
-                            self.compressed_idx = compressed_idx;
+                            self.pos = pos;
                             self.unpacked = true;
                             return;
                         }
-                        compressed_idx += 1;
+                        pos += 1;
                         f(ctx, *idx, *weight);
                     }
                 }
             }
         }
-        self.compressed_idx = compressed_idx;
 
         // 3. Iterate over remainders
-        for e in &self.list.remainders[self.remainders_idx..] {
+        for e in &self.list.remainders[pos - self.list.chunks.len() * BitPackerImpl::BLOCK_LEN..] {
             if e.record_id > id {
+                self.pos = pos;
                 return;
             }
             f(ctx, e.record_id, e.weight);
-            self.remainders_idx += 1;
+            pos += 1;
         }
+        self.pos = pos;
     }
 
     fn reliable_max_next_weight() -> bool {
