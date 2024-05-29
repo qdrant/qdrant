@@ -12,6 +12,7 @@ use memory::mmap_ops::{
 };
 use serde::{Deserialize, Serialize};
 
+use super::INDEX_FILE_NAME;
 use crate::common::sparse_vector::RemappedSparseVector;
 use crate::common::types::{DimId, DimOffset};
 use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
@@ -20,7 +21,6 @@ use crate::index::posting_list::PostingListIterator;
 use crate::index::posting_list_common::PostingElementEx;
 
 const POSTING_HEADER_SIZE: usize = size_of::<PostingListFileHeader>();
-const INDEX_FILE_NAME: &str = "inverted_index.data";
 const INDEX_CONFIG_FILE_NAME: &str = "inverted_index_config.json";
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]

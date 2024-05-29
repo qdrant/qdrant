@@ -5074,6 +5074,7 @@ dependencies = [
  "schemars",
  "seahash",
  "segment",
+ "semver",
  "serde",
  "serde-untagged",
  "serde-value",
