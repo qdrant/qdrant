@@ -1,3 +1,5 @@
+use std::fmt;
+
 use schemars::JsonSchema;
 use segment::types::ShardKey;
 use serde::{Deserialize, Serialize};
@@ -42,4 +44,10 @@ pub struct ReshardingKey {
     pub peer_id: PeerId,
     pub shard_id: ShardId,
     pub shard_key: Option<ShardKey>,
+}
+
+impl fmt::Display for ReshardingKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}/{}/{:?}", self.peer_id, self.shard_id, self.shard_key)
+    }
 }

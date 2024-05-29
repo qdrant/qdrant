@@ -674,12 +674,6 @@ impl Collection {
     }
 
     pub async fn abort_resharding(&self, reshard: ReshardingKey) -> CollectionResult<()> {
-        let ReshardingKey {
-            peer_id,
-            shard_id,
-            ref shard_key,
-        } = reshard;
-
         let mut shard_holder = self.shards_holder.write().await;
 
         let is_in_progress = if let Some(state) = shard_holder.resharding_state.read().deref() {
@@ -695,7 +689,7 @@ impl Collection {
             is_in_progress
         } else {
             log::warn!(
-                "aborting resharding of collection {} ({peer_id}/{shard_id}/{shard_key:?}),\
+                "aborting resharding of collection {} ({reshard}),\
                  but resharding is not in progress",
                 self.id,
             );
@@ -705,9 +699,10 @@ impl Collection {
 
         if shard_holder.get_shard(&reshard.shard_id).is_none() {
             log::warn!(
-                "aborting resharding of collection {} ({peer_id}/{shard_id}/{shard_key:?}), \
-                 but shard {shard_id} does not exist in collection",
+                "aborting resharding of collection {} ({reshard}), \
+                 but shard {} does not exist in collection",
                 self.id,
+                reshard.shard_id
             );
         }
 
