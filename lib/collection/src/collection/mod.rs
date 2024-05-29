@@ -642,23 +642,9 @@ impl Collection {
     }
 
     pub async fn start_resharding(&self, reshard: ReshardingKey) -> CollectionResult<()> {
-        // TODO(resharding): Improve error handling?
-
         let mut shard_holder = self.shards_holder.write().await;
 
-        if let Some(state) = shard_holder.resharding_state.read().deref() {
-            return Err(CollectionError::bad_request(format!(
-                "resharding of collection {} is already in progress: {state:?}",
-                self.id,
-            )));
-        }
-
-        if shard_holder.get_shard(&reshard.shard_id).is_some() {
-            return Err(CollectionError::bad_shard_selection(format!(
-                "shard {} already exists in collection {}",
-                reshard.shard_id, self.id,
-            )));
-        }
+        shard_holder.check_start_resharding(&reshard)?;
 
         let replica_set = self
             .create_replica_set(
@@ -668,50 +654,17 @@ impl Collection {
             )
             .await?;
 
-        shard_holder.start_resharding(reshard, replica_set)?;
+        shard_holder.start_resharding_unchecked(reshard, replica_set)?;
 
         Ok(())
     }
 
     pub async fn abort_resharding(&self, reshard: ReshardingKey) -> CollectionResult<()> {
-        let mut shard_holder = self.shards_holder.write().await;
-
-        let is_in_progress = if let Some(state) = shard_holder.resharding_state.read().deref() {
-            let is_in_progress = state.matches(&reshard);
-
-            if !is_in_progress {
-                return Err(CollectionError::bad_request(format!(
-                    "resharding of collection {} is not in progress",
-                    self.id,
-                )));
-            }
-
-            is_in_progress
-        } else {
-            log::warn!(
-                "aborting resharding of collection {} ({reshard}),\
-                 but resharding is not in progress",
-                self.id,
-            );
-
-            false
-        };
-
-        if shard_holder.get_shard(&reshard.shard_id).is_none() {
-            log::warn!(
-                "aborting resharding of collection {} ({reshard}), \
-                 but shard {} does not exist in collection",
-                self.id,
-                reshard.shard_id
-            );
-        }
-
-        // TODO(resharding): Contextualize errors? 🤔
-        shard_holder
-            .abort_resharding(reshard, is_in_progress)
-            .await?;
-
-        Ok(())
+        self.shards_holder
+            .write()
+            .await
+            .abort_resharding(reshard)
+            .await
     }
 
     pub async fn get_telemetry_data(&self, detail: TelemetryDetail) -> CollectionTelemetry {
