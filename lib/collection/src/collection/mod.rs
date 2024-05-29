@@ -374,7 +374,12 @@ impl Collection {
 
             drop(shard_holder);
 
-            self.abort_resharding(peer_id, shard_id, shard_key).await?;
+            self.abort_resharding(ReshardingKey {
+                peer_id,
+                shard_id,
+                shard_key,
+            })
+            .await?;
 
             // TODO(resharding): Abort all resharding transfers!?
 
