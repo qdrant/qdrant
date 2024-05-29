@@ -683,7 +683,7 @@ impl Collection {
         let mut shard_holder = self.shards_holder.write().await;
 
         let is_in_progress = if let Some(state) = shard_holder.resharding_state.read().deref() {
-            let is_in_progress = state.key() == reshard;
+            let is_in_progress = state.matches(&reshard);
 
             if !is_in_progress {
                 return Err(CollectionError::bad_request(format!(

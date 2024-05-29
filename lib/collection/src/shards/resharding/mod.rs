@@ -21,6 +21,12 @@ impl ReshardingState {
         }
     }
 
+    pub fn matches(&self, key: &ReshardingKey) -> bool {
+        self.peer_id == key.peer_id
+            && self.shard_id == key.shard_id
+            && self.shard_key == key.shard_key
+    }
+
     pub fn key(&self) -> ReshardingKey {
         ReshardingKey {
             peer_id: self.peer_id,
