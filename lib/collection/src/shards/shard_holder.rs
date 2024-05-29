@@ -12,9 +12,8 @@ use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 
 use super::replica_set::AbortShardTransfer;
-use super::resharding::ReshardingKey;
+use super::resharding::{ReshardingKey, ReshardingState};
 use super::transfer::transfer_tasks_pool::TransferTasksPool;
-use crate::collection::resharding::ReshardingState;
 use crate::common::validate_snapshot_archive::validate_open_snapshot_archive;
 use crate::config::{CollectionConfig, ShardingMethod};
 use crate::hash_ring::HashRing;
@@ -146,7 +145,7 @@ impl ShardHolder {
             debug_assert!(
                 self.resharding_state.read().is_some(),
                 "shard holder contains resharding hashring, but resharding field is {:?}",
-                self.resharding_state.read().clone(),
+                *self.resharding_state.read(),
             );
 
             // TODO(resharding): `CollectionError::service_error`? 🤔
@@ -158,7 +157,7 @@ impl ShardHolder {
         debug_assert!(
             self.resharding_state.read().is_none(),
             "shard holder does not contain resharding hashring, but resharding field is {:?}",
-            self.resharding_state.read().clone(),
+            *self.resharding_state.read(),
         );
 
         if self.shards.contains_key(&shard_id) {
@@ -176,6 +175,7 @@ impl ShardHolder {
                 state.is_none(),
                 "resharding is already in progress: {state:?}"
             );
+
             *state = Some(ReshardingState::new(peer_id, shard_id, shard_key));
         })?;
 
@@ -514,6 +514,7 @@ impl ShardHolder {
                         .read()
                         .clone()
                         .map_or(false, |state| state.shard_id == shard_id);
+
                     if is_resharding {
                         continue;
                     }

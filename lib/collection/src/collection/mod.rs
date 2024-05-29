@@ -1,7 +1,6 @@
 mod collection_ops;
 pub mod payload_index_schema;
 mod point_ops;
-pub mod resharding;
 mod search;
 mod shard_transfer;
 mod sharding_keys;
@@ -22,7 +21,6 @@ use semver::Version;
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
 
-use self::resharding::ReshardingState;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_state::{ShardInfo, State};
 use crate::common::is_ready::IsReady;
@@ -35,7 +33,7 @@ use crate::shards::collection_shard_distribution::CollectionShardDistribution;
 use crate::shards::local_shard::clock_map::RecoveryPoint;
 use crate::shards::replica_set::ReplicaState::{Active, Dead, Initializing, Listener};
 use crate::shards::replica_set::{ChangePeerState, ReplicaState, ShardReplicaSet};
-use crate::shards::resharding::ReshardingKey;
+use crate::shards::resharding::{ReshardingKey, ReshardingState};
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::{shard_not_found_error, LockedShardHolder, ShardHolder};
 use crate::shards::transfer::helpers::check_transfer_conflicts_strict;
@@ -676,16 +674,10 @@ impl Collection {
     }
 
     pub async fn abort_resharding(&self, reshard: ReshardingKey) -> CollectionResult<()> {
-        let ReshardingKey {
-            peer_id,
-            shard_id,
-            ref shard_key,
-        } = reshard;
-
         let mut shard_holder = self.shards_holder.write().await;
 
         let is_in_progress = if let Some(state) = shard_holder.resharding_state.read().deref() {
-            let is_in_progress = state.key() == reshard;
+            let is_in_progress = state.matches(&reshard);
 
             if !is_in_progress {
                 return Err(CollectionError::bad_request(format!(
@@ -697,7 +689,7 @@ impl Collection {
             is_in_progress
         } else {
             log::warn!(
-                "aborting resharding of collection {} ({peer_id}/{shard_id}/{shard_key:?}),\
+                "aborting resharding of collection {} ({reshard}),\
                  but resharding is not in progress",
                 self.id,
             );
@@ -707,9 +699,10 @@ impl Collection {
 
         if shard_holder.get_shard(&reshard.shard_id).is_none() {
             log::warn!(
-                "aborting resharding of collection {} ({peer_id}/{shard_id}/{shard_key:?}), \
-                 but shard {shard_id} does not exist in collection",
+                "aborting resharding of collection {} ({reshard}), \
+                 but shard {} does not exist in collection",
                 self.id,
+                reshard.shard_id
             );
         }
 
