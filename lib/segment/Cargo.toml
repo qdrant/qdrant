@@ -60,6 +60,7 @@ num-cmp = "0.1.0"
 rand = "0.8"
 bitvec = "1.0.1"
 seahash = "4.1.0"
+semver = { workspace = true }
 tar = { workspace = true }
 fs_extra = "1.3.0"
 tinyvec = { version = "1.6.0", features = ["alloc"] }
