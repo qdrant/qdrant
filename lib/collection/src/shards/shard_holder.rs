@@ -12,7 +12,9 @@ use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 
 use super::replica_set::AbortShardTransfer;
+use super::resharding::ReshardingKey;
 use super::transfer::transfer_tasks_pool::TransferTasksPool;
+use crate::collection::resharding::ReshardingState;
 use crate::common::validate_snapshot_archive::validate_open_snapshot_archive;
 use crate::config::{CollectionConfig, ShardingMethod};
 use crate::hash_ring::HashRing;
@@ -32,6 +34,7 @@ use crate::shards::transfer::{ShardTransfer, ShardTransferKey};
 use crate::shards::CollectionId;
 
 const SHARD_TRANSFERS_FILE: &str = "shard_transfers";
+const RESHARDING_STATE_FILE: &str = "resharding_state.json";
 pub const SHARD_KEY_MAPPING_FILE: &str = "shard_key_mapping.json";
 
 pub type ShardKeyMapping = HashMap<ShardKey, HashSet<ShardId>>;
@@ -39,8 +42,8 @@ pub type ShardKeyMapping = HashMap<ShardKey, HashSet<ShardId>>;
 pub struct ShardHolder {
     shards: HashMap<ShardId, ShardReplicaSet>,
     pub(crate) shard_transfers: SaveOnDisk<HashSet<ShardTransfer>>,
+    pub(crate) resharding_state: SaveOnDisk<Option<ReshardingState>>,
     pub(crate) rings: HashMap<Option<ShardKey>, HashRing>,
-    resharding: Option<ShardId>,
     key_mapping: SaveOnDisk<ShardKeyMapping>,
     // Duplicates the information from `key_mapping` for faster access
     // Do not require locking
@@ -50,8 +53,10 @@ pub struct ShardHolder {
 pub type LockedShardHolder = RwLock<ShardHolder>;
 
 impl ShardHolder {
-    pub fn new(collection_path: &Path, resharding: Option<ShardId>) -> CollectionResult<Self> {
+    pub fn new(collection_path: &Path) -> CollectionResult<Self> {
         let shard_transfers = SaveOnDisk::load_or_init(collection_path.join(SHARD_TRANSFERS_FILE))?;
+        let resharding_state: SaveOnDisk<Option<ReshardingState>> =
+            SaveOnDisk::load_or_init(collection_path.join(RESHARDING_STATE_FILE))?;
 
         let key_mapping: SaveOnDisk<ShardKeyMapping> =
             SaveOnDisk::load_or_init(collection_path.join(SHARD_KEY_MAPPING_FILE))?;
@@ -66,7 +71,7 @@ impl ShardHolder {
 
         let mut rings = HashMap::from([(None, HashRing::single())]);
 
-        if let Some(shard_id) = resharding {
+        if let Some(shard_id) = resharding_state.read().clone().map(|state| state.shard_id) {
             rings.insert(
                 shard_id_to_key_mapping.get(&shard_id).cloned(),
                 HashRing::resharding(shard_id),
@@ -76,8 +81,8 @@ impl ShardHolder {
         Ok(Self {
             shards: HashMap::new(),
             shard_transfers,
+            resharding_state,
             rings,
-            resharding,
             key_mapping,
             shard_id_to_key_mapping,
         })
@@ -108,10 +113,15 @@ impl ShardHolder {
 
     pub fn start_resharding(
         &mut self,
-        shard_id: ShardId,
+        resharding_key: ReshardingKey,
         shard: ShardReplicaSet,
-        shard_key: Option<ShardKey>,
     ) -> Result<(), CollectionError> {
+        let ReshardingKey {
+            shard_id,
+            shard_key,
+            peer_id,
+        } = resharding_key;
+
         // TODO(resharding):
         //
         // `CollectionError::service_error` seems more fitting here... but if `start_resharding`
@@ -134,9 +144,9 @@ impl ShardHolder {
 
         if ring.is_resharding() {
             debug_assert!(
-                self.resharding.is_some(),
+                self.resharding_state.read().is_some(),
                 "shard holder contains resharding hashring, but resharding field is {:?}",
-                self.resharding
+                self.resharding_state.read().clone(),
             );
 
             // TODO(resharding): `CollectionError::service_error`? 🤔
@@ -146,9 +156,9 @@ impl ShardHolder {
         }
 
         debug_assert!(
-            self.resharding.is_none(),
+            self.resharding_state.read().is_none(),
             "shard holder does not contain resharding hashring, but resharding field is {:?}",
-            self.resharding
+            self.resharding_state.read().clone(),
         );
 
         if self.shards.contains_key(&shard_id) {
@@ -159,19 +169,29 @@ impl ShardHolder {
         }
 
         ring.add_resharding(shard_id);
-        self.resharding = Some(shard_id);
-        self.add_shard(shard_id, shard, shard_key)?;
+        self.add_shard(shard_id, shard, shard_key.clone())?;
+
+        self.resharding_state.write(|state| {
+            debug_assert!(
+                state.is_none(),
+                "resharding is already in progress: {state:?}"
+            );
+            *state = Some(ReshardingState::new(peer_id, shard_id, shard_key));
+        })?;
 
         Ok(())
     }
 
     pub async fn abort_resharding(
         &mut self,
-        shard_id: ShardId,
-        peer_id: PeerId,
-        shard_key: Option<ShardKey>,
+        resharding_key: ReshardingKey,
         is_in_progress: bool,
     ) -> Result<(), CollectionError> {
+        let ReshardingKey {
+            shard_id,
+            shard_key,
+            peer_id,
+        } = resharding_key;
         let mut removed_resharding = false;
 
         if let Some(ring) = self.rings.get_mut(&shard_key) {
@@ -220,6 +240,11 @@ impl ShardHolder {
                  but shard holder does not contain {shard_id} replica set",
             );
         }
+
+        // TODO(resharding): Contextualize errors? 🤔
+        self.resharding_state.write(|state| {
+            *state = None;
+        })?;
 
         Ok(())
     }
@@ -484,7 +509,12 @@ impl ShardHolder {
             }
             ShardSelectorInternal::All => {
                 for (&shard_id, shard) in self.shards.iter() {
-                    if self.resharding == Some(shard_id) {
+                    let is_resharding = self
+                        .resharding_state
+                        .read()
+                        .clone()
+                        .map_or(false, |state| state.shard_id == shard_id);
+                    if is_resharding {
                         continue;
                     }
 

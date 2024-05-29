@@ -8,6 +8,7 @@ pub mod proxy_shard;
 pub mod queue_proxy_shard;
 pub mod remote_shard;
 pub mod replica_set;
+pub mod resharding;
 pub mod resolve;
 pub mod shard;
 pub mod shard_config;

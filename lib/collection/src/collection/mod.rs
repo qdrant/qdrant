@@ -35,6 +35,7 @@ use crate::shards::collection_shard_distribution::CollectionShardDistribution;
 use crate::shards::local_shard::clock_map::RecoveryPoint;
 use crate::shards::replica_set::ReplicaState::{Active, Dead, Initializing, Listener};
 use crate::shards::replica_set::{ChangePeerState, ReplicaState, ShardReplicaSet};
+use crate::shards::resharding::ReshardingKey;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::{shard_not_found_error, LockedShardHolder, ShardHolder};
 use crate::shards::transfer::helpers::check_transfer_conflicts_strict;
@@ -42,8 +43,6 @@ use crate::shards::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool
 use crate::shards::transfer::{ShardTransfer, ShardTransferMethod};
 use crate::shards::{replica_set, CollectionId};
 use crate::telemetry::CollectionTelemetry;
-
-const RESHARDING_STATE_FILE: &str = "resharding_state.json";
 
 /// Collection's data is split into several shards.
 #[allow(dead_code)]
@@ -53,7 +52,6 @@ pub struct Collection {
     pub(crate) collection_config: Arc<RwLock<CollectionConfig>>,
     pub(crate) shared_storage_config: Arc<SharedStorageConfig>,
     pub(crate) payload_index_schema: SaveOnDisk<PayloadIndexSchema>,
-    resharding_state: SaveOnDisk<Option<ReshardingState>>,
     this_peer_id: PeerId,
     path: PathBuf,
     snapshots_path: PathBuf,
@@ -102,7 +100,7 @@ impl Collection {
     ) -> Result<Self, CollectionError> {
         let start_time = std::time::Instant::now();
 
-        let mut shard_holder = ShardHolder::new(path, None)?;
+        let mut shard_holder = ShardHolder::new(path)?;
 
         let shared_collection_config = Arc::new(RwLock::new(collection_config.clone()));
         for (shard_id, mut peers) in shard_distribution.shards {
@@ -137,7 +135,6 @@ impl Collection {
         collection_config.save(path)?;
 
         let payload_index_schema = Self::load_payload_index_schema(path)?;
-        let resharding_state = Self::load_resharding_state(path)?;
 
         Ok(Self {
             id: name.clone(),
@@ -145,7 +142,6 @@ impl Collection {
             collection_config: shared_collection_config,
             payload_index_schema,
             shared_storage_config,
-            resharding_state,
             this_peer_id,
             path: path.to_owned(),
             snapshots_path: snapshots_path.to_owned(),
@@ -209,14 +205,7 @@ impl Collection {
         });
         collection_config.validate_and_warn();
 
-        let resharding_state = Self::load_resharding_state(path)
-            .expect("Can't load or initialize resharding progress");
-
-        let mut shard_holder = ShardHolder::new(
-            path,
-            resharding_state.read().as_ref().map(|state| state.shard_id),
-        )
-        .expect("Can not create shard holder");
+        let mut shard_holder = ShardHolder::new(path).expect("Can not create shard holder");
 
         let shared_collection_config = Arc::new(RwLock::new(collection_config.clone()));
 
@@ -247,7 +236,6 @@ impl Collection {
             collection_config: shared_collection_config,
             payload_index_schema,
             shared_storage_config,
-            resharding_state,
             this_peer_id,
             path: path.to_owned(),
             snapshots_path: snapshots_path.to_owned(),
@@ -263,18 +251,6 @@ impl Collection {
             search_runtime: search_runtime.unwrap_or_else(Handle::current),
             optimizer_cpu_budget,
         }
-    }
-
-    fn resharding_state_file(collection_path: &Path) -> PathBuf {
-        collection_path.join(RESHARDING_STATE_FILE)
-    }
-
-    fn load_resharding_state(
-        collection_path: &Path,
-    ) -> CollectionResult<SaveOnDisk<Option<ReshardingState>>> {
-        let resharding_state_file = Self::resharding_state_file(collection_path);
-        let resharding_state = SaveOnDisk::load_or_init(resharding_state_file)?;
-        Ok(resharding_state)
     }
 
     /// Check if stored version have consequent version.
@@ -460,6 +436,7 @@ impl Collection {
     pub async fn state(&self) -> State {
         let shards_holder = self.shards_holder.read().await;
         let transfers = shards_holder.shard_transfers.read().clone();
+        let resharding = shards_holder.resharding_state.read().clone();
         State {
             config: self.collection_config.read().await.clone(),
             shards: shards_holder
@@ -471,7 +448,7 @@ impl Collection {
                     (*shard_id, shard_info)
                 })
                 .collect(),
-            resharding: self.resharding_state.read().clone(),
+            resharding,
             transfers,
             shards_key_mapping: shards_holder.get_shard_key_to_ids_mapping(),
             payload_index_schema: self.payload_index_schema.read().clone(),
@@ -657,65 +634,58 @@ impl Collection {
         Ok(())
     }
 
-    pub fn resharding_state(&self) -> Option<ReshardingState> {
-        self.resharding_state.read().clone()
+    pub async fn resharding_state(&self) -> Option<ReshardingState> {
+        self.shards_holder
+            .read()
+            .await
+            .resharding_state
+            .read()
+            .clone()
     }
 
-    pub async fn start_resharding(
-        &self,
-        peer_id: PeerId,
-        shard_id: ShardId,
-        shard_key: Option<ShardKey>,
-    ) -> CollectionResult<()> {
+    pub async fn start_resharding(&self, reshard: ReshardingKey) -> CollectionResult<()> {
         // TODO(resharding): Improve error handling?
 
         let mut shard_holder = self.shards_holder.write().await;
 
-        if let Some(state) = self.resharding_state.read().deref() {
+        if let Some(state) = shard_holder.resharding_state.read().deref() {
             return Err(CollectionError::bad_request(format!(
                 "resharding of collection {} is already in progress: {state:?}",
-                self.id
+                self.id,
             )));
         }
 
-        if shard_holder.get_shard(&shard_id).is_some() {
+        if shard_holder.get_shard(&reshard.shard_id).is_some() {
             return Err(CollectionError::bad_shard_selection(format!(
-                "shard {shard_id} already exists in collection {}",
-                self.id
+                "shard {} already exists in collection {}",
+                reshard.shard_id, self.id,
             )));
         }
 
         let replica_set = self
-            .create_replica_set(shard_id, &[peer_id], Some(ReplicaState::Resharding))
+            .create_replica_set(
+                reshard.shard_id,
+                &[reshard.peer_id],
+                Some(ReplicaState::Resharding),
+            )
             .await?;
 
-        shard_holder.start_resharding(shard_id, replica_set, shard_key.clone())?;
-
-        self.resharding_state.write(|state| {
-            debug_assert!(
-                state.is_none(),
-                "resharding of collection {} is already in progress: {state:?}",
-                self.id
-            );
-
-            *state = Some(ReshardingState::new(peer_id, shard_id, shard_key));
-        })?;
+        shard_holder.start_resharding(reshard, replica_set)?;
 
         Ok(())
     }
 
-    pub async fn abort_resharding(
-        &self,
-        peer_id: PeerId,
-        shard_id: ShardId,
-        shard_key: Option<ShardKey>,
-    ) -> CollectionResult<()> {
+    pub async fn abort_resharding(&self, reshard: ReshardingKey) -> CollectionResult<()> {
+        let ReshardingKey {
+            peer_id,
+            shard_id,
+            ref shard_key,
+        } = reshard;
+
         let mut shard_holder = self.shards_holder.write().await;
 
-        let is_in_progress = if let Some(state) = self.resharding_state.read().deref() {
-            let is_in_progress = state.peer_id == peer_id
-                && state.shard_id == shard_id
-                && state.shard_key == shard_key;
+        let is_in_progress = if let Some(state) = shard_holder.resharding_state.read().deref() {
+            let is_in_progress = state.key() == reshard;
 
             if !is_in_progress {
                 return Err(CollectionError::bad_request(format!(
@@ -735,7 +705,7 @@ impl Collection {
             false
         };
 
-        if shard_holder.get_shard(&shard_id).is_none() {
+        if shard_holder.get_shard(&reshard.shard_id).is_none() {
             log::warn!(
                 "aborting resharding of collection {} ({peer_id}/{shard_id}/{shard_key:?}), \
                  but shard {shard_id} does not exist in collection",
@@ -745,13 +715,8 @@ impl Collection {
 
         // TODO(resharding): Contextualize errors? 🤔
         shard_holder
-            .abort_resharding(shard_id, peer_id, shard_key.clone(), is_in_progress)
+            .abort_resharding(reshard, is_in_progress)
             .await?;
-
-        // TODO(resharding): Contextualize errors? 🤔
-        self.resharding_state.write(|state| {
-            *state = None;
-        })?;
 
         Ok(())
     }
