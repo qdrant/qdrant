@@ -5,10 +5,12 @@ use crate::common::operation_error::{OperationError, OperationResult};
 #[repr(C)]
 struct GpuNearestHeapParamsBuffer {
     capacity: u32,
+    ef: usize,
 }
 
 pub struct GpuNearestHeap {
     pub ef: usize,
+    pub capacity: usize,
     pub device: Arc<gpu::Device>,
     pub params_buffer: Arc<gpu::Buffer>,
     pub nearest_scores_buffer: Arc<gpu::Buffer>,
@@ -52,6 +54,7 @@ impl GpuNearestHeap {
 
         let params = GpuNearestHeapParamsBuffer {
             capacity: ceiled_ef as u32,
+            ef,
         };
         staging_buffer.upload(&params, 0);
 
@@ -80,6 +83,7 @@ impl GpuNearestHeap {
 
         Ok(Self {
             ef,
+            capacity: ceiled_ef,
             device,
             params_buffer,
             nearest_scores_buffer,
@@ -93,7 +97,7 @@ impl GpuNearestHeap {
 #[cfg(test)]
 mod tests {
     use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
-    use common::types::{PointOffsetType, ScoredPointOffset};
+    use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
 
@@ -107,7 +111,7 @@ mod tests {
     #[test]
     fn test_gpu_nearest_heap() {
         let ef = 100;
-        let points_count = 100; // TODO: revert to 1024
+        let points_count = 128; // TODO: revert to 1024
         let groups_count = 2; // TODO: revert to 8
         let inputs_count = points_count;
 
@@ -271,6 +275,36 @@ mod tests {
             for i in 0..ef {
                 sorted_output_cpu[group * ef + i] = sorted[i];
             }
+        }
+
+        let mut nearest_scores: Vec<ScoreType> =
+            vec![0.0; gpu_nearest_heap.capacity * groups_count];
+        context.copy_gpu_buffer(
+            gpu_nearest_heap.nearest_scores_buffer.clone(),
+            download_staging_buffer.clone(),
+            0,
+            0,
+            nearest_scores.len() * std::mem::size_of::<ScoreType>(),
+        );
+        context.run();
+        context.wait_finish();
+        download_staging_buffer.download_slice(nearest_scores.as_mut_slice(), 0);
+
+        let mut nearest_indices: Vec<PointOffsetType> =
+            vec![0; gpu_nearest_heap.capacity * groups_count];
+        context.copy_gpu_buffer(
+            gpu_nearest_heap.nearest_indices_buffer.clone(),
+            download_staging_buffer.clone(),
+            0,
+            0,
+            nearest_indices.len() * std::mem::size_of::<PointOffsetType>(),
+        );
+        context.run();
+        context.wait_finish();
+        download_staging_buffer.download_slice(nearest_indices.as_mut_slice(), 0);
+
+        for (i, (idx, s)) in nearest_indices.iter().zip(nearest_scores.iter()).enumerate() {
+            println!("SCORE: {}: {}, {}", i, idx, s);
         }
 
         // TODO: remove

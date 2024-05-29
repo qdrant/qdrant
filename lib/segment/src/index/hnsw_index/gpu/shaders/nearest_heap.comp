@@ -40,13 +40,13 @@ void nearest_heap_init() {
     uint capacity = NEAREST_HEAP_CAPACITY;
     for (uint i = SUBGROUP_INVOKATION_ID; i < capacity; i += SUBGROUP_SIZE) {
         uint buffer_index = buffer_offset + i;
-        nearest_scores.data[buffer_index] = positive_infinity;
+        nearest_scores.data[buffer_index] = 0.0;
     }
 }
 
 // Push the nearest `ScoredPoint`. Returns true if the `ScoredPoint` was added.
 bool push_nearest(ScoredPoint scored_point) {
-    if (nearest_count == NEAREST_HEAP_EF) {
+    if (false && nearest_count == NEAREST_HEAP_EF) {
         if (scored_point.score > nearest_smaller_score) {
             uint buffer_offset = NEAREST_BUFFER_OFFSET;
             if (nearest_smaller_index % SUBGROUP_SIZE == SUBGROUP_INVOKATION_ID) {
@@ -82,8 +82,8 @@ bool push_nearest(ScoredPoint scored_point) {
     } else {
         if (nearest_count % SUBGROUP_SIZE == SUBGROUP_INVOKATION_ID) {
             uint buffer_index = NEAREST_BUFFER_OFFSET + nearest_count;
-            nearest_scores.data[buffer_index] = scored_point.score;
-            nearest_indices.data[buffer_index] = scored_point.id;
+            nearest_scores.data[buffer_index] = 101.0;//scored_point.score;
+            nearest_indices.data[buffer_index] = 101;//scored_point.id;
         }
         groupMemoryBarrier(); // TODO: is this necessary? We write and read in the same shader invocation
 
