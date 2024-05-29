@@ -24,6 +24,7 @@ use storage::rbac::Access;
 use crate::actix::api::cluster_api::config_cluster_api;
 use crate::actix::api::collections_api::config_collections_api;
 use crate::actix::api::count_api::count_points;
+use crate::actix::api::debug_api::config_debugger_api;
 use crate::actix::api::discovery_api::config_discovery_api;
 use crate::actix::api::issues_api::config_issues_api;
 use crate::actix::api::recommend_api::config_recommend_api;
@@ -35,6 +36,7 @@ use crate::actix::api::snapshot_api::config_snapshots_api;
 use crate::actix::api::update_api::config_update_api;
 use crate::actix::auth::{Auth, WhitelistItem};
 use crate::common::auth::AuthKeys;
+use crate::common::debugger::DebuggerState;
 use crate::common::health;
 use crate::common::http_client::HttpClient;
 use crate::common::telemetry::TelemetryCollector;
@@ -72,6 +74,7 @@ pub fn init(
             .await
             .actix_telemetry_collector
             .clone();
+        let debugger_state = web::Data::new(DebuggerState::from_settings(&settings));
         let telemetry_collector_data = web::Data::from(telemetry_collector);
         let logger_handle_data = web::Data::new(logger_handle);
         let http_client = web::Data::new(HttpClient::from_settings(&settings)?);
@@ -150,6 +153,7 @@ pub fn init(
                 .app_data(telemetry_collector_data.clone())
                 .app_data(logger_handle_data.clone())
                 .app_data(http_client.clone())
+                .app_data(debugger_state.clone())
                 .app_data(health_checker.clone())
                 .app_data(validate_path_config)
                 .app_data(validate_query_config)
@@ -167,6 +171,7 @@ pub fn init(
                 .configure(config_discovery_api)
                 .configure(config_shards_api)
                 .configure(config_issues_api)
+                .configure(config_debugger_api)
                 // Ordering of services is important for correct path pattern matching
                 // See: <https://github.com/qdrant/qdrant/issues/3543>
                 .service(scroll_points)

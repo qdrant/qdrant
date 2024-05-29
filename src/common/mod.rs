@@ -22,3 +22,7 @@ pub mod telemetry_reporting;
 pub mod auth;
 
 pub mod strings;
+
+pub mod debugger;
+
+pub mod pyroscope_state;

@@ -1,4 +1,3 @@
-debug: true
 log_level: INFO
 
 service:
