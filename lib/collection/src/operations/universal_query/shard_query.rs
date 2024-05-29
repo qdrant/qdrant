@@ -49,6 +49,15 @@ pub enum ScoringQuery {
 }
 
 impl ScoringQuery {
+    pub fn needs_intermediate_results(&self) -> bool {
+        match self {
+            ScoringQuery::Fusion(fusion) => match fusion {
+                Fusion::Rrf => true,
+            },
+            ScoringQuery::Vector(_) | ScoringQuery::OrderBy(_) => false,
+        }
+    }
+
     /// Get the vector name if it is scored against a vector
     pub fn get_vector_name(&self) -> Option<&str> {
         match self {
