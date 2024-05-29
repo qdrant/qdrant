@@ -27,6 +27,7 @@ async fn test_delete_from_indexed_payload() {
         Arc::new(Default::default()),
         current_runtime.clone(),
         CpuBudget::default(),
+        config.optimizer_config.clone(),
     )
     .await
     .unwrap();
