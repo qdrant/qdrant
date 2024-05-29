@@ -31,7 +31,7 @@ impl ReshardingState {
 }
 
 /// Unique identifier of a resharding operation
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema)]
 pub struct ReshardingKey {
     pub peer_id: PeerId,
     pub shard_id: ShardId,
