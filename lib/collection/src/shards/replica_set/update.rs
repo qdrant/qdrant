@@ -368,7 +368,6 @@ impl ShardReplicaSet {
         }
 
         if !failures.is_empty() && successes.len() < minimal_success_count {
-            // TODO(resarding): 🤔
             self.handle_failed_replicas(
                 failures
                     .iter()
@@ -451,7 +450,6 @@ impl ShardReplicaSet {
                 _ => continue,
             }
 
-            // TODO(resharding): 🤔
             if peer_state == ReplicaState::Partial
                 && matches!(err, CollectionError::PreConditionFailed { .. })
             {
@@ -460,7 +458,6 @@ impl ShardReplicaSet {
                 continue;
             }
 
-            // TODO(resharding): 🤔🤔🤔
             if err.is_transient() || peer_state == ReplicaState::Initializing {
                 // If the error is transient, we should not deactivate the peer
                 // before allowing other operations to continue.
