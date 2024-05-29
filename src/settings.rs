@@ -9,6 +9,7 @@ use serde::Deserialize;
 use storage::types::StorageConfig;
 use validator::Validate;
 
+use crate::common::debugger::DebuggerConfig;
 use crate::tracing;
 
 const DEFAULT_CONFIG: &str = include_str!("../config/config.yaml");
@@ -137,6 +138,8 @@ pub struct Settings {
     pub telemetry_disabled: bool,
     #[validate]
     pub tls: Option<TlsConfig>,
+    #[serde(default)]
+    pub debugger: DebuggerConfig,
     /// A list of messages for errors that happened during loading the configuration. We collect
     /// them and store them here while loading because then our logger is not configured yet.
     /// We therefore need to log these messages later, after the logger is ready.
