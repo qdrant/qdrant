@@ -147,10 +147,10 @@ impl LocalShard {
         'shard: 'query,
     {
         async move {
-            let mut search_indices = Vec::new();
-            let mut scroll_indices = Vec::new();
-
-            let mut merged_list = Vec::new();
+            let max_len = merge_plan.sources.len();
+            let mut search_indices = Vec::with_capacity(max_len);
+            let mut scroll_indices = Vec::with_capacity(max_len);
+            let mut merged_list = Vec::with_capacity(max_len);
 
             for source in merge_plan.sources.into_iter() {
                 match source {
@@ -173,7 +173,16 @@ impl LocalShard {
 
             let sources = prefetch_holder.iter_sources(search_indices, scroll_indices, merged_list);
 
-            if depth == 0 && merge_plan.merge.rescore == Some(ScoringQuery::Fusion(Fusion::Rrf)) {
+            let root_query_needs_intermediate_results = || {
+                merge_plan
+                    .merge
+                    .rescore
+                    .as_ref()
+                    .map(|query| query.needs_intermediate_results())
+                    .unwrap_or(false)
+            };
+
+            if depth == 0 && root_query_needs_intermediate_results() {
                 // in case of top level RRF, we need to propagate intermediate results
                 Ok(sources.map(Cow::into_owned).collect())
             } else {
