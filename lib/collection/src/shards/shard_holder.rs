@@ -112,10 +112,7 @@ impl ShardHolder {
         Ok(())
     }
 
-    pub fn check_start_resharding(
-        &mut self,
-        resharding_key: &ReshardKey,
-    ) -> Result<(), CollectionError> {
+    pub fn check_start_resharding(&mut self, resharding_key: &ReshardKey) -> CollectionResult<()> {
         let ReshardKey {
             shard_id,
             shard_key,
@@ -179,6 +176,50 @@ impl ShardHolder {
 
             *state = Some(ReshardState::new(peer_id, shard_id, shard_key));
         })?;
+
+        Ok(())
+    }
+
+    pub fn commit_hashring(&mut self, resharding_key: ReshardKey) -> CollectionResult<()> {
+        let ReshardKey {
+            shard_id,
+            ref shard_key,
+            ..
+        } = resharding_key;
+
+        let ring = get_ring(&mut self.rings, shard_key)?;
+
+        {
+            let state = self.resharding_state.read();
+            assert_resharding_state_consistency(&state, ring, shard_key);
+
+            match state.deref() {
+                Some(state) if state.matches(&resharding_key) => {
+                    // TODO(resharding): Check resharding is in the correct state to commit hashring!
+                }
+
+                Some(state) => {
+                    return Err(CollectionError::bad_request(format!(
+                        "another resharding is in progress:\n{state:#?}"
+                    )))
+                }
+
+                None => {
+                    return Err(CollectionError::bad_request(
+                        "resharding is not in progress".into(),
+                    ))
+                }
+            }
+        }
+
+        debug_assert!(
+            self.shards.contains_key(&shard_id),
+            "shard holder does not contain shard {shard_id} replica set"
+        );
+
+        // TODO(resharding): Assert that peer exists!?
+
+        ring.commit();
 
         Ok(())
     }

@@ -295,6 +295,7 @@ pub struct DeleteCollectionOperation(pub String);
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize)]
 pub enum ReshardingOperation {
     Start(ReshardKey),
+    CommitHashRing(ReshardKey),
     Abort(ReshardKey),
 }
 
