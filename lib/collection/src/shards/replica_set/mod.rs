@@ -254,6 +254,7 @@ impl ShardReplicaSet {
                     collection_id.clone(),
                     shard_path,
                     collection_config.clone(),
+                    optimizers_config.clone(),
                     shared_storage_config.clone(),
                     update_runtime.clone(),
                     optimizer_cpu_budget.clone(),

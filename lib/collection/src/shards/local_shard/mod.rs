@@ -199,11 +199,13 @@ impl LocalShard {
     }
 
     /// Recovers shard from disk.
+    #[allow(clippy::too_many_arguments)]
     pub async fn load(
         id: ShardId,
         collection_id: CollectionId,
         shard_path: &Path,
         collection_config: Arc<TokioRwLock<CollectionConfig>>,
+        optimizers_config: OptimizersConfig,
         shared_storage_config: Arc<SharedStorageConfig>,
         update_runtime: Handle,
         optimizer_cpu_budget: CpuBudget,
@@ -301,7 +303,7 @@ impl LocalShard {
         let optimizers = build_optimizers(
             shard_path,
             &collection_config_read.params,
-            &collection_config_read.optimizer_config,
+            &optimizers_config,
             &collection_config_read.hnsw_config,
             &collection_config_read.quantization_config,
         );
