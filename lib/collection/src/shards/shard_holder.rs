@@ -12,9 +12,8 @@ use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 
 use super::replica_set::AbortShardTransfer;
-use super::resharding::ReshardingKey;
+use super::resharding::{ReshardingKey, ReshardingState};
 use super::transfer::transfer_tasks_pool::TransferTasksPool;
-use crate::collection::resharding::ReshardingState;
 use crate::common::validate_snapshot_archive::validate_open_snapshot_archive;
 use crate::config::{CollectionConfig, ShardingMethod};
 use crate::hash_ring::HashRing;

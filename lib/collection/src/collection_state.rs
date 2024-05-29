@@ -4,9 +4,9 @@ use serde::{Deserialize, Serialize};
 use validator::Validate;
 
 use crate::collection::payload_index_schema::PayloadIndexSchema;
-use crate::collection::resharding::ReshardingState;
 use crate::config::CollectionConfig;
 use crate::shards::replica_set::ReplicaState;
+use crate::shards::resharding::ReshardingState;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::ShardKeyMapping;
 use crate::shards::transfer::ShardTransfer;
