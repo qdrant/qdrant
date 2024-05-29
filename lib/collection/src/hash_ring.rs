@@ -80,11 +80,7 @@ impl<T: Hash + Copy + PartialEq> HashRing<T> {
         T: fmt::Display,
     {
         let Self::Resharding { old, new } = self else {
-            log::warn!(
-                "removing resharding shard,
-                 but hashring is not in resharding mode"
-            );
-
+            log::warn!("removing resharding shard, but hashring is not in resharding mode");
             return false;
         };
 

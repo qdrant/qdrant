@@ -6,7 +6,6 @@ use collection::config::ShardingMethod;
 use collection::events::{CollectionDeletedEvent, IndexCreatedEvent};
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::ReplicaState;
-use collection::shards::resharding::ReshardingKey;
 use collection::shards::transfer::ShardTransfer;
 use collection::shards::{transfer, CollectionId};
 use uuid::Uuid;
@@ -275,30 +274,12 @@ impl TableOfContent {
         let collection = self.get_collection_unchecked(&collection).await?;
 
         match operation {
-            ReshardingOperation::Start {
-                peer_id,
-                shard_id,
-                shard_key,
-            } => {
-                let reshard = ReshardingKey {
-                    peer_id,
-                    shard_id,
-                    shard_key,
-                };
-                collection.start_resharding(reshard).await?;
+            ReshardingOperation::Start(key) => {
+                collection.start_resharding(key).await?;
             }
 
-            ReshardingOperation::Abort {
-                peer_id,
-                shard_id,
-                shard_key,
-            } => {
-                let reshard = ReshardingKey {
-                    peer_id,
-                    shard_id,
-                    shard_key,
-                };
-                collection.abort_resharding(reshard).await?;
+            ReshardingOperation::Abort(key) => {
+                collection.abort_resharding(key).await?;
             }
         }
 
