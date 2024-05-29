@@ -145,7 +145,7 @@ impl ShardHolder {
             debug_assert!(
                 self.resharding_state.read().is_some(),
                 "shard holder contains resharding hashring, but resharding field is {:?}",
-                self.resharding_state.read().clone(),
+                *self.resharding_state.read(),
             );
 
             // TODO(resharding): `CollectionError::service_error`? 🤔
@@ -157,7 +157,7 @@ impl ShardHolder {
         debug_assert!(
             self.resharding_state.read().is_none(),
             "shard holder does not contain resharding hashring, but resharding field is {:?}",
-            self.resharding_state.read().clone(),
+            *self.resharding_state.read(),
         );
 
         if self.shards.contains_key(&shard_id) {
@@ -175,6 +175,7 @@ impl ShardHolder {
                 state.is_none(),
                 "resharding is already in progress: {state:?}"
             );
+
             *state = Some(ReshardingState::new(peer_id, shard_id, shard_key));
         })?;
 
@@ -513,6 +514,7 @@ impl ShardHolder {
                         .read()
                         .clone()
                         .map_or(false, |state| state.shard_id == shard_id);
+
                     if is_resharding {
                         continue;
                     }

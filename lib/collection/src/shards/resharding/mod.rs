@@ -14,7 +14,6 @@ pub struct ReshardingState {
 }
 
 impl ReshardingState {
-    #[allow(dead_code)]
     pub fn new(peer_id: PeerId, shard_id: ShardId, shard_key: Option<ShardKey>) -> Self {
         Self {
             peer_id,
