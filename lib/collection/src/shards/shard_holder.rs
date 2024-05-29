@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::ops::Deref as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -110,70 +111,62 @@ impl ShardHolder {
         Ok(())
     }
 
-    pub fn start_resharding(
+    pub fn check_start_resharding(
         &mut self,
-        resharding_key: ReshardingKey,
-        shard: ShardReplicaSet,
-    ) -> Result<(), CollectionError> {
+        resharding_key: &ReshardingKey,
+    ) -> CollectionResult<()> {
         let ReshardingKey {
             shard_id,
             shard_key,
-            peer_id,
+            ..
         } = resharding_key;
 
-        // TODO(resharding):
-        //
-        // `CollectionError::service_error` seems more fitting here... but if `start_resharding`
-        // returns `service_error` here, it will crash consensus thread.
-        //
-        // So it's seems less annoying to allow all of these errors be `bad_request`s for now, and
-        // (maybe) switch (some of) them to `service_error`s later.
+        let ring = get_ring(&mut self.rings, shard_key)?;
 
-        let Some(ring) = self.rings.get_mut(&shard_key) else {
-            // TODO(resharding): `CollectionError::service_error`? 🤔
-            return Err(CollectionError::bad_request(format!(
-                "shard holder does not contain {} hashring",
-                if let Some(shard_key) = &shard_key {
-                    shard_key as &dyn fmt::Display
-                } else {
-                    &"default"
-                }
-            )));
-        };
+        {
+            let state = self.resharding_state.read();
+            assert_resharding_state_consistency(&state, ring, shard_key);
 
-        if ring.is_resharding() {
-            debug_assert!(
-                self.resharding_state.read().is_some(),
-                "shard holder contains resharding hashring, but resharding field is {:?}",
-                *self.resharding_state.read(),
-            );
-
-            // TODO(resharding): `CollectionError::service_error`? 🤔
-            return Err(CollectionError::bad_request(
-                "shard holder already contains resharding hashring".into(),
-            ));
+            if let Some(state) = state.deref() {
+                return Err(CollectionError::bad_request(format!(
+                    "resharding is already in progress:\n{state:#?}"
+                )));
+            }
         }
 
-        debug_assert!(
-            self.resharding_state.read().is_none(),
-            "shard holder does not contain resharding hashring, but resharding field is {:?}",
-            *self.resharding_state.read(),
-        );
-
-        if self.shards.contains_key(&shard_id) {
-            // TODO(resharding): `CollectionError::service_error`? 🤔
+        if self.shards.contains_key(shard_id) {
             return Err(CollectionError::bad_request(format!(
-                "shard holder already contains shard {shard_id} replica set"
+                "shard holder already contains shard {shard_id} replica set",
             )));
         }
 
+        // TODO(resharding): Check that peer exists!?
+
+        Ok(())
+    }
+
+    pub fn start_resharding_unchecked(
+        &mut self,
+        resharding_key: ReshardingKey,
+        shard: ShardReplicaSet,
+    ) -> CollectionResult<()> {
+        let ReshardingKey {
+            peer_id,
+            shard_id,
+            shard_key,
+        } = resharding_key;
+
+        // TODO(resharding): Delete shard on error!?
+
+        let ring = get_ring(&mut self.rings, &shard_key)?;
         ring.add_resharding(shard_id);
+
         self.add_shard(shard_id, shard, shard_key.clone())?;
 
         self.resharding_state.write(|state| {
             debug_assert!(
                 state.is_none(),
-                "resharding is already in progress: {state:?}"
+                "resharding is already in progress:\n{state:#?}"
             );
 
             *state = Some(ReshardingState::new(peer_id, shard_id, shard_key));
@@ -185,21 +178,42 @@ impl ShardHolder {
     pub async fn abort_resharding(
         &mut self,
         resharding_key: ReshardingKey,
-        is_in_progress: bool,
-    ) -> Result<(), CollectionError> {
+    ) -> CollectionResult<()> {
         let ReshardingKey {
-            shard_id,
-            shard_key,
             peer_id,
+            shard_id,
+            ref shard_key,
         } = resharding_key;
-        let mut removed_resharding = false;
 
-        if let Some(ring) = self.rings.get_mut(&shard_key) {
+        let is_in_progress = match self.resharding_state.read().deref() {
+            Some(state) if state.matches(&resharding_key) => true,
+
+            Some(state) => {
+                log::warn!(
+                    "aborting resharding {resharding_key}, \
+                     but another resharding is in progress:\n\
+                     {state:#?}"
+                );
+
+                false
+            }
+
+            None => {
+                log::warn!(
+                    "aborting resharding {resharding_key}, \
+                     but resharding is not in progress"
+                );
+
+                false
+            }
+        };
+
+        if let Some(ring) = self.rings.get_mut(shard_key) {
             log::debug!("removing peer {peer_id} from {shard_key:?} hashring");
-            removed_resharding = ring.remove_resharding(shard_id);
+            ring.remove_resharding(shard_id);
         } else {
             log::warn!(
-                "aborting resharding of shard {shard_id} ({peer_id}/{shard_key:?}), \
+                "aborting resharding {resharding_key}, \
                  but {shard_key:?} hashring does not exist"
             );
         }
@@ -211,7 +225,7 @@ impl ShardHolder {
                     shard.remove_peer(peer_id).await?;
                 }
 
-                Some(ReplicaState::Dead) if is_in_progress || removed_resharding => {
+                Some(ReplicaState::Dead) if is_in_progress => {
                     log::debug!("removing dead peer {peer_id} from {shard_id} replica set");
                     shard.remove_peer(peer_id).await?;
                 }
@@ -224,7 +238,7 @@ impl ShardHolder {
 
                 None => {
                     log::warn!(
-                        "aborting resharding of shard {shard_id} ({peer_id}/{shard_key:?}), \
+                        "aborting resharding {resharding_key}, \
                          but peer {peer_id} does not exist in {shard_id} replica set"
                     );
                 }
@@ -236,15 +250,16 @@ impl ShardHolder {
             }
         } else {
             log::warn!(
-                "aborting resharding of shard {shard_id} ({peer_id}/{shard_key:?}), \
+                "aborting resharding {resharding_key}, \
                  but shard holder does not contain {shard_id} replica set",
             );
         }
 
-        // TODO(resharding): Contextualize errors? 🤔
-        self.resharding_state.write(|state| {
-            *state = None;
-        })?;
+        if is_in_progress {
+            self.resharding_state.write(|state| {
+                *state = None;
+            })?;
+        }
 
         Ok(())
     }
@@ -1104,5 +1119,40 @@ impl ShardHolder {
 pub(crate) fn shard_not_found_error(shard_id: ShardId) -> CollectionError {
     CollectionError::NotFound {
         what: format!("shard {shard_id}"),
+    }
+}
+
+fn get_ring<'a>(
+    rings: &'a mut HashMap<Option<ShardKey>, HashRing>,
+    key: &'_ Option<ShardKey>,
+) -> CollectionResult<&'a mut HashRing> {
+    rings.get_mut(key).ok_or_else(|| {
+        CollectionError::bad_request(format!("{} hashring does not exist", shard_key_fmt(key),))
+    })
+}
+
+fn assert_resharding_state_consistency(
+    state: &Option<ReshardingState>,
+    ring: &HashRing,
+    key: &Option<ShardKey>,
+) {
+    if let Some(state) = state {
+        debug_assert!(
+            ring.is_resharding(),
+            "resharding is in progress, but {key:?} hashring is not a resharding hashring:\n\
+             {state:#?}"
+        );
+    } else {
+        debug_assert!(
+            !ring.is_resharding(),
+            "resharding is not in progress, but {key:?} hashring is a resharding hashring"
+        );
+    }
+}
+
+fn shard_key_fmt(key: &Option<ShardKey>) -> &dyn fmt::Display {
+    match key {
+        Some(key) => key,
+        None => &"default",
     }
 }
