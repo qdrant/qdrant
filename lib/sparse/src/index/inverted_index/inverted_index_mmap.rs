@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
-use io::storage_version::{StorageVersion as _, VERSION_FILE};
 use memmap2::{Mmap, MmapMut};
 use memory::madvise;
 use memory::mmap_ops::{
@@ -13,16 +12,15 @@ use memory::mmap_ops::{
 };
 use serde::{Deserialize, Serialize};
 
+use super::INDEX_FILE_NAME;
 use crate::common::sparse_vector::RemappedSparseVector;
 use crate::common::types::{DimId, DimOffset};
 use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use crate::index::inverted_index::InvertedIndex;
-use crate::index::migrate::SparseVectorIndexVersion;
 use crate::index::posting_list::PostingListIterator;
 use crate::index::posting_list_common::PostingElementEx;
 
 const POSTING_HEADER_SIZE: usize = size_of::<PostingListFileHeader>();
-const INDEX_FILE_NAME: &str = "inverted_index.data";
 const INDEX_CONFIG_FILE_NAME: &str = "inverted_index_config.json";
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -69,12 +67,10 @@ impl InvertedIndex for InvertedIndexMmap {
     }
 
     fn files(path: &Path) -> Vec<PathBuf> {
-        let mut files = vec![path.join(VERSION_FILE), Self::index_file_path(path)];
-        files.retain(|f| f.exists());
-
-        files.push(Self::index_config_file_path(path));
-
-        files
+        vec![
+            Self::index_file_path(path),
+            Self::index_config_file_path(path),
+        ]
     }
 
     fn upsert(&mut self, _id: PointOffsetType, _vector: RemappedSparseVector) {
@@ -147,9 +143,6 @@ impl InvertedIndexMmap {
         // save header properties
         let posting_count = inverted_index_ram.postings.len();
         let vector_count = inverted_index_ram.vector_count();
-
-        // save version
-        SparseVectorIndexVersion::save(path.as_ref())?;
 
         // finalize data with index file.
         let file_header = InvertedIndexFileHeader {

@@ -14,6 +14,9 @@ pub mod inverted_index_mmap;
 pub mod inverted_index_ram;
 pub mod inverted_index_ram_builder;
 
+pub const OLD_INDEX_FILE_NAME: &str = "inverted_index.data";
+pub const INDEX_FILE_NAME: &str = "inverted_index.dat";
+
 pub trait InvertedIndex: Sized {
     type Iter<'a>: PostingListIter + Clone
     where
