@@ -1,7 +1,7 @@
 use api::grpc::qdrant as grpc;
 use common::types::ScoreType;
 use itertools::Itertools;
-use segment::data_types::order_by::{Direction, OrderBy};
+use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{NamedQuery, NamedVectorStruct, Vector, DEFAULT_VECTOR_NAME};
 use segment::types::{Filter, Order, ScoredPoint, SearchParams, WithPayloadInterface, WithVector};
 use segment::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery};
@@ -68,7 +68,7 @@ impl ScoringQuery {
         }
     }
 
-    /// Return the order of results, depending on the type of query
+    /// Returns the expected order of results, depending on the type of query
     pub fn order(
         opt_self: Option<&Self>,
         collection_params: &CollectionParams,
@@ -87,10 +87,7 @@ impl ScoringQuery {
                 ScoringQuery::Fusion(fusion) => match fusion {
                     Fusion::Rrf => Order::LargeBetter,
                 },
-                ScoringQuery::OrderBy(order_by) => match order_by.direction() {
-                    Direction::Asc => Order::SmallBetter,
-                    Direction::Desc => Order::LargeBetter,
-                },
+                ScoringQuery::OrderBy(order_by) => Order::from(order_by.direction()),
             },
             None => {
                 // Order by ID

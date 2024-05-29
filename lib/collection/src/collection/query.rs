@@ -1,5 +1,5 @@
+use std::mem;
 use std::sync::Arc;
-use std::{iter, mem};
 
 use futures::{future, TryFutureExt};
 use itertools::{Either, Itertools};
@@ -20,6 +20,7 @@ struct IntermediateQueryInfo<'a> {
 }
 
 impl Collection {
+    /// Returns a vector of shard responses for the given query.
     async fn query_shards_concurrently(
         &self,
         request: Arc<ShardQueryRequest>,
@@ -52,7 +53,10 @@ impl Collection {
         future::try_join_all(all_searches).await
     }
 
-    /// This is a remote shard implementation to querying the shards. Only used for the internal service
+    /// To be called on the remote instance. Only used for the internal service.
+    ///
+    /// If the root query is a Fusion, the returned results correspond to each the prefetches.
+    /// Otherwise, it will be a list with a single list of scored points.
     pub async fn query_internal(
         &self,
         request: ShardQueryRequest,
@@ -65,58 +69,65 @@ impl Collection {
             .query_shards_concurrently(Arc::clone(&request), read_consistency, shard_selection)
             .await?;
 
-        let (num_intermediate_responses, intermediate_infos) =
-            if let Some(ScoringQuery::Fusion(Fusion::Rrf)) = request.query {
-                (
-                    request.prefetches.len(),
-                    Either::Left(
-                        request
-                            .prefetches
-                            .iter()
-                            .map(|prefetch| IntermediateQueryInfo {
-                                scoring_query: prefetch.query.as_ref(),
-                                take: prefetch.limit,
-                            }),
-                    ),
-                )
-            } else {
-                (
-                    1,
-                    Either::Right(iter::once(IntermediateQueryInfo {
-                        scoring_query: request.query.as_ref(),
-                        take: request.offset + request.limit,
-                    })),
-                )
-            };
+        let queries_for_results = intermediate_query_infos(&request);
+        let results_len = queries_for_results.len();
+        let mut results = ShardQueryResponse::with_capacity(results_len);
+        debug_assert!(all_shards_results
+            .iter()
+            .all(|shard_results| shard_results.len() == results_len));
 
+        // Time to merge the results in each shard for each intermediate query.
+        // [ [shard1_result1, shard1_result2],
+        //          ↓               ↓
+        //   [shard2_result1, shard2_result2] ]
+        //
+        // = [merged_result1, merged_result2]
         let collection_params = self.collection_config.read().await.params.clone();
-
-        let mut result = ShardQueryResponse::with_capacity(num_intermediate_responses);
-
-        for (idx, intermediate_info) in intermediate_infos.enumerate() {
-            let intermediate_result_for_shard = all_shards_results
+        for (idx, intermediate_info) in queries_for_results.into_iter().enumerate() {
+            let same_result_per_shard = all_shards_results
                 .iter_mut()
                 .map(|intermediates| mem::take(&mut intermediates[idx]));
 
-            let order = collection_params.scoring_order(intermediate_info.scoring_query)?;
+            let order = ScoringQuery::order(intermediate_info.scoring_query, &collection_params)?;
 
             let intermediate_result = match order {
                 Order::LargeBetter => Either::Left(
-                    intermediate_result_for_shard
-                        .kmerge_by(|a, b| ScoredPointTies(a) > ScoredPointTies(b)),
+                    same_result_per_shard.kmerge_by(|a, b| ScoredPointTies(a) > ScoredPointTies(b)),
                 ),
                 Order::SmallBetter => Either::Right(
-                    intermediate_result_for_shard
-                        .kmerge_by(|a, b| ScoredPointTies(a) < ScoredPointTies(b)),
+                    same_result_per_shard.kmerge_by(|a, b| ScoredPointTies(a) < ScoredPointTies(b)),
                 ),
             }
             .dedup()
             .take(intermediate_info.take)
             .collect();
 
-            result.push(intermediate_result);
+            results.push(intermediate_result);
         }
 
-        Ok(result)
+        Ok(results)
+    }
+}
+
+/// Returns a list of the query that corresponds to each of the results in each shard.
+///
+/// Example: `[info1, info2, info3]` corresponds to `[result1, result2, result3]` of each shard
+fn intermediate_query_infos(request: &ShardQueryRequest) -> Vec<IntermediateQueryInfo<'_>> {
+    if let Some(ScoringQuery::Fusion(Fusion::Rrf)) = request.query {
+        // In case of RRF, expect the propagated intermediate results
+        request
+            .prefetches
+            .iter()
+            .map(|prefetch| IntermediateQueryInfo {
+                scoring_query: prefetch.query.as_ref(),
+                take: prefetch.limit,
+            })
+            .collect_vec()
+    } else {
+        // Otherwise, we expect the root result
+        vec![IntermediateQueryInfo {
+            scoring_query: request.query.as_ref(),
+            take: request.offset + request.limit,
+        }]
     }
 }

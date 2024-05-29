@@ -12,9 +12,9 @@ use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::types::{
     default_replication_factor_const, default_shard_number_const,
-    default_write_consistency_factor_const, Distance, HnswConfig, Indexes, Order,
-    PayloadStorageType, QuantizationConfig, SparseVectorDataConfig, VectorDataConfig,
-    VectorStorageDatatype, VectorStorageType,
+    default_write_consistency_factor_const, Distance, HnswConfig, Indexes, PayloadStorageType,
+    QuantizationConfig, SparseVectorDataConfig, VectorDataConfig, VectorStorageDatatype,
+    VectorStorageType,
 };
 use serde::{Deserialize, Serialize};
 use validator::Validate;
@@ -25,7 +25,6 @@ use crate::operations::types::{
     CollectionError, CollectionResult, SparseVectorParams, SparseVectorsConfig, VectorParams,
     VectorParamsDiff, VectorsConfig, VectorsConfigDiff,
 };
-use crate::operations::universal_query::shard_query::{Fusion, ScoringQuery};
 use crate::operations::validation;
 use crate::optimizers_builder::OptimizersConfig;
 
@@ -395,29 +394,5 @@ impl CollectionParams {
         } else {
             Ok(Default::default())
         }
-    }
-
-    pub fn scoring_order(&self, scoring_query: Option<&ScoringQuery>) -> CollectionResult<Order> {
-        let order = match scoring_query {
-            Some(scoring_query) => match scoring_query {
-                ScoringQuery::Vector(query_enum) => {
-                    if query_enum.is_distance_scored() {
-                        self.get_distance(query_enum.get_vector_name())?
-                            .distance_order()
-                    } else {
-                        Order::LargeBetter
-                    }
-                }
-                ScoringQuery::Fusion(fusion) => match fusion {
-                    Fusion::Rrf => Order::LargeBetter,
-                },
-                ScoringQuery::OrderBy(order_by) => Order::from(order_by.direction()),
-            },
-            None => {
-                // Order by ID
-                Order::SmallBetter
-            }
-        };
-        Ok(order)
     }
 }
