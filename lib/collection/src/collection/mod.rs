@@ -25,8 +25,10 @@ use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_state::{ShardInfo, State};
 use crate::common::is_ready::IsReady;
 use crate::config::CollectionConfig;
+use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult, NodeType};
+use crate::optimizers_builder::OptimizersConfig;
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::collection_shard_distribution::CollectionShardDistribution;
@@ -50,6 +52,7 @@ pub struct Collection {
     pub(crate) collection_config: Arc<RwLock<CollectionConfig>>,
     pub(crate) shared_storage_config: Arc<SharedStorageConfig>,
     pub(crate) payload_index_schema: SaveOnDisk<PayloadIndexSchema>,
+    optimizers_overwrite: Option<OptimizersConfigDiff>,
     this_peer_id: PeerId,
     path: PathBuf,
     snapshots_path: PathBuf,
@@ -95,6 +98,7 @@ impl Collection {
         search_runtime: Option<Handle>,
         update_runtime: Option<Handle>,
         optimizer_cpu_budget: CpuBudget,
+        optimizers_overwrite: Option<OptimizersConfigDiff>,
     ) -> Result<Self, CollectionError> {
         let start_time = std::time::Instant::now();
 
@@ -103,6 +107,11 @@ impl Collection {
         let shared_collection_config = Arc::new(RwLock::new(collection_config.clone()));
         for (shard_id, mut peers) in shard_distribution.shards {
             let is_local = peers.remove(&this_peer_id);
+
+            let mut optimizers_config = collection_config.optimizer_config.clone();
+            if let Some(optimizers_overwrite) = optimizers_overwrite.clone() {
+                optimizers_config = optimizers_overwrite.update(&optimizers_config)?;
+            }
 
             let replica_set = ShardReplicaSet::build(
                 shard_id,
@@ -114,6 +123,7 @@ impl Collection {
                 abort_shard_transfer.clone(),
                 path,
                 shared_collection_config.clone(),
+                optimizers_config,
                 shared_storage_config.clone(),
                 channel_service.clone(),
                 update_runtime.clone().unwrap_or_else(Handle::current),
@@ -138,6 +148,7 @@ impl Collection {
             id: name.clone(),
             shards_holder: locked_shard_holder,
             collection_config: shared_collection_config,
+            optimizers_overwrite,
             payload_index_schema,
             shared_storage_config,
             this_peer_id,
@@ -171,6 +182,7 @@ impl Collection {
         search_runtime: Option<Handle>,
         update_runtime: Option<Handle>,
         optimizer_cpu_budget: CpuBudget,
+        optimizers_overwrite: Option<OptimizersConfigDiff>,
     ) -> Self {
         let start_time = std::time::Instant::now();
         let stored_version = CollectionVersion::load(path)
@@ -205,6 +217,14 @@ impl Collection {
 
         let mut shard_holder = ShardHolder::new(path).expect("Can not create shard holder");
 
+        let mut optimizers_config = collection_config.optimizer_config.clone();
+
+        if let Some(optimizers_overwrite) = optimizers_overwrite.clone() {
+            optimizers_config = optimizers_overwrite
+                .update(&optimizers_config)
+                .expect("Can not apply optimizer overwrite");
+        }
+
         let shared_collection_config = Arc::new(RwLock::new(collection_config.clone()));
 
         shard_holder
@@ -212,6 +232,7 @@ impl Collection {
                 path,
                 &collection_id,
                 shared_collection_config.clone(),
+                optimizers_config,
                 shared_storage_config.clone(),
                 channel_service.clone(),
                 on_replica_failure.clone(),
@@ -232,6 +253,7 @@ impl Collection {
             id: collection_id.clone(),
             shards_holder: locked_shard_holder,
             collection_config: shared_collection_config,
+            optimizers_overwrite,
             payload_index_schema,
             shared_storage_config,
             this_peer_id,
@@ -733,6 +755,16 @@ impl Collection {
             config: self.collection_config.read().await.clone(),
             shards: shards_telemetry,
             transfers,
+        }
+    }
+
+    pub async fn optimizers_config_with_overwrite(&self) -> CollectionResult<OptimizersConfig> {
+        let config = self.collection_config.read().await;
+
+        if let Some(optimizers_overwrite) = self.optimizers_overwrite.clone() {
+            Ok(optimizers_overwrite.update(&config.optimizer_config)?)
+        } else {
+            Ok(config.optimizer_config.clone())
         }
     }
 

@@ -85,6 +85,7 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         None,
         None,
         CpuBudget::default(),
+        None,
     )
     .await
     .unwrap();
@@ -139,6 +140,7 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         None,
         None,
         CpuBudget::default(),
+        None,
     )
     .await;
 

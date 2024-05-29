@@ -22,6 +22,7 @@ use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::snapshot_ops::SnapshotDescription;
 use crate::operations::types::{CollectionError, CollectionResult, ShardTransferInfo};
 use crate::operations::{OperationToShard, SplitByShard};
+use crate::optimizers_builder::OptimizersConfig;
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::local_shard::LocalShard;
@@ -585,6 +586,7 @@ impl ShardHolder {
         collection_path: &Path,
         collection_id: &CollectionId,
         collection_config: Arc<RwLock<CollectionConfig>>,
+        optimizers_config: OptimizersConfig,
         shared_storage_config: Arc<SharedStorageConfig>,
         channel_service: ChannelService,
         on_peer_failure: ChangePeerState,
@@ -629,6 +631,7 @@ impl ShardHolder {
                     collection_id.clone(),
                     &path,
                     collection_config.clone(),
+                    optimizers_config.clone(),
                     shared_storage_config.clone(),
                     channel_service.clone(),
                     on_peer_failure.clone(),

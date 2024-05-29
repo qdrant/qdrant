@@ -28,6 +28,7 @@ use crate::common::snapshots_manager::SnapshotStorageManager;
 use crate::config::CollectionConfig;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
+use crate::optimizers_builder::OptimizersConfig;
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::dummy_shard::DummyShard;
@@ -93,6 +94,7 @@ pub struct ShardReplicaSet {
     channel_service: ChannelService,
     collection_id: CollectionId,
     collection_config: Arc<RwLock<CollectionConfig>>,
+    optimizers_config: OptimizersConfig,
     pub(crate) shared_storage_config: Arc<SharedStorageConfig>,
     update_runtime: Handle,
     search_runtime: Handle,
@@ -121,6 +123,7 @@ impl ShardReplicaSet {
         abort_shard_transfer: AbortShardTransfer,
         collection_path: &Path,
         collection_config: Arc<RwLock<CollectionConfig>>,
+        optimizers_config: OptimizersConfig,
         shared_storage_config: Arc<SharedStorageConfig>,
         channel_service: ChannelService,
         update_runtime: Handle,
@@ -138,6 +141,7 @@ impl ShardReplicaSet {
                 shared_storage_config.clone(),
                 update_runtime.clone(),
                 optimizer_cpu_budget.clone(),
+                optimizers_config.clone(),
             )
             .await?;
             Some(Shard::Local(shard))
@@ -183,6 +187,7 @@ impl ShardReplicaSet {
             channel_service,
             collection_id,
             collection_config,
+            optimizers_config,
             shared_storage_config,
             update_runtime,
             search_runtime,
@@ -203,6 +208,7 @@ impl ShardReplicaSet {
         collection_id: CollectionId,
         shard_path: &Path,
         collection_config: Arc<RwLock<CollectionConfig>>,
+        optimizers_config: OptimizersConfig,
         shared_storage_config: Arc<SharedStorageConfig>,
         channel_service: ChannelService,
         on_peer_failure: ChangePeerState,
@@ -294,6 +300,7 @@ impl ShardReplicaSet {
             channel_service,
             collection_id,
             collection_config,
+            optimizers_config,
             shared_storage_config,
             update_runtime,
             search_runtime,
@@ -452,6 +459,7 @@ impl ShardReplicaSet {
             self.shared_storage_config.clone(),
             self.update_runtime.clone(),
             self.optimizer_cpu_budget.clone(),
+            self.optimizers_config.clone(),
         )
         .await;
 
@@ -635,6 +643,7 @@ impl ShardReplicaSet {
                     self.shared_storage_config.clone(),
                     self.update_runtime.clone(),
                     self.optimizer_cpu_budget.clone(),
+                    self.optimizers_config.clone(),
                 )
                 .await?;
                 match state {

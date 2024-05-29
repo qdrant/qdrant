@@ -53,7 +53,7 @@ use crate::operations::types::{
     CollectionResult, CollectionStatus, OptimizersStatus,
 };
 use crate::operations::OperationWithClockTag;
-use crate::optimizers_builder::{build_optimizers, clear_temp_segments};
+use crate::optimizers_builder::{build_optimizers, clear_temp_segments, OptimizersConfig};
 use crate::shards::shard::ShardId;
 use crate::shards::shard_config::{ShardConfig, SHARD_CONFIG_FILE};
 use crate::shards::telemetry::{LocalShardTelemetry, OptimizerTelemetry};
@@ -373,6 +373,7 @@ impl LocalShard {
         shard_path.join("segments")
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn build_local(
         id: ShardId,
         collection_id: CollectionId,
@@ -381,6 +382,7 @@ impl LocalShard {
         shared_storage_config: Arc<SharedStorageConfig>,
         update_runtime: Handle,
         optimizer_cpu_budget: CpuBudget,
+        optimizers_config: OptimizersConfig,
     ) -> CollectionResult<LocalShard> {
         // initialize local shard config file
         let local_shard_config = ShardConfig::new_replica_set();
@@ -392,6 +394,7 @@ impl LocalShard {
             shared_storage_config,
             update_runtime,
             optimizer_cpu_budget,
+            optimizers_config,
         )
         .await?;
         local_shard_config.save(shard_path)?;
@@ -399,6 +402,7 @@ impl LocalShard {
     }
 
     /// Creates new empty shard with given configuration, initializing all storages, optimizers and directories.
+    #[allow(clippy::too_many_arguments)]
     pub async fn build(
         id: ShardId,
         collection_id: CollectionId,
@@ -407,6 +411,7 @@ impl LocalShard {
         shared_storage_config: Arc<SharedStorageConfig>,
         update_runtime: Handle,
         optimizer_cpu_budget: CpuBudget,
+        optimizers_config: OptimizersConfig,
     ) -> CollectionResult<LocalShard> {
         let config = collection_config.read().await;
 
@@ -475,7 +480,7 @@ impl LocalShard {
         let optimizers = build_optimizers(
             shard_path,
             &config.params,
-            &config.optimizer_config,
+            &optimizers_config,
             &config.hnsw_config,
             &config.quantization_config,
         );

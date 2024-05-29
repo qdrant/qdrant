@@ -81,6 +81,8 @@ fn batch_search_bench(c: &mut Criterion) {
         quantization_config: Default::default(),
     };
 
+    let optimizers_config = collection_config.optimizer_config.clone();
+
     let shared_config = Arc::new(RwLock::new(collection_config));
 
     let shard = handle
@@ -92,6 +94,7 @@ fn batch_search_bench(c: &mut Criterion) {
             Default::default(),
             handle.clone(),
             CpuBudget::default(),
+            optimizers_config,
         ))
         .unwrap();
 

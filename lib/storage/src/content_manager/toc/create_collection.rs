@@ -213,6 +213,7 @@ impl TableOfContent {
             Some(self.search_runtime.handle().clone()),
             Some(self.update_runtime.handle().clone()),
             self.optimizer_cpu_budget.clone(),
+            self.storage_config.optimizers_overwrite.clone(),
         )
         .await?;
 
