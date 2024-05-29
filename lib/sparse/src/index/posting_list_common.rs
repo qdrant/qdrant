@@ -1,4 +1,4 @@
-use common::types::PointOffsetType;
+use common::types::{PointOffsetType, ScoreType};
 
 use crate::common::types::DimWeight;
 
@@ -62,6 +62,14 @@ pub trait PostingListIter {
         id: PointOffsetType,
         ctx: &mut Ctx,
         f: impl FnMut(&mut Ctx, PointOffsetType, DimWeight),
+    );
+
+    fn score_till_id(
+        &mut self,
+        id: PointOffsetType,
+        scores: &mut [ScoreType],
+        query_weight: DimWeight,
+        batch_start_id: PointOffsetType,
     );
 
     /// Whether the max_next_weight is reliable.

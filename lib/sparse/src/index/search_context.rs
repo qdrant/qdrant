@@ -139,17 +139,11 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
         self.pooled.scores.resize(batch_len as usize, 0.0);
 
         for posting in self.postings_iterators.iter_mut() {
-            posting.posting_list_iterator.for_each_till_id(
+            posting.posting_list_iterator.score_till_id(
                 batch_last_id,
                 self.pooled.scores.as_mut_slice(),
-                #[inline(always)]
-                |scores, id, weight| {
-                    let element_score = weight * posting.query_weight;
-                    let local_id = (id - batch_start_id) as usize;
-                    // SAFETY: `id` is within `batch_start_id..=batch_last_id`
-                    // Thus, `local_id` is within `0..batch_len`.
-                    *unsafe { scores.get_unchecked_mut(local_id) } += element_score;
-                },
+                posting.query_weight,
+                batch_start_id,
             );
         }
 

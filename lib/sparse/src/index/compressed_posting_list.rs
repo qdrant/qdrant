@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::mem::size_of;
 
 use bitpacking::BitPacker as _;
-use common::types::PointOffsetType;
+use common::types::{PointOffsetType, ScoreType};
 #[cfg(debug_assertions)]
 use itertools::Itertools as _;
 
@@ -414,6 +414,95 @@ impl<'a> PostingListIter for CompressedPostingListIterator<'a> {
                 return;
             }
             f(ctx, e.record_id, e.weight);
+            pos += 1;
+        }
+        self.pos = pos;
+    }
+
+    #[inline]
+    fn score_till_id(
+        &mut self,
+        id: PointOffsetType,
+        scores: &mut [ScoreType],
+        query_weight: DimWeight,
+        batch_start_id: PointOffsetType,
+    ) {
+        let mut pos = self.pos;
+        if pos / BitPackerImpl::BLOCK_LEN < self.list.chunks.len() {
+            // 1. Iterate over already decompressed chunk
+            if self.unpacked {
+                let chunk = &self.list.chunks[pos / BitPackerImpl::BLOCK_LEN];
+
+                for (idx, weight) in std::iter::zip(
+                    &self.decompressed_chunk[pos % BitPackerImpl::BLOCK_LEN..],
+                    &chunk.weights[pos % BitPackerImpl::BLOCK_LEN..],
+                ) {
+                    if *idx > id {
+                        self.pos = pos;
+                        return;
+                    }
+                    {
+                        let element_score = weight * query_weight;
+                        let local_id = (*idx - batch_start_id) as usize;
+                        // SAFETY: `id` is within `batch_start_id..=batch_last_id`
+                        // Thus, `local_id` is within `0..batch_len`.
+                        *unsafe { scores.get_unchecked_mut(local_id) } += element_score;
+                    }
+                    pos += 1;
+                }
+            }
+
+            // 2. Iterate over compressed chunks
+            while pos / BitPackerImpl::BLOCK_LEN < self.list.chunks.len() {
+                self.list
+                    .decompress_chunk(pos / BitPackerImpl::BLOCK_LEN, &mut self.decompressed_chunk);
+                let chunk = &self.list.chunks[pos / BitPackerImpl::BLOCK_LEN];
+
+                if *self.decompressed_chunk.last().unwrap() <= id {
+                    // Optimistic path: skip id comparison
+                    for (idx, weight) in std::iter::zip(&self.decompressed_chunk, &chunk.weights) {
+                        {
+                            let element_score = weight * query_weight;
+                            let local_id = (*idx - batch_start_id) as usize;
+                            // SAFETY: `id` is within `batch_start_id..=batch_last_id`
+                            // Thus, `local_id` is within `0..batch_len`.
+                            *unsafe { scores.get_unchecked_mut(local_id) } += element_score;
+                        }
+                    }
+                    pos += BitPackerImpl::BLOCK_LEN;
+                } else {
+                    for (idx, weight) in std::iter::zip(&self.decompressed_chunk, &chunk.weights) {
+                        if *idx > id {
+                            self.pos = pos;
+                            self.unpacked = true;
+                            return;
+                        }
+                        pos += 1;
+                        {
+                            let element_score = weight * query_weight;
+                            let local_id = (*idx - batch_start_id) as usize;
+                            // SAFETY: `id` is within `batch_start_id..=batch_last_id`
+                            // Thus, `local_id` is within `0..batch_len`.
+                            *unsafe { scores.get_unchecked_mut(local_id) } += element_score;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Iterate over remainders
+        for e in &self.list.remainders[pos - self.list.chunks.len() * BitPackerImpl::BLOCK_LEN..] {
+            if e.record_id > id {
+                self.pos = pos;
+                return;
+            }
+            {
+                let element_score = e.weight * query_weight;
+                let local_id = (e.record_id - batch_start_id) as usize;
+                // SAFETY: `id` is within `batch_start_id..=batch_last_id`
+                // Thus, `local_id` is within `0..batch_len`.
+                *unsafe { scores.get_unchecked_mut(local_id) } += element_score;
+            }
             pos += 1;
         }
         self.pos = pos;

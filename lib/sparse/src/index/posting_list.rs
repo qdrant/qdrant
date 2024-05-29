@@ -1,6 +1,6 @@
 use std::cmp::max;
 
-use common::types::PointOffsetType;
+use common::types::{PointOffsetType, ScoreType};
 use ordered_float::OrderedFloat;
 
 use super::posting_list_common::{PostingElement, PostingElementEx, PostingListIter};
@@ -203,6 +203,30 @@ impl<'a> PostingListIter for PostingListIterator<'a> {
                 break;
             }
             f(ctx, element.record_id, element.weight);
+            current_index += 1;
+        }
+        self.current_index = current_index;
+    }
+
+    fn score_till_id(
+        &mut self,
+        id: PointOffsetType,
+        scores: &mut [ScoreType],
+        query_weight: DimWeight,
+        batch_start_id: PointOffsetType,
+    ) {
+        let mut current_index = self.current_index;
+        for element in &self.elements[current_index..] {
+            if element.record_id > id {
+                break;
+            }
+            {
+                let element_score = element.weight * query_weight;
+                let local_id = (element.record_id - batch_start_id) as usize;
+                // SAFETY: `id` is within `batch_start_id..=batch_last_id`
+                // Thus, `local_id` is within `0..batch_len`.
+                *unsafe { scores.get_unchecked_mut(local_id) } += element_score;
+            }
             current_index += 1;
         }
         self.current_index = current_index;
