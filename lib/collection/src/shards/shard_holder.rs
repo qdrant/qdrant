@@ -128,9 +128,15 @@ impl ShardHolder {
             assert_resharding_state_consistency(&state, ring, shard_key);
 
             if let Some(state) = state.deref() {
-                return Err(CollectionError::bad_request(format!(
-                    "resharding is already in progress:\n{state:#?}"
-                )));
+                if state.matches(resharding_key) {
+                    return Err(CollectionError::bad_request(format!(
+                        "resharding {resharding_key} is already in progress:\n{state:#?}"
+                    )));
+                } else {
+                    return Err(CollectionError::bad_request(format!(
+                        "another resharding is in progress:\n{state:#?}"
+                    )));
+                }
             }
         }
 
@@ -257,6 +263,13 @@ impl ShardHolder {
 
         if is_in_progress {
             self.resharding_state.write(|state| {
+                debug_assert!(
+                    state
+                        .as_ref()
+                        .map_or(false, |state| state.matches(&resharding_key)),
+                    "resharding {resharding_key} is not in progress:\n{state:#?}"
+                );
+
                 *state = None;
             })?;
         }
@@ -1127,25 +1140,25 @@ fn get_ring<'a>(
     key: &'_ Option<ShardKey>,
 ) -> CollectionResult<&'a mut HashRing> {
     rings.get_mut(key).ok_or_else(|| {
-        CollectionError::bad_request(format!("{} hashring does not exist", shard_key_fmt(key),))
+        CollectionError::bad_request(format!("{} hashring does not exist", shard_key_fmt(key)))
     })
 }
 
 fn assert_resharding_state_consistency(
     state: &Option<ReshardingState>,
     ring: &HashRing,
-    key: &Option<ShardKey>,
+    shard_key: &Option<ShardKey>,
 ) {
     if let Some(state) = state {
         debug_assert!(
             ring.is_resharding(),
-            "resharding is in progress, but {key:?} hashring is not a resharding hashring:\n\
+            "resharding is in progress, but {shard_key:?} hashring is not a resharding hashring:\n\
              {state:#?}"
         );
     } else {
         debug_assert!(
             !ring.is_resharding(),
-            "resharding is not in progress, but {key:?} hashring is a resharding hashring"
+            "resharding is not in progress, but {shard_key:?} hashring is a resharding hashring"
         );
     }
 }
