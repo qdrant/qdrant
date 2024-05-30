@@ -108,9 +108,10 @@ impl Collection {
         for (shard_id, mut peers) in shard_distribution.shards {
             let is_local = peers.remove(&this_peer_id);
 
-            let mut optimizers_config = collection_config.optimizer_config.clone();
+            let mut effective_optimizers_config = collection_config.optimizer_config.clone();
             if let Some(optimizers_overwrite) = optimizers_overwrite.clone() {
-                optimizers_config = optimizers_overwrite.update(&optimizers_config)?;
+                effective_optimizers_config =
+                    optimizers_overwrite.update(&effective_optimizers_config)?;
             }
 
             let replica_set = ShardReplicaSet::build(
@@ -123,7 +124,7 @@ impl Collection {
                 abort_shard_transfer.clone(),
                 path,
                 shared_collection_config.clone(),
-                optimizers_config,
+                effective_optimizers_config,
                 shared_storage_config.clone(),
                 channel_service.clone(),
                 update_runtime.clone().unwrap_or_else(Handle::current),
@@ -217,11 +218,11 @@ impl Collection {
 
         let mut shard_holder = ShardHolder::new(path).expect("Can not create shard holder");
 
-        let mut optimizers_config = collection_config.optimizer_config.clone();
+        let mut effective_optimizers_config = collection_config.optimizer_config.clone();
 
         if let Some(optimizers_overwrite) = optimizers_overwrite.clone() {
-            optimizers_config = optimizers_overwrite
-                .update(&optimizers_config)
+            effective_optimizers_config = optimizers_overwrite
+                .update(&effective_optimizers_config)
                 .expect("Can not apply optimizer overwrite");
         }
 
@@ -232,7 +233,7 @@ impl Collection {
                 path,
                 &collection_id,
                 shared_collection_config.clone(),
-                optimizers_config,
+                effective_optimizers_config,
                 shared_storage_config.clone(),
                 channel_service.clone(),
                 on_replica_failure.clone(),
@@ -758,7 +759,7 @@ impl Collection {
         }
     }
 
-    pub async fn optimizers_config_with_overwrite(&self) -> CollectionResult<OptimizersConfig> {
+    pub async fn effective_optimizers_config(&self) -> CollectionResult<OptimizersConfig> {
         let config = self.collection_config.read().await;
 
         if let Some(optimizers_overwrite) = self.optimizers_overwrite.clone() {

@@ -205,7 +205,7 @@ impl LocalShard {
         collection_id: CollectionId,
         shard_path: &Path,
         collection_config: Arc<TokioRwLock<CollectionConfig>>,
-        optimizers_config: OptimizersConfig,
+        effective_optimizers_config: OptimizersConfig,
         shared_storage_config: Arc<SharedStorageConfig>,
         update_runtime: Handle,
         optimizer_cpu_budget: CpuBudget,
@@ -303,7 +303,7 @@ impl LocalShard {
         let optimizers = build_optimizers(
             shard_path,
             &collection_config_read.params,
-            &optimizers_config,
+            &effective_optimizers_config,
             &collection_config_read.hnsw_config,
             &collection_config_read.quantization_config,
         );
@@ -384,7 +384,7 @@ impl LocalShard {
         shared_storage_config: Arc<SharedStorageConfig>,
         update_runtime: Handle,
         optimizer_cpu_budget: CpuBudget,
-        optimizers_config: OptimizersConfig,
+        effective_optimizers_config: OptimizersConfig,
     ) -> CollectionResult<LocalShard> {
         // initialize local shard config file
         let local_shard_config = ShardConfig::new_replica_set();
@@ -396,7 +396,7 @@ impl LocalShard {
             shared_storage_config,
             update_runtime,
             optimizer_cpu_budget,
-            optimizers_config,
+            effective_optimizers_config,
         )
         .await?;
         local_shard_config.save(shard_path)?;
@@ -413,7 +413,7 @@ impl LocalShard {
         shared_storage_config: Arc<SharedStorageConfig>,
         update_runtime: Handle,
         optimizer_cpu_budget: CpuBudget,
-        optimizers_config: OptimizersConfig,
+        effective_optimizers_config: OptimizersConfig,
     ) -> CollectionResult<LocalShard> {
         let config = collection_config.read().await;
 
@@ -482,7 +482,7 @@ impl LocalShard {
         let optimizers = build_optimizers(
             shard_path,
             &config.params,
-            &optimizers_config,
+            &effective_optimizers_config,
             &config.hnsw_config,
             &config.quantization_config,
         );
