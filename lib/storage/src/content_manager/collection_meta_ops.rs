@@ -9,7 +9,7 @@ use collection::operations::types::{
     SparseVectorParams, SparseVectorsConfig, VectorsConfig, VectorsConfigDiff,
 };
 use collection::shards::replica_set::ReplicaState;
-use collection::shards::resharding::ReshardingKey;
+use collection::shards::resharding::ReshardKey;
 use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};
 use collection::shards::transfer::{ShardTransfer, ShardTransferKey, ShardTransferRestart};
 use collection::shards::{replica_set, CollectionId};
@@ -294,8 +294,8 @@ pub struct DeleteCollectionOperation(pub String);
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize)]
 pub enum ReshardingOperation {
-    Start(ReshardingKey),
-    Abort(ReshardingKey),
+    Start(ReshardKey),
+    Abort(ReshardKey),
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash, Clone)]

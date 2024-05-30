@@ -20,12 +20,14 @@ pub mod consensus_ops {
     use collection::operations::types::PeerMetadata;
     use collection::shards::replica_set::ReplicaState;
     use collection::shards::replica_set::ReplicaState::Initializing;
+    use collection::shards::resharding::ReshardKey;
     use collection::shards::shard::PeerId;
     use collection::shards::transfer::ShardTransfer;
     use collection::shards::{replica_set, CollectionId};
     use raft::eraftpb::Entry as RaftEntry;
     use serde::{Deserialize, Serialize};
 
+    use super::collection_meta_ops::ReshardingOperation;
     use crate::content_manager::collection_meta_ops::{
         CollectionMetaOperations, SetShardReplicaState, ShardTransferOperations, UpdateCollection,
         UpdateCollectionOperation,
@@ -79,6 +81,22 @@ pub mod consensus_ops {
                 collection_id,
                 ShardTransferOperations::Finish(transfer),
             )))
+        }
+
+        pub fn abort_resharding(collection_id: CollectionId, reshard_key: ReshardKey) -> Self {
+            ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::Resharding(
+                collection_id,
+                ReshardingOperation::Abort(reshard_key),
+            )))
+        }
+
+        pub fn finish_resharding(_collection_id: CollectionId, _reshard_key: ReshardKey) -> Self {
+            // TODO(resharding@ffuugoo): connect resharding finish message here
+            todo!("connect resharding finish message here");
+            // ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::Resharding(
+            //     collection_id,
+            //     ReshardingOperation::Finish(reshard_key),
+            // )))
         }
 
         pub fn set_replica_state(
