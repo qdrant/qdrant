@@ -35,6 +35,7 @@ use crate::shards::local_shard::clock_map::RecoveryPoint;
 use crate::shards::replica_set::ReplicaState::{Active, Dead, Initializing, Listener};
 use crate::shards::replica_set::{ChangePeerState, ReplicaState, ShardReplicaSet};
 use crate::shards::resharding::tasks_pool::ReshardTasksPool;
+use crate::shards::resharding::ReshardKey;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::{shard_not_found_error, LockedShardHolder, ShardHolder};
 use crate::shards::transfer::helpers::check_transfer_conflicts_strict;
@@ -378,7 +379,7 @@ impl Collection {
 
             drop(shard_holder);
 
-            self.abort_resharding(ReshardingKey {
+            self.abort_resharding(ReshardKey {
                 peer_id,
                 shard_id,
                 shard_key,
