@@ -2,20 +2,15 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use bitvec::slice::BitSlice;
-use common::types::PointOffsetType;
-use io::file_operations::{atomic_save_json, read_json};
-use quantization::encoded_vectors_binary::{EncodedBinVector, EncodedVectorsBin};
 use quantization::{
     EncodedQueryPQ, EncodedQueryU8, EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8,
 };
+use quantization::encoded_vectors_binary::{EncodedBinVector, EncodedVectorsBin};
 use serde::{Deserialize, Serialize};
 
-use super::quantized_multivector_storage::{
-    create_offsets_file_from_iter, MultivectorOffset, MultivectorOffsetsStorage,
-    QuantizedMultivectorStorage,
-};
-use super::quantized_scorer_builder::QuantizedScorerBuilder;
-use crate::common::mmap_type::MmapSlice;
+use common::types::PointOffsetType;
+use io::file_operations::{atomic_save_json, read_json};
+
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::vector_utils::TrySetCapacityExact;
 use crate::data_types::primitive::PrimitiveVectorElement;
@@ -25,13 +20,19 @@ use crate::types::{
     ProductQuantizationConfig, QuantizationConfig, ScalarQuantization, ScalarQuantizationConfig,
     VectorStorageDatatype,
 };
+use crate::vector_storage::{
+    DenseVectorStorage, MultiVectorStorage, RawScorer, VectorStorage, VectorStorageEnum,
+};
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::quantized::quantized_mmap_storage::{
     QuantizedMmapStorage, QuantizedMmapStorageBuilder,
 };
-use crate::vector_storage::{
-    DenseVectorStorage, MultiVectorStorage, RawScorer, VectorStorage, VectorStorageEnum,
+
+use super::quantized_multivector_storage::{
+    create_offsets_file_from_iter, MultivectorOffset, MultivectorOffsetsStorage,
+    MultivectorOffsetsStorageMmap, QuantizedMultivectorStorage,
 };
+use super::quantized_scorer_builder::QuantizedScorerBuilder;
 
 pub const QUANTIZED_CONFIG_PATH: &str = "quantized.config.json";
 pub const QUANTIZED_DATA_PATH: &str = "quantized.data";
@@ -53,7 +54,7 @@ type ScalarRamMulti = QuantizedMultivectorStorage<
 type ScalarMmapMulti = QuantizedMultivectorStorage<
     EncodedQueryU8,
     EncodedVectorsU8<QuantizedMmapStorage>,
-    MmapSlice<MultivectorOffset>,
+    MultivectorOffsetsStorageMmap,
 >;
 
 type PQRamMulti = QuantizedMultivectorStorage<
@@ -65,7 +66,7 @@ type PQRamMulti = QuantizedMultivectorStorage<
 type PQMmapMulti = QuantizedMultivectorStorage<
     EncodedQueryPQ,
     EncodedVectorsPQ<QuantizedMmapStorage>,
-    MmapSlice<MultivectorOffset>,
+    MultivectorOffsetsStorageMmap,
 >;
 
 type BinaryRamMulti = QuantizedMultivectorStorage<
@@ -77,7 +78,7 @@ type BinaryRamMulti = QuantizedMultivectorStorage<
 type BinaryMmapMulti = QuantizedMultivectorStorage<
     EncodedBinVector,
     EncodedVectorsBin<QuantizedMmapStorage>,
-    MmapSlice<MultivectorOffset>,
+    MultivectorOffsetsStorageMmap,
 >;
 
 pub enum QuantizedVectorStorage {

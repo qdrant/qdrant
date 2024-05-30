@@ -1,6 +1,7 @@
+use std::fs::canonicalize;
 use std::marker::PhantomData;
 use std::ops::DerefMut;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use common::types::{PointOffsetType, ScoreType};
 use memmap2::MmapMut;
@@ -48,7 +49,12 @@ impl MultivectorOffsetsStorage for Vec<MultivectorOffset> {
     }
 }
 
-impl MultivectorOffsetsStorage for MmapSlice<MultivectorOffset> {
+pub struct MultivectorOffsetsStorageMmap {
+    path: PathBuf,
+    offsets: MmapSlice<MultivectorOffset>,
+}
+
+impl MultivectorOffsetsStorage for MultivectorOffsetsStorageMmap {
     fn load(path: &Path) -> OperationResult<Self> {
         let offsets_file = std::fs::OpenOptions::new()
             .read(true)
@@ -56,16 +62,24 @@ impl MultivectorOffsetsStorage for MmapSlice<MultivectorOffset> {
             .create(false)
             .open(path)?;
         let offsets_mmap = unsafe { MmapMut::map_mut(&offsets_file) }?;
-        unsafe { Ok(MmapSlice::<MultivectorOffset>::try_from(offsets_mmap)?) }
+        let offsets = unsafe { MmapSlice::<MultivectorOffset>::try_from(offsets_mmap)? };
+        Ok(Self {
+            path: path.to_path_buf(),
+            offsets,
+        })
     }
 
-    fn save(&self, _path: &Path) -> OperationResult<()> {
-        // mmap is already saved
-        Ok(())
+    fn save(&self, path: &Path) -> OperationResult<()> {
+        if canonicalize(path)? != canonicalize(&self.path)? {
+            create_offsets_file_from_iter(path, self.offsets.len(), self.offsets.iter().copied())
+        } else {
+            // no need to flush, as the mmap is immutable
+            Ok(())
+        }
     }
 
     fn get_offset(&self, idx: PointOffsetType) -> MultivectorOffset {
-        self[idx as usize]
+        self.offsets[idx as usize]
     }
 }
 
