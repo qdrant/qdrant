@@ -46,38 +46,41 @@ impl Collection {
             )
             .await?;
 
-        // Stop any already active resharding task to allow starting a new one
-        let mut active_reshard_tasks = self.reshard_tasks.lock().await;
-        let task_result = active_reshard_tasks.stop_task(&reshard_key).await;
-        debug_assert!(task_result.is_none(), "Reshard task already exists");
-
         shard_holder.start_resharding_unchecked(reshard_key.clone(), replica_set)?;
 
-        let shard_holder = self.shards_holder.clone();
-        let collection_id = self.id.clone();
-        let channel_service = self.channel_service.clone();
-        let progress = Arc::new(Mutex::new(ReshardTaskProgress::new()));
-        let spawned_task = resharding::spawn_resharding_task(
-            shard_holder,
-            progress.clone(),
-            reshard_task.clone(),
-            consensus,
-            collection_id,
-            channel_service,
-            self.name(),
-            temp_dir,
-            on_finish,
-            on_error,
-        );
+        // If this peer is responsible for driving the resharding, start the task for it
+        if reshard_task.peer_id == self.this_peer_id {
+            // Stop any already active resharding task to allow starting a new one
+            let mut active_reshard_tasks = self.reshard_tasks.lock().await;
+            let task_result = active_reshard_tasks.stop_task(&reshard_key).await;
+            debug_assert!(task_result.is_none(), "Reshard task already exists");
 
-        active_reshard_tasks.add_task(
-            &reshard_task,
-            ReshardTaskItem {
-                task: spawned_task,
-                started_at: chrono::Utc::now(),
-                progress,
-            },
-        );
+            let shard_holder = self.shards_holder.clone();
+            let collection_id = self.id.clone();
+            let channel_service = self.channel_service.clone();
+            let progress = Arc::new(Mutex::new(ReshardTaskProgress::new()));
+            let spawned_task = resharding::spawn_resharding_task(
+                shard_holder,
+                progress.clone(),
+                reshard_task.clone(),
+                consensus,
+                collection_id,
+                channel_service,
+                self.name(),
+                temp_dir,
+                on_finish,
+                on_error,
+            );
+
+            active_reshard_tasks.add_task(
+                &reshard_task,
+                ReshardTaskItem {
+                    task: spawned_task,
+                    started_at: chrono::Utc::now(),
+                    progress,
+                },
+            );
+        }
 
         Ok(())
     }
