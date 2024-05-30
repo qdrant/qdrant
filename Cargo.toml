@@ -33,6 +33,7 @@ tracing-tracy = ["tracing", "dep:tracing-tracy"]
 tokio-tracing = ["tokio/tracing"]
 stacktrace = ["rstack-self"]
 chaos-testing = []
+data-consistency-check = ["collection/data-consistency-check"]
 
 [dev-dependencies]
 serde_urlencoded = "0.7"
