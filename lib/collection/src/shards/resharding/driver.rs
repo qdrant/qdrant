@@ -107,7 +107,7 @@ fn stage_replicate_replication_factor() -> CollectionResult<()> {
 
 /// Stage 4: commit new hashring
 ///
-/// Check whether the new hashring still needs to be commited.
+/// Check whether the new hashring still needs to be committed.
 fn check_commit_hashring() -> bool {
     todo!()
 }
