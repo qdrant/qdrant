@@ -269,10 +269,18 @@ impl TableOfContent {
 
     async fn handle_resharding(
         &self,
-        collection: CollectionId,
+        collection_id: CollectionId,
         operation: ReshardingOperation,
     ) -> Result<(), StorageError> {
-        let collection = self.get_collection_unchecked(&collection).await?;
+        let collection = self.get_collection_unchecked(&collection_id).await?;
+        let proposal_sender = if let Some(proposal_sender) = self.consensus_proposal_sender.clone()
+        {
+            proposal_sender
+        } else {
+            return Err(StorageError::service_error(
+                "Can't handle resharding, this is a single node deployment",
+            ));
+        };
 
         match operation {
             ReshardingOperation::Start(key) => {
@@ -292,37 +300,27 @@ impl TableOfContent {
                 };
 
                 let on_finish = {
-                    // TODO: let collection_id = collection_id.clone();
-                    // TODO: let transfer = transfer.clone();
-                    // TODO: let proposal_sender = proposal_sender.clone();
-                    // TODO: async move {
-                    // TODO:     let operation =
-                    // TODO:         ConsensusOperations::finish_transfer(collection_id, transfer);
-
-                    // TODO:     if let Err(error) = proposal_sender.send(operation) {
-                    // TODO:         log::error!("Can't report transfer progress to consensus: {}", error)
-                    // TODO:     };
-                    // TODO: }
-                    todo!();
-                    async {}
+                    let collection_id = collection_id.clone();
+                    let key = key.clone();
+                    let proposal_sender = proposal_sender.clone();
+                    async move {
+                        let operation = ConsensusOperations::finish_resharding(collection_id, key);
+                        if let Err(error) = proposal_sender.send(operation) {
+                            log::error!("Can't report resharding progress to consensus: {error}");
+                        };
+                    }
                 };
 
                 let on_failure = {
-                    // TODO: let collection_id = collection_id.clone();
-                    // TODO: let transfer = transfer.clone();
-                    // TODO: async move {
-                    // TODO:     if let Err(error) =
-                    // TODO:         proposal_sender.send(ConsensusOperations::abort_transfer(
-                    // TODO:             collection_id,
-                    // TODO:             transfer,
-                    // TODO:             "transmission failed",
-                    // TODO:         ))
-                    // TODO:     {
-                    // TODO:         log::error!("Can't report transfer progress to consensus: {}", error)
-                    // TODO:     };
-                    // TODO: }
-                    todo!();
-                    async {}
+                    let collection_id = collection_id.clone();
+                    let key = key.clone();
+                    async move {
+                        if let Err(error) = proposal_sender
+                            .send(ConsensusOperations::abort_resharding(collection_id, key))
+                        {
+                            log::error!("Can't report resharding progress to consensus: {error}");
+                        };
+                    }
                 };
 
                 let temp_dir = self.optional_temp_or_storage_temp_path()?;
@@ -398,7 +396,7 @@ impl TableOfContent {
                             ConsensusOperations::finish_transfer(collection_id, transfer);
 
                         if let Err(error) = proposal_sender.send(operation) {
-                            log::error!("Can't report transfer progress to consensus: {}", error)
+                            log::error!("Can't report transfer progress to consensus: {error}");
                         };
                     }
                 };
@@ -414,7 +412,7 @@ impl TableOfContent {
                                 "transmission failed",
                             ))
                         {
-                            log::error!("Can't report transfer progress to consensus: {}", error)
+                            log::error!("Can't report transfer progress to consensus: {error}");
                         };
                     }
                 };
