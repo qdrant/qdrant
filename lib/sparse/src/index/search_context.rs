@@ -379,6 +379,7 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
 
 #[cfg(test)]
 mod tests {
+    use std::borrow::Cow;
     use std::sync::OnceLock;
 
     use rand::Rng;
@@ -467,7 +468,8 @@ mod tests {
             .tempdir()
             .unwrap();
         let inverted_index_mmap =
-            InvertedIndexMmap::convert_and_save(&inverted_index_ram, &tmp_dir_path).unwrap();
+            InvertedIndexMmap::from_ram_index(Cow::Borrowed(&inverted_index_ram), &tmp_dir_path)
+                .unwrap();
         _search_test(&inverted_index_mmap);
     }
 
@@ -636,7 +638,8 @@ mod tests {
             .tempdir()
             .unwrap();
         let inverted_index_mmap =
-            InvertedIndexMmap::convert_and_save(&inverted_index_ram, &tmp_dir_path).unwrap();
+            InvertedIndexMmap::from_ram_index(Cow::Borrowed(&inverted_index_ram), &tmp_dir_path)
+                .unwrap();
         _search_with_hot_key_test(&inverted_index_mmap);
     }
 

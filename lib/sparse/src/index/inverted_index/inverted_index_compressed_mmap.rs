@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::io::{BufWriter, Write as _};
 use std::mem::size_of;
 use std::path::{Path, PathBuf};
@@ -85,7 +86,7 @@ impl InvertedIndex for InvertedIndexMmap {
     }
 
     fn from_ram_index<P: AsRef<Path>>(
-        ram_index: InvertedIndexRam,
+        ram_index: Cow<InvertedIndexRam>,
         path: P,
     ) -> std::io::Result<Self> {
         let index = InvertedIndexImmutableRam::from_ram_index(ram_index, &path)?;
@@ -271,8 +272,11 @@ mod tests {
         builder.add(9, [(1, 6.0)].into());
         let inverted_index_ram = builder.build();
         let tmp_dir_path = Builder::new().prefix("test_index_dir1").tempdir().unwrap();
-        let inverted_index_ram =
-            InvertedIndexImmutableRam::from_ram_index(inverted_index_ram, &tmp_dir_path).unwrap();
+        let inverted_index_ram = InvertedIndexImmutableRam::from_ram_index(
+            Cow::Borrowed(&inverted_index_ram),
+            &tmp_dir_path,
+        )
+        .unwrap();
 
         let tmp_dir_path = Builder::new().prefix("test_index_dir2").tempdir().unwrap();
 

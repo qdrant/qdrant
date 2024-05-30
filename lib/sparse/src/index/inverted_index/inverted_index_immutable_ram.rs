@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::path::Path;
 
 use common::types::PointOffsetType;
@@ -69,10 +70,12 @@ impl InvertedIndex for InvertedIndexImmutableRam {
     }
 
     fn from_ram_index<P: AsRef<Path>>(
-        ram_index: InvertedIndexRam,
+        ram_index: Cow<InvertedIndexRam>,
         _path: P,
     ) -> std::io::Result<Self> {
-        Ok(InvertedIndexImmutableRam { inner: ram_index })
+        Ok(InvertedIndexImmutableRam {
+            inner: ram_index.into_owned(),
+        })
     }
 
     fn vector_count(&self) -> usize {
@@ -100,9 +103,11 @@ mod tests {
         let inverted_index_ram = builder.build();
 
         let tmp_dir_path = Builder::new().prefix("test_index_dir").tempdir().unwrap();
-        let inverted_index_immutable_ram =
-            InvertedIndexImmutableRam::from_ram_index(inverted_index_ram, tmp_dir_path.path())
-                .unwrap();
+        let inverted_index_immutable_ram = InvertedIndexImmutableRam::from_ram_index(
+            Cow::Borrowed(&inverted_index_ram),
+            tmp_dir_path.path(),
+        )
+        .unwrap();
         inverted_index_immutable_ram
             .save(tmp_dir_path.path())
             .unwrap();

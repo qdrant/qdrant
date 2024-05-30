@@ -12,7 +12,7 @@ edition = "2021"
 multiling-chinese = ["charabia/chinese"]
 multiling-japanese = ["charabia/japanese"]
 multiling-korean = ["charabia/korean"]
-testing = ["common/testing"]
+testing = ["common/testing", "sparse/testing"]
 
 [build-dependencies]
 cc = "1.0"

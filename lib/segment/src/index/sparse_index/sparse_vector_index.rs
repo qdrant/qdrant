@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fs::{create_dir_all, remove_dir_all, rename};
 use std::path::{Path, PathBuf};
@@ -231,7 +232,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             tick_progress();
         }
         Ok((
-            TInvertedIndex::from_ram_index(ram_index_builder.build(), path)?,
+            TInvertedIndex::from_ram_index(Cow::Owned(ram_index_builder.build()), path)?,
             indices_tracker,
         ))
     }
