@@ -118,7 +118,7 @@ fn create_segment(
         )
         .all(|v| v);
 
-    let id_tracker = sp(IdTrackerEnum::SimpleIdTracker(SimpleIdTracker::open(
+    let id_tracker = sp(IdTrackerEnum::MutableIdTracker(SimpleIdTracker::open(
         database.clone(),
     )?));
 
