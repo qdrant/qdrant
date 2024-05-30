@@ -37,7 +37,7 @@ pub fn process_response_error(err: StorageError, timing: Instant) -> HttpRespons
         backtrace,
     } = &err
     {
-        log::warn!("error processing request: {}", description);
+        log::error!("error processing request: {}", description);
         if let Some(backtrace) = backtrace {
             log::trace!("backtrace: {}", backtrace);
         }
