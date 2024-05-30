@@ -1,5 +1,4 @@
 use std::cmp::{max, min, Ordering};
-use std::ops::ControlFlow;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 
@@ -140,19 +139,18 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
         self.pooled.scores.resize(batch_len as usize, 0.0);
 
         for posting in self.postings_iterators.iter_mut() {
-            posting.posting_list_iterator.try_for_each(|element| {
-                let element_id = element.record_id;
-                if element_id > batch_last_id {
-                    // reaching end of the batch
-                    ControlFlow::Break(())
-                } else {
-                    let element_score = element.weight * posting.query_weight;
-                    // update score for id
-                    let local_id = (element_id - batch_start_id) as usize;
-                    self.pooled.scores[local_id] += element_score;
-                    ControlFlow::Continue(())
-                }
-            });
+            posting.posting_list_iterator.for_each_till_id(
+                batch_last_id,
+                self.pooled.scores.as_mut_slice(),
+                #[inline(always)]
+                |scores, id, weight| {
+                    let element_score = weight * posting.query_weight;
+                    let local_id = (id - batch_start_id) as usize;
+                    // SAFETY: `id` is within `batch_start_id..=batch_last_id`
+                    // Thus, `local_id` is within `0..batch_len`.
+                    *unsafe { scores.get_unchecked_mut(local_id) } += element_score;
+                },
+            );
         }
 
         for (local_index, &score) in self.pooled.scores.iter().enumerate() {
@@ -176,18 +174,18 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
     fn process_last_posting_list<F: Fn(PointOffsetType) -> bool>(&mut self, filter_condition: &F) {
         debug_assert_eq!(self.postings_iterators.len(), 1);
         let posting = &mut self.postings_iterators[0];
-        posting.posting_list_iterator.try_for_each(|element| {
-            // do not score if filter condition is not satisfied
-            if !filter_condition(element.record_id) {
-                return ControlFlow::Continue(());
-            }
-            let score = element.weight * posting.query_weight;
-            self.top_results.push(ScoredPointOffset {
-                score,
-                idx: element.record_id,
-            });
-            ControlFlow::<()>::Continue(())
-        });
+        posting.posting_list_iterator.for_each_till_id(
+            PointOffsetType::MAX,
+            &mut (),
+            |_, id, weight| {
+                // do not score if filter condition is not satisfied
+                if !filter_condition(id) {
+                    return;
+                }
+                let score = weight * posting.query_weight;
+                self.top_results.push(ScoredPointOffset { score, idx: id });
+            },
+        );
     }
 
     /// Returns the next min record id from all posting list iterators
