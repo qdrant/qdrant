@@ -116,7 +116,7 @@ function test_version() {
 }
 
 # Build
-cargo build
+cargo build --features data-consistency-check
 
 # Test previous patch version
 test_version $PREV_PATCH_QDRANT_VERSION

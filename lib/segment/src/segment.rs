@@ -989,6 +989,83 @@ impl Segment {
         Ok(())
     }
 
+    /// Check data consistency of the segment
+    /// - internal id without external id
+    /// - external id without internal
+    /// - internal id without version
+    /// - internal id without vector
+    ///
+    /// Returns an error if any inconsistency is found
+    pub fn check_data_consistency(&self) -> OperationResult<()> {
+        let id_tracker = self.id_tracker.borrow();
+
+        // dangling internal ids
+        let mut has_dangling_internal_ids = false;
+        for internal_id in id_tracker.iter_ids() {
+            if id_tracker.external_id(internal_id).is_none() {
+                log::error!("Internal id {} without external id", internal_id);
+                has_dangling_internal_ids = true
+            }
+        }
+
+        // dangling external ids
+        let mut has_dangling_external_ids = false;
+        for external_id in id_tracker.iter_external() {
+            if id_tracker.internal_id(external_id).is_none() {
+                log::error!("External id {} without internal id", external_id);
+                has_dangling_external_ids = true;
+            }
+        }
+
+        // checking internal id without version
+        let mut has_internal_ids_without_version = false;
+        for internal_id in id_tracker.iter_ids() {
+            if id_tracker.internal_version(internal_id).is_none() {
+                log::error!("Internal id {} without version", internal_id);
+                has_internal_ids_without_version = true;
+            }
+        }
+
+        // check that non deleted points exist in vector storage
+        let mut has_internal_ids_without_vector = false;
+        for internal_id in id_tracker.iter_ids() {
+            for (vector_name, vector_data) in &self.vector_data {
+                let vector_storage = vector_data.vector_storage.borrow();
+                let is_vector_deleted_storage = vector_storage.is_deleted_vector(internal_id);
+                let is_vector_deleted_tracker = id_tracker.is_deleted_point(internal_id);
+                let vector_stored = vector_storage.get_vector_opt(internal_id);
+                if !is_vector_deleted_storage
+                    && !is_vector_deleted_tracker
+                    && vector_stored.is_none()
+                {
+                    let point_id = id_tracker.external_id(internal_id);
+                    let point_version = id_tracker.internal_version(internal_id);
+                    log::error!(
+                        "Vector storage '{}' is missing point {:?} point_offset: {} version: {:?}",
+                        vector_name,
+                        point_id,
+                        internal_id,
+                        point_version
+                    );
+                    has_internal_ids_without_vector = true;
+                }
+            }
+        }
+
+        let is_inconsistent = has_dangling_internal_ids
+            || has_dangling_external_ids
+            || has_internal_ids_without_version
+            || has_internal_ids_without_vector;
+
+        if is_inconsistent {
+            Err(OperationError::service_error(
+                "Inconsistent segment data detected",
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
     pub fn available_vector_count(&self, vector_name: &str) -> OperationResult<usize> {
         check_vector_name(vector_name, &self.segment_config)?;
         Ok(self.vector_data[vector_name]

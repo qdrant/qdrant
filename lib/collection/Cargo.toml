@@ -11,6 +11,7 @@ edition = "2021"
 [features]
 testing = []
 tracing = ["dep:tracing", "api/tracing", "segment/tracing"]
+data-consistency-check = []
 
 [dev-dependencies]
 criterion = "0.5"
