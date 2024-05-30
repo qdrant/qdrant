@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 use common::types::PointOffsetType;
@@ -50,7 +51,7 @@ pub trait InvertedIndex: Sized {
 
     /// Create inverted index from ram index
     fn from_ram_index<P: AsRef<Path>>(
-        ram_index: InvertedIndexRam,
+        ram_index: Cow<InvertedIndexRam>,
         path: P,
     ) -> std::io::Result<Self>;
 

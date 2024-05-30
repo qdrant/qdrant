@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::io;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
@@ -136,7 +137,8 @@ pub fn run_bench(
 
     run_bench2(
         c.benchmark_group(format!("search/ram_c/{name}")),
-        &InvertedIndexImmutableRam::from_ram_index(index.clone(), "nonexistent/path").unwrap(),
+        &InvertedIndexImmutableRam::from_ram_index(Cow::Borrowed(&index), "nonexistent/path")
+            .unwrap(),
         query_vectors,
         &hottest_query_vectors,
     );
@@ -147,7 +149,7 @@ pub fn run_bench(
         .unwrap();
     run_bench2(
         c.benchmark_group(format!("search/mmap/{name}")),
-        &InvertedIndexMmap::from_ram_index(index.clone(), tmp_dir_path.path()).unwrap(),
+        &InvertedIndexMmap::from_ram_index(Cow::Borrowed(&index), tmp_dir_path.path()).unwrap(),
         query_vectors,
         &hottest_query_vectors,
     );
@@ -158,7 +160,8 @@ pub fn run_bench(
         .unwrap();
     run_bench2(
         c.benchmark_group(format!("search/mmap_c/{name}")),
-        &InvertedIndexCompressedMmap::from_ram_index(index, tmp_dir_path.path()).unwrap(),
+        &InvertedIndexCompressedMmap::from_ram_index(Cow::Borrowed(&index), tmp_dir_path.path())
+            .unwrap(),
         query_vectors,
         &hottest_query_vectors,
     );
