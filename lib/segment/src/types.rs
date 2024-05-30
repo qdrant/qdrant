@@ -382,6 +382,10 @@ pub struct CollectionConfigDefaults {
     pub shard_number: u32,
 
     #[validate(range(min = 1))]
+    #[serde(default = "default_shard_number_per_node_const")]
+    pub shard_number_per_node: u32,
+
+    #[validate(range(min = 1))]
     #[serde(default = "default_replication_factor_const")]
     pub replication_factor: u32,
 
@@ -395,6 +399,10 @@ pub struct CollectionConfigDefaults {
 pub struct VectorsConfigDefaults {
     #[serde(default)]
     pub on_disk: Option<bool>,
+}
+
+pub const fn default_shard_number_per_node_const() -> u32 {
+    1
 }
 
 pub const fn default_shard_number_const() -> u32 {
