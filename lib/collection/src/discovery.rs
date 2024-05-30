@@ -27,7 +27,7 @@ fn discovery_into_core_search(
 ) -> CollectionResult<CoreSearchRequest> {
     let lookup_collection_name = request.lookup_from.as_ref().map(|x| &x.collection);
 
-    let lookup_vector_name = request.get_search_vector_name();
+    let lookup_vector_name = request.get_lookup_vector_name();
 
     // Check we actually fetched all referenced vectors in this request
     let referenced_ids = request.get_referenced_point_ids();

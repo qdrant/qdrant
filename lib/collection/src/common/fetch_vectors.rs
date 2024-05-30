@@ -15,6 +15,7 @@ use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
     CollectionError, CollectionResult, PointRequestInternal, RecommendExample, Record,
 };
+use crate::operations::universal_query::collection_query::VectorInput;
 
 pub async fn retrieve_points(
     collection: &Collection,
@@ -105,16 +106,31 @@ impl ReferencedVectors {
 
     pub fn get(
         &self,
-        collection_name: &Option<&CollectionName>,
+        lookup_collection_name: &Option<&CollectionName>,
         point_id: PointIdType,
     ) -> Option<&Record> {
-        match collection_name {
+        match lookup_collection_name {
             None => self.default_mapping.get(&point_id),
             Some(collection) => {
                 let collection_mapping = self.collection_mapping.get(*collection)?;
                 collection_mapping.get(&point_id)
             }
         }
+    }
+
+    pub fn convert_to_vectors_owned<'a>(
+        &'a self,
+        inputs: impl Iterator<Item = VectorInput> + 'a,
+        vector_name: &'a str,
+        collection_name: Option<&'a String>,
+    ) -> impl Iterator<Item = Vector> + 'a {
+        inputs.filter_map(move |example| match example {
+            VectorInput::Vector(vector) => Some(vector),
+            VectorInput::Id(vid) => {
+                let rec = self.get(&collection_name, vid).unwrap();
+                rec.get_vector_by_name(vector_name).map(|v| v.to_owned())
+            }
+        })
     }
 }
 
@@ -279,7 +295,7 @@ where
         |(request, _)| request.get_lookup_shard_key(),
         |(request, _), referenced_points| {
             let collection_name = request.get_lookup_collection();
-            let vector_name = request.get_search_vector_name();
+            let vector_name = request.get_lookup_vector_name();
             let point_ids_iter = request.get_referenced_point_ids();
             referenced_points.add_from_iter(
                 point_ids_iter.into_iter(),

@@ -125,7 +125,10 @@ impl<'a> CollectionAccessView<'a> {
         }
     }
 
-    fn check_vector_query(&self, vector_query: &VectorQuery) -> Result<(), StorageError> {
+    fn check_vector_query(
+        &self,
+        vector_query: &VectorQuery<VectorInput>,
+    ) -> Result<(), StorageError> {
         match vector_query {
             VectorQuery::Nearest(nearest) => self.check_vector_input(nearest)?,
             VectorQuery::RecommendBestScore(reco) | VectorQuery::RecommendAverageVector(reco) => {

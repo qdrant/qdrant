@@ -1,4 +1,5 @@
 use std::future::Future;
+use std::iter::Peekable;
 use std::time::Duration;
 
 use api::rest::RecommendStrategy;
@@ -29,7 +30,7 @@ use crate::operations::types::{
     RecommendRequestInternal, UsingVector,
 };
 
-fn avg_vectors<'a>(vectors: impl Iterator<Item = VectorRef<'a>>) -> CollectionResult<Vector> {
+fn avg_vectors<'a>(vectors: impl IntoIterator<Item = VectorRef<'a>>) -> CollectionResult<Vector> {
     let mut avg_dense = DenseVector::default();
     let mut avg_sparse = SparseVector::default();
     let mut dense_count = 0;
@@ -101,6 +102,22 @@ fn merge_positive_and_negative_avg(positive: Vector, negative: Vector) -> Collec
             "Positive and negative vectors should be of the same type, either all dense or all sparse".to_owned(),
         )),
     }
+}
+
+pub fn avg_vector_for_recommendation<'a>(
+    positive: impl IntoIterator<Item = VectorRef<'a>>,
+    mut negative: Peekable<impl Iterator<Item = VectorRef<'a>>>,
+) -> CollectionResult<Vector> {
+    let avg_positive = avg_vectors(positive)?;
+
+    let search_vector = if negative.peek().is_none() {
+        avg_positive
+    } else {
+        let avg_negative = avg_vectors(negative)?;
+        merge_positive_and_negative_avg(avg_positive, avg_negative)?
+    };
+
+    Ok(search_vector)
 }
 
 pub async fn recommend_by<'a, F, Fut>(
@@ -273,7 +290,7 @@ fn recommend_by_avg_vector(
     reference_vectors_ids: Vec<ExtendedPointId>,
     all_vectors_records_map: &ReferencedVectors,
 ) -> CollectionResult<CoreSearchRequest> {
-    let lookup_vector_name = request.get_search_vector_name();
+    let lookup_vector_name = request.get_lookup_vector_name();
 
     let RecommendRequestInternal {
         filter,
@@ -311,15 +328,8 @@ fn recommend_by_avg_vector(
         Some(UsingVector::Name(name)) => name,
     };
 
-    let avg_positive = avg_vectors(positive_vectors)?;
-    let negative = negative_vectors.collect_vec();
-
-    let search_vector = if negative.is_empty() {
-        avg_positive
-    } else {
-        let avg_negative = avg_vectors(negative.into_iter())?;
-        merge_positive_and_negative_avg(avg_positive, avg_negative)?
-    };
+    let search_vector =
+        avg_vector_for_recommendation(positive_vectors, negative_vectors.peekable())?;
 
     Ok(CoreSearchRequest {
         query: QueryEnum::Nearest(NamedVectorStruct::new_from_vector(
@@ -348,7 +358,7 @@ fn recommend_by_best_score(
     reference_vectors_ids: Vec<PointIdType>,
     all_vectors_records_map: &ReferencedVectors,
 ) -> CoreSearchRequest {
-    let lookup_vector_name = request.get_search_vector_name();
+    let lookup_vector_name = request.get_lookup_vector_name();
 
     let RecommendRequestInternal {
         positive,
