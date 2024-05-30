@@ -174,6 +174,8 @@ storage:
       # Whether vectors should be stored in memory or on disk.
       on_disk: null
 
+    # shard_number_per_node: 1
+
     # Default quantization configuration.
     # More info: https://qdrant.tech/documentation/guides/quantization
     quantization: null
