@@ -106,6 +106,7 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     Distance::Dot,
     128, // dim
     32, // ef
+    false,
     25., // min_acc out of 100
 )]
 #[case::discovery_binary_dot(
@@ -114,6 +115,7 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     Distance::Dot,
     128, // dim
     128, // ef
+    false,
     20., // min_acc out of 100
 )]
 #[case::recommend_binary_dot(
@@ -122,6 +124,7 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     Distance::Dot,
     128, // dim
     64, // ef
+    false,
     20., // min_acc out of 100
 )]
 #[case::nearest_binary_cosine(
@@ -130,6 +133,7 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     Distance::Cosine,
     128, // dim
     32, // ef
+    false,
     25., // min_acc out of 100
 )]
 #[case::discovery_binary_cosine(
@@ -138,6 +142,7 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     Distance::Cosine,
     128, // dim
     128, // ef
+    false,
     15., // min_acc out of 100
 )]
 #[case::recommend_binary_cosine(
@@ -146,6 +151,7 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     Distance::Cosine,
     128, // dim
     64, // ef
+    false,
     15., // min_acc out of 100
 )]
 #[case::nearest_scalar_dot(
@@ -154,6 +160,7 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     Distance::Dot,
     32, // dim
     32, // ef
+    false,
     80., // min_acc out of 100
 )]
 #[case::nearest_scalar_cosine(
@@ -162,6 +169,7 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     Distance::Cosine,
     32, // dim
     32, // ef
+    false,
     80., // min_acc out of 100
 )]
 #[case::nearest_pq_dot(
@@ -170,7 +178,17 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     Distance::Dot,
     16, // dim
     32, // ef
+    false,
     70., // min_acc out of 100
+)]
+#[case::nearest_scalar_cosine_on_disk(
+    QueryVariant::Nearest,
+    QuantizationVariant::Scalar,
+    Distance::Cosine,
+    32, // dim
+    32, // ef
+    true,
+    80., // min_acc out of 100
 )]
 fn test_multivector_quantization_hnsw(
     #[case] query_variant: QueryVariant,
@@ -178,6 +196,7 @@ fn test_multivector_quantization_hnsw(
     #[case] distance: Distance,
     #[case] dim: usize,
     #[case] ef: usize,
+    #[case] on_disk: bool,
     #[case] min_acc: f64, // out of 100
 ) {
     let stopped = AtomicBool::new(false);
@@ -194,13 +213,18 @@ fn test_multivector_quantization_hnsw(
     let quantized_data_path = dir.path();
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
 
+    let storage_type = if on_disk {
+        VectorStorageType::ChunkedMmap
+    } else {
+        VectorStorageType::Memory
+    };
     let config = SegmentConfig {
         vector_data: HashMap::from([(
             DEFAULT_VECTOR_NAME.to_owned(),
             VectorDataConfig {
                 size: dim,
                 distance,
-                storage_type: VectorStorageType::Memory,
+                storage_type,
                 index: Indexes::Plain {},
                 quantization_config: None,
                 multivec_config: Some(MultiVectorConfig::default()), // uses multivec config
@@ -240,15 +264,18 @@ fn test_multivector_quantization_hnsw(
         QuantizationVariant::Scalar => ScalarQuantizationConfig {
             r#type: Default::default(),
             quantile: None,
-            always_ram: None,
+            always_ram: Some(false),
         }
         .into(),
         QuantizationVariant::PQ => ProductQuantizationConfig {
             compression: CompressionRatio::X8,
-            always_ram: None,
+            always_ram: Some(false),
         }
         .into(),
-        QuantizationVariant::Binary => BinaryQuantizationConfig { always_ram: None }.into(),
+        QuantizationVariant::Binary => BinaryQuantizationConfig {
+            always_ram: Some(false),
+        }
+        .into(),
     };
 
     segment.vector_data.values_mut().for_each(|vector_storage| {
