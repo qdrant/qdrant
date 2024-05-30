@@ -16,7 +16,7 @@ use crate::common::operation_error::{check_process_stopped, OperationError, Oper
 use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
 use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
-use crate::id_tracker::IdTracker;
+use crate::id_tracker::{IdTracker, IdTrackerEnum};
 use crate::index::hnsw_index::graph_links::{GraphLinksMmap, GraphLinksRam};
 use crate::index::hnsw_index::hnsw::HNSWIndex;
 use crate::index::plain_payload_index::PlainIndex;
@@ -106,8 +106,6 @@ fn create_segment(
         PayloadStorageType::OnDisk => sp(OnDiskPayloadStorage::open(database.clone())?.into()),
     };
 
-    let id_tracker = sp(SimpleIdTracker::open(database.clone())?);
-
     let appendable_flag = config
         .vector_data
         .values()
@@ -119,6 +117,10 @@ fn create_segment(
                 .map(|sparse_vector_config| sparse_vector_config.index.index_type.is_appendable()),
         )
         .all(|v| v);
+
+    let id_tracker = sp(IdTrackerEnum::SimpleIdTracker(SimpleIdTracker::open(
+        database.clone(),
+    )?));
 
     let payload_index_path = segment_path.join(PAYLOAD_INDEX_PATH);
     let payload_index: Arc<AtomicRefCell<StructPayloadIndex>> = sp(StructPayloadIndex::open(
