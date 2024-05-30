@@ -57,7 +57,7 @@ impl ReshardState {
     }
 }
 
-/// Unique identifier of a resharding operation
+/// Unique identifier of a resharding task
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema)]
 pub struct ReshardKey {
     pub peer_id: PeerId,
@@ -71,6 +71,7 @@ impl fmt::Display for ReshardKey {
     }
 }
 
+/// A resharding task with additional information needed to fulfill the operation
 #[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ReshardTask {
     pub peer_id: PeerId,
