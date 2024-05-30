@@ -13,7 +13,7 @@ use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 
 use super::replica_set::AbortShardTransfer;
-use super::resharding::{ReshardingKey, ReshardingState};
+use super::resharding::{ReshardKey, ReshardState};
 use super::transfer::transfer_tasks_pool::TransferTasksPool;
 use crate::common::validate_snapshot_archive::validate_open_snapshot_archive;
 use crate::config::{CollectionConfig, ShardingMethod};
@@ -42,7 +42,7 @@ pub type ShardKeyMapping = HashMap<ShardKey, HashSet<ShardId>>;
 pub struct ShardHolder {
     shards: HashMap<ShardId, ShardReplicaSet>,
     pub(crate) shard_transfers: SaveOnDisk<HashSet<ShardTransfer>>,
-    pub(crate) resharding_state: SaveOnDisk<Option<ReshardingState>>,
+    pub(crate) resharding_state: SaveOnDisk<Option<ReshardState>>,
     pub(crate) rings: HashMap<Option<ShardKey>, HashRing>,
     key_mapping: SaveOnDisk<ShardKeyMapping>,
     // Duplicates the information from `key_mapping` for faster access
@@ -55,7 +55,7 @@ pub type LockedShardHolder = RwLock<ShardHolder>;
 impl ShardHolder {
     pub fn new(collection_path: &Path) -> CollectionResult<Self> {
         let shard_transfers = SaveOnDisk::load_or_init(collection_path.join(SHARD_TRANSFERS_FILE))?;
-        let resharding_state: SaveOnDisk<Option<ReshardingState>> =
+        let resharding_state: SaveOnDisk<Option<ReshardState>> =
             SaveOnDisk::load_or_init(collection_path.join(RESHARDING_STATE_FILE))?;
 
         let key_mapping: SaveOnDisk<ShardKeyMapping> =
@@ -113,9 +113,9 @@ impl ShardHolder {
 
     pub fn check_start_resharding(
         &mut self,
-        resharding_key: &ReshardingKey,
-    ) -> CollectionResult<()> {
-        let ReshardingKey {
+        resharding_key: &ReshardKey,
+    ) -> Result<(), CollectionError> {
+        let ReshardKey {
             shard_id,
             shard_key,
             ..
@@ -151,12 +151,13 @@ impl ShardHolder {
         Ok(())
     }
 
+    // TODO: do not leave broken intermediate state if this fails midway?
     pub fn start_resharding_unchecked(
         &mut self,
-        resharding_key: ReshardingKey,
+        resharding_key: ReshardKey,
         shard: ShardReplicaSet,
     ) -> CollectionResult<()> {
-        let ReshardingKey {
+        let ReshardKey {
             peer_id,
             shard_id,
             shard_key,
@@ -175,17 +176,14 @@ impl ShardHolder {
                 "resharding is already in progress:\n{state:#?}"
             );
 
-            *state = Some(ReshardingState::new(peer_id, shard_id, shard_key));
+            *state = Some(ReshardState::new(peer_id, shard_id, shard_key));
         })?;
 
         Ok(())
     }
 
-    pub async fn abort_resharding(
-        &mut self,
-        resharding_key: ReshardingKey,
-    ) -> CollectionResult<()> {
-        let ReshardingKey {
+    pub async fn abort_resharding(&mut self, resharding_key: ReshardKey) -> CollectionResult<()> {
+        let ReshardKey {
             peer_id,
             shard_id,
             ref shard_key,
@@ -1145,7 +1143,7 @@ fn get_ring<'a>(
 }
 
 fn assert_resharding_state_consistency(
-    state: &Option<ReshardingState>,
+    state: &Option<ReshardState>,
     ring: &HashRing,
     shard_key: &Option<ShardKey>,
 ) {

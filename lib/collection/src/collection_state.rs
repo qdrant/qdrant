@@ -6,7 +6,7 @@ use validator::Validate;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::config::CollectionConfig;
 use crate::shards::replica_set::ReplicaState;
-use crate::shards::resharding::ReshardingState;
+use crate::shards::resharding::ReshardState;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::ShardKeyMapping;
 use crate::shards::transfer::ShardTransfer;
@@ -21,7 +21,7 @@ pub struct State {
     #[validate]
     pub config: CollectionConfig,
     pub shards: HashMap<ShardId, ShardInfo>,
-    pub resharding: Option<ReshardingState>,
+    pub resharding: Option<ReshardState>,
     #[serde(default)]
     pub transfers: HashSet<ShardTransfer>,
     #[serde(default)]

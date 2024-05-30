@@ -274,14 +274,58 @@ impl TableOfContent {
 
     async fn handle_resharding(
         &self,
-        collection: CollectionId,
+        collection_id: CollectionId,
         operation: ReshardingOperation,
     ) -> Result<(), StorageError> {
-        let collection = self.get_collection_unchecked(&collection).await?;
+        let collection = self.get_collection_unchecked(&collection_id).await?;
+        let proposal_sender = if let Some(proposal_sender) = self.consensus_proposal_sender.clone()
+        {
+            proposal_sender
+        } else {
+            return Err(StorageError::service_error(
+                "Can't handle resharding, this is a single node deployment",
+            ));
+        };
 
         match operation {
             ReshardingOperation::Start(key) => {
-                collection.start_resharding(key).await?;
+                let consensus = match self.shard_transfer_dispatcher.lock().as_ref() {
+                    Some(consensus) => Box::new(consensus.clone()),
+                    None => {
+                        return Err(StorageError::service_error(
+                            "Can't handle transfer, this is a single node deployment",
+                        ))
+                    }
+                };
+
+                let on_finish = {
+                    let collection_id = collection_id.clone();
+                    let key = key.clone();
+                    let proposal_sender = proposal_sender.clone();
+                    async move {
+                        let operation = ConsensusOperations::finish_resharding(collection_id, key);
+                        if let Err(error) = proposal_sender.send(operation) {
+                            log::error!("Can't report resharding progress to consensus: {error}");
+                        };
+                    }
+                };
+
+                let on_failure = {
+                    let collection_id = collection_id.clone();
+                    let key = key.clone();
+                    async move {
+                        if let Err(error) = proposal_sender
+                            .send(ConsensusOperations::abort_resharding(collection_id, key))
+                        {
+                            log::error!("Can't report resharding progress to consensus: {error}");
+                        };
+                    }
+                };
+
+                let temp_dir = self.optional_temp_or_storage_temp_path()?;
+                collection
+                    .start_resharding(key, consensus, temp_dir, on_finish, on_failure)
+                    .await?;
             }
 
             ReshardingOperation::Abort(key) => {
@@ -351,7 +395,7 @@ impl TableOfContent {
                             ConsensusOperations::finish_transfer(collection_id, transfer);
 
                         if let Err(error) = proposal_sender.send(operation) {
-                            log::error!("Can't report transfer progress to consensus: {}", error)
+                            log::error!("Can't report transfer progress to consensus: {error}");
                         };
                     }
                 };
@@ -367,7 +411,7 @@ impl TableOfContent {
                                 "transmission failed",
                             ))
                         {
-                            log::error!("Can't report transfer progress to consensus: {}", error)
+                            log::error!("Can't report transfer progress to consensus: {error}");
                         };
                     }
                 };

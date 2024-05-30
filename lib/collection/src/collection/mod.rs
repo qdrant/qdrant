@@ -1,6 +1,7 @@
 mod collection_ops;
 pub mod payload_index_schema;
 mod point_ops;
+mod resharding;
 mod search;
 mod shard_transfer;
 mod sharding_keys;
@@ -33,7 +34,7 @@ use crate::shards::collection_shard_distribution::CollectionShardDistribution;
 use crate::shards::local_shard::clock_map::RecoveryPoint;
 use crate::shards::replica_set::ReplicaState::{Active, Dead, Initializing, Listener};
 use crate::shards::replica_set::{ChangePeerState, ReplicaState, ShardReplicaSet};
-use crate::shards::resharding::{ReshardingKey, ReshardingState};
+use crate::shards::resharding::tasks_pool::ReshardTasksPool;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::{shard_not_found_error, LockedShardHolder, ShardHolder};
 use crate::shards::transfer::helpers::check_transfer_conflicts_strict;
@@ -55,6 +56,7 @@ pub struct Collection {
     snapshots_path: PathBuf,
     channel_service: ChannelService,
     transfer_tasks: Mutex<TransferTasksPool>,
+    reshard_tasks: Mutex<ReshardTasksPool>,
     request_shard_transfer_cb: RequestShardTransfer,
     notify_peer_failure_cb: ChangePeerState,
     abort_shard_transfer_cb: replica_set::AbortShardTransfer,
@@ -145,6 +147,7 @@ impl Collection {
             snapshots_path: snapshots_path.to_owned(),
             channel_service,
             transfer_tasks: Mutex::new(TransferTasksPool::new(name.clone())),
+            reshard_tasks: Mutex::new(ReshardTasksPool::new(name)),
             request_shard_transfer_cb: request_shard_transfer.clone(),
             notify_peer_failure_cb: on_replica_failure.clone(),
             abort_shard_transfer_cb: abort_shard_transfer,
@@ -239,6 +242,7 @@ impl Collection {
             snapshots_path: snapshots_path.to_owned(),
             channel_service,
             transfer_tasks: Mutex::new(TransferTasksPool::new(collection_id.clone())),
+            reshard_tasks: Mutex::new(ReshardTasksPool::new(collection_id)),
             request_shard_transfer_cb: request_shard_transfer.clone(),
             notify_peer_failure_cb: on_replica_failure,
             abort_shard_transfer_cb: abort_shard_transfer,
@@ -652,41 +656,6 @@ impl Collection {
         }
 
         Ok(())
-    }
-
-    pub async fn resharding_state(&self) -> Option<ReshardingState> {
-        self.shards_holder
-            .read()
-            .await
-            .resharding_state
-            .read()
-            .clone()
-    }
-
-    pub async fn start_resharding(&self, reshard: ReshardingKey) -> CollectionResult<()> {
-        let mut shard_holder = self.shards_holder.write().await;
-
-        shard_holder.check_start_resharding(&reshard)?;
-
-        let replica_set = self
-            .create_replica_set(
-                reshard.shard_id,
-                &[reshard.peer_id],
-                Some(ReplicaState::Resharding),
-            )
-            .await?;
-
-        shard_holder.start_resharding_unchecked(reshard, replica_set)?;
-
-        Ok(())
-    }
-
-    pub async fn abort_resharding(&self, reshard: ReshardingKey) -> CollectionResult<()> {
-        self.shards_holder
-            .write()
-            .await
-            .abort_resharding(reshard)
-            .await
     }
 
     pub async fn get_telemetry_data(&self, detail: TelemetryDetail) -> CollectionTelemetry {
