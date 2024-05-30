@@ -6,7 +6,6 @@ use collection::config::ShardingMethod;
 use collection::events::{CollectionDeletedEvent, IndexCreatedEvent};
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::ReplicaState;
-use collection::shards::resharding::ReshardTask;
 use collection::shards::transfer::ShardTransfer;
 use collection::shards::{transfer, CollectionId};
 use uuid::Uuid;
@@ -284,12 +283,6 @@ impl TableOfContent {
 
         match operation {
             ReshardingOperation::Start(key) => {
-                let reshard_task = ReshardTask {
-                    peer_id: key.peer_id,
-                    shard_id: key.shard_id,
-                    shard_key: key.shard_key.clone(),
-                };
-
                 let consensus = match self.shard_transfer_dispatcher.lock().as_ref() {
                     Some(consensus) => Box::new(consensus.clone()),
                     None => {
@@ -325,7 +318,7 @@ impl TableOfContent {
 
                 let temp_dir = self.optional_temp_or_storage_temp_path()?;
                 collection
-                    .start_resharding(reshard_task, consensus, temp_dir, on_finish, on_failure)
+                    .start_resharding(key, consensus, temp_dir, on_finish, on_failure)
                     .await?;
             }
 

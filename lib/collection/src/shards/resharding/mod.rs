@@ -71,30 +71,12 @@ impl fmt::Display for ReshardKey {
     }
 }
 
-/// A resharding task with additional information needed to fulfill the operation
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct ReshardTask {
-    pub peer_id: PeerId,
-    pub shard_id: ShardId,
-    pub shard_key: Option<ShardKey>,
-}
-
-impl ReshardTask {
-    pub fn key(&self) -> ReshardKey {
-        ReshardKey {
-            peer_id: self.peer_id,
-            shard_id: self.shard_id,
-            shard_key: self.shard_key.clone(),
-        }
-    }
-}
-
 // TODO(resharding): move this into driver module?
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_resharding_task<T, F>(
     shards_holder: Arc<LockedShardHolder>,
     progress: Arc<Mutex<ReshardTaskProgress>>,
-    transfer: ReshardTask,
+    reshard_key: ReshardKey,
     consensus: Box<dyn ShardTransferConsensus>,
     collection_id: CollectionId,
     channel_service: ChannelService,
@@ -117,12 +99,12 @@ where
 
                     log::warn!(
                         "Retrying resharding {collection_id}:{} (retry {attempt})",
-                        transfer.shard_id,
+                        reshard_key.shard_id,
                     );
                 }
 
                 drive_resharding(
-                    transfer.clone(),
+                    reshard_key.clone(),
                     progress.clone(),
                     shards_holder.clone(),
                     consensus.as_ref(),
@@ -142,7 +124,7 @@ where
             if let Ok(Err(err)) = &result {
                 log::error!(
                     "Failed to reshard {collection_id}:{}: {err}",
-                    transfer.shard_id,
+                    reshard_key.shard_id,
                 );
             }
 

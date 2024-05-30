@@ -6,7 +6,7 @@ use parking_lot::Mutex;
 
 use crate::common::eta_calculator::EtaCalculator;
 use crate::common::stoppable_task_async::CancellableAsyncTaskHandle;
-use crate::shards::resharding::{ReshardKey, ReshardTask};
+use crate::shards::resharding::ReshardKey;
 use crate::shards::CollectionId;
 
 pub struct ReshardTasksPool {
@@ -117,7 +117,7 @@ impl ReshardTasksPool {
         })
     }
 
-    pub fn add_task(&mut self, reshard_task: &ReshardTask, item: ReshardTaskItem) {
-        self.tasks.insert(reshard_task.key(), item);
+    pub fn add_task(&mut self, reshard_key: ReshardKey, item: ReshardTaskItem) {
+        self.tasks.insert(reshard_key, item);
     }
 }

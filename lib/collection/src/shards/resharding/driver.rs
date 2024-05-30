@@ -4,7 +4,7 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 
 use super::tasks_pool::ReshardTaskProgress;
-use super::ReshardTask;
+use super::ReshardKey;
 use crate::operations::types::CollectionResult;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::shard_holder::LockedShardHolder;
@@ -23,7 +23,7 @@ use crate::shards::CollectionId;
 /// This function is cancel safe.
 #[allow(clippy::too_many_arguments)]
 pub async fn drive_resharding(
-    _transfer_config: ReshardTask,
+    _reshard_key: ReshardKey,
     _progress: Arc<Mutex<ReshardTaskProgress>>,
     _shard_holder: Arc<LockedShardHolder>,
     _consensus: &dyn ShardTransferConsensus,
