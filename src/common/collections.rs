@@ -14,7 +14,7 @@ use collection::operations::types::{
     AliasDescription, CollectionClusterInfo, CollectionInfo, CollectionsAliasesResponse,
 };
 use collection::shards::replica_set;
-use collection::shards::resharding::ReshardingKey;
+use collection::shards::resharding::ReshardKey;
 use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};
 use collection::shards::transfer::{ShardTransfer, ShardTransferKey, ShardTransferRestart};
 use itertools::Itertools;
@@ -567,7 +567,7 @@ pub async fn do_update_collection_cluster(
                 .submit_collection_meta_op(
                     CollectionMetaOperations::Resharding(
                         collection_name.clone(),
-                        ReshardingOperation::Start(ReshardingKey {
+                        ReshardingOperation::Start(ReshardKey {
                             peer_id,
                             shard_id,
                             shard_key,
@@ -589,7 +589,7 @@ pub async fn do_update_collection_cluster(
                 .submit_collection_meta_op(
                     CollectionMetaOperations::Resharding(
                         collection_name.clone(),
-                        ReshardingOperation::Abort(ReshardingKey {
+                        ReshardingOperation::Abort(ReshardKey {
                             peer_id: state.peer_id,
                             shard_id: state.shard_id,
                             shard_key: state.shard_key.clone(),

@@ -6,6 +6,7 @@ use collection::config::ShardingMethod;
 use collection::events::{CollectionDeletedEvent, IndexCreatedEvent};
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::ReplicaState;
+use collection::shards::resharding::ReshardTask;
 use collection::shards::transfer::ShardTransfer;
 use collection::shards::{transfer, CollectionId};
 use uuid::Uuid;
@@ -275,7 +276,59 @@ impl TableOfContent {
 
         match operation {
             ReshardingOperation::Start(key) => {
-                collection.start_resharding(key).await?;
+                let reshard_task = ReshardTask {
+                    peer_id: key.peer_id,
+                    shard_id: key.shard_id,
+                    shard_key: key.shard_key.clone(),
+                };
+
+                let consensus = match self.shard_transfer_dispatcher.lock().as_ref() {
+                    Some(consensus) => Box::new(consensus.clone()),
+                    None => {
+                        return Err(StorageError::service_error(
+                            "Can't handle transfer, this is a single node deployment",
+                        ))
+                    }
+                };
+
+                let on_finish = {
+                    // TODO: let collection_id = collection_id.clone();
+                    // TODO: let transfer = transfer.clone();
+                    // TODO: let proposal_sender = proposal_sender.clone();
+                    // TODO: async move {
+                    // TODO:     let operation =
+                    // TODO:         ConsensusOperations::finish_transfer(collection_id, transfer);
+
+                    // TODO:     if let Err(error) = proposal_sender.send(operation) {
+                    // TODO:         log::error!("Can't report transfer progress to consensus: {}", error)
+                    // TODO:     };
+                    // TODO: }
+                    todo!();
+                    async {}
+                };
+
+                let on_failure = {
+                    // TODO: let collection_id = collection_id.clone();
+                    // TODO: let transfer = transfer.clone();
+                    // TODO: async move {
+                    // TODO:     if let Err(error) =
+                    // TODO:         proposal_sender.send(ConsensusOperations::abort_transfer(
+                    // TODO:             collection_id,
+                    // TODO:             transfer,
+                    // TODO:             "transmission failed",
+                    // TODO:         ))
+                    // TODO:     {
+                    // TODO:         log::error!("Can't report transfer progress to consensus: {}", error)
+                    // TODO:     };
+                    // TODO: }
+                    todo!();
+                    async {}
+                };
+
+                let temp_dir = self.optional_temp_or_storage_temp_path()?;
+                collection
+                    .start_resharding(reshard_task, consensus, temp_dir, on_finish, on_failure)
+                    .await?;
             }
 
             ReshardingOperation::Abort(key) => {
