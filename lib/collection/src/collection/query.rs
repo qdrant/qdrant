@@ -6,7 +6,7 @@ use segment::types::Order;
 use segment::utils::scored_point_ties::ScoredPointTies;
 
 use super::Collection;
-use crate::common::transpose_iterator::transpose;
+use crate::common::transpose_iterator::{transpose, transposed_iter};
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::CollectionResult;
@@ -90,11 +90,10 @@ impl Collection {
         // = [merged_result1, merged_result2]
 
         // Shape: [num_internal_queries, num_shards, num_scored_points]
-        let all_shards_result_by_transposed = transpose(all_shards_results);
+        let all_shards_result_by_transposed = transposed_iter(all_shards_results);
 
-        for (query_info, shards_results) in query_infos
-            .into_iter()
-            .zip(all_shards_result_by_transposed.into_iter())
+        for (query_info, shards_results) in
+            query_infos.into_iter().zip(all_shards_result_by_transposed)
         {
             // `shards_results` shape: [num_shards, num_scored_points]
             let order = ScoringQuery::order(query_info.scoring_query, &collection_params)?;
