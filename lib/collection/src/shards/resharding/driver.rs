@@ -16,6 +16,8 @@ use crate::shards::CollectionId;
 /// Returns `true` if we should finalize resharding. Returns `false` if we should silently
 /// drop it, because it is being restarted.
 ///
+/// Sequence based on: <https://www.notion.so/qdrant/7b3c60d7843c4c7a945848f81dbdc1a1>
+///
 /// # Cancel safety
 ///
 /// This function is cancel safe.
