@@ -335,6 +335,7 @@ impl LocalShard {
         )
         .await;
 
+        // Apply outstanding operations from WAL
         local_shard.load_from_wal(collection_id).await?;
 
         let available_memory_bytes = Mem::new().available_memory_bytes() as usize;
@@ -617,6 +618,39 @@ impl LocalShard {
             );
         }
 
+        // The storage is expected to be consistent after WAL recovery
+        #[cfg(feature = "data-consistency-check")]
+        self.check_data_consistency()?;
+
+        Ok(())
+    }
+
+    /// Check data consistency for all segments
+    ///
+    /// Returns an error at the first inconsistent segment
+    pub fn check_data_consistency(&self) -> CollectionResult<()> {
+        log::info!("Checking data consistency for shard {:?}", self.path);
+        let segments = self.segments.read();
+        for (_idx, segment) in segments.iter() {
+            match segment {
+                LockedSegment::Original(raw_segment) => {
+                    let segment_guard = raw_segment.read();
+                    if let Err(err) = segment_guard.check_data_consistency() {
+                        log::error!(
+                            "Segment {:?} is inconsistent: {}",
+                            segment_guard.current_path,
+                            err
+                        );
+                        return Err(err.into());
+                    }
+                }
+                LockedSegment::Proxy(_) => {
+                    return Err(CollectionError::service_error(
+                        "Proxy segment found in check_data_consistency",
+                    ));
+                }
+            }
+        }
         Ok(())
     }
 
