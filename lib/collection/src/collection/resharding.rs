@@ -46,22 +46,17 @@ impl Collection {
             )
             .await?;
 
-        shard_holder.start_resharding_unchecked(reshard_key.clone(), replica_set)?;
-
-        // TODO: ----------------------------------------------------------------------------------
-        // TODO(resharding): start and drive functions seem similar, can we merge them?
-        // TODO(resharding): clearly distinguish between resharding state and active task
-
+        // Stop any already active resharding task to allow starting a new one
         let mut active_reshard_tasks = self.reshard_tasks.lock().await;
         let task_result = active_reshard_tasks.stop_task(&reshard_key).await;
         debug_assert!(task_result.is_none(), "Reshard task already exists");
 
+        shard_holder.start_resharding_unchecked(reshard_key.clone(), replica_set)?;
+
         let shard_holder = self.shards_holder.clone();
         let collection_id = self.id.clone();
         let channel_service = self.channel_service.clone();
-
         let progress = Arc::new(Mutex::new(ReshardTaskProgress::new()));
-
         let spawned_task = resharding::spawn_resharding_task(
             shard_holder,
             progress.clone(),
