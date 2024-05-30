@@ -1,4 +1,3 @@
-use std::mem;
 use std::sync::Arc;
 
 use futures::{future, TryFutureExt};
@@ -7,6 +6,7 @@ use segment::types::Order;
 use segment::utils::scored_point_ties::ScoredPointTies;
 
 use super::Collection;
+use crate::common::transpose_iterator::transpose;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::CollectionResult;
@@ -65,41 +65,66 @@ impl Collection {
     ) -> CollectionResult<ShardQueryResponse> {
         let request = Arc::new(request);
 
-        let mut all_shards_results = self
+        // Results from all shards
+        // Shape: [num_shards, num_internal_queries, num_scored_points]
+        let all_shards_results = self
             .query_shards_concurrently(Arc::clone(&request), read_consistency, shard_selection)
             .await?;
 
-        let queries_for_results = intermediate_query_infos(&request);
-        let results_len = queries_for_results.len();
+        let query_infos = intermediate_query_infos(&request);
+        let results_len = query_infos.len();
         let mut results = ShardQueryResponse::with_capacity(results_len);
         debug_assert!(all_shards_results
             .iter()
             .all(|shard_results| shard_results.len() == results_len));
 
+        let collection_params = self.collection_config.read().await.params.clone();
+
         // Time to merge the results in each shard for each intermediate query.
+        // In order to do this, we need to iterate over columns of the all_shards_results matrix.
+        //
         // [ [shard1_result1, shard1_result2],
         //          ↓               ↓
         //   [shard2_result1, shard2_result2] ]
         //
         // = [merged_result1, merged_result2]
-        let collection_params = self.collection_config.read().await.params.clone();
-        for (idx, intermediate_info) in queries_for_results.into_iter().enumerate() {
-            let same_result_per_shard = all_shards_results
-                .iter_mut()
-                .map(|intermediates| mem::take(&mut intermediates[idx]));
 
-            let order = ScoringQuery::order(intermediate_info.scoring_query, &collection_params)?;
+        // Shape: [num_internal_queries, num_shards, num_scored_points]
+        let all_shards_result_by_transposed = transpose(all_shards_results);
 
+        for (query_info, shards_results) in query_infos
+            .into_iter()
+            .zip(all_shards_result_by_transposed.into_iter())
+        {
+            // `shards_results` shape: [num_shards, num_scored_points]
+            let order = ScoringQuery::order(query_info.scoring_query, &collection_params)?;
+
+            // Equivalent to:
+            //
+            // shards_results
+            //     .into_iter()
+            //     .kmerge_by(match order {
+            //         Order::LargeBetter => |a, b| ScoredPointTies(a) > ScoredPointTies(b),
+            //         Order::SmallBetter => |a, b| ScoredPointTies(a) < ScoredPointTies(b),
+            //     })
+            //
+            // if the `kmerge_by` function were able to work with reference predicates.
+            // Either::Left and Either::Right are used to allow type inference to work.
+            //
             let intermediate_result = match order {
                 Order::LargeBetter => Either::Left(
-                    same_result_per_shard.kmerge_by(|a, b| ScoredPointTies(a) > ScoredPointTies(b)),
+                    shards_results
+                        .into_iter()
+                        .kmerge_by(|a, b| ScoredPointTies(a) > ScoredPointTies(b)),
                 ),
                 Order::SmallBetter => Either::Right(
-                    same_result_per_shard.kmerge_by(|a, b| ScoredPointTies(a) < ScoredPointTies(b)),
+                    shards_results
+                        .into_iter()
+                        .kmerge_by(|a, b| ScoredPointTies(a) < ScoredPointTies(b)),
                 ),
             }
             .dedup()
-            .take(intermediate_info.take)
+            .take(query_info.take)
             .collect();
 
             results.push(intermediate_result);
