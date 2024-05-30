@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::fs::{create_dir_all, remove_dir_all, rename};
+use std::fs::{create_dir_all, remove_dir_all};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -10,12 +10,11 @@ use common::cpu::CpuPermit;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use io::storage_version::{StorageVersion as _, VERSION_FILE};
 use itertools::Itertools;
-use semver::Version;
 use sparse::common::scores_memory_pool::ScoresMemoryPool;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::types::DimId;
 use sparse::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
-use sparse::index::inverted_index::{InvertedIndex, INDEX_FILE_NAME, OLD_INDEX_FILE_NAME};
+use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::migrate::SparseVectorIndexVersion;
 use sparse::index::search_context::SearchContext;
 
@@ -161,18 +160,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     fn try_load(
         path: &Path,
     ) -> OperationResult<(SparseIndexConfig, TInvertedIndex, IndicesTracker)> {
-        let mut stored_version = SparseVectorIndexVersion::load(path)?;
-
-        // Simple migration mechanism for 0.1.0.
-        // TODO: Drop this code on the next version bump.
-        let old_path = path.join(OLD_INDEX_FILE_NAME);
-        assert_eq!(SparseVectorIndexVersion::current(), Version::new(0, 1, 0));
-        if stored_version.is_none() && old_path.exists() {
-            rename(old_path, path.join(INDEX_FILE_NAME))?;
-            SparseVectorIndexVersion::save(path)?;
-            stored_version = Some(SparseVectorIndexVersion::current());
-        }
-
+        let stored_version = SparseVectorIndexVersion::load(path)?;
         if stored_version != Some(SparseVectorIndexVersion::current()) {
             return Err(OperationError::service_error(format!(
                 "Index version mismatch, expected {}, found {}",
