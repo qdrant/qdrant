@@ -6,7 +6,7 @@ use segment::types::Order;
 use segment::utils::scored_point_ties::ScoredPointTies;
 
 use super::Collection;
-use crate::common::transpose_iterator::{transpose, transposed_iter};
+use crate::common::transpose_iterator::transposed_iter;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::CollectionResult;
