@@ -47,9 +47,18 @@ pub async fn drive_resharding(
         stage_replicate_replication_factor()?;
     }
 
-    // ...
+    // Stage 4: commit new hashring
+    if !check_commit_hashring() {
+        stage_commit_hashring()?;
+    }
 
-    todo!("implement driver steps here");
+    // Stage 5: propagate deletes
+    if !check_propagate_deletes() {
+        stage_propagate_deletes()?;
+    }
+
+    // Stage 6: finalize
+    stage_finalize()?;
 
     Ok(true)
 }
@@ -93,5 +102,40 @@ fn check_replicate_replication_factor() -> bool {
 ///
 /// Do replicate replicate to match replication factor.
 fn stage_replicate_replication_factor() -> CollectionResult<()> {
+    todo!()
+}
+
+/// Stage 4: commit new hashring
+///
+/// Check whether the new hashring still needs to be commited.
+fn check_commit_hashring() -> bool {
+    todo!()
+}
+
+/// Stage 4: commit new hashring
+///
+/// Do commit the new hashring.
+fn stage_commit_hashring() -> CollectionResult<()> {
+    todo!()
+}
+
+/// Stage 5: propagate deletes
+///
+/// Check whether migrated points still need to be deleted in their old shards.
+fn check_propagate_deletes() -> bool {
+    todo!()
+}
+
+/// Stage 5: commit new hashring
+///
+/// Do delete migrated points from their old shards.
+fn stage_propagate_deletes() -> CollectionResult<()> {
+    todo!()
+}
+
+/// Stage 6: finalize
+///
+/// Finalize the resharding operation.
+fn stage_finalize() -> CollectionResult<()> {
     todo!()
 }
