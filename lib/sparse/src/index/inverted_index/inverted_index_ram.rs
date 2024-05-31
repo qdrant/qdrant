@@ -125,9 +125,9 @@ impl InvertedIndexRam {
                 }
             }
         }
-        // given that there are no holes in the internal ids and that we are not deleting from the index
-        // we can just use the id as a proxy the count
-        self.vector_count = max(self.vector_count, id as usize + 1);
+        if old_vector.is_none() {
+            self.vector_count += 1;
+        }
     }
 }
 
