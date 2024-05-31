@@ -272,8 +272,8 @@ fn _test_filterable_hnsw(
         Range {
             lt: None,
             gt: None,
-            gte: Some(200 as f64),
-            lte: Some(201 as f64),
+            gte: Some(200_f64),
+            lte: Some(201_f64),
         },
     )));
 
