@@ -46,6 +46,7 @@ fn test_alias_operation() {
             flush_interval_sec: 2,
             max_optimization_threads: Some(2),
         },
+        optimizers_overwrite: None,
         wal: Default::default(),
         performance: PerformanceConfig {
             max_search_threads: 1,

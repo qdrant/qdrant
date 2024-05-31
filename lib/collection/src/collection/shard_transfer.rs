@@ -92,6 +92,8 @@ impl Collection {
             //
             // This should disable queries to receiver replica even if it was active before.
             if !is_local && is_receiver {
+                let effective_optimizers_config = self.effective_optimizers_config().await?;
+
                 let shard = LocalShard::build(
                     shard_id,
                     self.name(),
@@ -100,6 +102,7 @@ impl Collection {
                     self.shared_storage_config.clone(),
                     self.update_runtime.clone(),
                     self.optimizer_cpu_budget.clone(),
+                    effective_optimizers_config,
                 )
                 .await?;
 

@@ -53,7 +53,7 @@ use crate::operations::types::{
     CollectionResult, CollectionStatus, OptimizersStatus,
 };
 use crate::operations::OperationWithClockTag;
-use crate::optimizers_builder::{build_optimizers, clear_temp_segments};
+use crate::optimizers_builder::{build_optimizers, clear_temp_segments, OptimizersConfig};
 use crate::shards::shard::ShardId;
 use crate::shards::shard_config::{ShardConfig, SHARD_CONFIG_FILE};
 use crate::shards::telemetry::{LocalShardTelemetry, OptimizerTelemetry};
@@ -199,11 +199,13 @@ impl LocalShard {
     }
 
     /// Recovers shard from disk.
+    #[allow(clippy::too_many_arguments)]
     pub async fn load(
         id: ShardId,
         collection_id: CollectionId,
         shard_path: &Path,
         collection_config: Arc<TokioRwLock<CollectionConfig>>,
+        effective_optimizers_config: OptimizersConfig,
         shared_storage_config: Arc<SharedStorageConfig>,
         update_runtime: Handle,
         optimizer_cpu_budget: CpuBudget,
@@ -301,7 +303,7 @@ impl LocalShard {
         let optimizers = build_optimizers(
             shard_path,
             &collection_config_read.params,
-            &collection_config_read.optimizer_config,
+            &effective_optimizers_config,
             &collection_config_read.hnsw_config,
             &collection_config_read.quantization_config,
         );
@@ -374,6 +376,7 @@ impl LocalShard {
         shard_path.join("segments")
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn build_local(
         id: ShardId,
         collection_id: CollectionId,
@@ -382,6 +385,7 @@ impl LocalShard {
         shared_storage_config: Arc<SharedStorageConfig>,
         update_runtime: Handle,
         optimizer_cpu_budget: CpuBudget,
+        effective_optimizers_config: OptimizersConfig,
     ) -> CollectionResult<LocalShard> {
         // initialize local shard config file
         let local_shard_config = ShardConfig::new_replica_set();
@@ -393,6 +397,7 @@ impl LocalShard {
             shared_storage_config,
             update_runtime,
             optimizer_cpu_budget,
+            effective_optimizers_config,
         )
         .await?;
         local_shard_config.save(shard_path)?;
@@ -400,6 +405,7 @@ impl LocalShard {
     }
 
     /// Creates new empty shard with given configuration, initializing all storages, optimizers and directories.
+    #[allow(clippy::too_many_arguments)]
     pub async fn build(
         id: ShardId,
         collection_id: CollectionId,
@@ -408,6 +414,7 @@ impl LocalShard {
         shared_storage_config: Arc<SharedStorageConfig>,
         update_runtime: Handle,
         optimizer_cpu_budget: CpuBudget,
+        effective_optimizers_config: OptimizersConfig,
     ) -> CollectionResult<LocalShard> {
         let config = collection_config.read().await;
 
@@ -476,7 +483,7 @@ impl LocalShard {
         let optimizers = build_optimizers(
             shard_path,
             &config.params,
-            &config.optimizer_config,
+            &effective_optimizers_config,
             &config.hnsw_config,
             &config.quantization_config,
         );

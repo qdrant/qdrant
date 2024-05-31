@@ -83,6 +83,7 @@ async fn fixture() -> Collection {
         None,
         None,
         CpuBudget::default(),
+        None,
     )
     .await
     .unwrap();
