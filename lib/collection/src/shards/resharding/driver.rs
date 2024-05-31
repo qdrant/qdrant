@@ -1,17 +1,19 @@
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use parking_lot::Mutex;
+use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 
 use super::tasks_pool::ReshardTaskProgress;
 use super::ReshardKey;
-use crate::operations::types::CollectionResult;
+use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::channel_service::ChannelService;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::LockedShardHolder;
-use crate::shards::transfer::ShardTransferConsensus;
+use crate::shards::transfer::{ShardTransfer, ShardTransferConsensus, ShardTransferMethod};
 use crate::shards::CollectionId;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -98,9 +100,10 @@ enum Stage {
 pub async fn drive_resharding(
     reshard_key: ReshardKey,
     _progress: Arc<Mutex<ReshardTaskProgress>>,
-    _shard_holder: Arc<LockedShardHolder>,
-    _consensus: &dyn ShardTransferConsensus,
-    _collection_id: CollectionId,
+    shard_holder: Arc<LockedShardHolder>,
+    // TODO: we might want to separate this type into shard transfer and resharding
+    consensus: &dyn ShardTransferConsensus,
+    collection_id: CollectionId,
     _channel_service: ChannelService,
     _temp_dir: &Path,
 ) -> CollectionResult<bool> {
@@ -112,22 +115,22 @@ pub async fn drive_resharding(
     }
 
     // Stage 2: init
-    if !check_migrate_points() {
-        stage_migrate_points()?;
+    if !completed_migrate_points(&state) {
+        stage_migrate_points(&mut state, shard_holder.clone(), consensus, &collection_id).await?;
     }
 
     // Stage 3: replicate to match replication factor
-    if !check_replicate_replication_factor() {
-        stage_replicate_replication_factor()?;
+    if !completed_replicate() {
+        stage_replicate()?;
     }
 
     // Stage 4: commit new hashring
-    if !check_commit_hashring() {
+    if !completed_commit_hashring() {
         stage_commit_hashring()?;
     }
 
     // Stage 5: propagate deletes
-    if !check_propagate_deletes() {
+    if !completed_propagate_deletes() {
         stage_propagate_deletes()?;
     }
 
@@ -155,35 +158,111 @@ fn stage_init(state: &mut DriverState) -> CollectionResult<()> {
 /// Stage 2: migrate points
 ///
 /// Check whether we need to migrate points into the new shard.
-fn check_migrate_points() -> bool {
-    todo!()
+fn completed_migrate_points(state: &DriverState) -> bool {
+    state.all_peers_reached(Stage::S2_MigratePointsEnd) && state.shard_ids_to_migrate().is_empty()
 }
 
 /// Stage 2: migrate points
 ///
 /// Do migrate points into the new shard.
-fn stage_migrate_points() -> CollectionResult<()> {
-    todo!()
+async fn stage_migrate_points(
+    state: &mut DriverState,
+    shard_holder: Arc<LockedShardHolder>,
+    consensus: &dyn ShardTransferConsensus,
+    collection_id: &CollectionId,
+) -> CollectionResult<()> {
+    state.bump_all_peers_to(Stage::S2_MigratePointsStart);
+
+    while let Some(source_shard_id) = state.shard_ids_to_migrate().pop() {
+        let mut transfer = shard_holder
+            .read()
+            .await
+            .get_transfers(|transfer| {
+                transfer.method == Some(ShardTransferMethod::ReshardingStreamRecords)
+                    && transfer.shard_id == source_shard_id
+                    && transfer.to_shard_id == Some(state.key.shard_id)
+            })
+            .pop();
+
+        // If there is no transfer yet, start one now
+        if transfer.is_none() {
+            // TODO: also support local transfers (without consensus?)
+            // TODO: do not just pick random source, consider transfer limits
+            let active_remote_shards = {
+                let shard_holder = shard_holder.read().await;
+
+                let replica_set = shard_holder.get_shard(&source_shard_id).ok_or_else(|| {
+                    CollectionError::service_error(format!(
+                        "Shard {source_shard_id} not found in the shard holder for resharding",
+                    ))
+                })?;
+
+                replica_set.active_remote_shards().await
+            };
+            let source_peer_id = active_remote_shards
+                .choose(&mut rand::thread_rng())
+                .cloned()
+                .ok_or_else(|| {
+                    CollectionError::service_error(format!(
+                        "No remote peer with shard {source_shard_id} in active state for resharding",
+                    ))
+                })?;
+
+            let transfer_config = ShardTransfer {
+                shard_id: source_shard_id,
+                from: source_peer_id,
+                to: consensus.this_peer_id()?,
+                sync: true,
+                method: Some(ShardTransferMethod::ReshardingStreamRecords),
+                to_shard_id: Some(state.key.shard_id),
+            };
+            consensus
+                .start_shard_transfer_confirm_and_retry(&transfer_config, collection_id)
+                .await?;
+            transfer.replace(transfer_config);
+        }
+
+        // Wait for shard transfer to finish
+        // TODO: we must not fall through this before it even started
+        // TODO: don't wait for transfer to be gone, listen to finish/abort message instead!
+        let transfer_key = transfer.as_ref().unwrap().key();
+        loop {
+            let transfer_ongoing = shard_holder
+                .read()
+                .await
+                .check_transfer_exists(&transfer_key);
+            if !transfer_ongoing {
+                break;
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+
+        state.migrated_shard_ids.push(source_shard_id);
+    }
+
+    state.bump_all_peers_to(Stage::S2_MigratePointsEnd);
+
+    Ok(())
 }
 
 /// Stage 3: replicate to match replication factor
 ///
 /// Check whether we need to replicate to match replication factor.
-fn check_replicate_replication_factor() -> bool {
+fn completed_replicate() -> bool {
     todo!()
 }
 
 /// Stage 3: replicate to match replication factor
 ///
 /// Do replicate replicate to match replication factor.
-fn stage_replicate_replication_factor() -> CollectionResult<()> {
+fn stage_replicate() -> CollectionResult<()> {
     todo!()
 }
 
 /// Stage 4: commit new hashring
 ///
 /// Check whether the new hashring still needs to be committed.
-fn check_commit_hashring() -> bool {
+fn completed_commit_hashring() -> bool {
     todo!()
 }
 
@@ -197,7 +276,7 @@ fn stage_commit_hashring() -> CollectionResult<()> {
 /// Stage 5: propagate deletes
 ///
 /// Check whether migrated points still need to be deleted in their old shards.
-fn check_propagate_deletes() -> bool {
+fn completed_propagate_deletes() -> bool {
     todo!()
 }
 
