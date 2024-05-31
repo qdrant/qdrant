@@ -47,7 +47,7 @@ serde-value = "0.7"
 serde-untagged = "0.1.6"
 ordered-float = "4.2"
 thiserror = "1.0"
-atomic_refcell = "0.1.13"
+atomic_refcell = { workspace = true }
 atomicwrites = "0.4.3"
 memmap2 = "0.9.4"
 schemars = { workspace = true }
@@ -58,7 +58,7 @@ num-traits = "0.2.19"
 num-derive = "0.4.2"
 num-cmp = "0.1.0"
 rand = "0.8"
-bitvec = "1.0.1"
+bitvec = { version = "1.0.1", features = ["serde"] }
 seahash = "4.1.0"
 semver = { workspace = true }
 tar = { workspace = true }

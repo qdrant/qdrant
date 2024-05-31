@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use bitvec::prelude::BitSlice;
 use common::types::PointOffsetType;
 use rand::rngs::StdRng;
@@ -5,6 +7,7 @@ use rand::{Rng, SeedableRng};
 
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
+use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
 use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 use crate::types::{PointIdType, SeqNumberType};
 
@@ -112,6 +115,10 @@ pub trait IdTracker {
     /// Check whether the given point is soft deleted
     fn is_deleted_point(&self, internal_id: PointOffsetType) -> bool;
 
+    fn make_immutable(&self, save_path: &Path) -> OperationResult<IdTrackerEnum>;
+
+    fn name(&self) -> &'static str;
+
     /// Iterator over `n` random IDs which are not deleted
     ///
     /// A [`BitSlice`] of deleted vectors may optionally be given to also consider deleted named
@@ -148,7 +155,7 @@ pub type IdTrackerSS = dyn IdTracker + Sync + Send;
 
 pub enum IdTrackerEnum {
     MutableIdTracker(SimpleIdTracker),
-    ImmutableIdTracker(SimpleIdTracker),
+    ImmutableIdTracker(ImmutableIdTracker),
 }
 
 impl IdTracker for IdTrackerEnum {
@@ -284,6 +291,22 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => {
                 id_tracker.is_deleted_point(internal_id)
             }
+        }
+    }
+
+    fn make_immutable(&self, save_path: &Path) -> OperationResult<IdTrackerEnum> {
+        match self {
+            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.make_immutable(save_path),
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => {
+                Ok(id_tracker.make_immutable(save_path)?)
+            }
+        }
+    }
+
+    fn name(&self) -> &'static str {
+        match self {
+            IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.name(),
+            IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.name(),
         }
     }
 

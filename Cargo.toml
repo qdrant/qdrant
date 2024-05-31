@@ -149,6 +149,7 @@ tracing = { version = "0.1", features = ["async-await"] }
 uuid = { version = "1.8", features = ["v4", "serde"] }
 validator = { version = "0.16.1", features = ["derive"] }
 wal = { git = "https://github.com/qdrant/wal.git", rev = "a7870900f29811a24e20882887d60e6a2febf945" }
+atomic_refcell = "0.1.13"
 
 [[bin]]
 name = "schema_generator"

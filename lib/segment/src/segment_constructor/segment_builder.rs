@@ -9,7 +9,7 @@ use common::cpu::CpuPermit;
 use io::storage_version::StorageVersion;
 
 use super::{
-    create_id_tracker, create_payload_storage, create_sparse_vector_index,
+    create_mutable_id_tracker, create_payload_storage, create_sparse_vector_index,
     create_sparse_vector_storage, create_vector_index, get_payload_index_path,
     get_vector_index_path, get_vector_storage_path, new_segment_path, open_segment_db,
     open_vector_storage,
@@ -59,7 +59,7 @@ impl SegmentBuilder {
 
         let database = open_segment_db(&temp_path, segment_config)?;
 
-        let id_tracker = create_id_tracker(database.clone())?;
+        let id_tracker = create_mutable_id_tracker(database.clone())?;
 
         let payload_storage = create_payload_storage(database.clone(), segment_config)?;
 

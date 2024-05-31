@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use atomic_refcell::AtomicRefCell;
 use common::cpu::CpuPermit;
 use io::storage_version::StorageVersion;
 use itertools::Itertools;
@@ -371,6 +372,15 @@ pub trait SegmentOptimizer {
 
         let mut optimized_segment: Segment = segment_builder.build(permit, stopped)?;
 
+        // Make the IdTracker immutable if built segment is not appendable.
+        if !optimized_segment.appendable_flag {
+            let immutable = optimized_segment
+                .id_tracker
+                .borrow()
+                .make_immutable(&optimized_segment.current_path)?;
+            optimized_segment.id_tracker = Arc::new(AtomicRefCell::new(immutable));
+        }
+
         // Delete points in 2 steps
         // First step - delete all points with read lock
         // Second step - delete all the rest points with full write lock
@@ -612,6 +622,7 @@ pub trait SegmentOptimizer {
                 tmp_segment.drop_data()?;
             }
         }
+
         timer.set_success(true);
         Ok(true)
     }

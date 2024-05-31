@@ -87,6 +87,16 @@ pub enum ExtendedPointId {
     Uuid(Uuid),
 }
 
+impl ExtendedPointId {
+    pub fn is_num_id(&self) -> bool {
+        matches!(self, ExtendedPointId::NumId(..))
+    }
+
+    pub fn is_uuid(&self) -> bool {
+        matches!(self, ExtendedPointId::Uuid(..))
+    }
+}
+
 impl std::fmt::Display for ExtendedPointId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {

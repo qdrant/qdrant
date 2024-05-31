@@ -56,7 +56,7 @@ uuid = { workspace = true }
 url = { version = "2", features = ["serde"] }
 validator = { workspace = true }
 actix-web-validator = "5.0.1"
-actix-web = {version = "4.6.0"}
+actix-web = { version = "4.6.0" }
 actix-files = "0.6.5"
 
 common = { path = "../common/common" }
@@ -81,12 +81,13 @@ fnv = { workspace = true }
 indexmap = { workspace = true }
 ringbuffer = "0.15.0"
 strum = { workspace = true }
+atomic_refcell = { workspace = true }
 
 tracing = { workspace = true, optional = true }
 fs4 = "0.8.3"
 
 # AWS S3 support
-object_store = { version = "0.10.1" , features = ["aws"] }
+object_store = { version = "0.10.1", features = ["aws"] }
 
 
 [[bench]]
