@@ -76,6 +76,16 @@ impl<T: Hash + Copy + PartialEq> HashRing<T> {
         new.add(shard);
     }
 
+    pub fn commit(&mut self) -> bool {
+        let Self::Resharding { new, .. } = self else {
+            log::warn!("committing resharding hashring, but hashring is not in resharding mode");
+            return false;
+        };
+
+        *self = Self::Single(new.clone());
+        true
+    }
+
     pub fn remove_resharding(&mut self, shard: T) -> bool
     where
         T: fmt::Display,
