@@ -14,6 +14,7 @@ use crate::shards::remote_shard::RemoteShard;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_holder::LockedShardHolder;
+use crate::shards::CollectionId;
 
 /// Orchestrate shard snapshot transfer
 ///
@@ -161,7 +162,7 @@ pub(super) async fn transfer_snapshot(
     channel_service: ChannelService,
     consensus: &dyn ShardTransferConsensus,
     snapshots_path: &Path,
-    collection_name: &str,
+    collection_id: &CollectionId,
     temp_dir: &Path,
 ) -> CollectionResult<()> {
     let remote_peer_id = remote_shard.peer_id;
@@ -193,7 +194,7 @@ pub(super) async fn transfer_snapshot(
     // Create shard snapshot
     log::trace!("Creating snapshot of shard {shard_id} for shard snapshot transfer");
     let snapshot_description = shard_holder_read
-        .create_shard_snapshot(snapshots_path, collection_name, shard_id, temp_dir)
+        .create_shard_snapshot(snapshots_path, collection_id, shard_id, temp_dir)
         .await?;
 
     // TODO: If future is cancelled until `get_shard_snapshot_path` resolves, shard snapshot may not be cleaned up...
@@ -211,14 +212,14 @@ pub(super) async fn transfer_snapshot(
     // Recover shard snapshot on remote
     let mut shard_download_url = local_rest_address;
     shard_download_url.set_path(&format!(
-        "/collections/{collection_name}/shards/{shard_id}/snapshots/{}",
+        "/collections/{collection_id}/shards/{shard_id}/snapshots/{}",
         &snapshot_description.name,
     ));
 
     log::trace!("Transferring and recovering shard {shard_id} snapshot on peer {remote_peer_id}");
     remote_shard
         .recover_shard_snapshot_from_url(
-            collection_name,
+            collection_id,
             shard_id,
             &shard_download_url,
             SnapshotPriority::ShardTransfer,
@@ -244,7 +245,7 @@ pub(super) async fn transfer_snapshot(
     consensus
         .snapshot_recovered_switch_to_partial_confirm_remote(
             &transfer_config,
-            collection_name,
+            collection_id,
             &remote_shard,
         )
         .await

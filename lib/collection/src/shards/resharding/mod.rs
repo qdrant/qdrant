@@ -80,7 +80,6 @@ pub fn spawn_resharding_task<T, F>(
     consensus: Box<dyn ShardTransferConsensus>,
     collection_id: CollectionId,
     channel_service: ChannelService,
-    collection_name: String,
     temp_dir: PathBuf,
     on_finish: T,
     on_error: F,
@@ -109,7 +108,6 @@ where
                     shards_holder.clone(),
                     consensus.as_ref(),
                     collection_id.clone(),
-                    &collection_name,
                     channel_service.clone(),
                     &temp_dir,
                 )
