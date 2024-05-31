@@ -2,6 +2,7 @@ use std::sync::Weak;
 
 use async_trait::async_trait;
 use collection::operations::types::{CollectionError, CollectionResult};
+use collection::shards::shard::PeerId;
 use collection::shards::transfer::{ShardTransfer, ShardTransferConsensus};
 use collection::shards::CollectionId;
 
@@ -34,6 +35,15 @@ impl ShardTransferDispatcher {
 
 #[async_trait]
 impl ShardTransferConsensus for ShardTransferDispatcher {
+    fn this_peer_id(&self) -> CollectionResult<PeerId> {
+        let Some(toc) = self.toc.upgrade() else {
+            return Err(CollectionError::service_error(
+                "Failed to get this peer ID, table of contents is dropped",
+            ));
+        };
+        Ok(toc.this_peer_id())
+    }
+
     fn consensus_commit_term(&self) -> (u64, u64) {
         let state = self.consensus_state.hard_state();
         (state.commit, state.term)
@@ -46,7 +56,7 @@ impl ShardTransferConsensus for ShardTransferDispatcher {
     ) -> CollectionResult<()> {
         let Some(toc) = self.toc.upgrade() else {
             return Err(CollectionError::service_error(
-                "Table of contents is dropped",
+                "Can't set shard state, table of contents is dropped",
             ));
         };
         let Some(proposal_sender) = toc.consensus_proposal_sender.as_ref() else {
