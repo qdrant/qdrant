@@ -166,9 +166,10 @@ impl DatabaseColumnWrapper {
     {
         let db = self.database.read();
         let cf_handle = self.get_column_family(&db)?;
-        db.delete_cf(cf_handle, key).map_err(|err| {
-            OperationError::service_error(format!("RocksDB delete_cf error: {err}"))
-        })?;
+        db.delete_cf_opt(cf_handle, key, &Self::get_write_options())
+            .map_err(|err| {
+                OperationError::service_error(format!("RocksDB delete_cf error: {err}"))
+            })?;
         Ok(())
     }
 
