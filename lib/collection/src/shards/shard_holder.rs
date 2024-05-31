@@ -547,13 +547,9 @@ impl ShardHolder {
         shard_id: &ShardId,
         peer_id: &PeerId,
     ) -> Vec<ShardTransfer> {
-        self.shard_transfers
-            .read()
-            .iter()
-            .filter(|transfer| transfer.shard_id == *shard_id)
-            .filter(|transfer| transfer.from == *peer_id || transfer.to == *peer_id)
-            .cloned()
-            .collect()
+        self.get_transfers(|transfer| {
+            transfer.shard_id == *shard_id && (transfer.from == *peer_id || transfer.to == *peer_id)
+        })
     }
 
     fn get_shard_ids_by_key(&self, shard_key: &ShardKey) -> CollectionResult<HashSet<ShardId>> {
