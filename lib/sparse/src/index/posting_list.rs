@@ -29,6 +29,18 @@ impl PostingList {
         }
     }
 
+    pub fn delete(&mut self, record_id: PointOffsetType) {
+        let index = self
+            .elements
+            .binary_search_by_key(&record_id, |e| e.record_id);
+        if let Ok(found_index) = index {
+            self.elements.remove(found_index);
+            if found_index < self.elements.len() {
+                self.propagate_max_next_weight_to_the_left(found_index);
+            }
+        }
+    }
+
     /// Upsert a posting element into the posting list.
     ///
     /// Worst case is adding a new element at the end of the list with a very large weight.

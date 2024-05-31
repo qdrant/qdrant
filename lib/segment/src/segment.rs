@@ -25,7 +25,7 @@ use crate::common::operation_error::{
 };
 use crate::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
 use crate::common::{check_named_vectors, check_query_vectors, check_stopped, check_vector_name};
-use crate::data_types::named_vectors::NamedVectors;
+use crate::data_types::named_vectors::{CowVector, NamedVectors};
 use crate::data_types::order_by::{Direction, OrderBy, OrderValue};
 use crate::data_types::query_context::{QueryContext, SegmentQueryContext};
 use crate::data_types::vectors::{MultiDenseVector, QueryVector, Vector, VectorRef};
@@ -145,9 +145,22 @@ impl Segment {
             match vector {
                 Some(vector) => {
                     let mut vector_storage = vector_data.vector_storage.borrow_mut();
+                    let old_vector = if vector.is_sparse() {
+                        // Sparse vector index requires an old vector to be passed
+                        // to update operation, so it can clean up old index entries properly
+                        //
+                        // So we retrieve it here.
+                        vector_storage
+                            .get_vector_opt(internal_id)
+                            .map(CowVector::to_owned)
+                    } else {
+                        // We don't need old dense vector for update operation,
+                        // so it is skipped for efficiency
+                        None
+                    };
                     vector_storage.insert_vector(internal_id, vector)?;
                     let mut vector_index = vector_data.vector_index.borrow_mut();
-                    vector_index.update_vector(internal_id, vector)?;
+                    vector_index.update_vector(internal_id, vector, old_vector)?;
                 }
                 None => {
                     // No vector provided, so we remove it
@@ -181,15 +194,32 @@ impl Segment {
         check_named_vectors(&vectors, &self.segment_config)?;
         for (vector_name, new_vector) in vectors {
             let vector_data = &self.vector_data[vector_name.as_ref()];
+            let old_vector = if new_vector.as_vec_ref().is_sparse() {
+                // Sparse vector index requires an old vector to be passed
+                // to update operation, so it can clean up old index entries properly
+                //
+                // So we retrieve it here.
+                vector_data
+                    .vector_storage
+                    .borrow()
+                    .get_vector_opt(internal_id)
+                    .map(CowVector::to_owned)
+            } else {
+                // We don't need old dense vector for update operation,
+                // so it is skipped for efficiency
+                None
+            };
+
             let new_vector = new_vector.as_vec_ref();
             vector_data
                 .vector_storage
                 .borrow_mut()
                 .insert_vector(internal_id, new_vector)?;
-            vector_data
-                .vector_index
-                .borrow_mut()
-                .update_vector(internal_id, new_vector)?;
+            vector_data.vector_index.borrow_mut().update_vector(
+                internal_id,
+                new_vector,
+                old_vector,
+            )?;
         }
         Ok(())
     }
@@ -264,11 +294,11 @@ impl Segment {
                     };
                     vector_storage.insert_vector(new_index, VectorRef::from(&vector))?;
                     vector_storage.delete_vector(new_index)?;
-                    vector_index.update_vector(new_index, VectorRef::from(&vector))?;
+                    vector_index.update_vector(new_index, VectorRef::from(&vector), None)?;
                 }
                 Some(vec) => {
                     vector_storage.insert_vector(new_index, vec)?;
-                    vector_index.update_vector(new_index, vec)?;
+                    vector_index.update_vector(new_index, vec, None)?;
                 }
             }
         }

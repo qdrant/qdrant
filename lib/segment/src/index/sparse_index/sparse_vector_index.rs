@@ -584,7 +584,12 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         self.inverted_index.vector_count()
     }
 
-    fn update_vector(&mut self, id: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
+    fn update_vector(
+        &mut self,
+        id: PointOffsetType,
+        vector: VectorRef,
+        old_vector: Option<Vector>,
+    ) -> OperationResult<()> {
         if self.config.index_type != SparseIndexType::MutableRam {
             return Err(OperationError::service_error(
                 "Cannot update vector in non-appendable index",
@@ -592,11 +597,15 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         }
 
         let vector: &SparseVector = vector.try_into()?;
+        let old_vector: Option<SparseVector> =
+            old_vector.map(SparseVector::try_from).transpose()?;
+
         // do not upsert empty vectors into the index
         if !vector.is_empty() {
             self.indices_tracker.register_indices(vector);
             let vector = self.indices_tracker.remap_vector(vector.to_owned());
-            self.inverted_index.upsert(id, vector);
+            let old_vector = old_vector.map(|v| self.indices_tracker.remap_vector(v.to_owned()));
+            self.inverted_index.upsert(id, vector, old_vector);
         }
         Ok(())
     }

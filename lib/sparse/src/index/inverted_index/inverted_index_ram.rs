@@ -48,8 +48,13 @@ impl InvertedIndex for InvertedIndexRam {
         Vec::new()
     }
 
-    fn upsert(&mut self, id: PointOffsetType, vector: RemappedSparseVector) {
-        self.upsert(id, vector);
+    fn upsert(
+        &mut self,
+        id: PointOffsetType,
+        vector: RemappedSparseVector,
+        old_vector: Option<RemappedSparseVector>,
+    ) {
+        self.upsert(id, vector, old_vector);
     }
 
     fn from_ram_index<P: AsRef<Path>>(
@@ -86,7 +91,24 @@ impl InvertedIndexRam {
     }
 
     /// Upsert a vector into the inverted index.
-    pub fn upsert(&mut self, id: PointOffsetType, vector: RemappedSparseVector) {
+    pub fn upsert(
+        &mut self,
+        id: PointOffsetType,
+        vector: RemappedSparseVector,
+        old_vector: Option<RemappedSparseVector>,
+    ) {
+        // Find elements of the old vector that are not in the new vector
+        if let Some(old_vector) = old_vector {
+            let elements_to_delete = old_vector
+                .indices
+                .iter()
+                .filter(|&dim_id| !vector.indices.contains(dim_id))
+                .map(|&dim_id| dim_id as usize);
+            for dim_id in elements_to_delete {
+                self.postings[dim_id].delete(id);
+            }
+        }
+
         for (dim_id, weight) in vector.indices.into_iter().zip(vector.values.into_iter()) {
             let dim_id = dim_id as usize;
             match self.postings.get_mut(dim_id) {
@@ -105,7 +127,7 @@ impl InvertedIndexRam {
         }
         // given that there are no holes in the internal ids and that we are not deleting from the index
         // we can just use the id as a proxy the count
-        self.vector_count = max(self.vector_count, id as usize);
+        self.vector_count = max(self.vector_count, id as usize + 1);
     }
 }
 
@@ -127,6 +149,7 @@ mod tests {
         inverted_index_ram.upsert(
             4,
             RemappedSparseVector::new(vec![1, 2, 3], vec![40.0, 40.0, 40.0]).unwrap(),
+            None,
         );
         for i in 1..4 {
             let posting_list = inverted_index_ram.get(&i).unwrap();
@@ -155,6 +178,7 @@ mod tests {
         inverted_index_ram.upsert(
             4,
             RemappedSparseVector::new(vec![1, 2, 30], vec![40.0, 40.0, 40.0]).unwrap(),
+            None,
         );
 
         // new dimension resized postings
@@ -195,9 +219,9 @@ mod tests {
         assert_eq!(inverted_index_ram_built.vector_count, 3);
 
         let mut inverted_index_ram_upserted = InvertedIndexRam::empty();
-        inverted_index_ram_upserted.upsert(1, first_vec);
-        inverted_index_ram_upserted.upsert(2, second_vec);
-        inverted_index_ram_upserted.upsert(3, third_vec);
+        inverted_index_ram_upserted.upsert(1, first_vec, None);
+        inverted_index_ram_upserted.upsert(2, second_vec, None);
+        inverted_index_ram_upserted.upsert(3, third_vec, None);
 
         assert_eq!(
             inverted_index_ram_built.postings.len(),

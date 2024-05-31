@@ -74,7 +74,12 @@ impl InvertedIndex for InvertedIndexMmap {
         ]
     }
 
-    fn upsert(&mut self, _id: PointOffsetType, _vector: RemappedSparseVector) {
+    fn upsert(
+        &mut self,
+        _id: PointOffsetType,
+        _vector: RemappedSparseVector,
+        _old_vector: Option<RemappedSparseVector>,
+    ) {
         panic!("Cannot upsert into a read-only Mmap inverted index")
     }
 

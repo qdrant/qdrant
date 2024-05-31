@@ -26,7 +26,6 @@ type StoredSparseVector = StoredRecord<SparseVector>;
 /// In-memory vector storage with on-update persistence using `store`
 pub struct SimpleSparseVectorStorage {
     db_wrapper: DatabaseColumnWrapper,
-    update_buffer: StoredSparseVector,
     /// BitVec for deleted flags. Grows dynamically upto last set flag.
     deleted: BitVec,
     /// Current number of deleted vectors.
@@ -66,10 +65,6 @@ pub fn open_simple_sparse_vector_storage(
 
     Ok(VectorStorageEnum::SparseSimple(SimpleSparseVectorStorage {
         db_wrapper,
-        update_buffer: StoredSparseVector {
-            deleted: false,
-            vector: SparseVector::default(),
-        },
         deleted,
         deleted_count,
         total_vector_count,
@@ -102,15 +97,16 @@ impl SimpleSparseVectorStorage {
         vector: Option<&SparseVector>,
     ) -> OperationResult<()> {
         // Write vector state to buffer record
-        let record = &mut self.update_buffer;
-        record.deleted = deleted;
+        let record = StoredSparseVector {
+            deleted,
+            vector: vector.cloned().unwrap_or_default(),
+        };
         if let Some(vector) = vector {
             if deleted {
                 self.total_sparse_size = self.total_sparse_size.saturating_sub(vector.values.len());
             } else {
                 self.total_sparse_size += vector.values.len();
             }
-            record.vector = vector.clone();
         }
 
         // Store updated record
