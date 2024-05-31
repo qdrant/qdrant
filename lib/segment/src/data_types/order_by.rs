@@ -6,7 +6,7 @@ use validator::Validate;
 
 use crate::json_path::JsonPath;
 use crate::types::{
-    DateTimePayloadType, FloatPayloadType, IntPayloadType, Payload, Range, RangeInterface,
+    DateTimePayloadType, FloatPayloadType, IntPayloadType, Order, Payload, Range, RangeInterface,
 };
 
 const INTERNAL_KEY_OF_ORDER_BY_VALUE: &str = "____ordered_with____";
@@ -34,6 +34,15 @@ impl Direction {
                 gte: None,
                 lt: None,
             },
+        }
+    }
+}
+
+impl From<Direction> for Order {
+    fn from(direction: Direction) -> Self {
+        match direction {
+            Direction::Asc => Order::SmallBetter,
+            Direction::Desc => Order::LargeBetter,
         }
     }
 }
