@@ -189,8 +189,8 @@ async fn stage_migrate_points(
             .pop();
 
         // Get the transfer, if there is no transfer yet, start one now
-        let transfer = match ongoing_transfer {
-            Some(transfer) => transfer,
+        let (transfer, start_transfer) = match ongoing_transfer {
+            Some(transfer) => (transfer, false),
             None => {
                 // TODO: also support local transfers (without consensus?)
                 // TODO: do not just pick random source, consider transfer limits
@@ -223,24 +223,26 @@ async fn stage_migrate_points(
                     method: Some(ShardTransferMethod::ReshardingStreamRecords),
                     to_shard_id: Some(state.key.shard_id),
                 };
-                consensus
-                    .start_shard_transfer_confirm_and_retry(&transfer, collection_id)
-                    .await?;
-                transfer
+                (transfer, true)
             }
         };
 
+        let await_transfer_end = consensus.await_shard_transfer_end(
+            transfer.clone(),
+            collection_id.clone(),
+            Some(MIGRATE_POINT_TRANSFER_MAX_DURATION),
+        );
+
+        if start_transfer {
+            consensus
+                .start_shard_transfer_confirm_and_retry(&transfer, collection_id)
+                .await?;
+        }
+
         // Wait for the transfer to finish
-        // TODO: await before above restart
         // TODO: ensure this can't data race
-        let result = consensus
-            .await_shard_transfer_end(
-                transfer.clone(),
-                collection_id.clone(),
-                Some(MIGRATE_POINT_TRANSFER_MAX_DURATION),
-            )
-            .await?;
-        if result.is_err() {
+        let transfer_result = await_transfer_end.await?;
+        if transfer_result.is_err() {
             return Err(CollectionError::service_error(format!(
                 "Shard {source_shard_id} failed to be transferred to this node for resharding",
             )));
