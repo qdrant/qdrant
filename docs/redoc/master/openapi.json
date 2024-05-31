@@ -5149,6 +5149,94 @@
           }
         }
       }
+    },
+    "/collections/{collection_name}/points/query": {
+      "post": {
+        "tags": [
+          "points"
+        ],
+        "summary": "Query points",
+        "description": "Universally query points. This endpoint covers all capabilities of search, recommend, discover, filters. But also enables hybrid and multi-stage queries.",
+        "operationId": "query_points",
+        "requestBody": {
+          "description": "Describes the query to make to the collection",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QueryRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "collection_name",
+            "in": "path",
+            "description": "Name of the collection to query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "consistency",
+            "in": "query",
+            "description": "Define read consistency guarantees for the operation",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ReadConsistency"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "description": "error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "time": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Time spent to process this request"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ScoredPoint"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "openapi": "3.0.1",
@@ -11217,6 +11305,422 @@
             "type": "boolean"
           }
         }
+      },
+      "QueryRequest": {
+        "type": "object",
+        "properties": {
+          "shard_key": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKeySelector"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "prefetch": {
+            "description": "Sub-requests to perform first. If present, the query will be performed on the results of the prefetch(es).",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Prefetch"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Prefetch"
+                }
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "query": {
+            "description": "Query to perform. If missing, returns points ordered by their IDs.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QueryInterface"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "using": {
+            "description": "Define which vector name to use for querying. If missing, the default vector is used.",
+            "type": "string",
+            "nullable": true
+          },
+          "filter": {
+            "description": "Filter conditions - return only those points that satisfy the specified conditions.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Filter"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "params": {
+            "description": "Search params for when there is no prefetch",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SearchParams"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "score_threshold": {
+            "description": "Return points with scores better than this threshold.",
+            "type": "number",
+            "format": "float",
+            "nullable": true
+          },
+          "limit": {
+            "description": "Max number of points. Default is 10.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "offset": {
+            "description": "Offset of the result. Skip this many points. Default is 0",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "with_vector": {
+            "description": "Options for specifying which vectors to include into the response. Default is false.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WithVector"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "with_payload": {
+            "description": "Options for specifying which payload to include or not. Default is false.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WithPayloadInterface"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "Prefetch": {
+        "type": "object",
+        "properties": {
+          "prefetch": {
+            "description": "Sub-requests to perform first. If present, the query will be performed on the results of the prefetches.",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Prefetch"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Prefetch"
+                }
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "query": {
+            "description": "Query to perform. If missing, returns points ordered by their IDs.",
+            "default": null,
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QueryInterface"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "using": {
+            "description": "Define which vector name to use for querying. If missing, the default vector is used.",
+            "type": "string",
+            "nullable": true
+          },
+          "filter": {
+            "description": "Filter conditions - return only those points that satisfy the specified conditions.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Filter"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "params": {
+            "description": "Search params for when there is no prefetch",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SearchParams"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "score_threshold": {
+            "description": "Return points with scores better than this threshold.",
+            "type": "number",
+            "format": "float",
+            "nullable": true
+          },
+          "limit": {
+            "description": "Max number of points to return. Default is 10.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          }
+        }
+      },
+      "QueryInterface": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/VectorInput"
+          },
+          {
+            "$ref": "#/components/schemas/Query"
+          }
+        ]
+      },
+      "VectorInput": {
+        "anyOf": [
+          {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "float"
+            }
+          },
+          {
+            "$ref": "#/components/schemas/SparseVector"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "float"
+              }
+            }
+          },
+          {
+            "$ref": "#/components/schemas/ExtendedPointId"
+          }
+        ]
+      },
+      "Query": {
+        "oneOf": [
+          {
+            "description": "Find the nearest neighbors to this vector.",
+            "type": "object",
+            "required": [
+              "nearest"
+            ],
+            "properties": {
+              "nearest": {
+                "$ref": "#/components/schemas/VectorInput"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Use multiple positive and negative vectors to find the results.",
+            "type": "object",
+            "required": [
+              "recommend"
+            ],
+            "properties": {
+              "recommend": {
+                "$ref": "#/components/schemas/RecommendInput"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Search for nearest points, but constrain the search space with context",
+            "type": "object",
+            "required": [
+              "discover"
+            ],
+            "properties": {
+              "discover": {
+                "$ref": "#/components/schemas/DiscoverInput"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Return points that live in positive areas.",
+            "type": "object",
+            "required": [
+              "context"
+            ],
+            "properties": {
+              "context": {
+                "$ref": "#/components/schemas/ContextInput"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Order the points by a payload field.",
+            "type": "object",
+            "required": [
+              "order_by"
+            ],
+            "properties": {
+              "order_by": {
+                "$ref": "#/components/schemas/OrderByInterface"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "description": "Fuse the results of multiple prefetches.",
+            "type": "object",
+            "required": [
+              "fusion"
+            ],
+            "properties": {
+              "fusion": {
+                "$ref": "#/components/schemas/Fusion"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "RecommendInput": {
+        "type": "object",
+        "properties": {
+          "positives": {
+            "description": "Look for vectors closest to the vectors from these points",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VectorInput"
+            },
+            "nullable": true
+          },
+          "negatives": {
+            "description": "Try to avoid vectors like the vector from these points",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VectorInput"
+            },
+            "nullable": true
+          },
+          "strategy": {
+            "description": "How to use the provided vectors to find the results",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RecommendStrategy"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "DiscoverInput": {
+        "type": "object",
+        "required": [
+          "context_pairs",
+          "target"
+        ],
+        "properties": {
+          "target": {
+            "$ref": "#/components/schemas/VectorInput"
+          },
+          "context_pairs": {
+            "description": "Search space will be constrained by these pairs of vectors",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContextPair"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ContextPair"
+                }
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "ContextPair": {
+        "type": "object",
+        "required": [
+          "negative",
+          "positive"
+        ],
+        "properties": {
+          "positive": {
+            "$ref": "#/components/schemas/VectorInput"
+          },
+          "negative": {
+            "$ref": "#/components/schemas/VectorInput"
+          }
+        }
+      },
+      "ContextInput": {
+        "type": "object",
+        "required": [
+          "pairs"
+        ],
+        "properties": {
+          "pairs": {
+            "description": "Search space will be constrained by these pairs of vectors",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContextPair"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ContextPair"
+                }
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "Fusion": {
+        "anyOf": [
+          {
+            "description": "Reciprocal rank fusion",
+            "nullable": true
+          }
+        ]
       }
     }
   }
