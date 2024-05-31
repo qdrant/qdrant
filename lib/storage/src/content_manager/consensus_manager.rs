@@ -14,7 +14,7 @@ use collection::operations::types::PeerMetadata;
 use collection::shards::shard::PeerId;
 use collection::shards::CollectionId;
 use common::defaults;
-use futures::future::join_all;
+use futures::future::{join_all, select_all};
 use parking_lot::{Mutex, RwLock};
 use raft::eraftpb::{ConfChangeType, ConfChangeV2, Entry as RaftEntry};
 use raft::{GetEntriesContext, RaftState, RawNode, SoftState, Storage};
@@ -602,6 +602,49 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                 }
             }
             Ok(Ok(()))
+        }
+    }
+
+    /// Wait for only one of the given operations, the first operation that resolves.
+    pub fn await_for_any_operation(
+        &self,
+        operations: Vec<ConsensusOperations>,
+        wait_timeout: Option<Duration>,
+    ) -> impl Future<Output = Result<Result<ConsensusOperations, StorageError>, Elapsed>> {
+        let mut receivers = vec![];
+        for operation in operations.iter() {
+            // one-shot broadcast channel
+            let (sender, mut receiver) = broadcast::channel(1);
+            let mut on_apply_lock = self.on_consensus_op_apply.lock();
+            // check that the exact same operation is not already in-flight
+            match on_apply_lock.get(operation) {
+                Some(existing_sender) => {
+                    // subscribe to existing sender for faster feedback
+                    receiver = existing_sender.subscribe()
+                }
+                None => {
+                    // insert new sender
+                    on_apply_lock.insert(operation.clone(), sender);
+                }
+            };
+            receivers.push(receiver);
+        }
+
+        async move {
+            // TODO: always use futures unordered here!
+            let await_for_one = select_all(receivers.iter_mut().map(|receiver| Box::pin(receiver.recv())));
+            let (result, index, _operations) = tokio::time::timeout(
+                wait_timeout.unwrap_or(defaults::CONSENSUS_META_OP_WAIT),
+                await_for_one,
+            )
+            .await?;
+            match result {
+                Ok(response_res) => match response_res {
+                    Ok(_) => Ok(Ok(operations[index].clone())),
+                    Err(err) => Ok(Err(err)),
+                },
+                Err(recv_error) => Ok(Err(recv_error.into())),
+            }
         }
     }
 

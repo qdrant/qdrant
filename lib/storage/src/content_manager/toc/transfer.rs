@@ -1,4 +1,5 @@
 use std::sync::Weak;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use collection::operations::types::{CollectionError, CollectionResult};
@@ -116,5 +117,46 @@ impl ShardTransferConsensus for ShardTransferDispatcher {
             .map_err(|err| {
                 CollectionError::service_error(format!("Failed to propose and confirm shard transfer restart operation through consensus: {err}"))
             })
+    }
+
+    // TODO: rework internals, listen on finish/abort channel instead
+    async fn await_shard_transfer_end(
+        &self,
+        transfer: ShardTransfer,
+        collection_id: CollectionId,
+        timeout: Option<Duration>,
+    ) -> CollectionResult<Result<(), ()>> {
+        let success = ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::TransferShard(
+                        collection_id.clone(),
+                        ShardTransferOperations::Finish(transfer.clone()),
+            )));
+        let failure =
+            // TODO: this does not work because reason can be anything
+            ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::TransferShard(
+                        collection_id,
+                        ShardTransferOperations::Abort {
+                            transfer: transfer.key(),
+                            reason: String::new(),
+                        },
+            )));
+
+        let result = self.consensus_state.await_for_any_operation(
+            vec![
+                success.clone(),
+                failure.clone(),
+            ],
+            timeout,
+        ).await;
+
+        match result {
+            // We saw the success operation
+            Ok(Ok(operation)) if operation == success => Ok(Ok(())),
+            // We saw the failure operation
+            Ok(Ok(_operation)) => Ok(Err(())),
+            // Storage error
+            Ok(Err(err)) => Err(CollectionError::service_error(format!("Failed to await for shard transfer end: {err}"))),
+            // Timeout
+            Err(err) => Err(CollectionError::service_error(format!("Awaiting for shard transfer end timed out: {err}"))),
+        }
     }
 }

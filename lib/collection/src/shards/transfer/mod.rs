@@ -355,6 +355,17 @@ pub trait ShardTransferConsensus: Send + Sync {
             .await_commit_on_all_peers(this_peer_id, commit, term, defaults::CONSENSUS_META_OP_WAIT)
             .await
     }
+
+    /// Await for a given shard transfer to complete.
+    ///
+    /// The returned inner result defines whether it successfully finished or whether it was
+    /// aborted/cancelled.
+    async fn await_shard_transfer_end(
+        &self,
+        transfer: ShardTransfer,
+        collection_id: CollectionId,
+        timeout: Option<Duration>,
+    ) -> CollectionResult<Result<(), ()>>;
 }
 
 /// Await for consensus to synchronize across all peers
