@@ -8,6 +8,7 @@ use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_holder::LockedShardHolder;
 use crate::shards::transfer::stream_records::TRANSFER_BATCH_SIZE;
+use crate::shards::CollectionId;
 
 /// Orchestrate shard transfer by streaming records, but only the points that fall into the new
 /// shard.
@@ -26,7 +27,7 @@ pub(super) async fn transfer_resharding_stream_records(
     progress: Arc<Mutex<TransferTaskProgress>>,
     shard_id: ShardId,
     remote_shard: RemoteShard,
-    collection_name: &str,
+    collection_id: &CollectionId,
 ) -> CollectionResult<()> {
     let remote_peer_id = remote_shard.peer_id;
     let hashring;
@@ -121,7 +122,7 @@ pub(super) async fn transfer_resharding_stream_records(
 
         let cutoff = replica_set.shard_recovery_point().await?;
         let result = remote_shard
-            .update_shard_cutoff_point(collection_name, shard_id, &cutoff)
+            .update_shard_cutoff_point(collection_id, shard_id, &cutoff)
             .await;
 
         // Warn and ignore if remote shard is running an older version, error otherwise

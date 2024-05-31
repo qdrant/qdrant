@@ -11,6 +11,7 @@ use crate::shards::remote_shard::RemoteShard;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_holder::LockedShardHolder;
+use crate::shards::CollectionId;
 
 /// Orchestrate shard diff transfer
 ///
@@ -79,7 +80,7 @@ pub(super) async fn transfer_wal_delta(
     remote_shard: RemoteShard,
     channel_service: ChannelService,
     consensus: &dyn ShardTransferConsensus,
-    collection_name: &str,
+    collection_id: &CollectionId,
 ) -> CollectionResult<()> {
     let remote_peer_id = remote_shard.peer_id;
 
@@ -87,7 +88,7 @@ pub(super) async fn transfer_wal_delta(
 
     // Ask remote shard on failed node for recovery point
     let recovery_point = remote_shard
-        .shard_recovery_point(collection_name, shard_id)
+        .shard_recovery_point(collection_id, shard_id)
         .await
         .map_err(|err| {
             CollectionError::service_error(format!(
@@ -135,7 +136,7 @@ pub(super) async fn transfer_wal_delta(
         // Note: once we migrate from partial snapshot to recovery, we give this method a proper name
         .snapshot_recovered_switch_to_partial_confirm_remote(
             &transfer_config,
-            collection_name,
+            collection_id,
             &remote_shard,
         )
         .await

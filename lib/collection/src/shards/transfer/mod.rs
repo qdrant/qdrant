@@ -135,7 +135,7 @@ pub trait ShardTransferConsensus: Send + Sync {
     fn snapshot_recovered_switch_to_partial(
         &self,
         transfer_config: &ShardTransfer,
-        collection_name: CollectionId,
+        collection_id: CollectionId,
     ) -> CollectionResult<()>;
 
     /// After snapshot recovery, propose to switch shard to `Partial` and confirm on remote shard
@@ -155,7 +155,7 @@ pub trait ShardTransferConsensus: Send + Sync {
     async fn snapshot_recovered_switch_to_partial_confirm_remote(
         &self,
         transfer_config: &ShardTransfer,
-        collection_name: &str,
+        collection_id: &CollectionId,
         remote_shard: &RemoteShard,
     ) -> CollectionResult<()> {
         let mut result = Err(CollectionError::service_error(
@@ -169,7 +169,7 @@ pub trait ShardTransferConsensus: Send + Sync {
             }
 
             result = self
-                .snapshot_recovered_switch_to_partial(transfer_config, collection_name.to_string());
+                .snapshot_recovered_switch_to_partial(transfer_config, collection_id.to_string());
 
             if let Err(err) = &result {
                 log::error!("Failed to propose snapshot recovered operation to consensus: {err}");
@@ -180,7 +180,7 @@ pub trait ShardTransferConsensus: Send + Sync {
 
             result = remote_shard
                 .wait_for_shard_state(
-                    collection_name,
+                    collection_id,
                     transfer_config.shard_id,
                     ReplicaState::Partial,
                     CONSENSUS_CONFIRM_TIMEOUT,
@@ -217,7 +217,7 @@ pub trait ShardTransferConsensus: Send + Sync {
     async fn restart_shard_transfer(
         &self,
         transfer_config: ShardTransfer,
-        collection_name: CollectionId,
+        collection_id: CollectionId,
     ) -> CollectionResult<()>;
 
     /// Propose to restart a shard transfer with a different given configuration
@@ -227,7 +227,7 @@ pub trait ShardTransferConsensus: Send + Sync {
     async fn restart_shard_transfer_confirm_and_retry(
         &self,
         transfer_config: &ShardTransfer,
-        collection_name: &str,
+        collection_id: &CollectionId,
     ) -> CollectionResult<()> {
         let mut result = Err(CollectionError::service_error(
             "`restart_shard_transfer_confirm_and_retry` exit without attempting any work, \
@@ -241,7 +241,7 @@ pub trait ShardTransferConsensus: Send + Sync {
 
             log::trace!("Propose and confirm shard transfer restart operation");
             result = self
-                .restart_shard_transfer(transfer_config.clone(), collection_name.into())
+                .restart_shard_transfer(transfer_config.clone(), collection_id.into())
                 .await;
 
             match &result {
