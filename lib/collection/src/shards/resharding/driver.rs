@@ -28,7 +28,6 @@ pub async fn drive_resharding(
     _shard_holder: Arc<LockedShardHolder>,
     _consensus: &dyn ShardTransferConsensus,
     _collection_id: CollectionId,
-    _collection_name: &str,
     _channel_service: ChannelService,
     _temp_dir: &Path,
 ) -> CollectionResult<bool> {

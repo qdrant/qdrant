@@ -65,7 +65,6 @@ impl Collection {
                 consensus,
                 collection_id,
                 channel_service,
-                self.name(),
                 temp_dir,
                 on_finish,
                 on_error,
