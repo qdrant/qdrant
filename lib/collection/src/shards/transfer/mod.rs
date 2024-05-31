@@ -248,7 +248,7 @@ pub trait ShardTransferConsensus: Send + Sync {
                 Ok(()) => break,
                 Err(err) => {
                     log::error!(
-                        "Failed to confirm snapshot recovered operation on consensus: {err}"
+                        "Failed to confirm restart shard transfer operation on consensus: {err}"
                     );
                     continue;
                 }
