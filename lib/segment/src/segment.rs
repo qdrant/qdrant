@@ -1923,7 +1923,9 @@ impl SegmentEntry for Segment {
 
 impl Drop for Segment {
     fn drop(&mut self) {
-        let _lock = self.lock_flushing();
+        if let Err(flushing_err) = self.lock_flushing() {
+            log::error!("Failed to flush segment during drop: {flushing_err}");
+        }
     }
 }
 
