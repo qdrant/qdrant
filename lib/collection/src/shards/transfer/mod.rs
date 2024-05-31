@@ -211,6 +211,61 @@ pub trait ShardTransferConsensus: Send + Sync {
         })
     }
 
+    /// Propose to start a shard transfer
+    ///
+    /// # Warning
+    ///
+    /// This only submits a proposal to consensus. Calling this does not guarantee that consensus
+    /// will actually apply the operation across the cluster.
+    async fn start_shard_transfer(
+        &self,
+        transfer_config: ShardTransfer,
+        collection_name: CollectionId,
+    ) -> CollectionResult<()>;
+
+    /// Propose to start a shard transfer
+    ///
+    /// This internally confirms and retries a few times if needed to ensure consensus picks up the
+    /// operation.
+    async fn start_shard_transfer_confirm_and_retry(
+        &self,
+        transfer_config: &ShardTransfer,
+        collection_name: &str,
+    ) -> CollectionResult<()> {
+        let mut result = Err(CollectionError::service_error(
+            "`start_shard_transfer_confirm_and_retry` exit without attempting any work, \
+             this is a programming error",
+        ));
+
+        for attempt in 0..CONSENSUS_CONFIRM_RETRIES {
+            if attempt > 0 {
+                sleep(CONSENSUS_CONFIRM_RETRY_DELAY).await;
+            }
+
+            log::trace!("Propose and confirm shard transfer start operation");
+            result = self
+                .start_shard_transfer(transfer_config.clone(), collection_name.into())
+                .await;
+
+            match &result {
+                Ok(()) => break,
+                Err(err) => {
+                    log::error!(
+                        "Failed to confirm start shard transfer operation on consensus: {err}"
+                    );
+                    continue;
+                }
+            }
+        }
+
+        result.map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to start shard transfer through consensus \
+                 after {CONSENSUS_CONFIRM_RETRIES} retries: {err}"
+            ))
+        })
+    }
+
     /// Propose to restart a shard transfer with a different given configuration
     ///
     /// # Warning

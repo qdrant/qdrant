@@ -78,6 +78,26 @@ impl ShardTransferConsensus for ShardTransferDispatcher {
         Ok(())
     }
 
+    async fn start_shard_transfer(
+        &self,
+        transfer_config: ShardTransfer,
+        collection_name: CollectionId,
+    ) -> CollectionResult<()> {
+        let operation =
+            ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::TransferShard(
+                collection_name,
+                ShardTransferOperations::Start(transfer_config),
+            )));
+        self
+            .consensus_state
+            .propose_consensus_op_with_await(operation.clone(), None)
+            .await
+            .map(|_| ())
+            .map_err(|err| {
+                CollectionError::service_error(format!("Failed to propose and confirm shard transfer start operation through consensus: {err}"))
+            })
+    }
+
     async fn restart_shard_transfer(
         &self,
         transfer_config: ShardTransfer,
