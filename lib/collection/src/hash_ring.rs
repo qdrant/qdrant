@@ -76,7 +76,7 @@ impl<T: Hash + Copy + PartialEq> HashRing<T> {
         new.add(shard);
     }
 
-    pub fn commit(&mut self) -> bool {
+    pub fn commit_resharding(&mut self) -> bool {
         let Self::Resharding { new, .. } = self else {
             log::warn!("committing resharding hashring, but hashring is not in resharding mode");
             return false;

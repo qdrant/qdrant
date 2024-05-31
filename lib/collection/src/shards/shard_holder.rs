@@ -186,35 +186,37 @@ impl ShardHolder {
         Ok(())
     }
 
-    pub fn commit_hashring(&mut self, resharding_key: ReshardKey) -> CollectionResult<()> {
+    pub fn check_resharding(
+        &mut self,
+        resharding_key: &ReshardKey,
+        check_state: impl Fn(&ReshardState) -> CollectionResult<()>,
+    ) -> CollectionResult<()> {
         let ReshardKey {
             shard_id,
-            ref shard_key,
+            shard_key,
             ..
         } = resharding_key;
 
-        let ring = get_ring(&mut self.rings, shard_key)?;
+        let ring = get_ring(&mut self.rings, &shard_key)?;
 
-        {
-            let state = self.resharding_state.read();
-            assert_resharding_state_consistency(&state, ring, shard_key);
+        let state = self.resharding_state.read();
+        assert_resharding_state_consistency(&state, ring, &resharding_key.shard_key);
 
-            match state.deref() {
-                Some(state) if state.matches(&resharding_key) => {
-                    // TODO(resharding): Check resharding is in the correct state to commit hashring!
-                }
+        match state.deref() {
+            Some(state) if state.matches(&resharding_key) => {
+                check_state(state)?;
+            }
 
-                Some(state) => {
-                    return Err(CollectionError::bad_request(format!(
-                        "another resharding is in progress:\n{state:#?}"
-                    )))
-                }
+            Some(state) => {
+                return Err(CollectionError::bad_request(format!(
+                    "another resharding is in progress:\n{state:#?}"
+                )));
+            }
 
-                None => {
-                    return Err(CollectionError::bad_request(
-                        "resharding is not in progress",
-                    ))
-                }
+            None => {
+                return Err(CollectionError::bad_request(
+                    "resharding is not in progress",
+                ));
             }
         }
 
@@ -225,9 +227,37 @@ impl ShardHolder {
 
         // TODO(resharding): Assert that peer exists!?
 
-        ring.commit();
+        Ok(())
+    }
+
+    pub fn commit_read_hashring(&mut self, resharding_key: ReshardKey) -> CollectionResult<()> {
+        self.check_resharding(&resharding_key, |_| {
+            // TODO(resharding): Check resharding is in the correct state to commit read hashring!
+            Ok(())
+        })?;
+
+        todo!()
+    }
+
+    pub fn commit_write_hashring(&mut self, resharding_key: ReshardKey) -> CollectionResult<()> {
+        self.check_resharding(&resharding_key, |_| {
+            // TODO(resharding): Check resharding is in the correct state to commit write hashring!
+            Ok(())
+        })?;
+
+        let ring = get_ring(&mut self.rings, &resharding_key.shard_key)?;
+        ring.commit_resharding();
 
         Ok(())
+    }
+
+    pub fn finish_resharding(&mut self, resharding_key: ReshardKey) -> CollectionResult<()> {
+        self.check_resharding(&resharding_key, |_| {
+            // TODO(resharding): Check resharding is in the correct state to finish resharding!
+            Ok(())
+        })?;
+
+        todo!()
     }
 
     pub async fn abort_resharding(&mut self, resharding_key: ReshardKey) -> CollectionResult<()> {
@@ -638,6 +668,8 @@ impl ShardHolder {
             }
             ShardSelectorInternal::All => {
                 for (&shard_id, shard) in self.shards.iter() {
+                    // TODO(resharding): Handle resharded shard!?
+
                     let is_resharding = self
                         .resharding_state
                         .read()
@@ -1249,10 +1281,13 @@ pub(crate) fn shard_not_found_error(shard_id: ShardId) -> CollectionError {
 
 fn get_ring<'a>(
     rings: &'a mut HashMap<Option<ShardKey>, HashRing>,
-    key: &'_ Option<ShardKey>,
+    shard_key: &'_ Option<ShardKey>,
 ) -> CollectionResult<&'a mut HashRing> {
-    rings.get_mut(key).ok_or_else(|| {
-        CollectionError::bad_request(format!("{} hashring does not exist", shard_key_fmt(key)))
+    rings.get_mut(shard_key).ok_or_else(|| {
+        CollectionError::bad_request(format!(
+            "{} hashring does not exist",
+            shard_key_fmt(shard_key)
+        ))
     })
 }
 
