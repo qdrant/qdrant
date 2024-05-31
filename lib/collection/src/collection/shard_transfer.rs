@@ -156,7 +156,6 @@ impl Collection {
             collection_id,
             channel_service,
             self.snapshots_path.clone(),
-            self.name(),
             temp_dir,
             on_finish,
             on_error,

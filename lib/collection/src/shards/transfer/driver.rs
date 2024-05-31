@@ -39,7 +39,6 @@ pub async fn transfer_shard(
     shard_holder: Arc<LockedShardHolder>,
     consensus: &dyn ShardTransferConsensus,
     collection_id: CollectionId,
-    collection_name: &str,
     channel_service: ChannelService,
     snapshots_path: &Path,
     temp_dir: &Path,
@@ -67,7 +66,7 @@ pub async fn transfer_shard(
                 progress,
                 local_shard_id,
                 remote_shard,
-                collection_name,
+                &collection_id,
             )
             .await?;
         }
@@ -79,7 +78,7 @@ pub async fn transfer_shard(
                 progress,
                 local_shard_id,
                 remote_shard,
-                collection_name,
+                &collection_id,
             )
             .await?;
         }
@@ -95,7 +94,7 @@ pub async fn transfer_shard(
                 channel_service,
                 consensus,
                 snapshots_path,
-                collection_name,
+                &collection_id,
                 temp_dir,
             )
             .await?;
@@ -111,7 +110,7 @@ pub async fn transfer_shard(
                 remote_shard,
                 channel_service,
                 consensus,
-                collection_name,
+                &collection_id,
             )
             .await;
 
@@ -122,7 +121,7 @@ pub async fn transfer_shard(
                 let did_fall_back = transfer_shard_fallback_default(
                     transfer_config,
                     consensus,
-                    collection_name,
+                    &collection_id,
                     fallback_shard_transfer_method,
                 )
                 .await?;
@@ -140,7 +139,7 @@ pub async fn transfer_shard(
 pub async fn transfer_shard_fallback_default(
     mut transfer_config: ShardTransfer,
     consensus: &dyn ShardTransferConsensus,
-    collection_name: &str,
+    collection_id: &CollectionId,
     fallback_method: ShardTransferMethod,
 ) -> CollectionResult<bool> {
     // Do not attempt to fall back to the same method
@@ -153,7 +152,7 @@ pub async fn transfer_shard_fallback_default(
     // Propose to restart transfer with a different method
     transfer_config.method.replace(fallback_method);
     consensus
-        .restart_shard_transfer_confirm_and_retry(&transfer_config, collection_name)
+        .restart_shard_transfer_confirm_and_retry(&transfer_config, collection_id)
         .await?;
 
     Ok(false)
@@ -267,7 +266,6 @@ pub fn spawn_transfer_task<T, F>(
     collection_id: CollectionId,
     channel_service: ChannelService,
     snapshots_path: PathBuf,
-    collection_name: String,
     temp_dir: PathBuf,
     on_finish: T,
     on_error: F,
@@ -297,7 +295,6 @@ where
                     shards_holder.clone(),
                     consensus.as_ref(),
                     collection_id.clone(),
-                    &collection_name,
                     channel_service.clone(),
                     &snapshots_path,
                     &temp_dir,
