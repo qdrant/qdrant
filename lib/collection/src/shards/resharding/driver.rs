@@ -23,8 +23,8 @@ struct DriverState {
     /// State of each peer we know about
     peers: HashMap<PeerId, Stage>,
 
-    /// List of shard IDs successfully migrated to the new shard.
-    migrated_shard_ids: Vec<u32>,
+    /// List of shard IDs successfully migrated to the new shard
+    migrated_shards: Vec<ShardId>,
 }
 
 impl DriverState {
@@ -32,7 +32,7 @@ impl DriverState {
         Self {
             key,
             peers: HashMap::new(),
-            migrated_shard_ids: vec![],
+            migrated_shards: vec![],
         }
     }
 
@@ -51,7 +51,7 @@ impl DriverState {
     /// List the shard IDs we still need to migrate.
     pub fn shard_ids_to_migrate(&self) -> Vec<ShardId> {
         self.source_shard_ids()
-            .filter(|shard_id| !self.migrated_shard_ids.contains(shard_id))
+            .filter(|shard_id| !self.migrated_shards.contains(shard_id))
             .collect()
     }
 
@@ -164,7 +164,9 @@ fn completed_migrate_points(state: &DriverState) -> bool {
 
 /// Stage 2: migrate points
 ///
-/// Do migrate points into the new shard.
+/// Keeps checking what shards are still pending point migrations. For each of them it starts a
+/// shard transfer if needed, waiting for them to finish. Once this returns, all points are
+/// migrated to the target shard.
 async fn stage_migrate_points(
     state: &mut DriverState,
     shard_holder: Arc<LockedShardHolder>,
@@ -237,7 +239,7 @@ async fn stage_migrate_points(
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
 
-        state.migrated_shard_ids.push(source_shard_id);
+        state.migrated_shards.push(source_shard_id);
     }
 
     state.bump_all_peers_to(Stage::S2_MigratePointsEnd);
