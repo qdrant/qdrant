@@ -161,6 +161,7 @@ impl TableOfContent {
                 Some(search_runtime.handle().clone()),
                 Some(update_runtime.handle().clone()),
                 optimizer_cpu_budget.clone(),
+                storage_config.optimizers_overwrite.clone(),
             ));
 
             collections.insert(collection_name, collection);

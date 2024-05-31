@@ -592,6 +592,7 @@ mod tests {
             dummy_abort_shard_transfer(),
             collection_dir.path(),
             shared_config,
+            config.optimizer_config.clone(),
             Default::default(),
             Default::default(),
             update_runtime,

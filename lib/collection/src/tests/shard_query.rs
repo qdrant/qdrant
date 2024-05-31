@@ -34,6 +34,7 @@ async fn test_shard_query_rrf_rescoring() {
         Arc::new(Default::default()),
         current_runtime.clone(),
         CpuBudget::default(),
+        config.optimizer_config.clone(),
     )
     .await
     .unwrap();
@@ -165,6 +166,7 @@ async fn test_shard_query_vector_rescoring() {
         Arc::new(Default::default()),
         current_runtime.clone(),
         CpuBudget::default(),
+        config.optimizer_config.clone(),
     )
     .await
     .unwrap();
@@ -283,6 +285,7 @@ async fn test_shard_query_payload_vector() {
         Arc::new(Default::default()),
         current_runtime.clone(),
         CpuBudget::default(),
+        config.optimizer_config.clone(),
     )
     .await
     .unwrap();

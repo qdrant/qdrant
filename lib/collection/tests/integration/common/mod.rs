@@ -104,6 +104,7 @@ pub async fn new_local_collection(
         None,
         None,
         CpuBudget::default(),
+        None,
     )
     .await;
 
@@ -138,6 +139,7 @@ pub async fn load_local_collection(
         None,
         None,
         CpuBudget::default(),
+        None,
     )
     .await
 }

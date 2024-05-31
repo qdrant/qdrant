@@ -129,6 +129,18 @@ storage:
     # If 0 - no optimization threads, optimizations will be disabled.
     max_optimization_threads: null
 
+  # This section has the same options as 'optimizers' above. All values specified here will overwrite the collections
+  # optimizers configs regardless of the config above and the options specified at collection creation.
+  #optimizers_overwrite:
+  #  deleted_threshold: 0.2
+  #  vacuum_min_vector_number: 1000
+  #  default_segment_number: 0
+  #  max_segment_size_kb: null
+  #  memmap_threshold_kb: null
+  #  indexing_threshold_kb: 20000
+  #  flush_interval_sec: 5
+  #  max_optimization_threads: null
+
   # Default parameters of HNSW Index. Could be overridden for each collection or named vector individually
   hnsw_index:
     # Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.

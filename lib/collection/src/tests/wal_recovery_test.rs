@@ -27,6 +27,7 @@ async fn test_delete_from_indexed_payload() {
         Arc::new(Default::default()),
         current_runtime.clone(),
         CpuBudget::default(),
+        config.optimizer_config.clone(),
     )
     .await
     .unwrap();
@@ -57,6 +58,7 @@ async fn test_delete_from_indexed_payload() {
         collection_name.clone(),
         collection_dir.path(),
         Arc::new(RwLock::new(config.clone())),
+        config.optimizer_config.clone(),
         Arc::new(Default::default()),
         current_runtime.clone(),
         CpuBudget::default(),
@@ -76,7 +78,8 @@ async fn test_delete_from_indexed_payload() {
         0,
         collection_name,
         collection_dir.path(),
-        Arc::new(RwLock::new(config)),
+        Arc::new(RwLock::new(config.clone())),
+        config.optimizer_config.clone(),
         Arc::new(Default::default()),
         current_runtime,
         CpuBudget::default(),

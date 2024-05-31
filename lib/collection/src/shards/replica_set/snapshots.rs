@@ -111,6 +111,7 @@ impl ShardReplicaSet {
                 self.collection_id.clone(),
                 &self.shard_path,
                 self.collection_config.clone(),
+                self.optimizers_config.clone(),
                 self.shared_storage_config.clone(),
                 self.update_runtime.clone(),
                 self.optimizer_cpu_budget.clone(),

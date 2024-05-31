@@ -26,6 +26,8 @@ impl Collection {
             .filter(|peer_id| *peer_id != self.this_peer_id)
             .collect();
 
+        let effective_optimizers_config = self.effective_optimizers_config().await?;
+
         ShardReplicaSet::build(
             shard_id,
             self.name(),
@@ -36,6 +38,7 @@ impl Collection {
             self.abort_shard_transfer_cb.clone(),
             &self.path,
             self.collection_config.clone(),
+            effective_optimizers_config,
             self.shared_storage_config.clone(),
             self.channel_service.clone(),
             self.update_runtime.clone(),
