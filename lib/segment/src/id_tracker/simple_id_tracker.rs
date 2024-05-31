@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::path::Path;
 use std::sync::Arc;
 
 use bincode;
@@ -14,16 +15,27 @@ use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDelet
 use crate::common::rocksdb_buffered_update_wrapper::DatabaseColumnScheduledUpdateWrapper;
 use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, DB_MAPPING_CF, DB_VERSIONS_CF};
 use crate::common::Flusher;
-use crate::id_tracker::IdTracker;
+use crate::id_tracker::immutable_id_tracker::{ImmutableIdTracker, PointMappings};
+use crate::id_tracker::{IdTracker, IdTrackerEnum};
 use crate::types::{ExtendedPointId, PointIdType, SeqNumberType};
 
 /// Point Id type used for storing ids internally
 /// Should be serializable by `bincode`, therefore is not untagged.
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
-enum StoredPointId {
+pub(crate) enum StoredPointId {
     NumId(u64),
     Uuid(Uuid),
     String(String),
+}
+
+impl StoredPointId {
+    pub fn is_num_id(&self) -> bool {
+        matches!(self, Self::NumId(..))
+    }
+
+    pub fn is_uuid(&self) -> bool {
+        matches!(self, Self::Uuid(..))
+    }
 }
 
 impl From<&ExtendedPointId> for StoredPointId {
@@ -31,6 +43,24 @@ impl From<&ExtendedPointId> for StoredPointId {
         match point_id {
             ExtendedPointId::NumId(idx) => StoredPointId::NumId(*idx),
             ExtendedPointId::Uuid(uuid) => StoredPointId::Uuid(*uuid),
+        }
+    }
+}
+
+impl From<ExtendedPointId> for StoredPointId {
+    fn from(point_id: ExtendedPointId) -> Self {
+        Self::from(&point_id)
+    }
+}
+
+impl From<&StoredPointId> for ExtendedPointId {
+    fn from(point_id: &StoredPointId) -> Self {
+        match point_id {
+            StoredPointId::NumId(idx) => ExtendedPointId::NumId(*idx),
+            StoredPointId::Uuid(uuid) => ExtendedPointId::Uuid(*uuid),
+            StoredPointId::String(str) => {
+                unimplemented!("cannot convert internal string id '{str}' to external id")
+            }
         }
     }
 }
@@ -404,6 +434,37 @@ impl IdTracker for SimpleIdTracker {
             }
         }
         Ok(())
+    }
+
+    fn make_immutable(&self, save_path: &Path) -> OperationResult<IdTrackerEnum> {
+        let external_to_internal = self
+            .external_to_internal_num
+            .iter()
+            .map(|(k, v)| (StoredPointId::NumId(*k), *v))
+            .chain(
+                self.external_to_internal_uuid
+                    .iter()
+                    .map(|(k, v)| (StoredPointId::Uuid(*k), *v)),
+            )
+            .collect();
+
+        let mappings = PointMappings {
+            external_to_internal,
+            internal_to_version: self.internal_to_version.clone(),
+            internal_to_external: self.internal_to_external.iter().map(|i| i.into()).collect(),
+        };
+
+        let immutable_tracker =
+            ImmutableIdTracker::new(save_path.to_path_buf(), self.deleted.clone(), mappings);
+
+        // Make it persistent
+        immutable_tracker.save()?;
+
+        Ok(IdTrackerEnum::ImmutableIdTracker(immutable_tracker))
+    }
+
+    fn name(&self) -> &'static str {
+        "simple id tracker"
     }
 }
 

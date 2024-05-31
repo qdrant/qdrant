@@ -13,7 +13,7 @@ use crate::common::Flusher;
 use crate::fixtures::payload_fixtures::{
     generate_diverse_payload, FLT_KEY, GEO_KEY, INT_KEY, STR_KEY, TEXT_KEY,
 };
-use crate::id_tracker::IdTracker;
+use crate::id_tracker::{IdTracker, IdTrackerEnum};
 use crate::index::plain_payload_index::PlainPayloadIndex;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::PayloadIndex;
@@ -158,6 +158,14 @@ impl IdTracker for FixtureIdTracker {
 
     fn cleanup_versions(&mut self) -> OperationResult<()> {
         Ok(())
+    }
+
+    fn make_immutable(&self, _save_path: &Path) -> OperationResult<IdTrackerEnum> {
+        unimplemented!()
+    }
+
+    fn name(&self) -> &'static str {
+        "fixture id tracker"
     }
 }
 
