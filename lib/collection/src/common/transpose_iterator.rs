@@ -40,7 +40,7 @@ pub fn transpose<T>(v: Vec<Vec<T>>) -> Vec<Vec<T>> {
 /// May panic if the input is not a rectangle.
 pub fn transposed_iter<T>(rectangle: Vec<Vec<T>>) -> impl Iterator<Item = Vec<T>> {
     assert!(!rectangle.is_empty());
-    let len = rectangle[0].len();
+    let len = rectangle.first().map(Vec::len).unwrap_or(0);
     let mut iters: Vec<_> = rectangle.into_iter().map(|n| n.into_iter()).collect();
     (0..len).map(move |_| {
         iters
