@@ -215,6 +215,13 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleDenseVectorStorage<T> {
         CowVector::from(T::slice_to_float_cow(self.vectors.get(key).into()))
     }
 
+    /// Get vector by key, if it exists.
+    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
+        self.vectors
+            .get_opt(key)
+            .map(|slice| CowVector::from(T::slice_to_float_cow(slice.into())))
+    }
+
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
         let vector: &[VectorElementType] = vector.try_into()?;
         let vector = T::slice_from_float_cow(Cow::from(vector));
