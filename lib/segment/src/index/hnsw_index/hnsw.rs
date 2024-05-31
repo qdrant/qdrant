@@ -63,6 +63,7 @@ pub struct HNSWIndex<TGraphLinks: GraphLinks> {
     quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
     payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     config: HnswGraphConfig,
+    hnsw_config: HnswConfig,
     path: PathBuf,
     graph: Option<GraphLayers<TGraphLinks>>,
     searches_telemetry: HNSWSearchesTelemetry,
@@ -92,26 +93,11 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let config = if config_path.exists() {
             HnswGraphConfig::load(&config_path)?
         } else {
-            let vector_storage = vector_storage.borrow();
-            let available_vectors = vector_storage.available_vector_count();
-            let full_scan_threshold = vector_storage
-                .available_size_in_bytes()
-                .checked_div(available_vectors)
-                .and_then(|avg_vector_size| {
-                    hnsw_config
-                        .full_scan_threshold
-                        .saturating_mul(BYTES_IN_KB)
-                        .checked_div(avg_vector_size)
-                })
-                .unwrap_or(1);
-
             HnswGraphConfig::new(
                 hnsw_config.m,
                 hnsw_config.ef_construct,
-                full_scan_threshold,
                 hnsw_config.max_indexing_threads,
                 hnsw_config.payload_m,
-                available_vectors,
             )
         };
 
@@ -128,6 +114,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             quantized_vectors,
             payload_index,
             config,
+            hnsw_config,
             path: path.to_owned(),
             graph,
             searches_telemetry: HNSWSearchesTelemetry {
@@ -552,7 +539,8 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 // But because a lot of points may be deleted in this graph, it may just be faster
                 // to do a plain search instead.
                 let plain_search = exact
-                    || vector_storage.available_vector_count() < self.config.full_scan_threshold;
+                    || vector_storage.available_vector_count()
+                        < self.config.full_scan_threshold.unwrap_or_default();
 
                 // Do plain or graph search
                 if plain_search {
@@ -623,7 +611,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     id_tracker.available_point_count(),
                 );
 
-                if query_cardinality.max < self.config.full_scan_threshold {
+                if query_cardinality.max < self.config.full_scan_threshold.unwrap_or_default() {
                     // if cardinality is small - use plain index
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.small_cardinality);
@@ -636,7 +624,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                     );
                 }
 
-                if query_cardinality.min > self.config.full_scan_threshold {
+                if query_cardinality.min > self.config.full_scan_threshold.unwrap_or_default() {
                     // if cardinality is high enough - use HNSW index
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.large_cardinality);
@@ -656,7 +644,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 if sample_check_cardinality(
                     id_tracker.sample_ids(Some(vector_storage.deleted_vector_bitslice())),
                     |idx| filter_context.check(idx),
-                    self.config.full_scan_threshold,
+                    self.config.full_scan_threshold.unwrap_or_default(),
                     available_vector_count, // Check cardinality among available vectors
                 ) {
                     // if cardinality is high enough - use HNSW index
@@ -692,7 +680,19 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             "building HNSW for {total_vector_count} vectors with {} CPUs",
             permit.num_cpus,
         );
-        let indexing_threshold = self.config.full_scan_threshold;
+        let available_vectors = vector_storage.available_vector_count();
+        let indexing_threshold = vector_storage
+            .available_size_in_bytes()
+            .checked_div(available_vectors)
+            .and_then(|avg_vector_size| {
+                self.hnsw_config
+                    .full_scan_threshold
+                    .saturating_mul(BYTES_IN_KB)
+                    .checked_div(avg_vector_size)
+            })
+            .unwrap_or(1);
+        self.config.full_scan_threshold.replace(indexing_threshold);
+
         let mut graph_layers_builder = GraphLayersBuilder::new(
             total_vector_count,
             self.config.m,
