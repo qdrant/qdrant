@@ -632,7 +632,11 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
         async move {
             // TODO: always use futures unordered here!
-            let await_for_one = select_all(receivers.iter_mut().map(|receiver| Box::pin(receiver.recv())));
+            let await_for_one = select_all(
+                receivers
+                    .iter_mut()
+                    .map(|receiver| Box::pin(receiver.recv())),
+            );
             let (result, index, _operations) = tokio::time::timeout(
                 wait_timeout.unwrap_or(defaults::CONSENSUS_META_OP_WAIT),
                 await_for_one,

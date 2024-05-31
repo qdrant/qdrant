@@ -16,6 +16,8 @@ use crate::shards::shard_holder::LockedShardHolder;
 use crate::shards::transfer::{ShardTransfer, ShardTransferConsensus, ShardTransferMethod};
 use crate::shards::CollectionId;
 
+const MIGRATE_POINT_TRANSFER_MAX_DURATION: Duration = Duration::from_secs(12 * 60 * 60);
+
 #[derive(Debug, Serialize, Deserialize)]
 struct DriverState {
     key: ReshardKey,
@@ -176,7 +178,7 @@ async fn stage_migrate_points(
     state.bump_all_peers_to(Stage::S2_MigratePointsStart);
 
     while let Some(source_shard_id) = state.shards_to_migrate().pop() {
-        let mut transfer = shard_holder
+        let ongoing_transfer = shard_holder
             .read()
             .await
             .get_transfers(|transfer| {
@@ -186,22 +188,25 @@ async fn stage_migrate_points(
             })
             .pop();
 
-        // If there is no transfer yet, start one now
-        if transfer.is_none() {
-            // TODO: also support local transfers (without consensus?)
-            // TODO: do not just pick random source, consider transfer limits
-            let active_remote_shards = {
-                let shard_holder = shard_holder.read().await;
+        // Get the transfer, if there is no transfer yet, start one now
+        let transfer = match ongoing_transfer {
+            Some(transfer) => transfer,
+            None => {
+                // TODO: also support local transfers (without consensus?)
+                // TODO: do not just pick random source, consider transfer limits
+                let active_remote_shards = {
+                    let shard_holder = shard_holder.read().await;
 
-                let replica_set = shard_holder.get_shard(&source_shard_id).ok_or_else(|| {
-                    CollectionError::service_error(format!(
+                    let replica_set =
+                        shard_holder.get_shard(&source_shard_id).ok_or_else(|| {
+                            CollectionError::service_error(format!(
                         "Shard {source_shard_id} not found in the shard holder for resharding",
                     ))
-                })?;
+                        })?;
 
-                replica_set.active_remote_shards().await
-            };
-            let source_peer_id = active_remote_shards
+                    replica_set.active_remote_shards().await
+                };
+                let source_peer_id = active_remote_shards
                 .choose(&mut rand::thread_rng())
                 .cloned()
                 .ok_or_else(|| {
@@ -210,33 +215,35 @@ async fn stage_migrate_points(
                     ))
                 })?;
 
-            let transfer_config = ShardTransfer {
-                shard_id: source_shard_id,
-                from: source_peer_id,
-                to: consensus.this_peer_id()?,
-                sync: true,
-                method: Some(ShardTransferMethod::ReshardingStreamRecords),
-                to_shard_id: Some(state.key.shard_id),
-            };
-            consensus
-                .start_shard_transfer_confirm_and_retry(&transfer_config, collection_id)
-                .await?;
-            transfer.replace(transfer_config);
-        }
-
-        // Wait for shard transfer to finish
-        // TODO: we must not fall through this before it even started
-        // TODO: don't wait for transfer to be gone, listen to finish/abort message instead!
-        let transfer_key = transfer.as_ref().unwrap().key();
-        loop {
-            let transfer_ongoing = shard_holder
-                .read()
-                .await
-                .check_transfer_exists(&transfer_key);
-            if !transfer_ongoing {
-                break;
+                let transfer = ShardTransfer {
+                    shard_id: source_shard_id,
+                    from: source_peer_id,
+                    to: consensus.this_peer_id()?,
+                    sync: true,
+                    method: Some(ShardTransferMethod::ReshardingStreamRecords),
+                    to_shard_id: Some(state.key.shard_id),
+                };
+                consensus
+                    .start_shard_transfer_confirm_and_retry(&transfer, collection_id)
+                    .await?;
+                transfer
             }
-            tokio::time::sleep(Duration::from_secs(1)).await;
+        };
+
+        // Wait for the transfer to finish
+        // TODO: await before above restart
+        // TODO: ensure this can't data race
+        let result = consensus
+            .await_shard_transfer_end(
+                transfer.clone(),
+                collection_id.clone(),
+                Some(MIGRATE_POINT_TRANSFER_MAX_DURATION),
+            )
+            .await?;
+        if result.is_err() {
+            return Err(CollectionError::service_error(format!(
+                "Shard {source_shard_id} failed to be transferred to this node for resharding",
+            )));
         }
 
         state.migrated_shards.push(source_shard_id);

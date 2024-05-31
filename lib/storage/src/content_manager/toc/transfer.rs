@@ -126,9 +126,10 @@ impl ShardTransferConsensus for ShardTransferDispatcher {
         collection_id: CollectionId,
         timeout: Option<Duration>,
     ) -> CollectionResult<Result<(), ()>> {
-        let success = ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::TransferShard(
-                        collection_id.clone(),
-                        ShardTransferOperations::Finish(transfer.clone()),
+        let success =
+            ConsensusOperations::CollectionMeta(Box::new(CollectionMetaOperations::TransferShard(
+                collection_id.clone(),
+                ShardTransferOperations::Finish(transfer.clone()),
             )));
         let failure =
             // TODO: this does not work because reason can be anything
@@ -140,13 +141,10 @@ impl ShardTransferConsensus for ShardTransferDispatcher {
                         },
             )));
 
-        let result = self.consensus_state.await_for_any_operation(
-            vec![
-                success.clone(),
-                failure.clone(),
-            ],
-            timeout,
-        ).await;
+        let result = self
+            .consensus_state
+            .await_for_any_operation(vec![success.clone(), failure.clone()], timeout)
+            .await;
 
         match result {
             // We saw the success operation
@@ -154,9 +152,13 @@ impl ShardTransferConsensus for ShardTransferDispatcher {
             // We saw the failure operation
             Ok(Ok(_operation)) => Ok(Err(())),
             // Storage error
-            Ok(Err(err)) => Err(CollectionError::service_error(format!("Failed to await for shard transfer end: {err}"))),
+            Ok(Err(err)) => Err(CollectionError::service_error(format!(
+                "Failed to await for shard transfer end: {err}"
+            ))),
             // Timeout
-            Err(err) => Err(CollectionError::service_error(format!("Awaiting for shard transfer end timed out: {err}"))),
+            Err(err) => Err(CollectionError::service_error(format!(
+                "Awaiting for shard transfer end timed out: {err}"
+            ))),
         }
     }
 }
