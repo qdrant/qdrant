@@ -12,6 +12,7 @@ pub mod service_api;
 pub mod shards_api;
 pub mod snapshot_api;
 pub mod update_api;
+pub mod query_api;
 
 use common::validation::validate_collection_name;
 use serde::Deserialize;
