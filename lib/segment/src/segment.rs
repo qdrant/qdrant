@@ -194,14 +194,13 @@ impl Segment {
         check_named_vectors(&vectors, &self.segment_config)?;
         for (vector_name, new_vector) in vectors {
             let vector_data = &self.vector_data[vector_name.as_ref()];
+            let mut vector_storage = vector_data.vector_storage.borrow_mut();
             let old_vector = if new_vector.as_vec_ref().is_sparse() {
                 // Sparse vector index requires an old vector to be passed
                 // to update operation, so it can clean up old index entries properly
                 //
                 // So we retrieve it here.
-                vector_data
-                    .vector_storage
-                    .borrow()
+                vector_storage
                     .get_vector_opt(internal_id)
                     .map(CowVector::to_owned)
             } else {
@@ -211,10 +210,7 @@ impl Segment {
             };
 
             let new_vector = new_vector.as_vec_ref();
-            vector_data
-                .vector_storage
-                .borrow_mut()
-                .insert_vector(internal_id, new_vector)?;
+            vector_storage.insert_vector(internal_id, new_vector)?;
             vector_data.vector_index.borrow_mut().update_vector(
                 internal_id,
                 new_vector,
