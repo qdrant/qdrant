@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::cmp::max;
 use std::path::{Path, PathBuf};
 
 use common::types::PointOffsetType;
@@ -106,7 +105,7 @@ impl InvertedIndexRam {
         old_vector: Option<RemappedSparseVector>,
     ) {
         // Find elements of the old vector that are not in the new vector
-        if let Some(old_vector) = old_vector {
+        if let Some(old_vector) = &old_vector {
             let elements_to_delete = old_vector
                 .indices
                 .iter()
