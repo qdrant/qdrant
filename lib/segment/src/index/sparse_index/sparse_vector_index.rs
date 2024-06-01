@@ -606,6 +606,14 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
             let vector = self.indices_tracker.remap_vector(vector.to_owned());
             let old_vector = old_vector.map(|v| self.indices_tracker.remap_vector(v.to_owned()));
             self.inverted_index.upsert(id, vector, old_vector);
+        } else {
+            if let Some(old_vector) = old_vector {
+                // Make sure empty vectors do not interfere with the index
+                if !old_vector.is_empty() {
+                    let old_vector = self.indices_tracker.remap_vector(old_vector);
+                    self.inverted_index.remove(id, old_vector);
+                }
+            }
         }
         Ok(())
     }

@@ -46,6 +46,8 @@ pub trait InvertedIndex: Sized {
     /// Files used by this index
     fn files(path: &Path) -> Vec<PathBuf>;
 
+    fn remove(&mut self, id: PointOffsetType, old_vector: RemappedSparseVector);
+
     /// Upsert a vector into the inverted index.
     fn upsert(
         &mut self,

@@ -65,6 +65,10 @@ impl InvertedIndex for InvertedIndexImmutableRam {
         InvertedIndexMmap::files(path)
     }
 
+    fn remove(&mut self, _id: PointOffsetType, _old_vector: RemappedSparseVector) {
+        panic!("Cannot remove from a read-only RAM inverted index")
+    }
+
     fn upsert(
         &mut self,
         _id: PointOffsetType,

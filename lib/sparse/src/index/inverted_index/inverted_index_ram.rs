@@ -48,6 +48,14 @@ impl InvertedIndex for InvertedIndexRam {
         Vec::new()
     }
 
+    fn remove(&mut self, id: PointOffsetType, old_vector: RemappedSparseVector) {
+        for dim_id in old_vector.indices {
+            self.postings[dim_id as usize].delete(id);
+        }
+
+        self.vector_count = self.vector_count.saturating_sub(1);
+    }
+
     fn upsert(
         &mut self,
         id: PointOffsetType,

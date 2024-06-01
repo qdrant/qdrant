@@ -74,6 +74,10 @@ impl InvertedIndex for InvertedIndexMmap {
         ]
     }
 
+    fn remove(&mut self, _id: PointOffsetType, _old_vector: RemappedSparseVector) {
+        panic!("Cannot remove from a read-only Mmap inverted index")
+    }
+
     fn upsert(
         &mut self,
         _id: PointOffsetType,
