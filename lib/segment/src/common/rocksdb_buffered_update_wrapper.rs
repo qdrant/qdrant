@@ -33,10 +33,11 @@ impl DatabaseColumnScheduledUpdateWrapper {
         K: AsRef<[u8]>,
         V: AsRef<[u8]>,
     {
+        // keep `insert_pending_persistence` lock for atomicity
+        let mut insert_guard = self.insert_pending_persistence.lock();
+        insert_guard.insert(key.as_ref().to_vec(), value.as_ref().to_vec());
         self.deleted_pending_persistence.lock().remove(key.as_ref());
-        self.insert_pending_persistence
-            .lock()
-            .insert(key.as_ref().to_vec(), value.as_ref().to_vec());
+        drop(insert_guard);
         Ok(())
     }
 
@@ -45,14 +46,21 @@ impl DatabaseColumnScheduledUpdateWrapper {
         K: AsRef<[u8]>,
     {
         let key = key.as_ref();
-        self.insert_pending_persistence.lock().remove(key);
+        // keep `insert_pending_persistence` lock for atomicity
+        let mut insert_guard = self.insert_pending_persistence.lock();
+        insert_guard.remove(key);
         self.deleted_pending_persistence.lock().insert(key.to_vec());
+        drop(insert_guard);
         Ok(())
     }
 
     pub fn flusher(&self) -> Flusher {
-        let ids_to_delete = mem::take(&mut *self.deleted_pending_persistence.lock());
         let ids_to_insert = mem::take(&mut *self.insert_pending_persistence.lock());
+        let ids_to_delete = mem::take(&mut *self.deleted_pending_persistence.lock());
+        debug_assert!(
+            ids_to_insert.keys().all(|key| !ids_to_delete.contains(key)),
+            "Key to marked for insertion is also marked for deletion!"
+        );
         let wrapper = self.db.clone();
         Box::new(move || {
             for id in ids_to_delete {
