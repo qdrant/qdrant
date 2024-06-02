@@ -363,12 +363,10 @@ pub trait SegmentOptimizer {
         }
 
         for field in proxy_deleted_indexes.read().iter() {
-            segment_builder.indexed_fields.remove(field);
+            segment_builder.remove_indexed_field(field);
         }
         for (field, schema_type) in proxy_created_indexes.read().iter() {
-            segment_builder
-                .indexed_fields
-                .insert(field.to_owned(), schema_type.to_owned());
+            segment_builder.add_indexed_field(field.to_owned(), schema_type.to_owned());
         }
 
         let mut optimized_segment: Segment = segment_builder.build(permit, stopped)?;

@@ -20,10 +20,10 @@ use crate::vector_storage::VectorStorage;
 
 /// Structure for constructing segment out of several other segments
 pub struct SegmentBuilder {
-    pub segment: Option<Segment>,
-    pub destination_path: PathBuf,
-    pub temp_path: PathBuf,
-    pub indexed_fields: HashMap<PayloadKeyType, PayloadFieldSchema>,
+    segment: Option<Segment>,
+    destination_path: PathBuf,
+    temp_path: PathBuf,
+    indexed_fields: HashMap<PayloadKeyType, PayloadFieldSchema>,
 }
 
 impl SegmentBuilder {
@@ -43,6 +43,14 @@ impl SegmentBuilder {
             temp_path,
             indexed_fields: Default::default(),
         })
+    }
+
+    pub fn remove_indexed_field(&mut self, field: &PayloadKeyType) {
+        self.indexed_fields.remove(field);
+    }
+
+    pub fn add_indexed_field(&mut self, field: PayloadKeyType, schema: PayloadFieldSchema) {
+        self.indexed_fields.insert(field, schema);
     }
 
     /// Update current segment builder with all (not deleted) vectors and payload form `other` segment
