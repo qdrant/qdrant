@@ -15,10 +15,11 @@ use super::{
 use crate::common::error_logging::LogError;
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::entry::entry_point::SegmentEntry;
-use crate::id_tracker::IdTrackerEnum;
+use crate::id_tracker::{IdTracker, IdTrackerEnum};
 use crate::index::hnsw_index::num_rayon_threads;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
+use crate::payload_storage::PayloadStorage;
 use crate::segment::Segment;
 use crate::segment_constructor::{build_segment, load_segment};
 use crate::types::{Indexes, PayloadFieldSchema, PayloadKeyType, SegmentConfig, SeqNumberType};
@@ -27,13 +28,12 @@ use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 /// Structure for constructing segment out of several other segments
 pub struct SegmentBuilder {
-    segment: Option<Segment>,
-
-    _version: Option<SeqNumberType>,
+    version: SeqNumberType,
     _database: Arc<RwLock<DB>>,
-    _id_tracker: IdTrackerEnum,
-    _payload_storage: PayloadStorageEnum,
-    _vector_storages: HashMap<String, VectorStorageEnum>,
+    id_tracker: IdTrackerEnum,
+    payload_storage: PayloadStorageEnum,
+    vector_storages: HashMap<String, VectorStorageEnum>,
+    segment_config: SegmentConfig,
 
     destination_path: PathBuf,
     temp_path: PathBuf,
@@ -50,7 +50,6 @@ impl SegmentBuilder {
         // so we can ignore the `stopped` flag
         let stopped = AtomicBool::new(false);
 
-        let segment = build_segment(temp_dir, segment_config, true)?;
         let temp_path = new_segment_path(temp_dir);
 
         let database = open_segment_db(&temp_path, segment_config)?;
@@ -77,13 +76,12 @@ impl SegmentBuilder {
         let destination_path = segment_path.join(temp_path.file_name().unwrap());
 
         Ok(SegmentBuilder {
-            segment: Some(segment),
-
-            _version: None,
+            version: Default::default(), // default version is 0
             _database: database,
-            _id_tracker: id_tracker,
-            _payload_storage: payload_storage,
-            _vector_storages: vector_storages,
+            id_tracker,
+            payload_storage,
+            vector_storages,
+            segment_config: segment_config.clone(),
 
             destination_path,
             temp_path,
@@ -111,15 +109,8 @@ impl SegmentBuilder {
     /// * `bool` - if `true` - data successfully added, if `false` - process was interrupted
     ///
     pub fn update_from(&mut self, other: &Segment, stopped: &AtomicBool) -> OperationResult<bool> {
-        let self_segment = match &mut self.segment {
-            Some(segment) => segment,
-            None => {
-                return Err(OperationError::service_error(
-                    "Segment building error: created segment not found",
-                ));
-            }
-        };
-        self_segment.version = Some(cmp::max(self_segment.version(), other.version()));
+
+        self.version = cmp::max(self.version, other.version());
 
         let other_id_tracker = other.id_tracker.borrow();
         let other_vector_storages: HashMap<_, _> = other
@@ -131,27 +122,16 @@ impl SegmentBuilder {
             .collect();
         let other_payload_index = other.payload_index.borrow();
 
-        let mut id_tracker = self_segment.id_tracker.borrow_mut();
-        let mut vector_storages: HashMap<_, _> = self_segment
-            .vector_data
-            .iter()
-            .map(|(vector_name, vector_data)| {
-                (
-                    vector_name.to_owned(),
-                    vector_data.vector_storage.borrow_mut(),
-                )
-            })
-            .collect();
-        let mut payload_index = self_segment.payload_index.borrow_mut();
+        let id_tracker = &mut self.id_tracker;
 
-        if vector_storages.len() != other_vector_storages.len() {
+        if self.vector_storages.len() != other_vector_storages.len() {
             return Err(OperationError::service_error(
-                format!("Self and other segments have different vector names count. Self count: {}, other count: {}", vector_storages.len(), other_vector_storages.len()),
+                format!("Self and other segments have different vector names count. Self count: {}, other count: {}", self.vector_storages.len(), other_vector_storages.len()),
             ));
         }
 
         let mut new_internal_range = None;
-        for (vector_name, vector_storage) in &mut vector_storages {
+        for (vector_name, vector_storage) in &mut self.vector_storages {
             check_process_stopped(stopped)?;
             let other_vector_storage = other_vector_storages.get(vector_name).ok_or_else(|| {
                 OperationError::service_error(format!(
@@ -208,7 +188,7 @@ impl SegmentBuilder {
                         let other_payload = other_payload_index.payload(old_internal_id)?;
                         // Propagate payload to new segment
                         if !other_payload.is_empty() {
-                            payload_index.assign(new_internal_id, &other_payload, &None)?;
+                            self.payload_storage.assign(new_internal_id, &other_payload)?;
                         }
                     }
                     Some(existing_internal_id) => {
@@ -221,11 +201,11 @@ impl SegmentBuilder {
                             id_tracker.drop(external_id)?;
                             id_tracker.set_link(external_id, new_internal_id)?;
                             id_tracker.set_internal_version(new_internal_id, other_version)?;
-                            payload_index.drop(existing_internal_id)?;
+                            self.payload_storage.drop(existing_internal_id)?;
                             let other_payload = other_payload_index.payload(old_internal_id)?;
                             // Propagate payload to new segment
                             if !other_payload.is_empty() {
-                                payload_index.assign(new_internal_id, &other_payload, &None)?;
+                                self.payload_storage.assign(new_internal_id, &other_payload)?;
                             }
                             existing_internal_id
                         } else {
@@ -233,7 +213,7 @@ impl SegmentBuilder {
                             // Mark newly added vector as removed
                             new_internal_id
                         };
-                        for vector_storage in vector_storages.values_mut() {
+                        for vector_storage in self.vector_storages.values_mut() {
                             vector_storage.delete_vector(remove_id)?;
                         }
                     }
@@ -256,10 +236,6 @@ impl SegmentBuilder {
         {
             // Arc permit to share it with each vector store
             let permit = Arc::new(permit);
-
-            let mut segment = self.segment.take().ok_or(OperationError::service_error(
-                "Segment building error: created segment not found",
-            ))?;
 
             for (field, payload_schema) in &self.indexed_fields {
                 segment.create_field_index(segment.version(), field, Some(payload_schema))?;
