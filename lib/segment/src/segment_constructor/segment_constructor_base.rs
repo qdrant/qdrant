@@ -26,6 +26,7 @@ use crate::index::sparse_index::sparse_vector_index::SparseVectorIndex;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::VectorIndexEnum;
 use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
+use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::segment::{Segment, SegmentVersion, VectorData, SEGMENT_STATE_FILE};
 use crate::types::{
@@ -82,7 +83,7 @@ pub fn get_vector_index_path(segment_path: &Path, vector_name: &str) -> PathBuf 
     segment_path.join(get_vector_name_with_prefix(VECTOR_INDEX_PATH, vector_name))
 }
 
-fn open_vector_storage(
+pub(crate) fn open_vector_storage(
     database: &Arc<RwLock<DB>>,
     vector_config: &VectorDataConfig,
     stopped: &AtomicBool,
@@ -247,12 +248,10 @@ fn open_vector_storage(
     }
 }
 
-fn create_segment(
-    version: Option<SeqNumberType>,
+pub(crate) fn open_segment_db(
     segment_path: &Path,
     config: &SegmentConfig,
-    stopped: &AtomicBool,
-) -> OperationResult<Segment> {
+) -> OperationResult<Arc<RwLock<DB>>> {
     let vector_db_names: Vec<String> = config
         .vector_data
         .keys()
@@ -264,13 +263,28 @@ fn create_segment(
                 .map(|vector_name| get_vector_name_with_prefix(DB_VECTOR_CF, vector_name)),
         )
         .collect();
-    let database = open_db(segment_path, &vector_db_names)
-        .map_err(|err| OperationError::service_error(format!("RocksDB open error: {err}")))?;
+    open_db(segment_path, &vector_db_names)
+        .map_err(|err| OperationError::service_error(format!("RocksDB open error: {err}")))
+}
 
-    let payload_storage = match config.payload_storage_type {
-        PayloadStorageType::InMemory => sp(SimplePayloadStorage::open(database.clone())?.into()),
-        PayloadStorageType::OnDisk => sp(OnDiskPayloadStorage::open(database.clone())?.into()),
-    };
+pub(crate) fn create_payload_storage(
+    database: Arc<RwLock<DB>>,
+    config: &SegmentConfig,
+) -> OperationResult<PayloadStorageEnum> {
+    match config.payload_storage_type {
+        PayloadStorageType::InMemory => SimplePayloadStorage::open(database)?.into(),
+        PayloadStorageType::OnDisk => OnDiskPayloadStorage::open(database)?.into(),
+    }
+}
+
+fn create_segment(
+    version: Option<SeqNumberType>,
+    segment_path: &Path,
+    config: &SegmentConfig,
+    stopped: &AtomicBool,
+) -> OperationResult<Segment> {
+    let database = open_segment_db(segment_path, config)?;
+    let payload_storage = sp(create_payload_storage(database.clone(), config)?);
 
     let appendable_flag = config
         .vector_data
@@ -511,6 +525,10 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option
     Ok(Some(segment))
 }
 
+pub fn new_segment_path(segments_path: &Path) -> PathBuf {
+    segments_path.join(Uuid::new_v4().to_string())
+}
+
 /// Build segment instance using given configuration.
 /// Builder will generate folder for the segment and store all segment information inside it.
 ///
@@ -528,7 +546,7 @@ pub fn build_segment(
     config: &SegmentConfig,
     ready: bool,
 ) -> OperationResult<Segment> {
-    let segment_path = segments_path.join(Uuid::new_v4().to_string());
+    let segment_path = new_segment_path(segments_path);
 
     std::fs::create_dir_all(&segment_path)?;
 

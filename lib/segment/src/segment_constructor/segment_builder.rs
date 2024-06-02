@@ -3,24 +3,36 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use parking_lot::RwLock;
+use rocksdb::DB;
 
 use common::cpu::CpuPermit;
 
-use super::get_vector_storage_path;
+use super::{create_payload_storage, get_vector_storage_path, new_segment_path, open_segment_db, open_vector_storage};
 use crate::common::error_logging::LogError;
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::entry::entry_point::SegmentEntry;
+use crate::id_tracker::IdTrackerEnum;
 use crate::index::hnsw_index::num_rayon_threads;
 use crate::index::{PayloadIndex, VectorIndex};
+use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::segment::Segment;
 use crate::segment_constructor::{build_segment, load_segment};
-use crate::types::{Indexes, PayloadFieldSchema, PayloadKeyType, SegmentConfig};
+use crate::types::{Indexes, PayloadFieldSchema, PayloadKeyType, SegmentConfig, SeqNumberType};
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-use crate::vector_storage::VectorStorage;
+use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 /// Structure for constructing segment out of several other segments
 pub struct SegmentBuilder {
     segment: Option<Segment>,
+    version: Option<SeqNumberType>,
+    database: Arc<RwLock<DB>>,
+    id_tracker: IdTrackerEnum,
+    payload_storage: PayloadStorageEnum,
+    vector_storage: HashMap<String, VectorStorageEnum>,
+
+
+
     destination_path: PathBuf,
     temp_path: PathBuf,
     indexed_fields: HashMap<PayloadKeyType, PayloadFieldSchema>,
@@ -32,8 +44,31 @@ impl SegmentBuilder {
         temp_dir: &Path,
         segment_config: &SegmentConfig,
     ) -> OperationResult<Self> {
+
+        // When we build a new segment, it is empty at first,
+        // so we can ignore the `stopped` flag
+        let stopped = AtomicBool::new(false);
+
         let segment = build_segment(temp_dir, segment_config, true)?;
-        let temp_path = segment.current_path.clone();
+        let temp_path = new_segment_path(temp_dir);
+
+        let database = open_segment_db(&temp_path, segment_config)?;
+        let payload_storage = create_payload_storage(database.clone(), segment_config)?;
+
+        let mut vector_stores = HashMap::new();
+
+        for (vector_name, vector_config) in &segment_config.vector_data {
+            let vector_storage_path = get_vector_storage_path(segment_path, vector_name);
+            let vector_storage = open_vector_storage(
+                &database,
+                vector_config,
+                &stopped,
+                &vector_storage_path,
+                vector_name,
+            )?;
+
+            vector_stores.insert(vector_name.to_owned(), vector_storage);
+        }
 
         let destination_path = segment_path.join(temp_path.file_name().unwrap());
 
