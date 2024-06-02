@@ -30,20 +30,16 @@ fn init_vector_storage(
     dim: usize,
     num: usize,
     dist: Distance,
-) -> (
-    Arc<AtomicRefCell<VectorStorageEnum>>,
-    Arc<AtomicRefCell<IdTrackerSS>>,
-) {
+) -> (VectorStorageEnum, Arc<AtomicRefCell<IdTrackerSS>>) {
     let db = open_db(path, &[DB_VECTOR_CF]).unwrap();
     let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(num)));
-    let storage =
+    let mut storage =
         open_simple_dense_vector_storage(db, DB_VECTOR_CF, dim, dist, &AtomicBool::new(false))
             .unwrap();
     {
-        let mut borrowed_storage = storage.borrow_mut();
         for i in 0..num {
             let vector: Vector = random_vector(dim).into();
-            borrowed_storage
+            storage
                 .insert_vector(i as PointOffsetType, VectorRef::from(&vector))
                 .unwrap();
         }
@@ -57,7 +53,6 @@ fn benchmark_naive(c: &mut Criterion) {
 
     let dist = Distance::Dot;
     let (storage, id_tracker) = init_vector_storage(dir.path(), DIM, NUM_VECTORS, dist);
-    let borrowed_storage = storage.borrow();
     let borrowed_id_tracker = id_tracker.borrow();
 
     let mut group = c.benchmark_group("storage-score-all");
@@ -68,7 +63,7 @@ fn benchmark_naive(c: &mut Criterion) {
             let vector = vector.as_slice().into();
             new_raw_scorer(
                 vector,
-                &borrowed_storage,
+                &storage,
                 borrowed_id_tracker.deleted_point_bitslice(),
             )
             .unwrap()
@@ -82,7 +77,6 @@ fn random_access_benchmark(c: &mut Criterion) {
 
     let dist = Distance::Dot;
     let (storage, id_tracker) = init_vector_storage(dir.path(), DIM, NUM_VECTORS, dist);
-    let borrowed_storage = storage.borrow();
     let borrowed_id_tracker = id_tracker.borrow();
 
     let mut group = c.benchmark_group("storage-score-random");
@@ -92,7 +86,7 @@ fn random_access_benchmark(c: &mut Criterion) {
 
     let scorer = new_raw_scorer(
         vector,
-        &borrowed_storage,
+        &storage,
         borrowed_id_tracker.deleted_point_bitslice(),
     )
     .unwrap();

@@ -89,7 +89,7 @@ pub(crate) fn open_vector_storage(
     stopped: &AtomicBool,
     vector_storage_path: &Path,
     vector_name: &str,
-) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
+) -> OperationResult<VectorStorageEnum> {
     let storage_element_type = vector_config.datatype.unwrap_or_default();
 
     match vector_config.storage_type {
@@ -271,10 +271,21 @@ pub(crate) fn create_payload_storage(
     database: Arc<RwLock<DB>>,
     config: &SegmentConfig,
 ) -> OperationResult<PayloadStorageEnum> {
-    match config.payload_storage_type {
-        PayloadStorageType::InMemory => SimplePayloadStorage::open(database)?.into(),
-        PayloadStorageType::OnDisk => OnDiskPayloadStorage::open(database)?.into(),
-    }
+    let payload_storage = match config.payload_storage_type {
+        PayloadStorageType::InMemory => {
+            PayloadStorageEnum::from(SimplePayloadStorage::open(database)?)
+        }
+        PayloadStorageType::OnDisk => {
+            PayloadStorageEnum::from(OnDiskPayloadStorage::open(database)?)
+        }
+    };
+    Ok(payload_storage)
+}
+
+pub(crate) fn create_id_tracker(database: Arc<RwLock<DB>>) -> OperationResult<IdTrackerEnum> {
+    Ok(IdTrackerEnum::MutableIdTracker(SimpleIdTracker::open(
+        database,
+    )?))
 }
 
 fn create_segment(
@@ -298,9 +309,7 @@ fn create_segment(
         )
         .all(|v| v);
 
-    let id_tracker = sp(IdTrackerEnum::MutableIdTracker(SimpleIdTracker::open(
-        database.clone(),
-    )?));
+    let id_tracker = sp(create_id_tracker(database.clone())?);
 
     let payload_index_path = segment_path.join(PAYLOAD_INDEX_PATH);
     let payload_index: Arc<AtomicRefCell<StructPayloadIndex>> = sp(StructPayloadIndex::open(
@@ -316,13 +325,13 @@ fn create_segment(
         let vector_index_path = get_vector_index_path(segment_path, vector_name);
 
         // Select suitable vector storage type based on configuration
-        let vector_storage = open_vector_storage(
+        let vector_storage = Arc::new(AtomicRefCell::new(open_vector_storage(
             &database,
             vector_config,
             stopped,
             &vector_storage_path,
             vector_name,
-        )?;
+        )?));
 
         // Warn when number of points between ID tracker and storage differs
         let point_count = id_tracker.borrow().total_point_count();

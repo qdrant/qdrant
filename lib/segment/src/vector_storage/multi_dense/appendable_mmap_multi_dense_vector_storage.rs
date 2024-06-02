@@ -2,9 +2,7 @@ use std::fs::create_dir_all;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
 
-use atomic_refcell::AtomicRefCell;
 use bitvec::prelude::BitSlice;
 use common::types::PointOffsetType;
 
@@ -45,7 +43,7 @@ pub fn open_appendable_memmap_multi_vector_storage(
     dim: usize,
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
-) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
+) -> OperationResult<VectorStorageEnum> {
     let storage = open_appendable_memmap_multi_vector_storage_impl::<VectorElementType>(
         path,
         dim,
@@ -53,8 +51,8 @@ pub fn open_appendable_memmap_multi_vector_storage(
         multi_vector_config,
     )?;
 
-    Ok(Arc::new(AtomicRefCell::new(
-        VectorStorageEnum::MultiDenseAppendableMemmap(Box::new(storage)),
+    Ok(VectorStorageEnum::MultiDenseAppendableMemmap(Box::new(
+        storage,
     )))
 }
 
@@ -63,12 +61,12 @@ pub fn open_appendable_memmap_multi_vector_storage_byte(
     dim: usize,
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
-) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
+) -> OperationResult<VectorStorageEnum> {
     let storage =
         open_appendable_memmap_multi_vector_storage_impl(path, dim, distance, multi_vector_config)?;
 
-    Ok(Arc::new(AtomicRefCell::new(
-        VectorStorageEnum::MultiDenseAppendableMemmapByte(Box::new(storage)),
+    Ok(VectorStorageEnum::MultiDenseAppendableMemmapByte(Box::new(
+        storage,
     )))
 }
 
@@ -77,12 +75,12 @@ pub fn open_appendable_memmap_multi_vector_storage_half(
     dim: usize,
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
-) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
+) -> OperationResult<VectorStorageEnum> {
     let storage =
         open_appendable_memmap_multi_vector_storage_impl(path, dim, distance, multi_vector_config)?;
 
-    Ok(Arc::new(AtomicRefCell::new(
-        VectorStorageEnum::MultiDenseAppendableMemmapHalf(Box::new(storage)),
+    Ok(VectorStorageEnum::MultiDenseAppendableMemmapHalf(Box::new(
+        storage,
     )))
 }
 

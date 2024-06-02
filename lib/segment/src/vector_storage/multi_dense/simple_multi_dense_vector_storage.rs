@@ -2,7 +2,6 @@ use std::ops::Range;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use atomic_refcell::AtomicRefCell;
 use bitvec::prelude::{BitSlice, BitVec};
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
@@ -55,7 +54,7 @@ pub fn open_simple_multi_dense_vector_storage(
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
     stopped: &AtomicBool,
-) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
+) -> OperationResult<VectorStorageEnum> {
     let storage = open_simple_multi_dense_vector_storage_impl(
         database,
         database_column_name,
@@ -64,9 +63,7 @@ pub fn open_simple_multi_dense_vector_storage(
         multi_vector_config,
         stopped,
     )?;
-    Ok(Arc::new(AtomicRefCell::new(
-        VectorStorageEnum::MultiDenseSimple(storage),
-    )))
+    Ok(VectorStorageEnum::MultiDenseSimple(storage))
 }
 
 pub fn open_simple_multi_dense_vector_storage_byte(
@@ -76,7 +73,7 @@ pub fn open_simple_multi_dense_vector_storage_byte(
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
     stopped: &AtomicBool,
-) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
+) -> OperationResult<VectorStorageEnum> {
     let storage = open_simple_multi_dense_vector_storage_impl(
         database,
         database_column_name,
@@ -85,9 +82,7 @@ pub fn open_simple_multi_dense_vector_storage_byte(
         multi_vector_config,
         stopped,
     )?;
-    Ok(Arc::new(AtomicRefCell::new(
-        VectorStorageEnum::MultiDenseSimpleByte(storage),
-    )))
+    Ok(VectorStorageEnum::MultiDenseSimpleByte(storage))
 }
 
 pub fn open_simple_multi_dense_vector_storage_half(
@@ -97,7 +92,7 @@ pub fn open_simple_multi_dense_vector_storage_half(
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
     stopped: &AtomicBool,
-) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
+) -> OperationResult<VectorStorageEnum> {
     let storage = open_simple_multi_dense_vector_storage_impl(
         database,
         database_column_name,
@@ -106,9 +101,7 @@ pub fn open_simple_multi_dense_vector_storage_half(
         multi_vector_config,
         stopped,
     )?;
-    Ok(Arc::new(AtomicRefCell::new(
-        VectorStorageEnum::MultiDenseSimpleHalf(storage),
-    )))
+    Ok(VectorStorageEnum::MultiDenseSimpleHalf(storage))
 }
 
 fn open_simple_multi_dense_vector_storage_impl<T: PrimitiveVectorElement>(
