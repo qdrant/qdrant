@@ -109,7 +109,6 @@ impl SegmentBuilder {
     /// * `bool` - if `true` - data successfully added, if `false` - process was interrupted
     ///
     pub fn update_from(&mut self, other: &Segment, stopped: &AtomicBool) -> OperationResult<bool> {
-
         self.version = cmp::max(self.version, other.version());
 
         let other_id_tracker = other.id_tracker.borrow();
@@ -188,7 +187,8 @@ impl SegmentBuilder {
                         let other_payload = other_payload_index.payload(old_internal_id)?;
                         // Propagate payload to new segment
                         if !other_payload.is_empty() {
-                            self.payload_storage.assign(new_internal_id, &other_payload)?;
+                            self.payload_storage
+                                .assign(new_internal_id, &other_payload)?;
                         }
                     }
                     Some(existing_internal_id) => {
@@ -205,7 +205,8 @@ impl SegmentBuilder {
                             let other_payload = other_payload_index.payload(old_internal_id)?;
                             // Propagate payload to new segment
                             if !other_payload.is_empty() {
-                                self.payload_storage.assign(new_internal_id, &other_payload)?;
+                                self.payload_storage
+                                    .assign(new_internal_id, &other_payload)?;
                             }
                             existing_internal_id
                         } else {
