@@ -7,8 +7,6 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use common::cpu::CpuPermit;
 use io::storage_version::StorageVersion;
-use parking_lot::RwLock;
-use rocksdb::DB;
 
 use super::{
     create_id_tracker, create_payload_storage, create_sparse_vector_index, create_vector_index,
@@ -34,7 +32,6 @@ use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 /// Structure for constructing segment out of several other segments
 pub struct SegmentBuilder {
     version: SeqNumberType,
-    _database: Arc<RwLock<DB>>,
     id_tracker: IdTrackerEnum,
     payload_storage: PayloadStorageEnum,
     vector_storages: HashMap<String, VectorStorageEnum>,
@@ -84,7 +81,6 @@ impl SegmentBuilder {
 
         Ok(SegmentBuilder {
             version: Default::default(), // default version is 0
-            _database: database,
             id_tracker,
             payload_storage,
             vector_storages,
@@ -240,7 +236,6 @@ impl SegmentBuilder {
         let (temp_path, destination_path) = {
             let SegmentBuilder {
                 version,
-                _database,
                 id_tracker,
                 payload_storage,
                 mut vector_storages,
