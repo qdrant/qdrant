@@ -149,7 +149,7 @@ impl ShardReplicaSet {
             None
         };
         let replica_state: SaveOnDisk<ReplicaSetState> =
-            SaveOnDisk::load_or_init(shard_path.join(REPLICA_STATE_FILE))?;
+            SaveOnDisk::load_or_init_default(shard_path.join(REPLICA_STATE_FILE))?;
 
         let init_replica_state = init_state.unwrap_or(ReplicaState::Initializing);
         replica_state.write(|rs| {
@@ -219,7 +219,7 @@ impl ShardReplicaSet {
         optimizer_cpu_budget: CpuBudget,
     ) -> Self {
         let replica_state: SaveOnDisk<ReplicaSetState> =
-            SaveOnDisk::load_or_init(shard_path.join(REPLICA_STATE_FILE)).unwrap();
+            SaveOnDisk::load_or_init_default(shard_path.join(REPLICA_STATE_FILE)).unwrap();
 
         if replica_state.read().this_peer_id != this_peer_id {
             replica_state

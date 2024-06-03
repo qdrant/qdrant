@@ -26,7 +26,8 @@ impl Collection {
         collection_path: &Path,
     ) -> CollectionResult<SaveOnDisk<PayloadIndexSchema>> {
         let payload_index_file = Self::payload_index_file(collection_path);
-        let schema: SaveOnDisk<PayloadIndexSchema> = SaveOnDisk::load_or_init(payload_index_file)?;
+        let schema: SaveOnDisk<PayloadIndexSchema> =
+            SaveOnDisk::load_or_init_default(payload_index_file)?;
         Ok(schema)
     }
 
