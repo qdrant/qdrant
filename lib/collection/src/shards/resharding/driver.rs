@@ -64,6 +64,8 @@ impl DriverState {
 
 /// State of each node while resharding
 ///
+/// Defines the state each node has reached and completed.
+///
 /// Important: the states in this enum are ordered, from beginning to end!
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -102,7 +104,7 @@ pub async fn drive_resharding(
     reshard_key: ReshardKey,
     _progress: Arc<Mutex<ReshardTaskProgress>>,
     shard_holder: Arc<LockedShardHolder>,
-    // TODO: we might want to separate this type into shard transfer and resharding
+    // TODO(resharding): we might want to separate this type into shard transfer and resharding
     consensus: &dyn ShardTransferConsensus,
     collection_id: CollectionId,
     _channel_service: ChannelService,
@@ -191,8 +193,8 @@ async fn stage_migrate_points(
         let (transfer, start_transfer) = match ongoing_transfer {
             Some(transfer) => (transfer, false),
             None => {
-                // TODO: also support local transfers (without consensus?)
-                // TODO: do not just pick random source, consider transfer limits
+                // TODO(resharding): also support local (direct) transfers without consensus
+                // TODO(resharding): do not just pick random source, consider transfer limits
                 let active_remote_shards = {
                     let shard_holder = shard_holder.read().await;
 
