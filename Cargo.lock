@@ -4329,7 +4329,7 @@ dependencies = [
  "rand 0.8.5",
  "reqwest 0.12.4",
  "rstack-self",
- "rustls 0.23.8",
+ "rustls 0.23.9",
  "rustls-pemfile 2.1.2",
  "rustls-pki-types",
  "rusty-hook",
@@ -4959,9 +4959,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.8"
+version = "0.23.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "79adb16721f56eb2d843e67676896a61ce7a0fa622dc18d3e372477a029d2740"
+checksum = "a218f0f6d05669de4eabfb24f31ce802035c952429d037507b4a4a39f0e60c5b"
 dependencies = [
  "log",
  "once_cell",
@@ -6116,7 +6116,7 @@ version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c7bc40d0e5a97695bb96e27995cd3a08538541b0a846f65bba7a359f36700d4"
 dependencies = [
- "rustls 0.23.8",
+ "rustls 0.23.9",
  "rustls-pki-types",
  "tokio",
 ]
