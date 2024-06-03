@@ -16,15 +16,14 @@ use crate::shards::shard_holder::LockedShardHolder;
 use crate::shards::transfer::{ShardTransfer, ShardTransferConsensus, ShardTransferMethod};
 use crate::shards::CollectionId;
 
-const MIGRATE_POINT_TRANSFER_MAX_DURATION: Duration = Duration::from_secs(12 * 60 * 60);
+/// Maximum time a point migration transfer might take.
+const MIGRATE_POINT_TRANSFER_MAX_DURATION: Duration = Duration::from_secs(24 * 60 * 60);
 
 #[derive(Debug, Serialize, Deserialize)]
 struct DriverState {
     key: ReshardKey,
-
     /// State of each peer we know about
     peers: HashMap<PeerId, Stage>,
-
     /// List of shard IDs successfully migrated to the new shard
     migrated_shards: Vec<ShardId>,
 }
@@ -227,25 +226,24 @@ async fn stage_migrate_points(
             }
         };
 
-        let await_transfer_end = consensus.await_shard_transfer_end(
-            transfer.clone(),
-            collection_id.clone(),
-            Some(MIGRATE_POINT_TRANSFER_MAX_DURATION),
-        );
+        {
+            let shard_holder_read = shard_holder.read().await;
+            let await_transfer_end = shard_holder_read
+                .await_shard_transfer_end(transfer.key(), MIGRATE_POINT_TRANSFER_MAX_DURATION);
 
-        if start_transfer {
-            consensus
-                .start_shard_transfer_confirm_and_retry(&transfer, collection_id)
-                .await?;
-        }
+            if start_transfer {
+                consensus
+                    .start_shard_transfer_confirm_and_retry(&transfer, collection_id)
+                    .await?;
+            }
 
-        // Wait for the transfer to finish
-        // TODO: ensure this can't data race
-        let transfer_result = await_transfer_end.await?;
-        if transfer_result.is_err() {
-            return Err(CollectionError::service_error(format!(
-                "Shard {source_shard_id} failed to be transferred to this node for resharding",
-            )));
+            // Wait for the transfer to finish
+            let transfer_result = await_transfer_end.await?;
+            if transfer_result.is_err() {
+                return Err(CollectionError::service_error(format!(
+                    "Shard {source_shard_id} failed to be transferred to this node for resharding",
+                )));
+            }
         }
 
         state.migrated_shards.push(source_shard_id);
