@@ -399,12 +399,12 @@ async fn stage_replicate(
                     reshard_key.shard_id,
                 )));
             };
-            replica_set.peers().into_keys().collect::<HashSet<_>>()
+            replica_set.peers().into_keys().collect()
         };
         let all_peers = consensus.peers().into_iter().collect::<HashSet<_>>();
-        let peer_candidates: Vec<_> = all_peers.difference(&occupied_peers).cloned().collect();
+        let candidate_peers: Vec<_> = all_peers.difference(&occupied_peers).cloned().collect();
         // TODO(resharding): do not just pick random source, consider shard distribution
-        let Some(target_peer) = peer_candidates.choose(&mut rand::thread_rng()).cloned() else {
+        let Some(target_peer) = candidate_peers.choose(&mut rand::thread_rng()).cloned() else {
             log::warn!("Resharding could not match desired replication factors as all peers are occupied, continuing with lower replication factor");
             break;
         };
