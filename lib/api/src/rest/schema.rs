@@ -8,6 +8,7 @@ use segment::json_path::JsonPath;
 use segment::types::{Filter, SearchParams, ShardKey, WithPayloadInterface, WithVector};
 use serde::{Deserialize, Serialize};
 use sparse::common::sparse_vector::SparseVector;
+use validator::Validate;
 
 /// Type for dense vector
 pub type DenseVector = Vec<segment::data_types::vectors::VectorElementType>;
@@ -170,20 +171,23 @@ pub enum VectorInput {
     MultiDenseVector(MultiDenseVector),
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct QueryRequestInternal {
     /// Sub-requests to perform first. If present, the query will be performed on the results of the prefetches.
+    #[validate]
     #[serde(with = "MaybeOneOrMany")]
     #[schemars(with = "MaybeOneOrMany<Prefetch>")]
     pub prefetch: Option<Vec<Prefetch>>,
 
     /// Query to perform. If missing, returns points ordered by their IDs.
+    #[validate]
     pub query: Option<QueryInterface>,
 
     /// Define which vector to use for querying. If missing, the default vector is used.
     pub using: Option<String>,
 
     /// Filter conditions - return only those points that satisfy the specified conditions.
+    #[validate]
     pub filter: Option<Filter>,
 
     /// Search params for when there is no prefetch
@@ -205,8 +209,9 @@ pub struct QueryRequestInternal {
     pub with_payload: Option<WithPayloadInterface>,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct QueryRequest {
+    #[validate]
     #[serde(flatten)]
     pub internal: QueryRequestInternal,
     pub shard_key: Option<ShardKeySelector>,
@@ -241,20 +246,23 @@ pub enum Query {
     Fusion(Fusion),
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct Prefetch {
     /// Sub-requests to perform first. If present, the query will be performed on the results of the prefetches.
+    #[validate]
     #[serde(with = "MaybeOneOrMany")]
     #[schemars(with = "MaybeOneOrMany<Prefetch>")]
     pub prefetch: Option<Vec<Prefetch>>,
 
     /// Query to perform. If missing, returns points ordered by their IDs.
+    #[validate]
     pub query: Option<QueryInterface>,
 
     /// Define which vector to use for querying. If missing, the default vector is used.
     pub using: Option<String>,
 
     /// Filter conditions - return only those points that satisfy the specified conditions.
+    #[validate]
     pub filter: Option<Filter>,
 
     /// Search params for when there is no prefetch
@@ -296,30 +304,44 @@ pub struct RecommendInput {
     pub strategy: Option<RecommendStrategy>,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+impl RecommendInput {
+    pub fn iter(&self) -> impl Iterator<Item = &VectorInput> {
+        self.positives
+            .iter()
+            .flatten()
+            .chain(self.negatives.iter().flatten())
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct DiscoverInput {
     /// Use this as the primary search objective
+    #[validate]
     pub target: VectorInput,
 
     /// Search space will be constrained by these pairs of vectors
+    #[validate]
     #[serde(with = "MaybeOneOrMany")]
     #[schemars(with = "MaybeOneOrMany<ContextPair>")]
     pub context_pairs: Option<Vec<ContextPair>>,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct ContextInput {
     /// Search space will be constrained by these pairs of vectors
+    #[validate]
     #[serde(with = "MaybeOneOrMany")]
     #[schemars(with = "MaybeOneOrMany<ContextPair>")]
     pub pairs: Option<Vec<ContextPair>>,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct ContextPair {
     /// A positive vector
+    #[validate]
     pub positive: VectorInput,
 
     /// Repel from this vector
+    #[validate]
     pub negative: VectorInput,
 }
