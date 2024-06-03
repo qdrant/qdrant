@@ -226,6 +226,8 @@ async fn stage_migrate_points(
             }
         };
 
+        // Create listener for transfer end before proposing to start the transfer
+        // That way we're sure we receive all transfer related messages
         let await_transfer_end = shard_holder
             .read()
             .await
@@ -237,12 +239,32 @@ async fn stage_migrate_points(
                 .await?;
         }
 
-        // Wait for the transfer to finish
-        let transfer_result = await_transfer_end.await?;
-        if transfer_result.is_err() {
-            return Err(CollectionError::service_error(format!(
-                "Shard {source_shard_id} failed to be transferred to this node for resharding",
-            )));
+        match await_transfer_end.await {
+            Ok(Ok(_)) => {
+                log::debug!("Points of shard {source_shard_id} migrated succesfully for resharding")
+            }
+            // Transfer aborted
+            Ok(Err(_)) => {
+                return Err(CollectionError::service_error(format!(
+                    "Shard {source_shard_id} failed to be migrated to this node for resharding, transfer aborted",
+                )));
+            }
+            // Transfer timed out
+            Err(_) => {
+                let abort_transfer = consensus
+                    .abort_shard_transfer_confirm_and_retry(
+                        transfer.key(),
+                        collection_id,
+                        "resharding migration transfer timed out",
+                    )
+                    .await;
+                if let Err(err) = abort_transfer {
+                    log::warn!("Failed to abort migration transfer for shard {source_shard_id} to clean up after timeout, ignoring: {err}");
+                }
+                return Err(CollectionError::service_error(format!(
+                    "Shard {source_shard_id} failed to be migrated to this node for resharding, transfer timed out",
+                )));
+            }
         }
 
         state.migrated_shards.push(source_shard_id);

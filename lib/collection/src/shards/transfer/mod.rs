@@ -321,6 +321,63 @@ pub trait ShardTransferConsensus: Send + Sync {
         })
     }
 
+    /// Propose to abort a shard transfer
+    ///
+    /// # Warning
+    ///
+    /// This only submits a proposal to consensus. Calling this does not guarantee that consensus
+    /// will actually apply the operation across the cluster.
+    async fn abort_shard_transfer(
+        &self,
+        transfer: ShardTransferKey,
+        collection_id: CollectionId,
+        reason: &str,
+    ) -> CollectionResult<()>;
+
+    /// Propose to abort a shard transfer
+    ///
+    /// This internally confirms and retries a few times if needed to ensure consensus picks up the
+    /// operation.
+    async fn abort_shard_transfer_confirm_and_retry(
+        &self,
+        transfer: ShardTransferKey,
+        collection_id: &CollectionId,
+        reason: &str,
+    ) -> CollectionResult<()> {
+        let mut result = Err(CollectionError::service_error(
+            "`abort_shard_transfer_confirm_and_retry` exit without attempting any work, \
+             this is a programming error",
+        ));
+
+        for attempt in 0..CONSENSUS_CONFIRM_RETRIES {
+            if attempt > 0 {
+                sleep(CONSENSUS_CONFIRM_RETRY_DELAY).await;
+            }
+
+            log::trace!("Propose and confirm shard transfer abort operation");
+            result = self
+                .abort_shard_transfer(transfer, collection_id.into(), reason)
+                .await;
+
+            match &result {
+                Ok(()) => break,
+                Err(err) => {
+                    log::error!(
+                        "Failed to confirm abort shard transfer operation on consensus: {err}"
+                    );
+                    continue;
+                }
+            }
+        }
+
+        result.map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to abort shard transfer through consensus \
+                 after {CONSENSUS_CONFIRM_RETRIES} retries: {err}"
+            ))
+        })
+    }
+
     /// Wait for all other peers to reach the current consensus
     ///
     /// This will take the current consensus state of this node. It then explicitly awaits on all
