@@ -1047,6 +1047,11 @@ impl Segment {
                         internal_id,
                         point_version
                     );
+                    log::info!("!is_vector_deleted_storage {}, !is_vector_deleted_tracker {}, vector_stored.is_none {}",
+                        !is_vector_deleted_storage,
+                        !is_vector_deleted_tracker,
+                        vector_stored.is_none());
+
                     has_internal_ids_without_vector = true;
                 }
             }
