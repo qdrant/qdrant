@@ -50,7 +50,8 @@ impl GpuGraphBuilder {
             gpu::Device::new(gpu_instance.clone(), gpu_instance.vk_physical_devices[0]).unwrap(),
         );
         let gpu_context = gpu::Context::new(gpu_device.clone());
-        let gpu_vector_storage = GpuVectorStorage::new(gpu_device.clone(), vector_storage, dim).unwrap();
+        let gpu_vector_storage =
+            GpuVectorStorage::new(gpu_device.clone(), vector_storage, dim).unwrap();
         let gpu_links =
             GpuLinks::new(gpu_device.clone(), m, ef_construct, m0, num_vectors).unwrap();
 

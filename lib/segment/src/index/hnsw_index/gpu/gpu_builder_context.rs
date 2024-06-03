@@ -244,7 +244,8 @@ mod tests {
             Arc::new(gpu::Device::new(instance.clone(), instance.vk_physical_devices[0]).unwrap());
         let mut gpu_context = gpu::Context::new(device.clone());
 
-        let gpu_vector_storage = GpuVectorStorage::new(device.clone(), &storage.borrow(), dim).unwrap();
+        let gpu_vector_storage =
+            GpuVectorStorage::new(device.clone(), &storage.borrow(), dim).unwrap();
         let mut gpu_links =
             GpuLinks::new(device.clone(), m, ef_construct, m0, num_vectors).unwrap();
         let mut gpu_search_context = GpuSearchContext::new(

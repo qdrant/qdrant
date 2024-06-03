@@ -352,7 +352,8 @@ mod tests {
             candidates_capacity,
             device.clone(),
         );
-        let gpu_vector_storage = GpuVectorStorage::new(device.clone(), &storage.borrow(), dim).unwrap();
+        let gpu_vector_storage =
+            GpuVectorStorage::new(device.clone(), &storage.borrow(), dim).unwrap();
 
         TestData {
             _points: points,

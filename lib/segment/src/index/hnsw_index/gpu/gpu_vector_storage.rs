@@ -231,7 +231,8 @@ mod tests {
         let device =
             Arc::new(gpu::Device::new(instance.clone(), instance.vk_physical_devices[0]).unwrap());
 
-        let gpu_vector_storage = GpuVectorStorage::new(device.clone(), &storage.borrow(), dim).unwrap();
+        let gpu_vector_storage =
+            GpuVectorStorage::new(device.clone(), &storage.borrow(), dim).unwrap();
 
         let scores_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
