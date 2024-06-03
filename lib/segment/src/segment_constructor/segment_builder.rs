@@ -250,7 +250,11 @@ impl SegmentBuilder {
 
             let appendable_flag = segment_config.is_appendable();
 
+            payload_storage.flusher()()?;
             let payload_storage_arc = Arc::new(AtomicRefCell::new(payload_storage));
+
+            id_tracker.mapping_flusher()()?;
+            id_tracker.versions_flusher()()?;
             let id_tracker_arc = Arc::new(AtomicRefCell::new(id_tracker));
 
             let payload_index_path = get_payload_index_path(temp_path.as_path());
@@ -267,6 +271,7 @@ impl SegmentBuilder {
                 check_process_stopped(stopped)?;
             }
 
+            payload_index.flusher()()?;
             let payload_index_arc = Arc::new(AtomicRefCell::new(payload_index));
 
             // Arc permit to share it with each vector store
@@ -288,6 +293,9 @@ impl SegmentBuilder {
                         "Vector storage for vector name {vector_name} not found on segment build"
                     )));
                 };
+
+                vector_storage.flusher()()?;
+
                 let vector_storage_arc = Arc::new(AtomicRefCell::new(vector_storage));
 
                 let quantized_vectors = quantized_vectors.remove(vector_name);
@@ -313,6 +321,8 @@ impl SegmentBuilder {
                         "Vector storage for vector name {vector_name} not found on sparse segment build"
                     )));
                 };
+
+                vector_storage.flusher()()?;
 
                 let vector_storage_arc = Arc::new(AtomicRefCell::new(vector_storage));
 
