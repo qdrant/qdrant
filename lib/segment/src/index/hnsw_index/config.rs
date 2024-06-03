@@ -20,7 +20,7 @@ pub struct HnswGraphConfig {
     ///
     /// Note: this is number of vectors, not KiloBytes.
     #[serde(alias = "indexing_threshold")]
-    pub full_scan_threshold: Option<usize>,
+    pub full_scan_threshold: usize,
     #[serde(default)]
     pub max_indexing_threads: usize,
     #[serde(default)]
@@ -35,19 +35,21 @@ impl HnswGraphConfig {
     pub fn new(
         m: usize,
         ef_construct: usize,
+        full_scan_threshold: usize,
         max_indexing_threads: usize,
         payload_m: Option<usize>,
+        indexed_vector_count: usize,
     ) -> Self {
         HnswGraphConfig {
             m,
             m0: m * 2,
             ef_construct,
             ef: ef_construct,
-            full_scan_threshold: None,
+            full_scan_threshold,
             max_indexing_threads,
             payload_m,
             payload_m0: payload_m.map(|v| v * 2),
-            indexed_vector_count: None,
+            indexed_vector_count: Some(indexed_vector_count),
         }
     }
 
