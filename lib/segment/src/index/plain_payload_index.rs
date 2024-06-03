@@ -16,7 +16,7 @@ use crate::common::operation_time_statistics::{
 };
 use crate::common::{Flusher, BYTES_IN_KB};
 use crate::data_types::query_context::VectorQueryContext;
-use crate::data_types::vectors::{QueryVector, Vector, VectorRef};
+use crate::data_types::vectors::{QueryVector, VectorRef};
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::PayloadConfig;
@@ -362,10 +362,23 @@ impl VectorIndex for PlainIndex {
 
     fn update_vector(
         &mut self,
-        _id: PointOffsetType,
-        _vector: VectorRef,
-        _old_vector: Option<Vector>,
+        id: PointOffsetType,
+        vector: Option<VectorRef>,
     ) -> OperationResult<()> {
+        let mut vector_storage = self.vector_storage.borrow_mut();
+
+        if let Some(vector) = vector {
+            vector_storage.insert_vector(id, vector)?;
+        } else {
+            if id as usize >= vector_storage.total_vector_count() {
+                // Vector doesn't exist in the storage
+                // Insert default vector to keep the sequence
+                let default_vector = vector_storage.default_vector();
+                vector_storage.insert_vector(id, VectorRef::from(&default_vector))?;
+            }
+            vector_storage.delete_vector(id)?;
+        }
+
         Ok(())
     }
 }

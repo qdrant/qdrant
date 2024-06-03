@@ -23,6 +23,7 @@ use super::indices_tracker::IndicesTracker;
 use super::sparse_index_config::SparseIndexType;
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::operation_time_statistics::ScopeDurationMeasurer;
+use crate::data_types::named_vectors::CowVector;
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, Vector, VectorRef};
 use crate::id_tracker::IdTrackerSS;
@@ -587,24 +588,42 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
     fn update_vector(
         &mut self,
         id: PointOffsetType,
-        vector: VectorRef,
-        old_vector: Option<Vector>,
+        vector: Option<VectorRef>,
     ) -> OperationResult<()> {
+        let (old_vector, new_vector) = {
+            let mut vector_storage = self.vector_storage.borrow_mut();
+            let old_vector = vector_storage.get_vector_opt(id).map(CowVector::to_owned);
+            let new_vector = if let Some(vector) = vector {
+                vector_storage.insert_vector(id, vector)?;
+                vector.to_owned()
+            } else {
+                let default_vector = vector_storage.default_vector();
+                if id as usize >= vector_storage.total_vector_count() {
+                    // Vector doesn't exist in the storage
+                    // Insert default vector to keep the sequence
+                    vector_storage.insert_vector(id, VectorRef::from(&default_vector))?;
+                }
+                vector_storage.delete_vector(id)?;
+                default_vector
+            };
+            (old_vector, new_vector)
+        };
+
         if self.config.index_type != SparseIndexType::MutableRam {
             return Err(OperationError::service_error(
                 "Cannot update vector in non-appendable index",
             ));
         }
 
-        let vector: &SparseVector = vector.try_into()?;
+        let vector = SparseVector::try_from(new_vector)?;
         let old_vector: Option<SparseVector> =
             old_vector.map(SparseVector::try_from).transpose()?;
 
         // do not upsert empty vectors into the index
         if !vector.is_empty() {
-            self.indices_tracker.register_indices(vector);
-            let vector = self.indices_tracker.remap_vector(vector.to_owned());
-            let old_vector = old_vector.map(|v| self.indices_tracker.remap_vector(v.to_owned()));
+            self.indices_tracker.register_indices(&vector);
+            let vector = self.indices_tracker.remap_vector(vector);
+            let old_vector = old_vector.map(|v| self.indices_tracker.remap_vector(v));
             self.inverted_index.upsert(id, vector, old_vector);
         } else if let Some(old_vector) = old_vector {
             // Make sure empty vectors do not interfere with the index

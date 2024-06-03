@@ -14,7 +14,7 @@ use super::plain_payload_index::PlainIndex;
 use super::sparse_index::sparse_vector_index::SparseVectorIndex;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::query_context::VectorQueryContext;
-use crate::data_types::vectors::{QueryVector, Vector, VectorRef};
+use crate::data_types::vectors::{QueryVector, VectorRef};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
 
@@ -54,8 +54,7 @@ pub trait VectorIndex {
     fn update_vector(
         &mut self,
         id: PointOffsetType,
-        vector: VectorRef,
-        _old_vector: Option<Vector>,
+        vector: Option<VectorRef>,
     ) -> OperationResult<()>;
 }
 
@@ -176,16 +175,15 @@ impl VectorIndex for VectorIndexEnum {
     fn update_vector(
         &mut self,
         id: PointOffsetType,
-        vector: VectorRef,
-        old_vector: Option<Vector>,
+        vector: Option<VectorRef>,
     ) -> OperationResult<()> {
         match self {
-            Self::Plain(index) => index.update_vector(id, vector, old_vector),
-            Self::HnswRam(index) => index.update_vector(id, vector, old_vector),
-            Self::HnswMmap(index) => index.update_vector(id, vector, old_vector),
-            Self::SparseRam(index) => index.update_vector(id, vector, old_vector),
-            Self::SparseImmutableRam(index) => index.update_vector(id, vector, old_vector),
-            Self::SparseMmap(index) => index.update_vector(id, vector, old_vector),
+            Self::Plain(index) => index.update_vector(id, vector),
+            Self::HnswRam(index) => index.update_vector(id, vector),
+            Self::HnswMmap(index) => index.update_vector(id, vector),
+            Self::SparseRam(index) => index.update_vector(id, vector),
+            Self::SparseImmutableRam(index) => index.update_vector(id, vector),
+            Self::SparseMmap(index) => index.update_vector(id, vector),
         }
     }
 }
