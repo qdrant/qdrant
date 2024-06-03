@@ -35,13 +35,12 @@ impl ShardTransferDispatcher {
 
 #[async_trait]
 impl ShardTransferConsensus for ShardTransferDispatcher {
-    fn this_peer_id(&self) -> CollectionResult<PeerId> {
-        let Some(toc) = self.toc.upgrade() else {
-            return Err(CollectionError::service_error(
-                "Failed to get this peer ID, table of contents is dropped",
-            ));
-        };
-        Ok(toc.this_peer_id())
+    fn this_peer_id(&self) -> PeerId {
+        self.consensus_state.this_peer_id()
+    }
+
+    fn peers(&self) -> Vec<PeerId> {
+        self.consensus_state.peers()
     }
 
     fn consensus_commit_term(&self) -> (u64, u64) {

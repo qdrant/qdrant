@@ -184,6 +184,15 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         self.persistent.read().this_peer_id
     }
 
+    pub fn peers(&self) -> Vec<PeerId> {
+        self.persistent
+            .read()
+            .peer_address_by_id()
+            .keys()
+            .copied()
+            .collect()
+    }
+
     pub fn first_voter(&self) -> PeerId {
         match self.first_voter.read().as_ref() {
             Some(id) => *id,
