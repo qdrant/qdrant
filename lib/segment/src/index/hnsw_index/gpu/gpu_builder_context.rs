@@ -244,7 +244,7 @@ mod tests {
             Arc::new(gpu::Device::new(instance.clone(), instance.vk_physical_devices[0]).unwrap());
         let mut gpu_context = gpu::Context::new(device.clone());
 
-        let gpu_vector_storage = GpuVectorStorage::new(device.clone(), &storage.borrow()).unwrap();
+        let gpu_vector_storage = GpuVectorStorage::new(device.clone(), &storage.borrow(), dim).unwrap();
         let mut gpu_links =
             GpuLinks::new(device.clone(), m, ef_construct, m0, num_vectors).unwrap();
         let mut gpu_search_context = GpuSearchContext::new(
@@ -266,7 +266,7 @@ mod tests {
         // init gpu pilelines
         let update_entry_shader = Arc::new(gpu::Shader::new(
             device.clone(),
-            include_bytes!("./shaders/update_entries.spv"),
+            include_bytes!("./shaders/compiled/update_entries.spv"),
         ));
         let update_entry_pipeline = gpu::Pipeline::builder()
             .add_descriptor_set_layout(0, gpu_vector_storage.descriptor_set_layout.clone())
@@ -278,7 +278,7 @@ mod tests {
 
         let link_shader = Arc::new(gpu::Shader::new(
             device.clone(),
-            include_bytes!("./shaders/run_requests.spv"),
+            include_bytes!("./shaders/compiled/run_requests.spv"),
         ));
         let link_pipeline = gpu::Pipeline::builder()
             .add_descriptor_set_layout(0, gpu_vector_storage.descriptor_set_layout.clone())

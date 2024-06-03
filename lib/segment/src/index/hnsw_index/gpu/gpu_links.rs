@@ -240,7 +240,7 @@ mod tests {
         // test 2: run shader that sorts links and check that links are sorted
         let shader = Arc::new(gpu::Shader::new(
             device.clone(),
-            include_bytes!("./shaders/test_links.spv"),
+            include_bytes!("./shaders/compiled/test_links.spv"),
         ));
 
         let pipeline = gpu::Pipeline::builder()

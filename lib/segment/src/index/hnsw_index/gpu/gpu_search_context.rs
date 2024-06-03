@@ -352,7 +352,7 @@ mod tests {
             candidates_capacity,
             device.clone(),
         );
-        let gpu_vector_storage = GpuVectorStorage::new(device.clone(), &storage.borrow()).unwrap();
+        let gpu_vector_storage = GpuVectorStorage::new(device.clone(), &storage.borrow(), dim).unwrap();
 
         TestData {
             _points: points,
@@ -435,7 +435,7 @@ mod tests {
 
         let shader = Arc::new(gpu::Shader::new(
             device.clone(),
-            include_bytes!("./shaders/test_searcher.spv"),
+            include_bytes!("./shaders/compiled/test_searcher.spv"),
         ));
 
         let requests_buffer = Arc::new(gpu::Buffer::new(
@@ -749,7 +749,7 @@ mod tests {
 
         let shader = Arc::new(gpu::Shader::new(
             device.clone(),
-            include_bytes!("./shaders/test_heuristic.spv"),
+            include_bytes!("./shaders/compiled/test_heuristic.spv"),
         ));
 
         let requests_buffer = Arc::new(gpu::Buffer::new(

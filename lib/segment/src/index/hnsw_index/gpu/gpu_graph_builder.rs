@@ -32,12 +32,14 @@ unsafe impl Send for GpuGraphBuilder {}
 unsafe impl Sync for GpuGraphBuilder {}
 
 impl GpuGraphBuilder {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         num_vectors: usize,
         m: usize,
         m0: usize,
         ef_construct: usize,
         vector_storage: &VectorStorageEnum,
+        dim: usize,
         point_levels: Vec<usize>,
         gpu_threads: usize,
     ) -> Self {
@@ -48,7 +50,7 @@ impl GpuGraphBuilder {
             gpu::Device::new(gpu_instance.clone(), gpu_instance.vk_physical_devices[0]).unwrap(),
         );
         let gpu_context = gpu::Context::new(gpu_device.clone());
-        let gpu_vector_storage = GpuVectorStorage::new(gpu_device.clone(), vector_storage).unwrap();
+        let gpu_vector_storage = GpuVectorStorage::new(gpu_device.clone(), vector_storage, dim).unwrap();
         let gpu_links =
             GpuLinks::new(gpu_device.clone(), m, ef_construct, m0, num_vectors).unwrap();
 
@@ -67,7 +69,7 @@ impl GpuGraphBuilder {
         // init gpu pilelines
         let update_entry_shader = Arc::new(gpu::Shader::new(
             gpu_device.clone(),
-            include_bytes!("./shaders/update_entries.spv"),
+            include_bytes!("./shaders/compiled/update_entries.spv"),
         ));
         let update_entry_pipeline = gpu::Pipeline::builder()
             .add_descriptor_set_layout(0, gpu_vector_storage.descriptor_set_layout.clone())
@@ -79,7 +81,7 @@ impl GpuGraphBuilder {
 
         let link_shader = Arc::new(gpu::Shader::new(
             gpu_device.clone(),
-            include_bytes!("./shaders/run_requests.spv"),
+            include_bytes!("./shaders/compiled/run_requests.spv"),
         ));
         let link_pipeline = gpu::Pipeline::builder()
             .add_descriptor_set_layout(0, gpu_vector_storage.descriptor_set_layout.clone())

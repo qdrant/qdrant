@@ -30,10 +30,10 @@ impl GpuVectorStorage {
     pub fn new(
         device: Arc<gpu::Device>,
         vector_storage: &VectorStorageEnum,
+        dim: usize,
     ) -> OperationResult<Self> {
         let timer = std::time::Instant::now();
 
-        let dim = vector_storage.vector_dim();
         let capacity = Self::get_capacity(dim);
         let upload_points_count = UPLOAD_CHUNK_SIZE / (capacity * std::mem::size_of::<f32>());
 
@@ -231,7 +231,7 @@ mod tests {
         let device =
             Arc::new(gpu::Device::new(instance.clone(), instance.vk_physical_devices[0]).unwrap());
 
-        let gpu_vector_storage = GpuVectorStorage::new(device.clone(), &storage.borrow()).unwrap();
+        let gpu_vector_storage = GpuVectorStorage::new(device.clone(), &storage.borrow(), dim).unwrap();
 
         let scores_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
@@ -249,7 +249,7 @@ mod tests {
 
         let shader = Arc::new(gpu::Shader::new(
             device.clone(),
-            include_bytes!("./shaders/test_vector_storage.spv"),
+            include_bytes!("./shaders/compiled/test_vector_storage.spv"),
         ));
 
         let pipeline = gpu::Pipeline::builder()
