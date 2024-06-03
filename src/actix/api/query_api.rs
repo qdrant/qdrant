@@ -1,5 +1,5 @@
-use actix_web::web::{self, Json, Path, Query};
-use actix_web::{post, Responder};
+use actix_web::{post, web, Responder};
+use actix_web_validator::{Json, Path, Query};
 use api::rest::QueryRequest;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use itertools::Itertools;
