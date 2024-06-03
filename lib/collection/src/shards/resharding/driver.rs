@@ -226,24 +226,23 @@ async fn stage_migrate_points(
             }
         };
 
-        {
-            let shard_holder_read = shard_holder.read().await;
-            let await_transfer_end = shard_holder_read
-                .await_shard_transfer_end(transfer.key(), MIGRATE_POINT_TRANSFER_MAX_DURATION);
+        let await_transfer_end = shard_holder
+            .read()
+            .await
+            .await_shard_transfer_end(transfer.key(), MIGRATE_POINT_TRANSFER_MAX_DURATION);
 
-            if start_transfer {
-                consensus
-                    .start_shard_transfer_confirm_and_retry(&transfer, collection_id)
-                    .await?;
-            }
+        if start_transfer {
+            consensus
+                .start_shard_transfer_confirm_and_retry(&transfer, collection_id)
+                .await?;
+        }
 
-            // Wait for the transfer to finish
-            let transfer_result = await_transfer_end.await?;
-            if transfer_result.is_err() {
-                return Err(CollectionError::service_error(format!(
-                    "Shard {source_shard_id} failed to be transferred to this node for resharding",
-                )));
-            }
+        // Wait for the transfer to finish
+        let transfer_result = await_transfer_end.await?;
+        if transfer_result.is_err() {
+            return Err(CollectionError::service_error(format!(
+                "Shard {source_shard_id} failed to be transferred to this node for resharding",
+            )));
         }
 
         state.migrated_shards.push(source_shard_id);

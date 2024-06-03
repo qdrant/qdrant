@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::cpu::CpuBudget;
+use futures::Future;
 use itertools::Itertools;
 use segment::types::ShardKey;
 use tar::Builder as TarBuilder;
@@ -530,11 +531,11 @@ impl ShardHolder {
     ///
     /// The returned inner result defines whether it successfully finished or whether it was
     /// aborted/cancelled.
-    pub async fn await_shard_transfer_end(
+    pub fn await_shard_transfer_end(
         &self,
         transfer: ShardTransferKey,
         timeout: Duration,
-    ) -> CollectionResult<Result<(), ()>> {
+    ) -> impl Future<Output = CollectionResult<Result<(), ()>>> {
         let mut subscriber = self.shard_transfer_changes.subscribe();
         let receiver = async move {
             loop {
@@ -552,12 +553,14 @@ impl ShardHolder {
             }
         };
 
-        match tokio::time::timeout(timeout, receiver).await {
-            Ok(operation) => Ok(operation?),
-            // Timeout
-            Err(err) => Err(CollectionError::service_error(format!(
-                "Awaiting for shard transfer end timed out: {err}"
-            ))),
+        async move {
+            match tokio::time::timeout(timeout, receiver).await {
+                Ok(operation) => Ok(operation?),
+                // Timeout
+                Err(err) => Err(CollectionError::service_error(format!(
+                    "Awaiting for shard transfer end timed out: {err}"
+                ))),
+            }
         }
     }
 
