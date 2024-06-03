@@ -187,7 +187,7 @@ async fn stage_migrate_points(
             })
             .pop();
 
-        // Get the transfer, if there is no transfer yet, start one now
+        // Get the transfer, start one if there is none
         let (transfer, start_transfer) = match ongoing_transfer {
             Some(transfer) => (transfer, false),
             None => {
@@ -239,9 +239,12 @@ async fn stage_migrate_points(
                 .await?;
         }
 
+        // Wait for transfer to end
         match await_transfer_end.await {
             Ok(Ok(_)) => {
-                log::debug!("Points of shard {source_shard_id} migrated succesfully for resharding")
+                log::debug!(
+                    "Points of shard {source_shard_id} migrated successfully for resharding"
+                )
             }
             // Transfer aborted
             Ok(Err(_)) => {
