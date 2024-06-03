@@ -21,6 +21,7 @@ pub struct Device {
     pub gpu_allocator: Option<Mutex<Allocator>>,
     pub compute_queues: Vec<Queue>,
     pub transfer_queues: Vec<Queue>,
+    pub subgroup_size: usize,
 }
 
 impl Device {
@@ -82,10 +83,16 @@ impl Device {
             )
         };
 
-        unsafe {
+        let subgroup_size = unsafe {
             let props = instance
                 .vk_instance
                 .get_physical_device_properties(vk_physical_device);
+            let mut props2 = vk::PhysicalDeviceProperties2::default();
+            let mut subgroup_properties = vk::PhysicalDeviceSubgroupProperties::default();
+            props2.p_next = &mut subgroup_properties as *mut _ as *mut std::ffi::c_void;
+            instance
+                .vk_instance
+                .get_physical_device_properties2(vk_physical_device, &mut props2);
             println!(
                 "maxComputeWorkGroupCount: {:?}",
                 props.limits.max_compute_work_group_count
@@ -99,10 +106,15 @@ impl Device {
                 props.limits.max_compute_work_group_invocations
             );
             println!(
+                "subgroup_size: {:?}",
+                subgroup_properties.subgroup_size,
+            );
+            println!(
                 "Device name: {:?}",
                 ::std::ffi::CStr::from_ptr(props.device_name.as_ptr())
             );
-        }
+            subgroup_properties.subgroup_size as usize
+        };
 
         let mut compute_queues = Vec::new();
         let mut transfer_queues = Vec::new();
@@ -141,6 +153,7 @@ impl Device {
                 })
                 .ok()?,
             ));
+
             Some(Device {
                 instance: instance.clone(),
                 vk_device,
@@ -148,6 +161,7 @@ impl Device {
                 gpu_allocator,
                 compute_queues,
                 transfer_queues,
+                subgroup_size,
             })
         } else {
             None
