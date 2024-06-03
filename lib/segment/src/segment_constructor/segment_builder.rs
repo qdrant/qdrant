@@ -65,7 +65,7 @@ impl SegmentBuilder {
         let mut vector_storages = HashMap::new();
 
         for (vector_name, vector_config) in &segment_config.vector_data {
-            let vector_storage_path = get_vector_storage_path(segment_path, vector_name);
+            let vector_storage_path = get_vector_storage_path(&temp_path, vector_name);
             let vector_storage = open_vector_storage(
                 &database,
                 vector_config,
