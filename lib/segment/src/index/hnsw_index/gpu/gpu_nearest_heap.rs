@@ -303,7 +303,11 @@ mod tests {
         context.wait_finish();
         download_staging_buffer.download_slice(nearest_indices.as_mut_slice(), 0);
 
-        for (i, (idx, s)) in nearest_indices.iter().zip(nearest_scores.iter()).enumerate() {
+        for (i, (idx, s)) in nearest_indices
+            .iter()
+            .zip(nearest_scores.iter())
+            .enumerate()
+        {
             println!("SCORE: {}: {}, {}", i, idx, s);
         }
 
