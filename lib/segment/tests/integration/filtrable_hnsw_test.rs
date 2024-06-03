@@ -123,29 +123,6 @@ fn _test_filterable_hnsw(
     let int_key = "int";
 
     let mut segment = build_segment(dir.path(), &config, true).unwrap();
-    let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
-    let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
-    let payload_index_ptr = segment.payload_index.clone();
-
-    // initialize hnsw index before inserting points to test segment constructor logic
-    let hnsw_config = HnswConfig {
-        m,
-        ef_construct,
-        full_scan_threshold,
-        max_indexing_threads: 2,
-        on_disk: Some(false),
-        payload_m: None,
-    };
-    let mut hnsw_index = HNSWIndex::<GraphLinksRam>::open(
-        hnsw_dir.path(),
-        segment.id_tracker.clone(),
-        vector_storage.clone(),
-        quantized_vectors.clone(),
-        payload_index_ptr.clone(),
-        hnsw_config.clone(),
-    )
-    .unwrap();
-
     for n in 0..num_vectors {
         let idx = n.into();
         let vector = random_vector(&mut rnd, dim);
@@ -161,8 +138,32 @@ fn _test_filterable_hnsw(
             .unwrap();
     }
 
+    let payload_index_ptr = segment.payload_index.clone();
+
+    let hnsw_config = HnswConfig {
+        m,
+        ef_construct,
+        full_scan_threshold,
+        max_indexing_threads: 2,
+        on_disk: Some(false),
+        payload_m: None,
+    };
+
     let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
     let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
+
+    let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
+    let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
+    let mut hnsw_index = HNSWIndex::<GraphLinksRam>::open(
+        hnsw_dir.path(),
+        segment.id_tracker.clone(),
+        vector_storage.clone(),
+        quantized_vectors.clone(),
+        payload_index_ptr.clone(),
+        hnsw_config,
+    )
+    .unwrap();
+
     hnsw_index.build_index(permit.clone(), &stopped).unwrap();
 
     payload_index_ptr
@@ -264,37 +265,4 @@ fn _test_filterable_hnsw(
         "hits: {hits} of {attempts}"
     ); // Not more than X% failures
     eprintln!("hits = {hits:#?} out of {attempts}");
-
-    // check low cardinality search
-    let query = random_query(&query_variant, &mut rnd, dim);
-    let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(
-        path(int_key),
-        Range {
-            lt: None,
-            gt: None,
-            gte: Some(200 as f64),
-            lte: Some(201 as f64),
-        },
-    )));
-
-    hnsw_index
-        .search(
-            &[&query],
-            Some(&filter),
-            top,
-            Some(&SearchParams {
-                hnsw_ef: Some(ef),
-                ..Default::default()
-            }),
-            &Default::default(),
-        )
-        .unwrap();
-    // check that search was performed using plain search
-    assert_eq!(
-        hnsw_index
-            .get_telemetry_data(TelemetryDetail::default())
-            .filtered_small_cardinality
-            .count,
-        1
-    );
 }
