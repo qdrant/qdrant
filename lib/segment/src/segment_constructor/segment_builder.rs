@@ -229,6 +229,9 @@ impl SegmentBuilder {
             self.indexed_fields.insert(field, payload_schema);
         }
 
+        id_tracker.mapping_flusher()()?;
+        id_tracker.versions_flusher()()?;
+
         Ok(true)
     }
 
