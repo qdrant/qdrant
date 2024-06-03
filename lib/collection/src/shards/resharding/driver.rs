@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use futures::Future;
 use parking_lot::Mutex;
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
@@ -25,6 +26,9 @@ const MIGRATE_POINT_TRANSFER_MAX_DURATION: Duration = Duration::from_secs(24 * 6
 
 /// Maximum time a shard replication transfer might take.
 const REPLICATE_TRANSFER_MAX_DURATION: Duration = MIGRATE_POINT_TRANSFER_MAX_DURATION;
+
+/// Interval for the sanity check while awaiting shard transfers.
+const AWAIT_SHARD_TRANSFER_SANITY_CHECK_INTERVAL: Duration = Duration::from_secs(60);
 
 type PersistedState = SaveOnDisk<DriverState>;
 
@@ -290,36 +294,26 @@ async fn stage_migrate_points(
                 .await?;
         }
 
-        // Wait for transfer to end
-        match await_transfer_end.await {
-            Ok(Ok(_)) => {
-                log::debug!(
-                    "Points of shard {source_shard_id} migrated successfully for resharding"
-                )
-            }
-            // Transfer aborted
-            Ok(Err(_)) => {
-                return Err(CollectionError::service_error(format!(
-                    "Shard {source_shard_id} failed to be migrated to this node for resharding, transfer got aborted",
-                )));
-            }
-            // Transfer timed out
-            Err(_) => {
-                let abort_transfer = consensus
-                    .abort_shard_transfer_confirm_and_retry(
-                        transfer.key(),
-                        collection_id,
-                        "resharding migration transfer timed out",
-                    )
-                    .await;
-                if let Err(err) = abort_transfer {
-                    log::warn!("Failed to abort migration transfer for shard {source_shard_id} to clean up after timeout, ignoring: {err}");
-                }
-                return Err(CollectionError::service_error(format!(
-                    "Shard {source_shard_id} failed to be migrated to this node for resharding, transfer timed out",
-                )));
-            }
-        }
+        // Await transfer success
+        await_transfer_success(
+            reshard_key,
+            &transfer,
+            &shard_holder,
+            collection_id,
+            consensus,
+            await_transfer_end,
+        )
+        .await
+        .map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to migrate points from shard {source_shard_id} to {} for resharding: {err}",
+                reshard_key.shard_id
+            ))
+        })?;
+        log::debug!(
+            "Points of shard {source_shard_id} successfully migrated into shard {} for resharding",
+            reshard_key.shard_id,
+        );
 
         state.write(|data| {
             data.migrated_shards.push(source_shard_id);
@@ -430,39 +424,26 @@ async fn stage_replicate(
             .start_shard_transfer_confirm_and_retry(&transfer, collection_id)
             .await?;
 
-        // Wait for transfer to end
-        match await_transfer_end.await {
-            Ok(Ok(_)) => {
-                log::debug!(
-                    "Shard {} successfully replicated to peer {target_peer} for resharding",
-                    reshard_key.shard_id,
-                )
-            }
-            // Transfer aborted
-            Ok(Err(_)) => {
-                return Err(CollectionError::service_error(format!(
-                    "Shard {} failed to be replicated to peer {target_peer} for resharding, transfer got aborted",
-                    reshard_key.shard_id,
-                )));
-            }
-            // Transfer timed out
-            Err(_) => {
-                let abort_transfer = consensus
-                    .abort_shard_transfer_confirm_and_retry(
-                        transfer.key(),
-                        collection_id,
-                        "resharding replication transfer timed out",
-                    )
-                    .await;
-                if let Err(err) = abort_transfer {
-                    log::warn!("Failed to abort replication transfer for shard {} to node {target_peer} to clean up after timeout, ignoring: {err}", reshard_key.shard_id);
-                }
-                return Err(CollectionError::service_error(format!(
-                    "Shard {} failed to be replicated to peer {target_peer} for resharding, transfer timed out",
-                    reshard_key.shard_id,
-                )));
-            }
-        }
+        // Await transfer success
+        await_transfer_success(
+            reshard_key,
+            &transfer,
+            &shard_holder,
+            collection_id,
+            consensus,
+            await_transfer_end,
+        )
+        .await
+        .map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to replicate shard {} to peer {target_peer} for resharding: {err}",
+                reshard_key.shard_id
+            ))
+        })?;
+        log::debug!(
+            "Shard {} successfully replicated to peer {target_peer} for resharding",
+            reshard_key.shard_id,
+        );
     }
 
     state.write(|data| {
@@ -505,4 +486,80 @@ fn stage_propagate_deletes() -> CollectionResult<()> {
 /// Finalize the resharding operation.
 fn stage_finalize() -> CollectionResult<()> {
     todo!()
+}
+
+/// Await for a resharding shard trnasfer to succeed.
+///
+/// Yields on a successfull transfer.
+///
+/// Returns an error if:
+/// - the transfer failed or got aborted
+/// - the transfer timed out
+/// - no matching transfer is ongoing; it never started or went missing without a notification
+///
+/// Yields on a succesful transfer. Returns an error if an error occurred or if the global timeout
+/// is reached.
+async fn await_transfer_success(
+    reshard_key: &ReshardKey,
+    transfer: &ShardTransfer,
+    shard_holder: &Arc<LockedShardHolder>,
+    collection_id: &CollectionId,
+    consensus: &dyn ShardTransferConsensus,
+    await_transfer_end: impl Future<Output = CollectionResult<Result<(), ()>>>,
+) -> CollectionResult<()> {
+    // Periodic sanity check, returns if the shard transfer we're waiting on has gone missing
+    // Prevents this await getting stuck indefinitely
+    let sanity_check = async {
+        let transfer_key = transfer.key();
+        while shard_holder
+            .read()
+            .await
+            .check_transfer_exists(&transfer_key)
+        {
+            tokio::time::sleep(AWAIT_SHARD_TRANSFER_SANITY_CHECK_INTERVAL).await;
+        }
+
+        // Give our normal logic time process the transfer end
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    };
+
+    tokio::select! {
+        biased;
+        // Await the transfer end
+        result = await_transfer_end => match result {
+            Ok(Ok(_)) => Ok(()),
+            // Transfer aborted
+            Ok(Err(_)) => {
+                Err(CollectionError::service_error(format!(
+                            "Transfer of shard {} failed, transfer got aborted",
+                            reshard_key.shard_id,
+                )))
+            }
+            // Transfer timed out
+            Err(_) => {
+                let abort_transfer = consensus
+                    .abort_shard_transfer_confirm_and_retry(
+                        transfer.key(),
+                        collection_id,
+                        "resharding transfer transfer timed out",
+                    )
+                    .await;
+                if let Err(err) = abort_transfer {
+                    log::warn!("Failed to abort shard transfer for shard {} resharding to clean up after timeout, ignoring: {err}", reshard_key.shard_id);
+                }
+                Err(CollectionError::service_error(format!(
+                            "Transfer of shard {} failed, transfer timed out",
+                            reshard_key.shard_id,
+                )))
+            }
+        },
+        // Sanity check to ensure the tranfser is still ongoing and we're waiting on something
+        _ = sanity_check => {
+            debug_assert!(false, "no transfer for shard {}, it never properly started or we missed the end notification for it", reshard_key.shard_id);
+            Err(CollectionError::service_error(format!(
+                "No transfer for shard {} exists, assuming it failed",
+                reshard_key.shard_id,
+            )))
+        },
+    }
 }
