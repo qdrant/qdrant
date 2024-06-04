@@ -64,6 +64,7 @@ impl Collection {
                 reshard_key.clone(),
                 consensus,
                 collection_id,
+                self.path.clone(),
                 channel_service,
                 temp_dir,
                 on_finish,

@@ -1,15 +1,17 @@
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use parking_lot::Mutex;
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
+use tokio::task::block_in_place;
 
 use super::tasks_pool::ReshardTaskProgress;
 use super::ReshardKey;
 use crate::operations::types::{CollectionError, CollectionResult};
+use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::LockedShardHolder;
@@ -19,7 +21,7 @@ use crate::shards::CollectionId;
 /// Maximum time a point migration transfer might take.
 const MIGRATE_POINT_TRANSFER_MAX_DURATION: Duration = Duration::from_secs(24 * 60 * 60);
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct DriverState {
     key: ReshardKey,
     /// State of each peer we know about
@@ -107,19 +109,30 @@ pub async fn drive_resharding(
     // TODO(resharding): we might want to separate this type into shard transfer and resharding
     consensus: &dyn ShardTransferConsensus,
     collection_id: CollectionId,
+    collection_path: PathBuf,
     _channel_service: ChannelService,
     _temp_dir: &Path,
 ) -> CollectionResult<bool> {
-    let mut state = DriverState::new(reshard_key);
+    let resharding_state_path = resharding_state_path(&reshard_key, &collection_path);
+    let state: SaveOnDisk<DriverState> = SaveOnDisk::load_or_init(&resharding_state_path, || {
+        DriverState::new(reshard_key.clone())
+    })?;
 
     // Stage 1: init
     if !completed_init(&state) {
-        stage_init(&mut state)?;
+        stage_init(&state)?;
     }
 
     // Stage 2: init
     if !completed_migrate_points(&state) {
-        stage_migrate_points(&mut state, shard_holder.clone(), consensus, &collection_id).await?;
+        stage_migrate_points(
+            &reshard_key,
+            &state,
+            shard_holder.clone(),
+            consensus,
+            &collection_id,
+        )
+        .await?;
     }
 
     // Stage 3: replicate to match replication factor
@@ -140,29 +153,44 @@ pub async fn drive_resharding(
     // Stage 6: finalize
     stage_finalize()?;
 
+    // Remove the state file after successful resharding
+    if let Err(err) = tokio::fs::remove_file(resharding_state_path).await {
+        log::error!(
+            "Failed to remove resharding state file after successful resharding, ignoring: {err}"
+        );
+    }
+
     Ok(true)
+}
+
+fn resharding_state_path(reshard_key: &ReshardKey, collection_path: &Path) -> PathBuf {
+    collection_path.join(format!("resharding_state_{}.json", reshard_key.shard_id))
 }
 
 /// Stage 1: init
 ///
 /// Check whether we need to initialize the resharding process.
-fn completed_init(state: &DriverState) -> bool {
-    state.all_peers_reached(Stage::S1_InitEnd)
+fn completed_init(state: &SaveOnDisk<DriverState>) -> bool {
+    state.read().all_peers_reached(Stage::S1_InitEnd)
 }
 
 /// Stage 1: init
 ///
 /// Do initialize the resharding process.
-fn stage_init(state: &mut DriverState) -> CollectionResult<()> {
-    state.bump_all_peers_to(Stage::S1_InitEnd);
+fn stage_init(state: &SaveOnDisk<DriverState>) -> CollectionResult<()> {
+    state.write(|data| {
+        data.bump_all_peers_to(Stage::S1_InitEnd);
+    })?;
     todo!();
 }
 
 /// Stage 2: migrate points
 ///
 /// Check whether we need to migrate points into the new shard.
-fn completed_migrate_points(state: &DriverState) -> bool {
-    state.all_peers_reached(Stage::S2_MigratePointsEnd) && state.shards_to_migrate().is_empty()
+fn completed_migrate_points(state: &SaveOnDisk<DriverState>) -> bool {
+    let state_read = state.read();
+    state_read.all_peers_reached(Stage::S2_MigratePointsEnd)
+        && state_read.shards_to_migrate().is_empty()
 }
 
 /// Stage 2: migrate points
@@ -171,21 +199,24 @@ fn completed_migrate_points(state: &DriverState) -> bool {
 /// shard transfer if needed, waiting for them to finish. Once this returns, all points are
 /// migrated to the target shard.
 async fn stage_migrate_points(
-    state: &mut DriverState,
+    reshard_key: &ReshardKey,
+    state: &SaveOnDisk<DriverState>,
     shard_holder: Arc<LockedShardHolder>,
     consensus: &dyn ShardTransferConsensus,
     collection_id: &CollectionId,
 ) -> CollectionResult<()> {
-    state.bump_all_peers_to(Stage::S2_MigratePointsStart);
+    state.write(|data| {
+        data.bump_all_peers_to(Stage::S2_MigratePointsStart);
+    })?;
 
-    while let Some(source_shard_id) = state.shards_to_migrate().pop() {
+    while let Some(source_shard_id) = block_in_place(|| state.read().shards_to_migrate().pop()) {
         let ongoing_transfer = shard_holder
             .read()
             .await
             .get_transfers(|transfer| {
                 transfer.method == Some(ShardTransferMethod::ReshardingStreamRecords)
                     && transfer.shard_id == source_shard_id
-                    && transfer.to_shard_id == Some(state.key.shard_id)
+                    && transfer.to_shard_id == Some(reshard_key.shard_id)
             })
             .pop();
 
@@ -222,7 +253,7 @@ async fn stage_migrate_points(
                     to: consensus.this_peer_id()?,
                     sync: true,
                     method: Some(ShardTransferMethod::ReshardingStreamRecords),
-                    to_shard_id: Some(state.key.shard_id),
+                    to_shard_id: Some(reshard_key.shard_id),
                 };
                 (transfer, true)
             }
@@ -272,10 +303,14 @@ async fn stage_migrate_points(
             }
         }
 
-        state.migrated_shards.push(source_shard_id);
+        state.write(|data| {
+            data.migrated_shards.push(source_shard_id);
+        })?;
     }
 
-    state.bump_all_peers_to(Stage::S2_MigratePointsEnd);
+    state.write(|data| {
+        data.bump_all_peers_to(Stage::S2_MigratePointsEnd);
+    })?;
 
     Ok(())
 }

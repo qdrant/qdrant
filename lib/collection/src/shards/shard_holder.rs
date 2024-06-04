@@ -57,12 +57,13 @@ pub type LockedShardHolder = RwLock<ShardHolder>;
 
 impl ShardHolder {
     pub fn new(collection_path: &Path) -> CollectionResult<Self> {
-        let shard_transfers = SaveOnDisk::load_or_init(collection_path.join(SHARD_TRANSFERS_FILE))?;
+        let shard_transfers =
+            SaveOnDisk::load_or_init_default(collection_path.join(SHARD_TRANSFERS_FILE))?;
         let resharding_state: SaveOnDisk<Option<ReshardState>> =
-            SaveOnDisk::load_or_init(collection_path.join(RESHARDING_STATE_FILE))?;
+            SaveOnDisk::load_or_init_default(collection_path.join(RESHARDING_STATE_FILE))?;
 
         let key_mapping: SaveOnDisk<ShardKeyMapping> =
-            SaveOnDisk::load_or_init(collection_path.join(SHARD_KEY_MAPPING_FILE))?;
+            SaveOnDisk::load_or_init_default(collection_path.join(SHARD_KEY_MAPPING_FILE))?;
 
         let mut shard_id_to_key_mapping = HashMap::new();
 

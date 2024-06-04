@@ -38,7 +38,7 @@ impl ShardReplicaSet {
         is_distributed: bool,
     ) -> CollectionResult<()> {
         let replica_state: SaveOnDisk<ReplicaSetState> =
-            SaveOnDisk::load_or_init(snapshot_path.join(REPLICA_STATE_FILE))?;
+            SaveOnDisk::load_or_init_default(snapshot_path.join(REPLICA_STATE_FILE))?;
 
         // If this shard have local data
         let is_snapshot_local = replica_state.read().is_local;

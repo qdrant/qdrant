@@ -31,14 +31,23 @@ pub enum Error {
     FromClosure(Box<dyn std::error::Error>),
 }
 
-impl<T: Serialize + Default + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
-    pub fn load_or_init(path: impl Into<PathBuf>) -> Result<Self, Error> {
+impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
+    /// Load data from disk at the given path, or initialize the default if it doesn't exist.
+    pub fn load_or_init_default(path: impl Into<PathBuf>) -> Result<Self, Error>
+    where
+        T: Default,
+    {
+        Self::load_or_init(path, T::default)
+    }
+
+    /// Load data from disk at the given path, or initialize it with `init` if it doesn't exist.
+    pub fn load_or_init(path: impl Into<PathBuf>, init: impl FnOnce() -> T) -> Result<Self, Error> {
         let path: PathBuf = path.into();
         let data = if path.exists() {
             let file = File::open(&path)?;
             serde_json::from_reader(&file)?
         } else {
-            Default::default()
+            init()
         };
         Ok(Self {
             change_notification: Condvar::new(),
@@ -151,7 +160,7 @@ mod tests {
     fn saves_data() {
         let dir = Builder::new().prefix("test").tempdir().unwrap();
         let counter_file = dir.path().join("counter");
-        let counter: SaveOnDisk<u32> = SaveOnDisk::load_or_init(&counter_file).unwrap();
+        let counter: SaveOnDisk<u32> = SaveOnDisk::load_or_init_default(&counter_file).unwrap();
         counter.write(|counter| *counter += 1).unwrap();
         assert_eq!(*counter.read(), 1);
         assert_eq!(
@@ -170,9 +179,9 @@ mod tests {
     fn loads_data() {
         let dir = Builder::new().prefix("test").tempdir().unwrap();
         let counter_file = dir.path().join("counter");
-        let counter: SaveOnDisk<u32> = SaveOnDisk::load_or_init(&counter_file).unwrap();
+        let counter: SaveOnDisk<u32> = SaveOnDisk::load_or_init_default(&counter_file).unwrap();
         counter.write(|counter| *counter += 1).unwrap();
-        let counter: SaveOnDisk<u32> = SaveOnDisk::load_or_init(&counter_file).unwrap();
+        let counter: SaveOnDisk<u32> = SaveOnDisk::load_or_init_default(&counter_file).unwrap();
         let value = *counter.read();
         assert_eq!(value, 1)
     }
@@ -182,7 +191,7 @@ mod tests {
         let dir = Builder::new().prefix("test").tempdir().unwrap();
         let counter_file = dir.path().join("counter");
         let counter: Arc<SaveOnDisk<u32>> =
-            Arc::new(SaveOnDisk::load_or_init(counter_file).unwrap());
+            Arc::new(SaveOnDisk::load_or_init_default(counter_file).unwrap());
         let counter_copy = counter.clone();
         let handle = thread::spawn(move || {
             sleep(Duration::from_millis(200));
@@ -201,7 +210,7 @@ mod tests {
         let dir = Builder::new().prefix("test").tempdir().unwrap();
         let counter_file = dir.path().join("counter");
         let counter: Arc<SaveOnDisk<u32>> =
-            Arc::new(SaveOnDisk::load_or_init(counter_file).unwrap());
+            Arc::new(SaveOnDisk::load_or_init_default(counter_file).unwrap());
         let counter_copy = counter.clone();
         let handle = thread::spawn(move || {
             sleep(Duration::from_millis(200));
