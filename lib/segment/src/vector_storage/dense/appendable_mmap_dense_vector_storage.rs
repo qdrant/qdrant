@@ -3,9 +3,7 @@ use std::fs::create_dir_all;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
 
-use atomic_refcell::AtomicRefCell;
 use bitvec::prelude::BitSlice;
 use common::types::PointOffsetType;
 
@@ -33,24 +31,22 @@ pub fn open_appendable_memmap_vector_storage(
     path: &Path,
     dim: usize,
     distance: Distance,
-) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
+) -> OperationResult<VectorStorageEnum> {
     let storage =
         open_appendable_memmap_vector_storage_impl::<VectorElementType>(path, dim, distance)?;
 
-    Ok(Arc::new(AtomicRefCell::new(
-        VectorStorageEnum::DenseAppendableMemmap(Box::new(storage)),
-    )))
+    Ok(VectorStorageEnum::DenseAppendableMemmap(Box::new(storage)))
 }
 
 pub fn open_appendable_memmap_vector_storage_byte(
     path: &Path,
     dim: usize,
     distance: Distance,
-) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
+) -> OperationResult<VectorStorageEnum> {
     let storage = open_appendable_memmap_vector_storage_impl(path, dim, distance)?;
 
-    Ok(Arc::new(AtomicRefCell::new(
-        VectorStorageEnum::DenseAppendableMemmapByte(Box::new(storage)),
+    Ok(VectorStorageEnum::DenseAppendableMemmapByte(Box::new(
+        storage,
     )))
 }
 
@@ -58,11 +54,11 @@ pub fn open_appendable_memmap_vector_storage_half(
     path: &Path,
     dim: usize,
     distance: Distance,
-) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
+) -> OperationResult<VectorStorageEnum> {
     let storage = open_appendable_memmap_vector_storage_impl(path, dim, distance)?;
 
-    Ok(Arc::new(AtomicRefCell::new(
-        VectorStorageEnum::DenseAppendableMemmapHalf(Box::new(storage)),
+    Ok(VectorStorageEnum::DenseAppendableMemmapHalf(Box::new(
+        storage,
     )))
 }
 

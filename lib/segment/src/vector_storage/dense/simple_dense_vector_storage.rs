@@ -4,7 +4,6 @@ use std::ops::Range;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use atomic_refcell::AtomicRefCell;
 use bitvec::prelude::{BitSlice, BitVec};
 use common::types::PointOffsetType;
 use log::debug;
@@ -92,7 +91,7 @@ pub fn open_simple_dense_vector_storage(
     dim: usize,
     distance: Distance,
     stopped: &AtomicBool,
-) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
+) -> OperationResult<VectorStorageEnum> {
     let storage = open_simple_dense_vector_storage_impl::<VectorElementType>(
         database,
         database_column_name,
@@ -101,9 +100,7 @@ pub fn open_simple_dense_vector_storage(
         stopped,
     )?;
 
-    Ok(Arc::new(AtomicRefCell::new(
-        VectorStorageEnum::DenseSimple(storage),
-    )))
+    Ok(VectorStorageEnum::DenseSimple(storage))
 }
 
 pub fn open_simple_dense_byte_vector_storage(
@@ -112,7 +109,7 @@ pub fn open_simple_dense_byte_vector_storage(
     dim: usize,
     distance: Distance,
     stopped: &AtomicBool,
-) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
+) -> OperationResult<VectorStorageEnum> {
     let storage = open_simple_dense_vector_storage_impl(
         database,
         database_column_name,
@@ -121,9 +118,7 @@ pub fn open_simple_dense_byte_vector_storage(
         stopped,
     )?;
 
-    Ok(Arc::new(AtomicRefCell::new(
-        VectorStorageEnum::DenseSimpleByte(storage),
-    )))
+    Ok(VectorStorageEnum::DenseSimpleByte(storage))
 }
 
 pub fn open_simple_dense_half_vector_storage(
@@ -132,7 +127,7 @@ pub fn open_simple_dense_half_vector_storage(
     dim: usize,
     distance: Distance,
     stopped: &AtomicBool,
-) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
+) -> OperationResult<VectorStorageEnum> {
     let storage = open_simple_dense_vector_storage_impl(
         database,
         database_column_name,
@@ -141,9 +136,7 @@ pub fn open_simple_dense_half_vector_storage(
         stopped,
     )?;
 
-    Ok(Arc::new(AtomicRefCell::new(
-        VectorStorageEnum::DenseSimpleHalf(storage),
-    )))
+    Ok(VectorStorageEnum::DenseSimpleHalf(storage))
 }
 
 impl<T: PrimitiveVectorElement> SimpleDenseVectorStorage<T> {
