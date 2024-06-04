@@ -488,16 +488,16 @@ fn stage_finalize() -> CollectionResult<()> {
     todo!()
 }
 
-/// Await for a resharding shard trnasfer to succeed.
+/// Await for a resharding shard transfer to succeed.
 ///
-/// Yields on a successfull transfer.
+/// Yields on a successful transfer.
 ///
 /// Returns an error if:
 /// - the transfer failed or got aborted
 /// - the transfer timed out
 /// - no matching transfer is ongoing; it never started or went missing without a notification
 ///
-/// Yields on a succesful transfer. Returns an error if an error occurred or if the global timeout
+/// Yields on a successful transfer. Returns an error if an error occurred or if the global timeout
 /// is reached.
 async fn await_transfer_success(
     reshard_key: &ReshardKey,
