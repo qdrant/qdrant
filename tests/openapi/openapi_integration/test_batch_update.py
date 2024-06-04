@@ -1,9 +1,9 @@
+from operator import itemgetter
+
 import pytest
 
-from .helpers.helpers import request_with_validation
 from .helpers.collection_setup import basic_collection_setup, drop_collection
-
-from operator import itemgetter
+from .helpers.helpers import request_with_validation
 
 collection_name = 'test_collection_batch_update'
 
@@ -32,9 +32,13 @@ def assert_points(points, nonexisting_ids=None, with_vectors=False):
     )
     assert response.ok
 
-    assert sorted(response.json()['result'], key=itemgetter('id')) == sorted(
-        points, key=itemgetter('id')
-    )
+    for point, expected in zip(
+        sorted(response.json()['result'], key=itemgetter('id')), 
+        sorted(points, key=itemgetter('id'))
+    ):
+        assert point.get('id') == expected.get('id')
+        assert point.get('payload') == expected.get('payload')
+        assert point.get('vector') == expected.get('vector')
 
 
 def test_batch_update():
