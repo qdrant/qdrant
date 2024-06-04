@@ -352,14 +352,6 @@ impl<'a> VectorRef<'a> {
             VectorRef::MultiDense(v) => Vector::MultiDense(v.to_owned()),
         }
     }
-
-    pub fn is_sparse(&self) -> bool {
-        match self {
-            VectorRef::Dense(_) => false,
-            VectorRef::Sparse(_) => true,
-            VectorRef::MultiDense(_) => false,
-        }
-    }
 }
 
 impl<'a> TryInto<&'a [VectorElementType]> for &'a Vector {
