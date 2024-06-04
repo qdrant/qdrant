@@ -118,6 +118,9 @@ pub enum ShardTransferMethod {
 /// Interface to consensus for shard transfer operations.
 #[async_trait]
 pub trait ShardTransferConsensus: Send + Sync {
+    /// Get the peer ID for the current node.
+    fn this_peer_id(&self) -> CollectionResult<PeerId>;
+
     /// Get the current consensus commit and term state.
     ///
     /// Returns `(commit, term)`.
@@ -208,6 +211,61 @@ pub trait ShardTransferConsensus: Send + Sync {
         })
     }
 
+    /// Propose to start a shard transfer
+    ///
+    /// # Warning
+    ///
+    /// This only submits a proposal to consensus. Calling this does not guarantee that consensus
+    /// will actually apply the operation across the cluster.
+    async fn start_shard_transfer(
+        &self,
+        transfer_config: ShardTransfer,
+        collection_name: CollectionId,
+    ) -> CollectionResult<()>;
+
+    /// Propose to start a shard transfer
+    ///
+    /// This internally confirms and retries a few times if needed to ensure consensus picks up the
+    /// operation.
+    async fn start_shard_transfer_confirm_and_retry(
+        &self,
+        transfer_config: &ShardTransfer,
+        collection_name: &str,
+    ) -> CollectionResult<()> {
+        let mut result = Err(CollectionError::service_error(
+            "`start_shard_transfer_confirm_and_retry` exit without attempting any work, \
+             this is a programming error",
+        ));
+
+        for attempt in 0..CONSENSUS_CONFIRM_RETRIES {
+            if attempt > 0 {
+                sleep(CONSENSUS_CONFIRM_RETRY_DELAY).await;
+            }
+
+            log::trace!("Propose and confirm shard transfer start operation");
+            result = self
+                .start_shard_transfer(transfer_config.clone(), collection_name.into())
+                .await;
+
+            match &result {
+                Ok(()) => break,
+                Err(err) => {
+                    log::error!(
+                        "Failed to confirm start shard transfer operation on consensus: {err}"
+                    );
+                    continue;
+                }
+            }
+        }
+
+        result.map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to start shard transfer through consensus \
+                 after {CONSENSUS_CONFIRM_RETRIES} retries: {err}"
+            ))
+        })
+    }
+
     /// Propose to restart a shard transfer with a different given configuration
     ///
     /// # Warning
@@ -248,7 +306,7 @@ pub trait ShardTransferConsensus: Send + Sync {
                 Ok(()) => break,
                 Err(err) => {
                     log::error!(
-                        "Failed to confirm snapshot recovered operation on consensus: {err}"
+                        "Failed to confirm restart shard transfer operation on consensus: {err}"
                     );
                     continue;
                 }
@@ -258,6 +316,63 @@ pub trait ShardTransferConsensus: Send + Sync {
         result.map_err(|err| {
             CollectionError::service_error(format!(
                 "Failed to restart shard transfer through consensus \
+                 after {CONSENSUS_CONFIRM_RETRIES} retries: {err}"
+            ))
+        })
+    }
+
+    /// Propose to abort a shard transfer
+    ///
+    /// # Warning
+    ///
+    /// This only submits a proposal to consensus. Calling this does not guarantee that consensus
+    /// will actually apply the operation across the cluster.
+    async fn abort_shard_transfer(
+        &self,
+        transfer: ShardTransferKey,
+        collection_id: CollectionId,
+        reason: &str,
+    ) -> CollectionResult<()>;
+
+    /// Propose to abort a shard transfer
+    ///
+    /// This internally confirms and retries a few times if needed to ensure consensus picks up the
+    /// operation.
+    async fn abort_shard_transfer_confirm_and_retry(
+        &self,
+        transfer: ShardTransferKey,
+        collection_id: &CollectionId,
+        reason: &str,
+    ) -> CollectionResult<()> {
+        let mut result = Err(CollectionError::service_error(
+            "`abort_shard_transfer_confirm_and_retry` exit without attempting any work, \
+             this is a programming error",
+        ));
+
+        for attempt in 0..CONSENSUS_CONFIRM_RETRIES {
+            if attempt > 0 {
+                sleep(CONSENSUS_CONFIRM_RETRY_DELAY).await;
+            }
+
+            log::trace!("Propose and confirm shard transfer abort operation");
+            result = self
+                .abort_shard_transfer(transfer, collection_id.into(), reason)
+                .await;
+
+            match &result {
+                Ok(()) => break,
+                Err(err) => {
+                    log::error!(
+                        "Failed to confirm abort shard transfer operation on consensus: {err}"
+                    );
+                    continue;
+                }
+            }
+        }
+
+        result.map_err(|err| {
+            CollectionError::service_error(format!(
+                "Failed to abort shard transfer through consensus \
                  after {CONSENSUS_CONFIRM_RETRIES} retries: {err}"
             ))
         })
