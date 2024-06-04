@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use atomic_refcell::AtomicRefCell;
 use common::cpu::CpuPermit;
 use rand::prelude::StdRng;
 use rand::SeedableRng;
@@ -67,7 +68,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
 
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-    let multi_storage = open_simple_multi_dense_vector_storage(
+    let mut multi_storage = open_simple_multi_dense_vector_storage(
         db,
         DB_VECTOR_CF,
         dim,
@@ -108,7 +109,6 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
 
         let internal_id = segment.id_tracker.borrow().internal_id(idx).unwrap();
         multi_storage
-            .borrow_mut()
             .insert_vector(
                 internal_id,
                 VectorRef::MultiDense(TypedMultiDenseVectorRef::from(&vector_multi)),
@@ -150,6 +150,8 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
     hnsw_index_dense
         .build_index(permit.clone(), &stopped)
         .unwrap();
+
+    let multi_storage = Arc::new(AtomicRefCell::new(multi_storage));
 
     let mut hnsw_index_multi = HNSWIndex::<GraphLinksRam>::open(
         hnsw_dir.path(),

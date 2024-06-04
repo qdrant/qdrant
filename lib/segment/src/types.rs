@@ -762,6 +762,20 @@ impl SegmentConfig {
                 .values()
                 .any(|config| config.index.index_type.is_on_disk())
     }
+
+    pub fn is_appendable(&self) -> bool {
+        self.vector_data
+            .values()
+            .map(|vector_config| vector_config.is_appendable())
+            .chain(
+                self.sparse_vector_data
+                    .values()
+                    .map(|sparse_vector_config| {
+                        sparse_vector_config.index.index_type.is_appendable()
+                    }),
+            )
+            .all(|v| v)
+    }
 }
 
 /// Storage types for vectors

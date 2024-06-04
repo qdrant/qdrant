@@ -54,8 +54,7 @@ fn test_async_raw_scorer(
         .prefix("immutable-storage")
         .tempdir()?;
 
-    let storage = open_memmap_vector_storage_with_async_io(dir.path(), dim, distance, true)?;
-    let mut storage = storage.borrow_mut();
+    let mut storage = open_memmap_vector_storage_with_async_io(dir.path(), dim, distance, true)?;
 
     let mut id_tracker = FixtureIdTracker::new(points);
 
@@ -66,15 +65,13 @@ fn test_async_raw_scorer(
 
         let db = rocksdb_wrapper::open_db(dir.path(), &[rocksdb_wrapper::DB_VECTOR_CF])?;
 
-        let mutable_storage = open_simple_dense_vector_storage(
+        let mut mutable_storage = open_simple_dense_vector_storage(
             db,
             rocksdb_wrapper::DB_VECTOR_CF,
             dim,
             distance,
             &AtomicBool::new(false),
         )?;
-
-        let mut mutable_storage = mutable_storage.borrow_mut();
 
         insert_random_vectors(&mut rng, dim, &mut mutable_storage, points)?;
         delete_random_vectors(&mut rng, &mut mutable_storage, &mut id_tracker, delete)?;

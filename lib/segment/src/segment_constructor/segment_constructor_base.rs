@@ -8,7 +8,8 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use io::storage_version::StorageVersion;
 use log::info;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
+use rocksdb::DB;
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -16,7 +17,7 @@ use crate::common::operation_error::{check_process_stopped, OperationError, Oper
 use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
 use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
-use crate::id_tracker::{IdTracker, IdTrackerEnum};
+use crate::id_tracker::{IdTracker, IdTrackerEnum, IdTrackerSS};
 use crate::index::hnsw_index::graph_links::{GraphLinksMmap, GraphLinksRam};
 use crate::index::hnsw_index::hnsw::HNSWIndex;
 use crate::index::plain_payload_index::PlainIndex;
@@ -25,11 +26,12 @@ use crate::index::sparse_index::sparse_vector_index::SparseVectorIndex;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::VectorIndexEnum;
 use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
+use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::segment::{Segment, SegmentVersion, VectorData, SEGMENT_STATE_FILE};
 use crate::types::{
     Distance, Indexes, PayloadStorageType, SegmentConfig, SegmentState, SegmentType, SeqNumberType,
-    VectorStorageDatatype, VectorStorageType,
+    SparseVectorDataConfig, VectorDataConfig, VectorStorageDatatype, VectorStorageType,
 };
 use crate::vector_storage::dense::appendable_mmap_dense_vector_storage::{
     open_appendable_memmap_vector_storage, open_appendable_memmap_vector_storage_byte,
@@ -52,7 +54,7 @@ use crate::vector_storage::multi_dense::simple_multi_dense_vector_storage::{
 };
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
-use crate::vector_storage::VectorStorage;
+use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 pub const PAYLOAD_INDEX_PATH: &str = "payload_index";
 pub const VECTOR_STORAGE_PATH: &str = "vector_storage";
@@ -81,12 +83,175 @@ pub fn get_vector_index_path(segment_path: &Path, vector_name: &str) -> PathBuf 
     segment_path.join(get_vector_name_with_prefix(VECTOR_INDEX_PATH, vector_name))
 }
 
-fn create_segment(
-    version: Option<SeqNumberType>,
+pub(crate) fn open_vector_storage(
+    database: &Arc<RwLock<DB>>,
+    vector_config: &VectorDataConfig,
+    stopped: &AtomicBool,
+    vector_storage_path: &Path,
+    vector_name: &str,
+) -> OperationResult<VectorStorageEnum> {
+    let storage_element_type = vector_config.datatype.unwrap_or_default();
+
+    match vector_config.storage_type {
+        // In memory
+        VectorStorageType::Memory => {
+            let db_column_name = get_vector_name_with_prefix(DB_VECTOR_CF, vector_name);
+
+            if let Some(multi_vec_config) = &vector_config.multivec_config {
+                match storage_element_type {
+                    VectorStorageDatatype::Float32 => open_simple_multi_dense_vector_storage(
+                        database.clone(),
+                        &db_column_name,
+                        vector_config.size,
+                        vector_config.distance,
+                        *multi_vec_config,
+                        stopped,
+                    ),
+                    VectorStorageDatatype::Uint8 => open_simple_multi_dense_vector_storage_byte(
+                        database.clone(),
+                        &db_column_name,
+                        vector_config.size,
+                        vector_config.distance,
+                        *multi_vec_config,
+                        stopped,
+                    ),
+                    VectorStorageDatatype::Float16 => open_simple_multi_dense_vector_storage_half(
+                        database.clone(),
+                        &db_column_name,
+                        vector_config.size,
+                        vector_config.distance,
+                        *multi_vec_config,
+                        stopped,
+                    ),
+                }
+            } else {
+                match storage_element_type {
+                    VectorStorageDatatype::Float32 => open_simple_dense_vector_storage(
+                        database.clone(),
+                        &db_column_name,
+                        vector_config.size,
+                        vector_config.distance,
+                        stopped,
+                    ),
+                    VectorStorageDatatype::Uint8 => open_simple_dense_byte_vector_storage(
+                        database.clone(),
+                        &db_column_name,
+                        vector_config.size,
+                        vector_config.distance,
+                        stopped,
+                    ),
+                    VectorStorageDatatype::Float16 => open_simple_dense_half_vector_storage(
+                        database.clone(),
+                        &db_column_name,
+                        vector_config.size,
+                        vector_config.distance,
+                        stopped,
+                    ),
+                }
+            }
+        }
+        // Mmap on disk, not appendable
+        VectorStorageType::Mmap => {
+            if let Some(multi_vec_config) = &vector_config.multivec_config {
+                // there are no mmap multi vector storages, appendable only
+                match storage_element_type {
+                    VectorStorageDatatype::Float32 => open_appendable_memmap_multi_vector_storage(
+                        vector_storage_path,
+                        vector_config.size,
+                        vector_config.distance,
+                        *multi_vec_config,
+                    ),
+                    VectorStorageDatatype::Uint8 => {
+                        open_appendable_memmap_multi_vector_storage_byte(
+                            vector_storage_path,
+                            vector_config.size,
+                            vector_config.distance,
+                            *multi_vec_config,
+                        )
+                    }
+                    VectorStorageDatatype::Float16 => {
+                        open_appendable_memmap_multi_vector_storage_half(
+                            vector_storage_path,
+                            vector_config.size,
+                            vector_config.distance,
+                            *multi_vec_config,
+                        )
+                    }
+                }
+            } else {
+                match storage_element_type {
+                    VectorStorageDatatype::Float32 => open_memmap_vector_storage(
+                        vector_storage_path,
+                        vector_config.size,
+                        vector_config.distance,
+                    ),
+                    VectorStorageDatatype::Uint8 => open_memmap_vector_storage_byte(
+                        vector_storage_path,
+                        vector_config.size,
+                        vector_config.distance,
+                    ),
+                    VectorStorageDatatype::Float16 => open_memmap_vector_storage_half(
+                        vector_storage_path,
+                        vector_config.size,
+                        vector_config.distance,
+                    ),
+                }
+            }
+        }
+        // Chunked mmap on disk, appendable
+        VectorStorageType::ChunkedMmap => {
+            if let Some(multi_vec_config) = &vector_config.multivec_config {
+                match storage_element_type {
+                    VectorStorageDatatype::Float32 => open_appendable_memmap_multi_vector_storage(
+                        vector_storage_path,
+                        vector_config.size,
+                        vector_config.distance,
+                        *multi_vec_config,
+                    ),
+                    VectorStorageDatatype::Uint8 => {
+                        open_appendable_memmap_multi_vector_storage_byte(
+                            vector_storage_path,
+                            vector_config.size,
+                            vector_config.distance,
+                            *multi_vec_config,
+                        )
+                    }
+                    VectorStorageDatatype::Float16 => {
+                        open_appendable_memmap_multi_vector_storage_half(
+                            vector_storage_path,
+                            vector_config.size,
+                            vector_config.distance,
+                            *multi_vec_config,
+                        )
+                    }
+                }
+            } else {
+                match storage_element_type {
+                    VectorStorageDatatype::Float32 => open_appendable_memmap_vector_storage(
+                        vector_storage_path,
+                        vector_config.size,
+                        vector_config.distance,
+                    ),
+                    VectorStorageDatatype::Uint8 => open_appendable_memmap_vector_storage_byte(
+                        vector_storage_path,
+                        vector_config.size,
+                        vector_config.distance,
+                    ),
+                    VectorStorageDatatype::Float16 => open_appendable_memmap_vector_storage_half(
+                        vector_storage_path,
+                        vector_config.size,
+                        vector_config.distance,
+                    ),
+                }
+            }
+        }
+    }
+}
+
+pub(crate) fn open_segment_db(
     segment_path: &Path,
     config: &SegmentConfig,
-    stopped: &AtomicBool,
-) -> OperationResult<Segment> {
+) -> OperationResult<Arc<RwLock<DB>>> {
     let vector_db_names: Vec<String> = config
         .vector_data
         .keys()
@@ -98,31 +263,129 @@ fn create_segment(
                 .map(|vector_name| get_vector_name_with_prefix(DB_VECTOR_CF, vector_name)),
         )
         .collect();
-    let database = open_db(segment_path, &vector_db_names)
-        .map_err(|err| OperationError::service_error(format!("RocksDB open error: {err}")))?;
+    open_db(segment_path, &vector_db_names)
+        .map_err(|err| OperationError::service_error(format!("RocksDB open error: {err}")))
+}
 
+pub(crate) fn create_payload_storage(
+    database: Arc<RwLock<DB>>,
+    config: &SegmentConfig,
+) -> OperationResult<PayloadStorageEnum> {
     let payload_storage = match config.payload_storage_type {
-        PayloadStorageType::InMemory => sp(SimplePayloadStorage::open(database.clone())?.into()),
-        PayloadStorageType::OnDisk => sp(OnDiskPayloadStorage::open(database.clone())?.into()),
+        PayloadStorageType::InMemory => {
+            PayloadStorageEnum::from(SimplePayloadStorage::open(database)?)
+        }
+        PayloadStorageType::OnDisk => {
+            PayloadStorageEnum::from(OnDiskPayloadStorage::open(database)?)
+        }
+    };
+    Ok(payload_storage)
+}
+
+pub(crate) fn create_id_tracker(database: Arc<RwLock<DB>>) -> OperationResult<IdTrackerEnum> {
+    Ok(IdTrackerEnum::MutableIdTracker(SimpleIdTracker::open(
+        database,
+    )?))
+}
+
+pub(crate) fn get_payload_index_path(segment_path: &Path) -> PathBuf {
+    segment_path.join(PAYLOAD_INDEX_PATH)
+}
+
+pub(crate) fn create_vector_index(
+    vector_config: &VectorDataConfig,
+    vector_index_path: &Path,
+    id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+    vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
+    payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
+    quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
+) -> OperationResult<VectorIndexEnum> {
+    let vector_index = match &vector_config.index {
+        Indexes::Plain {} => VectorIndexEnum::Plain(PlainIndex::new(
+            id_tracker.clone(),
+            vector_storage.clone(),
+            payload_index.clone(),
+        )),
+        Indexes::Hnsw(vector_hnsw_config) => {
+            if vector_hnsw_config.on_disk == Some(true) {
+                VectorIndexEnum::HnswMmap(HNSWIndex::<GraphLinksMmap>::open(
+                    vector_index_path,
+                    id_tracker.clone(),
+                    vector_storage.clone(),
+                    quantized_vectors.clone(),
+                    payload_index.clone(),
+                    vector_hnsw_config.clone(),
+                )?)
+            } else {
+                VectorIndexEnum::HnswRam(HNSWIndex::<GraphLinksRam>::open(
+                    vector_index_path,
+                    id_tracker.clone(),
+                    vector_storage.clone(),
+                    quantized_vectors.clone(),
+                    payload_index.clone(),
+                    vector_hnsw_config.clone(),
+                )?)
+            }
+        }
     };
 
-    let appendable_flag = config
-        .vector_data
-        .values()
-        .map(|vector_config| vector_config.is_appendable())
-        .chain(
-            config
-                .sparse_vector_data
-                .values()
-                .map(|sparse_vector_config| sparse_vector_config.index.index_type.is_appendable()),
-        )
-        .all(|v| v);
+    Ok(vector_index)
+}
 
-    let id_tracker = sp(IdTrackerEnum::MutableIdTracker(SimpleIdTracker::open(
-        database.clone(),
-    )?));
+pub(crate) fn create_sparse_vector_index(
+    sparse_vector_config: SparseVectorDataConfig,
+    vector_index_path: &Path,
+    id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+    vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
+    payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
+    stopped: &AtomicBool,
+) -> OperationResult<VectorIndexEnum> {
+    let vector_index = match sparse_vector_config.index.index_type {
+        SparseIndexType::MutableRam => VectorIndexEnum::SparseRam(SparseVectorIndex::open(
+            sparse_vector_config.index,
+            id_tracker.clone(),
+            vector_storage.clone(),
+            payload_index.clone(),
+            vector_index_path,
+            stopped,
+        )?),
+        SparseIndexType::ImmutableRam => {
+            VectorIndexEnum::SparseImmutableRam(SparseVectorIndex::open(
+                sparse_vector_config.index,
+                id_tracker.clone(),
+                vector_storage.clone(),
+                payload_index.clone(),
+                vector_index_path,
+                stopped,
+            )?)
+        }
+        SparseIndexType::Mmap => VectorIndexEnum::SparseMmap(SparseVectorIndex::open(
+            sparse_vector_config.index,
+            id_tracker.clone(),
+            vector_storage.clone(),
+            payload_index.clone(),
+            vector_index_path,
+            stopped,
+        )?),
+    };
 
-    let payload_index_path = segment_path.join(PAYLOAD_INDEX_PATH);
+    Ok(vector_index)
+}
+
+fn create_segment(
+    version: Option<SeqNumberType>,
+    segment_path: &Path,
+    config: &SegmentConfig,
+    stopped: &AtomicBool,
+) -> OperationResult<Segment> {
+    let database = open_segment_db(segment_path, config)?;
+    let payload_storage = sp(create_payload_storage(database.clone(), config)?);
+
+    let appendable_flag = config.is_appendable();
+
+    let id_tracker = sp(create_id_tracker(database.clone())?);
+
+    let payload_index_path = get_payload_index_path(segment_path);
     let payload_index: Arc<AtomicRefCell<StructPayloadIndex>> = sp(StructPayloadIndex::open(
         payload_storage,
         id_tracker.clone(),
@@ -136,170 +399,13 @@ fn create_segment(
         let vector_index_path = get_vector_index_path(segment_path, vector_name);
 
         // Select suitable vector storage type based on configuration
-        let storage_element_type = vector_config.datatype.unwrap_or_default();
-        let vector_storage = match vector_config.storage_type {
-            // In memory
-            VectorStorageType::Memory => {
-                let db_column_name = get_vector_name_with_prefix(DB_VECTOR_CF, vector_name);
-                if let Some(multi_vec_config) = &vector_config.multivec_config {
-                    match storage_element_type {
-                        VectorStorageDatatype::Float32 => open_simple_multi_dense_vector_storage(
-                            database.clone(),
-                            &db_column_name,
-                            vector_config.size,
-                            vector_config.distance,
-                            *multi_vec_config,
-                            stopped,
-                        )?,
-                        VectorStorageDatatype::Uint8 => {
-                            open_simple_multi_dense_vector_storage_byte(
-                                database.clone(),
-                                &db_column_name,
-                                vector_config.size,
-                                vector_config.distance,
-                                *multi_vec_config,
-                                stopped,
-                            )?
-                        }
-                        VectorStorageDatatype::Float16 => {
-                            open_simple_multi_dense_vector_storage_half(
-                                database.clone(),
-                                &db_column_name,
-                                vector_config.size,
-                                vector_config.distance,
-                                *multi_vec_config,
-                                stopped,
-                            )?
-                        }
-                    }
-                } else {
-                    match storage_element_type {
-                        VectorStorageDatatype::Float32 => open_simple_dense_vector_storage(
-                            database.clone(),
-                            &db_column_name,
-                            vector_config.size,
-                            vector_config.distance,
-                            stopped,
-                        )?,
-                        VectorStorageDatatype::Uint8 => open_simple_dense_byte_vector_storage(
-                            database.clone(),
-                            &db_column_name,
-                            vector_config.size,
-                            vector_config.distance,
-                            stopped,
-                        )?,
-                        VectorStorageDatatype::Float16 => open_simple_dense_half_vector_storage(
-                            database.clone(),
-                            &db_column_name,
-                            vector_config.size,
-                            vector_config.distance,
-                            stopped,
-                        )?,
-                    }
-                }
-            }
-            // Mmap on disk, not appendable
-            VectorStorageType::Mmap => {
-                if let Some(multi_vec_config) = &vector_config.multivec_config {
-                    // there are no mmap multi vector storages, appendable only
-                    match storage_element_type {
-                        VectorStorageDatatype::Float32 => {
-                            open_appendable_memmap_multi_vector_storage(
-                                &vector_storage_path,
-                                vector_config.size,
-                                vector_config.distance,
-                                *multi_vec_config,
-                            )?
-                        }
-                        VectorStorageDatatype::Uint8 => {
-                            open_appendable_memmap_multi_vector_storage_byte(
-                                &vector_storage_path,
-                                vector_config.size,
-                                vector_config.distance,
-                                *multi_vec_config,
-                            )?
-                        }
-                        VectorStorageDatatype::Float16 => {
-                            open_appendable_memmap_multi_vector_storage_half(
-                                &vector_storage_path,
-                                vector_config.size,
-                                vector_config.distance,
-                                *multi_vec_config,
-                            )?
-                        }
-                    }
-                } else {
-                    match storage_element_type {
-                        VectorStorageDatatype::Float32 => open_memmap_vector_storage(
-                            &vector_storage_path,
-                            vector_config.size,
-                            vector_config.distance,
-                        )?,
-                        VectorStorageDatatype::Uint8 => open_memmap_vector_storage_byte(
-                            &vector_storage_path,
-                            vector_config.size,
-                            vector_config.distance,
-                        )?,
-                        VectorStorageDatatype::Float16 => open_memmap_vector_storage_half(
-                            &vector_storage_path,
-                            vector_config.size,
-                            vector_config.distance,
-                        )?,
-                    }
-                }
-            }
-            // Chunked mmap on disk, appendable
-            VectorStorageType::ChunkedMmap => {
-                if let Some(multi_vec_config) = &vector_config.multivec_config {
-                    match storage_element_type {
-                        VectorStorageDatatype::Float32 => {
-                            open_appendable_memmap_multi_vector_storage(
-                                &vector_storage_path,
-                                vector_config.size,
-                                vector_config.distance,
-                                *multi_vec_config,
-                            )?
-                        }
-                        VectorStorageDatatype::Uint8 => {
-                            open_appendable_memmap_multi_vector_storage_byte(
-                                &vector_storage_path,
-                                vector_config.size,
-                                vector_config.distance,
-                                *multi_vec_config,
-                            )?
-                        }
-                        VectorStorageDatatype::Float16 => {
-                            open_appendable_memmap_multi_vector_storage_half(
-                                &vector_storage_path,
-                                vector_config.size,
-                                vector_config.distance,
-                                *multi_vec_config,
-                            )?
-                        }
-                    }
-                } else {
-                    match storage_element_type {
-                        VectorStorageDatatype::Float32 => open_appendable_memmap_vector_storage(
-                            &vector_storage_path,
-                            vector_config.size,
-                            vector_config.distance,
-                        )?,
-                        VectorStorageDatatype::Uint8 => open_appendable_memmap_vector_storage_byte(
-                            &vector_storage_path,
-                            vector_config.size,
-                            vector_config.distance,
-                        )?,
-                        VectorStorageDatatype::Float16 => {
-                            open_appendable_memmap_vector_storage_half(
-                                &vector_storage_path,
-                                vector_config.size,
-                                vector_config.distance,
-                            )?
-                        }
-                    }
-                }
-            }
-        };
+        let vector_storage = Arc::new(AtomicRefCell::new(open_vector_storage(
+            &database,
+            vector_config,
+            stopped,
+            &vector_storage_path,
+            vector_name,
+        )?));
 
         // Warn when number of points between ID tracker and storage differs
         let point_count = id_tracker.borrow().total_point_count();
@@ -324,32 +430,14 @@ fn create_segment(
             None
         });
 
-        let vector_index: Arc<AtomicRefCell<VectorIndexEnum>> = match &vector_config.index {
-            Indexes::Plain {} => sp(VectorIndexEnum::Plain(PlainIndex::new(
-                id_tracker.clone(),
-                vector_storage.clone(),
-                payload_index.clone(),
-            ))),
-            Indexes::Hnsw(vector_hnsw_config) => sp(if vector_hnsw_config.on_disk == Some(true) {
-                VectorIndexEnum::HnswMmap(HNSWIndex::<GraphLinksMmap>::open(
-                    &vector_index_path,
-                    id_tracker.clone(),
-                    vector_storage.clone(),
-                    quantized_vectors.clone(),
-                    payload_index.clone(),
-                    vector_hnsw_config.clone(),
-                )?)
-            } else {
-                VectorIndexEnum::HnswRam(HNSWIndex::<GraphLinksRam>::open(
-                    &vector_index_path,
-                    id_tracker.clone(),
-                    vector_storage.clone(),
-                    quantized_vectors.clone(),
-                    payload_index.clone(),
-                    vector_hnsw_config.clone(),
-                )?)
-            }),
-        };
+        let vector_index: Arc<AtomicRefCell<VectorIndexEnum>> = sp(create_vector_index(
+            vector_config,
+            &vector_index_path,
+            id_tracker.clone(),
+            vector_storage.clone(),
+            payload_index.clone(),
+            quantized_vectors.clone(),
+        )?);
 
         check_process_stopped(stopped)?;
 
@@ -381,34 +469,14 @@ fn create_segment(
             );
         }
 
-        let vector_index = match sparse_vector_config.index.index_type {
-            SparseIndexType::MutableRam => sp(VectorIndexEnum::SparseRam(SparseVectorIndex::open(
-                sparse_vector_config.index,
-                id_tracker.clone(),
-                vector_storage.clone(),
-                payload_index.clone(),
-                &vector_index_path,
-                stopped,
-            )?)),
-            SparseIndexType::ImmutableRam => sp(VectorIndexEnum::SparseImmutableRam(
-                SparseVectorIndex::open(
-                    sparse_vector_config.index,
-                    id_tracker.clone(),
-                    vector_storage.clone(),
-                    payload_index.clone(),
-                    &vector_index_path,
-                    stopped,
-                )?,
-            )),
-            SparseIndexType::Mmap => sp(VectorIndexEnum::SparseMmap(SparseVectorIndex::open(
-                sparse_vector_config.index,
-                id_tracker.clone(),
-                vector_storage.clone(),
-                payload_index.clone(),
-                &vector_index_path,
-                stopped,
-            )?)),
-        };
+        let vector_index = sp(create_sparse_vector_index(
+            sparse_vector_config.clone(),
+            &vector_index_path,
+            id_tracker.clone(),
+            vector_storage.clone(),
+            payload_index.clone(),
+            stopped,
+        )?);
 
         check_process_stopped(stopped)?;
 
@@ -502,6 +570,10 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option
     Ok(Some(segment))
 }
 
+pub fn new_segment_path(segments_path: &Path) -> PathBuf {
+    segments_path.join(Uuid::new_v4().to_string())
+}
+
 /// Build segment instance using given configuration.
 /// Builder will generate folder for the segment and store all segment information inside it.
 ///
@@ -519,7 +591,7 @@ pub fn build_segment(
     config: &SegmentConfig,
     ready: bool,
 ) -> OperationResult<Segment> {
-    let segment_path = segments_path.join(Uuid::new_v4().to_string());
+    let segment_path = new_segment_path(segments_path);
 
     std::fs::create_dir_all(&segment_path)?;
 
