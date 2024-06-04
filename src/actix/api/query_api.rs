@@ -49,3 +49,7 @@ async fn query_points(
     })
     .await
 }
+
+pub fn config_query_api(cfg: &mut web::ServiceConfig) {
+    cfg.service(query_points);
+}
