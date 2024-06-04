@@ -190,8 +190,10 @@ impl ShardOperation for LocalShard {
         request: Arc<ShardQueryRequest>,
         search_runtime_handle: &Handle,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        let collection_params = self.collection_config.read().await.params.clone();
+
         self.do_planned_query(
-            PlannedQuery::try_from(request.as_ref().to_owned())?,
+            PlannedQuery::from_shard_request(request.as_ref().to_owned(), &collection_params)?,
             search_runtime_handle,
             None,
         )

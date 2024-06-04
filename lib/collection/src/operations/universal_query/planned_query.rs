@@ -4,9 +4,10 @@ use std::sync::Arc;
 
 use api::rest::OrderByInterface;
 use common::types::ScoreType;
-use segment::types::{Filter, WithPayloadInterface, WithVector};
+use segment::types::{Filter, Order, WithPayloadInterface, WithVector};
 
 use super::shard_query::{ScoringQuery, ShardPrefetch, ShardQueryRequest};
+use crate::config::CollectionParams;
 use crate::operations::types::{
     CollectionError, CollectionResult, CoreSearchRequest, CoreSearchRequestBatch,
     ScrollRequestInternal,
@@ -27,6 +28,9 @@ pub struct PlannedQuery {
 pub struct ResultsMerge {
     /// Alter the scores before selecting the best limit
     pub rescore: Option<ScoringQuery>,
+
+    /// Which order the results from segments should merge in
+    pub order: Order,
 
     /// Use this filter
     pub filter: Option<Filter>,
@@ -60,10 +64,11 @@ pub struct MergePlan {
 }
 
 // TODO(universal-query): Maybe just return a CoreSearchRequest if there is no prefetch?
-impl TryFrom<ShardQueryRequest> for PlannedQuery {
-    type Error = CollectionError;
-
-    fn try_from(request: ShardQueryRequest) -> CollectionResult<Self> {
+impl PlannedQuery {
+    pub fn from_shard_request(
+        request: ShardQueryRequest,
+        collection_params: &CollectionParams,
+    ) -> CollectionResult<Self> {
         let ShardQueryRequest {
             prefetches,
             query,
@@ -85,9 +90,15 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
         let score_threshold;
         let with_vector;
         let with_payload;
+        let order = ScoringQuery::order(query.as_ref(), collection_params)?;
 
         if !prefetches.is_empty() {
-            sources = recurse_prefetches(&mut core_searches, &mut scrolls, prefetches)?;
+            sources = recurse_prefetches(
+                &mut core_searches,
+                &mut scrolls,
+                prefetches,
+                collection_params,
+            )?;
             rescore = query;
             filter = req_filter;
             offset = req_offset;
@@ -163,6 +174,7 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
                 sources,
                 merge: ResultsMerge {
                     rescore,
+                    order,
                     limit,
                     filter,
                     score_threshold,
@@ -183,6 +195,7 @@ fn recurse_prefetches(
     core_searches: &mut Vec<CoreSearchRequest>,
     scrolls: &mut Vec<ScrollRequestInternal>,
     prefetches: Vec<ShardPrefetch>,
+    collection_params: &CollectionParams,
 ) -> CollectionResult<Vec<PrefetchSource>> {
     let mut sources = Vec::with_capacity(prefetches.len());
 
@@ -195,6 +208,8 @@ fn recurse_prefetches(
             filter,
             score_threshold,
         } = prefetch;
+
+        let order = ScoringQuery::order(query.as_ref(), collection_params)?;
 
         let source = if prefetches.is_empty() {
             // This is a leaf prefetch. Fetch this info from the segments
@@ -254,12 +269,14 @@ fn recurse_prefetches(
             }
         } else {
             // This is a nested prefetch. Recurse into it
-            let inner_sources = recurse_prefetches(core_searches, scrolls, prefetches)?;
+            let inner_sources =
+                recurse_prefetches(core_searches, scrolls, prefetches, collection_params)?;
 
             let prefetch_plan = MergePlan {
                 sources: inner_sources,
                 merge: ResultsMerge {
                     rescore: query,
+                    order,
                     filter,
                     limit,
                     score_threshold,
@@ -275,15 +292,49 @@ fn recurse_prefetches(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+    use std::num::{NonZeroU32, NonZeroU64};
+
     use segment::data_types::vectors::{MultiDenseVector, NamedVectorStruct, Vector};
     use segment::types::{
-        Condition, FieldCondition, Filter, Match, SearchParams, WithPayloadInterface, WithVector,
+        Condition, Distance, FieldCondition, Filter, Match, SearchParams, WithPayloadInterface,
+        WithVector,
     };
     use sparse::common::sparse_vector::SparseVector;
 
     use super::*;
     use crate::operations::query_enum::QueryEnum;
+    use crate::operations::types::{VectorParams, VectorsConfig};
     use crate::operations::universal_query::shard_query::Fusion;
+
+    fn collection_params() -> CollectionParams {
+        let cosine_params = VectorParams {
+            size: NonZeroU64::new(4u64).unwrap(),
+            distance: Distance::Cosine,
+            hnsw_config: None,
+            quantization_config: None,
+            on_disk: None,
+            datatype: None,
+            multivec_config: None,
+        };
+        let vectors = BTreeMap::from([
+            ("dense".to_string(), cosine_params.clone()),
+            ("byte".to_string(), cosine_params.clone()),
+            ("full".to_string(), cosine_params.clone()),
+            ("multi".to_string(), cosine_params.clone()),
+        ]);
+
+        CollectionParams {
+            vectors: VectorsConfig::Multi(vectors),
+            shard_number: NonZeroU32::new(1).unwrap(),
+            sharding_method: None,
+            replication_factor: NonZeroU32::new(1).unwrap(),
+            write_consistency_factor: NonZeroU32::new(1).unwrap(),
+            read_fan_out_factor: None,
+            on_disk_payload: false,
+            sparse_vectors: None,
+        }
+    }
 
     #[test]
     fn test_try_from_double_rescore() {
@@ -326,7 +377,8 @@ mod tests {
             with_payload: WithPayloadInterface::Bool(true),
         };
 
-        let planned_query = PlannedQuery::try_from(request).unwrap();
+        let planned_query =
+            PlannedQuery::from_shard_request(request, &collection_params()).unwrap();
 
         assert_eq!(
             planned_query.searches.searches,
@@ -357,6 +409,7 @@ mod tests {
                                 "full",
                             )
                         ))),
+                        order: Order::LargeBetter,
                         filter: None,
                         limit: 100,
                         score_threshold: None
@@ -371,6 +424,7 @@ mod tests {
                             "multi"
                         )
                     ))),
+                    order: Order::LargeBetter,
                     filter: Some(Filter::default()),
                     limit: 10,
                     score_threshold: None,
@@ -400,7 +454,8 @@ mod tests {
             with_payload: WithPayloadInterface::Bool(true),
         };
 
-        let planned_query = PlannedQuery::try_from(request).unwrap();
+        let planned_query =
+            PlannedQuery::from_shard_request(request, &collection_params()).unwrap();
 
         assert_eq!(
             planned_query.searches.searches,
@@ -425,6 +480,7 @@ mod tests {
                 sources: vec![PrefetchSource::SearchesIdx(0)],
                 merge: ResultsMerge {
                     rescore: None,
+                    order: Order::LargeBetter,
                     filter: None,
                     limit: 10,
                     score_threshold: None,
@@ -483,7 +539,8 @@ mod tests {
             with_payload: WithPayloadInterface::Bool(false),
         };
 
-        let planned_query = PlannedQuery::try_from(request).unwrap();
+        let planned_query =
+            PlannedQuery::from_shard_request(request, &collection_params()).unwrap();
 
         assert_eq!(
             planned_query.searches.searches,
@@ -526,6 +583,7 @@ mod tests {
                 ],
                 merge: ResultsMerge {
                     rescore: Some(ScoringQuery::Fusion(Fusion::Rrf)),
+                    order: Order::LargeBetter,
                     filter: Some(Filter::default()),
                     limit: 50,
                     score_threshold: None
@@ -555,7 +613,7 @@ mod tests {
             with_payload: WithPayloadInterface::Bool(false),
         };
 
-        let planned_query = PlannedQuery::try_from(request);
+        let planned_query = PlannedQuery::from_shard_request(request, &collection_params());
 
         assert!(planned_query.is_err())
     }
@@ -603,7 +661,8 @@ mod tests {
             with_payload: WithPayloadInterface::Bool(false),
         };
 
-        let planned_query = PlannedQuery::try_from(request).unwrap();
+        let planned_query =
+            PlannedQuery::from_shard_request(request, &collection_params()).unwrap();
 
         assert_eq!(planned_query.offset, 49);
         assert_eq!(
@@ -618,6 +677,7 @@ mod tests {
                 sources: vec![PrefetchSource::SearchesIdx(0)],
                 merge: ResultsMerge {
                     rescore: Some(ScoringQuery::Fusion(Fusion::Rrf)),
+                    order: Order::LargeBetter,
                     filter: Some(Filter::default()),
                     limit: 50,
                     score_threshold: Some(0.666)

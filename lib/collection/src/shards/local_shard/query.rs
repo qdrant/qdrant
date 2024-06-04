@@ -6,11 +6,13 @@ use std::time::Duration;
 use api::rest::OrderByInterface;
 use futures::future::BoxFuture;
 use futures::FutureExt;
-use itertools::Itertools as _;
+use itertools::{Either, Itertools as _};
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
 use segment::types::{
-    Filter, HasIdCondition, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
+    Filter, HasIdCondition, Order, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface,
+    WithVector,
 };
+use segment::utils::scored_point_ties::ScoredPointTies;
 use tokio::runtime::Handle;
 
 use super::LocalShard;
@@ -309,11 +311,19 @@ impl LocalShard {
             .await
         } else {
             // no rescore required - just merge, sort and limit
-            let top = sources
-                .flat_map(Cow::into_owned)
-                .sorted_unstable()
-                .take(merge.limit)
-                .collect();
+            let top_iter = sources.flat_map(Cow::into_owned);
+            let top = match merge.order {
+                Order::LargeBetter => Either::Left(
+                    top_iter.sorted_unstable_by(|a, b| ScoredPointTies(b).cmp(&ScoredPointTies(a))),
+                ),
+                Order::SmallBetter => Either::Right(
+                    top_iter.sorted_unstable_by(|a, b| ScoredPointTies(a).cmp(&ScoredPointTies(b))),
+                ),
+            }
+            .dedup()
+            .take(merge.limit)
+            .collect();
+
             Ok(top)
         }
     }
