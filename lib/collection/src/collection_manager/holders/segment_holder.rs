@@ -896,7 +896,8 @@ impl<'s> SegmentHolder {
         let wrapped_segment = {
             let proxy_segment = proxy_segment.read();
             if let Err(err) = proxy_segment.propagate_to_wrapped() {
-                log::error!("Propagating proxy segment {proxy_id} changes to wrapped segment failed, ignoring: {err}");
+                log::error!("Propagating proxy segment {proxy_id} changes to wrapped segment failed, retrying later: {err}");
+                return Err(RwLockWriteGuard::downgrade_to_upgradable(write_segments));
             }
             proxy_segment.wrapped_segment.clone()
         };
