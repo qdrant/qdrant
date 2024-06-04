@@ -54,7 +54,7 @@ schemars = { workspace = true }
 log = "0.4"
 geo = "0.28.0"
 geohash = "0.13.1"
-num-traits = "0.2.19"
+num-traits = { workspace = true }
 num-derive = "0.4.2"
 num-cmp = "0.1.0"
 rand = "0.8"
@@ -89,7 +89,7 @@ tracing = { workspace = true, optional = true }
 macro_rules_attribute = "0.2.0"
 generic-tests = "0.1.2"
 nom = "7.1.3"
-half = { version = "2.4.1", features = ["alloc", "serde", "num-traits"] }
+half = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 cgroups-rs = "0.3"

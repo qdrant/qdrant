@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::fmt::Debug;
 use std::mem::size_of;
 
 use bitpacking::BitPacker as _;
@@ -6,37 +7,39 @@ use common::types::PointOffsetType;
 #[cfg(debug_assertions)]
 use itertools::Itertools as _;
 
-use super::posting_list_common::{PostingElement, PostingElementEx, PostingListIter};
-use crate::common::types::DimWeight;
+use super::posting_list_common::{
+    GenericPostingElement, PostingElement, PostingElementEx, PostingListIter,
+};
+use crate::common::types::{DimWeight, Weight};
 type BitPackerImpl = bitpacking::BitPacker4x;
 
 #[derive(Default, Debug, Clone, PartialEq)]
-pub struct CompressedPostingList {
+pub struct CompressedPostingList<W> {
     /// Compressed ids data. Chunks refer to subslies of this data.
     id_data: Vec<u8>,
 
     /// Fixed-size chunks.
-    chunks: Vec<CompressedPostingChunk>,
+    chunks: Vec<CompressedPostingChunk<W>>,
 
     /// Remainder elements that do not fit into chunks.
-    remainders: Vec<PostingElement>,
+    remainders: Vec<GenericPostingElement<W>>,
 
     /// Id of the last element in the list. Used to avoid unpacking the last chunk.
     last_id: Option<PointOffsetType>,
 }
 
-/// A non-owning view of [`CompressedPostingList`].
+/// A non-owning view of [`GenericCompressedPostingList`].
 #[derive(Default, Debug, Clone, PartialEq)]
-pub struct CompressedPostingListView<'a> {
+pub struct CompressedPostingListView<'a, W> {
     id_data: &'a [u8],
-    chunks: &'a [CompressedPostingChunk],
-    remainders: &'a [PostingElement],
+    chunks: &'a [CompressedPostingChunk<W>],
+    remainders: &'a [GenericPostingElement<W>],
     last_id: Option<PointOffsetType>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 #[repr(C)]
-pub struct CompressedPostingChunk {
+pub struct CompressedPostingChunk<W> {
     /// Initial data point id. Used for decompression.
     initial: PointOffsetType,
 
@@ -44,11 +47,11 @@ pub struct CompressedPostingChunk {
     offset: u32,
 
     /// Weight values for the chunk.
-    weights: [DimWeight; BitPackerImpl::BLOCK_LEN],
+    weights: [W; BitPackerImpl::BLOCK_LEN],
 }
 
-impl CompressedPostingList {
-    pub(super) fn view(&self) -> CompressedPostingListView {
+impl<W: Weight> CompressedPostingList<W> {
+    pub(super) fn view(&self) -> CompressedPostingListView<W> {
         CompressedPostingListView {
             id_data: &self.id_data,
             chunks: &self.chunks,
@@ -57,12 +60,12 @@ impl CompressedPostingList {
         }
     }
 
-    pub fn iter(&self) -> CompressedPostingListIterator {
+    pub fn iter(&self) -> CompressedPostingListIterator<W> {
         self.view().iter()
     }
 
     #[cfg(test)]
-    pub fn from(records: Vec<(PointOffsetType, DimWeight)>) -> CompressedPostingList {
+    pub fn from(records: Vec<(PointOffsetType, W)>) -> CompressedPostingList<W> {
         let mut posting_list = CompressedPostingBuilder::new();
         for (id, weight) in records {
             posting_list.add(id, weight);
@@ -72,28 +75,28 @@ impl CompressedPostingList {
 }
 
 pub struct CompressedPostingListStoreSize {
+    pub total: usize,
     pub id_data_bytes: usize,
     pub chunks_count: usize,
-    pub remainders_count: usize,
 }
 
 impl CompressedPostingListStoreSize {
-    pub fn total(&self) -> usize {
-        self.id_data_bytes
-            + self.chunks_count * size_of::<CompressedPostingChunk>()
-            + self.remainders_count * size_of::<PostingElement>()
-    }
-
-    pub fn chunks_bytes(&self) -> usize {
-        self.chunks_count * size_of::<CompressedPostingChunk>()
+    fn new<W: Weight>(id_data_bytes: usize, chunks_count: usize, remainders_count: usize) -> Self {
+        CompressedPostingListStoreSize {
+            total: id_data_bytes
+                + chunks_count * size_of::<CompressedPostingChunk<W>>()
+                + remainders_count * size_of::<GenericPostingElement<W>>(),
+            id_data_bytes,
+            chunks_count,
+        }
     }
 }
 
-impl<'a> CompressedPostingListView<'a> {
+impl<'a, W: Weight> CompressedPostingListView<'a, W> {
     pub(super) fn new(
         id_data: &'a [u8],
-        chunks: &'a [CompressedPostingChunk],
-        remainders: &'a [PostingElement],
+        chunks: &'a [CompressedPostingChunk<W>],
+        remainders: &'a [GenericPostingElement<W>],
         last_id: Option<PointOffsetType>,
     ) -> Self {
         CompressedPostingListView {
@@ -104,7 +107,13 @@ impl<'a> CompressedPostingListView<'a> {
         }
     }
 
-    pub(super) fn parts(&self) -> (&'a [u8], &'a [CompressedPostingChunk], &'a [PostingElement]) {
+    pub(super) fn parts(
+        &self,
+    ) -> (
+        &'a [u8],
+        &'a [CompressedPostingChunk<W>],
+        &'a [GenericPostingElement<W>],
+    ) {
         (self.id_data, self.chunks, self.remainders)
     }
 
@@ -113,14 +122,14 @@ impl<'a> CompressedPostingListView<'a> {
     }
 
     pub(super) fn store_size(&self) -> CompressedPostingListStoreSize {
-        CompressedPostingListStoreSize {
-            id_data_bytes: self.id_data.len(),
-            chunks_count: self.chunks.len(),
-            remainders_count: self.remainders.len(),
-        }
+        CompressedPostingListStoreSize::new::<W>(
+            self.id_data.len(),
+            self.chunks.len(),
+            self.remainders.len(),
+        )
     }
 
-    pub fn to_owned(&self) -> CompressedPostingList {
+    pub fn to_owned(&self) -> CompressedPostingList<W> {
         CompressedPostingList {
             id_data: self.id_data.to_vec(),
             chunks: self.chunks.to_vec(),
@@ -153,7 +162,11 @@ impl<'a> CompressedPostingListView<'a> {
         );
     }
 
-    fn get_chunk_size(chunks: &[CompressedPostingChunk], data: &[u8], chunk_index: usize) -> usize {
+    fn get_chunk_size(
+        chunks: &[CompressedPostingChunk<W>],
+        data: &[u8],
+        chunk_index: usize,
+    ) -> usize {
         if chunk_index + 1 < chunks.len() {
             chunks[chunk_index + 1].offset as usize - chunks[chunk_index].offset as usize
         } else {
@@ -161,27 +174,30 @@ impl<'a> CompressedPostingListView<'a> {
         }
     }
 
-    pub fn iter(&self) -> CompressedPostingListIterator<'a> {
+    pub fn iter(&self) -> CompressedPostingListIterator<'a, W> {
         CompressedPostingListIterator::new(self)
     }
 }
 
-#[derive(Default)]
-pub struct CompressedPostingBuilder {
-    elements: Vec<PostingElement>,
+pub struct CompressedPostingBuilder<W> {
+    elements: Vec<GenericPostingElement<W>>,
 }
 
-impl CompressedPostingBuilder {
+impl<W: Weight> CompressedPostingBuilder<W> {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
-        Default::default()
+        CompressedPostingBuilder {
+            elements: Vec::new(),
+        }
     }
 
     /// Add a new record to the posting list.
-    pub fn add(&mut self, record_id: PointOffsetType, weight: DimWeight) {
-        self.elements.push(PostingElement { record_id, weight });
+    pub fn add(&mut self, record_id: PointOffsetType, weight: W) {
+        self.elements
+            .push(GenericPostingElement { record_id, weight });
     }
 
-    pub fn build(mut self) -> CompressedPostingList {
+    pub fn build(mut self) -> CompressedPostingList<W> {
         self.elements.sort_unstable_by_key(|e| e.record_id);
 
         // Check for duplicates
@@ -252,8 +268,8 @@ impl CompressedPostingBuilder {
 }
 
 #[derive(Clone)]
-pub struct CompressedPostingListIterator<'a> {
-    list: CompressedPostingListView<'a>,
+pub struct CompressedPostingListIterator<'a, W> {
+    list: CompressedPostingListView<'a, W>,
 
     /// If true, then `decompressed_chunk` contains the unpacked chunk for the current position.
     unpacked: bool,
@@ -263,10 +279,10 @@ pub struct CompressedPostingListIterator<'a> {
     pos: usize,
 }
 
-impl<'a> CompressedPostingListIterator<'a> {
+impl<'a, W: Weight> CompressedPostingListIterator<'a, W> {
     #[inline]
-    fn new(list: &CompressedPostingListView<'a>) -> CompressedPostingListIterator<'a> {
-        CompressedPostingListIterator {
+    fn new(list: &CompressedPostingListView<'a, W>) -> Self {
+        Self {
             list: list.clone(),
             unpacked: false,
             decompressed_chunk: [0; BitPackerImpl::BLOCK_LEN],
@@ -291,7 +307,7 @@ impl<'a> CompressedPostingListIterator<'a> {
     }
 }
 
-impl<'a> PostingListIter for CompressedPostingListIterator<'a> {
+impl<'a, W: Weight> PostingListIter for CompressedPostingListIterator<'a, W> {
     #[inline]
     fn peek(&mut self) -> Option<PostingElementEx> {
         let pos = self.pos;
@@ -305,8 +321,8 @@ impl<'a> PostingListIter for CompressedPostingListIterator<'a> {
             let chunk = &self.list.chunks[pos / BitPackerImpl::BLOCK_LEN];
             return Some(PostingElementEx {
                 record_id: self.decompressed_chunk[pos % BitPackerImpl::BLOCK_LEN],
-                weight: chunk.weights[pos % BitPackerImpl::BLOCK_LEN],
-                max_next_weight: 0.0,
+                weight: chunk.weights[pos % BitPackerImpl::BLOCK_LEN].into(),
+                max_next_weight: Default::default(),
             });
         }
 
@@ -315,8 +331,8 @@ impl<'a> PostingListIter for CompressedPostingListIterator<'a> {
             .get(pos - self.list.chunks.len() * BitPackerImpl::BLOCK_LEN)
             .map(|e| PostingElementEx {
                 record_id: e.record_id,
-                weight: e.weight,
-                max_next_weight: 0.0,
+                weight: e.weight.into(),
+                max_next_weight: Default::default(),
             })
     }
 
@@ -363,57 +379,47 @@ impl<'a> PostingListIter for CompressedPostingListIterator<'a> {
         mut f: impl FnMut(&mut Ctx, PointOffsetType, DimWeight),
     ) {
         let mut pos = self.pos;
-        if pos / BitPackerImpl::BLOCK_LEN < self.list.chunks.len() {
-            // 1. Iterate over already decompressed chunk
-            if self.unpacked {
-                let chunk = &self.list.chunks[pos / BitPackerImpl::BLOCK_LEN];
 
-                for (idx, weight) in std::iter::zip(
-                    &self.decompressed_chunk[pos % BitPackerImpl::BLOCK_LEN..],
-                    &chunk.weights[pos % BitPackerImpl::BLOCK_LEN..],
-                ) {
-                    if *idx > id {
-                        self.pos = pos;
-                        return;
-                    }
-                    f(ctx, *idx, *weight);
-                    pos += 1;
-                }
-            }
+        // Iterate over compressed chunks
+        let mut weights_buf = [0.0; BitPackerImpl::BLOCK_LEN];
 
-            // 2. Iterate over compressed chunks
-            while pos / BitPackerImpl::BLOCK_LEN < self.list.chunks.len() {
+        let mut need_unpack = !self.unpacked;
+        while pos / BitPackerImpl::BLOCK_LEN < self.list.chunks.len() {
+            if need_unpack {
                 self.list
                     .decompress_chunk(pos / BitPackerImpl::BLOCK_LEN, &mut self.decompressed_chunk);
-                let chunk = &self.list.chunks[pos / BitPackerImpl::BLOCK_LEN];
+            }
+            need_unpack = true;
 
-                if *self.decompressed_chunk.last().unwrap() <= id {
-                    // Optimistic path: skip id comparison
-                    for (idx, weight) in std::iter::zip(&self.decompressed_chunk, &chunk.weights) {
-                        f(ctx, *idx, *weight);
-                    }
-                    pos += BitPackerImpl::BLOCK_LEN;
-                } else {
-                    for (idx, weight) in std::iter::zip(&self.decompressed_chunk, &chunk.weights) {
-                        if *idx > id {
-                            self.pos = pos;
-                            self.unpacked = true;
-                            return;
-                        }
-                        pos += 1;
-                        f(ctx, *idx, *weight);
-                    }
-                }
+            let chunk = &self.list.chunks[pos / BitPackerImpl::BLOCK_LEN];
+
+            let start = pos % BitPackerImpl::BLOCK_LEN;
+            let count = count_le_sorted(id, &self.decompressed_chunk[start..]);
+            let weights = W::into_f32_slice(
+                &chunk.weights[start..start + count],
+                &mut weights_buf[..count],
+            );
+
+            for (idx, weight) in
+                std::iter::zip(&self.decompressed_chunk[start..start + count], weights)
+            {
+                f(ctx, *idx, *weight);
+            }
+            pos += count;
+            if start + count != BitPackerImpl::BLOCK_LEN {
+                self.unpacked = true;
+                self.pos = pos;
+                return;
             }
         }
 
-        // 3. Iterate over remainders
+        // Iterate over remainders
         for e in &self.list.remainders[pos - self.list.chunks.len() * BitPackerImpl::BLOCK_LEN..] {
             if e.record_id > id {
                 self.pos = pos;
                 return;
             }
-            f(ctx, e.record_id, e.weight);
+            f(ctx, e.record_id, e.weight.into());
             pos += 1;
         }
         self.pos = pos;
@@ -429,14 +435,26 @@ impl<'a> PostingListIter for CompressedPostingListIterator<'a> {
 }
 
 #[derive(Clone)]
-pub struct CompressedPostingListStdIterator<'a>(CompressedPostingListIterator<'a>);
+pub struct CompressedPostingListStdIterator<'a, W>(CompressedPostingListIterator<'a, W>);
 
-impl Iterator for CompressedPostingListStdIterator<'_> {
+impl<W: Weight> Iterator for CompressedPostingListStdIterator<'_, W> {
     type Item = PostingElement;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.0.next()
     }
+}
+
+/// Find the amount of elements in the sorted array that are less or equal to `val`. In other words,
+/// the first index `i` such that `data[i] > val`, or `data.len()` if all elements are less or equal
+/// to `val`.
+fn count_le_sorted<T: Copy + Eq + Ord>(val: T, data: &[T]) -> usize {
+    if data.last().map_or(true, |&x| x < val) {
+        // Happy case
+        return data.len();
+    }
+
+    data.binary_search(&val).map_or_else(|x| x, |x| x + 1)
 }
 
 #[cfg(test)]
@@ -516,6 +534,16 @@ mod tests {
                     assert_eq!(data, &case[CASES[i]..CASES[j]]);
                 }
             }
+        }
+    }
+
+    #[test]
+    fn test_count_le_sorted() {
+        let data = [1, 2, 4, 5];
+        for val in 0..9 {
+            let pos = count_le_sorted(val, &data);
+            assert!(data[..pos].iter().all(|&x| x <= val));
+            assert!(data[pos..].iter().all(|&x| x > val));
         }
     }
 }

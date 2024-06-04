@@ -14,8 +14,10 @@ testing = []
 [dependencies]
 bitpacking = "0.9.2"
 common = { path = "../common/common" }
+half = { workspace = true }
 io = { path = "../common/io" }
 memory = { path = "../common/memory" }
+num-traits = { workspace = true }
 memmap2 = "0.9.4"
 schemars = { workspace = true }
 serde = { workspace = true }

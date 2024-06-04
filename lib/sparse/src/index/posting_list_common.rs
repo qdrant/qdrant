@@ -5,6 +5,14 @@ use crate::common::types::DimWeight;
 pub const DEFAULT_MAX_NEXT_WEIGHT: DimWeight = f32::NEG_INFINITY;
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct GenericPostingElement<W> {
+    /// Record ID
+    pub record_id: PointOffsetType,
+    /// Weight of the record in the dimension
+    pub weight: W,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct PostingElement {
     /// Record ID
     pub record_id: PointOffsetType,
