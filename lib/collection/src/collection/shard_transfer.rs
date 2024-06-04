@@ -291,7 +291,7 @@ impl Collection {
             transfer::driver::revert_proxy_shard_to_local(shard_holder, transfer.shard_id).await?;
         }
 
-        shard_holder.register_finish_transfer(&transfer_key)?;
+        shard_holder.register_abort_transfer(&transfer_key)?;
 
         Ok(())
     }

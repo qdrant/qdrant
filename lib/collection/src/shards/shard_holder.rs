@@ -3,14 +3,15 @@ use std::fmt;
 use std::ops::Deref as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use common::cpu::CpuBudget;
+use futures::Future;
 use itertools::Itertools;
-// TODO rename ReplicaShard to ReplicaSetShard
 use segment::types::ShardKey;
 use tar::Builder as TarBuilder;
 use tokio::runtime::Handle;
-use tokio::sync::RwLock;
+use tokio::sync::{broadcast, RwLock};
 
 use super::replica_set::AbortShardTransfer;
 use super::resharding::{ReshardKey, ReshardState};
@@ -43,6 +44,7 @@ pub type ShardKeyMapping = HashMap<ShardKey, HashSet<ShardId>>;
 pub struct ShardHolder {
     shards: HashMap<ShardId, ShardReplicaSet>,
     pub(crate) shard_transfers: SaveOnDisk<HashSet<ShardTransfer>>,
+    pub(crate) shard_transfer_changes: broadcast::Sender<ShardTransferChange>,
     pub(crate) resharding_state: SaveOnDisk<Option<ReshardState>>,
     pub(crate) rings: HashMap<Option<ShardKey>, HashRing>,
     key_mapping: SaveOnDisk<ShardKeyMapping>,
@@ -79,9 +81,12 @@ impl ShardHolder {
             );
         }
 
+        let (shard_transfer_changes, _) = broadcast::channel(64);
+
         Ok(Self {
             shards: HashMap::new(),
             shard_transfers,
+            shard_transfer_changes,
             resharding_state,
             rings,
             key_mapping,
@@ -489,17 +494,74 @@ impl ShardHolder {
     }
 
     pub fn register_start_shard_transfer(&self, transfer: ShardTransfer) -> CollectionResult<bool> {
-        Ok(self
+        let changed = self
             .shard_transfers
-            .write(|transfers| transfers.insert(transfer))?)
+            .write(|transfers| transfers.insert(transfer.clone()))?;
+        let _ = self
+            .shard_transfer_changes
+            .send(ShardTransferChange::Start(transfer));
+        Ok(changed)
     }
 
     pub fn register_finish_transfer(&self, key: &ShardTransferKey) -> CollectionResult<bool> {
-        Ok(self.shard_transfers.write(|transfers| {
+        let any_removed = self.shard_transfers.write(|transfers| {
             let before_remove = transfers.len();
             transfers.retain(|transfer| !key.check(transfer));
-            before_remove != transfers.len() // `true` if something was removed
-        })?)
+            before_remove != transfers.len()
+        })?;
+        let _ = self
+            .shard_transfer_changes
+            .send(ShardTransferChange::Finish(*key));
+        Ok(any_removed)
+    }
+
+    pub fn register_abort_transfer(&self, key: &ShardTransferKey) -> CollectionResult<bool> {
+        let any_removed = self.shard_transfers.write(|transfers| {
+            let before_remove = transfers.len();
+            transfers.retain(|transfer| !key.check(transfer));
+            before_remove != transfers.len()
+        })?;
+        let _ = self
+            .shard_transfer_changes
+            .send(ShardTransferChange::Abort(*key));
+        Ok(any_removed)
+    }
+
+    /// Await for a given shard transfer to complete.
+    ///
+    /// The returned inner result defines whether it successfully finished or whether it was
+    /// aborted/cancelled.
+    pub fn await_shard_transfer_end(
+        &self,
+        transfer: ShardTransferKey,
+        timeout: Duration,
+    ) -> impl Future<Output = CollectionResult<Result<(), ()>>> {
+        let mut subscriber = self.shard_transfer_changes.subscribe();
+        let receiver = async move {
+            loop {
+                match subscriber.recv().await {
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => return Err(CollectionError::service_error(
+                        "Failed to await shard transfer end: failed to listen for shard transfer changes, channel closed"
+                    )),
+                    Err(err @ tokio::sync::broadcast::error::RecvError::Lagged(_)) => return Err(CollectionError::service_error(format!(
+                        "Failed to await shard transfer end: failed to listen for shard transfer changes, channel lagged behind: {err}"
+                    ))),
+                    Ok(ShardTransferChange::Finish(key)) if key == transfer => return Ok(Ok(())),
+                    Ok(ShardTransferChange::Abort(key)) if key == transfer => return Ok(Err(())),
+                    Ok(_) => {},
+                }
+            }
+        };
+
+        async move {
+            match tokio::time::timeout(timeout, receiver).await {
+                Ok(operation) => Ok(operation?),
+                // Timeout
+                Err(err) => Err(CollectionError::service_error(format!(
+                    "Awaiting for shard transfer end timed out: {err}"
+                ))),
+            }
+        }
     }
 
     /// The count of incoming and outgoing shard transfers on the given peer
@@ -547,13 +609,9 @@ impl ShardHolder {
         shard_id: &ShardId,
         peer_id: &PeerId,
     ) -> Vec<ShardTransfer> {
-        self.shard_transfers
-            .read()
-            .iter()
-            .filter(|transfer| transfer.shard_id == *shard_id)
-            .filter(|transfer| transfer.from == *peer_id || transfer.to == *peer_id)
-            .cloned()
-            .collect()
+        self.get_transfers(|transfer| {
+            transfer.shard_id == *shard_id && (transfer.from == *peer_id || transfer.to == *peer_id)
+        })
     }
 
     fn get_shard_ids_by_key(&self, shard_key: &ShardKey) -> CollectionResult<HashSet<ShardId>> {
@@ -1171,6 +1229,13 @@ impl ShardHolder {
         }
         Ok(())
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ShardTransferChange {
+    Start(ShardTransfer),
+    Finish(ShardTransferKey),
+    Abort(ShardTransferKey),
 }
 
 pub(crate) fn shard_not_found_error(shard_id: ShardId) -> CollectionError {

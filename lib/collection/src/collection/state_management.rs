@@ -7,7 +7,7 @@ use crate::config::CollectionConfig;
 use crate::operations::types::CollectionResult;
 use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::shard::{PeerId, ShardId};
-use crate::shards::shard_holder::ShardKeyMapping;
+use crate::shards::shard_holder::{ShardKeyMapping, ShardTransferChange};
 use crate::shards::transfer::ShardTransfer;
 
 impl Collection {
@@ -44,7 +44,15 @@ impl Collection {
             if transfer.from == this_peer_id {
                 // Abort transfer as sender should not learn about the transfer from snapshot
                 // If this happens it mean the sender is probably outdated and it is safer to abort
-                abort_transfer(transfer.clone())
+                abort_transfer(transfer.clone());
+                // Since we remove the transfer from our list below, we don't invoke regular abort logic on this node
+                // Do it here explicitly so we don't miss a silent abort change
+                let _ = self
+                    .shards_holder
+                    .read()
+                    .await
+                    .shard_transfer_changes
+                    .send(ShardTransferChange::Abort(transfer.key()));
             }
         }
         self.shards_holder
