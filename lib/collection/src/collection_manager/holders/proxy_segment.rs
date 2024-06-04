@@ -234,13 +234,14 @@ impl ProxySegment {
         {
             let deleted_points = self.deleted_points.upgradable_read();
             if !deleted_points.is_empty() {
+                let mut deleted_points = RwLockUpgradableReadGuard::upgrade(deleted_points);
                 wrapped_segment.with_upgraded(|wrapped_segment| {
                     for point_id in deleted_points.iter() {
                         wrapped_segment.delete_point(op_num, *point_id)?;
                     }
                     OperationResult::Ok(())
                 })?;
-                RwLockUpgradableReadGuard::upgrade(deleted_points).clear();
+                deleted_points.clear();
 
                 // Note: We do not clear the deleted mask here, as it provides
                 // no performance advantage and does not affect the correctness of search.
@@ -253,13 +254,14 @@ impl ProxySegment {
         {
             let deleted_indexes = self.deleted_indexes.upgradable_read();
             if !deleted_indexes.is_empty() {
+                let mut deleted_indexes = RwLockUpgradableReadGuard::upgrade(deleted_indexes);
                 wrapped_segment.with_upgraded(|wrapped_segment| {
                     for key in deleted_indexes.iter() {
                         wrapped_segment.delete_field_index(op_num, key)?;
                     }
                     OperationResult::Ok(())
                 })?;
-                RwLockUpgradableReadGuard::upgrade(deleted_indexes).clear();
+                deleted_indexes.clear();
             }
         }
 
@@ -268,13 +270,14 @@ impl ProxySegment {
         {
             let created_indexes = self.created_indexes.upgradable_read();
             if !created_indexes.is_empty() {
+                let mut created_indexes = RwLockUpgradableReadGuard::upgrade(created_indexes);
                 wrapped_segment.with_upgraded(|wrapped_segment| {
                     for (key, field_schema) in created_indexes.iter() {
                         wrapped_segment.create_field_index(op_num, key, Some(field_schema))?;
                     }
                     OperationResult::Ok(())
                 })?;
-                RwLockUpgradableReadGuard::upgrade(created_indexes).clear();
+                created_indexes.clear();
             }
         }
 
