@@ -475,13 +475,13 @@ mod from_rest {
     impl From<rest::RecommendInput> for VectorQuery<VectorInput> {
         fn from(value: rest::RecommendInput) -> Self {
             let rest::RecommendInput {
-                positives,
-                negatives,
+                positive,
+                negative,
                 strategy,
             } = value;
 
-            let positives = positives.into_iter().flatten().map(From::from).collect();
-            let negatives = negatives.into_iter().flatten().map(From::from).collect();
+            let positives = positive.into_iter().flatten().map(From::from).collect();
+            let negatives = negative.into_iter().flatten().map(From::from).collect();
 
             let reco_query = RecoQuery::new(positives, negatives);
 
@@ -694,16 +694,16 @@ mod from_grpc {
 
         fn try_from(value: grpc::RecommendInput) -> Result<Self, Self::Error> {
             let grpc::RecommendInput {
-                positives,
-                negatives,
+                positive,
+                negative,
                 strategy,
             } = value;
 
-            let positives = positives
+            let positives = positive
                 .into_iter()
                 .map(TryFrom::try_from)
                 .collect::<Result<Vec<_>, _>>()?;
-            let negatives = negatives
+            let negatives = negative
                 .into_iter()
                 .map(TryFrom::try_from)
                 .collect::<Result<Vec<_>, _>>()?;

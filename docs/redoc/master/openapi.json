@@ -11615,7 +11615,7 @@
       "RecommendInput": {
         "type": "object",
         "properties": {
-          "positives": {
+          "positive": {
             "description": "Look for vectors closest to the vectors from these points",
             "type": "array",
             "items": {
@@ -11623,7 +11623,7 @@
             },
             "nullable": true
           },
-          "negatives": {
+          "negative": {
             "description": "Try to avoid vectors like the vector from these points",
             "type": "array",
             "items": {

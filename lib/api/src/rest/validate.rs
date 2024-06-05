@@ -82,16 +82,8 @@ impl Validate for VectorInput {
 
 impl Validate for RecommendInput {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
-        let no_positives = self
-            .positives
-            .as_ref()
-            .map(|p| p.is_empty())
-            .unwrap_or(true);
-        let no_negatives = self
-            .positives
-            .as_ref()
-            .map(|n| n.is_empty())
-            .unwrap_or(true);
+        let no_positives = self.positive.as_ref().map(|p| p.is_empty()).unwrap_or(true);
+        let no_negatives = self.negative.as_ref().map(|n| n.is_empty()).unwrap_or(true);
 
         if no_positives && no_negatives {
             let mut errors = validator::ValidationErrors::new();

@@ -3207,8 +3207,8 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| positives | [VectorInput](#qdrant-VectorInput) | repeated | Look for vectors closest to the vectors from these points |
-| negatives | [VectorInput](#qdrant-VectorInput) | repeated | Try to avoid vectors like the vector from these points |
+| positive | [VectorInput](#qdrant-VectorInput) | repeated | Look for vectors closest to the vectors from these points |
+| negative | [VectorInput](#qdrant-VectorInput) | repeated | Try to avoid vectors like the vector from these points |
 | strategy | [RecommendStrategy](#qdrant-RecommendStrategy) | optional | How to use the provided vectors to find the results |
 
 

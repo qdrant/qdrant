@@ -295,10 +295,10 @@ pub enum RecommendStrategy {
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct RecommendInput {
     /// Look for vectors closest to the vectors from these points
-    pub positives: Option<Vec<VectorInput>>,
+    pub positive: Option<Vec<VectorInput>>,
 
     /// Try to avoid vectors like the vector from these points
-    pub negatives: Option<Vec<VectorInput>>,
+    pub negative: Option<Vec<VectorInput>>,
 
     /// How to use the provided vectors to find the results
     pub strategy: Option<RecommendStrategy>,
@@ -306,10 +306,10 @@ pub struct RecommendInput {
 
 impl RecommendInput {
     pub fn iter(&self) -> impl Iterator<Item = &VectorInput> {
-        self.positives
+        self.positive
             .iter()
             .flatten()
-            .chain(self.negatives.iter().flatten())
+            .chain(self.negative.iter().flatten())
     }
 }
 

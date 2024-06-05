@@ -483,8 +483,8 @@ message CountPoints {
 }
 
 message RecommendInput {
-  repeated VectorInput positives = 1; // Look for vectors closest to the vectors from these points
-  repeated VectorInput negatives = 2; // Try to avoid vectors like the vector from these points
+  repeated VectorInput positive = 1; // Look for vectors closest to the vectors from these points
+  repeated VectorInput negative = 2; // Try to avoid vectors like the vector from these points
   optional RecommendStrategy strategy = 3; // How to use the provided vectors to find the results
 }
 
