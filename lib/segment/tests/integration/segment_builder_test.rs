@@ -6,15 +6,19 @@ use std::time::{Duration, Instant};
 use common::cpu::CpuPermit;
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
-use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
+use segment::data_types::named_vectors::NamedVectors;
+use segment::data_types::vectors::{only_default_vector, VectorRef, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::segment::Segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::types::{Indexes, SegmentConfig, VectorDataConfig, VectorStorageType};
+use sparse::common::sparse_vector::SparseVector;
 use tempfile::Builder;
 
-use crate::fixtures::segment::{build_segment_1, build_segment_2, empty_segment};
+use crate::fixtures::segment::{
+    build_segment_1, build_segment_2, build_segment_sparse_1, build_segment_sparse_2, empty_segment,
+};
 
 #[test]
 fn test_building_new_segment() {
@@ -32,6 +36,70 @@ fn test_building_new_segment() {
     // Include overlapping with segment1 to check the
     segment2
         .upsert_point(100, 3.into(), only_default_vector(&[0., 0., 0., 0.]))
+        .unwrap();
+
+    builder.update_from(&segment1, &stopped).unwrap();
+    builder.update_from(&segment2, &stopped).unwrap();
+    builder.update_from(&segment2, &stopped).unwrap();
+
+    // Check what happens if segment building fails here
+
+    let segment_count = dir.path().read_dir().unwrap().count();
+
+    assert_eq!(segment_count, 2);
+
+    let temp_segment_count = temp_dir.path().read_dir().unwrap().count();
+
+    assert_eq!(temp_segment_count, 1);
+
+    // Now we finalize building
+
+    let permit_cpu_count = num_rayon_threads(0);
+    let permit = CpuPermit::dummy(permit_cpu_count as u32);
+
+    let merged_segment: Segment = builder.build(permit, &stopped).unwrap();
+
+    let new_segment_count = dir.path().read_dir().unwrap().count();
+
+    assert_eq!(new_segment_count, 3);
+
+    assert_eq!(
+        merged_segment.iter_points().count(),
+        merged_segment.available_point_count(),
+    );
+    assert_eq!(
+        merged_segment.available_point_count(),
+        segment1
+            .iter_points()
+            .chain(segment2.iter_points())
+            .unique()
+            .count(),
+    );
+
+    assert_eq!(merged_segment.point_version(3.into()), Some(100));
+}
+
+#[test]
+fn test_building_new_sparse_segment() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+
+    let stopped = AtomicBool::new(false);
+
+    let segment1 = build_segment_sparse_1(dir.path());
+    let mut segment2 = build_segment_sparse_2(dir.path());
+
+    let mut builder =
+        SegmentBuilder::new(dir.path(), temp_dir.path(), &segment1.segment_config).unwrap();
+
+    // Include overlapping with segment1 to check the
+    let vec = SparseVector::new(vec![0, 1, 2, 3], vec![0.0, 0.0, 0.0, 0.0]).unwrap();
+    segment2
+        .upsert_point(
+            100,
+            3.into(),
+            NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec)),
+        )
         .unwrap();
 
     builder.update_from(&segment1, &stopped).unwrap();
