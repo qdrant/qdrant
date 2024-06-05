@@ -2,7 +2,6 @@ use std::ops::Range;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use atomic_refcell::AtomicRefCell;
 use bitvec::prelude::{BitSlice, BitVec};
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
@@ -41,7 +40,7 @@ pub fn open_simple_sparse_vector_storage(
     database: Arc<RwLock<DB>>,
     database_column_name: &str,
     stopped: &AtomicBool,
-) -> OperationResult<Arc<AtomicRefCell<VectorStorageEnum>>> {
+) -> OperationResult<VectorStorageEnum> {
     let (mut deleted, mut deleted_count) = (BitVec::new(), 0);
     let db_wrapper = DatabaseColumnWrapper::new(database, database_column_name);
 
@@ -65,19 +64,17 @@ pub fn open_simple_sparse_vector_storage(
         check_process_stopped(stopped)?;
     }
 
-    Ok(Arc::new(AtomicRefCell::new(
-        VectorStorageEnum::SparseSimple(SimpleSparseVectorStorage {
-            db_wrapper,
-            update_buffer: StoredSparseVector {
-                deleted: false,
-                vector: SparseVector::default(),
-            },
-            deleted,
-            deleted_count,
-            total_vector_count,
-            total_sparse_size,
-        }),
-    )))
+    Ok(VectorStorageEnum::SparseSimple(SimpleSparseVectorStorage {
+        db_wrapper,
+        update_buffer: StoredSparseVector {
+            deleted: false,
+            vector: SparseVector::default(),
+        },
+        deleted,
+        deleted_count,
+        total_vector_count,
+        total_sparse_size,
+    }))
 }
 
 impl SimpleSparseVectorStorage {

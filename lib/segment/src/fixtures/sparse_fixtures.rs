@@ -49,7 +49,11 @@ pub fn fixture_open_sparse_index<I: InvertedIndex>(
     let wrapped_payload_index = Arc::new(AtomicRefCell::new(payload_index));
 
     let db = open_db(storage_dir, &[DB_VECTOR_CF]).unwrap();
-    let vector_storage = open_simple_sparse_vector_storage(db, DB_VECTOR_CF, stopped)?;
+    let vector_storage = Arc::new(AtomicRefCell::new(open_simple_sparse_vector_storage(
+        db,
+        DB_VECTOR_CF,
+        stopped,
+    )?));
     let mut borrowed_storage = vector_storage.borrow_mut();
 
     // add empty points to storage

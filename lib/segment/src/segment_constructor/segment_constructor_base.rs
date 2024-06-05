@@ -372,6 +372,15 @@ pub(crate) fn create_sparse_vector_index(
     Ok(vector_index)
 }
 
+pub(crate) fn create_sparse_vector_storage(
+    database: Arc<RwLock<DB>>,
+    vector_name: &str,
+    stopped: &AtomicBool,
+) -> OperationResult<VectorStorageEnum> {
+    let db_column_name = get_vector_name_with_prefix(DB_VECTOR_CF, vector_name);
+    open_simple_sparse_vector_storage(database, &db_column_name, stopped)
+}
+
 fn create_segment(
     version: Option<SeqNumberType>,
     segment_path: &Path,
@@ -455,9 +464,11 @@ fn create_segment(
         let vector_storage_path = get_vector_storage_path(segment_path, vector_name);
         let vector_index_path = get_vector_index_path(segment_path, vector_name);
 
-        let db_column_name = get_vector_name_with_prefix(DB_VECTOR_CF, vector_name);
-        let vector_storage =
-            open_simple_sparse_vector_storage(database.clone(), &db_column_name, stopped)?;
+        let vector_storage = sp(create_sparse_vector_storage(
+            database.clone(),
+            vector_name,
+            stopped,
+        )?);
 
         // Warn when number of points between ID tracker and storage differs
         let point_count = id_tracker.borrow().total_point_count();

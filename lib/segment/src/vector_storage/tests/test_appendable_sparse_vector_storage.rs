@@ -14,7 +14,7 @@ use crate::vector_storage::query::RecoQuery;
 use crate::vector_storage::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
 use crate::vector_storage::{new_raw_scorer, VectorStorage, VectorStorageEnum};
 
-fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
+fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let points: Vec<SparseVector> = vec![
         vec![(0, 1.0), (2, 1.0), (3, 1.0)],
         vec![(0, 1.0), (2, 1.0)],
@@ -31,18 +31,17 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
 
     let borrowed_id_tracker = id_tracker.borrow_mut();
-    let mut borrowed_storage = storage.borrow_mut();
 
     // Insert all points
     for (i, vec) in points.iter().enumerate() {
-        borrowed_storage
+        storage
             .insert_vector(i as PointOffsetType, vec.into())
             .unwrap();
     }
 
     // Check that all points are inserted
     for (i, vec) in points.iter().enumerate() {
-        let stored_vec = borrowed_storage.get_vector(i as PointOffsetType);
+        let stored_vec = storage.get_vector(i as PointOffsetType);
         let sparse: &SparseVector = stored_vec.as_vec_ref().try_into().unwrap();
         assert_eq!(sparse, vec);
     }
@@ -53,12 +52,10 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
         .enumerate()
         .filter(|(_, d)| *d)
         .for_each(|(i, _)| {
-            borrowed_storage
-                .delete_vector(i as PointOffsetType)
-                .unwrap();
+            storage.delete_vector(i as PointOffsetType).unwrap();
         });
     assert_eq!(
-        borrowed_storage.deleted_vector_count(),
+        storage.deleted_vector_count(),
         2,
         "2 vectors must be deleted"
     );
@@ -77,7 +74,7 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
     // Because nearest search for raw scorer is incorrect,
     let closest = new_raw_scorer(
         query_vector,
-        &borrowed_storage,
+        storage,
         borrowed_id_tracker.deleted_point_bitslice(),
     )
     .unwrap()
@@ -88,33 +85,25 @@ fn do_test_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
     assert_eq!(closest[2].idx, 4);
 
     // Delete 1, re-delete 2
-    borrowed_storage
-        .delete_vector(1 as PointOffsetType)
-        .unwrap();
-    borrowed_storage
-        .delete_vector(2 as PointOffsetType)
-        .unwrap();
+    storage.delete_vector(1 as PointOffsetType).unwrap();
+    storage.delete_vector(2 as PointOffsetType).unwrap();
     assert_eq!(
-        borrowed_storage.deleted_vector_count(),
+        storage.deleted_vector_count(),
         3,
         "3 vectors must be deleted"
     );
 
     // Delete all
-    borrowed_storage
-        .delete_vector(0 as PointOffsetType)
-        .unwrap();
-    borrowed_storage
-        .delete_vector(4 as PointOffsetType)
-        .unwrap();
+    storage.delete_vector(0 as PointOffsetType).unwrap();
+    storage.delete_vector(4 as PointOffsetType).unwrap();
     assert_eq!(
-        borrowed_storage.deleted_vector_count(),
+        storage.deleted_vector_count(),
         5,
         "all vectors must be deleted"
     );
 }
 
-fn do_test_update_from_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnum>>) {
+fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
     let points: Vec<SparseVector> = vec![
         vec![(0, 1.0), (2, 1.0), (3, 1.0)],
         vec![(0, 1.0), (2, 1.0)],
@@ -131,29 +120,24 @@ fn do_test_update_from_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnu
         Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
 
     let borrowed_id_tracker = id_tracker.borrow_mut();
-    let mut borrowed_storage = storage.borrow_mut();
-
     {
         let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
         let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
-        let storage2 =
+        let mut storage2 =
             open_simple_sparse_vector_storage(db, DB_VECTOR_CF, &AtomicBool::new(false)).unwrap();
         {
-            let mut borrowed_storage2 = storage2.borrow_mut();
             points.iter().enumerate().for_each(|(i, vec)| {
-                borrowed_storage2
+                storage2
                     .insert_vector(i as PointOffsetType, vec.into())
                     .unwrap();
                 if delete_mask[i] {
-                    borrowed_storage2
-                        .delete_vector(i as PointOffsetType)
-                        .unwrap();
+                    storage2.delete_vector(i as PointOffsetType).unwrap();
                 }
             });
         }
-        borrowed_storage
+        storage
             .update_from(
-                &storage2.borrow(),
+                &storage2,
                 &mut Box::new(0..points.len() as u32),
                 &Default::default(),
             )
@@ -161,7 +145,7 @@ fn do_test_update_from_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnu
     }
 
     assert_eq!(
-        borrowed_storage.deleted_vector_count(),
+        storage.deleted_vector_count(),
         2,
         "2 vectors must be deleted from other storage"
     );
@@ -179,7 +163,7 @@ fn do_test_update_from_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnu
     });
     let closest = new_raw_scorer(
         query_vector,
-        &borrowed_storage,
+        storage,
         borrowed_id_tracker.deleted_point_bitslice(),
     )
     .unwrap()
@@ -190,17 +174,11 @@ fn do_test_update_from_delete_points(storage: Arc<AtomicRefCell<VectorStorageEnu
     assert_eq!(closest[2].idx, 4);
 
     // Delete all
-    borrowed_storage
-        .delete_vector(0 as PointOffsetType)
-        .unwrap();
-    borrowed_storage
-        .delete_vector(1 as PointOffsetType)
-        .unwrap();
-    borrowed_storage
-        .delete_vector(4 as PointOffsetType)
-        .unwrap();
+    storage.delete_vector(0 as PointOffsetType).unwrap();
+    storage.delete_vector(1 as PointOffsetType).unwrap();
+    storage.delete_vector(4 as PointOffsetType).unwrap();
     assert_eq!(
-        borrowed_storage.deleted_vector_count(),
+        storage.deleted_vector_count(),
         5,
         "all vectors must be deleted"
     );
@@ -212,10 +190,10 @@ fn test_delete_points_in_simple_sparse_vector_storage() {
 
     {
         let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-        let storage =
+        let mut storage =
             open_simple_sparse_vector_storage(db, DB_VECTOR_CF, &AtomicBool::new(false)).unwrap();
-        do_test_delete_points(storage.clone());
-        storage.borrow().flusher()().unwrap();
+        do_test_delete_points(&mut storage);
+        storage.flusher()().unwrap();
     }
     let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
     let _storage =
@@ -227,10 +205,10 @@ fn test_update_from_delete_points_simple_sparse_vector_storage() {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     {
         let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-        let storage =
+        let mut storage =
             open_simple_sparse_vector_storage(db, DB_VECTOR_CF, &AtomicBool::new(false)).unwrap();
-        do_test_update_from_delete_points(storage.clone());
-        storage.borrow().flusher()().unwrap();
+        do_test_update_from_delete_points(&mut storage);
+        storage.flusher()().unwrap();
     }
 
     let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
