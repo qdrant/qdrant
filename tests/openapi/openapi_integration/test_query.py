@@ -78,14 +78,14 @@ def test_basic_scroll():
         assert record.get("payload") == scored_point.get("payload")
 
 
-def test_basic_recommend():
+def test_basic_recommend_avg():
     response = request_with_validation(
         api="/collections/{collection_name}/points/recommend",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "positive": [1, 2, 3, 4], # ids
-            "negative": [3], # ids
+            "positive": [1, 2, 3, 4],  # ids
+            "negative": [3],  # ids
             "limit": 10,
         },
     )
@@ -98,7 +98,7 @@ def test_basic_recommend():
         path_params={"collection_name": collection_name},
         body={
             "query": {
-                "recommend": {"positives": [1, 2, 3, 4], "negatives": [3]}, # ids
+                "recommend": {"positives": [1, 2, 3, 4], "negatives": [3]},  # ids
             }
         },
     )
@@ -107,4 +107,37 @@ def test_basic_recommend():
 
     assert recommend_result == query_result
 
-    #TODO(universal-query): fix recommend query to not include referenced ids
+
+def test_basic_recommend_best_score():
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/recommend",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "positive": [1, 2, 3, 4],  # ids
+            "negative": [3],  # ids
+            "limit": 10,
+            "strategy": "best_score",
+        },
+    )
+    assert response.ok
+    recommend_result = response.json()["result"]
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "query": {
+                "recommend": {
+                    "positives": [1, 2, 3, 4], # ids
+                    "negatives": [3], # ids
+                    "strategy": "best_score",
+                },
+            }
+        },
+    )
+    assert response.ok
+    query_result = response.json()["result"]
+
+    assert recommend_result == query_result
