@@ -264,7 +264,7 @@ mod tests {
             pipeline,
             &[descriptor_set, gpu_vector_storage.descriptor_set.clone()],
         );
-        context.dispatch(32 * num_vectors, 1, 1);
+        context.dispatch(num_vectors, 1, 1);
 
         let timer = std::time::Instant::now();
         context.run();
