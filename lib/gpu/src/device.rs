@@ -180,8 +180,7 @@ impl Device {
     }
 
     pub fn subgroup_size(&self) -> usize {
-        // TODO: get from physical device properties
-        32
+        self.subgroup_size
     }
 }
 
