@@ -4373,9 +4373,10 @@ dependencies = [
 [[package]]
 name = "quantization"
 version = "0.1.0"
-source = "git+https://github.com/qdrant/quantization.git#14f42f944358b4e95c482892dc4ead019809a448"
+source = "git+https://github.com/qdrant/quantization.git#0caf67d96f022a792bda2e41fa878ba1e113113f"
 dependencies = [
  "cc",
+ "num-traits",
  "permutation_iterator",
  "rand 0.8.5",
  "rayon",
