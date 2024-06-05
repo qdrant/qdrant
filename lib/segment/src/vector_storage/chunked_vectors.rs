@@ -52,13 +52,9 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
     where
         TKey: num_traits::cast::AsPrimitive<usize>,
     {
-        let key: usize = key.as_();
-        let chunk_data = &self.chunks[key / self.chunk_capacity];
-        let idx = (key % self.chunk_capacity) * self.dim;
-        &chunk_data[idx..idx + self.dim]
+        self.get_opt(key).expect("vector not found")
     }
 
-    /// Duplicate of `get` with explicit bound check.
     pub fn get_opt<TKey>(&self, key: TKey) -> Option<&[T]>
     where
         TKey: num_traits::cast::AsPrimitive<usize>,
