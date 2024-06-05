@@ -67,14 +67,13 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
             return None;
         }
         let key: usize = key.as_();
-        let chunk_data = &self.chunks[key / self.chunk_capacity];
-        let idx = (key % self.chunk_capacity) * self.dim;
-        let range = idx..idx + self.dim;
-        if range.start < chunk_data.len() && range.end <= chunk_data.len() {
-            Some(&chunk_data[range])
-        } else {
-            None
-        }
+        self.chunks
+            .get(key / self.chunk_capacity)
+            .and_then(|chunk_data| {
+                let idx = (key % self.chunk_capacity) * self.dim;
+                let range = idx..idx + self.dim;
+                chunk_data.get(range)
+            })
     }
 
     pub fn get_many<TKey>(&self, key: TKey, count: usize) -> &[T]
