@@ -98,7 +98,7 @@ def test_basic_recommend_avg():
         path_params={"collection_name": collection_name},
         body={
             "query": {
-                "recommend": {"positives": [1, 2, 3, 4], "negatives": [3]},  # ids
+                "recommend": {"positive": [1, 2, 3, 4], "negative": [3]},  # ids
             }
         },
     )
@@ -130,8 +130,8 @@ def test_basic_recommend_best_score():
         body={
             "query": {
                 "recommend": {
-                    "positives": [1, 2, 3, 4], # ids
-                    "negatives": [3], # ids
+                    "positive": [1, 2, 3, 4],  # ids
+                    "negative": [3],  # ids
                     "strategy": "best_score",
                 },
             }
@@ -141,3 +141,36 @@ def test_basic_recommend_best_score():
     query_result = response.json()["result"]
 
     assert recommend_result == query_result
+
+
+def test_basic_discover():
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/discover",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "target": 2,  # ids
+            "context": [{"positive": 3, "negative": 4}],  # ids
+            "limit": 10,
+        },
+    )
+    assert response.ok
+    discover_result = response.json()["result"]
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "query": {
+                "discover": {
+                    "target": 2,
+                    "context": [{"positive": 3, "negative": 4}],
+                },
+            }
+        },
+    )
+    assert response.ok
+    query_result = response.json()["result"]
+
+    assert discover_result == query_result
