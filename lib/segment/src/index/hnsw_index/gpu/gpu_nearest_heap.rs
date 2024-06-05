@@ -5,7 +5,7 @@ use crate::common::operation_error::{OperationError, OperationResult};
 #[repr(C)]
 struct GpuNearestHeapParamsBuffer {
     capacity: u32,
-    ef: usize,
+    ef: u32,
 }
 
 pub struct GpuNearestHeap {
@@ -52,9 +52,13 @@ impl GpuNearestHeap {
             std::mem::size_of::<GpuNearestHeapParamsBuffer>(),
         ));
 
+        println!(
+            "Creating nearest heap with ef={}, capacity={}",
+            ef, ceiled_ef
+        );
         let params = GpuNearestHeapParamsBuffer {
             capacity: ceiled_ef as u32,
-            ef,
+            ef: ef as u32,
         };
         staging_buffer.upload(&params, 0);
 
@@ -118,7 +122,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(41);
         let inputs_data: Vec<ScoredPointOffset> = (0..inputs_count * groups_count)
             .map(|i| ScoredPointOffset {
-                idx: (i % inputs_count) as PointOffsetType,
+                idx: i as PointOffsetType,
                 score: rng.gen_range(-1.0..1.0),
             })
             .collect();
@@ -187,24 +191,16 @@ mod tests {
             inputs_count * groups_count * std::mem::size_of::<f32>(),
         ));
 
-        let sorted_output_buffer = Arc::new(gpu::Buffer::new(
-            device.clone(),
-            gpu::BufferType::Storage,
-            ef * groups_count * std::mem::size_of::<ScoredPointOffset>(),
-        ));
-
         let descriptor_set_layout = gpu::DescriptorSetLayout::builder()
             .add_uniform_buffer(0)
             .add_storage_buffer(1)
             .add_storage_buffer(2)
-            .add_storage_buffer(3)
             .build(device.clone());
 
         let descriptor_set = gpu::DescriptorSet::builder(descriptor_set_layout.clone())
             .add_uniform_buffer(0, test_params_buffer.clone())
             .add_storage_buffer(1, input_points_buffer.clone())
             .add_storage_buffer(2, scores_output_buffer.clone())
-            .add_storage_buffer(3, sorted_output_buffer.clone())
             .build();
 
         let pipeline = gpu::Pipeline::builder()
@@ -220,7 +216,7 @@ mod tests {
                 gpu_nearest_heap.descriptor_set.clone(),
             ],
         );
-        context.dispatch(threads_count, 1, 1);
+        context.dispatch(groups_count, 1, 1);
         context.run();
         context.wait_finish();
 
@@ -228,7 +224,7 @@ mod tests {
             device.clone(),
             gpu::BufferType::GpuToCpu,
             std::cmp::max(
-                std::cmp::max(scores_output_buffer.size, sorted_output_buffer.size),
+                scores_output_buffer.size,
                 std::cmp::max(
                     gpu_nearest_heap.nearest_scores_buffer.size,
                     gpu_nearest_heap.nearest_indices_buffer.size,
@@ -244,22 +240,8 @@ mod tests {
         );
         context.run();
         context.wait_finish();
-
         let mut scores_output = vec![0.0; inputs_count * groups_count];
         download_staging_buffer.download_slice(&mut scores_output, 0);
-
-        context.copy_gpu_buffer(
-            sorted_output_buffer.clone(),
-            download_staging_buffer.clone(),
-            0,
-            0,
-            sorted_output_buffer.size,
-        );
-        context.run();
-        context.wait_finish();
-
-        let mut sorted_output = vec![ScoredPointOffset { idx: 0, score: 0.0 }; ef * groups_count];
-        download_staging_buffer.download_slice(&mut sorted_output, 0);
 
         let mut scores_output_cpu = vec![0.0; inputs_count * groups_count];
         let mut sorted_output_cpu =
@@ -275,6 +257,13 @@ mod tests {
             for i in 0..ef {
                 sorted_output_cpu[group * ef + i] = sorted[i];
             }
+        }
+
+        for i in 0..inputs_count * groups_count {
+            println!(
+                "SCORES_OUTPUT {}: gpu={}, cpu={}",
+                i, scores_output[i], scores_output_cpu[i]
+            );
         }
 
         let mut nearest_scores: Vec<ScoreType> =
@@ -308,7 +297,7 @@ mod tests {
             .zip(nearest_scores.iter())
             .enumerate()
         {
-            println!("SCORE: {}: {}, {}", i, idx, s);
+            println!("INTERNAL: {}: id={}, score={}", i, idx, s);
         }
 
         // TODO: remove

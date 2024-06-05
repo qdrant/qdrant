@@ -14,6 +14,7 @@ const POINT_ID INVALID_POINT_ID = 0xffffffff;
 
 const float positive_infinity = 1.0 / 0.0;
 const float negative_infinity = -1.0 / 0.0;
+#define UINT_MAX 0xffffffff
 
 struct ScoredPoint {
     POINT_ID id;
