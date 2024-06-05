@@ -394,6 +394,7 @@ mod test {
     fn test_mixed_types_iterator() {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let id_tracker = make_immutable_tracker(dir.path());
+        assert!(!*id_tracker.dirty.read());
 
         let sorted_from_tracker = id_tracker.iter_from(None).map(|(k, _)| k).collect_vec();
 
@@ -408,9 +409,14 @@ mod test {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let id_tracker = make_immutable_tracker(dir.path());
 
-        let loaded_id_tracker = ImmutableIdTracker::open(dir.path()).unwrap();
+        let mut loaded_id_tracker = ImmutableIdTracker::open(dir.path()).unwrap();
+        assert!(!*loaded_id_tracker.dirty.read());
 
         assert_eq!(id_tracker.mappings, loaded_id_tracker.mappings);
         assert_eq!(id_tracker.deleted, loaded_id_tracker.deleted);
+
+        loaded_id_tracker.drop(PointIdType::NumId(180)).unwrap();
+
+        assert!(*loaded_id_tracker.dirty.read());
     }
 }
