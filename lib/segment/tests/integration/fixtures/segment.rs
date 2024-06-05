@@ -8,7 +8,9 @@ use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, Spars
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-use segment::types::{Distance, Indexes, SegmentConfig, SparseVectorDataConfig, VectorDataConfig, VectorStorageType};
+use segment::types::{
+    Distance, Indexes, SegmentConfig, SparseVectorDataConfig, VectorDataConfig, VectorStorageType,
+};
 use serde_json::json;
 use sparse::common::sparse_vector::SparseVector;
 
@@ -258,7 +260,8 @@ pub fn build_segment_sparse_1(path: &Path) -> Segment {
             payload_storage_type: Default::default(),
         },
         true,
-    ).unwrap();
+    )
+    .unwrap();
 
     let vec1 = SparseVector::new(vec![0, 1, 2, 3], vec![1.0, 0.0, 1.0, 1.0]).unwrap();
     let vec2 = SparseVector::new(vec![0, 1, 2, 3], vec![1.0, 0.0, 1.0, 0.0]).unwrap();
@@ -267,19 +270,39 @@ pub fn build_segment_sparse_1(path: &Path) -> Segment {
     let vec5 = SparseVector::new(vec![0, 1, 2, 3], vec![1.0, 0.0, 0.0, 0.0]).unwrap();
 
     segment1
-        .upsert_point(1, 1.into(), NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec1)))
+        .upsert_point(
+            1,
+            1.into(),
+            NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec1)),
+        )
         .unwrap();
     segment1
-        .upsert_point(2, 2.into(), NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec2)))
+        .upsert_point(
+            2,
+            2.into(),
+            NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec2)),
+        )
         .unwrap();
     segment1
-        .upsert_point(3, 3.into(), NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec3)))
+        .upsert_point(
+            3,
+            3.into(),
+            NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec3)),
+        )
         .unwrap();
     segment1
-        .upsert_point(4, 4.into(), NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec4)))
+        .upsert_point(
+            4,
+            4.into(),
+            NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec4)),
+        )
         .unwrap();
     segment1
-        .upsert_point(5, 5.into(), NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec5)))
+        .upsert_point(
+            5,
+            5.into(),
+            NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec5)),
+        )
         .unwrap();
 
     let payload_key = "color";
@@ -322,7 +345,8 @@ pub fn build_segment_sparse_2(path: &Path) -> Segment {
             payload_storage_type: Default::default(),
         },
         true,
-    ).unwrap();
+    )
+    .unwrap();
 
     let vec1 = SparseVector::new(vec![0, 1, 2, 3], vec![-1.0, 0.0, 1.0, 1.0]).unwrap();
     let vec2 = SparseVector::new(vec![0, 1, 2, 3], vec![-1.0, 0.0, 1.0, 0.0]).unwrap();
@@ -331,19 +355,39 @@ pub fn build_segment_sparse_2(path: &Path) -> Segment {
     let vec5 = SparseVector::new(vec![0, 1, 2, 3], vec![-1.0, 0.0, 0.0, 0.0]).unwrap();
 
     segment2
-        .upsert_point(11, 11.into(), NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec1)))
+        .upsert_point(
+            11,
+            11.into(),
+            NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec1)),
+        )
         .unwrap();
     segment2
-        .upsert_point(12, 12.into(), NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec2)))
+        .upsert_point(
+            12,
+            12.into(),
+            NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec2)),
+        )
         .unwrap();
     segment2
-        .upsert_point(13, 13.into(), NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec3)))
+        .upsert_point(
+            13,
+            13.into(),
+            NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec3)),
+        )
         .unwrap();
     segment2
-        .upsert_point(14, 14.into(), NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec4)))
+        .upsert_point(
+            14,
+            14.into(),
+            NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec4)),
+        )
         .unwrap();
     segment2
-        .upsert_point(15, 15.into(), NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec5)))
+        .upsert_point(
+            15,
+            15.into(),
+            NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec5)),
+        )
         .unwrap();
 
     let payload_key = "color";

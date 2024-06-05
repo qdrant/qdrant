@@ -16,7 +16,9 @@ use segment::types::{Indexes, SegmentConfig, VectorDataConfig, VectorStorageType
 use sparse::common::sparse_vector::SparseVector;
 use tempfile::Builder;
 
-use crate::fixtures::segment::{build_segment_1, build_segment_2, build_segment_sparse_1, build_segment_sparse_2, empty_segment};
+use crate::fixtures::segment::{
+    build_segment_1, build_segment_2, build_segment_sparse_1, build_segment_sparse_2, empty_segment,
+};
 
 #[test]
 fn test_building_new_segment() {
@@ -93,7 +95,11 @@ fn test_building_new_sparse_segment() {
     // Include overlapping with segment1 to check the
     let vec = SparseVector::new(vec![0, 1, 2, 3], vec![0.0, 0.0, 0.0, 0.0]).unwrap();
     segment2
-        .upsert_point(100, 3.into(), NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec)))
+        .upsert_point(
+            100,
+            3.into(),
+            NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec)),
+        )
         .unwrap();
 
     builder.update_from(&segment1, &stopped).unwrap();
