@@ -119,8 +119,7 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
 
     /// Returns reference to vector data by key
     pub fn get_vector(&self, key: PointOffsetType) -> &[T] {
-        let offset = self.data_offset(key).expect("offset not found");
-        self.raw_vector_offset(offset)
+        self.get_vector_opt(key).expect("vector not found")
     }
 
     /// Returns an optional reference to vector data by key
