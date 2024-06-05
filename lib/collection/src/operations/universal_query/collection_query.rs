@@ -494,13 +494,10 @@ mod from_rest {
 
     impl From<rest::DiscoverInput> for VectorQuery<VectorInput> {
         fn from(value: rest::DiscoverInput) -> Self {
-            let rest::DiscoverInput {
-                target,
-                context_pairs,
-            } = value;
+            let rest::DiscoverInput { target, context } = value;
 
             let target = From::from(target);
-            let context = context_pairs
+            let context = context
                 .into_iter()
                 .flatten()
                 .map(context_pair_from_rest)
@@ -512,7 +509,7 @@ mod from_rest {
 
     impl From<rest::ContextInput> for VectorQuery<VectorInput> {
         fn from(value: rest::ContextInput) -> Self {
-            let rest::ContextInput { pairs } = value;
+            let rest::ContextInput(pairs) = value;
 
             let context = pairs
                 .into_iter()
@@ -731,17 +728,14 @@ mod from_grpc {
         type Error = Status;
 
         fn try_from(value: grpc::DiscoverInput) -> Result<Self, Self::Error> {
-            let grpc::DiscoverInput {
-                target,
-                context_pairs,
-            } = value;
+            let grpc::DiscoverInput { target, context } = value;
 
             let target = VectorInput::try_from(
                 target
                     .ok_or_else(|| Status::invalid_argument("DiscoverInput target is missing"))?,
             )?;
 
-            let context = context_pairs
+            let context = context
                 .into_iter()
                 .map(context_pair_from_grpc)
                 .collect::<Result<_, _>>()?;
@@ -754,10 +748,10 @@ mod from_grpc {
         type Error = Status;
 
         fn try_from(value: grpc::ContextInput) -> Result<Self, Self::Error> {
-            let grpc::ContextInput { context_pairs } = value;
+            let grpc::ContextInput { context } = value;
 
             Ok(VectorQuery::Context(ContextQuery {
-                pairs: context_pairs
+                pairs: context
                     .into_iter()
                     .map(context_pair_from_grpc)
                     .collect::<Result<_, _>>()?,
@@ -791,9 +785,15 @@ mod from_grpc {
 
     /// Circular dependencies prevents us from implementing `TryFrom` directly
     fn context_pair_from_grpc(
-        value: grpc::ContextPairInput,
+        value: grpc::ContextInputElement,
     ) -> Result<ContextPair<VectorInput>, Status> {
-        let grpc::ContextPairInput { positive, negative } = value;
+        let variant = value
+            .variant
+            .ok_or_else(|| Status::invalid_argument("ContextInputElement variant is missing"))?;
+
+        let grpc::context_input_element::Variant::Pair(value) = variant;
+
+        let grpc::ContextInputPair { positive, negative } = value;
 
         let positive =
             positive.ok_or_else(|| Status::invalid_argument("ContextPair positive is missing"))?;

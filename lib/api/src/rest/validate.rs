@@ -2,7 +2,9 @@ use common::validation::validate_multi_vector;
 use validator::{Validate, ValidationError};
 
 use super::schema::{BatchVectorStruct, Vector, VectorStruct};
-use super::{Fusion, OrderByInterface, Query, QueryInterface, RecommendInput, VectorInput};
+use super::{
+    ContextInput, Fusion, OrderByInterface, Query, QueryInterface, RecommendInput, VectorInput,
+};
 use crate::rest::NamedVectorStruct;
 
 impl Validate for VectorStruct {
@@ -103,6 +105,16 @@ impl Validate for RecommendInput {
         }
 
         for item in self.iter() {
+            item.validate()?;
+        }
+
+        Ok(())
+    }
+}
+
+impl Validate for ContextInput {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        for item in self.0.iter().flatten().flat_map(|item| item.iter()) {
             item.validate()?;
         }
 

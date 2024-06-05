@@ -115,7 +115,8 @@
     - [Condition](#qdrant-Condition)
     - [ContextExamplePair](#qdrant-ContextExamplePair)
     - [ContextInput](#qdrant-ContextInput)
-    - [ContextPairInput](#qdrant-ContextPairInput)
+    - [ContextInputElement](#qdrant-ContextInputElement)
+    - [ContextInputPair](#qdrant-ContextInputPair)
     - [CountPoints](#qdrant-CountPoints)
     - [CountResponse](#qdrant-CountResponse)
     - [CountResult](#qdrant-CountResult)
@@ -1981,16 +1982,31 @@ The JSON representation for `Value` is a JSON value.
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| context_pairs | [ContextPairInput](#qdrant-ContextPairInput) | repeated | Search space will be constrained by these pairs of vectors |
+| context | [ContextInputElement](#qdrant-ContextInputElement) | repeated | Search space will be constrained by these pairs of vectors |
 
 
 
 
 
 
-<a name="qdrant-ContextPairInput"></a>
+<a name="qdrant-ContextInputElement"></a>
 
-### ContextPairInput
+### ContextInputElement
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| pair | [ContextInputPair](#qdrant-ContextInputPair) |  | leaving extensibility for unstructured context |
+
+
+
+
+
+
+<a name="qdrant-ContextInputPair"></a>
+
+### ContextInputPair
 
 
 
@@ -2227,7 +2243,7 @@ The JSON representation for `Value` is a JSON value.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | target | [VectorInput](#qdrant-VectorInput) |  | Use this as the primary search objective |
-| context_pairs | [ContextPairInput](#qdrant-ContextPairInput) | repeated | Search space will be constrained by these pairs of vectors |
+| context | [ContextInputElement](#qdrant-ContextInputElement) | repeated | Search space will be constrained by these pairs of vectors |
 
 
 

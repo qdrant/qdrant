@@ -488,18 +488,25 @@ message RecommendInput {
   optional RecommendStrategy strategy = 3; // How to use the provided vectors to find the results
 }
 
-message ContextPairInput {
+message ContextInputElement {
+  oneof variant {
+    ContextInputPair pair = 1;
+    // leaving extensibility for unstructured context
+  }
+}
+
+message ContextInputPair {
   VectorInput positive = 1; // A positive vector
   VectorInput negative = 2; // Repel from this vector
 }
 
 message DiscoverInput {
   VectorInput target = 1; // Use this as the primary search objective
-  repeated ContextPairInput context_pairs = 2; // Search space will be constrained by these pairs of vectors
+  repeated ContextInputElement context = 2; // Search space will be constrained by these pairs of vectors
 }
 
 message ContextInput {
-  repeated ContextPairInput context_pairs = 1; // Search space will be constrained by these pairs of vectors
+  repeated ContextInputElement context = 1; // Search space will be constrained by these pairs of vectors
 }
 
 enum Fusion {

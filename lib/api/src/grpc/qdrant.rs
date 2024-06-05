@@ -4741,7 +4741,25 @@ pub struct RecommendInput {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ContextPairInput {
+pub struct ContextInputElement {
+    #[prost(oneof = "context_input_element::Variant", tags = "1")]
+    pub variant: ::core::option::Option<context_input_element::Variant>,
+}
+/// Nested message and enum types in `ContextInputElement`.
+pub mod context_input_element {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Variant {
+        /// leaving extensibility for unstructured context
+        #[prost(message, tag = "1")]
+        Pair(super::ContextInputPair),
+    }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ContextInputPair {
     /// A positive vector
     #[prost(message, optional, tag = "1")]
     pub positive: ::core::option::Option<VectorInput>,
@@ -4758,7 +4776,7 @@ pub struct DiscoverInput {
     pub target: ::core::option::Option<VectorInput>,
     /// Search space will be constrained by these pairs of vectors
     #[prost(message, repeated, tag = "2")]
-    pub context_pairs: ::prost::alloc::vec::Vec<ContextPairInput>,
+    pub context: ::prost::alloc::vec::Vec<ContextInputElement>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -4766,7 +4784,7 @@ pub struct DiscoverInput {
 pub struct ContextInput {
     /// Search space will be constrained by these pairs of vectors
     #[prost(message, repeated, tag = "1")]
-    pub context_pairs: ::prost::alloc::vec::Vec<ContextPairInput>,
+    pub context: ::prost::alloc::vec::Vec<ContextInputElement>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

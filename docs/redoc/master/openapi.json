@@ -11647,14 +11647,14 @@
       "DiscoverInput": {
         "type": "object",
         "required": [
-          "context_pairs",
+          "context",
           "target"
         ],
         "properties": {
           "target": {
             "$ref": "#/components/schemas/VectorInput"
           },
-          "context_pairs": {
+          "context": {
             "description": "Search space will be constrained by these pairs of vectors",
             "anyOf": [
               {
@@ -11689,29 +11689,20 @@
         }
       },
       "ContextInput": {
-        "type": "object",
-        "required": [
-          "pairs"
-        ],
-        "properties": {
-          "pairs": {
-            "description": "Search space will be constrained by these pairs of vectors",
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ContextPair"
-              },
-              {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/ContextPair"
-                }
-              },
-              {
-                "nullable": true
-              }
-            ]
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/ContextPair"
+          },
+          {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContextPair"
+            }
+          },
+          {
+            "nullable": true
           }
-        }
+        ]
       },
       "Fusion": {
         "anyOf": [

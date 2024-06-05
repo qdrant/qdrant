@@ -323,17 +323,16 @@ pub struct DiscoverInput {
     #[validate]
     #[serde(with = "MaybeOneOrMany")]
     #[schemars(with = "MaybeOneOrMany<ContextPair>")]
-    pub context_pairs: Option<Vec<ContextPair>>,
+    pub context: Option<Vec<ContextPair>>,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
-pub struct ContextInput {
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct ContextInput(
     /// Search space will be constrained by these pairs of vectors
-    #[validate]
     #[serde(with = "MaybeOneOrMany")]
     #[schemars(with = "MaybeOneOrMany<ContextPair>")]
-    pub pairs: Option<Vec<ContextPair>>,
-}
+    pub Option<Vec<ContextPair>>,
+);
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct ContextPair {
@@ -344,4 +343,10 @@ pub struct ContextPair {
     /// Repel from this vector
     #[validate]
     pub negative: VectorInput,
+}
+
+impl ContextPair {
+    pub fn iter(&self) -> impl Iterator<Item = &VectorInput> {
+        std::iter::once(&self.positive).chain(std::iter::once(&self.negative))
+    }
 }
