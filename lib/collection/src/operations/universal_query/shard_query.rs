@@ -19,7 +19,7 @@ pub type ShardQueryResponse = Vec<Vec<ScoredPoint>>;
 /// Internal representation of a universal query request.
 ///
 /// Direct translation of the user-facing request, but with all point ids substituted with their corresponding vectors.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ShardQueryRequest {
     pub prefetches: Vec<ShardPrefetch>,
     pub query: Option<ScoringQuery>,
@@ -99,7 +99,7 @@ impl ScoringQuery {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ShardPrefetch {
     pub prefetches: Vec<ShardPrefetch>,
     pub query: Option<ScoringQuery>,
