@@ -212,7 +212,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleDenseVectorStorage<T> {
     }
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {
-        CowVector::from(T::slice_to_float_cow(self.vectors.get(key).into()))
+        self.get_vector_opt(key).expect("vector not found")
     }
 
     /// Get vector by key, if it exists.

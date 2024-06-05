@@ -119,8 +119,14 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
 
     /// Returns reference to vector data by key
     pub fn get_vector(&self, key: PointOffsetType) -> &[T] {
-        let offset = self.data_offset(key).unwrap();
+        let offset = self.data_offset(key).expect("offset not found");
         self.raw_vector_offset(offset)
+    }
+
+    /// Returns an optional reference to vector data by key
+    pub fn get_vector_opt(&self, key: PointOffsetType) -> Option<&[T]> {
+        self.data_offset(key)
+            .map(|offset| self.raw_vector_offset(offset))
     }
 
     pub fn delete(&mut self, key: PointOffsetType) -> bool {

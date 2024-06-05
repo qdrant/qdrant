@@ -264,12 +264,19 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for SimpleMultiDenseVector
         self.dim
     }
 
+    /// Panics if key is out of bounds
     fn get_multi(&self, key: PointOffsetType) -> TypedMultiDenseVectorRef<T> {
-        let metadata = &self.vectors_metadata[key as usize];
-        TypedMultiDenseVectorRef {
-            flattened_vectors: self.vectors.get_many(metadata.start, metadata.size),
-            dim: self.dim,
-        }
+        self.get_multi_opt(key).expect("Vector not found")
+    }
+
+    /// None if key is out of bounds
+    fn get_multi_opt(&self, key: PointOffsetType) -> Option<TypedMultiDenseVectorRef<T>> {
+        self.vectors_metadata
+            .get(key as usize)
+            .map(|metadata| TypedMultiDenseVectorRef {
+                flattened_vectors: self.vectors.get_many(metadata.start, metadata.size),
+                dim: self.dim,
+            })
     }
 
     fn iterate_inner_vectors(&self) -> impl Iterator<Item = &[T]> + Clone + Send {
@@ -312,10 +319,15 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleMultiDenseVectorStorage<
     }
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {
-        let multi_dense_vector = self.get_multi(key);
-        CowVector::MultiDense(T::into_float_multivector(CowMultiVector::Borrowed(
-            multi_dense_vector,
-        )))
+        self.get_vector_opt(key).expect("vector not found")
+    }
+
+    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
+        self.get_multi_opt(key).map(|multi_dense_vector| {
+            CowVector::MultiDense(T::into_float_multivector(CowMultiVector::Borrowed(
+                multi_dense_vector,
+            )))
+        })
     }
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {

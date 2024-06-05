@@ -138,16 +138,24 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for AppendableMmapMultiDen
         self.vectors.dim()
     }
 
+    /// Panics if key is not found
     fn get_multi(&self, key: PointOffsetType) -> TypedMultiDenseVectorRef<T> {
-        let mmap_offset = self.offsets.get(key as usize).unwrap().first().unwrap();
-        let flattened_vectors = self
-            .vectors
-            .get_many(mmap_offset.offset, mmap_offset.count as usize)
-            .expect("vector not found");
-        TypedMultiDenseVectorRef {
-            flattened_vectors,
-            dim: self.vectors.dim(),
-        }
+        self.get_multi_opt(key).expect("vector not found")
+    }
+
+    /// Returns None if key is not found
+    fn get_multi_opt(&self, key: PointOffsetType) -> Option<TypedMultiDenseVectorRef<T>> {
+        self.offsets
+            .get(key as usize)
+            .and_then(|mmap_offset| {
+                let mmap_offset = mmap_offset.first().expect("mmap_offset must not be empty");
+                self.vectors
+                    .get_many(mmap_offset.offset, mmap_offset.count as usize)
+            })
+            .map(|flattened_vectors| TypedMultiDenseVectorRef {
+                flattened_vectors,
+                dim: self.vectors.dim(),
+            })
     }
 
     fn iterate_inner_vectors(&self) -> impl Iterator<Item = &[T]> + Clone + Send {
@@ -190,15 +198,20 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapMultiDenseVector
     }
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {
+        self.get_vector_opt(key).expect("vector not found")
+    }
+
+    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
         // TODO(colbert) borrow instead of clone
-        let multivector = self.get_multi(key);
-        let multivector = TypedMultiDenseVector {
-            flattened_vectors: multivector.flattened_vectors.to_vec(),
-            dim: multivector.dim,
-        };
-        CowVector::MultiDense(T::into_float_multivector(CowMultiVector::Owned(
-            multivector,
-        )))
+        self.get_multi_opt(key).map(|multivector| {
+            let multivector = TypedMultiDenseVector {
+                flattened_vectors: multivector.flattened_vectors.to_vec(),
+                dim: multivector.dim,
+            };
+            CowVector::MultiDense(T::into_float_multivector(CowMultiVector::Owned(
+                multivector,
+            )))
+        })
     }
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
