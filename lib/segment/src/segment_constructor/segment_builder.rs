@@ -9,9 +9,10 @@ use common::cpu::CpuPermit;
 use io::storage_version::StorageVersion;
 
 use super::{
-    create_id_tracker, create_payload_storage, create_sparse_vector_index, create_vector_index,
-    get_payload_index_path, get_vector_index_path, get_vector_storage_path, new_segment_path,
-    open_segment_db, open_vector_storage,
+    create_id_tracker, create_payload_storage, create_sparse_vector_index,
+    create_sparse_vector_storage, create_vector_index, get_payload_index_path,
+    get_vector_index_path, get_vector_storage_path, new_segment_path, open_segment_db,
+    open_vector_storage,
 };
 use crate::common::error_logging::LogError;
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
@@ -74,6 +75,16 @@ impl SegmentBuilder {
                 vector_name,
             )?;
 
+            vector_storages.insert(vector_name.to_owned(), vector_storage);
+        }
+
+        #[allow(clippy::for_kv_map)]
+        for (vector_name, _sparse_vector_config) in &segment_config.sparse_vector_data {
+            // `_sparse_vector_config` should be used, once we are able to initialize storage with
+            // different datatypes
+
+            let vector_storage =
+                create_sparse_vector_storage(database.clone(), vector_name, &stopped)?;
             vector_storages.insert(vector_name.to_owned(), vector_storage);
         }
 
