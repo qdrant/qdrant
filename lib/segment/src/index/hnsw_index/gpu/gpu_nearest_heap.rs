@@ -248,7 +248,7 @@ mod tests {
                 sorted_output_cpu[group * ef + i] = sorted[i];
             }
         }
-    
+
         for i in 0..inputs_count * groups_count {
             println!(
                 "SCORES_OUTPUT {}: gpu={}, cpu={}",
@@ -293,7 +293,10 @@ mod tests {
 
         assert_eq!(scores_output, scores_output_cpu);
         for i in 0..sorted_output_gpu.len() {
-            println!("{}: {} {}", i, sorted_output_gpu[i].idx, sorted_output_gpu[i].score);
+            println!(
+                "{}: {} {}",
+                i, sorted_output_gpu[i].idx, sorted_output_gpu[i].score
+            );
             assert_eq!(sorted_output_gpu[i].idx, sorted_output_cpu[i].idx);
             assert!((sorted_output_gpu[i].score - sorted_output_cpu[i].score).abs() < 1e-6);
         }
