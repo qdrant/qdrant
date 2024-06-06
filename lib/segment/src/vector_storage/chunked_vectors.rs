@@ -52,10 +52,24 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
     where
         TKey: num_traits::cast::AsPrimitive<usize>,
     {
+        self.get_opt(key).expect("vector not found")
+    }
+
+    pub fn get_opt<TKey>(&self, key: TKey) -> Option<&[T]>
+    where
+        TKey: num_traits::cast::AsPrimitive<usize>,
+    {
+        if self.chunks.is_empty() {
+            return None;
+        }
         let key: usize = key.as_();
-        let chunk_data = &self.chunks[key / self.chunk_capacity];
-        let idx = (key % self.chunk_capacity) * self.dim;
-        &chunk_data[idx..idx + self.dim]
+        self.chunks
+            .get(key / self.chunk_capacity)
+            .and_then(|chunk_data| {
+                let idx = (key % self.chunk_capacity) * self.dim;
+                let range = idx..idx + self.dim;
+                chunk_data.get(range)
+            })
     }
 
     pub fn get_many<TKey>(&self, key: TKey, count: usize) -> &[T]
@@ -263,12 +277,16 @@ mod tests {
     #[test]
     fn test_chunked_vectors_with_skipped_chunks() {
         let mut vectors = ChunkedVectors::new(3);
+        assert_eq!(vectors.get_opt(0), None);
+
         vectors.insert(0, &[1, 2, 3]).unwrap();
         vectors.insert(10_000_000, &[4, 5, 6]).unwrap();
         assert!(vectors.chunks.len() > 3);
 
         assert_eq!(vectors.get(0), &[1, 2, 3]);
         assert_eq!(vectors.get(10_000_000), &[4, 5, 6]);
+
+        assert_eq!(vectors.get_opt(10_000_001), None);
 
         // check if first chunk is fully allocated
         assert_eq!(vectors.get(100), &[0, 0, 0]);
