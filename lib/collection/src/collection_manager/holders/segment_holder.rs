@@ -239,7 +239,8 @@ impl<'s> SegmentHolder {
     ///
     /// Pair of (id of newly inserted segment, Vector of replaced segments)
     ///
-    pub fn swap<T>(
+    /// The inserted segment gets assigned a new unique ID.
+    pub fn swap_new<T>(
         &mut self,
         segment: T,
         remove_ids: &[SegmentId],
@@ -850,7 +851,7 @@ impl<'s> SegmentHolder {
                 log::error!("Failed to replicate proxy segment field indexes, ignoring: {err}");
             }
 
-            let (segment_id, segments) = write_segments.swap(proxy, &[segment_id]);
+            let (segment_id, segments) = write_segments.swap_new(proxy, &[original_segment_id]);
             debug_assert_eq!(segments.len(), 1);
             let locked_proxy_segment = write_segments
                 .get(segment_id)
@@ -908,7 +909,7 @@ impl<'s> SegmentHolder {
             }
             proxy_segment.wrapped_segment.clone()
         };
-        let (_, segments) = write_segments.swap(wrapped_segment, &[proxy_id]);
+        let (_, segments) = write_segments.swap_new(wrapped_segment, &[proxy_id]);
         debug_assert_eq!(segments.len(), 1);
 
         // Downgrade write lock to read and give it back
@@ -956,7 +957,7 @@ impl<'s> SegmentHolder {
                         }
                         proxy_segment.wrapped_segment.clone()
                     };
-                    let (_, segments) = write_segments.swap(wrapped_segment, &[proxy_id]);
+                    let (_, segments) = write_segments.swap_new(wrapped_segment, &[proxy_id]);
                     debug_assert_eq!(segments.len(), 1);
                 }
                 // If already unproxied, do nothing
@@ -1143,7 +1144,7 @@ mod tests {
 
         let segment3 = build_simple_segment(dir.path(), 4, Distance::Dot).unwrap();
 
-        let (_sid3, replaced_segments) = holder.swap(segment3, &[sid1, sid2]);
+        let (_sid3, replaced_segments) = holder.swap_new(segment3, &[sid1, sid2]);
         replaced_segments
             .into_iter()
             .for_each(|s| s.drop_data().unwrap());

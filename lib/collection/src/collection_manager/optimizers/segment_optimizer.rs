@@ -279,7 +279,7 @@ pub trait SegmentOptimizer {
                     LockedSegment::Proxy(proxy_segment) => {
                         let wrapped_segment = proxy_segment.read().wrapped_segment.clone();
                         let (restored_id, _proxies) =
-                            segments_lock.swap(wrapped_segment, &[proxy_id]);
+                            segments_lock.swap_new(wrapped_segment, &[proxy_id]);
                         restored_segment_ids.push(restored_id);
                     }
                 }
@@ -506,7 +506,7 @@ pub trait SegmentOptimizer {
                 // so we can afford this operation under the full collection write lock
                 let op_num = 0;
                 proxy.replicate_field_indexes(op_num)?; // Slow only in case the index is change in the gap between two calls
-                proxy_ids.push(write_segments.swap(proxy, &[idx]).0);
+                proxy_ids.push(write_segments.swap_new(proxy, &[idx]).0);
             }
             proxy_ids
         };
@@ -580,7 +580,7 @@ pub trait SegmentOptimizer {
 
             optimized_segment.prefault_mmap_pages();
 
-            let (_, proxies) = write_segments_guard.swap(optimized_segment, &proxy_ids);
+            let (_, proxies) = write_segments_guard.swap_new(optimized_segment, &proxy_ids);
 
             let has_appendable_segments = write_segments_guard.has_appendable_segment();
 

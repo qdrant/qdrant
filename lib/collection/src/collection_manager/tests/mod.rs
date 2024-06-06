@@ -40,7 +40,7 @@ fn wrap_proxy(segments: LockedSegmentHolder, sid: SegmentId, path: &Path) -> Seg
         proxy_deleted_indexes,
     );
 
-    let (new_id, _replaced_segments) = write_segments.swap(proxy, &[sid]);
+    let (new_id, _replaced_segments) = write_segments.swap_new(proxy, &[sid]);
     new_id
 }
 
