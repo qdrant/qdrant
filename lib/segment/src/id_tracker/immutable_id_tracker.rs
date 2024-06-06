@@ -1,3 +1,6 @@
+// TODO: remove this when we integrate the new immutable id tracker
+#![allow(dead_code)]
+
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
@@ -286,7 +289,9 @@ impl IdTracker for ImmutableIdTracker {
     }
 
     fn make_immutable(&self, _: &Path) -> OperationResult<IdTrackerEnum> {
-        Ok(IdTrackerEnum::ImmutableIdTracker(self.clone()))
+        todo!()
+        // TODO: uncomment this when we integrate the new immutable id tracker
+        // Ok(IdTrackerEnum::ImmutableIdTracker(self.clone()))
     }
 
     fn name(&self) -> &'static str {
@@ -315,79 +320,80 @@ impl IdTracker for ImmutableIdTracker {
     }
 }
 
+// TODO: Uncomment when we'll implement immutable ID tracker
+/*
 #[cfg(test)]
 mod test {
-    use itertools::Itertools;
-    use tempfile::Builder;
+use itertools::Itertools;
+use tempfile::Builder;
 
-    use super::*;
-    use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
-    use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
+use super::*;
+use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
+use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 
-    #[test]
-    fn test_iterator() {
-        let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
+#[test]
+fn test_iterator() {
+    let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+    let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
 
-        let mut id_tracker = SimpleIdTracker::open(db).unwrap();
+    let mut id_tracker = SimpleIdTracker::open(db).unwrap();
 
-        id_tracker.set_link(200.into(), 0).unwrap();
-        id_tracker.set_link(100.into(), 1).unwrap();
-        id_tracker.set_link(150.into(), 2).unwrap();
-        id_tracker.set_link(120.into(), 3).unwrap();
-        id_tracker.set_link(180.into(), 4).unwrap();
-        id_tracker.set_link(110.into(), 5).unwrap();
-        id_tracker.set_link(115.into(), 6).unwrap();
-        id_tracker.set_link(190.into(), 7).unwrap();
-        id_tracker.set_link(177.into(), 8).unwrap();
-        id_tracker.set_link(118.into(), 9).unwrap();
+    id_tracker.set_link(200.into(), 0).unwrap();
+    id_tracker.set_link(100.into(), 1).unwrap();
+    id_tracker.set_link(150.into(), 2).unwrap();
+    id_tracker.set_link(120.into(), 3).unwrap();
+    id_tracker.set_link(180.into(), 4).unwrap();
+    id_tracker.set_link(110.into(), 5).unwrap();
+    id_tracker.set_link(115.into(), 6).unwrap();
+    id_tracker.set_link(190.into(), 7).unwrap();
+    id_tracker.set_link(177.into(), 8).unwrap();
+    id_tracker.set_link(118.into(), 9).unwrap();
 
-        let id_tracker = id_tracker.make_immutable(dir.path()).unwrap();
+    let id_tracker = id_tracker.make_immutable(dir.path()).unwrap();
 
-        let first_four = id_tracker.iter_from(None).take(4).collect_vec();
+    let first_four = id_tracker.iter_from(None).take(4).collect_vec();
 
-        assert_eq!(first_four.len(), 4);
-        assert_eq!(first_four[0].0, 100.into());
+    assert_eq!(first_four.len(), 4);
+    assert_eq!(first_four[0].0, 100.into());
 
-        let last = id_tracker.iter_from(Some(first_four[3].0)).collect_vec();
-        assert_eq!(last.len(), 7);
+    let last = id_tracker.iter_from(Some(first_four[3].0)).collect_vec();
+    assert_eq!(last.len(), 7);
+}
+
+fn make_values() -> Vec<PointIdType> {
+    vec![
+        100.into(),
+        PointIdType::Uuid(Uuid::from_u128(123_u128)),
+        PointIdType::Uuid(Uuid::from_u128(156_u128)),
+        150.into(),
+        120.into(),
+        PointIdType::Uuid(Uuid::from_u128(12_u128)),
+        180.into(),
+        110.into(),
+        115.into(),
+        PointIdType::Uuid(Uuid::from_u128(673_u128)),
+        190.into(),
+        177.into(),
+        PointIdType::Uuid(Uuid::from_u128(971_u128)),
+    ]
+}
+
+fn make_immutable_tracker(path: &Path) -> ImmutableIdTracker {
+    let db = open_db(path, &[DB_VECTOR_CF]).unwrap();
+
+    let mut id_tracker = SimpleIdTracker::open(db).unwrap();
+
+    let values = make_values();
+
+    for (id, value) in values.iter().enumerate() {
+        id_tracker.set_link(*value, id as PointOffsetType).unwrap();
     }
 
-    fn make_values() -> Vec<PointIdType> {
-        vec![
-            100.into(),
-            PointIdType::Uuid(Uuid::from_u128(123_u128)),
-            PointIdType::Uuid(Uuid::from_u128(156_u128)),
-            150.into(),
-            120.into(),
-            PointIdType::Uuid(Uuid::from_u128(12_u128)),
-            180.into(),
-            110.into(),
-            115.into(),
-            PointIdType::Uuid(Uuid::from_u128(673_u128)),
-            190.into(),
-            177.into(),
-            PointIdType::Uuid(Uuid::from_u128(971_u128)),
-        ]
-    }
-
-    fn make_immutable_tracker(path: &Path) -> ImmutableIdTracker {
-        let db = open_db(path, &[DB_VECTOR_CF]).unwrap();
-
-        let mut id_tracker = SimpleIdTracker::open(db).unwrap();
-
-        let values = make_values();
-
-        for (id, value) in values.iter().enumerate() {
-            id_tracker.set_link(*value, id as PointOffsetType).unwrap();
+    match id_tracker.make_immutable(path).unwrap() {
+        IdTrackerEnum::MutableIdTracker(_) => {
+            unreachable!()
         }
-
-        match id_tracker.make_immutable(path).unwrap() {
-            IdTrackerEnum::MutableIdTracker(_) => {
-                unreachable!()
-            }
-            IdTrackerEnum::ImmutableIdTracker(m) => m,
-        }
+        IdTrackerEnum::ImmutableIdTracker(m) => m,
     }
 
     #[test]
@@ -420,3 +426,4 @@ mod test {
         assert!(*loaded_id_tracker.dirty.read());
     }
 }
+*/
