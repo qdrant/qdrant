@@ -334,7 +334,7 @@ mod tests {
 
         let segment_config = large_segment.segment_config.clone();
 
-        let large_segment_id = holder.add(large_segment);
+        let large_segment_id = holder.add_new(large_segment);
 
         let vectors_config: BTreeMap<String, VectorParams> = segment_config
             .vector_data
@@ -443,10 +443,10 @@ mod tests {
 
         let segment_config = small_segment.segment_config.clone();
 
-        let small_segment_id = holder.add(small_segment);
-        let middle_low_segment_id = holder.add(middle_low_segment);
-        let middle_segment_id = holder.add(middle_segment);
-        let large_segment_id = holder.add(large_segment);
+        let small_segment_id = holder.add_new(small_segment);
+        let middle_low_segment_id = holder.add_new(middle_low_segment);
+        let middle_segment_id = holder.add_new(middle_segment);
+        let large_segment_id = holder.add_new(large_segment);
 
         let mut index_optimizer = IndexingOptimizer::new(
             2,
@@ -736,7 +736,7 @@ mod tests {
 
         let _segment_ids: Vec<SegmentId> = segments
             .into_iter()
-            .map(|segment| holder.add(segment))
+            .map(|segment| holder.add_new(segment))
             .collect();
 
         let locked_holder: Arc<RwLock<_, _>> = Arc::new(RwLock::new(holder));
@@ -841,7 +841,7 @@ mod tests {
 
         let segment = random_segment(dir.path(), 100, point_count, dim as usize);
 
-        let segment_id = holder.add(segment);
+        let segment_id = holder.add_new(segment);
         let locked_holder: Arc<parking_lot::RwLock<_>> = Arc::new(RwLock::new(holder));
 
         let hnsw_config = HnswConfig {

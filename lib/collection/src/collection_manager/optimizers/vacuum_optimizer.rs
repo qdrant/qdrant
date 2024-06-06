@@ -234,7 +234,7 @@ mod tests {
         let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let mut holder = SegmentHolder::default();
-        let segment_id = holder.add(random_segment(dir.path(), 100, 200, 4));
+        let segment_id = holder.add_new(random_segment(dir.path(), 100, 200, 4));
 
         let segment = holder.get(segment_id).unwrap();
 
@@ -423,7 +423,7 @@ mod tests {
             )
             .unwrap();
 
-        let mut segment_id = holder.add(segment);
+        let mut segment_id = holder.add_new(segment);
         let locked_holder: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
 
         let hnsw_config = HnswConfig {

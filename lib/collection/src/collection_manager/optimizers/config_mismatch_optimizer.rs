@@ -314,7 +314,7 @@ mod tests {
 
         let segment = random_segment(dir.path(), 100, point_count, dim as usize);
 
-        let segment_id = holder.add(segment);
+        let segment_id = holder.add_new(segment);
         let locked_holder: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
 
         let hnsw_config = HnswConfig {
@@ -469,7 +469,7 @@ mod tests {
             vector2_dim as usize,
         );
 
-        let segment_id = holder.add(segment);
+        let segment_id = holder.add_new(segment);
         let locked_holder: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
 
         let hnsw_config_collection = HnswConfig {
@@ -639,7 +639,7 @@ mod tests {
             vector2_dim as usize,
         );
 
-        let segment_id = holder.add(segment);
+        let segment_id = holder.add_new(segment);
         let locked_holder: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
 
         let quantization_config_collection =
