@@ -81,28 +81,30 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
 
         let mut core_searches = Vec::new();
         let mut scrolls = Vec::new();
-        let sources;
-        let merge;
         let offset;
         let with_vector;
         let with_payload;
 
-        if !prefetches.is_empty() {
-            sources = recurse_prefetches(&mut core_searches, &mut scrolls, prefetches)?;
+        let merge_plan = if !prefetches.is_empty() {
+            let sources = recurse_prefetches(&mut core_searches, &mut scrolls, prefetches)?;
             let rescore = query.ok_or_else(|| {
                 CollectionError::bad_request("cannot have prefetches without a query".to_string())
             })?;
-            merge = Some(ResultsMerge {
-                rescore,
-                filter: req_filter,
-                limit,
-                score_threshold: req_score_threshold,
-            });
             offset = req_offset;
             with_vector = req_with_vector;
             with_payload = req_with_payload;
+
+            MergePlan {
+                sources,
+                merge: Some(ResultsMerge {
+                    rescore,
+                    filter: req_filter,
+                    limit,
+                    score_threshold: req_score_threshold,
+                }),
+            }
         } else {
-            sources = match query {
+            let sources = match query {
                 Some(ScoringQuery::Vector(query)) => {
                     // Everything should come from 1 core search
                     let core_search = CoreSearchRequest {
@@ -117,6 +119,8 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
                     };
 
                     core_searches.push(core_search);
+
+                    offset = 0; // already handled by the core search
 
                     vec![PrefetchSource::SearchesIdx(0)]
                 }
@@ -138,6 +142,8 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
 
                     scrolls.push(scroll);
 
+                    offset = req_offset;
+
                     vec![PrefetchSource::ScrollsIdx(0)]
                 }
                 None => {
@@ -153,17 +159,21 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
 
                     scrolls.push(scroll);
 
+                    offset = req_offset;
+
                     vec![PrefetchSource::ScrollsIdx(0)]
                 }
             };
-            merge = None;
-            offset = 0;
+
             with_vector = WithVector::Bool(false);
             with_payload = WithPayloadInterface::Bool(false);
-        }
+
+            // Root-level query without prefetches is the only case where merge is `None`
+            MergePlan { sources, merge: None }
+        };
 
         Ok(Self {
-            merge_plan: MergePlan { sources, merge },
+            merge_plan,
             searches: Arc::new(CoreSearchRequestBatch {
                 searches: core_searches,
             }),
@@ -249,7 +259,7 @@ fn recurse_prefetches(
                 }
             }
         } else {
-            // This is a nested prefetch. Recurse into it
+            // This has nested prefetches. Recurse into them
             let inner_sources = recurse_prefetches(core_searches, scrolls, prefetches)?;
 
             let rescore = query.ok_or_else(|| {
