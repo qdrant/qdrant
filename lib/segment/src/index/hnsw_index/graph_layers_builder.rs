@@ -44,6 +44,7 @@ pub struct GraphLayersBuilder {
 pub struct GraphLayersPatch {
     pub point_id: PointOffsetType,
     pub level: usize,
+    pub old_links: LinkContainer,
     pub links: LinkContainer,
 }
 
@@ -298,6 +299,18 @@ impl GraphLayersBuilder {
     }
 
     pub fn link_new_point(&self, point_id: PointOffsetType, mut points_scorer: FilteredScorer) {
+        // specisal case for empty graph. locking here guarantees that only one thread will create first entry point
+        {
+            let mut entry_points = self.entry_points.lock();
+            if entry_points.is_empty() {
+                let level = self.get_point_level(point_id);
+                entry_points.new_point(point_id, level, |point_id| {
+                    points_scorer.check_vector(point_id)
+                });
+                return;
+            }
+        }
+
         let mut is_looser = false;
         'attempt: loop {
             let _looser_guard = if is_looser {
@@ -314,6 +327,11 @@ impl GraphLayersBuilder {
                 if let Some(lock) =
                     self.links_layers[patch.point_id as usize][patch.level].try_write()
                 {
+                    if lock.as_slice() != patch.old_links.as_slice() {
+                        is_looser = true;
+                        continue 'attempt;
+                    }
+
                     locks.push(lock);
                     links_to_apply.push(patch.links.clone());
                 } else {
@@ -422,6 +440,7 @@ impl GraphLayersBuilder {
                             patches.push(GraphLayersPatch {
                                 point_id,
                                 level: curr_level,
+                                old_links: existing_links.clone(),
                                 links: selected_nearest.clone(),
                             });
                             selected_nearest
@@ -438,6 +457,7 @@ impl GraphLayersBuilder {
                                     point_id: other_point,
                                     level: curr_level,
                                     links,
+                                    old_links: other_point_links.clone(),
                                 });
                             } else {
                                 let mut candidates = BinaryHeap::with_capacity(level_m + 1);
@@ -464,6 +484,7 @@ impl GraphLayersBuilder {
                                     point_id: other_point,
                                     level: curr_level,
                                     links: selected_candidates,
+                                    old_links: other_point_links.clone(),
                                 });
                             }
                         }
