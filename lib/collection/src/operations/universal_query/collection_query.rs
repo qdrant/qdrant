@@ -735,7 +735,10 @@ mod from_grpc {
                     .ok_or_else(|| Status::invalid_argument("DiscoverInput target is missing"))?,
             )?;
 
-            let context = context
+            let grpc::ContextInput { pairs } = context
+                .ok_or_else(|| Status::invalid_argument("DiscoverInput context is missing"))?;
+
+            let context = pairs
                 .into_iter()
                 .map(context_pair_from_grpc)
                 .collect::<Result<_, _>>()?;
@@ -748,14 +751,9 @@ mod from_grpc {
         type Error = Status;
 
         fn try_from(value: grpc::ContextInput) -> Result<Self, Self::Error> {
-            let grpc::ContextInput { context } = value;
+            let context_query = context_query_from_grpc(value)?;
 
-            Ok(VectorQuery::Context(ContextQuery {
-                pairs: context
-                    .into_iter()
-                    .map(context_pair_from_grpc)
-                    .collect::<Result<_, _>>()?,
-            }))
+            Ok(VectorQuery::Context(context_query))
         }
     }
 
@@ -784,15 +782,23 @@ mod from_grpc {
     }
 
     /// Circular dependencies prevents us from implementing `TryFrom` directly
+    fn context_query_from_grpc(
+        value: grpc::ContextInput,
+    ) -> Result<ContextQuery<VectorInput>, Status> {
+        let grpc::ContextInput { pairs } = value;
+
+        Ok(ContextQuery {
+            pairs: pairs
+                .into_iter()
+                .map(context_pair_from_grpc)
+                .collect::<Result<_, _>>()?,
+        })
+    }
+
+    /// Circular dependencies prevents us from implementing `TryFrom` directly
     fn context_pair_from_grpc(
-        value: grpc::ContextInputElement,
+        value: grpc::ContextInputPair,
     ) -> Result<ContextPair<VectorInput>, Status> {
-        let variant = value
-            .variant
-            .ok_or_else(|| Status::invalid_argument("ContextInputElement variant is missing"))?;
-
-        let grpc::context_input_element::Variant::Pair(value) = variant;
-
         let grpc::ContextInputPair { positive, negative } = value;
 
         let positive =

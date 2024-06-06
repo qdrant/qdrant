@@ -179,7 +179,7 @@ pub struct QueryRequestInternal {
     #[schemars(with = "MaybeOneOrMany<Prefetch>")]
     pub prefetch: Option<Vec<Prefetch>>,
 
-    /// Query to perform. If missing, returns points ordered by their IDs.
+    /// Query to perform. If missing without prefetches, returns points ordered by their IDs.
     #[validate]
     pub query: Option<QueryInterface>,
 
@@ -254,7 +254,7 @@ pub struct Prefetch {
     #[schemars(with = "MaybeOneOrMany<Prefetch>")]
     pub prefetch: Option<Vec<Prefetch>>,
 
-    /// Query to perform. If missing, returns points ordered by their IDs.
+    /// Query to perform. If missing without prefetches, returns points ordered by their IDs.
     #[validate]
     pub query: Option<QueryInterface>,
 
