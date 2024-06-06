@@ -1420,17 +1420,34 @@ mod tests {
 
         let holder = Arc::new(RwLock::new(holder));
 
+        let before_ids = holder
+            .read()
+            .iter()
+            .map(|(id, _)| *id)
+            .collect::<HashSet<_>>();
+
         let segments_dir = Builder::new().prefix("segments_dir").tempdir().unwrap();
         let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
         let snapshot_dir = Builder::new().prefix("snapshot_dir").tempdir().unwrap();
         SegmentHolder::snapshot_all_segments(
-            holder,
+            holder.clone(),
             segments_dir.path(),
             None,
             temp_dir.path(),
             snapshot_dir.path(),
         )
         .unwrap();
+
+        let after_ids = holder
+            .read()
+            .iter()
+            .map(|(id, _)| *id)
+            .collect::<HashSet<_>>();
+
+        assert_eq!(
+            before_ids, after_ids,
+            "segment holder IDs before and after snapshotting must be equal",
+        );
 
         let archive_count = read_dir(&snapshot_dir).unwrap().count();
         // one archive produced per concrete segment in the SegmentHolder
