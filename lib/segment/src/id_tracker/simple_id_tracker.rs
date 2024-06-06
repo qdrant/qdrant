@@ -28,16 +28,6 @@ pub(crate) enum StoredPointId {
     String(String),
 }
 
-impl StoredPointId {
-    pub fn is_num_id(&self) -> bool {
-        matches!(self, Self::NumId(..))
-    }
-
-    pub fn is_uuid(&self) -> bool {
-        matches!(self, Self::Uuid(..))
-    }
-}
-
 impl From<&ExtendedPointId> for StoredPointId {
     fn from(point_id: &ExtendedPointId) -> Self {
         match point_id {
@@ -437,19 +427,21 @@ impl IdTracker for SimpleIdTracker {
     }
 
     fn make_immutable(&self, save_path: &Path) -> OperationResult<IdTrackerEnum> {
-        let external_to_internal: BTreeMap<_, _> = self
+        let external_to_internal_num: BTreeMap<_, _> = self
             .external_to_internal_num
             .iter()
-            .map(|(k, v)| (StoredPointId::NumId(*k), *v))
-            .chain(
-                self.external_to_internal_uuid
-                    .iter()
-                    .map(|(k, v)| (StoredPointId::Uuid(*k), *v)),
-            )
+            .map(|(k, v)| (*k, *v))
+            .collect();
+
+        let external_to_internal_uuid = self
+            .external_to_internal_uuid
+            .iter()
+            .map(|(k, v)| (*k, *v))
             .collect();
 
         let mappings = PointMappings {
-            external_to_internal,
+            external_to_internal_num,
+            external_to_internal_uuid,
             internal_to_external: self.internal_to_external.iter().map(|i| i.into()).collect(),
         };
 
