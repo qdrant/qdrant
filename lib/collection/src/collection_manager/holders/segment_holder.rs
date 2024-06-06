@@ -179,9 +179,7 @@ impl<'s> SegmentHolder {
 
     fn generate_new_key(&self) -> SegmentId {
         let key: SegmentId = self.id_source.fetch_add(1, Ordering::SeqCst);
-        if self.appendable_segments.contains_key(&key)
-            || self.non_appendable_segments.contains_key(&key)
-        {
+        if self.get(key).is_some() {
             debug_assert!(false, "generated new key that already exists");
             self.generate_new_key()
         } else {
@@ -196,21 +194,44 @@ impl<'s> SegmentHolder {
     where
         T: Into<LockedSegment>,
     {
-        let locked_segment = segment.into();
-        self.add_new_locked(locked_segment)
+        let segment_id = self.generate_new_key();
+        self.add_existing(segment_id, segment);
+        segment_id
     }
 
     /// Add new segment to storage which is already LockedSegment
     ///
     /// The segment gets assigned a new unique ID.
     pub fn add_new_locked(&mut self, segment: LockedSegment) -> SegmentId {
-        let key = self.generate_new_key();
+        let segment_id = self.generate_new_key();
+        self.add_existing_locked(segment_id, segment);
+        segment_id
+    }
+
+    /// Add an existing segment to storage
+    ///
+    /// The segment gets the provided ID, which must not be in the segment holder yet.
+    pub fn add_existing<T>(&mut self, segment_id: SegmentId, segment: T)
+    where
+        T: Into<LockedSegment>,
+    {
+        let locked_segment = segment.into();
+        self.add_existing_locked(segment_id, locked_segment);
+    }
+
+    /// Add an existing segment to storage which is already LockedSegment
+    ///
+    /// The segment gets the provided ID, which must not be in the segment holder yet.
+    pub fn add_existing_locked(&mut self, segment_id: SegmentId, segment: LockedSegment) {
+        debug_assert!(
+            self.get(segment_id).is_none(),
+            "cannot add segment with ID {segment_id}, it already exists",
+        );
         if segment.get().read().is_appendable() {
-            self.appendable_segments.insert(key, segment);
+            self.appendable_segments.insert(segment_id, segment);
         } else {
-            self.non_appendable_segments.insert(key, segment);
+            self.non_appendable_segments.insert(segment_id, segment);
         }
-        key
     }
 
     pub fn remove(&mut self, remove_ids: &[SegmentId]) -> Vec<LockedSegment> {
@@ -250,6 +271,31 @@ impl<'s> SegmentHolder {
     {
         let new_id = self.add_new(segment);
         (new_id, self.remove(remove_ids))
+    }
+
+    /// Replace old segments with a new one
+    ///
+    /// # Arguments
+    ///
+    /// * `segment` - segment to insert
+    /// * `remove_ids` - ids of segments to replace
+    ///
+    /// # Result
+    ///
+    /// Pair of (id of newly inserted segment, Vector of replaced segments)
+    ///
+    /// The inserted segment uses the provided segment ID, which must not be in the segment holder yet.
+    pub fn swap_existing<T>(
+        &mut self,
+        use_segment_id: SegmentId,
+        segment: T,
+        remove_ids: &[SegmentId],
+    ) -> Vec<LockedSegment>
+    where
+        T: Into<LockedSegment>,
+    {
+        self.add_existing(use_segment_id, segment);
+        self.remove(remove_ids)
     }
 
     pub fn get(&self, id: SegmentId) -> Option<&LockedSegment> {
@@ -685,7 +731,7 @@ impl<'s> SegmentHolder {
         log::trace!("Applying function on all proxied shard segments");
         let mut result = Ok(());
         let mut unproxied_segment_ids = Vec::with_capacity(proxies.len());
-        for (proxy_id, proxy_segment) in &proxies {
+        for (proxy_id, original_segment_id, proxy_segment) in &proxies {
             // Get segment to snapshot
             let segment = match proxy_segment {
                 LockedSegment::Proxy(proxy_segment) => {
@@ -708,7 +754,12 @@ impl<'s> SegmentHolder {
 
             // Try to unproxy/release this segment since we don't use it anymore
             // Unproxying now prevent unnecessary writes to the temporary segment
-            match Self::try_unproxy_segment(segments_lock, *proxy_id, proxy_segment.clone()) {
+            match Self::try_unproxy_segment(
+                segments_lock,
+                *proxy_id,
+                *original_segment_id,
+                proxy_segment.clone(),
+            ) {
                 Ok(lock) => {
                     segments_lock = lock;
                     unproxied_segment_ids.push(*proxy_id);
@@ -716,7 +767,7 @@ impl<'s> SegmentHolder {
                 Err(lock) => segments_lock = lock,
             }
         }
-        proxies.retain(|(id, _)| !unproxied_segment_ids.contains(id));
+        proxies.retain(|(id, _, _)| !unproxied_segment_ids.contains(id));
 
         // Unproxy all segments
         // Always do this to prevent leaving proxy segments behind
@@ -799,7 +850,7 @@ impl<'s> SegmentHolder {
         segments_path: &Path,
         collection_params: Option<&CollectionParams>,
     ) -> OperationResult<(
-        Vec<(SegmentId, LockedSegment)>,
+        Vec<(SegmentId, SegmentId, LockedSegment)>,
         LockedSegment,
         RwLockUpgradableReadGuard<'a, SegmentHolder>,
     )> {
@@ -842,7 +893,7 @@ impl<'s> SegmentHolder {
         // We cannot fail past this point to prevent only having some segments proxified
         let mut proxies = Vec::with_capacity(new_proxies.len());
         let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
-        for (segment_id, mut proxy) in new_proxies {
+        for (original_segment_id, mut proxy) in new_proxies {
             // Replicate field indexes the second time, because optimized segments could have
             // been changed. The probability is small, though, so we can afford this operation
             // under the full collection write lock
@@ -857,7 +908,7 @@ impl<'s> SegmentHolder {
                 .get(segment_id)
                 .cloned()
                 .expect("failed to get segment from segment holder we just swapped in");
-            proxies.push((segment_id, locked_proxy_segment));
+            proxies.push((segment_id, original_segment_id, locked_proxy_segment));
         }
         let segments_lock = RwLockWriteGuard::downgrade_to_upgradable(write_segments);
 
@@ -873,6 +924,7 @@ impl<'s> SegmentHolder {
     fn try_unproxy_segment(
         segments_lock: RwLockUpgradableReadGuard<SegmentHolder>,
         proxy_id: SegmentId,
+        original_segment_id: SegmentId,
         proxy_segment: LockedSegment,
     ) -> Result<RwLockUpgradableReadGuard<SegmentHolder>, RwLockUpgradableReadGuard<SegmentHolder>>
     {
@@ -902,6 +954,7 @@ impl<'s> SegmentHolder {
 
         // Batch 2: propagate changes to wrapped segment with segment holder write lock
         // Propagate proxied changes to wrapped segment, take it out and swap with proxy
+        // Important: put the wrapped segment back with its original segment ID
         let wrapped_segment = {
             let proxy_segment = proxy_segment.read();
             if let Err(err) = proxy_segment.propagate_to_wrapped() {
@@ -909,7 +962,8 @@ impl<'s> SegmentHolder {
             }
             proxy_segment.wrapped_segment.clone()
         };
-        let (_, segments) = write_segments.swap_new(wrapped_segment, &[proxy_id]);
+        let segments =
+            write_segments.swap_existing(original_segment_id, wrapped_segment, &[proxy_id]);
         debug_assert_eq!(segments.len(), 1);
 
         // Downgrade write lock to read and give it back
@@ -919,7 +973,7 @@ impl<'s> SegmentHolder {
     /// Unproxy all shard segments for [`proxy_all_segments_and_apply`]
     fn unproxy_all_segments(
         segments_lock: RwLockUpgradableReadGuard<SegmentHolder>,
-        proxies: Vec<(SegmentId, LockedSegment)>,
+        proxies: Vec<(SegmentId, SegmentId, LockedSegment)>,
         tmp_segment: LockedSegment,
     ) -> OperationResult<()> {
         // We must propagate all changes in the proxy into their wrapped segments, as we'll put the
@@ -934,7 +988,7 @@ impl<'s> SegmentHolder {
         // Batch 1: propagate changes to wrapped segment with segment holder read lock
         proxies
             .iter()
-            .filter_map(|(proxy_id, proxy_segment)| match proxy_segment {
+            .filter_map(|(proxy_id, _original_segment_id, proxy_segment)| match proxy_segment {
                 LockedSegment::Proxy(proxy_segment) => Some((proxy_id, proxy_segment)),
                 LockedSegment::Original(_) => None,
             }).for_each(|(proxy_id, proxy_segment)| {
@@ -946,9 +1000,10 @@ impl<'s> SegmentHolder {
         // Batch 2: propagate changes to wrapped segment with segment holder write lock
         // Swap out each proxy with wrapped segment once changes are propagated
         let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
-        for (proxy_id, proxy_segment) in proxies {
+        for (proxy_id, original_segment_id, proxy_segment) in proxies {
             match proxy_segment {
                 // Propagate proxied changes to wrapped segment, take it out and swap with proxy
+                // Important: put the wrapped segment back with its original segment ID
                 LockedSegment::Proxy(proxy_segment) => {
                     let wrapped_segment = {
                         let proxy_segment = proxy_segment.read();
@@ -957,7 +1012,11 @@ impl<'s> SegmentHolder {
                         }
                         proxy_segment.wrapped_segment.clone()
                     };
-                    let (_, segments) = write_segments.swap_new(wrapped_segment, &[proxy_id]);
+                    let segments = write_segments.swap_existing(
+                        original_segment_id,
+                        wrapped_segment,
+                        &[proxy_id],
+                    );
                     debug_assert_eq!(segments.len(), 1);
                 }
                 // If already unproxied, do nothing
