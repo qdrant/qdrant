@@ -277,6 +277,7 @@ impl<'s> SegmentHolder {
     ///
     /// # Arguments
     ///
+    /// * `segment_id` - segment ID to use
     /// * `segment` - segment to insert
     /// * `remove_ids` - ids of segments to replace
     ///
@@ -287,14 +288,14 @@ impl<'s> SegmentHolder {
     /// The inserted segment uses the provided segment ID, which must not be in the segment holder yet.
     pub fn swap_existing<T>(
         &mut self,
-        use_segment_id: SegmentId,
+        segment_id: SegmentId,
         segment: T,
         remove_ids: &[SegmentId],
     ) -> Vec<LockedSegment>
     where
         T: Into<LockedSegment>,
     {
-        self.add_existing(use_segment_id, segment);
+        self.add_existing(segment_id, segment);
         self.remove(remove_ids)
     }
 
