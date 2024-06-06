@@ -15,13 +15,8 @@ readonly uniform NearestHeapParams {
 
 layout(set = NEAREST_HEAP_LAYOUT_SET, binding = 1)
 buffer NearestScores {
-    float data[];
-} nearest_scores;
-
-layout(set = NEAREST_HEAP_LAYOUT_SET, binding = 2)
-buffer NearestIndices {
-    uint data[];
-} nearest_indices;
+    ScoredPoint data[];
+} nearest_data;
 
 float nearest_smaller_score;
 uint nearest_smaller_index;
@@ -40,8 +35,7 @@ void nearest_heap_init() {
     uint capacity = NEAREST_HEAP_CAPACITY;
     for (uint i = SUBGROUP_INVOKATION_ID; i < capacity; i += SUBGROUP_SIZE) {
         uint buffer_index = buffer_offset + i;
-        nearest_scores.data[buffer_index] = negative_infinity;
-        nearest_indices.data[buffer_index] = 0;
+        nearest_data.data[buffer_index] = ScoredPoint(0, negative_infinity);
     }
     groupMemoryBarrier();
 }
@@ -54,8 +48,7 @@ bool push_nearest(ScoredPoint scored_point) {
             uint buffer_offset = NEAREST_BUFFER_OFFSET;
             if (subgroupElect()) {
                 uint buffer_index = buffer_offset + nearest_smaller_index;
-                nearest_scores.data[buffer_index] = scored_point.score;
-                nearest_indices.data[buffer_index] = scored_point.id;
+                nearest_data.data[buffer_index] = scored_point;
             }
             groupMemoryBarrier(); // TODO: is this necessary? We can write and read in the same shader invocation
 
@@ -63,7 +56,7 @@ bool push_nearest(ScoredPoint scored_point) {
             nearest_smaller_score = positive_infinity;
             for (uint i = SUBGROUP_INVOKATION_ID; i < ef; i += SUBGROUP_SIZE) {
                 uint buffer_index = buffer_offset + i;
-                float score = nearest_scores.data[buffer_index];
+                float score = nearest_data.data[buffer_index].score;
                 if (score < nearest_smaller_score) {
                     nearest_smaller_score = score;
                     nearest_smaller_index = i;
@@ -84,8 +77,7 @@ bool push_nearest(ScoredPoint scored_point) {
     } else {
         if (subgroupElect()) {
             uint buffer_index = NEAREST_BUFFER_OFFSET + nearest_count;
-            nearest_scores.data[buffer_index] = scored_point.score;
-            nearest_indices.data[buffer_index] = scored_point.id;
+            nearest_data.data[buffer_index] = scored_point;
         }
         groupMemoryBarrier(); // TODO: is this necessary? We can write and read in the same shader invocation
 
@@ -150,23 +142,7 @@ uint subgroup_bubble_sort(float score, uint count) {
 }
 
 void sort_nearest() {
-    uint buffer_offset = NEAREST_BUFFER_OFFSET;
-
-    // do bubble sort in each subgroup to reduce the number of memory accesses
-    for (uint i = SUBGROUP_INVOKATION_ID; i < NEAREST_HEAP_CAPACITY; i += SUBGROUP_SIZE) {
-        float score = nearest_scores.data[buffer_offset + i];
-        uint index = nearest_indices.data[buffer_offset + i];
-        uint permut = subgroup_bubble_sort(score, SUBGROUP_SIZE);
-        float shuffled_score = subgroupShuffle(score, permut);
-        uint shuffled_index = subgroupShuffle(index, permut);
-        nearest_scores.data[buffer_offset + i] = shuffled_score;
-        nearest_indices.data[buffer_offset + i] = shuffled_index;
-        groupMemoryBarrier();
-    }
-
-    if (nearest_count < SUBGROUP_SIZE) {
-        return;
-    }
+    return;
 }
 
 #endif
