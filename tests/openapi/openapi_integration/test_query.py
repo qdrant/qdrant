@@ -9,6 +9,16 @@ collection_name = "test_query"
 @pytest.fixture(autouse=True, scope="module")
 def setup(on_disk_vectors):
     basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
+    
+    response = request_with_validation(
+        api="/collections/{collection_name}/index",
+        method="PUT",
+        path_params={"collection_name": collection_name},
+        body={
+            "field_name": "price",
+            "field_schema": "float"},
+    )
+    assert response.ok
     yield
     drop_collection(collection_name=collection_name)
 
@@ -174,3 +184,62 @@ def test_basic_discover():
     query_result = response.json()["result"]
 
     assert discover_result == query_result
+
+
+def test_basic_context():
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/discover",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "context": [{"positive": 2, "negative": 4}],
+            "limit": 100,
+        },
+    )
+    assert response.ok
+    context_result = response.json()["result"]
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "query": {
+                "context": [{"positive": 2, "negative": 4}],
+            },
+            "limit": 100,
+        },
+    )
+    assert response.ok
+    query_result = response.json()["result"]
+    
+    assert set([p["id"] for p in context_result]) == set([p["id"] for p in query_result])
+
+
+def test_basic_order_by():
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/scroll",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "order_by": "price",
+        },
+    )
+    assert response.ok
+    scroll_result = response.json()["result"]["points"]
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "query": {"order_by": "price"},
+            "with_payload": True,
+        },
+    )
+    assert response.ok
+    query_result = response.json()["result"]
+
+    for record, scored_point in zip(scroll_result, query_result):
+        assert record.get("id") == scored_point.get("id")
+        assert record.get("payload") == scored_point.get("payload")

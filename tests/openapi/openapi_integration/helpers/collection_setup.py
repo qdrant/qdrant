@@ -162,22 +162,22 @@ def basic_collection_setup(
                 {
                     "id": 1,
                     "vector": [0.05, 0.61, 0.76, 0.74],
-                    "payload": {"city": "Berlin"}
+                    "payload": {"city": "Berlin", "price": 10.0}
                 },
                 {
                     "id": 2,
                     "vector": [0.19, 0.81, 0.75, 0.11],
-                    "payload": {"city": ["Berlin", "London"]}
+                    "payload": {"city": ["Berlin", "London"], "price": 11.0}
                 },
                 {
                     "id": 3,
                     "vector": [0.36, 0.55, 0.47, 0.94],
-                    "payload": {"city": ["Berlin", "Moscow"]}
+                    "payload": {"city": ["Berlin", "Moscow"], "price": 9.5}
                 },
                 {
                     "id": 4,
                     "vector": [0.18, 0.01, 0.85, 0.80],
-                    "payload": {"city": ["London", "Moscow"]}
+                    "payload": {"city": ["London", "Moscow"], "price": 9}
                 },
                 {
                     "id": 5,
@@ -191,12 +191,12 @@ def basic_collection_setup(
                 {
                     "id": 7,
                     "vector": [0.25, 0.98, 0.14, 0.43],
-                    "payload": {"city": None}
+                    "payload": {"city": None, "price": None}
                 },
                 {
                     "id": 8,
                     "vector": [0.79, 0.53, 0.72, 0.15],
-                    "payload": {"city": []}
+                    "payload": {"city": [], "price": []}
                 },
                 {
                     "id": 9,
@@ -215,7 +215,7 @@ def basic_collection_setup(
                             "values": [0.1, 0.2, 0.3]
                         }
                     },
-                    "payload": {"city": []}
+                    "payload": {"city": [], "price": []}
                 }
             ]
         }
