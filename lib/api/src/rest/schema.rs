@@ -156,7 +156,7 @@ pub enum OrderByInterface {
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(untagged, rename_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
 pub enum Fusion {
     /// Reciprocal rank fusion
     Rrf,

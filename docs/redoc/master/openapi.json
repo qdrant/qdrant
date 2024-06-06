@@ -11338,7 +11338,7 @@
             ]
           },
           "query": {
-            "description": "Query to perform. If missing, returns points ordered by their IDs.",
+            "description": "Query to perform. If missing without prefetches, returns points ordered by their IDs.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/QueryInterface"
@@ -11441,7 +11441,7 @@
             ]
           },
           "query": {
-            "description": "Query to perform. If missing, returns points ordered by their IDs.",
+            "description": "Query to perform. If missing without prefetches, returns points ordered by their IDs.",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/QueryInterface"
@@ -11705,10 +11705,13 @@
         ]
       },
       "Fusion": {
-        "anyOf": [
+        "oneOf": [
           {
             "description": "Reciprocal rank fusion",
-            "nullable": true
+            "type": "string",
+            "enum": [
+              "rrf"
+            ]
           }
         ]
       }
