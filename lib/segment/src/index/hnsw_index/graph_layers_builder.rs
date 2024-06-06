@@ -37,8 +37,10 @@ pub struct GraphLayersBuilder {
 
     // Fields used on construction phase only
     visited_pool: VisitedPool,
+    looser_mutex: Mutex<()>,
 }
 
+#[derive(Debug, Clone)]
 pub struct GraphLayersPatch {
     pub point_id: PointOffsetType,
     pub level: usize,
@@ -129,6 +131,7 @@ impl GraphLayersBuilder {
             links_layers,
             entry_points: Mutex::new(EntryPoints::new(entry_points_num)),
             visited_pool: VisitedPool::new(),
+            looser_mutex: Mutex::new(()),
         }
     }
 
@@ -295,19 +298,42 @@ impl GraphLayersBuilder {
     }
 
     pub fn link_new_point(&self, point_id: PointOffsetType, mut points_scorer: FilteredScorer) {
-        let patches = self.link_new_point_impl(point_id, &mut points_scorer);
-        for patch in patches {
-            let mut locked_links = self.links_layers[patch.point_id as usize][patch.level].write();
-            locked_links.clear();
-            locked_links.extend(patch.links);
+        let mut is_looser = false;
+        'attempt: loop {
+            let _looser_guard = if is_looser {
+                Some(self.looser_mutex.lock())
+            } else {
+                None
+            };
+
+            let patches = self.link_new_point_impl(point_id, &mut points_scorer);
+
+            let mut locks = Vec::with_capacity(patches.len());
+            let mut links_to_apply = Vec::with_capacity(patches.len());
+            for patch in &patches {
+                if let Some(lock) = self.links_layers[patch.point_id as usize][patch.level].try_write() {
+                    locks.push(lock);
+                    links_to_apply.push(patch.links.clone());
+                } else {
+                    is_looser = true;
+                    continue 'attempt;
+                }
+            }
+
+            for (links, lock) in links_to_apply.iter().zip(locks.iter_mut()) {
+                lock.clear();
+                lock.extend(links.iter().copied());
+            }
+
+            let level = self.get_point_level(point_id);
+            self
+                .entry_points
+                .lock()
+                .new_point(point_id, level, |point_id| {
+                    points_scorer.check_vector(point_id)
+                });
+            break;
         }
-        let level = self.get_point_level(point_id);
-        self
-            .entry_points
-            .lock()
-            .new_point(point_id, level, |point_id| {
-                points_scorer.check_vector(point_id)
-            });
     }
 
     pub fn link_new_point_impl(&self, point_id: PointOffsetType, points_scorer: &mut FilteredScorer) -> Vec<GraphLayersPatch> {
