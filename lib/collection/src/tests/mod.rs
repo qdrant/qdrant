@@ -34,16 +34,16 @@ async fn test_optimization_process() {
     let mut holder = SegmentHolder::default();
 
     let segments_to_merge = vec![
-        holder.add(random_segment(dir.path(), 100, 3, dim)),
-        holder.add(random_segment(dir.path(), 100, 3, dim)),
-        holder.add(random_segment(dir.path(), 100, 3, dim)),
+        holder.add_new(random_segment(dir.path(), 100, 3, dim)),
+        holder.add_new(random_segment(dir.path(), 100, 3, dim)),
+        holder.add_new(random_segment(dir.path(), 100, 3, dim)),
     ];
 
-    let segment_to_index = holder.add(random_segment(dir.path(), 100, 110, dim));
+    let segment_to_index = holder.add_new(random_segment(dir.path(), 100, 110, dim));
 
     let _other_segment_ids: Vec<SegmentId> = vec![
-        holder.add(random_segment(dir.path(), 100, 20, dim)),
-        holder.add(random_segment(dir.path(), 100, 20, dim)),
+        holder.add_new(random_segment(dir.path(), 100, 20, dim)),
+        holder.add_new(random_segment(dir.path(), 100, 20, dim)),
     ];
 
     let merge_optimizer: Arc<Optimizer> =
@@ -138,7 +138,7 @@ async fn test_cancel_optimization() {
     let dim = 256;
 
     for _ in 0..5 {
-        holder.add(random_segment(dir.path(), 100, 1000, dim));
+        holder.add_new(random_segment(dir.path(), 100, 1000, dim));
     }
 
     let indexing_optimizer: Arc<Optimizer> =

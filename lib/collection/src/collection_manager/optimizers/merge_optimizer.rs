@@ -171,9 +171,9 @@ mod tests {
         let dim = 256;
 
         let _segments_to_merge = [
-            holder.add(random_segment(dir.path(), 100, 40, dim)),
-            holder.add(random_segment(dir.path(), 100, 50, dim)),
-            holder.add(random_segment(dir.path(), 100, 60, dim)),
+            holder.add_new(random_segment(dir.path(), 100, 40, dim)),
+            holder.add_new(random_segment(dir.path(), 100, 50, dim)),
+            holder.add_new(random_segment(dir.path(), 100, 60, dim)),
         ];
 
         let mut merge_optimizer = get_merge_optimizer(dir.path(), temp_dir.path(), dim);
@@ -205,16 +205,16 @@ mod tests {
         let dim = 256;
 
         let segments_to_merge = [
-            holder.add(random_segment(dir.path(), 100, 3, dim)),
-            holder.add(random_segment(dir.path(), 100, 3, dim)),
-            holder.add(random_segment(dir.path(), 100, 3, dim)),
-            holder.add(random_segment(dir.path(), 100, 10, dim)),
+            holder.add_new(random_segment(dir.path(), 100, 3, dim)),
+            holder.add_new(random_segment(dir.path(), 100, 3, dim)),
+            holder.add_new(random_segment(dir.path(), 100, 3, dim)),
+            holder.add_new(random_segment(dir.path(), 100, 10, dim)),
         ];
 
         let other_segment_ids = [
-            holder.add(random_segment(dir.path(), 100, 20, dim)),
-            holder.add(random_segment(dir.path(), 100, 20, dim)),
-            holder.add(random_segment(dir.path(), 100, 20, dim)),
+            holder.add_new(random_segment(dir.path(), 100, 20, dim)),
+            holder.add_new(random_segment(dir.path(), 100, 20, dim)),
+            holder.add_new(random_segment(dir.path(), 100, 20, dim)),
         ];
 
         let merge_optimizer = get_merge_optimizer(dir.path(), temp_dir.path(), dim);

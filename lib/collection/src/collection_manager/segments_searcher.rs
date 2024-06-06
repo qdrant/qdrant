@@ -711,8 +711,8 @@ mod tests {
 
         let mut holder = SegmentHolder::default();
 
-        let _sid1 = holder.add(segment1);
-        let _sid2 = holder.add(segment2);
+        let _sid1 = holder.add_new(segment1);
+        let _sid2 = holder.add_new(segment2);
 
         let segment_holder = Arc::new(RwLock::new(holder));
 

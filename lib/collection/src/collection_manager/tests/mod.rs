@@ -40,7 +40,7 @@ fn wrap_proxy(segments: LockedSegmentHolder, sid: SegmentId, path: &Path) -> Seg
         proxy_deleted_indexes,
     );
 
-    let (new_id, _replaced_segments) = write_segments.swap(proxy, &[sid]);
+    let (new_id, _replaced_segments) = write_segments.swap_new(proxy, &[sid]);
     new_id
 }
 
@@ -53,8 +53,8 @@ fn test_update_proxy_segments() {
 
     let mut holder = SegmentHolder::default();
 
-    let sid1 = holder.add(segment1);
-    let _sid2 = holder.add(segment2);
+    let sid1 = holder.add_new(segment1);
+    let _sid2 = holder.add_new(segment2);
 
     let segments = Arc::new(RwLock::new(holder));
 
@@ -103,8 +103,8 @@ fn test_move_points_to_copy_on_write() {
 
     let mut holder = SegmentHolder::default();
 
-    let sid1 = holder.add(segment1);
-    let _sid2 = holder.add(segment2);
+    let sid1 = holder.add_new(segment1);
+    let _sid2 = holder.add_new(segment2);
 
     let segments = Arc::new(RwLock::new(holder));
 
