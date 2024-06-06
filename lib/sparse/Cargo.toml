@@ -33,6 +33,7 @@ parking_lot = "0.12.3"
 [dev-dependencies]
 criterion = "0.5"
 dataset = { path = "../common/dataset" }
+generic-tests = { workspace = true }
 indicatif = { workspace = true }
 sparse = { path = ".", features = ["testing"] }
 

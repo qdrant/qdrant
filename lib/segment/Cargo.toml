@@ -87,7 +87,7 @@ sparse = { path = "../sparse" }
 
 tracing = { workspace = true, optional = true }
 macro_rules_attribute = "0.2.0"
-generic-tests = "0.1.2"
+generic-tests = { workspace = true }
 nom = "7.1.3"
 half = { workspace = true }
 

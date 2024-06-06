@@ -5638,6 +5638,7 @@ dependencies = [
  "common",
  "criterion",
  "dataset",
+ "generic-tests",
  "half 2.4.1",
  "indicatif",
  "io",

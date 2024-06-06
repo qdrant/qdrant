@@ -126,6 +126,7 @@ chrono = { version = "0.4.38", features = ["serde"] }
 fnv = "1.0"
 futures = "0.3.30"
 futures-util = "0.3.30"
+generic-tests = "0.1.2"
 half = { version = "2.4.1", features = ["alloc", "serde", "num-traits"] }
 indexmap = { version = "2", features = ["serde"] }
 indicatif = "0.17.8"
