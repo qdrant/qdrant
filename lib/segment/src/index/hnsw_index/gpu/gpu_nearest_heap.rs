@@ -269,10 +269,7 @@ mod tests {
         context.wait_finish();
         download_staging_buffer.download_slice(nearest_gpu.as_mut_slice(), 0);
 
-        for (i, s) in nearest_gpu
-            .iter()
-            .enumerate()
-        {
+        for (i, s) in nearest_gpu.iter().enumerate() {
             println!("INTERNAL: {}: id={}, score={}", i, s.idx, s.score);
         }
 
