@@ -15,6 +15,7 @@ use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDelet
 use crate::common::rocksdb_buffered_update_wrapper::DatabaseColumnScheduledUpdateWrapper;
 use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, DB_MAPPING_CF, DB_VERSIONS_CF};
 use crate::common::Flusher;
+use crate::id_tracker::immutable_id_tracker::{ImmutableIdTracker, PointMappings};
 use crate::id_tracker::{IdTracker, IdTrackerEnum};
 use crate::types::{ExtendedPointId, PointIdType, SeqNumberType};
 
@@ -435,35 +436,32 @@ impl IdTracker for SimpleIdTracker {
         Ok(())
     }
 
-    fn make_immutable(&self, _save_path: &Path) -> OperationResult<IdTrackerEnum> {
-        // TODO: uncomment this when we integrate the new immutable id tracker
-        /*
-               let external_to_internal = self
-                   .external_to_internal_num
-                   .iter()
-                   .map(|(k, v)| (StoredPointId::NumId(*k), *v))
-                   .chain(
-                       self.external_to_internal_uuid
-                           .iter()
-                           .map(|(k, v)| (StoredPointId::Uuid(*k), *v)),
-                   )
-                   .collect();
+    fn make_immutable(&self, save_path: &Path) -> OperationResult<IdTrackerEnum> {
+        let external_to_internal: BTreeMap<_, _> = self
+            .external_to_internal_num
+            .iter()
+            .map(|(k, v)| (StoredPointId::NumId(*k), *v))
+            .chain(
+                self.external_to_internal_uuid
+                    .iter()
+                    .map(|(k, v)| (StoredPointId::Uuid(*k), *v)),
+            )
+            .collect();
 
-               let mappings = PointMappings {
-                   external_to_internal,
-                   internal_to_version: self.internal_to_version.clone(),
-                   internal_to_external: self.internal_to_external.iter().map(|i| i.into()).collect(),
-               };
+        let mappings = PointMappings {
+            external_to_internal,
+            internal_to_external: self.internal_to_external.iter().map(|i| i.into()).collect(),
+        };
 
-               let immutable_tracker =
-                   ImmutableIdTracker::new(save_path.to_path_buf(), self.deleted.clone(), mappings);
+        let mut internal_to_version = self.internal_to_version.clone();
+        if internal_to_version.len() < self.internal_to_external.len() {
+            internal_to_version.resize(self.internal_to_external.len(), 0);
+        }
 
-               // Make it persistent
-               immutable_tracker.save()?;
+        let immutable_tracker =
+            ImmutableIdTracker::new(save_path, &self.deleted, &internal_to_version, mappings)?;
 
-               Ok(IdTrackerEnum::ImmutableIdTracker(immutable_tracker))
-        */
-        todo!()
+        Ok(IdTrackerEnum::ImmutableIdTracker(immutable_tracker))
     }
 
     fn name(&self) -> &'static str {
