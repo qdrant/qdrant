@@ -322,6 +322,8 @@ mod tests {
             ("byte".to_string(), cosine_params.clone()),
             ("full".to_string(), cosine_params.clone()),
             ("multi".to_string(), cosine_params.clone()),
+            // this is incorrect, but we don't care for this test
+            ("sparse".to_string(), cosine_params.clone()),
         ]);
 
         CollectionParams {
