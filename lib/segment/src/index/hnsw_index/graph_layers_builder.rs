@@ -311,7 +311,9 @@ impl GraphLayersBuilder {
             let mut locks = Vec::with_capacity(patches.len());
             let mut links_to_apply = Vec::with_capacity(patches.len());
             for patch in &patches {
-                if let Some(lock) = self.links_layers[patch.point_id as usize][patch.level].try_write() {
+                if let Some(lock) =
+                    self.links_layers[patch.point_id as usize][patch.level].try_write()
+                {
                     locks.push(lock);
                     links_to_apply.push(patch.links.clone());
                 } else {
@@ -326,8 +328,7 @@ impl GraphLayersBuilder {
             }
 
             let level = self.get_point_level(point_id);
-            self
-                .entry_points
+            self.entry_points
                 .lock()
                 .new_point(point_id, level, |point_id| {
                     points_scorer.check_vector(point_id)
@@ -336,7 +337,11 @@ impl GraphLayersBuilder {
         }
     }
 
-    pub fn link_new_point_impl(&self, point_id: PointOffsetType, points_scorer: &mut FilteredScorer) -> Vec<GraphLayersPatch> {
+    pub fn link_new_point_impl(
+        &self,
+        point_id: PointOffsetType,
+        points_scorer: &mut FilteredScorer,
+    ) -> Vec<GraphLayersPatch> {
         let mut patches = vec![];
         // Check if there is an suitable entry point
         //   - entry point level if higher or equal
@@ -347,9 +352,7 @@ impl GraphLayersBuilder {
         let entry_point_opt = self
             .entry_points
             .lock()
-            .get_entry_point(|point_id| {
-                points_scorer.check_vector(point_id)
-            });
+            .get_entry_point(|point_id| points_scorer.check_vector(point_id));
         match entry_point_opt {
             // New point is a new empty entry (for this filter, at least)
             // We can't do much here, so just quit
@@ -400,7 +403,8 @@ impl GraphLayersBuilder {
 
                     if self.use_heuristic {
                         let selected_nearest = {
-                            let existing_links = self.links_layers[point_id as usize][curr_level].read();
+                            let existing_links =
+                                self.links_layers[point_id as usize][curr_level].read();
                             for &existing_link in existing_links.iter() {
                                 if !visited_list.check(existing_link) {
                                     search_context.process_candidate(ScoredPointOffset {
@@ -424,7 +428,8 @@ impl GraphLayersBuilder {
                         };
 
                         for &other_point in &selected_nearest {
-                            let other_point_links = self.links_layers[other_point as usize][curr_level].read();
+                            let other_point_links =
+                                self.links_layers[other_point as usize][curr_level].read();
                             if other_point_links.len() < level_m {
                                 // If linked point is lack of neighbours
                                 let mut links = other_point_links.clone();
