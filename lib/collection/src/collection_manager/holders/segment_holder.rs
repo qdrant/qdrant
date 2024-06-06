@@ -2,6 +2,7 @@ use std::cmp::{max, min};
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
 use std::ops::Deref;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
@@ -9,7 +10,6 @@ use std::time::{Duration, Instant};
 use io::storage_version::StorageVersion;
 use parking_lot::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use rand::seq::SliceRandom;
-use rand::{thread_rng, Rng};
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::{Segment, SegmentVersion};
@@ -142,6 +142,9 @@ pub struct SegmentHolder {
 
     update_tracker: UpdateTracker,
 
+    /// Source for unique (virtual) IDs for newly added segments
+    id_source: AtomicUsize,
+
     /// Seq number of the first un-recovered operation.
     /// If there are no failed operation - None
     pub failed_operation: BTreeSet<SeqNumberType>,
@@ -175,10 +178,11 @@ impl<'s> SegmentHolder {
     }
 
     fn generate_new_key(&self) -> SegmentId {
-        let key = thread_rng().gen::<SegmentId>();
+        let key: SegmentId = self.id_source.fetch_add(1, Ordering::SeqCst);
         if self.appendable_segments.contains_key(&key)
             || self.non_appendable_segments.contains_key(&key)
         {
+            debug_assert!(false, "generated new key that already exists");
             self.generate_new_key()
         } else {
             key
