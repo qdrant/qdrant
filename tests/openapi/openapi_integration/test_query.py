@@ -1,7 +1,8 @@
+from math import isclose
 import pytest
 
 from .helpers.collection_setup import basic_collection_setup, drop_collection
-from .helpers.helpers import request_with_validation
+from .helpers.helpers import reciprocal_rank_fusion, request_with_validation
 
 collection_name = "test_query"
 
@@ -172,7 +173,7 @@ def test_basic_discover():
     )
     assert response.ok
     discover_result = response.json()["result"]
-    
+
     query_result = root_and_rescored_query(
         {
             "discover": {
@@ -232,3 +233,51 @@ def test_basic_order_by():
     for record, scored_point in zip(scroll_result, query_result):
         assert record.get("id") == scored_point.get("id")
         assert record.get("payload") == scored_point.get("payload")
+
+
+def test_basic_rrf():
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/search",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "vector": [0.1, 0.2, 0.3, 0.4],
+            "limit": 10,
+        },
+    )
+    assert response.ok
+    search_result_1 = response.json()["result"]
+    
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/search",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "vector": [0.5, 0.6, 0.7, 0.8],
+            "limit": 10,
+        },
+    )
+    assert response.ok
+    search_result_2 = response.json()["result"]
+    
+    rrf_expected = reciprocal_rank_fusion([search_result_1, search_result_2], limit=10)
+    
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "prefetch": [
+                { "query": [0.1, 0.2, 0.3, 0.4] },
+                { "query": [0.5, 0.6, 0.7, 0.8] },
+            ],
+            "query": {"fusion": "rrf"},
+        },
+    )
+    assert response.ok, response.json()
+    rrf_result = response.json()["result"]
+    
+    for expected, result in zip(rrf_expected, rrf_result):
+        assert expected["id"] == result["id"]
+        assert expected["payload"] == result["payload"]
+        assert isclose(expected["score"], result["score"], rel_tol=1e-5)
