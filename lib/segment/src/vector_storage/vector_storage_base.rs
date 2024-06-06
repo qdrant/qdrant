@@ -55,10 +55,7 @@ pub trait VectorStorage {
     fn get_vector(&self, key: PointOffsetType) -> CowVector;
 
     /// Get the vector by the given key if it exists
-    /// Blanket implementation - override if necessary
-    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
-        Some(self.get_vector(key))
-    }
+    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector>;
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()>;
 
@@ -116,6 +113,7 @@ pub trait SparseVectorStorage: VectorStorage {
 pub trait MultiVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
     fn vector_dim(&self) -> usize;
     fn get_multi(&self, key: PointOffsetType) -> TypedMultiDenseVectorRef<T>;
+    fn get_multi_opt(&self, key: PointOffsetType) -> Option<TypedMultiDenseVectorRef<T>>;
     fn iterate_inner_vectors(&self) -> impl Iterator<Item = &[T]> + Clone + Send;
     fn multi_vector_config(&self) -> &MultiVectorConfig;
 }

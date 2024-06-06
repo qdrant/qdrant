@@ -162,8 +162,10 @@ impl VectorStorage for SimpleSparseVectorStorage {
         vector.unwrap_or_else(CowVector::default_sparse)
     }
 
+    /// Get vector by key, if it exists.
+    ///
+    /// ignore any error
     fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
-        // ignore any error
         self.get_sparse(key).ok().map(CowVector::from)
     }
 

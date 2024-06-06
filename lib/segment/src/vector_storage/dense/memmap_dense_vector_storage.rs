@@ -157,9 +157,15 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
     }
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {
-        CowVector::from(T::slice_to_float_cow(
-            self.mmap_store.as_ref().unwrap().get_vector(key).into(),
-        ))
+        self.get_vector_opt(key).expect("vector not found")
+    }
+
+    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
+        self.mmap_store
+            .as_ref()
+            .unwrap()
+            .get_vector_opt(key)
+            .map(|vector| T::slice_to_float_cow(vector.into()).into())
     }
 
     fn insert_vector(&mut self, _key: PointOffsetType, _vector: VectorRef) -> OperationResult<()> {
