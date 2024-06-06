@@ -9,18 +9,49 @@ collection_name = "test_query"
 @pytest.fixture(autouse=True, scope="module")
 def setup(on_disk_vectors):
     basic_collection_setup(collection_name=collection_name, on_disk_vectors=on_disk_vectors)
-    
+
     response = request_with_validation(
         api="/collections/{collection_name}/index",
         method="PUT",
         path_params={"collection_name": collection_name},
-        body={
-            "field_name": "price",
-            "field_schema": "float"},
+        body={"field_name": "price", "field_schema": "float"},
     )
     assert response.ok
     yield
     drop_collection(collection_name=collection_name)
+
+
+def root_and_rescored_query(query, limit=None, with_payload=None):
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "query": query,
+            "limit": limit,
+            "with_payload": with_payload,
+        },
+    )
+    assert response.ok
+    root_query_result = response.json()["result"]
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "prefetch": {
+                "limit": 1000,
+            },
+            "query": query,
+            "with_payload": with_payload,
+        },
+    )
+    assert response.ok
+    nested_query_result = response.json()["result"]
+
+    assert root_query_result == nested_query_result
+    return root_query_result
 
 
 def test_basic_search():
@@ -36,27 +67,9 @@ def test_basic_search():
     assert response.ok
     search_result = response.json()["result"]
 
-    response = request_with_validation(
-        api="/collections/{collection_name}/points/query",
-        method="POST",
-        path_params={"collection_name": collection_name},
-        body={
-            "query": [0.1, 0.2, 0.3, 0.4],
-        },
-    )
-    assert response.ok
-    default_query_result = response.json()["result"]
+    default_query_result = root_and_rescored_query([0.1, 0.2, 0.3, 0.4])
 
-    response = request_with_validation(
-        api="/collections/{collection_name}/points/query",
-        method="POST",
-        path_params={"collection_name": collection_name},
-        body={
-            "query": {"nearest": [0.1, 0.2, 0.3, 0.4]},
-        },
-    )
-    assert response.ok
-    nearest_query_result = response.json()["result"]
+    nearest_query_result = root_and_rescored_query({"nearest": [0.1, 0.2, 0.3, 0.4]})
 
     assert search_result == default_query_result
     assert search_result == nearest_query_result
@@ -102,18 +115,11 @@ def test_basic_recommend_avg():
     assert response.ok
     recommend_result = response.json()["result"]
 
-    response = request_with_validation(
-        api="/collections/{collection_name}/points/query",
-        method="POST",
-        path_params={"collection_name": collection_name},
-        body={
-            "query": {
-                "recommend": {"positive": [1, 2, 3, 4], "negative": [3]},  # ids
-            }
-        },
+    query_result = root_and_rescored_query(
+        {
+            "recommend": {"positive": [1, 2, 3, 4], "negative": [3]},  # ids
+        }
     )
-    assert response.ok
-    query_result = response.json()["result"]
 
     assert recommend_result == query_result
 
@@ -166,22 +172,15 @@ def test_basic_discover():
     )
     assert response.ok
     discover_result = response.json()["result"]
-
-    response = request_with_validation(
-        api="/collections/{collection_name}/points/query",
-        method="POST",
-        path_params={"collection_name": collection_name},
-        body={
-            "query": {
-                "discover": {
-                    "target": 2,
-                    "context": [{"positive": 3, "negative": 4}],
-                },
+    
+    query_result = root_and_rescored_query(
+        {
+            "discover": {
+                "target": 2,
+                "context": [{"positive": 3, "negative": 4}],
             }
         },
     )
-    assert response.ok
-    query_result = response.json()["result"]
 
     assert discover_result == query_result
 
@@ -212,7 +211,7 @@ def test_basic_context():
     )
     assert response.ok
     query_result = response.json()["result"]
-    
+
     assert set([p["id"] for p in context_result]) == set([p["id"] for p in query_result])
 
 
@@ -228,17 +227,7 @@ def test_basic_order_by():
     assert response.ok
     scroll_result = response.json()["result"]["points"]
 
-    response = request_with_validation(
-        api="/collections/{collection_name}/points/query",
-        method="POST",
-        path_params={"collection_name": collection_name},
-        body={
-            "query": {"order_by": "price"},
-            "with_payload": True,
-        },
-    )
-    assert response.ok
-    query_result = response.json()["result"]
+    query_result = root_and_rescored_query({"order_by": "price"}, with_payload=True)
 
     for record, scored_point in zip(scroll_result, query_result):
         assert record.get("id") == scored_point.get("id")
