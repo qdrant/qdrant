@@ -50,6 +50,13 @@ use crate::vector_storage::{
 
 const HNSW_USE_HEURISTIC: bool = true;
 
+/// Build first N points in HNSW graph using only a single thread, to avoid
+/// disconnected components in the graph.
+#[cfg(debug_assertions)]
+const SINGLE_THREADED_HNSW_BUILD_THRESHOLD: usize = 32;
+#[cfg(not(debug_assertions))]
+const SINGLE_THREADED_HNSW_BUILD_THRESHOLD: usize = 256;
+
 pub struct HNSWIndex<TGraphLinks: GraphLinks> {
     id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
@@ -232,12 +239,25 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             Ok::<_, OperationError>(())
         };
 
-        pool.install(|| {
-            points_to_index
-                .into_par_iter()
-                .try_for_each(insert_points)
-        })?;
+        let first_points = points_to_index
+            .len()
+            .min(SINGLE_THREADED_HNSW_BUILD_THRESHOLD);
 
+        // First index points in single thread so ensure warm start for parallel indexing process
+        for point_id in points_to_index[..first_points].iter().copied() {
+            insert_points(point_id)?;
+        }
+        // Once initial structure is built, index remaining points in parallel
+        // So that each thread will insert points in different parts of the graph,
+        // it is less likely that they will compete for the same locks
+        if points_to_index.len() > first_points {
+            pool.install(|| {
+                points_to_index
+                    .into_par_iter()
+                    .skip(first_points)
+                    .try_for_each(insert_points)
+            })?;
+        }
         Ok(())
     }
 
@@ -725,9 +745,15 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         let mut indexed_vectors = 0;
 
         if self.config.m > 0 {
-            let ids_iterator = id_tracker.iter_ids_excluding(deleted_bitslice);
+            let mut ids_iterator = id_tracker.iter_ids_excluding(deleted_bitslice);
+
+            let first_few_ids: Vec<_> = ids_iterator
+                .by_ref()
+                .take(SINGLE_THREADED_HNSW_BUILD_THRESHOLD)
+                .collect();
             let ids: Vec<_> = ids_iterator.collect();
-            indexed_vectors = ids.len();
+
+            indexed_vectors = ids.len() + first_few_ids.len();
 
             let insert_point = |vector_id| {
                 check_process_stopped(stopped)?;
@@ -748,6 +774,10 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 graph_layers_builder.link_new_point(vector_id, points_scorer);
                 Ok::<_, OperationError>(())
             };
+
+            for vector_id in first_few_ids {
+                insert_point(vector_id)?;
+            }
 
             if !ids.is_empty() {
                 pool.install(|| ids.into_par_iter().try_for_each(insert_point))?;
