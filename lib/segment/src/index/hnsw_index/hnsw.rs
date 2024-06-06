@@ -10,6 +10,7 @@ use bitvec::prelude::BitSlice;
 use common::cpu::linux_low_thread_priority;
 use common::cpu::CpuPermit;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
+use itertools::Itertools;
 use log::debug;
 use memory::mmap_ops;
 use parking_lot::Mutex;
@@ -232,11 +233,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             Ok::<_, OperationError>(())
         };
 
-        pool.install(|| {
-            points_to_index
-                .into_par_iter()
-                .try_for_each(insert_points)
-        })?;
+        pool.install(|| points_to_index.into_par_iter().try_for_each(insert_points))?;
 
         Ok(())
     }
@@ -725,8 +722,9 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
         let mut indexed_vectors = 0;
 
         if self.config.m > 0 {
-            let ids_iterator = id_tracker.iter_ids_excluding(deleted_bitslice);
-            let ids: Vec<_> = ids_iterator.collect();
+            let ids = id_tracker
+                .iter_ids_excluding(deleted_bitslice)
+                .collect_vec();
             indexed_vectors = ids.len();
 
             let insert_point = |vector_id| {

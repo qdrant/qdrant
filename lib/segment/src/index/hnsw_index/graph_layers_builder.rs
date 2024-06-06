@@ -303,10 +303,9 @@ impl GraphLayersBuilder {
             let mut entry_points = self.entry_points.lock();
             if entry_points.is_empty() {
                 let level = self.get_point_level(point_id);
-                entry_points
-                    .new_point(point_id, level, |point_id| {
-                        points_scorer.check_vector(point_id)
-                    });
+                entry_points.new_point(point_id, level, |point_id| {
+                    points_scorer.check_vector(point_id)
+                });
                 return;
             }
         }
@@ -322,25 +321,24 @@ impl GraphLayersBuilder {
             let patches = self.link_new_point_impl(point_id, &mut points_scorer);
 
             let mut locks = Vec::with_capacity(patches.len());
-            let mut links_to_apply = Vec::with_capacity(patches.len());
             for patch in &patches {
-                if let Some(lock) = self.links_layers[patch.point_id as usize][patch.level].try_write() {
+                if let Some(lock) =
+                    self.links_layers[patch.point_id as usize][patch.level].try_write()
+                {
                     locks.push(lock);
-                    links_to_apply.push(patch.links.clone());
                 } else {
                     is_looser = true;
                     continue 'attempt;
                 }
             }
 
-            for (links, lock) in links_to_apply.iter().zip(locks.iter_mut()) {
+            for (patch, lock) in patches.into_iter().zip(locks.iter_mut()) {
                 lock.clear();
-                lock.extend(links.iter().copied());
+                lock.extend(patch.links.into_iter());
             }
 
             let level = self.get_point_level(point_id);
-            self
-                .entry_points
+            self.entry_points
                 .lock()
                 .new_point(point_id, level, |point_id| {
                     points_scorer.check_vector(point_id)
@@ -349,7 +347,11 @@ impl GraphLayersBuilder {
         }
     }
 
-    pub fn link_new_point_impl(&self, point_id: PointOffsetType, points_scorer: &mut FilteredScorer) -> Vec<GraphLayersPatch> {
+    pub fn link_new_point_impl(
+        &self,
+        point_id: PointOffsetType,
+        points_scorer: &mut FilteredScorer,
+    ) -> Vec<GraphLayersPatch> {
         let mut patches = vec![];
         // Check if there is an suitable entry point
         //   - entry point level if higher or equal
@@ -411,7 +413,8 @@ impl GraphLayersBuilder {
 
                     if self.use_heuristic {
                         let selected_nearest = {
-                            let existing_links = self.links_layers[point_id as usize][curr_level].read();
+                            let existing_links =
+                                self.links_layers[point_id as usize][curr_level].read();
                             for &existing_link in existing_links.iter() {
                                 if !visited_list.check(existing_link) {
                                     search_context.process_candidate(ScoredPointOffset {
@@ -435,7 +438,8 @@ impl GraphLayersBuilder {
                         };
 
                         for &other_point in &selected_nearest {
-                            let other_point_links = self.links_layers[other_point as usize][curr_level].read();
+                            let other_point_links =
+                                self.links_layers[other_point as usize][curr_level].read();
                             if other_point_links.len() < level_m {
                                 // If linked point is lack of neighbours
                                 let mut links = other_point_links.clone();
