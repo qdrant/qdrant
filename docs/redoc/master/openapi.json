@@ -11382,7 +11382,7 @@
             "nullable": true
           },
           "limit": {
-            "description": "Max number of points. Default is 10.",
+            "description": "Max number of points to return. Default is 10.",
             "type": "integer",
             "format": "uint",
             "minimum": 0,
@@ -11442,7 +11442,6 @@
           },
           "query": {
             "description": "Query to perform. If missing, returns points ordered by their IDs.",
-            "default": null,
             "anyOf": [
               {
                 "$ref": "#/components/schemas/QueryInterface"
