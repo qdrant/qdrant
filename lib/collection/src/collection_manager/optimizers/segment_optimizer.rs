@@ -581,6 +581,11 @@ pub trait SegmentOptimizer {
             optimized_segment.prefault_mmap_pages();
 
             let (_, proxies) = write_segments_guard.swap_new(optimized_segment, &proxy_ids);
+            debug_assert_eq!(
+                proxies.len(),
+                proxy_ids.len(),
+                "swapped different number of proxies on unwrap, missing or incorrect segment IDs?"
+            );
 
             let has_appendable_segments = write_segments_guard.has_appendable_segment();
 
