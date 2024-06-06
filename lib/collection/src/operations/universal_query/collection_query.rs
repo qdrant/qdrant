@@ -296,6 +296,13 @@ impl CollectionPrefetch {
         lookup_vector_name: &str,
         lookup_collection: Option<&String>,
     ) -> CollectionResult<ShardPrefetch> {
+        // Check no prefetches without a query
+        if !self.prefetch.is_empty() && self.query.is_none() {
+            return Err(CollectionError::bad_request(
+                "A query is needed to merge the prefetches. Can't have prefetches without defining a query.",
+            ));
+        }
+
         let filter = exclude_referenced_ids(&self.query, self.filter);
 
         let query = self
@@ -339,6 +346,13 @@ impl CollectionQueryRequest {
         self,
         ids_to_vectors: &ReferencedVectors,
     ) -> CollectionResult<ShardQueryRequest> {
+        // Check no prefetches without a query
+        if !self.prefetch.is_empty() && self.query.is_none() {
+            return Err(CollectionError::bad_request(
+                "A query is needed to merge the prefetches. Can't have prefetches without defining a query.",
+            ));
+        }
+
         // Check we actually fetched all referenced vectors in this request (and nested prefetches)
         for &point_id in &(&self).get_referenced_point_ids() {
             if ids_to_vectors.get(&None, point_id).is_none() {

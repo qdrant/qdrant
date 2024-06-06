@@ -130,7 +130,7 @@ pub fn validate_transfer(
     if transfer.method == Some(ShardTransferMethod::ReshardingStreamRecords) {
         let Some(to_shard_id) = transfer.to_shard_id else {
             return Err(CollectionError::bad_request(
-                "Target shard is not set for resharding transfer".into(),
+                "Target shard is not set for resharding transfer",
             ));
         };
 
