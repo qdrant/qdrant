@@ -39,6 +39,12 @@ pub struct GraphLayersBuilder {
     visited_pool: VisitedPool,
 }
 
+pub struct GraphLayersPatch {
+    pub point_id: PointOffsetType,
+    pub level: usize,
+    pub links: LinkContainer,
+}
+
 impl GraphLayersBase for GraphLayersBuilder {
     fn get_visited_list_from_pool(&self) -> VisitedListHandle {
         self.visited_pool.get(self.num_points())
@@ -289,6 +295,16 @@ impl GraphLayersBuilder {
     }
 
     pub fn link_new_point(&self, point_id: PointOffsetType, mut points_scorer: FilteredScorer) {
+        let patches = self.link_new_point_impl(point_id, &mut points_scorer);
+        for patch in patches {
+            let mut locked_links = self.links_layers[patch.point_id as usize][patch.level].write();
+            locked_links.clear();
+            locked_links.extend(patch.links);
+        }
+    }
+
+    pub fn link_new_point_impl(&self, point_id: PointOffsetType, points_scorer: &mut FilteredScorer) -> Vec<GraphLayersPatch> {
+        let mut patches = vec![];
         // Check if there is an suitable entry point
         //   - entry point level if higher or equal
         //   - it satisfies filters
@@ -315,7 +331,7 @@ impl GraphLayersBuilder {
                         entry_point.point_id,
                         entry_point.level,
                         level,
-                        &mut points_scorer,
+                        points_scorer,
                     )
                 } else {
                     ScoredPointOffset {
@@ -338,7 +354,7 @@ impl GraphLayersBuilder {
                         &mut search_context,
                         curr_level,
                         &mut visited_list,
-                        &mut points_scorer,
+                        points_scorer,
                     );
 
                     if let Some(the_nearest) = search_context.nearest.iter().max() {
@@ -349,16 +365,13 @@ impl GraphLayersBuilder {
 
                     if self.use_heuristic {
                         let selected_nearest = {
-                            let mut existing_links =
-                                self.links_layers[point_id as usize][curr_level].write();
-                            {
-                                for &existing_link in existing_links.iter() {
-                                    if !visited_list.check(existing_link) {
-                                        search_context.process_candidate(ScoredPointOffset {
-                                            idx: existing_link,
-                                            score: points_scorer.score_point(existing_link),
-                                        });
-                                    }
+                            let existing_links = self.links_layers[point_id as usize][curr_level].read();
+                            for &existing_link in existing_links.iter() {
+                                if !visited_list.check(existing_link) {
+                                    search_context.process_candidate(ScoredPointOffset {
+                                        idx: existing_link,
+                                        score: points_scorer.score_point(existing_link),
+                                    });
                                 }
                             }
 
@@ -367,16 +380,25 @@ impl GraphLayersBuilder {
                                 level_m,
                                 scorer,
                             );
-                            existing_links.clone_from(&selected_nearest);
+                            patches.push(GraphLayersPatch {
+                                point_id,
+                                level: curr_level,
+                                links: selected_nearest.clone(),
+                            });
                             selected_nearest
                         };
 
                         for &other_point in &selected_nearest {
-                            let mut other_point_links =
-                                self.links_layers[other_point as usize][curr_level].write();
+                            let other_point_links = self.links_layers[other_point as usize][curr_level].read();
                             if other_point_links.len() < level_m {
                                 // If linked point is lack of neighbours
-                                other_point_links.push(point_id);
+                                let mut links = other_point_links.clone();
+                                links.push(point_id);
+                                patches.push(GraphLayersPatch {
+                                    point_id: other_point,
+                                    level: curr_level,
+                                    links,
+                                });
                             } else {
                                 let mut candidates = BinaryHeap::with_capacity(level_m + 1);
                                 candidates.push(ScoredPointOffset {
@@ -397,10 +419,12 @@ impl GraphLayersBuilder {
                                         level_m,
                                         scorer,
                                     );
-                                other_point_links.clear(); // this do not free memory, which is good
-                                for selected in selected_candidates.iter().copied() {
-                                    other_point_links.push(selected);
-                                }
+
+                                patches.push(GraphLayersPatch {
+                                    point_id: other_point,
+                                    level: curr_level,
+                                    links: selected_candidates,
+                                });
                             }
                         }
                     } else {
@@ -434,6 +458,7 @@ impl GraphLayersBuilder {
                 }
             }
         }
+        patches
     }
 
     /// This function returns average number of links per node in HNSW graph
