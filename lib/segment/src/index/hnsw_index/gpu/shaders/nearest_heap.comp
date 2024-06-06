@@ -142,7 +142,32 @@ uint subgroup_bubble_sort(float score, uint count) {
 }
 
 void sort_nearest() {
-    return;
+    uint buffer_offset = NEAREST_BUFFER_OFFSET;
+
+    uint iterations_count = nearest_count / (SUBGROUP_SIZE / 2) + uint(sign(float(nearest_count % (SUBGROUP_SIZE / 2))));
+    for (uint _cnt = 0; _cnt < iterations_count; _cnt++) {
+        // do bubble sort in each subgroup to reduce the number of memory accesses
+        for (uint i = SUBGROUP_INVOKATION_ID; i < NEAREST_HEAP_CAPACITY; i += SUBGROUP_SIZE) {
+            ScoredPoint scores_point = nearest_data.data[buffer_offset + i];
+            uint permut = subgroup_bubble_sort(scores_point.score, SUBGROUP_SIZE);
+            float shuffled_scores_point_score = subgroupShuffle(scores_point.score, permut);
+            uint shuffled_scores_point_id = subgroupShuffle(scores_point.id, permut);
+            nearest_data.data[buffer_offset + i] = ScoredPoint(shuffled_scores_point_id, shuffled_scores_point_score);
+            groupMemoryBarrier();
+        }
+
+        if (NEAREST_HEAP_CAPACITY > SUBGROUP_SIZE) {
+            // do bubble sort in each subgroup to reduce the number of memory accesses
+            for (uint i = SUBGROUP_INVOKATION_ID + (SUBGROUP_SIZE / 2); i < NEAREST_HEAP_CAPACITY - (SUBGROUP_SIZE / 2); i += SUBGROUP_SIZE) {
+                ScoredPoint scores_point = nearest_data.data[buffer_offset + i];
+                uint permut = subgroup_bubble_sort(scores_point.score, SUBGROUP_SIZE);
+                float shuffled_scores_point_score = subgroupShuffle(scores_point.score, permut);
+                uint shuffled_scores_point_id = subgroupShuffle(scores_point.id, permut);
+                nearest_data.data[buffer_offset + i] = ScoredPoint(shuffled_scores_point_id, shuffled_scores_point_score);
+                groupMemoryBarrier();
+            }
+        }
+    }
 }
 
 #endif
