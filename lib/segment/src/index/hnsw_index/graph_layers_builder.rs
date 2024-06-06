@@ -298,6 +298,19 @@ impl GraphLayersBuilder {
     }
 
     pub fn link_new_point(&self, point_id: PointOffsetType, mut points_scorer: FilteredScorer) {
+        // specisal case for empty graph. locking here guarantees that only one thread will create first entry point
+        {
+            let mut entry_points = self.entry_points.lock();
+            if entry_points.is_empty() {
+                let level = self.get_point_level(point_id);
+                entry_points
+                    .new_point(point_id, level, |point_id| {
+                        points_scorer.check_vector(point_id)
+                    });
+                return;
+            }
+        }
+
         let mut is_looser = false;
         'attempt: loop {
             let _looser_guard = if is_looser {

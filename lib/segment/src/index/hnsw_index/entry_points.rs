@@ -37,6 +37,11 @@ impl EntryPoints {
             extra_entry_points: FixedLengthPriorityQueue::new(extra_entry_points),
         }
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.entry_points.is_empty()
+    }
+
     pub fn merge_from_other(&mut self, mut other: EntryPoints) {
         self.entry_points.append(&mut other.entry_points);
         // Do not merge `extra_entry_points` to prevent duplications
