@@ -291,7 +291,7 @@ impl LocalShard {
                 })
                 .unwrap_or(Ok(()))?;
 
-            segment_holder.add(segment);
+            segment_holder.add_new(segment);
         }
 
         let res = segment_holder.deduplicate_points()?;
@@ -474,7 +474,7 @@ impl LocalShard {
                 ))
             })??;
 
-            segment_holder.add(segment);
+            segment_holder.add_new(segment);
         }
 
         let wal: SerdeWal<OperationWithClockTag> =

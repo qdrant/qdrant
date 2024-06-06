@@ -207,8 +207,8 @@ pub fn build_test_holder(path: &Path) -> RwLock<SegmentHolder> {
 
     let mut holder = SegmentHolder::default();
 
-    let _sid1 = holder.add(segment1);
-    let _sid2 = holder.add(segment2);
+    let _sid1 = holder.add_new(segment1);
+    let _sid2 = holder.add_new(segment2);
 
     RwLock::new(holder)
 }
@@ -272,7 +272,7 @@ pub fn optimize_segment(segment: Segment) -> LockedSegment {
 
     let mut holder = SegmentHolder::default();
 
-    let segment_id = holder.add(segment);
+    let segment_id = holder.add_new(segment);
 
     let optimizer = get_indexing_optimizer(&segments_dir, dir.path(), dim);
 

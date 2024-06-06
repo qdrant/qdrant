@@ -320,7 +320,7 @@ pub trait SegmentOptimizer {
         self.unwrap_proxy(segments, proxy_ids);
         if temp_segment.get().read().available_point_count() > 0 {
             let mut write_segments = segments.write();
-            write_segments.add_locked(temp_segment.clone());
+            write_segments.add_new_locked(temp_segment.clone());
         }
     }
 
@@ -589,7 +589,7 @@ pub trait SegmentOptimizer {
 
             // Append a temp segment to collection if it is not empty or there is no other appendable segment
             if tmp_segment.get().read().available_point_count() > 0 || !has_appendable_segments {
-                write_segments_guard.add_locked(tmp_segment);
+                write_segments_guard.add_new_locked(tmp_segment);
 
                 // unlock collection for search and updates
                 drop(write_segments_guard);

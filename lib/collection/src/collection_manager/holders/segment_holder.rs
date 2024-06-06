@@ -186,16 +186,20 @@ impl<'s> SegmentHolder {
     }
 
     /// Add new segment to storage
-    pub fn add<T>(&mut self, segment: T) -> SegmentId
+    ///
+    /// The segment gets assigned a new unique ID.
+    pub fn add_new<T>(&mut self, segment: T) -> SegmentId
     where
         T: Into<LockedSegment>,
     {
         let locked_segment = segment.into();
-        self.add_locked(locked_segment)
+        self.add_new_locked(locked_segment)
     }
 
     /// Add new segment to storage which is already LockedSegment
-    pub fn add_locked(&mut self, segment: LockedSegment) -> SegmentId {
+    ///
+    /// The segment gets assigned a new unique ID.
+    pub fn add_new_locked(&mut self, segment: LockedSegment) -> SegmentId {
         let key = self.generate_new_key();
         if segment.get().read().is_appendable() {
             self.appendable_segments.insert(key, segment);
@@ -239,7 +243,7 @@ impl<'s> SegmentHolder {
     where
         T: Into<LockedSegment>,
     {
-        let new_id = self.add(segment);
+        let new_id = self.add_new(segment);
         (new_id, self.remove(remove_ids))
     }
 
@@ -726,7 +730,7 @@ impl<'s> SegmentHolder {
         collection_params: &CollectionParams,
     ) -> OperationResult<LockedSegment> {
         let segment = self.build_tmp_segment(segments_path, Some(collection_params), true)?;
-        self.add_locked(segment.clone());
+        self.add_new_locked(segment.clone());
         Ok(segment)
     }
 
@@ -962,7 +966,7 @@ impl<'s> SegmentHolder {
         let has_appendable_segment = write_segments.has_appendable_segment();
         if available_points > 0 || !has_appendable_segment {
             log::trace!("Keeping temporary segment with {available_points} points");
-            write_segments.add_locked(tmp_segment);
+            write_segments.add_new_locked(tmp_segment);
         } else {
             log::trace!("Dropping temporary segment with no changes");
             tmp_segment.drop_data()?;
@@ -1128,8 +1132,8 @@ mod tests {
 
         let mut holder = SegmentHolder::default();
 
-        let sid1 = holder.add(segment1);
-        let sid2 = holder.add(segment2);
+        let sid1 = holder.add_new(segment1);
+        let sid2 = holder.add_new(segment2);
 
         assert_ne!(sid1, sid2);
 
@@ -1154,8 +1158,8 @@ mod tests {
 
         let mut holder = SegmentHolder::default();
 
-        let sid1 = holder.add(segment1);
-        let sid2 = holder.add(segment2);
+        let sid1 = holder.add_new(segment1);
+        let sid2 = holder.add_new(segment2);
 
         let op_num = 100;
         let mut processed_points: Vec<PointIdType> = vec![];
@@ -1262,8 +1266,8 @@ mod tests {
         segment1.appendable_flag = false;
 
         let mut holder = SegmentHolder::default();
-        let sid1 = holder.add(segment1);
-        let sid2 = holder.add(segment2);
+        let sid1 = holder.add_new(segment1);
+        let sid2 = holder.add_new(segment2);
 
         // Update point 123, 456 and 789 in the non-appendable segment to move it to segment 2
         let op_num = 101;
@@ -1319,8 +1323,8 @@ mod tests {
 
         let mut holder = SegmentHolder::default();
 
-        let sid1 = holder.add(segment1);
-        let sid2 = holder.add(segment2);
+        let sid1 = holder.add_new(segment1);
+        let sid2 = holder.add_new(segment2);
 
         let res = holder.deduplicate_points().unwrap();
 
@@ -1345,8 +1349,8 @@ mod tests {
 
         let mut holder = SegmentHolder::default();
 
-        let sid1 = holder.add(segment1);
-        let sid2 = holder.add(segment2);
+        let sid1 = holder.add_new(segment1);
+        let sid2 = holder.add_new(segment2);
         assert_ne!(sid1, sid2);
 
         let holder = Arc::new(RwLock::new(holder));
