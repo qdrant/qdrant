@@ -106,13 +106,40 @@ RUN mkdir /static && STATIC_DIR=/static ./tools/sync-web-ui.sh
 
 FROM debian:12-slim AS qdrant
 
-RUN apt-get update \
-    && apt-get install --no-install-recommends -y ca-certificates tzdata libunwind8 \
+RUN apt-get update
+
+# Install additional packages into the container.
+# E.g., the debugger of choice: gdb/gdbserver/lldb.
+ARG PACKAGES
+
+RUN apt-get install -y --no-install-recommends ca-certificates tzdata libunwind8 $PACKAGES \
     && rm -rf /var/lib/apt/lists/*
 
-ARG APP=/qdrant
+# Copy Qdrant source files into the container. Useful for debugging.
+#
+# To enable, set `SOURCES` to *any* non-empty string. E.g., 1/true/enable/whatever.
+# (Note, that *any* non-empty string would work, so 0/false/disable would enable the option as well.)
+ARG SOURCES
 
-RUN mkdir -p "$APP"
+# Dockerfile does not support conditional `COPY` instructions (e.g., it's impossible to do something
+# like `if [ -n "$SOURCES" ]; then COPY ...; fi`), so we *hack* conditional `COPY` by abusing
+# parameter expansion and `COPY` wildcards support. 😎
+
+ENV DIR=${SOURCES:+/qdrant/src}
+COPY --from=builder ${DIR:-/null?} $DIR/
+
+ENV DIR=${SOURCES:+/qdrant/lib}
+COPY --from=builder ${DIR:-/null?} $DIR/
+
+ENV DIR=${SOURCES:+/usr/local/cargo/registry/src}
+COPY --from=builder ${DIR:-/null?} $DIR/
+
+ENV DIR=${SOURCES:+/usr/local/cargo/git/checkouts}
+COPY --from=builder ${DIR:-/null?} $DIR/
+
+ENV DIR=
+
+ARG APP=/qdrant
 
 COPY --from=builder /qdrant/qdrant "$APP"/qdrant
 COPY --from=builder /qdrant/config "$APP"/config
