@@ -275,8 +275,13 @@ fn exclude_referenced_ids(query: &Option<Query>, filter: Option<Filter>) -> Opti
             let ids: HashSet<_> = vector_query
                 .get_referenced_ids()
                 .into_iter()
-                .cloned()
+                .copied()
                 .collect();
+
+            if ids.is_empty() {
+                return filter;
+            }
+
             let id_filter = Filter::new_must_not(Condition::HasId(HasIdCondition::from(ids)));
             Some(id_filter.merge_owned(filter.unwrap_or_default()))
         }
