@@ -22,9 +22,7 @@ fn position_score(position: usize) -> f32 {
 ///
 /// The output is a single sorted list of ScoredPoint.
 /// Does not break ties.
-pub fn rrf_scoring(
-    responses: impl IntoIterator<Item = Vec<ScoredPoint>>
-) -> Vec<ScoredPoint> {
+pub fn rrf_scoring(responses: impl IntoIterator<Item = Vec<ScoredPoint>>) -> Vec<ScoredPoint> {
     // track scored points by id
     let mut points_by_id: HashMap<ExtendedPointId, ScoredPoint> = HashMap::new();
 
