@@ -19,7 +19,11 @@ pub struct GpuCandidatesHeap {
 }
 
 impl GpuCandidatesHeap {
-    pub fn new(device: Arc<gpu::Device>, groups_count: usize, capacity: usize) -> OperationResult<Self> {
+    pub fn new(
+        device: Arc<gpu::Device>,
+        groups_count: usize,
+        capacity: usize,
+    ) -> OperationResult<Self> {
         let ceiled_capacity = capacity.div_ceil(device.subgroup_size()) * device.subgroup_size();
         let buffers_elements_count = ceiled_capacity * groups_count;
 
@@ -114,7 +118,8 @@ mod tests {
             Arc::new(gpu::Device::new(instance.clone(), instance.vk_physical_devices[0]).unwrap());
 
         let mut context = gpu::Context::new(device.clone());
-        let gpu_candidates_heap = GpuCandidatesHeap::new(device.clone(), groups_count, capacity).unwrap();
+        let gpu_candidates_heap =
+            GpuCandidatesHeap::new(device.clone(), groups_count, capacity).unwrap();
 
         let shader = Arc::new(gpu::Shader::new(
             device.clone(),
@@ -229,7 +234,10 @@ mod tests {
         download_staging_buffer.download_slice(&mut scores_gpu, 0);
 
         for (i, (cpu, gpu)) in scores_cpu.iter().zip(scores_gpu.iter()).enumerate() {
-            println!("CAND {}: {}:{}, {}:{}", i, cpu.idx, cpu.score, gpu.idx, gpu.score);
+            println!(
+                "CAND {}: {}:{}, {}:{}",
+                i, cpu.idx, cpu.score, gpu.idx, gpu.score
+            );
             //println!("CAND {}: gpu: {}, cpu: {}", i%(inputs_count), gpu.score, cpu.score);
         }
 

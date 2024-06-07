@@ -1,13 +1,13 @@
 pub mod combined_graph_builder;
 pub mod cpu_graph_builder;
 pub mod gpu_builder_context;
+pub mod gpu_candidates_heap;
 pub mod gpu_graph_builder;
 pub mod gpu_links;
 pub mod gpu_nearest_heap;
 pub mod gpu_search_context;
 pub mod gpu_vector_storage;
 pub mod gpu_visited_flags;
-pub mod gpu_candidates_heap;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
