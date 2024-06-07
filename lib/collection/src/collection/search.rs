@@ -281,13 +281,13 @@ impl Collection {
         Ok(top_results)
     }
 
-    fn post_process_if_slow_request<'a>(
+    pub fn post_process_if_slow_request<'a>(
         &self,
         duration: Duration,
-        filters: impl Iterator<Item = Option<&'a Filter>>,
+        filters: impl IntoIterator<Item = Option<&'a Filter>>,
     ) {
         if duration > segment::problems::UnindexedField::slow_query_threshold() {
-            let filters = filters.flatten().cloned().collect::<Vec<_>>();
+            let filters = filters.into_iter().flatten().cloned().collect_vec();
 
             let schema = self.payload_index_schema.read().schema.clone();
 

@@ -298,21 +298,18 @@ impl TableOfContent {
         &self,
         collection_name: &str,
         mut request: CollectionQueryRequest,
-        _read_consistency: Option<ReadConsistency>, // TODO(universal-query): pass this to collection
-        _shard_selection: ShardSelectorInternal, // TODO(universal-query): pass this to collection
+        read_consistency: Option<ReadConsistency>,
+        shard_selection: ShardSelectorInternal,
         access: Access,
     ) -> Result<Vec<ScoredPoint>, StorageError> {
         let collection_pass = access.check_point_op(collection_name, &mut request)?;
 
-        let _collection = self.get_collection(&collection_pass).await?;
+        let collection = self.get_collection(&collection_pass).await?;
 
-        //TODO(universal-query): implement query in collection
-        // collection
-        //     .query(request, read_consistency, &shard_selection)
-        //     .await
-        //     .map_err(|err| err.into())
-
-        todo!()
+        collection
+            .query(request, read_consistency, &shard_selection)
+            .await
+            .map_err(|err| err.into())
     }
 
     /// # Cancel safety
