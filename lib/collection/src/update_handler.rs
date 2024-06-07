@@ -387,6 +387,47 @@ impl UpdateHandler {
         handles
     }
 
+    /// Ensure there is at least one appendable segment with enough capacity
+    ///
+    /// If there is no appendable segment, or all are at or over capacity, a new empty one is
+    /// created.
+    ///
+    /// Capacity is determined based on `optimizers.max_segment_size_kb`.
+    fn ensure_appendable_segment_with_capacity(
+        &self,
+        segments_path: &Path,
+        segments: LockedSegmentHolder,
+    ) -> OperationResult<()> {
+        let no_segment_with_capacity = {
+            let segments_read = segments.read();
+            segments_read
+                .appendable_segments_ids()
+                .into_iter()
+                .filter_map(|segment_id| segments_read.get(segment_id))
+                .all(|segment| {
+                    let max_vector_size_bytes = segment
+                        .get()
+                        .read()
+                        .max_available_vectors_size_in_bytes()
+                        .unwrap_or_default();
+                    let max_segment_size_bytes = self
+                        .thresholds_config
+                        .max_segment_size
+                        .saturating_add(segment::common::BYTES_IN_KB);
+
+                    max_vector_size_bytes >= max_segment_size_bytes
+                })
+        };
+
+        if no_segment_with_capacity {
+            segments
+                .write()
+                .create_appendable_segment(segments_path, &self.collection_params)?;
+        }
+
+        Ok(())
+    }
+
     /// Checks conditions for all optimizers and returns whether any is satisfied
     ///
     /// In other words, if this returns true we have pending optimizations.
