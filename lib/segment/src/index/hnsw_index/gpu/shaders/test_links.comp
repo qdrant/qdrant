@@ -6,6 +6,9 @@
 #extension GL_KHR_shader_subgroup_ballot : enable
 #extension GL_KHR_shader_subgroup_vote : enable
 
+#include "common.comp"
+layout(local_size_x = SUBGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
+
 #define LINKS_LAYOUT_SET 0
 #include "links.comp"
 
@@ -19,7 +22,7 @@ POINT_ID heap_data[16];
 void main() {
     BHEAP(LINKS_BHEAP, init)(0, 16, 0);
 
-    POINT_ID point_id = gl_GlobalInvocationID.x;
+    POINT_ID point_id = gl_GlobalInvocationID.x / SUBGROUP_SIZE;
     
     LINKS_FOREACH(point_id) {
         BHEAP(LINKS_BHEAP, push)(LINKS_FOREACH_VALUE);
