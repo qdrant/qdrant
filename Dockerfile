@@ -62,9 +62,6 @@ RUN case "$BUILDPLATFORM" in \
 ARG TARGETPLATFORM
 ENV TARGETPLATFORM=${TARGETPLATFORM:-linux/amd64}
 
-ARG GIT_COMMIT_ID
-ENV GIT_COMMIT_ID=${GIT_COMMIT_ID}
-
 RUN xx-apt-get install -y pkg-config gcc g++ libc6-dev libunwind-dev
 
 # Select Cargo profile (e.g., `release`, `dev` or `ci`)
@@ -90,6 +87,8 @@ RUN PKG_CONFIG="/usr/bin/$(xx-info)-pkg-config" \
     xx-cargo chef cook --profile $PROFILE ${FEATURES:+--features} $FEATURES --features=stacktrace --recipe-path recipe.json
 
 COPY . .
+# Include git commit into Qdrant binary during build
+ARG GIT_COMMIT_ID
 # `PKG_CONFIG=...` is a workaround for `xx-cargo` bug for crates based on `pkg-config`!
 #
 # https://github.com/tonistiigi/xx/issues/107
