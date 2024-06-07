@@ -8,8 +8,7 @@ use futures::future::BoxFuture;
 use futures::FutureExt;
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
 use segment::types::{
-    Filter, HasIdCondition, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface,
-    WithVector,
+    Filter, HasIdCondition, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
 
@@ -199,26 +198,49 @@ impl LocalShard {
     async fn rescore<'a>(
         &self,
         sources: impl Iterator<Item = Cow<'a, Vec<ScoredPoint>>>,
-        rescore_query: ScoringQuery,
-        filter: Option<Filter>,
-        limit: usize,
-        score_threshold: Option<f32>,
+        merge: ResultsMerge,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
-        match rescore_query {
-            ScoringQuery::Fusion(Fusion::Rrf) => {
-                let mut top_rrf = rrf_scoring(sources.map(Cow::into_owned));
+        let ResultsMerge {
+            rescore,
+            filter,
+            score_threshold,
+            limit,
+        } = merge;
 
-                if let Some(score_threshold) = score_threshold {
-                    top_rrf = top_rrf
-                        .into_iter()
-                        .take_while(|point| point.score >= score_threshold)
-                        .take(limit)
-                        .collect();
+        match rescore {
+            ScoringQuery::Fusion(Fusion::Rrf) => {
+                let sources: Vec<_> = sources.map(Cow::into_owned).collect();
+
+                // TODO(universal-query): Remove this ugly part when we propagate merged filters to leaf queries
+                let valid_ids = if let Some(filter) = filter {
+                    let filter =
+                        filter_with_sources_ids(sources.iter().map(Cow::Borrowed), Some(filter));
+                    Some(self.read_filtered(Some(&filter))?)
                 } else {
-                    top_rrf.truncate(limit);
-                }
+                    None
+                };
+
+                let mut top_rrf = rrf_scoring(sources);
+
+                top_rrf = top_rrf
+                    .into_iter()
+                    .filter(|point| {
+                        // TODO(universal-query): Remove this ugly part when we propagate merged filters to leaf queries
+                        valid_ids
+                            .as_ref()
+                            .map(|valid_ids| valid_ids.contains(&point.id))
+                            .unwrap_or(true)
+                    })
+                    .take_while(|point| {
+                        // TODO(universal-query): Refactor this ugly part when we propagate merged filters to leaf queries
+                        score_threshold
+                            .map(|threshold| point.score >= threshold)
+                            .unwrap_or(true)
+                    })
+                    .take(limit)
+                    .collect();
 
                 Ok(top_rrf)
             }
@@ -289,28 +311,17 @@ impl LocalShard {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
-        if let Some(ResultsMerge {
-            limit,
-            rescore,
-            filter,
-            score_threshold,
-        }) = merge
-        {
-            self.rescore(
-                sources,
-                rescore,
-                filter,
-                limit,
-                score_threshold,
-                search_runtime_handle,
-                timeout,
-            )
-            .await
+        if let Some(results_merge) = merge {
+            self.rescore(sources, results_merge, search_runtime_handle, timeout)
+                .await
         } else {
-            // The whole query request has no prefetches, and everything comes directly from the same source
-            let top = sources.next().ok_or_else(|| {
-                CollectionError::service_error("No sources to merge in the query request")
-            })?.into_owned();
+            // The whole query request has no prefetches, and everything comes directly from a single source
+            let top = sources
+                .next()
+                .ok_or_else(|| {
+                    CollectionError::service_error("No sources to merge in the query request")
+                })?
+                .into_owned();
 
             debug_assert!(sources.next().is_none());
 

@@ -279,8 +279,7 @@ mod tests {
 
     use segment::data_types::vectors::{MultiDenseVector, NamedVectorStruct, Vector};
     use segment::types::{
-        Condition, FieldCondition, Filter, Match, SearchParams, WithPayloadInterface,
-        WithVector,
+        Condition, FieldCondition, Filter, Match, SearchParams, WithPayloadInterface, WithVector,
     };
     use sparse::common::sparse_vector::SparseVector;
 
