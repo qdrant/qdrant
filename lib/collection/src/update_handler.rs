@@ -1,6 +1,6 @@
 use std::cmp::min;
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -81,10 +81,6 @@ pub enum OptimizerSignal {
 /// Structure, which holds object, required for processing updates of the collection
 pub struct UpdateHandler {
     shared_storage_config: Arc<SharedStorageConfig>,
-    /// Collection parameters if a new segment needs to be built.
-    pub(super) collection_params: CollectionParams,
-    /// Collection thresholds configuration to determine whether segments are over capacity.
-    pub(super) thresholds_config: OptimizerThresholds,
     /// List of used optimizers
     pub optimizers: Arc<Vec<Arc<Optimizer>>>,
     /// Log of optimizer statuses
@@ -127,8 +123,6 @@ impl UpdateHandler {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         shared_storage_config: Arc<SharedStorageConfig>,
-        collection_params: CollectionParams,
-        thresholds_config: OptimizerThresholds,
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
         optimizer_cpu_budget: CpuBudget,
@@ -142,8 +136,6 @@ impl UpdateHandler {
     ) -> UpdateHandler {
         UpdateHandler {
             shared_storage_config,
-            collection_params,
-            thresholds_config,
             optimizers,
             segments,
             update_worker: None,
@@ -268,6 +260,22 @@ impl UpdateHandler {
     {
         let mut scheduled_segment_ids = HashSet::<_>::default();
         let mut handles = vec![];
+
+        // Ensure we have at least one appendable segment with enough capacity
+        // Source required parameters from first optimizer
+        if let Some(optimizer) = optimizers.first() {
+            let result = Self::ensure_appendable_segment_with_capacity(
+                &segments,
+                optimizer.segments_path(),
+                &optimizer.collection_params(),
+                optimizer.threshold_config(),
+            );
+            if let Err(err) = result {
+                log::error!("Failed to ensure there are appendable segments with capacity: {err}");
+                panic!("Failed to ensure there are appendable segments with capacity: {err}");
+            }
+        }
+
         'outer: for optimizer in optimizers.iter() {
             loop {
                 // Return early if we reached the optimization job limit
@@ -394,9 +402,10 @@ impl UpdateHandler {
     ///
     /// Capacity is determined based on `optimizers.max_segment_size_kb`.
     fn ensure_appendable_segment_with_capacity(
-        &self,
+        segments: &LockedSegmentHolder,
         segments_path: &Path,
-        segments: LockedSegmentHolder,
+        collection_params: &CollectionParams,
+        thresholds_config: &OptimizerThresholds,
     ) -> OperationResult<()> {
         let no_segment_with_capacity = {
             let segments_read = segments.read();
@@ -410,8 +419,7 @@ impl UpdateHandler {
                         .read()
                         .max_available_vectors_size_in_bytes()
                         .unwrap_or_default();
-                    let max_segment_size_bytes = self
-                        .thresholds_config
+                    let max_segment_size_bytes = thresholds_config
                         .max_segment_size
                         .saturating_add(segment::common::BYTES_IN_KB);
 
@@ -422,7 +430,7 @@ impl UpdateHandler {
         if no_segment_with_capacity {
             segments
                 .write()
-                .create_appendable_segment(segments_path, &self.collection_params)?;
+                .create_appendable_segment(segments_path, collection_params)?;
         }
 
         Ok(())
