@@ -1,4 +1,4 @@
-use std::iter;
+use std::iter::{self, Chain, Once};
 
 use common::math::fast_sigmoid;
 use common::types::ScoreType;
@@ -57,6 +57,16 @@ impl<T> ContextPair<T> {
         let difference = positive - negative - MARGIN;
 
         fast_sigmoid(ScoreType::min(difference, 0.0))
+    }
+}
+
+impl<T> IntoIterator for ContextPair<T> {
+    type Item = T;
+
+    type IntoIter = Chain<Once<T>, Once<T>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        iter::once(self.positive).chain(iter::once(self.negative))
     }
 }
 
