@@ -2,14 +2,16 @@ use std::sync::Arc;
 
 use futures::{future, TryFutureExt};
 use itertools::{Either, Itertools};
-use segment::types::Order;
+use segment::types::{Order, ScoredPoint};
 use segment::utils::scored_point_ties::ScoredPointTies;
 
 use super::Collection;
+use crate::common::fetch_vectors::resolve_referenced_vectors_batch;
 use crate::common::transpose_iterator::transposed_iter;
 use crate::operations::consistency_params::ReadConsistency;
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::CollectionResult;
+use crate::operations::universal_query::collection_query::CollectionQueryRequest;
 use crate::operations::universal_query::shard_query::{
     Fusion, ScoringQuery, ShardQueryRequest, ShardQueryResponse,
 };
@@ -51,6 +53,30 @@ impl Collection {
                 })
         });
         future::try_join_all(all_searches).await
+    }
+
+    /// To be called on the user-responding instance. Resolves ids into vectors, and merges the results from local and remote shards.
+    ///
+    /// This function is used to query the collection. It will return a list of scored points.
+    pub async fn query(
+        &self,
+        request: CollectionQueryRequest,
+        read_consistency: Option<ReadConsistency>,
+        shard_selection: &ShardSelectorInternal,
+    ) -> CollectionResult<Vec<ScoredPoint>> {
+        // Turn ids into vectors, if necessary
+        let ids_to_vectors = resolve_referenced_vectors_batch(
+            &[(&request, shard_selection.clone())],
+            self,
+            |_| async { unimplemented!("lookup_from is not implemented yet") },
+            read_consistency,
+        )
+        .await?;
+
+        let _shard_request = request.try_into_shard_request(&ids_to_vectors)?;
+
+        // TODO(universal-query): Implement the rest of the user-facing query logic
+        todo!()
     }
 
     /// To be called on the remote instance. Only used for the internal service.

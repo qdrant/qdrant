@@ -15,6 +15,7 @@ use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::{
     CollectionError, CollectionResult, PointRequestInternal, RecommendExample, Record,
 };
+use crate::operations::universal_query::collection_query::VectorInput;
 
 pub async fn retrieve_points(
     collection: &Collection,
@@ -72,6 +73,27 @@ pub struct PointRef<'a> {
 
 pub type CollectionName = String;
 
+///
+///  ┌──────────────┐
+///  │              │  -> Batch request
+///  │ request(+ids)├───────┐   to storage
+///  │              │       │
+///  └──────────────┘       │
+///                         │
+///                         │
+///    Reference Vectors    ▼
+///  ┌──────────────────────────────┐
+///  │                              │
+///  │  ┌───────┐      ┌──────────┐ │
+///  │  │       │      │          │ │
+///  │  │  IDs  ├─────►│ Vectors  │ │
+///  │  │       │      │          │ │
+///  │  └───────┘      └──────────┘ │
+///  │                              │
+///  └──────────────────────────────┘
+///
+/// This is a temporary structure, which holds resolved references to vectors,
+/// mentioned in the query.
 #[derive(Default)]
 pub struct ReferencedVectors {
     collection_mapping: HashMap<CollectionName, HashMap<PointIdType, Record>>,
@@ -105,14 +127,31 @@ impl ReferencedVectors {
 
     pub fn get(
         &self,
-        collection_name: &Option<&CollectionName>,
+        lookup_collection_name: &Option<&CollectionName>,
         point_id: PointIdType,
     ) -> Option<&Record> {
-        match collection_name {
+        match lookup_collection_name {
             None => self.default_mapping.get(&point_id),
             Some(collection) => {
                 let collection_mapping = self.collection_mapping.get(*collection)?;
                 collection_mapping.get(&point_id)
+            }
+        }
+    }
+
+    /// Convert potential reference to a vector (vector id) into actual vector,
+    /// which was resolved by the request to the storage.
+    pub fn resolve_reference<'a>(
+        &'a self,
+        collection_name: Option<&'a String>,
+        vector_name: &str,
+        vector_input: VectorInput,
+    ) -> Option<Vector> {
+        match vector_input {
+            VectorInput::Vector(vector) => Some(vector),
+            VectorInput::Id(vid) => {
+                let rec = self.get(&collection_name, vid).unwrap();
+                rec.get_vector_by_name(vector_name).map(|v| v.to_owned())
             }
         }
     }
@@ -279,7 +318,7 @@ where
         |(request, _)| request.get_lookup_shard_key(),
         |(request, _), referenced_points| {
             let collection_name = request.get_lookup_collection();
-            let vector_name = request.get_search_vector_name();
+            let vector_name = request.get_lookup_vector_name();
             let point_ids_iter = request.get_referenced_point_ids();
             referenced_points.add_from_iter(
                 point_ids_iter.into_iter(),

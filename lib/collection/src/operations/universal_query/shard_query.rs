@@ -38,6 +38,7 @@ pub enum Fusion {
     Rrf,
 }
 
+/// Same as `Query`, but with the resolved vector references.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ScoringQuery {
     /// Score points against some vector(s)
