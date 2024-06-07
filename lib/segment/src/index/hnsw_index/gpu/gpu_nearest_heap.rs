@@ -48,10 +48,6 @@ impl GpuNearestHeap {
             std::mem::size_of::<GpuNearestHeapParamsBuffer>(),
         ));
 
-        println!(
-            "Creating nearest heap with ef={}, capacity={}",
-            ef, ceiled_ef
-        );
         let params = GpuNearestHeapParamsBuffer {
             capacity: ceiled_ef as u32,
             ef: ef as u32,
@@ -112,7 +108,7 @@ mod tests {
         let groups_count = 8;
         let inputs_count = points_count;
 
-        let mut rng = StdRng::seed_from_u64(41);
+        let mut rng = StdRng::seed_from_u64(42);
         let inputs_data: Vec<ScoredPointOffset> = (0..inputs_count * groups_count)
             .map(|i| ScoredPointOffset {
                 idx: i as PointOffsetType,
@@ -249,13 +245,6 @@ mod tests {
             }
         }
 
-        for i in 0..inputs_count * groups_count {
-            println!(
-                "SCORES_OUTPUT {}: gpu={}, cpu={}",
-                i, scores_output[i], scores_output_cpu[i]
-            );
-        }
-
         let mut nearest_gpu: Vec<ScoredPointOffset> =
             vec![Default::default(); gpu_nearest_heap.capacity * groups_count];
         context.copy_gpu_buffer(
@@ -269,19 +258,6 @@ mod tests {
         context.wait_finish();
         download_staging_buffer.download_slice(nearest_gpu.as_mut_slice(), 0);
 
-        for (i, s) in nearest_gpu.iter().enumerate() {
-            println!("INTERNAL: {}: id={}, score={}", i, s.idx, s.score);
-        }
-
-        // TODO: remove
-        for i in 0..inputs_count * groups_count {
-            println!(
-                "{}: gpu: {}, cpu: {}, input {}",
-                i, scores_output[i], scores_output_cpu[i], inputs_data[i].score
-            );
-            assert!((scores_output[i] - scores_output_cpu[i]).abs() < 1e-6);
-        }
-
         let mut sorted_output_gpu = Vec::new();
         for group in 0..groups_count {
             let mut nearest_group = Vec::new();
@@ -292,14 +268,6 @@ mod tests {
         }
 
         assert_eq!(scores_output, scores_output_cpu);
-        for i in 0..sorted_output_gpu.len() {
-            println!(
-                "{}: {} {}",
-                i, sorted_output_gpu[i].idx, sorted_output_gpu[i].score
-            );
-            assert_eq!(sorted_output_gpu[i].idx, sorted_output_cpu[i].idx);
-            assert!((sorted_output_gpu[i].score - sorted_output_cpu[i].score).abs() < 1e-6);
-        }
         assert_eq!(sorted_output_gpu, sorted_output_cpu);
     }
 }
