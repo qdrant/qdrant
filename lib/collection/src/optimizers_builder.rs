@@ -104,6 +104,25 @@ impl OptimizersConfig {
         }
     }
 
+    pub fn optimizer_thresholds(&self) -> OptimizerThresholds {
+        let indexing_threshold = match self.indexing_threshold {
+            None => DEFAULT_INDEXING_THRESHOLD_KB, // default value
+            Some(0) => usize::MAX,                 // disable vector index
+            Some(custom) => custom,
+        };
+
+        let memmap_threshold = match self.memmap_threshold {
+            None | Some(0) => usize::MAX, // default | disable memmap
+            Some(custom) => custom,
+        };
+
+        OptimizerThresholds {
+            memmap_threshold,
+            indexing_threshold,
+            max_segment_size: self.get_max_segment_size(),
+        }
+    }
+
     pub fn get_max_segment_size(&self) -> usize {
         if let Some(max_segment_size) = self.max_segment_size {
             max_segment_size
@@ -137,23 +156,7 @@ pub fn build_optimizers(
 ) -> Arc<Vec<Arc<Optimizer>>> {
     let segments_path = shard_path.join(SEGMENTS_PATH);
     let temp_segments_path = shard_path.join(TEMP_SEGMENTS_PATH);
-
-    let indexing_threshold = match optimizers_config.indexing_threshold {
-        None => DEFAULT_INDEXING_THRESHOLD_KB, // default value
-        Some(0) => usize::MAX,                 // disable vector index
-        Some(custom) => custom,
-    };
-
-    let memmap_threshold = match optimizers_config.memmap_threshold {
-        None | Some(0) => usize::MAX, // default | disable memmap
-        Some(custom) => custom,
-    };
-
-    let threshold_config = OptimizerThresholds {
-        memmap_threshold,
-        indexing_threshold,
-        max_segment_size: optimizers_config.get_max_segment_size(),
-    };
+    let threshold_config = optimizers_config.optimizer_thresholds();
 
     Arc::new(vec![
         Arc::new(MergeOptimizer::new(
