@@ -158,6 +158,8 @@ impl LocalShard {
 
         let mut update_handler = UpdateHandler::new(
             shared_storage_config.clone(),
+            config.params.clone(),
+            config.optimizer_config.optimizer_thresholds(),
             optimizers.clone(),
             optimizers_log.clone(),
             optimizer_cpu_budget.clone(),
@@ -681,6 +683,8 @@ impl LocalShard {
             &config.quantization_config,
         );
         update_handler.optimizers = new_optimizers;
+        update_handler.collection_params = config.params.clone();
+        update_handler.thresholds_config = config.optimizer_config.optimizer_thresholds();
         update_handler.flush_interval_sec = config.optimizer_config.flush_interval_sec;
         update_handler.max_optimization_threads = config.optimizer_config.max_optimization_threads;
         update_handler.run_workers(update_receiver);

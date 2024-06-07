@@ -21,9 +21,12 @@ use tokio::time::{timeout, Duration};
 
 use crate::collection_manager::collection_updater::CollectionUpdater;
 use crate::collection_manager::holders::segment_holder::LockedSegmentHolder;
-use crate::collection_manager::optimizers::segment_optimizer::SegmentOptimizer;
+use crate::collection_manager::optimizers::segment_optimizer::{
+    OptimizerThresholds, SegmentOptimizer,
+};
 use crate::collection_manager::optimizers::{Tracker, TrackerLog, TrackerStatus};
 use crate::common::stoppable_task::{spawn_stoppable, StoppableTaskHandle};
+use crate::config::CollectionParams;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::CollectionUpdateOperations;
@@ -78,6 +81,10 @@ pub enum OptimizerSignal {
 /// Structure, which holds object, required for processing updates of the collection
 pub struct UpdateHandler {
     shared_storage_config: Arc<SharedStorageConfig>,
+    /// Collection parameters if a new segment needs to be built.
+    pub(super) collection_params: CollectionParams,
+    /// Collection thresholds configuration to determine whether segments are over capacity.
+    pub(super) thresholds_config: OptimizerThresholds,
     /// List of used optimizers
     pub optimizers: Arc<Vec<Arc<Optimizer>>>,
     /// Log of optimizer statuses
@@ -120,6 +127,8 @@ impl UpdateHandler {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         shared_storage_config: Arc<SharedStorageConfig>,
+        collection_params: CollectionParams,
+        thresholds_config: OptimizerThresholds,
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
         optimizer_cpu_budget: CpuBudget,
@@ -133,6 +142,8 @@ impl UpdateHandler {
     ) -> UpdateHandler {
         UpdateHandler {
             shared_storage_config,
+            collection_params,
+            thresholds_config,
             optimizers,
             segments,
             update_worker: None,
