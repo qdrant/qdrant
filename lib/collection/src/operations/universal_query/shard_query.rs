@@ -109,6 +109,33 @@ pub struct ShardPrefetch {
     pub score_threshold: Option<ScoreType>,
 }
 
+impl ShardQueryRequest {
+    pub fn filter_refs(&self) -> Vec<Option<&Filter>> {
+        let mut filters = vec![];
+        filters.push(self.filter.as_ref());
+
+        for prefetch in &self.prefetches {
+            filters.extend(prefetch.filter_refs())
+        }
+
+        filters
+    }
+}
+
+impl ShardPrefetch {
+    fn filter_refs(&self) -> Vec<Option<&Filter>> {
+        let mut filters = vec![];
+
+        filters.push(self.filter.as_ref());
+
+        for prefetch in &self.prefetches {
+            filters.extend(prefetch.filter_refs())
+        }
+
+        filters
+    }
+}
+
 impl TryFrom<grpc::QueryShardPoints> for ShardQueryRequest {
     type Error = Status;
 
