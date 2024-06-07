@@ -56,6 +56,7 @@ impl Collection {
 
             let shard_holder = self.shards_holder.clone();
             let collection_id = self.id.clone();
+            let collection_config = Arc::clone(&self.collection_config);
             let channel_service = self.channel_service.clone();
             let progress = Arc::new(Mutex::new(ReshardTaskProgress::new()));
             let spawned_task = resharding::spawn_resharding_task(
@@ -65,6 +66,7 @@ impl Collection {
                 consensus,
                 collection_id,
                 self.path.clone(),
+                collection_config,
                 channel_service,
                 temp_dir,
                 on_finish,
