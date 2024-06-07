@@ -143,7 +143,7 @@ fn test_building_new_sparse_segment() {
     assert_eq!(merged_segment.point_version(3.into()), Some(100));
 }
 
-fn estimate_build_time(segment: &Segment, stop_delay_millis: u64) -> (u64, bool) {
+fn estimate_build_time(segment: &Segment, stop_delay_millis: Option<u64>) -> (u64, bool) {
     let stopped = Arc::new(AtomicBool::new(false));
 
     let dir = Builder::new().prefix("segment_dir1").tempdir().unwrap();
@@ -172,15 +172,16 @@ fn estimate_build_time(segment: &Segment, stop_delay_millis: u64) -> (u64, bool)
 
     let now = Instant::now();
 
-    let stopped_t = stopped.clone();
-
-    std::thread::Builder::new()
-        .name("build_estimator_timeout".to_string())
-        .spawn(move || {
-            std::thread::sleep(Duration::from_millis(stop_delay_millis));
-            stopped_t.store(true, Ordering::Release);
-        })
-        .unwrap();
+    if let Some(stop_delay_millis) = stop_delay_millis {
+        let stopped_t = stopped.clone();
+        std::thread::Builder::new()
+            .name("build_estimator_timeout".to_string())
+            .spawn(move || {
+                std::thread::sleep(Duration::from_millis(stop_delay_millis));
+                stopped_t.store(true, Ordering::Release);
+            })
+            .unwrap();
+    }
 
     let permit_cpu_count = num_rayon_threads(0);
     let permit = CpuPermit::dummy(permit_cpu_count as u32);
@@ -228,15 +229,15 @@ fn test_building_cancellation() {
     }
 
     // Get normal build time
-    let (time_baseline, was_cancelled_baseline) = estimate_build_time(&baseline_segment, 20000);
+    let (time_baseline, was_cancelled_baseline) = estimate_build_time(&baseline_segment, None);
     assert!(!was_cancelled_baseline);
     eprintln!("baseline time: {}", time_baseline);
 
     // Checks that optimization with longer cancellation delay will also finish fast
     let early_stop_delay = time_baseline / 20;
-    let (time_fast, was_cancelled_early) = estimate_build_time(&segment, early_stop_delay);
+    let (time_fast, was_cancelled_early) = estimate_build_time(&segment, Some(early_stop_delay));
     let late_stop_delay = time_baseline / 5;
-    let (time_long, was_cancelled_later) = estimate_build_time(&segment_2, late_stop_delay);
+    let (time_long, was_cancelled_later) = estimate_build_time(&segment_2, Some(late_stop_delay));
 
     let acceptable_stopping_delay = 600; // millis
 
