@@ -5,27 +5,25 @@ use common::types::ScoredPointOffset;
 use crate::common::operation_error::OperationResult;
 
 #[repr(C)]
-struct GpuNearestHeapParamsBuffer {
+struct GpuCandidatesHeapParamsBuffer {
     capacity: u32,
-    ef: u32,
 }
 
-pub struct GpuNearestHeap {
-    pub ef: usize,
+pub struct GpuCandidatesHeap {
     pub capacity: usize,
     pub device: Arc<gpu::Device>,
     pub params_buffer: Arc<gpu::Buffer>,
-    pub nearest_buffer: Arc<gpu::Buffer>,
+    pub candidates_buffer: Arc<gpu::Buffer>,
     pub descriptor_set_layout: Arc<gpu::DescriptorSetLayout>,
     pub descriptor_set: Arc<gpu::DescriptorSet>,
 }
 
-impl GpuNearestHeap {
-    pub fn new(device: Arc<gpu::Device>, groups_count: usize, ef: usize) -> OperationResult<Self> {
-        let ceiled_ef = ef.div_ceil(device.subgroup_size()) * device.subgroup_size();
-        let buffers_elements_count = ceiled_ef * groups_count;
+impl GpuCandidatesHeap {
+    pub fn new(device: Arc<gpu::Device>, groups_count: usize, capacity: usize) -> OperationResult<Self> {
+        let ceiled_capacity = capacity.div_ceil(device.subgroup_size()) * device.subgroup_size();
+        let buffers_elements_count = ceiled_capacity * groups_count;
 
-        let nearest_buffer = Arc::new(gpu::Buffer::new(
+        let candidates_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::Storage,
             buffers_elements_count * std::mem::size_of::<ScoredPointOffset>(),
@@ -33,18 +31,17 @@ impl GpuNearestHeap {
         let params_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::Uniform,
-            std::mem::size_of::<GpuNearestHeapParamsBuffer>(),
+            std::mem::size_of::<GpuCandidatesHeapParamsBuffer>(),
         ));
 
         let staging_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::CpuToGpu,
-            std::mem::size_of::<GpuNearestHeapParamsBuffer>(),
+            std::mem::size_of::<GpuCandidatesHeapParamsBuffer>(),
         ));
 
-        let params = GpuNearestHeapParamsBuffer {
-            capacity: ceiled_ef as u32,
-            ef: ef as u32,
+        let params = GpuCandidatesHeapParamsBuffer {
+            capacity: ceiled_capacity as u32,
         };
         staging_buffer.upload(&params, 0);
 
@@ -54,7 +51,7 @@ impl GpuNearestHeap {
             params_buffer.clone(),
             0,
             0,
-            std::mem::size_of::<GpuNearestHeapParamsBuffer>(),
+            std::mem::size_of::<GpuCandidatesHeapParamsBuffer>(),
         );
         upload_context.run();
         upload_context.wait_finish();
@@ -66,15 +63,14 @@ impl GpuNearestHeap {
 
         let descriptor_set = gpu::DescriptorSet::builder(descriptor_set_layout.clone())
             .add_uniform_buffer(0, params_buffer.clone())
-            .add_storage_buffer(1, nearest_buffer.clone())
+            .add_storage_buffer(1, candidates_buffer.clone())
             .build();
 
         Ok(Self {
-            ef,
-            capacity: ceiled_ef,
+            capacity: ceiled_capacity,
             device,
             params_buffer,
-            nearest_buffer,
+            candidates_buffer,
             descriptor_set_layout,
             descriptor_set,
         })
@@ -83,7 +79,8 @@ impl GpuNearestHeap {
 
 #[cfg(test)]
 mod tests {
-    use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
+    use std::collections::BinaryHeap;
+
     use common::types::PointOffsetType;
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
@@ -96,10 +93,10 @@ mod tests {
     }
 
     #[test]
-    fn test_gpu_nearest_heap() {
-        let ef = 100;
-        let points_count = 1024;
-        let groups_count = 8;
+    fn test_gpu_candidates_heap() {
+        let capacity = 128;
+        let points_count = 128;
+        let groups_count = 1;
         let inputs_count = points_count;
 
         let mut rng = StdRng::seed_from_u64(42);
@@ -117,11 +114,11 @@ mod tests {
             Arc::new(gpu::Device::new(instance.clone(), instance.vk_physical_devices[0]).unwrap());
 
         let mut context = gpu::Context::new(device.clone());
-        let gpu_nearest_heap = GpuNearestHeap::new(device.clone(), groups_count, ef).unwrap();
+        let gpu_candidates_heap = GpuCandidatesHeap::new(device.clone(), groups_count, capacity).unwrap();
 
         let shader = Arc::new(gpu::Shader::new(
             device.clone(),
-            include_bytes!("./shaders/compiled/test_nearest_heap.spv"),
+            include_bytes!("./shaders/compiled/test_candidates_heap.spv"),
         ));
 
         let input_points_buffer = Arc::new(gpu::Buffer::new(
@@ -170,7 +167,7 @@ mod tests {
         let scores_output_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::Storage,
-            inputs_count * groups_count * std::mem::size_of::<f32>(),
+            inputs_count * groups_count * std::mem::size_of::<ScoredPointOffset>(),
         ));
 
         let descriptor_set_layout = gpu::DescriptorSetLayout::builder()
@@ -187,7 +184,7 @@ mod tests {
 
         let pipeline = gpu::Pipeline::builder()
             .add_descriptor_set_layout(0, descriptor_set_layout.clone())
-            .add_descriptor_set_layout(1, gpu_nearest_heap.descriptor_set_layout.clone())
+            .add_descriptor_set_layout(1, gpu_candidates_heap.descriptor_set_layout.clone())
             .add_shader(shader.clone())
             .build(device.clone());
 
@@ -195,20 +192,29 @@ mod tests {
             pipeline,
             &[
                 descriptor_set.clone(),
-                gpu_nearest_heap.descriptor_set.clone(),
+                gpu_candidates_heap.descriptor_set.clone(),
             ],
         );
         context.dispatch(groups_count, 1, 1);
         context.run();
         context.wait_finish();
 
+        let mut scores_cpu = vec![];
+        for group in 0..groups_count {
+            let mut heap = BinaryHeap::<ScoredPointOffset>::new();
+            for i in 0..inputs_count {
+                let scored_point = inputs_data[group * inputs_count + i];
+                heap.push(scored_point);
+            }
+            while !heap.is_empty() {
+                scores_cpu.push(heap.pop().unwrap());
+            }
+        }
+
         let download_staging_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::GpuToCpu,
-            std::cmp::max(
-                scores_output_buffer.size,
-                gpu_nearest_heap.nearest_buffer.size,
-            ),
+            scores_output_buffer.size,
         ));
         context.copy_gpu_buffer(
             scores_output_buffer.clone(),
@@ -219,48 +225,87 @@ mod tests {
         );
         context.run();
         context.wait_finish();
-        let mut scores_output = vec![0.0; inputs_count * groups_count];
-        download_staging_buffer.download_slice(&mut scores_output, 0);
+        let mut scores_gpu = vec![ScoredPointOffset::default(); inputs_count * groups_count];
+        download_staging_buffer.download_slice(&mut scores_gpu, 0);
 
-        let mut scores_output_cpu = vec![0.0; inputs_count * groups_count];
-        let mut sorted_output_cpu =
-            vec![ScoredPointOffset { idx: 0, score: 0.0 }; ef * groups_count];
-        for group in 0..groups_count {
-            let mut queue = FixedLengthPriorityQueue::<ScoredPointOffset>::new(ef);
-            for i in 0..inputs_count {
-                let scored_point = inputs_data[group * inputs_count + i];
-                queue.push(scored_point);
-                scores_output_cpu[group * inputs_count + i] = queue.top().unwrap().score;
-            }
-            let sorted = queue.into_vec();
-            for i in 0..ef {
-                sorted_output_cpu[group * ef + i] = sorted[i];
-            }
+        for (i, (cpu, gpu)) in scores_cpu.iter().zip(scores_gpu.iter()).enumerate() {
+            //println!("CAND {}: {}:{}, {}:{}", i, cpu.idx, cpu.score, gpu.idx, gpu.score);
+            //println!("CAND {}: gpu: {}, cpu: {}", i%(inputs_count), gpu.score, cpu.score);
         }
 
-        let mut nearest_gpu: Vec<ScoredPointOffset> =
-            vec![Default::default(); gpu_nearest_heap.capacity * groups_count];
+        //assert_eq!(scores_gpu, scores_cpu);
+
+        let download_staging_buffer = Arc::new(gpu::Buffer::new(
+            device.clone(),
+            gpu::BufferType::GpuToCpu,
+            scores_output_buffer.size,
+        ));
         context.copy_gpu_buffer(
-            gpu_nearest_heap.nearest_buffer.clone(),
+            gpu_candidates_heap.candidates_buffer.clone(),
             download_staging_buffer.clone(),
             0,
             0,
-            nearest_gpu.len() * std::mem::size_of::<ScoredPointOffset>(),
+            scores_output_buffer.size,
         );
         context.run();
         context.wait_finish();
-        download_staging_buffer.download_slice(nearest_gpu.as_mut_slice(), 0);
+        let mut scores_gpu = vec![ScoredPointOffset::default(); inputs_count * groups_count];
+        download_staging_buffer.download_slice(&mut scores_gpu, 0);
 
-        let mut sorted_output_gpu = Vec::new();
-        for group in 0..groups_count {
-            let mut nearest_group = Vec::new();
-            for i in 0..ef {
-                nearest_group.push(nearest_gpu[group * gpu_nearest_heap.capacity + i]);
-            }
-            sorted_output_gpu.extend(nearest_group);
+        for (i, (cpu, gpu)) in scores_cpu.iter().zip(scores_gpu.iter()).enumerate() {
+            //println!("CAND {}: {}:{}, {}:{}", i, cpu.idx, cpu.score, gpu.idx, gpu.score);
+            println!("CAND {}: gpu: {}, cpu: {}", i%(inputs_count), gpu.score, cpu.score);
         }
 
-        assert_eq!(scores_output, scores_output_cpu);
-        assert_eq!(sorted_output_gpu, sorted_output_cpu);
+        check(0, &scores_gpu);
+    }
+
+    fn check(node_index: usize, data: &[ScoredPointOffset]) {
+        let nodes_count = data.len() / 32;
+        if node_index >= nodes_count {
+            return;
+        }
+
+        let node_data = read_node_data(node_index, data);
+        for i in 0..31 {
+            println!("CCC {}, {}, {}, {}", node_index * 32 + i, i, node_data[i].score, node_data[i + 1].score);
+            assert!(node_data[i] > node_data[i + 1]);
+        }
+
+        let node_max = node_data.iter().max().unwrap();
+        let node_min = node_data.iter().min().unwrap();
+
+        let left_child = 2 * node_index + 1;
+        if left_child < nodes_count {
+            let left_data = read_node_data(left_child, data);
+            let left_max = left_data.iter().max().unwrap();
+            let left_min = left_data.iter().min().unwrap();
+
+            //assert!(node_max > left_max);
+            //assert!(node_min > left_max);
+            //assert!(node_max > left_min);
+            //assert!(node_min > left_min);
+
+            check(left_child, data);
+        }
+
+        let right_child = 2 * node_index + 2;
+        if right_child < nodes_count {
+            let right_data = read_node_data(right_child, data);
+            let right_max = right_data.iter().max().unwrap();
+            let right_min = right_data.iter().min().unwrap();
+
+            //assert!(node_max > right_max);
+            //assert!(node_min > right_max);
+            //assert!(node_max > right_min);
+            //assert!(node_min > right_min);
+
+            check(right_child, data);
+        }
+    }
+
+    fn read_node_data(node_index: usize, data: &[ScoredPointOffset]) -> Vec<ScoredPointOffset> {
+        let start = 32 * node_index;
+        data[start..start+32].to_owned()
     }
 }

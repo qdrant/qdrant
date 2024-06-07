@@ -19,56 +19,184 @@ buffer CandidatesScores {
 
 uint candidates_count;
 
-// TODO
-#define CANDIDATES_HEAP_OFFSET 0
+#define CANDIDATES_HEAP_CAPACITY candidates_heap_params.capacity
+#define CANDIDATES_BUFFER_OFFSET (CANDIDATES_HEAP_CAPACITY * (gl_GlobalInvocationID.x / SUBGROUP_SIZE))
+
+// [!][+][+][-][-][-]
+// [+][+][!][-][-][-]
+ScoredPoint candidates_heap_replace_first(ScoredPoint node_value, ScoredPoint scored_point) {
+    bool need_shift = scored_point.score > node_value.score;
+    bool other_need_shift = subgroupShuffleDown(need_shift, 1);
+    float other_score = subgroupShuffleDown(node_value.score, 1);
+    uint other_id = subgroupShuffleDown(node_value.id, 1);
+
+    if (SUBGROUP_INVOKATION_ID == 0) {
+        need_shift = true;
+    }
+
+    if (SUBGROUP_INVOKATION_ID == SUBGROUP_SIZE - 1) {
+        other_need_shift = false;
+        other_score = node_value.score;
+        other_id = node_value.id;
+    }
+
+    if (other_need_shift && need_shift) {
+        node_value.score = other_score;
+        node_value.id = other_id;
+    } else if (need_shift) {
+        node_value = scored_point;
+    }
+    return node_value;
+}
+
+// [+][+][+][-][-][!]
+// [+][+][+][!][-][-]
+ScoredPoint candidates_heap_replace_last(ScoredPoint node_value, ScoredPoint scored_point) {
+    bool need_shift = scored_point.score < node_value.score;
+    bool other_need_shift = subgroupShuffleUp(need_shift, 1);
+    float other_score = subgroupShuffleUp(node_value.score, 1);
+    uint other_id = subgroupShuffleUp(node_value.id, 1);
+
+    if (SUBGROUP_INVOKATION_ID == SUBGROUP_SIZE - 1) {
+        need_shift = true;
+    }
+
+    if (SUBGROUP_INVOKATION_ID == 0) {
+        other_need_shift = false;
+        other_score = node_value.score;
+        other_id = node_value.id;
+    }
+
+    if (other_need_shift && need_shift) {
+        node_value.score = other_score;
+        node_value.id = other_id;
+    } else if (need_shift) {
+        node_value = scored_point;
+    }
+    return node_value;
+}
+
+ScoredPoint candidates_heap_read(uint buffer_offset, uint node_index) {
+    uint buffer_index = buffer_offset + node_index * SUBGROUP_SIZE + SUBGROUP_INVOKATION_ID;
+    return candidates.data[buffer_index];
+}
+
+void candidates_heap_write(uint buffer_offset, uint node_index, ScoredPoint value) {
+    uint buffer_index = buffer_offset + node_index * SUBGROUP_SIZE + SUBGROUP_INVOKATION_ID;
+    candidates.data[buffer_index] = value;
+}
 
 void candidates_heap_init() {
     candidates_count = 0;
+
+    uint buffer_offset = CANDIDATES_BUFFER_OFFSET;
+    uint capacity = CANDIDATES_HEAP_CAPACITY;
+    for (uint i = SUBGROUP_INVOKATION_ID; i < capacity; i += SUBGROUP_SIZE) {
+        uint buffer_index = buffer_offset + i;
+        candidates.data[buffer_index] = ScoredPoint(0, positive_infinity);
+    }
+    groupMemoryBarrier();
 }
 
 ScoredPoint pop_candidate() {
-    uint strides_count = candidates_heap_params.capacity / SUBGROUP_SIZE;
-    uint buffer_offset = CANDIDATES_HEAP_OFFSET;
-    uint buffer_stride_offset = buffer_offset + candidates_heap_params.capacity;
-
-    ScoredPoint popped_candidate = ScoredPoint(0, negative_infinity);
-    uint popped_stride_index = 0;
-    for (uint i = SUBGROUP_INVOKATION_ID; i < strides_count / SUBGROUP_SIZE; i++) {
-        ScoredPoint candidate = candidates.data[buffer_stride_offset + i];
-        if (candidate.score > popped_candidate.score) {
-            popped_candidate = candidate;
-            popped_stride_index = i;
-        }
+    if (candidates_count == 0) {
+        return ScoredPoint(0, 0.0);
     }
 
-/*
-    float exclusive_smaller = subgroupExclusiveMin(nearest_smaller_score);
-    bool is_min_thread = nearest_smaller_score < exclusive_smaller;
-    uvec4 subgroup_min_threads = subgroupBallot(is_min_thread);
-    uint subgroup_min_thread = subgroupBallotFindLSB(subgroup_min_threads);
-    nearest_smaller_index = subgroupShuffle(nearest_smaller_index, subgroup_min_thread);
-    nearest_smaller_score = subgroupShuffle(nearest_smaller_score, subgroup_min_thread);
-*/
-    return ScoredPoint(0, 0.0);
+    uint buffer_offset = CANDIDATES_BUFFER_OFFSET;
+    ScoredPoint first_candidate = candidates.data[buffer_offset];
+    ScoredPoint last_candidate = candidates.data[buffer_offset + candidates_count - 1];
+    if (subgroupElect()) {
+        candidates.data[buffer_offset + candidates_count - 1] = ScoredPoint(0, positive_infinity);
+    }
+    groupMemoryBarrier();
+
+    uint node_index = 0;
+    ScoredPoint node_value = candidates_heap_read(buffer_offset, node_index);
+    node_value = candidates_heap_replace_first(node_value, last_candidate);
+    while (true) {
+        uint left_index = 2 * node_index + 1;
+        if (left_index * SUBGROUP_SIZE >= CANDIDATES_HEAP_CAPACITY) {
+            break;
+        }
+        uint child_index = left_index;
+        ScoredPoint child_value = candidates_heap_read(buffer_offset, child_index);
+        float child_smallest_score = subgroupBroadcast(child_value.score, 0);
+
+        uint right_index = left_index + 1;
+        if (right_index * SUBGROUP_SIZE < CANDIDATES_HEAP_CAPACITY) {
+            ScoredPoint right_value = candidates_heap_read(buffer_offset, right_index);
+            float right_smallest_score = subgroupBroadcast(right_value.score, 0);
+            if (right_smallest_score < child_smallest_score) {
+                child_index = right_index;
+                child_value = right_value;
+                child_smallest_score = right_smallest_score;
+            }
+        }
+
+        float node_largest_score = subgroupBroadcast(node_value.score, SUBGROUP_SIZE - 1);
+        if (node_largest_score < child_smallest_score) {
+            break;
+        }
+        uint node_largest_id = subgroupBroadcast(node_value.id, SUBGROUP_SIZE - 1);
+        ScoredPoint node_largest = ScoredPoint(node_largest_id, node_largest_score);
+
+        uint child_smallest_id = subgroupBroadcast(child_value.id, 0);
+        ScoredPoint child_smallest = ScoredPoint(child_smallest_id, child_smallest_score);
+
+        child_value = candidates_heap_replace_first(child_value, node_largest);
+        node_value = candidates_heap_replace_last(node_value, child_smallest);
+
+        candidates_heap_write(buffer_offset, node_index, node_value);
+        node_value = child_value;
+        node_index = child_index;
+    }
+
+    candidates_heap_write(buffer_offset, node_index, node_value);
+    candidates_count--;
+    groupMemoryBarrier();
+    first_candidate.score = -first_candidate.score; // TODO: revert direction
+    return first_candidate;
 }
 
-void push_candidate(ScoredPoint scored_point) {
-    if (candidates_count == candidates_heap_params.capacity) {
-        return;
+bool push_candidate(ScoredPoint scored_point) {
+    scored_point.score = -scored_point.score; // TODO: revert direction
+    if (candidates_count == CANDIDATES_HEAP_CAPACITY) {
+        return false;
     }
 
-    if (subgroupElect()) {
-        uint buffer_offset = CANDIDATES_HEAP_OFFSET;
-        candidates.data[buffer_offset + candidates_count] = scored_point;
+    uint buffer_offset = CANDIDATES_BUFFER_OFFSET;
+    uint node_index = candidates_count / SUBGROUP_SIZE;
+    ScoredPoint node_value = candidates_heap_read(buffer_offset, node_index);
+    node_value = candidates_heap_replace_last(node_value, scored_point);
 
-        uint stride_index = candidates_heap_params.capacity + (candidates_count / SUBGROUP_SIZE);
-        if (scored_point.score > candidates.data[buffer_offset + stride_index].score) {
-            candidates.data[buffer_offset + stride_index] = scored_point;
+    while (true) {
+        if (node_index == 0) {
+            break;
+        }
+        uint parent_index = (node_index - 1) / 2;
+        ScoredPoint parent_value = candidates_heap_read(buffer_offset, parent_index);
+        float node_smallest_score = subgroupBroadcast(node_value.score, 0);
+        float parent_largest_score = subgroupBroadcast(parent_value.score, SUBGROUP_SIZE - 1);
+        if (node_smallest_score < parent_largest_score) {
+            uint node_smallest_id = subgroupBroadcast(node_value.id, 0);
+            uint parent_largest_id = subgroupBroadcast(parent_value.id, SUBGROUP_SIZE - 1);
+            ScoredPoint node_smallest = ScoredPoint(node_smallest_id, node_smallest_score);
+            ScoredPoint parent_largest = ScoredPoint(parent_largest_id, parent_largest_score);
+            node_value = candidates_heap_replace_first(node_value, parent_largest);
+            parent_value = candidates_heap_replace_last(parent_value, node_smallest);
+            candidates_heap_write(buffer_offset, node_index, node_value);
+            node_value = parent_value;
+            node_index = parent_index;
+        } else {
+            break;
         }
     }
 
+    candidates_heap_write(buffer_offset, node_index, node_value);
     candidates_count++;
-    subgroupMemoryBarrier();
+    groupMemoryBarrier();
+    return true;
 }
 
 #endif
