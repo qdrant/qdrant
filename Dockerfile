@@ -40,7 +40,7 @@ RUN apt-get update \
 ARG BUILDPLATFORM
 ENV BUILDPLATFORM=${BUILDPLATFORM:-linux/amd64}
 
-ARG MOLD_VERSION=2.3.2
+ARG MOLD_VERSION=2.31.0
 
 RUN case "$BUILDPLATFORM" in \
         */amd64 ) PLATFORM=x86_64 ;; \
@@ -62,9 +62,6 @@ RUN case "$BUILDPLATFORM" in \
 ARG TARGETPLATFORM
 ENV TARGETPLATFORM=${TARGETPLATFORM:-linux/amd64}
 
-ARG GIT_COMMIT_ID
-ENV GIT_COMMIT_ID=${GIT_COMMIT_ID}
-
 RUN xx-apt-get install -y pkg-config gcc g++ libc6-dev libunwind-dev
 
 # Select Cargo profile (e.g., `release`, `dev` or `ci`)
@@ -80,7 +77,7 @@ ARG RUSTFLAGS
 ARG LINKER=mold
 
 COPY --from=planner /qdrant/recipe.json recipe.json
-# `PKG_CONFIG=...` is a workaround for `xx-cargo` bug for crates based on `pkg-config`!
+# `PKG_CONFIG=...` is a workaround for `xx-cargo` bug for crates using `pkg-config`!
 #
 # https://github.com/tonistiigi/xx/issues/107
 # https://github.com/tonistiigi/xx/pull/108
@@ -90,7 +87,9 @@ RUN PKG_CONFIG="/usr/bin/$(xx-info)-pkg-config" \
     xx-cargo chef cook --profile $PROFILE ${FEATURES:+--features} $FEATURES --features=stacktrace --recipe-path recipe.json
 
 COPY . .
-# `PKG_CONFIG=...` is a workaround for `xx-cargo` bug for crates based on `pkg-config`!
+# Include git commit into Qdrant binary during build
+ARG GIT_COMMIT_ID
+# `PKG_CONFIG=...` is a workaround for `xx-cargo` bug for crates using `pkg-config`!
 #
 # https://github.com/tonistiigi/xx/issues/107
 # https://github.com/tonistiigi/xx/pull/108
@@ -102,18 +101,45 @@ RUN PKG_CONFIG="/usr/bin/$(xx-info)-pkg-config" \
     && mv target/$(xx-cargo --print-target-triple)/$PROFILE_DIR/qdrant /qdrant/qdrant
 
 # Download and extract web UI
-RUN mkdir /static ; STATIC_DIR='/static' ./tools/sync-web-ui.sh
+RUN mkdir /static && STATIC_DIR=/static ./tools/sync-web-ui.sh
 
 
 FROM debian:12-slim AS qdrant
 
-RUN apt-get update \
-    && apt-get install --no-install-recommends -y ca-certificates tzdata libunwind8 \
+RUN apt-get update
+
+# Install additional packages into the container.
+# E.g., the debugger of choice: gdb/gdbserver/lldb.
+ARG PACKAGES
+
+RUN apt-get install -y --no-install-recommends ca-certificates tzdata libunwind8 $PACKAGES \
     && rm -rf /var/lib/apt/lists/*
 
-ARG APP=/qdrant
+# Copy Qdrant source files into the container. Useful for debugging.
+#
+# To enable, set `SOURCES` to *any* non-empty string. E.g., 1/true/enable/whatever.
+# (Note, that *any* non-empty string would work, so 0/false/disable would enable the option as well.)
+ARG SOURCES
 
-RUN mkdir -p "$APP"
+# Dockerfile does not support conditional `COPY` instructions (e.g., it's impossible to do something
+# like `if [ -n "$SOURCES" ]; then COPY ...; fi`), so we *hack* conditional `COPY` by abusing
+# parameter expansion and `COPY` wildcards support. 😎
+
+ENV DIR=${SOURCES:+/qdrant/src}
+COPY --from=builder ${DIR:-/null?} $DIR/
+
+ENV DIR=${SOURCES:+/qdrant/lib}
+COPY --from=builder ${DIR:-/null?} $DIR/
+
+ENV DIR=${SOURCES:+/usr/local/cargo/registry/src}
+COPY --from=builder ${DIR:-/null?} $DIR/
+
+ENV DIR=${SOURCES:+/usr/local/cargo/git/checkouts}
+COPY --from=builder ${DIR:-/null?} $DIR/
+
+ENV DIR=
+
+ARG APP=/qdrant
 
 COPY --from=builder /qdrant/qdrant "$APP"/qdrant
 COPY --from=builder /qdrant/config "$APP"/config
