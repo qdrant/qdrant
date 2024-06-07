@@ -20,6 +20,7 @@ use crate::operations::universal_query::shard_query::{
 
 struct IntermediateQueryInfo<'a> {
     scoring_query: Option<&'a ScoringQuery>,
+    /// Limit + offset
     take: usize,
 }
 
@@ -83,30 +84,30 @@ impl Collection {
             .query_shards_concurrently(request.clone(), read_consistency, shard_selection)
             .await?;
 
-        let mut merged_intemediates = self
+        let mut merged_intermediates = self
             .merge_intermediate_results_from_shards(request.as_ref(), all_shards_results)
             .await?;
 
         let result = if let Some(ScoringQuery::Fusion(fusion)) = &request.query {
             // If the root query is a Fusion, the returned results correspond to each the prefetches.
             match fusion {
-                Fusion::Rrf => rrf_scoring(merged_intemediates, request.limit, request.offset),
+                Fusion::Rrf => rrf_scoring(merged_intermediates),
             }
         } else {
             // Otherwise, it will be a list with a single list of scored points.
-            debug_assert_eq!(merged_intemediates.len(), 1);
-            merged_intemediates
-                .pop()
-                .ok_or_else(|| {
-                    CollectionError::service_error(
-                        "Query response was expected to have one list of results.",
-                    )
-                })?
-                .into_iter()
-                .skip(request.offset)
-                .take(request.limit)
-                .collect()
+            debug_assert_eq!(merged_intermediates.len(), 1);
+            merged_intermediates.pop().ok_or_else(|| {
+                CollectionError::service_error(
+                    "Query response was expected to have one list of results.",
+                )
+            })?
         };
+
+        let result: Vec<_> = result
+            .into_iter()
+            .skip(request.offset)
+            .take(request.limit)
+            .collect();
 
         let filter_refs = request.filter_refs();
         self.post_process_if_slow_request(instant.elapsed(), filter_refs);
@@ -209,14 +210,14 @@ impl Collection {
 ///
 /// Example: `[info1, info2, info3]` corresponds to `[result1, result2, result3]` of each shard
 fn intermediate_query_infos(request: &ShardQueryRequest) -> Vec<IntermediateQueryInfo<'_>> {
-    let has_intermediate_results = request
+    let needs_intermediate_results = request
         .query
         .as_ref()
         .map(|sq| sq.needs_intermediate_results())
         .unwrap_or(false);
 
-    if has_intermediate_results {
-        // In case of RRF, expect the propagated intermediate results
+    if needs_intermediate_results {
+        // In case of Fusion, expect the propagated intermediate results
         request
             .prefetches
             .iter()

@@ -23,9 +23,7 @@ fn position_score(position: usize) -> f32 {
 /// The output is a single sorted list of ScoredPoint.
 /// Does not break ties.
 pub fn rrf_scoring(
-    responses: impl IntoIterator<Item = Vec<ScoredPoint>>,
-    take: usize,
-    skip: usize,
+    responses: impl IntoIterator<Item = Vec<ScoredPoint>>
 ) -> Vec<ScoredPoint> {
     // track scored points by id
     let mut points_by_id: HashMap<ExtendedPointId, ScoredPoint> = HashMap::new();
@@ -47,19 +45,13 @@ pub fn rrf_scoring(
         }
     }
 
-    let mut scores = points_by_id.into_iter().collect::<Vec<_>>();
+    let mut scores: Vec<_> = points_by_id.into_values().collect();
     scores.sort_unstable_by(|a, b| {
         // sort by score descending
-        OrderedFloat(b.1.score).cmp(&OrderedFloat(a.1.score))
+        OrderedFloat(b.score).cmp(&OrderedFloat(a.score))
     });
 
-    // materialized updated scored points
     scores
-        .into_iter()
-        .skip(skip)
-        .take(take)
-        .map(|(_, v)| v)
-        .collect()
 }
 
 #[cfg(test)]
@@ -82,14 +74,14 @@ mod tests {
     #[test]
     fn test_rrf_scoring_empty() {
         let responses = vec![];
-        let scored_points = rrf_scoring(responses, 10, 0);
+        let scored_points = rrf_scoring(responses);
         assert_eq!(scored_points.len(), 0);
     }
 
     #[test]
     fn test_rrf_scoring_one() {
         let responses = vec![vec![make_scored_point(1, 0.9)]];
-        let scored_points = rrf_scoring(responses, 10, 0);
+        let scored_points = rrf_scoring(responses);
         assert_eq!(scored_points.len(), 1);
         assert_eq!(scored_points[0].id, 1.into());
         assert_eq!(scored_points[0].score, 0.5); // 1 / (0 + 2)
@@ -112,40 +104,11 @@ mod tests {
         ];
 
         // top 10
-        let scored_points = rrf_scoring(responses.clone(), 10, 0);
+        let scored_points = rrf_scoring(responses.clone());
         assert_eq!(scored_points.len(), 4);
         // assert that the list is sorted
         assert!(scored_points.windows(2).all(|w| w[0].score >= w[1].score));
 
-        // top 1
-        let scored_points = rrf_scoring(responses.clone(), 1, 0);
-        assert_eq!(scored_points.len(), 1);
-        assert_eq!(scored_points[0].id, 1.into());
-        assert_eq!(scored_points[0].score, 1.0833334);
-
-        // top 2
-        let scored_points = rrf_scoring(responses.clone(), 2, 0);
-        assert_eq!(scored_points.len(), 2);
-        assert_eq!(scored_points[0].id, 1.into());
-        assert_eq!(scored_points[0].score, 1.0833334);
-
-        assert_eq!(scored_points[1].id, 2.into());
-        assert_eq!(scored_points[1].score, 0.8333334);
-
-        // top 3
-        let scored_points = rrf_scoring(responses.clone(), 3, 0);
-        assert_eq!(scored_points.len(), 3);
-        assert_eq!(scored_points[0].id, 1.into());
-        assert_eq!(scored_points[0].score, 1.0833334);
-
-        assert_eq!(scored_points[1].id, 2.into());
-        assert_eq!(scored_points[1].score, 0.8333334);
-
-        assert_eq!(scored_points[2].id, 3.into());
-        assert_eq!(scored_points[2].score, 0.5833334);
-
-        // top 4
-        let scored_points = rrf_scoring(responses, 4, 0);
         assert_eq!(scored_points.len(), 4);
         assert_eq!(scored_points[0].id, 1.into());
         assert_eq!(scored_points[0].score, 1.0833334);

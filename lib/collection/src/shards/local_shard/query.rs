@@ -206,7 +206,8 @@ impl LocalShard {
     ) -> CollectionResult<Vec<ScoredPoint>> {
         match rescore_query {
             ScoringQuery::Fusion(Fusion::Rrf) => {
-                let top_rrf = rrf_scoring(sources.map(Cow::into_owned), limit, 0);
+                let mut top_rrf = rrf_scoring(sources.map(Cow::into_owned));
+                top_rrf.truncate(limit);
                 Ok(top_rrf)
             }
             ScoringQuery::OrderBy(order_by) => {
