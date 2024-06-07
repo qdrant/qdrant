@@ -34,7 +34,9 @@ fn hnsw_benchmark(c: &mut Criterion) {
         let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let level = graph_layers_builder.get_random_layer(&mut rng);
         graph_layers_builder.set_levels(idx, level);
-        graph_layers_builder.link_new_point(idx, scorer);
+        graph_layers_builder
+            .link_new_point(idx, scorer, &false.into())
+            .unwrap();
     }
     let graph_layers = graph_layers_builder
         .into_graph_layers::<GraphLinksRam>(None)

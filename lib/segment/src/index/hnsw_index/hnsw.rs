@@ -229,7 +229,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             let points_scorer =
                 FilteredScorer::new(raw_scorer.as_ref(), Some(&block_condition_checker));
 
-            graph_layers_builder.link_new_point(block_point_id, points_scorer);
+            graph_layers_builder.link_new_point(block_point_id, points_scorer, stopped)?;
             Ok::<_, OperationError>(())
         };
 
@@ -744,7 +744,7 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
                 }?;
                 let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
 
-                graph_layers_builder.link_new_point(vector_id, points_scorer);
+                graph_layers_builder.link_new_point(vector_id, points_scorer, stopped)?;
                 Ok::<_, OperationError>(())
             };
 

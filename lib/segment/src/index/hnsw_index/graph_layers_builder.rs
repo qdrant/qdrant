@@ -1,7 +1,7 @@
 use std::cmp::{max, min};
 use std::collections::BinaryHeap;
 use std::path::Path;
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicBool, AtomicUsize};
 
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
@@ -10,7 +10,7 @@ use rand::distributions::Uniform;
 use rand::Rng;
 
 use super::graph_links::GraphLinks;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{check_process_stopped, OperationResult};
 use crate::index::hnsw_index::entry_points::EntryPoints;
 use crate::index::hnsw_index::graph_layers::{GraphLayers, GraphLayersBase, LinkContainer};
 use crate::index::hnsw_index::graph_links::GraphLinksConverter;
@@ -298,7 +298,12 @@ impl GraphLayersBuilder {
         Self::select_candidate_with_heuristic_from_sorted(closest_iter, m, score_internal)
     }
 
-    pub fn link_new_point(&self, point_id: PointOffsetType, mut points_scorer: FilteredScorer) {
+    pub fn link_new_point(
+        &self,
+        point_id: PointOffsetType,
+        mut points_scorer: FilteredScorer,
+        stopped: &AtomicBool,
+    ) -> OperationResult<()> {
         // specisal case for empty graph. locking here guarantees that only one thread will create first entry point
         {
             let mut entry_points = self.entry_points.lock();
@@ -307,12 +312,13 @@ impl GraphLayersBuilder {
                 entry_points.new_point(point_id, level, |point_id| {
                     points_scorer.check_vector(point_id)
                 });
-                return;
+                return Ok(());
             }
         }
 
         let mut is_looser = false;
         'attempt: loop {
+            check_process_stopped(stopped)?;
             let _looser_guard = if is_looser {
                 Some(self.looser_mutex.lock())
             } else {
@@ -353,6 +359,7 @@ impl GraphLayersBuilder {
                 });
             break;
         }
+        Ok(())
     }
 
     pub fn link_new_point_impl(
@@ -609,7 +616,9 @@ mod tests {
                     let raw_scorer = vector_holder.get_raw_scorer(added_vector).unwrap();
                     let scorer =
                         FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
-                    graph_layers.link_new_point(idx, scorer);
+                    graph_layers
+                        .link_new_point(idx, scorer, &false.into())
+                        .unwrap();
                 });
         });
 
@@ -650,7 +659,9 @@ mod tests {
             let added_vector = vector_holder.vectors.get(idx).to_vec();
             let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone()).unwrap();
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
-            graph_layers.link_new_point(idx, scorer);
+            graph_layers
+                .link_new_point(idx, scorer, &false.into())
+                .unwrap();
         }
 
         (vector_holder, graph_layers)
@@ -829,7 +840,9 @@ mod tests {
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
             let level = graph_layers_builder.get_random_layer(&mut rng);
             graph_layers_builder.set_levels(idx, level);
-            graph_layers_builder.link_new_point(idx, scorer);
+            graph_layers_builder
+                .link_new_point(idx, scorer, &false.into())
+                .unwrap();
         }
         let graph_layers = graph_layers_builder
             .into_graph_layers::<GraphLinksRam>(None)
