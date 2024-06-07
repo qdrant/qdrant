@@ -6,13 +6,11 @@ use std::time::Duration;
 use api::rest::OrderByInterface;
 use futures::future::BoxFuture;
 use futures::FutureExt;
-use itertools::{Either, Itertools as _};
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
 use segment::types::{
-    Filter, HasIdCondition, Order, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface,
+    Filter, HasIdCondition, PointIdType, ScoredPoint, WithPayload, WithPayloadInterface,
     WithVector,
 };
-use segment::utils::scored_point_ties::ScoredPointTies;
 use tokio::runtime::Handle;
 
 use super::LocalShard;
@@ -178,9 +176,8 @@ impl LocalShard {
             let root_query_needs_intermediate_results = || {
                 merge_plan
                     .merge
-                    .rescore
                     .as_ref()
-                    .map(|query| query.needs_intermediate_results())
+                    .map(|plan| plan.rescore.needs_intermediate_results())
                     .unwrap_or(false)
             };
 
@@ -287,23 +284,21 @@ impl LocalShard {
     /// Rescores if required.
     async fn merge_prefetches<'a>(
         &self,
-        sources: impl Iterator<Item = Cow<'a, Vec<ScoredPoint>>>,
-        merge: ResultsMerge,
+        mut sources: impl Iterator<Item = Cow<'a, Vec<ScoredPoint>>>,
+        merge: Option<ResultsMerge>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<ScoredPoint>> {
-        let ResultsMerge {
+        if let Some(ResultsMerge {
             limit,
-            order,
             rescore,
             filter,
             score_threshold,
-        } = merge;
-
-        if let Some(rescore_query) = rescore {
+        }) = merge
+        {
             self.rescore(
                 sources,
-                rescore_query,
+                rescore,
                 filter,
                 limit,
                 score_threshold,
@@ -312,31 +307,12 @@ impl LocalShard {
             )
             .await
         } else {
-            let sources = sources.collect_vec();
+            // The whole query request has no prefetches, and everything comes directly from the same source
+            let top = sources.next().ok_or_else(|| {
+                CollectionError::service_error("No sources to merge in the query request")
+            })?.into_owned();
 
-            // no rescore required - just merge, sort and limit
-            let filter = filter_with_sources_ids(sources.clone().into_iter(), filter);
-
-            // TODO(universal-query): don't read_filtered if there is no filter
-            let valid_ids = self.read_filtered(Some(&filter))?;
-
-            let top_iter = sources
-                .into_iter()
-                .flat_map(Cow::into_owned)
-                .filter(|point| valid_ids.contains(&point.id));
-
-            let top = match order {
-                Order::LargeBetter => Either::Left(
-                    top_iter.sorted_unstable_by(|a, b| ScoredPointTies(b).cmp(&ScoredPointTies(a))),
-                ),
-                Order::SmallBetter => Either::Right(
-                    top_iter.sorted_unstable_by(|a, b| ScoredPointTies(a).cmp(&ScoredPointTies(b))),
-                ),
-            }
-            .dedup()
-            // TODO(universal-query): add score threshold
-            .take(limit)
-            .collect();
+            debug_assert!(sources.next().is_none());
 
             Ok(top)
         }
