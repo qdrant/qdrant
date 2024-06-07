@@ -136,7 +136,7 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
                         filter: req_filter,
                         with_vector: req_with_vector,
                         with_payload: Some(req_with_payload),
-                        limit: Some(limit),
+                        limit: Some(limit + req_offset),
                         offset: None,
                     };
 
@@ -153,7 +153,7 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
                         filter: req_filter,
                         with_vector: req_with_vector,
                         with_payload: Some(req_with_payload),
-                        limit: Some(limit),
+                        limit: Some(limit + req_offset),
                         offset: None,
                     };
 
