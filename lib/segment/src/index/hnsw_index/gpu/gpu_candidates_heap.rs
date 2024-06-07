@@ -94,8 +94,8 @@ mod tests {
 
     #[test]
     fn test_gpu_candidates_heap() {
-        let capacity = 128;
-        let points_count = 128;
+        let capacity = 32;
+        let points_count = 32;
         let groups_count = 1;
         let inputs_count = points_count;
 
@@ -229,83 +229,10 @@ mod tests {
         download_staging_buffer.download_slice(&mut scores_gpu, 0);
 
         for (i, (cpu, gpu)) in scores_cpu.iter().zip(scores_gpu.iter()).enumerate() {
-            //println!("CAND {}: {}:{}, {}:{}", i, cpu.idx, cpu.score, gpu.idx, gpu.score);
+            println!("CAND {}: {}:{}, {}:{}", i, cpu.idx, cpu.score, gpu.idx, gpu.score);
             //println!("CAND {}: gpu: {}, cpu: {}", i%(inputs_count), gpu.score, cpu.score);
         }
 
-        //assert_eq!(scores_gpu, scores_cpu);
-
-        let download_staging_buffer = Arc::new(gpu::Buffer::new(
-            device.clone(),
-            gpu::BufferType::GpuToCpu,
-            scores_output_buffer.size,
-        ));
-        context.copy_gpu_buffer(
-            gpu_candidates_heap.candidates_buffer.clone(),
-            download_staging_buffer.clone(),
-            0,
-            0,
-            scores_output_buffer.size,
-        );
-        context.run();
-        context.wait_finish();
-        let mut scores_gpu = vec![ScoredPointOffset::default(); inputs_count * groups_count];
-        download_staging_buffer.download_slice(&mut scores_gpu, 0);
-
-        for (i, (cpu, gpu)) in scores_cpu.iter().zip(scores_gpu.iter()).enumerate() {
-            //println!("CAND {}: {}:{}, {}:{}", i, cpu.idx, cpu.score, gpu.idx, gpu.score);
-            println!("CAND {}: gpu: {}, cpu: {}", i%(inputs_count), gpu.score, cpu.score);
-        }
-
-        check(0, &scores_gpu);
-    }
-
-    fn check(node_index: usize, data: &[ScoredPointOffset]) {
-        let nodes_count = data.len() / 32;
-        if node_index >= nodes_count {
-            return;
-        }
-
-        let node_data = read_node_data(node_index, data);
-        for i in 0..31 {
-            println!("CCC {}, {}, {}, {}", node_index * 32 + i, i, node_data[i].score, node_data[i + 1].score);
-            assert!(node_data[i] > node_data[i + 1]);
-        }
-
-        let node_max = node_data.iter().max().unwrap();
-        let node_min = node_data.iter().min().unwrap();
-
-        let left_child = 2 * node_index + 1;
-        if left_child < nodes_count {
-            let left_data = read_node_data(left_child, data);
-            let left_max = left_data.iter().max().unwrap();
-            let left_min = left_data.iter().min().unwrap();
-
-            //assert!(node_max > left_max);
-            //assert!(node_min > left_max);
-            //assert!(node_max > left_min);
-            //assert!(node_min > left_min);
-
-            check(left_child, data);
-        }
-
-        let right_child = 2 * node_index + 2;
-        if right_child < nodes_count {
-            let right_data = read_node_data(right_child, data);
-            let right_max = right_data.iter().max().unwrap();
-            let right_min = right_data.iter().min().unwrap();
-
-            //assert!(node_max > right_max);
-            //assert!(node_min > right_max);
-            //assert!(node_max > right_min);
-            //assert!(node_min > right_min);
-
-            check(right_child, data);
-        }
-    }
-
-    fn read_node_data(node_index: usize, data: &[ScoredPointOffset]) -> Vec<ScoredPointOffset> {
-        let start = 32 * node_index;
-        data[start..start+32].to_owned()
+        assert_eq!(scores_gpu, scores_cpu);
     }
 }

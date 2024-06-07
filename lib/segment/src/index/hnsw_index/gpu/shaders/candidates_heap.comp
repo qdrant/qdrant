@@ -22,8 +22,6 @@ uint candidates_count;
 #define CANDIDATES_HEAP_CAPACITY candidates_heap_params.capacity
 #define CANDIDATES_BUFFER_OFFSET (CANDIDATES_HEAP_CAPACITY * (gl_GlobalInvocationID.x / SUBGROUP_SIZE))
 
-// [!][+][+][-][-][-]
-// [+][+][!][-][-][-]
 ScoredPoint candidates_heap_replace_first(ScoredPoint node_value, ScoredPoint scored_point) {
     bool need_shift = scored_point.score > node_value.score;
     bool other_need_shift = subgroupShuffleDown(need_shift, 1);
@@ -43,14 +41,13 @@ ScoredPoint candidates_heap_replace_first(ScoredPoint node_value, ScoredPoint sc
     if (other_need_shift && need_shift) {
         node_value.score = other_score;
         node_value.id = other_id;
-    } else if (need_shift) {
+    }
+    if (!other_need_shift && need_shift) {
         node_value = scored_point;
     }
     return node_value;
 }
 
-// [+][+][+][-][-][!]
-// [+][+][+][!][-][-]
 ScoredPoint candidates_heap_replace_last(ScoredPoint node_value, ScoredPoint scored_point) {
     bool need_shift = scored_point.score < node_value.score;
     bool other_need_shift = subgroupShuffleUp(need_shift, 1);
@@ -70,7 +67,8 @@ ScoredPoint candidates_heap_replace_last(ScoredPoint node_value, ScoredPoint sco
     if (other_need_shift && need_shift) {
         node_value.score = other_score;
         node_value.id = other_id;
-    } else if (need_shift) {
+    }
+    if (!other_need_shift && need_shift) {
         node_value = scored_point;
     }
     return node_value;

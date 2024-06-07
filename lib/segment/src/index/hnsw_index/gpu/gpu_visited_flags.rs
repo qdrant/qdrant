@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::OperationResult;
 
 #[repr(C)]
 struct GpuVisitedFlagsParamsBuffer {
@@ -21,15 +21,9 @@ pub struct GpuVisitedFlags {
 impl GpuVisitedFlags {
     pub fn new(
         device: Arc<gpu::Device>,
-        threads_count: usize,
+        groups_count: usize,
         points_count: usize,
     ) -> OperationResult<Self> {
-        if threads_count % device.subgroup_size() != 0 {
-            return Err(OperationError::service_error(
-                "Threads count must be a multiple of subgroup size",
-            ));
-        }
-
         let params_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::Uniform,
@@ -43,7 +37,7 @@ impl GpuVisitedFlags {
         let visited_flags_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::Storage,
-            (threads_count / device.subgroup_size()) * points_count * std::mem::size_of::<u8>(),
+            groups_count * points_count * std::mem::size_of::<u8>(),
         ));
 
         let params = GpuVisitedFlagsParamsBuffer {
