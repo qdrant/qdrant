@@ -119,7 +119,10 @@ pub enum ShardTransferMethod {
 #[async_trait]
 pub trait ShardTransferConsensus: Send + Sync {
     /// Get the peer ID for the current node.
-    fn this_peer_id(&self) -> CollectionResult<PeerId>;
+    fn this_peer_id(&self) -> PeerId;
+
+    /// Get all peer IDs, including that of the current node.
+    fn peers(&self) -> Vec<PeerId>;
 
     /// Get the current consensus commit and term state.
     ///
