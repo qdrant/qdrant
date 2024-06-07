@@ -348,7 +348,7 @@ impl UpdateHandler {
                                 // Handle and report errors
                                 Err(error) => match error {
                                     CollectionError::Cancelled { description } => {
-                                        debug!("Optimization cancelled - {}", description);
+                                        debug!("Optimization cancelled - {description}");
                                         tracker_handle
                                             .update(TrackerStatus::Cancelled(description));
                                         false
@@ -360,7 +360,7 @@ impl UpdateHandler {
                                         // It is only possible to fix after full restart,
                                         // so the best available action here is to stop whole
                                         // optimization thread and log the error
-                                        log::error!("Optimization error: {}", error);
+                                        log::error!("Optimization error: {error}");
 
                                         tracker_handle
                                             .update(TrackerStatus::Error(error.to_string()));
