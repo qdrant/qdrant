@@ -77,7 +77,7 @@ ARG RUSTFLAGS
 ARG LINKER=mold
 
 COPY --from=planner /qdrant/recipe.json recipe.json
-# `PKG_CONFIG=...` is a workaround for `xx-cargo` bug for crates based on `pkg-config`!
+# `PKG_CONFIG=...` is a workaround for `xx-cargo` bug for crates using `pkg-config`!
 #
 # https://github.com/tonistiigi/xx/issues/107
 # https://github.com/tonistiigi/xx/pull/108
@@ -89,7 +89,7 @@ RUN PKG_CONFIG="/usr/bin/$(xx-info)-pkg-config" \
 COPY . .
 # Include git commit into Qdrant binary during build
 ARG GIT_COMMIT_ID
-# `PKG_CONFIG=...` is a workaround for `xx-cargo` bug for crates based on `pkg-config`!
+# `PKG_CONFIG=...` is a workaround for `xx-cargo` bug for crates using `pkg-config`!
 #
 # https://github.com/tonistiigi/xx/issues/107
 # https://github.com/tonistiigi/xx/pull/108
@@ -101,7 +101,7 @@ RUN PKG_CONFIG="/usr/bin/$(xx-info)-pkg-config" \
     && mv target/$(xx-cargo --print-target-triple)/$PROFILE_DIR/qdrant /qdrant/qdrant
 
 # Download and extract web UI
-RUN mkdir /static ; STATIC_DIR='/static' ./tools/sync-web-ui.sh
+RUN mkdir /static && STATIC_DIR=/static ./tools/sync-web-ui.sh
 
 
 FROM debian:12-slim AS qdrant
