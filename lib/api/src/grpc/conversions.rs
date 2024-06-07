@@ -962,7 +962,11 @@ fn conditions_helper_to_grpc(conditions: Option<Vec<segment::types::Condition>>)
             if conditions.is_empty() {
                 vec![]
             } else {
-                conditions.into_iter().map(|c| c.into()).collect()
+                conditions
+                    .into_iter()
+                    .filter(|c| !matches!(c, segment::types::Condition::Resharding(_))) // TODO(resharding)!?
+                    .map(|c| c.into())
+                    .collect()
             }
         }
     }

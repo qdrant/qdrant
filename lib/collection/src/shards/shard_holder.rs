@@ -8,7 +8,7 @@ use std::time::Duration;
 use common::cpu::CpuBudget;
 use futures::Future;
 use itertools::Itertools;
-use segment::types::ShardKey;
+use segment::types::{Condition, Filter, ShardKey};
 use tar::Builder as TarBuilder;
 use tokio::runtime::Handle;
 use tokio::sync::{broadcast, RwLock};
@@ -18,7 +18,7 @@ use super::resharding::{ReshardKey, ReshardState};
 use super::transfer::transfer_tasks_pool::TransferTasksPool;
 use crate::common::validate_snapshot_archive::validate_open_snapshot_archive;
 use crate::config::{CollectionConfig, ShardingMethod};
-use crate::hash_ring::HashRing;
+use crate::hash_ring::{self, HashRing};
 use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::snapshot_ops::SnapshotDescription;
@@ -236,7 +236,15 @@ impl ShardHolder {
             Ok(())
         })?;
 
-        todo!()
+        self.resharding_state.write(|state| {
+            let Some(state) = state else {
+                unreachable!();
+            };
+
+            state.filter_read_operations = true; // TODO(resharding): Add proper resharding state!
+        })?;
+
+        Ok(())
     }
 
     pub fn commit_write_hashring(&mut self, resharding_key: ReshardKey) -> CollectionResult<()> {
@@ -351,6 +359,34 @@ impl ShardHolder {
         }
 
         Ok(())
+    }
+
+    pub fn resharding_filter(&self) -> Option<Filter> {
+        let filter = self.resharding_filter_impl()?;
+        let filter = Filter::new_must_not(Condition::Resharding(Arc::new(filter)));
+        Some(filter)
+    }
+
+    pub fn resharding_filter_impl(&self) -> Option<hash_ring::Filter> {
+        let state = self.resharding_state.read();
+
+        let Some(state) = state.deref() else {
+            return None;
+        };
+
+        if !state.filter_read_operations {
+            return None;
+        }
+
+        let Some(ring) = self.rings.get(&state.shard_key) else {
+            return None; // TODO(resharding)!?
+        };
+
+        let HashRing::Resharding { new, .. } = ring else {
+            return None; // TODO(resharding)!?
+        };
+
+        Some(hash_ring::Filter::new(new.clone(), state.shard_id))
     }
 
     pub fn add_shard(
