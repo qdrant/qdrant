@@ -73,6 +73,27 @@ pub struct PointRef<'a> {
 
 pub type CollectionName = String;
 
+///
+///  ┌──────────────┐
+///  │              │  -> Batch request
+///  │ request(+ids)├───────┐   to storage
+///  │              │       │
+///  └──────────────┘       │
+///                         │
+///                         │
+///    Reference Vectors    ▼
+///  ┌──────────────────────────────┐
+///  │                              │
+///  │  ┌───────┐      ┌──────────┐ │
+///  │  │       │      │          │ │
+///  │  │  IDs  ├─────►│ Vectors  │ │
+///  │  │       │      │          │ │
+///  │  └───────┘      └──────────┘ │
+///  │                              │
+///  └──────────────────────────────┘
+///
+/// This is a temporary structure, which holds resolved references to vectors,
+/// mentioned in the query.
 #[derive(Default)]
 pub struct ReferencedVectors {
     collection_mapping: HashMap<CollectionName, HashMap<PointIdType, Record>>,
@@ -118,19 +139,21 @@ impl ReferencedVectors {
         }
     }
 
-    pub fn convert_to_vectors_owned<'a>(
+    /// Convert potential reference to a vector (vector id) into actual vector,
+    /// which was resolved by the request to the storage.
+    pub fn resolve_reference<'a>(
         &'a self,
-        inputs: impl Iterator<Item = VectorInput> + 'a,
-        vector_name: &'a str,
         collection_name: Option<&'a String>,
-    ) -> impl Iterator<Item = Vector> + 'a {
-        inputs.filter_map(move |example| match example {
+        vector_name: &str,
+        vector_input: VectorInput,
+    ) -> Option<Vector> {
+        match vector_input {
             VectorInput::Vector(vector) => Some(vector),
             VectorInput::Id(vid) => {
                 let rec = self.get(&collection_name, vid).unwrap();
                 rec.get_vector_by_name(vector_name).map(|v| v.to_owned())
             }
-        })
+        }
     }
 }
 

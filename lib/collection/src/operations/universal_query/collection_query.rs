@@ -1,5 +1,3 @@
-use std::iter;
-
 use api::rest::RecommendStrategy;
 use common::types::ScoreType;
 use itertools::Itertools;
@@ -126,75 +124,78 @@ impl VectorQuery<VectorInput> {
         match self {
             VectorQuery::Nearest(vector_input) => {
                 let vector = ids_to_vectors
-                    .convert_to_vectors_owned(
-                        iter::once(vector_input),
-                        lookup_vector_name,
-                        lookup_collection,
-                    )
-                    .next()
+                    .resolve_reference(lookup_collection, lookup_vector_name, vector_input)
                     .unwrap();
 
                 VectorQuery::Nearest(vector)
             }
             VectorQuery::RecommendAverageVector(reco) => {
-                let positives = ids_to_vectors
-                    .convert_to_vectors_owned(
-                        reco.positives.into_iter(),
-                        lookup_vector_name,
-                        lookup_collection,
-                    )
+                let positives = reco
+                    .positives
+                    .into_iter()
+                    .filter_map(|vector_input| {
+                        ids_to_vectors.resolve_reference(
+                            lookup_collection,
+                            lookup_vector_name,
+                            vector_input,
+                        )
+                    })
                     .collect();
-                let negatives = ids_to_vectors
-                    .convert_to_vectors_owned(
-                        reco.negatives.into_iter(),
-                        lookup_vector_name,
-                        lookup_collection,
-                    )
+                let negatives = reco
+                    .negatives
+                    .into_iter()
+                    .filter_map(|vector_input| {
+                        ids_to_vectors.resolve_reference(
+                            lookup_collection,
+                            lookup_vector_name,
+                            vector_input,
+                        )
+                    })
                     .collect();
 
                 VectorQuery::RecommendAverageVector(RecoQuery::new(positives, negatives))
             }
             VectorQuery::RecommendBestScore(reco) => {
                 // TODO(universal-query): This is a copy-paste from `RecommendAverageVector` branch, remove duplicated code
-                let positives = ids_to_vectors
-                    .convert_to_vectors_owned(
-                        reco.positives.into_iter(),
-                        lookup_vector_name,
-                        lookup_collection,
-                    )
+                let positives = reco
+                    .positives
+                    .into_iter()
+                    .filter_map(|vector_input| {
+                        ids_to_vectors.resolve_reference(
+                            lookup_collection,
+                            lookup_vector_name,
+                            vector_input,
+                        )
+                    })
                     .collect();
-                let negatives = ids_to_vectors
-                    .convert_to_vectors_owned(
-                        reco.negatives.into_iter(),
-                        lookup_vector_name,
-                        lookup_collection,
-                    )
+                let negatives = reco
+                    .negatives
+                    .into_iter()
+                    .filter_map(|vector_input| {
+                        ids_to_vectors.resolve_reference(
+                            lookup_collection,
+                            lookup_vector_name,
+                            vector_input,
+                        )
+                    })
                     .collect();
 
                 VectorQuery::RecommendBestScore(RecoQuery::new(positives, negatives))
             }
             VectorQuery::Discover(discover) => {
                 let target = ids_to_vectors
-                    .convert_to_vectors_owned(
-                        iter::once(discover.target),
-                        lookup_vector_name,
-                        lookup_collection,
-                    )
-                    .next()
+                    .resolve_reference(lookup_collection, lookup_vector_name, discover.target)
                     .unwrap();
                 let pairs = discover
                     .pairs
                     .into_iter()
-                    .map(|pair| {
-                        let mut vector_pair = ids_to_vectors.convert_to_vectors_owned(
-                            pair.into_iter(),
-                            lookup_vector_name,
-                            lookup_collection,
-                        );
-                        ContextPair {
-                            positive: vector_pair.next().unwrap(),
-                            negative: vector_pair.next().unwrap(),
-                        }
+                    .map(|pair| ContextPair {
+                        positive: ids_to_vectors
+                            .resolve_reference(lookup_collection, lookup_vector_name, pair.positive)
+                            .unwrap(),
+                        negative: ids_to_vectors
+                            .resolve_reference(lookup_collection, lookup_vector_name, pair.negative)
+                            .unwrap(),
                     })
                     .collect();
 
@@ -204,16 +205,13 @@ impl VectorQuery<VectorInput> {
                 let pairs = context
                     .pairs
                     .into_iter()
-                    .map(|pair| {
-                        let mut vector_pair = ids_to_vectors.convert_to_vectors_owned(
-                            pair.into_iter(),
-                            lookup_vector_name,
-                            lookup_collection,
-                        );
-                        ContextPair {
-                            positive: vector_pair.next().unwrap(),
-                            negative: vector_pair.next().unwrap(),
-                        }
+                    .map(|pair| ContextPair {
+                        positive: ids_to_vectors
+                            .resolve_reference(lookup_collection, lookup_vector_name, pair.positive)
+                            .unwrap(),
+                        negative: ids_to_vectors
+                            .resolve_reference(lookup_collection, lookup_vector_name, pair.negative)
+                            .unwrap(),
                     })
                     .collect();
 
