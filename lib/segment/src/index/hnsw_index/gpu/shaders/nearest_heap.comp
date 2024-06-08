@@ -18,7 +18,7 @@ buffer NearestScores {
     ScoredPoint data[];
 } nearest_data;
 
-float nearest_smaller_score;
+ScoredPoint nearest_smaller;
 uint nearest_smaller_index;
 uint nearest_count;
 
@@ -29,13 +29,13 @@ uint nearest_count;
 void nearest_heap_init() {
     nearest_count = 0;
     nearest_smaller_index = 0;
-    nearest_smaller_score = positive_infinity;
+    nearest_smaller = ScoredPoint(UINT_MAX, positive_infinity);
 
     uint buffer_offset = NEAREST_BUFFER_OFFSET;
     uint capacity = NEAREST_HEAP_CAPACITY;
     for (uint i = SUBGROUP_INVOKATION_ID; i < capacity; i += SUBGROUP_SIZE) {
         uint buffer_index = buffer_offset + i;
-        nearest_data.data[buffer_index] = ScoredPoint(0, negative_infinity);
+        nearest_data.data[buffer_index] = ScoredPoint(UINT_MAX, negative_infinity);
     }
     groupMemoryBarrier();
 }
@@ -44,7 +44,7 @@ void nearest_heap_init() {
 bool push_nearest(ScoredPoint scored_point) {
     uint ef = NEAREST_HEAP_EF;
     if (nearest_count == ef) {
-        if (scored_point.score > nearest_smaller_score) {
+        if (scored_point.score > nearest_smaller.score) {
             uint buffer_offset = NEAREST_BUFFER_OFFSET;
             if (subgroupElect()) {
                 uint buffer_index = buffer_offset + nearest_smaller_index;
@@ -53,22 +53,24 @@ bool push_nearest(ScoredPoint scored_point) {
             groupMemoryBarrier(); // TODO: is this necessary? We can write and read in the same shader invocation
 
             nearest_smaller_index = 0;
-            nearest_smaller_score = positive_infinity;
+            nearest_smaller.id = 0;
+            nearest_smaller.score = positive_infinity;
             for (uint i = SUBGROUP_INVOKATION_ID; i < ef; i += SUBGROUP_SIZE) {
                 uint buffer_index = buffer_offset + i;
-                float score = nearest_data.data[buffer_index].score;
-                if (score < nearest_smaller_score) {
-                    nearest_smaller_score = score;
+                ScoredPoint scored_point = nearest_data.data[buffer_index];
+                if (scored_point.score < nearest_smaller.score) {
+                    nearest_smaller = scored_point;
                     nearest_smaller_index = i;
                 }
             }
 
-            float subgroup_smaller = subgroupMin(nearest_smaller_score);
-            bool is_min_thread = nearest_smaller_score == subgroup_smaller;
+            float subgroup_smaller = subgroupMin(nearest_smaller.score);
+            bool is_min_thread = nearest_smaller.score == subgroup_smaller;
             uvec4 subgroup_min_threads = subgroupBallot(is_min_thread);
             uint subgroup_min_thread = subgroupBallotFindLSB(subgroup_min_threads);
             nearest_smaller_index = subgroupShuffle(nearest_smaller_index, subgroup_min_thread);
-            nearest_smaller_score = subgroupShuffle(nearest_smaller_score, subgroup_min_thread);
+            nearest_smaller.score = subgroupShuffle(nearest_smaller.score, subgroup_min_thread);
+            nearest_smaller.id = subgroupShuffle(nearest_smaller.id, subgroup_min_thread);
 
             return true;
         } else {
@@ -81,8 +83,8 @@ bool push_nearest(ScoredPoint scored_point) {
         }
         groupMemoryBarrier(); // TODO: is this necessary? We can write and read in the same shader invocation
 
-        if (scored_point.score < nearest_smaller_score) {
-            nearest_smaller_score = scored_point.score;
+        if (scored_point.score < nearest_smaller.score) {
+            nearest_smaller = scored_point;
             nearest_smaller_index = nearest_count;
         }
         nearest_count++;
@@ -170,8 +172,11 @@ ScoredPoint get_nearest(uint i) {
 }
 
 void set_nearest(uint i, ScoredPoint scored_point) {
-    uint buffer_offset = NEAREST_BUFFER_OFFSET;
-    nearest_data.data[buffer_offset + i] = scored_point;
+    if (subgroupElect()) {
+        uint buffer_offset = NEAREST_BUFFER_OFFSET;
+        nearest_data.data[buffer_offset + i] = scored_point;
+    }
+    groupMemoryBarrier();
 }
 
 #endif

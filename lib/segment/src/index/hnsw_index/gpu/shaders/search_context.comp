@@ -1,0 +1,100 @@
+#ifndef SEARCH_CONTEXT_HEADER
+#define SEARCH_CONTEXT_HEADER
+
+#include "common.comp"
+#include "vector_storage.comp"
+#include "links.comp"
+#include "nearest_heap.comp"
+#include "candidates_heap.comp"
+#include "visited_flags.comp"
+
+void process_candidate(ScoredPoint scored_point) {
+    bool not_presented = nearest_smaller.id != scored_point.id;
+    bool was_added = push_nearest(scored_point);
+    if (was_added && not_presented) {
+        push_candidate(scored_point);
+    }
+}
+
+void process_link(POINT_ID point_id, POINT_ID link) {
+    if (check_and_process_visited(link)) {
+        float score = similarity(point_id, link);
+        ScoredPoint scored_point = ScoredPoint(link, score);
+        process_candidate(scored_point);
+    }
+}
+
+void search(POINT_ID point_id, ScoredPoint entry) {
+    check_and_process_visited(point_id);
+    check_and_process_visited(entry.id);
+    push_nearest(entry);
+    push_candidate(entry);
+
+    while (candidates_count > 0) {
+        ScoredPoint candidate = pop_candidate();
+        if (candidate.score < nearest_smaller.score) {
+            continue;
+        }
+        LINKS_FOREACH(candidate.id) {
+            process_link(point_id, LINKS_FOREACH_VALUE);
+        }
+    }
+
+    LINKS_FOREACH(point_id) {
+        process_link(point_id, LINKS_FOREACH_VALUE);
+    }
+}
+
+ScoredPoint greedy_search(POINT_ID point_id, ScoredPoint entry) {
+    bool changed = true;
+    ScoredPoint result = entry;
+    while (changed) {
+        changed = false;
+
+        LINKS_FOREACH(result.id) {
+            float score = similarity(point_id, LINKS_FOREACH_VALUE);
+            if (score > result.score) {
+                changed = true;
+                result = ScoredPoint(LINKS_FOREACH_VALUE, score);
+            }
+        }
+    }
+    return result;
+}
+
+uint run_heuristic() {
+    sort_nearest();
+    uint result_count = 0;
+
+    for (uint i = 0; i < nearest_count; i++) {
+        if (result_count >= LEVEL_M) {
+            break;
+        }
+
+        ScoredPoint current_closest = get_nearest(i);
+        bool is_good = true;
+
+        for (uint j = 0; j < result_count; j++) {
+            ScoredPoint selected_point = get_nearest(j);
+            float dist_to_already_selected = similarity(current_closest.id, selected_point.id);
+            if (dist_to_already_selected > current_closest.score) {
+                is_good = false;
+                break;
+            }
+        }
+
+        if (is_good) {
+            set_nearest(result_count, current_closest);
+            result_count += 1;
+        }
+    }
+
+    return result_count;
+}
+
+void search_context_init() {
+    nearest_heap_init();
+    candidates_heap_init();
+}
+
+#endif

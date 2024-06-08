@@ -38,14 +38,14 @@ void main() {
         groupMemoryBarrier();
         memoryBarrier();
 
-        float nearest_smaller_score_check = subgroupMin(nearest_smaller_score);
-        bool is_different = nearest_smaller_score_check != nearest_smaller_score;
+        float nearest_smaller_score_check = subgroupMin(nearest_smaller.score);
+        bool is_different = nearest_smaller_score_check != nearest_smaller.score;
         if (subgroupAny(is_different)) {
             if (subgroupElect()) {
                 scores_output.data[point_index] = positive_infinity;
             }
         } else if (subgroupElect()) {
-            scores_output.data[point_index] = nearest_smaller_score;
+            scores_output.data[point_index] = nearest_smaller.score;
         }
     }
 
