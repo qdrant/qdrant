@@ -302,7 +302,7 @@ mod tests {
         let mut gpu_responses_1 = vec![ScoredPointOffset::default(); groups_count * ef];
         responses_staging_buffer.download_slice(&mut gpu_responses_1, 0);
         let gpu_responses_1 = gpu_responses_1
-            .windows(ef)
+            .chunks_exact(ef)
             .map(|r| r.to_owned())
             .collect_vec();
 
@@ -341,7 +341,7 @@ mod tests {
         let mut gpu_responses_2 = vec![ScoredPointOffset::default(); groups_count * ef];
         responses_staging_buffer.download_slice(&mut gpu_responses_2, 0);
         let gpu_responses_2 = gpu_responses_2
-            .windows(ef)
+            .chunks_exact(ef)
             .map(|r| r.to_owned())
             .collect_vec();
 
@@ -358,15 +358,12 @@ mod tests {
             let search_result = graph_layers_builder
                 .search_on_level(entry, 0, ef, &mut scorer)
                 .into_vec();
-            for (cpu, gpu) in search_result.iter().zip(gpu_responses_1[i].iter()) {
-                println!("{:?} {:?}", cpu, gpu);
-                //assert_eq!(cpu.idx, gpu.idx);
-                //assert!((cpu.score - gpu.score).abs() < 1e-5);
-            }
-            for (cpu, gpu) in search_result.iter().zip(gpu_responses_2[i].iter()) {
-                //println!("{:?} {:?}", cpu, gpu);
-                //assert_eq!(cpu.idx, gpu.idx);
-                //assert!((cpu.score - gpu.score).abs() < 1e-5);
+            for (cpu, (gpu_1, gpu_2)) in search_result.iter().zip(gpu_responses_1[i].iter().zip(gpu_responses_2[i].iter())) {
+                println!("{:?} {:?} {:?}", cpu, gpu_1, gpu_2);
+                assert_eq!(cpu.idx, gpu_1.idx);
+                assert_eq!(cpu.idx, gpu_2.idx);
+                assert!((cpu.score - gpu_1.score).abs() < 1e-5);
+                assert!((cpu.score - gpu_2.score).abs() < 1e-5);
             }
         }
     }

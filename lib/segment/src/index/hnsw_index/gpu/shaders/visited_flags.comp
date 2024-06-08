@@ -38,7 +38,7 @@ bool check_and_process_visited(POINT_ID point_id) {
             visited_flags.data[index] = cleared | (VISITED_GENERATION << shift);
         }
     }
-    bool broadcasted_changed = subgroupBroadcastFirst(changed);
+    bool broadcasted_changed = subgroupAny(changed);
     if (broadcasted_changed) {
         groupMemoryBarrier();
     }
