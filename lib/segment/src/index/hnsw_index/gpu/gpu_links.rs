@@ -186,7 +186,6 @@ impl GpuLinks {
         self.links[start_index] = links.len() as PointOffsetType;
         self.links[start_index + 1..start_index + 1 + links.len()].copy_from_slice(links);
 
-        self.patched_points.push((point_id, links.len()));
         let mut patch_start_index = self.patched_points.len()
             * (self.links_capacity + 1)
             * std::mem::size_of::<PointOffsetType>();
@@ -194,6 +193,7 @@ impl GpuLinks {
             .upload(&(links.len() as u32), patch_start_index);
         patch_start_index += std::mem::size_of::<PointOffsetType>();
         self.patch_buffer.upload_slice(links, patch_start_index);
+        self.patched_points.push((point_id, links.len()));
 
         Ok(())
     }

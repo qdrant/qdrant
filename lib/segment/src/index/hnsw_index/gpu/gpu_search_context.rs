@@ -86,13 +86,10 @@ mod tests {
 
     use super::*;
     use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
-    use crate::fixtures::index_fixtures::{
-        random_vector, FakeFilterContext, TestRawScorerProducer,
-    };
+    use crate::fixtures::index_fixtures::{FakeFilterContext, TestRawScorerProducer};
     use crate::index::hnsw_index::graph_layers::GraphLayersBase;
     use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
     use crate::index::hnsw_index::point_scorer::FilteredScorer;
-    use crate::spaces::metric::Metric;
     use crate::spaces::simple::DotProductMetric;
     use crate::types::Distance;
     use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
@@ -105,9 +102,9 @@ mod tests {
 
     #[test]
     fn test_gpu_hnsw_search_on_level() {
-        let num_vectors = 2048;
-        let groups_count = 1;
-        let dim = 256;
+        let num_vectors = 5;
+        let groups_count = 2;
+        let dim = 64;
         let m = 16;
         let ef = 32;
 
@@ -275,7 +272,7 @@ mod tests {
             .build(device.clone());
 
         context.bind_pipeline(
-            pipeline,
+            pipeline.clone(),
             &[
                 descriptor_set.clone(),
                 gpu_search_context.gpu_vector_storage.descriptor_set.clone(),
@@ -302,14 +299,51 @@ mod tests {
         );
         context.run();
         context.wait_finish();
-        let mut gpu_responses = vec![ScoredPointOffset::default(); groups_count * ef];
-        responses_staging_buffer.download_slice(&mut gpu_responses, 0);
-        let gpu_responses = gpu_responses
+        let mut gpu_responses_1 = vec![ScoredPointOffset::default(); groups_count * ef];
+        responses_staging_buffer.download_slice(&mut gpu_responses_1, 0);
+        let gpu_responses_1 = gpu_responses_1
             .windows(ef)
             .map(|r| r.to_owned())
             .collect_vec();
 
-        println!("{:?}", gpu_responses);
+        // restart search to check reset
+        gpu_search_context.reset_context(&mut context);
+        context.run();
+        context.wait_finish();
+        context.bind_pipeline(
+            pipeline,
+            &[
+                descriptor_set.clone(),
+                gpu_search_context.gpu_vector_storage.descriptor_set.clone(),
+                gpu_search_context.gpu_links.descriptor_set.clone(),
+                gpu_search_context.gpu_nearest_heap.descriptor_set.clone(),
+                gpu_search_context
+                    .gpu_candidates_heap
+                    .descriptor_set
+                    .clone(),
+                gpu_search_context.gpu_visited_flags.descriptor_set.clone(),
+            ],
+        );
+        context.dispatch(groups_count, 1, 1);
+        context.run();
+        context.wait_finish();
+
+        // Download response second time
+        context.copy_gpu_buffer(
+            responses_buffer.clone(),
+            responses_staging_buffer.clone(),
+            0,
+            0,
+            responses_buffer.size,
+        );
+        context.run();
+        context.wait_finish();
+        let mut gpu_responses_2 = vec![ScoredPointOffset::default(); groups_count * ef];
+        responses_staging_buffer.download_slice(&mut gpu_responses_2, 0);
+        let gpu_responses_2 = gpu_responses_2
+            .windows(ef)
+            .map(|r| r.to_owned())
+            .collect_vec();
 
         // Check response
         for i in 0..groups_count {
@@ -324,7 +358,16 @@ mod tests {
             let search_result = graph_layers_builder
                 .search_on_level(entry, 0, ef, &mut scorer)
                 .into_vec();
-            println!("{:?}", search_result);
+            for (cpu, gpu) in search_result.iter().zip(gpu_responses_1[i].iter()) {
+                println!("{:?} {:?}", cpu, gpu);
+                //assert_eq!(cpu.idx, gpu.idx);
+                //assert!((cpu.score - gpu.score).abs() < 1e-5);
+            }
+            for (cpu, gpu) in search_result.iter().zip(gpu_responses_2[i].iter()) {
+                //println!("{:?} {:?}", cpu, gpu);
+                //assert_eq!(cpu.idx, gpu.idx);
+                //assert!((cpu.score - gpu.score).abs() < 1e-5);
+            }
         }
     }
 }

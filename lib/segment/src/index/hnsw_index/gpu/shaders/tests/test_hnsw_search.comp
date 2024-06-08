@@ -48,8 +48,12 @@ void main() {
     float entry_score = similarity(search_request.id, search_request.entry);
     uint count = search(search_request.id, ScoredPoint(search_request.entry, entry_score));
 
-    uint result_index_offset = NEAREST_HEAP_EF * subgroup_index;
-    for (uint i = 0; i < count; i++) {
-        search_results.data[result_index_offset + i] = get_nearest(i);
+    barrier();
+
+    if (subgroupElect()) {
+        uint result_index_offset = NEAREST_HEAP_EF * subgroup_index;
+        for (uint i = 0; i < count; i++) {
+            search_results.data[result_index_offset + i] = get_nearest(i);
+        }
     }
 }
