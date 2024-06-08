@@ -23,55 +23,63 @@ uint candidates_count;
 #define CANDIDATES_BUFFER_OFFSET (CANDIDATES_HEAP_CAPACITY * (gl_GlobalInvocationID.x / SUBGROUP_SIZE))
 
 ScoredPoint candidates_heap_replace_first(ScoredPoint node_value, ScoredPoint scored_point) {
-    bool need_shift = scored_point.score > node_value.score;
-    bool other_need_shift = subgroupShuffleDown(need_shift, 1);
-    float other_score = subgroupShuffleDown(node_value.score, 1);
-    uint other_id = subgroupShuffleDown(node_value.id, 1);
-
-    if (SUBGROUP_INVOKATION_ID == 0) {
-        need_shift = true;
-    }
-
-    if (SUBGROUP_INVOKATION_ID == SUBGROUP_SIZE - 1) {
-        other_need_shift = false;
-        other_score = node_value.score;
-        other_id = node_value.id;
-    }
-
-    if (other_need_shift && need_shift) {
-        node_value.score = other_score;
-        node_value.id = other_id;
-    }
-    if (!other_need_shift && need_shift) {
+    bool need_change = scored_point.score > node_value.score;
+    uint invocation = SUBGROUP_INVOKATION_ID;
+    uint first_invocation = 0;
+    if (invocation == first_invocation) {
+        need_change = true;
         node_value = scored_point;
     }
-    return node_value;
+
+    uvec4 ballot = subgroupBallot(need_change);
+    bool right_need_change = false;
+
+    if (invocation + 1 < SUBGROUP_SIZE) {
+        right_need_change = subgroupBallotBitExtract(ballot, invocation + 1);
+    }
+
+    uint permut = invocation;
+    if (need_change && right_need_change) {
+        permut = invocation + 1;
+    }
+    if (need_change && !right_need_change) {
+        permut = first_invocation;
+    }
+
+    return ScoredPoint(
+        subgroupShuffle(node_value.id, permut),
+        subgroupShuffle(node_value.score, permut)
+    );
 }
 
 ScoredPoint candidates_heap_replace_last(ScoredPoint node_value, ScoredPoint scored_point) {
-    bool need_shift = scored_point.score < node_value.score;
-    bool other_need_shift = subgroupShuffleUp(need_shift, 1);
-    float other_score = subgroupShuffleUp(node_value.score, 1);
-    uint other_id = subgroupShuffleUp(node_value.id, 1);
-
-    if (SUBGROUP_INVOKATION_ID == SUBGROUP_SIZE - 1) {
-        need_shift = true;
-    }
-
-    if (SUBGROUP_INVOKATION_ID == 0) {
-        other_need_shift = false;
-        other_score = node_value.score;
-        other_id = node_value.id;
-    }
-
-    if (other_need_shift && need_shift) {
-        node_value.score = other_score;
-        node_value.id = other_id;
-    }
-    if (!other_need_shift && need_shift) {
+    bool need_change = scored_point.score < node_value.score;
+    uint invocation = SUBGROUP_INVOKATION_ID;
+    uint last_invocation = SUBGROUP_SIZE - 1;
+    if (invocation == last_invocation) {
+        need_change = true;
         node_value = scored_point;
     }
-    return node_value;
+
+    uvec4 ballot = subgroupBallot(need_change);
+    bool left_need_change = false;
+
+    if (invocation > 0) {
+        left_need_change = subgroupBallotBitExtract(ballot, invocation - 1);
+    }
+
+    uint permut = invocation;
+    if (need_change && left_need_change) {
+        permut = invocation - 1;
+    }
+    if (need_change && !left_need_change) {
+        permut = last_invocation;
+    }
+
+    return ScoredPoint(
+        subgroupShuffle(node_value.id, permut),
+        subgroupShuffle(node_value.score, permut)
+    );
 }
 
 ScoredPoint candidates_heap_read(uint buffer_offset, uint node_index) {

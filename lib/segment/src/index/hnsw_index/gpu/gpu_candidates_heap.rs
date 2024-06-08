@@ -98,9 +98,9 @@ mod tests {
 
     #[test]
     fn test_gpu_candidates_heap() {
-        let capacity = 32;
-        let points_count = 32;
-        let groups_count = 1;
+        let capacity = 1024;
+        let points_count = 1024;
+        let groups_count = 8;
         let inputs_count = points_count;
 
         let mut rng = StdRng::seed_from_u64(42);
@@ -232,14 +232,6 @@ mod tests {
         context.wait_finish();
         let mut scores_gpu = vec![ScoredPointOffset::default(); inputs_count * groups_count];
         download_staging_buffer.download_slice(&mut scores_gpu, 0);
-
-        for (i, (cpu, gpu)) in scores_cpu.iter().zip(scores_gpu.iter()).enumerate() {
-            println!(
-                "CAND {}: {}:{}, {}:{}",
-                i, cpu.idx, cpu.score, gpu.idx, gpu.score
-            );
-            //println!("CAND {}: gpu: {}, cpu: {}", i%(inputs_count), gpu.score, cpu.score);
-        }
 
         assert_eq!(scores_gpu, scores_cpu);
     }
