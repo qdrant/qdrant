@@ -164,4 +164,14 @@ void sort_nearest() {
     }
 }
 
+ScoredPoint get_nearest(uint i) {
+    uint buffer_offset = NEAREST_BUFFER_OFFSET;
+    return nearest_data.data[buffer_offset + i];
+}
+
+void set_nearest(uint i, ScoredPoint scored_point) {
+    uint buffer_offset = NEAREST_BUFFER_OFFSET;
+    nearest_data.data[buffer_offset + i] = scored_point;
+}
+
 #endif

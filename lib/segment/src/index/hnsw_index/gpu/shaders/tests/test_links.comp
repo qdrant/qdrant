@@ -7,18 +7,18 @@
 #extension GL_KHR_shader_subgroup_ballot : enable
 #extension GL_KHR_shader_subgroup_vote : enable
 
-#include "common.comp"
+#include "../common.comp"
 layout(local_size_x = SUBGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 
 #define LINKS_LAYOUT_SET 0
-#include "links.comp"
+#include "../links.comp"
 
 #define BHEAP_NAME LINKS_BHEAP
 POINT_ID heap_data[16];
 #define BHEAP_DATA heap_data
 #define BHEAP_TYPE POINT_ID
 #define BHEAP_CMP(a, b) a > b
-#include "bheap.comp" 
+#include "../bheap.comp" 
 
 void main() {
     BHEAP(LINKS_BHEAP, init)(0, 16, 0);
