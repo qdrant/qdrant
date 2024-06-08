@@ -27,5 +27,29 @@ layout(local_size_x = SUBGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 
 #include "../search_context.comp"
 
+struct SearchRequest {
+    uint id;
+    uint entry;
+};
+
+layout(set = 0, binding = 0) buffer SearchRequests {
+    SearchRequest data[];
+} search_requests;
+
+layout(set = 0, binding = 1) buffer SearchResults {
+    ScoredPoint data[];
+} search_results;
+
 void main() {
+    search_context_init();
+    uint subgroup_index = gl_GlobalInvocationID.x / SUBGROUP_SIZE;
+    SearchRequest search_request = search_requests.data[subgroup_index];
+
+    float entry_score = similarity(search_request.id, search_request.entry);
+    uint count = search(search_request.id, ScoredPoint(search_request.entry, entry_score));
+
+    uint result_index_offset = NEAREST_HEAP_EF * subgroup_index;
+    for (uint i = 0; i < count; i++) {
+        search_results.data[result_index_offset + i] = get_nearest(i);
+    }
 }

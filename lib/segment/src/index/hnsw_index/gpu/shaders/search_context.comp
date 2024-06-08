@@ -24,7 +24,7 @@ void process_link(POINT_ID point_id, POINT_ID link) {
     }
 }
 
-void search(POINT_ID point_id, ScoredPoint entry) {
+uint search(POINT_ID point_id, ScoredPoint entry) {
     check_and_process_visited(point_id);
     check_and_process_visited(entry.id);
     push_nearest(entry);
@@ -43,6 +43,9 @@ void search(POINT_ID point_id, ScoredPoint entry) {
     LINKS_FOREACH(point_id) {
         process_link(point_id, LINKS_FOREACH_VALUE);
     }
+
+    sort_nearest();
+    return nearest_count;
 }
 
 ScoredPoint greedy_search(POINT_ID point_id, ScoredPoint entry) {
@@ -63,7 +66,6 @@ ScoredPoint greedy_search(POINT_ID point_id, ScoredPoint entry) {
 }
 
 uint run_heuristic() {
-    sort_nearest();
     uint result_count = 0;
 
     for (uint i = 0; i < nearest_count; i++) {
