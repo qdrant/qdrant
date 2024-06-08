@@ -9,3 +9,4 @@ glslc tests/test_candidates_heap.comp -o compiled/test_candidates_heap.spv -O --
 glslc tests/test_visited_flags.comp -o compiled/test_visited_flags.spv -O --target-spv=spv1.3 --target-env=vulkan1.3
 glslc tests/test_hnsw_search.comp -o compiled/test_hnsw_search.spv -O --target-spv=spv1.3 --target-env=vulkan1.3
 glslc tests/test_greedy_search.comp -o compiled/test_greedy_search.spv -O --target-spv=spv1.3 --target-env=vulkan1.3
+glslc tests/test_heuristic.comp -o compiled/test_heuristic.spv -O --target-spv=spv1.3 --target-env=vulkan1.3
