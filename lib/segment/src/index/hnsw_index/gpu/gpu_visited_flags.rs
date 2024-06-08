@@ -24,6 +24,9 @@ impl GpuVisitedFlags {
         groups_count: usize,
         points_count: usize,
     ) -> OperationResult<Self> {
+        let alignment = std::mem::size_of::<u32>();
+        let points_count = points_count.div_ceil(alignment) * alignment;
+
         let params_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
             gpu::BufferType::Uniform,
@@ -41,7 +44,7 @@ impl GpuVisitedFlags {
         ));
 
         let params = GpuVisitedFlagsParamsBuffer {
-            capacity: points_count as u32,
+            capacity: (points_count as u32) / 4,
             generation: 1,
         };
         params_staging_buffer.upload(&params, 0);

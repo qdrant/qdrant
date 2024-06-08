@@ -22,80 +22,7 @@ uint candidates_count;
 #define CANDIDATES_HEAP_CAPACITY candidates_heap_params.capacity
 #define CANDIDATES_BUFFER_OFFSET (CANDIDATES_HEAP_CAPACITY * (gl_GlobalInvocationID.x / SUBGROUP_SIZE))
 
-uint subgroup_bubble_sort_2(float score) {
-    uint invocation = SUBGROUP_INVOKATION_ID;
-    bool is_even = invocation % 2 == 0;
-    uint invocation_forward = is_even ? invocation + 1 : invocation - 1;
-    uint invocation_backward = invocation;
-    if (invocation != SUBGROUP_SIZE - 1 && invocation != 0) {
-        invocation_backward = is_even ? invocation - 1 : invocation + 1;
-    }
-
-    uint index = invocation;
-    for (uint j = 0; j < SUBGROUP_SIZE / 2; j++) {
-        bool is_even = SUBGROUP_INVOKATION_ID % 2 == 0;
-        bool was_changed = false;
-
-        // step one: compare with the next element
-        {
-            float next_score = subgroupShuffle(score, invocation_forward);
-            uint next_index = subgroupShuffle(index, invocation_forward);
-            bool need_exchange = is_even ? score > next_score : score < next_score;
-            if (need_exchange) {
-                was_changed = true;
-                score = next_score;
-                index = next_index;
-            }
-        }
-
-        // step two: compare with previous element
-        {
-            float next_score = subgroupShuffle(score, invocation_backward);
-            uint next_index = subgroupShuffle(index, invocation_backward);
-            bool need_exchange = is_even ? score < next_score : score > next_score;
-            if (need_exchange) {
-                was_changed = true;
-                score = next_score;
-                index = next_index;
-            }
-        }
-
-        if (!subgroupAny(was_changed)) {
-            break;
-        }
-    }
-    return index;
-}
-
 ScoredPoint candidates_heap_replace_first(ScoredPoint node_value, ScoredPoint scored_point) {
-    uint invocation = SUBGROUP_INVOKATION_ID;
-    uint first_invocation = 0;
-    if (invocation == first_invocation) {
-        node_value = scored_point;
-    }
-
-    uint permut = subgroup_bubble_sort_2(node_value.score);
-    return ScoredPoint(
-        subgroupShuffle(node_value.id, permut),
-        subgroupShuffle(node_value.score, permut)
-    );
-}
-
-ScoredPoint candidates_heap_replace_last(ScoredPoint node_value, ScoredPoint scored_point) {
-    uint invocation = SUBGROUP_INVOKATION_ID;
-    uint last_invocation = SUBGROUP_SIZE - 1;
-    if (invocation == last_invocation) {
-        node_value = scored_point;
-    }
-
-    uint permut = subgroup_bubble_sort_2(node_value.score);
-    return ScoredPoint(
-        subgroupShuffle(node_value.id, permut),
-        subgroupShuffle(node_value.score, permut)
-    );
-}
-
-ScoredPoint candidates_heap_replace_first_2(ScoredPoint node_value, ScoredPoint scored_point) {
     bool need_change = scored_point.score > node_value.score;
     uint invocation = SUBGROUP_INVOKATION_ID;
     uint first_invocation = 0;
@@ -125,7 +52,7 @@ ScoredPoint candidates_heap_replace_first_2(ScoredPoint node_value, ScoredPoint 
     );
 }
 
-ScoredPoint candidates_heap_replace_last_2(ScoredPoint node_value, ScoredPoint scored_point) {
+ScoredPoint candidates_heap_replace_last(ScoredPoint node_value, ScoredPoint scored_point) {
     bool need_change = scored_point.score < node_value.score;
     uint invocation = SUBGROUP_INVOKATION_ID;
     uint last_invocation = SUBGROUP_SIZE - 1;

@@ -102,8 +102,8 @@ mod tests {
 
     #[test]
     fn test_gpu_hnsw_search_on_level() {
-        let num_vectors = 5;
-        let groups_count = 2;
+        let num_vectors = 1024;
+        let groups_count = 8;
         let dim = 64;
         let m = 16;
         let ef = 32;
@@ -358,8 +358,10 @@ mod tests {
             let search_result = graph_layers_builder
                 .search_on_level(entry, 0, ef, &mut scorer)
                 .into_vec();
-            for (cpu, (gpu_1, gpu_2)) in search_result.iter().zip(gpu_responses_1[i].iter().zip(gpu_responses_2[i].iter())) {
-                println!("{:?} {:?} {:?}", cpu, gpu_1, gpu_2);
+            for (cpu, (gpu_1, gpu_2)) in search_result
+                .iter()
+                .zip(gpu_responses_1[i].iter().zip(gpu_responses_2[i].iter()))
+            {
                 assert_eq!(cpu.idx, gpu_1.idx);
                 assert_eq!(cpu.idx, gpu_2.idx);
                 assert!((cpu.score - gpu_1.score).abs() < 1e-5);
