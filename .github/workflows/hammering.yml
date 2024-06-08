@@ -13,10 +13,10 @@ jobs:
 
     steps:
     - name: Install minimal stable
-      uses: dtolnay/rust-toolchain@stable
+      uses: dtolnay/rust-toolchain@1.77.0
     - uses: actions/checkout@v4
       with:
-        fetch-depth: 100
+        fetch-depth: 300
     - name: Install Protoc
       uses: arduino/setup-protoc@v3
       with:
@@ -24,196 +24,22 @@ jobs:
 
     - name: Copy hammering
       shell: bash
-      run: cp -a ./tools/hammering.sh ./hammering.sh
+      run: cp -a ./tools/hammering2.sh ./hammering.sh
 
-    - name: Checkout 50c7a7e380de9f272d77edf5ef0238848b996416~0 and build
-      run: git checkout 50c7a7e380de9f272d77edf5ef0238848b996416~0 && cargo test -p collection --lib --no-run
-    - name: Run hammering
+    - name: Run on a good revision
       shell: bash
-      run: . ./hammering.sh
+      run: |
+        git checkout 50c7a7e~200
+        bash ./hammering.sh # should pass
 
-    - name: Checkout 50c7a7e380de9f272d77edf5ef0238848b996416~1 and build
-      run: git checkout 50c7a7e380de9f272d77edf5ef0238848b996416~1 && cargo test -p collection --lib --no-run
-    - name: Run hammering
+    - name: Run on a bad revision
       shell: bash
-      run: . ./hammering.sh
+      run: |
+        git checkout 50c7a7e
+        rc=0; bash ./hammering.sh || rc=$?; [ $rc = 1 ] # should fail
 
-    - name: Checkout 50c7a7e380de9f272d77edf5ef0238848b996416~2 and build
-      run: git checkout 50c7a7e380de9f272d77edf5ef0238848b996416~2 && cargo test -p collection --lib --no-run
-    - name: Run hammering
+    - name: Run bisect
       shell: bash
-      run: . ./hammering.sh
-
-    - name: Checkout 50c7a7e380de9f272d77edf5ef0238848b996416~3 and build
-      run: git checkout 50c7a7e380de9f272d77edf5ef0238848b996416~3 && cargo test -p collection --lib --no-run
-    - name: Run hammering
-      shell: bash
-      run: . ./hammering.sh
-
-    - name: Checkout 50c7a7e380de9f272d77edf5ef0238848b996416~4 and build
-      run: git checkout 50c7a7e380de9f272d77edf5ef0238848b996416~4 && cargo test -p collection --lib --no-run
-    - name: Run hammering
-      shell: bash
-      run: . ./hammering.sh
-
-    - name: Checkout 50c7a7e380de9f272d77edf5ef0238848b996416~5 and build
-      run: git checkout 50c7a7e380de9f272d77edf5ef0238848b996416~5 && cargo test -p collection --lib --no-run
-    - name: Run hammering
-      shell: bash
-      run: . ./hammering.sh
-
-    - name: Checkout 50c7a7e380de9f272d77edf5ef0238848b996416~6 and build
-      run: git checkout 50c7a7e380de9f272d77edf5ef0238848b996416~6 && cargo test -p collection --lib --no-run
-    - name: Run hammering
-      shell: bash
-      run: . ./hammering.sh
-
-    - name: Checkout 50c7a7e380de9f272d77edf5ef0238848b996416~7 and build
-      run: git checkout 50c7a7e380de9f272d77edf5ef0238848b996416~7 && cargo test -p collection --lib --no-run
-    - name: Run hammering
-      shell: bash
-      run: . ./hammering.sh
-
-    - name: Checkout 50c7a7e380de9f272d77edf5ef0238848b996416~8 and build
-      run: git checkout 50c7a7e380de9f272d77edf5ef0238848b996416~8 && cargo test -p collection --lib --no-run
-    - name: Run hammering
-      shell: bash
-      run: . ./hammering.sh
-
-    - name: Checkout 50c7a7e380de9f272d77edf5ef0238848b996416~9 and build
-      run: git checkout 50c7a7e380de9f272d77edf5ef0238848b996416~9 && cargo test -p collection --lib --no-run
-    - name: Run hammering
-      shell: bash
-      run: . ./hammering.sh
-
-    - name: Checkout 50c7a7e380de9f272d77edf5ef0238848b996416~10 and build
-      run: git checkout 50c7a7e380de9f272d77edf5ef0238848b996416~10 && cargo test -p collection --lib --no-run
-    - name: Run hammering
-      shell: bash
-      run: . ./hammering.sh
-
-    - name: Checkout 50c7a7e380de9f272d77edf5ef0238848b996416~11 and build
-      run: git checkout 50c7a7e380de9f272d77edf5ef0238848b996416~11 && cargo test -p collection --lib --no-run
-    - name: Run hammering
-      shell: bash
-      run: . ./hammering.sh
-
-    - name: Checkout 50c7a7e380de9f272d77edf5ef0238848b996416~12 and build
-      run: git checkout 50c7a7e380de9f272d77edf5ef0238848b996416~12 && cargo test -p collection --lib --no-run
-    - name: Run hammering
-      shell: bash
-      run: . ./hammering.sh
-
-    - name: Checkout 50c7a7e380de9f272d77edf5ef0238848b996416~13 and build
-      run: git checkout 50c7a7e380de9f272d77edf5ef0238848b996416~13 && cargo test -p collection --lib --no-run
-    - name: Run hammering
-      shell: bash
-      run: . ./hammering.sh
-
-    - name: Checkout 50c7a7e380de9f272d77edf5ef0238848b996416~14 and build
-      run: git checkout 50c7a7e380de9f272d77edf5ef0238848b996416~14 && cargo test -p collection --lib --no-run
-    - name: Run hammering
-      shell: bash
-      run: . ./hammering.sh
-
-    - name: Checkout 50c7a7e380de9f272d77edf5ef0238848b996416~15 and build
-      run: git checkout 50c7a7e380de9f272d77edf5ef0238848b996416~15 && cargo test -p collection --lib --no-run
-    - name: Run hammering
-      shell: bash
-      run: . ./hammering.sh
-
-    - name: Checkout 50c7a7e380de9f272d77edf5ef0238848b996416~16 and build
-      run: git checkout 50c7a7e380de9f272d77edf5ef0238848b996416~16 && cargo test -p collection --lib --no-run
-    - name: Run hammering
-      shell: bash
-      run: . ./hammering.sh
-
-    - name: Checkout 50c7a7e380de9f272d77edf5ef0238848b996416~17 and build
-      run: git checkout 50c7a7e380de9f272d77edf5ef0238848b996416~17 && cargo test -p collection --lib --no-run
-    - name: Run hammering
-      shell: bash
-      run: . ./hammering.sh
-
-    - name: Checkout 50c7a7e380de9f272d77edf5ef0238848b996416~18 and build
-      run: git checkout 50c7a7e380de9f272d77edf5ef0238848b996416~18 && cargo test -p collection --lib --no-run
-    - name: Run hammering
-      shell: bash
-      run: . ./hammering.sh
-
-    - name: Checkout 50c7a7e380de9f272d77edf5ef0238848b996416~19 and build
-      run: git checkout 50c7a7e380de9f272d77edf5ef0238848b996416~19 && cargo test -p collection --lib --no-run
-    - name: Run hammering
-      shell: bash
-      run: . ./hammering.sh
-
-    - name: Checkout 50c7a7e380de9f272d77edf5ef0238848b996416~20 and build
-      run: git checkout 50c7a7e380de9f272d77edf5ef0238848b996416~20 && cargo test -p collection --lib --no-run
-    - name: Run hammering
-      shell: bash
-      run: . ./hammering.sh
-
-    - name: Checkout 50c7a7e380de9f272d77edf5ef0238848b996416~21 and build
-      run: git checkout 50c7a7e380de9f272d77edf5ef0238848b996416~21 && cargo test -p collection --lib --no-run
-    - name: Run hammering
-      shell: bash
-      run: . ./hammering.sh
-
-    - name: Checkout 50c7a7e380de9f272d77edf5ef0238848b996416~22 and build
-      run: git checkout 50c7a7e380de9f272d77edf5ef0238848b996416~22 && cargo test -p collection --lib --no-run
-    - name: Run hammering
-      shell: bash
-      run: . ./hammering.sh
-
-    - name: Checkout 50c7a7e380de9f272d77edf5ef0238848b996416~23 and build
-      run: git checkout 50c7a7e380de9f272d77edf5ef0238848b996416~23 && cargo test -p collection --lib --no-run
-    - name: Run hammering
-      shell: bash
-      run: . ./hammering.sh
-
-    - name: Checkout 50c7a7e380de9f272d77edf5ef0238848b996416~24 and build
-      run: git checkout 50c7a7e380de9f272d77edf5ef0238848b996416~24 && cargo test -p collection --lib --no-run
-    - name: Run hammering
-      shell: bash
-      run: . ./hammering.sh
-
-    - name: Checkout 50c7a7e380de9f272d77edf5ef0238848b996416~25 and build
-      run: git checkout 50c7a7e380de9f272d77edf5ef0238848b996416~25 && cargo test -p collection --lib --no-run
-    - name: Run hammering
-      shell: bash
-      run: . ./hammering.sh
-
-    - name: Checkout 50c7a7e380de9f272d77edf5ef0238848b996416~26 and build
-      run: git checkout 50c7a7e380de9f272d77edf5ef0238848b996416~26 && cargo test -p collection --lib --no-run
-    - name: Run hammering
-      shell: bash
-      run: . ./hammering.sh
-
-    - name: Checkout 50c7a7e380de9f272d77edf5ef0238848b996416~27 and build
-      run: git checkout 50c7a7e380de9f272d77edf5ef0238848b996416~27 && cargo test -p collection --lib --no-run
-    - name: Run hammering
-      shell: bash
-      run: . ./hammering.sh
-
-    - name: Checkout 50c7a7e380de9f272d77edf5ef0238848b996416~28 and build
-      run: git checkout 50c7a7e380de9f272d77edf5ef0238848b996416~28 && cargo test -p collection --lib --no-run
-    - name: Run hammering
-      shell: bash
-      run: . ./hammering.sh
-
-    - name: Checkout 50c7a7e380de9f272d77edf5ef0238848b996416~29 and build
-      run: git checkout 50c7a7e380de9f272d77edf5ef0238848b996416~29 && cargo test -p collection --lib --no-run
-    - name: Run hammering
-      shell: bash
-      run: . ./hammering.sh
-
-    - name: Checkout 50c7a7e380de9f272d77edf5ef0238848b996416~30 and build
-      run: git checkout 50c7a7e380de9f272d77edf5ef0238848b996416~30 && cargo test -p collection --lib --no-run
-    - name: Run hammering
-      shell: bash
-      run: . ./hammering.sh
-
-    - name: Checkout 50c7a7e380de9f272d77edf5ef0238848b996416~31 and build
-      run: git checkout 50c7a7e380de9f272d77edf5ef0238848b996416~31 && cargo test -p collection --lib --no-run
-    - name: Run hammering
-      shell: bash
-      run: . ./hammering.sh
+      run: |
+        git bisect start 50c7a7e 50c7a7e~200
+        git bisect run bash ./hammering.sh
