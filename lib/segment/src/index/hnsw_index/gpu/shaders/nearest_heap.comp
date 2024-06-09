@@ -144,22 +144,28 @@ void sort_nearest() {
     for (uint _cnt = 0; _cnt < iterations_count; _cnt++) {
         // do bubble sort in each subgroup to reduce the number of memory accesses
         for (uint i = SUBGROUP_INVOKATION_ID; i < NEAREST_HEAP_CAPACITY; i += SUBGROUP_SIZE) {
-            ScoredPoint scores_point = nearest_data.data[buffer_offset + i];
-            uint permut = subgroup_bubble_sort(scores_point.score);
-            float shuffled_scores_point_score = subgroupShuffle(scores_point.score, permut);
-            uint shuffled_scores_point_id = subgroupShuffle(scores_point.id, permut);
-            nearest_data.data[buffer_offset + i] = ScoredPoint(shuffled_scores_point_id, shuffled_scores_point_score);
+            ScoredPoint scored_point = nearest_data.data[buffer_offset + i];
+            if (i >= nearest_count) {
+                scored_point.score = negative_infinity;
+            }
+            uint permut = subgroup_bubble_sort(scored_point.score);
+            float shuffled_scored_point_score = subgroupShuffle(scored_point.score, permut);
+            uint shuffled_scored_point_id = subgroupShuffle(scored_point.id, permut);
+            nearest_data.data[buffer_offset + i] = ScoredPoint(shuffled_scored_point_id, shuffled_scored_point_score);
             groupMemoryBarrier();
         }
 
         if (NEAREST_HEAP_CAPACITY > SUBGROUP_SIZE) {
             // do bubble sort in each subgroup to reduce the number of memory accesses
             for (uint i = SUBGROUP_INVOKATION_ID + (SUBGROUP_SIZE / 2); i < NEAREST_HEAP_CAPACITY - (SUBGROUP_SIZE / 2); i += SUBGROUP_SIZE) {
-                ScoredPoint scores_point = nearest_data.data[buffer_offset + i];
-                uint permut = subgroup_bubble_sort(scores_point.score);
-                float shuffled_scores_point_score = subgroupShuffle(scores_point.score, permut);
-                uint shuffled_scores_point_id = subgroupShuffle(scores_point.id, permut);
-                nearest_data.data[buffer_offset + i] = ScoredPoint(shuffled_scores_point_id, shuffled_scores_point_score);
+                ScoredPoint scored_point = nearest_data.data[buffer_offset + i];
+                if (i >= nearest_count) {
+                    scored_point.score = negative_infinity;
+                }
+                uint permut = subgroup_bubble_sort(scored_point.score);
+                float shuffled_scored_point_score = subgroupShuffle(scored_point.score, permut);
+                uint shuffled_scored_point_id = subgroupShuffle(scored_point.id, permut);
+                nearest_data.data[buffer_offset + i] = ScoredPoint(shuffled_scored_point_id, shuffled_scored_point_score);
                 groupMemoryBarrier();
             }
         }

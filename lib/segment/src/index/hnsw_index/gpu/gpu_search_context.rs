@@ -743,11 +743,11 @@ mod tests {
 
     #[test]
     fn test_gpu_hnsw_patch() {
-        let num_vectors = 512;
+        let num_vectors = 1024;
         let groups_count = 8;
         let dim = 64;
-        let m = 8;
-        let ef = 16;
+        let m = 16;
+        let ef = 32;
 
         let mut test = create_test_data(num_vectors, groups_count, dim, m, ef);
 
@@ -776,40 +776,6 @@ mod tests {
 
             let (cpu_patches, cpu_new_entry) =
                 test.graph_layers_builder.get_patch(requests[i], 0, scorer);
-
-            println!(
-                "Patches for request {i}. entry={}, new_entry={}, cpu={}",
-                requests[i].entry, new_entries[i], cpu_new_entry,
-            );
-            for (gpu_patch, cpu_patch) in gpu_patches.iter().zip(cpu_patches.iter()) {
-                println!("ID={:?}, cpu={:?}", gpu_patch.id, cpu_patch.id);
-                println!("Links gpu={:?}", gpu_patch.links);
-                println!("Links cpu={:?}", cpu_patch.links);
-
-                let added_vector = test.vector_holder.vectors.get(gpu_patch.id).to_vec();
-                let raw_scorer = test
-                    .vector_holder
-                    .get_raw_scorer(added_vector.clone())
-                    .unwrap();
-                let scores = gpu_patch
-                    .links
-                    .iter()
-                    .map(|l| raw_scorer.score_point(*l))
-                    .collect_vec();
-                println!("Scores gpu={:?}", scores);
-
-                let added_vector = test.vector_holder.vectors.get(cpu_patch.id).to_vec();
-                let raw_scorer = test
-                    .vector_holder
-                    .get_raw_scorer(added_vector.clone())
-                    .unwrap();
-                let scores = cpu_patch
-                    .links
-                    .iter()
-                    .map(|l| raw_scorer.score_point(*l))
-                    .collect_vec();
-                println!("Scores cpu={:?}", scores);
-            }
 
             assert_eq!(new_entries[i], cpu_new_entry);
             assert_eq!(gpu_patches.len(), cpu_patches.len());
