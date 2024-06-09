@@ -21,9 +21,15 @@ pub struct GpuNearestHeap {
 }
 
 impl GpuNearestHeap {
-    pub fn new(device: Arc<gpu::Device>, groups_count: usize, ef: usize) -> OperationResult<Self> {
-        let ceiled_ef = ef.div_ceil(device.subgroup_size()) * device.subgroup_size();
-        let buffers_elements_count = ceiled_ef * groups_count;
+    pub fn new(
+        device: Arc<gpu::Device>,
+        groups_count: usize,
+        ef: usize,
+        capacity: usize,
+    ) -> OperationResult<Self> {
+        assert!(capacity >= ef);
+        let capacity = capacity.div_ceil(device.subgroup_size()) * device.subgroup_size();
+        let buffers_elements_count = capacity * groups_count;
 
         let nearest_buffer = Arc::new(gpu::Buffer::new(
             device.clone(),
@@ -43,7 +49,7 @@ impl GpuNearestHeap {
         ));
 
         let params = GpuNearestHeapParamsBuffer {
-            capacity: ceiled_ef as u32,
+            capacity: capacity as u32,
             ef: ef as u32,
         };
         staging_buffer.upload(&params, 0);
@@ -71,7 +77,7 @@ impl GpuNearestHeap {
 
         Ok(Self {
             ef,
-            capacity: ceiled_ef,
+            capacity,
             device,
             params_buffer,
             nearest_buffer,
@@ -117,7 +123,7 @@ mod tests {
             Arc::new(gpu::Device::new(instance.clone(), instance.vk_physical_devices[0]).unwrap());
 
         let mut context = gpu::Context::new(device.clone());
-        let gpu_nearest_heap = GpuNearestHeap::new(device.clone(), groups_count, ef).unwrap();
+        let gpu_nearest_heap = GpuNearestHeap::new(device.clone(), groups_count, ef, ef).unwrap();
 
         let shader = Arc::new(gpu::Shader::new(
             device.clone(),

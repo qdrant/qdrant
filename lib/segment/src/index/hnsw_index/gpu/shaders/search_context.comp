@@ -8,20 +8,22 @@
 #include "candidates_heap.comp"
 #include "visited_flags.comp"
 
-void process_candidate(ScoredPoint scored_point) {
+bool process_candidate(ScoredPoint scored_point) {
     bool not_presented = nearest_smaller.id != scored_point.id;
     bool was_added = push_nearest(scored_point);
     if (was_added && not_presented) {
-        push_candidate(scored_point);
+        return push_candidate(scored_point);
     }
+    return true;
 }
 
-void process_link(POINT_ID point_id, POINT_ID link) {
+bool process_link(POINT_ID point_id, POINT_ID link) {
     if (check_and_process_visited(link)) {
         float score = similarity(point_id, link);
         ScoredPoint scored_point = ScoredPoint(link, score);
-        process_candidate(scored_point);
+        return process_candidate(scored_point);
     }
+    return true;
 }
 
 uint search(POINT_ID point_id, ScoredPoint entry) {
@@ -36,12 +38,18 @@ uint search(POINT_ID point_id, ScoredPoint entry) {
             continue;
         }
         LINKS_FOREACH(candidate.id) {
-            process_link(point_id, LINKS_FOREACH_VALUE);
+            bool success = process_link(point_id, LINKS_FOREACH_VALUE);
+            if (!success) {
+                return UINT_MAX;
+            }
         }
     }
 
     LINKS_FOREACH(point_id) {
-        process_link(point_id, LINKS_FOREACH_VALUE);
+        bool success = process_link(point_id, LINKS_FOREACH_VALUE);
+        if (!success) {
+            return UINT_MAX;
+        }
     }
 
     sort_nearest();
