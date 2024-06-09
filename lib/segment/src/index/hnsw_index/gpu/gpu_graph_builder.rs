@@ -226,9 +226,11 @@ impl GpuGraphBuilder {
 
         for (i, (patches, (&new_entry, linking_point))) in patches
             .iter()
-            .zip(new_entries.iter().zip(
-                self.points[chunk.clone()].iter_mut()
-            ))
+            .zip(
+                new_entries
+                    .iter()
+                    .zip(self.points[chunk.clone()].iter_mut()),
+            )
             .enumerate()
         {
             for patch in patches {
@@ -273,7 +275,10 @@ impl GpuGraphBuilder {
         let new_entries = self.gpu_search_context.greedy_search(&self.requests)?;
         assert_eq!(new_entries.len(), chunk.len());
 
-        for (linking_point, new_entry) in self.points[chunk.clone()].iter_mut().zip(new_entries.iter()) {
+        for (linking_point, new_entry) in self.points[chunk.clone()]
+            .iter_mut()
+            .zip(new_entries.iter())
+        {
             linking_point.entry.point_id = new_entry.idx;
         }
 
@@ -395,8 +400,9 @@ mod tests {
                 gpu_graph.links_map(point_id, level, |l| gpu_links.push(l));
 
                 let mut cpu_links = vec![];
-                test.graph_layers_builder.links_map(point_id, level, |l| cpu_links.push(l));
-                
+                test.graph_layers_builder
+                    .links_map(point_id, level, |l| cpu_links.push(l));
+
                 println!("level {level} links {:?}", cpu_links);
                 assert_eq!(gpu_links, cpu_links);
             }
