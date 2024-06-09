@@ -365,17 +365,19 @@ mod tests {
         .unwrap();
 
         for point_id in 0..num_vectors as PointOffsetType {
+            println!("point {point_id}");
             let gpu_levels = gpu_graph.get_point_level(point_id);
             let cpu_levels = test.graph_layers_builder.get_point_level(point_id);
             assert_eq!(cpu_levels, gpu_levels);
 
-            for level in 0..cpu_levels {
+            for level in 0..cpu_levels + 1 {
                 let mut gpu_links = vec![];
                 gpu_graph.links_map(point_id, level, |l| gpu_links.push(l));
 
                 let mut cpu_links = vec![];
                 test.graph_layers_builder.links_map(point_id, level, |l| cpu_links.push(l));
                 
+                println!("level {level} links {:?}", cpu_links);
                 assert_eq!(gpu_links, cpu_links);
             }
         }
