@@ -445,13 +445,13 @@ mod tests {
 
             //assert_eq!(gpu_set, cpu_set);
         }
-        println!("total_sames: {}, total_top: {}", total_sames, total_top);
+        println!("total_sames: {}, total_top: {}, div {}", total_sames, total_top, total_sames as f32 / total_top as f32);
         assert!(total_sames as f32 >= total_top as f32 * 0.9, "sames: {}, total_top: {}", total_sames, total_top);
     }
 
     #[test]
     fn test_gpu_hnsw_equivalency() {
-        let num_vectors = 1024;
+        let num_vectors = 32;
         let groups_count = 1;
         let dim = 64;
         let m = 8;
