@@ -16,6 +16,11 @@ pub struct GreedySearchRequest {
     entry: PointOffsetType,
 }
 
+pub struct GraphLinksPatch {
+    id: PointOffsetType,
+    links: Vec<PointOffsetType>,
+}
+
 pub struct GpuSearchContext {
     pub device: Arc<gpu::Device>,
     pub context: gpu::Context,
@@ -26,12 +31,19 @@ pub struct GpuSearchContext {
     pub gpu_candidates_heap: GpuCandidatesHeap,
     pub gpu_visited_flags: GpuVisitedFlags,
     pub is_dirty_links: bool,
+
     pub greedy_upload_staging_buffer: Arc<gpu::Buffer>,
     pub greedy_download_staging_buffer: Arc<gpu::Buffer>,
     pub greedy_requests_buffer: Arc<gpu::Buffer>,
     pub greedy_responses_buffer: Arc<gpu::Buffer>,
     pub greedy_descriptor_set: Arc<gpu::DescriptorSet>,
     pub greedy_pipeline: Arc<gpu::Pipeline>,
+    //pub greedy_upload_staging_buffer: Arc<gpu::Buffer>,
+    //pub greedy_download_staging_buffer: Arc<gpu::Buffer>,
+    //pub greedy_requests_buffer: Arc<gpu::Buffer>,
+    //pub greedy_responses_buffer: Arc<gpu::Buffer>,
+    //pub greedy_descriptor_set: Arc<gpu::DescriptorSet>,
+    //pub greedy_pipeline: Arc<gpu::Pipeline>,
 }
 
 impl GpuSearchContext {
@@ -176,6 +188,13 @@ impl GpuSearchContext {
         self.greedy_download_staging_buffer
             .download_slice(&mut gpu_responses, 0);
         Ok(gpu_responses)
+    }
+
+    pub fn run_insert_vector(
+        &mut self,
+        requests: &[GreedySearchRequest],
+    ) -> Vec<Vec<GraphLinksPatch>> {
+        todo!()
     }
 
     pub fn get_links(&self, point_id: PointOffsetType) -> &[PointOffsetType] {
