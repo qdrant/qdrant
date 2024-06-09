@@ -371,14 +371,15 @@ mod tests {
             graph_layers_builder.link_new_point(idx, scorer);
         }
 
-        let search_vectors = (0..search_counts).map(|_| random_vector(&mut rng, dim)).collect();
+        let search_vectors = (0..search_counts)
+            .map(|_| random_vector(&mut rng, dim))
+            .collect();
 
         TestData {
             vector_storage: storage,
             vector_holder,
             graph_layers_builder,
             search_vectors,
-
         }
     }
 
@@ -410,7 +411,8 @@ mod tests {
         .unwrap();
 
         let gpu_graph: GraphLayers<GraphLinksRam> = gpu_graph.into_graph_layers(None).unwrap();
-        let cpu_graph: GraphLayers<GraphLinksRam> = test.graph_layers_builder.into_graph_layers(None).unwrap();
+        let cpu_graph: GraphLayers<GraphLinksRam> =
+            test.graph_layers_builder.into_graph_layers(None).unwrap();
 
         let top = 10;
         let mut total_sames = 0;
@@ -445,8 +447,18 @@ mod tests {
 
             //assert_eq!(gpu_set, cpu_set);
         }
-        println!("total_sames: {}, total_top: {}, div {}", total_sames, total_top, total_sames as f32 / total_top as f32);
-        assert!(total_sames as f32 >= total_top as f32 * 0.9, "sames: {}, total_top: {}", total_sames, total_top);
+        println!(
+            "total_sames: {}, total_top: {}, div {}",
+            total_sames,
+            total_top,
+            total_sames as f32 / total_top as f32
+        );
+        assert!(
+            total_sames as f32 >= total_top as f32 * 0.9,
+            "sames: {}, total_top: {}",
+            total_sames,
+            total_top
+        );
     }
 
     #[test]
@@ -482,8 +494,12 @@ mod tests {
             assert_eq!(cpu_levels, gpu_levels);
 
             for level in 0..cpu_levels + 1 {
-                let gpu_links = gpu_graph.links_layers[point_id as usize][level].read().clone();
-                let cpu_links = test.graph_layers_builder.links_layers[point_id as usize][level].read().clone();
+                let gpu_links = gpu_graph.links_layers[point_id as usize][level]
+                    .read()
+                    .clone();
+                let cpu_links = test.graph_layers_builder.links_layers[point_id as usize][level]
+                    .read()
+                    .clone();
                 println!("level {level} links {:?}", cpu_links);
                 assert_eq!(gpu_links, cpu_links);
             }
