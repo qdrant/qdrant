@@ -104,7 +104,7 @@ impl GpuGraphBuilder {
             }
         }
 
-        let mut builder = GpuGraphBuilder {
+        let builder = GpuGraphBuilder {
             graph_layers_builder,
             gpu_search_context,
             points,
@@ -112,11 +112,7 @@ impl GpuGraphBuilder {
             ids_hashset: Default::default(),
             chunks,
         };
-        for level in (0..levels_count).rev() {
-            builder.build_level(level)?;
-        }
-
-        Ok(builder.graph_layers_builder)
+        builder.build_levels()
     }
 
     fn sort_points_by_level(
@@ -169,6 +165,20 @@ impl GpuGraphBuilder {
         chunks
     }
 
+    fn build_levels(mut self) -> OperationResult<GraphLayersBuilder> {
+        let levels_count = self.points[0].level;
+        for level in (0..levels_count).rev() {
+            let level_m = if level > 0 {
+                self.graph_layers_builder.m
+            } else {
+                self.graph_layers_builder.m0
+            };
+            self.gpu_search_context.update_layer_params(level_m);
+            self.build_level(level)?;
+        }
+        Ok(self.graph_layers_builder)
+    }
+
     fn build_level(&mut self, level: usize) -> OperationResult<()> {
         let mut chunk_index = 0usize;
         while chunk_index < self.chunks.len() {
@@ -203,10 +213,14 @@ impl GpuGraphBuilder {
         }
 
         let (patches, new_entries) = self.gpu_search_context.run_insert_vector(&self.requests)?;
+        assert_eq!(patches.len(), new_entries.len());
+        assert_eq!(patches.len(), chunk.len());
 
-        for (i, (patches, (&new_entry, request))) in patches
+        for (i, (patches, (&new_entry, linking_point))) in patches
             .iter()
-            .zip(new_entries.iter().zip(self.requests.iter()))
+            .zip(new_entries.iter().zip(
+                self.points[chunk.clone()].iter_mut()
+            ))
             .enumerate()
         {
             for patch in patches {
@@ -224,7 +238,7 @@ impl GpuGraphBuilder {
                 links.clear();
                 links.extend_from_slice(&patch.links);
             }
-            self.points[request.id as usize].entry.point_id = new_entry;
+            linking_point.entry.point_id = new_entry;
         }
 
         Ok(chunk.len())
@@ -239,9 +253,134 @@ impl GpuGraphBuilder {
             })
         }
         let new_entries = self.gpu_search_context.greedy_search(&self.requests)?;
-        for (&new_entry, request) in new_entries.iter().zip(self.requests.iter()) {
-            self.points[request.id as usize].entry.point_id = new_entry.idx;
+        assert_eq!(new_entries.len(), chunk.len());
+
+        for (linking_point, new_entry) in self.points[chunk.clone()].iter_mut().zip(new_entries.iter()) {
+            linking_point.entry.point_id = new_entry.idx;
         }
         Ok(())
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use atomic_refcell::AtomicRefCell;
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
+
+    use super::*;
+    use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
+    use crate::fixtures::index_fixtures::{FakeFilterContext, TestRawScorerProducer};
+    use crate::index::hnsw_index::graph_layers::GraphLayersBase;
+    use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
+    use crate::index::hnsw_index::point_scorer::FilteredScorer;
+    use crate::spaces::simple::DotProductMetric;
+    use crate::types::Distance;
+    use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
+
+    struct TestData {
+        vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
+        graph_layers_builder: GraphLayersBuilder,
+    }
+
+    fn create_test_data(
+        num_vectors: usize,
+        dim: usize,
+        m: usize,
+        m0: usize,
+        ef: usize,
+    ) -> TestData {
+        // Generate random vectors
+        let mut rng = StdRng::seed_from_u64(42);
+        let vector_holder =
+            TestRawScorerProducer::<DotProductMetric>::new(dim, num_vectors, &mut rng);
+
+        // upload vectors to storage
+        let dir = tempfile::Builder::new().prefix("db_dir").tempdir().unwrap();
+        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
+        let storage =
+            open_simple_dense_vector_storage(db, DB_VECTOR_CF, dim, Distance::Dot, &false.into())
+                .unwrap();
+        {
+            let mut borrowed_storage = storage.borrow_mut();
+            for idx in 0..num_vectors {
+                let v = vector_holder.get_vector(idx as PointOffsetType);
+                borrowed_storage
+                    .insert_vector(idx as PointOffsetType, v.as_vec_ref())
+                    .unwrap();
+            }
+        }
+
+        // Build HNSW index
+        let mut graph_layers_builder = GraphLayersBuilder::new(num_vectors, m, m0, ef, 1, true);
+        let mut rng = StdRng::seed_from_u64(42);
+        for idx in 0..(num_vectors as PointOffsetType) {
+            let level = graph_layers_builder.get_random_layer(&mut rng);
+            graph_layers_builder.set_levels(idx, level);
+        }
+
+        let mut ids: Vec<_> = (0..num_vectors as PointOffsetType).collect();
+        GpuGraphBuilder::sort_points_by_level(&graph_layers_builder, &mut ids);
+
+        for &idx in &ids {
+            let fake_filter_context = FakeFilterContext {};
+            let added_vector = vector_holder.vectors.get(idx).to_vec();
+            let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone()).unwrap();
+            let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+            graph_layers_builder.link_new_point(idx, scorer);
+        }
+
+        TestData {
+            vector_storage: storage,
+            graph_layers_builder,
+        }
+    }
+
+    #[test]
+    fn test_gpu_hnsw_equivalency() {
+        let num_vectors = 1024;
+        let groups_count = 1;
+        let dim = 64;
+        let m = 8;
+        let m0 = 16;
+        let ef = 32;
+
+        let test = create_test_data(num_vectors, dim, m, m0, ef);
+
+        let mut rng = StdRng::seed_from_u64(42);
+        let debug_messenger = gpu::PanicIfErrorMessenger {};
+        let gpu_graph = GpuGraphBuilder::build(
+            &mut rng,
+            Some(&debug_messenger),
+            groups_count,
+            &test.vector_storage.borrow(),
+            m,
+            m0,
+            ef,
+            1,
+            (0..num_vectors as PointOffsetType).collect(),
+        )
+        .unwrap();
+
+        for point_id in 0..num_vectors as PointOffsetType {
+            let gpu_levels = gpu_graph.get_point_level(point_id);
+            let cpu_levels = test.graph_layers_builder.get_point_level(point_id);
+            assert_eq!(cpu_levels, gpu_levels);
+
+            for level in 0..cpu_levels {
+                let mut gpu_links = vec![];
+                gpu_graph.links_map(point_id, level, |l| gpu_links.push(l));
+
+                let mut cpu_links = vec![];
+                test.graph_layers_builder.links_map(point_id, level, |l| cpu_links.push(l));
+                
+                assert_eq!(gpu_links, cpu_links);
+            }
+        }
+    }
+
+    #[test]
+    fn test_gpu_hnsw_quality() {}
 }
