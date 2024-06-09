@@ -206,7 +206,7 @@ impl GraphLayersBuilder {
         picked_level.round() as usize
     }
 
-    fn get_point_level(&self, point_id: PointOffsetType) -> usize {
+    pub fn get_point_level(&self, point_id: PointOffsetType) -> usize {
         self.links_layers[point_id as usize].len() - 1
     }
 

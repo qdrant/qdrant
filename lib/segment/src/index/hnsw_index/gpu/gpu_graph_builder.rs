@@ -1,0 +1,247 @@
+use std::ops::Range;
+
+use ahash::HashSet;
+use common::types::PointOffsetType;
+use rand::Rng;
+
+use super::gpu_search_context::{GpuRequest, GpuSearchContext};
+use crate::common::operation_error::OperationResult;
+use crate::index::hnsw_index::entry_points::EntryPoint;
+use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
+use crate::vector_storage::{VectorStorage, VectorStorageEnum};
+
+pub struct GpuGraphBuilder {
+    graph_layers_builder: GraphLayersBuilder,
+    gpu_search_context: GpuSearchContext,
+    points: Vec<PointLinkingData>,
+    requests: Vec<GpuRequest>,
+    ids_hashset: HashSet<PointOffsetType>,
+    chunks: Vec<Range<usize>>,
+}
+
+struct PointLinkingData {
+    point_id: PointOffsetType,
+    level: usize,
+    entry: EntryPoint,
+}
+
+impl GpuGraphBuilder {
+    #[allow(clippy::too_many_arguments)]
+    pub fn build<R: Rng + ?Sized>(
+        rng: &mut R,
+        debug_messenger: Option<&dyn gpu::DebugMessenger>,
+        groups_count: usize,
+        vector_storage: &VectorStorageEnum,
+        m: usize,
+        m0: usize,
+        ef: usize,
+        entry_points_num: usize,
+        mut ids: Vec<PointOffsetType>,
+    ) -> OperationResult<GraphLayersBuilder> {
+        let num_vectors = vector_storage.total_vector_count();
+        let mut graph_layers_builder =
+            GraphLayersBuilder::new(num_vectors, m, m0, ef, entry_points_num, true);
+
+        if num_vectors == 0 {
+            return Ok(graph_layers_builder);
+        }
+        let max_patched_points = groups_count * (m0 + 1);
+
+        let first_dense = vector_storage.get_vector(0);
+        let first_dense: &[f32] = first_dense.as_vec_ref().try_into()?;
+        let dim = first_dense.len();
+
+        for idx in 0..(num_vectors as PointOffsetType) {
+            let level = graph_layers_builder.get_random_layer(rng);
+            graph_layers_builder.set_levels(idx, level);
+        }
+
+        Self::sort_points_by_level(&graph_layers_builder, &mut ids);
+        // We don't need the first point because first point does not have his entry
+        // Just manually update entry for the first point and remove it from the ids list
+        let levels_count = graph_layers_builder.get_point_level(ids[0]) + 1;
+        graph_layers_builder
+            .entry_points
+            .lock()
+            .new_point(ids[0], levels_count - 1, |_| true);
+        ids.remove(0);
+
+        if ids.is_empty() {
+            return Ok(graph_layers_builder);
+        }
+
+        let gpu_search_context = GpuSearchContext::new(
+            debug_messenger,
+            groups_count,
+            vector_storage,
+            dim,
+            m,
+            m0,
+            ef,
+            max_patched_points,
+        )?;
+
+        let chunks = Self::build_initial_chunks(&graph_layers_builder, &ids, groups_count);
+        let mut points = Vec::with_capacity(ids.len());
+        for chunk in chunks.iter() {
+            let mut entry_points = graph_layers_builder.entry_points.lock();
+            for i in chunk.clone() {
+                let point_id = ids[i];
+                let level = graph_layers_builder.get_point_level(point_id);
+                let entry = entry_points.get_entry_point(|_| true).unwrap();
+                points.push(PointLinkingData {
+                    point_id,
+                    level,
+                    entry,
+                });
+            }
+
+            // update entries
+            for i in chunk.clone() {
+                let point_id = ids[i];
+                let level = graph_layers_builder.get_point_level(point_id);
+                entry_points.new_point(point_id, level, |_| true);
+            }
+        }
+
+        let mut builder = GpuGraphBuilder {
+            graph_layers_builder,
+            gpu_search_context,
+            points,
+            requests: Default::default(),
+            ids_hashset: Default::default(),
+            chunks,
+        };
+        for level in (0..levels_count).rev() {
+            builder.build_level(level)?;
+        }
+
+        Ok(builder.graph_layers_builder)
+    }
+
+    fn sort_points_by_level(
+        graph_layers_builder: &GraphLayersBuilder,
+        ids: &mut [PointOffsetType],
+    ) {
+        ids.sort_by(|&a, &b| {
+            let a_level = graph_layers_builder.get_point_level(a);
+            let b_level = graph_layers_builder.get_point_level(b);
+            match b_level.cmp(&a_level) {
+                std::cmp::Ordering::Less => std::cmp::Ordering::Less,
+                std::cmp::Ordering::Greater => std::cmp::Ordering::Greater,
+                std::cmp::Ordering::Equal => a.cmp(&b),
+            }
+        });
+    }
+
+    fn build_initial_chunks(
+        graph_layers_builder: &GraphLayersBuilder,
+        ids: &[PointOffsetType],
+        groups_count: usize,
+    ) -> Vec<Range<usize>> {
+        let num_vectors = ids.len();
+        let mut chunks: Vec<_> = (0..num_vectors.div_ceil(groups_count))
+            .map(|start| {
+                groups_count * start..std::cmp::min(groups_count * (start + 1), num_vectors)
+            })
+            .collect();
+
+        let mut chunk_index = 0usize;
+        while chunk_index < chunks.len() {
+            let chunk = chunks[chunk_index].clone();
+            let point_id = ids[chunk.start];
+            let chunk_level = graph_layers_builder.get_point_level(point_id);
+            for i in 0..chunk.len() {
+                let point_id = ids[chunk.start + i];
+                let level = graph_layers_builder.get_point_level(point_id);
+                // divide chunk by level
+                if level != chunk_level {
+                    let chunk1 = chunk.start..chunk.start + i;
+                    let chunk2 = chunk.start + i..chunk.end;
+                    chunks[chunk_index] = chunk1;
+                    chunks.insert(chunk_index + 1, chunk2);
+                }
+            }
+
+            chunk_index += 1;
+        }
+
+        chunks
+    }
+
+    fn build_level(&mut self, level: usize) -> OperationResult<()> {
+        let mut chunk_index = 0usize;
+        while chunk_index < self.chunks.len() {
+            let chunk = self.chunks[chunk_index].clone();
+            let chunk_level = self.points[chunk.start].level;
+            if level > chunk_level {
+                self.update_entries_chunk(chunk)?;
+            } else {
+                let applied_count = self.build_chunk(chunk.clone(), level)?;
+                if applied_count != chunk.len() {
+                    let applied_chunk = chunk.start..chunk.start + applied_count;
+                    let remainder_chunk = chunk.start + applied_count..chunk.end;
+                    self.chunks[chunk_index] = applied_chunk;
+                    self.chunks.insert(chunk_index + 1, remainder_chunk);
+                }
+            }
+            chunk_index += 1;
+        }
+
+        Ok(())
+    }
+
+    fn build_chunk(&mut self, chunk: Range<usize>, level: usize) -> OperationResult<usize> {
+        self.requests.clear();
+        self.ids_hashset.clear();
+
+        for linking_point in &self.points[chunk.clone()] {
+            self.requests.push(GpuRequest {
+                id: linking_point.point_id,
+                entry: linking_point.entry.point_id,
+            })
+        }
+
+        let (patches, new_entries) = self.gpu_search_context.run_insert_vector(&self.requests)?;
+
+        for (i, (patches, (&new_entry, request))) in patches
+            .iter()
+            .zip(new_entries.iter().zip(self.requests.iter()))
+            .enumerate()
+        {
+            for patch in patches {
+                // conflict detect, this point and all after won't be updated
+                if !self.ids_hashset.insert(patch.id) {
+                    return Ok(i);
+                }
+            }
+
+            // no conflicts, apply patch
+            for patch in patches {
+                self.gpu_search_context.set_links(patch.id, &patch.links)?;
+                let mut links =
+                    self.graph_layers_builder.links_layers[patch.id as usize][level].write();
+                links.clear();
+                links.extend_from_slice(&patch.links);
+            }
+            self.points[request.id as usize].entry.point_id = new_entry;
+        }
+
+        Ok(chunk.len())
+    }
+
+    fn update_entries_chunk(&mut self, chunk: Range<usize>) -> OperationResult<()> {
+        self.requests.clear();
+        for linking_point in &self.points[chunk.clone()] {
+            self.requests.push(GpuRequest {
+                id: linking_point.point_id,
+                entry: linking_point.entry.point_id,
+            })
+        }
+        let new_entries = self.gpu_search_context.greedy_search(&self.requests)?;
+        for (&new_entry, request) in new_entries.iter().zip(self.requests.iter()) {
+            self.points[request.id as usize].entry.point_id = new_entry.idx;
+        }
+        Ok(())
+    }
+}

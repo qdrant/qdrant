@@ -1,4 +1,5 @@
 pub mod gpu_candidates_heap;
+pub mod gpu_graph_builder;
 pub mod gpu_links;
 pub mod gpu_nearest_heap;
 pub mod gpu_search_context;
