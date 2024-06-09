@@ -17,6 +17,8 @@ pub struct GpuGraphBuilder {
     requests: Vec<GpuRequest>,
     ids_hashset: HashSet<PointOffsetType>,
     chunks: Vec<Range<usize>>,
+    updates_timer: std::time::Duration,
+    patches_timer: std::time::Duration,
 }
 
 struct PointLinkingData {
@@ -111,6 +113,8 @@ impl GpuGraphBuilder {
             requests: Default::default(),
             ids_hashset: Default::default(),
             chunks,
+            updates_timer: Default::default(),
+            patches_timer: Default::default(),
         };
         builder.build_levels()
     }
@@ -176,6 +180,9 @@ impl GpuGraphBuilder {
             self.gpu_search_context.update_layer_params(level_m);
             self.build_level(level)?;
         }
+
+        println!("Gpu graph patches time: {:?}", self.patches_timer);
+        println!("Gpu graph update entries time: {:?}", self.updates_timer);
         Ok(self.graph_layers_builder)
     }
 
@@ -202,6 +209,7 @@ impl GpuGraphBuilder {
     }
 
     fn build_chunk(&mut self, chunk: Range<usize>, level: usize) -> OperationResult<usize> {
+        let timer = std::time::Instant::now();
         self.requests.clear();
         self.ids_hashset.clear();
 
@@ -226,25 +234,35 @@ impl GpuGraphBuilder {
             for patch in patches {
                 // conflict detect, this point and all after won't be updated
                 if !self.ids_hashset.insert(patch.id) {
+                    self.patches_timer += timer.elapsed();
                     return Ok(i);
                 }
             }
 
             // no conflicts, apply patch
             for patch in patches {
+                if patch.id == 0 && level == 0 {
+                    println!("apply patch {:?}", &patch.links);
+                }
+
                 self.gpu_search_context.set_links(patch.id, &patch.links)?;
                 let mut links =
                     self.graph_layers_builder.links_layers[patch.id as usize][level].write();
                 links.clear();
                 links.extend_from_slice(&patch.links);
+                if patch.id == 0 && level == 0 {
+                    println!("apply patch {:?}", &links);
+                }
             }
             linking_point.entry.point_id = new_entry;
         }
 
+        self.patches_timer += timer.elapsed();
         Ok(chunk.len())
     }
 
     fn update_entries_chunk(&mut self, chunk: Range<usize>) -> OperationResult<()> {
+        let timer = std::time::Instant::now();
         self.requests.clear();
         for linking_point in &self.points[chunk.clone()] {
             self.requests.push(GpuRequest {
@@ -258,6 +276,8 @@ impl GpuGraphBuilder {
         for (linking_point, new_entry) in self.points[chunk.clone()].iter_mut().zip(new_entries.iter()) {
             linking_point.entry.point_id = new_entry.idx;
         }
+
+        self.updates_timer += timer.elapsed();
         Ok(())
     }
 }
