@@ -189,6 +189,7 @@ impl Distance {
     }
 }
 
+#[derive(Debug, PartialEq)]
 pub enum Order {
     LargeBetter,
     SmallBetter,
