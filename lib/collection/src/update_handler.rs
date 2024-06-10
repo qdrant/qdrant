@@ -261,21 +261,6 @@ impl UpdateHandler {
         let mut scheduled_segment_ids = HashSet::<_>::default();
         let mut handles = vec![];
 
-        // Ensure we have at least one appendable segment with enough capacity
-        // Source required parameters from first optimizer
-        if let Some(optimizer) = optimizers.first() {
-            let result = Self::ensure_appendable_segment_with_capacity(
-                &segments,
-                optimizer.segments_path(),
-                &optimizer.collection_params(),
-                optimizer.threshold_config(),
-            );
-            if let Err(err) = result {
-                log::error!("Failed to ensure there are appendable segments with capacity: {err}");
-                panic!("Failed to ensure there are appendable segments with capacity: {err}");
-            }
-        }
-
         'outer: for optimizer in optimizers.iter() {
             loop {
                 // Return early if we reached the optimization job limit
@@ -401,7 +386,7 @@ impl UpdateHandler {
     /// created.
     ///
     /// Capacity is determined based on `optimizers.max_segment_size_kb`.
-    fn ensure_appendable_segment_with_capacity(
+    pub(super) fn ensure_appendable_segment_with_capacity(
         segments: &LockedSegmentHolder,
         segments_path: &Path,
         collection_params: &CollectionParams,
@@ -428,6 +413,7 @@ impl UpdateHandler {
         };
 
         if no_segment_with_capacity {
+            log::debug!("Creating new appendable segment, all existing segments are over capacity");
             segments
                 .write()
                 .create_appendable_segment(segments_path, collection_params)?;
@@ -544,6 +530,21 @@ impl UpdateHandler {
                 // Optimizer signal
                 Ok(Some(signal @ (OptimizerSignal::Nop | OptimizerSignal::Operation(_)))) => {
                     has_triggered_optimizers.store(true, Ordering::Relaxed);
+
+                    // Ensure we have at least one appendable segment with enough capacity
+                    // Source required parameters from first optimizer
+                    if let Some(optimizer) = optimizers.first() {
+                        let result = Self::ensure_appendable_segment_with_capacity(
+                            &segments,
+                            optimizer.segments_path(),
+                            &optimizer.collection_params(),
+                            optimizer.threshold_config(),
+                        );
+                        if let Err(err) = result {
+                            log::error!("Failed to ensure there are appendable segments with capacity: {err}");
+                            panic!("Failed to ensure there are appendable segments with capacity: {err}");
+                        }
+                    }
 
                     // If not forcing with Nop, wait on next signal if we have too many handles
                     if signal != OptimizerSignal::Nop
