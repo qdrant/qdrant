@@ -226,28 +226,28 @@ impl<T: PrimitiveVectorElement> VectorStorage for AppendableMmapMultiDenseVector
             .map(|x| x.first().copied().unwrap_or_default())
             .unwrap_or_default();
 
-        if multi_vector.vector_count() > offset.capacity as usize {
+        if multi_vector.vectors_count() > offset.capacity as usize {
             // append vector to the end
             let mut new_key = self.vectors.len();
             let chunk_left_keys = self.vectors.get_remaining_chunk_keys(new_key);
-            if multi_vector.vector_count() > chunk_left_keys {
+            if multi_vector.vectors_count() > chunk_left_keys {
                 new_key += chunk_left_keys;
             }
 
             offset = MultivectorMmapOffset {
                 offset: new_key as PointOffsetType,
-                count: multi_vector.vector_count() as PointOffsetType,
-                capacity: multi_vector.vector_count() as PointOffsetType,
+                count: multi_vector.vectors_count() as PointOffsetType,
+                capacity: multi_vector.vectors_count() as PointOffsetType,
             };
         } else {
             // use existing place to insert vector
-            offset.count = multi_vector.vector_count() as PointOffsetType;
+            offset.count = multi_vector.vectors_count() as PointOffsetType;
         }
 
         self.vectors.insert_many(
             offset.offset,
             multi_vector.flattened_vectors,
-            multi_vector.vector_count(),
+            multi_vector.vectors_count(),
         )?;
         self.offsets.insert(key as usize, &[offset])?;
         self.set_deleted(key, false)?;

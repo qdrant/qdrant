@@ -134,19 +134,19 @@ fn open_simple_multi_dense_vector_storage_impl<T: PrimitiveVectorElement>(
         }
 
         let metadata = &mut vectors_metadata[point_id_usize];
-        metadata.inner_vectors_count = stored_record.vector.vector_count();
+        metadata.inner_vectors_count = stored_record.vector.vectors_count();
         metadata.inner_vector_capacity = metadata.inner_vectors_count;
         metadata.id = point_id;
 
         metadata.start = vectors.len() as PointOffsetType;
         let left_keys = vectors.get_chunk_left_keys(metadata.start);
-        if stored_record.vector.vector_count() > left_keys {
+        if stored_record.vector.vectors_count() > left_keys {
             metadata.start += left_keys as PointOffsetType;
         }
         vectors.insert_many(
             metadata.start,
             &stored_record.vector.flattened_vectors,
-            stored_record.vector.vector_count(),
+            stored_record.vector.vectors_count(),
         )?;
 
         check_process_stopped(stopped)?;
@@ -228,25 +228,25 @@ impl<T: PrimitiveVectorElement> SimpleMultiDenseVectorStorage<T> {
         }
         let metadata = &mut self.vectors_metadata[key_usize];
         metadata.id = key;
-        metadata.inner_vectors_count = multi_vector.vector_count();
+        metadata.inner_vectors_count = multi_vector.vectors_count();
 
-        if multi_vector.vector_count() > metadata.inner_vector_capacity {
+        if multi_vector.vectors_count() > metadata.inner_vector_capacity {
             metadata.inner_vector_capacity = metadata.inner_vectors_count;
             metadata.start = self.vectors.len() as PointOffsetType;
             let left_keys = self.vectors.get_chunk_left_keys(metadata.start);
-            if multi_vector.vector_count() > left_keys {
+            if multi_vector.vectors_count() > left_keys {
                 metadata.start += left_keys as PointOffsetType;
             }
             self.vectors.insert_many(
                 metadata.start,
                 multi_vector.flattened_vectors,
-                multi_vector.vector_count(),
+                multi_vector.vectors_count(),
             )?;
         } else {
             self.vectors.insert_many(
                 metadata.start,
                 multi_vector.flattened_vectors,
-                multi_vector.vector_count(),
+                multi_vector.vectors_count(),
             )?;
         }
 
