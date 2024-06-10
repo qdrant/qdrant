@@ -176,7 +176,7 @@ mod tests {
             holder.add_new(random_segment(dir.path(), 100, 60, dim)),
         ];
 
-        let mut merge_optimizer = get_merge_optimizer(dir.path(), temp_dir.path(), dim);
+        let mut merge_optimizer = get_merge_optimizer(dir.path(), temp_dir.path(), dim, None);
 
         let locked_holder = Arc::new(RwLock::new(holder));
 
@@ -217,7 +217,7 @@ mod tests {
             holder.add_new(random_segment(dir.path(), 100, 20, dim)),
         ];
 
-        let merge_optimizer = get_merge_optimizer(dir.path(), temp_dir.path(), dim);
+        let merge_optimizer = get_merge_optimizer(dir.path(), temp_dir.path(), dim, None);
 
         let locked_holder: Arc<RwLock<_>> = Arc::new(RwLock::new(holder));
 
