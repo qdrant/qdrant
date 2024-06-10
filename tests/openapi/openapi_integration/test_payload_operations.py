@@ -256,7 +256,7 @@ def test_payload_operations():
         path_params={'collection_name': collection_name, 'id': 1},
     )
     assert response.ok
-    assert len(response.json()['result']['payload']) == 4
+    assert len(response.json()['result']['payload']) == 5
     assert response.json()['result']['payload']['key6'] == "xxx"
 
     # set property of payload with top level
@@ -290,7 +290,7 @@ def test_payload_operations():
         path_params={'collection_name': collection_name, 'id': 1},
     )
     assert response.ok
-    assert len(response.json()['result']['payload']) == 4
+    assert len(response.json()['result']['payload']) == 5
     assert response.json()['result']['payload']["key6"]["subkey"] == "yyy"
 
     # set property of payload with nested key
@@ -312,7 +312,7 @@ def test_payload_operations():
         path_params={'collection_name': collection_name, 'id': 1},
     )
     assert response.ok
-    assert len(response.json()['result']['payload']) == 4
+    assert len(response.json()['result']['payload']) == 5
     assert response.json()['result']['payload']["key6"]["subkey2"]["subkey3"] == "yyy"
 
     # set property of payload with array index
@@ -334,7 +334,7 @@ def test_payload_operations():
         path_params={'collection_name': collection_name, 'id': 1},
     )
     assert response.ok
-    assert len(response.json()['result']['payload']) == 4
+    assert len(response.json()['result']['payload']) == 5
     assert response.json()['result']['payload']["key6"]["arraykey"][0]["a1"]["a1k"] == "yyy"
 
     # set property of payload with array full index
@@ -356,7 +356,7 @@ def test_payload_operations():
         path_params={'collection_name': collection_name, 'id': 1},
     )
     assert response.ok
-    assert len(response.json()['result']['payload']) == 4
+    assert len(response.json()['result']['payload']) == 5
     assert response.json()['result']['payload']["key6"]["arraykey"][1]["a2"]["a2k"] == "yyy"
 
     # set property of payload with not exists key
@@ -378,7 +378,7 @@ def test_payload_operations():
         path_params={'collection_name': collection_name, 'id': 1},
     )
     assert response.ok
-    assert len(response.json()['result']['payload']) == 4
+    assert len(response.json()['result']['payload']) == 5
     assert response.json()['result']['payload']["key6"]["subkey7"]["key"] == "xxx"
 
     # Idempotence test.
