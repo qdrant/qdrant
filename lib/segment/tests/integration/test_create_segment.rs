@@ -6,9 +6,13 @@ use tempfile::Builder;
 use crate::fixtures::segment::{build_segment_1, empty_segment};
 
 #[test]
-fn test_create_empty_segment() {
-    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let _segment = empty_segment(dir.path());
+fn empty_test() {
+    println!("Empty test");
+}
+
+#[test]
+fn test_minimal_rocksdb() {
+    let _opts = rocksdb::Options::default();
 }
 
 #[test]
@@ -19,12 +23,14 @@ fn test_create_rocksdb() {
 }
 
 #[test]
+fn test_create_empty_segment() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let _segment = empty_segment(dir.path());
+}
+
+
+#[test]
 fn test_create_segment() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let _segment = build_segment_1(dir.path());
-}
-
-#[test]
-fn empty_test() {
-    println!("Empty test");
 }
