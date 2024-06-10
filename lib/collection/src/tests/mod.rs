@@ -222,7 +222,7 @@ async fn test_new_segment_when_all_over_capacity() {
         memmap_threshold_kb: 1_000_000,
         indexing_threshold_kb: 1_000_000,
     };
-    let mut holder = SegmentHolder::new(optimizer_thresholds.clone());
+    let mut holder = SegmentHolder::new(optimizer_thresholds);
 
     holder.add_new(random_segment(dir.path(), 100, 3, dim));
     holder.add_new(random_segment(dir.path(), 100, 3, dim));
