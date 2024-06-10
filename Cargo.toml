@@ -107,7 +107,7 @@ constant_time_eq = "0.3.0"
 tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-log = { version = "0.2", default-features = false, features = ["log-tracer", "std"] }
-console-subscriber = { version = "0.1", default-features = false, features = ["parking_lot"], optional = true }
+console-subscriber = { version = "0.3", default-features = false, features = ["parking_lot"], optional = true }
 tracing-tracy = { version = "0.11.0", features = ["ondemand"], optional = true }
 actix-web-extras = "0.1.0"
 
