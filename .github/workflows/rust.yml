@@ -17,6 +17,11 @@ jobs:
         os: [ windows-2019 ]
 
     steps:
+    - name: Set up Clang
+      uses: egor-tensin/setup-clang@v1
+      with:
+        version: latest
+        platform: x64
     - name: Install minimal stable
       uses: dtolnay/rust-toolchain@stable
     - uses: actions/checkout@v4
