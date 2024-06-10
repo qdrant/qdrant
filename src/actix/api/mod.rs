@@ -4,6 +4,7 @@ pub mod count_api;
 pub mod debug_api;
 pub mod discovery_api;
 pub mod issues_api;
+pub mod query_api;
 pub mod read_params;
 pub mod recommend_api;
 pub mod retrieve_api;
