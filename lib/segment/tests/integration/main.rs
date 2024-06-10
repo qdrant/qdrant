@@ -21,3 +21,4 @@ pub mod segment_builder_test;
 pub mod segment_tests;
 mod sparse_discover_test;
 mod sparse_vector_index_search_tests;
+mod test_create_segment;
