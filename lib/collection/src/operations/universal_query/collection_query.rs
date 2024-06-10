@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use api::rest::RecommendStrategy;
 use common::types::ScoreType;
 use itertools::Itertools;
@@ -5,7 +7,9 @@ use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{
     MultiDenseVector, NamedQuery, NamedVectorStruct, Vector, VectorRef, DEFAULT_VECTOR_NAME,
 };
-use segment::types::{Filter, PointIdType, SearchParams, WithPayloadInterface, WithVector};
+use segment::types::{
+    Condition, Filter, HasIdCondition, PointIdType, SearchParams, WithPayloadInterface, WithVector,
+};
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
 
 use super::shard_query::{Fusion, ScoringQuery, ShardPrefetch, ShardQueryRequest};
@@ -264,6 +268,27 @@ pub struct CollectionPrefetch {
     pub params: Option<SearchParams>,
 }
 
+/// Exclude the referenced ids by editing the filter.
+fn exclude_referenced_ids(query: &Option<Query>, filter: Option<Filter>) -> Option<Filter> {
+    match query {
+        Some(Query::Vector(vector_query)) => {
+            let ids: HashSet<_> = vector_query
+                .get_referenced_ids()
+                .into_iter()
+                .copied()
+                .collect();
+
+            if ids.is_empty() {
+                return filter;
+            }
+
+            let id_filter = Filter::new_must_not(Condition::HasId(HasIdCondition::from(ids)));
+            Some(id_filter.merge_owned(filter.unwrap_or_default()))
+        }
+        _ => filter,
+    }
+}
+
 impl CollectionPrefetch {
     fn try_into_shard_prefetch(
         self,
@@ -271,6 +296,8 @@ impl CollectionPrefetch {
         lookup_vector_name: &str,
         lookup_collection: Option<&String>,
     ) -> CollectionResult<ShardPrefetch> {
+        let filter = exclude_referenced_ids(&self.query, self.filter);
+
         let query = self
             .query
             .map(|query| {
@@ -298,7 +325,7 @@ impl CollectionPrefetch {
         Ok(ShardPrefetch {
             prefetches,
             query,
-            filter: self.filter,
+            filter,
             score_threshold: self.score_threshold,
             limit: self.limit,
             params: self.params,
@@ -307,6 +334,7 @@ impl CollectionPrefetch {
 }
 
 impl CollectionQueryRequest {
+    /// Substitutes all the point ids in the request with the actual vectors, as well as editing filters so that ids are not included in the response.
     pub fn try_into_shard_request(
         self,
         ids_to_vectors: &ReferencedVectors,
@@ -323,6 +351,8 @@ impl CollectionQueryRequest {
         let lookup_vector_name = (&self).get_lookup_vector_name();
         let lookup_collection = (&self).get_lookup_collection().cloned();
         let using = self.using.clone();
+
+        let filter = exclude_referenced_ids(&self.query, self.filter);
 
         let query = self
             .query
@@ -351,7 +381,7 @@ impl CollectionQueryRequest {
         Ok(ShardQueryRequest {
             prefetches,
             query,
-            filter: self.filter,
+            filter,
             score_threshold: self.score_threshold,
             limit: self.limit,
             offset: self.offset,
