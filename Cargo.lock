@@ -109,9 +109,9 @@ dependencies = [
 
 [[package]]
 name = "actix-multipart"
-version = "0.6.1"
+version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b960e2aea75f49c8f069108063d12a48d329fc8b60b786dfc7552a9d5918d2d"
+checksum = "d974dd6c4f78d102d057c672dcf6faa618fafa9df91d44f9c466688fc1275a3a"
 dependencies = [
  "actix-multipart-derive",
  "actix-utils",
@@ -125,6 +125,7 @@ dependencies = [
  "log",
  "memchr",
  "mime",
+ "rand 0.8.5",
  "serde",
  "serde_json",
  "serde_plain",

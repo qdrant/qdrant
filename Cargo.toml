@@ -100,7 +100,7 @@ segment = { path = "lib/segment" }
 collection = { path = "lib/collection" }
 storage = { path = "lib/storage" }
 api = { path = "lib/api" }
-actix-multipart = "0.6.1"
+actix-multipart = "0.6.2"
 constant_time_eq = "0.3.0"
 
 # Profiling
