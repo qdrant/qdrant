@@ -28,7 +28,6 @@ fn test_create_empty_segment() {
     let _segment = empty_segment(dir.path());
 }
 
-
 #[test]
 fn test_create_segment() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
