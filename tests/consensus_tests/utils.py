@@ -253,6 +253,13 @@ def get_collection_info(peer_api_uri: str, collection_name: str) -> dict:
     return res
 
 
+def get_collection_point_count(peer_api_uri: str, collection_name: str, exact: bool = False) -> int:
+    r = requests.post(f"{peer_api_uri}/collections/test_collection/points/count", json={"exact": exact})
+    assert_http_ok(r)
+    res = r.json()["result"]["count"]
+    return res
+
+
 def print_collection_cluster_info(peer_api_uri: str, collection_name: str, headers={}):
     print(json.dumps(get_collection_cluster_info(peer_api_uri, collection_name, headers=headers), indent=4))
 
