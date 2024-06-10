@@ -226,10 +226,8 @@ impl Collection {
         let order_by = request.order_by.map(OrderBy::from);
 
         // Validate user did not try to use an id offset with order_by
-        if order_by.is_some() {
-            if id_offset.is_some() {
-                return Err(CollectionError::bad_input("Cannot use an `offset` when using `order_by`. The alternative for paging is to use `order_by.start_from` and a filter to exclude the IDs that you've already seen for the `order_by.start_from` value".to_string()));
-            }
+        if order_by.is_some() && id_offset.is_some() {
+            return Err(CollectionError::bad_input("Cannot use an `offset` when using `order_by`. The alternative for paging is to use `order_by.start_from` and a filter to exclude the IDs that you've already seen for the `order_by.start_from` value".to_string()));
         };
 
         if limit == 0 {
