@@ -83,8 +83,13 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
 
         let merge_plan = if !prefetches.is_empty() {
             offset = req_offset;
-            let sources =
-                recurse_prefetches(&mut core_searches, &mut scrolls, prefetches, offset, req_filter)?;
+            let sources = recurse_prefetches(
+                &mut core_searches,
+                &mut scrolls,
+                prefetches,
+                offset,
+                req_filter,
+            )?;
             let rescore = query.ok_or_else(|| {
                 CollectionError::bad_request("cannot have prefetches without a query".to_string())
             })?;
@@ -268,7 +273,8 @@ fn recurse_prefetches(
             }
         } else {
             // This has nested prefetches. Recurse into them
-            let inner_sources = recurse_prefetches(core_searches, scrolls, prefetches, offset, filter)?;
+            let inner_sources =
+                recurse_prefetches(core_searches, scrolls, prefetches, offset, filter)?;
 
             let rescore = query.ok_or_else(|| {
                 CollectionError::bad_request("cannot have prefetches without a query".to_string())
@@ -354,7 +360,7 @@ mod tests {
                     Vector::Dense(dummy_vector.clone()),
                     "byte",
                 )),
-                filter: None,
+                filter: Some(Filter::default()),
                 params: None,
                 limit: 1000,
                 offset: 0,
@@ -505,7 +511,7 @@ mod tests {
                         Vector::Dense(dummy_vector.clone()),
                         "dense",
                     )),
-                    filter: None,
+                    filter: Some(Filter::default()),
                     params: None,
                     limit: 100,
                     offset: 0,
@@ -518,7 +524,7 @@ mod tests {
                         Vector::Sparse(dummy_sparse.clone()),
                         "sparse",
                     )),
-                    filter: None,
+                    filter: Some(Filter::default()),
                     params: None,
                     limit: 100,
                     offset: 0,
