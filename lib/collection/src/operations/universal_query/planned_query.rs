@@ -86,11 +86,12 @@ impl TryFrom<ShardQueryRequest> for PlannedQuery {
         let with_payload;
 
         let merge_plan = if !prefetches.is_empty() {
-            let sources = recurse_prefetches(&mut core_searches, &mut scrolls, prefetches)?;
+            offset = req_offset;
+            let sources = recurse_prefetches(&mut core_searches, &mut scrolls, prefetches, offset)?;
             let rescore = query.ok_or_else(|| {
                 CollectionError::bad_request("cannot have prefetches without a query".to_string())
             })?;
-            offset = req_offset;
+
             with_vector = req_with_vector;
             with_payload = req_with_payload;
 
@@ -192,6 +193,7 @@ fn recurse_prefetches(
     core_searches: &mut Vec<CoreSearchRequest>,
     scrolls: &mut Vec<ScrollRequestInternal>,
     prefetches: Vec<ShardPrefetch>,
+    offset: usize,
 ) -> CollectionResult<Vec<PrefetchSource>> {
     let mut sources = Vec::with_capacity(prefetches.len());
 
@@ -199,11 +201,14 @@ fn recurse_prefetches(
         let ShardPrefetch {
             prefetches,
             query,
-            limit,
+            limit: prefetch_limit,
             params,
             filter,
             score_threshold,
         } = prefetch;
+
+        // Offset is replicated at each step from the root to the leaves
+        let limit = prefetch_limit + offset;
 
         let source = if prefetches.is_empty() {
             // This is a leaf prefetch. Fetch this info from the segments
@@ -263,7 +268,7 @@ fn recurse_prefetches(
             }
         } else {
             // This has nested prefetches. Recurse into them
-            let inner_sources = recurse_prefetches(core_searches, scrolls, prefetches)?;
+            let inner_sources = recurse_prefetches(core_searches, scrolls, prefetches, offset)?;
 
             let rescore = query.ok_or_else(|| {
                 CollectionError::bad_request("cannot have prefetches without a query".to_string())
