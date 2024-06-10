@@ -2261,6 +2261,15 @@ impl Filter {
             must_not: merge_component(self.must_not, other.must_not),
         }
     }
+
+    pub fn merge_opts(this: Option<Self>, other: Option<Self>) -> Option<Self> {
+        match (this, other) {
+            (None, None) => None,
+            (Some(this), None) => Some(this),
+            (None, Some(other)) => Some(other),
+            (Some(this), Some(other)) => Some(this.merge_owned(other)),
+        }
+    }
 }
 
 #[cfg(test)]
