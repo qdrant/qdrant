@@ -248,7 +248,7 @@ pub(crate) fn open_vector_storage(
     }
 }
 
-pub(crate) fn open_segment_db(
+pub fn open_segment_db(
     segment_path: &Path,
     config: &SegmentConfig,
 ) -> OperationResult<Arc<RwLock<DB>>> {

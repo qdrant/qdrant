@@ -7,6 +7,25 @@ use crate::segment::Segment;
 use crate::segment_constructor::build_segment;
 use crate::types::{Distance, Indexes, SegmentConfig, VectorDataConfig, VectorStorageType};
 
+pub fn simple_segment_config(dim: usize, distance: Distance) -> SegmentConfig {
+    SegmentConfig {
+        vector_data: HashMap::from([(
+            DEFAULT_VECTOR_NAME.to_owned(),
+            VectorDataConfig {
+                size: dim,
+                distance,
+                storage_type: VectorStorageType::Memory,
+                index: Indexes::Plain {},
+                quantization_config: None,
+                multivec_config: None,
+                datatype: None,
+            },
+        )]),
+        sparse_vector_data: Default::default(),
+        payload_storage_type: Default::default(),
+    }
+}
+
 /// Build new segment with plain index in given directory
 ///
 /// # Arguments
@@ -18,26 +37,7 @@ pub fn build_simple_segment(
     dim: usize,
     distance: Distance,
 ) -> OperationResult<Segment> {
-    build_segment(
-        path,
-        &SegmentConfig {
-            vector_data: HashMap::from([(
-                DEFAULT_VECTOR_NAME.to_owned(),
-                VectorDataConfig {
-                    size: dim,
-                    distance,
-                    storage_type: VectorStorageType::Memory,
-                    index: Indexes::Plain {},
-                    quantization_config: None,
-                    multivec_config: None,
-                    datatype: None,
-                },
-            )]),
-            sparse_vector_data: Default::default(),
-            payload_storage_type: Default::default(),
-        },
-        true,
-    )
+    build_segment(path, &simple_segment_config(dim, distance), true)
 }
 
 pub fn build_multivec_segment(
