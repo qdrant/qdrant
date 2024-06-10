@@ -354,7 +354,7 @@ impl<'s> SegmentHolder {
 
     /// Get the smallest appendable segment
     ///
-    /// The returned segment likley has the most capacity for new points, which will help balance
+    /// The returned segment likely has the most capacity for new points, which will help balance
     /// new incoming data over all segments we have.
     ///
     /// This attempts a non-blocking read-lock on all segments to find the smallest one. Segments
