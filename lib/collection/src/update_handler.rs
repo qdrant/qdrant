@@ -406,7 +406,7 @@ impl UpdateHandler {
                         .unwrap_or_default();
                     let max_segment_size_bytes = thresholds_config
                         .max_segment_size_kb
-                        .saturating_add(segment::common::BYTES_IN_KB);
+                        .saturating_mul(segment::common::BYTES_IN_KB);
 
                     max_vector_size_bytes >= max_segment_size_bytes
                 })
