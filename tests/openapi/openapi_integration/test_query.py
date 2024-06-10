@@ -277,7 +277,11 @@ def test_basic_rrf():
     assert response.ok, response.json()
     rrf_result = response.json()["result"]
     
-    for expected, result in zip(rrf_expected, rrf_result):
+    def get_id(x):
+        return x["id"]
+    
+    # rrf order is not deterministic with same scores, so we need to sort by id
+    for expected, result in zip(sorted(rrf_expected, key=get_id), sorted(rrf_result, key=get_id)):
         assert expected["id"] == result["id"]
         assert expected["payload"] == result["payload"]
         assert isclose(expected["score"], result["score"], rel_tol=1e-5)
