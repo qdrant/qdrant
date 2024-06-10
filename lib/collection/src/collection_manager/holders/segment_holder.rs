@@ -17,6 +17,7 @@ use segment::segment_constructor::build_segment;
 use segment::types::{PointIdType, SegmentConfig, SeqNumberType};
 
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
+use crate::collection_manager::optimizers::segment_optimizer::OptimizerThresholds;
 use crate::config::CollectionParams;
 use crate::operations::types::CollectionError;
 use crate::shards::update_tracker::UpdateTracker;
@@ -135,7 +136,6 @@ impl From<ProxySegment> for LockedSegment {
     }
 }
 
-#[derive(Default)]
 pub struct SegmentHolder {
     appendable_segments: HashMap<SegmentId, LockedSegment>,
     non_appendable_segments: HashMap<SegmentId, LockedSegment>,
@@ -151,11 +151,26 @@ pub struct SegmentHolder {
 
     /// Holds the first uncorrected error happened with optimizer
     pub optimizer_errors: Option<CollectionError>,
+
+    /// Thresholds config, needed for capacity based segment selection.
+    thresholds_config: OptimizerThresholds,
 }
 
 pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
 
 impl<'s> SegmentHolder {
+    pub fn new(thresholds_config: OptimizerThresholds) -> Self {
+        Self {
+            appendable_segments: HashMap::new(),
+            non_appendable_segments: HashMap::new(),
+            update_tracker: UpdateTracker::default(),
+            id_source: AtomicUsize::new(0),
+            failed_operation: BTreeSet::new(),
+            optimizer_errors: None,
+            thresholds_config,
+        }
+    }
+
     /// Iterate over all segments with their IDs
     ///
     /// Appendable first, then non-appendable.
@@ -1195,7 +1210,7 @@ mod tests {
         let segment1 = build_segment_1(dir.path());
         let segment2 = build_segment_2(dir.path());
 
-        let mut holder = SegmentHolder::default();
+        let mut holder = SegmentHolder::fixture();
 
         let sid1 = holder.add_new(segment1);
         let sid2 = holder.add_new(segment2);
@@ -1221,7 +1236,7 @@ mod tests {
 
         segment2.appendable_flag = false;
 
-        let mut holder = SegmentHolder::default();
+        let mut holder = SegmentHolder::fixture();
 
         let sid1 = holder.add_new(segment1);
         let sid2 = holder.add_new(segment2);
@@ -1330,7 +1345,7 @@ mod tests {
         // Segment 1 is non-appendable, segment 2 is appendable
         segment1.appendable_flag = false;
 
-        let mut holder = SegmentHolder::default();
+        let mut holder = SegmentHolder::fixture();
         let sid1 = holder.add_new(segment1);
         let sid2 = holder.add_new(segment2);
 
@@ -1386,7 +1401,7 @@ mod tests {
             .set_payload(200, 5.into(), &json!({}).into(), &None)
             .unwrap();
 
-        let mut holder = SegmentHolder::default();
+        let mut holder = SegmentHolder::fixture();
 
         let sid1 = holder.add_new(segment1);
         let sid2 = holder.add_new(segment2);
@@ -1412,7 +1427,7 @@ mod tests {
         let segment1 = build_segment_1(dir.path());
         let segment2 = build_segment_2(dir.path());
 
-        let mut holder = SegmentHolder::default();
+        let mut holder = SegmentHolder::fixture();
 
         let sid1 = holder.add_new(segment1);
         let sid2 = holder.add_new(segment2);

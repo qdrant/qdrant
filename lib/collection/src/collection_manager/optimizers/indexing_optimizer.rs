@@ -316,7 +316,7 @@ mod tests {
     #[test]
     fn test_multi_vector_optimization() {
         init();
-        let mut holder = SegmentHolder::default();
+        let mut holder = SegmentHolder::fixture();
 
         let stopped = AtomicBool::new(false);
         let dim1 = 128;
@@ -421,7 +421,7 @@ mod tests {
         init();
 
         let mut rng = thread_rng();
-        let mut holder = SegmentHolder::default();
+        let mut holder = SegmentHolder::fixture();
 
         let payload_field: JsonPath = "number".parse().unwrap();
 
@@ -712,7 +712,7 @@ mod tests {
     fn test_indexing_optimizer_with_number_of_segments() {
         init();
 
-        let mut holder = SegmentHolder::default();
+        let mut holder = SegmentHolder::fixture();
 
         let stopped = AtomicBool::new(false);
         let dim = 256;
@@ -837,7 +837,7 @@ mod tests {
         // Base segment
         let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-        let mut holder = SegmentHolder::default();
+        let mut holder = SegmentHolder::fixture();
 
         let segment = random_segment(dir.path(), 100, point_count, dim as usize);
 

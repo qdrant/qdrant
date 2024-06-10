@@ -33,6 +33,22 @@ pub fn empty_segment(path: &Path) -> Segment {
     build_simple_segment(path, 4, Distance::Dot).unwrap()
 }
 
+impl SegmentHolder {
+    pub fn fixture() -> Self {
+        Self::new(OptimizerThresholds::fixture())
+    }
+}
+
+impl OptimizerThresholds {
+    pub fn fixture() -> Self {
+        Self {
+            max_segment_size_kb: 100_000,
+            memmap_threshold_kb: 1_000_000,
+            indexing_threshold_kb: 1_000_000,
+        }
+    }
+}
+
 /// A generator for random point IDs
 #[derive(Default)]
 pub(crate) struct PointIdGenerator {
@@ -205,7 +221,7 @@ pub fn build_test_holder(path: &Path) -> RwLock<SegmentHolder> {
     let segment1 = build_segment_1(path);
     let segment2 = build_segment_2(path);
 
-    let mut holder = SegmentHolder::default();
+    let mut holder = SegmentHolder::fixture();
 
     let _sid1 = holder.add_new(segment1);
     let _sid2 = holder.add_new(segment2);
@@ -221,11 +237,7 @@ pub(crate) fn get_merge_optimizer(
 ) -> MergeOptimizer {
     MergeOptimizer::new(
         5,
-        optimizer_thresholds.unwrap_or(OptimizerThresholds {
-            max_segment_size_kb: 100_000,
-            memmap_threshold_kb: 1_000_000,
-            indexing_threshold_kb: 1_000_000,
-        }),
+        optimizer_thresholds.unwrap_or_else(OptimizerThresholds::fixture),
         segment_path.to_owned(),
         collection_temp_dir.to_owned(),
         CollectionParams {
@@ -271,7 +283,7 @@ pub fn optimize_segment(segment: Segment) -> LockedSegment {
 
     let dim = segment.segment_config.vector_data.get("").unwrap().size;
 
-    let mut holder = SegmentHolder::default();
+    let mut holder = SegmentHolder::fixture();
 
     let segment_id = holder.add_new(segment);
 

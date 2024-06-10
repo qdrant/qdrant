@@ -709,7 +709,7 @@ mod tests {
         let segment1 = random_segment(dir.path(), 10, 2000, 4);
         let segment2 = random_segment(dir.path(), 10, 4000, 4);
 
-        let mut holder = SegmentHolder::default();
+        let mut holder = SegmentHolder::fixture();
 
         let _sid1 = holder.add_new(segment1);
         let _sid2 = holder.add_new(segment2);

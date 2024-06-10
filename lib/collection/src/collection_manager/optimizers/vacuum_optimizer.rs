@@ -233,7 +233,7 @@ mod tests {
     fn test_vacuum_conditions() {
         let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-        let mut holder = SegmentHolder::default();
+        let mut holder = SegmentHolder::fixture();
         let segment_id = holder.add_new(random_segment(dir.path(), 100, 200, 4));
 
         let segment = holder.get(segment_id).unwrap();
@@ -405,7 +405,7 @@ mod tests {
         // Base segment
         let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-        let mut holder = SegmentHolder::default();
+        let mut holder = SegmentHolder::fixture();
 
         let mut segment = random_multi_vec_segment(
             dir.path(),

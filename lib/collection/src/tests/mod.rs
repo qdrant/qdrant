@@ -38,7 +38,7 @@ async fn test_optimization_process() {
     let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
 
     let dim = 256;
-    let mut holder = SegmentHolder::default();
+    let mut holder = SegmentHolder::fixture();
 
     let segments_to_merge = vec![
         holder.add_new(random_segment(dir.path(), 100, 3, dim)),
@@ -141,7 +141,7 @@ async fn test_cancel_optimization() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
 
-    let mut holder = SegmentHolder::default();
+    let mut holder = SegmentHolder::fixture();
     let dim = 256;
 
     for _ in 0..5 {
@@ -222,7 +222,7 @@ async fn test_new_segment_when_all_over_capacity() {
         memmap_threshold_kb: 1_000_000,
         indexing_threshold_kb: 1_000_000,
     };
-    let mut holder = SegmentHolder::default();
+    let mut holder = SegmentHolder::new(optimizer_thresholds.clone());
 
     holder.add_new(random_segment(dir.path(), 100, 3, dim));
     holder.add_new(random_segment(dir.path(), 100, 3, dim));

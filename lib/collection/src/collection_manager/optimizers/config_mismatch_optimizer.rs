@@ -310,7 +310,7 @@ mod tests {
         // Base segment
         let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-        let mut holder = SegmentHolder::default();
+        let mut holder = SegmentHolder::fixture();
 
         let segment = random_segment(dir.path(), 100, point_count, dim as usize);
 
@@ -459,7 +459,7 @@ mod tests {
         // Base segment
         let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-        let mut holder = SegmentHolder::default();
+        let mut holder = SegmentHolder::fixture();
 
         let segment = random_multi_vec_segment(
             dir.path(),
@@ -629,7 +629,7 @@ mod tests {
         // Base segment
         let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-        let mut holder = SegmentHolder::default();
+        let mut holder = SegmentHolder::fixture();
 
         let segment = random_multi_vec_segment(
             dir.path(),

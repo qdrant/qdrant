@@ -167,7 +167,7 @@ mod tests {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
 
-        let mut holder = SegmentHolder::default();
+        let mut holder = SegmentHolder::fixture();
         let dim = 256;
 
         let _segments_to_merge = [
@@ -201,7 +201,7 @@ mod tests {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
 
-        let mut holder = SegmentHolder::default();
+        let mut holder = SegmentHolder::fixture();
         let dim = 256;
 
         let segments_to_merge = [

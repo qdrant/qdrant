@@ -260,7 +260,8 @@ impl LocalShard {
             );
         }
 
-        let mut segment_holder = SegmentHolder::default();
+        let mut segment_holder =
+            SegmentHolder::new(effective_optimizers_config.optimizer_thresholds());
 
         for handler in load_handlers {
             let segment = handler.join().map_err(|err| {
@@ -434,7 +435,8 @@ impl LocalShard {
             ))
         })?;
 
-        let mut segment_holder = SegmentHolder::default();
+        let mut segment_holder =
+            SegmentHolder::new(effective_optimizers_config.optimizer_thresholds());
         let mut build_handlers = vec![];
 
         let vector_params = config.params.to_base_vector_data()?;
